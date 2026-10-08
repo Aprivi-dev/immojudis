@@ -29,6 +29,8 @@ const SALE_COLUMNS = [
   "starting_price_eur",
   "property_type",
   "visit_dates",
+  "occupancy_status",
+  "city",
   "first_seen_at",
   "publication_quarantine:raw_payload->>publication_quarantine",
 ].join(",");
@@ -82,6 +84,8 @@ const storedSaleSchema = z
       .nullable(),
     property_type: z.string().nullable(),
     visit_dates: z.unknown(),
+    occupancy_status: z.string().nullable().optional(),
+    city: z.string().nullable().optional(),
     first_seen_at: z.string().datetime({ offset: true }).nullable(),
     publication_quarantine: z.string().nullable().optional(),
   })
@@ -318,15 +322,7 @@ async function loadEligibleSales(input: {
       (candidate) =>
         !isPublicationQuarantinedMarker(candidate.publication_quarantine, candidate.status),
     )) {
-      rows.push({
-        id: row.id,
-        saleDate: row.sale_date,
-        status: row.status,
-        startingPriceEur: row.starting_price_eur,
-        propertyType: row.property_type,
-        visitDates: row.visit_dates,
-        firstSeenAt: row.first_seen_at,
-      });
+      rows.push(mapStoredSale(row));
     }
     if (page.length < PAGE_SIZE) return rows;
   }
@@ -410,6 +406,8 @@ function mapStoredSale(row: z.infer<typeof storedSaleSchema>): TribunalJudicialA
     propertyType: row.property_type,
     visitDates: row.visit_dates,
     firstSeenAt: row.first_seen_at,
+    occupationStatus: row.occupancy_status ?? null,
+    city: row.city ?? null,
   };
 }
 

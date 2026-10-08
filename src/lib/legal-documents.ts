@@ -1,14 +1,14 @@
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-07-29.1",
-    sha256: "226b41a85d6adba14bfa0613311d85141e6a342b5b338753e92d4984f3557e99",
+    sha256: "c55e7cffefcf3ebc6e0807e3a234f8d155603e32344cd6ffc0f2478533538df9",
     effectiveDate: "29 juillet 2026",
     path: "/legal",
   },
   terms: {
-    version: "2026-07-29.1",
-    sha256: "3b46da5f455e9420656e5269ee45749907f6fc01f9fe25a78bcd81e769560378",
-    effectiveDate: "29 juillet 2026",
+    version: "2026-10-03.1",
+    sha256: "bde7989a42c979643b892c07ef6ed515dc6fe5d425dd5b3d469d5e4a5625f9dc",
+    effectiveDate: "3 octobre 2026",
     path: "/conditions-generales",
   },
   privacy: {
@@ -39,6 +39,19 @@ export type LegalConfigurationStatus = {
   missing: string[];
 };
 
+const REQUIRED_PUBLISHER_FIELDS = [
+  ["entityName", "NEXT_PUBLIC_LEGAL_ENTITY_NAME"],
+  ["legalForm", "NEXT_PUBLIC_LEGAL_ENTITY_FORM"],
+  ["address", "NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS"],
+  ["registration", "NEXT_PUBLIC_LEGAL_REGISTRATION"],
+  ["publicationDirector", "NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR"],
+  ["contactEmail", "NEXT_PUBLIC_LEGAL_CONTACT_EMAIL"],
+  ["contactPhone", "NEXT_PUBLIC_LEGAL_CONTACT_PHONE"],
+  ["mediatorName", "NEXT_PUBLIC_LEGAL_MEDIATOR_NAME"],
+  ["mediatorAddress", "NEXT_PUBLIC_LEGAL_MEDIATOR_ADDRESS"],
+  ["mediatorWebsite", "NEXT_PUBLIC_LEGAL_MEDIATOR_WEBSITE"],
+] as const;
+
 export const VERCEL_HOSTING_PROVIDER = {
   name: "Vercel Inc.",
   address: "440 N Barranca Avenue #4133, Covina, CA 91723, États-Unis",
@@ -65,19 +78,19 @@ export function publicLegalPublisher(): LegalPublisher {
 export function legalConfigurationStatus(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): LegalConfigurationStatus {
-  const required = [
-    ["NEXT_PUBLIC_LEGAL_ENTITY_NAME", env.NEXT_PUBLIC_LEGAL_ENTITY_NAME],
-    ["NEXT_PUBLIC_LEGAL_ENTITY_FORM", env.NEXT_PUBLIC_LEGAL_ENTITY_FORM],
-    ["NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS", env.NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS],
-    ["NEXT_PUBLIC_LEGAL_REGISTRATION", env.NEXT_PUBLIC_LEGAL_REGISTRATION],
-    ["NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR", env.NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR],
-    ["NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL],
-    ["NEXT_PUBLIC_LEGAL_CONTACT_PHONE", env.NEXT_PUBLIC_LEGAL_CONTACT_PHONE],
-    ["NEXT_PUBLIC_LEGAL_MEDIATOR_NAME", env.NEXT_PUBLIC_LEGAL_MEDIATOR_NAME],
-    ["NEXT_PUBLIC_LEGAL_MEDIATOR_ADDRESS", env.NEXT_PUBLIC_LEGAL_MEDIATOR_ADDRESS],
-    ["NEXT_PUBLIC_LEGAL_MEDIATOR_WEBSITE", env.NEXT_PUBLIC_LEGAL_MEDIATOR_WEBSITE],
-  ] as const;
-  const missing = required.filter(([, value]) => !filled(value)).map(([name]) => name);
+  const missing = REQUIRED_PUBLISHER_FIELDS.filter(([, name]) => !filled(env[name])).map(
+    ([, name]) => name,
+  );
+  return { ready: missing.length === 0, missing };
+}
+
+/** Uses the statically referenced public variables that Next.js includes in the client bundle. */
+export function legalPublisherConfigurationStatus(
+  publisher: LegalPublisher = publicLegalPublisher(),
+): LegalConfigurationStatus {
+  const missing = REQUIRED_PUBLISHER_FIELDS.filter(([field]) => !publisher[field]?.trim()).map(
+    ([, name]) => name,
+  );
   return { ready: missing.length === 0, missing };
 }
 

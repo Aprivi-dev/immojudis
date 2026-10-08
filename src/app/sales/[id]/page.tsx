@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 import { formatPrice } from "@/lib/format";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { getSaleProcedure, saleVenueLabel } from "@/lib/sale-procedure";
@@ -11,11 +11,11 @@ type PageProps = {
   params: Promise<{ id: string }>;
 };
 
-async function loadSaleDetail(id: string) {
+const loadSaleDetail = cache(async (id: string) => {
   const sale = await getSaleById(id);
   if (sale) return { sale, preview: null };
   return { sale: null, preview: await getSalePreviewById(id) };
-}
+});
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;

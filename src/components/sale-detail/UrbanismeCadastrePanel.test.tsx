@@ -1,10 +1,32 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
 import { UrbanismeCadastrePanel } from "./UrbanismeCadastrePanel";
+
+vi.mock("./CadastralNeighborhoodMap", () => ({
+  CadastralNeighborhoodMap: ({
+    lat,
+    lng,
+    pointKind,
+    address,
+  }: {
+    lat: number;
+    lng: number;
+    pointKind: string;
+    address: string;
+  }) => (
+    <div
+      data-testid="cadastral-neighborhood-map"
+      data-lat={String(lat)}
+      data-lng={String(lng)}
+      data-point-kind={pointKind}
+      data-address={address}
+    />
+  ),
+}));
 
 afterEach(() => cleanup());
 
@@ -15,6 +37,35 @@ const sale = (values: Partial<AuctionSale> = {}): AuctionSale =>
   }) as AuctionSale;
 
 describe("UrbanismeCadastrePanel", () => {
+  it("garde le point d’adresse original pour le plan quand les champs affichés sont masqués", () => {
+    const mapLocation = sale({
+      address: "12 rue des Fleurs",
+      postal_code: "33000",
+      city: "Bordeaux",
+      latitude: 44.842748,
+      longitude: -0.586227,
+    });
+
+    render(
+      <UrbanismeCadastrePanel
+        sale={sale({
+          address: null,
+          postal_code: null,
+          city: null,
+          latitude: null,
+          longitude: null,
+        })}
+        mapLocation={mapLocation}
+      />,
+    );
+
+    const map = screen.getByTestId("cadastral-neighborhood-map");
+    expect(map.getAttribute("data-lat")).toBe("44.842748");
+    expect(map.getAttribute("data-lng")).toBe("-0.586227");
+    expect(map.getAttribute("data-point-kind")).toBe("listing");
+    expect(map.getAttribute("data-address")).toBe("12 rue des Fleurs, 33000 Bordeaux");
+  });
+
   it("renders explicit unavailable states without tabs, legal conclusions, or a fake plan", () => {
     const { container } = render(
       <UrbanismeCadastrePanel

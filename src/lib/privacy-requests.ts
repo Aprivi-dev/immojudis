@@ -72,7 +72,16 @@ export type PrivacyRequestAdminSummary = PrivacyRequestSummary & {
 };
 
 export type PrivacyRequestListResponse = { requests: PrivacyRequestSummary[] };
-export type PrivacyRequestAdminListResponse = { requests: PrivacyRequestAdminSummary[] };
+export type PrivacyRequestAdminListResponse = {
+  requests: PrivacyRequestAdminSummary[];
+  totalCount: number;
+  openCount: number;
+  overdueCount: number;
+  truncated: boolean;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+};
 
 type PrivacyRequestRow = Tables<"data_subject_requests">;
 
@@ -134,14 +143,36 @@ export async function listPrivacyRequests(
 
 export async function listPrivacyRequestsForAdmin(
   auth: SupabaseAuthContext,
+  { offset = 0, limit = 100 }: { offset?: number; limit?: number } = {},
 ): Promise<PrivacyRequestAdminListResponse> {
   assertAdmin(auth);
-  const { data, error } = await supabaseAdmin
-    .from("data_subject_requests")
-    .select(ADMIN_COLUMNS)
-    .order("submitted_at", { ascending: false })
-    .limit(100);
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
+  const openStatuses = ["received", "identity_verification", "in_review"] as const;
+  const now = new Date().toISOString();
+  const [
+    { data, error, count: totalCount },
+    { count: openCount, error: openError },
+    { count: overdueCount, error: overdueError },
+  ] = await Promise.all([
+    supabaseAdmin
+      .from("data_subject_requests")
+      .select(ADMIN_COLUMNS, { count: "exact" })
+      .order("submitted_at", { ascending: false })
+      .range(safeOffset, safeOffset + safeLimit - 1),
+    supabaseAdmin
+      .from("data_subject_requests")
+      .select("id", { count: "exact", head: true })
+      .in("status", openStatuses),
+    supabaseAdmin
+      .from("data_subject_requests")
+      .select("id", { count: "exact", head: true })
+      .in("status", openStatuses)
+      .lt("due_at", now),
+  ]);
   if (error) throw error;
+  if (openError) throw openError;
+  if (overdueError) throw overdueError;
   return {
     requests: (data ?? []).map((row) => {
       const typed = row as Pick<PrivacyRequestRow, AdminColumn>;
@@ -152,6 +183,13 @@ export async function listPrivacyRequestsForAdmin(
         operatorNotes: typed.operator_notes,
       };
     }),
+    totalCount: totalCount ?? data?.length ?? 0,
+    openCount: openCount ?? 0,
+    overdueCount: overdueCount ?? 0,
+    truncated: (totalCount ?? data?.length ?? 0) > (data?.length ?? 0),
+    offset: safeOffset,
+    limit: safeLimit,
+    hasMore: safeOffset + (data?.length ?? 0) < (totalCount ?? 0),
   };
 }
 

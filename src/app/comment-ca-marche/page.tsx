@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
+  alternates: { canonical: "/comment-ca-marche" },
   title: "Comment utiliser Immojudis",
   description:
     "Rechercher une vente, comparer des biens, sauvegarder ses favoris et préparer une simulation.",
@@ -22,7 +23,7 @@ const steps = [
   },
   {
     title: "Retrouver les ventes suivies",
-    text: "Le cœur ajoute une vente à vos favoris. Le compte gratuit permet d’en conserver dix, accessibles sur vos appareils. Retirez une vente pour libérer une place. Les favoris seuls n’envoient pas de notification automatique.",
+    text: "Le cœur ajoute une vente à vos favoris. Le compte gratuit permet d’en conserver trois, accessibles sur vos appareils. Retirez une vente pour libérer une place. Les favoris seuls n’envoient pas de notification automatique.",
     href: "/favoris",
     label: "Ouvrir mes favoris",
   },
@@ -34,7 +35,7 @@ const steps = [
   },
   {
     title: "Passer au dossier réel",
-    text: "Le plan Analyse ouvre les modules disponibles sur les fiches réelles. L’export PDF concerne les ventes au tribunal et ne reprend pas encore les réglages personnels du simulateur. Vérifiez les données et documents disponibles avant de décider ; aucune estimation ne garantit le résultat de la vente.",
+    text: "Le plan Analyse ouvre les modules disponibles sur les fiches réelles. Pour les ventes au tribunal, le PDF reprend votre scénario d’achat et de travaux ainsi que vos hypothèses locatives, le coût complet et la mensualité calculée. L’apport, le taux et la durée du financement ne sont pas encore détaillés séparément dans le PDF. Vérifiez les données et documents disponibles avant de décider ; aucune estimation ne garantit le résultat de la vente.",
     href: "/accompagnement",
     label: "Consulter les accès et tarifs",
   },

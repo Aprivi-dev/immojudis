@@ -11,6 +11,8 @@ type Props = Omit<ComponentProps<"img">, "src" | "alt"> & {
   src: string;
   alt: string;
   compactFallback?: boolean;
+  /** Called only when the original source has failed, after optimizer fallback. */
+  onOriginalError?: () => void;
 };
 
 export function ListingPhoto(props: Props) {
@@ -21,6 +23,7 @@ function Photo({
   src,
   alt,
   onError,
+  onOriginalError,
   compactFallback = false,
   width,
   height,
@@ -36,9 +39,12 @@ function Photo({
     const image = imageRef.current;
     if (image?.complete && !image.naturalWidth) {
       if (optimized) setOriginalOnly(true);
-      else setFailed(true);
+      else {
+        setFailed(true);
+        onOriginalError?.();
+      }
     }
-  }, [optimized]);
+  }, [onOriginalError, optimized]);
 
   if (failed) {
     return (
@@ -60,7 +66,10 @@ function Photo({
     ref: imageRef,
     onError: (event: SyntheticEvent<HTMLImageElement>) => {
       if (optimized) setOriginalOnly(true);
-      else setFailed(true);
+      else {
+        setFailed(true);
+        onOriginalError?.();
+      }
       onError?.(event);
     },
   };

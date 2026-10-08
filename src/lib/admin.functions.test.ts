@@ -6,40 +6,41 @@ describe("admin dashboard AI description stats", () => {
     const stats = buildAiDescriptionDashboardStats([
       {
         status: "upcoming",
-        raw_payload: {
-          llm_display_description: "Synthèse prête. ".repeat(8),
-          llm_prompt_version: "auction_llm_v10_structured_display",
-          llm_display_quality_version: "display_quality_20260911_v3",
-          llm_display_status: "accepted",
-        },
+        llm_display_description: "Synthèse prête. ".repeat(8),
+        llm_prompt_version: "auction_llm_v10_structured_display",
+        llm_display_quality_version: "display_quality_20260911_v3",
+        llm_display_status: "accepted",
       },
       {
         status: "active",
-        raw_payload: {
-          llm_display_description: "Ancienne synthèse.",
-          llm_prompt_version: "auction_llm_v5",
-        },
+        llm_display_description: "Ancienne synthèse.",
+        llm_prompt_version: "auction_llm_v5",
       },
       {
         status: "upcoming",
-        raw_payload: {
-          source_description: "Description source.",
-        },
+        llm_display_description: null,
+        llm_prompt_version: null,
       },
       {
         status: "past",
-        raw_payload: {},
+      },
+      {
+        status: "active",
+        llm_display_description: "Synthèse avec types invalides. ".repeat(8),
+        llm_prompt_version: "auction_llm_v10_structured_display",
+        llm_display_quality_version: { invalid: true },
+        llm_display_status: 1,
       },
     ]);
 
     expect(stats).toEqual({
       expectedPromptVersion: "auction_llm_v10_structured_display",
-      total: 4,
-      activeOrUpcoming: 3,
+      total: 5,
+      activeOrUpcoming: 4,
       ready: 1,
       missing: 1,
       promptVersionMismatch: 2,
-      backfillRemaining: 2,
+      backfillRemaining: 3,
     });
   });
 
@@ -47,12 +48,10 @@ describe("admin dashboard AI description stats", () => {
     const stats = buildAiDescriptionDashboardStats([
       {
         status: "upcoming",
-        raw_payload: {
-          llm_display_description: "Maison située à Paris.",
-          llm_prompt_version: "auction_llm_v10_structured_display",
-          llm_display_quality_version: "display_quality_20260911_v3",
-          llm_display_status: "fallback",
-        },
+        llm_display_description: "Maison située à Paris.",
+        llm_prompt_version: "auction_llm_v10_structured_display",
+        llm_display_quality_version: "display_quality_20260911_v3",
+        llm_display_status: "fallback",
       },
     ]);
     expect(stats.ready).toBe(0);
@@ -62,20 +61,16 @@ describe("admin dashboard AI description stats", () => {
   it("paginates all AI description rows before computing backlog stats", async () => {
     const firstPage = Array.from({ length: 1000 }, () => ({
       status: "past",
-      raw_payload: {
-        llm_display_description: "Ancienne annonce.",
-        llm_prompt_version: "auction_llm_v10_structured_display",
-      },
+      llm_display_description: "Ancienne annonce.",
+      llm_prompt_version: "auction_llm_v10_structured_display",
     }));
     const secondPage = [
       {
         status: "active",
-        raw_payload: {
-          llm_display_description: "Synthèse active. ".repeat(8),
-          llm_prompt_version: "auction_llm_v10_structured_display",
-          llm_display_quality_version: "display_quality_20260911_v3",
-          llm_display_status: "accepted",
-        },
+        llm_display_description: "Synthèse active. ".repeat(8),
+        llm_prompt_version: "auction_llm_v10_structured_display",
+        llm_display_quality_version: "display_quality_20260911_v3",
+        llm_display_status: "accepted",
       },
     ];
     const ranges: Array<[number, number]> = [];
@@ -85,14 +80,22 @@ describe("admin dashboard AI description stats", () => {
         expect(table).toBe("auction_sales");
         return {
           select(columns: string) {
-            expect(columns).toBe("status,raw_payload");
+            expect(columns).toBe(
+              "status,llm_display_description:raw_payload->llm_display_description,llm_prompt_version:raw_payload->llm_prompt_version,llm_display_quality_version:raw_payload->llm_display_quality_version,llm_display_status:raw_payload->llm_display_status",
+            );
             return {
-              range(from: number, to: number) {
-                ranges.push([from, to]);
-                return Promise.resolve({
-                  data: pages[ranges.length - 1] ?? [],
-                  error: null,
-                });
+              order(column: string, options: { ascending?: boolean }) {
+                expect(column).toBe("id");
+                expect(options).toEqual({ ascending: true });
+                return {
+                  range(from: number, to: number) {
+                    ranges.push([from, to]);
+                    return Promise.resolve({
+                      data: pages[ranges.length - 1] ?? [],
+                      error: null,
+                    });
+                  },
+                };
               },
             };
           },

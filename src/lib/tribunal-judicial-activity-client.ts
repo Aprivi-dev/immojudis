@@ -4,6 +4,7 @@ import {
   type TribunalJudicialActivityHistoryMonths,
   type TribunalJudicialActivityResponse,
 } from "@/lib/tribunal-judicial-activity";
+import { authHeaders } from "@/lib/client-api-core";
 
 type TribunalJudicialActivityClientQuery =
   | { courtCode: string; saleId?: never }
@@ -19,7 +20,10 @@ export async function fetchTribunalJudicialActivity(
   });
   if (typeof args.saleId === "string") params.set("saleId", args.saleId);
   else params.set("courtCode", args.courtCode.trim());
-  const response = await fetch(`/api/v1/tribunals/judicial-activity?${params.toString()}`);
+  const response = await fetch(`/api/v1/tribunals/judicial-activity?${params.toString()}`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
   const payload = (await response.json().catch(() => null)) as
     | (unknown & { error?: string; code?: string })
     | null;

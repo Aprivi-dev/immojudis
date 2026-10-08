@@ -3,95 +3,38 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import dynamic from "next/dynamic";
-import type * as React from "react";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import entryMotion from "@/components/ui/entry-motion.module.css";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
-import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
-import BedDouble from "lucide-react/dist/esm/icons/bed-double.js";
-import Bell from "lucide-react/dist/esm/icons/bell.js";
-import Building2 from "lucide-react/dist/esm/icons/building-2.js";
-import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
-import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import Download from "lucide-react/dist/esm/icons/download.js";
-import Heart from "lucide-react/dist/esm/icons/heart.js";
-import Landmark from "lucide-react/dist/esm/icons/landmark.js";
-import LayoutPanelLeft from "lucide-react/dist/esm/icons/layout-panel-left.js";
-import ListFilter from "lucide-react/dist/esm/icons/list-filter.js";
-import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
-import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
-import Map from "lucide-react/dist/esm/icons/map.js";
-import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
-import Ruler from "lucide-react/dist/esm/icons/ruler.js";
-import SearchIcon from "lucide-react/dist/esm/icons/search.js";
-import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "sonner";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
-import { useViewedSales } from "@/hooks/use-viewed-sales";
-import { supabase } from "@/integrations/supabase/client";
-import { Link, useLocation, useNavigate } from "@/lib/router-compat";
+import { useLocation, useNavigate } from "@/lib/router-compat";
 import {
   createWatchedZone as createWatchedZoneRequest,
-  addFavoriteSale as addFavoriteSaleRequest,
+  fetchAccessPlan,
   fetchDpeExplorer,
   exportSalesCsv,
-  fetchFeatureEntitlements,
   fetchSalesAiReviewProjections,
   fetchSalesStatistics,
-  removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { createAlert } from "@/lib/queries";
-import { DPE_CLASSES, dpeColor, extractDpe, type DpeClass } from "@/lib/dpe";
-import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
-import {
-  formatDate,
-  formatPrice,
-  formatPricePerM2,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
-import { geocodeAddress, geocodeAdministrativeArea, pricePerM2, type GeoPoint } from "@/lib/geo";
-import { mapboxStaticImageUrl } from "@/lib/mapbox";
-import { firstPropertyImage, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
-import { cleanSaleTitle, saleDisplayTitle } from "@/lib/sale-title";
-import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
-import { isNew } from "@/lib/dates";
+import { createAlert, getSaleById } from "@/lib/queries";
+import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
-import type { AuctionSale } from "@/lib/types";
-import type { WatchedZoneInput } from "@/lib/watched-zones";
-import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
 import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
 import {
   DEFAULT_SEARCH_LIMIT,
-  HOME_TYPE_OPTIONS,
-  SORT_OPTIONS,
-  STATUS_OPTIONS,
   applyClientSearchFilters,
-  compactPrice,
   countActiveSearchFilters,
-  hasClientOnlyFilters,
   hasCoordinates,
   sortClientSearchResults,
 } from "@/lib/search/search-filters";
-import {
-  areMapViewportsClose,
-  shouldMapListFollowViewport,
-  visibleSalesForMapViewport,
-} from "@/lib/search/map-viewport-results";
+import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
+import { catalogPlaceholder } from "@/lib/search/catalog-placeholder";
 import {
   mergeSalesSearch,
   salesSearchToUrlRecord,
   type SalesSearchParams,
-  type SalesSearchUrlRecord,
-  type SearchSortKey,
 } from "@/lib/search/search-url-state";
 import {
   fetchSearchCount,
@@ -102,15 +45,11 @@ import type { MapViewportChange } from "./MapPanel";
 import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
-import {
-  ResultsSummary,
-  SearchHeader,
-  SortDropdown,
-  SaveSearchButton,
-  CsvExportButton,
-} from "./SearchHeader";
+import { ResultsSummary, SearchHeader, SortDropdown } from "./SearchHeader";
 import { SearchResultsList } from "./SearchResults";
 import { SaleComparisonBar } from "./SaleComparisonBar";
+import { SaleTypeFilter } from "./SaleTypeFilter";
+import { SearchLawyerPlacement } from "./SearchLawyerPlacement";
 import {
   SearchDraft,
   buildAlertName,
@@ -163,7 +102,6 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const [hoveredSaleId, setHoveredSaleId] = useState<string | null>(null);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [mapViewport, setMapViewport] = useState<MapViewportChange | null>(null);
-  const deferredMapViewport = useDeferredValue(mapViewport);
   const [wideMap, setWideMap] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mobileMapOpen, setMobileMapOpen] = useState(Boolean(search.map));
@@ -179,10 +117,12 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const [center, setCenter] = useState<GeoPoint | null>(null);
   const [geocoding, setGeocoding] = useState(false);
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const mapVisible = isDesktop || mobileMapOpen;
   const geographicLabel = search.city || search.department || search.query || "";
   useEffect(() => {
     let cancelled = false;
-    if (!geographicLabel) {
+    if (!mapVisible || !geographicLabel) {
       setLocationCenter(null);
       return;
     }
@@ -209,8 +149,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     return () => {
       cancelled = true;
     };
-  }, [geographicLabel]);
-  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  }, [geographicLabel, mapVisible]);
   const page = search.page ?? 1;
   const pageSize = search.limit ?? DEFAULT_SEARCH_LIMIT;
   const pageOffset = (page - 1) * pageSize;
@@ -261,7 +200,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
       const nextRecord = salesSearchToUrlRecord(nextSearch);
       if (stableUrlRecord(currentRecord) === stableUrlRecord(nextRecord)) return;
       ownDraftNavigations.current.add(JSON.stringify(searchToDraft(nextSearch)));
-      navigate({ search: nextRecord, replace: true });
+      navigate({ search: nextRecord, replace: true, shallow: true });
     }, 320);
 
     return () => window.clearTimeout(timeout);
@@ -300,8 +239,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     [search],
   );
   const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
-    queryKey: ["feature-entitlements", user?.id ?? "anonymous"],
-    queryFn: fetchFeatureEntitlements,
+    queryKey: ["feature-entitlements", user?.id ?? "anonymous", "plan"],
+    queryFn: fetchAccessPlan,
     enabled: Boolean(user) && !authLoading,
     staleTime: 5 * 60_000,
   });
@@ -318,24 +257,37 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     isFetching,
     isLoading,
   } = useQuery({
-    queryKey: ["sales-search", searchKeySignature, isPreview, isDiscovery],
+    queryKey: ["sales-search", searchKeySignature, comparisonScope],
+    placeholderData: (previous, query) =>
+      catalogPlaceholder(previous, query?.queryKey, comparisonScope),
     queryFn: () => fetchSearchResults({ search, preview: isPreview, discovery: isDiscovery }),
     enabled: catalogReady,
     staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
   const { data: totalCount, isLoading: isCountLoading } = useQuery({
-    queryKey: ["sales-search-count", searchKeySignature, isPreview, isDiscovery],
+    queryKey: ["sales-search-count", searchKeySignature, comparisonScope],
+    placeholderData: (previous, query) =>
+      catalogPlaceholder(previous, query?.queryKey, comparisonScope),
     queryFn: () => fetchSearchCount({ search, preview: isPreview, discovery: isDiscovery }),
     enabled: catalogReady,
     staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
-  const { data: rawMapSales = [], isLoading: isMapLoading } = useQuery({
-    queryKey: ["sales-search-map", mapSearchKeySignature, isPreview, isDiscovery],
+  const {
+    data: rawMapSales = [],
+    isLoading: isMapLoading,
+    isFetching: isMapFetching,
+  } = useQuery({
+    queryKey: ["sales-search-map", mapSearchKeySignature, comparisonScope],
+    placeholderData: (previous, query) =>
+      catalogPlaceholder(previous, query?.queryKey, comparisonScope),
     queryFn: () => fetchSearchMapResults(search, { discovery: isDiscovery }),
-    enabled: catalogReady && !isPreview,
+    enabled: catalogReady && !isPreview && mapVisible,
     staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
   const filteredSales = useMemo(
@@ -352,26 +304,37 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   const mapSales = useMemo(
     () =>
-      (isPreview
-        ? rawSales
-        : sortClientSearchResults(
-            applyClientSearchFilters(rawMapSales.length ? rawMapSales : rawSales, search, center),
-            search,
-            center,
-          )
+      (!mapVisible
+        ? []
+        : isPreview
+          ? rawSales
+          : sortClientSearchResults(
+              applyClientSearchFilters(rawMapSales.length ? rawMapSales : rawSales, search, center),
+              search,
+              center,
+            )
       )
         .filter(hasCoordinates)
         .slice(0, 500),
-    [center, isPreview, rawMapSales, rawSales, search],
+    [center, isPreview, mapVisible, rawMapSales, rawSales, search],
   );
 
-  const mapViewportResults = useMemo(
-    () => visibleSalesForMapViewport(mapSales, deferredMapViewport),
-    [deferredMapViewport, mapSales],
-  );
+  // The map projection is intentionally lightweight. Fetch the complete row
+  // only after an authenticated user selects a sale that is actually present
+  // in the current map result set. Hovering, preview mode, and a hidden map
+  // never trigger this request.
+  const selectedMapSaleId =
+    selectedSaleId && mapSales.some((sale) => sale.id === selectedSaleId) ? selectedSaleId : null;
+  const { data: selectedMapSaleDetail, isFetching: selectedMapSaleDetailLoading } = useQuery({
+    queryKey: ["sales-map-detail", comparisonScope, selectedMapSaleId],
+    queryFn: () => getSaleById(selectedMapSaleId!, { discovery: isDiscovery }),
+    enabled: Boolean(catalogReady && user && mapVisible && selectedMapSaleId && comparisonScope),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
 
   const mapListFollowsViewport = false;
-  const displayedSales = mapListFollowsViewport ? mapViewportResults.sales : filteredSales;
+  const displayedSales = filteredSales;
   const aiReviewSaleIds = useMemo(
     () => [...new Set([...displayedSales, ...mapSales].map((sale) => sale.id).filter(Boolean))],
     [displayedSales, mapSales],
@@ -379,7 +342,10 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const { data: aiReviewData, isError: aiReviewError } = useQuery({
     queryKey: ["sales-ai-review", user?.id ?? "anonymous", aiReviewSaleIds],
     queryFn: () => fetchSalesAiReviewProjections(aiReviewSaleIds),
-    enabled: Boolean(user && !authLoading && !isPreview && aiReviewSaleIds.length),
+    // Discovery rows already use the public redacted view. The AI review
+    // endpoint reads Analyse-only projections and must not blank valid public
+    // city, price or date values for free users.
+    enabled: Boolean(user && !authLoading && !isPreview && !isDiscovery && aiReviewSaleIds.length),
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -392,7 +358,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     return grouped;
   }, [aiReviewData]);
   const aiReviewStatus: AiReviewRequestStatus =
-    !user || isPreview || aiReviewSaleIds.length === 0
+    !user || isPreview || isDiscovery || aiReviewSaleIds.length === 0
       ? "disabled"
       : aiReviewError
         ? "error"
@@ -402,21 +368,13 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const hasLocalFilters = false;
   const isInitialLoading = authLoading || entitlementsLoading || isLoading;
   const activeFiltersCount = countActiveSearchFilters(search);
-  const searchDisplayCount = hasLocalFilters
-    ? filteredSales.length
-    : (totalCount ?? filteredSales.length);
-  const displayCount = mapListFollowsViewport ? mapViewportResults.total : searchDisplayCount;
-  const loadedCount = mapListFollowsViewport ? mapSales.length : rawSales.length;
+  const displayCount = totalCount ?? filteredSales.length;
   const filteredCount = displayedSales.length;
   const hasMore =
-    !mapListFollowsViewport &&
-    !hasLocalFilters &&
-    totalCount != null &&
-    pageOffset + rawSales.length < totalCount &&
-    rawSales.length >= pageSize;
-  const hasPrevious = !mapListFollowsViewport && page > 1;
+    totalCount != null && pageOffset + rawSales.length < totalCount && rawSales.length >= pageSize;
+  const hasPrevious = page > 1;
   const splitClass = wideMap
-    ? "lg:grid-cols-[minmax(390px,40%)_minmax(0,1fr)]"
+    ? "lg:grid-cols-[minmax(360px,38%)_minmax(0,1fr)]"
     : "lg:grid-cols-[minmax(0,52%)_minmax(0,48%)]";
   const localSearchStatistics = useMemo(
     () => buildSearchStatistics(displayedSales),
@@ -434,16 +392,16 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const { data: salesStatisticsData, isFetching: salesStatisticsLoading } = useQuery({
     queryKey: ["sales-statistics", searchKeySignature],
     queryFn: () => fetchSalesStatistics({ search }),
-    enabled: !statisticsLocked && !authLoading && Boolean(user),
+    enabled: statisticsOpen && !statisticsLocked && !authLoading && Boolean(user),
     retry: false,
     staleTime: 2 * 60_000,
   });
   const searchStatistics = useMemo(
     () =>
-      salesStatisticsData && !mapListFollowsViewport
+      salesStatisticsData
         ? searchStatisticsFromServer(salesStatisticsData.summary)
         : localSearchStatistics,
-    [localSearchStatistics, mapListFollowsViewport, salesStatisticsData],
+    [localSearchStatistics, salesStatisticsData],
   );
   const statisticsLoading =
     isInitialLoading || (!statisticsLocked && salesStatisticsLoading && !salesStatisticsData);
@@ -471,7 +429,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const updateSearch = useCallback(
     (patch: Partial<SalesSearchParams>) => {
       const next = mergeSalesSearch(searchRef.current, patch);
-      navigate({ search: salesSearchToUrlRecord(next), replace: true });
+      navigate({ search: salesSearchToUrlRecord(next), replace: true, shallow: true });
     },
     [navigate],
   );
@@ -481,6 +439,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     navigate({
       search: salesSearchToUrlRecord({ sort: search.sort }),
       replace: true,
+      shallow: true,
     });
   }, [navigate, search.sort]);
 
@@ -527,6 +486,41 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     },
     [isPreview, updateSearch],
   );
+
+  const handleSearchAsMoveChange = useCallback(
+    (enabled: boolean) => {
+      updateSearch({
+        searchAsMove: enabled,
+        viewport: enabled ? mapViewport?.bounds : undefined,
+      });
+    },
+    [mapViewport, updateSearch],
+  );
+
+  const mapPanelProps = {
+    sales: mapSales,
+    geographicLabel,
+    onSearchViewport: () => {
+      if (!isPreview && mapViewport) updateSearch({ viewport: mapViewport.bounds });
+    },
+    locationCenter,
+    totalCount,
+    hoveredSaleId,
+    selectedSaleId,
+    selectedSaleDetail:
+      selectedMapSaleDetail?.id === selectedMapSaleId ? selectedMapSaleDetail : null,
+    selectedSaleDetailLoading: Boolean(selectedMapSaleId && selectedMapSaleDetailLoading),
+    isLoading: isInitialLoading || isMapLoading || isMapFetching,
+    searchAsMove: !isPreview && Boolean(search.searchAsMove),
+    preview: isPreview,
+    showDpeLegend: !dpeLocked,
+    aiReviewBySaleId,
+    aiReviewStatus,
+    onHover: setHoveredSaleId,
+    onSelect: handleMapSelect,
+    onViewportChange: handleViewportChange,
+    onSearchAsMoveChange: handleSearchAsMoveChange,
+  };
 
   async function saveSearch() {
     if (!user) {
@@ -626,7 +620,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   }
 
   return (
-    <main className="min-h-screen bg-[#edf3f7] text-[#132238] [--sales-header-height:11rem] lg:[--sales-header-height:8.375rem]">
+    <main className="min-h-screen bg-[#f7f8fa] text-[#132238] [--sales-header-height:8rem] lg:[--sales-header-height:8rem]">
       <a
         href="#sales-results"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-[#132238] focus:shadow-lg"
@@ -635,29 +629,22 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
       </a>
 
       <SearchHeader
-        search={search}
         draft={draft}
         setDraft={setDraft}
-        displayCount={displayCount}
-        loadedCount={loadedCount}
-        filteredCount={filteredCount}
         activeFiltersCount={activeFiltersCount}
-        mapListFollowsViewport={mapListFollowsViewport}
         isLoading={isInitialLoading}
-        isCountLoading={isCountLoading}
         isFetching={isFetching}
-        geocoding={geocoding}
         filtersOpen={filtersOpen}
         savingAlert={savingAlert}
         alertsLocked={alertsLocked}
         exportingCsv={exportingCsv}
         csvExportLocked={csvExportLocked}
         wideMap={wideMap}
+        isDesktop={isDesktop}
         onFiltersOpenChange={setFiltersOpen}
         onReset={resetFilters}
         onSaveSearch={saveSearch}
         onExportCsv={exportCsv}
-        onSortChange={(sort) => updateSearch({ sort: sort === "relevance" ? undefined : sort })}
         onToggleLayout={() => setWideMap((value) => !value)}
       />
 
@@ -670,18 +657,15 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           id="sales-results"
           tabIndex={-1}
           style={{ scrollMarginTop: "calc(var(--sales-header-height) + 12px)" }}
-          className="min-w-0 border-t border-[#132238]/10 bg-white lg:order-1 lg:border-r"
+          className="min-w-0 bg-[#f7f8fa] lg:order-1 lg:border-r lg:border-[#dce3eb]"
           aria-label="Résultats de recherche"
+          aria-busy={isFetching}
         >
-          <div className="flex flex-wrap items-center justify-between gap-1 pr-4">
+          <div className="flex flex-wrap items-center justify-between gap-1 border-b border-[#e3e8ee] bg-white pr-4">
             <ResultsSummary
               search={search}
               displayCount={displayCount}
-              loadedCount={loadedCount}
-              filteredCount={filteredCount}
               hasLocalFilters={hasLocalFilters}
-              mapListFollowsViewport={mapListFollowsViewport}
-              mapViewport={deferredMapViewport}
               isLoading={isInitialLoading || isCountLoading}
               geocoding={geocoding}
             />
@@ -695,8 +679,75 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
               />
             </div>
           </div>
+          <div className="border-b border-[#e3e8ee] bg-white px-4 py-3 sm:px-5">
+            <SaleTypeFilter
+              compact
+              value={draft.saleType}
+              onChange={(saleType) =>
+                setDraft((current) => ({
+                  ...current,
+                  saleType,
+                  tribunal: !saleType || saleType === "tribunal" ? current.tribunal : "",
+                }))
+              }
+            />
+          </div>
+          <SaleComparisonBar
+            key={comparisonScope ?? "loading"}
+            items={comparison.items}
+            returnTo={currentLocation.href}
+            userId={user?.id ?? null}
+            onRemove={comparison.remove}
+            onClear={comparison.clear}
+            onRestore={comparison.replace}
+            hideWhenEmpty
+          />
+
+          {isFetching && !isInitialLoading ? (
+            <p role="status" className="px-5 pt-3 text-xs font-medium text-[#526170]">
+              Actualisation des annonces…
+            </p>
+          ) : null}
+          <SearchResultsList
+            sales={displayedSales}
+            returnTo={currentLocation.href}
+            locked={isPreview}
+            analysisLocked={isDiscovery}
+            isLoading={isInitialLoading}
+            error={error}
+            selectedSaleId={selectedSaleId}
+            hoveredSaleId={hoveredSaleId}
+            onHover={setHoveredSaleId}
+            onSelect={setSelectedSaleId}
+            comparedSaleIds={comparison.items.map((item) => item.id)}
+            comparisonDisabled={!catalogReady}
+            onToggleComparison={comparison.toggle}
+            aiReviewBySaleId={aiReviewBySaleId}
+            aiReviewStatus={aiReviewStatus}
+            sponsoredPlacement={
+              <SearchLawyerPlacement
+                geographicLabel={geographicLabel}
+                city={search.city}
+                department={search.department}
+              />
+            }
+          />
+
+          <SearchPagination
+            hasMore={hasMore}
+            hasPrevious={hasPrevious}
+            isFetching={isFetching}
+            loadedCount={filteredCount}
+            totalCount={mapListFollowsViewport ? displayCount : totalCount}
+            mapListFollowsViewport={mapListFollowsViewport}
+            page={page}
+            pageSize={pageSize}
+            onNext={loadNextPage}
+            onPrevious={loadPreviousPage}
+          />
+
           <details
-            className="mx-4 mb-2 rounded-md border border-[#dce3eb] sm:mx-5"
+            className="mx-4 mt-3 rounded-lg border border-[#dce3eb] bg-white sm:mx-5"
             onToggle={(event) => setStatisticsOpen(event.currentTarget.open)}
           >
             <summary className="cursor-pointer px-4 py-2 text-sm font-medium">
@@ -721,76 +772,13 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
               />
             ) : null}
           </details>
-          <SaleComparisonBar
-            key={comparisonScope ?? "loading"}
-            items={comparison.items}
-            returnTo={currentLocation.href}
-            userId={user?.id ?? null}
-            onRemove={comparison.remove}
-            onClear={comparison.clear}
-            onRestore={comparison.replace}
-            hideWhenEmpty
-          />
-
-          <SearchResultsList
-            sales={displayedSales}
-            returnTo={currentLocation.href}
-            locked={isPreview}
-            analysisLocked={isDiscovery}
-            isLoading={isInitialLoading}
-            error={error}
-            selectedSaleId={selectedSaleId}
-            hoveredSaleId={hoveredSaleId}
-            onHover={setHoveredSaleId}
-            onSelect={setSelectedSaleId}
-            comparedSaleIds={comparison.items.map((item) => item.id)}
-            comparisonDisabled={!catalogReady}
-            onToggleComparison={comparison.toggle}
-            aiReviewBySaleId={aiReviewBySaleId}
-            aiReviewStatus={aiReviewStatus}
-          />
-
-          <SearchPagination
-            hasMore={hasMore}
-            hasPrevious={hasPrevious}
-            isFetching={isFetching}
-            loadedCount={filteredCount}
-            totalCount={mapListFollowsViewport ? displayCount : totalCount}
-            mapListFollowsViewport={mapListFollowsViewport}
-            page={page}
-            pageSize={pageSize}
-            onNext={loadNextPage}
-            onPrevious={loadPreviousPage}
-          />
-
           <Footer />
         </section>
 
         {isDesktop ? (
           <aside className="relative min-h-[calc(100svh_-_var(--sales-header-height))] bg-[#dfe7eb] lg:order-2">
             <div className="sticky top-[var(--sales-header-height)] h-[calc(100svh_-_var(--sales-header-height))]">
-              <LazyMapPanel
-                sales={mapSales}
-                locationCenter={locationCenter}
-                totalCount={totalCount}
-                hoveredSaleId={hoveredSaleId}
-                selectedSaleId={selectedSaleId}
-                isLoading={isInitialLoading || isMapLoading}
-                searchAsMove={!isPreview && Boolean(search.searchAsMove)}
-                preview={isPreview}
-                showDpeLegend={!dpeLocked}
-                aiReviewBySaleId={aiReviewBySaleId}
-                aiReviewStatus={aiReviewStatus}
-                onHover={setHoveredSaleId}
-                onSelect={handleMapSelect}
-                onViewportChange={handleViewportChange}
-                onSearchAsMoveChange={(enabled) =>
-                  updateSearch({
-                    searchAsMove: enabled,
-                    viewport: enabled ? mapViewport?.bounds : undefined,
-                  })
-                }
-              />
+              <LazyMapPanel {...mapPanelProps} />
             </div>
           </aside>
         ) : null}
@@ -848,28 +836,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
               </span>
             </div>
             <div className="h-full pt-14">
-              <LazyMapPanel
-                sales={mapSales}
-                locationCenter={locationCenter}
-                totalCount={totalCount}
-                hoveredSaleId={hoveredSaleId}
-                selectedSaleId={selectedSaleId}
-                isLoading={isInitialLoading || isMapLoading}
-                searchAsMove={!isPreview && Boolean(search.searchAsMove)}
-                preview={isPreview}
-                showDpeLegend={!dpeLocked}
-                aiReviewBySaleId={aiReviewBySaleId}
-                aiReviewStatus={aiReviewStatus}
-                onHover={setHoveredSaleId}
-                onSelect={handleMapSelect}
-                onViewportChange={handleViewportChange}
-                onSearchAsMoveChange={(enabled) =>
-                  updateSearch({
-                    searchAsMove: enabled,
-                    viewport: enabled ? mapViewport?.bounds : undefined,
-                  })
-                }
-              />
+              <LazyMapPanel {...mapPanelProps} />
             </div>
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>

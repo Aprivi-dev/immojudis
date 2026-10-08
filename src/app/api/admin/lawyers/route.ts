@@ -5,6 +5,7 @@ import {
   listAdminReferencedLawyers,
   saveAdminReferencedLawyer,
 } from "@/lib/admin-lawyers";
+import { adminErrorResponse } from "@/lib/api-route-errors";
 
 export async function GET(request: Request) {
   try {
@@ -28,14 +29,4 @@ export async function POST(request: Request) {
   } catch (error) {
     return adminErrorResponse(error);
   }
-}
-
-function adminErrorResponse(error: unknown) {
-  const message = error instanceof Error ? error.message : "Erreur admin";
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden")
-      ? 403
-      : 400;
-  return NextResponse.json({ error: message }, { status });
 }

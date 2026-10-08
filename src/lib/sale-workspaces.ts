@@ -8,7 +8,6 @@ import {
   DOCUMENT_REVIEW_STATUSES,
   SALE_WORKSPACE_STATUSES,
   type SaleWorkspaceChecklist,
-  type SaleWorkspaceDocumentReview,
   type SaleWorkspaceDocumentReviews,
   type SaleWorkspacePrivateNotes,
   type SaleWorkspaceStatus,

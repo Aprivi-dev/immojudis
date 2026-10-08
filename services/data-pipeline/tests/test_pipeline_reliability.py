@@ -1,10 +1,15 @@
 import hashlib
 import json
+import os
+import threading
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import httpx
+import psycopg
 import pytest
 
 from src.dedupe import merge_duplicate_sales
@@ -19,6 +24,153 @@ from src.normalize import normalize_sale
 from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, download_documents, sale_storage_id
 from src.sources.common import PaginationCoverage
 from src.storage import supabase_client as storage
+
+
+def test_queued_display_revision_is_rekeyed_without_cancelling_the_old_row():
+    calls = []
+
+    class Connection:
+        def execute(self, query, params=None):
+            calls.append((query, params))
+            if query.startswith("savepoint") or query.startswith("release savepoint"):
+                return SimpleNamespace(fetchall=lambda: [])
+            return SimpleNamespace(
+                fetchall=lambda: [("sale-1", "display_description", "pipeline_v2:new")]
+            )
+
+    jobs = [{
+        "source_url": "https://example.test/sale-1",
+        "job_type": "display_description",
+        "input_hash": "pipeline_v2:new",
+        "priority": 20,
+    }]
+
+    assert storage._coalesce_queued_display_revisions(Connection(), jobs) == {
+        ("sale-1", "display_description", "pipeline_v2:new")
+    }
+    query = next(query for query, _params in calls if query.startswith("with incoming"))
+    assert "for update skip locked" in query
+    assert "queued_row.status='queued'" in query
+    assert "queued.status='queued'" in query
+    assert query.count("not exists") >= 2
+    assert "attempt_count=0" in query
+    params = next(params for query, params in calls if query.startswith("with incoming"))
+    assert params == (
+        "https://example.test/sale-1",
+        "display_description",
+        "pipeline_v2:new",
+        20,
+    )
+
+
+def test_queued_display_revision_race_rolls_back_to_savepoint():
+    statements = []
+
+    class Connection:
+        def execute(self, query, params=None):
+            statements.append((query, params))
+            if query.startswith("with incoming"):
+                raise psycopg.errors.UniqueViolation("duplicate key value violates unique constraint")
+            return SimpleNamespace(fetchall=lambda: [])
+
+    jobs = [{
+        "source_url": "https://example.test/race",
+        "job_type": "display_description",
+        "input_hash": "pipeline_v2:new",
+        "priority": 20,
+    }]
+
+    assert storage._coalesce_queued_display_revisions(Connection(), jobs) == set()
+    assert [query for query, _params in statements] == [
+        "savepoint coalesce_display_revision",
+        next(query for query, _params in statements if query.startswith("with incoming")),
+        "rollback to savepoint coalesce_display_revision",
+        "release savepoint coalesce_display_revision",
+    ]
+
+
+def test_queued_display_revision_reraises_non_unique_errors_after_savepoint_cleanup():
+    statements = []
+
+    class Connection:
+        def execute(self, query, params=None):
+            statements.append((query, params))
+            if query.startswith("with incoming"):
+                raise RuntimeError("permission denied for relation auction_enrichment_jobs")
+            return SimpleNamespace(fetchall=lambda: [])
+
+    jobs = [{
+        "source_url": "https://example.test/error",
+        "job_type": "display_description",
+        "input_hash": "pipeline_v2:new",
+        "priority": 20,
+    }]
+
+    with pytest.raises(RuntimeError, match="permission denied"):
+        storage._coalesce_queued_display_revisions(Connection(), jobs)
+    assert [query for query, _params in statements] == [
+        "savepoint coalesce_display_revision",
+        next(query for query, _params in statements if query.startswith("with incoming")),
+        "rollback to savepoint coalesce_display_revision",
+        "release savepoint coalesce_display_revision",
+    ]
+
+
+def test_queued_display_revision_concurrent_postgres_claim_does_not_abort_transaction():
+    """Exercise SKIP LOCKED with two real publication transactions when supplied."""
+    url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not url:
+        pytest.skip("Requires disposable PostgreSQL")
+
+    source_url = f"https://example.test/coalesce-race-{uuid4()}"
+    input_hash = "pipeline_v2:concurrent"
+    with storage._postgres_connect(url) as db:
+        db.execute(
+            "insert into public.auction_enrichment_jobs "
+            "(source_url,job_type,input_hash,status,priority) "
+            "values (%s,'display_description','pipeline_v2:old','queued',20)",
+            (source_url,),
+        )
+
+    barrier = threading.Barrier(2)
+    results: list[set[tuple[str, str, str]]] = []
+    errors: list[BaseException] = []
+
+    def coalesce_once() -> None:
+        try:
+            with storage._postgres_connect(url) as db:
+                barrier.wait(timeout=10)
+                results.append(storage._coalesce_queued_display_revisions(
+                    db,
+                    [{
+                        "source_url": source_url,
+                        "job_type": "display_description",
+                        "input_hash": input_hash,
+                        "priority": 20,
+                    }],
+                ))
+        except BaseException as exc:  # pragma: no cover - only exercised by a disposable DB
+            errors.append(exc)
+
+    threads = [threading.Thread(target=coalesce_once) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=20)
+
+    try:
+        assert not errors
+        assert len(results) == 2
+        with storage._postgres_connect(url) as db:
+            rows = db.execute(
+                "select input_hash,status from public.auction_enrichment_jobs "
+                "where source_url=%s order by id",
+                (source_url,),
+            ).fetchall()
+            assert rows == [(input_hash, "queued")]
+    finally:
+        with storage._postgres_connect(url) as db:
+            db.execute("delete from public.auction_enrichment_jobs where source_url=%s", (source_url,))
 
 
 def test_source_check_expires_and_content_change_invalidates_enrichment():

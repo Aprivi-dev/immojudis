@@ -17,11 +17,22 @@ const SCROLL_SOURCES = [
   "notaires",
 ] as const;
 
-const startScrollSchema = z.object({
-  source: z.enum(SCROLL_SOURCES).default("all"),
-  mode: z.enum(["collect", "llm_backfill"]).default("collect"),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-});
+const startScrollSchema = z
+  .object({
+    source: z.enum(SCROLL_SOURCES).default("all"),
+    mode: z.enum(["collect", "llm_backfill"]).default("collect"),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.mode === "llm_backfill" && data.source !== "all") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["source"],
+        message: "Le backfill LLM doit cibler la source all.",
+      });
+    }
+  });
 const AUTOMATIC_LLM_ENRICHMENT = true;
 const LLM_BACKFILL_SOURCE = "llm-description-backfill";
 const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display";
@@ -29,6 +40,7 @@ const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display";
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
 type RunnerMode = "github_actions" | "webhook" | "queue_worker";
+export type RunnerStatus = "active" | "suspended" | "unknown";
 
 export type AdminScrollSource = (typeof SCROLL_SOURCES)[number];
 export type AdminScrollMode = "collect" | "llm_backfill";
@@ -62,6 +74,8 @@ export type AdminDashboardData = {
   runner: {
     instantDispatchConfigured: boolean;
     mode: RunnerMode;
+    controlEnabled?: boolean | null;
+    status?: RunnerStatus;
   };
   stats: {
     sales: number;
@@ -112,8 +126,13 @@ type TableClient<T> = {
     select: (columns?: string) => QueryBuilder<T>;
   };
   update: (payload: unknown) => {
-    eq: (column: string, value: unknown) => PromiseLike<{ error: QueryError | null }>;
+    eq: (column: string, value: unknown) => UpdateQuery<T>;
   };
+};
+
+type UpdateQuery<T> = PromiseLike<{ data?: T[] | null; error: QueryError | null }> & {
+  eq: (column: string, value: unknown) => UpdateQuery<T>;
+  select: (columns?: string) => QueryBuilder<T>;
 };
 
 type AdminClient = {
@@ -149,12 +168,20 @@ type AuctionRunRow = {
 
 type AuctionSaleAiDescriptionRow = {
   status?: string | null;
-  raw_payload?: unknown;
+  llm_display_description?: unknown;
+  llm_prompt_version?: unknown;
+  llm_display_quality_version?: unknown;
+  llm_display_status?: unknown;
+};
+
+type PipelineControlRow = {
+  enabled?: boolean | null;
 };
 
 const RUN_COLUMNS =
   "id,status,source,use_llm,started_at,finished_at,summary,errors,created_at,updated_at";
-const AI_DESCRIPTION_COLUMNS = "status,raw_payload";
+const AI_DESCRIPTION_COLUMNS =
+  "status,llm_display_description:raw_payload->llm_display_description,llm_prompt_version:raw_payload->llm_prompt_version,llm_display_quality_version:raw_payload->llm_display_quality_version,llm_display_status:raw_payload->llm_display_status";
 const AI_DESCRIPTION_PAGE_SIZE = 1000;
 
 function getAdminClient(): AdminClient {
@@ -230,12 +257,6 @@ function cleanPayloadText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function rawPayloadObject(value: unknown): JsonObject {
-  return value != null && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonObject)
-    : {};
-}
-
 function isActiveOrUpcomingStatus(status: unknown): boolean {
   return status === "active" || status === "upcoming";
 }
@@ -252,9 +273,8 @@ export function buildAiDescriptionDashboardStats(
   for (const row of rows) {
     if (!isActiveOrUpcomingStatus(row.status)) continue;
     activeOrUpcoming += 1;
-    const payload = rawPayloadObject(row.raw_payload);
-    const displayDescription = cleanPayloadText(payload.llm_display_description);
-    const promptVersion = cleanPayloadText(payload.llm_prompt_version);
+    const displayDescription = cleanPayloadText(row.llm_display_description);
+    const promptVersion = cleanPayloadText(row.llm_prompt_version);
     if (!displayDescription) {
       missing += 1;
     }
@@ -265,8 +285,8 @@ export function buildAiDescriptionDashboardStats(
       displayDescription &&
       displayDescription.length >= 80 &&
       promptVersion === expectedPromptVersion &&
-      payload.llm_display_quality_version === "display_quality_20260911_v3" &&
-      ["accepted", "fallback"].includes(String(payload.llm_display_status))
+      row.llm_display_quality_version === "display_quality_20260911_v3" &&
+      ["accepted", "fallback"].includes(String(row.llm_display_status))
     ) {
       ready += 1;
     }
@@ -293,6 +313,7 @@ export async function readAiDescriptionStats(
     const result = await admin
       .from<AuctionSaleAiDescriptionRow>("auction_sales")
       .select(AI_DESCRIPTION_COLUMNS)
+      .order("id", { ascending: true })
       .range(from, to);
 
     if (result.error) {
@@ -309,32 +330,40 @@ export async function readAiDescriptionStats(
 }
 
 function scrollWebhookUrl(): string | null {
-  return process.env.SCROLL_WEBHOOK_URL ?? process.env.IMMOJUDIS_SCROLL_WEBHOOK_URL ?? null;
+  return firstFilledEnv(process.env.SCROLL_WEBHOOK_URL, process.env.IMMOJUDIS_SCROLL_WEBHOOK_URL);
 }
 
 function scrollWebhookSecret(): string | null {
-  return process.env.SCROLL_WEBHOOK_SECRET ?? process.env.IMMOJUDIS_SCROLL_WEBHOOK_SECRET ?? null;
+  return firstFilledEnv(
+    process.env.SCROLL_WEBHOOK_SECRET,
+    process.env.IMMOJUDIS_SCROLL_WEBHOOK_SECRET,
+  );
 }
 
 function githubActionsToken(): string | null {
-  return (
-    process.env.GITHUB_SCROLL_TOKEN ??
-    process.env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN ??
-    process.env.GITHUB_ACTIONS_DISPATCH_TOKEN ??
-    null
+  return firstFilledEnv(
+    process.env.GITHUB_SCROLL_TOKEN,
+    process.env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN,
+    process.env.GITHUB_ACTIONS_DISPATCH_TOKEN,
   );
 }
 
 function githubActionsRepository(): string {
-  return process.env.GITHUB_SCROLL_REPOSITORY ?? "Aprivi-dev/immojudis";
+  return firstFilledEnv(process.env.GITHUB_SCROLL_REPOSITORY) ?? "Aprivi-dev/immojudis";
 }
 
 function githubActionsWorkflow(): string {
-  return process.env.GITHUB_SCROLL_WORKFLOW ?? "data-pipeline.yml";
+  return firstFilledEnv(process.env.GITHUB_SCROLL_WORKFLOW) ?? "data-pipeline.yml";
 }
 
 function githubActionsRef(): string {
-  return process.env.GITHUB_SCROLL_REF ?? "main";
+  return firstFilledEnv(process.env.GITHUB_SCROLL_REF) ?? "main";
+}
+
+function firstFilledEnv(...values: Array<string | undefined>): string | null {
+  return (
+    values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim() ?? null
+  );
 }
 
 function runnerMode(): RunnerMode {
@@ -350,6 +379,50 @@ async function updateRunSummary(runId: string, summary: JsonObject, errors: Json
     .update({ summary, errors })
     .eq("id", runId);
   if (error) throw new Error(error.message ?? "Impossible de mettre à jour le run.");
+}
+
+async function readRun(runId: string): Promise<AuctionRun> {
+  const admin = getAdminClient();
+  const result = await admin
+    .from<AuctionRunRow>("auction_runs")
+    .select(RUN_COLUMNS)
+    .eq("id", runId)
+    .limit(1);
+  if (result.error) throw new Error(result.error.message ?? "Impossible de relire le run.");
+  const row = result.data?.[0];
+  if (!row) throw new Error("Run introuvable après le lancement de la collecte.");
+  return normalizeRun(row);
+}
+
+/**
+ * A deterministic upstream rejection makes this run terminal. The status
+ * predicate prevents a worker that won the race from being overwritten.
+ */
+async function markRunDispatchFailed(
+  runId: string,
+  summary: JsonObject,
+  errors: JsonObject,
+): Promise<AuctionRun> {
+  const admin = getAdminClient();
+  const finishedAt = new Date().toISOString();
+  const result = await admin
+    .from<AuctionRunRow>("auction_runs")
+    .update({
+      status: "failed",
+      finished_at: finishedAt,
+      updated_at: finishedAt,
+      summary,
+      errors,
+    })
+    .eq("id", runId)
+    .eq("status", "queued")
+    .select(RUN_COLUMNS)
+    .limit(1);
+  if (result.error) {
+    throw new Error(result.error.message ?? "Impossible de clôturer le run rejeté.");
+  }
+  if (result.data?.[0]) return normalizeRun(result.data[0]);
+  return readRun(runId);
 }
 
 async function dispatchGitHubActionsRun(
@@ -394,6 +467,10 @@ export async function getAdminDashboard(authToken: string): Promise<AdminDashboa
     .select(RUN_COLUMNS)
     .order("created_at", { ascending: false, nullsFirst: false })
     .limit(25);
+  const pipelineControlQuery = admin
+    .from<PipelineControlRow>("auction_pipeline_control")
+    .select("enabled")
+    .limit(1);
 
   const [
     runsResult,
@@ -404,6 +481,7 @@ export async function getAdminDashboard(authToken: string): Promise<AdminDashboa
     scoreFactors,
     runsCount,
     aiDescriptions,
+    pipelineControl,
   ] = await Promise.all([
     runsQuery,
     countRows("auction_sales"),
@@ -413,6 +491,7 @@ export async function getAdminDashboard(authToken: string): Promise<AdminDashboa
     countRows("auction_score_factors"),
     countRows("auction_runs"),
     readAiDescriptionStats(admin),
+    pipelineControlQuery,
   ]);
 
   if (runsResult.error) {
@@ -420,6 +499,10 @@ export async function getAdminDashboard(authToken: string): Promise<AdminDashboa
   }
 
   const runs = (runsResult.data ?? []).map(normalizeRun);
+  const controlEnabled =
+    pipelineControl.error || !pipelineControl.data?.length
+      ? null
+      : (pipelineControl.data[0]?.enabled ?? null);
 
   return {
     checkedAt: new Date().toISOString(),
@@ -427,6 +510,9 @@ export async function getAdminDashboard(authToken: string): Promise<AdminDashboa
     runner: {
       instantDispatchConfigured: runnerMode() !== "queue_worker",
       mode: runnerMode(),
+      controlEnabled,
+      status:
+        controlEnabled === true ? "active" : controlEnabled === false ? "suspended" : "unknown",
     },
     stats: {
       sales,
@@ -451,10 +537,15 @@ export async function startAdminScroll(
   const context = await requireSupabaseAuthContext(authToken);
   const data = startScrollSchema.parse(input ?? {});
   const adminUser = await assertAdminContext(context as AdminContext);
-  const admin = getAdminClient();
-  const requestedAt = new Date().toISOString();
   const mode = runnerMode();
   const webhookUrl = scrollWebhookUrl();
+  if (mode === "queue_worker" || (mode === "webhook" && !webhookUrl)) {
+    throw new Error(
+      "Aucun runner de collecte n'est configuré. Configurez GITHUB_SCROLL_TOKEN ou SCROLL_WEBHOOK_URL avant de lancer une demande.",
+    );
+  }
+  const admin = getAdminClient();
+  const requestedAt = new Date().toISOString();
   const initialSummary = {
     requested_by: adminUser.email,
     requested_at: requestedAt,
@@ -467,7 +558,7 @@ export async function startAdminScroll(
         ? "dispatch_immediate"
         : mode === "webhook"
           ? "webhook_immediate"
-          : "scheduled_github_actions_queue",
+          : "manual_dispatch_required",
   };
 
   const inserted = await admin
@@ -490,74 +581,91 @@ export async function startAdminScroll(
   if (!run.id) throw new Error("Demande créée sans identifiant de run.");
 
   if (mode === "github_actions") {
+    let response: Response;
     try {
-      const response = await dispatchGitHubActionsRun(run, {
+      response = await dispatchGitHubActionsRun(run, {
         source: data.source,
         mode: data.mode,
         limit: data.limit,
       });
+    } catch (error) {
+      const githubErrors = {
+        ...run.errors,
+        github_actions: error instanceof Error ? error.message : "GitHub Actions indisponible",
+      };
       const githubSummary = {
         ...run.summary,
         github_actions: {
-          dispatched_at: new Date().toISOString(),
+          attempted_at: new Date().toISOString(),
           repository: githubActionsRepository(),
           workflow: githubActionsWorkflow(),
           ref: githubActionsRef(),
-          status: response.status,
-          ok: response.ok,
+          outcome: "unknown",
         },
       };
-      const githubErrors = response.ok
-        ? run.errors
-        : {
-            ...run.errors,
-            github_actions: `HTTP ${response.status}`,
-          };
       await updateRunSummary(run.id, githubSummary, githubErrors);
 
       return {
-        ok: true,
-        dispatched: response.ok,
+        ok: false,
+        dispatched: false,
         dispatchMode: "github_actions",
         run: {
           ...run,
           summary: githubSummary,
           errors: githubErrors,
         },
-        message: response.ok
-          ? "Demande envoyée au worker GitHub Actions."
-          : `Demande enregistrée, mais GitHub Actions a répondu HTTP ${response.status}. Le worker planifié prendra le relais.`,
-      };
-    } catch (error) {
-      const githubErrors = {
-        ...run.errors,
-        github_actions: error instanceof Error ? error.message : "GitHub Actions indisponible",
-      };
-      await updateRunSummary(run.id, run.summary, githubErrors);
-
-      return {
-        ok: true,
-        dispatched: false,
-        dispatchMode: "github_actions",
-        run: {
-          ...run,
-          errors: githubErrors,
-        },
         message:
-          "Demande enregistrée, mais GitHub Actions n'a pas répondu. Le worker planifié prendra le relais.",
+          "Demande enregistrée, mais le résultat du lancement GitHub Actions est indéterminé. Vérifiez l’exécution et le canal avant toute nouvelle action.",
       };
     }
+
+    const githubSummary = {
+      ...run.summary,
+      github_actions: {
+        dispatched_at: new Date().toISOString(),
+        repository: githubActionsRepository(),
+        workflow: githubActionsWorkflow(),
+        ref: githubActionsRef(),
+        status: response.status,
+        ok: response.ok,
+      },
+    };
+    if (response.ok) {
+      await updateRunSummary(run.id, githubSummary, run.errors);
+      return {
+        ok: true,
+        dispatched: true,
+        dispatchMode: "github_actions",
+        run: { ...run, summary: githubSummary },
+        message: "Demande envoyée au worker GitHub Actions.",
+      };
+    }
+
+    const githubErrors = {
+      ...run.errors,
+      github_actions: `HTTP ${response.status}`,
+    };
+    const failedRun = await markRunDispatchFailed(
+      run.id,
+      { ...githubSummary, completion_status: "dispatch_failed" },
+      githubErrors,
+    );
+    const workerRace = failedRun.status !== "failed";
+    return {
+      ok: false,
+      dispatched: false,
+      dispatchMode: "github_actions",
+      run: failedRun,
+      message: workerRace
+        ? `GitHub Actions a répondu HTTP ${response.status}, mais un worker a déjà pris le run. Vérifiez son état avant toute nouvelle action.`
+        : `GitHub Actions a répondu HTTP ${response.status}. Le run est marqué en échec ; corrigez le canal puis relancez-le.`,
+    };
   }
 
   if (!webhookUrl) {
-    return {
-      ok: true,
-      dispatched: false,
-      dispatchMode: "queue_worker",
-      run,
-      message:
-        "Demande enregistrée. Le worker GitHub Actions planifié la prendra automatiquement dans la file.",
-    };
+    throw new Error(
+      "Aucun runner de collecte n'est configuré. Configurez GITHUB_SCROLL_TOKEN ou SCROLL_WEBHOOK_URL avant de lancer une demande.",
+    );
   }
 
   const headers: Record<string, string> = {
@@ -566,8 +674,9 @@ export async function startAdminScroll(
   const secret = scrollWebhookSecret();
   if (secret) headers["X-Immojudis-Secret"] = secret;
 
+  let response: Response;
   try {
-    const response = await fetch(webhookUrl, {
+    response = await fetch(webhookUrl, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -581,52 +690,70 @@ export async function startAdminScroll(
       }),
       signal: AbortSignal.timeout(12_000),
     });
-
+  } catch (error) {
+    const webhookErrors = {
+      ...run.errors,
+      webhook: error instanceof Error ? error.message : "Webhook indisponible",
+    };
     const webhookSummary = {
       ...run.summary,
       webhook: {
-        dispatched_at: new Date().toISOString(),
-        status: response.status,
-        ok: response.ok,
+        attempted_at: new Date().toISOString(),
+        outcome: "unknown",
       },
     };
-    const webhookErrors = response.ok
-      ? run.errors
-      : {
-          ...run.errors,
-          webhook: `HTTP ${response.status}`,
-        };
     await updateRunSummary(run.id, webhookSummary, webhookErrors);
 
     return {
-      ok: true,
-      dispatched: response.ok,
+      ok: false,
+      dispatched: false,
       dispatchMode: "webhook",
       run: {
         ...run,
         summary: webhookSummary,
         errors: webhookErrors,
       },
-      message: response.ok
-        ? "Demande envoyée au runner de collecte."
-        : `Demande enregistrée, mais le webhook a répondu HTTP ${response.status}.`,
-    };
-  } catch (error) {
-    const webhookErrors = {
-      ...run.errors,
-      webhook: error instanceof Error ? error.message : "Webhook indisponible",
-    };
-    await updateRunSummary(run.id, run.summary, webhookErrors);
-
-    return {
-      ok: true,
-      dispatched: false,
-      dispatchMode: "webhook",
-      run: {
-        ...run,
-        errors: webhookErrors,
-      },
-      message: "Demande enregistrée, mais le webhook de lancement n'a pas répondu.",
+      message:
+        "Demande enregistrée, mais le résultat du lancement webhook est indéterminé. Vérifiez l’exécution et le canal avant toute nouvelle action.",
     };
   }
+
+  const webhookSummary = {
+    ...run.summary,
+    webhook: {
+      dispatched_at: new Date().toISOString(),
+      status: response.status,
+      ok: response.ok,
+    },
+  };
+  if (response.ok) {
+    await updateRunSummary(run.id, webhookSummary, run.errors);
+    return {
+      ok: true,
+      dispatched: true,
+      dispatchMode: "webhook",
+      run: { ...run, summary: webhookSummary },
+      message: "Demande envoyée au runner de collecte.",
+    };
+  }
+
+  const webhookErrors = {
+    ...run.errors,
+    webhook: `HTTP ${response.status}`,
+  };
+  const failedRun = await markRunDispatchFailed(
+    run.id,
+    { ...webhookSummary, completion_status: "dispatch_failed" },
+    webhookErrors,
+  );
+  const workerRace = failedRun.status !== "failed";
+  return {
+    ok: false,
+    dispatched: false,
+    dispatchMode: "webhook",
+    run: failedRun,
+    message: workerRace
+      ? `Le webhook a répondu HTTP ${response.status}, mais un worker a déjà pris le run. Vérifiez son état avant toute nouvelle action.`
+      : `Le webhook a répondu HTTP ${response.status}. Le run est marqué en échec ; corrigez le canal puis relancez-le.`,
+  };
 }

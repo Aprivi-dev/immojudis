@@ -15,11 +15,11 @@ export function AdminInformationAgentWorkspace() {
   return (
     <div className="space-y-6">
       <AdminCatalogueReadinessPanel onPrepareInformationRequest={setSelection} />
-      <AdminAuctionFactClaimReviewPanel />
       <AdminInformationAgentMissionsPanel
         selection={selection}
         onClose={() => setSelection(null)}
       />
+      <AdminAuctionFactClaimReviewPanel />
       <AdminInformationAgentReviewPanel />
       <AdminInformationAgentTemplatePanel />
     </div>

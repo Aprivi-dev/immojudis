@@ -1,0 +1,357 @@
+.root {
+  margin-top: 18px;
+  color: #132238;
+}
+
+.accordionList {
+  display: grid;
+  gap: 12px;
+}
+
+.accordion {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e1d8ca;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 9px 24px rgb(19 34 56 / 5%);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 14px 17px;
+  color: #132238;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 750;
+  list-style: none;
+}
+
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary::after {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-right: 1.5px solid #946724;
+  border-bottom: 1.5px solid #946724;
+  content: "";
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 160ms ease;
+}
+
+.accordion[open] .summary {
+  border-bottom: 1px solid #eee6dc;
+}
+
+.accordion[open] .summary::after {
+  transform: rotate(225deg) translate(-1px, -2px);
+}
+
+.summary:focus-visible,
+.sourceButton:focus-visible,
+.sourceLink:focus-visible {
+  outline: 3px solid rgb(156 100 43 / 35%);
+  outline-offset: 3px;
+}
+
+.sectionCount {
+  color: #718096;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.factList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+  margin: 0;
+  padding: 15px;
+  list-style: none;
+}
+
+.factCard {
+  display: flex;
+  min-width: 0;
+  min-height: 92px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 0;
+  border-bottom: 1px solid #eee6dc;
+  background: transparent;
+}
+
+.factSource {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.factLabel,
+.factValue {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.factLabel {
+  color: #526176;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.factValue {
+  margin-top: 4px;
+  color: #132238;
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.factMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+}
+
+.status {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.statusReported {
+  border-color: #d8e2ef;
+  background: #f4f7fb;
+  color: #4e637e;
+}
+
+.statusEstimated {
+  border-color: #e8d1a8;
+  background: #fff8ec;
+  color: #875b1c;
+}
+
+.statusMissing {
+  border-color: #e4e8ed;
+  background: #f7f8fa;
+  color: #66758a;
+}
+
+.statusConflict {
+  border-color: #e7c9c3;
+  background: #fff5f3;
+  color: #914e43;
+}
+
+.sourceButton {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: #946724;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: rgb(148 103 36 / 45%);
+  text-underline-offset: 3px;
+}
+
+.sourceButton:hover {
+  color: #6e4916;
+  text-decoration-color: currentColor;
+}
+
+.emptyState {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid #e1d8ca;
+  border-radius: 16px;
+  background: #fff;
+  color: #607086;
+  font-size: 13px;
+}
+
+.sourceDialog {
+  width: min(600px, calc(100vw - 32px));
+  max-height: min(88vh, 760px);
+  overflow-y: auto;
+  border-color: #e1d8ca;
+  background: #fffdf9;
+  color: #132238;
+}
+
+.sourceDialog [data-slot="dialog-title"] {
+  max-width: calc(100% - 22px);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 25px;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.sourceDialog [data-slot="dialog-description"] {
+  color: #607086;
+  line-height: 1.45;
+}
+
+.explanation {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 3px solid #c2904e;
+  background: #fff8ec;
+  color: #526176;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sourceList {
+  display: grid;
+  gap: 10px;
+}
+
+.noSource {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px dashed #ddcfbd;
+  border-radius: 11px;
+  background: #fffcf7;
+  color: #607086;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sourceCard {
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid #e9dfd2;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.sourceCardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sourceKind,
+.sourceTitle,
+.sourcePage,
+.sourceDetails {
+  overflow-wrap: anywhere;
+}
+
+.sourceKind {
+  margin: 0;
+  color: #946724;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sourceTitle {
+  margin: 4px 0 0;
+  color: #263c55;
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.sourcePage {
+  flex: 0 0 auto;
+  color: #718096;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.excerpt {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid #ead7b8;
+  background: #fffcf7;
+  color: #526176;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.sourceDetails {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  color: #718096;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.sourceLink {
+  color: #946724;
+  font-weight: 750;
+  text-decoration: underline;
+  text-decoration-color: rgb(148 103 36 / 45%);
+  text-underline-offset: 3px;
+}
+
+.sourceLink:hover {
+  color: #6e4916;
+  text-decoration-color: currentColor;
+}
+
+@media (max-width: 640px) {
+  .summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 13px 14px;
+  }
+
+  .summary::after {
+    margin-top: 4px;
+  }
+
+  .sectionCount {
+    flex-basis: calc(100% - 20px);
+    margin-top: -7px;
+  }
+
+  .factList {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 11px 14px;
+  }
+
+  .factCard {
+    min-height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summary::after {
+    transition: none;
+  }
+}

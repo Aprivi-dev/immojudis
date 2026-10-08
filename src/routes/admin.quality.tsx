@@ -10,10 +10,13 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import type { ReactElement } from "react";
 import { AdminShell } from "@/components/admin/AdminShell";
-import { getSales } from "@/lib/queries";
 import { saleDisplayTitle } from "@/lib/sale-title";
-import type { AuctionSale } from "@/lib/types";
-import { fetchValuationAdminOverview } from "@/lib/client-api";
+import { fetchAdminDataQuality, fetchValuationAdminOverview } from "@/lib/client-api";
+import type {
+  DataQualityPrioritySale,
+  DataQualityReport,
+  DataQualitySourceCoverage,
+} from "@/lib/data-quality-monitor";
 
 export const Route = createFileRoute("/admin/quality")({
   head: () => ({
@@ -29,34 +32,25 @@ export const Route = createFileRoute("/admin/quality")({
 });
 
 export function AdminQualityPage() {
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["admin-quality-sales"],
-    queryFn: () => getSales({}, 500, "date_asc"),
+  const qualityQuery = useQuery({
+    queryKey: ["admin-quality-report"],
+    queryFn: fetchAdminDataQuality,
     staleTime: 60_000,
   });
-  const sales = data ?? [];
+  const qualityReport = qualityQuery.data;
   const {
     data: valuationOverview,
     isLoading: valuationLoading,
     refetch: refetchValuation,
     isFetching: valuationFetching,
+    error: valuationError,
   } = useQuery({
     queryKey: ["admin-valuation-overview"],
     queryFn: fetchValuationAdminOverview,
     staleTime: 60_000,
   });
-  const metrics = buildQualityMetrics(sales);
-  const weakSales = sales
-    .filter(
-      (sale) =>
-        (sale.score_confidence ?? 0) < 0.55 ||
-        !hasAiDescription(sale) ||
-        richDocumentCount(sale) === 0 ||
-        sale.app_surface_m2 == null ||
-        !sale.occupancy_status ||
-        sale.occupancy_status === "unknown",
-    )
-    .slice(0, 12);
+  const metrics = buildQualityMetrics(qualityReport);
+  const weakSales = qualityReport?.prioritySales ?? [];
 
   return (
     <AdminShell
@@ -64,43 +58,54 @@ export function AdminQualityPage() {
       title="Qualité des données"
       description="Repérez les dossiers qui fragilisent la confiance produit."
       onRefresh={() => {
-        void refetch();
+        void qualityQuery.refetch();
         void refetchValuation();
       }}
-      isRefreshing={isFetching || valuationFetching}
+      isRefreshing={qualityQuery.isFetching || valuationFetching}
     >
       <div className="max-w-[92rem]">
-        {error && (
-          <div className="mt-6 rounded-lg border border-red-300/20 bg-red-500/10 p-4 text-sm text-red-100">
-            {error instanceof Error ? error.message : "Erreur de chargement"}
+        {qualityQuery.error && (
+          <div
+            role="alert"
+            className="mt-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+          >
+            {qualityQuery.error instanceof Error
+              ? qualityQuery.error.message
+              : "Erreur de chargement"}
           </div>
         )}
+
+        <p className="mt-6 text-xs text-muted-foreground">
+          Les indicateurs et la ventilation par source couvrent {qualityReport?.sampleSize ?? "…"}{" "}
+          ventes du catalogue. La file ci-dessous affiche uniquement les dossiers prioritaires parmi
+          les 500 premières ventes classées par date pour garder l’écran réactif.
+        </p>
 
         <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <QualityMetric
             icon={<Database />}
             label="Ventes"
-            value={isLoading ? "…" : String(metrics.total)}
+            value={qualityQuery.isLoading ? "…" : String(metrics.total)}
           />
           <QualityMetric
             icon={<FileText />}
             label="Avec documents"
-            value={isLoading ? "…" : pct(metrics.withDocs, metrics.total)}
+            value={qualityQuery.isLoading ? "…" : pct(metrics.withDocs, metrics.total)}
           />
           <QualityMetric
             icon={<Sparkles />}
             label="Synthèse IA"
-            value={isLoading ? "…" : pct(metrics.withAiDescription, metrics.total)}
+            value={qualityQuery.isLoading ? "…" : pct(metrics.withAiDescription, metrics.total)}
           />
           <QualityMetric
             icon={<Activity />}
             label="Confiance moyenne"
-            value={isLoading ? "…" : metrics.avgConfidence}
+            value={qualityQuery.isLoading ? "…" : metrics.avgConfidence}
           />
           <QualityMetric
             icon={<ShieldCheck />}
             label="Risques sourcés"
-            value={isLoading ? "…" : pct(metrics.sourcedRisks, metrics.riskSales)}
+            value={qualityQuery.isLoading ? "…" : pct(metrics.sourcedRisks, metrics.riskSales)}
           />
         </div>
 
@@ -143,7 +148,11 @@ export function AdminQualityPage() {
               Dossiers à reprendre en priorité
             </div>
             <div className="mt-4 divide-y divide-white/10">
-              {weakSales.length === 0 && !isLoading ? (
+              {qualityQuery.error && !qualityReport ? (
+                <p role="status" className="text-sm text-red-800">
+                  Les dossiers prioritaires n’ont pas pu être vérifiés. Réessayez avec Actualiser.
+                </p>
+              ) : weakSales.length === 0 && !qualityQuery.isLoading ? (
                 <p className="text-sm text-muted-foreground">
                   Aucun dossier faible dans l'échantillon chargé.
                 </p>
@@ -207,11 +216,27 @@ export function AdminQualityPage() {
                     : "Activité inconnue"}
             </span>
           </div>
+          {valuationError ? (
+            <p
+              role="alert"
+              className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+            >
+              {valuationOverview
+                ? "Actualisation des estimations impossible. Les dernières données reçues restent affichées."
+                : "Le diagnostic des estimations est indisponible. Réessayez avec Actualiser."}
+            </p>
+          ) : null}
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <QualityMetric
               icon={<Activity />}
               label="Estimations 24 h"
-              value={valuationLoading ? "…" : String(valuationOverview?.runtime.estimates ?? 0)}
+              value={
+                valuationLoading
+                  ? "…"
+                  : valuationOverview
+                    ? String(valuationOverview.runtime.estimates)
+                    : "—"
+              }
             />
             <QualityMetric
               icon={<Sparkles />}
@@ -292,13 +317,7 @@ function QualityLine({ label, value }: { label: string; value: string }) {
   );
 }
 
-function WeakSaleLine({ sale }: { sale: AuctionSale }) {
-  const flags = [];
-  if ((sale.score_confidence ?? 0) < 0.55) flags.push("confiance faible");
-  if (!hasAiDescription(sale)) flags.push("synthèse IA absente");
-  if (richDocumentCount(sale) === 0) flags.push("documents manquants");
-  if (sale.app_surface_m2 == null) flags.push("surface absente");
-  if (!sale.occupancy_status || sale.occupancy_status === "unknown") flags.push("occupation");
+function WeakSaleLine({ sale }: { sale: DataQualityPrioritySale }) {
   return (
     <Link
       to="/sales/$id"
@@ -309,7 +328,7 @@ function WeakSaleLine({ sale }: { sale: AuctionSale }) {
         <span className="block truncate font-medium text-foreground">
           {saleDisplayTitle(sale, sale.city ?? sale.id)}
         </span>
-        <span className="text-xs text-muted-foreground">{flags.join(" · ")}</span>
+        <span className="text-xs text-muted-foreground">{sale.flags.join(" · ")}</span>
       </span>
       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
         {sale.score_confidence != null ? `${Math.round(sale.score_confidence * 100)}%` : "—"}
@@ -365,89 +384,45 @@ function QualityPill({ value }: { value: string }) {
   );
 }
 
-function buildQualityMetrics(sales: AuctionSale[]) {
-  const total = sales.length;
-  const riskSales = sales.filter((sale) => (sale.risks?.length ?? 0) > 0);
-  const confidences = sales
-    .map((sale) => sale.score_confidence)
-    .filter((value): value is number => typeof value === "number");
-  const avg =
-    confidences.length > 0
-      ? `${Math.round((confidences.reduce((sum, value) => sum + value, 0) / confidences.length) * 100)}%`
-      : "—";
+function buildQualityMetrics(report: DataQualityReport | undefined) {
+  const metric = (key: string) =>
+    [...(report?.fields ?? []), ...(report?.capabilities ?? [])].find((item) => item.key === key);
   return {
-    total,
-    withAiDescription: sales.filter(hasAiDescription).length,
-    withDocs: sales.filter((sale) => documentCount(sale) > 0 || richDocumentCount(sale) > 0).length,
-    withRichDocs: sales.filter((sale) => richDocumentCount(sale) > 0).length,
-    withSurface: sales.filter((sale) => sale.app_surface_m2 != null).length,
-    withOccupation: sales.filter(
-      (sale) => sale.occupancy_status && sale.occupancy_status !== "unknown",
-    ).length,
-    highConfidence: sales.filter((sale) => (sale.score_confidence ?? 0) >= 0.7).length,
-    riskSales: riskSales.length,
-    sourcedRisks: riskSales.filter((sale) =>
-      (sale.risks ?? []).some((risk) => risk.evidence || risk.occurrences?.[0]?.excerpt),
-    ).length,
-    avgConfidence: avg,
-    sources: buildSourceQuality(sales),
+    total: report?.sampleSize ?? 0,
+    withAiDescription: metric("ai_description")?.count ?? 0,
+    withDocs: metric("documents")?.count ?? 0,
+    withRichDocs: report?.richDocumentsCount ?? 0,
+    withSurface: metric("surface")?.count ?? 0,
+    withOccupation: report?.occupationCount ?? 0,
+    highConfidence: report?.highConfidenceCount ?? 0,
+    riskSales: report?.riskSales ?? 0,
+    sourcedRisks: report?.sourcedRiskSales ?? 0,
+    avgConfidence:
+      report?.averageConfidencePct == null
+        ? "—"
+        : String(Math.round(report.averageConfidencePct)) + "%",
+    sources: (report?.sourceCoverage ?? []).map(sourceCoverageToQuality),
   };
 }
 
-function buildSourceQuality(sales: AuctionSale[]): SourceQuality[] {
-  const groups = new Map<string, AuctionSale[]>();
-  for (const sale of sales) {
-    const key = sale.primary_source || sale.source_name || "source inconnue";
-    groups.set(key, [...(groups.get(key) ?? []), sale]);
-  }
-  return [...groups.entries()]
-    .map(([name, items]) => {
-      const confidences = items
-        .map((sale) => sale.score_confidence)
-        .filter((value): value is number => typeof value === "number");
-      const avgConfidence =
-        confidences.length > 0
-          ? `${Math.round((confidences.reduce((sum, value) => sum + value, 0) / confidences.length) * 100)}%`
-          : "—";
-      return {
-        name,
-        total: items.length,
-        withAiDescription: items.filter(hasAiDescription).length,
-        withSurface: items.filter((sale) => sale.app_surface_m2 != null).length,
-        withGps: items.filter((sale) => sale.latitude != null && sale.longitude != null).length,
-        withDocs: items.filter((sale) => documentCount(sale) > 0 || richDocumentCount(sale) > 0)
-          .length,
-        withOccupation: items.filter(
-          (sale) => sale.occupancy_status && sale.occupancy_status !== "unknown",
-        ).length,
-        avgConfidence,
-        weakCount: items.filter(
-          (sale) =>
-            (sale.score_confidence ?? 0) < 0.55 ||
-            !hasAiDescription(sale) ||
-            sale.app_surface_m2 == null ||
-            richDocumentCount(sale) === 0 ||
-            !sale.occupancy_status ||
-            sale.occupancy_status === "unknown",
-        ).length,
-      };
-    })
-    .sort((a, b) => b.weakCount - a.weakCount || b.total - a.total);
+function sourceCoverageToQuality(source: DataQualitySourceCoverage): SourceQuality {
+  return {
+    name: source.source,
+    total: source.count,
+    withAiDescription: source.count - source.missingAiDescription,
+    withSurface: source.count - source.missingSurface,
+    withGps: source.count - source.missingLocation,
+    withDocs: source.count - source.missingDocuments,
+    withOccupation: source.count - source.missingOccupation,
+    avgConfidence:
+      source.averageConfidencePct == null
+        ? "—"
+        : String(Math.round(source.averageConfidencePct)) + "%",
+    weakCount: source.weakCount,
+  };
 }
 
 function pct(count: number, total: number): string {
   if (total === 0) return "0%";
   return `${Math.round((count / total) * 100)}%`;
-}
-
-function documentCount(sale: AuctionSale): number {
-  return Array.isArray(sale.documents) ? sale.documents.length : 0;
-}
-
-function richDocumentCount(sale: AuctionSale): number {
-  return sale.documents_rich?.length ?? 0;
-}
-
-function hasAiDescription(sale: AuctionSale): boolean {
-  return Boolean(sale.llm_display_description?.trim());
 }

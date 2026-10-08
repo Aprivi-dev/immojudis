@@ -13,12 +13,19 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { Link, useNavigate } from "@/lib/router-compat";
 import {
-  fetchFeatureEntitlements,
+  fetchAccessPlan,
+  fetchBillingOffer,
   openBillingPortal,
   startAnalyseCheckout,
-} from "@/lib/client-api";
+} from "@/lib/client-billing";
 import type { PlanCode } from "@/lib/plans";
-import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { LEGAL_DOCUMENTS, legalPublisherConfigurationStatus } from "@/lib/legal-documents";
+import {
+  ANALYSIS_RECURRING_LABEL,
+  ANALYSIS_SUBSCRIPTION_ONLY_LABEL,
+  ANALYSIS_TRIAL_LABEL,
+  resolveAnalysisOfferLabel,
+} from "@/lib/analysis-offer";
 
 export function BillingActions({
   className = "",
@@ -31,33 +38,45 @@ export function BillingActions({
   const navigate = useNavigate();
   const [plan, setPlan] = useState<PlanCode | null>(null);
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
+  const [offerConfigured, setOfferConfigured] = useState(false);
+  const [offerLabel, setOfferLabel] = useState(() => resolveAnalysisOfferLabel());
+  const [trialAvailable, setTrialAvailable] = useState(true);
   const [busy, setBusy] = useState<"checkout" | "portal" | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const checkoutTriggerRef = useRef<HTMLButtonElement>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [immediatePerformanceAccepted, setImmediatePerformanceAccepted] = useState(false);
+  const checkoutAvailable = legalPublisherConfigurationStatus().ready;
 
   useEffect(() => {
     let active = true;
-    if (!user) {
-      setPlan(null);
-      setCurrentPeriodEnd(null);
-      return;
-    }
-
     setPlan(null);
     setCurrentPeriodEnd(null);
 
-    fetchFeatureEntitlements()
-      .then((response) => {
+    fetchBillingOffer()
+      .then((offer) => {
         if (active) {
-          setPlan(response.plan.plan);
-          setCurrentPeriodEnd(response.plan.currentPeriodEnd);
+          setOfferConfigured(offer.configured);
+          setOfferLabel(offer.label);
+          setTrialAvailable(offer.trialAvailable !== false);
         }
       })
       .catch(() => {
-        if (active) setPlan(null);
+        if (active) setOfferConfigured(false);
       });
+
+    if (user) {
+      fetchAccessPlan()
+        .then((response) => {
+          if (active) {
+            setPlan(response.plan.plan);
+            setCurrentPeriodEnd(response.plan.currentPeriodEnd);
+          }
+        })
+        .catch(() => {
+          if (active) setPlan(null);
+        });
+    }
 
     return () => {
       active = false;
@@ -73,7 +92,7 @@ export function BillingActions({
   }
 
   async function openCheckoutReview() {
-    if (loading || busy) return;
+    if (loading || busy || !checkoutAvailable || !offerConfigured) return;
     if (!user) {
       await redirectToLogin();
       return;
@@ -85,7 +104,14 @@ export function BillingActions({
   }
 
   async function confirmCheckout() {
-    if (!termsAccepted || !immediatePerformanceAccepted || busy) return;
+    if (
+      !termsAccepted ||
+      !immediatePerformanceAccepted ||
+      busy ||
+      !checkoutAvailable ||
+      !offerConfigured
+    )
+      return;
     setBusy("checkout");
     try {
       const response = await startAnalyseCheckout({
@@ -123,12 +149,17 @@ export function BillingActions({
   }
 
   const hasAnalysis = plan === "analyse";
-  const primaryLabel =
-    busy === "checkout"
-      ? "Redirection..."
-      : hasAnalysis
-        ? "Prolonger de 30 jours — 29 €"
-        : "Débloquer Analyse — 29 € / 30 jours";
+  const primaryLabel = hasAnalysis
+    ? busy === "portal"
+      ? "Ouverture..."
+      : "Gérer mon abonnement Analyse"
+    : !checkoutAvailable || !offerConfigured
+      ? "Paiement temporairement indisponible"
+      : busy === "checkout"
+        ? "Redirection..."
+        : trialAvailable
+          ? "Démarrer l’essai Analyse"
+          : "Souscrire à Analyse";
   const expiryLabel = formatAccessEnd(currentPeriodEnd);
 
   return (
@@ -136,9 +167,11 @@ export function BillingActions({
       <div className={`flex flex-col gap-2 sm:flex-row ${className}`}>
         <button
           type="button"
-          onClick={openCheckoutReview}
+          onClick={hasAnalysis ? openPortal : openCheckoutReview}
           ref={checkoutTriggerRef}
-          disabled={loading || Boolean(busy)}
+          disabled={
+            loading || Boolean(busy) || (!hasAnalysis && (!checkoutAvailable || !offerConfigured))
+          }
           className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
         >
           <CreditCard className="h-4 w-4" />
@@ -156,10 +189,23 @@ export function BillingActions({
           </button>
         ) : hideHelper ? null : (
           <span className="inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-muted-foreground">
-            Paiement unique · aucun renouvellement automatique
+            {trialAvailable
+              ? `${ANALYSIS_TRIAL_LABEL} · abonnement résiliable depuis le portail Stripe`
+              : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL} · sans nouvel essai`}
           </span>
         )}
       </div>
+
+      {!checkoutAvailable || !offerConfigured ? (
+        <p role="status" className="mt-3 text-sm leading-relaxed text-brand-navy/80">
+          Les souscriptions sont temporairement indisponibles. Vous pouvez explorer gratuitement le
+          catalogue.{" "}
+          <Link to="/legal" className="underline">
+            Voir les mentions légales
+          </Link>
+          .
+        </p>
+      ) : null}
 
       <Dialog open={checkoutOpen} onOpenChange={(open) => !busy && setCheckoutOpen(open)}>
         <DialogContent
@@ -180,13 +226,20 @@ export function BillingActions({
             <div className="flex items-center justify-between gap-4">
               <div>
                 <strong className="text-foreground">ImmoJudis Analyse</strong>
-                <p className="mt-1 text-xs text-muted-foreground">Accès complet pendant 30 jours</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {trialAvailable ? ANALYSIS_TRIAL_LABEL : "Abonnement immédiat, sans nouvel essai"}
+                </p>
               </div>
-              <strong className="text-lg text-foreground">29 € TTC</strong>
+              <strong className="text-lg text-foreground">{offerLabel}</strong>
             </div>
             <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
-              Paiement unique, sans abonnement ni renouvellement automatique. Activation après
-              confirmation du paiement.
+              {trialAvailable
+                ? "Carte bancaire requise pendant l’essai. "
+                : "Carte bancaire requise. "}
+              {trialAvailable
+                ? ANALYSIS_RECURRING_LABEL
+                : "Abonnement récurrent résiliable depuis le portail Stripe"}
+              . Le montant et la périodicité sont affichés par Stripe avant confirmation.
             </p>
           </div>
 
@@ -206,8 +259,9 @@ export function BillingActions({
               >
                 conditions générales
               </Link>{" "}
-              (version {LEGAL_DOCUMENTS.terms.version}) et je reconnais que la commande m’oblige à
-              payer 29 €.
+              (version {LEGAL_DOCUMENTS.terms.version}) et je reconnais que la commande m’oblige à{" "}
+              {trialAvailable ? "démarrer l’essai, puis " : "souscrire à "}payer le tarif récurrent
+              affiché par Stripe.
             </span>
           </label>
 
@@ -241,7 +295,9 @@ export function BillingActions({
             <button
               type="button"
               onClick={confirmCheckout}
-              disabled={!termsAccepted || !immediatePerformanceAccepted || Boolean(busy)}
+              disabled={
+                !termsAccepted || !immediatePerformanceAccepted || Boolean(busy) || !offerConfigured
+              }
               className="ij-signup-button inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
             >
               <CreditCard className="h-4 w-4" />

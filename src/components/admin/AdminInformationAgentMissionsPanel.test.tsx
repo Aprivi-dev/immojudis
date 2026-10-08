@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 describe("AdminInformationAgentMissionsPanel", () => {
-  it("keeps generation and sending as two explicit admin actions", async () => {
+  it("opens the editable draft after one selection and keeps sending explicit", async () => {
     const draft = mission("draft");
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
     mocks.create.mockResolvedValue({ ok: true, mission: draft, gaps: [], facts: [] });
@@ -38,13 +38,9 @@ describe("AdminInformationAgentMissionsPanel", () => {
     renderPanel();
 
     expect(screen.queryByRole("button", { name: "Valider et envoyer" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Générer le brouillon" }));
-
     await screen.findByRole("button", { name: "Valider et envoyer" });
     expect(mocks.create.mock.calls[0][0]).toEqual({
       saleId: "11111111-1111-4111-8111-111111111111",
-      recipientEmail: "cabinet@example.test",
-      recipientName: "Maître Dupont",
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Valider et envoyer" }));
@@ -57,6 +53,182 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(mocks.action.mock.calls[0][0]).not.toHaveProperty("shareRequesterEmail");
   });
 
+  it("clears the name when the email changes and keeps the edited message explicit", async () => {
+    const draft = mission("draft");
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: draft, gaps: [], facts: [] });
+    mocks.action.mockResolvedValue({ ok: true, missions: [mission("sent")], facts: [] });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    const name = screen.getByRole("textbox", { name: "Nom du destinataire" }) as HTMLInputElement;
+    const email = screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement;
+    const body = screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
+    const originalBody = body.value;
+    expect(name.value).toBe("Maître Dupont");
+
+    fireEvent.change(email, { target: { value: "new-contact@example.test" } });
+
+    expect(name.value).toBe("");
+    expect(body.value).toBe(originalBody);
+    expect(
+      screen.getByRole("heading", { name: "Brouillon pour new-contact@example.test" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Relisez le nom et la formule d’appel dans le message",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Valider et envoyer" }));
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    expect(mocks.action.mock.calls[0][0]).toMatchObject({
+      recipientEmail: "new-contact@example.test",
+      recipientName: null,
+      bodyText: originalBody,
+    });
+  });
+
+  it("restores in-session edits after closing and reopening the same draft", async () => {
+    const draft = mission("draft");
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: draft, gaps: [], facts: [] });
+    const selection = {
+      saleId: "11111111-1111-4111-8111-111111111111",
+      title: "Appartement à Bordeaux",
+      recipientName: "Maître Dupont",
+      recipientContact: "cabinet@example.test",
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel selection={selection} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Email" }), {
+      target: { value: "verified@example.test" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Nom du destinataire" }), {
+      target: { value: "Cabinet vérifié" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Objet" }), {
+      target: { value: "Objet relu par l’administration" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Message relu et complété manuellement avant envoi." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Fermer" }));
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel selection={null} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel selection={selection} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(
+      (screen.getByRole("textbox", { name: "Nom du destinataire" }) as HTMLInputElement).value,
+    ).toBe("Cabinet vérifié");
+    expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).value).toBe(
+      "verified@example.test",
+    );
+    expect((screen.getByRole("textbox", { name: "Objet" }) as HTMLInputElement).value).toBe(
+      "Objet relu par l’administration",
+    );
+    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).value).toBe(
+      "Message relu et complété manuellement avant envoi.",
+    );
+  });
+
+  it("does not reuse an arbitrary draft when several contacts exist for the sale", async () => {
+    const saleId = "11111111-1111-4111-8111-111111111111";
+    mocks.list.mockResolvedValue({
+      ok: true,
+      missions: [
+        mission("failed", saleId, "one@example.test"),
+        mission("failed", saleId, "two@example.test"),
+      ],
+      facts: [],
+    });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: mission("draft", saleId, "resolved@example.test"),
+      gaps: [],
+      facts: [],
+    });
+
+    renderPanel({
+      saleId,
+      title: "Appartement à Bordeaux",
+      recipientName: null,
+      recipientContact: null,
+    });
+
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(mocks.create.mock.calls[0][0]).toEqual({ saleId });
+  });
+
+  it("keeps sent mission fields read-only", async () => {
+    const sent = mission("sent");
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: sent, gaps: [], facts: [] });
+
+    renderPanel();
+    await screen.findByRole("heading", { name: "Brouillon pour cabinet@example.test" });
+    expect(
+      (screen.getByRole("textbox", { name: "Nom du destinataire" }) as HTMLInputElement).readOnly,
+    ).toBe(true);
+    expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).readOnly).toBe(
+      true,
+    );
+    expect((screen.getByRole("textbox", { name: "Objet" }) as HTMLInputElement).readOnly).toBe(
+      true,
+    );
+    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).readOnly).toBe(
+      true,
+    );
+    expect(screen.queryByRole("button", { name: "Valider et envoyer" })).toBeNull();
+  });
+
+  it("does not reopen a sent draft from the local preparation cache", async () => {
+    const draft = mission("draft");
+    const sent = mission("sent");
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: draft, gaps: [], facts: [] });
+    mocks.action.mockResolvedValue({ ok: true, missions: [sent], facts: [] });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const selection = {
+      saleId: "11111111-1111-4111-8111-111111111111",
+      title: "Appartement à Bordeaux",
+      recipientName: "Maître Dupont",
+      recipientContact: "Tél. 01 02 03 · cabinet@example.test",
+    };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel selection={selection} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    fireEvent.click(screen.getByRole("button", { name: "Valider et envoyer" }));
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Fermer" }));
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel selection={null} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel selection={selection} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+  });
+
   it("lets an admin resume a mission after a transient send failure", async () => {
     mocks.list.mockResolvedValue({ ok: true, missions: [mission("failed")], facts: [] });
 
@@ -67,7 +239,55 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(screen.getByRole("button", { name: "Annuler la mission" })).toBeTruthy();
   });
 
-  it("lets the backend discover the contact when the selection has no email", async () => {
+  it("keeps a resumed history mission when a previous queue request finishes late", async () => {
+    const firstSaleId = "11111111-1111-4111-8111-111111111111";
+    const historyMission = mission(
+      "failed",
+      "99999999-9999-4999-8999-999999999999",
+      "history@example.test",
+    );
+    let resolveFirst!: (value: unknown) => void;
+    const firstResponse = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    const onClose = vi.fn();
+    mocks.list.mockResolvedValue({ ok: true, missions: [historyMission], facts: [] });
+    mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+    mocks.create.mockReturnValue(firstResponse);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel
+          selection={{
+            saleId: firstSaleId,
+            title: "File en cours",
+            recipientName: null,
+            recipientContact: null,
+          }}
+          onClose={onClose}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Reprendre" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("heading", { name: "Brouillon pour history@example.test" }),
+    ).toBeTruthy();
+    resolveFirst({
+      ok: true,
+      mission: mission("draft", firstSaleId, "late@example.test"),
+      gaps: [],
+      facts: [],
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Brouillon pour history@example.test" }),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByRole("heading", { name: "Brouillon pour late@example.test" })).toBeNull();
+  });
+
+  it("lets the backend resolve a contact when the selection has no email", async () => {
     const draft = mission("draft");
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
     mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
@@ -80,16 +300,13 @@ describe("AdminInformationAgentMissionsPanel", () => {
       recipientContact: "Téléphone uniquement",
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Générer le brouillon" }));
-    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    await screen.findByRole("button", { name: "Valider et envoyer" });
     expect(mocks.create.mock.calls[0][0]).toEqual({
       saleId: "11111111-1111-4111-8111-111111111111",
-      recipientEmail: undefined,
-      recipientName: "Maître Martin",
     });
   });
 
-  it("preserves an explicitly selected contact email", async () => {
+  it("does not trust the first email embedded in a contact label", async () => {
     const draft = mission("draft");
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
     mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
@@ -102,12 +319,51 @@ describe("AdminInformationAgentMissionsPanel", () => {
       recipientContact: "contact@cabinet.example.test",
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Générer le brouillon" }));
-    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
-    expect(mocks.create.mock.calls[0][0].recipientEmail).toBe("contact@cabinet.example.test");
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(mocks.create.mock.calls[0][0]).toEqual({
+      saleId: "11111111-1111-4111-8111-111111111111",
+    });
+  });
+
+  it("falls back to a manually confirmed contact after an ambiguous selection", async () => {
+    const draft = mission("draft");
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create
+      .mockRejectedValueOnce(new Error("Plusieurs contacts sont possibles."))
+      .mockResolvedValueOnce({ ok: true, mission: draft, gaps: [], facts: [] });
+    mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+
+    renderPanel({
+      saleId: "11111111-1111-4111-8111-111111111111",
+      title: "Maison à Lille",
+      recipientName: "Contact à vérifier",
+      recipientContact: "cabinet-a@example.test · cabinet-b@example.test",
+    });
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Plusieurs contacts sont possibles",
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Nom du destinataire (à vérifier)" }), {
+      target: { value: "Cabinet A" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Email du destinataire" }), {
+      target: { value: "cabinet-a@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Préparer avec ce contact" }));
+
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(mocks.create.mock.calls[0][0]).toEqual({
+      saleId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(mocks.create.mock.calls[1][0]).toEqual({
+      saleId: "11111111-1111-4111-8111-111111111111",
+      recipientEmail: "cabinet-a@example.test",
+      recipientName: "Cabinet A",
+    });
   });
 
   it("queues a refresh for the exact sale and exposes its running status", async () => {
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
     mocks.sourceRefresh.mockResolvedValue({
       ok: true,
@@ -129,6 +385,7 @@ describe("AdminInformationAgentMissionsPanel", () => {
 
     renderPanel();
 
+    await screen.findByRole("button", { name: "Valider et envoyer" });
     fireEvent.click(await screen.findByRole("button", { name: "Actualiser la source" }));
     await waitFor(() =>
       expect(mocks.sourceRefresh.mock.calls[0]?.[0]).toEqual({
@@ -138,12 +395,12 @@ describe("AdminInformationAgentMissionsPanel", () => {
     );
     expect(await screen.findByText("en file")).toBeTruthy();
     expect(
-      (screen.getByRole("button", { name: "Attendre la fin du refresh" }) as HTMLButtonElement)
-        .disabled,
+      (screen.getByRole("button", { name: "Refresh en cours…" }) as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 
   it("does not label an older completed refresh as this draft's refresh", async () => {
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
 
     renderPanel(undefined, {
@@ -164,8 +421,75 @@ describe("AdminInformationAgentMissionsPanel", () => {
       history: [],
     });
 
-    expect(await screen.findByRole("button", { name: "Générer le brouillon" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Générer le brouillon actualisé" })).toBeNull();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(screen.getByRole("button", { name: "Actualiser la source" })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Régénérer depuis la source actualisée" }),
+    ).toBeNull();
+  });
+
+  it("ignores a stale draft response after the admin changes the selection", async () => {
+    const firstSaleId = "11111111-1111-4111-8111-111111111111";
+    const secondSaleId = "99999999-9999-4999-8999-999999999999";
+    let resolveFirst!: (value: unknown) => void;
+    const firstResponse = new Promise((resolve) => {
+      resolveFirst = resolve;
+    });
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockImplementation(({ saleId }: { saleId: string }) =>
+      saleId === firstSaleId
+        ? firstResponse
+        : Promise.resolve({
+            ok: true,
+            mission: mission("draft", secondSaleId, "second@example.test"),
+            gaps: [],
+            facts: [],
+          }),
+    );
+
+    const firstSelection = {
+      saleId: firstSaleId,
+      title: "Première annonce",
+      recipientName: null,
+      recipientContact: null,
+    };
+    const secondSelection = {
+      saleId: secondSaleId,
+      title: "Seconde annonce",
+      recipientName: null,
+      recipientContact: null,
+    };
+    mocks.sourceStatus.mockResolvedValue({ ok: true, request: null, history: [] });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel selection={firstSelection} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(mocks.create.mock.calls[0]?.[0]).toEqual({ saleId: firstSaleId }));
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentMissionsPanel selection={secondSelection} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    expect(
+      screen.getByRole("heading", { name: "Brouillon pour second@example.test" }),
+    ).toBeTruthy();
+
+    resolveFirst({
+      ok: true,
+      mission: mission("draft", firstSaleId, "first@example.test"),
+      gaps: [],
+      facts: [],
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Brouillon pour second@example.test" }),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByRole("heading", { name: "Brouillon pour first@example.test" })).toBeNull();
   });
 });
 
@@ -192,15 +516,19 @@ function renderPanel(
   );
 }
 
-function mission(status: "draft" | "sent" | "failed") {
+function mission(
+  status: "draft" | "sent" | "failed",
+  saleId = "11111111-1111-4111-8111-111111111111",
+  recipientEmail = "cabinet@example.test",
+) {
   return {
     id: "22222222-2222-4222-8222-222222222222",
     caseId: "33333333-3333-4333-8333-333333333333",
-    saleId: "11111111-1111-4111-8111-111111111111",
+    saleId,
     status,
     recipientKind: "source_lawyer",
     recipientName: "Maître Dupont",
-    recipientEmail: "cabinet@example.test",
+    recipientEmail,
     subject: "Demande de pièces",
     bodyText: "Bonjour, pourriez-vous transmettre les pièces complémentaires du dossier ?",
     questionKeys: ["documents"],

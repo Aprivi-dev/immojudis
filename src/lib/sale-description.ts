@@ -47,11 +47,12 @@ export function buildStructuredDescription(sale: AuctionSale, now = new Date()):
   const status = listingSaleStatus(sale, now);
   const withdrawn = ["cancelled", "canceled", "postponed"].includes(sale.status ?? "");
   const past = status?.startsWith("Date de vente passée") ?? false;
+  const occupation = listingOccupation(sale);
   const facts = [
     valuationConflict ? "type de bien à confirmer" : propertyTypeLabel(sale.property_type),
     valuationConflict ? "surface à vérifier" : saleSurfaceLabel(sale),
     sale.rooms_count ? `${sale.rooms_count} pièce${sale.rooms_count > 1 ? "s" : ""}` : null,
-    listingOccupation(sale),
+    ["Non renseignée", "À confirmer"].includes(occupation) ? null : occupation,
   ].filter((fact): fact is string => Boolean(fact && fact !== "Non renseigné"));
 
   return [

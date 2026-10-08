@@ -21,7 +21,7 @@ function failure(error: unknown) {
         ? 401
         : message.startsWith("Forbidden")
           ? 403
-          : error instanceof z.ZodError
+          : error instanceof z.ZodError || error instanceof SyntaxError
             ? 400
             : 500,
     },
@@ -30,14 +30,9 @@ function failure(error: unknown) {
 export async function GET(request: Request) {
   try {
     await authorize(request);
-    const results = await Promise.all([
+    const [sourcesResult, controlResult, alertsResult, usageResult] = await Promise.all([
       client.from("auction_source_state").select("*").order("source_name"),
       client.from("auction_pipeline_control").select("*").single(),
-      client
-        .from("auction_pipeline_observations")
-        .select("source_name,observed_at,metrics")
-        .order("observed_at", { ascending: false })
-        .limit(11),
       client
         .from("operational_alerts")
         .select("alert_key,status,details,notification_status,notification_event,last_seen_at")
@@ -45,14 +40,41 @@ export async function GET(request: Request) {
         .order("last_seen_at", { ascending: false }),
       client.rpc("pipeline_usage_summary"),
     ]);
-    for (const result of results) if (result.error) throw new Error(result.error.message);
+
+    for (const result of [sourcesResult, controlResult, alertsResult, usageResult]) {
+      if (result.error) throw new Error(result.error.message);
+    }
+
+    // The health observer appends one row per source on every tick. A global
+    // limit therefore returns several rows for the busiest source and can
+    // silently omit the others. Query the indexed latest row per configured
+    // source so the admin panel always displays the current metric for each
+    // source, plus the enrichment queue observation.
+    const sourceNames = [
+      ...(sourcesResult.data ?? []).map((source) => source.source_name),
+      "enrichment-queue",
+    ].filter((sourceName, index, names) => names.indexOf(sourceName) === index);
+    const observationResults = await Promise.all(
+      sourceNames.map((sourceName) =>
+        client
+          .from("auction_pipeline_observations")
+          .select("source_name,observed_at,metrics")
+          .eq("source_name", sourceName)
+          .order("observed_at", { ascending: false })
+          .limit(1),
+      ),
+    );
+    for (const result of observationResults) {
+      if (result.error) throw new Error(result.error.message);
+    }
+
     return NextResponse.json(
       {
-        sources: results[0].data,
-        control: results[1].data,
-        observations: results[2].data,
-        alerts: results[3].data,
-        usage: results[4].data,
+        sources: sourcesResult.data,
+        control: controlResult.data,
+        observations: observationResults.flatMap((result) => result.data ?? []),
+        alerts: alertsResult.data,
+        usage: usageResult.data,
       },
       { headers: { "cache-control": "no-store" } },
     );

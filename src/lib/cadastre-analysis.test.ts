@@ -150,7 +150,7 @@ describe("cadastral analysis", () => {
       ],
     });
     expect(analysis.sources).toContain("API Carto Cadastre");
-    expect(analysis.limitations.join(" ")).toContain("API Carto");
+    expect(analysis.limitations.join(" ")).toContain("position du bien");
   });
 
   it("uses structured source blocks as high-confidence cadastral references", () => {
@@ -248,6 +248,8 @@ describe("cadastral analysis", () => {
       references: [],
       documents: [],
     });
-    expect(analysis.summary).toBe("Parcelle cadastrale à connecter ou à confirmer.");
+    expect(analysis.summary).toBe(
+      "Référence cadastrale absente ou à confirmer dans le plan officiel.",
+    );
   });
 });

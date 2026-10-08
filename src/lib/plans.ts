@@ -34,6 +34,7 @@ export type FeatureKey =
   | "property.reportEditing"
   | "property.urbanPlanning"
   | "property.streetFacade"
+  | "property.weatherHistory"
   | "property.saleHistory"
   | "property.soldComparables"
   | "property.activeComparables"
@@ -100,6 +101,7 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "property.reportEditing": "locked",
     "property.urbanPlanning": "locked",
     "property.streetFacade": "locked",
+    "property.weatherHistory": "locked",
     "property.saleHistory": "locked",
     "property.soldComparables": "locked",
     "property.activeComparables": "locked",
@@ -143,6 +145,7 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "property.reportEditing": "included",
     "property.urbanPlanning": "included",
     "property.streetFacade": "included",
+    "property.weatherHistory": "included",
     "property.saleHistory": "included",
     "property.soldComparables": "included",
     "property.activeComparables": "included",
@@ -162,7 +165,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     pdfExportsPerMonth: 0,
     savedReports: 0,
     reportEditing: "limited",
-    favoriteSales: 10,
+    favoriteSales: 3,
     watchedZones: 1,
     saleAnalysisSets: 1,
     saleAnalysisItems: 3,

@@ -1,77 +1,16 @@
 import { isActiveComparableSale } from "@/lib/sale-window";
-import { randomBytes } from "node:crypto";
-import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
-import { buildActiveComparablesAnalysis } from "@/lib/active-comparables-analysis";
-import { buildAudienceReadinessAnalysis } from "@/lib/audience-readiness-analysis";
-import { buildAuctionCostAnalysis } from "@/lib/auction-cost-analysis";
-import { buildCadastralAnalysis, type StructuredCadastralParcel } from "@/lib/cadastre-analysis";
-import { buildDemographicAnalysis } from "@/lib/demographic-analysis";
-import { buildDpeAnalysis } from "@/lib/dpe-analysis";
+import { type StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import { normalizeDpeClass, type StructuredDpeDiagnostic } from "@/lib/dpe";
-import {
-  formatDate,
-  formatPrice,
-  formatPricePerM2,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
-import { getEnvironmentalContext, type EnvironmentalContext } from "@/lib/environment.functions";
-import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
-import { buildLegalAttentionAnalysis } from "@/lib/legal-attention-analysis";
-import type { MarketEstimate } from "@/lib/market.functions";
-import { buildMarketComparablesAnalysis } from "@/lib/market-comparables-analysis";
-import { buildNearbyServicesAnalysis } from "@/lib/nearby-services";
-import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
-import { buildOccupancyAnalysis } from "@/lib/occupation-analysis";
-import { buildRenovationAnalysis } from "@/lib/renovation-analysis";
-import { cleanSaleTitle } from "@/lib/sale-title";
-import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
-import {
-  featureAccess,
-  featureIncluded,
-  isPlanPeriodActive,
-  normalizePlanCode,
-  PLAN_LABELS,
-  PLAN_LIMITS,
-  type FeatureAccess,
-  type FeatureKey,
-  type PlanCode,
-} from "@/lib/plans";
-import {
-  computeAcquisitionCosts,
-  computeRecommendedCeilings,
-  computeRentabilityScore,
-  DEFAULT_MARKET_CEILING_SCENARIO,
-  DEFAULTS,
-} from "@/lib/profitability";
-import { createTextPdf } from "@/lib/simple-pdf";
-import {
-  buildReportTraceability,
-  REPORT_COMPLIANCE_NOTICE,
-  type SourceTraceEntry,
-} from "@/lib/source-traceability";
-import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
-import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
-import {
-  buildUrbanPlanningAnalysis,
-  type StructuredUrbanPlanningSignal,
-} from "@/lib/urban-planning-analysis";
-import { assertUsageLimitAvailable, recordFeatureUsageEvent } from "@/lib/usage";
-import { buildValuationAudit } from "@/lib/valuation-audit";
+import { getSaleSurface } from "@/lib/surface";
+import { type StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
+import { recordFeatureUsageEvent } from "@/lib/usage";
 import {
   buildValuationBacktestForSale,
   type ValuationBacktestResult,
 } from "@/lib/valuation-backtest";
-import type {
-  AuctionSale,
-  SaleDocumentRich,
-  SaleMedia,
-  SaleRisk,
-  SaleScoreFactor,
-} from "@/lib/types";
+import type { AuctionSale } from "@/lib/types";
 import {
   ActiveComparableSales,
   AppSaleRow,

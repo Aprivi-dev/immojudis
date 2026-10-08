@@ -12,7 +12,8 @@ import { DPE_CLASSES, dpeColor, type DpeClass } from "@/lib/dpe";
 import { HOME_TYPE_OPTIONS, STATUS_OPTIONS } from "@/lib/search/search-filters";
 import { type SearchDraft, toggleValue } from "./search-page-state";
 import { SaleTypeFilter } from "./SaleTypeFilter";
-import { BedsBathsFilter, DateRangeFields, InlineTextFilter, PriceFilter } from "./SearchHeader";
+import { DateRangeFields } from "./DateRangeFields";
+import { BedsBathsFilter, InlineTextFilter, PriceFilter } from "./SearchHeader";
 
 export function MoreFiltersModal({
   open,

@@ -18,15 +18,20 @@ const planStatusSchema = z.enum([
   "expired",
 ]);
 
+const optionalDateTimeSchema = z
+  .string()
+  .trim()
+  .optional()
+  .refine((value) => !value || Number.isFinite(new Date(value).getTime()), {
+    message: "La fin de période doit être une date valide.",
+  })
+  .transform((value) => (value ? new Date(value).toISOString() : null));
+
 export const adminSubscriptionGrantInputSchema = z.object({
   target: z.string().trim().min(3).max(320),
   planCode: z.enum(["decouverte", "analyse"]).default("analyse"),
   status: planStatusSchema.default("active"),
-  currentPeriodEnd: z
-    .string()
-    .trim()
-    .optional()
-    .transform((value) => (value ? new Date(value).toISOString() : null)),
+  currentPeriodEnd: optionalDateTimeSchema,
   note: z
     .string()
     .trim()
@@ -53,6 +58,12 @@ export type AdminSubscriptionSummary = {
 
 export type AdminSubscriptionListResponse = {
   subscriptions: AdminSubscriptionSummary[];
+  totalCount: number;
+  activeCount: number;
+  truncated: boolean;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
 };
 
 export type AdminSubscriptionGrantResponse = {
@@ -65,22 +76,40 @@ export type AdminSubscriptionGrantResponse = {
 
 export async function listAdminSubscriptions(
   authToken: string,
+  { offset = 0, limit = 50 }: { offset?: number; limit?: number } = {},
 ): Promise<AdminSubscriptionListResponse> {
   await assertAdminAuth(authToken);
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
 
-  const { data, error } = await supabaseAdmin
-    .from("user_subscriptions")
-    .select("*")
-    .order("updated_at", { ascending: false })
-    .limit(50);
+  const [{ data, error, count }, { count: activeCount, error: activeError }] = await Promise.all([
+    supabaseAdmin
+      .from("user_subscriptions")
+      .select("*", { count: "exact" })
+      .order("updated_at", { ascending: false })
+      .range(safeOffset, safeOffset + safeLimit - 1),
+    supabaseAdmin
+      .from("user_subscriptions")
+      .select("user_id", { count: "exact", head: true })
+      .eq("plan_code", "analyse")
+      .in("status", ["active", "trialing"]),
+  ]);
 
   if (error) throw error;
+  if (activeError) throw activeError;
 
   const emailByUserId = await getEmailsByUserId((data ?? []).map((row) => row.user_id));
+  const totalCount = count ?? data?.length ?? 0;
   return {
     subscriptions: (data ?? []).map((row) =>
       subscriptionToSummary(row, emailByUserId.get(row.user_id) ?? null),
     ),
+    totalCount,
+    activeCount: activeCount ?? 0,
+    truncated: totalCount > (data?.length ?? 0),
+    offset: safeOffset,
+    limit: safeLimit,
+    hasMore: safeOffset + (data?.length ?? 0) < totalCount,
   };
 }
 
@@ -194,7 +223,7 @@ async function findAuthUser(target: string): Promise<User> {
 }
 
 async function getEmailsByUserId(userIds: string[]): Promise<Map<string, string | null>> {
-  const uniqueIds = Array.from(new Set(userIds)).slice(0, 50);
+  const uniqueIds = Array.from(new Set(userIds));
   const entries = await Promise.all(
     uniqueIds.map(async (userId) => {
       const { data } = await supabaseAdmin.auth.admin.getUserById(userId);

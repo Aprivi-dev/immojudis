@@ -70,7 +70,7 @@ export default async function SharedReportPage({ params }: PageParams) {
   const demographicMissingData = normalizeStringList(demographicAnalysis.missingData);
   const demographicLimitations = normalizeStringList(demographicAnalysis.limitations);
   const occupancyAnalysis = asRecord(analysis.occupancyAnalysis);
-  const occupancyEvidence = normalizeOccupancyEvidence(occupancyAnalysis.evidence);
+  const occupancyEvidence = normalizeEvidence(occupancyAnalysis.evidence);
   const occupancyActions = normalizeStringList(occupancyAnalysis.nextActions);
   const auctionCostAnalysis = asRecord(analysis.auctionCostAnalysis);
   const auctionCostSignals = normalizeStringList(auctionCostAnalysis.sourceFeeSignals);
@@ -85,10 +85,10 @@ export default async function SharedReportPage({ params }: PageParams) {
   const urbanPlanningMissingChecks = normalizeStringList(urbanPlanningAnalysis.missingChecks);
   const urbanPlanningLimitations = normalizeStringList(urbanPlanningAnalysis.limitations);
   const dpe = asRecord(analysis.dpe);
-  const dpeEvidence = normalizeDpeEvidence(dpe.evidence);
+  const dpeEvidence = normalizeEvidence(dpe.evidence);
   const dpeActions = normalizeStringList(dpe.nextActions);
   const renovationAnalysis = asRecord(analysis.renovationAnalysis);
-  const renovationEvidence = normalizeRenovationEvidence(renovationAnalysis.evidence);
+  const renovationEvidence = normalizeEvidence(renovationAnalysis.evidence);
   const renovationActions = normalizeStringList(renovationAnalysis.nextActions);
   const renovationBudgetRange = formatRenovationBudgetRange(
     asRecord(renovationAnalysis.budgetRange),
@@ -274,13 +274,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 value={stringValue(marketComparables.priceRangeLabel, "À confirmer")}
               />
             </div>
-            {retainedComparables.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {retainedComparables.slice(0, 5).map((row) => (
-                  <li key={row}>{row}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={retainedComparables} limit={5} />
             {addressHistory.length ? (
               <div className="mt-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
@@ -293,13 +287,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 </ul>
               </div>
             ) : null}
-            {marketComparablesActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {marketComparablesActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={marketComparablesActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -326,25 +314,13 @@ export default async function SharedReportPage({ params }: PageParams) {
                 )}
               />
             </div>
-            {valuationCheckpoints.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {valuationCheckpoints.slice(0, 8).map((checkpoint) => (
-                  <li key={checkpoint}>{checkpoint}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={valuationCheckpoints} limit={8} />
             {valuationRiskFlags.length ? (
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                 Points à risque : {valuationRiskFlags.slice(0, 5).join(" · ")}
               </p>
             ) : null}
-            {valuationActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {valuationActions.slice(0, 4).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={valuationActions} limit={4} muted />
             {valuationLimitations.length ? (
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 {valuationLimitations.slice(0, 2).join(" · ")}
@@ -379,20 +355,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 )}
               />
             </div>
-            {activeComparableItems.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {activeComparableItems.slice(0, 5).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {activeComparableActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {activeComparableActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={activeComparableItems} limit={5} />
+            <SharedList items={activeComparableActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -430,20 +394,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 value={`${normalizeStringList(audienceReadinessAnalysis.visitDates).length} mention(s)`}
               />
             </div>
-            {audienceChecklistItems.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {audienceChecklistItems.slice(0, 8).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {audienceReadinessActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {audienceReadinessActions.slice(0, 4).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={audienceChecklistItems} limit={8} />
+            <SharedList items={audienceReadinessActions} limit={4} muted />
           </section>
         ) : null}
 
@@ -506,7 +458,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             label="Cadastre"
             value={stringValue(
               cadastral.summary,
-              cadastral.available ? "Repère disponible" : "À connecter ou confirmer",
+              cadastral.available ? "Repère disponible" : "Référence cadastrale à confirmer",
             )}
           />
           <SharedMetric
@@ -568,25 +520,13 @@ export default async function SharedReportPage({ params }: PageParams) {
                 value={formatSurfaceM2(numberValue(cadastral.landSurfaceM2))}
               />
             </div>
-            {cadastralReferences.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {cadastralReferences.map((reference) => (
-                  <li key={reference}>{reference}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={cadastralReferences} />
             {cadastralSources.length ? (
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 Sources : {cadastralSources.slice(0, 4).join(" · ")}
               </p>
             ) : null}
-            {cadastralActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {cadastralActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={cadastralActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -610,20 +550,8 @@ export default async function SharedReportPage({ params }: PageParams) {
               />
               <SharedMetric label="Source" value={dpeSourceLabel(stringValue(dpe.source, ""))} />
             </div>
-            {dpeEvidence.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {dpeEvidence.slice(0, 4).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {dpeActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {dpeActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={dpeEvidence} limit={4} />
+            <SharedList items={dpeActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -653,20 +581,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 )}
               />
             </div>
-            {renovationEvidence.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {renovationEvidence.slice(0, 4).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {renovationActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {renovationActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={renovationEvidence} limit={4} />
+            <SharedList items={renovationActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -699,27 +615,9 @@ export default async function SharedReportPage({ params }: PageParams) {
                 )}
               />
             </div>
-            {urbanPlanningItems.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {urbanPlanningItems.slice(0, 6).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {urbanPlanningMissingChecks.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {urbanPlanningMissingChecks.slice(0, 4).map((check) => (
-                  <li key={check}>{check}</li>
-                ))}
-              </ul>
-            ) : null}
-            {urbanPlanningActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {urbanPlanningActions.slice(0, 4).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={urbanPlanningItems} limit={6} />
+            <SharedList items={urbanPlanningMissingChecks} limit={4} muted />
+            <SharedList items={urbanPlanningActions} limit={4} muted />
             {urbanPlanningLimitations.length ? (
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 {urbanPlanningLimitations.slice(0, 2).join(" · ")}
@@ -763,13 +661,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 {mapUrl ? <SharedExternalLink href={mapUrl} label="Carte" /> : null}
               </div>
             ) : null}
-            {streetFacadeActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {streetFacadeActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={streetFacadeActions} limit={3} muted />
             {streetFacadeLimitations.length ? (
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 {streetFacadeLimitations.slice(0, 2).join(" · ")}
@@ -817,20 +709,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 Dimensions : {neighborhoodDimensions.join(" · ")}
               </p>
             ) : null}
-            {neighborhoodSignals.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {neighborhoodSignals.slice(0, 5).map((signal) => (
-                  <li key={signal}>{signal}</li>
-                ))}
-              </ul>
-            ) : null}
-            {neighborhoodActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {neighborhoodActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={neighborhoodSignals} limit={5} />
+            <SharedList items={neighborhoodActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -871,27 +751,9 @@ export default async function SharedReportPage({ params }: PageParams) {
                 )}
               />
             </div>
-            {demographicSignals.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {demographicSignals.slice(0, 6).map((signal) => (
-                  <li key={signal}>{signal}</li>
-                ))}
-              </ul>
-            ) : null}
-            {demographicMissingData.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {demographicMissingData.slice(0, 4).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {demographicActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {demographicActions.slice(0, 4).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={demographicSignals} limit={6} />
+            <SharedList items={demographicMissingData} limit={4} muted />
+            <SharedList items={demographicActions} limit={4} muted />
             {demographicLimitations.length ? (
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 {demographicLimitations.slice(0, 2).join(" · ")}
@@ -915,20 +777,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 value={locationQualityLabel(stringValue(nearbyServices.locationQuality, ""))}
               />
             </div>
-            {nearbyCategories.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {nearbyCategories.map((category) => (
-                  <li key={category}>{category}</li>
-                ))}
-              </ul>
-            ) : null}
-            {nearbyActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {nearbyActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={nearbyCategories} />
+            <SharedList items={nearbyActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -947,20 +797,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 value={stringValue(occupancyAnalysis.decisionImpact, "À vérifier avant enchère")}
               />
             </div>
-            {occupancyEvidence.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {occupancyEvidence.slice(0, 4).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {occupancyActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {occupancyActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={occupancyEvidence} limit={4} />
+            <SharedList items={occupancyActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -987,20 +825,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 value={formatKnownPrice(numberValue(auctionCostAnalysis.registrationDutiesEur))}
               />
             </div>
-            {auctionCostSignals.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {auctionCostSignals.slice(0, 4).map((signal) => (
-                  <li key={signal}>{signal}</li>
-                ))}
-              </ul>
-            ) : null}
-            {auctionCostActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {auctionCostActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={auctionCostSignals} limit={4} />
+            <SharedList items={auctionCostActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -1019,20 +845,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 value={stringValue(legalAttentionAnalysis.confidenceLabel, "À vérifier")}
               />
             </div>
-            {legalAttentionItems.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {legalAttentionItems.slice(0, 6).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {legalAttentionActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {legalAttentionActions.slice(0, 4).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={legalAttentionItems} limit={6} />
+            <SharedList items={legalAttentionActions} limit={4} muted />
             <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
               {stringValue(
                 legalAttentionAnalysis.disclaimer,
@@ -1122,6 +936,31 @@ function SharedMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SharedList({
+  items,
+  limit,
+  muted = false,
+}: {
+  items: string[];
+  limit?: number;
+  muted?: boolean;
+}) {
+  if (!items.length) return null;
+  return (
+    <ul
+      className={
+        muted
+          ? "mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground"
+          : "mt-4 space-y-2 text-sm leading-relaxed text-foreground"
+      }
+    >
+      {(limit == null ? items : items.slice(0, limit)).map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
 function SharedExternalLink({ href, label }: { href: string; label: string }) {
   return (
     <a
@@ -1183,33 +1022,7 @@ function normalizeNearbyCategoryLabels(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function normalizeOccupancyEvidence(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const excerpt = stringValue(record.excerpt, "");
-      return [label, source, excerpt].filter(Boolean).join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeDpeEvidence(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const excerpt = stringValue(record.excerpt, "");
-      return [label, source, excerpt].filter(Boolean).join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeRenovationEvidence(value: unknown): string[] {
+function normalizeEvidence(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => {

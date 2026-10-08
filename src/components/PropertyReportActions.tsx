@@ -145,8 +145,12 @@ function PropertyReportWorkspace({
         plan: response.plan,
       });
       if (response.share.url) {
-        await copyText(response.share.url);
-        toast.success("Lien de partage copié.");
+        try {
+          await copyText(response.share.url);
+          toast.success("Lien de partage copié.");
+        } catch {
+          toast.success("Lien de partage créé. Copiez-le depuis le rapport.");
+        }
       } else {
         toast.success("Partage activé.");
       }

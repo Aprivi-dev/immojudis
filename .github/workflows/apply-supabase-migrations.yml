@@ -16,29 +16,52 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  apply:
-    name: Apply audited migrations
+  validate:
+    name: Validate production migration target
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      SUPABASE_MIGRATION_RUNNER: postgres-js
-      PGCONNECT_TIMEOUT: "600"
-      SUPABASE_MIGRATION_CONNECT_RETRIES: "40"
-      SUPABASE_MIGRATION_RETRY_DELAY: "30"
-      CRON_SECRET: ${{ secrets.CRON_SECRET }}
-      OPERATIONS_HEALTH_URL: https://immojudis.com
     steps:
-      - name: Check target confirmation
+      - name: Check workflow event, ref, and confirmation
+        env:
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          WORKFLOW_EVENT: ${{ github.event_name }}
+          WORKFLOW_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event.inputs.confirm_target }}" != "production" ]; then
+          if [ "$WORKFLOW_EVENT" != "workflow_dispatch" ]; then
+            echo "This workflow only accepts an explicit workflow_dispatch event." >&2
+            exit 1
+          fi
+          if [ "$WORKFLOW_REF" != "refs/heads/main" ]; then
+            echo "Production migrations must be dispatched from refs/heads/main (got $WORKFLOW_REF)." >&2
+            exit 1
+          fi
+          if [ "$CONFIRM_TARGET" != "production" ]; then
             echo "confirm_target must be exactly: production" >&2
             exit 1
           fi
 
+  apply:
+    name: Apply audited migrations
+    needs: validate
+    if: needs.validate.result == 'success'
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 45
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_MIGRATION_RUNNER: postgres-js
+      PGCONNECT_TIMEOUT: "60"
+      SUPABASE_MIGRATION_CONNECT_RETRIES: "10"
+      SUPABASE_MIGRATION_RETRY_DELAY: "30"
+      SUPABASE_MIGRATION_RETRY_BUDGET_SECONDS: "2400"
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      OPERATIONS_HEALTH_URL: https://immojudis.com
+    steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -51,8 +74,60 @@ jobs:
       - name: Install project tooling
         run: npm ci --ignore-scripts
 
+      - name: Verify checked-out revision and record release provenance
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [ "$actual_sha" != "$EXPECTED_SHA" ]; then
+            echo "Checked-out revision $actual_sha does not match workflow SHA $EXPECTED_SHA." >&2
+            exit 1
+          fi
+          if [ "$EXPECTED_REF" != "refs/heads/main" ]; then
+            echo "Release provenance ref must be refs/heads/main (got $EXPECTED_REF)." >&2
+            exit 1
+          fi
+          GITHUB_SHA="$EXPECTED_SHA" GITHUB_REF="$EXPECTED_REF" \
+            node scripts/write-release-manifest.mjs \
+            --status attempted \
+            --output "$RUNNER_TEMP/immojudis-release-manifest-attempted.json"
+
+      - name: Upload attempted release provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: immojudis-supabase-migration-attempt-${{ github.run_id }}
+          path: ${{ runner.temp }}/immojudis-release-manifest-attempted.json
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Apply pending migrations
         run: node scripts/apply-supabase-migrations.mjs
+
+      - name: Apply reviewed concurrent index operations
+        run: node scripts/apply-supabase-concurrent-index-operations.mjs
+
+      - name: Record successful migration application
+        if: success()
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          GITHUB_SHA="$EXPECTED_SHA" GITHUB_REF="$EXPECTED_REF" \
+            node scripts/write-release-manifest.mjs \
+            --status applied \
+            --output "$RUNNER_TEMP/immojudis-release-manifest-applied.json"
+
+      - name: Upload applied release provenance
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: immojudis-supabase-migration-applied-${{ github.run_id }}
+          path: ${{ runner.temp }}/immojudis-release-manifest-applied.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Configure the 15-minute health scheduler
         run: npm run ops:health-scheduler:configure

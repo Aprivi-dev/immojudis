@@ -84,7 +84,11 @@ VALID_SOURCES = {"all", *SOURCE_NAMES}
 LLM_BACKFILL_SOURCE = "llm-description-backfill"
 SOURCE_DETAIL_FAMILY = "source_detail"
 ENRICHMENT_FAMILY = "enrichment"
-ENRICHMENT_FAMILY_CYCLE = (SOURCE_DETAIL_FAMILY,) * 5 + (ENRICHMENT_FAMILY,)
+# Keep a bounded general-enrichment lane even while source-detail is larger.
+# Four slots preserve source-detail priority while reserving 25% of worker
+# claims for display/fact/PDF jobs instead of allowing a persistent detail
+# backlog to reduce the general lane to one claim in six.
+ENRICHMENT_FAMILY_CYCLE = (SOURCE_DETAIL_FAMILY,) * 3 + (ENRICHMENT_FAMILY,)
 ENRICHMENT_MAX_JOBS = 90
 ENRICHMENT_BUDGET_SECONDS = 1200
 PDF_FINALIZATION_MARGIN_FRACTION = PDF_FINALIZATION_MARGIN_SECONDS / ENRICHMENT_BUDGET_SECONDS
@@ -1072,7 +1076,7 @@ def _run_enrichment_queue_worker(
 ) -> int:
     """Run one fair, bounded queue worker.
 
-    The historical cycle is five source-detail jobs followed by one general
+    The bounded cycle is three source-detail jobs followed by one general
     enrichment job. When the queue snapshot shows a larger general backlog, the
     worker temporarily alternates the two lanes while retaining at least one
     source-detail slot every other position. Detail claims are grouped into
@@ -1201,7 +1205,7 @@ def _run_enrichment_queue_worker(
         if claimed_family is not None:
             handled_by_family[claimed_family] += count
         # Advance by jobs, rather than by claim calls, so a detail batch of two
-        # still consumes exactly two positions in the five-to-one cycle.
+        # still consumes exactly two positions in the lane cycle.
         slot += count
     elapsed_seconds = max(time.monotonic() - started_at, 0.0)
     handled_per_hour = (handled * 3600 / elapsed_seconds) if elapsed_seconds else 0.0
@@ -1427,7 +1431,7 @@ def _enrichment_family_cycle(due_counts: dict[str, int]) -> tuple[str, ...]:
     The two lanes alternate only when the estimated due general backlog is
     larger.  The estimate is advisory and cannot make a family unclaimable:
     every preferred-lane miss immediately tries the alternate family.
-    Source-detail therefore remains guaranteed at least every other slot, while
+    Source-detail therefore remains guaranteed at least every fourth slot, while
     a large general backlog cannot be drained at the historical one-in-six rate.
     The SQL claim still applies its per-source round-robin ordering inside the
     detail lane.

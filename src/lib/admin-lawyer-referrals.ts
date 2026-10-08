@@ -16,6 +16,15 @@ type ReferencedLawyerEmailTarget = Pick<
   ReferencedLawyerRow,
   "id" | "display_name" | "firm_name" | "email" | "bar_association" | "city" | "department"
 >;
+type AssignableReferencedLawyer = Pick<
+  ReferencedLawyerRow,
+  | "id"
+  | "status"
+  | "paid_placement_status"
+  | "accepts_judicial_auctions"
+  | "paid_placement_starts_at"
+  | "paid_placement_ends_at"
+>;
 
 export type AdminLawyerReferralEmailDelivery = {
   status: "sent" | "skipped" | "failed";
@@ -25,6 +34,11 @@ export type AdminLawyerReferralEmailDelivery = {
   detail: string | null;
   attemptedAt: string;
 };
+
+type LawyerReferralEmailDeliveryState = Pick<
+  LawyerReferralRow,
+  "sent_at" | "requested_lawyer_id" | "metadata"
+>;
 
 const referralStatusSchema = z.enum([
   "new",
@@ -106,6 +120,12 @@ export type AdminLawyerReferralSummary = {
 export type AdminLawyerReferralListResponse = {
   requests: AdminLawyerReferralSummary[];
   lawyers: AdminLawyerReferralLawyerOption[];
+  totalCount: number;
+  openCount: number;
+  truncated: boolean;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
 };
 
 export type AdminLawyerReferralUpdateResponse = {
@@ -114,19 +134,31 @@ export type AdminLawyerReferralUpdateResponse = {
 
 export async function listAdminLawyerReferralRequests(
   authToken: string,
+  { offset = 0, limit = 50 }: { offset?: number; limit?: number } = {},
 ): Promise<AdminLawyerReferralListResponse> {
   await assertAdminAuth(authToken);
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
 
-  const [{ data: requestRows, error: requestError }, lawyerOptions] = await Promise.all([
+  const [
+    { data: requestRows, error: requestError, count: totalCount },
+    { count: openCount, error: openCountError },
+    lawyerOptions,
+  ] = await Promise.all([
     supabaseAdmin
       .from("lawyer_referral_requests")
-      .select("*")
+      .select("*", { count: "exact" })
       .order("created_at", { ascending: false })
-      .limit(50),
+      .range(safeOffset, safeOffset + safeLimit - 1),
+    supabaseAdmin
+      .from("lawyer_referral_requests")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["new", "manual_review", "sent_to_lawyer"]),
     listAssignableReferencedLawyers(),
   ]);
 
   if (requestError) throw requestError;
+  if (openCountError) throw openCountError;
 
   const requestedLawyerIds = (requestRows ?? [])
     .map((request) => request.requested_lawyer_id)
@@ -141,6 +173,12 @@ export async function listAdminLawyerReferralRequests(
       referralRequestToSummary(request, lawyerById.get(request.requested_lawyer_id ?? "") ?? null),
     ),
     lawyers: lawyerOptions,
+    totalCount: totalCount ?? requestRows?.length ?? 0,
+    openCount: openCount ?? 0,
+    truncated: (totalCount ?? requestRows?.length ?? 0) > (requestRows?.length ?? 0),
+    offset: safeOffset,
+    limit: safeLimit,
+    hasMore: safeOffset + (requestRows?.length ?? 0) < (totalCount ?? 0),
   };
 }
 
@@ -153,6 +191,23 @@ export async function updateAdminLawyerReferralRequest({
 }): Promise<AdminLawyerReferralUpdateResponse> {
   const auth = await assertAdminAuth(authToken);
   const existing = await getReferralRequest(input.id);
+  const requestedLawyerId =
+    input.requestedLawyerId === undefined ? existing.requested_lawyer_id : input.requestedLawyerId;
+  const assignmentChanged = requestedLawyerId !== existing.requested_lawyer_id;
+  const shouldDispatch = shouldDispatchReferencedLawyerEmail({
+    existing,
+    request: {
+      status: input.status,
+      requested_lawyer_id: requestedLawyerId,
+      metadata: existing.metadata,
+    },
+  });
+  if (
+    input.status === "sent_to_lawyer" &&
+    (!existing.sent_at || assignmentChanged || shouldDispatch)
+  ) {
+    await assertAssignableReferencedLawyer(requestedLawyerId);
+  }
   const payload = adminLawyerReferralUpdatePayload({
     existing,
     input,
@@ -210,6 +265,7 @@ export function adminLawyerReferralUpdatePayload({
   const assignedLawyerId =
     input.requestedLawyerId === undefined ? existing.requested_lawyer_id : input.requestedLawyerId;
   const timestamp = now.toISOString();
+  const assignmentChanged = assignedLawyerId !== existing.requested_lawyer_id;
 
   return {
     status: input.status,
@@ -221,7 +277,10 @@ export function adminLawyerReferralUpdatePayload({
         : existing.matching_status,
     admin_notes: input.adminNotes,
     assigned_at: assignedLawyerId && !existing.assigned_at ? timestamp : existing.assigned_at,
-    sent_at: input.status === "sent_to_lawyer" && !existing.sent_at ? timestamp : existing.sent_at,
+    sent_at:
+      input.status === "sent_to_lawyer" && (!existing.sent_at || assignmentChanged)
+        ? timestamp
+        : existing.sent_at,
     responded_at:
       input.status === "responded" && !existing.responded_at ? timestamp : existing.responded_at,
     metadata: asJson({
@@ -257,18 +316,86 @@ async function getReferralRequest(id: string): Promise<LawyerReferralRow> {
 }
 
 async function listAssignableReferencedLawyers(): Promise<AdminLawyerReferralLawyerOption[]> {
+  const now = new Date().toISOString();
   const { data, error } = await supabaseAdmin
     .from("referenced_lawyers")
     .select("id,display_name,firm_name,bar_association,city,department,priority_weight")
     .eq("status", "active")
     .in("paid_placement_status", ["trial", "active"])
     .eq("accepts_judicial_auctions", true)
+    .or("paid_placement_starts_at.is.null,paid_placement_starts_at.lte." + now)
+    .or("paid_placement_ends_at.is.null,paid_placement_ends_at.gte." + now)
     .order("priority_weight", { ascending: false })
     .order("display_name", { ascending: true })
     .limit(100);
 
   if (error) throw error;
   return (data ?? []).map(referencedLawyerToOption);
+}
+
+export function isReferencedLawyerPlacementActive(
+  lawyer: Pick<
+    AssignableReferencedLawyer,
+    | "status"
+    | "paid_placement_status"
+    | "accepts_judicial_auctions"
+    | "paid_placement_starts_at"
+    | "paid_placement_ends_at"
+  >,
+  now = new Date(),
+): boolean {
+  if (
+    lawyer.status !== "active" ||
+    !["trial", "active"].includes(lawyer.paid_placement_status) ||
+    !lawyer.accepts_judicial_auctions
+  ) {
+    return false;
+  }
+  return isPlacementWindowActive(
+    lawyer.paid_placement_starts_at,
+    lawyer.paid_placement_ends_at,
+    now,
+  );
+}
+
+async function assertAssignableReferencedLawyer(lawyerId: string | null): Promise<void> {
+  if (!lawyerId) {
+    throw new Error("Un avocat référencé éligible doit être assigné avant l'envoi.");
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("referenced_lawyers")
+    .select(
+      "id,status,paid_placement_status,accepts_judicial_auctions,paid_placement_starts_at,paid_placement_ends_at",
+    )
+    .eq("id", lawyerId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || !isReferencedLawyerPlacementActive(data)) {
+    throw new Error(
+      "Cet avocat n'est pas éligible : fiche active, adjudications acceptées et placement payant en cours requis.",
+    );
+  }
+}
+
+function isPlacementWindowActive(
+  startsAt: string | null,
+  endsAt: string | null,
+  now: Date,
+): boolean {
+  const nowTime = now.getTime();
+  if (!Number.isFinite(nowTime)) return false;
+  const startsTime = parsePlacementDate(startsAt);
+  const endsTime = parsePlacementDate(endsAt);
+  if (startsAt && startsTime == null) return false;
+  if (endsAt && endsTime == null) return false;
+  return (startsTime == null || startsTime <= nowTime) && (endsTime == null || endsTime >= nowTime);
+}
+
+function parsePlacementDate(value: string | null): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 async function getReferencedLawyersById(
@@ -286,6 +413,24 @@ async function getReferencedLawyersById(
   return new Map((data ?? []).map((lawyer) => [lawyer.id, referencedLawyerToOption(lawyer)]));
 }
 
+export function shouldDispatchReferencedLawyerEmail({
+  existing,
+  request,
+}: {
+  existing: LawyerReferralEmailDeliveryState;
+  request: Pick<LawyerReferralRow, "status" | "requested_lawyer_id" | "metadata">;
+}): boolean {
+  if (request.status !== "sent_to_lawyer") return false;
+
+  const reassigned = request.requested_lawyer_id !== existing.requested_lawyer_id;
+  if (reassigned || !existing.sent_at) return true;
+
+  const previousDelivery = normalizeEmailDelivery(
+    jsonObject(existing.metadata).lawyer_email_delivery,
+  );
+  return previousDelivery?.status === "failed" || previousDelivery?.status === "skipped";
+}
+
 async function dispatchReferencedLawyerEmailIfNeeded({
   existing,
   request,
@@ -293,13 +438,13 @@ async function dispatchReferencedLawyerEmailIfNeeded({
   env = process.env,
   fetchImpl = fetch,
 }: {
-  existing: Pick<LawyerReferralRow, "sent_at">;
+  existing: LawyerReferralEmailDeliveryState;
   request: LawyerReferralRow;
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
   fetchImpl?: typeof fetch;
 }): Promise<AdminLawyerReferralEmailDelivery | null> {
-  if (request.status !== "sent_to_lawyer" || existing.sent_at) return null;
+  if (!shouldDispatchReferencedLawyerEmail({ existing, request })) return null;
 
   const attemptedAt = now.toISOString();
   if (!request.requested_lawyer_id) {
@@ -350,7 +495,7 @@ async function dispatchReferencedLawyerEmailIfNeeded({
     const sendResult = await sendResendEmail({
       apiKey: config.apiKey,
       message,
-      idempotencyKey: `immojudis-lawyer-referral-${request.id}`,
+      idempotencyKey: `immojudis-lawyer-referral-${request.id}-${request.requested_lawyer_id}`,
       fetchImpl,
     });
     return {
