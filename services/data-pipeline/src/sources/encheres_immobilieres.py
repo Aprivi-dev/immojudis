@@ -7,6 +7,7 @@ from datetime import date
 from typing import Any
 from urllib.parse import urljoin
 
+import httpx
 from bs4 import BeautifulSoup
 
 from src.catalogue_proof import public_page_proof
@@ -18,6 +19,8 @@ from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
     PaginationCoverage,
     PoliteHttpClient,
+    RobotsAccessRefusedError,
+    RobotsUnavailableError,
     ScrapeResult,
     parse_html,
     should_fetch_detail,
@@ -115,10 +118,13 @@ def scrape_encheres_immobilieres_aquitaine_result(
             LOGGER.error("EncheresImmobilieres list fetch failed for %s: %s", page_url, exc)
             errors.append(f"{page_url}: {exc}")
             list_fetch_failures.append({"url": page_url, "error": str(exc)})
+            if not _continue_after_list_fetch_error(exc):
+                break
             consecutive_fetch_failures += 1
-            # A single failed page must not discard later pages that are still
-            # reachable.  Stop after two consecutive failures to avoid a
-            # repeated timeout turning a bounded source run into a scan loop.
+            # A single transient failure must not discard later pages that are
+            # still reachable. Stop after two consecutive transient failures
+            # to avoid a repeated timeout turning a bounded source run into a
+            # scan loop.
             if consecutive_fetch_failures >= 2:
                 break
             continue
@@ -163,6 +169,16 @@ def scrape_encheres_immobilieres_aquitaine_result(
         errors,
         {**getattr(client, "coverage_metrics", lambda: {})(), **coverage},
     )
+
+
+def _continue_after_list_fetch_error(exc: Exception) -> bool:
+    """Continue only for bounded transport failures that may be transient."""
+    if isinstance(exc, (httpx.HTTPStatusError, RobotsAccessRefusedError, RobotsUnavailableError)):
+        return False
+    message = str(exc).casefold()
+    if any(marker in message for marker in ("certificate_verify_failed", "ssl", "tls")):
+        return False
+    return isinstance(exc, (TimeoutError, ConnectionError, httpx.TransportError))
 
 
 def parse_encheres_immobilieres_html(html: str) -> list[dict[str, Any]]:

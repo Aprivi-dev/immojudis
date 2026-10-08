@@ -180,6 +180,12 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "source_evidence",
     "source_evidence_provenance",
     "source_energy_diagnostics",
+    "source_sale_schedule",
+    "date_precision",
+    "sale_date_precision",
+    "operator_land_surface_conflict",
+    "operator_land_surface_scope",
+    "source_display_constraints",
     "source_blocks",
     "source_images",
     "raw_image_url",
@@ -228,6 +234,15 @@ KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS = (
     "surface_source",
     "surface_confidence",
     "surface_evidence",
+)
+
+KNOWN_SOURCE_REFRESH_METADATA_FIELDS = (
+    "source_sale_schedule",
+    "date_precision",
+    "sale_date_precision",
+    "operator_land_surface_conflict",
+    "operator_land_surface_scope",
+    "source_display_constraints",
 )
 
 
@@ -1177,7 +1192,7 @@ def _hydrate_known_payloads_for_rows(
                 f"{len(missing)} known source URL(s)"
             )
         known_details.update(hydrated)
-        loaded_urls.update(pending)
+        loaded_urls.update(hydrated)
 
 
 def _hydrate_known_unchanged_sales(
@@ -1236,12 +1251,26 @@ def _preserve_known_enrichment_payloads(
             sale["llm_display_status"] = "pending"
             sale["source_content_changed"] = True
             continue
+        payload_fields = KNOWN_ENRICHMENT_PAYLOAD_FIELDS
+        if (
+            sale.get("source_detail_status") == "complete"
+            and not sale.get("_known_unchanged")
+            and not sale.get("_detail_fetch_failed")
+        ):
+            payload_fields = tuple(
+                key
+                for key in payload_fields
+                if key not in KNOWN_SOURCE_REFRESH_METADATA_FIELDS
+            )
         preserved += _backfill_payload_fields_from_known(
             sale,
             known,
-            keys=tuple(key for key in KNOWN_ENRICHMENT_PAYLOAD_FIELDS
-                       if sale.get("source_detail_status") not in {"complete", "restricted"}
-                       or key not in {"source_images", "raw_image_url"}),
+            keys=tuple(
+                key
+                for key in payload_fields
+                if sale.get("source_detail_status") not in {"complete", "restricted"}
+                or key not in {"source_images", "raw_image_url"}
+            ),
         )
         preserved += _backfill_document_surface_fields_from_known(sale, known)
         preserved += _backfill_document_price_from_known(sale, known)
