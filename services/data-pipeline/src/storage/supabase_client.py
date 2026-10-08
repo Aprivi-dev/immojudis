@@ -3986,9 +3986,30 @@ KNOWN_SALE_RAW_PAYLOAD_KEYS = (
     "pdf_multi_lot_guard",
     "rooms_bedrooms_conflict_evidence",
 )
-KNOWN_SALE_RAW_PAYLOAD_PROJECTION = "jsonb_strip_nulls(jsonb_build_object(" + ",".join(
-    f"'{key}',raw_payload->'{key}'" for key in KNOWN_SALE_RAW_PAYLOAD_KEYS
-) + ")) as raw_payload"
+# PostgreSQL caps a function call at 100 arguments.  A single
+# ``jsonb_build_object`` needs two arguments per key, so keep each chunk below
+# that limit and merge the chunks before stripping JSON nulls.  This preserves
+# the complete allow-list while avoiding a runtime 54023 on the direct worker
+# snapshot path.
+KNOWN_SALE_RAW_PAYLOAD_PROJECTION_CHUNK_SIZE = 40
+
+
+def _build_known_sale_raw_payload_projection(keys: tuple[str, ...]) -> str:
+    chunks = tuple(
+        "jsonb_build_object("
+        + ",".join(
+            f"'{key}',raw_payload->'{key}'"
+            for key in keys[start : start + KNOWN_SALE_RAW_PAYLOAD_PROJECTION_CHUNK_SIZE]
+        )
+        + ")"
+        for start in range(0, len(keys), KNOWN_SALE_RAW_PAYLOAD_PROJECTION_CHUNK_SIZE)
+    )
+    return "jsonb_strip_nulls(" + " || ".join(chunks) + ") as raw_payload"
+
+
+KNOWN_SALE_RAW_PAYLOAD_PROJECTION = _build_known_sale_raw_payload_projection(
+    KNOWN_SALE_RAW_PAYLOAD_KEYS
+)
 KNOWN_SALE_POSTGRES_SELECT = ",".join(
     (
         KNOWN_SALE_DETAIL_SELECT.rsplit(",raw_payload", 1)[0],
