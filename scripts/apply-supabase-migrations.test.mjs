@@ -318,6 +318,29 @@ commit;
     expect(stripOuterTransactionWrappers(`begin;${body}\ncommit;${suffix}`)).toBe(body + suffix);
   });
 
+  it.each(["é", "漢字", "𐐀", "tagé_1"])(
+    "preserves transaction boundaries around a non-ASCII dollar tag: %s",
+    (tag) => {
+      const body = `\nselect $${tag}$\ncommit;\n$x$\n$${tag}$;`;
+      const source = `begin;${body}\ncommit;`;
+      expect(stripOuterTransactionWrappers(source)).toBe(body);
+      expect(splitSqlStatements(source)).toEqual(["begin", body.trim().slice(0, -1), "commit"]);
+      expect(() => stripOuterTransactionWrappers(source + "\nselect 2;")).toThrow(
+        "executable statements follow COMMIT",
+      );
+    },
+  );
+
+  it("does not read dollar signs within SQL identifiers as string delimiters", () => {
+    const body = "\nselect 1 as é$tag$;\nselect 2 as identifier$tag$;";
+    const source = `begin;${body}\ncommit;`;
+    expect(stripOuterTransactionWrappers(source)).toBe(body);
+    expect(splitSqlStatements(source)).toHaveLength(4);
+    expect(() => stripOuterTransactionWrappers(source + "\nselect 3;")).toThrow(
+      "executable statements follow COMMIT",
+    );
+  });
+
   it("accepts the migration whose allowlisted concurrent-index SQL is stored as data", () => {
     const migration = collectMigrations().find(
       ({ file }) => file === "20261008121940_hot_identity_and_collection_lookup_indexes.sql",
