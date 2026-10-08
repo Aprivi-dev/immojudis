@@ -490,14 +490,6 @@ function maskSqlNonCode(source) {
     return index;
   };
 
-  const dollarQuoteDelimiter = (start) => {
-    const match = /^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/.exec(value.slice(start));
-    if (!match) return null;
-    const previous = value[start - 1];
-    if (previous && /[A-Za-z0-9_$]/.test(previous)) return null;
-    return match[0];
-  };
-
   for (let index = 0; index < value.length; ) {
     if (value[index] === "-" && value[index + 1] === "-") {
       const relativeLineEnd = value.slice(index + 2).search(/[\r\n]/);
@@ -515,7 +507,7 @@ function maskSqlNonCode(source) {
     if (
       (value[index] === "E" || value[index] === "e") &&
       value[index + 1] === "'" &&
-      (!value[index - 1] || !/[A-Za-z0-9_$]/.test(value[index - 1]))
+      !isSqlIdentifierContinuation(value[index - 1])
     ) {
       blank(index);
       index = maskSingleQuotedString(index + 1, true);
@@ -533,7 +525,7 @@ function maskSqlNonCode(source) {
     }
 
     if (value[index] === "$") {
-      const delimiter = dollarQuoteDelimiter(index);
+      const delimiter = dollarQuoteDelimiter(value, index);
       if (delimiter) {
         const end = value.indexOf(delimiter, index + delimiter.length);
         const after = end === -1 ? value.length : end + delimiter.length;
@@ -547,6 +539,20 @@ function maskSqlNonCode(source) {
   }
 
   return masked.join("");
+}
+
+function isSqlIdentifierContinuation(character) {
+  return character !== undefined && /[A-Za-z0-9_$\u0080-\uFFFF]/.test(character);
+}
+
+function dollarQuoteDelimiter(source, start) {
+  if (isSqlIdentifierContinuation(source[start - 1])) return null;
+  // PostgreSQL's lexer accepts high-bit UTF-8 bytes in identifier tags, not
+  // just ASCII letters. Mirror that rule for JavaScript's UTF-16 strings.
+  const match = /^\$(?:[A-Za-z_\u0080-\uFFFF][A-Za-z0-9_\u0080-\uFFFF]*)?\$/.exec(
+    source.slice(start),
+  );
+  return match?.[0] ?? null;
 }
 
 function loadEnvironmentFiles() {
@@ -871,7 +877,7 @@ function splitSqlStatements(sql) {
       const previous = source[index - 1] ?? "";
       const beforePrevious = source[index - 2] ?? "";
       backslashEscapes =
-        (previous === "e" || previous === "E") && !/[A-Za-z0-9_]/.test(beforePrevious);
+        (previous === "e" || previous === "E") && !isSqlIdentifierContinuation(beforePrevious);
       index += 1;
       continue;
     }
@@ -884,9 +890,9 @@ function splitSqlStatements(sql) {
     }
 
     if (character === "$" && next !== undefined) {
-      const match = /^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/.exec(source.slice(index));
-      if (match) {
-        dollarTag = match[0];
+      const delimiter = dollarQuoteDelimiter(source, index);
+      if (delimiter) {
+        dollarTag = delimiter;
         index += dollarTag.length;
         continue;
       }
