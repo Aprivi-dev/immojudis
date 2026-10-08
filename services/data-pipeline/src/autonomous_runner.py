@@ -279,6 +279,45 @@ def finish_source(db_url: str, run_id: str) -> None:
 
 def record_source_presence(db, run_id: str, source: str, availability: str, complete: bool) -> None:
     # Only a certified full inventory can establish absence. No deletion follows it.
+    # New deployments can provide the compact projection without making the
+    # Python rollout depend on migration order. Until that projection exists,
+    # retain the legacy raw_payload path byte-for-byte for compatibility with
+    # existing views and older databases.
+    compact_objects = db.execute(
+        "select to_regclass(%s), to_regprocedure(%s)",
+        (
+            "app_private.auction_sale_source_presence",
+            "app_private.auction_sale_source_presence_json(uuid)",
+        ),
+    ).fetchone()
+    if compact_objects and compact_objects[0] and compact_objects[1]:
+        db.execute("""insert into app_private.auction_sale_source_presence(
+            sale_id, source_name, availability, state, attempted_at, checked_at, run_id, legacy_raw)
+          select s.id, %s::text, %s::text,
+            case when %s then case when exists(
+              select 1 from public.auction_collection_items i
+              where i.run_id=%s and (i.source_url=s.source_url or i.canonical_source_url=s.source_url)
+            ) then 'present' else 'absent' end else null end,
+            now(), case when %s then now() else null end, %s::text
+          from public.auction_sales s
+          where s.source_name=%s
+             or exists(select 1 from public.auction_sale_source_presence p
+                where p.sale_id=s.id and p.source_name=%s::text)
+             or exists(select 1 from jsonb_array_elements(case when jsonb_typeof(s.observations)='array'
+                then s.observations else '[]'::jsonb end) o where o.value->>'source_name'=%s)
+             or exists(select 1 from public.auction_collection_items i
+                where i.run_id=%s and i.canonical_source_url=s.source_url)
+          on conflict (sale_id, source_name) do update set
+            availability=excluded.availability,
+            state=case when %s then excluded.state else state end,
+            attempted_at=excluded.attempted_at,
+            checked_at=case when %s then excluded.checked_at else checked_at end,
+            run_id=excluded.run_id,
+            legacy_raw=false""",
+            (source, availability, complete, run_id, complete, run_id,
+             source, source, source, run_id, complete, complete),
+        )
+        return
     db.execute("""update public.auction_sales s set raw_payload=jsonb_set(
         coalesce(s.raw_payload,'{}'),'{source_presence}',
         coalesce(s.raw_payload->'source_presence','{}') || jsonb_build_object(%s::text,

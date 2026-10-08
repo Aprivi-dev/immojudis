@@ -227,6 +227,53 @@ def test_paid_predictions_are_reserved_before_use_and_budget_deferral_preserves_
             db.rollback()
 
 
+def test_source_presence_uses_compact_projection_when_available():
+    from src.autonomous_runner import record_source_presence
+
+    calls = []
+
+    class Result:
+        def fetchone(self):
+            return (
+                "app_private.auction_sale_source_presence",
+                "app_private.auction_sale_source_presence_json(uuid)",
+            )
+
+    class CompactDb:
+        def execute(self, statement, params=None):
+            calls.append((statement, params))
+            if "to_regclass" in statement:
+                return Result()
+            return Result()
+
+    record_source_presence(CompactDb(), "run-1", "licitor", "available", True)
+
+    assert len(calls) == 2
+    assert "insert into app_private.auction_sale_source_presence" in calls[1][0]
+    assert "update public.auction_sales" not in calls[1][0]
+    assert calls[1][1][0:3] == ("licitor", "available", True)
+
+
+def test_source_presence_keeps_legacy_writer_until_projection_helper_exists():
+    from src.autonomous_runner import record_source_presence
+
+    calls = []
+
+    class Result:
+        def fetchone(self):
+            return ("app_private.auction_sale_source_presence", None)
+
+    class LegacyDb:
+        def execute(self, statement, params=None):
+            calls.append((statement, params))
+            return Result()
+
+    record_source_presence(LegacyDb(), "run-1", "licitor", "unavailable", False)
+
+    assert "update public.auction_sales" in calls[1][0]
+    assert "auction_sale_source_presence" not in calls[1][0]
+
+
 def test_source_outage_never_establishes_absence_or_deletes_listing():
     from src.autonomous_runner import record_source_presence
     url = os.getenv('PIPELINE_TEST_DB_URL')
