@@ -539,6 +539,106 @@ def pdf_enrichment_input_hash_for_sale(
     return "pipeline_v2:" + revision
 
 
+def _coalesce_queued_display_revisions(
+    connection: Any,
+    jobs: list[dict[str, object]],
+) -> set[tuple[str, str, str]]:
+    """Re-key one queued display job instead of creating a superseded row.
+
+    A source refresh can arrive while an older display revision is still
+    queued.  The claim RPC intentionally preserves that older row as an audit
+    cancellation, but doing so for every refresh creates avoidable churn and
+    lets the queue spend its capacity cancelling work.  Re-key only queued
+    display jobs, never running/failed jobs, and lock the selected row in the
+    caller's publication transaction so a concurrent claim cannot race the
+    rewrite.  The unique revision constraint still remains the final guard.
+    """
+    candidates: dict[tuple[str, str], dict[str, object]] = {}
+    for job in jobs:
+        if job.get("job_type") != "display_description":
+            continue
+        source_url = str(job.get("source_url") or "")
+        input_hash = str(job.get("input_hash") or "")
+        if not source_url or not input_hash:
+            continue
+        candidates[(source_url, "display_description")] = job
+    if not candidates:
+        return set()
+
+    values = ",".join("(%s,%s,%s,%s)" for _ in candidates)
+    params: list[object] = []
+    for (source_url, job_type), job in candidates.items():
+        params.extend((source_url, job_type, str(job["input_hash"]), int(job.get("priority") or 0)))
+    # A claim RPC can lock the same queued row between the candidate scan and
+    # the update.  Keep the rewrite in a savepoint so a concurrent unique
+    # revision insert cannot abort the publication transaction; the normal
+    # insert path below remains the final idempotency guard.
+    savepoint = "coalesce_display_revision"
+    connection.execute(f"savepoint {savepoint}")
+    try:
+        rows = connection.execute(
+            f"""with incoming(source_url, job_type, input_hash, priority) as (
+                  values {values}
+                ), candidates as (
+                  select queued.id, incoming.input_hash, incoming.priority
+                    from incoming
+                    cross join lateral (
+                      select queued_row.id
+                        from public.auction_enrichment_jobs queued_row
+                       where queued_row.source_url=incoming.source_url
+                         and queued_row.job_type=incoming.job_type
+                         and queued_row.status='queued'
+                         and queued_row.input_hash <> incoming.input_hash
+                       order by queued_row.created_at desc, queued_row.id desc
+                       for update skip locked
+                       limit 1
+                    ) queued
+                   where not exists (
+                     select 1 from public.auction_enrichment_jobs exact
+                      where exact.source_url=incoming.source_url
+                        and exact.job_type=incoming.job_type
+                        and exact.input_hash=incoming.input_hash
+                   )
+                ), updated as (
+                  update public.auction_enrichment_jobs queued
+                     set input_hash=candidates.input_hash,
+                         priority=candidates.priority,
+                         status='queued',
+                         attempt_count=0,
+                         locked_at=null,
+                         completed_at=null,
+                         next_attempt_at=statement_timestamp(),
+                         updated_at=statement_timestamp(),
+                         last_error=null
+                    from candidates
+                   where queued.id=candidates.id
+                     and queued.status='queued'
+                     and queued.input_hash <> candidates.input_hash
+                     and not exists (
+                       select 1 from public.auction_enrichment_jobs exact
+                        where exact.source_url=queued.source_url
+                          and exact.job_type=queued.job_type
+                          and exact.input_hash=candidates.input_hash
+                     )
+                  returning queued.source_url, queued.job_type, queued.input_hash
+                )
+                select source_url, job_type, input_hash from updated""",
+            tuple(params),
+        ).fetchall()
+    except Exception as exc:
+        connection.execute(f"rollback to savepoint {savepoint}")
+        if psycopg is None or not isinstance(exc, psycopg.errors.UniqueViolation):
+            raise
+        LOGGER.warning("Queued display revision coalescing lost a concurrent row race; enqueueing a new row")
+        rows = []
+    finally:
+        connection.execute(f"release savepoint {savepoint}")
+    return {
+        (str(source_url), str(job_type), str(input_hash))
+        for source_url, job_type, input_hash in rows
+    }
+
+
 def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> None:
     from src.enrichment.extract_structured import needs_fact_extraction
 
@@ -569,7 +669,26 @@ def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> Non
                          "priority": priority})
     if jobs:
         if _PUBLICATION_CONNECTION.get() is not None:
-            _transaction_write("auction_enrichment_jobs", jobs, "source_url,job_type,input_hash", ignore_conflicts=True)
+            connection = _PUBLICATION_CONNECTION.get()
+            coalesced = _coalesce_queued_display_revisions(connection, jobs)
+            coalesced_keys = {
+                (source_url, job_type)
+                for source_url, job_type, _ in coalesced
+            }
+            pending = [
+                job for job in jobs
+                if (
+                    str(job.get("source_url") or ""),
+                    str(job.get("job_type") or ""),
+                ) not in coalesced_keys
+            ]
+            if pending:
+                _transaction_write(
+                    "auction_enrichment_jobs",
+                    pending,
+                    "source_url,job_type,input_hash",
+                    ignore_conflicts=True,
+                )
         else:
             _postgrest_upsert(url, key, "auction_enrichment_jobs", jobs, "source_url,job_type,input_hash")
 
@@ -3793,6 +3912,114 @@ KNOWN_SALE_DETAIL_SELECT = ",".join(
         "raw_payload",
     )
 )
+# The REST fallback keeps the historical projection above because PostgREST
+# cannot express the JSONB allow-list below.  The direct PostgreSQL preflight
+# only needs fields used by the source fallback and enrichment preservation;
+# forwarding arbitrary scraper payload keys here was the main source of the
+# full-snapshot egress.  Keep the list explicit so a new preservation contract
+# has to opt in rather than silently re-expanding every row.
+KNOWN_SALE_RAW_PAYLOAD_KEYS = (
+    "source_checks",
+    "source_checks_by_source",
+    "source_presence",
+    # Vench's source-contract projection is consumed again when a cold worker
+    # restores a known listing.  Keep the complete contract together so a
+    # bounded snapshot cannot silently downgrade a paywalled source row.
+    "source_property_features",
+    "source_property_feature_evidence",
+    "source_property_features_meta",
+    "source_procedure_profile",
+    "source_field_observations",
+    "source_evidence",
+    "source_evidence_provenance",
+    "source_energy_diagnostics",
+    "source_blocks",
+    "source_conflicts",
+    "source_images",
+    "raw_image_url",
+    "source_description",
+    "source_factual_snapshot",
+    "source_identity_mismatch",
+    "source_detail_status",
+    "source_content_changed",
+    "source_content_change_reason",
+    "source_operational_changed",
+    "superseded_analysis",
+    "superseded_document_analysis",
+    "publication_identity_conflict",
+    "publication_conflict_evidence",
+    "document_analysis",
+    "document_facts_version",
+    "starting_price_extraction",
+    "surface_extraction",
+    "surface_analysis",
+    "land_surface_extraction",
+    "investment_analysis",
+    "llm_extraction",
+    "llm_fact_extraction",
+    "llm_fact_prompt_version",
+    "llm_display_prompt_version",
+    "llm_fact_coverage",
+    "llm_fact_input_key",
+    "llm_fact_context_manifest",
+    "llm_fact_context_coverage",
+    "llm_display_description",
+    "llm_display_description_word_count",
+    "llm_display_status",
+    "llm_display_model",
+    "llm_display_origin",
+    "llm_display_quality_version",
+    "llm_display_source_constraints",
+    "llm_display_evidence_check",
+    "llm_prompt_version",
+    "llm_due_diligence",
+    "pdf_fact_provenance",
+    "pdf_sale_date_extraction",
+    "pdf_visit_dates_extraction",
+    "pdf_energy_diagnostics",
+    "pdf_energy_diagnostics_candidates",
+    "pdf_surface_candidates",
+    "pdf_land_surface_candidates",
+    "pdf_rooms_candidates",
+    "pdf_bedrooms_candidates",
+    "pdf_occupancy_candidates",
+    "pdf_multi_lot_guard",
+    "rooms_bedrooms_conflict_evidence",
+)
+KNOWN_SALE_RAW_PAYLOAD_PROJECTION = "jsonb_strip_nulls(jsonb_build_object(" + ",".join(
+    f"'{key}',raw_payload->'{key}'" for key in KNOWN_SALE_RAW_PAYLOAD_KEYS
+) + ")) as raw_payload"
+KNOWN_SALE_POSTGRES_SELECT = ",".join(
+    (
+        KNOWN_SALE_DETAIL_SELECT.rsplit(",raw_payload", 1)[0],
+        KNOWN_SALE_RAW_PAYLOAD_PROJECTION,
+    )
+)
+
+
+def _known_sale_postgres_select(*, compact_presence: bool) -> str:
+    """Build the bounded snapshot projection for the active DB schema.
+
+    The compact source-presence migration replaces the catalogue-view JSON
+    expression with a SECURITY DEFINER helper.  Direct worker snapshots read
+    ``auction_sales`` rather than those views, so hydrate the same projection
+    here only after the helper's presence has been confirmed.
+    """
+    if not compact_presence:
+        return KNOWN_SALE_POSTGRES_SELECT
+    compact_payload = (
+        "jsonb_set("
+        f"{KNOWN_SALE_RAW_PAYLOAD_PROJECTION.removesuffix(' as raw_payload')},"
+        "'{source_presence}',"
+        "coalesce(app_private.auction_sale_source_presence_json(id),'{}'::jsonb),"
+        "true) as raw_payload"
+    )
+    return ",".join(
+        (
+            KNOWN_SALE_DETAIL_SELECT.rsplit(",raw_payload", 1)[0],
+            compact_payload,
+        )
+    )
 # Enrichment writes the full record back: a partial SELECT would erase price,
 # procedure, dates and other facts that the worker did not actually re-extract.
 DATA_REFRESH_SALE_SELECT = ",".join(dict.fromkeys((
@@ -3846,12 +4073,60 @@ def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
         # preflight snapshot there too, so a Data API outage cannot stop a
         # collection before the first source is scraped.
         with _postgres_connect(str(db_url)) as db:
+            # Keep aliases and every keyset page on one MVCC snapshot.  The
+            # previous one-shot SELECT had this property implicitly; setting
+            # REPEATABLE READ before the first read preserves it after the
+            # egress-bounded pagination change.
+            db.execute("set transaction isolation level repeatable read")
+            compact_presence = db.execute(
+                "select to_regclass(%s), to_regprocedure(%s)",
+                (
+                    "app_private.auction_sale_source_presence",
+                    "app_private.auction_sale_source_presence_json(uuid)",
+                ),
+            ).fetchone()
+            use_compact_presence = bool(
+                compact_presence
+                and compact_presence[0]
+                and compact_presence[1]
+            )
+            postgres_select = _known_sale_postgres_select(
+                compact_presence=use_compact_presence,
+            )
             reviewed_aliases = load_reviewed_aliases(db)
-            rows = db.execute(
-                f"select to_jsonb(sale) from (select {KNOWN_SALE_DETAIL_SELECT} "
-                "from public.auction_sales) sale"
-            ).fetchall()
-        all_rows = [row[0] for row in rows]
+            all_rows = []
+            last_id: str | None = None
+            while True:
+                if last_id is None:
+                    query = (
+                        f"select to_jsonb(sale) from (select {postgres_select} "
+                        "from public.auction_sales where id is not null "
+                        "order by id limit %s) sale"
+                    )
+                    params = (KNOWN_SALE_DETAIL_PAGE_SIZE,)
+                else:
+                    query = (
+                        f"select to_jsonb(sale) from (select {postgres_select} "
+                        "from public.auction_sales where id is not null and id > %s::uuid "
+                        "order by id limit %s) sale"
+                    )
+                    params = (last_id, KNOWN_SALE_DETAIL_PAGE_SIZE)
+                rows = db.execute(query, params).fetchall()
+                if not rows:
+                    break
+                all_rows.extend(row[0] for row in rows)
+                if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
+                    break
+                page_ids = [
+                    str(row[0].get("id"))
+                    for row in rows
+                    if isinstance(row[0], dict) and row[0].get("id")
+                ]
+                if not page_ids or page_ids[-1] == last_id:
+                    raise ReviewedAliasRegistryError(
+                        "Known sale detail snapshot could not advance its id cursor"
+                    )
+                last_id = page_ids[-1]
     else:
         if not url or not key:
             return {}

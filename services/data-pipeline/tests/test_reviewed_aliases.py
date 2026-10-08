@@ -30,6 +30,8 @@ class _Connection:
         self.statements.append(statement)
         if "list_reviewed_publication_aliases" in statement:
             return _Result(self.alias_rows)
+        if "select s.id" in statement:
+            return _Result([(row["id"],) for row in self.sale_rows])
         if "select to_jsonb(s)" in statement:
             return _Result([(row,) for row in self.sale_rows])
         raise AssertionError(f"unexpected SQL in resolver test: {statement}")

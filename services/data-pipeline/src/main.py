@@ -170,6 +170,16 @@ KNOWN_UNCHANGED_BACKFILL_FIELDS = (
 
 KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "source_presence",
+    # Preserve the structured source contract used by Vench and the source
+    # proof/readiness checks when a cold pass restores a known sale.
+    "source_property_features",
+    "source_property_feature_evidence",
+    "source_property_features_meta",
+    "source_procedure_profile",
+    "source_field_observations",
+    "source_evidence",
+    "source_evidence_provenance",
+    "source_energy_diagnostics",
     "source_blocks",
     "source_images",
     "raw_image_url",
