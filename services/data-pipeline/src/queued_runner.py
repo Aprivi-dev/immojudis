@@ -89,7 +89,7 @@ ENRICHMENT_FAMILY = "enrichment"
 # claims for display/fact/PDF jobs instead of allowing a persistent detail
 # backlog to reduce the general lane to one claim in six.
 ENRICHMENT_FAMILY_CYCLE = (SOURCE_DETAIL_FAMILY,) * 3 + (ENRICHMENT_FAMILY,)
-ENRICHMENT_MAX_JOBS = 90
+ENRICHMENT_MAX_JOBS = 180
 ENRICHMENT_BUDGET_SECONDS = 1200
 PDF_FINALIZATION_MARGIN_FRACTION = PDF_FINALIZATION_MARGIN_SECONDS / ENRICHMENT_BUDGET_SECONDS
 ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE = 2
@@ -1386,8 +1386,8 @@ def _read_due_enrichment_family_counts() -> dict[str, int]:
     eligibility join (retention, source state, and superseded revisions).  It
     is only a lane-ratio hint: every claim still applies the authoritative SQL
     eligibility checks, and an empty preferred lane immediately falls back to
-    the other family.  An unavailable read falls back to the conservative
-    historical source-detail-first cycle.
+    the other family.  An unavailable read is handled by the caller with a
+    neutral cycle so a transient telemetry failure cannot starve one family.
     """
     settings = load_settings()
     db_url = str(settings.get("supabase_db_url") or "")
@@ -1428,14 +1428,19 @@ def _read_due_enrichment_family_counts() -> dict[str, int]:
 def _enrichment_family_cycle(due_counts: dict[str, int]) -> tuple[str, ...]:
     """Choose a bounded lane ratio from one due-backlog estimate.
 
-    The two lanes alternate only when the estimated due general backlog is
-    larger.  The estimate is advisory and cannot make a family unclaimable:
-    every preferred-lane miss immediately tries the alternate family.
-    Source-detail therefore remains guaranteed at least every fourth slot, while
-    a large general backlog cannot be drained at the historical one-in-six rate.
+    The two lanes alternate when the estimated due general backlog is larger.
+    If the optional read is unavailable, use the neutral 1:1 cycle instead of
+    silently falling back to source-detail priority.  A degraded database
+    connection must not turn a transient telemetry failure into starvation of
+    display, fact, or PDF jobs.  The estimate is advisory and cannot make a
+    family unclaimable: every preferred-lane miss immediately tries the
+    alternate family.  When the estimate is available and source-detail is
+    larger, source-detail remains guaranteed at least every fourth slot.
     The SQL claim still applies its per-source round-robin ordering inside the
     detail lane.
     """
+    if not due_counts:
+        return GENERAL_BACKLOG_RELIEF_CYCLE
     source_detail = max(0, int(due_counts.get(SOURCE_DETAIL_FAMILY, 0)))
     enrichment = max(0, int(due_counts.get(ENRICHMENT_FAMILY, 0)))
     if enrichment > source_detail:
