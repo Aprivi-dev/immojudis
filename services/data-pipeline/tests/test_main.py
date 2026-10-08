@@ -104,6 +104,44 @@ def test_known_payload_hydration_fails_closed_without_rich_row() -> None:
     assert known[source_url]["raw_payload"] == {"source_checks": {source_url: {}}}
 
 
+def test_known_payload_hydration_marks_aliases_returned_by_fetch_as_loaded() -> None:
+    alias_url = "https://example.test/alias"
+    canonical_url = "https://example.test/canonical"
+    known = {
+        alias_url: {"raw_payload": {"source_presence": {}}},
+        canonical_url: {"raw_payload": {"source_presence": {}}},
+    }
+    hydrated = {
+        alias_url: {"raw_payload": {"source_sale_schedule": {"alias": True}}},
+        canonical_url: {"raw_payload": {"source_sale_schedule": {"canonical": True}}},
+    }
+    loaded: set[str] = set()
+    calls: list[dict[str, object]] = []
+
+    def fetch_details(**kwargs):
+        calls.append(kwargs)
+        return hydrated
+
+    main._hydrate_known_payloads_for_rows(
+        [{"source_url": alias_url}],
+        known,
+        loaded,
+        fetch_details=fetch_details,
+        lock=Lock(),
+    )
+    main._hydrate_known_payloads_for_rows(
+        [{"source_url": canonical_url}],
+        known,
+        loaded,
+        fetch_details=fetch_details,
+        lock=Lock(),
+    )
+
+    assert len(calls) == 1
+    assert loaded == {alias_url, canonical_url}
+    assert known[canonical_url] == hydrated[canonical_url]
+
+
 def test_run_scraper_uses_killable_source_worker_when_enabled(monkeypatch) -> None:
     calls: dict[str, object] = {}
     expected = ScrapeResult([], [], {"coverage_complete": True})
@@ -1330,6 +1368,89 @@ def test_sparse_known_hydration_preserves_geocode_and_tribunal_evidence() -> Non
 
     assert raw["geocode"] == geocode
     assert raw["tribunal_assignment"] == tribunal_assignment
+
+
+def test_sparse_known_hydration_preserves_sale_schedule_and_date_precision() -> None:
+    source_url = "https://example.test/sparse-retention"
+    retention_metadata = {
+        "source_sale_schedule": {
+            "opens_at": "2027-03-15T10:00:00Z",
+            "closes_at": "2027-03-15T14:00:00Z",
+        },
+        "date_precision": "day",
+        "sale_date_precision": "source_day",
+    }
+    known = {source_url: {"raw_payload": retention_metadata}}
+
+    unchanged = {
+        "_known_unchanged": True,
+        "source_detail_status": "complete",
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+    failed = {
+        "_detail_fetch_failed": True,
+        "source_detail_status": "failed",
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+    sparse = {
+        "source_detail_status": "restricted",
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+
+    assert main._hydrate_known_unchanged_sales([unchanged, failed], known) == 1
+    main._preserve_known_enrichment_payloads([sparse], known)
+
+    for sale in (unchanged, failed, sparse):
+        for key, value in retention_metadata.items():
+            assert sale[key] == value
+
+
+def test_fresh_complete_source_does_not_restore_stale_source_metadata() -> None:
+    source_url = "https://example.test/fresh-land-source"
+    known = {
+        source_url: {
+            "raw_payload": {
+                "source_sale_schedule": {"closes_at": "2027-03-15T14:00:00Z"},
+                "date_precision": "day",
+                "sale_date_precision": "source_day",
+                "operator_land_surface_conflict": True,
+                "operator_land_surface_scope": "copropriété",
+                "source_display_constraints": ["Surface terrain à vérifier"],
+            }
+        }
+    }
+    fresh = {
+        "source_detail_status": "complete",
+        "source_name": "agrasc",
+        "source_url": source_url,
+        "sale_date": "2027-04-20T12:00:00Z",
+        "description": "La nouvelle source décrit le bien sans conflit de surface.",
+    }
+    sparse = {
+        "source_detail_status": "restricted",
+        "source_name": "agrasc",
+        "source_url": source_url,
+    }
+
+    main._preserve_known_enrichment_payloads([fresh], known)
+    main._preserve_known_enrichment_payloads([sparse], known)
+
+    assert "source_sale_schedule" not in fresh
+    assert "date_precision" not in fresh
+    assert "sale_date_precision" not in fresh
+    assert "operator_land_surface_conflict" not in fresh
+    assert "operator_land_surface_scope" not in fresh
+    assert "source_display_constraints" not in fresh
+    assert sparse["operator_land_surface_conflict"] is True
+    assert sparse["operator_land_surface_scope"] == "copropriété"
+    assert sparse["source_display_constraints"] == ["Surface terrain à vérifier"]
+
+    assert sparse["source_sale_schedule"] == {"closes_at": "2027-03-15T14:00:00Z"}
+    assert sparse["date_precision"] == "day"
+    assert sparse["sale_date_precision"] == "source_day"
 
 
 def test_known_pdf_surface_is_preserved_before_incremental_publication() -> None:

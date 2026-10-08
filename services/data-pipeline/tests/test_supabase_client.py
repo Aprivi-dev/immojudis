@@ -253,11 +253,25 @@ def test_known_sale_projection_keeps_source_contract_and_compact_presence() -> N
         "source_evidence",
         "source_evidence_provenance",
         "source_energy_diagnostics",
+        "source_sale_schedule",
+        "date_precision",
+        "sale_date_precision",
+        "operator_land_surface_conflict",
+        "operator_land_surface_scope",
+        "source_display_constraints",
         "geocode",
         "tribunal_assignment",
     }
 
     assert required.issubset(set(supabase_client.KNOWN_SALE_RAW_PAYLOAD_KEYS))
+    for field in (
+        "latitude",
+        "longitude",
+        "risk_notes",
+        "investment_score",
+        "investment_summary",
+    ):
+        assert field in supabase_client.KNOWN_SALE_DETAIL_SELECT.split(",")
     compact_select = supabase_client._known_sale_postgres_select(compact_presence=True)
     assert "app_private.auction_sale_source_presence_json(id)" in compact_select
     for key in required:

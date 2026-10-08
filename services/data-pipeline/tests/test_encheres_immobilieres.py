@@ -202,3 +202,39 @@ def test_list_timeout_does_not_discard_later_reachable_page(monkeypatch) -> None
     assert result.coverage["list_fetch_failures"] == [
         {"url": f"{source.LIST_URL}?page=2", "error": "list page timed out"}
     ]
+
+
+def test_non_transient_list_errors_stop_without_scanning_next_page(monkeypatch) -> None:
+    error_factories = (
+        lambda request: httpx.HTTPStatusError("403 Forbidden", request=request, response=httpx.Response(403, request=request)),
+        lambda request: httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed", request=request),
+    )
+
+    monkeypatch.setattr(source, "load_settings", _settings)
+    monkeypatch.setattr(source, "TARGET_DEPARTMENTS", ("33",))
+    monkeypatch.setattr(source, "_enrich_sale_from_detail", lambda *args, **kwargs: None)
+
+    def run_case(make_error):
+        calls: list[str] = []
+
+        class Client:
+            def __init__(self, **kwargs) -> None:
+                pass
+
+            def get(self, url: str) -> str:
+                calls.append(url)
+                request = httpx.Request("GET", url)
+                raise make_error(request)
+
+            def coverage_metrics(self) -> dict[str, object]:
+                return {}
+
+        monkeypatch.setattr(source, "PoliteHttpClient", Client)
+        result = source.scrape_encheres_immobilieres_aquitaine_result(max_pages=100)
+
+        assert calls == [source.LIST_URL]
+        assert result.coverage["coverage_complete"] is False
+        assert len(result.coverage["list_fetch_failures"]) == 1
+
+    for make_error in error_factories:
+        run_case(make_error)
