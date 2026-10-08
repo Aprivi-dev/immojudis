@@ -291,14 +291,15 @@ def record_source_presence(db, run_id: str, source: str, availability: str, comp
         ),
     ).fetchone()
     if compact_objects and compact_objects[0] and compact_objects[1]:
-        db.execute("""insert into app_private.auction_sale_source_presence(
+        db.execute("""insert into app_private.auction_sale_source_presence as current_row(
             sale_id, source_name, availability, state, attempted_at, checked_at, run_id, legacy_raw)
           select s.id, %s::text, %s::text,
             case when %s then case when exists(
               select 1 from public.auction_collection_items i
               where i.run_id=%s and (i.source_url=s.source_url or i.canonical_source_url=s.source_url)
             ) then 'present' else 'absent' end else null end,
-            now(), case when %s then now() else null end, %s::text
+            now(), case when %s then now() else null end, %s::text,
+            false
           from public.auction_sales s
           where s.source_name=%s
              or exists(select 1 from public.auction_sale_source_presence p
@@ -309,9 +310,9 @@ def record_source_presence(db, run_id: str, source: str, availability: str, comp
                 where i.run_id=%s and i.canonical_source_url=s.source_url)
           on conflict (sale_id, source_name) do update set
             availability=excluded.availability,
-            state=case when %s then excluded.state else state end,
+            state=case when %s then excluded.state else current_row.state end,
             attempted_at=excluded.attempted_at,
-            checked_at=case when %s then excluded.checked_at else checked_at end,
+            checked_at=case when %s then excluded.checked_at else current_row.checked_at end,
             run_id=excluded.run_id,
             legacy_raw=false""",
             (source, availability, complete, run_id, complete, run_id,

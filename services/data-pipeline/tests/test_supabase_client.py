@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -259,6 +260,34 @@ def test_known_sale_projection_keeps_source_contract_and_compact_presence() -> N
     assert "app_private.auction_sale_source_presence_json(id)" in compact_select
     for key in required:
         assert f"raw_payload->'{key}'" in compact_select
+
+
+def test_known_sale_projection_executes_in_disposable_postgres() -> None:
+    url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not url:
+        pytest.skip("Requires disposable PostgreSQL")
+
+    from psycopg.types.json import Jsonb
+
+    payload = {
+        "source_checks": {"example": {"checked_at": "now"}},
+        "source_property_features": {"surface_m2": 100},
+        "source_presence": None,
+        "llm_display_description": None,
+        "unlisted_payload": {"must_not_be_forwarded": True},
+    }
+    with supabase_client._postgres_connect(url) as db:
+        row = db.execute(
+            "select "
+            f"{supabase_client.KNOWN_SALE_RAW_PAYLOAD_PROJECTION} "
+            "from (values (%s::jsonb)) as input(raw_payload)",
+            (Jsonb(payload),),
+        ).fetchone()
+
+    assert row == ({
+        "source_checks": {"example": {"checked_at": "now"}},
+        "source_property_features": {"surface_m2": 100},
+    },)
 
 
 def test_run_lifecycle_uses_postgres_after_cloudflare_521(monkeypatch) -> None:
