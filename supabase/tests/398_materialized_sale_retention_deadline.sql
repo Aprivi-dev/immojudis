@@ -388,19 +388,25 @@ select is(
 reset role;
 
 select ok(
-  position('retention_deadline <= p_now' in lower(pg_get_functiondef(
+  position('catalogue_expiry_materialized' in lower(pg_get_functiondef(
     'public.purge_expired_auction_sales(timestamptz,integer)'::regprocedure
   ))) > 0
-  and position('app_private.sale_retention_deadline(' in lower(pg_get_functiondef(
+  and position('catalogue_expiry_deadline <= p_now' in lower(pg_get_functiondef(
+    'public.purge_expired_auction_sales(timestamptz,integer)'::regprocedure
+  ))) > 0
+  and position('sale.status = ''postponed''' in lower(pg_get_functiondef(
+    'public.purge_expired_auction_sales(timestamptz,integer)'::regprocedure
+  ))) > 0
+  and position('app_private.sale_catalogue_expiry(' in lower(pg_get_functiondef(
+    'public.purge_expired_auction_sales(timestamptz,integer)'::regprocedure
+  ))) > 0
+  and position('retention_deadline <= p_now' in lower(pg_get_functiondef(
     'public.purge_expired_auction_sales(timestamptz,integer)'::regprocedure
   ))) = 0
-  and position('sale_procedure ?' in lower(pg_get_functiondef(
-    'public.purge_expired_auction_sales(timestamptz,integer)'::regprocedure
-  ))) = 0
-  and position('raw_payload ?' in lower(pg_get_functiondef(
+  and position('+ interval ''24 hours''' in lower(pg_get_functiondef(
     'public.purge_expired_auction_sales(timestamptz,integer)'::regprocedure
   ))) = 0,
-  'purge uses the indexed deadline instead of scanning retention JSON'
+  'purge uses the indexed catalogue deadline with a postponed-only compatibility fallback'
 );
 
 select ok(
