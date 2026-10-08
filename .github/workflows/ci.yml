@@ -136,6 +136,17 @@ jobs:
         run: npx --yes supabase@2.110.0 db reset --local --no-seed --log-level error
       - name: Detect migration drift
         run: npm run check:schema-drift
+      - name: Apply local concurrent index operations
+        env:
+          POSTGRES_SSL: disable
+        run: |
+          set -euo pipefail
+          status_path="$(mktemp)"
+          trap 'rm -f "$status_path"' EXIT
+          npx --yes supabase@2.110.0 status --output json > "$status_path"
+          database_url="$(jq -r '.DB_URL // empty' "$status_path")"
+          test -n "$database_url"
+          SUPABASE_DB_URL="$database_url" node scripts/apply-supabase-concurrent-index-operations.mjs
       - name: Run concurrent quota test
         run: npm run test:db-concurrency
       - name: Run database tests

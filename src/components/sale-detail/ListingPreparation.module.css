@@ -1,0 +1,370 @@
+.section {
+  max-width: 1260px;
+  margin: 30px auto 0;
+  padding: 28px;
+  border: 1px solid #e3dfd7;
+  border-radius: 24px;
+  background: #fffefa;
+  color: #132238;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 7px;
+  color: #806133;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.header h2 {
+  margin: 0;
+  font-family: var(--font-display), Georgia, serif;
+  font-size: clamp(25px, 3vw, 33px);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
+.summaryIntro {
+  max-width: 660px;
+  margin: 10px 0 0;
+  color: #536073;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.documentLink,
+.textLink,
+.textButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  color: #735522;
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+
+.documentLink {
+  flex-shrink: 0;
+}
+.documentLink svg {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+.textButton {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.documentLink:focus-visible,
+.textLink:focus-visible,
+.textButton:focus-visible,
+.secondaryButton:focus-visible {
+  outline: 3px solid #a87936;
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.coverageSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  margin-top: 22px;
+  padding: 14px 0;
+  border-block: 1px solid #e7e3db;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.coverageSummary p {
+  margin: 0;
+  color: #536073;
+}
+.coverageSummary ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.coverageSummary strong {
+  margin-right: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.essentialNotice {
+  margin: 14px 0 0;
+  color: #78582b;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.remaining {
+  margin-top: 24px;
+  padding: 22px;
+  border-radius: 16px;
+  background: #f5f2eb;
+}
+
+.remainingHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+}
+.remainingHeader h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.remainingHeader p {
+  margin: 6px 0 0;
+  color: #536073;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.remainingHeader .textButton {
+  flex-shrink: 0;
+}
+
+.priorityList {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.priorityList li {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.priorityList strong {
+  font-weight: 650;
+}
+.priorityList span {
+  color: #536073;
+  overflow-wrap: anywhere;
+}
+.remainingActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin-top: 20px;
+}
+
+.dialogContent {
+  max-height: min(88vh, 740px);
+  width: calc(100vw - 32px);
+  max-width: 600px;
+  overflow-y: auto;
+  border-color: #e4dacb;
+  background: #fffdf9;
+  color: #132238;
+}
+
+.dialogContent [data-slot="dialog-title"] {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 25px;
+  letter-spacing: -0.02em;
+}
+
+.dialogContent [data-slot="dialog-description"] {
+  color: #607086;
+  line-height: 1.5;
+}
+
+.checklist {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid #edf0f2;
+  border-radius: 10px;
+  color: #405168;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.checkMark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: 3px;
+  border: 2px solid #c2904e;
+  border-radius: 50%;
+}
+
+.checklistComplete {
+  border-color: #c9e1d5 !important;
+  background: #f3fbf6;
+}
+
+.checklistComplete .checkMark {
+  width: 17px;
+  height: 17px;
+  margin-top: 0;
+  border: 0;
+  color: #2e755e;
+  font-weight: 800;
+  line-height: 17px;
+}
+
+.noteLabel {
+  display: grid;
+  gap: 3px;
+  color: #263951;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.noteLabel span {
+  color: #778598;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.noteInput {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #d8dfe6;
+  border-radius: 10px;
+  background: #fff;
+  color: #132238;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.noteInput {
+  min-height: 76px;
+  padding: 10px 12px;
+}
+
+.noteInput:focus {
+  border-color: #a47539;
+  box-shadow: 0 0 0 3px rgb(156 100 43 / 14%);
+}
+
+.dialogFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status {
+  min-height: 18px;
+  color: #5f7186;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.secondaryButton {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 9px 13px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.secondaryButton {
+  border: 1px solid #d1b17e;
+  background: #fff8ec;
+  color: #734b18;
+}
+
+.secondaryButton:hover {
+  background: #f7ead5;
+}
+
+@media (max-width: 760px) {
+  .section {
+    margin-top: 20px;
+    padding: 22px 18px;
+    border-radius: 20px;
+  }
+  .header {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .coverageSummary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 16px;
+  }
+  .coverageSummary ul {
+    gap: 5px 15px;
+  }
+  .remaining {
+    padding: 18px 15px;
+  }
+  .remainingHeader {
+    flex-direction: column;
+    gap: 0;
+  }
+  .priorityList {
+    grid-template-columns: 1fr;
+    gap: 13px;
+    margin-top: 10px;
+  }
+  .priorityList li + li {
+    border-top: 1px solid #e3dfd7;
+    padding-top: 12px;
+  }
+  .remainingActions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .dialogFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .secondaryButton {
+    width: 100%;
+    white-space: normal;
+  }
+}

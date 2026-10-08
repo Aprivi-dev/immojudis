@@ -5,7 +5,7 @@ select plan(1);
 
 insert into public.auction_sales (
   id, source_name, source_url, city, department, starting_price_eur,
-  status, latitude, longitude, sale_venue_type, sale_legal_framework,
+  status, sale_date, latitude, longitude, sale_venue_type, sale_legal_framework,
   sale_verification_status, raw_payload
 )
 select
@@ -13,6 +13,7 @@ select
   'sale-type-regression', 'https://example.test/sale-type-regression/' || i,
   'SaleTypeRegressionC230', 'Gironde', 50000 + i * 1000,
   case when i = 6 then 'past' else 'upcoming' end,
+  '2099-01-01 12:00:00Z'::timestamptz,
   case when i = 7 then null else 44.8 end, -0.6,
   case when i = 1 then 'tribunal' when i in (2,3,6,7) then 'notary' when i = 4 then 'unknown' else 'online' end,
   case when i = 3 then 'judicial_partition' when i = 2 then 'voluntary_notarial' else 'unknown' end,
@@ -27,13 +28,13 @@ declare
   actual_count integer;
 begin
   select count(*) into actual_count from public.search_auction_sales_preview_v2(p_city => 'SaleTypeRegressionC230');
-  if actual_count <> 5 then raise exception 'Catalogue must exclude past and ungeocoded rows'; end if;
+  if actual_count <> 6 then raise exception 'Catalogue must exclude past rows while retaining future coordinate-less rows'; end if;
 
   select * into result from public.search_auction_sales_preview_v2(
     p_city => 'SaleTypeRegressionC230', p_sale_venue_type => 'notary', p_sort => 'price_asc', p_limit => 1, p_offset => 1
   );
   if result.id is distinct from 'c2300000-0000-4000-8000-000000000003'::uuid
-    or result.total_count is distinct from 2::bigint
+    or result.total_count is distinct from 3::bigint
     or result.sale_venue_type is distinct from 'notary' then
     raise exception 'Family filtering and total count must precede pagination, regardless of legal framework';
   end if;

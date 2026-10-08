@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { TribunalsPage } from "@/routes/tribunaux";
 
 export const metadata: Metadata = {
-  title: "Statistiques des ventes judiciaires par tribunal",
+  title: "Statistiques Tribunaux",
   description:
-    "Fourchettes de mises à prix, délais observés et calendrier des ventes judiciaires suivies par tribunal.",
+    "Comparez les prix d’adjudication, les mises à prix et les résultats des ventes judiciaires par tribunal et type de bien, avec les effectifs et la méthode de calcul.",
   robots: { index: true, follow: true },
 };
 

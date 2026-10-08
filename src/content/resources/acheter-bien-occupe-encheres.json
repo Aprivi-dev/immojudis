@@ -1,0 +1,134 @@
+{
+  "slug": "acheter-bien-occupe-encheres",
+  "publishedAt": "2026-10-05",
+  "title": "Acheter un bien occupé aux enchères : sécuriser son analyse avant de miser",
+  "category": "Occupation",
+  "description": "Une méthode Immojudis pour qualifier l'occupation, chiffrer les scénarios et fixer une limite de mise prudente.",
+  "intro": [
+    "Dans une vente aux enchères, « occupé » peut désigner un locataire, le débiteur saisi, un tiers ou une situation encore inconnue. Ces cas n'ont ni le même calendrier ni le même coût.",
+    "L'enjeu est de convertir les indices du dossier en hypothèses vérifiables. Immojudis aide à repérer l'occupation, les pièces, les comparables et les postes à intégrer au plafond ; l'analyse juridique doit être confirmée avec l'avocat."
+  ],
+  "takeaways": [
+    "Confronter toute mention d'occupation au procès-verbal et au cahier des conditions de vente.",
+    "Budgéter délai de libération, trésorerie, travaux différés et frais possibles.",
+    "Préparer avocat, garantie et calendrier de paiement avant l'audience.",
+    "Garder un plafond conditionnel si les sources se contredisent."
+  ],
+  "sections": [
+    {
+      "id": "qualifier-occupation",
+      "title": "Qualifier précisément l'occupation",
+      "paragraphs": [
+        "Séparez le fait observé de l'interprétation. Une annonce peut reprendre un constat ancien tandis qu'une pièce mentionne un bail ou une procédure. « Inoccupé au constat » ne garantit donc pas que le logement sera libre à la remise des clés.",
+        "Classez le dossier en quatre hypothèses : libre à confirmer, loué avec bail, occupé par le saisi ou un tiers, et statut contradictoire. Cette qualification organise la lecture sans conclure sur les droits de l'occupant."
+      ],
+      "bullets": [
+        "Libre : vérifier date du constat, accès et remise des clés.",
+        "Loué : relever bail, terme, loyer, impayés et pièces fournies.",
+        "Occupé ou contradictoire : identifier le titre invoqué et suspendre le prix tant que les sources ne sont pas rapprochées."
+      ]
+    },
+    {
+      "id": "lire-pieces",
+      "title": "Lire les pièces avant de calculer",
+      "paragraphs": [
+        "Le procès-verbal décrit ce qui a été constaté ; le cahier fixe le cadre de la vente. Bail, quittances, diagnostics et décision de justice peuvent modifier le calendrier. Notez pour chaque fait sa source et sa date.",
+        "Dans Immojudis, le statut et les signaux textuels sont accompagnés d'un niveau de confiance et de limites. Utilisez-les comme une priorité de lecture : ouvrez les pièces citées et faites confirmer leurs effets avant tout engagement."
+      ],
+      "table": {
+        "headers": ["Question", "À rechercher", "Action"],
+        "rows": [
+          ["Qui occupe ?", "Constat, bail, déclaration, procédure", "Faire valider le scénario"],
+          ["Quelle jouissance ?", "Clause du cahier, titre, délai", "Fixer une date prudente"],
+          ["Quel revenu ?", "Loyer, charges, impayés documentés", "Ne retenir que le prouvé"]
+        ]
+      }
+    },
+    {
+      "id": "chiffrer-scenarios",
+      "title": "Chiffrer trois scénarios",
+      "paragraphs": [
+        "Établissez un budget « libre », « maintien temporaire » et « libération longue ». Pour chacun, additionnez prix envisagé, frais indiqués au dossier, travaux, assurance, charges non récupérables, financement et trésorerie jusqu'à la sortie. Déduisez un loyer seulement si sa perception est documentée.",
+        "Un délai supplémentaire peut repousser travaux et location, réduire la capacité de remboursement et imposer une réserve. Faites varier durée et travaux dans la simulation plutôt que d'appliquer une remise forfaitaire."
+      ],
+      "bullets": [
+        "Bas : liberté d'accès confirmée et travaux planifiables.",
+        "Central : délai intermédiaire et revenus partiellement incertains.",
+        "Haut : aucun loyer retenu, délai long et réserve renforcée ; le plafond doit rester compatible avec ce cas."
+      ],
+      "callout": {
+        "title": "Point de vigilance",
+        "text": "Une mise à prix basse n'est pas une valeur de marché. Tant que occupation, surface ou travaux sont incertains, elle ne doit pas guider seule l'enchère."
+      }
+    },
+    {
+      "id": "droits-calendrier",
+      "title": "Ne pas confondre acquisition et libération",
+      "paragraphs": [
+        "Dans une saisie immobilière, les enchères sont portées par un avocat inscrit au barreau du tribunal judiciaire concerné. Une garantie est remise avant l'audience, puis prix et frais doivent être réglés selon le calendrier légal et le cahier ; une défaillance peut provoquer réitération et intérêts.",
+        "Après l'adjudication, tout dépend de l'occupant et de ses droits opposables. Le code prévoit un titre d'expulsion dans certains cas, sous réserve du cahier et du paiement ou de la consignation. Une expulsion locative suit sa propre procédure et peut être reportée pendant la trêve hivernale."
+      ],
+      "bullets": [
+        "Demander à l'avocat quel document établit l'occupation et quel acte est envisageable.",
+        "Vérifier ce que la visite permet réellement d'observer.",
+        "Financer l'adjudication sans compter sur une revente ou un loyer hypothétique."
+      ]
+    },
+    {
+      "id": "immojudis-decision",
+      "title": "Utiliser Immojudis comme grille de décision",
+      "paragraphs": [
+        "Sur la fiche, commencez par identité, surface, type, mise à prix et occupation. Consultez documents, risques et observations de source. Les rapports d'opportunité, de marché ou de plafond rassemblent les éléments disponibles, avec leurs limites.",
+        "Les comparables DVF donnent un repère de transactions, pas la valeur certaine d'un bien occupé. Comparez type, surface, état et localisation, puis ajustez pour accès, occupation et délai. Une donnée absente devient une question à résoudre, non un chiffre à forcer."
+      ],
+      "table": {
+        "headers": ["À vérifier", "Décision"],
+        "rows": [
+          ["Pièces cohérentes, accès et travaux évalués", "Plafond écrit avec réserve"],
+          ["Occupation ou comparable incertain", "Scénario prudent ou report"],
+          ["Avocat, garantie et financement organisés", "Engagement possible dans la limite fixée"]
+        ]
+      }
+    },
+    {
+      "id": "checklist-finale",
+      "title": "La checklist de la veille",
+      "paragraphs": [
+        "Relisez une page de synthèse : identité, occupation et sources, scénarios, montant disponible, questions à l'avocat et plafond ferme. Elle doit permettre de décider sans improviser dans la salle.",
+        "Si un élément essentiel reste inconnu, reportez ou réduisez l'engagement. Immojudis rend ce choix explicite et comparable d'une vente à l'autre."
+      ],
+      "bullets": [
+        "Occupation et pièces officielles identifiées.",
+        "Délai traduit en trésorerie et calendrier.",
+        "Frais, travaux, financement et réserve additionnés.",
+        "Plafond écrit avant l'audience."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d'exécution, enchères et garantie (articles R. 322-40 et R. 322-41)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939147"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d'exécution, paiement et frais après adjudication (articles R. 322-56 à R. 322-58)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939111"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d'exécution, effets de l'adjudication (articles R. 322-64 et suivants)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939220"
+    },
+    {
+      "label": "Service-Public — Trêve hivernale et expulsion locative",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F34736"
+    },
+    {
+      "label": "ANIL — Vente d'un logement occupé et poursuite du bail",
+      "url": "https://www.anil.org/parole-expert-location-vente-logement-proprietaire"
+    },
+    {
+      "label": "DGFiP — Demandes de valeurs foncières (DVF)",
+      "url": "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres"
+    }
+  ]
+}

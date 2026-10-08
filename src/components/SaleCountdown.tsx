@@ -1,8 +1,14 @@
 import Clock from "lucide-react/dist/esm/icons/clock.js";
 import { useEffect, useState } from "react";
+import {
+  calendarDaysBetween,
+  parisDateKey,
+  resolveSaleCountdownTarget,
+} from "@/lib/sale-countdown";
+import type { AuctionSale } from "@/lib/types";
 
-function diffParts(target: Date, now: number) {
-  const ms = target.getTime() - now;
+function diffParts(target: number, now: number) {
+  const ms = target - now;
   if (ms <= 0) return null;
   const totalMinutes = Math.floor(ms / 60000);
   const days = Math.floor(totalMinutes / (60 * 24));
@@ -37,14 +43,17 @@ function tone(days: number | null): {
 }
 
 export function SaleCountdown({
-  date,
+  sale,
+  precisionUnknown = false,
   variant = "chip",
 }: {
-  date: string | null | undefined;
+  sale: AuctionSale;
+  precisionUnknown?: boolean;
   variant?: "chip" | "block";
 }) {
-  const target = date ? new Date(date) : null;
-  const valid = target && !isNaN(target.getTime());
+  const resolved = resolveSaleCountdownTarget(sale, { precisionUnknown });
+  const targetMs = resolved?.target?.getTime() ?? null;
+  const valid = targetMs != null && Number.isFinite(targetMs);
   const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
@@ -52,13 +61,19 @@ export function SaleCountdown({
     setNow(Date.now());
     const i = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(i);
-  }, [valid]);
+  }, [targetMs, valid]);
 
   if (!valid) {
-    if (variant === "chip") return null;
+    if (variant === "chip") {
+      return (
+        <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <Clock className="h-3 w-3" /> Échéance à confirmer
+        </span>
+      );
+    }
     return (
       <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
-        Date à confirmer
+        Échéance à confirmer
       </div>
     );
   }
@@ -71,22 +86,51 @@ export function SaleCountdown({
     );
   }
 
-  const parts = diffParts(target!, now);
-  const t = tone(parts ? parts.days : null);
+  const parts = diffParts(targetMs, now);
+  const dayRemaining =
+    resolved?.kind === "day" && resolved.dateOnly
+      ? calendarDaysBetween(parisDateKey(new Date(now)), resolved.dateOnly)
+      : null;
 
-  if (!parts) {
+  if (resolved?.kind === "day" && dayRemaining != null) {
+    if (dayRemaining < 0 || !parts) {
+      return resolved.deadlineKnown === false ? (
+        <Confirmation variant={variant} />
+      ) : (
+        <PastSale variant={variant} />
+      );
+    }
+
+    const t = tone(dayRemaining);
+    const label =
+      dayRemaining === 0
+        ? "Aujourd'hui · heure à confirmer"
+        : `${dayRemaining} jours · heure à confirmer`;
+
     if (variant === "chip") {
       return (
-        <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-          <Clock className="h-3 w-3" /> Vente passée
+        <span
+          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ring-1 ${t.bg} ${t.text} ${t.ring}`}
+        >
+          <Clock className="h-3 w-3" /> {label}
         </span>
       );
     }
+
     return (
-      <div className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-        Vente passée
+      <div className={`rounded-lg p-3 ring-1 ${t.bg} ${t.text} ${t.ring}`}>
+        <div className="flex items-center gap-2 text-xs font-medium opacity-80">
+          <Clock className="h-3.5 w-3.5" /> Date de vente
+        </div>
+        <div className="mt-1 text-sm font-semibold">{label}</div>
       </div>
     );
+  }
+
+  const t = tone(parts ? parts.days : null);
+
+  if (!parts) {
+    return <PastSale variant={variant} />;
   }
 
   if (variant === "chip") {
@@ -108,7 +152,8 @@ export function SaleCountdown({
   return (
     <div className={`rounded-lg p-3 ring-1 ${t.bg} ${t.text} ${t.ring}`}>
       <div className="flex items-center gap-2 text-xs font-medium opacity-80">
-        <Clock className="h-3.5 w-3.5" /> Temps avant la vente
+        <Clock className="h-3.5 w-3.5" />
+        {resolved?.kind === "window" ? "Temps avant la clôture" : "Temps avant la vente"}
       </div>
       <div className="mt-1 flex items-baseline gap-3 tabular-nums">
         <Stat n={parts.days} label="jours" />
@@ -116,6 +161,34 @@ export function SaleCountdown({
         <Stat n={parts.minutes} label="min" />
       </div>
     </div>
+  );
+}
+
+function Confirmation({ variant }: { variant: "chip" | "block" }) {
+  if (variant === "chip") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+        <Clock className="h-3 w-3" /> Échéance à confirmer
+      </span>
+    );
+  }
+  return (
+    <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+      Échéance à confirmer
+    </div>
+  );
+}
+
+function PastSale({ variant }: { variant: "chip" | "block" }) {
+  if (variant === "chip") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+        <Clock className="h-3 w-3" /> Vente passée
+      </span>
+    );
+  }
+  return (
+    <div className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Vente passée</div>
   );
 }
 

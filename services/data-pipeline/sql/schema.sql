@@ -594,7 +594,7 @@ create table if not exists auction_runs (
 create table if not exists auction_documents (
   id uuid primary key default gen_random_uuid(),
   source_url text not null references auction_sales(source_url) on delete cascade,
-  document_url text not null unique,
+  document_url text not null,
   label text,
   document_type text,
   file_path text,
@@ -607,7 +607,8 @@ create table if not exists auction_documents (
   error_message text,
   raw_payload jsonb default '{}'::jsonb,
   created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  updated_at timestamptz default now(),
+  unique (source_url, document_url)
 );
 
 create table if not exists auction_extractions (

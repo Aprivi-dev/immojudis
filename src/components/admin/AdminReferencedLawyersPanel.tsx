@@ -237,6 +237,51 @@ export function AdminReferencedLawyersPanel() {
             </p>
           </div>
 
+          <div className="mt-4 grid gap-3 rounded-lg border border-white/10 p-3 md:grid-cols-2">
+            <label className="flex items-start gap-3 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={form.acceptsJudicialAuctions}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    acceptsJudicialAuctions: event.target.checked,
+                  }))
+                }
+                className="mt-0.5 size-4 accent-[#b96f2d]"
+              />
+              <span>
+                <span className="block font-semibold text-foreground">
+                  Accepte les adjudications
+                </span>
+                <span className="mt-1 block text-xs">
+                  Autorise l’affichage dans les mises en relation liées aux ventes judiciaires.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={form.acceptsRemoteContact}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    acceptsRemoteContact: event.target.checked,
+                  }))
+                }
+                className="mt-0.5 size-4 accent-[#b96f2d]"
+              />
+              <span>
+                <span className="block font-semibold text-foreground">
+                  Accepte le contact à distance
+                </span>
+                <span className="mt-1 block text-xs">
+                  Autorise les demandes de contact sans rendez-vous physique préalable.
+                </span>
+              </span>
+            </label>
+          </div>
+
           <label className="mt-3 grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Résumé
             <textarea

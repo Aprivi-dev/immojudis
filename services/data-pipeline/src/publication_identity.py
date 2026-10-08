@@ -378,10 +378,23 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
     hashes = sorted({sale.content_hash for sale in sales if sale.content_hash})
     relevant_aliases = registry.aliases_for_urls(urls)
     canonical_ids = sorted({alias.canonical_sale_id for alias in relevant_aliases})
-    rows = connection.execute("""select to_jsonb(s) from public.auction_sales s
+    # Lock and de-duplicate candidate IDs before touching the wide JSON row.
+    # The lock remains held by the caller's transaction while the second
+    # statement hydrates the rows, so the merge sees the same concurrency
+    # boundary without sorting/detoasting every candidate as part of FOR
+    # UPDATE.  Keep the explicit ID predicate for reviewed aliases whose
+    # current URL no longer matches the incoming source URL.
+    candidate_rows = connection.execute("""select s.id from public.auction_sales s
         where source_url=any(%s) or source_urls ?| %s or postal_code=any(%s)
           or content_hash=any(%s) or s.id=any(%s::uuid[])
-        order by source_url for update""", (urls, urls, postal_codes, hashes, canonical_ids)).fetchall()
+        order by s.id for update""", (urls, urls, postal_codes, hashes, canonical_ids)).fetchall()
+    candidate_ids = sorted({str(row[0]) for row in candidate_rows if row and row[0]})
+    if candidate_ids:
+        rows = connection.execute("""select to_jsonb(s) from public.auction_sales s
+            where s.id=any(%s::uuid[])
+            order by s.id""", (candidate_ids,)).fetchall()
+    else:
+        rows = []
     existing_rows = [_from_row(row[0]) for row in rows]
     existing_by_key: dict[str, AuctionSale] = {
         row.id or row.source_url: row for row in existing_rows

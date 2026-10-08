@@ -6,6 +6,38 @@ export type KeyFact = "sale_date" | "starting_price_eur" | "surface" | "occupanc
 
 export type FactReliabilityStatus = "observed" | "inferred" | "to_confirm" | "conflict";
 
+/**
+ * Stable causes behind the internal `to_confirm` status.
+ *
+ * The internal status remains intentionally conservative for scoring and
+ * review workflows. These codes only let the presentation layer distinguish a
+ * missing value from an automatically collected value that lacks a linked
+ * check, or from a concrete reservation that needs review.
+ */
+export type FactReliabilityReasonCode =
+  | "source_conflict"
+  | "missing_value"
+  | "derived_display"
+  | "confirmation_reservation"
+  | "inferred_value"
+  | "source_checked"
+  | "source_unlinked"
+  | "candidate_claim";
+
+export type FactPresentationKind =
+  | "documented"
+  | "reported"
+  | "missing"
+  | "estimated"
+  | "review"
+  | "conflict";
+
+export type FactPresentation = {
+  kind: FactPresentationKind;
+  label: string;
+  detail: string;
+};
+
 export type FactReliability = {
   field: KeyFact;
   label: string;
@@ -13,6 +45,7 @@ export type FactReliability = {
   statusLabel: string;
   detail: string;
   checkedAt: string | null;
+  reasonCode?: FactReliabilityReasonCode;
 };
 
 /**
@@ -161,6 +194,7 @@ export function getFactReliability(
       "conflict",
       checkedAt,
       `${label} : plusieurs signaux contradictoires sont enregistrés.`,
+      "source_conflict",
     );
   }
 
@@ -170,6 +204,7 @@ export function getFactReliability(
       "to_confirm",
       null,
       "L'échéance affichée provient des modalités de vente et n'est pas reliée au contrôle de la date canonique.",
+      "derived_display",
     );
   }
 
@@ -179,16 +214,23 @@ export function getFactReliability(
       "to_confirm",
       checkedAt,
       `${label} n'est pas renseignée dans les données collectées.`,
+      "missing_value",
     );
   }
 
   if (hasConfirmationReservation(sale, field, flags)) {
-    return result(field, "to_confirm", checkedAt, confirmationDetail(field, flags));
+    return result(
+      field,
+      "to_confirm",
+      checkedAt,
+      confirmationDetail(field, flags),
+      "confirmation_reservation",
+    );
   }
 
   const inferredDetail = inferenceDetail(sale, field, flags);
   if (inferredDetail) {
-    return result(field, "inferred", checkedAt, inferredDetail);
+    return result(field, "inferred", checkedAt, inferredDetail, "inferred_value");
   }
 
   if (field === "surface" && hasLowConfidenceSurfaceEvidence(sale)) {
@@ -197,11 +239,18 @@ export function getFactReliability(
       "to_confirm",
       checkedAt,
       "Un extrait de surface est disponible, mais la confiance enregistrée reste faible.",
+      "confirmation_reservation",
     );
   }
 
   if (checkedAt || (field === "surface" && hasRelevantSurfaceEvidence(sale))) {
-    return result(field, "observed", checkedAt, observedDetail(field, checkedAt, sale));
+    return result(
+      field,
+      "observed",
+      checkedAt,
+      observedDetail(field, checkedAt, sale),
+      "source_checked",
+    );
   }
 
   return result(
@@ -211,6 +260,7 @@ export function getFactReliability(
     latestCheck
       ? `${label} est présente. Un contrôle global de source est enregistré le ${formatCheckedAt(latestCheck)}, mais il n'est pas rattaché à cette valeur.`
       : `${label} est présente, mais aucun contrôle de source ou extrait de preuve n'est enregistré pour cette valeur.`,
+    "source_unlinked",
   );
 }
 
@@ -282,9 +332,108 @@ export function getFactReliabilityForDisplay(
       "to_confirm",
       null,
       "L'échéance affichée provient des modalités de vente et n'est pas reliée au contrôle de la date canonique.",
+      "derived_display",
     );
   }
   return fact;
+}
+
+const FACT_PRESENTATION_LABELS: Record<FactPresentationKind, string> = {
+  documented: "Documenté",
+  reported: "Non vérifié",
+  missing: "Non renseigné",
+  estimated: "Estimé",
+  review: "À vérifier",
+  conflict: "Sources divergentes",
+};
+
+function factPresentationKind(fact: FactReliability): FactPresentationKind {
+  if (fact.status === "conflict") return "conflict";
+  if (fact.reasonCode === "missing_value") return "missing";
+  if (fact.reasonCode === "derived_display") return "review";
+  if (fact.status === "observed") return "documented";
+  if (fact.status === "inferred") return "estimated";
+  if (fact.reasonCode === "candidate_claim" || fact.reasonCode === "source_unlinked") {
+    return "reported";
+  }
+  return "review";
+}
+
+function factPresentationDetail(fact: FactReliability, kind: FactPresentationKind): string {
+  if (kind === "documented") {
+    return fact.checkedAt
+      ? `${fact.label} est accompagnée d'une trace de source ou d'un contrôle enregistré le ${formatCheckedAt(fact.checkedAt)}.`
+      : `${fact.label} est accompagnée d'une trace de source enregistrée dans le dossier.`;
+  }
+  if (kind === "reported") {
+    return fact.reasonCode === "candidate_claim"
+      ? `${fact.label} a été reprise automatiquement, mais n'a pas encore été vérifiée en la comparant à la source ou aux pièces.`
+      : `${fact.label} a été reprise automatiquement, mais aucun contrôle ne lui est rattaché. Comparez-la avec la source ou les pièces.`;
+  }
+  if (kind === "missing") {
+    return `${fact.label} n'est pas renseignée dans les données collectées. Les pièces peuvent compléter cette information.`;
+  }
+  if (kind === "estimated") {
+    return `${fact.label} est déduite automatiquement à partir d'autres informations ; confirmez-la dans les pièces.`;
+  }
+  if (kind === "conflict") {
+    return `${fact.label} présente des valeurs différentes selon les sources. Comparez les extraits et les pièces avant de retenir une valeur.`;
+  }
+  if (fact.reasonCode === "derived_display") {
+    return "La date affichée provient des modalités de vente. Comparez-la avec la date annoncée dans la source ou les pièces.";
+  }
+  return (
+    fact.detail || `Comparez ${fact.label.toLocaleLowerCase("fr-FR")} avec la source ou les pièces.`
+  );
+}
+
+/**
+ * Keeps the public interpretation conservative when an authenticated display
+ * adapter has cleared a value, while leaving the internal reliability fact
+ * untouched. A conflict remains more informative than the absence caused by
+ * masking, and an explicit reservation remains a review item.
+ */
+function factForPresentation(
+  sale: AuctionSale,
+  field: KeyFact,
+  displayedValue: string | null | undefined,
+  fact: FactReliability,
+): FactReliability {
+  if (fact.status === "conflict") return fact;
+
+  if (field === "sale_date" && displayedValue && displayedValue !== sale.sale_date) {
+    return { ...fact, reasonCode: "derived_display" };
+  }
+
+  if (!hasFactValue(sale, field)) {
+    const reservation =
+      fact.status === "to_confirm" &&
+      (fact.reasonCode == null ||
+        !["missing_value", "candidate_claim", "source_unlinked"].includes(fact.reasonCode));
+    return { ...fact, reasonCode: reservation ? "confirmation_reservation" : "missing_value" };
+  }
+
+  return fact;
+}
+
+/**
+ * Returns the user-facing interpretation of a fact without changing the
+ * internal status used by scoring, acceptance, or review workflows.
+ */
+export function getFactPresentation(
+  sale: AuctionSale,
+  field: KeyFact,
+  displayedValue?: string | null,
+  facts?: FactReliabilityMap | null,
+): FactPresentation {
+  const fact = getFactReliabilityForDisplay(sale, field, displayedValue, facts);
+  const presentationFact = factForPresentation(sale, field, displayedValue, fact);
+  const kind = factPresentationKind(presentationFact);
+  return {
+    kind,
+    label: FACT_PRESENTATION_LABELS[kind],
+    detail: factPresentationDetail(presentationFact, kind),
+  };
 }
 
 const CLAIM_FIELD_ALIASES: Record<KeyFact, ReadonlySet<string>> = {
@@ -320,6 +469,7 @@ function claimReliabilityForField(
       "conflict",
       null,
       `${FACT_LABELS[field]} : plusieurs observations sourcées sont en conflit et nécessitent une revue.`,
+      "source_conflict",
     );
   }
 
@@ -329,6 +479,7 @@ function claimReliabilityForField(
       "to_confirm",
       null,
       `${FACT_LABELS[field]} : une observation candidate est disponible, mais elle n'est pas encore vérifiée.`,
+      "candidate_claim",
     );
   }
 
@@ -339,6 +490,7 @@ function claimReliabilityForField(
       "to_confirm",
       null,
       `${FACT_LABELS[field]} : l'observation validée ne contient pas une valeur comparable à la fiche.`,
+      "confirmation_reservation",
     );
   }
   if (acceptedClaims.some((claim) => !claimMatchesSale(sale, field, claim))) {
@@ -347,6 +499,7 @@ function claimReliabilityForField(
       "conflict",
       null,
       `${FACT_LABELS[field]} : une observation validée ne correspond pas à la valeur affichée et nécessite une revue.`,
+      "source_conflict",
     );
   }
 
@@ -356,6 +509,7 @@ function claimReliabilityForField(
       "observed",
       latestAcceptedClaimDate(acceptedClaims),
       `${FACT_LABELS[field]} est rattachée à une observation sourcée validée.`,
+      "source_checked",
     );
   }
 
@@ -450,6 +604,7 @@ function result(
   status: FactReliabilityStatus,
   checkedAt: string | null,
   detail: string,
+  reasonCode?: FactReliabilityReasonCode,
 ): FactReliability {
   return {
     field,
@@ -458,6 +613,7 @@ function result(
     statusLabel: STATUS_LABELS[status],
     detail,
     checkedAt,
+    ...(reasonCode ? { reasonCode } : {}),
   };
 }
 

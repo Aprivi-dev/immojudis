@@ -42,7 +42,7 @@ export function CadastralNeighborhoodMap({
       ? "Centre de parcelle indicatif"
       : pointKind === "street"
         ? "Repère de rue indicatif"
-        : "Point indicatif";
+        : "Point d’adresse indicatif";
 
   useEffect(() => {
     const container = mapContainerRef.current;

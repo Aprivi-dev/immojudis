@@ -16,8 +16,8 @@ select ok(not has_function_privilege('authenticated','public.purge_expired_aucti
 select ok(not has_table_privilege('anon','public.sale_retention_storage_queue','select'),'outbox private');
 insert into auth.users(id) values ('ffffffff-ffff-ffff-ffff-ffffffffff70');
 insert into public.auction_sales(id,source_name,source_url,status,starting_price_eur,sale_date) values
-('ffffffff-ffff-ffff-ffff-ffffffffff71','retention-test','https://example.test/retention/1','upcoming',10000,'2000-01-01 12:00Z'),
-('ffffffff-ffff-ffff-ffff-ffffffffff72','retention-test','https://example.test/retention/2','upcoming',10000,'2000-01-02 12:00Z');
+('ffffffff-ffff-ffff-ffff-ffffffffff71','retention-test','https://example.test/retention/1','upcoming',10000,'2000-01-02 12:00Z'),
+('ffffffff-ffff-ffff-ffff-ffffffffff72','retention-test','https://example.test/retention/2','upcoming',10000,'2000-01-03 12:00Z');
 insert into public.saved_property_reports(user_id,sale_id,title,report_kind) values ('ffffffff-ffff-ffff-ffff-ffffffffff70','ffffffff-ffff-ffff-ffff-ffffffffff71','Personal simulation','bid_ceiling');
 insert into public.sale_workspaces(user_id,sale_id,user_max_bid_eur) values ('ffffffff-ffff-ffff-ffff-ffffffffff70','ffffffff-ffff-ffff-ffff-ffffffffff71',50000);
 insert into public.valuation_estimates(auction_sale_id,engine_version,engine_kind,segment) values ('ffffffff-ffff-ffff-ffff-ffffffffff71','test','comparable_ensemble','house');
@@ -29,8 +29,8 @@ select app_private.auction_sale_catalogue_source_key('https://example.test/reten
 select throws_ok($$update public.auction_sale_competent_court_assignments set auction_sale_id=null where source_url_snapshot='https://example.test/retention/1'$$,'55000','Competent-court audit rows are immutable.','manual evidence detachment still forbidden');
 select throws_ok($$update public.auction_sale_court_label_assignments set court_name='changed' where source_url_snapshot='https://example.test/retention/1'$$,'55000','Court enrichment audit rows are immutable.','evidence content remains immutable');
 set local role service_role;
-select is((public.purge_expired_auction_sales('2000-01-02 11:59:59Z',25)->>'deleted')::integer,0,'not deleted before boundary');
-select is((public.purge_expired_auction_sales('2000-01-02 12:00Z',25)->>'deleted')::integer,1,'deleted at boundary as service role');
+select is((public.purge_expired_auction_sales('2000-01-02 11:59:59Z',25)->>'deleted')::integer,0,'not deleted before catalogue boundary');
+select is((public.purge_expired_auction_sales('2000-01-02 12:00Z',25)->>'deleted')::integer,1,'deleted at catalogue boundary as service role');
 reset role;
 select is((select count(*) from public.auction_sales where source_name='retention-test'),1::bigint,'younger sale retained');
 select is((select count(*) from public.saved_property_reports where user_id='ffffffff-ffff-ffff-ffff-ffffffffff70'),0::bigint,'personal reports removed');

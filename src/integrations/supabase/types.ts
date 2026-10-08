@@ -563,7 +563,7 @@ export type Database = {
       commercial_acceptances: {
         Row: {
           accepted_at: string;
-          amount_cents: number;
+          amount_cents: number | null;
           archived_until: string | null;
           checkout_created_at: string | null;
           checkout_session_id: string | null;
@@ -587,7 +587,7 @@ export type Database = {
         };
         Insert: {
           accepted_at?: string;
-          amount_cents: number;
+          amount_cents: number | null;
           archived_until?: string | null;
           checkout_created_at?: string | null;
           checkout_session_id?: string | null;
@@ -611,7 +611,7 @@ export type Database = {
         };
         Update: {
           accepted_at?: string;
-          amount_cents?: number;
+          amount_cents?: number | null;
           archived_until?: string | null;
           checkout_created_at?: string | null;
           checkout_session_id?: string | null;
@@ -3989,6 +3989,8 @@ export type Database = {
           id: string;
           location: string | null;
           promotion_options: string[];
+          published_at: string | null;
+          published_sale_id: string | null;
           requester_email: string | null;
           requester_id: string;
           reviewed_at: string | null;
@@ -4012,6 +4014,8 @@ export type Database = {
           id?: string;
           location?: string | null;
           promotion_options?: string[];
+          published_at?: string | null;
+          published_sale_id?: string | null;
           requester_email?: string | null;
           requester_id: string;
           reviewed_at?: string | null;
@@ -4035,6 +4039,8 @@ export type Database = {
           id?: string;
           location?: string | null;
           promotion_options?: string[];
+          published_at?: string | null;
+          published_sale_id?: string | null;
           requester_email?: string | null;
           requester_id?: string;
           reviewed_at?: string | null;
@@ -4046,7 +4052,15 @@ export type Database = {
           title?: string;
           updated_at?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "listing_publication_requests_published_sale_id_fkey";
+            columns: ["published_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+        ];
       };
     };
     Views: {
@@ -4182,6 +4196,10 @@ export type Database = {
       save_sale_analysis_set: {
         Args: { p_metadata: Json; p_items: Json; p_set_id?: string };
         Returns: Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
+      };
+      save_referenced_lawyer_with_coverage: {
+        Args: { p_coverage: Json; p_lawyer: Json; p_lawyer_id: string | null };
+        Returns: Database["public"]["Tables"]["referenced_lawyers"]["Row"][];
       };
       enqueue_admin_source_detail_bounded: {
         Args: {

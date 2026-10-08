@@ -22,9 +22,10 @@ const statusOptions: Array<{ value: PrivacyRequestStatus; label: string }> = [
 
 export function AdminPrivacyRequestsPanel() {
   const queryClient = useQueryClient();
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["admin-privacy-requests"],
-    queryFn: fetchAdminPrivacyRequests,
+  const [offset, setOffset] = useState(0);
+  const { data, isLoading, isFetching, error } = useQuery({
+    queryKey: ["admin-privacy-requests", offset],
+    queryFn: () => fetchAdminPrivacyRequests({ offset }),
     staleTime: 30_000,
   });
   const mutation = useMutation({
@@ -40,13 +41,16 @@ export function AdminPrivacyRequestsPanel() {
     },
   });
   const requests = data?.requests ?? [];
-  const openCount = requests.filter(
-    (request) => !["completed", "rejected"].includes(request.status),
-  ).length;
-  const overdueCount = requests.filter(
-    (request) =>
-      !["completed", "rejected"].includes(request.status) && new Date(request.dueAt) < new Date(),
-  ).length;
+  const openCount =
+    data?.openCount ??
+    requests.filter((request) => !["completed", "rejected"].includes(request.status)).length;
+  const overdueCount =
+    data?.overdueCount ??
+    requests.filter(
+      (request) =>
+        !["completed", "rejected"].includes(request.status) && new Date(request.dueAt) < new Date(),
+    ).length;
+  const totalCount = data?.totalCount ?? requests.length;
 
   return (
     <section className="liquid-panel mt-6 rounded-lg p-5 sm:p-6">
@@ -75,6 +79,13 @@ export function AdminPrivacyRequestsPanel() {
           {error instanceof Error ? error.message : "Demandes indisponibles"}
         </p>
       ) : null}
+      {data ? (
+        <p className="mt-4 text-xs text-muted-foreground">
+          {requests.length} demande{requests.length > 1 ? "s" : ""} récente
+          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {totalCount}
+          . Les compteurs ouverts et en retard couvrent toute la file.
+        </p>
+      ) : null}
       {!isLoading && !requests.length ? (
         <p className="mt-5 text-sm text-muted-foreground">Aucune demande enregistrée.</p>
       ) : null}
@@ -89,7 +100,62 @@ export function AdminPrivacyRequestsPanel() {
           />
         ))}
       </div>
+      {data && totalCount > 0 ? (
+        <AdminPagination
+          offset={offset}
+          count={requests.length}
+          totalCount={totalCount}
+          hasMore={data.hasMore}
+          busy={isFetching}
+          onPrevious={() => setOffset((current) => Math.max(0, current - data.limit))}
+          onNext={() => setOffset((current) => current + data.limit)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function AdminPagination({
+  offset,
+  count,
+  totalCount,
+  hasMore,
+  busy,
+  onPrevious,
+  onNext,
+}: {
+  offset: number;
+  count: number;
+  totalCount: number;
+  hasMore: boolean;
+  busy: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+      <span>
+        {offset + 1}–{offset + count} sur {totalCount}
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy || offset === 0}
+          onClick={onPrevious}
+        >
+          Précédent
+        </button>
+        <button
+          type="button"
+          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy || !hasMore}
+          onClick={onNext}
+        >
+          Suivant
+        </button>
+      </div>
+    </div>
   );
 }
 

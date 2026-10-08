@@ -1,7 +1,7 @@
 "use client";
 
-import { ListingQualityNotice } from "@/components/ListingQualityNotice";
 import { ListingPhoto } from "@/components/ListingPhoto";
+import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, ReactNode, UIEvent } from "react";
@@ -12,17 +12,12 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
 import Camera from "lucide-react/dist/esm/icons/camera.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
-import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import CircleAlert from "lucide-react/dist/esm/icons/circle-alert.js";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
-import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import Target from "lucide-react/dist/esm/icons/target.js";
-import Wrench from "lucide-react/dist/esm/icons/wrench.js";
-import { BillingActions } from "@/components/BillingActions";
 import { DocumentsList } from "@/components/DocumentsList";
 import { collectSaleDocuments } from "@/lib/sale-documents";
 import { riskEvidence } from "@/lib/risk-evidence";
@@ -31,9 +26,12 @@ import type { BidSimulationSnapshot } from "@/components/BidCeilingAssistant";
 import { useAuth } from "@/hooks/use-auth";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
+import { StreetViewDialog } from "@/components/StreetViewDialog";
+import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
+import { ListingWeatherHistory } from "@/components/sale-detail/ListingWeatherHistory";
 import { useOutcomeGraphForecast } from "@/hooks/use-outcome-graph-forecast";
 import { SaleVisual } from "@/components/SaleVisual";
-import { SaleProcedurePanel, SaleProcedureSummary } from "@/components/SaleProcedurePanel";
+import { SaleProcedurePanel } from "@/components/SaleProcedurePanel";
 import { ProfessionalPilotLauncher } from "@/components/ProfessionalPilotLauncher";
 import { buildTribunalPilot } from "@/lib/professional-pilot-tribunal";
 import { buildNotaryPilot } from "@/lib/professional-pilot-notary";
@@ -46,9 +44,10 @@ import {
   ListingLocation,
 } from "@/components/sale-detail/SaleListing";
 import { ListingBudget } from "@/components/sale-detail/ListingBudget";
-import { ListingDataCoverage } from "@/components/sale-detail/ListingDataCoverage";
-import { ListingWorks } from "@/components/sale-detail/ListingWorks";
-import { FinancingSimulator } from "@/components/sale-detail/FinancingSimulator";
+import { ListingPreparation } from "@/components/sale-detail/ListingPreparation";
+import type { ListingWorksDraft } from "@/components/sale-detail/ListingWorks";
+import type { FinancingDraft, FinancingResult } from "@/components/sale-detail/FinancingSimulator";
+import type { ListingRentalDraft } from "@/components/sale-detail/ListingRental";
 import { UrbanismeCadastrePanel } from "@/components/sale-detail/UrbanismeCadastrePanel";
 import { SaleDetailTabNav, type SaleDetailTab } from "@/components/sale-detail/SaleDetailTabNav";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
@@ -64,6 +63,7 @@ import type { MarketEstimate } from "@/lib/market.functions";
 import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
 import {
   computeRecommendedCeilings,
+  computeMarketCeiling,
   computeAcquisitionCosts,
   type MarketCeilingResult,
   DEFAULT_MARKET_CEILING_SCENARIO,
@@ -71,8 +71,7 @@ import {
   estimateWorksBudget,
 } from "@/lib/profitability";
 import { Link } from "@/lib/router-compat";
-import { listingCoordinates, listingDate } from "@/lib/sale-listing";
-import { saleSession, saleWindow } from "@/lib/sale-window";
+import { listingCoordinates } from "@/lib/sale-listing";
 import { propertyImages } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import {
@@ -82,9 +81,9 @@ import {
   saleHasVerifiedTribunal,
   saleIsTribunalVenue,
   saleProcedureIsConfirmed,
-  stateSaleMethodLabel,
 } from "@/lib/sale-procedure";
 import { getMarketValuationSurfaces } from "@/lib/surface";
+import { buildReportRentalScenario } from "@/lib/report-simulation";
 import {
   AI_REVIEW_ENERGY_FIELD_KEYS,
   AI_REVIEW_SURFACE_FIELD_KEYS,
@@ -93,13 +92,14 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
-import type { AuctionSale, SaleRisk } from "@/lib/types";
+import type { AuctionSale } from "@/lib/types";
 
-const SaleTribunalHistory = dynamic(
-  () => import("@/components/SaleTribunalHistory").then((module) => module.SaleTribunalHistory),
+const ListingStatistics = dynamic(
+  () =>
+    import("@/components/sale-detail/ListingStatistics").then((module) => module.ListingStatistics),
   {
     loading: () => (
-      <p className="p-6 text-sm text-muted-foreground">Chargement de l’historique du tribunal…</p>
+      <p className="p-6 text-sm text-muted-foreground">Chargement des statistiques du tribunal…</p>
     ),
   },
 );
@@ -121,6 +121,24 @@ const BidCeilingAssistant = dynamic(
 const PhotoCarouselDialog = dynamic(
   () => import("@/components/PhotoCarouselDialog").then((module) => module.PhotoCarouselDialog),
   { ssr: false },
+);
+const ListingWorks = dynamic(
+  () => import("@/components/sale-detail/ListingWorks").then((module) => module.ListingWorks),
+  {
+    loading: () => <p className="p-6 text-sm text-muted-foreground">Chargement des travaux…</p>,
+  },
+);
+const FinancingSimulator = dynamic(
+  () =>
+    import("@/components/sale-detail/FinancingSimulator").then(
+      (module) => module.FinancingSimulator,
+    ),
+  {
+    loading: () => <p className="p-6 text-sm text-muted-foreground">Chargement du financement…</p>,
+  },
+);
+const ListingRental = dynamic(() =>
+  import("@/components/sale-detail/ListingRental").then((module) => module.ListingRental),
 );
 
 type SaleDetailProps = {
@@ -173,7 +191,12 @@ export function FreeSaleDetailView({
   );
 }
 
-function SimplifiedSaleDetailView({
+function SimplifiedSaleDetailView(props: SaleDetailProps & { access: "discovery" | "analysis" }) {
+  const { user } = useAuth();
+  return <SaleDetailWorkspace key={`${user?.id ?? "guest-demo"}:${props.sale.id}`} {...props} />;
+}
+
+function SaleDetailWorkspace({
   sale,
   marketEstimateOverride = null,
   returnTo,
@@ -185,26 +208,35 @@ function SimplifiedSaleDetailView({
 }: SaleDetailProps & { access: "discovery" | "analysis" }) {
   const [calculationOpen, setCalculationOpen] = useState(false);
   const [simulation, setSimulation] = useState<BidSimulationSnapshot | null>(null);
+  const [personalWorksBudget, setPersonalWorksBudget] = useState<number | null>(null);
+  const [worksDraft, setWorksDraft] = useState<ListingWorksDraft | null>(null);
+  const [financingDraft, setFinancingDraft] = useState<FinancingDraft | null>(null);
+  const [financingResult, setFinancingResult] = useState<FinancingResult | null>(null);
+  const [rentalDraft, setRentalDraft] = useState<ListingRentalDraft | null>(null);
   const { user, loading: authLoading } = useAuth();
   const aiReviewQuery = useQuery({
     queryKey: ["sale-ai-review", sale.id, user?.id ?? "anonymous"],
     queryFn: () => fetchSaleAiReviewProjections(sale.id),
-    enabled: Boolean(user && !publicDemo && !authLoading && aiReviewProjections == null),
+    enabled: Boolean(
+      access === "analysis" && user && !publicDemo && !authLoading && aiReviewProjections == null,
+    ),
     staleTime: 5 * 60_000,
     retry: false,
   });
   const aiReviewStatus: AiReviewRequestStatus =
-    aiReviewProjections !== null
-      ? "ready"
-      : !user || publicDemo || authLoading
-        ? "disabled"
-        : aiReviewQuery.isError
-          ? "error"
-          : aiReviewQuery.data
-            ? "ready"
-            : "loading";
+    access === "discovery"
+      ? "disabled"
+      : aiReviewProjections !== null
+        ? "ready"
+        : !user || publicDemo || authLoading
+          ? "disabled"
+          : aiReviewQuery.isError
+            ? "error"
+            : aiReviewQuery.data
+              ? "ready"
+              : "loading";
   const resolvedAiReviewProjections =
-    aiReviewProjections ?? aiReviewQuery.data?.projections ?? null;
+    access === "analysis" ? (aiReviewProjections ?? aiReviewQuery.data?.projections ?? null) : null;
   const displaySale = useMemo(
     () => saleForAiReviewDisplay(sale, resolvedAiReviewProjections, aiReviewStatus),
     [aiReviewStatus, resolvedAiReviewProjections, sale],
@@ -212,11 +244,12 @@ function SimplifiedSaleDetailView({
   const factReliabilityQuery = useQuery({
     queryKey: ["sale-fact-reliability", sale.id, user?.id ?? "anonymous"],
     queryFn: () => fetchSaleFactReliabilities(sale.id),
-    enabled: Boolean(user && !publicDemo && !authLoading),
+    enabled: Boolean(access === "analysis" && user && !publicDemo && !authLoading),
     staleTime: 5 * 60_000,
     retry: false,
   });
-  const factReliabilities = factReliabilityQuery.data?.facts ?? null;
+  const factReliabilities =
+    access === "analysis" ? (factReliabilityQuery.data?.facts ?? null) : null;
   const valuationConflict = listingValuationConflict(sale);
   const priceReview = getAiReviewFieldResult(
     resolvedAiReviewProjections,
@@ -271,7 +304,7 @@ function SimplifiedSaleDetailView({
       query.state.data?.status === "queued" && !query.state.data.estimate ? 15_000 : false,
   });
   const marketEstimate =
-    valuationConflict || criticalAnalysisInputsBlocked
+    access !== "analysis" || valuationConflict || criticalAnalysisInputsBlocked
       ? null
       : (marketEstimateOverride ?? marketQuery.data?.estimate ?? null);
   const recommendations = useMemo(
@@ -296,8 +329,98 @@ function SimplifiedSaleDetailView({
       }),
     [displaySale.starting_price_eur, isTribunalSale, marketEstimate, surface],
   );
-  const worksBudget = estimateWorksBudget(surface, "rafraichissement");
-  const heroCeilingResult = activeSimulation?.result ?? recommendations.withRefreshWorks;
+  const worksBudget =
+    access === "analysis" ? estimateWorksBudget(surface, "rafraichissement") : null;
+  const retainedWorks =
+    access !== "analysis" ||
+    valuationConflict ||
+    criticalAnalysisInputsBlocked ||
+    activeSimulation?.worksKnown === false
+      ? null
+      : (activeSimulation?.works ?? personalWorksBudget ?? (surface == null ? null : worksBudget));
+  const heroCeilingResult =
+    activeSimulation?.result ??
+    (personalWorksBudget == null
+      ? recommendations.withRefreshWorks
+      : computeMarketCeiling({
+          surface,
+          price: displaySale.starting_price_eur ?? 0,
+          works: personalWorksBudget,
+          fpt: DEFAULTS.fpt,
+          scenario: DEFAULT_MARKET_CEILING_SCENARIO,
+          medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
+          p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
+          p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
+        }));
+  const projectCosts =
+    access === "analysis" &&
+    isTribunalSale &&
+    !valuationConflict &&
+    !criticalAnalysisInputsBlocked &&
+    retainedWorks != null &&
+    (displaySale.starting_price_eur ?? 0) > 0
+      ? computeAcquisitionCosts({
+          price: activeSimulation?.reportInput?.price ?? displaySale.starting_price_eur!,
+          works: retainedWorks,
+          fpt: activeSimulation?.reportInput?.fpt ?? DEFAULTS.fpt,
+        })
+      : null;
+  const activeFinancingResult =
+    (!valuationConflict && !criticalAnalysisInputsBlocked) ||
+    financingDraft?.projectPriceSource === "manual"
+      ? financingResult
+      : null;
+  const reportSimulation = useMemo(() => {
+    const currentSimulation =
+      activeSimulation?.result.available && activeSimulation.reportInput
+        ? activeSimulation.reportInput
+        : null;
+    if (!currentSimulation) return undefined;
+
+    const rentalScenario = buildReportRentalScenario({
+      draft: rentalDraft,
+      acquisitionCost: activeFinancingResult?.totalProjectCost ?? projectCosts?.totalCost ?? null,
+      monthlyDebtService: activeFinancingResult?.monthlyPayment ?? null,
+    });
+
+    return rentalScenario ? { ...currentSimulation, rentalScenario } : currentSimulation;
+  }, [activeFinancingResult, activeSimulation, projectCosts, rentalDraft]);
+  const applyWorksBudget = (amount: number) => {
+    if (
+      access !== "analysis" ||
+      !isTribunalSale ||
+      valuationConflict ||
+      criticalAnalysisInputsBlocked ||
+      !Number.isFinite(amount) ||
+      amount < 0
+    )
+      return;
+    setPersonalWorksBudget(amount);
+    const inputs = {
+      price:
+        activeSimulation?.reportInput?.price ?? Math.max(0, displaySale.starting_price_eur ?? 0),
+      works: amount,
+      fpt: activeSimulation?.reportInput?.fpt ?? DEFAULTS.fpt,
+      scenario: activeSimulation?.reportInput?.scenario ?? DEFAULT_MARKET_CEILING_SCENARIO,
+      customSafetyDiscountPct: activeSimulation?.reportInput?.customSafetyDiscountPct,
+      manualMarketPricePerM2: activeSimulation?.reportInput?.manualMarketPricePerM2 ?? null,
+    };
+    const result = computeMarketCeiling({
+      ...inputs,
+      surface,
+      medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
+      p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
+      p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
+    });
+    setSimulation({
+      saleId: sale.id,
+      ownerId: user?.id ?? "guest-demo",
+      works: amount,
+      worksKnown: true,
+      result,
+      reportInput: { ...inputs, expectedMaxBid: result.maxBid },
+    });
+  };
   const heroCeiling =
     access === "analysis" &&
     isTribunalSale &&
@@ -322,7 +445,7 @@ function SimplifiedSaleDetailView({
   useEffect(() => {
     const syncTabWithHash = () => {
       const anchor = window.location.hash.slice(1);
-      setActiveTab(tabForAnchor(anchor));
+      setActiveTab(tabForAnchor(anchor, isTribunalSale));
       if (
         ["calculation", "budget", "budget-analysis"].includes(anchor) &&
         budgetTarget === "calculation"
@@ -337,7 +460,7 @@ function SimplifiedSaleDetailView({
     syncTabWithHash();
     window.addEventListener("hashchange", syncTabWithHash);
     return () => window.removeEventListener("hashchange", syncTabWithHash);
-  }, [budgetTarget]);
+  }, [budgetTarget, isTribunalSale]);
 
   useEffect(() => {
     const anchor = window.location.hash.slice(1);
@@ -357,7 +480,7 @@ function SimplifiedSaleDetailView({
     const link = origin.closest<HTMLAnchorElement>('a[href^="#"]');
     const anchor = link?.getAttribute("href")?.slice(1);
     if (!anchor) return;
-    const tab = knownTabForAnchor(anchor);
+    const tab = knownTabForAnchor(anchor, isTribunalSale);
     if (!tab) return;
     if (
       ["calculation", "budget", "budget-analysis"].includes(anchor) &&
@@ -393,7 +516,6 @@ function SimplifiedSaleDetailView({
           <PropertyIdentity
             key={sale.id}
             sale={displaySale}
-            publicDemo={publicDemo}
             aiReviewProjections={resolvedAiReviewProjections}
             aiReviewStatus={aiReviewStatus}
           />
@@ -406,13 +528,45 @@ function SimplifiedSaleDetailView({
               factReliabilities={factReliabilities}
               aiReviewProjections={resolvedAiReviewProjections}
               aiReviewStatus={aiReviewStatus}
+              scenarioSummary={
+                projectCosts
+                  ? {
+                      purchasePrice: projectCosts.price,
+                      works: projectCosts.works,
+                      totalCost: projectCosts.totalCost,
+                      marketValue: marketEstimate?.actionable
+                        ? (marketEstimate.estimatedValueEur ?? null)
+                        : null,
+                      personalized: activeSimulation != null || personalWorksBudget != null,
+                    }
+                  : null
+              }
             />
           </div>
         </div>
+        <ListingPreparation
+          key={`${user?.id ?? "guest-demo"}:${sale.id}`}
+          sale={displaySale}
+          publicDemo={publicDemo}
+          ownerId={user?.id ?? "guest-demo"}
+          factReliabilities={factReliabilities}
+          aiReviewProjections={resolvedAiReviewProjections}
+          aiReviewStatus={aiReviewStatus}
+          canSimulate={
+            access === "analysis" &&
+            isTribunalSale &&
+            !valuationConflict &&
+            !criticalAnalysisInputsBlocked
+          }
+        />
       </div>
 
       <div id="annonce-sections" className={panelStyles.tabRegion}>
-        <SaleDetailTabNav activeTab={activeTab} onTabChange={changeTab} />
+        <SaleDetailTabNav
+          activeTab={activeTab}
+          onTabChange={changeTab}
+          showStatistics={isTribunalSale}
+        />
         <div
           id={`sale-detail-panel-${activeTab}`}
           role="tabpanel"
@@ -446,15 +600,31 @@ function SimplifiedSaleDetailView({
               )}
               <UrbanismeSection
                 sale={displaySale}
+                mapLocation={sale}
                 loadStructuredUrbanism={
                   access === "analysis" && !publicDemo && !authLoading && Boolean(user)
                 }
               />
-              <details className={panelStyles.disclosure}>
-                <summary>Qualité des informations du dossier</summary>
-                <ListingDataCoverage sale={displaySale} />
-                <ListingQualityNotice sale={displaySale} />
-              </details>
+              <ListingEnvironmentalRisks
+                city={
+                  getAiReviewFieldResult(
+                    resolvedAiReviewProjections,
+                    "property.city",
+                    aiReviewStatus,
+                  ).blocked
+                    ? null
+                    : displaySale.city
+                }
+                postalCode={displaySale.postal_code}
+              />
+              {!publicDemo && listingCoordinates(displaySale) ? (
+                <ListingWeatherHistory
+                  key={`${user?.id ?? "guest"}:${sale.id}`}
+                  saleId={sale.id}
+                  locked={access !== "analysis"}
+                  enabled={!authLoading && Boolean(user) && access === "analysis"}
+                />
+              ) : null}
             </>
           ) : null}
 
@@ -513,11 +683,7 @@ function SimplifiedSaleDetailView({
                     sale={displaySale}
                     marketEstimate={marketEstimate}
                     marketLoading={marketQuery.isLoading && marketEstimate == null}
-                    worksBudget={
-                      activeSimulation?.worksKnown === false
-                        ? null
-                        : (activeSimulation?.works ?? (surface == null ? null : worksBudget))
-                    }
+                    worksBudget={activeSimulation?.worksKnown === false ? null : retainedWorks}
                     recommendedCeiling={heroCeilingResult.maxBid}
                     ceilingAvailable={heroCeilingResult.available}
                     onAdjust={() => setCalculationOpen(true)}
@@ -532,6 +698,13 @@ function SimplifiedSaleDetailView({
                   <DiscoveryDecisionPanel sale={displaySale} />
                 )}
               </section>
+              {access === "analysis" ? (
+                <MarketSnapshot
+                  estimate={marketEstimate}
+                  computedAt={marketQuery.data?.computedAt ?? null}
+                  loading={marketQuery.isLoading && marketEstimate == null}
+                />
+              ) : null}
               {access === "analysis" && isTribunalSale && !valuationConflict ? (
                 <>
                   <details
@@ -560,6 +733,7 @@ function SimplifiedSaleDetailView({
                         sale={displaySale}
                         marketEstimateOverride={marketEstimate}
                         onSimulationChange={setSimulation}
+                        initialSimulation={activeSimulation?.reportInput}
                       />
                     ) : null}
                   </details>
@@ -608,25 +782,69 @@ function SimplifiedSaleDetailView({
                 <TribunalEstimationEvidence
                   sale={displaySale}
                   valuationConflict={Boolean(valuationConflict)}
-                  adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
-                  open={Boolean(expandedDetails["tribunal-history"])}
-                  onOpenChange={(open) => setDetailOpen("tribunal-history", open)}
+                  open={Boolean(expandedDetails["tribunal-perspective"])}
+                  onOpenChange={(open) => setDetailOpen("tribunal-perspective", open)}
                 />
               ) : null}
             </>
           ) : null}
 
-          {activeTab === "travaux" ? (
-            <>
-              <ListingWorks
-                sale={displaySale}
-                estimatedBudget={
-                  access === "analysis" && isTribunalSale && activeSimulation?.worksKnown === false
-                    ? null
-                    : (activeSimulation?.works ?? (surface == null ? null : worksBudget))
-                }
+          {activeTab === "statistiques" && isTribunalSale ? (
+            access === "analysis" ? (
+              <ListingStatistics
+                sale={sale}
+                premium={access === "analysis" && adjudicationStatisticsEnabled}
+                publicDemo={publicDemo}
+                propertyTypeVerified={!valuationConflict && !propertyTypeReview.blocked}
               />
-            </>
+            ) : (
+              <PremiumFeaturePreview
+                title="Les statistiques du tribunal avec Premium"
+                description="Consultez les tendances, les adjudications et les indicateurs disponibles pour préparer votre enchère."
+                labels={["Activité du tribunal", "Prix d’adjudication", "Tendances"]}
+              />
+            )
+          ) : null}
+
+          {activeTab === "travaux" ? (
+            access === "analysis" ? (
+              <>
+                {valuationConflict || criticalAnalysisInputsBlocked ? (
+                  <div className={panelStyles.warning} role="status">
+                    <p>
+                      Les caractéristiques nécessaires au calcul restent à confirmer. Votre détail
+                      travaux peut être préparé, puis intégré au scénario après vérification.
+                    </p>
+                  </div>
+                ) : null}
+                <ListingWorks
+                  sale={displaySale}
+                  estimatedBudget={
+                    access === "analysis" &&
+                    isTribunalSale &&
+                    activeSimulation?.worksKnown === false
+                      ? null
+                      : retainedWorks
+                  }
+                  onBudgetChange={
+                    access === "analysis" &&
+                    isTribunalSale &&
+                    !valuationConflict &&
+                    !criticalAnalysisInputsBlocked
+                      ? applyWorksBudget
+                      : undefined
+                  }
+                  initialDraft={worksDraft}
+                  onDraftChange={setWorksDraft}
+                />
+              </>
+            ) : (
+              <PremiumFeaturePreview
+                title="Estimez vos travaux avec Premium"
+                description="Préparez une enveloppe par poste et intégrez-la à votre scénario d’achat."
+                labels={["Budget travaux", "Détail par poste", "Coût du projet"]}
+              />
+            )
           ) : null}
 
           {activeTab === "financement" ? (
@@ -636,6 +854,20 @@ function SimplifiedSaleDetailView({
                   sale={displaySale}
                   aiReviewProjections={resolvedAiReviewProjections}
                   aiReviewStatus={aiReviewStatus}
+                  projectPriceOverride={projectCosts?.totalCost ?? null}
+                  initialDraft={financingDraft}
+                  onDraftChange={setFinancingDraft}
+                  onResultChange={setFinancingResult}
+                  initialInsuranceRate={0.3}
+                />
+                <ListingRental
+                  saleId={sale.id}
+                  acquisitionCost={
+                    activeFinancingResult?.totalProjectCost ?? projectCosts?.totalCost ?? null
+                  }
+                  monthlyDebtService={activeFinancingResult?.monthlyPayment ?? null}
+                  initialDraft={rentalDraft}
+                  onDraftChange={setRentalDraft}
                 />
               </div>
             </>
@@ -697,9 +929,7 @@ function SimplifiedSaleDetailView({
                   <PropertyReportActions
                     saleId={sale.id}
                     compact
-                    simulation={
-                      activeSimulation?.result.available ? activeSimulation.reportInput : undefined
-                    }
+                    simulation={reportSimulation}
                     requireSimulation
                   />
                 </section>
@@ -739,21 +969,28 @@ function SimplifiedSaleDetailView({
   );
 }
 
-const SALE_DETAIL_TABS = ["apercu", "estimation", "travaux", "financement", "demarches"] as const;
+const SALE_DETAIL_TABS = [
+  "apercu",
+  "estimation",
+  "statistiques",
+  "travaux",
+  "financement",
+  "demarches",
+] as const;
 type LegacyDetail =
   | "market"
   | "budget"
   | "participation"
   | "documents"
   | "professional-pilot"
-  | "tribunal-history";
+  | "tribunal-perspective";
 
 function legacyDetailForAnchor(anchor: string, budgetTarget: string): LegacyDetail | null {
   if (["budget", "budget-analysis", "calculation"].includes(anchor)) {
     return budgetTarget === "budget" ? "budget" : null;
   }
   if (
-    ["market", "participation", "documents", "professional-pilot", "tribunal-history"].includes(
+    ["market", "participation", "documents", "professional-pilot", "tribunal-perspective"].includes(
       anchor,
     )
   ) {
@@ -766,11 +1003,26 @@ function isTabAnchor(anchor: string): anchor is SaleDetailTab {
   return SALE_DETAIL_TABS.includes(anchor as SaleDetailTab);
 }
 
-function tabForAnchor(anchor: string): SaleDetailTab {
-  return knownTabForAnchor(anchor) ?? "apercu";
+function tabForAnchor(anchor: string, allowStatistics = true): SaleDetailTab {
+  return knownTabForAnchor(anchor, allowStatistics) ?? "apercu";
 }
 
-function knownTabForAnchor(anchor: string): SaleDetailTab | null {
+function knownTabForAnchor(anchor: string, allowStatistics = true): SaleDetailTab | null {
+  if (
+    [
+      "statistiques",
+      "tribunal-history",
+      "stats-overview",
+      "stats-ventes",
+      "stats-chiffres",
+      "stats-adjudications",
+      "stats-calendrier",
+      "stats-avocats",
+      "stats-communes",
+      "stats-methode",
+    ].includes(anchor)
+  )
+    return allowStatistics ? "statistiques" : "apercu";
   if (isTabAnchor(anchor)) return anchor;
   if (
     ["market", "budget", "budget-analysis", "summary", "calculation", "why-this-ceiling"].includes(
@@ -779,7 +1031,7 @@ function knownTabForAnchor(anchor: string): SaleDetailTab | null {
   ) {
     return "estimation";
   }
-  if (anchor === "tribunal-history") return "estimation";
+  if (anchor === "tribunal-perspective") return "estimation";
   if (anchor === "works") return "travaux";
   if (anchor === "financing") return "financement";
   if (
@@ -796,11 +1048,15 @@ function knownTabForAnchor(anchor: string): SaleDetailTab | null {
 function revealAnchor(anchor: string, budgetTarget: string) {
   const fallback = ["budget", "budget-analysis", "calculation"].includes(anchor)
     ? budgetTarget
-    : ["market", "tribunal-history", "why-this-ceiling"].includes(anchor)
+    : ["market", "tribunal-perspective", "why-this-ceiling"].includes(anchor)
       ? "summary"
-      : tabForAnchor(anchor) === "demarches"
-        ? "sale-detail-panel-demarches"
-        : null;
+      : tabForAnchor(anchor) === "travaux"
+        ? "sale-detail-panel-travaux"
+        : tabForAnchor(anchor) === "statistiques"
+          ? "sale-detail-panel-statistiques"
+          : tabForAnchor(anchor) === "demarches"
+            ? "sale-detail-panel-demarches"
+            : null;
   const target = document.getElementById(anchor) ?? (fallback && document.getElementById(fallback));
   if (!target) return;
   let parent = target.closest("details");
@@ -832,43 +1088,45 @@ function PanelIntro({
 function TribunalEstimationEvidence({
   sale,
   valuationConflict,
-  adjudicationStatisticsEnabled,
   open,
   onOpenChange,
 }: {
   sale: AuctionSale;
   valuationConflict: boolean;
-  adjudicationStatisticsEnabled: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const forecastQuery = useOutcomeGraphForecast(sale.id, !valuationConflict);
+  const forecastQuery = useOutcomeGraphForecast(sale.id, open && !valuationConflict);
   const forecastReady = !valuationConflict && forecastQuery.data?.forecast.status === "ready";
   return (
-    <details className={panelStyles.disclosure} open={open}>
+    <details id="tribunal-perspective" className={panelStyles.disclosure} open={open}>
       <summary
         onClick={(event) => {
           event.preventDefault();
           onOpenChange(!open);
         }}
       >
-        Historique et perspective d’adjudication
+        Perspective d’adjudication
       </summary>
       {forecastReady ? <OutcomeForecast forecastQuery={forecastQuery} /> : null}
-      <SaleTribunalHistory
-        sale={sale}
-        premium={adjudicationStatisticsEnabled}
-        propertyTypeVerified={!valuationConflict}
-      />
+      <p className="text-sm text-muted-foreground">
+        Les observations du tribunal sont disponibles dans l’onglet{" "}
+        <a href="#statistiques" className="font-semibold underline underline-offset-4">
+          Statistiques
+        </a>
+        .
+      </p>
     </details>
   );
 }
 
 function UrbanismeSection({
   sale,
+  mapLocation,
   loadStructuredUrbanism = false,
 }: {
   sale: AuctionSale;
+  mapLocation: Pick<AuctionSale, "address" | "postal_code" | "city" | "latitude" | "longitude">;
   loadStructuredUrbanism?: boolean;
 }) {
   const urbanismQuery = useQuery({
@@ -904,17 +1162,13 @@ function UrbanismeSection({
             </button>
           </div>
         ) : null}
-        {loadStructuredUrbanism && !sale.city ? (
-          <p className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-600">
-            Localisation à confirmer avant de charger les données cadastrales.
-          </p>
-        ) : (
-          <UrbanismeCadastrePanel
-            sale={sale}
-            cadastralParcels={urbanismQuery.data?.cadastralParcels}
-            urbanPlanningSignals={urbanismQuery.data?.urbanPlanningSignals}
-          />
-        )}
+        <UrbanismeCadastrePanel
+          sale={sale}
+          mapLocation={mapLocation}
+          cadastralParcels={urbanismQuery.data?.cadastralParcels}
+          urbanPlanningSignals={urbanismQuery.data?.urbanPlanningSignals}
+          officialLandEnabled={loadStructuredUrbanism}
+        />
       </div>
     </div>
   );
@@ -922,12 +1176,10 @@ function UrbanismeSection({
 
 function PropertyIdentity({
   sale,
-  publicDemo = false,
   aiReviewProjections = null,
   aiReviewStatus = "ready",
 }: {
   sale: AuctionSale;
-  publicDemo?: boolean;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   aiReviewStatus?: AiReviewRequestStatus;
 }) {
@@ -966,7 +1218,7 @@ function PropertyIdentity({
   };
 
   return (
-    <div className="min-w-0">
+    <div className={listingStyles.heroGallery}>
       <div className={listingStyles.photo}>
         {images[0] ? (
           <>
@@ -1028,7 +1280,7 @@ function PropertyIdentity({
             <button
               type="button"
               onClick={() => setGalleryIndex(0)}
-              className="group relative hidden h-[440px] w-full overflow-hidden bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gold md:block"
+              className={`${listingStyles.galleryMain} group relative hidden w-full overflow-hidden bg-muted text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gold md:block`}
               aria-label="Ouvrir la galerie photos"
             >
               <ListingPhoto
@@ -1040,7 +1292,11 @@ function PropertyIdentity({
               />
             </button>
             {mapLocation ? (
-              <div className="absolute bottom-8 left-3 z-10 md:bottom-4 md:left-4">
+              <div className="absolute bottom-8 left-3 z-10 flex max-w-[calc(100%-6rem)] flex-wrap gap-2 md:bottom-4 md:left-4">
+                <StreetViewDialog
+                  target={{ ...mapLocation, address }}
+                  className="min-h-10 rounded-md border-white/70 bg-white/95 px-3 py-2 text-xs shadow-lg backdrop-blur"
+                />
                 <MapboxPreviewButton
                   mode="streetLevel"
                   lat={mapLocation.lat}
@@ -1418,19 +1674,12 @@ function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
             {sale.starting_price_eur == null ? "À confirmer" : formatPrice(sale.starting_price_eur)}
           </dd>
         </div>
-        <div>
-          <dt>Valeur estimée</dt>
-          <dd className={panelStyles.textValue}>Avec l’offre Analyse</dd>
-        </div>
-        <div>
-          <dt>Mise plafond</dt>
-          <dd className={panelStyles.textValue}>Avec l’offre Analyse</dd>
-        </div>
       </dl>
-      <div className={panelStyles.estimationFoot}>
-        <p>Comparez le prix de départ au marché avant de fixer votre budget.</p>
-        <BillingActions hideHelper className={listingStyles.discoveryBilling} />
-      </div>
+      <PremiumFeaturePreview
+        title="La valeur du bien et votre mise plafond avec Premium"
+        description="Comparez le prix de départ aux références de marché et préparez un plafond d’enchère avec vos propres hypothèses."
+        labels={["Valeur de marché", "Mise plafond", "Références comparables"]}
+      />
     </aside>
   );
 }
@@ -1590,6 +1839,63 @@ function CeilingExplanation({
 function signedPrice(value: number) {
   if (value < 0) return `− ${formatPrice(Math.abs(value))}`;
   return formatPrice(value);
+}
+
+function MarketSnapshot({
+  estimate,
+  loading,
+  computedAt,
+}: {
+  estimate: MarketEstimate | null;
+  loading: boolean;
+  computedAt: string | null;
+}) {
+  const confidence = marketReferenceConfidence(estimate);
+  const hasRange =
+    estimate?.actionable &&
+    estimate.estimatedValueLowEur != null &&
+    estimate.estimatedValueHighEur != null;
+  const history = estimate?.comparableMode === "address_history";
+  const aggregate = estimate?.comparableMode === "geographic_aggregate";
+  const count = history ? estimate.addressHistory.length : (estimate?.sampleSize ?? 0);
+  return (
+    <section className={panelStyles.marketSnapshot} aria-label="Repères de marché">
+      <div>
+        <span className={panelStyles.metricEyebrow}>Fourchette de marché</span>
+        <strong>
+          {hasRange
+            ? `${formatPrice(estimate.estimatedValueLowEur!)} – ${formatPrice(estimate.estimatedValueHighEur!)}`
+            : loading
+              ? "Calcul en cours…"
+              : "Références à compléter"}
+        </strong>
+        <p>
+          {estimate?.source ?? "DVF"}
+          {computedAt
+            ? ` · Actualisée le ${formatDate(computedAt)}`
+            : " · Date de calcul non renseignée"}
+        </p>
+      </div>
+      <div>
+        <span className={panelStyles.metricEyebrow}>Solidité des données</span>
+        <strong className={panelStyles.confidenceText}>{confidence.confidenceLabel}</strong>
+        <p>
+          {count}{" "}
+          {history
+            ? "vente(s) à cette adresse"
+            : aggregate
+              ? "vente(s) de référence"
+              : "vente(s) comparable(s)"}
+          {estimate
+            ? ` · ${aggregate ? `Échelle ${aggregateScopeLabel(estimate.geographyLevel)}` : history ? "Lots potentiellement différents" : `Rayon ${estimate.radiusM} m`}`
+            : ""}
+        </p>
+      </div>
+      <a href="#market">
+        Examiner les références <ArrowRight className="h-4 w-4" aria-hidden />
+      </a>
+    </section>
+  );
 }
 
 function MarketEvidence({

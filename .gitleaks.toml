@@ -1,0 +1,55 @@
+title = "Immojudis Gitleaks policy"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Domain field identifiers in known test, migration, and audit fixture lines"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = [
+'''(?:^|/)docs/audits/backoffice-2026-10-04\.patch''',
+'''(?:^|/)docs/audits/information-agent-mail-2026-10-04/release\.patch''',
+'''(?:^|/)e2e/admin-information-agent\.spec\.ts''',
+'''(?:^|/)services/data-pipeline/tests/test_fact_claims\.py''',
+'''(?:^|/)src/components/sale-detail/SaleListing\.test\.tsx''',
+'''(?:^|/)src/lib/auction-fact-claims\.test\.ts''',
+'''(?:^|/)src/lib/fact-reliability\.test\.ts''',
+'''(?:^|/)src/lib/information-agent-inbound\.test\.ts''',
+'''(?:^|/)src/lib/information-agent-inbound\.ts''',
+'''(?:^|/)src/lib/source-traceability\.test\.ts''',
+'''(?:^|/)supabase/migrations/20260825131944_analyze_information_agent_evidence\.sql''',
+'''(?:^|/)supabase/migrations/20260920144219_deterministic_information_agent_llm_request_guards\.sql''',
+'''(?:^|/)supabase/migrations/20260928200000_information_agent_fact_claim_bridge\.sql''',
+'''(?:^|/)supabase/tests/370_auction_fact_claims\.sql''',
+'''(?:^|/)supabase/tests/383_ai_review_projection_guard\.sql''',
+]
+regexes = [
+'''^property\.(?:surface_m2|carrez_surface_m2|land_surface_m2)$''',
+'''^(?:land_surface_m2|servitude_123)$'''
+]
+
+[[allowlists]]
+description = "Synthetic injected UUID used only by the tribunal statistics test"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)src/lib/tribunal-statistics\.test\.ts''']
+regexes = ['''^b2a68f98-c8b8-4f50-a808-18607b442ee6$''']
+
+[[allowlists]]
+description = "Synthetic database hardening fixture identifiers with repeated test material"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)supabase/tests/030_phase_2_3_database_hardening\.sql''']
+regexes = ['''^immojudis_key_[123]$''']
+
+[[allowlists]]
+description = "Committed verifier digest; the random CI bearer token is not stored in source"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)supabase/functions/source-fetch-relay/auth\.ts''']
+regexes = ['''^381b771e9d098c1d3a29a1d284debec324b39435646c14cfa79a4aefcdd6b913$''']

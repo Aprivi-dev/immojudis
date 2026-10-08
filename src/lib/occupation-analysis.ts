@@ -1,6 +1,7 @@
 import { occupancyLabel } from "@/lib/format";
 import { listingOccupation } from "@/lib/listing-evidence";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
+import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 
 export type OccupancyStatusKind = "free" | "occupied" | "rented" | "to_confirm" | "conflicting";
 
@@ -380,40 +381,6 @@ function dedupeEvidence(evidence: OccupancyEvidence[]): OccupancyEvidence[] {
     if (!byKey.has(key)) byKey.set(key, item);
   }
   return [...byKey.values()];
-}
-
-function flattenKeyValues(value: unknown, path = ""): Array<{ path: string; value: unknown }> {
-  if (!value || typeof value !== "object") return [];
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) => flattenPrimitiveOrObject(item, `${path}[${index}]`));
-  }
-
-  return Object.entries(value as Record<string, unknown>).flatMap(([key, item]) =>
-    flattenPrimitiveOrObject(item, path ? `${path}.${key}` : key),
-  );
-}
-
-function flattenPrimitiveOrObject(
-  value: unknown,
-  path: string,
-): Array<{ path: string; value: unknown }> {
-  if (value && typeof value === "object") return flattenKeyValues(value, path);
-  return [{ path, value }];
-}
-
-function normalizeText(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[’']/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function excerpt(value: string): string {
-  const text = value.replace(/\s+/g, " ").trim();
-  return text.length > 180 ? `${text.slice(0, 177).trim()}...` : text;
 }
 
 function cleanText(value: unknown): string | null {

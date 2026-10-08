@@ -1,0 +1,136 @@
+{
+  "slug": "analyser-opportunite-encheres",
+  "publishedAt": "2026-10-05",
+  "title": "Analyser une opportunité aux enchères : la méthode Immojudis en sept contrôles",
+  "category": "Méthode",
+  "description": "Une grille de lecture pour qualifier une vente aux enchères immobilière, relier chaque risque à une hypothèse et décider quand approfondir ou s’arrêter.",
+  "intro": [
+    "Une annonce présente souvent un prix, une surface et une date. Cela suffit pour ouvrir un dossier, pas pour conclure. Une opportunité devient analysable quand l’identité du bien, le marché local, les pièces, l’occupation et le coût complet peuvent être confrontés.",
+    "La méthode Immojudis avance par contrôles successifs. Chaque contrôle peut renforcer le dossier, réduire la confiance ou arrêter l’analyse. Le but est la clarté, sans transformer une estimation en promesse."
+  ],
+  "takeaways": [
+    "Commencez par les faits vérifiables et gardez la source de chaque donnée.",
+    "Utilisez DVF comme repère comparable, en regardant sa qualité et ses limites.",
+    "Transformez occupation, travaux, documents manquants et frais en hypothèses ou en questions.",
+    "Comparez plusieurs plafonds et définissez vos conditions d’arrêt avant l’audience."
+  ],
+  "sections": [
+    {
+      "id": "cadrer-la-vente",
+      "title": "Cadrer la vente avant de juger le prix",
+      "paragraphs": [
+        "Relevez sur la fiche le lieu de vente, la procédure, la date, la mise à prix, la localisation, la surface et l’occupation. Si une donnée manque, écrivez « à confirmer » au lieu de supposer. Ce contrôle évite de comparer un appartement, un terrain ou une cession organisée par un autre acteur comme s’il s’agissait du même objet.",
+        "Immojudis affiche le type de vente, les repères connus et les éléments de source de la fiche. Vérifiez la source avant de passer au calcul."
+      ],
+      "bullets": [
+        "La surface est-elle documentée ou estimée ?",
+        "Date, tribunal ou organisateur et mise à prix sont-ils confirmés ?"
+      ]
+    },
+    {
+      "id": "lire-le-marche",
+      "title": "Lire le marché sans confondre repère et promesse",
+      "paragraphs": [
+        "La base Demande de valeurs foncières (DVF) du ministère de l’Économie permet d’examiner des mutations issues d’actes notariés et d’informations cadastrales. Constituez un ensemble de ventes ressemblant au bien : même type, surfaces proches, secteur comparable et période cohérente. Une médiane ou une fourchette n’est utile qu’une fois ces choix expliqués.",
+        "Sur Immojudis, observez nombre de comparables, rayon, niveau géographique et confiance. Un historique d’adresse peut concerner des lots différents ; il ne prouve pas la valeur du logement. Si l’échantillon est faible, une saisie manuelle reste un scénario provisoire."
+      ],
+      "bullets": [
+        "Écartez les comparables de nature ou de surface différente.",
+        "Ne déduisez pas un prix futur ou un résultat d’enchère d’une seule vente."
+      ]
+    },
+    {
+      "id": "pieces-et-tracabilite",
+      "title": "Relier chaque affirmation à une pièce",
+      "paragraphs": [
+        "Ouvrez le cahier des conditions de vente et les documents proposés : descriptif, diagnostics, procès-verbal, copropriété, plans ou éléments cadastraux. Notez ce que chaque pièce confirme, ce qu’elle ne dit pas et la question à poser au professionnel compétent.",
+        "Une donnée extraite automatiquement doit être relue dans le document original. Conservez le nom ou le lien de la pièce pour que l’origine de chaque hypothèse reste compréhensible."
+      ],
+      "callout": {
+        "title": "Test de traçabilité",
+        "text": "Pour chaque chiffre : quelle est la source, quand a-t-elle été vérifiée et qu’est-ce qui pourrait la rendre fausse ?"
+      }
+    },
+    {
+      "id": "risques-en-hypotheses",
+      "title": "Convertir les risques en hypothèses de coût",
+      "paragraphs": [
+        "Occupation inconnue, DPE à relire, travaux de copropriété, surface provisoire ou visite limitée peuvent modifier délai, budget ou usage. Traduisez chaque sujet en action et, si possible, en montant : devis, enveloppe de remise en état, coût de financement, délai de libération ou scénario sans travaux.",
+        "L’assistant de mise plafond propose des scénarios de travaux calculés à partir de la surface et accepte votre propre montant. Il affiche aussi l’enveloppe de travaux compatible avec le prix simulé. Utilisez-la pour repérer le point de rupture, pas pour valider un devis absent."
+      ],
+      "bullets": [
+        "Surface ou occupation à confirmer : recalculer avant de retenir le plafond.",
+        "Travaux inconnus : séparer certain, probable et aléa.",
+        "Copropriété ou servitude non lue : garder le poste ouvert."
+      ]
+    },
+    {
+      "id": "scenarios-et-plafond",
+      "title": "Comparer des scénarios plutôt qu’un chiffre unique",
+      "paragraphs": [
+        "Comparez dans Immojudis les profils prudent, intermédiaire, offensif ou personnalisé. Regardez le coût complet au plafond : enchère, frais estimés, travaux, portage et autres postes renseignés. Le chiffre doit rester accompagné de sa référence de marché et de sa marge de sécurité.",
+        "Commencez par le scénario documenté, puis testez un marché plus conservateur et un budget travaux différent. Si le plafond passe sous la mise à prix, si l’enveloppe travaux tombe à zéro ou si le marché est inexploitable, collectez une preuve ou arrêtez l’analyse."
+      ],
+      "table": {
+        "headers": ["Scénario", "Question", "Suite"],
+        "rows": [
+          [
+            "Prudent",
+            "La marge couvre-t-elle les inconnues ?",
+            "Approfondir si les pièces suivent"
+          ],
+          ["Intermédiaire", "Qu’est-ce qui est confirmé ?", "Comparer au budget"],
+          ["Offensif", "Quelle incertitude est acceptée ?", "Justifier ou écarter"],
+          ["Personnalisé", "Pourquoi ai-je changé ce montant ?", "Tracer source et date"]
+        ]
+      }
+    },
+    {
+      "id": "conditions-arret",
+      "title": "Définir ses conditions d’arrêt",
+      "paragraphs": [
+        "L’analyse peut produire une prochaine action précise : obtenir une pièce, vérifier une surface, visiter, appeler l’avocat ou demander un devis. Certains blocages doivent cependant empêcher de figer un plafond : identité incertaine, comparables hétérogènes, coût majeur impossible à borner ou financement non préparé.",
+        "Classez les dossiers par niveau de preuve avec vos favoris ou un tableau. Le but est de comparer des analyses vérifiables, pas seulement des mises à prix séduisantes."
+      ],
+      "bullets": [
+        "Vert : pièces principales lues et hypothèses chiffrées.",
+        "Orange : une hypothèse importante reste ouverte ; plafond provisoire.",
+        "Rouge : donnée structurante ou coût impossible à borner ; suspendre."
+      ]
+    },
+    {
+      "id": "preparer-audience",
+      "title": "Préparer l’audience avec le professionnel compétent",
+      "paragraphs": [
+        "Vérifiez calendrier et formalités avec l’avocat du dossier. Pour une saisie immobilière, l’article R322-40 du Code des procédures civiles d’exécution prévoit que les enchères sont portées par un avocat inscrit au barreau du tribunal concerné. Le cahier indique les éléments pratiques ; R322-41 encadre la garantie remise avant les enchères et R322-42 les frais de poursuite annoncés avant l’ouverture.",
+        "Transmettez une note : plafond en euros, scénario, coût complet, pièces lues, incertitudes et consigne d’arrêt. Immojudis aide à la structurer ; faites confirmer les hypothèses juridiques, techniques et de financement pertinentes par les professionnels compétents."
+      ],
+      "callout": {
+        "title": "Décision documentée",
+        "text": "Une opportunité se juge par la qualité des preuves, la clarté des coûts et votre capacité à respecter le plafond choisi."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "label": "Bercy — Estimer la valeur d’un bien avec le service DVF",
+      "url": "https://www.economie.gouv.fr/particuliers/gerer-mon-argent/investir-dans-limmobilier/estimez-la-valeur-dun-bien-immobilier-avec-le-service-demande-de-valeurs-foncieres?language=fr"
+    },
+    {
+      "label": "data.gouv.fr — Jeu de données Demandes de valeurs foncières",
+      "url": "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-40",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343491"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-41",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939157"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R322-42",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939159"
+    }
+  ]
+}

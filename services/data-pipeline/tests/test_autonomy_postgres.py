@@ -227,6 +227,107 @@ def test_paid_predictions_are_reserved_before_use_and_budget_deferral_preserves_
             db.rollback()
 
 
+def test_source_presence_uses_compact_projection_when_available():
+    from src.autonomous_runner import record_source_presence
+
+    calls = []
+
+    class Result:
+        def fetchone(self):
+            return (
+                "app_private.auction_sale_source_presence",
+                "app_private.auction_sale_source_presence_json(uuid)",
+            )
+
+    class CompactDb:
+        def execute(self, statement, params=None):
+            calls.append((statement, params))
+            if "to_regclass" in statement:
+                return Result()
+            return Result()
+
+    record_source_presence(CompactDb(), "run-1", "licitor", "available", True)
+
+    assert len(calls) == 2
+    assert "insert into app_private.auction_sale_source_presence" in calls[1][0]
+    assert "update public.auction_sales" not in calls[1][0]
+    assert calls[1][1][0:3] == ("licitor", "available", True)
+
+
+def test_source_presence_compact_insert_and_conflict_update_run_in_postgres():
+    from src.autonomous_runner import record_source_presence
+
+    url = os.getenv('PIPELINE_TEST_DB_URL')
+    if not url:
+        pytest.skip('Requires disposable PostgreSQL')
+    with _postgres_connect(url) as db:
+        try:
+            db.execute('create schema if not exists app_private')
+            db.execute('''create table public.auction_sales(
+                id uuid primary key, source_url text not null, source_name text,
+                observations jsonb not null default '[]'::jsonb)''')
+            db.execute('''create table public.auction_collection_items(
+                run_id text, source_url text, canonical_source_url text)''')
+            db.execute('''create table app_private.auction_sale_source_presence(
+                sale_id uuid not null, source_name text not null,
+                availability text not null, state text, attempted_at timestamptz,
+                checked_at timestamptz, run_id text,
+                legacy_raw boolean not null default false,
+                primary key (sale_id, source_name))''')
+            db.execute('''create view public.auction_sale_source_presence as
+                select * from app_private.auction_sale_source_presence''')
+            db.execute('''create function app_private.auction_sale_source_presence_json(uuid)
+                returns jsonb language sql immutable as $$ select '{}'::jsonb $$''')
+            sale_id = '42200000-0000-4000-8000-000000000001'
+            db.execute(
+                'insert into public.auction_sales(id, source_url, source_name) values (%s, %s, %s)',
+                (sale_id, 'https://example.test/compact', 'licitor'),
+            )
+            db.execute(
+                '''insert into public.auction_collection_items(run_id, source_url)
+                   values (%s, %s)''',
+                ('run-1', 'https://example.test/compact'),
+            )
+
+            record_source_presence(db, 'run-1', 'licitor', 'available', True)
+            assert db.execute(
+                '''select availability, state, legacy_raw
+                     from app_private.auction_sale_source_presence
+                    where sale_id = %s and source_name = %s''',
+                (sale_id, 'licitor'),
+            ).fetchone() == ('available', 'present', False)
+
+            record_source_presence(db, 'run-2', 'licitor', 'unavailable', False)
+            assert db.execute(
+                '''select availability, state, legacy_raw
+                     from app_private.auction_sale_source_presence
+                    where sale_id = %s and source_name = %s''',
+                (sale_id, 'licitor'),
+            ).fetchone() == ('unavailable', 'present', False)
+        finally:
+            db.rollback()
+
+
+def test_source_presence_keeps_legacy_writer_until_projection_helper_exists():
+    from src.autonomous_runner import record_source_presence
+
+    calls = []
+
+    class Result:
+        def fetchone(self):
+            return ("app_private.auction_sale_source_presence", None)
+
+    class LegacyDb:
+        def execute(self, statement, params=None):
+            calls.append((statement, params))
+            return Result()
+
+    record_source_presence(LegacyDb(), "run-1", "licitor", "unavailable", False)
+
+    assert "update public.auction_sales" in calls[1][0]
+    assert "auction_sale_source_presence" not in calls[1][0]
+
+
 def test_source_outage_never_establishes_absence_or_deletes_listing():
     from src.autonomous_runner import record_source_presence
     url = os.getenv('PIPELINE_TEST_DB_URL')

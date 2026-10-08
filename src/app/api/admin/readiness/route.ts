@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getAdminOperationalReadiness } from "@/lib/admin-readiness";
+import { adminErrorResponse } from "@/lib/api-route-errors";
 
 export const runtime = "nodejs";
 
@@ -11,12 +12,6 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Diagnostic indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.startsWith("Forbidden")
-        ? 403
-        : 400;
-    return NextResponse.json({ error: message }, { status });
+    return adminErrorResponse(error, { fallbackMessage: "Diagnostic indisponible" });
   }
 }

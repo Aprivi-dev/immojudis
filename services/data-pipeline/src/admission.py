@@ -68,6 +68,94 @@ def retention_deadline(sale: AuctionSale):
     return sale_datetime.astimezone(UTC) + timedelta(hours=24)
 
 
+def catalogue_expiry_deadline(sale: AuctionSale, *, policy: str | None = None):
+    """Return the instant after which a sale leaves the public catalogue.
+
+    Catalogue visibility has a stricter rule than retention.  A dated sale is
+    hidden as soon as its known timestamp has passed.  A date-only source is
+    kept visible through that civil day in Europe/Paris, because midnight in
+    the normalized value is an ingestion convention rather than evidence that
+    the hearing started at 00:00.  The policy is explicit and can be changed
+    with ``IMMOJUDIS_DATE_ONLY_CATALOGUE_POLICY`` (``end_of_local_day`` is the
+    safe default; ``start_of_day`` is available for a deliberate product
+    decision).
+
+    A missing date remains eligible for retention and review, but is not an
+    upcoming catalogue item.  The SQL catalogue uses the same rule.
+    """
+    import os
+    import re
+    from datetime import UTC, datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    if sale.sale_date is None:
+        return None
+
+    sale_datetime = sale.sale_date.replace(tzinfo=UTC) if sale.sale_date.tzinfo is None else sale.sale_date
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+
+    # An online sale can open at ``sale_date`` and remain actionable until
+    # the observed closing instant.  Keep this ingestion-side cutoff aligned
+    # with the SQL catalogue helper; otherwise an upsert could drop a listing
+    # while the public catalogue still considers its window live.
+    procedure = sale.sale_procedure if isinstance(sale.sale_procedure, dict) else {}
+    for schedule in (
+        procedure.get("sale_window"),
+        procedure.get("sale_session"),
+        raw_payload.get("source_sale_schedule"),
+    ):
+        if not isinstance(schedule, dict):
+            continue
+        try:
+            start = datetime.fromisoformat(str(schedule["opens_at"]).replace("Z", "+00:00"))
+            end = datetime.fromisoformat(str(schedule["closes_at"]).replace("Z", "+00:00"))
+            if start.tzinfo is not None and end.tzinfo is not None and end > start:
+                return end.astimezone(UTC)
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    raw_date = str(raw_payload.get("sale_date") or "")
+    precision = (
+        str(raw_payload.get("date_precision") or "").strip()
+        or str(raw_payload.get("sale_date_precision") or "").strip()
+    ).lower()
+    date_only = precision in {"day", "date", "day_only", "date_only", "unknown_time", "time_unknown"}
+    date_only = date_only or bool(raw_date and not re.search(r"[0-9]{1,2}\s*([hH]|:[0-9]{2})", raw_date))
+
+    selected_policy = (
+        policy
+        or os.getenv("IMMOJUDIS_DATE_ONLY_CATALOGUE_POLICY")
+        or "end_of_local_day"
+    ).strip().lower()
+    if selected_policy not in {"end_of_local_day", "start_of_day"}:
+        selected_policy = "end_of_local_day"
+    if not date_only:
+        return sale_datetime.astimezone(UTC)
+
+    local_date = sale_datetime.astimezone(ZoneInfo("Europe/Paris")).date()
+    if selected_policy == "start_of_day":
+        return datetime.combine(
+            local_date,
+            datetime.min.time(),
+            ZoneInfo("Europe/Paris"),
+        ).astimezone(UTC)
+
+    next_paris_midnight = datetime.combine(
+        local_date + timedelta(days=1),
+        datetime.min.time(),
+        ZoneInfo("Europe/Paris"),
+    )
+    return next_paris_midnight.astimezone(UTC)
+
+
+def is_catalogue_expired(sale: AuctionSale, now=None, *, policy: str | None = None) -> bool:
+    """Whether the sale must be excluded before writing catalogue rows."""
+    from datetime import UTC, datetime
+
+    deadline = catalogue_expiry_deadline(sale, policy=policy)
+    return deadline is not None and deadline <= (now or datetime.now(UTC))
+
+
 def is_expired(sale: AuctionSale, now=None) -> bool:
     from datetime import UTC, datetime
     deadline = retention_deadline(sale)

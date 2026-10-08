@@ -979,7 +979,7 @@ def test_enrichment_queue_does_not_complete_mixed_claim_job_when_replay_fails(mo
     assert replay_kwargs == [{"snapshot": fact_claim_snapshot}]
 
 
-def test_enrichment_worker_uses_five_to_one_lane_cycle(monkeypatch) -> None:
+def test_enrichment_worker_uses_three_to_one_lane_cycle(monkeypatch) -> None:
     calls: list[tuple[int, str]] = []
 
     def fake_batch(*, limit: int, family: str, provider_clients: dict | None = None) -> int:
@@ -992,10 +992,10 @@ def test_enrichment_worker_uses_five_to_one_lane_cycle(monkeypatch) -> None:
     assert calls == [
         (2, queued_runner.SOURCE_DETAIL_FAMILY),
         (2, queued_runner.SOURCE_DETAIL_FAMILY),
-        (2, queued_runner.SOURCE_DETAIL_FAMILY),
-        (2, queued_runner.SOURCE_DETAIL_FAMILY),
         (1, queued_runner.SOURCE_DETAIL_FAMILY),
         (1, queued_runner.ENRICHMENT_FAMILY),
+        (2, queued_runner.SOURCE_DETAIL_FAMILY),
+        (1, queued_runner.SOURCE_DETAIL_FAMILY),
     ]
 
 
@@ -1165,9 +1165,9 @@ def test_enrichment_worker_groups_detail_claims_without_exceeding_job_budget(mon
     assert queued_runner.run_enrichment_queue_worker(max_jobs=6, budget_seconds=1200) == 6
     assert calls == [
         (2, queued_runner.SOURCE_DETAIL_FAMILY),
-        (2, queued_runner.SOURCE_DETAIL_FAMILY),
         (1, queued_runner.SOURCE_DETAIL_FAMILY),
         (1, queued_runner.ENRICHMENT_FAMILY),
+        (2, queued_runner.SOURCE_DETAIL_FAMILY),
     ]
 
 
@@ -1199,7 +1199,7 @@ def test_enrichment_worker_reliefs_larger_general_backlog_without_starving_detai
     assert len(calls) == 8
 
 
-def test_enrichment_family_cycle_keeps_historical_ratio_when_details_are_larger() -> None:
+def test_enrichment_family_cycle_reserves_general_lane_when_details_are_larger() -> None:
     cycle = queued_runner._enrichment_family_cycle(
         {
             queued_runner.SOURCE_DETAIL_FAMILY: 3_386,
@@ -1208,7 +1208,7 @@ def test_enrichment_family_cycle_keeps_historical_ratio_when_details_are_larger(
     )
 
     assert cycle == queued_runner.ENRICHMENT_FAMILY_CYCLE
-    assert cycle.count(queued_runner.SOURCE_DETAIL_FAMILY) == 5
+    assert cycle.count(queued_runner.SOURCE_DETAIL_FAMILY) == 3
     assert cycle.count(queued_runner.ENRICHMENT_FAMILY) == 1
 
 

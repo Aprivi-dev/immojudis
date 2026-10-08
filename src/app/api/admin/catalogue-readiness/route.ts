@@ -6,6 +6,7 @@ import {
   getAdminCatalogueReadinessOverview,
   runAdminCatalogueReadinessAction,
 } from "@/lib/admin-catalogue-readiness";
+import { adminErrorResponse } from "@/lib/api-route-errors";
 
 export async function GET(request: Request) {
   try {
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminError(error);
+    return adminErrorResponse(error, { fallbackMessage: "Maturité catalogue indisponible" });
   }
 }
 
@@ -35,16 +36,6 @@ export async function PATCH(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminError(error);
+    return adminErrorResponse(error, { fallbackMessage: "Maturité catalogue indisponible" });
   }
-}
-
-function adminError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Maturité catalogue indisponible";
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden")
-      ? 403
-      : 400;
-  return NextResponse.json({ error: message }, { status });
 }

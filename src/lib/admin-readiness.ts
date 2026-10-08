@@ -3,6 +3,7 @@ import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middlew
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { legalConfigurationStatus } from "@/lib/legal-documents";
+import { resolveExpectedLatestMigrationVersion } from "@/lib/migration-manifest";
 
 export type ReadinessStatus = "ready" | "warning" | "blocked";
 export type ReadinessArea =
@@ -81,7 +82,7 @@ export type AdminOperationalReadinessResponse = {
   webhookUrl: string | null;
 };
 
-export const EXPECTED_LATEST_MIGRATION_VERSION = "20260820144541";
+export const EXPECTED_LATEST_MIGRATION_VERSION = "20261003170000";
 export const EXPECTED_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display";
 export const OPERATIONAL_HEALTH_SLO_TARGET_PERCENT = 99.5;
 export const OPERATIONAL_HEALTH_SLO_WINDOW_DAYS = 30;
@@ -128,8 +129,13 @@ export async function getAdminOperationalReadiness(
 
 export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>): ReadinessItem[] {
   const appUrl = resolveSiteOrigin(env);
-  const stripeSecret = env.STRIPE_SECRET_KEY;
-  const webhookSecret = env.STRIPE_WEBHOOK_SECRET;
+  const stripeSecret = firstFilledEnv(env.STRIPE_SECRET_KEY);
+  const analysisPriceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
+  const analysisPriceConfigured = Boolean(
+    analysisPriceId && /^price_[A-Za-z0-9]+$/.test(analysisPriceId),
+  );
+  const webhookSecret = firstFilledEnv(env.STRIPE_WEBHOOK_SECRET);
+  const cronSecret = firstFilledEnv(env.CRON_SECRET);
   const emailConfig = resolveEmailAlertDeliveryConfig(env);
   const instantPipelineDispatch = firstFilledEnv(
     env.GITHUB_SCROLL_TOKEN,
@@ -163,15 +169,29 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       area: "billing",
       label: "Checkout Analyse",
       status:
-        stripeSecret && appUrl && legalStatus.ready && emailConfig.configured ? "ready" : "blocked",
+        stripeSecret &&
+        analysisPriceConfigured &&
+        appUrl &&
+        legalStatus.ready &&
+        emailConfig.configured
+          ? "ready"
+          : "blocked",
       detail:
-        stripeSecret && appUrl && legalStatus.ready && emailConfig.configured
-          ? "Le checkout Analyse peut encaisser 29 €, conserver la preuve contractuelle et ouvrir 30 jours d'accès."
-          : "Le checkout Analyse attend Stripe, son URL canonique, ses mentions juridiques ou le canal de confirmation contractuelle.",
+        stripeSecret &&
+        analysisPriceConfigured &&
+        appUrl &&
+        legalStatus.ready &&
+        emailConfig.configured
+          ? "Le checkout Analyse peut ouvrir l’essai gratuit de 7 jours avec carte bancaire, puis l’abonnement récurrent, tout en conservant la preuve contractuelle."
+          : "Le checkout Analyse attend Stripe, un Price récurrent Analyse valide, son URL canonique, ses mentions juridiques ou le canal de confirmation contractuelle.",
       action:
-        stripeSecret && appUrl && legalStatus.ready && emailConfig.configured
+        stripeSecret &&
+        analysisPriceConfigured &&
+        appUrl &&
+        legalStatus.ready &&
+        emailConfig.configured
           ? null
-          : "Configurer Stripe, Resend, NEXT_PUBLIC_APP_URL et les variables NEXT_PUBLIC_LEGAL_*.",
+          : "Configurer STRIPE_SECRET_KEY, STRIPE_ANALYSIS_PRICE_ID (Price récurrent valide), Resend, NEXT_PUBLIC_APP_URL et les variables NEXT_PUBLIC_LEGAL_*.",
     },
     {
       key: "billing.webhook",
@@ -180,8 +200,8 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       status: stripeSecret && webhookSecret ? "ready" : "blocked",
       detail:
         stripeSecret && webhookSecret
-          ? "Le webhook peut attribuer les accès Analyse de façon idempotente."
-          : "L'attribution automatique des 30 jours d'accès n'est pas encore active.",
+          ? "Le webhook peut réconcilier les accès Analyse et leurs abonnements de façon idempotente."
+          : "La réconciliation automatique des accès Analyse n'est pas encore active.",
       action: stripeSecret && webhookSecret ? null : "Configurer STRIPE_WEBHOOK_SECRET.",
     },
     {
@@ -208,20 +228,20 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
       key: "cron.smart_alerts",
       area: "cron",
       label: "Crons alertes",
-      status: env.CRON_SECRET ? "ready" : "blocked",
-      detail: env.CRON_SECRET
+      status: cronSecret ? "ready" : "blocked",
+      detail: cronSecret
         ? `${EXPECTED_CRONS.length} routes cron sont protégées par CRON_SECRET.`
         : "Les routes cron refusent les exécutions planifiées sans CRON_SECRET.",
-      action: env.CRON_SECRET ? null : "Configurer CRON_SECRET dans Vercel Production.",
+      action: cronSecret ? null : "Configurer CRON_SECRET dans Vercel Production.",
     },
     {
       key: "pipeline.dispatch",
       area: "pipeline",
       label: "Déclenchement pipeline",
-      status: instantPipelineDispatch ? "ready" : "warning",
+      status: instantPipelineDispatch ? "ready" : "blocked",
       detail: instantPipelineDispatch
         ? "L'admin peut déclencher immédiatement le workflow de collecte/backfill."
-        : "L'admin peut créer une demande en file, mais le lancement dépend du worker GitHub planifié.",
+        : "Aucun runner de collecte n'est configuré : l'admin ne peut pas lancer de collecte ou de backfill.",
       action: instantPipelineDispatch
         ? null
         : "Configurer GITHUB_SCROLL_TOKEN ou SCROLL_WEBHOOK_URL pour un lancement immédiat.",
@@ -263,12 +283,13 @@ async function assertAdminAuth(authToken: string) {
 async function readMigrationReadiness(
   env: Pick<NodeJS.ProcessEnv, string>,
 ): Promise<MigrationReadiness> {
+  const expectedLatestVersion = resolveExpectedLatestMigrationVersion(env);
   const dbUrl = databaseUrl(env);
 
   if (!dbUrl) {
     return {
       status: "warning",
-      expectedLatestVersion: EXPECTED_LATEST_MIGRATION_VERSION,
+      expectedLatestVersion,
       latestAppliedVersion: null,
       appliedCount: null,
       detail: "Impossible de vérifier les migrations sans URL Postgres lisible au runtime.",
@@ -292,11 +313,11 @@ async function readMigrationReadiness(
       from supabase_migrations.schema_migrations
     `;
     const latestVersion = latest?.version ?? null;
-    const ready = Boolean(latestVersion && latestVersion >= EXPECTED_LATEST_MIGRATION_VERSION);
+    const ready = Boolean(latestVersion && latestVersion >= expectedLatestVersion);
 
     return {
       status: ready ? "ready" : "blocked",
-      expectedLatestVersion: EXPECTED_LATEST_MIGRATION_VERSION,
+      expectedLatestVersion,
       latestAppliedVersion: latestVersion,
       appliedCount: count?.count ?? null,
       detail: ready
@@ -306,7 +327,7 @@ async function readMigrationReadiness(
   } catch (error) {
     return {
       status: "warning",
-      expectedLatestVersion: EXPECTED_LATEST_MIGRATION_VERSION,
+      expectedLatestVersion,
       latestAppliedVersion: null,
       appliedCount: null,
       detail:
@@ -360,8 +381,11 @@ async function readAiDescriptionReadiness(
       classified as (
         select
           *,
-          display_description is not null
-            and prompt_version = ${promptVersion} as covered_current,
+          coalesce(
+            display_description is not null
+              and prompt_version = ${promptVersion},
+            false
+          ) as covered_current,
           nullif(description, '') is null
             and nullif(raw_text, '') is null
             and nullif(raw_payload->>'source_description', '') is null as missing_source,
@@ -581,7 +605,7 @@ function migrationItem(migrations: MigrationReadiness): ReadinessItem {
     action:
       migrations.status === "ready"
         ? null
-        : `Vérifier que ${EXPECTED_LATEST_MIGRATION_VERSION} est appliquée.`,
+        : `Vérifier que ${migrations.expectedLatestVersion} est appliquée.`,
   };
 }
 

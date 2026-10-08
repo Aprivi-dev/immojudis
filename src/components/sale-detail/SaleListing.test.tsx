@@ -115,19 +115,102 @@ describe("readable listing sections", () => {
     expect(details?.querySelector("p")?.textContent).toContain("CONDITIONS DE LA VENTE");
   });
 
-  it("leads with the starting price and three essential facts", () => {
+  it("leads with the starting price and known essential facts", () => {
     render(<ListingOverview sale={item()} />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Bordeaux");
     expect(screen.getByText("42,6 m²")).toBeTruthy();
     expect(screen.getByText("Surface Carrez")).toBeTruthy();
-    expect(screen.getAllByRole("term")).toHaveLength(3);
+    expect(screen.getByText("Chambres")).toBeTruthy();
+    expect(screen.getByText("1", { exact: true })).toBeTruthy();
+    expect(screen.getAllByRole("term")).toHaveLength(4);
     expect(screen.queryByText("Mise à prix au m²")).toBeNull();
     expect(screen.getByText("Prix de départ, hors frais")).toBeTruthy();
     expect(screen.getByRole("link", { name: /rendez-vous/i }).getAttribute("href")).toBe(
       "#rendez-vous",
     );
   });
-  it("shows a provenance status beside each key value without upgrading an unverified value", () => {
+  it("only adds the bedrooms fact when the count is a positive finite value", () => {
+    const { container } = render(
+      <ListingOverview sale={item({ bedrooms_count: 0, rooms_count: 2 })} />,
+    );
+
+    expect(within(container).queryByText("Chambres", { exact: true })).toBeNull();
+    expect(screen.getAllByRole("term")).toHaveLength(3);
+  });
+  it("keeps AI-blocked room data from reappearing as bedrooms", () => {
+    const projection: AiReviewProjectionReadModel = {
+      auction_sale_id: "sale-1",
+      field_key: "property.rooms_count",
+      review_state: "unresolved",
+      citation_status: "not_required",
+      is_publishable: false,
+      source_name: "Avoventes",
+      source_url: "https://avoventes.fr/vente/1",
+    };
+
+    render(
+      <ListingOverview
+        sale={item({ rooms_count: 4, bedrooms_count: 2 })}
+        aiReviewProjections={[projection]}
+      />,
+    );
+
+    expect(screen.queryByText("4", { exact: true })).toBeNull();
+    expect(screen.queryByText("2", { exact: true })).toBeNull();
+    expect(screen.queryByText("Chambres", { exact: true })).toBeNull();
+  });
+  it("keeps the pricing scenario secondary and collapsed by default", () => {
+    render(
+      <ListingOverview
+        sale={item()}
+        scenarioSummary={{
+          purchasePrice: 92_000,
+          totalCost: 124_000,
+          works: 20_000,
+          marketValue: 150_000,
+          personalized: false,
+        }}
+      />,
+    );
+
+    const summary = screen.getByText("Voir le scénario de prix");
+    const details = summary.closest("details");
+    expect(details).toBeTruthy();
+    expect(details?.open).toBe(false);
+    expect(
+      screen.getByText("Chambres").compareDocumentPosition(summary) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.getByText("15 octobre 2026", { exact: false }).compareDocumentPosition(summary) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    fireEvent.click(summary);
+    expect(details?.open).toBe(true);
+    expect(screen.getByText("Coût du projet estimé")).toBeTruthy();
+    expect(screen.getByText("Scénario de départ")).toBeTruthy();
+  });
+  it("uses the same collapsed disclosure for a personalized scenario", () => {
+    render(
+      <ListingOverview
+        sale={item()}
+        scenarioSummary={{
+          purchasePrice: 100_000,
+          totalCost: 132_000,
+          works: 25_000,
+          marketValue: null,
+          personalized: true,
+        }}
+      />,
+    );
+
+    const summary = screen.getByText("Voir le scénario de prix");
+    expect(summary.closest("details")?.open).toBe(false);
+    fireEvent.click(summary);
+    expect(screen.getByText("Votre scénario")).toBeTruthy();
+  });
+  it("shows a source explanation beside each key value without upgrading an unverified value", () => {
     render(
       <ListingOverview
         sale={item({
@@ -140,10 +223,14 @@ describe("readable listing sections", () => {
       />,
     );
 
-    expect(screen.getByRole("note", { name: /Date de vente : À confirmer/ })).toBeTruthy();
-    expect(screen.getByRole("note", { name: /Mise à prix : À confirmer/ })).toBeTruthy();
-    expect(screen.getByRole("note", { name: /Surface : Observé/ })).toBeTruthy();
-    expect(screen.getByRole("note", { name: /Occupation : Conflit/ })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Source à préciser pour Date de vente" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Source à préciser pour Mise à prix" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Source à préciser pour Surface Carrez" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Source à préciser pour Occupation" })).toBeTruthy();
   });
 
   it("labels a provisional surface as inferred in the real listing summary", () => {
@@ -160,7 +247,7 @@ describe("readable listing sections", () => {
     );
 
     expect(screen.getByText("Surface estimée")).toBeTruthy();
-    expect(screen.getByRole("note", { name: /Surface : Inféré/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Voir l’origine de Surface Carrez" })).toBeTruthy();
   });
 
   it("suppresses AI-blocked type and rooms while retaining source provenance", () => {
@@ -195,7 +282,7 @@ describe("readable listing sections", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
       "Type de bien à confirmer",
     );
-    expect(screen.getAllByText("À confirmer").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("À confirmer")).toBeTruthy();
     expect(
       screen.getAllByRole("link", { name: /Source : Avoventes/ }).length,
     ).toBeGreaterThanOrEqual(2);
@@ -222,6 +309,54 @@ describe("readable listing sections", () => {
     expect(screen.getAllByText("À confirmer").length).toBeGreaterThan(0);
     expect(screen.queryByText("42,6 m²")).toBeNull();
     expect(screen.getByText(/Source : Avoventes/)).toBeTruthy();
+    expect(screen.queryByRole("note", { name: /Surface :/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Surface/ })).toBeNull();
+  });
+  it("suppresses the price reliability badge when the AI review blocks the price", () => {
+    const projection: AiReviewProjectionReadModel = {
+      auction_sale_id: "sale-1",
+      field_key: "sale.starting_price_eur",
+      review_state: "unverified",
+      citation_status: "unverified",
+      is_publishable: false,
+      source_name: "Avoventes",
+      source_url: "https://avoventes.fr/vente/1",
+    };
+
+    render(<ListingOverview sale={item()} aiReviewProjections={[projection]} />);
+
+    expect(screen.getByText("À confirmer")).toBeTruthy();
+    expect(screen.queryByRole("note", { name: /Mise à prix :/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Mise à prix/ })).toBeNull();
+  });
+  it("does not expose premium or scenario values while a pricing input is protected", () => {
+    const projection: AiReviewProjectionReadModel = {
+      auction_sale_id: "sale-1",
+      field_key: "sale.starting_price_eur",
+      review_state: "unresolved",
+      citation_status: "not_required",
+      is_publishable: false,
+      source_name: "Avoventes",
+      source_url: "https://avoventes.fr/vente/1",
+    };
+
+    render(
+      <ListingOverview
+        sale={item()}
+        premiumCeiling={120_000}
+        aiReviewProjections={[projection]}
+        scenarioSummary={{
+          purchasePrice: 92_000,
+          totalCost: 124_000,
+          works: 20_000,
+          marketValue: 150_000,
+          personalized: false,
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Mise plafond indicative")).toBeNull();
+    expect(screen.queryByText("Voir le scénario de prix")).toBeNull();
   });
   it("does not show zero or invalid amounts as known property facts", () => {
     const { container } = render(
@@ -236,9 +371,53 @@ describe("readable listing sections", () => {
         })}
       />,
     );
-    expect(screen.getAllByText("À confirmer").length).toBeGreaterThanOrEqual(4);
+    expect(screen.getAllByText("Non renseigné").length).toBeGreaterThanOrEqual(2);
     expect(container.textContent).not.toContain("0 €");
     expect(container.textContent).not.toContain("NaN");
+  });
+  it("labels absent listing facts without presenting them as pending review", () => {
+    render(
+      <ListingOverview
+        sale={item({
+          title: "Lot",
+          property_type: "commercial",
+          city: null,
+          postal_code: null,
+          sale_date: null,
+          starting_price_eur: null,
+          rooms_count: null,
+          app_surface_m2: null,
+          habitable_surface_m2: null,
+          carrez_surface_m2: null,
+          land_surface_m2: null,
+        })}
+      />,
+    );
+    expect(screen.getAllByText("Non renseignée").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Non renseigné").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Date non renseignée")).toBeTruthy();
+    expect(screen.getByText("Localisation non renseignée")).toBeTruthy();
+  });
+  it("labels absent venue, visit and contact details explicitly", () => {
+    render(
+      <ListingPracticalDetails
+        sale={item({
+          sale_venue_type: "unknown",
+          sale_procedure: null,
+          source_blocks: null,
+          sale_date: null,
+          visit_dates: [],
+          lawyer_name: null,
+          lawyer_contact: null,
+          tribunal: null,
+          tribunal_name: null,
+        })}
+      />,
+    );
+    expect(screen.getByText("Lieu non renseigné")).toBeTruthy();
+    expect(screen.getByText("Dates de visite non renseignées")).toBeTruthy();
+    expect(screen.getByText("Contact non renseigné")).toBeTruthy();
+    expect(screen.getByText("Date non renseignée")).toBeTruthy();
   });
   it("shows the actual visits and an actionable dossier contact", () => {
     render(<ListingPracticalDetails sale={item()} />);

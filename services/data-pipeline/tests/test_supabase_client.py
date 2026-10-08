@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -179,31 +180,114 @@ def test_known_sale_preflight_uses_postgres_when_configured(monkeypatch) -> None
     })
 
     class FakeDb:
+        isolation = False
+
         def __enter__(self):
             return self
 
         def __exit__(self, *_args):
             return False
 
-        def execute(self, query):
+        def execute(self, query, params=None):
+            if query == "set transaction isolation level repeatable read":
+                self.isolation = True
+                return SimpleNamespace(fetchall=lambda: [])
+            if "to_regclass" in query and "to_regprocedure" in query:
+                return SimpleNamespace(
+                    fetchone=lambda: (
+                        "app_private.auction_sale_source_presence",
+                        "app_private.auction_sale_source_presence_json(uuid)",
+                    )
+                )
             if "list_reviewed_publication_aliases" in query:
                 return SimpleNamespace(fetchall=lambda: [(
                     alias_id, canonical_id, alias_url, canonical_url,
                     "reviewed-pair", {}, "2026-09-13T08:33:51Z", "test",
                 )])
             assert "select to_jsonb(sale)" in query
+            assert "jsonb_build_object" in query
+            assert "raw_payload->'source_checks'" in query
+            assert "auction_sale_source_presence_json(id)" in query
+            assert params == (supabase_client.KNOWN_SALE_DETAIL_PAGE_SIZE,)
             return SimpleNamespace(fetchall=lambda: [
-                ({"id": alias_id, "source_url": alias_url, "source_urls": []},),
-                ({"id": canonical_id, "source_url": canonical_url, "source_urls": []},),
+                ({"id": alias_id, "source_url": alias_url, "source_urls": [],
+                  "raw_payload": {
+                      "source_checks": {alias_url: {"checked_at": "now"}},
+                      "source_presence": {"licitor": {"availability": "available"}},
+                  }},),
+                ({"id": canonical_id, "source_url": canonical_url, "source_urls": [],
+                  "raw_payload": {
+                      "source_checks": {canonical_url: {"checked_at": "now"}},
+                      "source_presence": {"licitor": {"availability": "available"}},
+                  }},),
             ])
 
-    monkeypatch.setattr(supabase_client, "_postgres_connect", lambda _url: FakeDb())
+    databases = []
+
+    def fake_connect(_url):
+        database = FakeDb()
+        databases.append(database)
+        return database
+
+    monkeypatch.setattr(supabase_client, "_postgres_connect", fake_connect)
     monkeypatch.setattr(supabase_client.httpx, "get", lambda *_a, **_kw: pytest.fail("REST preflight used"))
 
     details = supabase_client.fetch_known_sale_details()
 
     assert details[alias_url]["id"] == canonical_id
     assert details[canonical_url]["id"] == canonical_id
+    assert details[canonical_url]["raw_payload"] == {
+        "source_checks": {canonical_url: {"checked_at": "now"}},
+        "source_presence": {"licitor": {"availability": "available"}},
+    }
+    assert databases[0].isolation is True
+
+
+def test_known_sale_projection_keeps_source_contract_and_compact_presence() -> None:
+    required = {
+        "source_property_features",
+        "source_property_feature_evidence",
+        "source_property_features_meta",
+        "source_procedure_profile",
+        "source_field_observations",
+        "source_evidence",
+        "source_evidence_provenance",
+        "source_energy_diagnostics",
+    }
+
+    assert required.issubset(set(supabase_client.KNOWN_SALE_RAW_PAYLOAD_KEYS))
+    compact_select = supabase_client._known_sale_postgres_select(compact_presence=True)
+    assert "app_private.auction_sale_source_presence_json(id)" in compact_select
+    for key in required:
+        assert f"raw_payload->'{key}'" in compact_select
+
+
+def test_known_sale_projection_executes_in_disposable_postgres() -> None:
+    url = os.getenv("PIPELINE_TEST_DB_URL")
+    if not url:
+        pytest.skip("Requires disposable PostgreSQL")
+
+    from psycopg.types.json import Jsonb
+
+    payload = {
+        "source_checks": {"example": {"checked_at": "now"}},
+        "source_property_features": {"surface_m2": 100},
+        "source_presence": None,
+        "llm_display_description": None,
+        "unlisted_payload": {"must_not_be_forwarded": True},
+    }
+    with supabase_client._postgres_connect(url) as db:
+        row = db.execute(
+            "select "
+            f"{supabase_client.KNOWN_SALE_RAW_PAYLOAD_PROJECTION} "
+            "from (values (%s::jsonb)) as input(raw_payload)",
+            (Jsonb(payload),),
+        ).fetchone()
+
+    assert row == ({
+        "source_checks": {"example": {"checked_at": "now"}},
+        "source_property_features": {"surface_m2": 100},
+    },)
 
 
 def test_run_lifecycle_uses_postgres_after_cloudflare_521(monkeypatch) -> None:
@@ -1607,7 +1691,7 @@ def test_upsert_documents_deduplicates_document_urls(monkeypatch) -> None:
 
     assert supabase_client.upsert_documents_to_supabase([sale]) == 2
     assert calls[0][0] == "auction_documents"
-    assert calls[0][2] == "document_url"
+    assert calls[0][2] == "source_url,document_url"
     assert [row["document_url"] for row in calls[0][1]] == [
         "https://example.test/pv.pdf",
         "https://example.test/ccv.pdf",

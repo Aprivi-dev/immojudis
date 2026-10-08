@@ -34,6 +34,8 @@ describe("tribunal judicial activity repository", () => {
           starting_price_eur: 50_000,
           property_type: "apartment",
           visit_dates: ["2026-09-01T09:00:00.000Z"],
+          occupancy_status: "occupied",
+          city: "Marseille",
           first_seen_at: "2026-08-01T09:00:00.000Z",
         },
       ],
@@ -73,6 +75,8 @@ describe("tribunal judicial activity repository", () => {
     expect(salesQuery.state.selected).not.toMatch(
       /address|description|lawyer|document|source_url/i,
     );
+    expect(salesQuery.state.selected).toContain("occupancy_status");
+    expect(salesQuery.state.selected).toContain("city");
     expect(salesQuery.state.ranges).toEqual([[0, 999]]);
     expect(salesQuery.state.selected).toContain(
       "publication_quarantine:raw_payload->>publication_quarantine",
@@ -91,6 +95,8 @@ describe("tribunal judicial activity repository", () => {
       starting_price_eur: 50_000,
       property_type: "apartment",
       visit_dates: [],
+      occupancy_status: null,
+      city: "Marseille",
       first_seen_at: "2026-08-01T09:00:00.000Z",
       publication_quarantine: index === 0 ? "operator_hold" : null,
     });
@@ -112,6 +118,47 @@ describe("tribunal judicial activity repository", () => {
     expect(result.activity.upcomingSales).toBe(1_000);
     expect(firstPage.state.ranges).toEqual([[0, 999]]);
     expect(secondPage.state.ranges).toEqual([[1_000, 1_999]]);
+  });
+
+  it("conserve occupation et commune sur le chemin d’une annonce précise", async () => {
+    const courtQuery = fakeQuery({
+      data: { code: "justice_tj_1_59", name: "TJ Marseille", judicial_region: null },
+      error: null,
+    });
+    const salesQuery = fakeQuery({
+      data: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          sale_date: "2026-08-10T09:00:00.000Z",
+          status: "past",
+          starting_price_eur: 50_000,
+          property_type: "apartment",
+          visit_dates: ["2026-07-01T09:00:00.000Z"],
+          occupancy_status: "occupied",
+          city: "Marseille",
+          first_seen_at: "2026-07-01T09:00:00.000Z",
+        },
+      ],
+      error: null,
+    });
+    serverFrom.mockReturnValueOnce(courtQuery.query).mockReturnValueOnce(salesQuery.query);
+
+    const result = await getTribunalJudicialActivity(
+      { courtCode: "justice_tj_1_59", historyMonths: 36 },
+      { asOf: AS_OF },
+    );
+
+    expect(result.activity.occupation).toEqual({
+      knownSales: 1,
+      unknownSales: 0,
+      distribution: [{ status: "occupied", count: 1, share: 1 }],
+    });
+    expect(result.activity.communes).toEqual([{ city: "Marseille", count: 1, share: 1 }]);
+    expect(result.activity.observedVisitCoverage).toEqual({
+      status: "insufficient_data",
+      value: null,
+      sampleSize: 1,
+    });
   });
 
   it("échoue fermé sans correspondance exacte dans le référentiel Justice", async () => {
@@ -381,6 +428,8 @@ describe("tribunal judicial activity repository", () => {
           starting_price_eur: 50_000,
           property_type: "apartment",
           visit_dates: [],
+          occupancy_status: "rented",
+          city: "Marseille",
           first_seen_at: "2026-08-01T09:00:00.000Z",
         },
       ],

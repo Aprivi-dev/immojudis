@@ -1501,3 +1501,24 @@ def test_superseded_enrichment_checkpoint_is_skipped(monkeypatch):
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: 0)
 
     assert main._checkpoint_enrichment(sale) is False
+
+
+def test_cold_worker_preserves_vench_source_contract_from_bounded_snapshot() -> None:
+    source_url = "https://example.test/vench/source-contract"
+    contract = {
+        "source_property_features": {"energy": {"dpe_class": "D"}},
+        "source_property_feature_evidence": {"energy": [{"text": "DPE D"}]},
+        "source_property_features_meta": {"version": "source_features_v2"},
+        "source_procedure_profile": {"family": "judicial", "confidence": 0.9},
+        "source_field_observations": {"sale_date": {"state": "observed"}},
+        "source_evidence": {"sale_date": [{"value": "2027-02-15"}]},
+        "source_evidence_provenance": {"sale_date": {"source": "vench"}},
+        "source_energy_diagnostics": {"dpe_class": "D"},
+    }
+    raw = {"source_name": "vench", "source_url": source_url}
+    known = {source_url: {"raw_payload": contract}}
+
+    main._preserve_known_enrichment_payloads([raw], known)
+
+    for key, value in contract.items():
+        assert raw[key] == value

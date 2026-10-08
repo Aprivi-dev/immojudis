@@ -4,7 +4,6 @@ import {
   buildOutcomeGraphRefusal,
   type OutcomeGraphConfidenceLabel,
   type OutcomeGraphForecast,
-  type OutcomeGraphHorizon,
   type OutcomeGraphPressureComponent,
   type OutcomeGraphProbability,
   type OutcomeGraphQuantiles,

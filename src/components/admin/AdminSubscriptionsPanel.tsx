@@ -25,13 +25,15 @@ const SUBSCRIPTIONS_QUERY_KEY = ["admin-subscriptions"] as const;
 export function AdminSubscriptionsPanel() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<SubscriptionFormState>(() => emptySubscriptionForm());
+  const [offset, setOffset] = useState(0);
   const subscriptionsQuery = useQuery({
-    queryKey: SUBSCRIPTIONS_QUERY_KEY,
-    queryFn: fetchAdminSubscriptions,
+    queryKey: [...SUBSCRIPTIONS_QUERY_KEY, offset],
+    queryFn: () => fetchAdminSubscriptions({ offset }),
     staleTime: 30_000,
   });
 
   const subscriptions = subscriptionsQuery.data?.subscriptions ?? [];
+  const totalCount = subscriptionsQuery.data?.totalCount ?? subscriptions.length;
 
   const grantMutation = useMutation({
     mutationFn: () => grantAdminSubscription({ data: formToInput(form) }),
@@ -82,6 +84,12 @@ export function AdminSubscriptionsPanel() {
             ? subscriptionsQuery.error.message
             : "Chargement impossible"}
         </div>
+      ) : null}
+      {subscriptionsQuery.data ? (
+        <p className="mt-4 text-xs text-muted-foreground">
+          {subscriptions.length} accès affiché{subscriptions.length > 1 ? "s" : ""} sur {totalCount}
+          . Les plus récents sont chargés en priorité.
+        </p>
       ) : null}
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[0.82fr_1.18fr]">
@@ -177,7 +185,64 @@ export function AdminSubscriptionsPanel() {
           </div>
         </div>
       </div>
+      {subscriptionsQuery.data && totalCount > 0 ? (
+        <AdminPagination
+          offset={offset}
+          count={subscriptions.length}
+          totalCount={totalCount}
+          hasMore={subscriptionsQuery.data.hasMore}
+          busy={subscriptionsQuery.isFetching}
+          onPrevious={() =>
+            setOffset((current) => Math.max(0, current - subscriptionsQuery.data!.limit))
+          }
+          onNext={() => setOffset((current) => current + subscriptionsQuery.data!.limit)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function AdminPagination({
+  offset,
+  count,
+  totalCount,
+  hasMore,
+  busy,
+  onPrevious,
+  onNext,
+}: {
+  offset: number;
+  count: number;
+  totalCount: number;
+  hasMore: boolean;
+  busy: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+      <span>
+        {offset + 1}–{offset + count} sur {totalCount}
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy || offset === 0}
+          onClick={onPrevious}
+        >
+          Précédent
+        </button>
+        <button
+          type="button"
+          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy || !hasMore}
+          onClick={onNext}
+        >
+          Suivant
+        </button>
+      </div>
+    </div>
   );
 }
 

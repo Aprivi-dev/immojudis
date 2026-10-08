@@ -3,9 +3,10 @@ import { formatDateTime } from "@/lib/format";
 import { getDisplaySurface, getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 import { publishedDay, sourceVisitExcerpt } from "./listing-evidence";
+import { cleanDateForListing, cleanListingAddress, cleanVisitText } from "./listing-data-cleanup";
 
 export function listingAddress(sale: AuctionSale): string {
-  const address = sale.address?.trim() ?? "";
+  const address = cleanListingAddress(sale.address) ?? "";
   const normalize = (value: string) =>
     value
       .normalize("NFD")
@@ -46,7 +47,7 @@ export function listingSurface(sale: AuctionSale) {
     label,
     formatted:
       surface.value == null
-        ? "À confirmer"
+        ? "Non renseignée"
         : `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(surface.value)} m²`,
     // A provisional studio surface or a plot is not a measured living area.
     pricePerM2:
@@ -69,8 +70,9 @@ export function listingCoordinates(sale: AuctionSale): { lat: number; lng: numbe
 }
 
 export function listingDate(value: string | null | undefined): string {
-  if (!value?.trim()) return "À confirmer";
-  const text = value.trim();
+  const cleaned = cleanDateForListing(value);
+  if (!cleaned) return "Date non renseignée";
+  const text = cleaned;
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
   if (dateOnly) {
     const date = new Date(`${text}T12:00:00Z`);
@@ -101,20 +103,26 @@ export function listingDate(value: string | null | undefined): string {
 
 export function listingVisits(sale: AuctionSale): string[] {
   const values = Array.isArray(sale.visit_dates)
-    ? sale.visit_dates.filter(
-        (value): value is string => typeof value === "string" && !!value.trim(),
-      )
-    : typeof sale.visit_dates === "string" && sale.visit_dates.trim()
-      ? [sale.visit_dates]
+    ? sale.visit_dates.filter((value): value is string => Boolean(cleanVisitText(value)))
+    : cleanVisitText(sale.visit_dates)
+      ? [cleanVisitText(sale.visit_dates)!]
       : [];
   const fallback = ["visites", "visite", "date_de_visite", "detail_date_de_visite", "visit_dates"]
     .map((key) => sale.source_blocks?.[key])
-    .filter((value): value is string => typeof value === "string" && !!value.trim());
+    .map((value) => cleanVisitText(value))
+    .filter((value): value is string => Boolean(value));
   const retained = values.length ? values : fallback;
   const sourceVisit = retained.some((value) => publishedDay(value))
     ? null
     : sourceVisitExcerpt(sale);
-  return [...new Set([...(sourceVisit ? [sourceVisit] : []), ...retained].map(listingDate))];
+  return [
+    ...new Set(
+      [...(sourceVisit ? [sourceVisit] : []), ...retained]
+        .map(cleanVisitText)
+        .filter((value): value is string => Boolean(value))
+        .map(listingDate),
+    ),
+  ];
 }
 
 export type ListingContactLink = {

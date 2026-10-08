@@ -3,18 +3,18 @@
   top: 64px;
   z-index: 20;
   margin: 28px 0 24px;
-  padding: 10px;
-  border: 1px solid rgb(219 225 233 / 88%);
-  border-radius: 18px;
-  background: rgb(255 255 255 / 94%);
-  box-shadow: 0 12px 30px rgb(19 34 56 / 8%);
+  padding: 8px;
+  border: 1px solid rgb(219 225 233 / 80%);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 4px 14px rgb(19 34 56 / 4%);
   backdrop-filter: blur(18px);
 }
 
 .inner {
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: center;
   min-width: 0;
 }
 
@@ -22,20 +22,10 @@
   display: none;
 }
 
-.eyebrow {
-  flex: 0 0 auto;
-  color: #607086;
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.09em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
 .tabList {
   display: flex;
-  flex: 1 1 auto;
-  gap: 6px;
+  flex: 0 1 880px;
+  gap: 8px;
   min-width: 0;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
@@ -45,11 +35,12 @@
 }
 
 .tab {
-  flex: 0 0 auto;
-  min-height: 42px;
-  padding: 9px 15px;
+  flex: 1 0 128px;
+  min-width: 128px;
+  min-height: 44px;
+  padding: 10px 16px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 11px;
   background: transparent;
   color: #405168;
   cursor: pointer;
@@ -57,6 +48,7 @@
   font-size: 14px;
   font-weight: 680;
   line-height: 1.25;
+  text-align: center;
   white-space: nowrap;
   transition:
     background-color 160ms ease,
@@ -80,7 +72,7 @@
   border-color: #132238;
   background: #132238;
   color: #fff;
-  box-shadow: 0 5px 12px rgb(19 34 56 / 16%);
+  box-shadow: 0 3px 8px rgb(19 34 56 / 12%);
 }
 
 .active:hover {

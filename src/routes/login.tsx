@@ -15,7 +15,8 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import {
-  isProfessionalAccount,
+  getAccountType,
+  isAdminAccount,
   PROFESSIONAL_ROLE_OPTIONS,
   type AccountType,
   type ProfessionalRole,
@@ -73,7 +74,7 @@ const modeCopy: Record<
 };
 
 export function LoginPage() {
-  const { user, profile } = useAuth();
+  const { user, profile, loading } = useAuth();
   const { redirect, mode: requestedMode } = Route.useSearch();
   const navigate = useNavigate();
   const mode: LoginMode = requestedMode ?? "login";
@@ -89,13 +90,17 @@ export function LoginPage() {
   const accountType: AccountType = mode === "professional" ? "b2b" : "b2c";
   const postAuthTarget = useMemo(
     () =>
-      postAuthDestination({ mode, redirect, professional: isProfessionalAccount(user, profile) }),
+      postAuthDestination({
+        mode,
+        redirect,
+        professional: isAdminAccount(user, profile) || getAccountType(user, profile) === "b2b",
+      }),
     [mode, profile, redirect, user],
   );
 
   useEffect(() => {
-    if (user) navigate({ to: postAuthTarget });
-  }, [navigate, postAuthTarget, user]);
+    if (user && !loading) navigate({ to: postAuthTarget });
+  }, [loading, navigate, postAuthTarget, user]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -167,8 +172,9 @@ export function LoginPage() {
               Deux parcours, une décision plus nette.
             </h1>
             <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
-              Découverte ouvre gratuitement le catalogue. Analyse débloque ensuite toutes les
-              informations pendant 30 jours pour 29 €. Les professionnels préparent leurs annonces.
+              Découverte ouvre gratuitement le catalogue. Analyse permet de tester les outils
+              Premium pendant sept jours avec carte bancaire, puis de poursuivre sur abonnement. Les
+              professionnels déposent et suivent leurs annonces dans leur espace.
             </p>
 
             <div className="mt-10 grid gap-3">
@@ -315,6 +321,7 @@ export function LoginPage() {
                 <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
                 <input
                   type="email"
+                  autoComplete="email"
                   required
                   placeholder="vous@exemple.fr"
                   value={email}
@@ -331,9 +338,10 @@ export function LoginPage() {
                 <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
                 <input
                   type="password"
+                  autoComplete={isSignup ? "new-password" : "current-password"}
                   required
-                  minLength={6}
-                  placeholder="6 caractères minimum"
+                  minLength={isSignup ? 8 : 6}
+                  placeholder={isSignup ? "8 caractères minimum" : "Votre mot de passe"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="form-input pl-10"
@@ -341,6 +349,11 @@ export function LoginPage() {
               </div>
             </label>
 
+            {!isSignup ? (
+              <Link to="/mot-de-passe-oublie" className="text-right text-sm underline">
+                Mot de passe oublié ?
+              </Link>
+            ) : null}
             <button
               type="submit"
               disabled={busy}
@@ -364,8 +377,20 @@ export function LoginPage() {
 
 function safeRedirect(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  if (!value.startsWith("/") || value.startsWith("//") || value.includes("://")) return undefined;
-  return value;
+  if (
+    !value.startsWith("/") ||
+    value.includes("\\") ||
+    [...value].some((character) => character.charCodeAt(0) <= 32)
+  )
+    return undefined;
+  const base = "http://immojudis.local";
+  try {
+    const url = new URL(value, base);
+    if (url.origin !== base || url.pathname === "/login") return undefined;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return undefined;
+  }
 }
 
 function ModeButton({

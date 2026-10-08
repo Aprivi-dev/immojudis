@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BidCeilingAssistant } from "./BidCeilingAssistant";
 import { EXAMPLE_SALE, EXAMPLE_MARKET_ESTIMATE } from "@/lib/example-sale";
 import { bidStorageKey, parseBidHistory } from "@/lib/bid-simulation-history";
+import type { AuctionSale } from "@/lib/types";
 
 const auth = vi.hoisted(() => ({
   user: { id: "investor-a" } as { id: string } | null,
@@ -23,9 +24,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function renderAssistant(sale = EXAMPLE_SALE) {
+function renderAssistant(sale: AuctionSale = EXAMPLE_SALE) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = (currentSale = sale) => (
+  const view = (currentSale: AuctionSale = sale) => (
     <QueryClientProvider client={client}>
       <BidCeilingAssistant sale={currentSale} marketEstimateOverride={EXAMPLE_MARKET_ESTIMATE} />
     </QueryClientProvider>
@@ -56,10 +57,41 @@ describe("saved ceiling simulations", () => {
         />
       </QueryClientProvider>,
     );
-    expect(container.textContent).toContain("Fiabilité correcte");
+    expect(container.textContent).toContain("Référence marché indicative");
     expect(container.textContent).toContain("Échantillon DVF exploitable avec prudence");
     expect(container.textContent).not.toContain("Référence DVF forte");
     expect(container.textContent).not.toContain("Fiabilité forte");
+  });
+
+  it("does not count invalid or duplicate document URLs as available pieces", () => {
+    const { container } = renderAssistant({
+      ...EXAMPLE_SALE,
+      documents: [],
+      documents_rich: [
+        { url: "/ressources", label: "Pièce fictive", type: "pdf", extraction_status: null },
+        {
+          url: "javascript:alert(1)",
+          label: "Lien invalide",
+          type: "pdf",
+          extraction_status: null,
+        },
+      ],
+    });
+    expect(container.textContent).toContain("Aucune pièce consultable n'est disponible");
+    expect(container.textContent).not.toContain("2 pièces disponibles");
+    const valid = {
+      url: "https://example.test/ccv.pdf",
+      label: "CCV",
+      type: "cahier_conditions",
+      extraction_status: null,
+    };
+    const { container: second } = renderAssistant({
+      ...EXAMPLE_SALE,
+      documents: [],
+      documents_rich: [valid, valid],
+    });
+    expect(second.textContent).toContain("1 pièce disponible");
+    expect(second.textContent).not.toContain("Fiabilité forte");
   });
 
   it("marks automatic works as unknown when a commercial surface is missing", () => {
@@ -109,6 +141,36 @@ describe("saved ceiling simulations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Réinitialiser" }));
     expect(onSimulationChange.mock.lastCall![0].result.maxBid).toBe(initial.result.maxBid);
     expect(onSimulationChange.mock.lastCall![0].works).toBe(initial.works);
+  });
+  it("restores the page scenario when changing tabs instead of reusing an older draft", () => {
+    const onSimulationChange = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { unmount } = render(
+      <QueryClientProvider client={client}>
+        <BidCeilingAssistant
+          sale={EXAMPLE_SALE}
+          marketEstimateOverride={EXAMPLE_MARKET_ESTIMATE}
+          onSimulationChange={onSimulationChange}
+        />
+      </QueryClientProvider>,
+    );
+    const previous = onSimulationChange.mock.lastCall![0];
+    unmount();
+    render(
+      <QueryClientProvider client={client}>
+        <BidCeilingAssistant
+          sale={EXAMPLE_SALE}
+          marketEstimateOverride={EXAMPLE_MARKET_ESTIMATE}
+          onSimulationChange={onSimulationChange}
+          initialSimulation={{ ...previous.reportInput, price: 110000, works: 45000 }}
+        />
+      </QueryClientProvider>,
+    );
+    const restored = onSimulationChange.mock.lastCall![0];
+    expect(restored.works).toBe(45000);
+    expect(restored.result.simulated.price).toBe(110000);
+    expect(restored.result.maxBid).toBeLessThan(previous.result.maxBid);
+    expect(Number.isFinite(restored.result.maxBid)).toBe(true);
   });
   it("saves and restores a custom margin without losing the chosen percentage", () => {
     renderAssistant();

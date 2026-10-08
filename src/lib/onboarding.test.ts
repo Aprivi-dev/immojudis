@@ -17,10 +17,11 @@ describe("first-search onboarding", () => {
   ])("preserves an explicit destination: %s", (redirect) => {
     expect(postAuthDestination({ mode: "investor", professional: false, redirect })).toBe(redirect);
   });
-  it("leaves login and professional destinations unchanged", () => {
+  it("routes professional accounts and pending registrations to their workspace", () => {
     expect(postAuthDestination({ mode: "login", professional: false })).toBe("/sales");
-    expect(postAuthDestination({ mode: "professional", professional: true })).toBe("/publish");
-    expect(postAuthDestination({ mode: "login", professional: true })).toBe("/publish");
+    expect(postAuthDestination({ mode: "professional", professional: true })).toBe("/espace-pro");
+    expect(postAuthDestination({ mode: "professional", professional: false })).toBe("/espace-pro");
+    expect(postAuthDestination({ mode: "login", professional: true })).toBe("/espace-pro");
   });
   it("uses the catalogue URL contract without enabling paid filters", () => {
     const record = firstSearchToUrl({

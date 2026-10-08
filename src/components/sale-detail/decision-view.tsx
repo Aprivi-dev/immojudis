@@ -1,21 +1,20 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useRouter } from "@/lib/router-compat";
-import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
-import Camera from "lucide-react/dist/esm/icons/camera.js";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
 import CircleHelp from "lucide-react/dist/esm/icons/circle-help.js";
-import ClipboardCheck from "lucide-react/dist/esm/icons/clipboard-check.js";
 import Clock3 from "lucide-react/dist/esm/icons/clock-3.js";
 import Download from "lucide-react/dist/esm/icons/download.js";
-import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import FileCheck2 from "lucide-react/dist/esm/icons/file-check-2.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
-import MessageSquare from "lucide-react/dist/esm/icons/message-square.js";
-import Scale from "lucide-react/dist/esm/icons/scale.js";
-import Send from "lucide-react/dist/esm/icons/send.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import Sparkles from "lucide-react/dist/esm/icons/sparkles.js";
 import Target from "lucide-react/dist/esm/icons/target.js";
@@ -26,88 +25,30 @@ import {
   formatPrice,
   formatDate,
   formatDateTime,
-  formatNumber,
-  documentTypeLabel,
   formatPricePerM2,
-  occupancyLabel,
   propertyTypeLabel,
-  saleStatusLabel,
 } from "@/lib/format";
-import { getDisplaySurface, getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
-import { isEmbeddableDocumentUrl, parseDocs } from "@/lib/documents";
-import { safeExternalHttpUrl } from "@/lib/external-url";
+import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { BidCeilingAssistant } from "@/components/BidCeilingAssistant";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { FeaturedLawyerPlacement } from "@/components/FeaturedLawyerPlacement";
 import { PropertyReportActions } from "@/components/PropertyReportActions";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleLocationHero } from "@/components/SaleLocationHero";
-import { MapThumbnail } from "@/components/MapThumbnail";
-import { BrandMark } from "@/components/BrandLogo";
-import { EvidenceTrail } from "@/components/EvidenceTrail";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
-import { PhotoCarouselDialog, type CarouselImage } from "@/components/PhotoCarouselDialog";
+import { PhotoCarouselDialog } from "@/components/PhotoCarouselDialog";
 import { RotatingCamera360 } from "@/components/RotatingCamera360";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/hooks/use-auth";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  createSaleAnalysisSet,
-  createSaleWorkspaceAnnotationClient,
-  fetchEnvironmentalContext,
-  fetchPrecomputedMarketEstimate,
-  fetchMarketAnalytics,
-  fetchSaleHistory,
-  fetchSaleWorkspace,
-  fetchSaleWorkspaceCollaboration,
-  fetchValuationBacktest,
-  inviteSaleWorkspaceCollaboratorClient,
-  saveSaleWorkspace,
-  updateSaleWorkspaceAnnotationClient,
-} from "@/lib/client-api";
-import type { EnvironmentalContext } from "@/lib/environment.functions";
 import type { MarketEstimate } from "@/lib/market.functions";
-import {
-  DEFAULT_DOCUMENT_REVIEW,
-  DEFAULT_SALE_CHECKLIST,
-  DOCUMENT_REVIEW_STATUS_LABELS,
-  SALE_WORKSPACE_STATUS_LABELS,
-  isUuid,
-  type SaleWorkspaceDocumentReview,
-  type SaleWorkspaceDocumentReviewStatus,
-  type SaleWorkspaceDocumentReviews,
-  type SaleWorkspaceStatus,
-} from "@/lib/sale-workspace-shared";
-import { cn } from "@/lib/utils";
-import { propertyImages } from "@/lib/sale-media";
-import { saleSourceLinks } from "@/lib/sale-source-links";
+import { isUuid } from "@/lib/sale-workspace-shared";
 import {
   computeAcquisitionCosts,
-  computeRecommendedCeilings,
-  DEFAULT_MARKET_CEILING_SCENARIO,
-  DEFAULTS,
   REFRESH_WORKS_PRICE_PER_M2,
   type MarketCeilingResult,
 } from "@/lib/profitability";
-import {
-  buildSaleProductSources,
-  type ProductFact,
-  type ProductGroup,
-  type ProductHistoryRow,
-  type ProductRisk,
-  type ProductWeatherMonth,
-  type SaleProductSources,
-} from "@/lib/sale-detail-sources";
+import type { SaleProductSources } from "@/lib/sale-detail-sources";
 import { getSaleDisplayDescription, hasSaleAiDescription } from "@/lib/sale-description";
 import { saleDisplayTitle } from "@/lib/sale-title";
-import type { AuctionSale, SaleDocumentRich, SaleMedia, SaleRiskOccurrence } from "@/lib/types";
+import type { AuctionSale, SaleMedia } from "@/lib/types";
 import {
   cleanContactValue,
   findOccurrence,
@@ -145,14 +86,12 @@ export function DecisionHero({
   location,
   media,
   decision,
-  acquisitionCost,
 }: {
   sale: AuctionSale;
   title: string;
   location: string;
   media: SaleMedia[];
   decision: DecisionSummary;
-  acquisitionCost: AcquisitionCost;
 }) {
   const city = sale.city ?? location.split(",").at(-1)?.trim() ?? "ce secteur";
   const propertyLabel = shortPropertyLabel(sale);
@@ -890,11 +829,9 @@ export function CeilingSimulatorCard({
 
 export function ProofsSection({
   sale,
-  decision,
   product,
 }: {
   sale: AuctionSale;
-  decision: DecisionSummary;
   product: SaleProductSources;
 }) {
   const surface = getDisplaySurface(sale);
@@ -1176,7 +1113,7 @@ export function DecisionActionRail({
             {decision.primaryCheck}.
           </p>
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3">
-            <SaleCountdown date={sale.sale_date} variant="block" />
+            <SaleCountdown sale={sale} variant="block" />
           </div>
           <div className="mt-4 grid gap-2">
             <a

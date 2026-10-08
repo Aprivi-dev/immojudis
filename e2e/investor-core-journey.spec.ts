@@ -87,7 +87,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
     }
     await route.fulfill({ status: 200, json: { reports: [], plan: null } });
   });
-  await page.route("**/api/feature-entitlements", (route) =>
+  await page.route(/\/api\/feature-entitlements(?:\?.*)?$/, (route) =>
     route.fulfill({
       status: 200,
       json: {
@@ -96,6 +96,17 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
       },
     }),
   );
+  await page.route("**/api/billing/offer", async (route) => {
+    await route.fulfill({
+      status: 200,
+      json: {
+        configured: true,
+        trialDays: 7,
+        trialAvailable: true,
+        label: "29 € / mois",
+      },
+    });
+  });
   await page.route("**/api/billing/checkout", async (route) => {
     journey.push("payment");
     await route.fulfill({ status: 200, json: { url: "/accompagnement?checkout=success" } });
@@ -139,7 +150,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   expect(reportId).toBe("report-e2e");
 
   await page.goto("/accompagnement");
-  await page.getByRole("button", { name: /Débloquer Analyse/ }).click();
+  await page.getByRole("button", { name: "Démarrer l’essai Analyse" }).click();
   await expect(page.getByRole("heading", { name: "Récapitulatif avant paiement" })).toBeVisible();
   const consentCheckboxes = page.getByRole("checkbox");
   await expect(consentCheckboxes).toHaveCount(2);

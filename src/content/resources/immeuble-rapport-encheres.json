@@ -1,0 +1,132 @@
+{
+  "slug": "immeuble-rapport-encheres",
+  "publishedAt": "2026-10-05",
+  "title": "Immeuble de rapport aux enchères : analyser l'ensemble avant de fixer sa mise",
+  "category": "Investissement",
+  "description": "Une méthode Immojudis pour relier pièces, loyers, travaux, énergie et valeur de marché avant d'enchérir sur un immeuble.",
+  "intro": [
+    "Un immeuble de rapport peut réunir plusieurs logements, un local et des dépendances sous une même adresse. À l'enchère, la mise à prix comparée à quelques loyers masque les écarts entre lots, les parties communes, les compteurs et les baux.",
+    "La bonne question est ce que chaque partie pourra produire et coûter, avec quelles preuves et dans quel délai. Immojudis fournit une base autour du type, des surfaces, des documents, des risques, des comparables, de l'énergie et du plafond de mise."
+  ],
+  "takeaways": [
+    "La valeur en bloc ne se déduit pas mécaniquement de la somme des lots.",
+    "Un tableau par lot distingue surface, occupation, loyer, état et travaux.",
+    "DPE, urbanisme et copropriété peuvent changer le calendrier et la sortie.",
+    "Le plafond part d'un coût complet et d'un scénario défavorable."
+  ],
+  "sections": [
+    {
+      "id": "definir-perimetre",
+      "title": "Définir exactement ce qui est vendu",
+      "paragraphs": [
+        "Vérifiez le périmètre juridique : immeuble ou lots, parcelle, caves, garages, local, dépendances et droits de passage. La désignation du cahier doit correspondre à l'adresse, aux plans et aux surfaces. Une surface globale peut inclure des espaces qui ne produisent pas de loyer ou dont l'usage n'est pas librement transformable.",
+        "Reconstituez le bâtiment dans un tableau. Pour chaque niveau, notez surface, destination, occupation, loyer, bail, état et pièces manquantes. Si les sources ne détaillent pas les unités, marquez la donnée comme hypothèse."
+      ],
+      "table": {
+        "headers": ["Bloc", "Preuve", "Risque si absent"],
+        "rows": [
+          ["Lots et dépendances", "Désignation, plans, cadastre", "Surface ou usage mal défini"],
+          ["Parties communes", "Accès, toiture, réseaux, compteurs", "Travaux sous-estimés"],
+          ["Destination et occupation", "Baux, constat, usage", "Revenus et calendrier irréalistes"]
+        ]
+      }
+    },
+    {
+      "id": "audit-lots",
+      "title": "Auditer les lots comme de petites opérations",
+      "paragraphs": [
+        "Pour chaque logement, relevez terme du bail, loyer hors charges, impayés signalés, quittances disponibles et occupation. Pour un local, identifiez activité et destination contractuelle. Ne remplacez pas un revenu prouvé par un loyer de marché sans vérifier relocation et état.",
+        "La visite doit couvrir logements, accès techniques et parties communes. Cherchez humidité, ventilation, électricité, canalisations, toiture, façades et équipements partagés. Une réserve commune peut peser davantage qu'une remise en état intérieure."
+      ],
+      "bullets": [
+        "État locatif : bail, loyer, charges, impayés et occupant.",
+        "État technique : structure, couverture, réseaux et chauffage.",
+        "Comptage et accès : équipements individualisés, visite, assurance et entretien possibles.",
+        "Pièces manquantes : les convertir en réserve ou condition de décision."
+      ]
+    },
+    {
+      "id": "valoriser-budget",
+      "title": "Relier valeur, loyers et coût complet",
+      "paragraphs": [
+        "Utilisez les transactions DVF comme repères en contrôlant type, surface et date. Un prix au mètre carré ignore vacance, baux sous le marché, toiture et division. Comparez conservation locative, revente en bloc et, si elle est possible, revente par lots.",
+        "Additionnez prix d'adjudication, frais, travaux privatifs et communs, études, financement, assurance, fiscalité à confirmer et périodes sans revenu. Déduisez seulement les loyers justifiables. Le rendement brut trie les dossiers ; il ne remplace pas un budget de trésorerie."
+      ],
+      "table": {
+        "headers": ["Scénario", "À retenir", "À tester"],
+        "rows": [
+          ["Conserver", "Loyers prouvés, vacance", "Charges, énergie, gestion"],
+          ["Rénover", "Loyers après travaux", "Planning, surcoût, absence de revenus"],
+          ["Revendre", "Prix de sortie comparables", "Division, diagnostics, délai"]
+        ]
+      },
+      "callout": {
+        "title": "Illustration",
+        "text": "Pour quatre logements annoncés à 220 m², une fiche par unité peut révéler surfaces différentes, vacance et travaux énergétiques. Le total devient une fourchette documentée, pas une promesse de rendement."
+      }
+    },
+    {
+      "id": "energie-urbanisme-copropriete",
+      "title": "Vérifier énergie, urbanisme et copropriété",
+      "paragraphs": [
+        "Pour les logements d'habitation loués comme résidence principale en France métropolitaine, le DPE impose un calendrier. Pour les baux signés, renouvelés ou reconduits entre 2025 et 2027, la classe doit être de A à F ; le seuil devient A à E entre 2028 et 2033, puis A à D à partir de 2034. Relisez le diagnostic complet, sa date et les travaux par logement.",
+        "Une future mise en copropriété ne se résume pas à diviser un plan. Pour un immeuble d'habitation construit depuis plus de dix ans, le Code de la construction et de l'habitation prévoit un diagnostic technique global préalable. Ajoutez géomètre, règlement, tantièmes, réseaux communs et consultation du PLU avant tout changement d'usage ou création de logement."
+      ],
+      "bullets": [
+        "Relire DPE et diagnostics dans les pièces, sans déduire une classe de l'annonce.",
+        "Vérifier PLU et servitudes avant de compter sur une division ou une surélévation.",
+        "Chiffrer études et travaux communs avant de répartir une marge.",
+        "Faire confirmer le montage par le notaire ou le professionnel compétent."
+      ]
+    },
+    {
+      "id": "immojudis-decision",
+      "title": "Préparer l'adjudication avec Immojudis",
+      "paragraphs": [
+        "Sur la fiche, contrôlez type d'immeuble, surfaces et confiance, occupation, source et pièces. Consultez risques, documents, signaux DPE, cadastre ou urbanisme disponibles, puis les comparables. Un rapport peut réunir ces données et simuler un plafond, toujours borné par la qualité du dossier.",
+        "Pour une saisie immobilière à la barre du tribunal judiciaire, l'avis et le cahier indiquent notamment nature, occupation éventuelle, surfaces connues, mise à prix et audience. Les enchères sont portées par un avocat et une garantie est prévue. Préparez avec lui frais, consignation et financement dans les délais, sans compter sur un loyer ou une revente hypothétique.",
+        "Avant l'audience, résumez périmètre, tableau des lots, revenus prouvés, travaux, contraintes, scénario de sortie, coût complet et plafond ferme. Si une donnée essentielle reste inconnue, réduisez l'engagement ou différez l'enchère."
+      ],
+      "table": {
+        "headers": ["Signal", "Question avant le plafond"],
+        "rows": [
+          ["Surface ou type incertain", "Quelle comparaison retenir ?"],
+          ["Occupation contradictoire", "Quel bail ou titre produit effet ?"],
+          ["DPE ou travaux absents", "Quel budget et quelle vacance ?"],
+          ["Comparable éloigné", "Quelle réserve ajouter ?"]
+        ]
+      },
+      "bullets": [
+        "Périmètre et surfaces rapprochés des pièces.",
+        "Analyse lot par lot avec revenus prouvés.",
+        "Scénario défavorable testé et plafond écrit avant les enchères."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d'exécution, publicité et contenu de l'avis de vente (article R. 322-31)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939111"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d'exécution, enchères portées par avocat et garantie (articles R. 322-40 et R. 322-41)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939147"
+    },
+    {
+      "label": "Service-Public — Logement décent et calendrier des seuils DPE",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F35978/0_1?lang=fr"
+    },
+    {
+      "label": "Légifrance — Code de la construction et de l'habitation, diagnostic technique global avant mise en copropriété (article L. 731-4)",
+      "url": "https://www.legifrance.gouv.fr/codes/id/LEGISCTA000028807582"
+    },
+    {
+      "label": "Géoportail de l'urbanisme — consulter les documents et règles d'urbanisme",
+      "url": "https://www.geoportail-urbanisme.gouv.fr/"
+    },
+    {
+      "label": "DGFiP — Demandes de valeurs foncières (DVF)",
+      "url": "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres"
+    }
+  ]
+}

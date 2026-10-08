@@ -22,7 +22,13 @@ export function buildSecurityHeaders(options: SecurityHeaderOptions): SecurityHe
     if (origin) connectSources.add(origin);
   }
 
-  const scriptSources = ["'self'", "'unsafe-inline'", "https://js.stripe.com"];
+  const scriptSources = [
+    "'self'",
+    "'unsafe-inline'",
+    "https://js.stripe.com",
+    // The official communal widget runs only in a sandboxed iframe.
+    "https://climascore.fr/widget/",
+  ];
   if (!options.isProduction) scriptSources.push("'unsafe-eval'");
 
   const directives = [
