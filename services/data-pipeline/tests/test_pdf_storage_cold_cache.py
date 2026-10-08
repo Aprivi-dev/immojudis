@@ -143,7 +143,7 @@ def test_asset_upsert_fetches_once_and_orders_document_extraction_cache(monkeypa
     monkeypatch.setattr(
         storage,
         "upsert_documents_to_supabase",
-        lambda sales, *, persisted_pdf_texts: events.append(("documents", persisted_pdf_texts)) or 4,
+        lambda sales, *, persisted_pdf_texts, prune_stale=False: events.append(("documents", persisted_pdf_texts)) or 4,
     )
     monkeypatch.setattr(
         storage,
