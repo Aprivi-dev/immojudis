@@ -8,7 +8,7 @@ import type { AuctionSale } from "@/lib/types";
 import type { WatchedZoneInput } from "@/lib/watched-zones";
 import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
 import { compactPrice } from "@/lib/search/search-filters";
-import { type SalesSearchParams, type SalesSearchUrlRecord } from "@/lib/search/search-url-state";
+import { stableUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { parseSaleType, saleTypeFilterLabel, type SaleTypeFilter } from "@/lib/sale-types";
 
 export type SearchDraft = {
@@ -169,13 +169,7 @@ export function toggleValue(values: string[], value: string) {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 }
 
-export function stableUrlRecord(record: SalesSearchUrlRecord) {
-  return JSON.stringify(
-    Object.entries(record)
-      .filter(([, value]) => value != null && value !== "")
-      .sort(([a], [b]) => a.localeCompare(b)),
-  );
-}
+export { stableUrlRecord };
 
 export function downloadBlob(blob: Blob, filename: string) {
   if (typeof document === "undefined") return;

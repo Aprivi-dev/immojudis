@@ -30,7 +30,12 @@ import {
   sortClientSearchResults,
 } from "@/lib/search/search-filters";
 import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
-import { catalogPlaceholder } from "@/lib/search/catalog-placeholder";
+import {
+  ANONYMOUS_PREVIEW_SCOPE,
+  catalogPlaceholder,
+  salesSearchCountQueryKey,
+  salesSearchQueryKey,
+} from "@/lib/search/catalog-placeholder";
 import {
   mergeSalesSearch,
   salesSearchToUrlRecord,
@@ -92,7 +97,18 @@ const LazySearchStatisticsPanel = dynamic(
   { loading: () => <SearchStatisticsLoading /> },
 );
 
-export function SearchPage({ search }: { search: SalesSearchParams }) {
+/**
+ * `serverSeeded` is true when the server already rendered (and dehydrated) the
+ * anonymous first page for this exact search. The list then stays visible while
+ * the session is being restored instead of being replaced by a skeleton.
+ */
+export function SearchPage({
+  search,
+  serverSeeded = false,
+}: {
+  search: SalesSearchParams;
+  serverSeeded?: boolean;
+}) {
   const navigate = useNavigate({ from: "/sales" });
   const currentLocation = useLocation();
   const { user, loading: authLoading } = useAuth();
@@ -250,6 +266,11 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     ? `${user?.id ?? "anonymous"}:${isPreview ? "preview" : isDiscovery ? "discovery" : "analysis"}`
     : null;
   const comparison = useSaleComparison(comparisonScope);
+  // While the session is restored, a server-seeded page reads the rows the
+  // server rendered for the signed-out catalogue (same keys as the dehydrated
+  // queries). They are replaced by the signed-in rows as soon as auth settles.
+  const serverSeededScope = authLoading && serverSeeded ? ANONYMOUS_PREVIEW_SCOPE : null;
+  const catalogScope = comparisonScope ?? serverSeededScope;
 
   const {
     data: rawSales = [],
@@ -258,9 +279,9 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     isLoading,
     refetch: refetchSales,
   } = useQuery({
-    queryKey: ["sales-search", searchKeySignature, comparisonScope],
+    queryKey: salesSearchQueryKey(searchKeySignature, catalogScope),
     placeholderData: (previous, query) =>
-      catalogPlaceholder(previous, query?.queryKey, comparisonScope),
+      catalogPlaceholder(previous, query?.queryKey, catalogScope),
     queryFn: () => fetchSearchResults({ search, preview: isPreview, discovery: isDiscovery }),
     enabled: catalogReady,
     staleTime: 60_000,
@@ -268,9 +289,9 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   });
 
   const { data: totalCount, isLoading: isCountLoading } = useQuery({
-    queryKey: ["sales-search-count", searchKeySignature, comparisonScope],
+    queryKey: salesSearchCountQueryKey(searchKeySignature, catalogScope),
     placeholderData: (previous, query) =>
-      catalogPlaceholder(previous, query?.queryKey, comparisonScope),
+      catalogPlaceholder(previous, query?.queryKey, catalogScope),
     queryFn: () => fetchSearchCount({ search, preview: isPreview, discovery: isDiscovery }),
     enabled: catalogReady,
     staleTime: 60_000,
@@ -367,7 +388,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           ? "ready"
           : "loading";
   const hasLocalFilters = false;
-  const isInitialLoading = authLoading || entitlementsLoading || isLoading;
+  const isInitialLoading = (authLoading && !serverSeeded) || entitlementsLoading || isLoading;
   const activeFiltersCount = countActiveSearchFilters(search);
   const displayCount = totalCount ?? filteredSales.length;
   const filteredCount = displayedSales.length;
@@ -650,9 +671,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
       />
 
       <div
-        className={`grid min-h-[calc(100svh_-_var(--sales-header-height))] ${
-          isDesktop ? splitClass : "grid-cols-1"
-        }`}
+        className={`grid min-h-[calc(100svh_-_var(--sales-header-height))] grid-cols-1 ${splitClass}`}
       >
         <section
           id="sales-results"
@@ -778,13 +797,15 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           <Footer />
         </section>
 
-        {isDesktop ? (
-          <aside className="relative min-h-[calc(100svh_-_var(--sales-header-height))] bg-[#dfe7eb] lg:order-2">
+        {/* Always rendered (hidden below lg): the two-column layout is decided by CSS
+            alone, so nothing shifts when the media query resolves after hydration. */}
+        <aside className="relative hidden min-h-[calc(100svh_-_var(--sales-header-height))] bg-[#dfe7eb] lg:order-2 lg:block">
+          {isDesktop ? (
             <div className="sticky top-[var(--sales-header-height)] h-[calc(100svh_-_var(--sales-header-height))]">
               <LazyMapPanel {...mapPanelProps} />
             </div>
-          </aside>
-        ) : null}
+          ) : null}
+        </aside>
       </div>
 
       {filtersOpen ? (
