@@ -67,7 +67,16 @@ def detail_is_fresh(row: dict[str, Any], source_url: str) -> bool:
 def document_fingerprint(documents: list) -> str:
     if not isinstance(documents, list):
         return ""
-    identities = sorted((str(d.get("url") or ""), str(d.get("label") or "")) for d in documents if isinstance(d, dict))
+    # Keep the manifest identity stable while an incremental PDF pass fills
+    # per-document hashes one at a time.  Byte changes are checked against
+    # the persisted cache proof in ``documents_are_current`` below; putting
+    # partial hashes in this manifest key would discard six-document
+    # checkpoints when the next batch adds its hashes.
+    identities = sorted(
+        (str(document.get("url") or ""), str(document.get("label") or ""))
+        for document in documents
+        if isinstance(document, dict)
+    )
     return hashlib.sha256(json.dumps(identities).encode()).hexdigest()
 
 
@@ -232,6 +241,22 @@ def documents_are_current(sale: Any) -> bool:
         ):
             return False
         if modern_manifest and not timestamp_is_fresh(item.get("http_checked_at")):
+            return False
+    # The manifest fingerprint remains stable while a partial pass fills the
+    # per-document hashes.  If the current sale already carries a hash for a
+    # document, compare it directly with the persisted proof so an in-place
+    # PDF replacement cannot reuse an otherwise fresh analysis.  Missing
+    # current hashes remain compatible with rows loaded from older storage.
+    current_hashes = {
+        clean_text(document.get("url")): clean_text(document.get("sha256"))
+        for document in documents
+        if isinstance(document, dict) and clean_text(document.get("url"))
+    }
+    for url, current_hash in current_hashes.items():
+        if not current_hash:
+            continue
+        persisted_hash = clean_text((proof_by_url.get(url) or {}).get("sha256"))
+        if persisted_hash and persisted_hash != current_hash:
             return False
     expected_hashes = {
         url: clean_text(item.get("sha256"))

@@ -107,3 +107,28 @@ class DocumentPoliteness:
         pause = slot - now
         if pause > 0:
             self._sleep(pause)
+
+
+def fetch_robots_document(
+    robots_url: str,
+    *,
+    send: Callable[..., httpx.Response],
+    settings: dict[str, object],
+) -> httpx.Response:
+    """Fetch robots.txt through the same pinned transport and identity as documents."""
+    return send(
+        robots_url,
+        headers={"User-Agent": str(settings["user_agent"]), "Accept": "text/plain,*/*;q=0.5"},
+        timeout_seconds=float(settings["request_timeout_seconds"]),
+    )
+
+
+def pause_within_deadline(seconds: float, ensure_deadline: Callable[[], float | None]) -> None:
+    """Sleep between requests to one host without outliving the worker deadline."""
+    end = time.monotonic() + seconds
+    while True:
+        pause = end - time.monotonic()
+        if pause <= 0:
+            return
+        remaining = ensure_deadline()
+        time.sleep(min(pause, remaining) if remaining is not None else pause)

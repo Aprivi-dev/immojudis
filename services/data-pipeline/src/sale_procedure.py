@@ -439,7 +439,7 @@ def _sale_corpus(sale: AuctionSale) -> str:
     # Otherwise a pending address-only court assignment can promote itself to
     # verified by matching wording in its own generated participation guide.
     block_values = (
-        [f"{key}: {value}" for key, value in source_blocks.items() if key != "sale_procedure"]
+        [f"{key}: {value}" for key, value in source_blocks.items() if key not in {"sale_procedure", "listing_completeness"}]
         if isinstance(source_blocks, dict)
         else []
     )

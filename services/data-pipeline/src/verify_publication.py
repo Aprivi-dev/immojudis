@@ -28,6 +28,12 @@ def main() -> int:
             token = storage._PUBLICATION_CONNECTION.set(connection)
             try:
                 storage.upsert_sales_to_supabase([sale], refresh_last_seen=False)
+                # Older/source-listing revisions may have no detail marker.
+                # Exercise that real publication path under the same rollback,
+                # without treating its attachment inventory as complete.
+                unmarked_sale = sale.model_copy(deep=True)
+                unmarked_sale.raw_payload.pop("source_detail_status", None)
+                storage.upsert_sales_to_supabase([unmarked_sale], refresh_last_seen=False)
                 raise VerificationRollback()
             finally:
                 storage._PUBLICATION_CONNECTION.reset(token)
