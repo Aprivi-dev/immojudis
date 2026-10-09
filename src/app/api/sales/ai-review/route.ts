@@ -1,3 +1,4 @@
+import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -5,7 +6,7 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { DETAIL_VIEW } from "@/lib/queries";
+import { DETAIL_VIEW } from "@/lib/sale-views";
 import {
   AI_REVIEW_FIELD_KEYS,
   type AiReviewCitationStatus,

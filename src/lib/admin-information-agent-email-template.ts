@@ -1,3 +1,4 @@
+import "server-only";
 import { z } from "zod";
 import { renderInformationRequestEmail } from "../../emails/information-request";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";

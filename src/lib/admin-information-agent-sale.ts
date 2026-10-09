@@ -1,3 +1,4 @@
+import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { AuctionSale, SaleDocumentRich, SaleMedia } from "@/lib/types";

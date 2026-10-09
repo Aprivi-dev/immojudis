@@ -1,3 +1,4 @@
+import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const METEOSTAT_API_URL = "https://meteostat.p.rapidapi.com/point/monthly";

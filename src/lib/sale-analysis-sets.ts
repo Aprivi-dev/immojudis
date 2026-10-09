@@ -1,3 +1,4 @@
+import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
