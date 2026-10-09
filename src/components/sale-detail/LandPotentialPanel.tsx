@@ -91,9 +91,9 @@ export function LandPotentialPanel({ saleId, enabled, initialReport }: Props) {
 
       {!enabled ? (
         <div className={styles.notice}>
-          <p>Le plan Analyse donne accès au dossier PLU et risques de chaque annonce.</p>
+          <p>L’offre Analyse donne accès au dossier PLU et risques de chaque annonce.</p>
           <a href="/accompagnement">
-            Découvrir le plan Analyse <ArrowUpRight size={15} aria-hidden="true" />
+            Découvrir l’offre Analyse <ArrowUpRight size={15} aria-hidden="true" />
           </a>
         </div>
       ) : (

@@ -2099,7 +2099,7 @@
   }
 }
 
-/* Homepage redesign — ImmoJudis judicial clarity */
+/* Homepage redesign — Immojudis judicial clarity */
 .ij-app-header {
   color: #132238;
   border-bottom: 1px solid rgb(19 34 56 / 8%);
@@ -3984,7 +3984,7 @@
   }
 }
 
-/* Homepage continuation — starts at "Nouvelle offre ImmoJudis". */
+/* Homepage continuation — starts at "Nouvelle offre Immojudis". */
 .ij-report {
   width: min(100% - clamp(1.5rem, 6vw, 7.5rem), 101rem);
   margin: 0 auto;

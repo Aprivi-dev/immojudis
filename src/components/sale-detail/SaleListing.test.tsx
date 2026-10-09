@@ -355,7 +355,7 @@ describe("readable listing sections", () => {
       />,
     );
 
-    expect(screen.queryByText("Mise plafond indicative")).toBeNull();
+    expect(screen.queryByText("Enchère plafond indicative")).toBeNull();
     expect(screen.queryByText("Voir le scénario de prix")).toBeNull();
   });
   it("does not show zero or invalid amounts as known property facts", () => {

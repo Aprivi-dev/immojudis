@@ -86,7 +86,7 @@ describe("SalePublicPreview", () => {
       "ventes immobilières au tribunal, chez le notaire et les ventes domaniales",
     );
     expect(container.textContent).not.toContain("confidential@example.test");
-    expect(container.textContent).not.toContain("mise plafond");
+    expect(container.textContent).not.toContain("enchère plafond");
     expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
 
     const cta = screen.getByRole("link", { name: /Voir gratuitement le dossier/ });
@@ -115,7 +115,7 @@ describe("SalePublicPreview", () => {
     });
     expect(screen.getByText("Mode de cession")).toBeTruthy();
     expect(screen.getByText(/Prix non publié/)).toBeTruthy();
-    expect(container.textContent).not.toContain("estimation de votre mise plafond");
+    expect(container.textContent).not.toContain("estimation de votre enchère plafond");
     expect(container.textContent).not.toContain("L'inscription et les enchères");
   });
 

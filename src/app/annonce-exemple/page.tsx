@@ -27,8 +27,8 @@ function ExampleFallback() {
         </p>
         <h1 className="mt-3 font-display text-4xl">Exemple de rapport d’opportunité</h1>
         <p className="mt-4 max-w-2xl text-muted-foreground">
-          Découvrez la lecture ImmoJudis d’une vente judiciaire : prix, marché, frais, risques et
-          plafond d’enchère.
+          Découvrez la lecture Immojudis d’une vente judiciaire : prix, marché, frais, risques et
+          enchère plafond.
         </p>
       </section>
     </main>

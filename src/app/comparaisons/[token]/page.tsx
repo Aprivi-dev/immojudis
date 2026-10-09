@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Comparaison partagée",
-  description: "Comparaison de biens issue du catalogue ImmoJudis.",
+  description: "Comparaison de biens issue du catalogue Immojudis.",
   robots: { index: false, follow: false },
 };
 
@@ -26,7 +26,7 @@ export default async function SharedSaleComparisonPage({
       <article className="mx-auto max-w-5xl overflow-hidden rounded-xl border border-[#d6e3e8] bg-white shadow-sm">
         <header className="border-b border-[#d6e3e8] px-4 py-5 sm:px-6">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0f766e]">
-            Comparaison partagée ImmoJudis
+            Comparaison partagée Immojudis
           </p>
           <h1 className="mt-2 text-2xl font-extrabold sm:text-3xl">{comparison.name}</h1>
           <p className="mt-2 text-sm text-[#526170]">

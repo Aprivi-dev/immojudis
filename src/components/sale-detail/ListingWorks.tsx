@@ -423,8 +423,8 @@ export function ListingWorks({
 
             {normalizedEstimatedBudget != null ? (
               <p className={styles.evidenceNote}>
-                Cette enveloppe est une hypothèse ajustable dans le calcul de mise plafond ; elle ne
-                remplace pas un devis établi après visite.
+                Cette enveloppe est une hypothèse ajustable dans le calcul d’enchère plafond ; elle
+                ne remplace pas un devis établi après visite.
               </p>
             ) : null}
           </div>

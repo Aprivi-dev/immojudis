@@ -11,7 +11,7 @@ type PageParams = {
 };
 
 export const metadata: Metadata = {
-  title: "Rapport partagé — ImmoJudis",
+  title: "Rapport partagé — Immojudis",
   robots: {
     index: false,
     follow: false,
@@ -119,7 +119,7 @@ export default async function SharedReportPage({ params }: PageParams) {
       <article className="mx-auto max-w-4xl rounded-lg border border-border bg-white/94 p-6 shadow-sm sm:p-8">
         <header className="border-b border-border pb-5">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gold-text">
-            Rapport partagé ImmoJudis
+            Rapport partagé Immojudis
           </p>
           <h1 className="mt-3 font-display text-3xl leading-tight text-foreground sm:text-4xl">
             {report.title}
@@ -611,7 +611,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 label="Impact décision"
                 value={stringValue(
                   urbanPlanningAnalysis.decisionImpact,
-                  "À intégrer avant le plafond d'enchère",
+                  "À intégrer avant l’enchère plafond",
                 )}
               />
             </div>

@@ -58,7 +58,7 @@ const modeCopy: Record<
   login: {
     eyebrow: "Connexion",
     title: "Reprendre votre analyse",
-    description: "Accédez aux annonces, favoris, alertes et prix plafonds déjà préparés.",
+    description: "Accédez aux annonces, favoris, alertes et enchères plafonds déjà préparées.",
     submit: "Se connecter",
   },
   investor: {

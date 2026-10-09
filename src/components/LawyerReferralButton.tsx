@@ -60,7 +60,7 @@ export function LawyerReferralButton({
     }
 
     if (referralLocked) {
-      toast.message("Mise en relation avocat réservée au plan Analyse.");
+      toast.message("Mise en relation avocat réservée à l’offre Analyse.");
       navigate({ to: "/accompagnement" });
       return;
     }
@@ -75,7 +75,7 @@ export function LawyerReferralButton({
       } else if (response.matchedLawyer) {
         toast.success(`Demande créée pour ${response.matchedLawyer.displayName}.`);
       } else {
-        toast.success("Demande créée. ImmoJudis recherchera un avocat référencé sur cette zone.");
+        toast.success("Demande créée. Immojudis recherchera un avocat référencé sur cette zone.");
       }
       await queryClient.invalidateQueries({
         queryKey: ["lawyer-referrals", user.id, saleId],
@@ -108,7 +108,7 @@ export function LawyerReferralButton({
               ? "Débloquer la mise en relation"
               : hasOpenRequest
                 ? "Demande avocat en cours"
-                : (label ?? "Mise en relation ImmoJudis")}
+                : (label ?? "Mise en relation Immojudis")}
       </button>
       {latestRequest ? <LawyerReferralStatus request={latestRequest} /> : null}
     </div>
@@ -129,7 +129,7 @@ function LawyerReferralStatus({ request }: { request: LawyerReferralSummary }) {
           </span>
         </p>
       ) : (
-        <p className="mt-2">Avocat référencé : attribution ImmoJudis en cours.</p>
+        <p className="mt-2">Avocat référencé : attribution Immojudis en cours.</p>
       )}
       <p className="mt-2 text-[11px] uppercase tracking-[0.08em]">
         Créée le {formatShortDate(request.createdAt)}

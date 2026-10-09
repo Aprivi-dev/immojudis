@@ -68,7 +68,7 @@ export function AdminLawyerReferralRequestsPanel() {
           <h2 className="mt-3 font-display text-2xl">Suivi des mises en relation</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             File de traitement des demandes issues des annonces. Les assignations utilisent
-            uniquement les avocats référencés ImmoJudis, pas les contacts source collectés.
+            uniquement les avocats référencés Immojudis, pas les contacts source collectés.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

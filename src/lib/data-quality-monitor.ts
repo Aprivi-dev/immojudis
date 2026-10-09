@@ -396,7 +396,7 @@ function buildCapabilityMetrics(sales: AuctionSale[]): DataQualityMetric[] {
     }),
     metric({
       key: "bid_ceiling",
-      label: "Calcul de mise maximale",
+      label: "Calcul d’enchère plafond",
       sales,
       predicate: (sale) => hasPrice(sale) && hasSurface(sale),
       productImpact: "Rend le simulateur actionnable avant audience.",

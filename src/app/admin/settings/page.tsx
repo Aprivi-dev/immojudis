@@ -3,7 +3,7 @@ import { AuthGate } from "@/components/AuthGate";
 import { AdminDashboardPage } from "@/routes/admin";
 
 export const metadata: Metadata = {
-  title: "Configuration admin — ImmoJudis",
+  title: "Configuration admin — Immojudis",
   description: "Réglages de collecte, limites IA et configuration des services.",
   robots: { index: false, follow: false },
 };

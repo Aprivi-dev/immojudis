@@ -41,7 +41,7 @@ export function ListingWeatherHistory({
           Températures, précipitations et soleil observé mois par mois dans ce secteur. Inclus dans
           l’offre Analyse.
         </p>
-        <Link href="/accompagnement">Découvrir l’historique météo avec Premium</Link>
+        <Link href="/accompagnement">Découvrir l’historique météo avec l’offre Analyse</Link>
       </section>
     );
   }

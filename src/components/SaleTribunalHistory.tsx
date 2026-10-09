@@ -659,7 +659,7 @@ function JudicialActivity({
           <p className="text-sm font-semibold text-brand-navy">{priceComparison}</p>
           <p className="mt-1 text-xs leading-relaxed text-brand-navy/70">
             Positionnement de la mise initiale uniquement : ce repère n’est ni une estimation de
-            valeur, ni un conseil ou plafond d’enchère.
+            valeur, ni un conseil ou enchère plafond.
           </p>
         </div>
       ) : null}

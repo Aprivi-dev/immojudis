@@ -236,7 +236,7 @@ export function BillingActions({
           <div className="rounded-lg border border-border bg-muted/35 p-4 text-sm">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <strong className="text-foreground">ImmoJudis Analyse</strong>
+                <strong className="text-foreground">Immojudis Analyse</strong>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {trialAvailable ? ANALYSIS_TRIAL_LABEL : "Abonnement immédiat, sans nouvel essai"}
                 </p>

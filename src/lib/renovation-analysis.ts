@@ -285,7 +285,7 @@ function decisionImpact({
   budgetRange: RenovationBudgetRange | null;
 }): string {
   if (status === "heavy_works") {
-    return "Ne pas fixer la mise maximale sans devis ou visite technique : le coût complet peut absorber toute la décote.";
+    return "Ne pas fixer l’enchère plafond sans devis ou visite technique : le coût complet peut absorber toute la décote.";
   }
   if (status === "works_to_budget") {
     return "Transformer les travaux repérés en enveloppe basse, médiane et haute avant stratégie d'enchère.";
@@ -298,7 +298,7 @@ function decisionImpact({
   }
   return budgetRange
     ? "Budget indicatif à confronter aux pièces avant audience."
-    : "État insuffisamment qualifié : prévoir une marge de sécurité dans la mise maximale.";
+    : "État insuffisamment qualifié : prévoir une marge de sécurité dans l’enchère plafond.";
 }
 
 function nextActions({
@@ -316,7 +316,7 @@ function nextActions({
       "Demander un avis technique ou un chiffrage artisan avant toute enchère offensive.",
     );
   } else if (status === "works_to_budget" || status === "light_refresh") {
-    actions.push("Reporter l'enveloppe travaux dans le calcul de mise maximale.");
+    actions.push("Reporter l'enveloppe travaux dans le calcul d’enchère plafond.");
   } else if (status === "good") {
     actions.push(
       "Conserver une marge de sécurité pour les défauts non visibles ou non documentés.",

@@ -10,7 +10,7 @@ import styles from "@/components/resources/Resources.module.css";
 
 const title = "Ressources : le blog des enchères immobilières";
 const description =
-  "Les guides ImmoJudis pour comprendre les enchères immobilières, analyser un bien, vérifier son occupation et construire un budget avant d’enchérir.";
+  "Les guides Immojudis pour comprendre les enchères immobilières, analyser un bien, vérifier son occupation et construire un budget avant d’enchérir.";
 
 export const metadata: Metadata = {
   title,
@@ -48,7 +48,7 @@ export default function Page() {
       />
       <div className={styles.container}>
         <header className={styles.hero}>
-          <p className={styles.eyebrow}>Ressources · Le blog ImmoJudis</p>
+          <p className={styles.eyebrow}>Ressources · Le blog Immojudis</p>
           <h1>
             Comprendre les enchères.
             <br />
@@ -91,7 +91,7 @@ export default function Page() {
         <ResourceLibrary articles={RESOURCE_SUMMARIES} />
         <ResourcesNextStep />
         <footer className={styles.footer}>
-          <Link href="/">ImmoJudis</Link>
+          <Link href="/">Immojudis</Link>
           <span>Les enchères immobilières en toute clarté.</span>
           <Link href="/contact">Nous contacter</Link>
         </footer>

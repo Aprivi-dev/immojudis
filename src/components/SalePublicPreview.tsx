@@ -208,7 +208,7 @@ export function SalePublicPreview({
               </h3>
               <p>
                 {procedure.venueType === "tribunal"
-                  ? "Marché local, risques du dossier, historique météo et estimation de votre mise plafond."
+                  ? "Marché local, risques du dossier, historique météo et estimation de votre enchère plafond."
                   : "Marché local, risques du dossier et historique météo lorsque les données le permettent."}
               </p>
             </div>

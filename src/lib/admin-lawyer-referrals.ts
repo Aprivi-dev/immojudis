@@ -582,25 +582,25 @@ export function buildLawyerReferralEmailMessage({
   const location = [city, department].filter(Boolean).join(" · ");
   const saleId = stringOrNull(sale.id);
   const saleUrl = saleId ? `${appUrl}/sales/${encodeURIComponent(saleId)}` : appUrl;
-  const subject = `Demande ImmoJudis - ${title}${city ? ` à ${city}` : ""}`;
+  const subject = `Demande Immojudis - ${title}${city ? ` à ${city}` : ""}`;
   const textLines = [
     `Bonjour ${lawyer.display_name},`,
     "",
-    "Une demande de mise en relation ImmoJudis vous a été assignée.",
+    "Une demande de mise en relation Immojudis vous a été assignée.",
     "",
     `${title}${location ? ` - ${location}` : ""}`,
     `Annonce: ${saleUrl}`,
     request.requester_email ? `Demandeur: ${request.requester_email}` : null,
     request.phone ? `Téléphone: ${request.phone}` : null,
     `Contact préféré: ${contactMethodLabel(request.preferred_contact_method)}`,
-    request.max_bid_eur ? `Mise maximale indiquée: ${formatPrice(request.max_bid_eur)}` : null,
+    request.max_bid_eur ? `Enchère plafond indiquée: ${formatPrice(request.max_bid_eur)}` : null,
     request.financing_ready == null
       ? null
       : `Financement prêt: ${request.financing_ready ? "oui" : "non"}`,
     request.message ? `Message: ${request.message}` : null,
-    request.admin_notes ? `Note ImmoJudis: ${request.admin_notes}` : null,
+    request.admin_notes ? `Note Immojudis: ${request.admin_notes}` : null,
     "",
-    "Les coordonnées et éléments transmis proviennent de la demande utilisateur ImmoJudis. Merci de vérifier votre disponibilité et les règles applicables avant toute prise en charge.",
+    "Les coordonnées et éléments transmis proviennent de la demande utilisateur Immojudis. Merci de vérifier votre disponibilité et les règles applicables avant toute prise en charge.",
   ].filter((line): line is string => typeof line === "string");
 
   return {
@@ -692,7 +692,7 @@ function buildLawyerReferralEmailHtml({
     ["Demandeur", requesterEmail],
     ["Téléphone", phone],
     ["Contact préféré", preferredContactMethod],
-    ["Mise maximale", maxBid],
+    ["Enchère plafond", maxBid],
     ["Financement prêt", financingReady == null ? null : financingReady ? "Oui" : "Non"],
   ]
     .filter(([, value]) => value)
@@ -707,13 +707,13 @@ function buildLawyerReferralEmailHtml({
   <body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif;">
     <div style="max-width:640px;margin:0 auto;padding:28px 18px;">
       <div style="background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:24px;">
-        <p style="margin:0 0 10px;color:#9b7a2f;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Mise en relation ImmoJudis</p>
+        <p style="margin:0 0 10px;color:#9b7a2f;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Mise en relation Immojudis</p>
         <h1 style="margin:0 0 8px;font-size:22px;line-height:1.25;color:#182033;">${escapeHtml(title)}</h1>
         ${location ? `<p style="margin:0 0 18px;color:#6c7280;">${escapeHtml(location)}</p>` : ""}
-        <p style="margin:0 0 18px;color:#4b5563;line-height:1.55;">Bonjour ${escapeHtml(lawyerName)}, une demande de mise en relation vous a été assignée depuis ImmoJudis.</p>
+        <p style="margin:0 0 18px;color:#4b5563;line-height:1.55;">Bonjour ${escapeHtml(lawyerName)}, une demande de mise en relation vous a été assignée depuis Immojudis.</p>
         ${rows ? `<table style="width:100%;border-collapse:collapse;margin:0 0 18px;">${rows}</table>` : ""}
         ${message ? `<p style="margin:0 0 14px;color:#4b5563;line-height:1.55;"><strong>Message utilisateur</strong><br>${escapeHtml(message)}</p>` : ""}
-        ${adminNotes ? `<p style="margin:0 0 14px;color:#4b5563;line-height:1.55;"><strong>Note ImmoJudis</strong><br>${escapeHtml(adminNotes)}</p>` : ""}
+        ${adminNotes ? `<p style="margin:0 0 14px;color:#4b5563;line-height:1.55;"><strong>Note Immojudis</strong><br>${escapeHtml(adminNotes)}</p>` : ""}
         <a href="${escapeAttribute(saleUrl)}" style="display:inline-block;background:#182033;color:#fff;text-decoration:none;border-radius:8px;padding:12px 16px;font-weight:700;">Voir l'annonce</a>
         <p style="margin:22px 0 0;color:#6c7280;font-size:12px;line-height:1.5;">
           Les éléments transmis sont indicatifs et doivent être vérifiés par le cabinet avant toute prise en charge.

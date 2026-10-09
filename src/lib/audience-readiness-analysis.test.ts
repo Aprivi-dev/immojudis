@@ -250,7 +250,7 @@ function renovationAnalysis(status: RenovationAnalysis["status"]): RenovationAna
     sources: [],
     summary: status === "unknown" ? "État à qualifier." : "Travaux qualifiés.",
     decisionImpact: "",
-    nextActions: ["Reporter l'enveloppe travaux dans le calcul de mise maximale."],
+    nextActions: ["Reporter l'enveloppe travaux dans le calcul d’enchère plafond."],
     limitations: [],
   };
 }

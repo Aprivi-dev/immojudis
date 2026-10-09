@@ -31,7 +31,7 @@ export function BrandLogo({
             textClassName,
           )}
         >
-          ImmoJudis
+          Immojudis
         </span>
         {showTagline ? (
           <span className="mt-1 block text-xs font-medium leading-tight text-[var(--gold)]">

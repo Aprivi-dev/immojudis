@@ -65,7 +65,7 @@ function featuredLawyer(
   return {
     id: LAWYER_ID,
     displayName: "Me Reference",
-    firmName: "Cabinet ImmoJudis",
+    firmName: "Cabinet Immojudis",
     barAssociation: "Bordeaux",
     city: "Bordeaux",
     department: "33",

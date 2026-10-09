@@ -8,9 +8,9 @@ import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 
 const RESOURCES_CANONICAL = "https://immojudis-dezt.vercel.app/ventes-immobilieres-judiciaires";
 const RESOURCES_TITLE =
-  "Ressources ventes immobilières judiciaires : annonces, risques et prix plafond | Immojudis";
+  "Ressources ventes immobilières judiciaires : annonces, risques et enchère plafond | Immojudis";
 const DESCRIPTION =
-  "Immojudis référence et analyse les ventes immobilières judiciaires : annonces, cahier des conditions de vente, risques, frais, occupation, prix plafond et enchères au tribunal.";
+  "Immojudis référence et analyse les ventes immobilières judiciaires : annonces, cahier des conditions de vente, risques, frais, occupation, enchère plafond et enchères au tribunal.";
 
 const FAQ: Array<{ q: string; a: string }> = [
   {
@@ -103,8 +103,8 @@ const METHOD: Array<{ n: string; title: string; text: string }> = [
   },
   {
     n: "6",
-    title: "Fixer un prix plafond",
-    text: "Le prix plafond est la limite à ne pas dépasser. Il doit être défini avant l'audience et respecté strictement.",
+    title: "Fixer une enchère plafond",
+    text: "L’enchère plafond est la limite à ne pas dépasser. Il doit être défini avant l'audience et respecté strictement.",
   },
 ];
 
@@ -134,7 +134,7 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
     def: "Prix de départ de la vente aux enchères. Elle ne doit pas être confondue avec la valeur réelle du bien.",
   },
   {
-    term: "Prix plafond",
+    term: "Enchère plafond",
     def: "Montant maximum à ne pas dépasser, calculé à partir du marché, des frais, des travaux, des risques et de la stratégie de l'acheteur.",
   },
   {
@@ -204,7 +204,7 @@ export const Route = createFileRoute("/ventes-immobilieres-judiciaires")({
       {
         property: "og:description",
         content:
-          "Trouvez, analysez et préparez vos ventes immobilières judiciaires avec Immojudis : annonces, risques, frais, occupation et prix plafond.",
+          "Trouvez, analysez et préparez vos ventes immobilières judiciaires avec Immojudis : annonces, risques, frais, occupation et enchère plafond.",
       },
       { property: "og:url", content: RESOURCES_CANONICAL },
     ],
@@ -252,7 +252,7 @@ export function ResourcesPage() {
               Identifiez les éléments clés : occupation, cahier des conditions de vente,
               diagnostics, frais, travaux et contraintes.
             </IntroCard>
-            <IntroCard title="Prix plafond">
+            <IntroCard title="Enchère plafond">
               Décidez avec méthode grâce à une approche en coût complet, intégrant les frais, les
               risques et la valeur de marché.
             </IntroCard>
@@ -400,7 +400,7 @@ export function ResourcesPage() {
                 "Le procès-verbal descriptif permet-il d'identifier des travaux importants ?",
                 "La mise à prix est-elle réellement attractive par rapport au marché local ?",
                 "Quel budget total faut-il prévoir après frais, travaux et marge de sécurité ?",
-                "Quel est le prix plafond à ne pas dépasser pour que l'opération reste rationnelle ?",
+                "Quel est l’enchère plafond à ne pas dépasser pour que l'opération reste rationnelle ?",
               ]}
             />
             <Callout>
@@ -537,7 +537,7 @@ export function ResourcesPage() {
               honoraires d'avocat, frais de publication, travaux, charges, financement et marge de
               sécurité.
             </P>
-            <P>Cette approche permet de fixer un prix plafond rationnel avant l'audience.</P>
+            <P>Cette approche permet de fixer une enchère plafond rationnel avant l'audience.</P>
 
             <SubTitle>Préparer le financement</SubTitle>
             <P>
@@ -585,7 +585,7 @@ export function ResourcesPage() {
             </P>
             <P>
               Le détail des frais doit être demandé à l'avocat. Il est indispensable de les intégrer
-              dans le prix plafond.
+              dans l’enchère plafond.
             </P>
 
             <SubTitle>2. Le jour de l'audience : enchérir au tribunal</SubTitle>
@@ -715,7 +715,7 @@ export function ResourcesPage() {
             </P>
             <P>
               Le cinquième risque est émotionnel. En audience, la concurrence peut pousser à
-              dépasser son prix plafond. C'est précisément ce qu'il faut éviter.
+              dépasser son enchère plafond. C'est précisément ce qu'il faut éviter.
             </P>
             <Callout>
               Immojudis a été pensé pour limiter ces risques en donnant une lecture structurée du
@@ -793,8 +793,8 @@ export function ResourcesPage() {
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             Immojudis vous aide à repérer les ventes immobilières judiciaires, lire les informations
-            utiles, identifier les risques et construire votre prix plafond avant l'audience. Avant
-            d'enchérir, ne vous arrêtez pas à la mise à prix : analysez le dossier, vérifiez
+            utiles, identifier les risques et construire votre enchère plafond avant l'audience.
+            Avant d'enchérir, ne vous arrêtez pas à la mise à prix : analysez le dossier, vérifiez
             l'occupation, estimez les frais, comparez le marché, sécurisez votre financement, fixez
             votre limite.
           </p>

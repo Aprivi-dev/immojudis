@@ -5,7 +5,7 @@ import { renderInformationRequestEmail } from "./information-request";
 const bodyText = [
   "Bonjour Maître Dupont,",
   "",
-  "Je vous contacte pour ImmoJudis, service indépendant d’information sur les ventes immobilières judiciaires. Nous vérifions la fiche de cette vente :",
+  "Je vous contacte pour Immojudis, service indépendant d’information sur les ventes immobilières judiciaires. Nous vérifions la fiche de cette vente :",
   "",
   "Référence de l’annonce : Maison — 33000 Bordeaux",
   "Audience annoncée : 12 septembre 2026",
@@ -29,12 +29,12 @@ describe("renderInformationRequestEmail", () => {
     expect(message.html).toContain("IMMOJUDIS");
     expect(message.html).toContain("IJ-8F31A290");
     expect(message.html).toContain("mailto:enquete+1234@reponses.immojudis.com");
-    expect(message.html).toContain("ImmoJudis n’agit pas au nom d’un tribunal");
+    expect(message.html).toContain("Immojudis n’agit pas au nom d’un tribunal");
     expect(message.html).toContain(
       "Merci de ne transmettre que des pièces que vous êtes autorisé à partager.",
     );
     expect(message.html).toContain(
-      "Si vous ne souhaitez plus être contacté par ImmoJudis, indiquez-le simplement en réponse.",
+      "Si vous ne souhaitez plus être contacté par Immojudis, indiquez-le simplement en réponse.",
     );
     expect(message.html).toContain("https://immojudis.com");
     expect(message.html).toContain("Ouvrir le dépôt sécurisé du dossier");
@@ -63,7 +63,7 @@ describe("renderInformationRequestEmail", () => {
       "Merci de ne transmettre que des pièces que vous êtes autorisé à partager.",
     );
     expect(message.text).toContain(
-      "Si vous ne souhaitez plus être contacté par ImmoJudis, indiquez-le simplement en réponse.",
+      "Si vous ne souhaitez plus être contacté par Immojudis, indiquez-le simplement en réponse.",
     );
     expect(message.text).not.toContain("validation explicite d’un utilisateur");
     expect(message.html).not.toContain("DEMANDE DOCUMENTAIRE SÉCURISÉE");
@@ -91,7 +91,7 @@ describe("renderInformationRequestEmail", () => {
       "https://staging.immojudis.com/login?mode=professional&redirect=%2Fespace-pro";
     const message = await renderInformationRequestEmail({
       subject: "Maison à Bordeaux — précisions sur la vente",
-      bodyText: `${bodyText}\n\n${renderInformationAgentAccountInvitation(accountUrl)}\n\nBien cordialement,\nL’équipe ImmoJudis`,
+      bodyText: `${bodyText}\n\n${renderInformationAgentAccountInvitation(accountUrl)}\n\nBien cordialement,\nL’équipe Immojudis`,
       replyTo: "enquete+1234@reponses.immojudis.com",
       caseReference: "IJ-8F31A290",
       appUrl: "https://staging.immojudis.com",

@@ -25,7 +25,7 @@ export const Route = createFileRoute("/accompagnement")({
       {
         name: "description",
         content:
-          "Explorez les ventes et conservez trois favoris gratuitement. Testez les outils Premium pendant sept jours avec carte, puis abonnement récurrent résiliable.",
+          "Explorez les ventes et conservez trois favoris gratuitement. Testez les outils de l’offre Analyse pendant sept jours avec carte, puis abonnement récurrent résiliable.",
       },
     ],
   }),
@@ -43,7 +43,7 @@ const discoveryFeatures = [
 ] as const;
 
 const analysisFeatures = [
-  "Mise plafond simulée avec une enveloppe travaux ajustable",
+  "Enchère plafond simulée avec une enveloppe travaux ajustable",
   "Estimation du bien et ventes comparables",
   "Statistiques des ventes et des tribunaux",
   "Détail des frais, travaux, risques et pièces",
@@ -62,7 +62,7 @@ export function AccompagnementPage() {
               La mise à prix est un départ. Préparez votre limite avant l’enchère.
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-relaxed text-brand-navy/72 sm:text-lg">
-              ImmoJudis réunit les comparables disponibles, les frais et les travaux pour vous aider
+              Immojudis réunit les comparables disponibles, les frais et les travaux pour vous aider
               à fixer une limite selon votre projet et vos hypothèses.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -91,8 +91,8 @@ export function AccompagnementPage() {
           <strong>Sans compte</strong>, consultez les aperçus du catalogue, les guides et l’annonce
           exemple. <strong>Avec un compte gratuit</strong>, retrouvez les informations pratiques,
           les sources publiques de la procédure et les vues du quartier.{" "}
-          <strong>Avec Premium</strong>, accédez aux analyses, aux simulations et à l’historique
-          météo.
+          <strong>Avec l’offre Analyse</strong>, accédez aux analyses, aux simulations et à
+          l’historique météo.
         </p>
         <div className="grid gap-5 lg:grid-cols-2">
           <PlanPanel
@@ -149,7 +149,7 @@ export function AccompagnementPage() {
             <OfferProof
               icon={<Target className="h-5 w-5" />}
               title="Une limite à préparer avant la vente"
-              text="La mise plafond simule une limite selon vos hypothèses de marché, de frais et de travaux."
+              text="L’enchère plafond simule une limite selon vos hypothèses de marché, de frais et de travaux."
             />
             <OfferProof
               icon={<Wrench className="h-5 w-5" />}

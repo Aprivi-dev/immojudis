@@ -413,7 +413,7 @@ function competitivePressure(
     },
     {
       key: "qualified_demand",
-      label: "Demande qualifiée ImmoJudis",
+      label: "Demande qualifiée Immojudis",
       score: nullableScore(cohort.pressure?.qualifiedDemandScore),
       weight: 0.2,
     },

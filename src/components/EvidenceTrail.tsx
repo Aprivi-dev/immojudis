@@ -60,7 +60,8 @@ export function EvidenceTrail({ sale }: { sale: AuctionSale }) {
               "Mention retenue car elle est contextualisée dans une pièce liée au bien."
             }
             impact={
-              impact || "Ce point peut modifier le prix plafond, le coût ou la stratégie d'enchère."
+              impact ||
+              "Ce point peut modifier l’enchère plafond, le coût ou la stratégie d'enchère."
             }
             documentType={
               occurrence?.document_type ||

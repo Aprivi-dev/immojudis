@@ -42,7 +42,7 @@ export function SearchStatisticsPanel({
         </h2>
         <p className="mt-1 text-sm leading-relaxed text-[#5b6878]">
           Le compte gratuit ouvre la fiche et la localisation complète. Analyse ajoute les
-          comparables, les risques et le calcul de votre mise plafond.
+          comparables, les risques et le calcul de votre enchère plafond.
         </p>
         <Link
           to="/annonce-exemple"

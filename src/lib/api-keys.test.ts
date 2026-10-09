@@ -9,7 +9,7 @@ import {
 } from "@/lib/api-keys";
 
 describe("API key helpers", () => {
-  it("generates opaque ImmoJudis API secrets and stable lookup prefixes", () => {
+  it("generates opaque Immojudis API secrets and stable lookup prefixes", () => {
     const secret = generateApiKeySecret();
 
     expect(isApiKeySecret(secret)).toBe(true);
