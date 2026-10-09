@@ -137,6 +137,12 @@ export async function evaluateOperationalHealth(
         ? [result.value.error.message ?? "Health evaluation failed"]
         : [],
   );
+  if (!delivery.configured) {
+    failures.push("No external operational alert channel is configured.");
+  }
+  if (delivery.failed > 0) {
+    failures.push(`${delivery.failed} external operational alert delivery(ies) failed.`);
+  }
   if (failures.length) throw new Error(failures.join("; "));
   const data = results.map((result) =>
     result.status === "fulfilled" ? (result.value.data ?? {}) : {},
