@@ -192,7 +192,7 @@ export function TribunalStatisticsDashboard({
     null;
 
   return (
-    <main className="min-h-screen bg-background text-brand-navy">
+    <main id="contenu" className="min-h-screen bg-background text-brand-navy">
       <header className="border-b border-brand-navy/10 bg-white/72">
         <div className="mx-auto max-w-[1260px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
           <h1 className="max-w-4xl font-display text-4xl font-medium leading-tight sm:text-5xl lg:text-6xl">

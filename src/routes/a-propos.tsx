@@ -23,7 +23,7 @@ export const Route = createFileRoute("/a-propos")({
 
 export function AboutPage() {
   return (
-    <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
+    <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <div className="mx-auto max-w-6xl">
         <section className="glass-shell overflow-hidden rounded-lg p-6 sm:p-8 lg:p-10">
           <div className="grid gap-8 lg:grid-cols-[1fr_26rem] lg:items-center">

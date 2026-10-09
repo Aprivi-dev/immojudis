@@ -67,7 +67,7 @@ export function TribunalJudicialActivityExplorer() {
   );
 
   return (
-    <main className="min-h-screen bg-background text-brand-navy">
+    <main id="contenu" className="min-h-screen bg-background text-brand-navy">
       <header className="border-b border-brand-navy/10 bg-white/80">
         <div className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">

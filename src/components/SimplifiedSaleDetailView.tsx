@@ -501,7 +501,7 @@ function SaleDetailWorkspace({
   };
 
   return (
-    <main className={listingStyles.page} onClickCapture={handleSectionLink}>
+    <main id="contenu" className={listingStyles.page} onClickCapture={handleSectionLink}>
       <div className={listingStyles.container}>
         <div className={listingStyles.topbar}>
           <Link

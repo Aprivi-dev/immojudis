@@ -87,7 +87,7 @@ export default async function Page({ params }: Props) {
   const related = RESOURCE_SUMMARIES.filter((item) => item.slug !== slug).slice(0, 3);
 
   return (
-    <main className={styles.root}>
+    <main id="contenu" className={styles.root}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{

@@ -50,9 +50,10 @@ export function MapboxPreviewButton({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button type="button" aria-label={ariaLabel} data-mapbox-mode={mode} className={className}>
-          <Icon className="h-3.5 w-3.5" />
+        <button type="button" data-mapbox-mode={mode} className={className}>
+          <Icon className="h-3.5 w-3.5" aria-hidden />
           <span>{label}</span>
+          <span className="sr-only"> — {ariaLabel}</span>
         </button>
       </DialogTrigger>
       <DialogContent className="max-h-[94vh] w-[calc(100vw-1rem)] max-w-6xl gap-0 overflow-hidden border-white/10 bg-night p-0 text-white shadow-2xl sm:rounded-lg">

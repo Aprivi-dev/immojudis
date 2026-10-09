@@ -172,7 +172,7 @@ export function LoginPage() {
   }
 
   return (
-    <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
+    <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <div className="mx-auto grid min-h-[calc(100svh-8rem)] max-w-6xl items-center gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,29rem)]">
         <section className="glass-shell relative hidden min-h-[38rem] overflow-hidden rounded-lg p-8 lg:block">
           <div className="cinematic-grid absolute inset-0 opacity-35" />

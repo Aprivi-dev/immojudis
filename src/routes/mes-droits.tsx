@@ -89,7 +89,7 @@ export function RightsPage() {
   });
 
   return (
-    <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
+    <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <div className="mx-auto max-w-5xl">
         <header className="glass-shell rounded-lg p-6 sm:p-8">
           <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">

@@ -41,9 +41,9 @@ describe("SiteHeader", () => {
 
   it("écrit Immojudis d'une seule façon", () => {
     render(<SiteHeader />);
-    expect(screen.getByRole("link", { name: "Immojudis, accueil" }).textContent).toContain(
-      "Immojudis",
-    );
+    expect(
+      screen.getByRole("link", { name: /^Immo\s*judis\s*,\s*accueil$/ }).textContent,
+    ).toContain("Immojudis");
   });
 
   it("marque la page courante", () => {

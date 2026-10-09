@@ -154,7 +154,10 @@ export function ProfessionalWorkspacePage() {
   const selectedDetail = detailQuery.data?.request ?? null;
 
   return (
-    <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
+    <main
+      id="contenu"
+      className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12"
+    >
       <div className="mx-auto max-w-7xl">
         <header className="glass-shell grid gap-6 rounded-lg p-6 sm:p-8 lg:grid-cols-[1fr_19rem] lg:items-end">
           <div>
@@ -535,7 +538,10 @@ function StatusPill({ status }: { status: PublicationRequestSummary["status"] })
 
 function WorkspaceLoading() {
   return (
-    <main className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 text-foreground">
+    <main
+      id="contenu"
+      className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 text-foreground"
+    >
       <div className="glass-shell flex w-full max-w-2xl items-center gap-3 rounded-lg p-6">
         <RefreshCw className="h-5 w-5 animate-spin text-gold-text" />
         <span className="text-sm text-muted-foreground">Vérification de votre espace pro...</span>
@@ -556,7 +562,10 @@ function WorkspaceMessage({
   children: React.ReactNode;
 }) {
   return (
-    <main className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 text-foreground sm:px-6">
+    <main
+      id="contenu"
+      className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 text-foreground sm:px-6"
+    >
       <div className="glass-shell w-full max-w-2xl rounded-lg p-6 sm:p-8">
         <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-gold/25 bg-gold/10 text-gold-text">
           <Icon className="h-5 w-5" />

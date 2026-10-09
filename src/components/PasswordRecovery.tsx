@@ -107,7 +107,7 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
 
   const invalid = reset && !checking && (!ready || needsNewRecoveryLink);
   return (
-    <main className="liquid-page min-h-[75vh] px-4 py-12 text-foreground">
+    <main id="contenu" className="liquid-page min-h-[75vh] px-4 py-12 text-foreground">
       <section className="glass-shell mx-auto max-w-md rounded-lg p-6 sm:p-8">
         <h1 className="font-display text-3xl">
           {reset ? "Nouveau mot de passe" : "Mot de passe oublié"}

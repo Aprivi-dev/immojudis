@@ -26,7 +26,7 @@ export default async function SharedReportPage({ params }: PageParams) {
   if (!report) notFound();
   if (report instanceof ReportSourceChangedError) {
     return (
-      <main className="mx-auto max-w-2xl px-6 py-16">
+      <main id="contenu" className="mx-auto max-w-2xl px-6 py-16">
         <h1 className="text-3xl font-semibold">Rapport à actualiser</h1>
         <p className="mt-4 text-slate-700">
           Les données de cette analyse ne peuvent plus être confirmées. Demandez à la personne qui
@@ -115,7 +115,7 @@ export default async function SharedReportPage({ params }: PageParams) {
   const personalSimulation = reportSimulationSchema.safeParse(ceiling.personalSimulation);
 
   return (
-    <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
+    <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <article className="mx-auto max-w-4xl rounded-lg border border-border bg-white/94 p-6 shadow-sm sm:p-8">
         <header className="border-b border-border pb-5">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gold-text">

@@ -311,7 +311,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
   };
 
   return (
-    <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
+    <main
+      id="contenu"
+      className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12"
+    >
       <div className="mx-auto max-w-3xl">
         <header className="glass-shell rounded-lg p-6 sm:p-9">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-gold-text">

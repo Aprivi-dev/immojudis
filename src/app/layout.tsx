@@ -4,6 +4,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Cormorant_Garamond, IBM_Plex_Sans } from "next/font/google";
 import "./../styles.css";
 import { AppProviders } from "./providers";
+import { SkipLink } from "@/components/SkipLink";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
 const cormorantGaramond = Cormorant_Garamond({
@@ -53,6 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr" className={`${cormorantGaramond.variable} ${ibmPlexSans.variable}`}>
       <body>
+        <SkipLink />
         <AppProviders>{children}</AppProviders>
         <Analytics />
         <SpeedInsights />

@@ -215,7 +215,7 @@ export const Route = createFileRoute("/ventes-immobilieres-judiciaires")({
 
 export function ResourcesPage() {
   return (
-    <main className="liquid-page min-h-screen bg-background pb-24 text-foreground">
+    <main id="contenu" className="liquid-page min-h-screen bg-background pb-24 text-foreground">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_JSON_LD) }}
