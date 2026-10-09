@@ -1,5 +1,31 @@
 project_id = "sgpakxtyvenlpeihuucm"
 
+# Auth settings versioned from the reviewed production configuration (plan P4-09). Values the
+# repository cannot know (Vercel preview hostnames, JWT lifetime, SMTP) are intentionally not
+# invented here: set them in Supabase > Authentication and copy them below once confirmed.
+# Not expressible in this file: "leaked password protection" (HaveIBeenPwned check, Pro plan) -
+# keep it enabled in Supabase > Authentication > Providers > Email.
+[auth]
+enabled = true
+site_url = "https://immojudis.com"
+# Production only. Add the Vercel preview URL pattern here once confirmed.
+additional_redirect_urls = ["https://immojudis.com/**"]
+enable_signup = true
+enable_anonymous_sign_ins = false
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+minimum_password_length = 12
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+double_confirm_changes = true
+
+# TOTP second factor for the administrator account (P0-02, enrolment at /admin/securite).
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
 [functions.source-fetch-relay]
 # Authentication is enforced by the function using a dedicated fetch-only token.
 verify_jwt = false
