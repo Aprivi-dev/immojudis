@@ -17,14 +17,8 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { fetchLawyerDirectory } from "@/lib/client-api";
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
-import { createFileRoute, Link } from "@/lib/router-compat";
-
-type DirectorySearch = {
-  saleId?: string;
-  bar?: string;
-  city?: string;
-  department?: string;
-};
+import type { DirectorySearch } from "@/lib/lawyer-directory-search";
+import { Link } from "@/lib/router-compat";
 
 const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
@@ -33,28 +27,12 @@ const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
   timeZone: "Europe/Paris",
 });
 
-export const Route = createFileRoute("/avocats")({
-  validateSearch: (search: Record<string, unknown>): DirectorySearch => ({
-    saleId: stringValue(search.saleId),
-    bar: stringValue(search.bar),
-    city: stringValue(search.city),
-    department: stringValue(search.department),
-  }),
-  head: () => ({
-    meta: [
-      { title: "Annuaire des avocats en droit immobilier — Immojudis" },
-      {
-        name: "description",
-        content:
-          "Trouvez un avocat en droit immobilier par barreau et identifiez clairement les profils partenaires sponsorisés.",
-      },
-    ],
-  }),
-  component: LawyerDirectoryPage,
-});
-
-export function LawyerDirectoryPage() {
-  const search = Route.useSearch<DirectorySearch>();
+/**
+ * The filters come from the server page as props: the page reads the URL on the
+ * server, so its heading and form are part of the HTML sent to crawlers instead
+ * of waiting for a client-side `useSearchParams`.
+ */
+export function LawyerDirectoryPage({ search }: { search: DirectorySearch }) {
   const directoryQuery = useQuery({
     queryKey: ["lawyer-directory", search.saleId, search.bar, search.city, search.department],
     queryFn: () => fetchLawyerDirectory(search),
@@ -518,10 +496,6 @@ function DirectorySkeleton() {
       ))}
     </div>
   );
-}
-
-function stringValue(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function lawyerInitials(displayName: string) {
