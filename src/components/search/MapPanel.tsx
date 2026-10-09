@@ -689,7 +689,7 @@ export function MapPanel({
           >
             <MapPin className="h-3.5 w-3.5 text-[#0f766e]" />
             <span>{boundary.label}</span>
-            <span className="font-medium text-[#667482]">
+            <span className="font-medium text-[#5b6878]">
               {" · "}
               {boundary.level === "commune"
                 ? "commune"
@@ -707,7 +707,7 @@ export function MapPanel({
             </a>
           </div>
         ) : boundaryLoading ? (
-          <span className="rounded-md border border-[#d6e0dc] bg-white/95 px-3 py-2 text-xs font-semibold text-[#667482] shadow-lg backdrop-blur">
+          <span className="rounded-md border border-[#d6e0dc] bg-white/95 px-3 py-2 text-xs font-semibold text-[#5b6878] shadow-lg backdrop-blur">
             Recherche du contour officiel…
           </span>
         ) : null}
@@ -1122,7 +1122,7 @@ function MapFallback({ message }: { message: string }) {
       <div className="max-w-sm rounded-md border border-[#cbded8] bg-white p-5 shadow-lg">
         <MapPin className="mx-auto h-8 w-8 text-[#0f766e]" />
         <h2 className="mt-3 text-base font-bold text-[#132238]">Carte Mapbox indisponible</h2>
-        <p className="mt-2 text-sm leading-relaxed text-[#55626f]">{message}</p>
+        <p className="mt-2 text-sm leading-relaxed text-[#5b6878]">{message}</p>
       </div>
     </div>
   );

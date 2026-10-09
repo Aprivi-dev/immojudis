@@ -94,7 +94,7 @@ export function MobileFilterDrawer({
           <h2 id="more-filters-title" className="text-base font-extrabold text-[#132238]">
             Filtres avancés
           </h2>
-          <p className="text-xs font-semibold text-[#667482]">
+          <p className="text-xs font-semibold text-[#5b6878]">
             {activeFiltersCount.toLocaleString("fr-FR")} filtre{activeFiltersCount === 1 ? "" : "s"}{" "}
             actif{activeFiltersCount === 1 ? "" : "s"}
           </p>
@@ -286,7 +286,7 @@ export function MobileFilterDrawer({
                 Maison avec terrain
               </label>
               <div>
-                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-[#667482]">
+                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-[#5b6878]">
                   DPE
                 </span>
                 <div className="flex flex-wrap gap-1.5">
@@ -379,7 +379,7 @@ export function MobileFilterDrawer({
         <button
           type="button"
           onClick={onReset}
-          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#ead8c5] bg-[#fffaf2] px-4 text-sm font-bold text-[#8a5b24] transition-colors hover:border-[#c98d45]"
+          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#ead8c5] bg-[#fffaf2] px-4 text-sm font-bold text-gold-text transition-colors hover:border-[#c98d45]"
         >
           <RotateCcw className="h-4 w-4" />
           Réinitialiser
@@ -416,7 +416,7 @@ export function AdvancedGroup({
 export function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="space-y-1">
-      <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-[#667482]">
+      <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-[#5b6878]">
         {label}
       </span>
       {children}

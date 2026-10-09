@@ -74,7 +74,7 @@ export function AdminCatalogueReadinessPanel({
       <section className="rounded-xl border bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#a36f2c]">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
               <ShieldCheck className="size-4" />
               Sélection Premium
             </div>

@@ -180,7 +180,7 @@ function InformationAgentTemplateEditor({
       <AdminPanel className="p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#a36f2c]">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
               Agent IA autonome
             </div>
             <h2 className="mt-2 text-xl font-semibold text-[#132238]">
@@ -244,7 +244,7 @@ function InformationAgentTemplateEditor({
                   <span
                     key={variable.key}
                     title={`${variable.label} · Exemple : ${variable.example}`}
-                    className="rounded-md border border-[#132238]/10 bg-white px-2 py-1 font-mono text-[11px] text-[#72501f]"
+                    className="rounded-md border border-[#132238]/10 bg-white px-2 py-1 font-mono text-[11px] text-gold-text"
                   >
                     {templateVariableToken(variable.key)}
                   </span>
@@ -265,7 +265,7 @@ function InformationAgentTemplateEditor({
                           className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
                             block.kind === "dynamic"
                               ? "bg-blue-50 text-blue-700"
-                              : "bg-[#f6eedc] text-[#795421]"
+                              : "bg-[#f6eedc] text-gold-text"
                           }`}
                         >
                           Bloc {block.kind === "dynamic" ? "dynamique" : "fixe"}

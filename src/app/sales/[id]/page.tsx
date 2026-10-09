@@ -108,7 +108,7 @@ function SaleDetailFallback({
   return (
     <main className="min-h-screen bg-[#f7f5f3] px-4 py-10 text-foreground sm:px-6">
       <section className="mx-auto max-w-3xl rounded-lg border border-border bg-white p-6 shadow-sm sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           {sale ? saleVenueLabel(getSaleProcedure(sale).venueType) : "Vente aux enchères"}
         </p>
         <h1 className="mt-3 font-display text-3xl leading-tight sm:text-4xl">

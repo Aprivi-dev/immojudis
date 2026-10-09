@@ -79,7 +79,7 @@ export function FeaturedLawyerPlacement({
 
   return (
     <section ref={sectionRef} className={shellClassName}>
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
+      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-text">
         <Scale className="h-3.5 w-3.5" />
         Avocat partenaire · profil sponsorisé
       </div>

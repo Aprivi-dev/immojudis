@@ -13,7 +13,7 @@ export function SimilarListings({ property }: { property: Property }) {
   return (
     <AnimatedSection id="similar" aria-labelledby="similar-title">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Comparables
         </p>
         <h2 id="similar-title" className="mt-2 font-display text-3xl text-foreground">

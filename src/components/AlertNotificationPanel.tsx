@@ -83,7 +83,7 @@ export default function AlertNotificationPanel({
           type="button"
           aria-label="Rafraîchir"
           onClick={() => void onRefresh()}
-          className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-soft"
+          className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text"
         >
           {isFetching ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -193,7 +193,7 @@ function NotificationItem({
             {notification.reasons.slice(0, 2).map((reason) => (
               <span
                 key={reason}
-                className="rounded-full bg-gold/10 px-2 py-0.5 text-[11px] font-semibold text-gold-soft"
+                className="rounded-full bg-gold/10 px-2 py-0.5 text-[11px] font-semibold text-gold-text"
               >
                 {reason}
               </span>
@@ -215,7 +215,7 @@ function NotificationItem({
             aria-label={unread ? "Marquer comme lue" : "Marquer comme non lue"}
             disabled={disabled}
             onClick={onRead}
-            className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-soft disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Check className="h-3.5 w-3.5" />
           </button>

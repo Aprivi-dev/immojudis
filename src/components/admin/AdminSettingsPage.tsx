@@ -105,7 +105,7 @@ export function AdminSettingsPage() {
     >
       <div className="space-y-6">
         <AdminPanel className="p-5 sm:p-6">
-          <p className="text-xs font-semibold uppercase tracking-widest text-[#a36f2c]">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gold-text">
             Centre de configuration
           </p>
           <h2 className="mt-2 text-xl font-semibold">Les bons réglages, au même endroit</h2>

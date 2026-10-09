@@ -74,7 +74,7 @@ export function AdminAuctionFactClaimReviewPanel() {
       <div className="border-b px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#a36f2c]">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
               <CheckCircle className="size-4" />
               Contrôle des faits sourcés
             </div>
@@ -238,7 +238,7 @@ function ClaimLine({
                   href={item.evidence.sourceUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 font-medium text-[#7c5222] underline"
+                  className="inline-flex items-center gap-1 font-medium text-gold-text underline"
                 >
                   Ouvrir la source <ExternalLink className="size-3" />
                 </a>

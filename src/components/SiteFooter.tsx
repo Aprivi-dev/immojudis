@@ -37,7 +37,7 @@ export function SiteFooter() {
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div>
             <Link href="/" className="font-display text-xl font-semibold text-foreground">
-              Immo<span className="text-gold-soft">Judis</span>
+              Immo<span className="text-gold-text">Judis</span>
             </Link>
             <p className="mt-1">Les ventes immobilières en toute clarté.</p>
           </div>

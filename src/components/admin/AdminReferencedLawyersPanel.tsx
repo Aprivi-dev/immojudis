@@ -70,7 +70,7 @@ export function AdminReferencedLawyersPanel() {
     <section className="liquid-panel mt-6 rounded-lg p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
             <Scale className="h-4 w-4" />
             Avocats référencés
           </div>
@@ -79,7 +79,7 @@ export function AdminReferencedLawyersPanel() {
         <button
           type="button"
           onClick={() => void lawyersQuery.refetch()}
-          className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold transition hover:border-gold"
+          className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${lawyersQuery.isFetching ? "animate-spin" : ""}`} />
           Actualiser
@@ -307,7 +307,7 @@ export function AdminReferencedLawyersPanel() {
                     coverage: [...current.coverage, emptyCoverageDraft()],
                   }))
                 }
-                className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2.5 py-1 text-xs text-gold transition hover:border-gold"
+                className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2.5 py-1 text-xs text-gold-text transition hover:border-gold"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Zone
@@ -341,7 +341,7 @@ export function AdminReferencedLawyersPanel() {
             <button
               type="submit"
               disabled={saveMutation.isPending}
-              className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-background disabled:cursor-not-allowed disabled:opacity-60"
+              className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Save className="h-3.5 w-3.5" />
               {saveMutation.isPending ? "Sauvegarde" : form.id ? "Mettre à jour" : "Créer"}
@@ -349,7 +349,7 @@ export function AdminReferencedLawyersPanel() {
             <button
               type="button"
               onClick={() => setForm(emptyLawyerForm())}
-              className="liquid-panel-soft inline-flex items-center justify-center rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold transition hover:border-gold"
+              className="liquid-panel-soft inline-flex items-center justify-center rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
             >
               Nouveau
             </button>
@@ -421,7 +421,7 @@ function LawyerLine({
       <button
         type="button"
         onClick={onEdit}
-        className="inline-grid h-8 w-8 place-items-center rounded-md border border-white/10 text-gold transition hover:border-gold"
+        className="inline-grid h-8 w-8 place-items-center rounded-md border border-white/10 text-gold-text transition hover:border-gold"
         aria-label="Modifier"
       >
         <Pencil className="h-3.5 w-3.5" />

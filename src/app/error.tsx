@@ -20,13 +20,13 @@ export default function Error({ error, reset }: { error: Error; reset: () => voi
           <button
             type="button"
             onClick={reset}
-            className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-background transition hover:brightness-105"
+            className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] transition hover:brightness-105"
           >
             Reessayer
           </button>
           <Link
             href="/"
-            className="liquid-panel-soft inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-gold transition hover:border-gold"
+            className="liquid-panel-soft inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
           >
             Retour a l'accueil
           </Link>

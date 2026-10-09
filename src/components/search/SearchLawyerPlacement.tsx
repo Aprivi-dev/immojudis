@@ -79,7 +79,7 @@ function SponsoredLawyerCard({
       aria-labelledby="search-lawyer-placement-title"
       className={`flex min-h-[320px] flex-col rounded-lg border border-[#d9b477] bg-[#fffaf2] p-4 shadow-sm ${className}`.trim()}
     >
-      <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#8a5b24]">
+      <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-gold-text">
         <Megaphone className="h-3.5 w-3.5" aria-hidden />
         Sponsorisé
       </div>
@@ -95,17 +95,17 @@ function SponsoredLawyerCard({
         .
       </p>
       {lawyer.barAssociation || lawyer.city || lawyer.department ? (
-        <p className="mt-3 text-xs text-[#667482]">
+        <p className="mt-3 text-xs text-[#5b6878]">
           {[lawyer.barAssociation, lawyer.city, lawyer.department].filter(Boolean).join(" · ")}
         </p>
       ) : null}
       <a
         href={directoryHref(lawyer)}
-        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md border border-[#c98d45]/45 bg-white px-3 py-2 text-xs font-bold text-[#8a5b24] transition-colors hover:border-[#c98d45] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98d45] focus-visible:ring-offset-2"
+        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md border border-[#c98d45]/45 bg-white px-3 py-2 text-xs font-bold text-gold-text transition-colors hover:border-[#c98d45] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98d45] focus-visible:ring-offset-2"
       >
         Voir l’annuaire du secteur
       </a>
-      <p className="mt-3 text-[11px] leading-relaxed text-[#667482]">
+      <p className="mt-3 text-[11px] leading-relaxed text-[#5b6878]">
         Cette mise en avant est signalée comme sponsorisée et ne constitue ni une recommandation, ni
         une garantie de résultat.
       </p>
@@ -120,7 +120,7 @@ function OpenLawyerPlacement({ loading, className }: { loading: boolean; classNa
       aria-busy={loading}
       className={`flex min-h-[320px] flex-col rounded-lg border border-[#d9b477] bg-[#fffaf2] p-4 shadow-sm ${className}`.trim()}
     >
-      <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#667482]">
+      <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#5b6878]">
         <Megaphone className="h-3.5 w-3.5" aria-hidden />
         Espace partenaire
       </div>

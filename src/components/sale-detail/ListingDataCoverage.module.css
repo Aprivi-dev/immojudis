@@ -61,7 +61,7 @@
 }
 
 .sectionCount {
-  color: #718096;
+  color: #5b6878;
   font-size: 11px;
   font-weight: 600;
 }
@@ -168,7 +168,7 @@
   padding: 2px 0;
   border: 0;
   background: transparent;
-  color: #946724;
+  color: var(--gold-text, #84602e);
   cursor: pointer;
   font-size: 11px;
   font-weight: 750;
@@ -267,7 +267,7 @@
 
 .sourceKind {
   margin: 0;
-  color: #946724;
+  color: var(--gold-text, #84602e);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -284,7 +284,7 @@
 
 .sourcePage {
   flex: 0 0 auto;
-  color: #718096;
+  color: #5b6878;
   font-size: 11px;
   font-weight: 700;
 }
@@ -305,13 +305,13 @@
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
-  color: #718096;
+  color: #5b6878;
   font-size: 11px;
   line-height: 1.35;
 }
 
 .sourceLink {
-  color: #946724;
+  color: var(--gold-text, #84602e);
   font-weight: 750;
   text-decoration: underline;
   text-decoration-color: rgb(148 103 36 / 45%);

@@ -30,7 +30,7 @@ export function PropertyHero({ property }: { property: Property }) {
               {property.title}
             </h1>
             <p className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" />
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" />
               <span>{address}</span>
             </p>
           </div>

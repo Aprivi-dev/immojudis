@@ -50,7 +50,7 @@ export function MapThumbnail({
         className={`relative flex items-center justify-center overflow-hidden bg-slate-50 ${className ?? ""}`}
       >
         <div className="relative flex flex-col items-center gap-2 px-4 text-center">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gold/40 bg-gold/15 text-gold">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gold/40 bg-gold/15 text-gold-text">
             <MapPin className="h-4 w-4" />
           </span>
           <span className="text-sm font-medium text-slate-700">Aperçu Mapbox indisponible</span>

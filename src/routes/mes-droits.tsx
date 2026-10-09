@@ -91,7 +91,7 @@ export function RightsPage() {
     <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <div className="mx-auto max-w-5xl">
         <header className="glass-shell rounded-lg p-6 sm:p-8">
-          <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+          <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
             <ShieldCheck className="h-4 w-4" />
             Espace authentifié
           </div>
@@ -143,18 +143,18 @@ export function RightsPage() {
               type="button"
               disabled={mutation.isPending}
               onClick={() => mutation.mutate()}
-              className="liquid-button mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-background disabled:opacity-60"
+              className="liquid-button mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] disabled:opacity-60"
             >
               <Send className="h-4 w-4" />
               {mutation.isPending ? "Enregistrement…" : "Envoyer la demande"}
             </button>
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
               Consultez la{" "}
-              <Link to="/privacy" className="text-gold underline">
+              <Link to="/privacy" className="text-gold-text underline">
                 politique de confidentialité
               </Link>{" "}
               et les{" "}
-              <Link to="/conditions-generales" className="text-gold underline">
+              <Link to="/conditions-generales" className="text-gold-text underline">
                 conditions générales
               </Link>
               .
@@ -187,7 +187,7 @@ export function RightsPage() {
                     <StatusBadge status={request.status} />
                   </div>
                   <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock className="h-3.5 w-3.5 text-gold" />
+                    <Clock className="h-3.5 w-3.5 text-gold-text" />
                     Échéance de réponse : {formatDate(request.dueAt)}
                   </div>
                   {request.message ? (
@@ -212,7 +212,7 @@ function StatusBadge({ status }: { status: string }) {
   const terminal = status === "completed";
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${terminal ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100" : "border-gold/25 bg-gold/10 text-gold-soft"}`}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${terminal ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100" : "border-gold/25 bg-gold/10 text-gold-text"}`}
     >
       {terminal ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
       {statusLabel(status)}

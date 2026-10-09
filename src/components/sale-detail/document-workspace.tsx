@@ -106,7 +106,7 @@ export function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
   const reviewedCount = countReviewedDocuments(state.reviews);
   const reviewCount = Object.keys(state.reviews).length;
   const actionClass =
-    "inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft";
+    "inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-text";
   const syncFooter = (
     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
       <span className="text-xs text-muted-foreground">
@@ -154,7 +154,7 @@ export function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
               >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
                       <FileCheck2 className="h-4 w-4" />
                       {documentTypeLabel(document.type)}
                     </div>
@@ -297,7 +297,7 @@ export function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
             >
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
                     <FileCheck2 className="h-4 w-4" />
                     {documentTypeLabel(document.document_type ?? document.type)}
                   </div>
@@ -349,7 +349,7 @@ export function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                     ) : (
                       <div className="flex min-h-[420px] flex-col justify-between rounded-lg border border-border bg-muted/30 p-5">
                         <div>
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-gold-soft">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-gold-text">
                             <FileCheck2 className="h-5 w-5" />
                           </div>
                           <h3 className="mt-4 text-base font-semibold text-foreground">
@@ -365,7 +365,7 @@ export function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                           href={document.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="mt-5 inline-flex items-center justify-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+                          className="mt-5 inline-flex items-center justify-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-foreground transition-colors hover:border-gold/50 hover:text-gold-text"
                         >
                           Ouvrir la source <ExternalLink className="h-3.5 w-3.5" />
                         </a>
@@ -504,7 +504,7 @@ export function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
                                       });
                                     });
                                   }}
-                                  className="mt-3 cursor-pointer text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft hover:text-gold"
+                                  className="mt-3 cursor-pointer text-xs font-semibold uppercase tracking-[0.12em] text-gold-text hover:text-gold-text"
                                 >
                                   Surligner l'élément sensible
                                 </button>
@@ -959,7 +959,7 @@ export function DossierAssistant({
   return (
     <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
       <div className="rounded-lg border border-border bg-white p-4 shadow-sm">
-        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
           Questions rapides
         </div>
         <div className="mt-3 grid gap-2">
@@ -980,7 +980,7 @@ export function DossierAssistant({
         </div>
       </div>
       <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
           Réponse sourcée
         </div>
         <h3 className="mt-2 text-lg font-semibold text-foreground">{question}</h3>

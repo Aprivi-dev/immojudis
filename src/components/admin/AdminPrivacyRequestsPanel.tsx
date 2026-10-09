@@ -74,7 +74,7 @@ export function AdminPrivacyRequestsPanel() {
     <section className="liquid-panel mt-6 rounded-lg p-5 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
             <ShieldCheck className="h-4 w-4" />
             Gouvernance des données
           </div>
@@ -212,7 +212,7 @@ function PrivacyRequestEditor({
         {request.message || "Aucune précision fournie."}
       </p>
       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-        <Clock className="h-3.5 w-3.5 text-gold" />
+        <Clock className="h-3.5 w-3.5 text-gold-text" />
         Reçue le {formatDate(request.submittedAt)} · échéance {formatDate(request.dueAt)}
       </div>
 

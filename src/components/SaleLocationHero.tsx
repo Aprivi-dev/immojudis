@@ -19,12 +19,12 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
   if (!hasLocation) {
     return (
       <div className="liquid-panel flex min-h-[220px] flex-col items-center justify-center rounded-lg p-8 text-center">
-        <MapPin className="h-6 w-6 text-gold" />
+        <MapPin className="h-6 w-6 text-gold-text" />
         <p className="mt-3 text-sm font-medium text-foreground">Localisation non cartographiée</p>
         <p className="mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
           Les coordonnées précises ne sont pas encore disponibles pour ce bien.
         </p>
-        <span className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-soft">
+        <span className="mt-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-text">
           Géocodage en attente
         </span>
       </div>
@@ -40,7 +40,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
 
       <div className="liquid-panel flex min-h-[260px] flex-col justify-between rounded-lg p-6 lg:min-h-[440px]">
         <div>
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gold/30 bg-gold/10 text-gold-soft">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gold/30 bg-gold/10 text-gold-text">
             <Navigation className="h-5 w-5" />
           </span>
           <h2 className="mt-4 font-display text-2xl text-foreground">Localisation</h2>
@@ -49,13 +49,13 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
           </p>
           <dl className="mt-5 grid gap-3 text-sm">
             <div className="rounded-md border border-white/10 bg-white/5 p-3">
-              <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
+              <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-text">
                 Latitude
               </dt>
               <dd className="mt-1 font-medium text-foreground">{lat.toFixed(5)}</dd>
             </div>
             <div className="rounded-md border border-white/10 bg-white/5 p-3">
-              <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
+              <dt className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gold-text">
                 Longitude
               </dt>
               <dd className="mt-1 font-medium text-foreground">{lng.toFixed(5)}</dd>
@@ -71,7 +71,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
           description={address || title}
           ariaLabel={`Afficher la vue aérienne 3D Mapbox de ${title}`}
           icon={Navigation}
-          className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-gold/30 bg-gold/10 px-4 text-sm font-semibold text-gold-soft transition-colors hover:border-gold/60 hover:bg-gold/15 hover:text-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+          className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-gold/30 bg-gold/10 px-4 text-sm font-semibold text-gold-text transition-colors hover:border-gold/60 hover:bg-gold/15 hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
         />
       </div>
     </div>
@@ -80,7 +80,7 @@ export function SaleLocationHero({ sale }: { sale: AuctionSale }) {
 
 function TileBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="absolute left-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-background/70 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-soft backdrop-blur">
+    <span className="absolute left-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-background/70 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-text backdrop-blur">
       {children}
     </span>
   );

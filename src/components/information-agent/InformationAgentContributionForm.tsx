@@ -313,7 +313,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
       <div className="mx-auto max-w-3xl">
         <header className="glass-shell rounded-lg p-6 sm:p-9">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-gold-soft">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-gold-text">
             <ShieldCheck className="size-4" aria-hidden="true" />
             Contribution sécurisée
           </div>
@@ -494,7 +494,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                       htmlFor="contribution-files"
                       className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gold/50 bg-cream/40 px-4 py-5 text-center transition hover:border-gold hover:bg-cream"
                     >
-                      <UploadCloud className="size-6 text-gold-soft" aria-hidden="true" />
+                      <UploadCloud className="size-6 text-gold-text" aria-hidden="true" />
                       <span className="mt-2 text-sm font-semibold text-foreground">
                         Choisir des fichiers
                       </span>
@@ -526,7 +526,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                             className="flex items-center gap-3 px-3 py-3 text-sm"
                           >
                             <FileText
-                              className="size-4 shrink-0 text-gold-soft"
+                              className="size-4 shrink-0 text-gold-text"
                               aria-hidden="true"
                             />
                             <span className="min-w-0 flex-1 truncate text-foreground">
@@ -575,7 +575,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
 
                   <button
                     type="submit"
-                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:bg-gold-soft hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:bg-gold-soft hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={submitting}
                   >
                     {submitting ? (
@@ -616,7 +616,7 @@ function Field({
       <label htmlFor={htmlFor} className="block text-sm font-semibold text-foreground">
         {label}{" "}
         {required ? (
-          <span aria-hidden="true" className="text-gold-soft">
+          <span aria-hidden="true" className="text-gold-text">
             *
           </span>
         ) : null}
@@ -653,7 +653,7 @@ function StatusCard({
 }
 
 const inputClassName =
-  "block min-h-11 w-full rounded-md border border-input bg-white/75 px-3 py-2.5 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-gold focus:ring-2 focus:ring-gold/20";
+  "block min-h-11 w-full rounded-md border border-input bg-white/75 px-3 py-2.5 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-gold focus:ring-2 focus:ring-gold/20";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {

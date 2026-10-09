@@ -33,7 +33,7 @@ export function InvestorOnboarding() {
   return (
     <main className="liquid-page min-h-[calc(100svh-4rem)] px-4 py-10 sm:px-6 sm:py-16">
       <section className="glass-shell mx-auto max-w-2xl rounded-lg p-6 sm:p-10">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Bienvenue dans votre compte Découverte
         </p>
         <ol aria-label="Étapes de démarrage" className="mt-6 flex gap-2">
@@ -157,7 +157,7 @@ export function InvestorOnboarding() {
               </p>
               <Link
                 to="/annonce-exemple"
-                className="inline-block text-sm font-medium text-gold-soft underline underline-offset-4"
+                className="inline-block text-sm font-medium text-gold-text underline underline-offset-4"
               >
                 Comprendre une analyse sur l’annonce exemple gratuite
               </Link>
@@ -177,7 +177,7 @@ export function InvestorOnboarding() {
             )}
             <button
               type="submit"
-              className="liquid-button rounded-lg px-6 py-3 text-sm font-semibold text-brand-navy"
+              className="liquid-button rounded-lg px-6 py-3 text-sm font-semibold"
             >
               {step === steps.length - 1 ? "Voir les biens" : "Continuer"}
             </button>

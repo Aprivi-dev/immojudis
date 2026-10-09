@@ -22,7 +22,7 @@
 }
 
 .intro > p {
-  color: #946724;
+  color: var(--gold-text, #84602e);
   font-size: 12px;
   font-weight: 750;
   letter-spacing: 0.12em;
@@ -81,7 +81,7 @@
   content: "+";
   float: right;
   margin-left: 12px;
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
   font-size: 23px;
   line-height: 0.8;
 }
@@ -176,7 +176,7 @@
 }
 
 .steps li::marker {
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
   font-weight: 700;
 }
 
@@ -271,7 +271,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #946724;
+  color: var(--gold-text, #84602e);
   font-weight: 650;
   font-size: 13px;
   min-height: 44px;
@@ -329,7 +329,7 @@
 }
 
 .priceGrid > div:nth-child(2) dd {
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
 }
 
 .priceGrid .textValue {
@@ -370,7 +370,7 @@
 
 .estimationFoot a {
   flex: 0 0 auto;
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 4px;
@@ -409,7 +409,7 @@
 .riskCard > a {
   display: inline-block;
   margin-top: 15px;
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
   font-size: 14px;
   font-weight: 700;
   text-decoration: underline;
@@ -477,7 +477,7 @@
 }
 
 .riskPreview svg {
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
 }
 
 .riskPreview span {
@@ -486,12 +486,12 @@
 
 .riskPreview strong {
   flex: 0 0 auto;
-  color: #946724;
+  color: var(--gold-text, #84602e);
   font-size: 12px;
 }
 
 .riskCard > p a {
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -505,7 +505,7 @@
 }
 
 .riskEvidence summary {
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
   cursor: pointer;
   font-weight: 700;
 }
@@ -531,7 +531,7 @@
 }
 
 .riskEvidence a {
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
   text-decoration: underline;
 }
 

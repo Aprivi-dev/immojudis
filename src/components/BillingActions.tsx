@@ -265,7 +265,7 @@ export function BillingActions({
               <Link
                 to="/conditions-generales"
                 target="_blank"
-                className="font-semibold text-gold underline"
+                className="font-semibold text-gold-text underline"
               >
                 conditions générales
               </Link>{" "}
@@ -286,7 +286,11 @@ export function BillingActions({
               Je demande l’exécution immédiate avant la fin du délai de rétractation et reconnais
               avoir reçu l’information sur mon droit de 14 jours et sur le montant proportionnel
               éventuellement dû pour le service déjà fourni. La{" "}
-              <Link to="/privacy" target="_blank" className="font-semibold text-gold underline">
+              <Link
+                to="/privacy"
+                target="_blank"
+                className="font-semibold text-gold-text underline"
+              >
                 politique de confidentialité
               </Link>{" "}
               est accessible avant la commande.

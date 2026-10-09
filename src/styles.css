@@ -59,6 +59,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --color-gold: var(--gold);
   --color-gold-soft: var(--gold-soft);
+  --color-gold-text: var(--gold-text);
   --color-surface: var(--surface);
   --color-cream: var(--cream);
   --color-brand-navy: var(--brand-navy);
@@ -83,6 +84,8 @@
   --surface: #fffaf2;
   --gold: #c98d45;
   --gold-soft: #9c642b;
+  /* Texte doré lisible : 5,7:1 sur blanc, 5,3:1 sur le fond ciel (WCAG AA) */
+  --gold-text: #84602e;
   --cream: #fff7eb;
 
   --card: var(--surface);
@@ -135,6 +138,16 @@
   --dur-fast: 160ms;
   --dur-base: 240ms;
   --dur-slow: 420ms;
+}
+
+/*
+ * Alias hérité : « text-gold » désignait l'or d'accent (2,8:1 sur fond clair).
+ * En texte on utilise toujours --gold-text (≥ 5:1) ; l'or d'accent reste réservé
+ * aux fonds, bordures et anneaux de focus. Cet alias couvre les pages dont les
+ * sources sont figées (pages légales).
+ */
+.text-gold {
+  color: var(--gold-text);
 }
 
 @layer base {
@@ -289,14 +302,14 @@
   }
 
   .admin-button-primary {
-    border: 1px solid #b56e2c;
-    background: #b96f2d;
+    border: 1px solid #a96126;
+    background: #a96126;
     color: #ffffff;
     box-shadow: 0 4px 12px rgb(154 87 29 / 16%);
   }
 
   .admin-button-primary:hover {
-    background: #a96126;
+    background: #8f5120;
     transform: translateY(-1px);
   }
 
@@ -365,7 +378,7 @@
   }
 
   .admin-console .liquid-button {
-    background: #b96f2d;
+    background: #a96126;
     color: #ffffff;
     box-shadow: 0 4px 12px rgb(154 87 29 / 16%);
   }
@@ -604,7 +617,9 @@
   }
 
   .liquid-button {
-    background: linear-gradient(145deg, #d59d56, #b97731);
+    background: linear-gradient(145deg, #d59d56, #c98d45);
+    /* Marine sur or : 5,6:1 à 6,5:1 (WCAG AA), contre 2,8:1 en blanc ou en ciel */
+    color: #132238;
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 32%),
       0 12px 28px rgb(201 141 69 / 18%);
@@ -2243,7 +2258,7 @@
 .ij-home-nav a:focus-visible,
 .ij-mobile-nav a:hover,
 .ij-mobile-nav a:focus-visible {
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
 }
 
 .ij-home-actions {
@@ -2284,14 +2299,29 @@
 
 .ij-signup-button {
   min-height: 3rem;
-  background: linear-gradient(145deg, #d39b56, #b97731);
+  background: linear-gradient(145deg, #d9a35f, #c98d45);
   padding: 0.72rem 1.28rem;
-  color: #fff9ef;
+  /* Marine sur or : 5,6:1 à 6,9:1 (le blanc plafonnait à 2,8:1) */
+  color: #132238;
   font-size: 0.96rem;
   font-weight: 600;
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 32%),
     0 1rem 2.5rem rgb(201 141 69 / 22%);
+}
+
+/* Bouton inactif : gris lisible (≥ 4,5:1) plutôt qu'une opacité qui faisait descendre le texte sous 3:1 */
+.ij-login-button:disabled,
+.ij-signup-button:disabled,
+.liquid-button:disabled {
+  border: 1px solid #c9d0d8;
+  background: #e6e9ee;
+  color: #4a5565;
+  box-shadow: none;
+  opacity: 1;
+  transform: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .ij-login-button:hover,
@@ -5045,7 +5075,7 @@
 }
 
 .immo-mapbox-popup-link:hover {
-  color: #9c642b;
+  color: var(--gold-text, #84602e);
 }
 
 .mapboxgl-ctrl-logo,

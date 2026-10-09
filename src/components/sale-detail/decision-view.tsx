@@ -157,14 +157,14 @@ export function DecisionHero({
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
             <a
               href="#calculation"
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-gold-soft px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gold"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-gold-soft px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gold-text"
             >
               <Target className="h-4 w-4" />
               Ajuster mon plafond
             </a>
             <a
               href="#risks"
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md border border-brand-navy/25 bg-white/80 px-5 py-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold/60 hover:text-gold-soft"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md border border-brand-navy/25 bg-white/80 px-5 py-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold/60 hover:text-gold-text"
             >
               <TriangleAlert className="h-4 w-4" />
               Voir les risques
@@ -300,17 +300,17 @@ export function DecisionMetricCard({
   return (
     <div className="min-w-0 rounded-lg border border-brand-navy/10 bg-white/82 p-4 shadow-sm">
       <dt className="flex items-center gap-2 text-[11px] font-semibold text-brand-navy/72">
-        <span className={accent ? "text-gold-soft" : "text-gold"}>{icon}</span>
+        <span className={accent ? "text-gold-text" : "text-gold-text"}>{icon}</span>
         {label}
       </dt>
       <dd
         className={`mt-2 text-[clamp(1.15rem,1.8vw,1.55rem)] font-semibold leading-tight tabular-nums ${
-          accent ? "text-gold-soft" : "text-brand-navy"
+          accent ? "text-gold-text" : "text-brand-navy"
         }`}
       >
         {value}
       </dd>
-      <p className="mt-1 text-xs leading-relaxed text-brand-navy/62">{detail}</p>
+      <p className="mt-1 text-xs leading-relaxed text-brand-navy/65">{detail}</p>
     </div>
   );
 }
@@ -419,14 +419,14 @@ export function AiPropertyDescriptionCard({
     <section id="description-ia" className="scroll-mt-28">
       <article className="rounded-lg border border-border bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-gold/25 bg-gold/[0.08] text-gold-soft">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-gold/25 bg-gold/[0.08] text-gold-text">
             <Sparkles className="h-5 w-5" />
           </span>
           <div>
             <h2 className="font-display text-2xl font-medium text-brand-navy sm:text-3xl">
               {descriptionLabel}
             </h2>
-            <p className="mt-1 text-sm text-brand-navy/62">
+            <p className="mt-1 text-sm text-brand-navy/65">
               Lecture qualitative du bien, conservée avant les chiffres et les risques.
             </p>
           </div>
@@ -435,7 +435,7 @@ export function AiPropertyDescriptionCard({
         <dl className="mt-5 grid gap-3 border-t border-border/70 pt-4 sm:grid-cols-2 lg:grid-cols-5">
           {facts.map(([label, value]) => (
             <div key={label} className="min-w-0">
-              <dt className="text-[11px] font-semibold uppercase text-brand-navy/54">{label}</dt>
+              <dt className="text-[11px] font-semibold uppercase text-brand-navy/65">{label}</dt>
               <dd className="mt-1 truncate text-sm font-semibold text-brand-navy">{value}</dd>
             </div>
           ))}
@@ -480,7 +480,7 @@ export function VerdictSection({
       <DecisionPanel icon={<FileCheck2 className="h-5 w-5" />} title="Verdict Immojudis">
         <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
           <div>
-            <div className="font-display text-4xl font-medium leading-none text-gold-soft sm:text-5xl">
+            <div className="font-display text-4xl font-medium leading-none text-gold-text sm:text-5xl">
               {verdict}
             </div>
             <p className="mt-3 text-sm leading-relaxed text-brand-navy/70">
@@ -494,7 +494,7 @@ export function VerdictSection({
           <dl className="grid gap-3 sm:grid-cols-2">
             {chips.map(([label, value]) => (
               <div key={label} className="rounded-lg border border-border bg-white/76 p-4">
-                <dt className="text-[11px] font-semibold uppercase text-brand-navy/54">{label}</dt>
+                <dt className="text-[11px] font-semibold uppercase text-brand-navy/65">{label}</dt>
                 <dd className="mt-2 text-sm font-semibold leading-relaxed text-brand-navy">
                   {value}
                 </dd>
@@ -557,9 +557,9 @@ export function KeyFiguresSection({
       <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {figures.map(([label, value, detail]) => (
           <div key={label} className="rounded-lg border border-border bg-white p-4 shadow-sm">
-            <dt className="text-[11px] font-semibold uppercase text-brand-navy/54">{label}</dt>
+            <dt className="text-[11px] font-semibold uppercase text-brand-navy/65">{label}</dt>
             <dd className="mt-2 text-lg font-semibold tabular-nums text-brand-navy">{value}</dd>
-            <p className="mt-1 text-xs leading-relaxed text-brand-navy/62">{detail}</p>
+            <p className="mt-1 text-xs leading-relaxed text-brand-navy/65">{detail}</p>
           </div>
         ))}
       </dl>
@@ -630,13 +630,13 @@ export function ActionableRiskCard({
   return (
     <article className="grid gap-3 rounded-lg border border-border bg-muted/20 p-4">
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-md border border-gold/25 bg-white text-gold-soft">
+        <span className="flex h-10 w-10 items-center justify-center rounded-md border border-gold/25 bg-white text-gold-text">
           {icon}
         </span>
         <h3 className="text-base font-semibold text-brand-navy">{title}</h3>
       </div>
       <p className="text-sm leading-relaxed text-brand-navy/72">{text}</p>
-      <div className="rounded-md border border-border bg-white p-3 text-xs leading-relaxed text-brand-navy/62">
+      <div className="rounded-md border border-border bg-white p-3 text-xs leading-relaxed text-brand-navy/65">
         <span className="font-semibold text-brand-navy">Source : {source}.</span>{" "}
         {excerpt ?? "Extrait à relire dans les pièces officielles."}
       </div>
@@ -712,7 +712,7 @@ export function CeilingCalculationSection({
                   <dd className="mt-1 text-xl font-semibold tabular-nums text-brand-navy">
                     {value}
                   </dd>
-                  <p className="mt-1 text-xs leading-relaxed text-brand-navy/62">{detail}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-brand-navy/65">{detail}</p>
                 </div>
               </div>
             ))}
@@ -721,7 +721,7 @@ export function CeilingCalculationSection({
             <DialogTrigger asChild>
               <button
                 type="button"
-                className="mt-5 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-gold/45 bg-white px-4 py-2 text-sm font-semibold text-gold-soft transition-colors hover:bg-gold/[0.08]"
+                className="mt-5 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-gold/45 bg-white px-4 py-2 text-sm font-semibold text-gold-text transition-colors hover:bg-gold/[0.08]"
               >
                 Voir la méthode et modifier les hypothèses <ChevronRight className="h-4 w-4" />
               </button>
@@ -790,12 +790,12 @@ export function CeilingSimulatorCard({
             d'enchère.
           </p>
         </div>
-        <Target className="h-5 w-5 shrink-0 text-gold-soft" />
+        <Target className="h-5 w-5 shrink-0 text-gold-text" />
       </div>
       <dl className="mt-5 divide-y divide-border/70 rounded-lg border border-border bg-muted/20">
         {rows.map(([label, value]) => (
           <div key={label} className="grid grid-cols-[1fr_auto] gap-4 px-4 py-3 text-sm">
-            <dt className="text-brand-navy/64">{label}</dt>
+            <dt className="text-brand-navy/65">{label}</dt>
             <dd className="font-semibold tabular-nums text-brand-navy">{value}</dd>
           </div>
         ))}
@@ -804,7 +804,7 @@ export function CeilingSimulatorCard({
         <DialogTrigger asChild>
           <button
             type="button"
-            className="mt-5 inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-gold-soft px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gold"
+            className="mt-5 inline-flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-gold-soft px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gold-text"
           >
             Ajuster mon plafond <ChevronRight className="h-4 w-4" />
           </button>
@@ -819,7 +819,7 @@ export function CeilingSimulatorCard({
           <BidCeilingAssistant sale={sale} marketEstimateOverride={marketEstimate} />
         </DialogContent>
       </Dialog>
-      <p className="mt-3 text-xs leading-relaxed text-brand-navy/58">
+      <p className="mt-3 text-xs leading-relaxed text-brand-navy/65">
         Le vocabulaire expert et les détails DVF restent disponibles dans la méthode, sans alourdir
         la première lecture.
       </p>
@@ -870,19 +870,19 @@ export function ProofsSection({
             key={proof.title}
             className="rounded-lg border border-border bg-white p-5 shadow-sm"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-muted/30 text-gold-soft">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-muted/30 text-gold-text">
               <FileCheck2 className="h-5 w-5" />
             </div>
             <h3 className="mt-4 text-base font-semibold leading-snug text-brand-navy">
               {proof.title}
             </h3>
-            <p className="mt-2 text-xs font-semibold uppercase text-gold-soft">
+            <p className="mt-2 text-xs font-semibold uppercase text-gold-text">
               Source : {proof.source}
             </p>
             <p className="mt-3 text-sm leading-relaxed text-brand-navy/70">{proof.text}</p>
             <a
               href={proof.href}
-              className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase text-gold-soft hover:text-gold"
+              className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase text-gold-text hover:text-gold-text"
             >
               Relier à la décision <ChevronRight className="h-3.5 w-3.5" />
             </a>
@@ -892,7 +892,7 @@ export function ProofsSection({
       <div className="mt-4">
         <SourcesAndDocumentsBlock sale={sale} product={product} />
       </div>
-      <p className="mt-3 text-xs leading-relaxed text-brand-navy/58">
+      <p className="mt-3 text-xs leading-relaxed text-brand-navy/65">
         Les documents officiels servent de preuves, pas de simple bibliothèque : chaque pièce doit
         confirmer une hypothèse de prix, de risque ou d'action.
       </p>
@@ -948,7 +948,7 @@ export function BeforeAuctionSection({
             <DialogTrigger asChild>
               <button
                 type="button"
-                className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-brand-navy transition-colors hover:border-gold/50 hover:text-gold-soft"
+                className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-brand-navy transition-colors hover:border-gold/50 hover:text-gold-text"
               >
                 Questions à poser à l'avocat
               </button>
@@ -1005,7 +1005,7 @@ export function FAQSection() {
           <details key={question} className="group">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-brand-navy">
               <span>{question}</span>
-              <ChevronRight className="h-4 w-4 shrink-0 text-brand-navy/45 transition-transform group-open:rotate-90" />
+              <ChevronRight className="h-4 w-4 shrink-0 text-brand-navy/65 transition-transform group-open:rotate-90" />
             </summary>
             <p className="px-5 pb-4 text-sm leading-relaxed text-brand-navy/68">{answer}</p>
           </details>
@@ -1042,17 +1042,17 @@ export function TechnicalDetailsSection({
             <h2 className="font-display text-2xl font-medium text-brand-navy">
               Détails techniques
             </h2>
-            <p className="mt-1 text-sm text-brand-navy/62">
+            <p className="mt-1 text-sm text-brand-navy/65">
               Traçabilité, données brutes et éléments secondaires du dossier.
             </p>
           </div>
-          <ChevronRight className="h-5 w-5 shrink-0 text-brand-navy/45 transition-transform group-open:rotate-90" />
+          <ChevronRight className="h-5 w-5 shrink-0 text-brand-navy/65 transition-transform group-open:rotate-90" />
         </summary>
         <div className="mt-5 grid gap-5 border-t border-border pt-5 lg:grid-cols-2">
           <dl className="grid gap-3 sm:grid-cols-2">
             {details.map(([label, value]) => (
               <div key={label} className="rounded-md border border-border bg-muted/30 p-3">
-                <dt className="text-[11px] font-semibold uppercase text-brand-navy/54">{label}</dt>
+                <dt className="text-[11px] font-semibold uppercase text-brand-navy/65">{label}</dt>
                 <dd className="mt-1 truncate text-sm font-medium text-brand-navy">{value}</dd>
               </div>
             ))}
@@ -1087,28 +1087,28 @@ export function DecisionActionRail({
     <aside className="hidden lg:block">
       <div className="sticky top-32 space-y-4">
         <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
-          <div className="text-[11px] font-semibold uppercase text-brand-navy/54">
+          <div className="text-[11px] font-semibold uppercase text-brand-navy/65">
             Plafonds conseillés · Prudent 8 %
           </div>
           <dl className="mt-3 grid gap-3">
             <div>
-              <dt className="text-[10px] uppercase tracking-[0.1em] text-brand-navy/54">
+              <dt className="text-[10px] uppercase tracking-[0.1em] text-brand-navy/65">
                 Sans travaux
               </dt>
-              <dd className="mt-1 text-2xl font-semibold tabular-nums text-gold-soft">
+              <dd className="mt-1 text-2xl font-semibold tabular-nums text-gold-text">
                 {ceilingWithoutWorksLabel(decision)}
               </dd>
             </div>
             <div className="border-t border-border/70 pt-3">
-              <dt className="text-[10px] uppercase tracking-[0.1em] text-brand-navy/54">
+              <dt className="text-[10px] uppercase tracking-[0.1em] text-brand-navy/65">
                 Avec rafraîchissement
               </dt>
-              <dd className="mt-1 text-2xl font-semibold tabular-nums text-gold-soft">
+              <dd className="mt-1 text-2xl font-semibold tabular-nums text-gold-text">
                 {ceilingWithRefreshWorksLabel(decision)}
               </dd>
             </div>
           </dl>
-          <p className="mt-2 text-xs leading-relaxed text-brand-navy/62">
+          <p className="mt-2 text-xs leading-relaxed text-brand-navy/65">
             Rafraîchissement retenu : {formatPrice(decision.refreshWorksBudget)}.{" "}
             {decision.primaryCheck}.
           </p>
@@ -1125,14 +1125,14 @@ export function DecisionActionRail({
             {lawyerHref ? (
               <a
                 href={lawyerHref}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-brand-navy transition-colors hover:border-gold/50 hover:text-gold-soft"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-brand-navy transition-colors hover:border-gold/50 hover:text-gold-text"
               >
                 Être accompagné par un avocat
               </a>
             ) : (
               <a
                 href="#steps"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-brand-navy transition-colors hover:border-gold/50 hover:text-gold-soft"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-white px-4 py-2 text-sm font-semibold text-brand-navy transition-colors hover:border-gold/50 hover:text-gold-text"
               >
                 Préparer l'avocat
               </a>
@@ -1150,7 +1150,7 @@ export function DecisionActionRail({
             onClick={() => void shareCurrentPage(saleDisplayTitle(sale, "Dossier Immojudis"))}
             className="flex min-h-11 w-full cursor-pointer items-center gap-3 border-b border-border px-4 py-3 text-left text-sm font-semibold text-brand-navy hover:bg-muted/30"
           >
-            <Share2 className="h-4 w-4 text-gold-soft" />
+            <Share2 className="h-4 w-4 text-gold-text" />
             Partager le bien
           </button>
           <button
@@ -1158,14 +1158,14 @@ export function DecisionActionRail({
             onClick={printAnalysis}
             className="flex min-h-11 w-full cursor-pointer items-center gap-3 border-b border-border px-4 py-3 text-left text-sm font-semibold text-brand-navy hover:bg-muted/30"
           >
-            <Download className="h-4 w-4 text-gold-soft" />
+            <Download className="h-4 w-4 text-gold-text" />
             Imprimer la synthèse
           </button>
           <a
             href="#proofs"
             className="flex min-h-11 w-full items-center gap-3 px-4 py-3 text-sm font-semibold text-brand-navy hover:bg-muted/30"
           >
-            <FileCheck2 className="h-4 w-4 text-gold-soft" />
+            <FileCheck2 className="h-4 w-4 text-gold-text" />
             {documentCount} pièce{documentCount > 1 ? "s" : ""} à relire
           </a>
         </div>
@@ -1179,7 +1179,7 @@ export function DecisionActionRail({
             <DialogTrigger asChild>
               <button
                 type="button"
-                className="mt-4 inline-flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-gold/45 bg-white px-3 py-2 text-xs font-semibold text-gold-soft hover:bg-white/80"
+                className="mt-4 inline-flex min-h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-gold/45 bg-white px-3 py-2 text-xs font-semibold text-gold-text hover:bg-white/80"
               >
                 <CircleHelp className="h-4 w-4" />
                 Interroger le dossier
@@ -1218,7 +1218,7 @@ export function DecisionPanel({
   return (
     <article className="rounded-lg border border-border bg-white/92 p-5 shadow-sm">
       <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-muted/30 text-gold-soft">
+        <span className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-muted/30 text-gold-text">
           {icon}
         </span>
         <h2 className="font-display text-2xl font-medium text-brand-navy sm:text-3xl">{title}</h2>

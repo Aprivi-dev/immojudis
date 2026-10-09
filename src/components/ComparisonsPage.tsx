@@ -93,7 +93,7 @@ function AccountComparisons({ userId }: { userId: string }) {
     <main className="liquid-page min-h-screen px-4 pb-16 pt-28 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <header className="max-w-3xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
             Espace personnel
           </p>
           <h1 className="mt-3 font-display text-4xl leading-tight text-foreground sm:text-5xl">
@@ -105,7 +105,7 @@ function AccountComparisons({ userId }: { userId: string }) {
           </p>
           <Link
             href="/sales"
-            className="mt-5 inline-flex min-h-11 items-center rounded-lg bg-gold-soft px-4 py-3 text-sm font-bold text-white transition hover:bg-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+            className="mt-5 inline-flex min-h-11 items-center rounded-lg bg-gold-soft px-4 py-3 text-sm font-bold text-white transition hover:bg-gold-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
           >
             Comparer d’autres biens
           </Link>
@@ -135,7 +135,7 @@ function AccountComparisons({ userId }: { userId: string }) {
             <button
               type="button"
               onClick={() => void query.refetch()}
-              className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-gold/40 px-4 py-2 text-sm font-bold text-gold-soft transition hover:bg-gold/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+              className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-gold/40 px-4 py-2 text-sm font-bold text-gold-text transition hover:bg-gold/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
             >
               Réessayer
             </button>
@@ -151,7 +151,7 @@ function AccountComparisons({ userId }: { userId: string }) {
               Sélectionnez deux ou trois biens dans le catalogue, puis choisissez « Enregistrer »
               dans le comparateur pour les retrouver ici.
             </p>
-            <Link href="/sales" className="mt-5 inline-flex font-bold text-gold-soft underline">
+            <Link href="/sales" className="mt-5 inline-flex font-bold text-gold-text underline">
               Ouvrir le catalogue
             </Link>
           </section>
@@ -264,7 +264,7 @@ function ComparisonCard({
           type="button"
           onClick={onShare}
           disabled={busy}
-          className="inline-flex min-h-10 items-center rounded-lg bg-gold-soft px-3 py-2 text-xs font-bold text-white transition hover:bg-gold disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          className="inline-flex min-h-10 items-center rounded-lg bg-gold-soft px-3 py-2 text-xs font-bold text-white transition hover:bg-gold-text disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
         >
           {set.sharing.enabled ? "Générer un nouveau lien" : "Créer un lien de partage"}
         </button>
@@ -333,7 +333,7 @@ function ComparisonItem({ item }: { item: SaleAnalysisItem }) {
           {sale ? (
             <Link
               href={`/sales/${sale.id}`}
-              className="font-semibold text-foreground underline decoration-gold/60 underline-offset-2 hover:text-gold-soft"
+              className="font-semibold text-foreground underline decoration-gold/60 underline-offset-2 hover:text-gold-text"
             >
               {saleLabel}
             </Link>

@@ -342,7 +342,7 @@ export function ProfessionalPilotWorkspace({
                       href={fact.sourceUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mt-1 inline-block text-xs font-semibold text-[#946724] underline"
+                      className="mt-1 inline-block text-xs font-semibold text-gold-text underline"
                     >
                       Voir la source
                     </a>
@@ -405,7 +405,7 @@ export function ProfessionalPilotWorkspace({
                       href={document.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-semibold text-[#946724] underline"
+                      className="font-semibold text-gold-text underline"
                     >
                       {document.label ?? document.type ?? "Document du dossier"}
                     </a>

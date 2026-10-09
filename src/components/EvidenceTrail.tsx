@@ -94,7 +94,7 @@ function EvidenceCard({
     <details className="group rounded-lg border border-border bg-white shadow-sm">
       <summary className="flex cursor-pointer list-none items-start justify-between gap-3 p-4">
         <div className="flex min-w-0 gap-3">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium text-foreground">{title}</span>
@@ -103,7 +103,7 @@ function EvidenceCard({
               </span>
             </div>
             <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <FileText className="h-3 w-3 text-gold" />
+              <FileText className="h-3 w-3 text-gold-text" />
               <span>{source}</span>
             </div>
           </div>
