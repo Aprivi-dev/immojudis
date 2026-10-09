@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       "Avocats référencés réservés au plan Analyse.",
     );
     const input = lawyerPlacementEventInputSchema.parse(await request.json());
-    return NextResponse.json(await recordLawyerPlacementEvent({ input }));
+    return NextResponse.json(await recordLawyerPlacementEvent({ input, userId: auth.userId }));
   } catch (error) {
     return apiRouteError(error, request, "lawyers.placement-events", {
       fallbackMessage: "Événement de placement avocat impossible",

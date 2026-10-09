@@ -54,6 +54,7 @@ import {
   createShareToken,
   defaultReportTitle,
   emptyToNull,
+  hashShareToken,
   normalizeShareExpiresAt,
   normalizeShareToken,
   normalizeSourceTrace,
@@ -497,7 +498,9 @@ export async function enablePropertyReportShare({
     .from("saved_property_reports")
     .update({
       share_enabled: true,
-      share_token: shareToken,
+      // Only the digest is persisted; the clear token goes back to the owner once.
+      share_token: null,
+      share_token_hash: hashShareToken(shareToken),
       shared_at: now,
       share_expires_at: shareExpiresAt,
     })
@@ -511,7 +514,7 @@ export async function enablePropertyReportShare({
   return {
     report: attachPlan(data, plan),
     plan,
-    share: buildPropertyReportShare(data, origin),
+    share: buildPropertyReportShare(data, origin, shareToken),
   };
 }
 
@@ -533,6 +536,7 @@ export async function disablePropertyReportShare({
     .update({
       share_enabled: false,
       share_token: null,
+      share_token_hash: null,
       share_expires_at: null,
     })
     .eq("id", reportId)
@@ -562,14 +566,18 @@ export async function getSharedPropertyReport({
   const { data, error } = await supabaseAdmin
     .from("saved_property_reports")
     .select(
-      "id,sale_id,title,report_kind,report_snapshot,market_snapshot,environmental_snapshot,ceiling_snapshot,share_enabled,share_token,shared_at,share_expires_at,share_view_count,updated_at",
+      "id,user_id,sale_id,title,report_kind,report_snapshot,market_snapshot,environmental_snapshot,ceiling_snapshot,share_enabled,shared_at,share_expires_at,share_view_count,updated_at",
     )
-    .eq("share_token", normalized)
+    .eq("share_token_hash", hashShareToken(normalized))
     .eq("share_enabled", true)
     .maybeSingle();
 
   if (error) throw error;
   if (!data || shareIsExpired(data.share_expires_at)) {
+    throw new Error("Rapport partagé introuvable ou expiré.");
+  }
+  // A link stops working as soon as its owner no longer has an active Analyse plan.
+  if (!(await shareOwnerKeepsSavedReports(data.user_id))) {
     throw new Error("Rapport partagé introuvable ou expiré.");
   }
 
@@ -587,16 +595,48 @@ export async function getSharedPropertyReport({
   return buildPublicSharedPropertyReport(data);
 }
 
+/**
+ * Whether the owner of a shared report still holds a plan that includes saved reports.
+ * Shared links are cut when the subscription ends (no active period, past due, cancelled).
+ */
+export async function shareOwnerKeepsSavedReports(userId: string): Promise<boolean> {
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("user_profiles")
+    .select("account_tier,user_role")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (profileError) throw profileError;
+  if (profile?.user_role === "admin" || profile?.account_tier === "premium") return true;
+
+  const { data: subscription, error } = await supabaseAdmin
+    .from("user_subscriptions")
+    .select("plan_code,status,current_period_end")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  const plan =
+    subscription && isPlanPeriodActive(subscription.status, subscription.current_period_end)
+      ? normalizePlanCode(subscription.plan_code)
+      : "decouverte";
+  return featureUnlocked(buildPlanEntitlements(plan).features.savedReports);
+}
+
 export function buildPropertyReportShare(
   report: Pick<
     SavedReportRow,
-    "share_enabled" | "share_token" | "shared_at" | "share_expires_at" | "share_view_count"
-  >,
+    "share_enabled" | "shared_at" | "share_expires_at" | "share_view_count"
+  > &
+    Partial<Pick<SavedReportRow, "share_token" | "share_token_hash">>,
   origin?: string | null,
+  // The clear token exists only in the response that creates the link; the database
+  // keeps its digest, so an existing share cannot be re-displayed (rotate to get a new URL).
+  issuedToken?: string | null,
 ): PropertyReportShare {
-  const token = report.share_token;
+  const token = issuedToken ?? report.share_token ?? null;
   const enabled = Boolean(
-    report.share_enabled && token && !shareIsExpired(report.share_expires_at),
+    report.share_enabled &&
+    (token || report.share_token_hash) &&
+    !shareIsExpired(report.share_expires_at),
   );
 
   return {

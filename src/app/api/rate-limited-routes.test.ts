@@ -89,7 +89,11 @@ beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   vi.spyOn(console, "info").mockImplementation(() => undefined);
-  mocks.auth.mockResolvedValue({ userId: "user-1" });
+  const visibleSale = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn() };
+  visibleSale.select.mockReturnValue(visibleSale);
+  visibleSale.eq.mockReturnValue(visibleSale);
+  visibleSale.maybeSingle.mockResolvedValue({ data: { id: saleId }, error: null });
+  mocks.auth.mockResolvedValue({ userId: "user-1", supabase: { from: () => visibleSale } });
   mocks.enforceUser.mockResolvedValue(1);
   mocks.enforceIp.mockResolvedValue(undefined);
   mocks.entitlement.mockResolvedValue({ plan: "analyse" });

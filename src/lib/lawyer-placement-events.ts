@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { tryConsumeUserRateLimit } from "@/lib/rate-limit";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import {
@@ -24,13 +25,27 @@ export type LawyerPlacementEventPayload = z.output<typeof lawyerPlacementEventIn
 export type LawyerPlacementEventResponse = {
   ok: true;
   recorded: boolean;
-  reason: "recorded" | "not_featured" | "no_featured_lawyer";
+  reason: "recorded" | "not_featured" | "no_featured_lawyer" | "duplicate";
 };
+
+export const PLACEMENT_EVENT_DEDUPE_SECONDS = 86_400;
+
+export function placementEventDedupeKey(input: LawyerPlacementEventPayload): string {
+  return [
+    "lawyer.placement",
+    input.eventType,
+    input.lawyerId,
+    input.saleId,
+    input.placementSlot,
+  ].join(":");
+}
 
 export async function recordLawyerPlacementEvent({
   input,
+  userId,
 }: {
   input: LawyerPlacementEventPayload;
+  userId: string;
 }): Promise<LawyerPlacementEventResponse> {
   const { lawyer } = await getFeaturedReferencedLawyerForSale({ saleId: input.saleId });
   const payload = buildLawyerPlacementEventInsert({ input, featuredLawyer: lawyer });
@@ -42,6 +57,16 @@ export async function recordLawyerPlacementEvent({
       reason: lawyer ? "not_featured" : "no_featured_lawyer",
     };
   }
+
+  // One event per user, placement and UTC day: the counter lives in the short-lived
+  // rate-limit buckets, so no user identifier is added to the analytics table.
+  const firstOfDay = await tryConsumeUserRateLimit({
+    userId,
+    bucketKey: placementEventDedupeKey(input),
+    limit: 1,
+    windowSeconds: PLACEMENT_EVENT_DEDUPE_SECONDS,
+  });
+  if (!firstOfDay) return { ok: true, recorded: false, reason: "duplicate" };
 
   const { error } = await supabaseAdmin.from("lawyer_placement_events").insert(payload);
   if (error) throw error;
