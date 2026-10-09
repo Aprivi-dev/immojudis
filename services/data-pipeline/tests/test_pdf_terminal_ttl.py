@@ -212,7 +212,7 @@ def test_terminal_http_refresh_drops_old_pdf_evidence_until_200(
     pdf_fact_extraction = importlib.import_module("src.pdf_fact_extraction")
     monkeypatch.setattr(pdf_fact_extraction, "PDF_TEXTS_DIR", pdf_texts_dir)
 
-    old_pdf = _make_pdf(tmp_path / "old.pdf", "Ancien texte documentaire.")
+    old_pdf = _make_pdf(tmp_path / "old.pdf", "Ancien texte documentaire. Appartement de 50 m², 2 pièces.")
     new_pdf = _make_pdf(tmp_path / "new.pdf", "Nouveau texte documentaire après réouverture.")
     responses = iter(
         [
@@ -250,6 +250,8 @@ def test_terminal_http_refresh_drops_old_pdf_evidence_until_200(
     pdf_enrichment.enrich_sale_from_pdfs(sale)
     assert queued_runner._pdf_evidence_is_terminal_for_facts(sale) is False
     assert sale.raw_payload["document_analysis"]["documents_extracted"] == 1
+    assert sale.surface_m2 == 50
+    assert sale.rooms_count == 2
 
     stale_timestamp = "2020-01-01T00:00:00+00:00"
     _make_metadata_stale(sale, documents_dir, stale_timestamp)
@@ -266,6 +268,8 @@ def test_terminal_http_refresh_drops_old_pdf_evidence_until_200(
     assert queued_runner._pdf_evidence_is_terminal_for_facts(sale) is True
     assert "Ancien texte documentaire." not in (sale.raw_text or "")
     assert "--- PDF TEXT ENRICHMENT ---" not in (sale.raw_text or "")
+    assert sale.surface_m2 is None
+    assert sale.rooms_count is None
     cache_path = pdf_texts_dir / f"{pdf_enrichment.sale_storage_id(sale)}.json"
     assert json.loads(cache_path.read_text(encoding="utf-8")) == []
 

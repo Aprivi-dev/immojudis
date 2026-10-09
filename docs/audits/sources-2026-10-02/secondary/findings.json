@@ -1,0 +1,131 @@
+{
+  "audit_date": "2026-10-02",
+  "scope": ["info_encheres", "vench", "petites_affiches", "agrasc"],
+  "capture_count": 12,
+  "http_200_count": 11,
+  "http_410_count": 1,
+  "findings": [
+    {
+      "id": "agrasc-evry-land-false-positive",
+      "status": "resolved",
+      "severity": "high",
+      "source": "agrasc",
+      "sample_id": "agrasc-evry-2075541",
+      "stage": "asset_normalization",
+      "kind": "semantic_false_positive",
+      "expected": "land_surface_m2 is null; the catalogue only exposes a generic 140 m² surface",
+      "observed": "The initial replay exposed land_surface_m2=140 after normalize_asset_features; the current replay keeps land_surface_m2=null through the deterministic final output",
+      "evidence": "The captured card text contains '140 m²' and 'rez-de-jardin'; no 'surface terrain' or parcel measurement is present.",
+      "action": "Fixed in asset normalization; retain the non-regression test for rez-de-jardin and keep the finding as resolved audit history."
+    },
+    {
+      "id": "info-6051-surface-scope",
+      "status": "resolved",
+      "severity": "high",
+      "source": "info_encheres",
+      "sample_id": "info-6051",
+      "stage": "detail_parser_adapter",
+      "kind": "ambiguous_surface",
+      "expected": "Preserve 24.10 m² séjour, 13.80 m² cuisine, 110.80 m² total built, 70 m² grange and 14,761 m² land as typed evidence",
+      "observed": "The Info Enchères adapter now emits surface_m2=110.80 with surface_scope=total and evidence for the explicit total before normalize_sale; land_surface_m2=14761 remains correct",
+      "evidence": "The captured description contains all four built/annex measurements and the cadastral 1ha 47a 61ca statement.",
+      "action": "Fixed in the Info Enchères adapter by qualifying the explicit lot total and retaining surface scope/source/evidence; keep the multi-room regression test."
+    },
+    {
+      "id": "info-room-inference",
+      "severity": "medium",
+      "source": "info_encheres",
+      "sample_id": "info-6051",
+      "stage": "asset_normalization",
+      "kind": "unproven_room_count",
+      "expected": "bedrooms_count=3; rooms_count remains null or is marked inferred",
+      "observed": "rooms_count changes from null to 5 after asset normalization",
+      "evidence": "The source explicitly says 3 chambres but does not publish a total number of rooms.",
+      "action": "Add provenance/confidence to inferred rooms and avoid treating it as a source fact."
+    },
+    {
+      "id": "info-6053-room-inference",
+      "severity": "medium",
+      "source": "info_encheres",
+      "sample_id": "info-6053",
+      "stage": "asset_normalization",
+      "kind": "unproven_room_count",
+      "expected": "bedrooms_count=1; rooms_count remains null or is marked inferred",
+      "observed": "rooms_count changes from null to 2 after asset normalization",
+      "evidence": "The source lists salon, séjour, cuisine, salle de bains, une chambre, WC and véranda without a total room count.",
+      "action": "Do not publish the inferred count as an explicit source attribute."
+    },
+    {
+      "id": "info-6051-occupancy-scope",
+      "severity": "medium",
+      "source": "info_encheres",
+      "sample_id": "info-6051",
+      "stage": "detail_parser",
+      "kind": "conflicting_occupancy_dimensions",
+      "expected": "Keep physical occupant wording and legal vacancy wording separately",
+      "observed": "occupancy_status=owner_occupied",
+      "evidence": "The page says the owner and family occupy the property and also says the goods are legally free of occupation.",
+      "action": "Split physical_occupancy from legal_occupancy and retain both excerpts."
+    },
+    {
+      "id": "petites-detail-metadata-merge",
+      "severity": "medium",
+      "source": "petites_affiches",
+      "sample_id": "petites-165934",
+      "stage": "detail_parser_vs_catalogue_merge",
+      "kind": "coverage_gap",
+      "expected": "tribunal and card image retained in the usable listing",
+      "observed": "Detail parser alone misses tribunal and image; list+detail merge restores both",
+      "evidence": "Tribunal is in the public meta description; image and tribunal are in the public catalogue card.",
+      "action": "Test the merged path and promote public meta/catalogue facts with provenance."
+    },
+    {
+      "id": "agrasc-auchel-typed-operator-fields",
+      "severity": "medium",
+      "source": "agrasc",
+      "sample_id": "agrasc-auchel-424878",
+      "stage": "normalization_schema",
+      "kind": "structured_field_gap",
+      "expected": "Heating, condition, destination, cadastral reference, zoning, sale fees and sale mode available as typed fields",
+      "observed": "Values are retained in description/source_blocks/operator_fields but not in AuctionSale fields",
+      "evidence": "The public operator page exposes Chauffage Gaz, Etat de ruine, Destination Habitation, AC 354, zone UB and commission/notary fee text.",
+      "action": "Extend typed output or completeness rules to read these provenance-backed operator fields."
+    },
+    {
+      "id": "agrasc-evry-detail-unavailable",
+      "severity": "availability",
+      "source": "agrasc",
+      "sample_id": "agrasc-evry-2075541",
+      "stage": "operator_request",
+      "kind": "terminal_detail_unavailable",
+      "expected": "Catalogue facts retained; operator enrichment marked unavailable",
+      "observed": "HTTP 410 and final URL /indisponible",
+      "evidence": "The rendered operator page states that the selected announcement no longer exists.",
+      "action": "Keep this status distinct from parser failures and score catalogue-only completeness accordingly."
+    },
+    {
+      "id": "vench-subscription-wall",
+      "severity": "availability",
+      "source": "vench",
+      "sample_id": "vench-166665",
+      "stage": "source_access",
+      "kind": "restricted_detail",
+      "expected": "Public facts scored; private description/lawyer/docs not treated as extraction failures",
+      "observed": "Description is a subscription prompt while title, surface, location, price, date, tribunal, feature and image are public",
+      "evidence": "The rendered detail explicitly asks for a subscription to consult the full description.",
+      "action": "Represent subscription_required as a coverage state."
+    },
+    {
+      "id": "petites-subscription-wall",
+      "severity": "availability",
+      "source": "petites_affiches",
+      "sample_id": "petites-165875",
+      "stage": "source_access",
+      "kind": "restricted_detail",
+      "expected": "Public card/detail facts scored; subscriber-only data not treated as extraction failures",
+      "observed": "Detail shows an explicit subscriber-only message; title, price, date, city and lawyer remain public",
+      "evidence": "The rendered page says consultation is strictly reserved for subscribers.",
+      "action": "Represent subscription_required as a coverage state."
+    }
+  ]
+}

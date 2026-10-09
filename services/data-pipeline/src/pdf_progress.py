@@ -17,7 +17,7 @@ from typing import Any
 from src.freshness import document_fingerprint, timestamp_is_fresh
 from src.normalize import clean_text
 
-PDF_TEXT_CACHE_VERSION = "pdf_text_v3_surface_calibration"
+PDF_TEXT_CACHE_VERSION = "pdf_text_v4_mixed_image_ocr"
 PDF_PROGRESS_SCHEMA_VERSION = 1
 
 

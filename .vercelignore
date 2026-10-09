@@ -29,3 +29,6 @@ services/data-pipeline/**/__pycache__/
 supabase/.temp/
 test-results/
 tsconfig.tsbuildinfo
+docs/audits/sources-2026-10-02/
+docs/audits/pdf-2026-10-02/
+docs/audits/pdf-production-2026-10-03/

@@ -52,6 +52,29 @@ def test_parse_petites_affiches_public_cards() -> None:
     assert validate_raw_sales("petites_affiches", sales, []) == sales
 
 
+def test_parse_petites_affiches_card_does_not_promote_starting_price_to_postal_code() -> None:
+    html = """
+    <div class="annonce_lot_2 col-md-6">
+      <div class="imgList">
+        <a href="/encheres-immobilieres/vente/maison-saint-quentin.html"><img src="/image.jpg" /></a>
+        <div class="miseAPrix">Mise à Prix : <strong>50 000</strong> €</div>
+      </div>
+      <div class="titreVente">
+        <a href="/encheres-immobilieres/vente/maison-saint-quentin.html">UNE MAISON à Saint-Quentin</a>
+      </div>
+      <div class="lieuVente"><strong>Tribunal Judiciaire de SAINT QUENTIN</strong></div>
+      <div class="adresse"><strong class="lot-adresse">Saint-Quentin</strong></div>
+      <div class="dateVente"><strong>14/10/2026</strong></div>
+    </div>
+    """
+
+    sales = parse_petites_affiches_html(html, fallback_department="50")
+
+    assert sales[0]["city"] == "Saint-Quentin"
+    assert sales[0]["starting_price_eur"] == "50 000"
+    assert sales[0]["postal_code"] is None
+
+
 def test_parse_petites_affiches_public_detail() -> None:
     html = """
     <meta name="description" content="Vente aux enchères d'un lot : UN APPARTEMENT à Bordeaux vendu au tribunal judiciaire de TJ DE BORDEAUX le 18/06/2026" />

@@ -192,6 +192,11 @@ _UNIT_TOKEN_PATTERN = r"m\s*(?:2|²|3|³)\b"
 _VALUE_PATTERN = r"(?P<value>[0-9]{1,6}(?:[\s\u00a0][0-9]{3})*(?:[,.][0-9]{1,3})?)"
 _VALUE_TOKEN_PATTERN = r"(?:[0-9]{1,6}(?:[\s\u00a0][0-9]{3})*(?:[,.][0-9]{1,3})?)"
 _NUMBER_WITH_UNIT_RE = re.compile(rf"{_VALUE_PATTERN}\s*{_UNIT_PATTERN}", re.I)
+_TYPED_TOTAL_SURFACE_RE = re.compile(
+    rf"(?:surface|superficie)\s+(?:(?:loi\s+)?carrez|habitable)\s+totale\s*"
+    rf"(?:(?:de|d['’]environ)\s*)?[:=]?\s*{_VALUE_TOKEN_PATTERN}\s*{_UNIT_TOKEN_PATTERN}",
+    re.I,
+)
 _EXPLICIT_SURFACE_PATTERNS: tuple[tuple[SurfaceKind, re.Pattern[str]], ...] = (
     (
         "explicit_carrez",
@@ -311,11 +316,13 @@ def extract_surface_facts_from_text(
                 continue
             unit = _match_unit(match)
             quote = _quote(raw_text, match.start(), match.end(), radius=85)
+            total_match = _TYPED_TOTAL_SURFACE_RE.search(match.group(0))
+            is_typed_total = total_match is not None and _match_value(total_match) == value
             candidate = SurfaceCandidate(
                 candidate_id=_stable_id("candidate", kind, str(value), quote),
                 value_m2=value,
                 kind=kind,
-                scope="asset",
+                scope="sale" if is_typed_total else "asset",
                 is_explicit=True,
                 unit_as_written=unit,
                 confidence=0.96 if unit == "m2" else 0.72,
@@ -778,7 +785,7 @@ def _measurement_is_included(measurement: SurfaceMeasurement) -> bool:
     return measurement.category in {"habitable", "circulation", "sanitary", "service"}
 
 
-def _candidate_rank(candidate: SurfaceCandidate, *, property_type: str | None) -> tuple[int, float]:
+def _candidate_rank(candidate: SurfaceCandidate, *, property_type: str | None) -> tuple[int, bool, float]:
     rank = {
         "explicit_carrez": 100 if property_type == "apartment" else 85,
         "explicit_habitable": 100 if property_type == "house" else 92,
@@ -790,7 +797,10 @@ def _candidate_rank(candidate: SurfaceCandidate, *, property_type: str | None) -
         "calculated_sale_sum": 0,
         "unknown": 0,
     }[candidate.kind]
-    return rank, candidate.confidence
+    # For the same surface kind, an explicitly stated total outranks the
+    # first component listed (e.g. an apartment sold with a separate studio).
+    # Never infer this priority from the largest value or surrounding quote.
+    return rank, candidate.scope == "sale", candidate.confidence
 
 
 def _dedupe_measurements(measurements: list[SurfaceMeasurement]) -> list[SurfaceMeasurement]:

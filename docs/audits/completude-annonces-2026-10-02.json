@@ -1,0 +1,4443 @@
+{
+  "catalogue_version": "2026-10-02.v1",
+  "language": "fr-FR",
+  "scope": "Mesure de richesse, de preuve et de fraîcheur d'une annonce d'enchères immobilières. Ce contrat ne constitue pas une validation juridique de la vente.",
+  "sources_in_scope": [
+    "avoventes",
+    "licitor",
+    "vench",
+    "info_encheres",
+    "encheres_publiques",
+    "petites_affiches",
+    "cessions_etat",
+    "agrasc",
+    "encheres_immobilieres",
+    "notaires"
+  ],
+  "property_types": [
+    "apartment",
+    "house",
+    "building",
+    "land",
+    "commercial",
+    "parking",
+    "mixed",
+    "other",
+    "unknown"
+  ],
+  "states": {
+    "observed": {
+      "label": "Observé",
+      "definition": "Valeur explicite, lisible et rattachée au lot exact avec une preuve conservée.",
+      "score_factor": 1.0
+    },
+    "inferred": {
+      "label": "Inféré",
+      "definition": "Valeur calculée ou déduite par une heuristique, un modèle ou une normalisation ; la valeur source reste conservée.",
+      "score_factor": 0.6
+    },
+    "unknown": {
+      "label": "Inconnu",
+      "definition": "Champ attendu ou recherché sans valeur exploitable trouvée.",
+      "score_factor": 0.0
+    },
+    "explicitly_absent": {
+      "label": "Absent explicitement",
+      "definition": "La source répond par une négation explicite pour ce lot, par exemple aucun jardin ou DPE non soumis.",
+      "score_factor": 1.0
+    },
+    "not_applicable": {
+      "label": "Non applicable",
+      "definition": "Le champ ne concerne pas le bien ou la procédure ; une raison contrôlée est obligatoire.",
+      "score_factor": null,
+      "exclude_from_denominator": true
+    },
+    "conflict": {
+      "label": "Conflit",
+      "definition": "Des valeurs incompatibles ou des identités de lot/procédure incohérentes subsistent.",
+      "score_factor": 0.0,
+      "critical_blocker": true
+    }
+  },
+  "evidence_grades": {
+    "A": "Page ou document primaire rattaché au lot exact : fiche opérateur, état officiel, procès-verbal, cahier, diagnostic ou pièce source lisible.",
+    "B": "Page détail primaire structurée avec libellé explicite, ou deux observations concordantes dont l'identité est établie.",
+    "C": "Résumé de liste, texte libre peu localisé, source secondaire concordante ou extraction automatique sans rattachement assez fin.",
+    "none": "Aucune preuve conservée ou preuve illisible ; ne peut pas produire l'état observed."
+  },
+  "field_observation_contract": {
+    "required_keys": [
+      "field",
+      "state",
+      "value",
+      "canonical_value",
+      "evidence",
+      "reason",
+      "inference",
+      "conflicts"
+    ],
+    "state_rules": {
+      "observed": "Au moins une preuve de grade A ou B et un extrait/localisateur.",
+      "inferred": "inference.method, inference.input_fields et inference.confidence sont obligatoires ; la valeur source n'est pas remplacée.",
+      "unknown": "reason.availability_reason est recommandé : not_found, page_inaccessible, document_locked ou source_not_disclosed.",
+      "explicitly_absent": "La citation doit contenir la négation et être rattachée au lot exact.",
+      "not_applicable": "reason.code et reason.explanation sont obligatoires ; l'état est interdit pour un paywall, un refus d'accès, une page inaccessible ou une simple omission de publication.",
+      "conflict": "Chaque valeur concurrente conserve source_url, extrait, captured_at et valeur canonique."
+    }
+  },
+  "scoring": {
+    "formula": "For each category, category_ratio = sum(importance_factor * state_factor) / sum(importance_factor for applicable fields). Global score = 100 * sum(category_weight * category_ratio for categories with at least one applicable field) / sum(category_weight for those categories).",
+    "gate_operator_semantics": {
+      "all_of": "Toutes les exigences ou branches doivent être satisfaites.",
+      "any_of": "Au moins une branche doit être satisfaite ; une branche représentée par un tableau est une conjonction.",
+      "conditional_any_of": "La première règle dont le contexte correspond s'applique ; au moins une de ses branches doit être satisfaite. Sans règle correspondante, la porte échoue et le champ de contexte reste à enrichir.",
+      "accepted_values": "Lorsqu'il est présent, accepted_values restreint la valeur canonique en plus de accepted_states.",
+      "min_value": "Lorsqu'il est présent, min_value impose une valeur numérique supérieure ou égale à cette borne."
+    },
+    "importance_factors": {
+      "critical": 3.0,
+      "high": 2.0,
+      "medium": 1.0,
+      "optional": 0.5
+    },
+    "state_factors": {
+      "observed": 1.0,
+      "explicitly_absent": 1.0,
+      "inferred": 0.6,
+      "unknown": 0.0,
+      "conflict": 0.0
+    },
+    "not_applicable_rule": "Retirer le champ du numérateur et du dénominateur ; aucune pénalité.",
+    "score_views": {
+      "completeness_score": {
+        "definition": "Richesse du produit pour les champs applicables ; un champ attendu mais inaccessible reste unknown et reste au dénominateur.",
+        "inaccessible_field_treatment": "unknown_and_in_denominator"
+      },
+      "extraction_coverage_score": {
+        "definition": "Qualité de l'extracteur sur les champs effectivement accessibles dans les artefacts capturés.",
+        "inaccessible_field_treatment": "excluded_from_denominator_only_when_source_presence_or_accessibility_proves_unavailable",
+        "warning": "Ne peut pas être utilisé pour déclarer une annonce riche."
+      }
+    },
+    "category_weights": {
+      "provenance": 10,
+      "procedure": 20,
+      "location": 15,
+      "property": 20,
+      "energy": 15,
+      "outdoor": 8,
+      "occupancy_and_risk": 7,
+      "documents_and_media": 5
+    },
+    "thresholds": {
+      "incomplet": {
+        "meaning": "Informations insuffisantes ou identité de source manquante.",
+        "min_inclusive": 0,
+        "max_exclusive": 55
+      },
+      "a_enrichir": {
+        "min_inclusive": 55,
+        "meaning": "Fiche mesurable mais trop pauvre pour une décision.",
+        "max_exclusive": 75
+      },
+      "decision_prete": {
+        "min_inclusive": 75,
+        "meaning": "Couverture utile et portes critiques levées.",
+        "max_exclusive": 90
+      },
+      "riche": {
+        "min_inclusive": 90,
+        "meaning": "Couverture large des champs applicables, preuves et pièces qualifiées.",
+        "max_inclusive": 100
+      }
+    },
+    "classification_after_gates": {
+      "raw_score_class": "Déterminer la classe sur le score décimal avant arrondi, selon thresholds.",
+      "identity_gate_failure": {
+        "gates": [
+          "source_identity",
+          "property_identity"
+        ],
+        "maximum_class": "incomplet",
+        "rule": "Une identité de source ou de bien non établie classe la fiche incomplet, quel que soit le score brut."
+      },
+      "other_critical_gate_failure": {
+        "maximum_class": "a_enrichir",
+        "rule": "Une autre porte critique échouée conserve le score brut pour diagnostic mais plafonne la classe publiée à a_enrichir."
+      },
+      "all_critical_gates_pass": "La classe publiée suit le score brut : décision_prete à partir de 75 et riche à partir de 90."
+    },
+    "critical_gates": [
+      {
+        "id": "source_identity",
+        "logic": "all_of",
+        "requirements": [
+          {
+            "field": "listing_id",
+            "accepted_states": [
+              "observed"
+            ]
+          },
+          {
+            "field": "source_name",
+            "accepted_states": [
+              "observed"
+            ]
+          },
+          {
+            "field": "source_url",
+            "accepted_states": [
+              "observed"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "property_identity",
+        "logic": "all_of",
+        "requirements": [
+          {
+            "field": "property_type",
+            "accepted_states": [
+              "observed"
+            ]
+          },
+          {
+            "logic": "any_of",
+            "requirements": [
+              {
+                "field": "source_title",
+                "accepted_states": [
+                  "observed"
+                ]
+              },
+              {
+                "field": "source_description",
+                "accepted_states": [
+                  "observed"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "location_precision",
+        "logic": "conditional_any_of",
+        "rules": [
+          {
+            "when": {
+              "property_types": [
+                "apartment",
+                "house",
+                "building",
+                "commercial",
+                "parking"
+              ]
+            },
+            "any_of": [
+              [
+                {
+                  "field": "address",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "location_precision",
+                  "accepted_states": [
+                    "observed"
+                  ],
+                  "accepted_values": [
+                    "exact",
+                    "address"
+                  ]
+                }
+              ],
+              [
+                {
+                  "field": "cadastral_references",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "insee_code",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "location_precision",
+                  "accepted_states": [
+                    "observed"
+                  ],
+                  "accepted_values": [
+                    "exact",
+                    "cadastral",
+                    "parcel"
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "when": {
+              "property_types": [
+                "land",
+                "mixed"
+              ]
+            },
+            "any_of": [
+              [
+                {
+                  "field": "address",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "location_precision",
+                  "accepted_states": [
+                    "observed"
+                  ],
+                  "accepted_values": [
+                    "exact",
+                    "address"
+                  ]
+                }
+              ],
+              [
+                {
+                  "field": "cadastral_references",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "insee_code",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "location_precision",
+                  "accepted_states": [
+                    "observed"
+                  ],
+                  "accepted_values": [
+                    "exact",
+                    "cadastral",
+                    "parcel"
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "id": "sale_schedule",
+        "logic": "conditional_any_of",
+        "rules": [
+          {
+            "when": {
+              "procedures": [
+                "online",
+                "state"
+              ]
+            },
+            "any_of": [
+              [
+                {
+                  "field": "sale_schedule",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ],
+              [
+                {
+                  "field": "sale_date",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "when": {
+              "procedures": [
+                "judicial",
+                "notarial"
+              ]
+            },
+            "any_of": [
+              [
+                {
+                  "field": "sale_date",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ],
+              [
+                {
+                  "field": "sale_schedule",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "id": "qualified_surface",
+        "logic": "conditional_any_of",
+        "rules": [
+          {
+            "when": {
+              "property_types": [
+                "land"
+              ]
+            },
+            "any_of": [
+              [
+                {
+                  "field": "land_surface_m2",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "land_surface_scope",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "when": {
+              "property_types": [
+                "apartment",
+                "house",
+                "building",
+                "commercial"
+              ]
+            },
+            "any_of": [
+              [
+                {
+                  "field": "surface_habitable_m2",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ],
+              [
+                {
+                  "field": "surface_carrez_m2",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ],
+              [
+                {
+                  "field": "surface_built_m2",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "when": {
+              "property_types": [
+                "mixed"
+              ]
+            },
+            "any_of": [
+              [
+                {
+                  "field": "surface_built_m2",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "surface_scope",
+                  "accepted_states": [
+                    "observed"
+                  ],
+                  "accepted_values": [
+                    "asset"
+                  ]
+                }
+              ],
+              [
+                {
+                  "field": "surface_built_m2",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "lot_reference",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "surface_scope",
+                  "accepted_states": [
+                    "observed"
+                  ],
+                  "accepted_values": [
+                    "lot"
+                  ]
+                }
+              ]
+            ],
+            "note": "Chaque lot vendu d'un bien mixte est évalué ; une surface agrégée doit être qualifiée comme celle de l'actif, ou chaque surface doit être rattachée à son lot. La surface d'un seul lot ne qualifie pas toute la vente."
+          },
+          {
+            "when": {
+              "property_types": [
+                "parking"
+              ]
+            },
+            "any_of": [
+              [
+                {
+                  "field": "surface_built_m2",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                },
+                {
+                  "field": "surface_scope",
+                  "accepted_states": [
+                    "observed"
+                  ],
+                  "accepted_values": [
+                    "asset",
+                    "lot",
+                    "annex"
+                  ]
+                }
+              ],
+              [
+                {
+                  "field": "parking",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ]
+            ],
+            "note": "À défaut de surface, parking doit décrire une place ou un nombre/type de places avec son extrait et la justification du rattachement au lot ; l'absence de dimensions n'est pas une surface inventée."
+          }
+        ]
+      },
+      {
+        "id": "starting_price",
+        "logic": "conditional_any_of",
+        "rules": [
+          {
+            "when": {
+              "procedures": [
+                "judicial",
+                "notarial",
+                "online"
+              ]
+            },
+            "any_of": [
+              [
+                {
+                  "field": "starting_price_eur",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ]
+            ]
+          },
+          {
+            "when": {
+              "sources": [
+                "cessions_etat"
+              ]
+            },
+            "any_of": [
+              [
+                {
+                  "field": "starting_price_eur",
+                  "accepted_states": [
+                    "observed"
+                  ]
+                }
+              ],
+              [
+                {
+                  "field": "starting_price_eur",
+                  "accepted_states": [
+                    "not_applicable"
+                  ],
+                  "reason_code": "state_no_starting_price",
+                  "requires": [
+                    "procedure_record",
+                    "source_blocks"
+                  ]
+                }
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "id": "source_proof",
+        "logic": "any_of",
+        "requirements": [
+          [
+            {
+              "field": "capture_text",
+              "accepted_states": [
+                "observed"
+              ]
+            }
+          ],
+          [
+            {
+              "field": "source_blocks",
+              "accepted_states": [
+                "observed"
+              ]
+            }
+          ],
+          [
+            {
+              "field": "documents_inventory",
+              "accepted_states": [
+                "observed"
+              ]
+            }
+          ],
+              [
+                {
+                  "field": "photos_usable_count",
+                  "accepted_states": [
+                    "observed"
+                  ],
+                  "min_value": 1
+                }
+          ]
+        ]
+      },
+      {
+        "id": "critical_conflict_free",
+        "logic": "all_of",
+        "requirements": [
+          {
+            "field": "source_conflicts",
+            "accepted_states": [
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "listing_id",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "source_name",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "source_url",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "property_type",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "lot_reference",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "address",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "sale_venue_type",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "sale_legal_framework",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "sale_verification_status",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "procedure_record",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "participation_mode",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "bid_method",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "payment_terms",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "sale_date",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "sale_schedule",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "starting_price_eur",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "sale_fees",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "adjudication_price_eur",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "surface_habitable_m2",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "surface_carrez_m2",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "surface_built_m2",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "land_surface_m2",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          },
+          {
+            "field": "occupancy_status",
+            "accepted_states": [
+              "observed",
+              "inferred",
+              "unknown",
+              "explicitly_absent",
+              "not_applicable"
+            ]
+          }
+        ],
+        "note": "Tout état conflict sur un champ listé, y compris un conflit provenant d'une source secondaire, fait échouer la porte."
+      },
+      {
+        "id": "conditions_document",
+        "logic": "conditional_any_of",
+        "rules": [
+          {
+            "when": {
+              "procedures": [
+                "judicial",
+                "notarial",
+                "online",
+                "state"
+              ]
+            },
+            "any_of": [
+              [
+                {
+              "field": "conditions_sale",
+              "accepted_states": [
+                "observed",
+                "not_applicable"
+              ]
+                }
+              ]
+            ],
+            "note": "explicitly_absent, unknown ou conflict restent bloquants ; not_applicable exige la raison contrôlée du contrat d'observation."
+          }
+        ]
+      }
+    ],
+    "existing_readiness_alignment": {
+      "policy": "premium_readiness_v1",
+      "axes": {
+        "sale_provenance": 30,
+        "property": 25,
+        "proofs": 25,
+        "practical": 10,
+        "analysis": 10
+      },
+      "rule": "Ce catalogue ajoute une mesure champ par champ ; il ne remplace pas la politique existante ni ses blockers."
+    },
+    "examples": [
+      {
+        "id": "apartment_with_na_and_conflict",
+        "scope": "Extrait pédagogique : procedure, location, property et documents_and_media seulement.",
+        "category_ratios_percent": {
+          "procedure": 60.0,
+          "location": 100.0,
+          "property": 68.9,
+          "documents_and_media": 66.7
+        },
+        "active_category_weights": {
+          "procedure": 20,
+          "location": 15,
+          "property": 20,
+          "documents_and_media": 5
+        },
+        "calculation": "(60.0*20 + 100.0*15 + 68.9*20 + 66.7*5) / (20+15+20+5)",
+        "score_percent": 73.5,
+        "states_that_drive_result": [
+          "sale_schedule=not_applicable (audience ponctuelle)",
+          "visit_dates=unknown",
+          "sale_fees=conflict",
+          "bedrooms_count=inferred",
+          "floor_number=conflict"
+        ],
+        "gate_result": "blocked_by_procedure_conflict"
+      },
+      {
+        "id": "state_land_with_na_and_inference",
+        "scope": "Extrait pédagogique : cession d'État par appel d'offres, localisation par parcelle.",
+        "category_ratios_percent": {
+          "procedure": 100.0,
+          "location": 100.0,
+          "property": 100.0,
+          "outdoor": 40.0,
+          "documents_and_media": 50.0
+        },
+        "active_category_weights": {
+          "procedure": 20,
+          "location": 15,
+          "property": 20,
+          "outdoor": 8,
+          "documents_and_media": 5
+        },
+        "calculation": "(100.0*20 + 100.0*15 + 100.0*20 + 40.0*8 + 50.0*5) / (20+15+20+8+5)",
+        "score_percent": 89.3,
+        "states_that_drive_result": [
+          "starting_price_eur=not_applicable with state_sale_method=appel_offres and source quote",
+          "address=not_applicable because the source explicitly uses parcel-based location",
+          "cadastral_references=observed",
+          "insee_code=observed",
+          "land_surface_m2=observed",
+          "land_use=inferred",
+          "boundary_access=unknown",
+          "documents_inventory=observed",
+          "photos_count=explicitly_absent",
+          "conditions_sale=unknown"
+        ],
+        "gate_result": "location_and_surface_pass; rich_blocked_by_unknown_critical_document"
+      }
+    ],
+    "threshold_comparison": "Apply continuous ranges to the unrounded score; display rounding does not change the class. Critical gates can still block a label."
+  },
+  "categories": [
+    {
+      "id": "provenance",
+      "label": "Provenance et capture",
+      "weight": 10
+    },
+    {
+      "id": "procedure",
+      "label": "Vente et procédure",
+      "weight": 20
+    },
+    {
+      "id": "location",
+      "label": "Localisation et lot",
+      "weight": 15
+    },
+    {
+      "id": "property",
+      "label": "Caractéristiques du bien",
+      "weight": 20
+    },
+    {
+      "id": "energy",
+      "label": "Énergie, chauffage et équipements techniques",
+      "weight": 15
+    },
+    {
+      "id": "outdoor",
+      "label": "Extérieurs, stationnement et annexes",
+      "weight": 8
+    },
+    {
+      "id": "occupancy_and_risk",
+      "label": "Occupation, copropriété, urbanisme et risques",
+      "weight": 7
+    },
+    {
+      "id": "documents_and_media",
+      "label": "Documents et médias",
+      "weight": 5
+    }
+  ],
+  "fields": [
+    {
+      "id": "listing_id",
+      "category": "provenance",
+      "label": "Identifiant de l'annonce",
+      "definition": "Identifiant interne stable de la ligne publiée.",
+      "type": "string|uuid",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.id",
+        "AuctionSale.id"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "source_name",
+      "category": "provenance",
+      "label": "Source",
+      "definition": "Nom contrôlé du connecteur qui a observé la fiche.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.source_name",
+        "AuctionSale.source_name"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "source_url",
+      "category": "provenance",
+      "label": "URL source",
+      "definition": "URL canonique de la fiche ou du lot exact.",
+      "type": "uri",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.source_url",
+        "AuctionSale.source_url"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "primary_source",
+      "category": "provenance",
+      "label": "Source primaire retenue",
+      "definition": "Source utilisée comme référence canonique lors d'un rapprochement.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.primary_source",
+        "AuctionSale.primary_source"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "source_urls",
+      "category": "provenance",
+      "label": "URLs d'observation",
+      "definition": "Toutes les URLs de sources rattachées au même lot.",
+      "type": "array<uri>",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.source_urls",
+        "AuctionSale.source_urls",
+        "auction_observations"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "external_id",
+      "category": "provenance",
+      "label": "Identifiant source",
+      "definition": "Référence externe du lot, dossier ou annonce.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.external_id",
+        "auction_observations.external_id",
+        "pipeline.raw_payload.external_id"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "source_title",
+      "category": "provenance",
+      "label": "Titre source",
+      "definition": "Titre ou nom du lot capturé depuis la source primaire.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.title",
+        "AuctionSale.title",
+        "raw_payload.source_blocks.titre"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "source_description",
+      "category": "provenance",
+      "label": "Description source",
+      "definition": "Description rattachée au bien, séparée du chrome générique de la page.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.description",
+        "AuctionSale.description",
+        "API.source_description",
+        "raw_payload.source_description"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "capture_text",
+      "category": "provenance",
+      "label": "Texte capturé",
+      "definition": "Texte brut ou texte source curaté conservant les libellés utiles.",
+      "type": "string",
+      "unit": "characters",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.raw_text",
+        "pipeline.raw_payload.raw_text"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "source_blocks",
+      "category": "provenance",
+      "label": "Blocs source",
+      "definition": "Objet de champs bruts et libellés servant de preuve et de régression.",
+      "type": "object<string,unknown>",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.raw_payload.source_blocks",
+        "AuctionSale.source_blocks"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "source_presence",
+      "category": "provenance",
+      "label": "Présence par source",
+      "definition": "État du champ dans les différentes observations : vu, non vu, inaccessible ou expiré.",
+      "type": "object<string,object>",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "raw_payload.source_presence",
+        "AuctionSale.source_presence"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "source_conflicts",
+      "category": "provenance",
+      "label": "Conflits de source",
+      "definition": "Liste des valeurs divergentes avec sources, sélection éventuelle et état de résolution.",
+      "type": "array<object>",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "raw_payload.source_conflicts",
+        "AuctionSale.source_conflicts"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "capture_checked_at",
+      "category": "provenance",
+      "label": "Contrôle de source",
+      "definition": "Horodatage du dernier contrôle de l'URL et de son contenu.",
+      "type": "timestamp",
+      "unit": "ISO-8601",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "raw_payload.source_checks.<source_url>.checked_at"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "extractor_version",
+      "category": "provenance",
+      "label": "Version extracteur",
+      "definition": "Version du connecteur ayant produit l'observation.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "raw_payload.source_checks.<source_url>.extractor_version"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "source_detail_status",
+      "category": "provenance",
+      "label": "État de la fiche détail",
+      "definition": "Résultat de la récupération dédiée de la page détail.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "raw_payload.source_detail_status",
+        "raw_payload.source_checks.<source_url>.detail_status"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "source_last_seen_at",
+      "category": "provenance",
+      "label": "Dernière observation",
+      "definition": "Date de dernière observation de la ligne source.",
+      "type": "timestamp",
+      "unit": "ISO-8601",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.last_seen_at",
+        "pipeline.raw_payload.last_seen_at"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "property_type",
+      "category": "procedure",
+      "label": "Type de bien",
+      "definition": "Catégorie normalisée du bien ou du lot.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.property_type",
+        "AuctionSale.property_type"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "sale_venue_type",
+      "category": "procedure",
+      "label": "Lieu/type de vente",
+      "definition": "Tribunal, notaire, État, en ligne ou inconnu.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.sale_venue_type",
+        "AuctionSale.sale_venue_type"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "sale_legal_framework",
+      "category": "procedure",
+      "label": "Cadre de vente",
+      "definition": "Saisie judiciaire, partage, insolvabilité, volontaire notariale, État ou inconnu.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.sale_legal_framework",
+        "AuctionSale.sale_legal_framework"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "sale_verification_status",
+      "category": "procedure",
+      "label": "Vérification de procédure",
+      "definition": "État verified, cross_checked, pending ou conflict.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.sale_verification_status",
+        "AuctionSale.sale_verification_status"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "listing_status",
+      "category": "procedure",
+      "label": "Statut de l'annonce",
+      "definition": "État observé : à venir, passée, adjugée, reportée, annulée, retirée ou inconnu.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.status",
+        "AuctionSale.status"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "auction_round",
+      "category": "procedure",
+      "label": "Tour de vente",
+      "definition": "Audience initiale, report, surenchère ou réitération, avec identifiant si publié.",
+      "type": "object|enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial",
+          "state",
+          "online"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.auction_round"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "sale_date",
+      "category": "procedure",
+      "label": "Date de vente/audience",
+      "definition": "Date et heure publiées de l'événement, avec distinction date seule/fuseau.",
+      "type": "timestamp|date",
+      "unit": "ISO-8601",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.sale_date",
+        "AuctionSale.sale_date",
+        "raw_payload.source_sale_schedule"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "sale_schedule",
+      "category": "procedure",
+      "label": "Fenêtre de vente",
+      "definition": "Ouverture, fermeture et fuseau pour une vente en ligne ou une procédure à échéance.",
+      "type": "object",
+      "unit": "ISO-8601",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "online",
+          "state"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "raw_payload.source_sale_schedule",
+        "AuctionSale.sale_procedure"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "procedure_record",
+      "category": "procedure",
+      "label": "Dossier de procédure",
+      "definition": "Enregistrement structuré du cadre, du mode de participation, des règles et des preuves de classification.",
+      "type": "object",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.sale_procedure",
+        "AuctionSale.sale_procedure",
+        "raw_payload.source_blocks.sale_procedure"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": true
+    },
+    {
+      "id": "tribunal",
+      "category": "procedure",
+      "label": "Tribunal",
+      "definition": "Juridiction rattachée à la vente lorsque la procédure est judiciaire.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.tribunal",
+        "auction_sales.tribunal_code",
+        "AuctionSale.tribunal",
+        "AuctionSale.tribunal_name"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "starting_price_eur",
+      "category": "procedure",
+      "label": "Mise à prix",
+      "definition": "Prix de départ publié, séparé de l'adjudication, des frais et de la consignation.",
+      "type": "decimal",
+      "unit": "EUR",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial",
+          "online",
+          "state"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.starting_price_eur",
+        "AuctionSale.starting_price_eur"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "adjudication_price_eur",
+      "category": "procedure",
+      "label": "Prix d'adjudication",
+      "definition": "Prix final explicitement publié pour une vente terminée.",
+      "type": "decimal",
+      "unit": "EUR",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial",
+          "online"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.adjudication_price_eur",
+        "AuctionSale.adjudication_price_eur"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "outcome_status",
+      "category": "procedure",
+      "label": "Résultat",
+      "definition": "Issue de l'audience : inconnue, annulée, reportée, sans enchère, adjugée, etc.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.status",
+        "raw_payload.source_blocks",
+        "proposed: property.outcome_status"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "venue_name",
+      "category": "procedure",
+      "label": "Lieu de vente",
+      "definition": "Nom du tribunal, de l'étude, de l'opérateur ou du site.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "AuctionSale.sale_procedure.venue_name",
+        "AuctionSale.sale_procedure.venueName",
+        "raw_payload.source_blocks.tribunal"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "venue_address",
+      "category": "procedure",
+      "label": "Adresse du lieu",
+      "definition": "Adresse du lieu de l'audience ou du rendez-vous, distincte de celle du bien.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "AuctionSale.sale_procedure.venue_address"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "visit_dates",
+      "category": "procedure",
+      "label": "Dates de visite",
+      "definition": "Créneaux de visite du bien, avec lieu et précision lorsque publiés.",
+      "type": "array<string|object>",
+      "unit": "ISO-8601 or source text",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "land",
+          "commercial",
+          "parking",
+          "mixed"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.visit_dates",
+        "AuctionSale.visit_dates",
+        "raw_payload.source_blocks.visites"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "participation_mode",
+      "category": "procedure",
+      "label": "Mode de participation",
+      "definition": "Présentiel, en ligne, hybride ou inconnu.",
+      "type": "enum(in_person|online|hybrid|unknown)",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "AuctionSale.sale_procedure.participation_mode"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "bid_method",
+      "category": "procedure",
+      "label": "Méthode d'enchère",
+      "definition": "Méthode de dépôt, mandat, enchère en ligne ou méthode spécifique à la vente.",
+      "type": "enum|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial",
+          "online"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "AuctionSale.sale_procedure.rules.bid_method"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "lawyer_required",
+      "category": "procedure",
+      "label": "Avocat requis",
+      "definition": "Règle de participation indiquant si un avocat ou intermédiaire est requis.",
+      "type": "boolean",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "AuctionSale.sale_procedure.rules.lawyer_required"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "eligible_bar",
+      "category": "procedure",
+      "label": "Barreau éligible",
+      "definition": "Barreau ou périmètre professionnel mentionné par la procédure.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "AuctionSale.sale_procedure.rules.eligible_bar"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "lawyer_name",
+      "category": "procedure",
+      "label": "Avocat/organisateur",
+      "definition": "Nom de l'avocat, cabinet, étude ou organisateur publié.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.lawyer_name",
+        "AuctionSale.lawyer_name"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "lawyer_contact",
+      "category": "procedure",
+      "label": "Contact procédure",
+      "definition": "Téléphone, email ou site actionnable du contact publié.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.lawyer_contact",
+        "AuctionSale.lawyer_contact"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "consignation",
+      "category": "procedure",
+      "label": "Consignation",
+      "definition": "Montant, taux, bénéficiaire et modalité publiés pour participer.",
+      "type": "object",
+      "unit": "EUR|percent",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial",
+          "online"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "raw_payload.source_blocks.consignation",
+        "AuctionSale.sale_procedure.rules",
+        "proposed: procedure.consignation"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "sale_fees",
+      "category": "procedure",
+      "label": "Frais de vente",
+      "definition": "Frais préalables, frais d'adjudication, taxes et commissions séparés.",
+      "type": "object",
+      "unit": "EUR|percent",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "raw_payload.source_blocks.frais_de_vente",
+        "proposed: procedure.sale_fees"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "payment_terms",
+      "category": "procedure",
+      "label": "Conditions de paiement",
+      "definition": "Mode, échéance, compte ou conditions publiées, sans confondre avec la consignation.",
+      "type": "object|string",
+      "unit": "days|EUR|text",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.sale_procedure.rules.payment_deadline_days",
+        "raw_payload.source_blocks.modalite_de_paiement",
+        "proposed: procedure.payment_terms"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "surenchere_window",
+      "category": "procedure",
+      "label": "Fenêtre de surenchère",
+      "definition": "Dates et état de la période de surenchère lorsqu'ils sont publiés.",
+      "type": "object",
+      "unit": "ISO-8601",
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: procedure.surenchere_window"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "address",
+      "category": "location",
+      "label": "Adresse du bien",
+      "definition": "Adresse de l'actif, séparée de l'adresse de l'audience et du texte légal.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "land",
+          "commercial",
+          "parking",
+          "mixed"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.address",
+        "AuctionSale.address",
+        "normalize_listing_address"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "postal_code",
+      "category": "location",
+      "label": "Code postal",
+      "definition": "Code postal de la commune du bien.",
+      "type": "string",
+      "unit": "5 digits France",
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.postal_code",
+        "AuctionSale.postal_code"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "city",
+      "category": "location",
+      "label": "Commune",
+      "definition": "Commune de l'actif, distincte de la commune du tribunal.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.city",
+        "AuctionSale.city"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "department",
+      "category": "location",
+      "label": "Département",
+      "definition": "Département source ou normalisé de l'actif.",
+      "type": "string",
+      "unit": "2-3 digit code",
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.department",
+        "AuctionSale.department"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "insee_code",
+      "category": "location",
+      "label": "Code INSEE",
+      "definition": "Code commune rattaché à l'actif, utile lorsque l'adresse exacte est masquée ou remplacée par une parcelle.",
+      "type": "string",
+      "unit": "5 digit commune code",
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: location.insee_code",
+        "auction_dpe_diagnostics.insee_code",
+        "cadastre enrichment"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": true
+    },
+    {
+      "id": "coordinates",
+      "category": "location",
+      "label": "Coordonnées",
+      "definition": "Latitude et longitude avec source du géocodage et confiance.",
+      "type": "object",
+      "unit": "WGS84 degrees",
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.latitude",
+        "auction_sales.longitude",
+        "AuctionSale.latitude",
+        "AuctionSale.longitude"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "location_precision",
+      "category": "location",
+      "label": "Précision de localisation",
+      "definition": "Granularité réellement publiée : adresse, commune, département, parcelle cadastrale ou masquée.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: location.location_precision"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "lot_reference",
+      "category": "location",
+      "label": "Référence de lot",
+      "definition": "Numéro ou référence permettant de relier la fiche aux pièces exactes.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: asset.lot_reference",
+        "raw_payload.lot_number",
+        "source_blocks.*"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "lot_count",
+      "category": "location",
+      "label": "Nombre de lots/actifs",
+      "definition": "Nombre d'actifs vendus dans l'ensemble décrit.",
+      "type": "integer",
+      "unit": "lots",
+      "applicability": {
+        "property_types": [
+          "building",
+          "mixed",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: asset.lot_count",
+        "source_blocks.lots_publics"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "cadastral_references",
+      "category": "location",
+      "label": "Références cadastrales",
+      "definition": "Commune, section et numéro de parcelle avec source.",
+      "type": "array<string>",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "land",
+          "house",
+          "building",
+          "mixed"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: asset.cadastral_references",
+        "cadastre enrichment",
+        "documents_rich"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "land_surface_m2",
+      "category": "location",
+      "label": "Surface de terrain",
+      "definition": "Contenance/étendue foncière avec portée parcel, lot, copropriété ou partie commune.",
+      "type": "decimal",
+      "unit": "m²",
+      "applicability": {
+        "property_types": [
+          "land",
+          "house",
+          "building",
+          "mixed"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.land_surface_m2",
+        "auction_surfaces.land_surface_m2",
+        "AuctionSale.land_surface_m2"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "land_surface_scope",
+      "category": "location",
+      "label": "Portée de la surface foncière",
+      "definition": "Indique si le nombre concerne une parcelle, un lot, la copropriété ou une surface commune.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "land",
+          "house",
+          "building",
+          "mixed"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.surface_scope",
+        "raw_payload.source_blocks.operator_land_surface_scope"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "surface_habitable_m2",
+      "category": "property",
+      "label": "Surface habitable",
+      "definition": "Surface habitable du logement, séparée des annexes et du terrain.",
+      "type": "decimal",
+      "unit": "m²",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.habitable_surface_m2",
+        "auction_surfaces.habitable_surface_m2",
+        "AuctionSale.habitable_surface_m2"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "surface_carrez_m2",
+      "category": "property",
+      "label": "Surface Carrez",
+      "definition": "Surface Carrez déclarée pour le lot de copropriété.",
+      "type": "decimal",
+      "unit": "m²",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.carrez_surface_m2",
+        "auction_surfaces.carrez_surface_m2",
+        "AuctionSale.carrez_surface_m2"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "surface_built_m2",
+      "category": "property",
+      "label": "Surface bâtie/utile",
+      "definition": "Surface construite ou utile dont la portée est explicitement qualifiée.",
+      "type": "decimal",
+      "unit": "m²",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial",
+          "mixed",
+          "parking"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.surface_m2",
+        "auction_sales.app_surface_m2",
+        "AuctionSale.app_surface_m2",
+        "AuctionSale.habitable_surface_m2"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "surface_scope",
+      "category": "property",
+      "label": "Portée de la surface bâtie",
+      "definition": "Logement, actif, lot, annexe, parcelle ou autre portée du nombre.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.surface_scope",
+        "AuctionSale.surface_scope",
+        "AuctionSale.app_surface_kind"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "surface_provenance",
+      "category": "property",
+      "label": "Provenance de surface",
+      "definition": "Origine source, PDF, cadastre, ADEME, LLM ou inférence et extrait associé.",
+      "type": "object",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "AuctionSale.surface_source",
+        "AuctionSale.surface_evidence",
+        "AuctionSale.surface_confidence"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "rooms_count",
+      "category": "property",
+      "label": "Nombre de pièces",
+      "definition": "Nombre de pièces principales explicitement décrit ; cuisine, WC, cave, garage et terrasse ne sont pas comptés.",
+      "type": "integer",
+      "unit": "pièces principales",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.rooms_count",
+        "auction_surfaces.rooms_count",
+        "AuctionSale.rooms_count"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "bedrooms_count",
+      "category": "property",
+      "label": "Nombre de chambres",
+      "definition": "Nombre de chambres explicitement mentionnées ; ne pas déduire d'un T2/T3.",
+      "type": "integer",
+      "unit": "chambres",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.bedrooms_count",
+        "auction_surfaces.bedrooms_count",
+        "AuctionSale.bedrooms_count"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "bathrooms_count",
+      "category": "property",
+      "label": "Salles de bains avec baignoire",
+      "definition": "Nombre de salles de bains avec baignoire explicitement identifié ; les salles d'eau et cabines de douche sont comptées séparément dans shower_rooms_count.",
+      "type": "integer",
+      "unit": "salles de bains avec baignoire",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "auction_sales.bathrooms_count",
+        "auction_features.bathrooms_count",
+        "AuctionSale.bathrooms_count"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false,
+      "quality_note": "La colonne historique bathrooms_count peut fusionner bains et salles d'eau ; elle reste une preuve partielle tant que le type de pièce n'est pas explicitement séparé."
+    },
+    {
+      "id": "shower_rooms_count",
+      "category": "property",
+      "label": "Salles d'eau/douches",
+      "definition": "Nombre de salles d'eau, salles de douche ou cabines de douche explicitement identifiées, sans les fusionner avec les salles de bains à baignoire.",
+      "type": "integer",
+      "unit": "pièces d'eau avec douche",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.shower_rooms_count",
+        "description",
+        "source_blocks.*"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "wc_count",
+      "category": "property",
+      "label": "WC",
+      "definition": "Nombre de WC explicitement identifié.",
+      "type": "integer",
+      "unit": "WC",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.wc_count",
+        "description",
+        "source_blocks.*"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "floor_number",
+      "category": "property",
+      "label": "Étage",
+      "definition": "Étage du lot avec rez-de-chaussée, sous-sol et combles représentés sans conversion silencieuse.",
+      "type": "integer|enum",
+      "unit": "niveau",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.floor_number",
+        "description",
+        "source_blocks.*"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "building_floor_count",
+      "category": "property",
+      "label": "Nombre de niveaux",
+      "definition": "Nombre total de niveaux du bâtiment lorsque publié.",
+      "type": "integer",
+      "unit": "niveaux",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.building_floor_count"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "elevator",
+      "category": "property",
+      "label": "Ascenseur",
+      "definition": "Ascenseur présent ou absent explicitement.",
+      "type": "boolean",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.elevator"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "layout",
+      "category": "property",
+      "label": "Composition/distribution",
+      "definition": "Liste structurée des pièces et de leur distribution, avec citation source.",
+      "type": "array<object>|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.layout",
+        "AuctionSale.description",
+        "raw_payload.source_blocks"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "flooring",
+      "category": "property",
+      "label": "Revêtements de sol",
+      "definition": "Type de sol par pièce ou zone : parquet, carrelage, moquette, béton, tomettes ou autre, sans déduction depuis une photo seule.",
+      "type": "array<object>|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.flooring",
+        "description",
+        "source_blocks.*"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "ceiling_height_m",
+      "category": "property",
+      "label": "Hauteur sous plafond",
+      "definition": "Hauteur explicitement mesurée et localisée.",
+      "type": "decimal",
+      "unit": "m",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "optional",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.ceiling_height_m"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "year_built",
+      "category": "property",
+      "label": "Année/période de construction",
+      "definition": "Année ou période de construction explicitement sourcée.",
+      "type": "integer|string",
+      "unit": "year",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.year_built"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "condition",
+      "category": "property",
+      "label": "État du bien",
+      "definition": "État source : neuf, bon, à rafraîchir, à rénover, ruine ou inconnu.",
+      "type": "enum|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial",
+          "land"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.condition",
+        "risk_notes",
+        "raw_payload.llm_extraction"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "works_needed",
+      "category": "property",
+      "label": "Travaux à prévoir",
+      "definition": "Travaux ou désordres décrits par la source, séparés d'une estimation financière.",
+      "type": "object|string",
+      "unit": "text|EUR if sourced",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.risk_notes",
+        "raw_payload.llm_extraction.works_needed",
+        "proposed: property.works_needed"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "accessibility",
+      "category": "property",
+      "label": "Accessibilité",
+      "definition": "Accès, escaliers, ascenseur et éléments PMR quand décrits.",
+      "type": "object|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.accessibility"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "orientation",
+      "category": "property",
+      "label": "Orientation",
+      "definition": "Orientation explicitement publiée.",
+      "type": "array<enum>",
+      "unit": "cardinal direction",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "land"
+        ]
+      },
+      "importance": "optional",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.orientation"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "view",
+      "category": "property",
+      "label": "Vue/vis-à-vis",
+      "definition": "Vue, dégagement ou vis-à-vis explicitement décrits.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "land"
+        ]
+      },
+      "importance": "optional",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.view"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "heating_mode",
+      "category": "energy",
+      "label": "Mode de chauffage",
+      "definition": "Chauffage individuel, collectif, mixte, absent ou inconnu.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: energy.heating_mode",
+        "description",
+        "source_blocks.*"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "heating_energy",
+      "category": "energy",
+      "label": "Énergie de chauffage",
+      "definition": "Électricité, gaz, fioul, bois, pompe à chaleur, réseau ou autre.",
+      "type": "enum|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: energy.heating_energy"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "heating_distribution",
+      "category": "energy",
+      "label": "Distribution du chauffage",
+      "definition": "Radiateurs, plancher, chaudière individuelle ou autre système explicitement décrit.",
+      "type": "enum|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: energy.heating_distribution"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "hot_water_mode",
+      "category": "energy",
+      "label": "Eau chaude",
+      "definition": "Mode individuel, collectif ou inconnu.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: energy.hot_water_mode"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "hot_water_energy",
+      "category": "energy",
+      "label": "Énergie de l'eau chaude",
+      "definition": "Énergie du système d'eau chaude sanitaire, séparée de son mode individuel ou collectif.",
+      "type": "enum|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: energy.hot_water_energy",
+        "description",
+        "source_blocks.*"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "dpe_class",
+      "category": "energy",
+      "label": "Classe DPE",
+      "definition": "Classe A à G, ou non soumis explicitement, avec source et date.",
+      "type": "enum",
+      "unit": "A-G",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_enrichment",
+      "schema_paths": [
+        "auction_dpe_diagnostics.dpe_class",
+        "raw_payload.source_blocks.dpe",
+        "src/lib/dpe.ts.extractDpe"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "ges_class",
+      "category": "energy",
+      "label": "Classe GES",
+      "definition": "Classe d'émissions A à G, ou non-applicabilité explicitement établie pour le bien ; une publication sans valeur reste unknown.",
+      "type": "enum",
+      "unit": "A-G",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_enrichment",
+      "schema_paths": [
+        "auction_dpe_diagnostics.ges_class",
+        "raw_payload.source_blocks.ges"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "energy_consumption_kwh_m2_year",
+      "category": "energy",
+      "label": "Consommation énergétique",
+      "definition": "Consommation du diagnostic avec son unité et son périmètre.",
+      "type": "decimal",
+      "unit": "kWh/m²/an",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_enrichment",
+      "schema_paths": [
+        "auction_dpe_diagnostics.energy_consumption_kwh_m2_year"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "emissions_kg_co2_m2_year",
+      "category": "energy",
+      "label": "Émissions GES",
+      "definition": "Émissions du diagnostic avec leur unité et leur périmètre.",
+      "type": "decimal",
+      "unit": "kgCO2/m²/an",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_enrichment",
+      "schema_paths": [
+        "auction_dpe_diagnostics.emissions_kg_co2_m2_year"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "dpe_established_at",
+      "category": "energy",
+      "label": "Date du DPE",
+      "definition": "Date d'établissement du diagnostic.",
+      "type": "date",
+      "unit": "ISO-8601 date",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_enrichment",
+      "schema_paths": [
+        "auction_dpe_diagnostics.established_at"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "dpe_valid_until",
+      "category": "energy",
+      "label": "Validité DPE",
+      "definition": "Date de fin de validité lorsqu'elle figure dans le diagnostic.",
+      "type": "date",
+      "unit": "ISO-8601 date",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_enrichment",
+      "schema_paths": [
+        "auction_dpe_diagnostics.valid_until"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "dpe_number",
+      "category": "energy",
+      "label": "Numéro DPE",
+      "definition": "Numéro du diagnostic permettant le rapprochement.",
+      "type": "string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_enrichment",
+      "schema_paths": [
+        "auction_dpe_diagnostics.diagnostic_number"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "windows_insulation",
+      "category": "energy",
+      "label": "Menuiseries/vitrage",
+      "definition": "Simple/double vitrage et matériau si publiés.",
+      "type": "enum|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.has_double_glazing",
+        "proposed: energy.windows_insulation"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "building_insulation",
+      "category": "energy",
+      "label": "Isolation du bâtiment",
+      "definition": "Isolation des murs, de la toiture et du plancher, avec niveau ou matériau lorsque publié ; distincte des menuiseries et du vitrage.",
+      "type": "object|string",
+      "unit": "text|cm if sourced",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: energy.building_insulation",
+        "description",
+        "source_blocks.*",
+        "documents_rich"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "ventilation",
+      "category": "energy",
+      "label": "Ventilation",
+      "definition": "Type de ventilation lorsqu'il est publié.",
+      "type": "enum|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "optional",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: energy.ventilation"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "cooling",
+      "category": "energy",
+      "label": "Climatisation",
+      "definition": "Climatisation présente ou absente explicitement.",
+      "type": "boolean",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "optional",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.has_air_conditioning",
+        "proposed: energy.cooling"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "utilities_connections",
+      "category": "energy",
+      "label": "Réseaux et assainissement",
+      "definition": "Branchements eau, électricité, gaz et type d'assainissement.",
+      "type": "object",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "land",
+          "house",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: energy.utilities_connections"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "garden",
+      "category": "outdoor",
+      "label": "Jardin",
+      "definition": "Jardin présent/absent explicitement et surface si publiée ; pour un appartement, préciser jouissance privative, partie commune ou lot annexe.",
+      "type": "object|boolean",
+      "unit": "m² if available",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "land",
+          "building",
+          "mixed"
+        ],
+        "conditions": "Pour apartment, observed seulement avec le droit, le lot ou le périmètre explicitement rattaché."
+      },
+      "importance": "medium",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.has_garden",
+        "proposed: outdoor.garden_surface_m2"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "terrace",
+      "category": "outdoor",
+      "label": "Terrasse",
+      "definition": "Terrasse présente/absente explicitement et surface si publiée.",
+      "type": "object|boolean",
+      "unit": "m² if available",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.has_terrace",
+        "proposed: outdoor.terrace_surface_m2"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "balcony",
+      "category": "outdoor",
+      "label": "Balcon",
+      "definition": "Balcon présent/absent explicitement et surface si publiée.",
+      "type": "object|boolean",
+      "unit": "m² if available",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "building"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: outdoor.balcony"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "garage",
+      "category": "outdoor",
+      "label": "Garage/box",
+      "definition": "Garage ou box distinct du stationnement extérieur, avec nombre/surface si publiés.",
+      "type": "object|boolean",
+      "unit": "count|m² if available",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.has_garage",
+        "proposed: outdoor.garage_details"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "parking",
+      "category": "outdoor",
+      "label": "Stationnement",
+      "definition": "Nombre et type de places, parking ou stationnement.",
+      "type": "object|integer",
+      "unit": "places",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial",
+          "parking",
+          "mixed"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.parking_count",
+        "auction_features.parking_count",
+        "proposed: outdoor.parking_type"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": true
+    },
+    {
+      "id": "cellar",
+      "category": "outdoor",
+      "label": "Cave",
+      "definition": "Cave présente/absente, lot et surface si disponibles.",
+      "type": "object|boolean",
+      "unit": "count|m² if available",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: outdoor.cellar"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "attic",
+      "category": "outdoor",
+      "label": "Grenier/combles",
+      "definition": "Dépendance sous toiture avec statut aménagé/non aménagé.",
+      "type": "object|boolean",
+      "unit": "m² if available",
+      "applicability": {
+        "property_types": [
+          "house",
+          "building",
+          "mixed"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: outdoor.attic"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "pool",
+      "category": "outdoor",
+      "label": "Piscine",
+      "definition": "Piscine présente/absente explicitement et type si publié ; pour un appartement, préciser droit privatif ou équipement commun et son périmètre.",
+      "type": "object|boolean",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "land",
+          "building",
+          "mixed"
+        ],
+        "conditions": "Pour apartment, observed seulement avec le droit, le lot ou le périmètre explicitement rattaché."
+      },
+      "importance": "optional",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.has_pool",
+        "proposed: outdoor.pool_details"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "outbuildings",
+      "category": "outdoor",
+      "label": "Dépendances",
+      "definition": "Dépendances distinctes : remise, grange, atelier, local ou autre, avec surface si publiée.",
+      "type": "array<object>",
+      "unit": "count|m² if available",
+      "applicability": {
+        "property_types": [
+          "house",
+          "land",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: outdoor.outbuildings"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "land_use",
+      "category": "outdoor",
+      "label": "Usage du terrain",
+      "definition": "Constructible, agricole, loisir ou mixte avec preuve de zonage/description.",
+      "type": "enum|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "land",
+          "house",
+          "mixed"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: outdoor.land_use",
+        "urban planning enrichment"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "boundary_access",
+      "category": "outdoor",
+      "label": "Accès et limites",
+      "definition": "Accès, façade, clôture, servitude d'accès et réseaux de terrain.",
+      "type": "object|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "land",
+          "house",
+          "mixed"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: outdoor.boundary_access"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "occupancy_status",
+      "category": "occupancy_and_risk",
+      "label": "Occupation",
+      "definition": "Libre, occupé, loué, propriétaire occupant, squatté ou inconnu.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.occupancy_status",
+        "AuctionSale.occupancy_status"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "occupancy_details",
+      "category": "occupancy_and_risk",
+      "label": "Détails d'occupation",
+      "definition": "Bail, échéance, réserve, occupant ou mode d'occupation sans collecter de données personnelles inutiles.",
+      "type": "object|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "raw_payload.llm_extraction.occupancy_details",
+        "raw_payload.source_blocks.occupation",
+        "proposed: occupancy.details"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "lease_status",
+      "category": "occupancy_and_risk",
+      "label": "Statut du bail",
+      "definition": "Bail identifié, absent ou inconnu pour un bien loué.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: occupancy.lease_status",
+        "documents_rich.document_type=bail"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "rent_eur",
+      "category": "occupancy_and_risk",
+      "label": "Loyer",
+      "definition": "Loyer avec périodicité et distinction hors charges/charges comprises.",
+      "type": "decimal|object",
+      "unit": "EUR/month|year",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: occupancy.rent"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "lease_end_date",
+      "category": "occupancy_and_risk",
+      "label": "Échéance du bail",
+      "definition": "Date d'échéance explicitement publiée.",
+      "type": "date",
+      "unit": "ISO-8601 date",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: occupancy.lease_end_date"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "coownership",
+      "category": "occupancy_and_risk",
+      "label": "Copropriété",
+      "definition": "Copropriété établie, absente explicitement ou inconnue.",
+      "type": "boolean",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "raw_payload.llm_extraction.copropriete",
+        "proposed: property.coownership"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "coownership_lot_description",
+      "category": "occupancy_and_risk",
+      "label": "Lots de copropriété",
+      "definition": "Description des lots vendus et de leurs annexes.",
+      "type": "string|array<object>",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.coownership_lot_description",
+        "source_blocks.*",
+        "documents_rich"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "coownership_charges_eur",
+      "category": "occupancy_and_risk",
+      "label": "Charges de copropriété",
+      "definition": "Montant, périodicité, exercice et distinction des charges courantes.",
+      "type": "object",
+      "unit": "EUR/year|quarter|month",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.coownership_charges_eur"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "coownership_works",
+      "category": "occupancy_and_risk",
+      "label": "Travaux de copropriété",
+      "definition": "Travaux votés/prévus et montant lorsque publiés.",
+      "type": "object|string",
+      "unit": "EUR if available",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.coownership_works"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "easements",
+      "category": "occupancy_and_risk",
+      "label": "Servitudes",
+      "definition": "Servitudes citées dans l'annonce, le PV, le cahier ou les documents d'urbanisme.",
+      "type": "array<object>|string",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "land",
+          "house",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "raw_payload.llm_extraction.servitudes",
+        "urban-planning analysis",
+        "proposed: risk.easements"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "urban_planning",
+      "category": "occupancy_and_risk",
+      "label": "Urbanisme",
+      "definition": "Zonage, permis, autorisations, constructibilité et règles attachées au terrain/bâti.",
+      "type": "object",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "land",
+          "house",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "urban-planning analysis",
+        "land report",
+        "proposed: risk.urban_planning"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": true
+    },
+    {
+      "id": "environmental_risks",
+      "category": "occupancy_and_risk",
+      "label": "Risques environnementaux",
+      "definition": "Risques et niveau avec source, date et périmètre.",
+      "type": "array<object>",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "auction_risks",
+        "AuctionSale.risks",
+        "AuctionSale.risk_notes"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": true
+    },
+    {
+      "id": "technical_diagnostics",
+      "category": "occupancy_and_risk",
+      "label": "Diagnostics techniques",
+      "definition": "Inventaire des diagnostics et statut de lecture : DPE/GES, amiante, plomb, gaz, électricité, termites, assainissement, etc.",
+      "type": "array<object>",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "documents_rich",
+        "auction_dpe_diagnostics",
+        "auction_risks",
+        "proposed: risk.technical_diagnostics"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "property_tax_eur",
+      "category": "occupancy_and_risk",
+      "label": "Taxe foncière",
+      "definition": "Montant et année lorsque publiés.",
+      "type": "object",
+      "unit": "EUR/year",
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial",
+          "mixed"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: property.property_tax_eur"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "documents_inventory",
+      "category": "documents_and_media",
+      "label": "Inventaire documentaire",
+      "definition": "URLs, labels, types normalisés et état de téléchargement des pièces.",
+      "type": "array<object>",
+      "unit": "documents",
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing",
+      "schema_paths": [
+        "auction_sales.documents",
+        "AuctionSale.documents",
+        "AuctionSale.documents_rich",
+        "collectSaleDocuments"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "document_extraction_status",
+      "category": "documents_and_media",
+      "label": "État d'extraction des pièces",
+      "definition": "Manifest, documents traités/échoués, pages extraites et couverture rich/partial/source_only.",
+      "type": "object",
+      "unit": "documents/pages",
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_nested",
+      "schema_paths": [
+        "raw_payload.document_analysis",
+        "documents_rich.extraction_status",
+        "documents_rich.download_status"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "pv_description",
+      "category": "documents_and_media",
+      "label": "PV descriptif",
+      "definition": "Présence, lien et état de lecture d'un procès-verbal descriptif.",
+      "type": "object|enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial",
+          "land",
+          "mixed"
+        ],
+        "procedures": [
+          "judicial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_taxonomy",
+      "schema_paths": [
+        "documents_rich.document_type=pv_huissier|pv_notaire|proces_verbal",
+        "pdf_document_types"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "conditions_sale",
+      "category": "documents_and_media",
+      "label": "Cahier/conditions de vente",
+      "definition": "Présence, type et état de lecture du document de conditions de vente ou de cession.",
+      "type": "object|enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ],
+        "procedures": [
+          "judicial",
+          "notarial",
+          "online",
+          "state"
+        ]
+      },
+      "importance": "critical",
+      "schema_status": "existing_taxonomy",
+      "schema_paths": [
+        "documents_rich.document_type=cahier_conditions|cahier_conditions_vente|conditions_vente",
+        "pdf_document_selection"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "diagnostics_documents",
+      "category": "documents_and_media",
+      "label": "Pièces de diagnostics",
+      "definition": "Documents techniques présents, téléchargés et lisibles.",
+      "type": "array<object>",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "high",
+      "schema_status": "existing_taxonomy",
+      "schema_paths": [
+        "documents_rich.document_type=diagnostics_techniques",
+        "auction_dpe_diagnostics"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "lease_documents",
+      "category": "documents_and_media",
+      "label": "Documents de bail",
+      "definition": "Bail, avenant ou document locatif présent et lisible.",
+      "type": "array<object>",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_taxonomy",
+      "schema_paths": [
+        "documents_rich.document_type=bail"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "photos_count",
+      "category": "documents_and_media",
+      "label": "Nombre de photos source",
+      "definition": "Nombre d'URLs d'images dédupliquées rattachées à la fiche.",
+      "type": "integer",
+      "unit": "images",
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing",
+      "schema_paths": [
+        "raw_payload.source_images",
+        "raw_payload.raw_image_url",
+        "AuctionSale.media"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "photos_usable_count",
+      "category": "documents_and_media",
+      "label": "Photos utilisables",
+      "definition": "Images accessibles, non logo/placeholder, dont le contenu est rattachable au bien.",
+      "type": "integer",
+      "unit": "images",
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: media.photos_usable_count"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "floorplan_media",
+      "category": "documents_and_media",
+      "label": "Plans",
+      "definition": "Plan d'étage ou plan du bien identifié dans les images/documents.",
+      "type": "array<object>|enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "apartment",
+          "house",
+          "building",
+          "commercial"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: media.floorplan_media"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "cadastre_media",
+      "category": "documents_and_media",
+      "label": "Plans cadastraux",
+      "definition": "Plan cadastral ou carte identifiée et rattachée au bien.",
+      "type": "array<object>|enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "land",
+          "house",
+          "building",
+          "mixed"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: media.cadastre_media",
+        "cadastre analysis"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    },
+    {
+      "id": "media_origin",
+      "category": "documents_and_media",
+      "label": "Origine média",
+      "definition": "Source opérateur, source directe, média dérivé ou origine inconnue.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "existing_partial",
+      "schema_paths": [
+        "AuctionSale.media[].source",
+        "raw_payload.source_images"
+      ],
+      "evidence_minimum": "B",
+      "inference_allowed": false
+    },
+    {
+      "id": "media_rights_status",
+      "category": "documents_and_media",
+      "label": "Statut de réutilisation média",
+      "definition": "Statut de droit ou d'autorisation connu, sans déduction depuis l'URL seule.",
+      "type": "enum",
+      "unit": null,
+      "applicability": {
+        "property_types": [
+          "all"
+        ]
+      },
+      "importance": "medium",
+      "schema_status": "new",
+      "schema_paths": [
+        "proposed: media.media_rights_status"
+      ],
+      "evidence_minimum": "A",
+      "inference_allowed": false
+    }
+  ],
+  "source_profiles": [
+    {
+      "id": "judicial_tribunal",
+      "sources": [
+        "licitor",
+        "avoventes",
+        "vench",
+        "info_encheres",
+        "petites_affiches",
+        "encheres_publiques",
+        "encheres_immobilieres"
+      ],
+      "critical_fields": [
+        "source_name",
+        "source_url",
+        "source_title",
+        "property_type",
+        "city",
+        "department",
+        "sale_date",
+        "starting_price_eur",
+        "source_blocks",
+        "occupancy_status"
+      ],
+      "priority_fields": [
+        "address",
+        "surface_habitable_m2",
+        "surface_carrez_m2",
+        "land_surface_m2",
+        "rooms_count",
+        "bedrooms_count",
+        "visit_dates",
+        "lawyer_name",
+        "lawyer_contact",
+        "conditions_sale",
+        "pv_description",
+        "diagnostics_documents",
+        "photos_count"
+      ],
+      "typical_not_applicable": [
+        "dpe_class for explicitly non-built/land property",
+        "floor_number for land",
+        "lawyer_name for an explicitly non-judicial procedure"
+      ]
+    },
+    {
+      "id": "public_auction_structured",
+      "sources": [
+        "encheres_publiques"
+      ],
+      "critical_fields": [
+        "source_name",
+        "source_url",
+        "lot_reference",
+        "property_type",
+        "city",
+        "department",
+        "sale_date",
+        "starting_price_eur",
+        "source_blocks",
+        "procedure_record"
+      ],
+      "priority_fields": [
+        "surface_habitable_m2",
+        "land_surface_m2",
+        "rooms_count",
+        "bedrooms_count",
+        "dpe_class",
+        "ges_class",
+        "occupancy_status",
+        "visit_dates",
+        "sale_fees",
+        "payment_terms",
+        "photos_count"
+      ],
+      "typical_not_applicable": [
+        "lawyer_required for an explicitly non-judicial procedure",
+        "floor_number for land"
+      ]
+    },
+    {
+      "id": "state_disposal",
+      "sources": [
+        "cessions_etat"
+      ],
+      "critical_fields": [
+        "source_name",
+        "source_url",
+        "external_id",
+        "source_title",
+        "property_type",
+        "city",
+        "department",
+        "source_blocks"
+      ],
+      "priority_fields": [
+        "address",
+        "postal_code",
+        "land_surface_m2",
+        "sale_date",
+        "sale_schedule",
+        "starting_price_eur",
+        "documents_inventory",
+        "visit_dates",
+        "photos_count",
+        "dpe_class"
+      ],
+      "typical_not_applicable": [
+        "tribunal for a verified non-judicial state disposal",
+        "lawyer_name when verified participation rules have no lawyer role",
+        "starting_price_eur only when the verified sale method has no starting-price concept; non-disclosure alone remains unknown"
+      ]
+    },
+    {
+      "id": "agrasc_operator",
+      "sources": [
+        "agrasc"
+      ],
+      "critical_fields": [
+        "source_name",
+        "source_url",
+        "external_id",
+        "source_title",
+        "property_type",
+        "city",
+        "department",
+        "source_blocks"
+      ],
+      "priority_fields": [
+        "starting_price_eur",
+        "sale_date",
+        "sale_schedule",
+        "documents_inventory",
+        "surface_built_m2",
+        "land_surface_m2",
+        "occupancy_status",
+        "photos_count",
+        "conditions_sale"
+      ],
+      "typical_not_applicable": [
+        "tribunal",
+        "lawyer_name"
+      ]
+    },
+    {
+      "id": "notarial",
+      "sources": [
+        "notaires",
+        "encheres_immobilieres"
+      ],
+      "critical_fields": [
+        "source_name",
+        "source_url",
+        "external_id",
+        "source_title",
+        "property_type",
+        "city",
+        "department",
+        "sale_date",
+        "starting_price_eur",
+        "participation_mode",
+        "source_blocks"
+      ],
+      "priority_fields": [
+        "address",
+        "surface_carrez_m2",
+        "rooms_count",
+        "bedrooms_count",
+        "coownership",
+        "coownership_charges_eur",
+        "dpe_class",
+        "ges_class",
+        "conditions_sale",
+        "diagnostics_documents",
+        "photos_count",
+        "visit_dates"
+      ],
+      "typical_not_applicable": [
+        "tribunal for a non-judicial notarial procedure",
+        "lawyer_name when the notarial procedure publishes no lawyer role"
+      ],
+      "activation": "sale_venue_type=notary with verified or cross_checked evidence"
+    },
+    {
+      "id": "online",
+      "sources": [
+        "agrasc",
+        "notaires",
+        "encheres_immobilieres",
+        "encheres_publiques",
+        "other"
+      ],
+      "critical_fields": [
+        "sale_schedule",
+        "participation_mode",
+        "bid_method",
+        "starting_price_eur",
+        "payment_terms",
+        "source_url"
+      ],
+      "priority_fields": [
+        "consignation",
+        "sale_fees",
+        "surenchere_window",
+        "documents_inventory",
+        "photos_count"
+      ],
+      "typical_not_applicable": [
+        "venue_address when there is no physical venue"
+      ]
+    }
+  ],
+  "verified_repository_contracts": [
+    "services/data-pipeline/src/models.py: AuctionSale and persisted fields",
+    "services/data-pipeline/sql/schema.sql: auction_sales, auction_surfaces, auction_features, auction_dpe_diagnostics and media projection",
+    "src/lib/types.ts: AuctionSale, SaleDocumentRich and SaleMedia",
+    "src/lib/sale-listing.ts: display cleanup and fallback rules for address, surface, dates, visits and contacts",
+    "services/data-pipeline/src/quality.py: source quality and completeness profiles",
+    "services/data-pipeline/src/catalogue_readiness.py: premium_readiness_v1, axes, state-sale exception and blockers",
+    "src/components/sale-detail/ListingDataCoverage.tsx: current 12-field visible coverage checklist",
+    "services/data-pipeline/src/sale_procedure.py: sale_procedure_v1 and procedure rules",
+    "services/data-pipeline/src/pdf_document_selection.py: document groups and extraction coverage",
+    "src/lib/dpe.ts: structured DPE/GES diagnostic projection"
+  ],
+  "coherence_checks": [
+    "A surface de logement, terrain, garage, cave, balcon et piscine ne partage pas un champ sans scope explicite.",
+    "rooms_count et bedrooms_count restent indépendants ; une chambre n'est jamais déduite du type T2/T3.",
+    "Une absence de résultat de scraping reste unknown ; explicitly_absent exige une négation source.",
+    "not_applicable est exclu du dénominateur et exige une raison contrôlée.",
+    "Un document présent mais illisible reste une pièce inventoriée avec extraction incomplete/failed et ne satisfait pas une preuve lue.",
+    "Une URL d'image de logo ou placeholder ne satisfait pas photos_usable_count.",
+    "Tout conflit d'identité, de lot, de procédure, de prix, de date, de surface principale ou d'occupation bloque les portes critiques.",
+    "Une valeur inférée ne remplace jamais sa valeur source et ne lève pas seule une porte critique."
+  ],
+  "known_failure_modes": [
+    {
+      "id": "wrong_subject_postal_code",
+      "description": "Un code postal, une adresse ou un téléphone du cabinet, du tribunal ou d'une visite est attribué au bien.",
+      "guard": "Séparer property.address/location de procedure.venue_address et des contacts ; exiger un localisateur rattaché au bloc du lot."
+    },
+    {
+      "id": "cold_room_as_bedroom",
+      "description": "Chambre froide, chambre technique ou autre local non résidentiel compté comme chambre.",
+      "guard": "bedrooms_count exige une chambre d'habitation explicitement rattachée au bien ; conserver le texte source si ambigu."
+    },
+    {
+      "id": "rez_de_jardin_as_private_garden",
+      "description": "La mention rez-de-jardin est convertie en jardin privatif.",
+      "guard": "floor_number et garden sont indépendants ; garden=true exige une mention explicite du jardin et, pour un appartement, le droit ou le périmètre rattaché au lot."
+    },
+    {
+      "id": "building_floor_on_wrong_lot",
+      "description": "L'étage du bâtiment ou d'une carte voisine est attribué au lot courant.",
+      "guard": "Vérifier le sujet, l'identifiant et le voisinage DOM avant d'accepter floor_number."
+    },
+    {
+      "id": "surface_scope_contamination",
+      "description": "Surface de terrain, parcelle, copropriété ou dépendance injectée dans la surface habitable.",
+      "guard": "Exiger surface_scope et conserver les champs surface_habitable_m2, surface_carrez_m2, surface_built_m2 et land_surface_m2 séparés."
+    },
+    {
+      "id": "unqualified_raw_text_fact",
+      "description": "Chauffage, étage, année, orientation ou charges trouvés dans raw_text sans rattachement de bloc.",
+      "guard": "Garder la preuve brute mais laisser le champ canonique unknown ou inferred tant qu'un sujet et un localisateur ne sont pas établis."
+    },
+    {
+      "id": "duplicate_image_variants",
+      "description": "Miniature, srcset, og:image et URL signée d'une même image comptés plusieurs fois.",
+      "guard": "Dédupliquer par identité média normalisée et conserver les variantes comme preuves."
+    },
+    {
+      "id": "false_from_not_found",
+      "description": "Un booléen devient false parce qu'aucune mention n'a été trouvée.",
+      "guard": "false/explicitly_absent exige une négation source ; l'absence de mot reste unknown."
+    },
+    {
+      "id": "periodicity_conflict",
+      "description": "Deux montants ont des périodicités incompatibles, par exemple charges annuelles et trimestrielles.",
+      "guard": "L'unité et la périodicité font partie de la valeur ; une divergence non résolue devient conflict."
+    }
+  ],
+  "source_profile_selection": {
+    "source_names_are_hints": true,
+    "rule": "Select procedural requirements from the verified sale_venue_type, sale_legal_framework and participation_mode. A portal name alone cannot prove a judicial, notarial or online procedure.",
+    "unknown_procedure": "Retain generic requirements and a procedure blocker until evidence is available."
+  }
+}

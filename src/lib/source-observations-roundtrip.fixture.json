@@ -1,0 +1,371 @@
+{
+  "schema_version": "source_field_observations.roundtrip.v1",
+  "generated_by": "services/data-pipeline/scripts/generate_observation_roundtrip_fixture.py",
+  "cases": [
+    {
+      "id": "inferred_rooms_count",
+      "source_url": "https://source.test/roundtrip/inferred",
+      "field": "rooms_count",
+      "fields": [
+        "rooms_count"
+      ],
+      "source_field_observations": {
+        "rooms_count": {
+          "value": 5,
+          "state": "inferred",
+          "evidence": [
+            {
+              "source_url": "https://source.test/roundtrip/inferred",
+              "locator": "https://source.test/roundtrip/inferred#text",
+              "quote": "Appartement avec séjour",
+              "grade": "C",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            },
+            {
+              "source_url": "https://source.test/roundtrip/inferred",
+              "locator": "https://source.test/roundtrip/inferred#text",
+              "quote": "rooms_count=5",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "inferred",
+          "subject_scope": "asset",
+          "inference": {
+            "method": "parser_field_without_explicit_source_text",
+            "input_fields": [
+              "rooms_count"
+            ],
+            "confidence": 0.6
+          }
+        }
+      },
+      "excluded_fields": [
+        "occupancy_status"
+      ]
+    },
+    {
+      "id": "conflict_rooms_count",
+      "source_url": "https://source.test/roundtrip/conflict",
+      "field": "rooms_count",
+      "fields": [
+        "rooms_count"
+      ],
+      "source_field_observations": {
+        "rooms_count": {
+          "value": 5,
+          "state": "conflict",
+          "evidence": [
+            {
+              "source_url": "https://source.test/roundtrip/conflict",
+              "locator": "https://source.test/roundtrip/conflict#text",
+              "quote": "rooms_count=5",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            },
+            {
+              "source_url": "https://source.test/roundtrip/conflict",
+              "locator": "https://source.test/roundtrip/conflict#text",
+              "quote": "Appartement T3 Vente appartement T3.",
+              "grade": "A",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "parser_field",
+          "subject_scope": "asset",
+          "values": [
+            5,
+            3
+          ],
+          "conflicts": [
+            {
+              "source_url": "https://source.test/roundtrip/conflict",
+              "excerpt": "rooms_count=5",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "value": 5
+            },
+            {
+              "source_url": "https://source.test/roundtrip/conflict",
+              "excerpt": "Appartement T3 Vente appartement T3.",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "value": 3
+            }
+          ]
+        }
+      },
+      "excluded_fields": [
+        "occupancy_status"
+      ]
+    },
+    {
+      "id": "real_notaires_bordeaux",
+      "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+      "field": "surface_habitable_m2",
+      "fields": [
+        "surface_habitable_m2",
+        "surface_carrez_m2",
+        "floor_number",
+        "heating_mode",
+        "heating_energy",
+        "heating_distribution",
+        "dpe_class",
+        "energy_consumption_kwh_m2_year",
+        "ges_class",
+        "emissions_kg_co2_m2_year",
+        "dpe_established_at",
+        "property_tax_eur"
+      ],
+      "source_field_observations": {
+        "surface_habitable_m2": {
+          "value": 76.36,
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "habitable_surface_m2=76.36",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "parser_field",
+          "subject_scope": "asset"
+        },
+        "surface_carrez_m2": {
+          "value": 76.36,
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "carrez_surface_m2=76.36",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "parser_field",
+          "subject_scope": "asset"
+        },
+        "floor_number": {
+          "value": 5,
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "es sur parcelle de 118 m² Audit de projection : chauffage collectif au gaz par radiateurs, situé au 5e étage. DPE C (178 kWh/m²/an), GES B (7 kgCO2/m²/an), réalisé le 30/06/2026. Taxe foncière : 1 213 €. Surf",
+              "grade": "A",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "explicit",
+          "subject_scope": "asset"
+        },
+        "heating_mode": {
+          "value": "collective",
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "chauffage collectif au gaz par radiateurs, situé au 5e étage",
+              "grade": "A",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "explicit",
+          "subject_scope": "asset"
+        },
+        "heating_energy": {
+          "value": "heat_pump",
+          "state": "conflict",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "technical.heating=pompe à chaleur",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            },
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "chauffage collectif au gaz par radiateurs, situé au 5e étage",
+              "grade": "A",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "parser_field",
+          "subject_scope": "asset",
+          "values": [
+            "heat_pump",
+            "gas"
+          ],
+          "conflicts": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "excerpt": "technical.heating=pompe à chaleur",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "value": "heat_pump"
+            },
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "excerpt": "chauffage collectif au gaz par radiateurs, situé au 5e étage",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "value": "gas"
+            }
+          ]
+        },
+        "heating_distribution": {
+          "value": "radiators",
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "chauffage collectif au gaz par radiateurs, situé au 5e étage",
+              "grade": "A",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "explicit",
+          "subject_scope": "asset"
+        },
+        "dpe_class": {
+          "value": "C",
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "energy.dpe.class=C",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            },
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "celle de 118 m² Audit de projection : chauffage collectif au gaz par radiateurs, situé au 5e étage. DPE C (178 kWh/m²/an), GES B (7 kgCO2/m²/an), réalisé le 30/06/2026. Taxe foncière : 1 213 €. Surface Car",
+              "grade": "A",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "parser_field",
+          "subject_scope": "asset"
+        },
+        "energy_consumption_kwh_m2_year": {
+          "value": 178,
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "energy.dpe.value=178",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "parser_field",
+          "subject_scope": "asset"
+        },
+        "ges_class": {
+          "value": "B",
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "energy.ges.class=B",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            },
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "e projection : chauffage collectif au gaz par radiateurs, situé au 5e étage. DPE C (178 kWh/m²/an), GES B (7 kgCO2/m²/an), réalisé le 30/06/2026. Taxe foncière : 1 213 €. Surface Carrez : 76,36 m². Le bien",
+              "grade": "A",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "parser_field",
+          "subject_scope": "asset"
+        },
+        "emissions_kg_co2_m2_year": {
+          "value": 7,
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "energy.ges.value=7",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "parser_field",
+          "subject_scope": "asset"
+        },
+        "dpe_established_at": {
+          "value": "2026-06-30",
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "energy.dpe.date=2026-06-30",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            },
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "energy.ges.date=2026-06-30",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "parser_field",
+          "subject_scope": "asset"
+        },
+        "property_tax_eur": {
+          "value": 1213,
+          "state": "observed",
+          "evidence": [
+            {
+              "source_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+              "locator": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289#text",
+              "quote": "taxeFonciere=1213",
+              "grade": "B",
+              "captured_at": "2026-10-02T12:00:00Z",
+              "processing_at": null
+            }
+          ],
+          "provenance": "parser_field",
+          "subject_scope": "asset"
+        }
+      },
+      "excluded_fields": [
+        "occupancy_status"
+      ]
+    }
+  ]
+}

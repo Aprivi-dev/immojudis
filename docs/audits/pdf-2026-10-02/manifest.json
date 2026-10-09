@@ -1,0 +1,381 @@
+{
+  "audit_id": "pdf-2026-10-02",
+  "captured_at": "2026-10-02",
+  "purpose": "Corpus local de pièces PDF publiques pour vérifier l'extraction de lots, unités, tableaux et classes DPE.",
+  "scope": {
+    "core_documents": 7,
+    "dpe_false_positive_documents": 4,
+    "sources_with_pdf": ["agrasc", "avoventes", "cessions_etat", "info_encheres"],
+    "sources_checked_without_downloadable_pdf": ["licitor", "notaires"]
+  },
+  "privacy": {
+    "release_policy": "metadata_and_redacted_ground_truth_only",
+    "local_only_paths": ["corpus/", "pages/", "supplementary/", "transport-failures/"],
+    "note": "Les PDF et captures locales peuvent contenir des adresses, signatures ou informations de procédure. Ils ne doivent pas être publiés; le manifeste conserve les métriques et SHA-256 pour rejouer l'audit sans les committer."
+  },
+  "tooling": {
+    "pdf_skill": "pdf:pdf (version 26.905.11957)",
+    "renderer": "PyMuPDF (fitz), services/data-pipeline/.venv/bin/python",
+    "visual_review": "Pages ciblées rendues en PNG puis inspectées visuellement; les conclusions sont dans ground-truth.md.",
+    "llm_or_database": "none"
+  },
+  "documents": [
+    {
+      "id": "agrasc-auchel-urbanisme",
+      "role": "core",
+      "source": "agrasc",
+      "listing_url": "https://www.agorastore-immo.fr/vente-occasion/immobilier/maison/maison-62-m-auchel-62-424878.aspx",
+      "url": "https://cdn.agorastore.fr/produits/documents/51f46f84-4667-41f6-b877-c201914fee8c.pdf",
+      "local_path": "corpus/agrasc-auchel-urbanisme.pdf",
+      "document_type": "fiche technique urbanisme/cadastre",
+      "lot_type": "maison / parcelle cadastrale",
+      "document_date": null,
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 77279,
+      "sha256": "253d415884280387e4849345514525b88694f573cee8ddc07c1cd14a0fe4aeb9",
+      "pages": 1,
+      "extraction": {
+        "mode": "text_with_embedded_image",
+        "text_chars": 325,
+        "nonempty_pages": 1,
+        "image_pages": 1,
+        "words": 54
+      },
+      "visual_pages": ["pages/agrasc-auchel-urbanisme-1.png"]
+    },
+    {
+      "id": "avoventes-saint-cloud-dpe",
+      "role": "core",
+      "source": "avoventes",
+      "listing_url": "https://avoventes.fr/enchere/une-piece-a-saint-cloud",
+      "url": "https://avoventes.fr/public/uploads/cabinet/120/documents/6ab0f1ec8288ettt.pdf",
+      "local_path": "corpus/avoventes-saint-cloud-dpe.pdf",
+      "document_type": "DPE scanné",
+      "lot_type": "copropriété, lot 6, pièce en rez-de-jardin",
+      "document_date": "2026-02-06",
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 1377088,
+      "sha256": "0d15f0b6467a82ff13258c897e8c93cefc07dae9298fcbf4b2ef3002d37267f5",
+      "pages": 10,
+      "extraction": {
+        "mode": "scanned",
+        "text_chars": 0,
+        "nonempty_pages": 0,
+        "image_pages": 10,
+        "words": 0
+      },
+      "visual_pages": [
+        "pages/avoventes-saint-cloud-dpe-01.png",
+        "pages/avoventes-saint-cloud-dpe-07.png",
+        "pages/avoventes-saint-cloud-dpe-08.png",
+        "pages/avoventes-saint-cloud-dpe-09.png"
+      ]
+    },
+    {
+      "id": "avoventes-saint-cloud-pv",
+      "role": "core",
+      "source": "avoventes",
+      "listing_url": "https://avoventes.fr/enchere/une-piece-a-saint-cloud",
+      "url": "https://avoventes.fr/public/uploads/cabinet/120/documents/6ab0f1b4e41bbttt.pdf",
+      "local_path": "corpus/avoventes-saint-cloud-pv.pdf",
+      "document_type": "procès-verbal descriptif scanné",
+      "lot_type": "copropriété, lot 6",
+      "document_date": "2026-02-03",
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 1176757,
+      "sha256": "c5d4c711889592154cf38dde5d084456003ad042d777712546c9fce2ee211e43",
+      "pages": 11,
+      "extraction": {
+        "mode": "scanned",
+        "text_chars": 0,
+        "nonempty_pages": 0,
+        "image_pages": 11,
+        "words": 0
+      },
+      "visual_pages": [
+        "pages/avoventes-saint-cloud-pv-01.png",
+        "pages/avoventes-saint-cloud-pv-04.png",
+        "pages/avoventes-saint-cloud-pv-05.png",
+        "pages/avoventes-saint-cloud-pv-11.png"
+      ]
+    },
+    {
+      "id": "cessions-saint-junien-cahier",
+      "role": "core",
+      "source": "cessions_etat",
+      "listing_url": "https://cessions.immobilier-etat.gouv.fr/biens/parcelle-br-ndeg104-saint-junien-87200",
+      "url": "https://cessions.immobilier-etat.gouv.fr/sites/default/files/2_Condition_de_vente_-_Cahier_des_charges_260870001.pdf?download=1",
+      "local_path": "corpus/cessions-saint-junien-cahier.pdf",
+      "document_type": "cahier des charges / appel à candidatures",
+      "lot_type": "terrain non bâti, lot 1, parcelle BR104",
+      "document_date": null,
+      "observed_dates": ["deadline 2026-12-01"],
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 113639,
+      "sha256": "b0241a2da0acaa660172c29756da7a53d3f1a97924373ec4abafa47b5320cad9",
+      "pages": 1,
+      "extraction": {
+        "mode": "text_with_embedded_image",
+        "text_chars": 3966,
+        "nonempty_pages": 1,
+        "image_pages": 1,
+        "words": 606
+      },
+      "visual_pages": ["pages/cessions-saint-junien-cahier-1.png"]
+    },
+    {
+      "id": "cessions-saint-junien-diagnostic",
+      "role": "core",
+      "source": "cessions_etat",
+      "listing_url": "https://cessions.immobilier-etat.gouv.fr/biens/parcelle-br-ndeg104-saint-junien-87200",
+      "url": "https://cessions.immobilier-etat.gouv.fr/sites/default/files/3_Diagnostic_reglementaire_260870001.pdf?download=1",
+      "local_path": "corpus/cessions-saint-junien-diagnostic.pdf",
+      "document_type": "état des risques / diagnostic réglementaire",
+      "lot_type": "parcelle BR85, périmètre de la cession BR104",
+      "document_date": "2026-10-02",
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 720174,
+      "sha256": "0a313ebd9473c9b785a68993fc6240e8c55753661d649799f9db70513c30d498",
+      "pages": 7,
+      "extraction": {
+        "mode": "text_with_embedded_images",
+        "text_chars": 9935,
+        "nonempty_pages": 7,
+        "image_pages": 7,
+        "words": 1485
+      },
+      "visual_pages": [
+        "pages/cessions-saint-junien-diagnostic-1.png",
+        "pages/cessions-saint-junien-diagnostic-2.png",
+        "pages/cessions-saint-junien-diagnostic-5.png",
+        "pages/cessions-saint-junien-diagnostic-6.png"
+      ]
+    },
+    {
+      "id": "cessions-saint-junien-plan-parcellaire",
+      "role": "core",
+      "source": "cessions_etat",
+      "listing_url": "https://cessions.immobilier-etat.gouv.fr/biens/parcelle-br-ndeg104-saint-junien-87200",
+      "url": "https://cessions.immobilier-etat.gouv.fr/sites/default/files/5_Plan_parcellaire_260870001.pdf?download=1",
+      "local_path": "corpus/cessions-saint-junien-plan-parcellaire.pdf",
+      "document_type": "plan parcellaire / document d'arpentage",
+      "lot_type": "section BR, division BR85 en BR103 et BR104",
+      "document_date": "2026-01-26",
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 3643668,
+      "sha256": "1aec83ce4c3b1c9e3f7f3ad718b3f9fa4a090d7336ef85ed0867524a64804818",
+      "pages": 3,
+      "extraction": {
+        "mode": "mixed_text_and_plan_image",
+        "text_chars": 2133,
+        "nonempty_pages": 3,
+        "image_pages": 2,
+        "words": 310
+      },
+      "visual_pages": [
+        "pages/cessions-saint-junien-plan-parcellaire-1.png",
+        "pages/cessions-saint-junien-plan-parcellaire-2.png",
+        "pages/cessions-saint-junien-plan-parcellaire-3.png"
+      ]
+    },
+    {
+      "id": "info-meyzieu-pvd-diags",
+      "role": "core",
+      "source": "info_encheres",
+      "listing_url": "https://www.info-encheres.com/108293-d-vente-encheres-immobilieres-maison-an-usage-d-habitation-meyzieu-69-ref-6053.html",
+      "url": "https://www.info-encheres.com/upload/PVD_+_diags_-_internetok.pdf",
+      "local_path": "corpus/info-meyzieu-pvd-diags.pdf",
+      "document_type": "PV descriptif + diagnostics, document mixte",
+      "lot_type": "maison d'habitation, parcelle DN345",
+      "document_date": "2025-06-06",
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 3012156,
+      "sha256": "b57ab7d9232d5e9eeb82eec963b222dcbba6a71cd3c89a5f91dfb4e295ffa612",
+      "pages": 19,
+      "extraction": {
+        "mode": "mixed_scanned_and_text",
+        "text_chars": 12275,
+        "nonempty_pages": 7,
+        "image_pages": 19,
+        "words": 1979
+      },
+      "visual_pages": [
+        "pages/info-meyzieu-pvd-diags-01.png",
+        "pages/info-meyzieu-pvd-diags-02.png",
+        "pages/info-meyzieu-pvd-diags-04.png",
+        "pages/info-meyzieu-pvd-diags-08.png",
+        "pages/info-meyzieu-pvd-diags-09.png"
+      ]
+    },
+    {
+      "id": "dpe-fp-info-jtyzddt",
+      "role": "dpe_false_positive",
+      "source": "info_encheres",
+      "listing_url": null,
+      "url": "https://www.info-encheres.com/upload/jTYZDDT.pdf",
+      "local_path": "corpus/dpe-fp/info-jTYZDDT.pdf",
+      "document_type": "DPE, pages de définition légale",
+      "lot_type": "appartement, mission DPE à Toulon",
+      "document_date": "2025-07-28",
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 9222650,
+      "sha256": "978759f402df91fe5bb07514974b68a35e45f9972b47078ccee05da8915084ae",
+      "pages": 92,
+      "extraction": {
+        "mode": "text_with_embedded_images",
+        "text_chars": 191794,
+        "nonempty_pages": 92,
+        "image_pages": 92,
+        "words": 27183
+      },
+      "visual_pages": ["pages/dpe-fp/info-jTYZDDT-29.png"]
+    },
+    {
+      "id": "dpe-fp-avoventes-cabinet132",
+      "role": "dpe_false_positive",
+      "source": "avoventes",
+      "listing_url": null,
+      "url": "https://avoventes.fr/public/uploads/cabinet/132/documents/6a5e013c3afdettt.pdf",
+      "local_path": "corpus/dpe-fp/avoventes-cabinet132-6a5e013c3afdettt.pdf",
+      "document_type": "DPE, page RGPD et observatoire",
+      "lot_type": "maison, 116,31 m², Hautefontaine",
+      "document_date": "2025-12-29",
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 22092883,
+      "sha256": "b56e436a6cf1da74c088d5098f4d975524b79e3a2ec86986e8887296a32f000d",
+      "pages": 45,
+      "extraction": {
+        "mode": "mixed_scanned_and_text",
+        "text_chars": 100913,
+        "nonempty_pages": 44,
+        "image_pages": 45,
+        "words": 14981
+      },
+      "visual_pages": ["pages/dpe-fp/avoventes-cabinet132-p-22.png"]
+    },
+    {
+      "id": "dpe-fp-info-ddt-vion",
+      "role": "dpe_false_positive",
+      "source": "info_encheres",
+      "listing_url": null,
+      "url": "https://www.info-encheres.com/upload/DDT_VION.pdf",
+      "local_path": "corpus/dpe-fp/info-DDT_VION.pdf",
+      "document_type": "DPE scanné",
+      "lot_type": "appartement, lot 2015-172-14, Thonon-les-Bains",
+      "document_date": "2025-09-26",
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 9303479,
+      "sha256": "2b3a9087b495f6084b49e7eb8baef901ede3965c8e985c7450136c26ec11e18d",
+      "pages": 41,
+      "extraction": {
+        "mode": "mixed_scanned_and_text",
+        "text_chars": 5707,
+        "nonempty_pages": 9,
+        "image_pages": 41,
+        "words": 809
+      },
+      "visual_pages": ["pages/dpe-fp/info-DDT_VION-21.png"]
+    },
+    {
+      "id": "dpe-fp-info-mhfndiags",
+      "role": "dpe_false_positive",
+      "source": "info_encheres",
+      "listing_url": null,
+      "url": "https://www.info-encheres.com/upload/MHFNDiags_-_internetok.pdf",
+      "local_path": "corpus/dpe-fp/info-MHFNDiags-internetok.pdf",
+      "document_type": "audit énergétique, recommandations et seuils réglementaires",
+      "lot_type": "maison individuelle / monopropriété, portée audit",
+      "document_date": null,
+      "observed_dates": ["2025-12-05 in report context"],
+      "captured_date": "2026-10-02",
+      "transport_status": "http_200_application_pdf",
+      "bytes": 6138125,
+      "sha256": "1866329c22d7f9d30a1236948f2ea81fee875332c3e16cd59ace1d01908b455e",
+      "pages": 161,
+      "extraction": {
+        "mode": "mixed_scanned_and_text",
+        "text_chars": 269656,
+        "nonempty_pages": 159,
+        "image_pages": 161,
+        "words": 41941
+      },
+      "visual_pages": [
+        "pages/dpe-fp/info-MHFNDiags-p-97.png",
+        "pages/dpe-fp/info-MHFNDiags-p-115.png"
+      ]
+    }
+  ],
+  "transport_probes": [
+    {
+      "id": "licitor-live-109932",
+      "source": "licitor",
+      "listing_url": "https://www.licitor.com/annonce/10/99/32/vente-aux-encheres/une-maison/savigne/vienne/109932.html",
+      "transport_status": "html_captured_no_pdf_url",
+      "documents_count": 0,
+      "evidence": "../sources-2026-10-02/primary/licitor-109932-extraction.json"
+    },
+    {
+      "id": "licitor-live-110031",
+      "source": "licitor",
+      "listing_url": "https://www.licitor.com/annonce/11/00/31/vente-aux-encheres/trois-lots-de-copropriete/poitiers/vienne/110031.html",
+      "transport_status": "html_captured_no_pdf_url",
+      "documents_count": 0,
+      "evidence": "../sources-2026-10-02/primary/licitor-110031-extraction.json"
+    },
+    {
+      "id": "notaires-api-2083008",
+      "source": "notaires",
+      "api_url": "https://www.immobilier.notaires.fr/pub-services/inotr-www-annonces/v1/annonces/2083008",
+      "listing_url": "https://www.immo-interactif.fr/encheres-en-ligne/appartement/arcachon-33/2083008",
+      "transport_status": "http_200_api_and_detail_no_downloadable_pdf",
+      "documents_count": 0,
+      "evidence": "../sources-2026-10-02/dynamic/rapport.md"
+    },
+    {
+      "id": "notaires-api-2074289",
+      "source": "notaires",
+      "api_url": "https://www.immobilier.notaires.fr/pub-services/inotr-www-annonces/v1/annonces/2074289",
+      "listing_url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+      "transport_status": "http_200_api_and_detail_no_downloadable_pdf",
+      "documents_count": 0,
+      "evidence": "../sources-2026-10-02/dynamic/rapport.md"
+    },
+    {
+      "id": "licitor-fixture-probes",
+      "source": "licitor",
+      "transport_status": "http_error_or_html_payload",
+      "local_paths": [
+        "transport-failures/licitor-fixture-108762-001.pdf",
+        "transport-failures/licitor-108763-cahier.pdf",
+        "transport-failures/licitor-108763-pvd.pdf",
+        "transport-failures/licitor-109014.pdf",
+        "transport-failures/licitor-109014-pvd.pdf"
+      ],
+      "note": "Les réponses conservées sont des erreurs/HTML, pas des PDF exploitables; elles ne sont pas incluses dans documents."
+    },
+    {
+      "id": "notaires-fixture-reglement",
+      "source": "notaires",
+      "url": "https://lesnotairesdutrocadero.fr/documents/reglement-consultation.pdf",
+      "transport_status": "http_404_html_payload",
+      "local_path": "transport-failures/notaires-fixture-reglement.pdf",
+      "note": "Réponse conservée pour rendre la limite de transport rejouable; ce fichier n'est pas un PDF."
+    }
+  ],
+  "offline_replay": {
+    "verify_sha256": "python3 - <<'PY'\nimport hashlib, json\nfrom pathlib import Path\nm=json.loads(Path('docs/audits/pdf-2026-10-02/manifest.json').read_text())\nroot=Path('docs/audits/pdf-2026-10-02')\nfor d in m['documents']:\n    p=root/d['local_path']; got=hashlib.sha256(p.read_bytes()).hexdigest()\n    assert got == d['sha256'], (d['id'], got, d['sha256'])\nprint(f\"{len(m['documents'])} PDF SHA-256 OK\")\nPY",
+    "measure_pdf": "services/data-pipeline/.venv/bin/python -c \"import fitz,sys; d=fitz.open(sys.argv[1]); print(len(d), sum(len(p.get_text()) for p in d))\" path/to/file.pdf",
+    "render_target": "services/data-pipeline/.venv/bin/python -c \"import fitz,sys; d=fitz.open(sys.argv[1]); p=d[int(sys.argv[2])-1]; pix=p.get_pixmap(matrix=fitz.Matrix(1.5,1.5),alpha=False); pix.save(sys.argv[3])\" path/to/file.pdf page output.png",
+    "network": "none after the local files are present"
+  }
+}
