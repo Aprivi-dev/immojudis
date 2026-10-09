@@ -15,7 +15,7 @@ export function ResourceLibrary({ articles }: { articles: ResourceSummary[] }) {
     <section className={styles.library} id="articles" aria-labelledby="articles-title">
       <div className={styles.sectionHeading}>
         <div>
-          <p className={styles.eyebrow}>La bibliothèque ImmoJudis</p>
+          <p className={styles.eyebrow}>La bibliothèque Immojudis</p>
           <h2 id="articles-title">À chaque question, une lecture.</h2>
         </div>
         <p className={styles.articleCount} role="status">

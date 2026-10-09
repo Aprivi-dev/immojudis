@@ -4,7 +4,7 @@ import { AdminDashboardPage } from "@/routes/admin";
 
 export const metadata: Metadata = {
   title: "Agent IA admin",
-  description: "Configuration du template de prise de contact de l’agent IA ImmoJudis.",
+  description: "Configuration du template de prise de contact de l’agent IA Immojudis.",
   robots: { index: false, follow: false },
 };
 

@@ -76,12 +76,12 @@ export function AdminCatalogueReadinessPanel({
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
               <ShieldCheck className="size-4" />
-              Sélection Premium
+              Sélection Analyse
             </div>
             <h2 className="mt-2 text-xl font-semibold">Seuil de maturité du catalogue</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-[#132238]/65">
               Les fiches restent conservées en base. Lorsque le filtre est actif, seules les fiches
-              prêtes ou publiées par dérogation alimentent l’analyse Premium.
+              prêtes ou publiées par dérogation alimentent l’offre Analyse.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -131,7 +131,7 @@ export function AdminCatalogueReadinessPanel({
           <Metric label="À évaluer" value={overview.pendingEvaluations} tone="amber" />
           <Metric label="Internes" value={overview.counts.internal_only} tone="red" />
           <Metric label="À enrichir" value={overview.counts.needs_enrichment} tone="amber" />
-          <Metric label="Prêtes Premium" value={overview.counts.premium_ready} tone="green" />
+          <Metric label="Prêtes Analyse" value={overview.counts.premium_ready} tone="green" />
         </div>
         <p className="mt-3 text-xs text-[#132238]/55">
           Politique {overview.policy.policyVersion} · seuil {overview.policy.premiumReadyMin}/100 ·
@@ -369,7 +369,7 @@ function ReadinessPill({ status }: { status: CatalogueReadinessStatus }) {
     unassessed: ["Non évaluée", "border-slate-300 bg-slate-50 text-slate-700"],
     internal_only: ["Interne", "border-red-200 bg-red-50 text-red-700"],
     needs_enrichment: ["À enrichir", "border-amber-200 bg-amber-50 text-amber-800"],
-    premium_ready: ["Prête Premium", "border-emerald-200 bg-emerald-50 text-emerald-700"],
+    premium_ready: ["Prête Analyse", "border-emerald-200 bg-emerald-50 text-emerald-700"],
   }[status];
   return (
     <span

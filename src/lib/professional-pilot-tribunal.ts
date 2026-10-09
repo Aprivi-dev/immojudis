@@ -99,7 +99,7 @@ export function buildTribunalPilot(sale: AuctionSale): PilotDefinition {
       "Mise à prix publiée",
       moneyValue(sale.starting_price_eur),
       listingSource,
-      "Montant repris de l'annonce ; il ne constitue pas un plafond d'enchère.",
+      "Montant repris de l'annonce ; il ne constitue pas une enchère plafond.",
     ),
     fact(
       "Avocat / représentation",
@@ -238,7 +238,7 @@ export function buildTribunalPilot(sale: AuctionSale): PilotDefinition {
     title: "Dossier de préparation d'audience",
     description:
       "Préparez une adjudication au tribunal à partir des faits publiés, des pièces disponibles et de vos hypothèses financières.",
-    priceLabel: "Plafond d'enchère retenu",
+    priceLabel: "Enchère plafond retenue",
     packetLabel: "Paquet avocat — adjudication tribunal",
     counterpartyLabel: "Avocat / barreau compétent",
     counterparty:

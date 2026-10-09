@@ -364,8 +364,9 @@ function BidCeilingWorkspace({
       <section className="rounded-lg border border-border bg-white p-5 shadow-sm">
         <AssistantHeader onReset={reset} />
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          Immojudis ne peut pas calculer une mise plafond fiable tant que la surface du bien n'est
-          pas renseignée. Complète la surface ou relis les pièces pour obtenir une fourchette.
+          Immojudis ne peut pas calculer une enchère plafond fiable tant que la surface du bien
+          n'est pas renseignée. Complétez la surface ou relisez les pièces pour obtenir une
+          fourchette.
         </p>
       </section>
     );
@@ -382,7 +383,7 @@ function BidCeilingWorkspace({
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
                 <Target className="h-4 w-4" />
-                Votre mise plafond
+                Votre enchère plafond
               </div>
               <div className="mt-3 text-4xl font-semibold leading-none tabular-nums text-foreground sm:text-5xl">
                 {verdictAvailable ? fmt(selected.result.maxBid) : "À compléter"}
@@ -838,7 +839,7 @@ function WorksScenarioSelector({
           </h3>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
             Choisissez l'ordre de grandeur le plus proche du projet. Le budget calculé sur les{" "}
-            {formatSurface(surface)} du bien est immédiatement déduit de votre mise plafond.
+            {formatSurface(surface)} du bien est immédiatement déduit de votre enchère plafond.
           </p>
         </div>
         <span className="rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-xs font-semibold text-gold-text">
@@ -918,7 +919,7 @@ function WorksScenarioSelector({
           {exceedsEnvelope ? (
             <p className="mt-2 text-xs font-medium leading-relaxed text-amber-700">
               Ce budget dépasse de {fmt(works - maxWorks!)} l'enveloppe travaux compatible avec la
-              mise simulée. Le plafond d'enchère baisse en conséquence.
+              mise simulée. L’enchère plafond baisse en conséquence.
             </p>
           ) : null}
         </div>
@@ -1014,9 +1015,9 @@ function MarketInput({
   const automaticPrice = estimate?.medianPricePerM2 ?? null;
   const needsManual = hasError || !automaticPrice;
   const helper = needsManual
-    ? "Le marché local manque de comparables solides. Saisis un prix au m² réaliste pour obtenir un plafond provisoire."
+    ? "Le marché local manque de comparables solides. Saisissez un prix au m² réaliste pour obtenir un plafond provisoire."
     : marketEdited
-      ? `Prix saisi utilisé à la place de la médiane DVF (${ppm2(automaticPrice)}). Efface le champ pour revenir au calcul automatique.`
+      ? `Prix saisi utilisé à la place de la médiane DVF (${ppm2(automaticPrice)}). Effacez le champ pour revenir au calcul automatique.`
       : usingCachedEstimate
         ? `Dernière estimation DVF conservée : médiane ${ppm2(automaticPrice)}.`
         : `Calcul automatique actif : médiane DVF ${ppm2(automaticPrice)}.`;
@@ -1143,7 +1144,7 @@ function MarketLocalCard({
         </p>
       ) : !hasRange ? (
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          {unavailableReason} Saisis un prix de marché au m² dans les réglages pour obtenir un
+          {unavailableReason} Saisissez un prix de marché au m² dans les réglages pour obtenir un
           plafond provisoire.
         </p>
       ) : (
@@ -1167,8 +1168,8 @@ function MarketLocalCard({
           <PriceRange estimate={estimate!} />
           {estimate!.actionable === false && (
             <p className="mt-3 rounded-md border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
-              Référence indicative uniquement : elle n'est pas utilisée automatiquement pour le
-              plafond d'enchère. Confirme un prix manuel ou renforce les comparables.
+              Référence indicative uniquement : elle n'est pas utilisée automatiquement pour
+              l’enchère plafond. Confirmez un prix manuel ou renforcez les comparables.
             </p>
           )}
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
@@ -1378,7 +1379,7 @@ function SimulationCard({
           ? positive
             ? "La mise simulée reste dans la zone défendable du scénario sélectionné."
             : "La mise simulée dépasse la zone défendable : il faut baisser l'enchère ou justifier une meilleure hypothèse de marché."
-          : "Ajoute un prix de marché local pour savoir si la mise simulée reste défendable."}
+          : "Ajoutez un prix de marché local pour savoir si la mise simulée reste défendable."}
       </p>
     </div>
   );

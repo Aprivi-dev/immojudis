@@ -60,7 +60,7 @@ function lawyerRow(overrides: Partial<LawyerRow>): LawyerRow {
   return {
     id: "lawyer",
     display_name: "Me Référencé",
-    firm_name: "Cabinet ImmoJudis",
+    firm_name: "Cabinet Immojudis",
     bar_association: "Paris",
     city: "Paris",
     department: "75",

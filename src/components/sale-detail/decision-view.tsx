@@ -580,7 +580,7 @@ export function PriceChangingRisksSection({
     ? `Si les travaux augmentent de 10 000 €, votre plafond doit baisser d'environ 10 000 € : ${formatPrice(
         Math.max(0, decision.ceiling.maxBid - 10_000),
       )}.`
-    : "Dès que le plafond est calculé, toute hausse de travaux ou de frais doit être retirée de votre enchère maximale.";
+    : "Dès que le plafond est calculé, toute hausse de travaux ou de frais doit être retirée de votre enchère plafond.";
 
   return (
     <section id="risks" className="scroll-mt-28">
@@ -679,7 +679,7 @@ export function CeilingCalculationSection({
     [
       "Frais d'acquisition retirés",
       formatPrice(acquisitionCost.acquisitionFeesTotal),
-      "Les frais estimés sont retirés de la valeur cible avant de calculer l'enchère maximale.",
+      "Les frais estimés sont retirés de la valeur cible avant de calculer l’enchère plafond.",
     ],
     [
       "Plafond conseillé sans travaux",
@@ -811,7 +811,7 @@ export function CeilingSimulatorCard({
         </DialogTrigger>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-6xl">
           <DialogHeader>
-            <DialogTitle>Ajuster le plafond d'enchère</DialogTitle>
+            <DialogTitle>Ajuster l’enchère plafond</DialogTitle>
             <DialogDescription>
               Modifiez les hypothèses et relisez le raisonnement détaillé.
             </DialogDescription>
@@ -957,7 +957,7 @@ export function BeforeAuctionSection({
               <DialogHeader>
                 <DialogTitle>Questions à poser à l'avocat</DialogTitle>
                 <DialogDescription>
-                  Points concrets à clarifier avant de fixer le plafond d'enchère.
+                  Points concrets à clarifier avant de fixer l’enchère plafond.
                 </DialogDescription>
               </DialogHeader>
               <LawyerQuestionsBlock
@@ -984,7 +984,7 @@ export function FAQSection() {
       "Pas nécessairement. Le prix final dépend des enchères à l'audience.",
     ],
     [
-      "Pourquoi fixer un plafond d'enchère ?",
+      "Pourquoi fixer une enchère plafond ?",
       "Pour éviter de surpayer sous l'effet de la concurrence ou de l'urgence.",
     ],
     [

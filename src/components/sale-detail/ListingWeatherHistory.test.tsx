@@ -49,7 +49,7 @@ describe("Meteostat display", () => {
         <ListingWeatherHistory saleId="test-sale" enabled locked />
       </QueryClientProvider>,
     );
-    expect(screen.getByRole("link", { name: /avec Premium/ }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: /avec l’offre Analyse/ }).getAttribute("href")).toBe(
       "/accompagnement",
     );
     expect(screen.queryByRole("table")).toBeNull();

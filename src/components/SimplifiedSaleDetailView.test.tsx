@@ -105,7 +105,7 @@ vi.mock("next/dynamic", () => ({
           <button onClick={onClose}>Fermer les photos</button>
         </div>
       ) : (
-        <div>Simulateur de mise plafond chargé</div>
+        <div>Simulateur d’enchère plafond chargé</div>
       );
     },
 }));
@@ -387,7 +387,7 @@ describe("integrated listing", () => {
     expect(details).not.toBeNull();
     expect(details?.open).toBe(true);
     expect(screen.queryByText("Ajuster les hypothèses")).toBeNull();
-    expect(screen.queryByText("Simulateur de mise plafond chargé")).toBeNull();
+    expect(screen.queryByText("Simulateur d’enchère plafond chargé")).toBeNull();
   });
 
   it("resets to Aperçu when navigating to another same-type sale without a hash", () => {
@@ -643,7 +643,7 @@ describe("integrated listing", () => {
     expect(calculation.open).toBe(false);
     fireEvent.click(screen.getByRole("link", { name: "Ajuster mes hypothèses" }));
     expect(calculation.open).toBe(true);
-    expect(screen.getByText("Simulateur de mise plafond chargé")).toBeTruthy();
+    expect(screen.getByText("Simulateur d’enchère plafond chargé")).toBeTruthy();
   });
 
   it("keeps the photo gallery action functional in the Aperçu panel", () => {
@@ -673,14 +673,18 @@ describe("integrated listing", () => {
     renderDetail("discovery");
     selectTab("Estimation");
     expect(
-      screen.getByRole("heading", { name: "La valeur du bien et votre mise plafond avec Premium" }),
+      screen.getByRole("heading", {
+        name: "La valeur du bien et votre enchère plafond avec l’offre Analyse",
+      }),
     ).toBeTruthy();
     selectTab("Travaux");
-    expect(screen.getByRole("heading", { name: "Estimez vos travaux avec Premium" })).toBeTruthy();
-    expect(screen.queryByText("Simulateur de mise plafond chargé")).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Simulateur d’enchère plafond chargé")).toBeNull();
     selectTab("Statistiques");
     expect(
-      screen.getByRole("heading", { name: "Les statistiques du tribunal avec Premium" }),
+      screen.getByRole("heading", { name: "Les statistiques du tribunal avec l’offre Analyse" }),
     ).toBeTruthy();
     expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
     expect(mocks.fetchMarket).not.toHaveBeenCalled();

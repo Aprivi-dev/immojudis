@@ -157,7 +157,7 @@ const RATIO_METRICS = [
 const DELAY_METRICS = [
   {
     key: "hearingToKnownResult",
-    label: "Audience → résultat connu par ImmoJudis",
+    label: "Audience → résultat connu par Immojudis",
   },
   {
     key: "postponementToNextHearing",
@@ -531,7 +531,7 @@ function DistributionSection({ item }: { item: DashboardItem }) {
       </h3>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/65">
         Les médianes et fourchettes ont chacune leur propre échantillon. Le délai de connaissance
-        ImmoJudis n’est pas présenté comme un délai de traitement interne du tribunal.
+        Immojudis n’est pas présenté comme un délai de traitement interne du tribunal.
       </p>
 
       <div
@@ -816,7 +816,7 @@ function DashboardEmpty() {
       <Landmark className="mx-auto h-8 w-8 text-gold-text" aria-hidden />
       <h2 className="mt-4 font-display text-2xl font-semibold">Données en consolidation</h2>
       <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-brand-navy/65">
-        Aucun instantané tribunal publiable n’est disponible pour cette période. ImmoJudis n’affiche
+        Aucun instantané tribunal publiable n’est disponible pour cette période. Immojudis n’affiche
         pas de valeurs déduites de candidats non revus.
       </p>
     </section>

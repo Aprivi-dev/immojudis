@@ -387,7 +387,7 @@ export function ListingOverview({
           </div>
           {guardedPremiumCeiling != null ? (
             <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>Mise plafond indicative</p>
+              <p className={styles.priceLabel}>Enchère plafond indicative</p>
               <p className={styles.premiumPriceValue}>{formatPrice(guardedPremiumCeiling)}</p>
               <a href="#why-this-ceiling" className={styles.priceExplanation}>
                 Comprendre le calcul
@@ -395,7 +395,7 @@ export function ListingOverview({
             </div>
           ) : showPremiumTeaser ? (
             <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>Mise plafond</p>
+              <p className={styles.priceLabel}>Enchère plafond</p>
               <p className={styles.premiumTeaser}>Disponible avec l’offre Analyse</p>
               <a href="/accompagnement" className={styles.priceExplanation}>
                 Découvrir l’analyse

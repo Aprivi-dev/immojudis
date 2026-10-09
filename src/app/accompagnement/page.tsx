@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/accompagnement" },
   title: "Offres Découverte et Analyse",
   description:
-    "Découverte gratuite avec trois favoris. Analyse propose sept jours d’essai avec carte bancaire, puis un abonnement aux outils Premium.",
+    "Découverte gratuite avec trois favoris. Analyse propose sept jours d’essai avec carte bancaire, puis un abonnement aux outils de l’offre Analyse.",
 };
 
 export default function Page() {

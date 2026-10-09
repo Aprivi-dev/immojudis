@@ -193,9 +193,9 @@ function AdminSidebarContent({
         to="/"
         onClick={onNavigate}
         className="shrink-0 px-6 pb-8 pt-7 font-display text-[2rem] font-semibold leading-none text-gold-text"
-        aria-label="ImmoJudis — accueil"
+        aria-label="Immojudis — accueil"
       >
-        ImmoJudis
+        Immojudis
       </Link>
 
       <nav
@@ -226,7 +226,7 @@ function AdminSidebarContent({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-white">Administrateur</span>
-          <span className="block truncate text-xs text-white/58">{adminEmail || "ImmoJudis"}</span>
+          <span className="block truncate text-xs text-white/58">{adminEmail || "Immojudis"}</span>
         </span>
       </div>
     </div>

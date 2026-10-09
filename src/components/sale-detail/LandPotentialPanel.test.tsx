@@ -276,9 +276,9 @@ describe("LandPotentialPanel", () => {
   it("affiche l'upsell sans appeler les sources lorsque le panneau est verrouillé", () => {
     render(<LandPotentialPanel saleId={SALE_ID} enabled={false} />);
 
-    expect(screen.getByText(/Le plan Analyse donne accès/)).toBeTruthy();
+    expect(screen.getByText(/L’offre Analyse donne accès/)).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: /Découvrir le plan Analyse/ }).getAttribute("href"),
+      screen.getByRole("link", { name: /Découvrir l’offre Analyse/ }).getAttribute("href"),
     ).toBe("/accompagnement");
     expect(screen.queryByRole("button", { name: /Consulter le PLU/ })).toBeNull();
     expect(mocks.fetchReport).not.toHaveBeenCalled();

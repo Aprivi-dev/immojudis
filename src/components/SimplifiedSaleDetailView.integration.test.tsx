@@ -203,7 +203,9 @@ describe("integrated scenario workspace", () => {
   it("reserves the works editor for Premium while keeping a clear trial preview", async () => {
     renderDetail("discovery");
     await openTab("Travaux");
-    expect(screen.getByRole("heading", { name: "Estimez vos travaux avec Premium" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),
+    ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Détailler le budget" })).toBeNull();
     expect(screen.queryByLabelText("Libellé du poste 1")).toBeNull();
     expect(

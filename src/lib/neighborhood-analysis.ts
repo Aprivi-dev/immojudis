@@ -368,7 +368,9 @@ function nextActions({
     );
   }
   if (status === "profiled") {
-    actions.push("Reporter les points favorables et défavorables dans le calcul de mise maximale.");
+    actions.push(
+      "Reporter les points favorables et défavorables dans le calcul d’enchère plafond.",
+    );
   }
   return actions.slice(0, 4);
 }

@@ -95,7 +95,7 @@ export function FeaturedLawyerPlacement({
         <FeaturedLawyerSummary lawyer={lawyer} />
       ) : (
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          ImmoJudis peut rechercher un avocat référencé disponible sur ce secteur.
+          Immojudis peut rechercher un avocat référencé disponible sur ce secteur.
         </p>
       )}
       <div className="mt-4">

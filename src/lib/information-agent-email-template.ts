@@ -63,7 +63,7 @@ export type InformationAgentEmailVariable =
 
 export const INFORMATION_AGENT_EMAIL_BLOCK_DEFINITIONS = [
   { id: "greeting", kind: "dynamic", label: "Formule d’appel" },
-  { id: "identity", kind: "fixed", label: "Présentation ImmoJudis" },
+  { id: "identity", kind: "fixed", label: "Présentation Immojudis" },
   { id: "sale_details", kind: "dynamic", label: "Informations de la vente" },
   { id: "request_intro", kind: "fixed", label: "Introduction de la demande" },
   { id: "questions", kind: "dynamic", label: "Questions adaptées à l’annonce" },
@@ -122,7 +122,7 @@ export const INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW = "POUR LES PROFESSION
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
   "Vous avez d’autres ventes à partager ?";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION =
-  "Vous pouvez créer un compte professionnel ImmoJudis pour transmettre vos propres annonces à notre équipe, faire connaître les ventes retenues dans notre catalogue et suivre leur examen. Chaque publication reste soumise à validation. C’est facultatif : répondre à cet email suffit pour ce dossier.";
+  "Vous pouvez créer un compte professionnel Immojudis pour transmettre vos propres annonces à notre équipe, faire connaître les ventes retenues dans notre catalogue et suivre leur examen. Chaque publication reste soumise à validation. C’est facultatif : répondre à cet email suffit pour ce dossier.";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
 
 export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 4;
@@ -226,7 +226,7 @@ export const informationAgentEmailTemplateContentSchema = z
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
   name: "Demande de précisions sur une vente — version 4",
-  subjectTemplate: "{{sale_subject_title}} — précisions pour ImmoJudis",
+  subjectTemplate: "{{sale_subject_title}} — précisions pour Immojudis",
   blocks: [
     {
       id: "greeting",
@@ -237,9 +237,9 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
     {
       id: "identity",
       kind: "fixed",
-      label: "Présentation ImmoJudis",
+      label: "Présentation Immojudis",
       content:
-        "ImmoJudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous complétons la fiche ci-dessous et votre connaissance du dossier nous serait précieuse.",
+        "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous complétons la fiche ci-dessous et votre connaissance du dossier nous serait précieuse.",
     },
     {
       id: "sale_details",
@@ -272,7 +272,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Conclusion et signature",
       content:
-        "Merci pour votre aide : votre réponse contribuera à rendre cette fiche plus utile aux personnes qui étudient la vente.\n\nBien cordialement,\nL’équipe ImmoJudis",
+        "Merci pour votre aide : votre réponse contribuera à rendre cette fiche plus utile aux personnes qui étudient la vente.\n\nBien cordialement,\nL’équipe Immojudis",
     },
   ],
 };
@@ -281,7 +281,7 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Identité et indépendance",
     description:
-      "Le bandeau ImmoJudis et la mention précisant que le service n’agit pas au nom d’un tribunal restent toujours affichés.",
+      "Le bandeau Immojudis et la mention précisant que le service n’agit pas au nom d’un tribunal restent toujours affichés.",
   },
   {
     title: "Transparence sur l’IA",
@@ -296,7 +296,7 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Invitation au compte professionnel",
     description:
-      "Une invitation facultative à créer un compte professionnel ImmoJudis est ajoutée automatiquement avant la conclusion, y compris pour les anciens modèles publiés.",
+      "Une invitation facultative à créer un compte professionnel Immojudis est ajoutée automatiquement avant la conclusion, y compris pour les anciens modèles publiés.",
   },
 ] as const;
 

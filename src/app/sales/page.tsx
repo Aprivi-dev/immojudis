@@ -21,7 +21,7 @@ function SalesCatalogFallback() {
     <main className="min-h-screen bg-[#f4f7f9] px-4 py-10 text-[#132238] sm:px-6">
       <section className="mx-auto max-w-6xl">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#0f766e]">
-          Catalogue ImmoJudis
+          Catalogue Immojudis
         </p>
         <h1 className="mt-3 font-display text-4xl leading-tight sm:text-5xl">
           Ventes immobilières aux enchères

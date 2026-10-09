@@ -35,7 +35,7 @@ const steps = [
   },
   {
     title: "Passer au dossier réel",
-    text: "Le plan Analyse ouvre les modules disponibles sur les fiches réelles. Pour les ventes au tribunal, le PDF reprend votre scénario d’achat et de travaux ainsi que vos hypothèses locatives, le coût complet et la mensualité calculée. L’apport, le taux et la durée du financement ne sont pas encore détaillés séparément dans le PDF. Vérifiez les données et documents disponibles avant de décider ; aucune estimation ne garantit le résultat de la vente.",
+    text: "L’offre Analyse ouvre les modules disponibles sur les fiches réelles. Pour les ventes au tribunal, le PDF reprend votre scénario d’achat et de travaux ainsi que vos hypothèses locatives, le coût complet et la mensualité calculée. L’apport, le taux et la durée du financement ne sont pas encore détaillés séparément dans le PDF. Vérifiez les données et documents disponibles avant de décider ; aucune estimation ne garantit le résultat de la vente.",
     href: "/accompagnement",
     label: "Consulter les accès et tarifs",
   },

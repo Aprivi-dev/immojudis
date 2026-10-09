@@ -168,11 +168,11 @@ describe("report export from the listing", () => {
     expect(mocks.save).not.toHaveBeenCalled();
   });
   it("does not download or announce success after a denied export", async () => {
-    mocks.exportPdf.mockRejectedValue(new Error("Export PDF réservé au plan Analyse."));
+    mocks.exportPdf.mockRejectedValue(new Error("Export PDF réservé à l’offre Analyse."));
     renderActions();
     fireEvent.click(screen.getByRole("button", { name: "Export PDF" }));
     await waitFor(() =>
-      expect(mocks.error).toHaveBeenCalledWith("Export PDF réservé au plan Analyse."),
+      expect(mocks.error).toHaveBeenCalledWith("Export PDF réservé à l’offre Analyse."),
     );
     expect(mocks.createUrl).not.toHaveBeenCalled();
     expect(mocks.success).not.toHaveBeenCalledWith("PDF exporté.");

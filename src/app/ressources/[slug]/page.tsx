@@ -36,7 +36,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description: article.description,
       url: article.href,
       publishedTime: article.publishedAt,
-      authors: ["ImmoJudis"],
+      authors: ["Immojudis"],
       images: [{ url: article.image }],
     },
     twitter: {
@@ -62,8 +62,8 @@ export default async function Page({ params }: Props) {
         headline: article.title,
         description: article.description,
         datePublished: article.publishedAt,
-        author: { "@type": "Organization", name: "ImmoJudis", url: origin },
-        publisher: { "@type": "Organization", name: "ImmoJudis", url: origin },
+        author: { "@type": "Organization", name: "Immojudis", url: origin },
+        publisher: { "@type": "Organization", name: "Immojudis", url: origin },
         image: `${origin}${article.image}`,
         mainEntityOfPage: `${origin}${article.href}`,
         inLanguage: "fr-FR",
@@ -104,11 +104,11 @@ export default async function Page({ params }: Props) {
         </nav>
         <article>
           <header className={styles.articleHeader}>
-            <p className={styles.eyebrow}>{article.category} · Le blog ImmoJudis</p>
+            <p className={styles.eyebrow}>{article.category} · Le blog Immojudis</p>
             <h1>{article.title}</h1>
             <p>{article.description}</p>
             <p className={styles.meta}>
-              Par la rédaction ImmoJudis
+              Par la rédaction Immojudis
               {article.publishedAt && (
                 <>
                   {" "}
