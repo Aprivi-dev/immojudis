@@ -7,7 +7,7 @@ const PUBLIC_ROUTES = [
   "/contact",
   "/legal",
   "/privacy",
-  "/accompagnement",
+  "/offres",
   "/ventes-immobilieres-judiciaires",
   "/annonce-exemple",
   "/login",

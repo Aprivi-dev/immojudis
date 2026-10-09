@@ -109,7 +109,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   });
   await page.route("**/api/billing/checkout", async (route) => {
     journey.push("payment");
-    await route.fulfill({ status: 200, json: { url: "/accompagnement?checkout=success" } });
+    await route.fulfill({ status: 200, json: { url: "/offres?checkout=success" } });
   });
   await page.route("**/api/property-reports/report-e2e/share", async (route) => {
     journey.push("share");
@@ -149,7 +149,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   });
   expect(reportId).toBe("report-e2e");
 
-  await page.goto("/accompagnement");
+  await page.goto("/offres");
   await page.getByRole("button", { name: "Démarrer l’essai Analyse" }).click();
   await expect(page.getByRole("heading", { name: "Récapitulatif avant paiement" })).toBeVisible();
   const consentCheckboxes = page.getByRole("checkbox");

@@ -56,11 +56,16 @@ const nextConfig: NextConfig = {
     ];
   },
   async redirects() {
+    // La page des offres a changé d'adresse : redirection permanente. Les liens, les signets
+    // et les adresses de retour de paiement en /accompagnement continuent de fonctionner.
+    const moved = [{ source: "/accompagnement", destination: "/offres", statusCode: 301 }];
+
     if (propertyDemoEnabled) {
-      return [];
+      return moved;
     }
 
     return [
+      ...moved,
       {
         source: "/properties",
         destination: "/annonce-exemple",

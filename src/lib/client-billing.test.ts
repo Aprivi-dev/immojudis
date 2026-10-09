@@ -9,7 +9,12 @@ vi.mock("@/integrations/supabase/client", () => ({
   supabase: { auth: { getSession: mocks.getSession } },
 }));
 
-import { fetchAccessPlan, openBillingPortal, startAnalyseCheckout } from "./client-billing";
+import {
+  fetchAccessPlan,
+  fetchBillingOffer,
+  openBillingPortal,
+  startAnalyseCheckout,
+} from "./client-billing";
 
 describe("client billing API", () => {
   beforeEach(() => {
@@ -26,6 +31,17 @@ describe("client billing API", () => {
   it("refuse les appels de facturation sans session", async () => {
     await expect(fetchAccessPlan()).rejects.toThrow("Connexion requise.");
     expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("lit l'offre publique même sans session (le visiteur voit si la souscription est ouverte)", async () => {
+    mocks.fetch.mockResolvedValueOnce(
+      jsonResponse({ configured: true, trialAvailable: true, label: "29 € TTC / mois" }),
+    );
+    await expect(fetchBillingOffer()).resolves.toMatchObject({ configured: true });
+    expect(mocks.fetch).toHaveBeenCalledWith("/api/billing/offer", {
+      headers: {},
+      cache: "no-store",
+    });
   });
 
   it("transmet le token au endpoint du plan", async () => {

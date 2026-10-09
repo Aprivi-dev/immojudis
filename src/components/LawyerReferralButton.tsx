@@ -61,7 +61,7 @@ export function LawyerReferralButton({
 
     if (referralLocked) {
       toast.message("Mise en relation avocat réservée à l’offre Analyse.");
-      navigate({ to: "/accompagnement" });
+      navigate({ to: "/offres" });
       return;
     }
 

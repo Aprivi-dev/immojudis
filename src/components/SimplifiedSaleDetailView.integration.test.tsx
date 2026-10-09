@@ -210,7 +210,7 @@ describe("integrated scenario workspace", () => {
     expect(screen.queryByLabelText("Libellé du poste 1")).toBeNull();
     expect(
       screen.getByRole("link", { name: "Découvrir l’offre Analyse" }).getAttribute("href"),
-    ).toBe("/accompagnement");
+    ).toBe("/offres");
   });
 
   it("does not expose the email draft workflow on the Premium listing", () => {

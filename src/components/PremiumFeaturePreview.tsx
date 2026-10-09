@@ -49,7 +49,7 @@ export function PremiumFeaturePreview({
         </p>
       ) : null}
       <Link
-        href="/accompagnement"
+        href="/offres"
         className="mt-4 inline-flex rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-brand-navy hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
       >
         Découvrir l’offre Analyse

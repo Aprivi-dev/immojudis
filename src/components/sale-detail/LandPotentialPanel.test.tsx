@@ -279,7 +279,7 @@ describe("LandPotentialPanel", () => {
     expect(screen.getByText(/L’offre Analyse donne accès/)).toBeTruthy();
     expect(
       screen.getByRole("link", { name: /Découvrir l’offre Analyse/ }).getAttribute("href"),
-    ).toBe("/accompagnement");
+    ).toBe("/offres");
     expect(screen.queryByRole("button", { name: /Consulter le PLU/ })).toBeNull();
     expect(mocks.fetchReport).not.toHaveBeenCalled();
   });

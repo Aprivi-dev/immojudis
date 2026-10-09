@@ -167,7 +167,7 @@ export function HomeDiscovery() {
                     </li>
                   ))}
                 </ul>
-                <Link href="/accompagnement" className={styles.primaryLink}>
+                <Link href="/offres" className={styles.primaryLink}>
                   Découvrir Analyse <ArrowRight aria-hidden="true" size={17} />
                 </Link>
                 {checkoutOpen === true ? (
