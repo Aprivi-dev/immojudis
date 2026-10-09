@@ -4,6 +4,7 @@ import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-g
 import type { AuctionSale, SaleFilters, SortKey } from "./types";
 import { assertCloudConfigured } from "./query-configuration";
 import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
+import { fetchPublicSaleSummary, type PublicSaleSummaryClient } from "./public-sale-summary";
 export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
 export type { CreateAlertPayload } from "./alert-queries";
 
@@ -570,6 +571,12 @@ export async function getSaleById(
 
 export async function getSalePreviewById(id: string): Promise<AuctionSale | null> {
   if (!assertCloudConfigured()) return null;
+  // Card-level facts of the public catalogue (type, surface, city, hearing date…).
+  // `unsupported` means the database function is not deployed yet: keep the
+  // minimal preview below so the page still works during a staggered release.
+  const summary = await fetchPublicSaleSummary(supabase as unknown as PublicSaleSummaryClient, id);
+  if (summary.kind === "found") return summary.sale;
+  if (summary.kind === "missing") return null;
   const { data, error } = await supabase
     .from(PUBLIC_PREVIEW_VIEW)
     .select(SALE_PREVIEW_COLUMNS)

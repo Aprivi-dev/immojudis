@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
-import { cache, Suspense } from "react";
-import { formatPrice } from "@/lib/format";
-import { getSaleById, getSalePreviewById } from "@/lib/queries";
-import { getSaleProcedure, saleVenueLabel } from "@/lib/sale-procedure";
-import { saleSeoTitle } from "@/lib/seo";
+import { notFound } from "next/navigation";
+import { lookupPublicSale } from "@/lib/public-sale.server";
+import {
+  GENERIC_SALE_SEO_TITLE,
+  saleSeoDescription,
+  saleSeoTitle,
+  saleStructuredData,
+} from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { SaleDetailPage } from "@/routes/sales.$id";
 
@@ -11,37 +14,48 @@ type PageProps = {
   params: Promise<{ id: string }>;
 };
 
-const loadSaleDetail = cache(async (id: string) => {
-  const sale = await getSaleById(id);
-  if (sale) return { sale, preview: null };
-  return { sale: null, preview: await getSalePreviewById(id) };
-});
+const NOT_INDEXED = { index: false, follow: false } as const;
+
+// The public page of a sale is identical for every visitor: it is generated on
+// first request, served from the cache, and refreshed at most every 5 minutes.
+// An unknown sale calls notFound(): the response carries the 404 page and
+// `noindex`. Its HTTP status is still 200 while the root `app/loading.tsx` wraps
+// every page in a Suspense boundary (the status is sent with the first streamed
+// chunk); a real 404 needs that boundary removed or a check in `proxy.ts`.
+export const revalidate = 300;
+
+export async function generateStaticParams() {
+  return [];
+}
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  const data = await loadSaleDetail(id);
-  const visibleSale = data.sale ?? data.preview ?? null;
-  const title = saleSeoTitle(visibleSale);
-  const venueLabel = visibleSale
-    ? saleVenueLabel(getSaleProcedure(visibleSale).venueType).toLocaleLowerCase("fr-FR")
-    : "vente aux enchères immobilière";
+  const lookup = await lookupPublicSale(id);
 
+  // A sale that is not in the public catalogue must never be indexed, and the
+  // generic title is kept when the server could not read the sale at all.
+  if (lookup.status !== "found") {
+    return {
+      title: lookup.status === "missing" ? "Annonce introuvable" : GENERIC_SALE_SEO_TITLE,
+      robots: NOT_INDEXED,
+    };
+  }
+
+  // The root layout template appends " - Immojudis": the title must not repeat it.
+  const title = saleSeoTitle(lookup.sale);
+  const description = saleSeoDescription(lookup.sale);
   return {
     title,
-    description:
-      visibleSale?.starting_price_eur != null
-        ? `${venueLabel} Immojudis avec mise à prix ${formatPrice(
-            visibleSale.starting_price_eur,
-          )}. Consultez l’organisation et les règles de participation vérifiées.`
-        : `Immojudis : ${venueLabel}, organisation et règles de participation vérifiées.`,
+    description,
     openGraph: {
       title,
-      description:
-        visibleSale?.city != null
-          ? `${venueLabel} à ${visibleSale.city}.`
-          : `${venueLabel} Immojudis.`,
-      type: "article",
+      description,
+      type: "website",
+      url: `/sales/${id}`,
+      siteName: "Immojudis",
+      locale: "fr_FR",
     },
+    twitter: { card: "summary_large_image", title, description },
     alternates: {
       canonical: `/sales/${id}`,
     },
@@ -50,32 +64,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function Page({ params }: PageProps) {
   const { id } = await params;
-  const data = await loadSaleDetail(id);
-  const visibleSale = data.sale ?? data.preview;
+  const lookup = await lookupPublicSale(id);
+  // Answered before any streaming starts, so crawlers get a real 404.
+  if (lookup.status === "missing") notFound();
+
+  const sale = lookup.status === "found" ? lookup.sale : null;
   const siteOrigin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
-  const structuredData = visibleSale
-    ? {
-        "@context": "https://schema.org",
-        "@type": "RealEstateListing",
-        name: saleSeoTitle(visibleSale),
-        url: `${siteOrigin}/sales/${id}`,
-        address: {
-          "@type": "PostalAddress",
-          addressLocality: visibleSale.city ?? undefined,
-          postalCode: visibleSale.postal_code ?? undefined,
-          addressCountry: "FR",
-        },
-        offers:
-          visibleSale.starting_price_eur == null
-            ? undefined
-            : {
-                "@type": "Offer",
-                price: visibleSale.starting_price_eur,
-                priceCurrency: "EUR",
-                availability: "https://schema.org/LimitedAvailability",
-              },
-      }
-    : null;
+  const structuredData = sale ? saleStructuredData(sale, { origin: siteOrigin }) : null;
 
   return (
     <>
@@ -87,52 +82,11 @@ export default async function Page({ params }: PageProps) {
           }}
         />
       ) : null}
-      <Suspense fallback={<SaleDetailFallback sale={visibleSale} />}>
-        <SaleDetailPage
-          id={id}
-          initialData={data}
-          adjudicationStatisticsEnabled={
-            process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"
-          }
-        />
-      </Suspense>
+      <SaleDetailPage
+        id={id}
+        initialData={{ sale: null, preview: sale }}
+        adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
+      />
     </>
-  );
-}
-
-function SaleDetailFallback({
-  sale,
-}: {
-  sale: Awaited<ReturnType<typeof loadSaleDetail>>["preview"];
-}) {
-  return (
-    <main className="min-h-screen bg-[#f7f5f3] px-4 py-10 text-foreground sm:px-6">
-      <section className="mx-auto max-w-3xl rounded-lg border border-border bg-white p-6 shadow-sm sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
-          {sale ? saleVenueLabel(getSaleProcedure(sale).venueType) : "Vente aux enchères"}
-        </p>
-        <h1 className="mt-3 font-display text-3xl leading-tight sm:text-4xl">
-          {saleSeoTitle(sale)}
-        </h1>
-        <dl className="mt-6 grid gap-4 rounded-md border border-border bg-muted/30 p-4 sm:grid-cols-2">
-          <div>
-            <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Mise à prix
-            </dt>
-            <dd className="mt-1 text-xl font-semibold">
-              {sale?.starting_price_eur == null
-                ? "À consulter"
-                : formatPrice(sale.starting_price_eur)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Localisation
-            </dt>
-            <dd className="mt-1 font-medium">{sale?.city ?? "Localisation à confirmer"}</dd>
-          </div>
-        </dl>
-      </section>
-    </main>
   );
 }
