@@ -19,6 +19,7 @@ import {
   fetchSalesStatistics,
 } from "@/lib/client-api";
 import { createAlert, getSaleById } from "@/lib/queries";
+import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
@@ -525,12 +526,18 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   async function saveSearch() {
     if (!user) {
-      toast.error("Connectez-vous pour enregistrer une recherche");
+      // La première alerte est gratuite : on invite à se connecter puis on
+      // ramène la personne sur sa recherche.
+      navigate(loginPathWithRedirect(currentLocation.href));
+      return;
+    }
+    if (entitlementsLoading || !entitlementsData) {
+      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
       return;
     }
     if (alertsLocked) {
-      toast.message("Alertes réservées au plan Analyse");
-      navigate({ to: "/accompagnement" });
+      toast.message("Les alertes de cette recherche sont réservées à l'offre Analyse.");
+      navigate(OFFERS_PATH);
       return;
     }
     if (activeFiltersCount === 0) {
@@ -600,11 +607,16 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   async function exportCsv() {
     if (!user) {
-      toast.error("Connectez-vous pour exporter les ventes");
+      navigate(loginPathWithRedirect(currentLocation.href));
+      return;
+    }
+    if (entitlementsLoading || !entitlementsData) {
+      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
       return;
     }
     if (csvExportLocked) {
-      toast.error("Export CSV réservé au plan Analyse");
+      toast.message("L'export CSV est réservé à l'offre Analyse.");
+      navigate(OFFERS_PATH);
       return;
     }
 
@@ -637,7 +649,6 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         isFetching={isFetching}
         filtersOpen={filtersOpen}
         savingAlert={savingAlert}
-        alertsLocked={alertsLocked}
         exportingCsv={exportingCsv}
         csvExportLocked={csvExportLocked}
         wideMap={wideMap}
