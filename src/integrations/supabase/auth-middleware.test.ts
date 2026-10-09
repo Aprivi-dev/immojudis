@@ -52,3 +52,38 @@ it("does not leak the database detail when the access profile cannot be read", a
   expect(String(errorLog.mock.calls[0]?.[0])).toContain("user_profiles");
   errorLog.mockRestore();
 });
+
+function adminClaimsFixture(aal?: string) {
+  mocks.getClaims.mockResolvedValue({
+    data: { claims: { sub: "admin-user", ...(aal ? { aal } : {}) } },
+    error: null,
+  });
+  const eq = vi.fn().mockReturnValue({
+    maybeSingle: vi
+      .fn()
+      .mockResolvedValue({ data: { account_tier: "premium", user_role: "admin" }, error: null }),
+  });
+  mocks.from.mockReturnValue({ select: vi.fn().mockReturnValue({ eq }) });
+}
+
+it("keeps administrator rights at aal1 while ADMIN_MFA_REQUIRED is off (default)", async () => {
+  adminClaimsFixture("aal1");
+  const result = await requireSupabaseAuthContext("admin-fixture");
+  expect(result).toMatchObject({ userRole: "admin", isAdmin: true });
+});
+
+it("withholds administrator rights from an aal1 session when ADMIN_MFA_REQUIRED is on", async () => {
+  vi.stubEnv("ADMIN_MFA_REQUIRED", "true");
+  for (const aal of ["aal1", undefined]) {
+    adminClaimsFixture(aal);
+    const result = await requireSupabaseAuthContext("admin-fixture");
+    expect(result).toMatchObject({ userRole: "admin", isAdmin: false });
+  }
+});
+
+it("grants administrator rights to an aal2 session when ADMIN_MFA_REQUIRED is on", async () => {
+  vi.stubEnv("ADMIN_MFA_REQUIRED", "true");
+  adminClaimsFixture("aal2");
+  const result = await requireSupabaseAuthContext("admin-fixture");
+  expect(result).toMatchObject({ userRole: "admin", isAdmin: true });
+});

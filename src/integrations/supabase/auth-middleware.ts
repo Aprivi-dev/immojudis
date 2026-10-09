@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { AccountTier, UserRole } from "@/lib/account";
+import { isAdminMfaRequired, sessionAssuranceLevel } from "@/lib/admin-mfa";
 import type { Database } from "./types";
 
 type Claims = Record<string, unknown> & {
@@ -102,6 +103,9 @@ export async function requireSupabaseAuthContext(token: string): Promise<Supabas
     claims,
     accountTier,
     userRole,
-    isAdmin: userRole === "admin",
+    // With ADMIN_MFA_REQUIRED=true an administrator only keeps admin rights on an aal2 session
+    // (TOTP verified); an aal1 session is treated like a regular account.
+    isAdmin:
+      userRole === "admin" && (!isAdminMfaRequired() || sessionAssuranceLevel(claims) === "aal2"),
   };
 }

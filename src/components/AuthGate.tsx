@@ -11,6 +11,7 @@ import {
   isProfessionalAccount,
 } from "@/lib/account";
 import { BrandMark } from "@/components/BrandLogo";
+import { AdminMfaGate } from "@/components/admin/AdminMfaGate";
 
 const PUBLIC_PATHS = new Set([
   "/",
@@ -30,6 +31,7 @@ const PUBLIC_PATHS = new Set([
 ]);
 const PROFESSIONAL_PATHS = new Set(["/publish"]);
 const ADMIN_PREFIX = "/admin";
+const ADMIN_SECURITY_PATH = "/admin/securite";
 
 function normalizePath(pathname: string) {
   if (pathname === "/") return pathname;
@@ -150,6 +152,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
         </div>
       </main>
     );
+  }
+
+  // Admin pages ask for the TOTP code first when the session is still aal1. The enrolment page
+  // itself stays reachable so a fresh administrator can set the factor up.
+  if (requiresAdminAccount && pathname !== ADMIN_SECURITY_PATH) {
+    return <AdminMfaGate>{children}</AdminMfaGate>;
   }
 
   return <>{children}</>;
