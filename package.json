@@ -1,6 +1,6 @@
 {
   "name": "immojudis",
-  "description": "Plateforme d'exploration des ventes immobilières aux enchères judiciaires (Nouvelle-Aquitaine) : assistant de mise plafond, cartographie Mapbox et pipeline de données.",
+  "description": "Plateforme d'exploration des ventes immobilières aux enchères en France (tribunal, notaire, État) : assistant de mise plafond, cartographie Mapbox et pipeline de données.",
   "private": true,
   "sideEffects": false,
   "type": "module",
