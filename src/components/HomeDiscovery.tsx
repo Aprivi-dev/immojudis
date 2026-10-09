@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
@@ -98,14 +99,20 @@ export function HomeDiscovery() {
                 <dt>Au tribunal</dt>
                 <dd>Un avocat du barreau compétent porte les enchères pour vous.</dd>
               </div>
-              <div>
-                <dt>Chez le notaire</dt>
-                <dd>L’office notarial précise les garanties et les modalités de participation.</dd>
-              </div>
-              <div>
-                <dt>Ventes domaniales</dt>
-                <dd>L’État fixe la procédure : enchères, appel d’offres ou vente amiable.</dd>
-              </div>
+              {notaryAndStatePilotsEnabled() ? (
+                <>
+                  <div>
+                    <dt>Chez le notaire</dt>
+                    <dd>
+                      L’office notarial précise les garanties et les modalités de participation.
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Ventes domaniales</dt>
+                    <dd>L’État fixe la procédure : enchères, appel d’offres ou vente amiable.</dd>
+                  </div>
+                </>
+              ) : null}
             </dl>
           </aside>
           <div className={styles.methodActions}>

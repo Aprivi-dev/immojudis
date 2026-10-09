@@ -1,5 +1,5 @@
 import { Link } from "@/lib/router-compat";
-import { SALE_TYPE_OPTIONS, type SaleTypeFilter as SaleTypeValue } from "@/lib/sale-types";
+import { visibleSaleTypeOptions, type SaleTypeFilter as SaleTypeValue } from "@/lib/sale-types";
 
 export function SaleTypeFilter({
   value,
@@ -22,7 +22,7 @@ export function SaleTypeFilter({
             : "flex flex-wrap items-center gap-2"
         }
       >
-        {[{ value: "" as const, label: "Toutes" }, ...SALE_TYPE_OPTIONS].map((option) => (
+        {[{ value: "" as const, label: "Toutes" }, ...visibleSaleTypeOptions()].map((option) => (
           <button
             key={option.value}
             type="button"
