@@ -683,7 +683,7 @@ class PoliteHttpClient:
 
 
 def listing_signature(sale: dict[str, Any]) -> str | None:
-    """Change-signature of a scraped list item (date + price).
+    """Change-signature of a scraped list item (date + price + interrupted status).
 
     Both values must be present on the current list card before a known detail
     page can be skipped.  A partial signature can match a database row whose
@@ -697,7 +697,32 @@ def listing_signature(sale: dict[str, Any]) -> str | None:
     if sale_date is None or price is None:
         return None
     date_part = sale_date.date().isoformat() if sale_date else None
-    return make_sale_signature(date_part, price)
+    return make_sale_signature(date_part, price, _card_interrupted_status(sale))
+
+
+_CARD_STATUS_KEYS = ("status", "statut", "badge", "status_label")
+_CARD_BADGE_TEXT = re.compile(r"\b(annul[ée]e?s?|report[ée]e?s?|retir[ée]e?s?)\b", re.I)
+_CARD_SENTENCE = re.compile(r"\bvente\s+(?:est\s+)?(annul[ée]e?|report[ée]e?|retir[ée]e?)\b", re.I)
+
+
+def _card_interrupted_status(sale: dict[str, Any]) -> str | None:
+    """The cancelled/postponed/withdrawn state a list card shows, if any."""
+    from src.normalize import INTERRUPTED_SALE_STATUSES, normalize_status
+
+    for key in _CARD_STATUS_KEYS:
+        value = sale.get(key)
+        # A badge such as « Vente annulée » is short; a long text is not one.
+        if not isinstance(value, str) or len(value) > 60:
+            continue
+        match = _CARD_BADGE_TEXT.search(value)
+        status = normalize_status(match.group(1) if match else value)
+        if status in INTERRUPTED_SALE_STATUSES:
+            return status
+    sentence = _CARD_SENTENCE.search(str(sale.get("raw_text") or ""))
+    if sentence:
+        status = normalize_status(sentence.group(1))
+        return status if status in INTERRUPTED_SALE_STATUSES else None
+    return None
 
 
 def should_fetch_detail(sale: dict[str, Any], known: dict[str, str] | None) -> bool:

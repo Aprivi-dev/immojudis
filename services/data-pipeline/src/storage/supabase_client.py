@@ -4308,7 +4308,7 @@ def fetch_known_sale_details(
     for row in all_rows:
         if not isinstance(row, dict):
             raise ReviewedAliasRegistryError("Malformed auction_sales detail row")
-        row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"))
+        row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"), row.get("status"))
 
     details: dict[str, dict[str, Any]] = {}
     rows_by_id = {

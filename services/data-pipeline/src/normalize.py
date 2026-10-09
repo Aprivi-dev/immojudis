@@ -85,8 +85,14 @@ SURFACE_VALUE_PATTERN = r"([0-9]+(?:[\s.][0-9]{3})*(?:[,.]\s*[0-9]+)?|[0-9]+(?:[
 LATIN_LETTERS_PATTERN = r"A-Za-zÀ-ÖØ-öø-ÿŒœŸ"
 
 
-def make_sale_signature(sale_date: object, price: object) -> str:
-    """Stable change-signature for a listing: date (YYYY-MM-DD) + rounded price.
+# A card that turns cancelled, postponed or withdrawn keeps its date and price: only
+# its status tells the detail page must be read again.
+INTERRUPTED_SALE_STATUSES = frozenset({"cancelled", "postponed", "withdrawn"})
+
+
+def make_sale_signature(sale_date: object, price: object, status: object = None) -> str:
+    """Stable change-signature for a listing: date (YYYY-MM-DD) + rounded price,
+    plus the status when the sale is cancelled, postponed or withdrawn.
     Used identically on the DB side and the scrape side to decide whether a
     known listing is unchanged (so its detail page can be skipped)."""
     date_part = str(sale_date)[:10] if sale_date else ""
@@ -94,7 +100,9 @@ def make_sale_signature(sale_date: object, price: object) -> str:
         price_part = str(int(round(float(price)))) if price not in (None, "") else ""
     except (TypeError, ValueError):
         price_part = ""
-    return f"{date_part}|{price_part}"
+    signature = f"{date_part}|{price_part}"
+    interrupted = normalize_status(status) if status else None
+    return f"{signature}|{interrupted}" if interrupted in INTERRUPTED_SALE_STATUSES else signature
 
 
 def strip_accents(value: str) -> str:
