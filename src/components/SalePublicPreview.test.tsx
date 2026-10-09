@@ -76,9 +76,10 @@ describe("SalePublicPreview", () => {
       lawyer_contact: "confidential@example.test",
     });
 
-    expect(
-      screen.getByRole("heading", { name: "Bien immobilier vendu chez le notaire" }),
-    ).toBeTruthy();
+    expect(screen.getByText("Bien immobilier vendu chez le notaire")).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(
+      "vente chez le notaire",
+    );
     expect(screen.getAllByText("Vente notariale").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Modalités à consulter dans le dossier")).toBeTruthy();
     expect(screen.getByText("Un seul catalogue, plusieurs procédures")).toBeTruthy();
@@ -119,6 +120,98 @@ describe("SalePublicPreview", () => {
     expect(container.textContent).not.toContain("L'inscription et les enchères");
   });
 
+  it("gives each sale its own heading, built from the facts of the sale", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_verification_status: "verified",
+      property_type: "apartment",
+      app_surface_m2: 50,
+      city: "Romainville",
+      department: "93",
+      sale_date: "2026-10-20T09:00:00+02:00",
+      tribunal: "TJ Bobigny",
+    });
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.textContent).toContain(
+      "Appartement 50 m² à Romainville (93) – vente au tribunal le 20 octobre 2026",
+    );
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
+  it("never gives two different sales the same heading", () => {
+    const facts = {
+      sale_venue_type: "tribunal",
+      property_type: "apartment",
+      app_surface_m2: 50,
+      city: "Romainville",
+      department: "93",
+      sale_date: "2026-10-20T09:00:00+02:00",
+    } as const;
+    const first = renderPreview({ ...facts, id: "005a914d-563c-427b-88a4-740cbf851afb" });
+    const firstHeading = screen.getByRole("heading", { level: 1 }).textContent;
+    first.unmount();
+    renderPreview(
+      { ...facts, id: "7c1e22ab-563c-427b-88a4-740cbf851afb" },
+      "7c1e22ab-563c-427b-88a4-740cbf851afb",
+    );
+    const secondHeading = screen.getByRole("heading", { level: 1 }).textContent;
+    expect(firstHeading).not.toBe(secondHeading);
+  });
+
+  it("shows what the catalogue card shows, without an account", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_verification_status: "verified",
+      property_type: "house",
+      app_surface_m2: 92,
+      rooms_count: 4,
+      city: "Pau",
+      department: "64",
+      sale_date: "2026-10-20T07:30:00Z",
+      tribunal: "TJ Pau",
+      media: [{ type: "image", url: "https://example.test/property-photo.jpg" }],
+    });
+    const facts = screen.getByText("Type de bien").closest("dl")!;
+    expect(facts.textContent).toContain("Maison");
+    expect(facts.textContent).toContain("92 m²");
+    expect(facts.textContent).toContain("4");
+    expect(facts.textContent).toContain("Pau · 64");
+    expect(facts.textContent).toContain("20 octobre 2026 à 9 h 30");
+    expect(facts.textContent).toContain("Tribunal judiciaire de Pau");
+    expect(screen.getByRole("img", { name: /Photo du bien/ })).toBeTruthy();
+  });
+
+  it("leaves out what is unknown and never prints a midnight time", () => {
+    renderPreview({
+      property_type: "land",
+      app_surface_m2: null,
+      rooms_count: null,
+      sale_date: "2026-10-23T00:00:00+00:00",
+    });
+    const facts = screen.getByText("Type de bien").closest("dl")!;
+    expect(facts.textContent).not.toContain("Surface");
+    expect(facts.textContent).not.toContain("Pièces");
+    expect(facts.textContent).toContain("23 octobre 2026");
+    expect(facts.textContent).not.toMatch(/\d h \d{2}/);
+    expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  it("lists what the full file adds instead of a vague protection notice", () => {
+    renderPreview({ sale_venue_type: "tribunal", sale_verification_status: "verified" });
+    expect(screen.queryByText(/protège les informations/)).toBeNull();
+    const list = screen.getByText("Le dossier complet ajoute").parentElement!;
+    expect(list.textContent).toContain("mise plafond simulée");
+    expect(list.textContent).toContain("ventes comparables");
+    expect(list.textContent).toContain("documents du dossier");
+  });
+
+  it("does not promise a bid ceiling for a notarial sale", () => {
+    renderPreview({ sale_venue_type: "notary" });
+    const list = screen.getByText("Le dossier complet ajoute").parentElement!;
+    expect(list.textContent).not.toContain("mise plafond");
+    expect(list.textContent).toContain("ventes comparables");
+  });
+
   it("has no structural accessibility violations", async () => {
     const { container } = renderPreview({
       sale_venue_type: "state",
@@ -129,10 +222,10 @@ describe("SalePublicPreview", () => {
   });
 });
 
-function renderPreview(overrides: Partial<AuctionSale> = {}) {
+function renderPreview(overrides: Partial<AuctionSale> = {}, saleId = "sale-1") {
   return render(
     <SalePublicPreview
-      saleId="sale-1"
+      saleId={saleId}
       returnTo="/sales"
       preview={
         {

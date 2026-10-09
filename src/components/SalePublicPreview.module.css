@@ -79,6 +79,67 @@
   line-height: 1.65;
 }
 
+.kicker {
+  margin-top: 18px;
+  color: #946724;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kicker + .title {
+  margin-top: 8px;
+}
+
+/* Short reference printed after the heading so that two lots never share one. */
+.reference {
+  display: block;
+  margin-top: 10px;
+  color: #64748b;
+  font-family: var(--font-ibm-plex-sans), system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+}
+
+/* The ratio is reserved up front: the photo never pushes the facts down. */
+.photo {
+  position: relative;
+  margin: 22px 0 0;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #e8edf3;
+}
+
+.adds {
+  margin-top: 26px;
+  border-radius: 16px;
+  background: #f5f8fb;
+  padding: 18px 20px;
+}
+
+.addsTitle {
+  color: #132238;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.adds ul {
+  margin-top: 10px;
+  padding-left: 18px;
+  color: #405168;
+  font-size: 14px;
+  line-height: 1.65;
+  list-style: disc;
+}
+
+.adds li + li {
+  margin-top: 4px;
+}
+
 .priceLabel {
   margin-top: 30px;
   color: #64748b;
