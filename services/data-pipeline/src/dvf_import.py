@@ -29,6 +29,9 @@ from src.storage.supabase_client import _postgres_connect
 LOGGER = logging.getLogger(__name__)
 
 DVF_SOURCE = "DVF"
+LIVE_TABLE = "dvf_transactions"
+STAGING_TABLE = "dvf_transactions_staging"
+OLD_TABLE = "dvf_transactions_old"
 DVF_MARKET_MUTATION_MARKERS = ("vente",)
 DVF_ADJUDICATION_MUTATION_MARKERS = ("adjudication",)
 DEFAULT_BATCH_SIZE = 1_000
@@ -70,6 +73,19 @@ class DvfImportOptions:
     limit: int | None = None
     replace_existing: bool = False
     dry_run: bool = False
+    # Load into dvf_transactions_staging without touching dvf_transactions.
+    # ``replace_existing`` is the single-file shortcut: reset staging, load it,
+    # then swap it in with one final replacement.
+    stage: bool = False
+    reset_staging: bool = False
+
+    @property
+    def uses_staging(self) -> bool:
+        return self.replace_existing or self.stage
+
+    @property
+    def resets_staging(self) -> bool:
+        return self.replace_existing or self.reset_staging
 
 
 @dataclass(frozen=True)
@@ -99,8 +115,10 @@ class DvfImportSummary:
 
 def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
     path = options.path
-    if options.replace_existing and options.limit is not None:
+    if options.uses_staging and options.limit is not None:
         raise ValueError("A replacement DVF import cannot be combined with a row limit.")
+    if options.reset_staging and not options.uses_staging:
+        raise ValueError("--reset-staging requires --stage or --replace-existing.")
     artifact = inspect_dvf_source(path)
     summary = DvfImportSummary(
         file_name=path.name,
@@ -136,13 +154,15 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
                 "limit": options.limit,
                 "batch_size": options.batch_size,
                 "replace_existing": options.replace_existing,
+                "stage": options.uses_staging,
+                "reset_staging": options.resets_staging,
             },
         )
         summary.batch_id = batch_id
         connection.commit()
         try:
-            if options.replace_existing:
-                _prepare_replacement_import(connection)
+            if options.uses_staging:
+                _prepare_staging_table(connection, reset=options.resets_staging)
             payload: list[dict[str, object]] = []
             for transaction in transactions:
                 transaction["import_batch_id"] = batch_id
@@ -154,7 +174,7 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
                         batch_id,
                         payload,
                         summary,
-                        replace_existing=options.replace_existing,
+                        replace_existing=options.uses_staging,
                     )
                     payload = []
             if payload:
@@ -163,12 +183,12 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
                     batch_id,
                     payload,
                     summary,
-                    replace_existing=options.replace_existing,
+                    replace_existing=options.uses_staging,
                 )
-            if options.replace_existing:
-                _restore_dvf_indexes(connection)
             _finish_import_batch(connection, summary)
             connection.commit()
+            if options.replace_existing:
+                swap_staging_into_live(connection)
         except Exception as exc:
             summary.errors.append(str(exc))
             try:
@@ -177,7 +197,7 @@ def import_dvf_file(options: DvfImportOptions) -> DvfImportSummary:
                     connection,
                     batch_id,
                     str(exc),
-                    restore_indexes=options.replace_existing,
+                    restore_indexes=False,
                 )
             except Exception as finalization_exc:
                 summary.errors.append(f"failure finalization failed: {finalization_exc}")
@@ -946,8 +966,12 @@ def _close_connection(connection: Any) -> None:
         pass
 
 
-def _prepare_replacement_import(connection: Any) -> None:
-    """Reset the DVF-only table before a fast, explicitly requested full reload."""
+def _prepare_staging_table(connection: Any, *, reset: bool) -> None:
+    """Make dvf_transactions_staging ready to receive a full reload.
+
+    The live table is never modified here: a full reload is loaded next to it
+    and only swapped in once every file made it into the staging table.
+    """
     with connection.cursor() as cursor:
         cursor.execute(
             "select exists(select 1 from public.dvf_transactions where source <> %s limit 1)",
@@ -956,50 +980,167 @@ def _prepare_replacement_import(connection: Any) -> None:
         row = cursor.fetchone()
         if row and bool(row[0]):
             raise RuntimeError("DVF replacement refused because the table contains another source.")
-        cursor.execute("truncate table public.dvf_transactions")
-        cursor.execute("drop index if exists public.dvf_transactions_source_mutation_uidx")
-        cursor.execute("drop index if exists public.dvf_transactions_sale_date_idx")
-        cursor.execute("drop index if exists public.dvf_transactions_department_sale_date_idx")
-        cursor.execute("drop index if exists public.dvf_transactions_lat_lng_idx")
+        if reset:
+            for statement in build_staging_create_statements():
+                cursor.execute(statement)
+        else:
+            cursor.execute("select to_regclass('public.dvf_transactions_staging') is not null")
+            row = cursor.fetchone()
+            if not row or not bool(row[0]):
+                raise RuntimeError(
+                    "dvf_transactions_staging does not exist; load the first file with --reset-staging."
+                )
         cursor.execute("set synchronous_commit = off")
         cursor.execute("set statement_timeout = 0")
     connection.commit()
 
 
-def _restore_dvf_indexes(connection: Any) -> None:
-    """Build query and integrity indexes once, after the sequential COPY."""
+def build_staging_create_statements() -> list[str]:
+    """Statements that recreate an empty, index-free copy of dvf_transactions."""
+    return [
+        f"drop table if exists public.{STAGING_TABLE}",
+        f"""
+        create table public.{STAGING_TABLE}
+          (like public.{LIVE_TABLE} including defaults including constraints including generated)
+        """,
+    ]
+
+
+def _dvf_index_statements(*, table: str, prefix: str) -> list[str]:
+    """Query and integrity indexes for ``table``, named ``{prefix}<suffix>``."""
+    unique_name = f"{prefix}source_mutation_uidx"
+    return [
+        f"""
+        create unique index if not exists {unique_name}
+          on public.{table} (source, source_mutation_id)
+        """,
+        f"""
+        comment on index public.{unique_name} is
+          'One canonical DVF transaction per source mutation; local and parcel source rows are aggregated by the importer.'
+        """,
+        f"""
+        create index if not exists {prefix}sale_date_idx
+          on public.{table} (sale_date desc)
+        """,
+        f"""
+        create index if not exists {prefix}department_sale_date_idx
+          on public.{table} (department, sale_date desc)
+        """,
+        f"""
+        create index if not exists {prefix}lat_lng_idx
+          on public.{table} (latitude, longitude)
+          where latitude is not null and longitude is not null
+        """,
+    ]
+
+
+STAGING_INDEX_SUFFIXES = (
+    "source_mutation_uidx",
+    "sale_date_idx",
+    "department_sale_date_idx",
+    "lat_lng_idx",
+    "pkey",
+)
+
+
+def build_staging_index_statements() -> list[str]:
+    """Indexes and constraints built on the staging table once it is fully loaded."""
+    return [
+        *_dvf_index_statements(table=STAGING_TABLE, prefix=f"{STAGING_TABLE}_"),
+        f"alter table public.{STAGING_TABLE} add constraint {STAGING_TABLE}_pkey primary key (id)",
+        # NOT VALID skips the scan of the loaded rows; the importer only writes
+        # batch ids it has just created, and on delete set null stays enforced.
+        f"""
+        alter table public.{STAGING_TABLE}
+          add constraint {LIVE_TABLE}_import_batch_id_fkey
+          foreign key (import_batch_id) references public.dvf_import_batches(id)
+          on delete set null not valid
+        """,
+        f"analyze public.{STAGING_TABLE}",
+    ]
+
+
+def build_swap_statements() -> list[str]:
+    """Metadata-only statements run inside the single swap transaction."""
+    rename_old_indexes = f"""
+        do $swap$
+        declare
+          index_name text;
+        begin
+          for index_name in
+            select indexname from pg_indexes
+            where schemaname = 'public' and tablename = '{OLD_TABLE}'
+          loop
+            execute format('alter index public.%I rename to %I', index_name, index_name || '_old');
+          end loop;
+        end
+        $swap$
+    """
+    statements = [
+        "set local lock_timeout = '120s'",
+        "set local statement_timeout = '15min'",
+        f"drop table if exists public.{OLD_TABLE}",
+        f"alter table public.{LIVE_TABLE} rename to {OLD_TABLE}",
+        rename_old_indexes,
+        f"alter table public.{STAGING_TABLE} rename to {LIVE_TABLE}",
+    ]
+    statements.extend(
+        f"alter index public.{STAGING_TABLE}_{suffix} rename to {LIVE_TABLE}_{suffix}"
+        for suffix in STAGING_INDEX_SUFFIXES
+    )
+    statements.extend(
+        [
+            f"alter table public.{LIVE_TABLE} enable row level security",
+            f"revoke all on table public.{LIVE_TABLE} from anon, authenticated",
+            f"grant select, insert, update, delete on table public.{LIVE_TABLE} to service_role",
+            f"""
+            comment on table public.{LIVE_TABLE} is
+              'Canonical DVF mutations used by plan-gated comparable, backtest, and valuation services. Import provenance is stored once in dvf_import_batches.'
+            """,
+            f"drop table public.{OLD_TABLE}",
+        ]
+    )
+    return statements
+
+
+def swap_staging_into_live(connection: Any) -> None:
+    """Replace dvf_transactions with the fully loaded staging table, atomically.
+
+    Index builds happen before the swap, on the staging table, so readers of
+    the live table are only blocked for the metadata statements. Any failure
+    before the single commit leaves dvf_transactions untouched.
+    """
     with connection.cursor() as cursor:
+        cursor.execute(f"select exists(select 1 from public.{STAGING_TABLE} limit 1)")
+        row = cursor.fetchone()
+        if not row or not bool(row[0]):
+            raise RuntimeError("DVF swap refused because the staging table is empty or missing.")
         cursor.execute(
-            """
-            create unique index if not exists dvf_transactions_source_mutation_uidx
-              on public.dvf_transactions (source, source_mutation_id)
-            """
+            "select exists(select 1 from public.dvf_transactions where source <> %s limit 1)",
+            (DVF_SOURCE,),
         )
-        cursor.execute(
-            """
-            comment on index public.dvf_transactions_source_mutation_uidx is
-              'One canonical DVF transaction per source mutation; local and parcel source rows are aggregated by the importer.'
-            """
-        )
-        cursor.execute(
-            """
-            create index if not exists dvf_transactions_sale_date_idx
-              on public.dvf_transactions (sale_date desc)
-            """
-        )
-        cursor.execute(
-            """
-            create index if not exists dvf_transactions_department_sale_date_idx
-              on public.dvf_transactions (department, sale_date desc)
-            """
-        )
-        cursor.execute(
-            """
-            create index if not exists dvf_transactions_lat_lng_idx
-              on public.dvf_transactions (latitude, longitude)
-              where latitude is not null and longitude is not null
-            """
-        )
+        row = cursor.fetchone()
+        if row and bool(row[0]):
+            raise RuntimeError("DVF replacement refused because the table contains another source.")
+        cursor.execute("set statement_timeout = 0")
+        for statement in build_staging_index_statements():
+            cursor.execute(statement)
+    connection.commit()
+    try:
+        with connection.cursor() as cursor:
+            for statement in build_swap_statements():
+                cursor.execute(statement)
+    except Exception:
+        connection.rollback()
+        raise
+    connection.commit()
+
+
+def _restore_dvf_indexes(connection: Any) -> None:
+    """Build query and integrity indexes on the live table (recovery helper)."""
+    with connection.cursor() as cursor:
+        for statement in _dvf_index_statements(table=LIVE_TABLE, prefix=f"{LIVE_TABLE}_"):
+            cursor.execute(statement)
 
 
 def _commit_transaction_batch(
@@ -1046,12 +1187,14 @@ def _commit_transaction_batch(
 
 
 def _copy_transactions(connection: Any, payload: list[dict[str, object]]) -> None:
+    """COPY a batch into the staging table; replacement loads never touch the live table."""
     if not payload:
         return
     if sql is None:
         raise RuntimeError("psycopg is required for direct Postgres writes")
     columns = list(DVF_TRANSACTION_COLUMNS)
-    copy_statement = sql.SQL("copy public.dvf_transactions ({columns}) from stdin").format(
+    copy_statement = sql.SQL("copy public.{table} ({columns}) from stdin").format(
+        table=sql.Identifier(STAGING_TABLE),
         columns=sql.SQL(", ").join(sql.Identifier(column) for column in columns),
     )
     with connection.cursor() as cursor:
@@ -1112,9 +1255,14 @@ def print_summary(summary: DvfImportSummary) -> None:
         print(f"- errors: {len(summary.errors)}")
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Importe un fichier DVF data.gouv dans Supabase.")
-    parser.add_argument("path", type=Path, help="Fichier DVF .txt/.csv ou archive .zip.")
+    parser.add_argument(
+        "path",
+        type=Path,
+        nargs="?",
+        help="Fichier DVF .txt/.csv ou archive .zip (absent avec --swap-staging).",
+    )
     parser.add_argument("--source-url", default=None, help="URL officielle du fichier source DVF.")
     parser.add_argument(
         "--batch-size",
@@ -1126,17 +1274,60 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--replace-existing",
         action="store_true",
-        help="Recharge intégralement la table DVF avec COPY (incompatible avec --limit).",
+        help=(
+            "Remplace dvf_transactions par ce seul fichier : chargement dans dvf_transactions_staging "
+            "puis échange atomique (incompatible avec --limit)."
+        ),
+    )
+    parser.add_argument(
+        "--stage",
+        action="store_true",
+        help="Charge le fichier dans dvf_transactions_staging sans toucher à dvf_transactions.",
+    )
+    parser.add_argument(
+        "--reset-staging",
+        action="store_true",
+        help="Recrée dvf_transactions_staging avant le chargement (premier fichier d'un import multi-fichiers).",
+    )
+    parser.add_argument(
+        "--swap-staging",
+        action="store_true",
+        help="Échange atomiquement dvf_transactions_staging et dvf_transactions (une seule fois, à la fin).",
     )
     parser.add_argument("--dry-run", action="store_true", help="Parse et valide sans écrire dans Supabase.")
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.swap_staging:
+        if args.path is not None or args.stage or args.reset_staging or args.replace_existing:
+            parser.error("--swap-staging s'utilise seul.")
+    elif args.path is None:
+        parser.error("path est requis sauf avec --swap-staging.")
+    return args
 
 
-def main() -> int:
-    args = parse_args()
+def _run_swap_staging(dry_run: bool) -> int:
+    if dry_run:
+        print("DVF swap skipped (dry run).")
+        return 0
+    settings = load_settings()
+    db_url = settings.get("supabase_db_url")
+    if not db_url:
+        raise RuntimeError("SUPABASE_DB_URL is required to swap the DVF staging table.")
+    connection = _postgres_connect(str(db_url))
+    try:
+        swap_staging_into_live(connection)
+    finally:
+        _close_connection(connection)
+    print("DVF staging table swapped into public.dvf_transactions.")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    if args.swap_staging:
+        return _run_swap_staging(args.dry_run)
     settings = load_settings()
     batch_size = args.batch_size or int(settings.get("dvf_import_batch_size") or DEFAULT_BATCH_SIZE)
-    if args.replace_existing and args.batch_size is None:
+    if (args.replace_existing or args.stage) and args.batch_size is None:
         batch_size = max(batch_size, DEFAULT_REPLACEMENT_BATCH_SIZE)
     summary = import_dvf_file(
         DvfImportOptions(
@@ -1146,6 +1337,8 @@ def main() -> int:
             limit=args.limit,
             replace_existing=args.replace_existing,
             dry_run=args.dry_run,
+            stage=args.stage,
+            reset_staging=args.reset_staging,
         )
     )
     print_summary(summary)
