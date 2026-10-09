@@ -63,6 +63,7 @@ from src.quality import (
 )
 from src.run_finalizer import register_run
 from src.sale_procedure import classify_sale_procedure
+from src.source_health import SOURCE_WARNING_EXIT_CODE, failed_sources, warning_annotations
 from src.source_process import run_source_in_subprocess
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
@@ -383,6 +384,10 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         finish_run_in_supabase(run_id, "failed", {"stage": "known_payload_lookup"}, errors)
         return 1
     collection_failed = any(errors.get(name) for name in scrapers)
+    # Judge sources on what collection returned. Errors recorded later (PDF,
+    # LLM, publication) are attributed to a source name but are not collection
+    # failures.
+    broken_sources = failed_sources(scrapers, raw_by_source, errors)
     coverage_incomplete = any(item.get("coverage_complete") is False for item in scrape_coverage.values())
     scoped_collection_complete = bool(
         options.source == "agrasc"
@@ -852,7 +857,14 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     for key, value in timings.items():
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
-    return 1 if publication_failed else 0
+    # An enabled source that raised or returned nothing must be visible in the
+    # GitHub run whatever else happened, as a per-source annotation.
+    for annotation in warning_annotations(broken_sources):
+        print(annotation)
+    if publication_failed:
+        return 1
+    # Publication itself worked: exit 2 is a warning for the workflows.
+    return SOURCE_WARNING_EXIT_CODE if broken_sources else 0
 
 
 def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:

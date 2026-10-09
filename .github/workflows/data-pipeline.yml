@@ -223,8 +223,10 @@ jobs:
           set -euo pipefail
           : "${SUPABASE_DB_URL:?Transactional publication requires SUPABASE_DB_URL}"
 
+          # Exit code 2 means "published, but an enabled source was empty or
+          # failed": a warning that must not stop the steps that follow.
           if [ "$REQUESTED_AUTOMATIC" = "true" ]; then
-            python -m src.autonomous_runner --run-id "$REQUESTED_RUN_ID"
+            bash scripts/allow_source_warning.sh python -m src.autonomous_runner --run-id "$REQUESTED_RUN_ID"
             exit 0
           fi
 
@@ -233,7 +235,7 @@ jobs:
             exit 0
           fi
           if [ "$REQUESTED_ENRICHMENT_ONLY" = "true" ]; then
-            python -m src.queued_runner --enrichment-only
+            bash scripts/allow_source_warning.sh python -m src.queued_runner --enrichment-only
             exit 0
           fi
 
@@ -248,7 +250,7 @@ jobs:
           if [ -n "$REQUESTED_LIMIT" ]; then
             args+=(--limit "$REQUESTED_LIMIT")
           fi
-          python -m src.main "${args[@]}"
+          bash scripts/allow_source_warning.sh python -m src.main "${args[@]}"
 
       - name: Finalize unfinished run
         if: always() && inputs.publication_check != true
@@ -260,6 +262,14 @@ jobs:
       - name: Report source coverage and enrichment backlog
         if: always()
         run: python -m src.pipeline_health --report-only
+
+      - name: Flag partial collection
+        if: always() && steps.pipeline.outputs.source_warning == 'true'
+        run: |
+          {
+            echo "### Collecte partielle"
+            echo "Au moins une source activée a rendu 0 annonce ou a levé une erreur. Voir les annotations « Source … en échec » de cette exécution."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Save extraction checkpoints
         if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true
