@@ -43,9 +43,11 @@ export const metadata: Metadata = {
       "Ventes au tribunal, notariales et domaniales référencées : comprenez les règles et préparez votre achat avec Immojudis.",
     type: "website",
     url: siteOrigin,
+    siteName: "Immojudis",
+    locale: "fr_FR",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
   },
 };
 

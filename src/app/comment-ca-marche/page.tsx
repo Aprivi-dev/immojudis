@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/comment-ca-marche" },
-  title: "Comment utiliser Immojudis",
+  title: "Comment ça marche : rechercher et préparer une vente",
   description:
     "Rechercher une vente, comparer des biens, sauvegarder ses favoris et préparer une simulation.",
 };

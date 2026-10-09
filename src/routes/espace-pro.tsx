@@ -30,15 +30,6 @@ import {
 } from "@/lib/publication-requests-client";
 
 export const Route = createFileRoute("/espace-pro")({
-  head: () => ({
-    meta: [
-      { title: "Espace pro — Immojudis" },
-      {
-        name: "description",
-        content: "Suivre vos demandes de publication, leurs pièces et les ventes mises en ligne.",
-      },
-    ],
-  }),
   component: ProfessionalWorkspacePage,
 });
 

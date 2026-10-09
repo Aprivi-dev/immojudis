@@ -16,7 +16,18 @@ export const metadata: Metadata = {
   title,
   description,
   alternates: { canonical: "/ressources" },
-  openGraph: { title, description, url: "/ressources", type: "website" },
+  openGraph: {
+    title,
+    description,
+    url: "/ressources",
+    type: "website",
+    siteName: "Immojudis",
+    locale: "fr_FR",
+    // Declared here because a page-level openGraph replaces the layout's: without
+    // an image, shares of this page would have no preview.
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "Immojudis" }],
+  },
+  twitter: { card: "summary_large_image", title, description, images: ["/opengraph-image"] },
 };
 
 export default function Page() {

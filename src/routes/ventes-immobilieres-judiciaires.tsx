@@ -6,12 +6,6 @@ import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import { SaleTypesOverview } from "@/components/SaleTypesOverview";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 
-const RESOURCES_CANONICAL = "https://immojudis-dezt.vercel.app/ventes-immobilieres-judiciaires";
-const RESOURCES_TITLE =
-  "Ressources ventes immobilières judiciaires : annonces, risques et prix plafond | Immojudis";
-const DESCRIPTION =
-  "Immojudis référence et analyse les ventes immobilières judiciaires : annonces, cahier des conditions de vente, risques, frais, occupation, prix plafond et enchères au tribunal.";
-
 const FAQ: Array<{ q: string; a: string }> = [
   {
     q: "Immojudis référence-t-il uniquement des ventes au tribunal ?",
@@ -194,22 +188,6 @@ const FAQ_JSON_LD = {
 };
 
 export const Route = createFileRoute("/ventes-immobilieres-judiciaires")({
-  head: () => ({
-    meta: [
-      { title: RESOURCES_TITLE },
-      { name: "description", content: DESCRIPTION },
-      { name: "robots", content: "index, follow" },
-      { property: "og:type", content: "website" },
-      { property: "og:title", content: RESOURCES_TITLE },
-      {
-        property: "og:description",
-        content:
-          "Trouvez, analysez et préparez vos ventes immobilières judiciaires avec Immojudis : annonces, risques, frais, occupation et prix plafond.",
-      },
-      { property: "og:url", content: RESOURCES_CANONICAL },
-    ],
-    links: [{ rel: "canonical", href: RESOURCES_CANONICAL }],
-  }),
   component: ResourcesPage,
 });
 

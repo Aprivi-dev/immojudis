@@ -11,7 +11,7 @@ type PageParams = {
 };
 
 export const metadata: Metadata = {
-  title: "Rapport partagé — ImmoJudis",
+  title: "Rapport partagé",
   robots: {
     index: false,
     follow: false,

@@ -8,16 +8,6 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { RESOURCES_PATH } from "@/lib/navigation";
 
 export const Route = createFileRoute("/a-propos")({
-  head: () => ({
-    meta: [
-      { title: "À propos — Immojudis" },
-      {
-        name: "description",
-        content:
-          "Immojudis rassemble les ventes au tribunal, notariales et domaniales référencées et explique les règles propres à chaque procédure.",
-      },
-    ],
-  }),
   component: AboutPage,
 });
 

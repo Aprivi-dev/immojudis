@@ -7,15 +7,6 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { publicLegalPublisher } from "@/lib/legal-documents";
 
 export const Route = createFileRoute("/contact")({
-  head: () => ({
-    meta: [
-      { title: "Contact — Immojudis" },
-      {
-        name: "description",
-        content: "Contacter l'équipe Immojudis.",
-      },
-    ],
-  }),
   component: ContactPage,
 });
 
