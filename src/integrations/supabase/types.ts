@@ -4311,6 +4311,36 @@ export type Database = {
           granted: boolean;
         }[];
       };
+      get_public_sale_summary: {
+        Args: { p_sale_id: string };
+        Returns: {
+          id: string;
+          starting_price_eur: number | null;
+          sale_venue_type: string;
+          sale_verification_status: string;
+          city: string | null;
+          department: string | null;
+          property_type: string | null;
+          sale_date: string | null;
+          app_surface_m2: number | null;
+          app_surface_kind: string | null;
+          rooms_count: number | null;
+          bedrooms_count: number | null;
+          bathrooms_count: number | null;
+          tribunal_name: string | null;
+          tribunal_city: string | null;
+          thumbnail_url: string | null;
+          updated_at: string | null;
+        }[];
+      };
+      list_public_sale_sitemap_entries: {
+        Args: { p_limit?: number; p_offset?: number };
+        Returns: {
+          id: string;
+          updated_at: string | null;
+          total_count: number;
+        }[];
+      };
       search_auction_sales_preview: {
         Args: {
           p_city?: string | null;
