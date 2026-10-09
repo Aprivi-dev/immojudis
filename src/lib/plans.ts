@@ -195,11 +195,33 @@ export function isActivePlanStatus(status: unknown): boolean {
   return status === "trialing" || status === "active";
 }
 
+/** A failed renewal keeps access this long after the end of the paid period. */
+export const PAST_DUE_GRACE_DAYS = 7;
+
+export type PlanBilling = {
+  status: PlanStatus | null;
+  /** True once a Stripe customer exists: the billing portal can then be opened. */
+  hasStripeCustomer: boolean;
+  /** End of the grace period when the last renewal failed. */
+  graceEndsAt: string | null;
+};
+
+export function pastDueGraceEnd(currentPeriodEnd: unknown): string | null {
+  if (typeof currentPeriodEnd !== "string") return null;
+  const end = new Date(currentPeriodEnd).getTime();
+  if (!Number.isFinite(end)) return null;
+  return new Date(end + PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
+
 export function isPlanPeriodActive(
   status: unknown,
   currentPeriodEnd: unknown,
   now = new Date(),
 ): boolean {
+  if (status === "past_due") {
+    const graceEnd = pastDueGraceEnd(currentPeriodEnd);
+    return graceEnd !== null && new Date(graceEnd).getTime() > now.getTime();
+  }
   if (!isActivePlanStatus(status)) return false;
   if (currentPeriodEnd == null || currentPeriodEnd === "") return true;
   if (typeof currentPeriodEnd !== "string") return false;

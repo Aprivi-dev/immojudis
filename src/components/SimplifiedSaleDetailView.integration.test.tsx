@@ -207,7 +207,7 @@ describe("integrated scenario workspace", () => {
     expect(screen.queryByRole("button", { name: "Détailler le budget" })).toBeNull();
     expect(screen.queryByLabelText("Libellé du poste 1")).toBeNull();
     expect(
-      screen.getByRole("link", { name: "Découvrir l’essai Premium" }).getAttribute("href"),
+      screen.getByRole("link", { name: "Découvrir l’offre Analyse" }).getAttribute("href"),
     ).toBe("/accompagnement");
   });
 

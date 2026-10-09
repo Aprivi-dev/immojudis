@@ -6,10 +6,13 @@ import { getEnvironmentalContext } from "@/lib/environment.functions";
 import {
   isPlanPeriodActive,
   normalizePlanCode,
+  pastDueGraceEnd,
   PLAN_LIMITS,
   type FeatureAccess,
   type FeatureKey,
+  type PlanBilling,
   type PlanCode,
+  type PlanStatus,
 } from "@/lib/plans";
 import { createTextPdf } from "@/lib/simple-pdf";
 import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
@@ -102,6 +105,7 @@ export type PlanEntitlements = {
   label: string;
   hasAnalysisAccess: boolean;
   currentPeriodEnd: string | null;
+  billing?: PlanBilling;
   limits: (typeof PLAN_LIMITS)[PlanCode];
   features: {
     salesStatistics: FeatureAccess;
@@ -663,7 +667,7 @@ export async function resolvePlanEntitlements(
 
   const { data, error } = await auth.supabase
     .from("user_subscriptions")
-    .select("plan_code,status,current_period_end")
+    .select("plan_code,status,current_period_end,stripe_customer_id")
     .eq("user_id", auth.userId)
     .maybeSingle();
 
@@ -672,7 +676,11 @@ export async function resolvePlanEntitlements(
     data && isPlanPeriodActive(data.status, data.current_period_end)
       ? normalizePlanCode(data.plan_code)
       : "decouverte";
-  return buildPlanEntitlements(plan, data?.current_period_end ?? null);
+  return buildPlanEntitlements(plan, data?.current_period_end ?? null, PLAN_LIMITS[plan], {
+    status: (data?.status as PlanStatus | undefined) ?? null,
+    hasStripeCustomer: Boolean(data?.stripe_customer_id),
+    graceEndsAt: data?.status === "past_due" ? pastDueGraceEnd(data.current_period_end) : null,
+  });
 }
 
 export async function assertFeatureEntitlement(

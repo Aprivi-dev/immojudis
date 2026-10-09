@@ -12,6 +12,7 @@ import {
   sendCommercialConfirmation,
 } from "@/lib/commercial-acceptance";
 import { assertPaidOfferLegalReadiness } from "@/lib/legal-documents";
+import { sendPaymentFailedNotice } from "@/lib/billing-notices";
 import {
   ANALYSIS_BILLING_MODEL,
   ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
@@ -90,6 +91,25 @@ type StripePaymentLifecycleRpcClient = {
     },
   ): Promise<{
     data: Array<{ access_end: string | null; granted: boolean }> | null;
+    error: { message?: string } | null;
+  }>;
+};
+
+type StripeSubscriptionRpcClient = {
+  rpc(
+    name: "apply_stripe_subscription_state",
+    args: {
+      p_current_period_end: string | null;
+      p_event_created: number;
+      p_metadata: Json;
+      p_plan_code: PlanCode;
+      p_status: PlanStatus;
+      p_stripe_customer_id: string | null;
+      p_stripe_subscription_id: string;
+      p_user_id: string;
+    },
+  ): Promise<{
+    data: Array<{ applied: boolean; reason: string }> | null;
     error: { message?: string } | null;
   }>;
 };
@@ -510,7 +530,14 @@ export async function handleStripeWebhook({
       case "customer.subscription.deleted":
       case "customer.subscription.paused":
       case "customer.subscription.resumed":
-        handled = await syncStripeSubscription(event.data.object as Stripe.Subscription);
+        handled = await syncStripeSubscription(
+          event.data.object as Stripe.Subscription,
+          null,
+          event.created,
+        );
+        break;
+      case "invoice.payment_failed":
+        handled = await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
         break;
       case "charge.refunded":
         handled = await handleChargeRefunded(event.data.object as Stripe.Charge, event);
@@ -697,7 +724,7 @@ async function handleCheckoutCompleted(
       : subscriptionValue;
 
   if (subscription?.object === "subscription") {
-    const synced = await syncStripeSubscription(subscription, userId);
+    const synced = await syncStripeSubscription(subscription, userId, event.created);
     if (synced) await releaseCheckoutReservation(session);
     const acceptanceId = session.metadata?.commercial_acceptance_id;
     if (synced && acceptanceId) {
@@ -795,7 +822,7 @@ async function handleChargeRefunded(charge: Stripe.Charge, event: Stripe.Event):
   const userId = await stripeUserIdFromPaymentObject(charge);
   const paymentIntentId = stripeObjectId(charge.payment_intent);
   if (!userId || !paymentIntentId) return false;
-  return recordStripePaymentState({
+  const recorded = await recordStripePaymentState({
     userId,
     paymentIntentId,
     state: "refunded",
@@ -803,6 +830,10 @@ async function handleChargeRefunded(charge: Stripe.Charge, event: Stripe.Event):
     event,
     revokeImmediately: true,
   });
+  // A refunded customer must not be charged again at the next renewal, and the
+  // subscription events that follow must report a cancelled state.
+  if (recorded) await cancelStripeSubscriptionForUser(userId);
+  return recorded;
 }
 
 async function handleChargeDispute(dispute: Stripe.Dispute, event: Stripe.Event): Promise<boolean> {
@@ -821,7 +852,7 @@ async function handleChargeDispute(dispute: Stripe.Dispute, event: Stripe.Event)
     .maybeSingle();
   if (error) throw error;
   const status = stripeDisputeStatusToPlanStatus(dispute.status, data?.current_period_end ?? null);
-  return recordStripePaymentState({
+  const recorded = await recordStripePaymentState({
     userId,
     paymentIntentId,
     state: stripeDisputeStatusToPaymentState(dispute.status),
@@ -829,17 +860,75 @@ async function handleChargeDispute(dispute: Stripe.Dispute, event: Stripe.Event)
     event,
     revokeImmediately: status === "cancelled",
   });
+  if (recorded && status === "cancelled") await cancelStripeSubscriptionForUser(userId);
+  return recorded;
+}
+
+async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<boolean> {
+  const customerId = stripeObjectId(invoice.customer);
+  if (!customerId || !invoice.id) return false;
+  const { data, error } = await supabaseAdmin
+    .from("user_subscriptions")
+    .select("user_id")
+    .eq("stripe_customer_id", customerId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.user_id) return false;
+  await sendPaymentFailedNotice({
+    userId: data.user_id,
+    invoiceId: invoice.id,
+    nextAttemptAt: invoice.next_payment_attempt,
+  });
+  return true;
+}
+
+function isStripeMissingOrCancelled(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  return (
+    code === "resource_missing" ||
+    (typeof message === "string" &&
+      /already.*cancel|cancel.*subscription|no such subscription/i.test(message))
+  );
+}
+
+async function cancelStripeSubscriptionForUser(userId: string): Promise<void> {
+  const { data, error } = await supabaseAdmin
+    .from("user_subscriptions")
+    .select("stripe_subscription_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  const subscriptionId = data?.stripe_subscription_id;
+  if (!subscriptionId) return;
+  try {
+    await getStripe().subscriptions.cancel(subscriptionId);
+  } catch (cancelError) {
+    if (!isStripeMissingOrCancelled(cancelError)) throw cancelError;
+  }
 }
 
 async function stripeUserIdFromPaymentObject(charge: Stripe.Charge): Promise<string | null> {
   if (charge.metadata?.user_id) return charge.metadata.user_id;
   const paymentIntentValue = charge.payment_intent;
-  if (!paymentIntentValue) return null;
-  const paymentIntent =
-    typeof paymentIntentValue === "string"
-      ? await getStripe().paymentIntents.retrieve(paymentIntentValue)
-      : paymentIntentValue;
-  return paymentIntent.metadata?.user_id ?? null;
+  if (paymentIntentValue) {
+    const paymentIntent =
+      typeof paymentIntentValue === "string"
+        ? await getStripe().paymentIntents.retrieve(paymentIntentValue)
+        : paymentIntentValue;
+    if (paymentIntent.metadata?.user_id) return paymentIntent.metadata.user_id;
+  }
+  // Subscription invoices carry no ImmoJudis metadata: the Stripe customer is
+  // the reliable link to the account.
+  const customerId = stripeObjectId(charge.customer);
+  if (!customerId) return null;
+  const { data, error } = await supabaseAdmin
+    .from("user_subscriptions")
+    .select("user_id")
+    .eq("stripe_customer_id", customerId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.user_id ?? null;
 }
 
 async function recordStripePaymentState({
@@ -872,52 +961,92 @@ async function recordStripePaymentState({
   return data?.[0]?.recorded === true;
 }
 
+async function retrieveCurrentSubscription(
+  subscription: Stripe.Subscription,
+): Promise<Stripe.Subscription> {
+  try {
+    return await getStripe().subscriptions.retrieve(subscription.id);
+  } catch (error) {
+    if (isStripeMissingOrCancelled(error)) return subscription;
+    throw error;
+  }
+}
+
+/** True when the price is the approved Analyse price (or none is configured yet). */
+export function isAnalysisSubscriptionPrice(
+  priceId: string | null | undefined,
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): boolean {
+  const configured = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
+  return !configured || !priceId || priceId === configured;
+}
+
+/**
+ * Store the state Stripe holds now, not the one in the (possibly late or
+ * replayed) payload. The database applies it only if it is not older than the
+ * newest applied event and not a reactivation of a refunded subscription.
+ */
 async function syncStripeSubscription(
   subscription: Stripe.Subscription,
-  fallbackUserId?: string | null,
+  fallbackUserId: string | null | undefined,
+  eventCreated: number,
 ): Promise<boolean> {
   const userId = fallbackUserId || (await findUserIdForSubscription(subscription));
   if (!userId) return false;
 
-  const customerId = stripeObjectId(subscription.customer);
-  const price = subscription.items.data[0]?.price;
-  const status = stripeSubscriptionStatusToPlanStatus(subscription.status);
-  const plan = resolveStripePlanCode({
-    metadataPlanCode: subscription.metadata?.plan_code,
-    priceId: price?.id ?? null,
+  const current = await retrieveCurrentSubscription(subscription);
+  const customerId = stripeObjectId(current.customer);
+  const price = current.items.data[0]?.price;
+  const status = stripeSubscriptionStatusToPlanStatus(current.status);
+  const plan: PlanCode = isAnalysisSubscriptionPrice(price?.id)
+    ? resolveStripePlanCode({
+        metadataPlanCode: current.metadata?.plan_code,
+        priceId: price?.id ?? null,
+      })
+    : "decouverte";
+  if (plan === "decouverte") {
+    console.warn("[billing] subscription with an unrecognised price ignored", {
+      subscription: current.id,
+      price: price?.id ?? null,
+    });
+  }
+
+  const client = supabaseAdmin as unknown as StripeSubscriptionRpcClient;
+  const { data, error } = await client.rpc("apply_stripe_subscription_state", {
+    p_current_period_end: stripeCurrentPeriodEndIso(current),
+    p_event_created: eventCreated,
+    p_metadata: asJson({
+      stripe_status: current.status,
+      stripe_price_id: price?.id ?? null,
+      stripe_product_id: stripeObjectId(price?.product),
+      stripe_price_amount_cents: price?.unit_amount ?? null,
+      stripe_price_currency: price?.currency ?? null,
+      stripe_price_interval: price?.recurring?.interval ?? null,
+      stripe_price_interval_count: price?.recurring?.interval_count ?? null,
+      stripe_subscription_created_at: unixToIso(current.created),
+      stripe_trial_start: unixToIso(current.trial_start),
+      stripe_trial_end: unixToIso(current.trial_end),
+      stripe_first_invoice_at: unixToIso(current.trial_end ?? current.created),
+      stripe_current_period_end: stripeCurrentPeriodEndIso(current),
+      cancel_at_period_end: current.cancel_at_period_end,
+      canceled_at: unixToIso(current.canceled_at),
+      synced_at: new Date().toISOString(),
+    }),
+    p_plan_code: plan,
+    p_status: status,
+    p_stripe_customer_id: customerId,
+    p_stripe_subscription_id: current.id,
+    p_user_id: userId,
   });
-
-  const { error } = await supabaseAdmin.from("user_subscriptions").upsert(
-    {
-      user_id: userId,
-      plan_code: plan,
-      status,
-      stripe_customer_id: customerId,
-      stripe_subscription_id: subscription.id,
-      current_period_end: stripeCurrentPeriodEndIso(subscription),
-      metadata: asJson({
-        stripe_status: subscription.status,
-        stripe_price_id: price?.id ?? null,
-        stripe_product_id: stripeObjectId(price?.product),
-        stripe_price_amount_cents: price?.unit_amount ?? null,
-        stripe_price_currency: price?.currency ?? null,
-        stripe_price_interval: price?.recurring?.interval ?? null,
-        stripe_price_interval_count: price?.recurring?.interval_count ?? null,
-        stripe_subscription_created_at: unixToIso(subscription.created),
-        stripe_trial_start: unixToIso(subscription.trial_start),
-        stripe_trial_end: unixToIso(subscription.trial_end),
-        stripe_first_invoice_at: unixToIso(subscription.trial_end ?? subscription.created),
-        stripe_current_period_end: stripeCurrentPeriodEndIso(subscription),
-        cancel_at_period_end: subscription.cancel_at_period_end,
-        canceled_at: unixToIso(subscription.canceled_at),
-        synced_at: new Date().toISOString(),
-      }),
-    },
-    { onConflict: "user_id" },
-  );
-
-  if (error) throw error;
-  return true;
+  if (error) throw new Error(error.message || "Synchronisation de l'abonnement Stripe impossible.");
+  const result = data?.[0];
+  if (result && !result.applied) {
+    console.info("[billing] stale or reversed subscription event ignored", {
+      subscription: current.id,
+      reason: result.reason,
+    });
+  }
+  return result?.applied === true;
 }
 
 export function resolveCheckoutPlanCode(_value: unknown): Exclude<PlanCode, "decouverte"> {

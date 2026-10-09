@@ -38,6 +38,7 @@ export function BillingActions({
   const navigate = useNavigate();
   const [plan, setPlan] = useState<PlanCode | null>(null);
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
+  const [hasStripeCustomer, setHasStripeCustomer] = useState(false);
   const [offerConfigured, setOfferConfigured] = useState(false);
   const [offerLabel, setOfferLabel] = useState(() => resolveAnalysisOfferLabel());
   const [trialAvailable, setTrialAvailable] = useState(true);
@@ -52,6 +53,7 @@ export function BillingActions({
     let active = true;
     setPlan(null);
     setCurrentPeriodEnd(null);
+    setHasStripeCustomer(false);
 
     fetchBillingOffer()
       .then((offer) => {
@@ -71,6 +73,7 @@ export function BillingActions({
           if (active) {
             setPlan(response.plan.plan);
             setCurrentPeriodEnd(response.plan.currentPeriodEnd);
+            setHasStripeCustomer(response.plan.billing?.hasStripeCustomer === true);
           }
         })
         .catch(() => {
@@ -149,10 +152,15 @@ export function BillingActions({
   }
 
   const hasAnalysis = plan === "analyse";
-  const primaryLabel = hasAnalysis
+  // A subscriber whose renewal failed has lost the plan but still needs the
+  // portal to update the card: checkout would be refused for them.
+  const managesBilling = hasAnalysis || hasStripeCustomer;
+  const primaryLabel = managesBilling
     ? busy === "portal"
       ? "Ouverture..."
-      : "Gérer mon abonnement Analyse"
+      : hasAnalysis
+        ? "Gérer mon abonnement Analyse"
+        : "Gérer mon abonnement"
     : !checkoutAvailable || !offerConfigured
       ? "Paiement temporairement indisponible"
       : busy === "checkout"
@@ -167,10 +175,12 @@ export function BillingActions({
       <div className={`flex flex-col gap-2 sm:flex-row ${className}`}>
         <button
           type="button"
-          onClick={hasAnalysis ? openPortal : openCheckoutReview}
+          onClick={managesBilling ? openPortal : openCheckoutReview}
           ref={checkoutTriggerRef}
           disabled={
-            loading || Boolean(busy) || (!hasAnalysis && (!checkoutAvailable || !offerConfigured))
+            loading ||
+            Boolean(busy) ||
+            (!managesBilling && (!checkoutAvailable || !offerConfigured))
           }
           className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -196,7 +206,7 @@ export function BillingActions({
         )}
       </div>
 
-      {!checkoutAvailable || !offerConfigured ? (
+      {!managesBilling && (!checkoutAvailable || !offerConfigured) ? (
         <p role="status" className="mt-3 text-sm leading-relaxed text-brand-navy/80">
           Les souscriptions sont temporairement indisponibles. Vous pouvez explorer gratuitement le
           catalogue.{" "}

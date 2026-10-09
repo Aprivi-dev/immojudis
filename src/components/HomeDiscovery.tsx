@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
+import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import styles from "./HomeDiscovery.module.css";
 
@@ -49,6 +50,7 @@ const analysisFeatures = [
 
 export function HomeDiscovery() {
   const analysisPrice = resolveAnalysisOfferLabel();
+  const checkoutOpen = useAnalysisCheckoutOpen();
 
   return (
     <div className={styles.root}>
@@ -168,10 +170,16 @@ export function HomeDiscovery() {
                 <Link href="/accompagnement" className={styles.primaryLink}>
                   Découvrir Analyse <ArrowRight aria-hidden="true" size={17} />
                 </Link>
-                <p className={styles.planFinePrint}>
-                  Essai de 7 jours avec carte bancaire, puis abonnement récurrent. Résiliable depuis
-                  votre espace.
-                </p>
+                {checkoutOpen === true ? (
+                  <p className={styles.planFinePrint}>
+                    Essai de 7 jours avec carte bancaire, puis abonnement récurrent. Résiliable
+                    depuis votre compte.
+                  </p>
+                ) : checkoutOpen === false ? (
+                  <p className={styles.planFinePrint}>
+                    Offre bientôt disponible : la souscription n’est pas encore ouverte.
+                  </p>
+                ) : null}
               </article>
             </div>
           </div>

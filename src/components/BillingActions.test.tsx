@@ -98,6 +98,26 @@ describe("BillingActions", () => {
     expect(mocks.startAnalyseCheckout).not.toHaveBeenCalled();
   });
 
+  it("lets a subscriber whose renewal failed update the card instead of re-subscribing", async () => {
+    mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: true, missing: [] });
+    mocks.fetchAccessPlan.mockResolvedValue({
+      plan: {
+        plan: "decouverte",
+        currentPeriodEnd: null,
+        billing: { status: "past_due", hasStripeCustomer: true, graceEndsAt: null },
+      },
+    });
+    renderActions();
+
+    const manage = await screen.findByRole("button", { name: "Gérer mon abonnement" });
+    expect((manage as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole("button", { name: /Démarrer l’essai|Souscrire/ })).toBeNull();
+
+    fireEvent.click(manage);
+    await waitFor(() => expect(mocks.openBillingPortal).toHaveBeenCalledTimes(1));
+    expect(mocks.startAnalyseCheckout).not.toHaveBeenCalled();
+  });
+
   it("opens the configured offer recap and requires both consents before checkout", async () => {
     mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: true, missing: [] });
     renderActions();

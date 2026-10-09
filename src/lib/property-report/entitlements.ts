@@ -8,6 +8,7 @@ import {
   PLAN_LIMITS,
   type FeatureAccess,
   type FeatureKey,
+  type PlanBilling,
   type PlanCode,
 } from "@/lib/plans";
 import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
@@ -19,12 +20,14 @@ export function buildPlanEntitlements(
   plan: PlanCode,
   currentPeriodEnd: string | null = null,
   limits: PlanEntitlements["limits"] = PLAN_LIMITS[plan],
+  billing?: PlanBilling,
 ): PlanEntitlements {
   return {
     plan,
     label: PLAN_LABELS[plan],
     hasAnalysisAccess: plan === "analyse",
     currentPeriodEnd,
+    ...(billing ? { billing } : {}),
     limits,
     features: {
       salesStatistics: featureAccess(plan, "sales.statistics"),
