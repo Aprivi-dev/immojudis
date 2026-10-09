@@ -16,7 +16,7 @@ import zipfile
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote, unquote, urljoin, urlparse, urlsplit, urlunsplit
 from xml.etree import ElementTree
@@ -60,6 +60,22 @@ from src.pdf_document_types import (
     classify_document_type,  # noqa: F401
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
+from src.pdf_ocr import (
+    PdfDeadlineExceeded,
+    PdfDocumentOcrBudgetExceeded,
+    PdfExtractionDeferred,
+    _PDF_DOCUMENT_OCR_DEADLINE,  # noqa: F401
+    _PDF_DOCUMENT_LOG_TYPES,  # noqa: F401
+    deadline_bounded_timeout as _deadline_bounded_timeout_impl,
+    ensure_pdf_document_ocr_budget as _ensure_pdf_document_ocr_budget,
+    ensure_pdf_ocr_deadline as _ensure_pdf_ocr_deadline_impl,
+    extract_page_text_with_ocr_result as _extract_page_text_with_ocr_result_impl,
+    log_pdf_document_transition as _log_pdf_document_transition,
+    pdf_document_ocr_budget_remaining,  # noqa: F401
+    pdf_document_ocr_budget_scope,
+    pdf_ocr_document_budget_seconds as _pdf_ocr_document_budget_seconds,
+    select_pdf_deadline_exception as _select_pdf_deadline_exception,
+)
 from src.pdf_page_analysis import (
     VISUAL_BLANK_INK_RATIO_MAX,  # noqa: F401
     VISUAL_BLANK_INK_THRESHOLD,  # noqa: F401
@@ -74,7 +90,6 @@ from src.pdf_page_analysis import (
     is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
 )
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
-from src.pdf_ocr import extract_page_text_with_ocr_result as _extract_page_text_with_ocr_result_impl
 from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections
 
 LOGGER = logging.getLogger(__name__)
@@ -83,41 +98,14 @@ DOCUMENT_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 
 MAX_DOCUMENT_REDIRECTS = 5
 
-# Deterministic PDF facts now include page/document scoped candidates and
-# multi-lot ambiguity decisions.  Bump this marker whenever the projection
-# semantics change so a previously complete extraction cannot be treated as
-# current by the structured-facts cache.
+# Deterministic PDF facts include page/document candidates and multi-lot
+# decisions; bump this marker when projection semantics change.
 DOCUMENT_FACTS_VERSION = "document_facts_v3_pdf_scope_diagnostics"
 
-# Keep a fixed part of the queue worker budget for the sale write, lease
-# telemetry, and claim cleanup after a bounded PDF pass returns.  The worker
-# still owns the 1,200-second budget; this is only the PDF's effective cutoff.
+# Keep a fixed margin for queue finalization after a bounded PDF pass.
 PDF_FINALIZATION_MARGIN_SECONDS = 60.0
-_PDF_DOCUMENT_LOG_TYPES = frozenset(
-    {
-        "pdf",
-        "doc",
-        "docx",
-        "pv_huissier",
-        "pv_notaire",
-        "proces_verbal",
-        "diagnostics_techniques",
-        "cahier_conditions_vente",
-        "conditions_vente",
-        "annonce_vente",
-        "bail",
-        "procedure_saisie",
-        "cadastre",
-        "other",
-        "unknown",
-    }
-)
 
 _PDF_DEADLINE: ContextVar[float | None] = ContextVar("pdf_enrichment_deadline", default=None)
-_PDF_DOCUMENT_OCR_DEADLINE: ContextVar[float | None] = ContextVar(
-    "pdf_document_ocr_deadline",
-    default=None,
-)
 
 
 @dataclass
@@ -140,33 +128,6 @@ class PermanentDocumentFailure(ValueError):
         self.reason = reason
 
 
-class PdfExtractionDeferred(ValueError):
-    """A bounded OCR pass stopped after checkpointing and should continue later."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        checkpointed_pages: int,
-        total_pages: int,
-        new_progress_pages: int,
-    ) -> None:
-        super().__init__(message)
-        self.checkpointed_pages = checkpointed_pages
-        self.total_pages = total_pages
-        self.new_progress_pages = new_progress_pages
-        self.progress_made = new_progress_pages > 0
-        self.next_attempt_at = datetime.now(UTC) + timedelta(minutes=30)
-
-
-class PdfDeadlineExceeded(PdfExtractionDeferred):
-    """The worker cutoff was reached; release the claim without spending retry."""
-
-
-class PdfDocumentOcrBudgetExceeded(PdfExtractionDeferred):
-    """One OCR-heavy document yielded after its bounded pass budget."""
-
-
 @contextmanager
 def pdf_deadline_scope(deadline: float | None):
     """Set a task-local monotonic cutoff for one queue batch."""
@@ -185,102 +146,8 @@ def pdf_deadline_remaining() -> float | None:
     return deadline - time.monotonic()
 
 
-@contextmanager
-def pdf_document_ocr_budget_scope(budget_seconds: float | None):
-    """Bound OCR for one document without extending the worker cutoff."""
-
-    if budget_seconds is None or float(budget_seconds) <= 0:
-        yield
-        return
-    deadline = time.monotonic() + float(budget_seconds)
-    current_deadline = _PDF_DOCUMENT_OCR_DEADLINE.get()
-    effective_deadline = (
-        min(current_deadline, deadline)
-        if current_deadline is not None
-        else deadline
-    )
-    token = _PDF_DOCUMENT_OCR_DEADLINE.set(effective_deadline)
-    try:
-        yield
-    finally:
-        _PDF_DOCUMENT_OCR_DEADLINE.reset(token)
-
-
-def pdf_document_ocr_budget_remaining() -> float | None:
-    deadline = _PDF_DOCUMENT_OCR_DEADLINE.get()
-    if deadline is None:
-        return None
-    return deadline - time.monotonic()
-
-
-def _pdf_ocr_document_budget_seconds(settings: dict[str, object]) -> float:
-    """Return the bounded OCR pass budget; zero disables this guard."""
-
-    if not bool(settings.get("pdf_ocr_enabled")):
-        return 0.0
-    try:
-        return max(0.0, float(settings.get("pdf_ocr_document_budget_seconds", 120.0) or 0.0))
-    except (TypeError, ValueError):
-        return 120.0
-
-
-def _log_pdf_document_transition(
-    document: dict[str, object],
-    *,
-    status: str,
-    started_at: float,
-    pages: int | None = None,
-    error_type: str | None = None,
-) -> None:
-    """Emit bounded document timing without URLs, text, or provider payloads."""
-
-    raw_document_type = str(document.get("document_type") or document.get("type") or "").strip().casefold()
-    document_type = (
-        raw_document_type
-        if raw_document_type in _PDF_DOCUMENT_LOG_TYPES
-        else "unknown"
-    )
-    LOGGER.info(
-        "PDF document transition: document_type=%s status=%s elapsed_seconds=%.1f "
-        "pages=%s error_type=%s",
-        document_type,
-        status,
-        max(time.monotonic() - started_at, 0.0),
-        pages if pages is not None else "unknown",
-        error_type or "none",
-    )
-
-
-def _ensure_pdf_document_ocr_budget(
-    *,
-    operation: str,
-    checkpointed_pages: int = 0,
-    total_pages: int = 0,
-    new_progress_pages: int = 0,
-) -> float | None:
-    remaining = pdf_document_ocr_budget_remaining()
-    if remaining is not None and remaining <= 0:
-        raise PdfDocumentOcrBudgetExceeded(
-            f"PDF OCR document budget reached during {operation}; retry resumes from checkpoint",
-            checkpointed_pages=checkpointed_pages,
-            total_pages=total_pages,
-            new_progress_pages=new_progress_pages,
-        )
-    return remaining
-
-
 def _pdf_deadline_exception(message: str, **kwargs: int) -> BaseException:
-    """Select the cutoff class after an interruptible OCR timeout."""
-
-    worker_remaining = pdf_deadline_remaining()
-    if worker_remaining is None or worker_remaining > 0:
-        document_remaining = pdf_document_ocr_budget_remaining()
-        if document_remaining is not None and document_remaining <= 0:
-            return PdfDocumentOcrBudgetExceeded(
-                message.replace("bounded deadline", "OCR document budget"),
-                **kwargs,
-            )
-    return PdfDeadlineExceeded(message, **kwargs)
+    return _select_pdf_deadline_exception(message, worker_remaining=pdf_deadline_remaining(), **kwargs)
 
 
 def _ensure_pdf_deadline(
@@ -308,26 +175,13 @@ def _ensure_pdf_ocr_deadline(
     total_pages: int = 0,
     new_progress_pages: int = 0,
 ) -> float | None:
-    """Apply both the worker and per-document OCR cutoffs to one OCR step."""
-
-    worker_remaining = _ensure_pdf_deadline(
+    return _ensure_pdf_ocr_deadline_impl(
+        worker_deadline=_ensure_pdf_deadline,
         operation=operation,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
         new_progress_pages=new_progress_pages,
     )
-    document_remaining = _ensure_pdf_document_ocr_budget(
-        operation=operation,
-        checkpointed_pages=checkpointed_pages,
-        total_pages=total_pages,
-        new_progress_pages=new_progress_pages,
-    )
-    remaining_values = [
-        value
-        for value in (worker_remaining, document_remaining)
-        if value is not None
-    ]
-    return min(remaining_values) if remaining_values else None
 
 
 def _deadline_bounded_timeout(
@@ -338,18 +192,14 @@ def _deadline_bounded_timeout(
     total_pages: int = 0,
     new_progress_pages: int = 0,
 ) -> tuple[float, bool]:
-    """Recompute a subprocess/HTTP timeout after preparation work."""
-
-    requested_timeout = max(0.001, float(timeout_seconds))
-    remaining = _ensure_pdf_ocr_deadline(
+    return _deadline_bounded_timeout_impl(
+        timeout_seconds,
+        ensure_deadline=_ensure_pdf_ocr_deadline,
         operation=operation,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
         new_progress_pages=new_progress_pages,
     )
-    if remaining is None:
-        return requested_timeout, False
-    return max(0.001, min(requested_timeout, remaining)), remaining <= requested_timeout
 
 
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
