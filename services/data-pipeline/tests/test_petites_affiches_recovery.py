@@ -22,7 +22,7 @@ PAGE_2 = CARD.replace("/vente/1.html", "/vente/2.html").replace("annonce_lot_1",
 
 def _settings() -> dict[str, object]:
     return {
-        "browser_user_agent": "test",
+        "user_agent": "test",
         "request_delay_seconds": 0,
         "request_timeout_seconds": 1,
     }

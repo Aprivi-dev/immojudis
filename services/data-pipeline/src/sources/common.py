@@ -247,42 +247,53 @@ class ScrapeResult:
 @dataclass
 class RobotsRules:
     rules: tuple[tuple[str, str], ...] = ()
+    # Seconds requested by "Crawl-delay" for our user agent; None when absent.
+    crawl_delay: float | None = None
 
     @classmethod
     def parse(cls, text: str, user_agent: str) -> RobotsRules:
-        groups: list[tuple[list[str], list[tuple[str, str]]]] = []
+        groups: list[tuple[list[str], list[tuple[str, str]], float | None]] = []
         agents: list[str] = []
         rules: list[tuple[str, str]] = []
+        delay: float | None = None
         for raw_line in text.splitlines():
             line = raw_line.split("#", 1)[0].strip()
             if not line:
                 if agents or rules:
-                    groups.append((agents, rules))
-                    agents, rules = [], []
+                    groups.append((agents, rules, delay))
+                    agents, rules, delay = [], [], None
                 continue
             if ":" not in line:
                 continue
             key, value = [part.strip() for part in line.split(":", 1)]
             key = key.lower()
             if key == "user-agent":
-                if rules:
-                    groups.append((agents, rules))
-                    agents, rules = [], []
+                if rules or delay is not None:
+                    groups.append((agents, rules, delay))
+                    agents, rules, delay = [], [], None
                 agents.append(value.lower())
             elif key in {"allow", "disallow"} and agents:
                 rules.append((key, value))
+            elif key == "crawl-delay" and agents:
+                try:
+                    parsed_delay = float(value)
+                except ValueError:
+                    continue
+                if math.isfinite(parsed_delay) and parsed_delay >= 0:
+                    delay = parsed_delay
         if agents or rules:
-            groups.append((agents, rules))
+            groups.append((agents, rules, delay))
 
         ua = user_agent.lower()
         selected: list[tuple[str, str]] = []
-        for group_agents, group_rules in groups:
+        selected_delay: float | None = None
+        for group_agents, group_rules, group_delay in groups:
             if any(agent != "*" and agent in ua for agent in group_agents):
-                selected = group_rules
+                selected, selected_delay = group_rules, group_delay
                 break
-            if not selected and "*" in group_agents:
-                selected = group_rules
-        return cls(tuple(selected))
+            if not selected and selected_delay is None and "*" in group_agents:
+                selected, selected_delay = group_rules, group_delay
+        return cls(tuple(selected), selected_delay)
 
     def can_fetch(self, url: str) -> bool:
         parsed = urlparse(url)
@@ -549,6 +560,17 @@ class PoliteHttpClient:
             self._robots_by_origin[self._last_robots_origin] = rules
         return rules
 
+    def _request_delay(self, url: str) -> float:
+        """Our configured cadence, raised to the origin's published Crawl-delay."""
+        try:
+            crawl_delay = self._robots_for_url(url).crawl_delay
+        except SourceTaskDeadlineExceeded:
+            raise
+        except Exception:
+            # An unverifiable policy is reported by _guard before any request.
+            return self.delay_seconds
+        return max(self.delay_seconds, crawl_delay or 0.0)
+
     def get(self, url: str) -> str:
         self._guard(url)
         response = self._request("GET", url)
@@ -579,10 +601,11 @@ class PoliteHttpClient:
             raise RuntimeError(f"Source deferred until {self._retry_not_before}")
         if self._access_denials >= 2:
             raise RuntimeError("Source suspended after repeated access refusals")
+        delay_seconds = self._request_delay(url)
         elapsed = time.monotonic() - self._last_request_at
-        if elapsed < self.delay_seconds:
+        if elapsed < delay_seconds:
             _source_task_sleep(
-                self.delay_seconds - elapsed,
+                delay_seconds - elapsed,
                 "waiting for source request cadence",
             )
         ensure_source_task_deadline("starting source request")

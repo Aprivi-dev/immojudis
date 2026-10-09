@@ -66,6 +66,8 @@ jobs:
       run:
         working-directory: services/data-pipeline
     env:
+      # Honest, contactable crawler identity; a repository variable overrides it.
+      AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: ${{ vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED || 'false' }}

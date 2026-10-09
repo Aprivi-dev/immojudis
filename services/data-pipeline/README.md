@@ -659,8 +659,7 @@ Le scraper :
 Variables optionnelles :
 
 ```bash
-AUCTION_USER_AGENT=immojudis-data-pipeline/1.0 (+https://immojudis-dezt.vercel.app/contact)
-AUCTION_BROWSER_USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+AUCTION_USER_AGENT=ImmojudisBot/1.0 (+https://immojudis.com/contact)
 REQUEST_DELAY_SECONDS=1.5
 REQUEST_TIMEOUT_SECONDS=20
 GEOCODE_ENABLED=true

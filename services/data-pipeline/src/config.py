@@ -15,6 +15,8 @@ PDF_TEXTS_DIR = RAW_DIR / "pdf_texts"
 PDF_DOCUMENT_TEXTS_DIR = PDF_TEXTS_DIR / "documents"
 DOCLING_TEXTS_DIR = RAW_DIR / "docling_texts"
 LLM_EXTRACTIONS_DIR = PROCESSED_DIR / "llm_extractions"
+# Identifies the crawler honestly; never impersonate a browser.
+DEFAULT_USER_AGENT = "ImmojudisBot/1.0 (+https://immojudis.com/contact)"
 DEFAULT_REPLICATE_MODEL = "qwen/qwen3-7-plus"
 DEFAULT_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display"
 DEFAULT_LLM_FACT_PROMPT_VERSION = "auction_facts_v1"
@@ -136,15 +138,7 @@ def load_settings() -> dict[str, str | float | None]:
             float(os.getenv("JUDILIBRE_RETRY_MAX_SLEEP_SECONDS", "30")),
         ),
         "dvf_import_batch_size": int(os.getenv("DVF_IMPORT_BATCH_SIZE", "1000")),
-        "user_agent": os.getenv("AUCTION_USER_AGENT", "immojudis-data-pipeline/1.0 (+https://example.com/contact)"),
-        "browser_user_agent": os.getenv(
-            "AUCTION_BROWSER_USER_AGENT",
-            (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/126.0.0.0 Safari/537.36"
-            ),
-        ),
+        "user_agent": (os.getenv("AUCTION_USER_AGENT") or "").strip() or DEFAULT_USER_AGENT,
         "request_delay_seconds": float(os.getenv("REQUEST_DELAY_SECONDS", "1.5")),
         "request_timeout_seconds": float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
         # A source collector is isolated from the parent pipeline so a parser

@@ -25,6 +25,7 @@ import fitz
 import httpx
 
 from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
+from src.document_politeness import DocumentPoliteness, DocumentRobotsDisallowed
 from src.freshness import invalidate_analysis, timestamp_is_fresh
 from src.models import AuctionSale
 from src.normalize import (
@@ -675,6 +676,13 @@ def _download_document_response(
     for redirect_count in range(MAX_DOCUMENT_REDIRECTS + 1):
         require_ep_url(current_url, load_settings())
         _ensure_pdf_deadline(operation="following document redirect")
+        try:
+            # robots.txt and the per-host delay apply to every hop, including
+            # redirects to another origin.
+            _DOCUMENT_POLITENESS.wait_turn(current_url)
+        except DocumentRobotsDisallowed as exc:
+            raise PermanentDocumentFailure("robots_disallowed", str(exc)) from exc
+        _ensure_pdf_deadline(operation="starting document HTTP request")
         response = _send_pinned_document_request(
             current_url,
             headers=headers,
@@ -730,6 +738,33 @@ def _send_pinned_document_request(
                 new_progress_pages=0,
             ) from exc
         raise
+
+
+def _fetch_document_robots(robots_url: str) -> httpx.Response:
+    settings = load_settings()
+    return _send_pinned_document_request(
+        robots_url,
+        headers={"User-Agent": str(settings["user_agent"]), "Accept": "text/plain,*/*;q=0.5"},
+        timeout_seconds=float(settings["request_timeout_seconds"]),
+    )
+
+
+def _document_pause(seconds: float) -> None:
+    """Sleep between requests to one host without outliving the worker deadline."""
+    end = time.monotonic() + seconds
+    while True:
+        pause = end - time.monotonic()
+        if pause <= 0:
+            return
+        remaining = _ensure_pdf_deadline(operation="waiting between document requests")
+        time.sleep(min(pause, remaining) if remaining is not None else pause)
+
+
+_DOCUMENT_POLITENESS = DocumentPoliteness(
+    user_agent=lambda: str(load_settings()["user_agent"]),
+    fetch_robots=_fetch_document_robots,
+    sleep=_document_pause,
+)
 
 
 def _read_document_stream(response: httpx.Response, max_bytes: int) -> bytes:

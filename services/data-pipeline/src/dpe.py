@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from src.config import load_settings
+from src.config import DEFAULT_USER_AGENT, load_settings
 from src.geocode import coordinates_are_verified
 from src.models import AuctionSale
 from src.normalize import clean_text, strip_accents
@@ -117,7 +117,7 @@ def enrich_dpe_sales(
                     geo_radius_m=int(settings.get("dpe_geo_radius_m") or 120),
                     max_results=int(settings.get("dpe_max_results") or 5),
                     timeout_seconds=float(settings.get("dpe_timeout_seconds") or 12),
-                    user_agent=str(settings.get("user_agent") or "immojudis-data-pipeline/1.0"),
+                    user_agent=str(settings.get("user_agent") or DEFAULT_USER_AGENT),
                 )
             )
         except Exception as exc:
@@ -134,7 +134,7 @@ def fetch_dpe_diagnostics_for_sale(
     geo_radius_m: int = 120,
     max_results: int = 5,
     timeout_seconds: float = 12,
-    user_agent: str = "immojudis-data-pipeline/1.0",
+    user_agent: str = DEFAULT_USER_AGENT,
 ) -> list[DpeDiagnostic]:
     if not sale.source_url:
         return []

@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from src.config import RAW_DIR
+from src.config import DEFAULT_USER_AGENT, RAW_DIR
 from src.court_competence import CourtCompetenceReference
 from src.official_sources.justice_open_data import (
     JusticeOpenDataSchemaError,
@@ -118,7 +118,7 @@ def sync_justice_references(
     http_client = client or httpx.Client(
         follow_redirects=True,
         timeout=httpx.Timeout(45.0, connect=15.0),
-        headers={"User-Agent": "immojudis-justice-reference-sync/1.0"},
+        headers={"User-Agent": DEFAULT_USER_AGENT},
         transport=httpx.HTTPTransport(retries=3),
     )
 

@@ -529,7 +529,7 @@ def test_petites_affiches_falls_back_to_get_when_national_post_is_refused(monkey
         petites_affiches,
         "load_settings",
         lambda: {
-            "browser_user_agent": "Mozilla/5.0",
+            "user_agent": "ImmojudisBot/1.0 (+https://immojudis.com/contact)",
             "request_delay_seconds": 0,
             "request_timeout_seconds": 1,
         },
