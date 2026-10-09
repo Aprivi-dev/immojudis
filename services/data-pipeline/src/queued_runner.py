@@ -1561,7 +1561,7 @@ def _enrichment_claim_limit(
     return min(_enrichment_claim_batch_size(family), detail_positions, remaining)
 
 
-if __name__ == "__main__":
+def _run_as_script() -> int:
     if "--enrichment-only" in sys.argv:
         # Detail claims are bounded batches, while each job is still processed
         # sequentially so GitHub serializes writers and the queue lease stays
@@ -1571,5 +1571,13 @@ if __name__ == "__main__":
             f'Enrichment worker recorded {claim_outcomes} bounded claim outcomes; '
             'terminal statuses are reported separately'
         )
-        sys.exit(0)
-    sys.exit(main())
+        return 0
+    return main()
+
+
+if __name__ == "__main__":
+    from src.catalogue_lock import catalogue_writer_lock
+
+    # The queue worker writes sales like the pipeline does; share its lock.
+    with catalogue_writer_lock(label="enrichment queue worker"):
+        sys.exit(_run_as_script())
