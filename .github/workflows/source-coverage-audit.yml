@@ -43,11 +43,11 @@ jobs:
           fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/data-pipeline/requirements.txt
+          cache-dependency-path: services/data-pipeline/requirements.lock
       - name: Install collector dependencies
-        run: python -m pip install -r services/data-pipeline/requirements.txt
+        run: python -m pip install --require-hashes -r services/data-pipeline/requirements.lock
       - name: Inventory public listings only
         if: inputs.audit_kind == 'inventory'
         working-directory: services/data-pipeline

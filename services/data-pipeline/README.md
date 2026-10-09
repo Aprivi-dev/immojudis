@@ -27,10 +27,17 @@ La source prioritaire est Avoventes. Licitor est disponible comme source optionn
 
 ```bash
 cd services/data-pipeline
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
+
+Les workflows GitHub installent des versions figées et vérifiées par hash
+(`pip install --require-hashes -r requirements.lock`, `requirements-dev.lock`,
+`requirements-valuation.lock`, générés pour CPython 3.12 sous Linux). Après avoir
+modifié un `requirements*.txt`, régénérer les lockfiles avec `pip install uv` puis
+`bash scripts/compile_locks.sh` ; `tests/test_requirements_locks.py` échoue si un
+lockfile n'est plus aligné sur son fichier source.
 
 Pour les audits documentaires ponctuels les plus lourds, installer aussi Docling :
 
