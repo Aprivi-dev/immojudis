@@ -11,17 +11,17 @@ const mocks = vi.hoisted(() => ({
   sale: vi.fn(),
   preview: vi.fn(),
   authenticated: true,
+  authLoading: false,
   authError: null as string | null,
 }));
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
     session: mocks.authenticated ? { user: { id: "test" } } : null,
-    loading: false,
+    loading: mocks.authLoading,
     authError: mocks.authError,
   }),
 }));
 vi.mock("@/hooks/use-viewed-sales", () => ({ markSaleViewed: vi.fn() }));
-vi.mock("@/lib/router-compat", () => ({ useSearch: () => ({}) }));
 vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: mocks.entitlements }));
 vi.mock("@/lib/queries", () => ({ getSaleById: mocks.sale, getSalePreviewById: mocks.preview }));
 vi.mock("@/components/SaleDetailView", () => ({
@@ -44,13 +44,18 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   ),
 }));
 vi.mock("@/components/SalePublicPreview", () => ({
-  SalePublicPreview: () => <div>Aperçu public</div>,
+  SalePublicPreview: ({ returnTo }: { returnTo: string }) => (
+    <div>
+      Aperçu public <span data-testid="return-to">{returnTo}</span>
+    </div>
+  ),
 }));
 afterEach(() => {
   cleanup();
   window.history.replaceState(null, "", "/");
   vi.resetAllMocks();
   mocks.authenticated = true;
+  mocks.authLoading = false;
   mocks.authError = null;
 });
 describe("listing access resolution", () => {
@@ -139,8 +144,8 @@ describe("listing access resolution", () => {
     expect(mocks.entitlements).not.toHaveBeenCalled();
   });
 
-  it("keeps raw authorized fields out of the tab title until review guards the detail view", async () => {
-    document.title = "Aperçu public - Immojudis";
+  it("leaves the tab title to the server metadata", async () => {
+    document.title = "Appartement à Bayonne - Immojudis";
     mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
     mocks.sale.mockResolvedValue({
       id: "sale",
@@ -149,16 +154,64 @@ describe("listing access resolution", () => {
       starting_price_eur: 30000,
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const view = render(
+    render(
       <QueryClientProvider client={client}>
         <SaleDetailPage id="sale" />
       </QueryClientProvider>,
     );
-    await waitFor(() => expect(document.title).toContain("Vente aux enchères immobilière"));
-    expect(document.title).not.toContain("Bayonne");
-    expect(document.title).not.toContain("30 000 €");
-    view.unmount();
-    expect(document.title).toBe("Aperçu public - Immojudis");
+    await screen.findByText("Analyse premium");
+    expect(document.title).toBe("Appartement à Bayonne - Immojudis");
+  });
+
+  it("shows the public page rendered by the server while the session is restored", () => {
+    mocks.authenticated = false;
+    mocks.authLoading = true;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "sale" } }}
+        />
+      </QueryClientProvider>,
+    );
+    // Synchronously available: this is what the server-rendered HTML contains.
+    expect(screen.getByText(/Aperçu public/)).toBeTruthy();
+    expect(screen.queryByText("Chargement")).toBeNull();
+    expect(mocks.preview).not.toHaveBeenCalled();
+    expect(mocks.sale).not.toHaveBeenCalled();
+  });
+
+  it("still waits for the session when the server rendered nothing for this sale", () => {
+    mocks.authenticated = false;
+    mocks.authLoading = true;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "other" } }}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText(/Aperçu public/)).toBeNull();
+  });
+
+  it("reads the return link from the browser address, not during rendering", async () => {
+    window.history.replaceState(null, "", "/sales/sale?from=%2Fsales%3Fcity%3DPau");
+    mocks.authenticated = false;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "sale" } }}
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("return-to").textContent).toBe("/sales?city=Pau"),
+    );
   });
 
   it("does not silently downgrade premium on an entitlement failure and retries", async () => {
