@@ -206,6 +206,7 @@ def test_paid_predictions_are_reserved_before_use_and_budget_deferral_preserves_
             monkeypatch.setenv('PIPELINE_AUTONOMOUS_RUN_ID',run)
             monkeypatch.setattr(pipeline_usage,'load_settings',lambda: {'supabase_db_url':url})
             monkeypatch.setattr(supabase_client,'_postgres_connect',lambda _: nullcontext(db))
+            monkeypatch.setattr(supabase_client,'_shared_postgres_connection',lambda _: nullcontext(db))
             pipeline_usage.record_prediction({'id':'prediction-1','status':'starting'},reservation=str(first))
             assert db.execute('select prediction_id,status,estimated_usd from auction_pipeline_usage where id=%s',(first,)).fetchone() == ('prediction-1','starting',None)
             pending_summary = db.execute('select pipeline_usage_summary()').fetchone()[0]

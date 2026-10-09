@@ -126,10 +126,13 @@ def train_valuation_models(options: TrainingOptions) -> list[ModelBundle]:
             bundles.append(bundle)
         return bundles
 
-    from src.storage.supabase_client import _postgres_connect
+    from src.storage.supabase_client import POSTGRES_TRAINING_STATEMENT_TIMEOUT_MS, _postgres_connect
 
     assert db_url is not None
-    with _postgres_connect(db_url) as connection:
+    # Reading millions of DVF rows legitimately outlasts the default 2-minute limit.
+    with _postgres_connect(
+        db_url, statement_timeout_ms=POSTGRES_TRAINING_STATEMENT_TIMEOUT_MS
+    ) as connection:
         for segment in options.segments:
             segment_frame = fetch_training_transactions(connection, segment=segment, limit=options.limit)
             bundle = train_frame_if_eligible(

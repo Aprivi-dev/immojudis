@@ -734,7 +734,10 @@ def test_dedicated_checkpoint_owns_queue_and_bounds_session(
             assert settings_after == settings_before
             assert captured["transaction_status"] is TransactionStatus.IDLE
             assert captured["settings_after"][0] in (None, "")
-            assert captured["settings_after"][1:] == ("0", "0")
+            # SET LOCAL must not leak out of the checkpoint transaction: the
+            # session is back to the pipeline's default 2-minute statement
+            # timeout (it used to be the server default, "0").
+            assert captured["settings_after"][1:] == ("0", "2min")
             assert captured["closed"] is True
             assert captured["url"] == db_url
             assert captured["connect_timeout"] == storage.PDF_CHECKPOINT_CONNECT_TIMEOUT
