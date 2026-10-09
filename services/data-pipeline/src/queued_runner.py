@@ -105,6 +105,16 @@ WORKER_OBSERVED_STATUS_KEYS = (
     "queued",
     "running",
 )
+_ENRICHMENT_JOB_LOG_TYPES = frozenset(
+    {
+        "pdf",
+        "fact_claims",
+        "fact_extraction",
+        "display_description",
+        SOURCE_DETAIL_FAMILY,
+        "unknown",
+    }
+)
 _WORKER_CLAIMED_JOB_IDS: ContextVar[set[str] | None] = ContextVar(
     "worker_claimed_job_ids",
     default=None,
@@ -119,8 +129,61 @@ _WORKER_LLM_BUDGET_EXHAUSTED: ContextVar[bool | None] = ContextVar(
 )
 
 
+def _job_transition_outcome(*, requested: dict[str, object], persisted: bool) -> str:
+    if not persisted:
+        return "lease_lost"
+    if requested.get("cancelled"):
+        return "cancelled"
+    return "completed" if requested.get("succeeded") else "failed"
+
+
+def _log_worker_job_transition(
+    job: dict[str, object],
+    *,
+    outcome: str,
+) -> None:
+    started_at = job.pop("_worker_started_at_monotonic", None)
+    if not isinstance(started_at, (int, float)):
+        return
+    raw_job_type = str(job.get("job_type") or "").strip().casefold()
+    job_type = raw_job_type if raw_job_type in _ENRICHMENT_JOB_LOG_TYPES else "unknown"
+    LOGGER.info(
+        "Enrichment job transition: job_type=%s outcome=%s elapsed_seconds=%.1f",
+        job_type,
+        outcome,
+        max(time.monotonic() - float(started_at), 0.0),
+    )
+
+
 def _finish_job(job: dict[str, object], **kwargs: object) -> bool:
-    return _finish_claim(job, finish_impl=finish_auction_enrichment_job_in_supabase, **kwargs)
+    try:
+        persisted = _finish_claim(
+            job,
+            finish_impl=finish_auction_enrichment_job_in_supabase,
+            **kwargs,
+        )
+    except Exception:
+        _log_worker_job_transition(job, outcome="finish_failed")
+        raise
+    _log_worker_job_transition(
+        job,
+        outcome=_job_transition_outcome(requested=kwargs, persisted=bool(persisted)),
+    )
+    return persisted
+
+
+def _defer_enrichment_jobs(
+    jobs: list[dict[str, object]],
+    error: PipelineBudgetExhausted | QueueJobDeferred,
+) -> None:
+    try:
+        defer_budget_jobs(jobs, error)
+    except Exception:
+        for job in jobs:
+            _log_worker_job_transition(job, outcome="defer_failed")
+        raise
+    for job in jobs:
+        _log_worker_job_transition(job, outcome="deferred")
 
 
 def main() -> int:
@@ -294,6 +357,10 @@ def _claim_enrichment_queue_jobs(*, limit: int, family: str | None) -> list[dict
 
 
 def _record_worker_claimed_job_ids(jobs: list[dict[str, object]]) -> None:
+    started_at = time.monotonic()
+    for job in jobs:
+        if isinstance(job, dict):
+            job.setdefault("_worker_started_at_monotonic", started_at)
     claimed_job_ids = _WORKER_CLAIMED_JOB_IDS.get()
     if claimed_job_ids is None:
         return
@@ -390,7 +457,7 @@ def _consume_pdf_retry_after_checkpoint_failure(
     if dependent_jobs:
         deferred = QueueJobDeferred("Dependent enrichment deferred until the PDF checkpoint is durable")
         _record_worker_deferred_job_ids(dependent_jobs)
-        defer_budget_jobs(dependent_jobs, deferred)
+        _defer_enrichment_jobs(dependent_jobs, deferred)
 
 
 def _pdf_checkpoint_failure_message(error: object) -> str:
@@ -589,7 +656,7 @@ def run_enrichment_queue_batch(
                 "Encheres Publiques access authorization required before general enrichment"
             )
             _record_worker_deferred_job_ids(sale_jobs)
-            defer_budget_jobs(sale_jobs, access_deferred)
+            _defer_enrichment_jobs(sale_jobs, access_deferred)
             mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info("Enrichment prerequisite deferred for %s: %s", source_url, access_deferred)
             continue
@@ -806,7 +873,7 @@ def run_enrichment_queue_batch(
                 "Encheres Publiques access authorization required before PDF download"
             )
             _record_worker_deferred_job_ids(sale_jobs)
-            defer_budget_jobs(sale_jobs, access_deferred)
+            _defer_enrichment_jobs(sale_jobs, access_deferred)
             mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info(
                 "Enrichment deferred after an unauthorized Encheres Publiques document target for %s: %s",
@@ -823,7 +890,7 @@ def run_enrichment_queue_batch(
                 mark_enrichment_jobs_terminal(sale_jobs)
                 continue
             _record_worker_deferred_job_ids(sale_jobs)
-            defer_budget_jobs(sale_jobs, exc)
+            _defer_enrichment_jobs(sale_jobs, exc)
             mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info(
                 "PDF extraction deferred at worker deadline after %s/%s pages for %s",
@@ -843,7 +910,7 @@ def run_enrichment_queue_batch(
                     mark_enrichment_jobs_terminal(sale_jobs)
                     continue
                 _record_worker_deferred_job_ids(sale_jobs)
-                defer_budget_jobs(sale_jobs, exc)
+                _defer_enrichment_jobs(sale_jobs, exc)
                 mark_enrichment_jobs_terminal(sale_jobs)
                 LOGGER.info(
                     "PDF extraction deferred after %s/%s pages for %s; %s new pages checkpointed",
@@ -873,7 +940,7 @@ def run_enrichment_queue_batch(
                         "Dependent enrichment deferred until the PDF retry state is resolved"
                     )
                     _record_worker_deferred_job_ids(dependent_jobs)
-                    defer_budget_jobs(dependent_jobs, deferred)
+                    _defer_enrichment_jobs(dependent_jobs, deferred)
                 elif not pdf_jobs:
                     for job in dependent_jobs:
                         _finish_job(job, succeeded=False, error_message=message)
@@ -884,7 +951,7 @@ def run_enrichment_queue_batch(
             # and polling. Release every still-owned claim in this batch;
             # no following sale may start another paid request after the cutoff.
             _record_worker_deferred_job_ids(pending_enrichment_jobs)
-            defer_budget_jobs(pending_enrichment_jobs, exc)
+            _defer_enrichment_jobs(pending_enrichment_jobs, exc)
             LOGGER.info("LLM worker deadline reached; remaining enrichment claims deferred: %s", exc)
             return len(enrichment_jobs) if family == ENRICHMENT_FAMILY else handled_detail_jobs
         except QueueJobDeferred as exc:
@@ -892,13 +959,13 @@ def run_enrichment_queue_batch(
             # extraction.  The helper releases the claim and restores the
             # attempt count while preserving a bounded wake-up time.
             _record_worker_deferred_job_ids(sale_jobs)
-            defer_budget_jobs(sale_jobs, exc)
+            _defer_enrichment_jobs(sale_jobs, exc)
             mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info("Enrichment prerequisite deferred for %s: %s", source_url, exc)
             continue
         except LLMEnrichmentDeferred as exc:
             _record_worker_deferred_job_ids(sale_jobs)
-            defer_budget_jobs(sale_jobs, exc)
+            _defer_enrichment_jobs(sale_jobs, exc)
             mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info("Fact analysis checkpointed; remaining chunks deferred: %s", source_url)
             continue
@@ -907,13 +974,13 @@ def run_enrichment_queue_batch(
             # key. Do not let its cooldown stall unrelated healthy sales from
             # the same claimed batch.
             _record_worker_deferred_job_ids(sale_jobs)
-            defer_budget_jobs(sale_jobs, exc)
+            _defer_enrichment_jobs(sale_jobs, exc)
             mark_enrichment_jobs_terminal(sale_jobs)
             LOGGER.info("Deterministic LLM request cooldown deferred: %s", source_url)
             continue
         except PipelineBudgetExhausted as exc:
             _record_worker_deferred_job_ids(pending_enrichment_jobs)
-            defer_budget_jobs(pending_enrichment_jobs, exc)
+            _defer_enrichment_jobs(pending_enrichment_jobs, exc)
             LOGGER.info("Enrichment deferred without consuming retry attempts: %s", exc)
             # The family claim is intentionally kept as a handled queue
             # outcome for legacy direct callers.  A bounded worker marks the
@@ -980,7 +1047,7 @@ def run_enrichment_queue_batch(
                     "Dependent enrichment deferred until the PDF retry state is resolved"
                 )
                 _record_worker_deferred_job_ids(dependent_jobs)
-                defer_budget_jobs(dependent_jobs, deferred)
+                _defer_enrichment_jobs(dependent_jobs, deferred)
                 mark_enrichment_jobs_terminal(sale_jobs)
                 LOGGER.info(
                     "Deferred dependent enrichment after PDF failure for %s: %s",
