@@ -18,6 +18,7 @@ from src.normalize import normalize_sale
 from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
     PdfDeadlineExceeded,
+    PdfDocumentOcrBudgetExceeded,
     PdfEnrichmentStats,
     PublicDocumentTarget,
     _adaptive_docling_timeout,
@@ -40,6 +41,7 @@ from src.pdf_enrichment import (
     extract_pdf_document,
     extract_pdf_pages,
     pdf_deadline_scope,
+    pdf_document_ocr_budget_scope,
 )
 
 
@@ -143,6 +145,69 @@ def test_deadline_ocr_recomputes_timeout_after_render(monkeypatch) -> None:
 
     assert captured["timeout"] is not None
     assert 0 < captured["timeout"] <= 0.2
+
+
+@pytest.mark.parametrize(
+    "worker_budget,document_budget,expected_error",
+    [
+        (None, 3.0, PdfDocumentOcrBudgetExceeded),
+        (10.0, 3.0, PdfDocumentOcrBudgetExceeded),
+        (3.0, 10.0, PdfDeadlineExceeded),
+    ],
+)
+def test_ocr_subprocess_timeout_uses_shortest_active_budget(
+    monkeypatch,
+    worker_budget,
+    document_budget,
+    expected_error,
+) -> None:
+    clock = [100.0]
+    captured = {"timeout": None}
+    monkeypatch.setattr("src.pdf_enrichment.time.monotonic", lambda: clock[0])
+
+    class Pixmap:
+        def save(self, path: str) -> None:
+            from pathlib import Path
+
+            Path(path).write_bytes(b"image")
+
+    class Page:
+        def get_textpage_ocr(self, **_kwargs):
+            raise AssertionError("native OCR must not run under a bounded deadline")
+
+        def get_pixmap(self, **_kwargs):
+            clock[0] += 1.0
+            return Pixmap()
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment.load_settings",
+        lambda: {"pdf_ocr_tessdata": None, "pdf_ocr_language": "fra"},
+    )
+
+    def timeout_run(*args, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        clock[0] += float(kwargs["timeout"]) + 0.1
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr("src.pdf_enrichment.subprocess.run", timeout_run)
+
+    with pytest.raises(expected_error) as error:
+        worker_deadline = None if worker_budget is None else clock[0] + worker_budget
+        with pdf_deadline_scope(worker_deadline):
+            with pdf_document_ocr_budget_scope(document_budget):
+                from src.pdf_enrichment import _extract_page_text_with_ocr_result
+
+                _extract_page_text_with_ocr_result(
+                    Page(),
+                    fallback="",
+                    checkpointed_pages=2,
+                    total_pages=3,
+                    new_progress_pages=1,
+                )
+
+    assert captured["timeout"] == pytest.approx(2.0)
+    assert error.value.checkpointed_pages == 2
+    assert error.value.progress_made is True
 
 
 def test_deadline_checks_between_continuous_document_stream_chunks() -> None:
