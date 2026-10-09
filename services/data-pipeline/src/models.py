@@ -6,6 +6,33 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
+from src.null_text import is_null_text, null_if_placeholder
+
+# Free-text columns: a literal « nan » or « None » means "missing", never a value.
+NULLABLE_TEXT_FIELDS = (
+    "external_id",
+    "tribunal",
+    "tribunal_code",
+    "department",
+    "city",
+    "address",
+    "postal_code",
+    "property_type",
+    "title",
+    "description",
+    "app_surface_kind",
+    "surface_scope",
+    "surface_source",
+    "surface_evidence",
+    "lawyer_name",
+    "lawyer_contact",
+    "occupancy_status",
+    "risk_notes",
+    "investment_summary",
+    "score_version",
+    "raw_text",
+)
+
 
 class AuctionSale(BaseModel):
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
@@ -90,8 +117,27 @@ class AuctionSale(BaseModel):
     def source_url_to_string(cls, value: str | HttpUrl) -> str:
         return str(value) if value is not None else value
 
+    @field_validator(*NULLABLE_TEXT_FIELDS, mode="before")
+    @classmethod
+    def placeholder_text_to_none(cls, value: Any) -> Any:
+        return null_if_placeholder(value)
+
+    @field_validator("visit_dates", mode="before")
+    @classmethod
+    def drop_placeholder_visit_dates(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return [item for item in value if not is_null_text(item)]
+        return value
+
     def to_storage_dict(self, exclude_none: bool = True) -> dict[str, Any]:
         data = self.model_dump(exclude_none=exclude_none)
+        for key in NULLABLE_TEXT_FIELDS:
+            # Fields assigned after construction bypass the validators above.
+            if is_null_text(data.get(key)):
+                if exclude_none:
+                    del data[key]
+                else:
+                    data[key] = None
         for key, value in list(data.items()):
             if isinstance(value, Decimal):
                 data[key] = float(value)
