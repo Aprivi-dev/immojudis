@@ -86,7 +86,7 @@ export function AdminShell({
   }, [mobileOpen]);
 
   return (
-    <main className="admin-console min-h-screen bg-[#f5f9fd] text-[#132238]">
+    <main className="admin-console min-h-screen bg-surface-muted text-brand-navy">
       <aside className="admin-sidebar hidden lg:flex">
         <AdminSidebarContent
           activeSection={activeSection}
@@ -104,7 +104,7 @@ export function AdminShell({
               aria-haspopup="dialog"
               aria-expanded={mobileOpen}
               onClick={() => setMobileOpen(true)}
-              className="mt-1 grid size-10 shrink-0 place-items-center rounded-lg border border-[#132238]/15 bg-white text-[#132238] lg:hidden"
+              className="mt-1 grid size-10 shrink-0 place-items-center rounded-lg border border-brand-navy/15 bg-white text-brand-navy lg:hidden"
             >
               <Menu className="size-5" />
             </button>
@@ -115,7 +115,7 @@ export function AdminShell({
               onClick={(event) => {
                 if (event.target === event.currentTarget) setMobileOpen(false);
               }}
-              className="fixed inset-y-0 left-0 m-0 h-dvh max-h-none w-[min(20rem,88vw)] max-w-none overflow-hidden border-0 bg-[#132238] p-0 text-white backdrop:bg-[#132238]/45 backdrop:backdrop-blur-sm"
+              className="fixed inset-y-0 left-0 m-0 h-dvh max-h-none w-[min(20rem,88vw)] max-w-none overflow-hidden border-0 bg-brand-navy p-0 text-white backdrop:bg-brand-navy/45 backdrop:backdrop-blur-sm"
             >
               <div className="h-full">
                 <button
@@ -134,17 +134,17 @@ export function AdminShell({
               </div>
             </dialog>
             <div className="min-w-0">
-              <h1 className="font-display text-[clamp(2.35rem,4vw,3.25rem)] font-medium leading-[0.98] text-[#132238]">
+              <h1 className="font-display text-[clamp(2.35rem,4vw,3.25rem)] font-medium leading-[0.98] text-brand-navy">
                 {title}
               </h1>
-              <p className="mt-2 text-sm text-[#132238]/68 sm:text-base">{description}</p>
+              <p className="mt-2 text-sm text-brand-navy/68 sm:text-base">{description}</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 sm:justify-end xl:flex-nowrap">
             {onSearchChange ? (
               <label className="admin-search">
-                <Search className="size-4 shrink-0 text-[#132238]/55" />
+                <Search className="size-4 shrink-0 text-brand-navy/55" />
                 <span className="sr-only">Rechercher dans la vue</span>
                 <input
                   type="search"
@@ -220,8 +220,8 @@ function AdminSidebarContent({
         })}
       </nav>
 
-      <div className="m-3 flex shrink-0 items-center gap-3 rounded-xl border border-white/10 bg-white/[0.06] p-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#d58c3f] text-xs font-bold text-white">
+      <div className="m-3 flex shrink-0 items-center gap-3 rounded-xl border border-brand-navy/10 bg-white/[0.06] p-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gold-soft text-xs font-bold text-white">
           {initials}
         </span>
         <span className="min-w-0 flex-1">
@@ -266,8 +266,8 @@ export function AdminSectionHeading({
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#132238]">{title}</h2>
-        {description ? <p className="mt-1 text-sm text-[#132238]/62">{description}</p> : null}
+        <h2 className="text-lg font-semibold tracking-[-0.01em] text-brand-navy">{title}</h2>
+        {description ? <p className="mt-1 text-sm text-brand-navy/62">{description}</p> : null}
       </div>
       {action}
     </div>

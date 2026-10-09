@@ -185,7 +185,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
             )}
           </div>
 
-          <div className="mt-5 rounded-md border border-brand-navy/10 bg-[#eef7ff] p-4">
+          <div className="mt-5 rounded-md border border-brand-navy/10 bg-background p-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <CompactFact
                 label={procedure.venueType === "state" ? "Service vendeur" : "Lieu / organisme"}
@@ -242,7 +242,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
           </ol>
 
           {procedure.organizerName || procedure.organizerContact ? (
-            <div className="mt-6 rounded-md border border-gold/25 bg-[#fffaf2] p-4">
+            <div className="mt-6 rounded-md border border-gold/25 bg-surface p-4">
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-brand-navy/75">
                 Contact de la vente
               </p>
@@ -313,7 +313,7 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
   });
 
   return (
-    <details className="group border-t border-brand-navy/10 bg-[#f8fbfe] px-5 py-4 sm:px-7 lg:px-8">
+    <details className="group border-t border-brand-navy/10 bg-surface-muted px-5 py-4 sm:px-7 lg:px-8">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-brand-navy">
         <span className="flex items-center gap-2">
           <ShieldCheck className="h-4 w-4 text-gold-text" aria-hidden />

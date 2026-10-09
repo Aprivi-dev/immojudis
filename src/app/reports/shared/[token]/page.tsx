@@ -917,7 +917,7 @@ export default async function SharedReportPage({ params }: PageParams) {
           </section>
         ) : null}
 
-        <footer className="mt-4 rounded-lg border border-[#1e40af]/15 bg-[#1e40af]/8 p-4 text-sm leading-relaxed text-[#1e3a8a]">
+        <footer className="mt-4 rounded-lg border border-info/15 bg-info/8 p-4 text-sm leading-relaxed text-info">
           {report.disclaimer}
         </footer>
       </article>

@@ -55,7 +55,7 @@ const analysisFeatures = [
 export function AccompagnementPage() {
   return (
     <main className="min-h-screen bg-white text-brand-navy">
-      <section className="border-b border-brand-navy/10 bg-[#eef7ff]">
+      <section className="border-b border-brand-navy/10 bg-background">
         <div className="mx-auto grid max-w-[1460px] gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(500px,0.85fr)] lg:items-center lg:px-8 lg:py-8">
           <div>
             <h1 className="max-w-3xl font-display text-[clamp(3.2rem,4.5vw,4.75rem)] font-medium leading-[0.96] text-brand-navy">
@@ -104,7 +104,7 @@ export function AccompagnementPage() {
             <Link
               to="/login"
               search={{ mode: "investor", redirect: "/sales" }}
-              className="inline-flex min-h-12 w-full items-center justify-center rounded-md border border-brand-navy bg-white px-5 py-3 text-sm font-semibold text-brand-navy transition-colors hover:bg-[#eef7ff]"
+              className="inline-flex min-h-12 w-full items-center justify-center rounded-md border border-brand-navy bg-white px-5 py-3 text-sm font-semibold text-brand-navy transition-colors hover:bg-background"
             >
               Créer mon compte gratuit
             </Link>
@@ -133,7 +133,7 @@ export function AccompagnementPage() {
         </p>
       </section>
 
-      <section className="border-t border-brand-navy/10 bg-[#fffaf2]">
+      <section className="border-t border-brand-navy/10 bg-surface">
         <div className="mx-auto grid max-w-[1220px] gap-8 px-4 py-12 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8 lg:py-16">
           <div>
             <h2 className="font-display text-4xl font-medium leading-tight text-brand-navy sm:text-5xl">

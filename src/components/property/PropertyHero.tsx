@@ -13,7 +13,7 @@ export function PropertyHero({ property }: { property: Property }) {
   ]);
 
   return (
-    <section className="bg-[#f7f5f1]">
+    <section className="bg-surface">
       <PhotoGallery
         photos={property.photos}
         title={property.title}

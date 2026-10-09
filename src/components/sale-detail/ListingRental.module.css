@@ -4,8 +4,8 @@
   overflow: hidden;
   border: 1px solid rgb(19 34 56 / 12%);
   border-radius: 18px;
-  background: var(--surface, #fffaf2);
-  color: var(--brand-navy, #132238);
+  background: var(--surface, var(--surface));
+  color: var(--brand-navy, var(--brand-navy));
   box-shadow: 0 12px 34px rgb(19 34 56 / 6%);
 }
 
@@ -20,7 +20,7 @@
 .eyebrow,
 .panelKicker {
   margin: 0;
-  color: var(--gold-text, #84602e);
+  color: var(--gold-text, var(--gold-text));
   font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.14em;
@@ -29,7 +29,7 @@
 
 .title {
   margin: 5px 0 0;
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-size: clamp(24px, 4vw, 32px);
   line-height: 1.1;
   letter-spacing: -0.025em;
@@ -56,7 +56,7 @@
   border: 1px solid rgb(156 100 43 / 24%);
   border-radius: 999px;
   background: rgb(201 141 69 / 10%);
-  color: var(--gold-text, #84602e);
+  color: var(--gold-text, var(--gold-text));
   padding: 7px 11px;
   font-size: 11px;
   font-weight: 700;
@@ -75,7 +75,7 @@
   min-width: 0;
   border: 1px solid rgb(19 34 56 / 10%);
   border-radius: 16px;
-  background: #fff;
+  background: #ffffff;
   padding: 18px;
 }
 
@@ -89,7 +89,7 @@
 .panelTitle,
 .resultTitle {
   margin: 0;
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-size: 21px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -109,7 +109,7 @@
 }
 
 .costReference > span {
-  color: var(--gold-text, #84602e);
+  color: var(--gold-text, var(--gold-text));
   font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.08em;
@@ -117,7 +117,7 @@
 }
 
 .costReference strong {
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-size: 22px;
   line-height: 1.1;
 }
@@ -148,13 +148,13 @@
 }
 
 .field label {
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-size: 13px;
   font-weight: 700;
 }
 
 .field label span {
-  color: #a61b13;
+  color: var(--danger);
 }
 
 .inputWithSuffix {
@@ -169,8 +169,8 @@
   min-height: 44px;
   border: 1px solid rgb(19 34 56 / 16%);
   border-radius: 9px;
-  background: var(--cream, #fff7eb);
-  color: var(--brand-navy, #132238);
+  background: var(--cream, var(--cream));
+  color: var(--brand-navy, var(--brand-navy));
   padding: 9px 11px;
   font: inherit;
   font-size: 16px;
@@ -187,14 +187,14 @@
 
 .inputWithSuffix input:focus-visible,
 .method summary:focus-visible {
-  border-color: var(--gold-soft, #9c642b);
-  outline: 2px solid var(--gold-soft, #9c642b);
+  border-color: var(--gold-soft, var(--gold-soft));
+  outline: 2px solid var(--gold-soft, var(--gold-soft));
   outline-offset: 2px;
   box-shadow: 0 0 0 3px rgb(201 141 69 / 14%);
 }
 
 .inputWithSuffix input[aria-invalid="true"] {
-  border-color: #b42318;
+  border-color: var(--danger);
 }
 
 .inputWithSuffix > span {
@@ -206,17 +206,17 @@
 
 .error {
   margin: 0;
-  color: #a61b13;
+  color: var(--danger);
   font-size: 12px;
   line-height: 1.45;
 }
 
 .warning {
   margin: 16px 0 0;
-  border: 1px solid #f0cb7a;
+  border: 1px solid var(--gold-light);
   border-radius: 10px;
-  background: #fff8e8;
-  color: #573b0b;
+  background: var(--warning-tint);
+  color: var(--gold-text);
   padding: 11px 12px;
 }
 
@@ -225,7 +225,7 @@
 }
 
 .resultPanel {
-  background: linear-gradient(180deg, #fff 0%, rgb(255 247 235 / 70%) 100%);
+  background: linear-gradient(180deg, #ffffff 0%, rgb(255 247 235 / 70%) 100%);
 }
 
 .resultTitle {
@@ -254,7 +254,7 @@
   min-width: 0;
   border: 1px solid rgb(19 34 56 / 10%);
   border-radius: 12px;
-  background: #fff;
+  background: #ffffff;
   padding: 13px;
 }
 
@@ -268,7 +268,7 @@
 }
 
 .resultCard strong {
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-size: clamp(22px, 3vw, 32px);
   line-height: 1.05;
   letter-spacing: -0.04em;
@@ -287,18 +287,18 @@
 }
 
 .primaryResult > span {
-  color: var(--gold-text, #84602e);
+  color: var(--gold-text, var(--gold-text));
 }
 
 .cashFlowResult {
   border-color: rgb(19 34 56 / 20%);
-  background: var(--brand-navy, #132238);
+  background: var(--brand-navy, var(--brand-navy));
 }
 
 .cashFlowResult > span,
 .cashFlowResult small,
 .cashFlowResult strong {
-  color: #fff;
+  color: #ffffff;
 }
 
 .missingResult,
@@ -315,7 +315,7 @@
 }
 
 .emptyResult strong {
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-size: 16px;
 }
 
@@ -337,7 +337,7 @@
   display: inline-flex;
   min-height: 32px;
   align-items: center;
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   cursor: pointer;
   font-size: 13px;
   font-weight: 700;

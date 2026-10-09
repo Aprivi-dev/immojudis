@@ -33,18 +33,18 @@ export default function SaleComparisonDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="grid max-h-[90svh] w-[calc(100%-1.5rem)] max-w-5xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl p-0 text-[#132238]"
+        className="grid max-h-[90svh] w-[calc(100%-1.5rem)] max-w-5xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-xl p-0 text-brand-navy"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           onRestoreFocus();
         }}
       >
-        <DialogHeader className="border-b border-[#d6e3e8] px-4 py-4 pr-12 text-left sm:px-6">
+        <DialogHeader className="border-b border-line-soft px-4 py-4 pr-12 text-left sm:px-6">
           <DialogTitle className="text-xl font-extrabold">Comparer les biens</DialogTitle>
           <DialogDescription>
             Les informations du catalogue, côte à côte. Gratuit, sans compte.
           </DialogDescription>
-          <p className="text-xs text-[#526170]">
+          <p className="text-xs text-ink-soft">
             {items.length < 2
               ? "Ajoutez un autre bien depuis la liste pour le comparer."
               : "Sur mobile, faites défiler le tableau horizontalement pour voir tous les biens."}
@@ -53,11 +53,11 @@ export default function SaleComparisonDialog({
         {items.length ? (
           <SaleComparisonTable items={items} returnTo={returnTo} onRemove={onRemove} />
         ) : (
-          <div className="grid min-h-24 place-items-center px-4 text-center text-sm text-[#526170]">
+          <div className="grid min-h-24 place-items-center px-4 text-center text-sm text-ink-soft">
             Restaurez une comparaison ci-dessous ou ajoutez des biens depuis le catalogue.
           </div>
         )}
-        <div className="max-h-[42svh] space-y-3 overflow-y-auto border-t border-[#d6e3e8] bg-[#fbfdff] px-4 py-3 text-xs leading-relaxed text-[#526170] sm:px-6">
+        <div className="max-h-[42svh] space-y-3 overflow-y-auto border-t border-line-soft bg-white px-4 py-3 text-xs leading-relaxed text-ink-soft sm:px-6">
           <SavedSaleComparisons
             items={items}
             returnTo={returnTo}

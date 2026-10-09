@@ -1,8 +1,8 @@
 .hero {
   position: relative;
   overflow: hidden;
-  background: #172538;
-  color: #fff;
+  background: var(--brand-navy);
+  color: #ffffff;
 }
 .poster {
   object-fit: cover;
@@ -48,7 +48,7 @@
   content: "";
   width: 88px;
   height: 1px;
-  background: #deb477;
+  background: var(--gold-light);
 }
 .introduction h1 {
   margin: 0;
@@ -60,7 +60,7 @@
   text-wrap: nowrap;
 }
 .introduction h1 em {
-  color: #deb477;
+  color: var(--gold-light);
   font-weight: 400;
 }
 .lead {
@@ -80,11 +80,11 @@
   gap: 18px;
   padding: 6px 6px 6px 24px;
   border-radius: 9px;
-  background: #fff;
+  background: #ffffff;
   box-shadow:
     0 0 0 1px rgb(255 255 255 / 35%),
     0 8px 30px rgb(9 24 42 / 16%);
-  color: #aa773b;
+  color: var(--gold-soft);
 }
 .search > svg {
   flex-shrink: 0;
@@ -95,17 +95,17 @@
   width: 100%;
   border: 0;
   background: transparent;
-  color: #172538;
+  color: var(--brand-navy);
   font-size: 16px;
   padding: 12px 0;
   outline: none;
 }
 .search input::placeholder {
-  color: #697387;
+  color: var(--ink-soft);
   opacity: 1;
 }
 .search:focus-within {
-  outline: 2px solid #deb477;
+  outline: 2px solid var(--gold-light);
   outline-offset: 4px;
 }
 .search button {
@@ -116,8 +116,8 @@
   align-self: stretch;
   border: 0;
   border-radius: 6px;
-  background: #84602e;
-  color: #fff;
+  background: var(--gold-soft);
+  color: #ffffff;
   padding: 0 24px;
   cursor: pointer;
   font-size: 16px;
@@ -126,20 +126,20 @@
   transition: background 180ms;
 }
 .search button:hover {
-  background: #6e4c21;
+  background: var(--gold-text);
 }
 .exampleLink {
   display: inline-flex;
   align-items: center;
   gap: 18px;
   margin-top: 24px;
-  border-bottom: 1px solid #c69c61;
+  border-bottom: 1px solid var(--gold);
   padding-bottom: 9px;
   font-size: 15px;
   transition: color 180ms;
 }
 .exampleLink:hover {
-  color: #f0cf9e;
+  color: var(--gold-light);
 }
 .caption {
   margin: auto 0 0;
@@ -155,9 +155,9 @@
   padding: 7px;
   border: 1px solid rgb(255 255 255 / 55%);
   border-radius: 7px;
-  background: #faf9f6;
+  background: #ffffff;
   box-shadow: 0 20px 60px rgb(6 18 31 / 26%);
-  color: #132238;
+  color: var(--brand-navy);
 }
 .dossierPhoto {
   position: relative;
@@ -174,9 +174,9 @@
   top: 12px;
   right: 12px;
   border-radius: 3px;
-  background: #faf9f6;
+  background: #ffffff;
   padding: 8px 12px;
-  color: #454745;
+  color: var(--ink-strong);
   font-size: 14px;
 }
 .dossierBody {
@@ -192,13 +192,13 @@
 }
 .figures {
   margin: 0;
-  border-top: 1px solid #dbcaaf;
+  border-top: 1px solid var(--line-warm);
 }
 .figures > div {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid #e6e3dd;
+  border-bottom: 1px solid var(--line-warm);
   padding: 12px 0;
   font-size: 18px;
   line-height: 1.4;
@@ -207,11 +207,11 @@
   border-bottom: 0;
 }
 .figures dt {
-  color: #637087;
+  color: var(--ink-soft);
 }
 .figures dd {
   margin: 0;
-  color: #383c41;
+  color: var(--ink-strong);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -221,7 +221,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 20px 0;
-  border-block: 1px solid #dbcaaf;
+  border-block: 1px solid var(--line-warm);
   font-family: var(--font-display);
   font-size: clamp(24px, 2vw, 30px);
   line-height: 1.1;
@@ -235,13 +235,13 @@
 }
 .assumptions {
   margin: 15px 0 0;
-  color: #637087;
+  color: var(--ink-soft);
   font-size: 14px;
   line-height: 1.55;
 }
 .hero a:focus-visible,
 .hero button:focus-visible {
-  outline: 2px solid #deb477;
+  outline: 2px solid var(--gold-light);
   outline-offset: 5px;
 }
 @media (max-width: 1180px) {
@@ -357,7 +357,12 @@
     margin: 32px 0 28px;
   }
   .shade {
-    background: linear-gradient(180deg, rgb(9 24 42 / 22%), rgb(9 24 42 / 54%) 60%, #172538);
+    background: linear-gradient(
+      180deg,
+      rgb(9 24 42 / 22%),
+      rgb(9 24 42 / 54%) 60%,
+      var(--brand-navy)
+    );
   }
   .poster {
     height: 740px;

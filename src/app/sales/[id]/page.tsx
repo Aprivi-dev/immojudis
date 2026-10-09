@@ -106,7 +106,7 @@ function SaleDetailFallback({
   sale: Awaited<ReturnType<typeof loadSaleDetail>>["preview"];
 }) {
   return (
-    <main className="min-h-screen bg-[#f7f5f3] px-4 py-10 text-foreground sm:px-6">
+    <main className="min-h-screen bg-surface-muted px-4 py-10 text-foreground sm:px-6">
       <section className="mx-auto max-w-3xl rounded-lg border border-border bg-white p-6 shadow-sm sm:p-8">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           {sale ? saleVenueLabel(getSaleProcedure(sale).venueType) : "Vente aux enchères"}

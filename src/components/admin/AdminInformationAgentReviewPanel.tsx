@@ -135,13 +135,13 @@ export function AdminInformationAgentReviewPanel() {
           Réponses reçues
         </div>
         <h2 className="mt-2 font-semibold">Informations à contrôler</h2>
-        <p className="mt-1 text-sm text-[#132238]/60">
+        <p className="mt-1 text-sm text-brand-navy/60">
           Rien n’est intégré à une annonce sans validation. Les pièces doivent aussi disposer de
           droits de diffusion.
         </p>
       </div>
       {query.isPending ? (
-        <p className="p-5 text-sm text-[#132238]/55">Chargement…</p>
+        <p className="p-5 text-sm text-brand-navy/55">Chargement…</p>
       ) : query.error ? (
         <p role="alert" className="p-5 text-sm text-red-700">
           {query.error instanceof Error ? query.error.message : "Réponses indisponibles"}
@@ -174,7 +174,7 @@ export function AdminInformationAgentReviewPanel() {
               >
                 <p
                   className={`font-semibold ${
-                    senderUnverified ? "text-amber-900" : "text-[#132238]"
+                    senderUnverified ? "text-amber-900" : "text-brand-navy"
                   }`}
                 >
                   {importedManually
@@ -183,7 +183,7 @@ export function AdminInformationAgentReviewPanel() {
                       ? "Expéditeur à vérifier"
                       : "Réponse reçue"}
                 </p>
-                <p className="mt-1 text-[#132238]">
+                <p className="mt-1 text-brand-navy">
                   {message.from_email} · {message.subject}
                 </p>
                 {importedManually ? (
@@ -192,7 +192,7 @@ export function AdminInformationAgentReviewPanel() {
                     rattachement de dossier et ne prouve pas l’identité de l’expéditeur.
                   </p>
                 ) : null}
-                <p className="mt-1 text-[#132238]/70">
+                <p className="mt-1 text-brand-navy/70">
                   Dossier {message.case_id ? shortId(message.case_id) : "inconnu"} · Contact attendu
                   : {informationCase?.recipient_email || "adresse indisponible"}
                 </p>
@@ -205,11 +205,11 @@ export function AdminInformationAgentReviewPanel() {
                     Voir l’annonce {shortId(informationCase.sale_id)}
                   </Link>
                 ) : null}
-                <p className="mt-2 whitespace-pre-wrap text-[#132238]/80">
+                <p className="mt-2 whitespace-pre-wrap text-brand-navy/80">
                   {message.body_text.slice(0, 500)}
                 </p>
                 {message.body_text.length > 500 ? (
-                  <details className="mt-2 text-[#132238]/80">
+                  <details className="mt-2 text-brand-navy/80">
                     <summary className="cursor-pointer font-medium underline">
                       Lire le message complet
                     </summary>
@@ -265,22 +265,22 @@ export function AdminInformationAgentReviewPanel() {
                       <span className="rounded-full border bg-slate-50 px-2 py-0.5 text-xs">
                         {factLabel(fact.fact_key)}
                       </span>
-                      <span className="text-xs text-[#132238]/50">
+                      <span className="text-xs text-brand-navy/50">
                         Confiance {Math.round(Number(fact.confidence) * 100)} %
                       </span>
                     </div>
                     <p className="mt-2 font-medium">{fact.display_value}</p>
                     {asset?.original_filename && asset.original_filename !== fact.display_value ? (
-                      <p className="mt-1 text-xs text-[#132238]/55">
+                      <p className="mt-1 text-xs text-brand-navy/55">
                         Pièce jointe : {asset.original_filename}
                       </p>
                     ) : null}
                     {typeof fact.source_page === "number" && fact.source_page > 0 ? (
-                      <p className="mt-1 text-xs text-[#132238]/55">
+                      <p className="mt-1 text-xs text-brand-navy/55">
                         Page source : {fact.source_page}
                       </p>
                     ) : null}
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#132238]/60">
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-navy/60">
                       <Link
                         to="/sales/$id"
                         params={{ id: fact.sale_id }}
@@ -296,12 +296,12 @@ export function AdminInformationAgentReviewPanel() {
                       </span>
                     </div>
                     {informationCase?.subject ? (
-                      <p className="mt-1 text-xs text-[#132238]/50">
+                      <p className="mt-1 text-xs text-brand-navy/50">
                         Objet : {informationCase.subject}
                       </p>
                     ) : null}
                     {fact.evidence_excerpt ? (
-                      <p className="mt-2 text-sm italic text-[#132238]/60">
+                      <p className="mt-2 text-sm italic text-brand-navy/60">
                         « {fact.evidence_excerpt} »
                       </p>
                     ) : null}
@@ -315,12 +315,12 @@ export function AdminInformationAgentReviewPanel() {
                           >
                             Droits de diffusion : {rightsStatusLabel(asset?.rights_status)}
                           </span>
-                          <span className="text-[#132238]/65">
+                          <span className="text-brand-navy/65">
                             Analyse : {extraction?.status ?? "en attente"}
                           </span>
                         </div>
                         {extraction?.summary ? (
-                          <p className="mt-2 break-words text-xs text-[#132238]/75">
+                          <p className="mt-2 break-words text-xs text-brand-navy/75">
                             <span className="font-medium">Résumé de l’analyse — à vérifier :</span>{" "}
                             {extraction.summary}
                           </p>
@@ -384,7 +384,7 @@ export function AdminInformationAgentReviewPanel() {
                             {preview?.assetId === asset.id ? (
                               <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
                                 <div className="flex items-center justify-between gap-2 px-1 pb-2">
-                                  <p className="text-xs font-medium text-[#132238]/75">
+                                  <p className="text-xs font-medium text-brand-navy/75">
                                     Aperçu privé · {asset.original_filename}
                                   </p>
                                   <button
@@ -402,13 +402,13 @@ export function AdminInformationAgentReviewPanel() {
                                   referrerPolicy="no-referrer"
                                   className="h-[28rem] w-full rounded border bg-slate-50"
                                 />
-                                <p className="px-1 pt-2 text-[11px] text-[#132238]/55">
+                                <p className="px-1 pt-2 text-[11px] text-brand-navy/55">
                                   Ce lien expire rapidement et l’original reste dans le stockage
                                   privé.
                                 </p>
                               </div>
                             ) : null}
-                            <label className="mt-3 block text-xs text-[#132238]/70">
+                            <label className="mt-3 block text-xs text-brand-navy/70">
                               <span className="font-medium">Note de revue (facultative)</span>
                               <input
                                 type="text"
@@ -421,10 +421,10 @@ export function AdminInformationAgentReviewPanel() {
                                 }
                                 placeholder="Ex. autorisation reçue dans le message"
                                 maxLength={1000}
-                                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-[#132238] outline-none focus:border-[#a36f2c] focus:ring-1 focus:ring-[#a36f2c]"
+                                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-brand-navy outline-none focus:border-gold-soft focus:ring-1 focus:ring-gold-soft"
                               />
                             </label>
-                            <p className="mt-2 text-xs text-[#132238]/60">
+                            <p className="mt-2 text-xs text-brand-navy/60">
                               La décision enregistre l’administrateur, la date et cette note dans
                               l’historique de la pièce.
                             </p>
@@ -493,7 +493,7 @@ export function AdminInformationAgentReviewPanel() {
           ) : null}
         </div>
       ) : (
-        <p className="p-5 text-sm text-[#132238]/55">Aucune information en attente de contrôle.</p>
+        <p className="p-5 text-sm text-brand-navy/55">Aucune information en attente de contrôle.</p>
       )}
     </section>
   );

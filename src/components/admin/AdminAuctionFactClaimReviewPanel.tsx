@@ -81,7 +81,7 @@ export function AdminAuctionFactClaimReviewPanel() {
             <h2 id="fact-review-title" className="mt-2 font-semibold">
               Faits à vérifier
             </h2>
-            <p className="mt-1 max-w-3xl text-sm text-[#132238]/60">
+            <p className="mt-1 max-w-3xl text-sm text-brand-navy/60">
               Comparez la valeur extraite avec la valeur canonique avant de l’accepter. Une preuve
               acceptée ne modifie pas automatiquement la fiche.
             </p>
@@ -99,7 +99,7 @@ export function AdminAuctionFactClaimReviewPanel() {
       </div>
 
       {query.isPending ? (
-        <p role="status" className="p-5 text-sm text-[#132238]/55">
+        <p role="status" className="p-5 text-sm text-brand-navy/55">
           Chargement des faits…
         </p>
       ) : query.error ? (
@@ -156,7 +156,7 @@ export function AdminAuctionFactClaimReviewPanel() {
           ) : null}
         </div>
       ) : (
-        <p className="p-5 text-sm text-[#132238]/60">Aucun fait en attente de revue.</p>
+        <p className="p-5 text-sm text-brand-navy/60">Aucun fait en attente de revue.</p>
       )}
     </section>
   );
@@ -206,31 +206,33 @@ function ClaimLine({
               )}
               {item.status === "conflicted" ? "Conflit" : "À confirmer"}
             </span>
-            <span className="text-xs text-[#132238]/55">{fieldLabel(item.fieldKey)}</span>
-            <span className="font-mono text-[11px] text-[#132238]/45">{shortId(item.claimId)}</span>
+            <span className="text-xs text-brand-navy/55">{fieldLabel(item.fieldKey)}</span>
+            <span className="font-mono text-[11px] text-brand-navy/45">
+              {shortId(item.claimId)}
+            </span>
           </div>
           <h3 className="mt-2 truncate font-semibold">
             {item.sale.title || item.sale.city || `Vente ${shortId(item.saleId)}`}
           </h3>
-          <p className="mt-1 text-xs text-[#132238]/55">
+          <p className="mt-1 text-xs text-brand-navy/55">
             {[item.sale.city, item.sale.saleDate ? formatDate(item.sale.saleDate) : null]
               .filter(Boolean)
               .join(" · ")}
           </p>
           <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
             <div className="rounded-lg border bg-amber-50/60 p-3">
-              <dt className="text-xs font-medium text-[#132238]/60">Valeur extraite</dt>
+              <dt className="text-xs font-medium text-brand-navy/60">Valeur extraite</dt>
               <dd className="mt-1 font-semibold text-amber-900">{formatValue(item.value)}</dd>
             </div>
             <div className="rounded-lg border bg-slate-50 p-3">
-              <dt className="text-xs font-medium text-[#132238]/60">Valeur canonique actuelle</dt>
-              <dd className="mt-1 font-semibold text-[#132238]">
+              <dt className="text-xs font-medium text-brand-navy/60">Valeur canonique actuelle</dt>
+              <dd className="mt-1 font-semibold text-brand-navy">
                 {formatValue(item.currentCanonicalValue)}
               </dd>
             </div>
           </dl>
-          <div className="mt-3 rounded-lg border border-dashed p-3 text-xs text-[#132238]/65">
-            <p className="font-medium text-[#132238]">Preuve · {item.evidence.kind}</p>
+          <div className="mt-3 rounded-lg border border-dashed p-3 text-xs text-brand-navy/65">
+            <p className="font-medium text-brand-navy">Preuve · {item.evidence.kind}</p>
             {locatorQuote ? <p className="mt-1 whitespace-pre-wrap">« {locatorQuote} »</p> : null}
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
               {item.evidence.sourceUrl ? (
@@ -305,7 +307,7 @@ function ClaimLine({
                 : "Motif du conflit"}
           </p>
           {needsNote ? (
-            <label className="mt-2 block text-xs font-medium text-[#132238]/75">
+            <label className="mt-2 block text-xs font-medium text-brand-navy/75">
               Justification obligatoire
               <textarea
                 value={activeDraft.note}
@@ -316,7 +318,7 @@ function ClaimLine({
               />
             </label>
           ) : (
-            <p className="mt-1 text-xs text-[#132238]/60">
+            <p className="mt-1 text-xs text-brand-navy/60">
               La valeur doit encore correspondre au canonique au moment de la validation.
             </p>
           )}

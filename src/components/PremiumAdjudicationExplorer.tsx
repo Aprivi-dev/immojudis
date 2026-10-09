@@ -70,7 +70,7 @@ export function PremiumAdjudicationExplorer({
           </button>
         </div>
       ) : !hasAccess ? (
-        <div className="mt-6 rounded-lg border border-brand-navy/12 bg-[#f8fbfe] p-5">
+        <div className="mt-6 rounded-lg border border-brand-navy/12 bg-surface-muted p-5">
           <p className="font-semibold text-brand-navy">
             Les résultats chiffrés sont réservés aux membres Analyse.
           </p>

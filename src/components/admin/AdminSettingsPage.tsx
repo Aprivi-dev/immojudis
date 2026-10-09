@@ -300,7 +300,7 @@ function PipelineControls({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
         <fieldset disabled={mutation.isPending} className="space-y-5 disabled:opacity-60">
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4">
             <input
-              className="mt-1 size-4 accent-[#a36f2c]"
+              className="mt-1 size-4 accent-gold-soft"
               type="checkbox"
               checked={current.enabled}
               onChange={(event) => update("enabled", event.target.checked)}
@@ -316,7 +316,7 @@ function PipelineControls({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
           </label>
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4">
             <input
-              className="mt-1 size-4 accent-[#a36f2c]"
+              className="mt-1 size-4 accent-gold-soft"
               type="checkbox"
               checked={current.source_details_enabled}
               onChange={(event) => update("source_details_enabled", event.target.checked)}

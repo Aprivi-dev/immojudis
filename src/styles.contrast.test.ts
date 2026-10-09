@@ -49,7 +49,7 @@ describe("contraste des jetons dorés (WCAG AA)", () => {
   });
 
   it("les boutons dorés n'utilisent plus un texte blanc ou ciel sur l'or clair", () => {
-    expect(css).toMatch(/\.liquid-button \{[^}]*color: #132238/);
-    expect(css).toMatch(/\.ij-signup-button \{[^}]*color: #132238/);
+    expect(css).toMatch(/\.liquid-button \{[^}]*color: (#132238|var\(--brand-navy\))/);
+    expect(css).toMatch(/\.ij-signup-button \{[^}]*color: (#132238|var\(--brand-navy\))/);
   });
 });
