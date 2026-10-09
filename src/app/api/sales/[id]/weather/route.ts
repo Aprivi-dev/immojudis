@@ -8,6 +8,8 @@ import {
 import { DETAIL_VIEW } from "@/lib/sale-views";
 import { getMeteostatHistoricalWeather, type MeteostatResult } from "@/lib/meteostat";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { enforceUserRateLimit, tryConsumeUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
 
 const saleIdSchema = z.string().uuid();
@@ -40,6 +42,11 @@ export async function GET(
       "property.weatherHistory",
       "Historique météo réservé au plan Analyse.",
     );
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "sales.weather",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     const { data: sale, error: saleError } = await auth.supabase
       .from(DETAIL_VIEW)
       .select(WEATHER_COLUMNS)
@@ -67,7 +74,16 @@ export async function GET(
             reason: "coordinates_missing" as const,
             message: "Cette annonce ne possède pas de coordonnées exploitables.",
           }
-        : await getMeteostatHistoricalWeather(latitude, longitude);
+        : await getMeteostatHistoricalWeather(latitude, longitude, {
+            // Cached communes cost nothing; only a miss that would reach Meteostat is
+            // charged to the caller's daily budget (5 per user per day).
+            beforeUpstreamFetch: () =>
+              tryConsumeUserRateLimit({
+                userId: auth.userId,
+                bucketKey: "sales.weather.upstream",
+                ...RATE_LIMIT_POLICIES.weatherUpstream,
+              }),
+          });
 
     return NextResponse.json(
       { saleId: parsedId.data, weather },

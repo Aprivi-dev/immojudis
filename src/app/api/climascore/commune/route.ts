@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { RateLimitError } from "@/lib/api-errors";
+import { rateLimitResponse } from "@/lib/api-observability";
+import { enforceIpRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { matchClimaScoreCommune } from "@/lib/climascore";
 
 const schema = z.object({
@@ -7,6 +11,16 @@ const schema = z.object({
 });
 
 export async function GET(request: Request) {
+  try {
+    await enforceIpRateLimit({
+      request,
+      bucketKey: "climascore.commune",
+      ...RATE_LIMIT_POLICIES.publicIp,
+    });
+  } catch (error) {
+    if (error instanceof RateLimitError) return rateLimitResponse(error, { commune: null });
+    throw error;
+  }
   const parsed = schema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!parsed.success) return Response.json({ commune: null }, { status: 400 });
   const url = new URL("https://geo.api.gouv.fr/communes");

@@ -1,10 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { RateLimitError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   assertEntitlement: vi.fn(),
   weather: vi.fn(),
   assertPublicationVisible: vi.fn(),
+  enforceUser: vi.fn(),
+  tryConsume: vi.fn(),
+}));
+
+vi.mock("@/lib/rate-limit", () => ({
+  enforceUserRateLimit: mocks.enforceUser,
+  tryConsumeUserRateLimit: mocks.tryConsume,
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -55,6 +63,17 @@ function setup(sale: { id: string; latitude: number | null; longitude: number | 
   return { query, from, auth };
 }
 
+function setupQuery() {
+  const query = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn() };
+  query.select.mockReturnValue(query);
+  query.eq.mockReturnValue(query);
+  query.maybeSingle.mockResolvedValue({
+    data: { id: saleId, latitude: 44.8378, longitude: -0.5792 },
+    error: null,
+  });
+  return query;
+}
+
 const request = () => new Request(`https://example.test/api/sales/${saleId}/weather`);
 const context = { params: Promise.resolve({ id: saleId }) };
 
@@ -62,6 +81,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.assertEntitlement.mockResolvedValue({ plan: "analyse" });
   mocks.weather.mockResolvedValue(readyWeather);
+  mocks.enforceUser.mockResolvedValue(1);
+  mocks.tryConsume.mockResolvedValue(true);
 });
 
 describe("sale weather route", () => {
@@ -79,7 +100,9 @@ describe("sale weather route", () => {
       "Historique météo réservé au plan Analyse.",
     );
     expect(query.select).toHaveBeenCalledWith("id,latitude,longitude");
-    expect(mocks.weather).toHaveBeenCalledWith(44.8378, -0.5792);
+    expect(mocks.weather).toHaveBeenCalledWith(44.8378, -0.5792, {
+      beforeUpstreamFetch: expect.any(Function),
+    });
     expect(mocks.assertPublicationVisible).toHaveBeenCalledWith(saleId);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
@@ -138,6 +161,38 @@ describe("sale weather route", () => {
     expect(response.headers.get("vary")).toBe("authorization");
     expect(mocks.assertEntitlement).not.toHaveBeenCalled();
     expect(mocks.weather).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 with Retry-After once the per-minute budget is spent", async () => {
+    setup({ id: saleId, latitude: 44.8378, longitude: -0.5792 });
+    mocks.enforceUser.mockRejectedValue(new RateLimitError(undefined, 37));
+
+    const response = await GET(request(), context);
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("37");
+    expect(mocks.weather).not.toHaveBeenCalled();
+  });
+
+  it("charges only upstream cache misses to the 5-per-day Meteostat budget", async () => {
+    setup({ id: saleId, latitude: 44.8378, longitude: -0.5792 });
+    mocks.auth.mockResolvedValue({
+      userId: "user-1",
+      supabase: { from: vi.fn().mockReturnValue(setupQuery()) },
+    });
+    await GET(request(), context);
+
+    expect(mocks.tryConsume).not.toHaveBeenCalled();
+    const options = mocks.weather.mock.calls[0]?.[2] as {
+      beforeUpstreamFetch: () => Promise<boolean>;
+    };
+    await options.beforeUpstreamFetch();
+    expect(mocks.tryConsume).toHaveBeenCalledWith({
+      userId: "user-1",
+      bucketKey: "sales.weather.upstream",
+      limit: 5,
+      windowSeconds: 86_400,
+    });
   });
 
   it("rejects malformed ids before authentication", async () => {

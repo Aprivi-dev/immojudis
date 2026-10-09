@@ -4,6 +4,8 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { refreshSaleValuationOnDemand } from "@/lib/sale-market-estimates";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -16,6 +18,11 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "market-estimate",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     await assertFeatureEntitlement(
       auth,
       "property.valueEstimate",
