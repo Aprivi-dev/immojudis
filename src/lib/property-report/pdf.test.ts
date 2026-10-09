@@ -68,6 +68,7 @@ function reportWithRentalScenario(
     } as Json,
     share_enabled: false,
     share_token: null,
+    share_token_hash: null,
     shared_at: null,
     share_expires_at: null,
     share_view_count: 0,

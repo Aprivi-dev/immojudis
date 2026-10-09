@@ -13,10 +13,64 @@ const API_KEY_SECRET_PREFIX = "ij_live_";
 const API_KEY_PREFIX_LENGTH = 18;
 const API_KEY_DEFAULT_SCOPES = ["sales.feed:read"] as const;
 
+export const API_KEY_MAX_LIFETIME_DAYS = 365;
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
 export const apiKeyCreateInputSchema = z.object({
   name: z.string().trim().min(2).max(80),
   expiresAt: z.string().datetime().nullable().optional(),
 });
+
+/**
+ * Keys always expire: a missing date means the maximum lifetime, a past date is
+ * refused and nothing may last longer than API_KEY_MAX_LIFETIME_DAYS.
+ */
+export function resolveApiKeyExpiry(
+  requested: string | null | undefined,
+  now: Date = new Date(),
+): string {
+  const maximum = now.getTime() + API_KEY_MAX_LIFETIME_DAYS * DAY_MS;
+  if (!requested) return new Date(maximum).toISOString();
+  const expiresAt = new Date(requested).getTime();
+  if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) {
+    throw new Error("La date d'expiration de la clé doit être future.");
+  }
+  if (expiresAt > maximum) {
+    throw new Error(`La durée maximale d'une clé API est de ${API_KEY_MAX_LIFETIME_DAYS} jours.`);
+  }
+  return new Date(expiresAt).toISOString();
+}
+
+// Tables a key-authenticated request may read through its service-role transport:
+// the published catalogue views and the owner's plan.
+const API_KEY_READABLE_RELATIONS = new Set([
+  "v_auction_sales_app",
+  "v_auction_sales_app_search",
+  "v_auction_sales_app_preview",
+  "v_auction_sales_discovery",
+  "v_auction_sales_discovery_search",
+  "user_subscriptions",
+]);
+
+/**
+ * Read-only, allowlisted view over the service-role client. API-key callers have no
+ * user JWT, but they must never hold a handle that can write or read arbitrary tables.
+ */
+export function createApiKeyReader(
+  client: Pick<typeof supabaseAdmin, "from">,
+): SupabaseAuthContext["supabase"] {
+  return {
+    from(relation: string) {
+      if (!API_KEY_READABLE_RELATIONS.has(relation)) {
+        throw new Error("Forbidden: ressource non accessible avec une clé API.");
+      }
+      const query = (client.from as (name: string) => { select: (...args: unknown[]) => unknown })(
+        relation,
+      );
+      return { select: (...args: unknown[]) => query.select(...args) };
+    },
+  } as unknown as SupabaseAuthContext["supabase"];
+}
 
 export type ApiKeyCreateInput = z.input<typeof apiKeyCreateInputSchema>;
 export type ApiKeyCreatePayload = z.output<typeof apiKeyCreateInputSchema>;
@@ -96,7 +150,7 @@ export async function createUserApiKey({
       key_prefix: apiKeyLookupPrefix(secret),
       key_hash: hashApiKey(secret),
       scopes: [...API_KEY_DEFAULT_SCOPES],
-      expires_at: input.expiresAt ?? null,
+      expires_at: resolveApiKeyExpiry(input.expiresAt),
     })
     .select("*")
     .single();
@@ -151,11 +205,12 @@ export async function apiKeyAuthContextFromRequest(
   const userRole = profile?.user_role === "admin" ? "admin" : "user";
 
   return {
-    supabase: supabaseAdmin,
+    supabase: createApiKeyReader(supabaseAdmin),
     userId: row.user_id,
     accountTier,
     userRole,
-    isAdmin: userRole === "admin",
+    // A key never carries administrator rights, whoever owns it.
+    isAdmin: false,
     claims: {
       sub: row.user_id,
       api_key_id: row.id,

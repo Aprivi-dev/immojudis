@@ -2131,6 +2131,7 @@ export type Database = {
           share_enabled: boolean;
           share_expires_at: string | null;
           share_token: string | null;
+          share_token_hash: string | null;
           share_view_count: number;
           shared_at: string | null;
           title: string;
@@ -2152,6 +2153,7 @@ export type Database = {
           share_enabled?: boolean;
           share_expires_at?: string | null;
           share_token?: string | null;
+          share_token_hash?: string | null;
           share_view_count?: number;
           shared_at?: string | null;
           title: string;
@@ -2173,6 +2175,7 @@ export type Database = {
           share_enabled?: boolean;
           share_expires_at?: string | null;
           share_token?: string | null;
+          share_token_hash?: string | null;
           share_view_count?: number;
           shared_at?: string | null;
           title?: string;

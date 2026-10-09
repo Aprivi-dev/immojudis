@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { Json } from "@/integrations/supabase/types";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import { type SourceTraceEntry } from "@/lib/source-traceability";
@@ -528,6 +528,11 @@ export function slugify(value: string): string {
 
 export function createShareToken(): string {
   return randomBytes(24).toString("base64url");
+}
+
+/** Only this digest is stored; the raw token is shown once, when the link is created. */
+export function hashShareToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 export function normalizeShareToken(value: string): string | null {
