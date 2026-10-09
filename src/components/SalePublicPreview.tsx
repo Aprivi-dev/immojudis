@@ -13,6 +13,7 @@ import { Link } from "@/lib/router-compat";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
+  saleVerificationExplanation,
   saleVerificationLabel,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
@@ -139,7 +140,7 @@ export function SalePublicPreview({
               <p>
                 <strong>{saleVerificationLabel(procedure.verificationStatus)}</strong>
                 <br />
-                La qualification affichée est rapprochée des sources disponibles par Immojudis.
+                {saleVerificationExplanation(procedure.verificationStatus)}
               </p>
             </div>
             <p className={styles.catalogueNote}>

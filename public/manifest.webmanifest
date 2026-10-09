@@ -1,0 +1,16 @@
+{
+  "name": "Immojudis",
+  "short_name": "Immojudis",
+  "description": "Les ventes immobilières aux enchères en toute clarté : annonces, procédures expliquées et enchère plafond chiffrée.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#eef7ff",
+  "theme_color": "#132238",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/brand/immojudis-justice-temple.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

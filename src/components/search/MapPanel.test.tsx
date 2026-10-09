@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/mapbox", () => ({
   getMapboxAccessToken: () => mocks.token,
+  disableMapboxTelemetry: vi.fn(),
   getMapboxStyleUrl: () => "test-style",
   MAPBOX_ATTRIBUTION: "Mapbox",
   MAPBOX_COPYRIGHT_URL: "https://www.mapbox.com/about/maps/",

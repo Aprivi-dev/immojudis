@@ -18,6 +18,7 @@ import {
   paymentDeadlineLabel,
   saleLegalFrameworkLabel,
   saleProcedureIsConfirmed,
+  saleVerificationExplanation,
   saleVerificationLabel,
   saleVenueLabel,
   stateSaleMethodLabel,
@@ -112,16 +113,21 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
               </p>
             </div>
           </div>
-          <span
-            className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${verificationTone}`}
-          >
-            {procedure.verificationStatus === "conflict" ? (
-              <CircleAlert className="h-4 w-4" aria-hidden />
-            ) : (
-              <ShieldCheck className="h-4 w-4" aria-hidden />
-            )}
-            {saleVerificationLabel(procedure.verificationStatus)}
-          </span>
+          <div className="flex shrink-0 flex-col gap-2 sm:max-w-xs">
+            <span
+              className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${verificationTone}`}
+            >
+              {procedure.verificationStatus === "conflict" ? (
+                <CircleAlert className="h-4 w-4" aria-hidden />
+              ) : (
+                <ShieldCheck className="h-4 w-4" aria-hidden />
+              )}
+              {saleVerificationLabel(procedure.verificationStatus)}
+            </span>
+            <p className="max-w-sm text-xs leading-relaxed text-brand-navy/65">
+              {saleVerificationExplanation(procedure.verificationStatus)}
+            </p>
+          </div>
         </div>
       </div>
 

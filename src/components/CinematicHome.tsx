@@ -66,6 +66,8 @@ export function CinematicHero() {
               fill
               sizes="(max-width: 760px) calc(100vw - 48px), (max-width: 1100px) 38vw, 480px"
               quality={85}
+              loading="eager"
+              fetchPriority="high"
             />
             <span className={styles.fictionBadge}>Exemple fictif</span>
           </div>

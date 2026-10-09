@@ -28,6 +28,7 @@ import type { GeographicBoundary } from "@/lib/geographic-boundary";
 import {
   MAPBOX_ATTRIBUTION,
   MAPBOX_COPYRIGHT_URL,
+  disableMapboxTelemetry,
   getMapboxAccessToken,
   mapboxSatelliteImageUrl,
 } from "@/lib/mapbox";
@@ -342,6 +343,7 @@ export function MapPanel({
     void import("mapbox-gl").then((module) => {
       if (cancelled || !containerRef.current) return;
       mapboxRuntime = module.default;
+      disableMapboxTelemetry(module.default);
       cleanup = startMap(module.default);
     });
     return () => {
