@@ -274,6 +274,10 @@ def load_settings() -> dict[str, str | float | None]:
         "pdf_ocr_enabled": os.getenv("PDF_OCR_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
         "pdf_ocr_language": os.getenv("PDF_OCR_LANGUAGE", "fra+eng"),
         "pdf_ocr_tessdata": os.getenv("TESSDATA_PREFIX") or os.getenv("PDF_OCR_TESSDATA"),
+        "pdf_ocr_document_budget_seconds": max(
+            0.0,
+            float(os.getenv("PDF_OCR_DOCUMENT_BUDGET_SECONDS", "120")),
+        ),
         "pdf_extractor": os.getenv("PDF_EXTRACTOR", "auto").lower(),
         "pdf_docling_enabled": os.getenv("PDF_DOCLING_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
         "pdf_docling_threshold_chars": int(os.getenv("PDF_DOCLING_THRESHOLD_CHARS", "1200")),
