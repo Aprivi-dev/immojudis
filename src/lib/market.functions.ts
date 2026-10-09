@@ -1635,7 +1635,7 @@ export async function getMarketEstimate(
   } catch (err) {
     const message = err instanceof Error ? err.message : "erreur inconnue";
     const code = marketEstimateErrorCode(err);
-    console.error("DVF fetch failed", err);
+    logMarketEstimateFailure(code, message, err);
     return {
       ok: false,
       error:
@@ -1652,6 +1652,23 @@ export async function getMarketEstimate(
       computedAt: null,
     };
   }
+}
+
+/**
+ * Expected business outcomes (unsupported segment, missing surface, address
+ * that cannot be geocoded, no comparable sale) are information, not incidents:
+ * only real outages and unexpected errors are logged as errors.
+ */
+export function logMarketEstimateFailure(
+  code: MarketEstimateErrorCode,
+  message: string,
+  error: unknown,
+): void {
+  if (code === "UPSTREAM_UNAVAILABLE" || code === "INTERNAL_ERROR") {
+    console.error("DVF fetch failed", error);
+    return;
+  }
+  console.info(JSON.stringify({ scope: "market-estimate", level: "info", code, message }));
 }
 
 export function marketEstimateErrorCode(error: unknown): MarketEstimateErrorCode {
