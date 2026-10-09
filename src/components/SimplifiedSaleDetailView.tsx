@@ -68,8 +68,8 @@ import {
   type MarketCeilingResult,
   DEFAULT_MARKET_CEILING_SCENARIO,
   DEFAULTS,
-  estimateWorksBudget,
 } from "@/lib/profitability";
+import { saleCostContext } from "@/lib/sale-cost-context";
 import { Link } from "@/lib/router-compat";
 import { listingCoordinates } from "@/lib/sale-listing";
 import { propertyImages } from "@/lib/sale-media";
@@ -313,10 +313,15 @@ function SaleDetailWorkspace({
         surface,
         price: Math.max(0, displaySale.starting_price_eur ?? 0),
         fpt: DEFAULTS.fpt,
+        ...saleCostContext(displaySale),
         scenario: DEFAULT_MARKET_CEILING_SCENARIO,
         medianPricePerM2:
           isTribunalSale && marketEstimate?.actionable === true
             ? marketEstimate.medianPricePerM2
+            : null,
+        p10PricePerM2:
+          isTribunalSale && marketEstimate?.actionable === true
+            ? marketEstimate.p10PricePerM2
             : null,
         p25PricePerM2:
           isTribunalSale && marketEstimate?.actionable === true
@@ -327,28 +332,29 @@ function SaleDetailWorkspace({
             ? marketEstimate.p75PricePerM2
             : null,
       }),
-    [displaySale.starting_price_eur, isTribunalSale, marketEstimate, surface],
+    [displaySale, isTribunalSale, marketEstimate, surface],
   );
-  const worksBudget =
-    access === "analysis" ? estimateWorksBudget(surface, "rafraichissement") : null;
+  // Aucun travaux n'est supposé tant que l'utilisateur n'en a pas chiffré.
   const retainedWorks =
     access !== "analysis" ||
     valuationConflict ||
     criticalAnalysisInputsBlocked ||
     activeSimulation?.worksKnown === false
       ? null
-      : (activeSimulation?.works ?? personalWorksBudget ?? (surface == null ? null : worksBudget));
+      : (activeSimulation?.works ?? personalWorksBudget ?? 0);
   const heroCeilingResult =
     activeSimulation?.result ??
     (personalWorksBudget == null
-      ? recommendations.withRefreshWorks
+      ? recommendations.withoutWorks
       : computeMarketCeiling({
           surface,
           price: displaySale.starting_price_eur ?? 0,
           works: personalWorksBudget,
           fpt: DEFAULTS.fpt,
+          ...saleCostContext(displaySale),
           scenario: DEFAULT_MARKET_CEILING_SCENARIO,
           medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
+          p10PricePerM2: marketEstimate?.actionable ? marketEstimate.p10PricePerM2 : null,
           p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
           p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
         }));
@@ -363,6 +369,10 @@ function SaleDetailWorkspace({
           price: activeSimulation?.reportInput?.price ?? displaySale.starting_price_eur!,
           works: retainedWorks,
           fpt: activeSimulation?.reportInput?.fpt ?? DEFAULTS.fpt,
+          lawyerFees: activeSimulation?.reportInput?.lawyerFees,
+          registrationRate: activeSimulation?.reportInput?.registrationRate,
+          taxRegime: activeSimulation?.reportInput?.taxRegime,
+          department: displaySale.department,
         })
       : null;
   const activeFinancingResult =
@@ -401,6 +411,12 @@ function SaleDetailWorkspace({
         activeSimulation?.reportInput?.price ?? Math.max(0, displaySale.starting_price_eur ?? 0),
       works: amount,
       fpt: activeSimulation?.reportInput?.fpt ?? DEFAULTS.fpt,
+      lawyerFees: activeSimulation?.reportInput?.lawyerFees,
+      registrationRate: activeSimulation?.reportInput?.registrationRate,
+      taxRegime: activeSimulation?.reportInput?.taxRegime,
+      occupancyDiscountPct: activeSimulation?.reportInput?.occupancyDiscountPct,
+      carryMonths: activeSimulation?.reportInput?.carryMonths,
+      monthlyCarryCharges: activeSimulation?.reportInput?.monthlyCarryCharges,
       scenario: activeSimulation?.reportInput?.scenario ?? DEFAULT_MARKET_CEILING_SCENARIO,
       customSafetyDiscountPct: activeSimulation?.reportInput?.customSafetyDiscountPct,
       manualMarketPricePerM2: activeSimulation?.reportInput?.manualMarketPricePerM2 ?? null,
@@ -408,7 +424,9 @@ function SaleDetailWorkspace({
     const result = computeMarketCeiling({
       ...inputs,
       surface,
+      ...saleCostContext(displaySale),
       medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
+      p10PricePerM2: marketEstimate?.actionable ? marketEstimate.p10PricePerM2 : null,
       p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
       p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
     });
@@ -683,7 +701,11 @@ function SaleDetailWorkspace({
                     sale={displaySale}
                     marketEstimate={marketEstimate}
                     marketLoading={marketQuery.isLoading && marketEstimate == null}
-                    worksBudget={activeSimulation?.worksKnown === false ? null : retainedWorks}
+                    worksBudget={
+                      activeSimulation?.worksKnown === false || !retainedWorks
+                        ? null
+                        : retainedWorks
+                    }
                     recommendedCeiling={heroCeilingResult.maxBid}
                     ceilingAvailable={heroCeilingResult.available}
                     onAdjust={() => setCalculationOpen(true)}
@@ -1776,12 +1798,15 @@ function CeilingExplanation({
   resultOverride?: MarketCeilingResult;
   worksOverride?: number;
 }) {
-  const result = resultOverride ?? recommendations.withRefreshWorks;
-  const works = worksOverride ?? recommendations.refreshWorksBudget;
+  const result = resultOverride ?? recommendations.withoutWorks;
+  const works = worksOverride ?? 0;
   const ceilingCosts = computeAcquisitionCosts({
     price: result.maxBid,
     works,
     fpt: result.simulated.fpt,
+    lawyerFees: result.simulated.lawyerFees,
+    registrationRate: result.simulated.registrationRate,
+    taxRegime: result.simulated.taxRegime,
   });
   const marketBase = result.available
     ? Math.round(result.marketReferencePricePerM2 * Math.max(0, surface ?? 0))
@@ -1791,6 +1816,19 @@ function CeilingExplanation({
   const rows = [
     ["Référence de marché du scénario", marketBase],
     ["Marge de sécurité", safetyMargin == null ? null : -safetyMargin],
+    ...(result.available && result.occupancy?.applied
+      ? ([
+          [
+            result.occupancy.status === "unknown"
+              ? "Décote d’occupation (occupation non confirmée)"
+              : "Décote d’occupation",
+            -result.occupancy.discountAmount,
+          ],
+          ...(result.occupancy.carryingCost > 0
+            ? ([["Portage avant libération", -result.occupancy.carryingCost]] as const)
+            : []),
+        ] as const)
+      : []),
     [
       "Frais estimés au plafond",
       result.available ? -Math.round(ceilingCosts.acquisitionFeesTotal) : null,
@@ -1821,7 +1859,7 @@ function CeilingExplanation({
         ))}
         <div className="flex items-baseline justify-between gap-4 border-t border-brand-navy/50 py-5">
           <dt className="font-display text-2xl font-semibold text-brand-navy">
-            Mise plafond recommandée
+            Mise plafond selon vos hypothèses
           </dt>
           <dd className="font-display text-3xl font-semibold text-brand-navy sm:text-4xl">
             {result.available ? formatPrice(result.maxBid) : "À compléter"}

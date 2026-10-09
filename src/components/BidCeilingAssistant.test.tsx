@@ -94,7 +94,7 @@ describe("saved ceiling simulations", () => {
     expect(second.textContent).not.toContain("Fiabilité forte");
   });
 
-  it("marks automatic works as unknown when a commercial surface is missing", () => {
+  it("never invents works when a commercial surface is missing", () => {
     const onSimulationChange = vi.fn();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -114,7 +114,7 @@ describe("saved ceiling simulations", () => {
         />
       </QueryClientProvider>,
     );
-    expect(onSimulationChange.mock.lastCall![0]).toMatchObject({ works: 0, worksKnown: false });
+    expect(onSimulationChange.mock.lastCall![0]).toMatchObject({ works: 0 });
   });
 
   it("publishes the current ceiling and works after edits and reset", () => {

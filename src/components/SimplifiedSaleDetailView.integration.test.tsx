@@ -242,12 +242,13 @@ describe("integrated scenario workspace", () => {
       price: sale.starting_price_eur!,
       works: 2_200,
       fpt: DEFAULTS.fpt,
+      department: sale.department,
     }).totalCost;
 
     await openTab("Financement");
     await waitFor(() => {
       const projectPrice = screen.getByLabelText(/Prix du projet/) as HTMLInputElement;
-      expect(projectPrice.value).toBe(String(expectedProjectCost));
+      expect(Number(projectPrice.value)).toBeCloseTo(expectedProjectCost, 1);
       expect(projectPrice.disabled).toBe(true);
       expect(screen.getByText("Coût complet retenu")).toBeTruthy();
     });

@@ -131,9 +131,9 @@ describe("bid ceiling analysis", () => {
     expect(analysis.scenarios[0].key).toBe("prudent");
     expect(analysis.scenarios[0].result.safetyDiscountPct).toBe(8);
     expect(analysis.assumptions).toMatchObject({
-      worksEur: 40_000,
-      worksSource: "default_refresh",
-      worksScenario: "rafraichissement",
+      worksEur: 0,
+      worksSource: "none",
+      worksScenario: null,
     });
   });
 });

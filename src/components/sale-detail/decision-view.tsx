@@ -130,7 +130,7 @@ export function DecisionHero({
             />
             <DecisionMetricCard
               icon={<Target className="h-4 w-4" />}
-              label="Plafond conseillé sans travaux"
+              label="Plafond selon vos hypothèses sans travaux"
               value={ceilingWithoutWorksLabel(decision)}
               detail={
                 decision.ceilingWithoutWorks.available
@@ -141,7 +141,7 @@ export function DecisionHero({
             />
             <DecisionMetricCard
               icon={<Wrench className="h-4 w-4" />}
-              label="Plafond conseillé avec rafraîchissement"
+              label="Plafond selon vos hypothèses avec rafraîchissement"
               value={ceilingWithRefreshWorksLabel(decision)}
               detail={`${formatPrice(decision.refreshWorksBudget)} de travaux · ${REFRESH_WORKS_PRICE_PER_M2} €/m²`}
               accent
@@ -345,9 +345,10 @@ export function DecisionIntroGrid({
               {formatPrice(sale.starting_price_eur)}.
             </p>
             <p>
-              En profil Prudent, le plafond conseillé est de {ceilingWithoutWorksLabel(decision)}{" "}
-              sans travaux et de {ceilingWithRefreshWorksLabel(decision)} avec une enveloppe de
-              rafraîchissement de {formatPrice(decision.refreshWorksBudget)}.
+              En profil Prudent, le plafond selon les hypothèses par défaut est de{" "}
+              {ceilingWithoutWorksLabel(decision)} sans travaux et de{" "}
+              {ceilingWithRefreshWorksLabel(decision)} avec une enveloppe de rafraîchissement de{" "}
+              {formatPrice(decision.refreshWorksBudget)}.
             </p>
             <p>
               Le dossier semble intéressant, mais deux points peuvent modifier fortement l'enchère
@@ -466,7 +467,7 @@ export function VerdictSection({
     spread == null
       ? "le plafond reste à compléter avec une référence de marché locale"
       : spread >= 0
-        ? "la mise à prix reste nettement inférieure au plafond conseillé"
+        ? "la mise à prix reste nettement inférieure au plafond retenu"
         : "la mise à prix dépasse le plafond actuellement calculé";
   const chips = [
     ["Potentiel", interesting ? "Intéressant" : "À vérifier"],
@@ -526,12 +527,12 @@ export function KeyFiguresSection({
   const figures = [
     ["Mise à prix", formatPrice(sale.starting_price_eur), "Prix de départ, pas prix final"],
     [
-      "Plafond conseillé sans travaux",
+      "Plafond selon vos hypothèses sans travaux",
       ceilingWithoutWorksLabel(decision),
       "Profil Prudent · marge de sécurité 8 %",
     ],
     [
-      "Plafond conseillé avec rafraîchissement",
+      "Plafond selon vos hypothèses avec rafraîchissement",
       ceilingWithRefreshWorksLabel(decision),
       `${formatPrice(decision.refreshWorksBudget)} de travaux à ${REFRESH_WORKS_PRICE_PER_M2} €/m²`,
     ],
@@ -682,12 +683,12 @@ export function CeilingCalculationSection({
       "Les frais estimés sont retirés de la valeur cible avant de calculer l'enchère maximale.",
     ],
     [
-      "Plafond conseillé sans travaux",
+      "Plafond selon vos hypothèses sans travaux",
       ceilingWithoutWorksLabel(decision),
       "Référence haute avant toute enveloppe de rénovation.",
     ],
     [
-      "Plafond conseillé avec rafraîchissement",
+      "Plafond selon vos hypothèses avec rafraîchissement",
       ceilingWithRefreshWorksLabel(decision),
       `${formatPrice(decision.refreshWorksBudget)} de travaux retirés · ${decision.action}.`,
     ],
@@ -774,8 +775,8 @@ export function CeilingSimulatorCard({
     ],
     ["Frais d'acquisition estimés", formatPrice(acquisitionCost.acquisitionFeesTotal)],
     ["Travaux de rafraîchissement", formatPrice(decision.refreshWorksBudget)],
-    ["Plafond conseillé sans travaux", ceilingWithoutWorksLabel(decision)],
-    ["Plafond conseillé avec rafraîchissement", ceilingWithRefreshWorksLabel(decision)],
+    ["Plafond selon vos hypothèses sans travaux", ceilingWithoutWorksLabel(decision)],
+    ["Plafond selon vos hypothèses avec rafraîchissement", ceilingWithRefreshWorksLabel(decision)],
   ];
 
   return (
@@ -1088,7 +1089,7 @@ export function DecisionActionRail({
       <div className="sticky top-32 space-y-4">
         <div className="rounded-lg border border-border bg-white p-5 shadow-sm">
           <div className="text-[11px] font-semibold uppercase text-brand-navy/54">
-            Plafonds conseillés · Prudent 8 %
+            Plafonds selon vos hypothèses · Prudent 8 %
           </div>
           <dl className="mt-3 grid gap-3">
             <div>
@@ -1321,7 +1322,7 @@ export function MobileActionBar({
           className="min-h-12 min-w-0 rounded-md bg-foreground px-3 py-2 text-xs text-background"
         >
           <span className="block text-[10px] uppercase tracking-[0.12em] text-background/70">
-            Plafonds conseillés · Prudent
+            Plafonds selon vos hypothèses · Prudent
           </span>
           <span className="mt-1 grid grid-cols-2 gap-2 tabular-nums">
             <span className="min-w-0">

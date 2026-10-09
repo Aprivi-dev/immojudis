@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyOccupancy,
   computeAcquisitionCosts,
+  computeEmolumentsHT,
   computeMarketCeiling,
   computeRecommendedCeilings,
   computeRentabilityScore,
   estimateWorksBudget,
   MARKET_CEILING_SCENARIOS,
+  registrationRateForDepartment,
   WORKS_SCENARIOS,
 } from "./profitability";
 
@@ -42,25 +45,143 @@ describe("estimateWorksBudget", () => {
   });
 });
 
+describe("computeEmolumentsHT", () => {
+  // Cas de référence calculés tranche par tranche avec le barème de l'article
+  // A444-191 (7,256 % / 2,993 % / 1,995 % / 1,497 %). Le premier reprend
+  // l'exemple publié par un cabinet d'avocats (2 242,56 € HT pour 100 000 €).
+  it.each([
+    [50_000, 1_444.26],
+    [100_000, 2_242.56],
+    [250_000, 4_488.06],
+  ])("reproduit le décompte de %d €", (price, expected) => {
+    expect(computeEmolumentsHT(price)).toBeCloseTo(expected, 1);
+  });
+});
+
+describe("registrationRateForDepartment", () => {
+  it("applique le taux plein par défaut et le taux de l'Indre", () => {
+    expect(registrationRateForDepartment("33")).toBeCloseTo(0.0632, 4);
+    expect(registrationRateForDepartment(null)).toBeCloseTo(0.0632, 4);
+    expect(registrationRateForDepartment("36")).toBeCloseTo(0.0509, 4);
+  });
+});
+
 describe("computeAcquisitionCosts", () => {
-  it("applies judicial auction fees and registration duties", () => {
+  it("applique émoluments, droits sur prix + frais préalables, CSI et honoraires", () => {
     const result = computeAcquisitionCosts({ price: 100_000 });
 
-    expect(result.emolumentsHT).toBeCloseTo(2_266.75, 2);
-    expect(result.emolumentsTTC).toBeCloseTo(2_720.1, 2);
-    expect(result.registrationDuties).toBe(5_800);
+    expect(result.emolumentsHT).toBeCloseTo(2_242.56, 1);
+    expect(result.emolumentsTTC).toBeCloseTo(2_691.07, 1);
+    // Base taxable = prix + frais préalables (103 000 €).
+    expect(result.registrationDuties).toBeCloseTo(103_000 * 0.0632, 2);
+    expect(result.csi).toBeCloseTo(103, 2);
+    expect(result.lawyerFees).toBe(1_500);
     expect(result.fpt).toBe(3_000);
-    expect(result.acquisitionFeesTotal).toBeCloseTo(11_520.1, 2);
-    expect(result.totalCost).toBeCloseTo(111_520.1, 2);
+    expect(result.acquisitionFeesTotal).toBeCloseTo(13_803.67, 1);
+    expect(result.totalCost).toBeCloseTo(113_803.67, 1);
+  });
+
+  it("utilise le taux de l'utilisateur quand il est saisi", () => {
+    const result = computeAcquisitionCosts({
+      price: 100_000,
+      department: "36",
+      registrationRate: 0.0581,
+    });
+    expect(result.registrationDuties).toBeCloseTo(103_000 * 0.0581, 2);
+    expect(computeAcquisitionCosts({ price: 100_000, department: "36" }).registrationRate).toBe(
+      0.0509,
+    );
+  });
+
+  it("remplace les droits par la TVA pour un bien soumis à TVA", () => {
+    const result = computeAcquisitionCosts({ price: 100_000, taxRegime: "vat" });
+    expect(result.registrationDuties).toBe(0);
+    expect(result.csi).toBe(0);
+    expect(result.vatOnPrice).toBe(20_000);
+    expect(result.totalCost).toBeCloseTo(
+      100_000 + 20_000 + result.emolumentsTTC + 1_500 + 3_000,
+      2,
+    );
   });
 
   it("clamps negative inputs to zero", () => {
-    const result = computeAcquisitionCosts({ price: -10_000, works: -5_000, fpt: -1_000 });
+    const result = computeAcquisitionCosts({
+      price: -10_000,
+      works: -5_000,
+      fpt: -1_000,
+      lawyerFees: -200,
+    });
 
     expect(result.price).toBe(0);
     expect(result.works).toBe(0);
     expect(result.fpt).toBe(0);
+    expect(result.lawyerFees).toBe(0);
     expect(result.totalCost).toBe(0);
+  });
+});
+
+describe("occupation du bien", () => {
+  const base = {
+    surface: 50,
+    price: 90_000,
+    scenario: "offensif" as const,
+    medianPricePerM2: 3_000,
+  };
+
+  it("donne deux plafonds différents pour un bien libre et un bien occupé", () => {
+    const free = computeMarketCeiling({ ...base, occupancy: "free" });
+    const occupied = computeMarketCeiling({ ...base, occupancy: "occupied" });
+    expect(occupied.maxBid).toBeLessThan(free.maxBid);
+    expect(occupied.occupancy?.applied).toBe(true);
+    expect(occupied.occupancy?.discountAmount).toBe(Math.round(3_000 * 50 * 0.15));
+    expect(occupied.occupancy?.bidReduction).toBe(free.maxBid - occupied.maxBid);
+    expect(free.occupancy?.applied).toBe(false);
+  });
+
+  it("traite une occupation inconnue comme un bien occupé", () => {
+    const unknown = computeMarketCeiling({ ...base, occupancy: "unknown" });
+    expect(unknown.occupancy?.applied).toBe(true);
+    expect(unknown.maxBid).toBe(computeMarketCeiling({ ...base, occupancy: "occupied" }).maxBid);
+  });
+
+  it("ajoute le portage : mois avant libération × charges mensuelles", () => {
+    const withoutCarry = computeMarketCeiling({ ...base, occupancy: "occupied" });
+    const withCarry = computeMarketCeiling({
+      ...base,
+      occupancy: "occupied",
+      carryMonths: 12,
+      monthlyCarryCharges: 300,
+    });
+    expect(withCarry.occupancy?.carryingCost).toBe(3_600);
+    expect(withCarry.maxBid).toBeLessThan(withoutCarry.maxBid);
+  });
+
+  it("classe les statuts bruts", () => {
+    expect(classifyOccupancy("Libre")).toBe("free");
+    expect(classifyOccupancy("occupied")).toBe("occupied");
+    expect(classifyOccupancy("Loué")).toBe("occupied");
+    expect(classifyOccupancy(null)).toBe("unknown");
+    expect(classifyOccupancy("unknown")).toBe("unknown");
+  });
+});
+
+describe("scénario prudent", () => {
+  it("avertit quand la borne basse manque et que la médiane est utilisée", () => {
+    const result = computeMarketCeiling({
+      surface: 50,
+      price: 90_000,
+      scenario: "prudent",
+      medianPricePerM2: 3_000,
+    });
+    expect(result.warning).toMatch(/pas prudent/);
+    const withLowBound = computeMarketCeiling({
+      surface: 50,
+      price: 90_000,
+      scenario: "prudent",
+      medianPricePerM2: 3_000,
+      p10PricePerM2: 2_400,
+    });
+    expect(withLowBound.warning).toBeUndefined();
   });
 });
 

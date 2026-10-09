@@ -2,6 +2,7 @@ import { toast } from "sonner";
 import { formatPrice, documentTypeLabel, occupancyLabel } from "@/lib/format";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import { parseDocs } from "@/lib/documents";
+import { saleCostContext } from "@/lib/sale-cost-context";
 import type { MarketEstimate } from "@/lib/market.functions";
 import {
   computeRecommendedCeilings,
@@ -21,12 +22,15 @@ export function buildDecisionSummary(
     surface: marketSurface,
     price: Math.max(0, sale.starting_price_eur ?? 0),
     fpt: DEFAULTS.fpt,
+    ...saleCostContext(sale),
     scenario: DEFAULT_MARKET_CEILING_SCENARIO,
     medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
+    p10PricePerM2: marketEstimate?.actionable ? marketEstimate.p10PricePerM2 : null,
     p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
     p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
   });
-  const ceiling = ceilings.withRefreshWorks;
+  // Le plafond de référence n'inclut aucun travaux tant que l'utilisateur n'en a pas choisi.
+  const ceiling = ceilings.withoutWorks;
 
   const primaryCheck = primaryCheckLabel(sale);
   return {

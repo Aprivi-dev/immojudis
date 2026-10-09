@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EXAMPLE_SALE, EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
 import { computeMarketCeiling } from "@/lib/profitability";
+import { saleCostContext } from "@/lib/sale-cost-context";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import {
   buildReportRentalScenario,
@@ -97,6 +98,8 @@ describe("report rental scenario payload", () => {
       ...baseInput,
       surface: getMarketValuationSurfaces(sale).builtSurfaceM2,
       medianPricePerM2: marketEstimate.medianPricePerM2,
+      ...saleCostContext(sale),
+      p10PricePerM2: marketEstimate.p10PricePerM2,
       p25PricePerM2: marketEstimate.p25PricePerM2,
       p75PricePerM2: marketEstimate.p75PricePerM2,
     };
