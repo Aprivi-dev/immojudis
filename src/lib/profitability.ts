@@ -2,18 +2,43 @@
 // Toutes les valeurs sont en euros sauf indication.
 import { defaultRentPerM2 } from "@/lib/geo";
 
-// ─── Barème officiel des émoluments d'avocat poursuivant ─────────────────
-// Article A444-191 du Code de commerce (tarif dégressif, HT).
-// https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000031012386
+// ─── Barème des émoluments de l'avocat poursuivant ───────────────────────
+// Article A444-191 du Code de commerce, qui renvoie au barème proportionnel
+// dégressif de l'article A444-102 (tableau 5, modifié par l'arrêté du
+// 28 février 2020). Taux HT appliqués tranche par tranche au prix
+// d'adjudication. Valeurs recoupées sur plusieurs sources publiques le
+// 09/10/2026 ; à confirmer sur Légifrance avant toute évolution :
+// https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000041595310
+export const EMOLUMENT_SCALE_REFERENCE = "art. A444-191 du Code de commerce";
+export const EMOLUMENT_SCALE_DATE = "09/10/2026";
 const EMOLUMENT_BRACKETS: Array<{ upTo: number; rate: number }> = [
-  { upTo: 6_500, rate: 0.07 },
-  { upTo: 17_000, rate: 0.0385 },
-  { upTo: 30_000, rate: 0.0275 },
-  { upTo: Infinity, rate: 0.015 },
+  { upTo: 6_500, rate: 0.07256 },
+  { upTo: 17_000, rate: 0.02993 },
+  { upTo: 60_000, rate: 0.01995 },
+  { upTo: Infinity, rate: 0.01497 },
 ];
 
 const VAT = 0.2;
-const REGISTRATION = 0.058;
+
+// ─── Droits de mutation à titre onéreux (DMTO) ───────────────────────────
+// Taux global (part départementale + communale + frais d'assiette) pour une
+// vente d'immeuble ancien. La loi de finances 2025 a permis aux départements de
+// relever leur part à 5 % jusqu'au 31/03/2028 : environ 88 départements
+// appliquent 6,32 % au 01/06/2026, une dizaine 5,81 % et l'Indre 5,09 %.
+// Sans liste officielle exhaustive à portée, le taux plein (le plus prudent)
+// sert de défaut ; l'utilisateur peut le corriger dans le simulateur.
+export const DMTO_TABLE_DATE = "01/06/2026";
+export const DMTO_DEFAULT_RATE = 0.0632;
+export const DMTO_RATE_BY_DEPARTMENT: Readonly<Record<string, number>> = {
+  "36": 0.0509,
+};
+/** Contribution de sécurité immobilière : 0,10 % de la base taxable. */
+export const CSI_RATE = 0.001;
+
+export function registrationRateForDepartment(department?: string | null): number {
+  const code = (department ?? "").trim().toUpperCase();
+  return DMTO_RATE_BY_DEPARTMENT[code] ?? DMTO_DEFAULT_RATE;
+}
 
 export function computeEmolumentsHT(price: number): number {
   let remaining = Math.max(0, price || 0);
@@ -33,6 +58,10 @@ export const DEFAULTS = {
   fpt: 3_000,
   works: 0,
   safetyDiscountPct: 8,
+  /** Honoraires de l'avocat enchérisseur, hors émoluments tarifés (TTC). */
+  lawyerFees: 1_500,
+  occupancyDiscountPct: 15,
+  occupancyCarryMonths: 12,
 };
 
 export const DEFAULT_MARKET_CEILING_SCENARIO = "prudent" as const;
@@ -74,11 +103,35 @@ export function estimateWorksBudget(
   return scenario ? Math.round(cleanSurface * scenario.pricePerM2) : 0;
 }
 
+export type TaxRegime = "registration" | "vat";
+
+/** Hypothèses de frais communes à tous les calculs de coût d'acquisition. */
+export type AcquisitionCostOptions = {
+  works?: number;
+  /** Frais préalables de la procédure, payés en plus du prix. */
+  fpt?: number;
+  /** Honoraires de l'avocat enchérisseur (TTC), hors émoluments tarifés. */
+  lawyerFees?: number;
+  /** Département du bien : détermine le taux de DMTO. */
+  department?: string | null;
+  /** Taux de DMTO saisi par l'utilisateur (fraction, ex. 0.0632). */
+  registrationRate?: number | null;
+  /** `vat` : bien soumis à TVA (terrain à bâtir, vendeur assujetti). */
+  taxRegime?: TaxRegime;
+};
+
 export type AcquisitionCostResult = {
   price: number;
   emolumentsHT: number;
   emolumentsTTC: number;
   registrationDuties: number;
+  registrationRate: number;
+  /** TVA sur le prix, uniquement pour un bien soumis à TVA. */
+  vatOnPrice: number;
+  taxRegime: TaxRegime;
+  /** Contribution de sécurité immobilière. */
+  csi: number;
+  lawyerFees: number;
   fpt: number;
   works: number;
   acquisitionFeesTotal: number;
@@ -90,18 +143,30 @@ export function computeAcquisitionCosts({
   price,
   works = DEFAULTS.works,
   fpt = DEFAULTS.fpt,
-}: {
-  price: number;
-  works?: number;
-  fpt?: number;
-}): AcquisitionCostResult {
+  lawyerFees = DEFAULTS.lawyerFees,
+  department,
+  registrationRate,
+  taxRegime = "registration",
+}: { price: number } & AcquisitionCostOptions): AcquisitionCostResult {
   const cleanPrice = Math.max(0, price || 0);
   const cleanWorks = Math.max(0, works || 0);
   const cleanFpt = Math.max(0, fpt || 0);
+  const cleanLawyerFees = Math.max(0, lawyerFees || 0);
   const emolumentsHT = computeEmolumentsHT(cleanPrice);
   const emolumentsTTC = emolumentsHT * (1 + VAT);
-  const registrationDuties = cleanPrice * REGISTRATION;
-  const acquisitionFeesTotal = emolumentsTTC + registrationDuties + cleanFpt;
+  // Les droits se calculent sur le prix augmenté des frais préalables
+  // (charges augmentatives), pas sur le seul prix.
+  const taxableBase = cleanPrice + cleanFpt;
+  const rate =
+    registrationRate != null && Number.isFinite(registrationRate) && registrationRate >= 0
+      ? registrationRate
+      : registrationRateForDepartment(department);
+  const subjectToVat = taxRegime === "vat";
+  const registrationDuties = subjectToVat ? 0 : taxableBase * rate;
+  const vatOnPrice = subjectToVat ? cleanPrice * VAT : 0;
+  const csi = subjectToVat ? 0 : taxableBase * CSI_RATE;
+  const acquisitionFeesTotal =
+    emolumentsTTC + registrationDuties + vatOnPrice + csi + cleanLawyerFees + cleanFpt;
   const totalCost = cleanPrice + acquisitionFeesTotal + cleanWorks;
 
   return {
@@ -109,6 +174,11 @@ export function computeAcquisitionCosts({
     emolumentsHT,
     emolumentsTTC,
     registrationDuties,
+    registrationRate: rate,
+    vatOnPrice,
+    taxRegime,
+    csi,
+    lawyerFees: cleanLawyerFees,
     fpt: cleanFpt,
     works: cleanWorks,
     acquisitionFeesTotal,
@@ -124,7 +194,8 @@ export const MARKET_CEILING_SCENARIOS = [
     basis: "p10",
     basisLabel: "borne basse calibrée (P10)",
     safetyDiscountPct: 8,
-    description: "Profil par défaut : borne basse à 80 % et marge de sécurité de 8 %.",
+    description:
+      "Profil par défaut : référence = les 10 % des ventes comparables les moins chères, puis marge de sécurité de 8 %.",
   },
   {
     key: "offensif",
@@ -139,24 +210,55 @@ export const MARKET_CEILING_SCENARIOS = [
 export type MarketCeilingScenarioKey = (typeof MARKET_CEILING_SCENARIOS)[number]["key"];
 export type MarketCeilingBasis = (typeof MARKET_CEILING_SCENARIOS)[number]["basis"];
 
-export type MarketCeilingInputs = {
-  surface: number | null;
-  price: number;
-  works?: number;
-  fpt?: number;
-  scenario: MarketCeilingScenarioKey | "custom";
-  customSafetyDiscountPct?: number;
-  medianPricePerM2?: number | null;
-  p10PricePerM2?: number | null;
-  p25PricePerM2?: number | null;
-  p75PricePerM2?: number | null;
-  p90PricePerM2?: number | null;
-  manualMarketPricePerM2?: number | null;
+export type OccupancyKind = "free" | "occupied" | "unknown";
+
+/** Range un statut d'occupation brut (`occupancy_status`) dans trois cas. */
+export function classifyOccupancy(status: string | null | undefined): OccupancyKind {
+  const value = (status ?? "").trim().toLowerCase();
+  if (!value || value === "unknown" || value === "inconnu") return "unknown";
+  if (value.includes("libre") || value === "vacant" || value === "free") return "free";
+  return "occupied";
+}
+
+export type OccupancyInputs = {
+  /** Un bien occupé ou d'occupation inconnue subit une décote et un portage. */
+  occupancy?: OccupancyKind;
+  occupancyDiscountPct?: number;
+  carryMonths?: number;
+  monthlyCarryCharges?: number;
+};
+
+export type MarketCeilingInputs = AcquisitionCostOptions &
+  OccupancyInputs & {
+    surface: number | null;
+    price: number;
+    scenario: MarketCeilingScenarioKey | "custom";
+    customSafetyDiscountPct?: number;
+    medianPricePerM2?: number | null;
+    p10PricePerM2?: number | null;
+    p25PricePerM2?: number | null;
+    p75PricePerM2?: number | null;
+    p90PricePerM2?: number | null;
+    manualMarketPricePerM2?: number | null;
+  };
+
+export type OccupancyAdjustment = {
+  applied: boolean;
+  status: OccupancyKind;
+  discountPct: number;
+  discountAmount: number;
+  carryMonths: number;
+  carryingCost: number;
+  /** Baisse de la mise plafond causée par l'occupation, en euros. */
+  bidReduction: number;
 };
 
 export type MarketCeilingResult = {
   available: boolean;
   reason?: string;
+  /** Avertissement affiché à côté du plafond (ex. scénario prudent sans borne basse). */
+  warning?: string;
+  occupancy?: OccupancyAdjustment;
   surface: number;
   scenario: MarketCeilingScenarioKey | "custom";
   basis: MarketCeilingBasis | "manual" | "p25";
@@ -196,12 +298,9 @@ export type RentabilityScoreFactor = {
   tone: "positive" | "neutral" | "negative";
 };
 
-export type RentabilityScoreInputs = {
+export type RentabilityScoreInputs = AcquisitionCostOptions & {
   surface: number | null;
   price: number;
-  works?: number;
-  fpt?: number;
-  department?: string | null;
   monthlyRent?: number | null;
   vacancyPct?: number;
   annualNonRecoverableCharges?: number | null;
@@ -248,13 +347,41 @@ export type RentabilityScoreResult = {
   factors: RentabilityScoreFactor[];
 };
 
-export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeilingResult {
-  const surface = Math.max(0, inputs.surface || 0);
-  const simulated = computeAcquisitionCosts({
-    price: inputs.price,
+function costOptionsOf(inputs: AcquisitionCostOptions): AcquisitionCostOptions {
+  return {
     works: inputs.works,
     fpt: inputs.fpt,
-  });
+    lawyerFees: inputs.lawyerFees,
+    department: inputs.department,
+    registrationRate: inputs.registrationRate,
+    taxRegime: inputs.taxRegime,
+  };
+}
+
+function occupancyAdjustment(
+  inputs: OccupancyInputs,
+  marketReferenceTotal: number,
+): Omit<OccupancyAdjustment, "bidReduction"> {
+  const status = inputs.occupancy ?? "free";
+  const applied = status !== "free";
+  const discountPct = clamp(inputs.occupancyDiscountPct ?? DEFAULTS.occupancyDiscountPct, 0, 60);
+  const carryMonths = Math.max(0, Math.round(inputs.carryMonths ?? DEFAULTS.occupancyCarryMonths));
+  return {
+    applied,
+    status,
+    discountPct,
+    discountAmount: applied ? Math.round(marketReferenceTotal * (discountPct / 100)) : 0,
+    carryMonths,
+    carryingCost: applied
+      ? Math.round(carryMonths * Math.max(0, inputs.monthlyCarryCharges ?? 0))
+      : 0,
+  };
+}
+
+export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeilingResult {
+  const surface = Math.max(0, inputs.surface || 0);
+  const costOptions = costOptionsOf(inputs);
+  const simulated = computeAcquisitionCosts({ price: inputs.price, ...costOptions });
 
   if (surface <= 0) {
     return unavailableResult("Surface manquante", surface, inputs, simulated);
@@ -284,17 +411,27 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
       ? clamp(inputs.customSafetyDiscountPct ?? DEFAULTS.safetyDiscountPct, 0, 40)
       : scenarioConfig.safetyDiscountPct;
   const maxAllInPricePerM2 = marketReference * (1 - safetyDiscountPct / 100);
-  const targetTotalCost = Math.max(0, maxAllInPricePerM2 * surface);
-  const maxBid = solveMaxBid(targetTotalCost, inputs.works ?? 0, inputs.fpt ?? DEFAULTS.fpt);
-  const maxBidCosts = computeAcquisitionCosts({
-    price: maxBid,
-    works: inputs.works,
-    fpt: inputs.fpt,
-  });
+  const occupancy = occupancyAdjustment(inputs, marketReference * surface);
+  const targetBeforeOccupancy = Math.max(0, maxAllInPricePerM2 * surface);
+  const targetTotalCost = Math.max(
+    0,
+    targetBeforeOccupancy - occupancy.discountAmount - occupancy.carryingCost,
+  );
+  const maxBid = solveMaxBid(targetTotalCost, costOptions);
+  const maxBidFree = occupancy.applied ? solveMaxBid(targetBeforeOccupancy, costOptions) : maxBid;
+  const maxBidCosts = computeAcquisitionCosts({ price: maxBid, ...costOptions });
   const maxBidIsReachable = maxBid > 0 && maxBidCosts.totalCost <= targetTotalCost + 1;
+  // Le scénario prudent suppose une borne basse ; sans elle il retombe sur la
+  // médiane, ce qui n'a plus rien de prudent et doit se voir.
+  const prudentWithoutLowBound =
+    inputs.scenario === "prudent" && basis !== "p10" && basis !== "manual";
 
   return {
     available: true,
+    warning: prudentWithoutLowBound
+      ? "Données insuffisantes : ce scénario n’est pas prudent. Faute de borne basse, la référence est la médiane locale."
+      : undefined,
+    occupancy: { ...occupancy, bidReduction: Math.max(0, maxBidFree - maxBid) },
     surface,
     scenario: inputs.scenario,
     basis,
@@ -317,12 +454,12 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
     simulatedBidPricePerM2: simulated.price / surface,
     simulatedAllInPricePerM2: simulated.totalCost / surface,
     marginTotal: Math.round(targetTotalCost - simulated.totalCost),
-    marginPerM2: Math.round(maxAllInPricePerM2 - simulated.totalCost / surface),
+    marginPerM2: Math.round(targetTotalCost / surface - simulated.totalCost / surface),
     maxWorksAtSimulatedPrice: Math.max(
       0,
       Math.round(
         targetTotalCost -
-          computeAcquisitionCosts({ price: simulated.price, works: 0, fpt: inputs.fpt }).totalCost,
+          computeAcquisitionCosts({ price: simulated.price, ...costOptions, works: 0 }).totalCost,
       ),
     ),
     p10PricePerM2: cleanPositive(inputs.p10PricePerM2),
@@ -346,11 +483,7 @@ export function computeRecommendedCeilings(
 
 export function computeRentabilityScore(inputs: RentabilityScoreInputs): RentabilityScoreResult {
   const surface = Math.max(0, inputs.surface || 0);
-  const acquisition = computeAcquisitionCosts({
-    price: inputs.price,
-    works: inputs.works,
-    fpt: inputs.fpt,
-  });
+  const acquisition = computeAcquisitionCosts({ price: inputs.price, ...costOptionsOf(inputs) });
   const assumptions = rentabilityAssumptions(inputs);
   const manualRent = cleanPositive(inputs.monthlyRent);
   const estimatedRent = surface > 0 ? surface * defaultRentPerM2(inputs.department) : null;
@@ -499,16 +632,16 @@ export function marketCeilingVerdict(result: MarketCeilingResult): {
   };
 }
 
-function solveMaxBid(targetTotalCost: number, works: number, fpt: number): number {
+function solveMaxBid(targetTotalCost: number, options: AcquisitionCostOptions): number {
   if (targetTotalCost <= 0) return 0;
-  const fixedCosts = computeAcquisitionCosts({ price: 0, works, fpt }).totalCost;
+  const fixedCosts = computeAcquisitionCosts({ price: 0, ...options }).totalCost;
   if (fixedCosts >= targetTotalCost) return 0;
 
   let low = 0;
   let high = targetTotalCost;
   for (let index = 0; index < 48; index += 1) {
     const mid = (low + high) / 2;
-    const total = computeAcquisitionCosts({ price: mid, works, fpt }).totalCost;
+    const total = computeAcquisitionCosts({ price: mid, ...options }).totalCost;
     if (total <= targetTotalCost) low = mid;
     else high = mid;
   }
