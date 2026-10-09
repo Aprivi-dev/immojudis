@@ -9,14 +9,14 @@ export default function NotFound() {
         </p>
         <h1 className="mt-3 font-display text-4xl">Bien introuvable</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          Cette fiche n'existe pas dans les donnees locales ou n'est plus disponible.
+          Cette fiche n'existe pas dans les données locales ou n'est plus disponible.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link
             href="/properties"
             className="inline-flex min-h-10 items-center justify-center rounded-md bg-gold-soft px-4 text-sm font-semibold text-white hover:bg-gold-text"
           >
-            Voir la demo
+            Voir la démo
           </Link>
           <Link
             href="/sales"

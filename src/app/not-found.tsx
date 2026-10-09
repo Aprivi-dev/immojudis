@@ -1,25 +1,48 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { BrandMark } from "@/components/BrandLogo";
+import Search from "lucide-react/dist/esm/icons/search.js";
+import { Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
+
+export const metadata: Metadata = { title: "Page introuvable" };
 
 export default function NotFound() {
   return (
-    <main className="liquid-page flex min-h-screen items-center justify-center px-4 py-10">
-      <section className="glass-shell max-w-xl overflow-hidden rounded-lg p-6 text-center sm:p-8">
-        <BrandMark className="mx-auto h-16 w-16 drop-shadow-[0_18px_34px_rgba(0,0,0,0.35)]" />
-        <h1 className="mt-5 font-display text-6xl leading-none text-gold-text">404</h1>
-        <h2 className="mt-4 font-display text-2xl text-foreground">Page introuvable</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          La page demandee n'existe pas ou a ete deplacee.
+    <main id="contenu" className="mx-auto w-full max-w-2xl px-4 py-16 sm:px-6 sm:py-24">
+      <Card className="text-center sm:!p-10">
+        <Eyebrow>Erreur 404</Eyebrow>
+        <h1 className="mt-3 font-display text-4xl font-semibold sm:text-5xl">Page introuvable</h1>
+        <p className="mx-auto mt-3 max-w-md text-ink-soft">
+          La page demandée n’existe pas ou a été déplacée. Cherchez une vente par ville, département
+          ou région, ou revenez à l’accueil.
         </p>
-        <div className="mt-6">
-          <Link
-            href="/"
-            className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] transition hover:brightness-105"
-          >
-            Retour a l'accueil
+        <form action="/sales" role="search" className="mx-auto mt-6 flex max-w-md gap-2">
+          <label htmlFor="not-found-search" className="sr-only">
+            Rechercher une vente par ville, département ou région
+          </label>
+          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-line bg-white px-3 focus-within:ring-2 focus-within:ring-gold">
+            <Search className="size-4 shrink-0 text-ink-soft" aria-hidden />
+            <input
+              id="not-found-search"
+              name="q"
+              type="search"
+              autoComplete="off"
+              placeholder="Ville, département ou région"
+              className="min-h-11 w-full min-w-0 bg-transparent text-sm outline-none"
+            />
+          </div>
+          <button type="submit" className={buttonClasses({ variant: "dark" })}>
+            Rechercher
+          </button>
+        </form>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <Link href="/sales" className={buttonClasses({ variant: "primary" })}>
+            Voir les ventes
+          </Link>
+          <Link href="/" className={buttonClasses()}>
+            Retour à l’accueil
           </Link>
         </div>
-      </section>
+      </Card>
     </main>
   );
 }
