@@ -77,12 +77,9 @@ jobs:
       PIPELINE_TRACEBACK_SECONDS: "300"
       # Honest, contactable crawler identity; a repository variable overrides it.
       AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      # Secrets are not part of the job environment: the pip and apt steps
+      # must not see them. Only the Python business steps below receive them.
       SOURCE_FETCH_RELAY_URL: ${{ vars.SOURCE_FETCH_RELAY_URL }}
-      SOURCE_FETCH_RELAY_TOKEN: ${{ secrets.SOURCE_FETCH_RELAY_TOKEN }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
       REPLICATE_MODEL: qwen/qwen3-7-plus
       PIPELINE_ENRICH_WORKERS: 2
       PIPELINE_LLM_WORKERS: 1
@@ -169,9 +166,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/data-pipeline/requirements.txt
+          cache-dependency-path: services/data-pipeline/requirements.lock
 
       - name: Compute cache day
         id: date
@@ -210,7 +207,7 @@ jobs:
           sudo apt-get install -y "${packages[@]}"
 
       - name: Install Python dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install --require-hashes -r requirements.lock
 
       - name: Refresh and verify official Justice references
         run: python -m src.official_sources.justice_reference_sync
@@ -218,6 +215,11 @@ jobs:
       - name: Run manually requested pipeline
         id: pipeline
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SOURCE_FETCH_RELAY_TOKEN: ${{ secrets.SOURCE_FETCH_RELAY_TOKEN }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
           REQUESTED_AUTOMATIC: ${{ inputs.automatic }}
           REQUESTED_PUBLICATION_CHECK: ${{ github.event.inputs.publication_check }}
           REQUESTED_ENRICHMENT_ONLY: ${{ github.event.inputs.enrichment_only }}
@@ -261,12 +263,15 @@ jobs:
       - name: Finalize unfinished run
         if: always() && inputs.publication_check != true
         env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_AUTOMATIC: ${{ inputs.automatic }}
           REQUESTED_RUN_ID: ${{ inputs.run_id }}
         run: python -m src.run_finalizer
 
       - name: Report source coverage and enrichment backlog
         if: always()
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python -m src.pipeline_health --report-only
 
       - name: Flag partial collection
@@ -305,7 +310,6 @@ jobs:
       run:
         working-directory: services/data-pipeline
     env:
-      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
       LLM_PROVIDER: replicate
       LLM_ENABLED: true
       APP_ENV: benchmark
@@ -317,14 +321,16 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/data-pipeline/requirements.txt
+          cache-dependency-path: services/data-pipeline/requirements.lock
 
       - name: Install pipeline dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install --require-hashes -r requirements.lock
 
       - name: Compare existing and candidate models
+        env:
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
         run: python -m scripts.benchmark_replicate_models --output model-benchmark.json
 
       - name: Save model comparison
