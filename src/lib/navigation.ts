@@ -1,5 +1,5 @@
 export const RESOURCES_PATH = "/ressources";
-export const OFFERS_PATH = "/accompagnement";
+export const OFFERS_PATH = "/offres";
 
 export type SiteLink = { readonly href: string; readonly label: string };
 

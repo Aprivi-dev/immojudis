@@ -111,7 +111,7 @@ export function SaleTribunalHistory({
               attendu pour ce bien.
             </p>
             <a
-              href="/accompagnement"
+              href="/offres"
               className="mt-3 inline-block text-sm font-semibold text-gold-text underline underline-offset-4"
             >
               Découvrir l’offre Analyse

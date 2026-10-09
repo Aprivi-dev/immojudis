@@ -397,7 +397,7 @@ export function ListingOverview({
             <div className={styles.premiumPrice}>
               <p className={styles.priceLabel}>Enchère plafond</p>
               <p className={styles.premiumTeaser}>Disponible avec l’offre Analyse</p>
-              <a href="/accompagnement" className={styles.priceExplanation}>
+              <a href="/offres" className={styles.priceExplanation}>
                 Découvrir l’analyse
               </a>
             </div>

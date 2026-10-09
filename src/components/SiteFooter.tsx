@@ -10,7 +10,7 @@ const MAIN_LINKS = [
   { href: "/avocats", label: "Avocats" },
   { href: "/ressources", label: "Ressources" },
   { href: "/comment-ca-marche", label: "Comment ça marche" },
-  { href: "/accompagnement", label: "Offres" },
+  { href: "/offres", label: "Offres" },
   { href: "/contact", label: "Contact" },
 ] as const;
 

@@ -91,7 +91,7 @@ export function BillingActions({
     const redirect =
       typeof window !== "undefined"
         ? `${window.location.pathname}${window.location.search}`
-        : "/accompagnement";
+        : "/offres";
     await navigate({ to: "/login", search: { redirect } });
   }
 

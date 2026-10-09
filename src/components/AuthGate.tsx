@@ -19,6 +19,7 @@ const PUBLIC_PATHS = new Set([
   "/avocats",
   "/annonce-exemple",
   "/accompagnement",
+  "/offres",
   "/a-propos",
   "/contact",
   "/ressources",
