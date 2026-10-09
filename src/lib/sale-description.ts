@@ -1,4 +1,5 @@
 import type { AuctionSale } from "@/lib/types";
+import { atTribunal } from "@/lib/seo";
 import { getSaleProcedure, saleVenueLabel } from "./sale-procedure";
 import { formatDate, formatPrice, formatSurface, propertyTypeLabel } from "./format";
 import { listingOccupation, listingValuationConflict, listingSaleStatus } from "./listing-evidence";
@@ -70,7 +71,7 @@ export function buildStructuredDescription(sale: AuctionSale, now = new Date()):
           : session
             ? `La séance est annoncée du ${listingDate(session.opens_at)} au ${listingDate(session.closes_at)}. L’heure de passage du lot reste à confirmer.`
             : saleDate !== "Date à confirmer"
-              ? `La vente est prévue le ${saleDate}${venue ? ` auprès de ${venue}` : ""}.`
+              ? `La vente est prévue le ${saleDate}${venueSentence(procedure.venueType, venue)}.`
               : "La date de vente reste à confirmer.",
     facts.length
       ? `Les informations disponibles indiquent : ${facts.join(", ")}.`
@@ -78,6 +79,12 @@ export function buildStructuredDescription(sale: AuctionSale, now = new Date()):
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+/** " au tribunal judiciaire de Bordeaux" / " auprès de Me Dupont": never "auprès de Tribunal judiciaire…". */
+function venueSentence(venueType: string, venue: string | null): string {
+  if (!venue) return "";
+  return venueType === "tribunal" ? ` ${atTribunal(venue)}` : ` auprès de ${venue}`;
 }
 
 function saleSurfaceLabel(sale: AuctionSale): string | null {

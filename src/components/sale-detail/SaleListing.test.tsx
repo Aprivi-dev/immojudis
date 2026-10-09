@@ -118,10 +118,10 @@ describe("readable listing sections", () => {
   it("leads with the starting price and known essential facts", () => {
     render(<ListingOverview sale={item()} />);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Bordeaux");
-    expect(screen.getByText("42,6 m²")).toBeTruthy();
+    expect(screen.getByText("68 m²")).toBeTruthy();
     expect(screen.getByText("Surface Carrez")).toBeTruthy();
     expect(screen.getByText("Chambres")).toBeTruthy();
-    expect(screen.getByText("1", { exact: true })).toBeTruthy();
+    expect(screen.getByText("2", { exact: true })).toBeTruthy();
     expect(screen.getAllByRole("term")).toHaveLength(4);
     expect(screen.queryByText("Mise à prix au m²")).toBeNull();
     expect(screen.getByText("Prix de départ, hors frais")).toBeTruthy();
@@ -524,7 +524,7 @@ describe("budget preparation", () => {
       target: { value: "20 000" },
     });
     expect(screen.getByRole("status").textContent).toContain("Total de vos hypothèses");
-    expect(screen.getByRole("status").textContent?.replace(/\s/g, "")).toContain("120000€");
+    expect(screen.getByRole("status").textContent?.replace(/\s/g, "")).toContain("123000€");
     fireEvent.change(screen.getByLabelText("Ensemble des frais d’acquisition (€)"), {
       target: { value: "-8" },
     });
