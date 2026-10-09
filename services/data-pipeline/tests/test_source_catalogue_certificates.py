@@ -17,7 +17,7 @@ PETITES_CARD = """
 
 def _petites_settings() -> dict[str, object]:
     return {
-        "browser_user_agent": "Mozilla/5.0",
+        "user_agent": "ImmojudisBot/1.0 (+https://immojudis.com/contact)",
         "request_delay_seconds": 0,
         "request_timeout_seconds": 1,
     }
@@ -114,7 +114,7 @@ def _patch_agrasc_client(monkeypatch, html: str) -> None:
         agrasc,
         "load_settings",
         lambda: {
-            "user_agent": "Mozilla/5.0",
+            "user_agent": "ImmojudisBot/1.0 (+https://immojudis.com/contact)",
             "request_delay_seconds": 0,
             "request_timeout_seconds": 1,
         },
@@ -221,7 +221,7 @@ def test_agrasc_uses_published_query_page_zero_when_bare_url_is_incoherent(monke
         agrasc,
         "load_settings",
         lambda: {
-            "user_agent": "Mozilla/5.0",
+            "user_agent": "ImmojudisBot/1.0 (+https://immojudis.com/contact)",
             "request_delay_seconds": 0,
             "request_timeout_seconds": 1,
         },

@@ -75,7 +75,7 @@ def scrape_cessions_etat_aquitaine_result(
     client = PoliteHttpClient(
         base_url=BASE_URL,
         tls_context=cessions_tls_context(),
-        user_agent=str(settings["browser_user_agent"]),
+        user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
         accept="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",

@@ -23,3 +23,11 @@ def _no_network_image_checks(monkeypatch):
     from src import image_validation
 
     image_validation.reset_image_validator()
+
+
+@pytest.fixture(autouse=True)
+def _no_document_politeness_waits(monkeypatch):
+    """Document downloads fetch robots.txt and wait 1.5 s per host in production."""
+    from src import document_politeness
+
+    monkeypatch.setattr(document_politeness, "POLITENESS_ENABLED", False)
