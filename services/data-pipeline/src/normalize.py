@@ -129,6 +129,11 @@ def parse_price(value: object | None) -> Decimal | None:
 
 
 def extract_starting_price(raw_sale: dict[str, object]) -> Decimal | None:
+    return resolve_starting_price(raw_sale)[0]
+
+
+def resolve_starting_price(raw_sale: dict[str, object]) -> tuple[Decimal | None, bool]:
+    """Return the starting price and whether the explicit and textual values disagree."""
     explicit = parse_price(
         _field_or_source_block(
             raw_sale,
@@ -152,6 +157,7 @@ def extract_starting_price(raw_sale: dict[str, object]) -> Decimal | None:
         )
     )
     text_price = None
+    lot_scoped = False
     for pattern in (
         r"(?P<label>mise\s+[àa]\s+prix(?:\s+initiale)?)\s*:?\s*(?P<price>[0-9][0-9\s.,]*)\s*(?:€|euros?)?",
         r"(?P<label>prix\s+de\s+vente)\s*:\s*(?P<price>[0-9][0-9\s.,]*)\s*(?:€|euros?)?",
@@ -164,13 +170,25 @@ def extract_starting_price(raw_sale: dict[str, object]) -> Decimal | None:
             if _is_dvf_comparable_price_context(text, match.start(), match.end(), match.group("label")):
                 continue
             text_price = parse_price(match.group("price"))
+            lot_scoped = _is_lot_scoped_price(text, match.start(), match.end())
             break
-    if explicit is not None and text_price is not None:
+    if explicit is None or text_price is None:
+        return explicit or text_price, False
+    # The text may correct a mistyped explicit value only when both describe the
+    # same lot. A price attached to “lot 2” (or any price of a multi-lot sale)
+    # says nothing about the explicit value, which is then kept and flagged.
+    same_lot = not lot_scoped and "multi_lot_sale" not in (raw_sale.get("quality_flags") or [])
+    if same_lot:
         if explicit == text_price * Decimal("10"):
-            return text_price
+            return text_price, False
         if explicit > Decimal("1000000") and text_price < explicit:
-            return text_price
-    return explicit or text_price
+            return text_price, False
+    return explicit or text_price, bool(explicit) and explicit != text_price
+
+
+def _is_lot_scoped_price(text: str, start: int, end: int) -> bool:
+    context = text[max(0, start - 60) : min(len(text), end + 40)]
+    return bool(re.search(r"\blots?\s*(?:n[°o.]?\s*)?\d+", context, re.I))
 
 
 def _is_dvf_comparable_price_context(text: str, start: int, end: int, label: str) -> bool:
@@ -764,6 +782,10 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         ),
         local_timezone=source_sale_timezone(raw_sale),
     )
+    starting_price, price_conflict = resolve_starting_price(raw_sale)
+    if price_conflict:
+        raw_sale["price_conflict"] = True
+        raw_sale["quality_flags"] = [*dict.fromkeys([*(raw_sale.get("quality_flags") or []), "price_conflict"])]
     adjudication_price = extract_adjudication_price(raw_sale)
     status = normalize_status(_field_or_source_block(raw_sale, "status", "status", "statut"), sale_date)
     if adjudication_price is not None:
@@ -1026,7 +1048,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         has_double_glazing=_feature_bool(
             raw_sale.get("has_double_glazing"), source_text, r"\bdouble\s+vitrage\b"
         ),
-        starting_price_eur=extract_starting_price(raw_sale),
+        starting_price_eur=starting_price,
         sale_date=sale_date,
         visit_dates=_normalize_visit_dates(
             _field_or_source_block(
