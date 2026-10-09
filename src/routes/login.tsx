@@ -3,9 +3,10 @@
 import { createFileRoute, Link, useNavigate } from "@/lib/router-compat";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
-import BadgeCheck from "lucide-react/dist/esm/icons/badge-check.js";
 import BriefcaseBusiness from "lucide-react/dist/esm/icons/briefcase-business.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
+import Eye from "lucide-react/dist/esm/icons/eye.js";
+import EyeOff from "lucide-react/dist/esm/icons/eye-off.js";
 import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import Mail from "lucide-react/dist/esm/icons/mail.js";
@@ -22,7 +23,9 @@ import {
   type ProfessionalRole,
 } from "@/lib/account";
 import { loginPageMode, type LoginPageMode } from "@/lib/navigation";
+import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { postAuthDestination } from "@/lib/onboarding";
+import { userMessage } from "@/lib/user-messages";
 
 export const Route = createFileRoute("/login")({
   validateSearch: (search: Record<string, unknown>): LoginSearch => {
@@ -84,6 +87,8 @@ export function LoginPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [professionalRole, setProfessionalRole] = useState<ProfessionalRole>("lawyer");
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const copy = modeCopy[mode];
   const isSignup = mode !== "login";
@@ -114,6 +119,7 @@ export function LoginPage() {
       return;
     }
 
+    setFormError(null);
     setBusy(true);
     try {
       if (mode === "login") {
@@ -141,6 +147,9 @@ export function LoginPage() {
             professional_role: accountType === "b2b" ? professionalRole : null,
             onboarding_version:
               accountType === "b2b" ? "2026-06-split-investor-pro" : "2026-08-first-search",
+            terms_version: LEGAL_DOCUMENTS.terms.version,
+            privacy_version: LEGAL_DOCUMENTS.privacy.version,
+            terms_accepted_at: new Date().toISOString(),
           },
         },
       });
@@ -151,7 +160,12 @@ export function LoginPage() {
           : "Compte Découverte créé. Vérifiez votre email si la confirmation est activée.",
       );
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Erreur");
+      const message = userMessage(
+        err,
+        "Impossible de continuer. Vérifiez vos informations puis réessayez.",
+      );
+      setFormError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -168,13 +182,13 @@ export function LoginPage() {
               <ShieldCheck className="h-3.5 w-3.5" />
               Accès Immojudis
             </div>
-            <h1 className="mt-6 font-display text-5xl leading-tight text-foreground">
-              Deux parcours, une décision plus nette.
-            </h1>
+            <p className="mt-6 font-display text-5xl leading-tight text-foreground">
+              Préparez votre achat aux enchères.
+            </p>
             <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
-              Découverte ouvre gratuitement le catalogue. Analyse permet de tester les outils
-              Premium pendant sept jours avec carte bancaire, puis de poursuivre sur abonnement. Les
-              professionnels déposent et suivent leurs annonces dans leur espace.
+              Découverte ouvre gratuitement le catalogue. Analyse ajoute le calcul de votre enchère
+              plafond, les comparables et les alertes, sur abonnement résiliable. Les professionnels
+              déposent et suivent leurs annonces dans leur espace.
             </p>
 
             <div className="mt-10 grid gap-3">
@@ -187,11 +201,6 @@ export function LoginPage() {
                 icon={BriefcaseBusiness}
                 title="Professionnel"
                 text="Référencer une vente et structurer le dossier."
-              />
-              <FeatureLine
-                icon={BadgeCheck}
-                title="Admin"
-                text="Piloter les annonces, scans et accès."
               />
             </div>
           </div>
@@ -208,7 +217,7 @@ export function LoginPage() {
                 })
               }
             >
-              Connexion
+              Se connecter
             </ModeButton>
             <ModeButton
               active={mode === "investor"}
@@ -219,7 +228,7 @@ export function LoginPage() {
                 })
               }
             >
-              Découverte
+              Créer un compte
             </ModeButton>
             <ModeButton
               active={mode === "professional"}
@@ -230,7 +239,7 @@ export function LoginPage() {
                 })
               }
             >
-              Pro
+              Professionnel
             </ModeButton>
           </div>
 
@@ -337,31 +346,63 @@ export function LoginPage() {
               <div className="relative">
                 <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   autoComplete={isSignup ? "new-password" : "current-password"}
                   required
                   minLength={isSignup ? 8 : 6}
                   placeholder={isSignup ? "8 caractères minimum" : "Votre mot de passe"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="form-input pl-10"
+                  className="form-input pl-10 pr-11"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                  aria-pressed={showPassword}
+                  className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
             </label>
 
             {!isSignup ? (
-              <Link to="/mot-de-passe-oublie" className="text-right text-sm underline">
-                Mot de passe oublié ?
-              </Link>
+              <div className="pb-2 text-right">
+                <Link to="/mot-de-passe-oublie" className="text-sm underline">
+                  Mot de passe oublié ?
+                </Link>
+              </div>
+            ) : null}
+            {formError ? (
+              <p
+                role="alert"
+                className="rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-700"
+              >
+                {formError}
+              </p>
             ) : null}
             <button
               type="submit"
               disabled={busy}
-              className="liquid-button inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+              className="liquid-button inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-brand-navy transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Chargement..." : copy.submit}
               {!busy ? <ArrowRight className="h-4 w-4" /> : null}
             </button>
+            {isSignup ? (
+              <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                En créant un compte, vous acceptez les{" "}
+                <Link to="/conditions-generales" className="underline">
+                  conditions générales
+                </Link>{" "}
+                et la{" "}
+                <Link to="/privacy" className="underline">
+                  politique de confidentialité
+                </Link>
+                .
+              </p>
+            ) : null}
           </form>
 
           <div className="mt-6 border-t border-white/10 pt-4 text-center text-xs text-muted-foreground">
@@ -406,7 +447,7 @@ function ModeButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-md px-3 py-2 text-[11px] font-bold uppercase tracking-[0.14em] transition ${
+      className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
         active
           ? "bg-gold text-brand-navy shadow-[0_12px_28px_rgb(242_196_135_/_18%)]"
           : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
