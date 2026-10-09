@@ -173,6 +173,10 @@ jobs:
           cache: pip
           cache-dependency-path: services/data-pipeline/requirements.txt
 
+      - name: Compute cache day
+        id: date
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       - name: Restore pipeline extraction cache
         id: extraction-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -182,7 +186,9 @@ jobs:
             services/data-pipeline/data/raw/pdf_texts
             services/data-pipeline/data/raw/docling_texts
             services/data-pipeline/data/processed/llm_extractions
-          key: immojudis-data-pipeline-${{ runner.os }}-${{ github.run_id }}
+          # One entry per UTC day instead of one per run: the newest earlier
+          # entry is restored by prefix, and the repository cache stays bounded.
+          key: immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}
           restore-keys: |
             immojudis-data-pipeline-${{ runner.os }}-
 
@@ -190,7 +196,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: services/data-pipeline/data/raw/outcome_sources/justice_courts
-          key: immojudis-justice-reference-${{ runner.os }}-${{ github.run_id }}
+          key: immojudis-justice-reference-${{ runner.os }}-${{ steps.date.outputs.day }}
           restore-keys: |
             immojudis-justice-reference-${{ runner.os }}-
 
@@ -271,8 +277,16 @@ jobs:
             echo "Au moins une source activée a rendu 0 annonce ou a levé une erreur. Voir les annotations « Source … en échec » de cette exécution."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Bound extraction cache
+        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true && steps.extraction-cache.outputs.cache-hit != 'true'
+        run: >
+          python scripts/prune_cache_dirs.py --max-age-days 14 --max-total-mb 300
+          data/documents data/raw/pdf_texts data/raw/docling_texts data/processed/llm_extractions
+
       - name: Save extraction checkpoints
-        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true
+        # A cache entry cannot be overwritten: once today's entry exists, later
+        # runs of the same day restore it and skip the save.
+        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true && steps.extraction-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -280,7 +294,7 @@ jobs:
             services/data-pipeline/data/raw/pdf_texts
             services/data-pipeline/data/raw/docling_texts
             services/data-pipeline/data/processed/llm_extractions
-          key: immojudis-data-pipeline-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}
 
   model-benchmark:
     if: github.event_name == 'workflow_dispatch' && inputs.model_benchmark
