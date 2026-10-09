@@ -1,10 +1,12 @@
 import type { NextConfig } from "next";
 import { listingPhotoRemotePatterns } from "./src/lib/listing-photo-source.ts";
-import { buildSecurityHeaders } from "./src/lib/security-headers.ts";
+import { buildSecurityHeaders, resolveCspMode } from "./src/lib/security-headers.ts";
 
 const propertyDemoEnabled = process.env.ENABLE_PROPERTY_DEMO === "true";
 const securityHeaders = buildSecurityHeaders({
-  enforceCsp: process.env.CSP_REPORT_ONLY !== "true" && process.env.CSP_ENFORCE !== "false",
+  // The nonce-based CSP is emitted per request by src/proxy.ts (report-only unless
+  // CSP_REPORT_ONLY=false). Until it is enforced, the historical CSP keeps protecting pages.
+  includeLegacyCsp: !resolveCspMode().enforced,
   isProduction: process.env.NODE_ENV === "production",
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL,
 });
