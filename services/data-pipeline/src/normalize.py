@@ -350,15 +350,33 @@ def parse_french_datetime(value: object | None, *, local_timezone: str = "Europe
         candidate = dated[0].group(0).strip()
         if not re.search(r"\d{1,2}:\d{2}", lowered) or re.search(r"\d{1,2}:\d{2}", candidate):
             lowered = candidate
-    try:
-        parsed = parser.parse(lowered, dayfirst=True, fuzzy=True)
-    except (ValueError, TypeError, OverflowError):
+    parsed = _parse_complete_date(lowered)
+    if parsed is None:
         return None
     if parsed.tzinfo is None:
         return _civil_time_to_utc(
             parsed, has_time=bool(re.search(r"\d{1,2}:\d{2}", lowered)), local_timezone=local_timezone,
         )
     return parsed.astimezone(UTC)
+
+
+_DATE_SENTINELS = (datetime(1900, 1, 1), datetime(1901, 2, 2))
+
+
+def _parse_complete_date(text: str) -> datetime | None:
+    """Parse with dateutil, but only when the text itself gives day, month and year.
+
+    dateutil fills missing parts from ``default``. Parsing against two different
+    defaults and comparing the results shows which parts came from the text,
+    without mistaking a real 1 January for a missing component.
+    """
+    try:
+        first, second = (parser.parse(text, dayfirst=True, fuzzy=True, default=d) for d in _DATE_SENTINELS)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    if (first.year, first.month, first.day) != (second.year, second.month, second.day):
+        return None
+    return first
 
 
 def normalize_property_type(value: object | None) -> str:
