@@ -128,15 +128,6 @@ const SOURCE_OPTIONS: Array<{ value: AdminScrollSource; label: string }> = [
 ];
 
 export const Route = createFileRoute("/admin")({
-  head: () => ({
-    meta: [
-      { title: "Admin — Immojudis" },
-      {
-        name: "description",
-        content: "Dashboard administrateur Immojudis.",
-      },
-    ],
-  }),
   component: AdminDashboardPage,
 });
 

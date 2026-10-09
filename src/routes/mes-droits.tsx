@@ -12,15 +12,6 @@ import { createPrivacyRequestClient, fetchPrivacyRequests } from "@/lib/client-a
 import type { PrivacyRequestType } from "@/lib/privacy-requests";
 
 export const Route = createFileRoute("/mes-droits")({
-  head: () => ({
-    meta: [
-      { title: "Mes droits — Immojudis" },
-      {
-        name: "description",
-        content: "Exercer un droit sur ses données ou demander une rétractation Immojudis.",
-      },
-    ],
-  }),
   component: RightsPage,
 });
 

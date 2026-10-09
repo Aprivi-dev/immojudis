@@ -19,15 +19,6 @@ import type {
 } from "@/lib/data-quality-monitor";
 
 export const Route = createFileRoute("/admin/quality")({
-  head: () => ({
-    meta: [
-      { title: "Qualité data — Immojudis" },
-      {
-        name: "description",
-        content: "Tableau de bord qualité des données et du scoring Immojudis.",
-      },
-    ],
-  }),
   component: AdminQualityPage,
 });
 

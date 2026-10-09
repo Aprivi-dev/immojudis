@@ -3,8 +3,8 @@ import { AuthGate } from "@/components/AuthGate";
 import { AdminQualityPage } from "@/routes/admin.quality";
 
 export const metadata: Metadata = {
-  title: "Qualite des donnees",
-  description: "Suivi de qualite des donnees Immojudis.",
+  title: "Qualité des données",
+  description: "Suivi de la qualité des données Immojudis.",
   robots: { index: false, follow: false },
 };
 

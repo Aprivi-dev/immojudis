@@ -24,17 +24,6 @@ import {
 } from "@/lib/publication-requests-client";
 
 export const Route = createFileRoute("/publish")({
-  head: () => ({
-    meta: [
-      { title: "Publier une vente — Immojudis" },
-      {
-        name: "description",
-        content:
-          "Préparez une demande de publication de vente aux enchères immobilière avec documents, anonymisation et validation admin.",
-      },
-    ],
-    links: [{ rel: "canonical", href: "/publish" }],
-  }),
   component: PublishPage,
 });
 

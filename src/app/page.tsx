@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { organizationStructuredData } from "@/lib/seo";
+import { resolveSiteOrigin } from "@/lib/site-url";
 import { HomePage } from "@/routes/index";
 
 export const metadata: Metadata = {
@@ -9,17 +11,8 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    name: "ImmoJudis",
-    url: "/",
-    potentialAction: {
-      "@type": "SearchAction",
-      target: "/sales?q={search_term_string}",
-      "query-input": "required name=search_term_string",
-    },
-  };
+  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const structuredData = organizationStructuredData(origin);
   return (
     <>
       <script
