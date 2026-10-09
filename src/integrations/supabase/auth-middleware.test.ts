@@ -36,3 +36,19 @@ it("uses the verified subject to read the account's current rights", async () =>
   expect(eq).toHaveBeenCalledWith("user_id", "verified-user");
   expect(result).toMatchObject({ userId: "verified-user", accountTier: "premium", isAdmin: false });
 });
+it("does not leak the database detail when the access profile cannot be read", async () => {
+  const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  mocks.getClaims.mockResolvedValue({ data: { claims: { sub: "verified-user" } }, error: null });
+  const eq = vi.fn().mockReturnValue({
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'relation "public.user_profiles" does not exist' },
+    }),
+  });
+  mocks.from.mockReturnValue({ select: vi.fn().mockReturnValue({ eq }) });
+  const failure = await requireSupabaseAuthContext("valid-fixture").catch((error: Error) => error);
+  expect(failure).toBeInstanceOf(Error);
+  expect((failure as Error).message).toBe("Unauthorized: User access profile unavailable");
+  expect(String(errorLog.mock.calls[0]?.[0])).toContain("user_profiles");
+  errorLog.mockRestore();
+});

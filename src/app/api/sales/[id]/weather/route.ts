@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -77,15 +78,8 @@ export async function GET(
       },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Historique météo indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.startsWith("Forbidden") || message.includes("réserv")
-        ? 403
-        : 400;
-    return NextResponse.json(
-      { error: message },
-      { status, headers: status === 401 || status === 403 ? PRIVATE_WEATHER_HEADERS : undefined },
-    );
+    return apiRouteError(error, request, "sales.id.weather", {
+      fallbackMessage: "Historique météo indisponible",
+    });
   }
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -58,12 +59,9 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unauthorized";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réserv")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message, estimate: null }, { status });
+    return apiRouteError(error, request, "market-estimate", {
+      fallbackMessage: "Unauthorized",
+      extra: { estimate: null },
+    });
   }
 }

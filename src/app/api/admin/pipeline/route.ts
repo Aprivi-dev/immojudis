@@ -1,5 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
@@ -13,20 +14,10 @@ async function authorize(request: Request) {
   const context = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
   if (!context.isAdmin) throw new Error("Forbidden: accès administrateur requis");
 }
-function failure(error: unknown) {
-  const message = error instanceof Error ? error.message : "Supervision indisponible";
-  return NextResponse.json(
-    { error: message },
-    {
-      status: message.startsWith("Unauthorized")
-        ? 401
-        : message.startsWith("Forbidden")
-          ? 403
-          : error instanceof z.ZodError || error instanceof SyntaxError
-            ? 400
-            : 500,
-    },
-  );
+function failure(error: unknown, request: Request) {
+  return apiRouteError(error, request, "admin.pipeline", {
+    fallbackMessage: "Supervision indisponible",
+  });
 }
 export async function GET(request: Request) {
   try {
@@ -43,7 +34,7 @@ export async function GET(request: Request) {
     ]);
 
     for (const result of [sourcesResult, controlResult, alertsResult, usageResult]) {
-      if (result.error) throw new Error(result.error.message);
+      if (result.error) throw result.error;
     }
 
     // The health observer appends one row per source on every tick. A global
@@ -66,7 +57,7 @@ export async function GET(request: Request) {
       ),
     );
     for (const result of observationResults) {
-      if (result.error) throw new Error(result.error.message);
+      if (result.error) throw result.error;
     }
 
     return NextResponse.json(
@@ -80,7 +71,7 @@ export async function GET(request: Request) {
       { headers: { "cache-control": "no-store" } },
     );
   } catch (error) {
-    return failure(error);
+    return failure(error, request);
   }
 }
 export async function PATCH(request: Request) {
@@ -100,10 +91,10 @@ export async function PATCH(request: Request) {
       .eq("source_name", input.source)
       .select("source_name,enabled")
       .maybeSingle();
-    if (error) throw new Error(error.message);
+    if (error) throw error;
     if (!data) return NextResponse.json({ error: "Source inconnue" }, { status: 404 });
     return NextResponse.json(data, { headers: { "cache-control": "no-store" } });
   } catch (error) {
-    return failure(error);
+    return failure(error, request);
   }
 }

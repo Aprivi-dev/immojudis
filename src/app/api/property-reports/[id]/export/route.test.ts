@@ -19,9 +19,10 @@ it("returns 403 and prevents caching when the plan does not include PDF export",
   expect(response.status).toBe(403);
   expect(response.headers.get("cache-control")).toBe("private, no-store");
   expect(response.headers.get("vary")).toBe("authorization");
-  expect(await response.json()).toEqual({
+  expect(await response.json()).toMatchObject({
     ok: false,
     error: "Export PDF réservé au plan Analyse.",
+    code: "FORBIDDEN",
   });
 });
 it("returns 401 without invoking export when authentication fails", async () => {

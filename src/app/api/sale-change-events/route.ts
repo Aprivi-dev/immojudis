@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -24,13 +25,9 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Changements indisponibles";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservé")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "sale-change-events", {
+      fallbackMessage: "Changements indisponibles",
+    });
   }
 }
 
@@ -43,14 +40,9 @@ export async function POST(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Monitoring des changements impossible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservé")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "sale-change-events", {
+      fallbackMessage: "Monitoring des changements impossible",
+    });
   }
 }
 
@@ -68,12 +60,8 @@ export async function PATCH(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Changement impossible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservé")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "sale-change-events", {
+      fallbackMessage: "Changement impossible",
+    });
   }
 }

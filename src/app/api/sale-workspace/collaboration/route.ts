@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -54,7 +55,7 @@ export async function GET(request: Request) {
     const response = await listSaleWorkspaceCollaboration({ auth, saleId });
     return NextResponse.json(response);
   } catch (error) {
-    return errorResponse(error, "Dossier collaboratif indisponible");
+    return errorResponse(request, error, "Dossier collaboratif indisponible");
   }
 }
 
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(await createSaleWorkspaceAnnotation({ auth, input: input.data }));
   } catch (error) {
-    return errorResponse(error, "Action collaborative impossible");
+    return errorResponse(request, error, "Action collaborative impossible");
   }
 }
 
@@ -87,12 +88,12 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(await updateSaleWorkspaceAnnotation({ auth, input: input.data }));
   } catch (error) {
-    return errorResponse(error, "Mise à jour collaborative impossible");
+    return errorResponse(request, error, "Mise à jour collaborative impossible");
   }
 }
 
-function errorResponse(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
-  const status = message.startsWith("Unauthorized") ? 401 : 400;
-  return NextResponse.json({ error: message }, { status });
+function errorResponse(request: Request, error: unknown, fallback: string) {
+  return apiRouteError(error, request, "sale-workspace.collaboration", {
+    fallbackMessage: fallback,
+  });
 }

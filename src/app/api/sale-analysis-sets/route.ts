@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -20,13 +21,10 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Analyses multi-biens indisponibles";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservée")
-        ? 403
-        : 400;
-    return NextResponse.json({ sets: [], error: message }, { status });
+    return apiRouteError(error, request, "sale-analysis-sets", {
+      fallbackMessage: "Analyses multi-biens indisponibles",
+      extra: { sets: [] },
+    });
   }
 }
 
@@ -40,12 +38,9 @@ export async function POST(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Création d'analyse impossible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservée")
-        ? 403
-        : 400;
-    return NextResponse.json({ set: null, error: message }, { status });
+    return apiRouteError(error, request, "sale-analysis-sets", {
+      fallbackMessage: "Création d'analyse impossible",
+      extra: { set: null },
+    });
   }
 }
