@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { findCnbBarAssociation } from "@/lib/cnb-directory";
 import { CNB_DATASET_PAGE_URL, normalizeBarKey, OPEN_LICENSE_URL } from "@/lib/cnb-open-data";
+import { LAWYER_DIRECTORY_PAGE_SIZE } from "@/lib/rate-limit-policies";
 import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
 
 type LawyerRow = Pick<
@@ -59,6 +60,7 @@ export const lawyerDirectoryQuerySchema = z.object({
   bar: z.string().trim().max(120).optional().transform(emptyToUndefined),
   city: z.string().trim().max(120).optional().transform(emptyToUndefined),
   department: z.string().trim().max(120).optional().transform(emptyToUndefined),
+  page: z.coerce.number().int().min(1).max(200).default(1),
 });
 
 export type LawyerDirectoryQuery = z.output<typeof lawyerDirectoryQuerySchema>;
@@ -94,8 +96,17 @@ export type LawyerDirectoryOfficialSource = {
   updatedAt: string;
 };
 
+export type LawyerDirectoryPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  hasMore: boolean;
+};
+
 export type LawyerDirectoryResponse = {
   lawyers: LawyerDirectoryProfile[];
+  /** Absent on error responses; a call never returns more than `pageSize` profiles. */
+  pagination?: LawyerDirectoryPagination;
   sectorLabel: string | null;
   barAssociation: string | null;
   isDemo: boolean;
@@ -107,6 +118,26 @@ const LAWYER_COLUMNS =
 const COVERAGE_COLUMNS = "lawyer_id,tribunal_code,tribunal_name,city,department,postal_code_prefix";
 const CNB_LAWYER_COLUMNS =
   "source_key,display_name,firm_name,address_line_1,address_line_2,postal_code,city,bar_association,specializations,oath_date,languages,source_updated_at";
+
+/** Slices a full directory into one page of at most LAWYER_DIRECTORY_PAGE_SIZE profiles. */
+export function paginateLawyerDirectory<T>(
+  profiles: T[],
+  page: number,
+  pageSize = LAWYER_DIRECTORY_PAGE_SIZE,
+): { items: T[]; pagination: LawyerDirectoryPagination } {
+  const size = Math.min(Math.max(1, Math.floor(pageSize)), LAWYER_DIRECTORY_PAGE_SIZE);
+  const current = Math.max(1, Math.floor(page));
+  const start = (current - 1) * size;
+  return {
+    items: profiles.slice(start, start + size),
+    pagination: {
+      page: current,
+      pageSize: size,
+      total: profiles.length,
+      hasMore: start + size < profiles.length,
+    },
+  };
+}
 
 export async function listLawyerDirectory(
   query: LawyerDirectoryQuery,
@@ -135,7 +166,9 @@ export async function listLawyerDirectory(
     data = response.data;
   } catch (error) {
     if (process.env.NODE_ENV === "development" && isMissingSupabaseServerConfiguration(error)) {
-      return demoLawyerDirectory(query, sale);
+      const demo = demoLawyerDirectory(query, sale);
+      const demoPage = paginateLawyerDirectory(demo.lawyers, query.page);
+      return { ...demo, lawyers: demoPage.items, pagination: demoPage.pagination };
     }
     throw error;
   }
@@ -180,8 +213,14 @@ export async function listLawyerDirectory(
     .filter((profile) => !referencedIdentities.has(directoryIdentityKey(profile)));
   const sourceUpdatedAt = cnbLawyers[0]?.source_updated_at ?? null;
 
+  const directoryPage = paginateLawyerDirectory(
+    [...referencedProfiles, ...officialProfiles],
+    query.page,
+  );
+
   return {
-    lawyers: [...referencedProfiles, ...officialProfiles],
+    lawyers: directoryPage.items,
+    pagination: directoryPage.pagination,
     sectorLabel: resolvedBarAssociation
       ? `Barreau de ${resolvedBarAssociation}`
       : (clean(sale?.department) ?? clean(query.department)),
@@ -422,7 +461,8 @@ function toDirectoryProfile(
     phone: lawyer.phone,
     websiteUrl: safeWebsiteUrl(lawyer.website_url),
     barAssociation: lawyer.bar_association,
-    barNumber: lawyer.bar_number,
+    // The bar registration number is kept out of the public directory.
+    barNumber: null,
     city: lawyer.city,
     department: lawyer.department,
     address: lawyer.address,

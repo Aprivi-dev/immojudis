@@ -4,6 +4,8 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
   createLawyerReferralRequest,
   listLawyerReferralRequests,
@@ -31,6 +33,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "lawyer-referrals.create",
+      ...RATE_LIMIT_POLICIES.formSubmit,
+    });
     const input = lawyerReferralRequestInputSchema.parse(await request.json());
     const response = await createLawyerReferralRequest({ auth, input });
     return NextResponse.json(response, { status: response.reusedExisting ? 200 : 201 });

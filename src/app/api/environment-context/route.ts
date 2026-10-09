@@ -8,11 +8,18 @@ import {
   environmentalContextCacheControl,
   getEnvironmentalContext,
 } from "@/lib/environment.functions";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 
 export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "environment-context",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     await assertFeatureEntitlement(
       auth,
       "property.neighborhoodAnalysis",

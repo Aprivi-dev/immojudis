@@ -90,6 +90,23 @@ export function apiError(error: unknown, context: ApiRequestContext, options: Ap
   );
 }
 
+/**
+ * 429 response for routes that do not use apiError (public proxies with their own
+ * response shape). `body` carries the empty success shape the client expects.
+ */
+export function rateLimitResponse(error: RateLimitError, body: Record<string, unknown> = {}) {
+  return NextResponse.json(
+    { ...body, ok: false, error: "Trop de demandes.", code: "RATE_LIMITED" satisfies ApiErrorCode },
+    {
+      status: 429,
+      headers: {
+        "retry-after": String(error.retryAfterSeconds),
+        "cache-control": "no-store",
+      },
+    },
+  );
+}
+
 /** Error response for the first-party (non-versioned) API routes. */
 export function apiRouteError(
   error: unknown,
