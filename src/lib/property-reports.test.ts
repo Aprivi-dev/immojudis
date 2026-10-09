@@ -322,7 +322,7 @@ describe("property report sharing", () => {
       estimatedMarketHigh: 249_000,
       estimatedMarketRangeLabel: "Fourchette de valeur estimée",
       apparentDiscountPct: 25,
-      grossYieldPct: 10.2,
+      grossYieldPct: 9.9,
       rentabilityScore: {
         available: true,
         rentSource: "department_estimate",

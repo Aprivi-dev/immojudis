@@ -1,6 +1,7 @@
 // Calcul d'un seuil d'enchère basé sur le marché local DVF.
 // Toutes les valeurs sont en euros sauf indication.
-import { defaultRentPerM2 } from "@/lib/geo";
+import { departmentCode } from "@/lib/department-code";
+import { defaultRentPerM2, RENT_REFERENCE_UNAVAILABLE } from "@/lib/rent-reference";
 
 // ─── Barème des émoluments de l'avocat poursuivant ───────────────────────
 // Article A444-191 du Code de commerce, qui renvoie au barème proportionnel
@@ -36,8 +37,8 @@ export const DMTO_RATE_BY_DEPARTMENT: Readonly<Record<string, number>> = {
 export const CSI_RATE = 0.001;
 
 export function registrationRateForDepartment(department?: string | null): number {
-  const code = (department ?? "").trim().toUpperCase();
-  return DMTO_RATE_BY_DEPARTMENT[code] ?? DMTO_DEFAULT_RATE;
+  const code = departmentCode(department);
+  return (code ? DMTO_RATE_BY_DEPARTMENT[code] : undefined) ?? DMTO_DEFAULT_RATE;
 }
 
 export function computeEmolumentsHT(price: number): number {
@@ -486,7 +487,9 @@ export function computeRentabilityScore(inputs: RentabilityScoreInputs): Rentabi
   const acquisition = computeAcquisitionCosts({ price: inputs.price, ...costOptionsOf(inputs) });
   const assumptions = rentabilityAssumptions(inputs);
   const manualRent = cleanPositive(inputs.monthlyRent);
-  const estimatedRent = surface > 0 ? surface * defaultRentPerM2(inputs.department) : null;
+  const referenceRentPerM2 = defaultRentPerM2(inputs.department);
+  const estimatedRent =
+    surface > 0 && referenceRentPerM2 != null ? surface * referenceRentPerM2 : null;
   const monthlyRent = manualRent ?? estimatedRent;
   const rentSource = manualRent ? "manual" : "department_estimate";
 
@@ -495,7 +498,7 @@ export function computeRentabilityScore(inputs: RentabilityScoreInputs): Rentabi
   }
   if (acquisition.totalCost <= 0 || !monthlyRent) {
     return unavailableRentabilityResult(
-      "Prix ou loyer manquant",
+      acquisition.totalCost > 0 ? RENT_REFERENCE_UNAVAILABLE : "Prix ou loyer manquant",
       acquisition.totalCost,
       assumptions,
     );
@@ -650,7 +653,7 @@ function solveMaxBid(targetTotalCost: number, options: AcquisitionCostOptions): 
 
 function rentabilityAssumptions(inputs: RentabilityScoreInputs) {
   const surface = Math.max(0, inputs.surface || 0);
-  const estimatedMonthlyRent = surface > 0 ? surface * defaultRentPerM2(inputs.department) : 0;
+  const estimatedMonthlyRent = surface * (defaultRentPerM2(inputs.department) ?? 0);
   const annualGrossRent = (cleanPositive(inputs.monthlyRent) ?? estimatedMonthlyRent) * 12;
 
   return {
