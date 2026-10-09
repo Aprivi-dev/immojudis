@@ -43,6 +43,7 @@ from src.enrichment.surface_reasoning import extract_and_apply_deterministic_sur
 from src.export import export_sales
 from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
 from src.geocode import geocode_sale
+from src.image_validation import filter_raw_image_url, warm_image_validations
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_sale, parse_price
@@ -471,6 +472,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     for offset in range(0, len(canonical_sales), 25):
         batch = []
         started = time.perf_counter()
+        warm_image_validations(canonical_sales[offset:offset + 25])
         for sale in canonical_sales[offset:offset + 25]:
             LOGGER.info("Preparing listing source=%s index=%s/%s", sale.source_name, offset + len(batch) + 1, len(canonical_sales))
             try:
@@ -649,6 +651,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
     # ── Phase 3 : finition (géocode réseau léger, tribunal, scoring) ─────────
     started = time.perf_counter()
+    warm_image_validations(app_ready)
     for sale in app_ready:
         try:
             _finalize_sale_for_app(sale, geocode=not bool(os.getenv("PIPELINE_AUTONOMOUS_RUN_ID")))
@@ -1590,6 +1593,7 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
         sale.raw_payload.pop("source_description", None)
     if geocode:
         geocode_sale(sale)
+    filter_raw_image_url(sale.raw_payload)
     fill_tribunal(sale)
     classify_sale_procedure(sale)
     surface_context = _surface_reasoning_context_for_sale(sale)
