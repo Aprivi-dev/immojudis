@@ -178,8 +178,8 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
     route.fulfill({ status: 200, json: { zones: [], plan: {} } }),
   );
   await page.goto("/favoris");
-  await expect(page.getByRole("heading", { name: "Mes ventes suivies" })).toBeVisible();
-  await expect(page.getByText(/Aucune vente suivie disponible/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Mes favoris" })).toBeVisible();
+  await expect(page.getByText("Aucun favori pour le moment")).toBeVisible();
   await page.goto("/alertes");
   await expect(page.getByRole("heading", { name: "Mes alertes", exact: true })).toBeVisible();
   await expect(page.getByText("Aucune alerte enregistrée.")).toBeVisible();

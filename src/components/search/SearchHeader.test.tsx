@@ -28,6 +28,31 @@ describe("SaveSearchButton", () => {
   });
 });
 
+describe("SaveSearchButton avec compte", () => {
+  it("propose la fréquence quotidienne par défaut et réserve l'hebdomadaire à l'offre Analyse", () => {
+    const onClick = vi.fn();
+    render(<SaveSearchButton signedIn saving={false} onClick={onClick} />);
+    fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
+    expect(screen.getByText(/un seul email récapitulatif/)).toBeTruthy();
+    const weekly = screen.getByRole("radio", { name: /Hebdomadaire/ }) as HTMLInputElement;
+    expect(weekly.disabled).toBe(true);
+    expect((screen.getByRole("radio", { name: "Quotidienne" }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
+    expect(onClick).toHaveBeenCalledWith({ frequency: "daily" });
+  });
+
+  it("permet l'hebdomadaire avec l'offre Analyse", () => {
+    const onClick = vi.fn();
+    render(<SaveSearchButton signedIn weeklyAllowed saving={false} onClick={onClick} />);
+    fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Hebdomadaire/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
+    expect(onClick).toHaveBeenCalledWith({ frequency: "weekly" });
+  });
+});
+
 describe("CsvExportButton", () => {
   it("reste cliquable pour un visiteur afin de le rediriger vers la connexion", () => {
     const onClick = vi.fn();

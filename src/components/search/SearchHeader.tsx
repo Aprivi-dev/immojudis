@@ -1,3 +1,4 @@
+import * as PopoverPrimitive from "@radix-ui/react-popover";
 import dynamic from "next/dynamic";
 import type * as React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -29,6 +30,8 @@ export function SearchHeader({
   savingAlert,
   exportingCsv,
   csvExportLocked,
+  signedIn = false,
+  weeklyAlertsAllowed = false,
   wideMap,
   isDesktop = false,
   onFiltersOpenChange,
@@ -46,11 +49,13 @@ export function SearchHeader({
   savingAlert: boolean;
   exportingCsv: boolean;
   csvExportLocked: boolean;
+  signedIn?: boolean;
+  weeklyAlertsAllowed?: boolean;
   wideMap: boolean;
   isDesktop?: boolean;
   onFiltersOpenChange: (open: boolean) => void;
   onReset: () => void;
-  onSaveSearch: () => void;
+  onSaveSearch: (options?: { frequency: AlertFrequencyChoice }) => void;
   onExportCsv: () => void;
   onToggleLayout: () => void;
 }) {
@@ -83,7 +88,13 @@ export function SearchHeader({
               </div>
             ) : null}
             {!isDesktop ? (
-              <SaveSearchButton compact saving={savingAlert} onClick={onSaveSearch} />
+              <SaveSearchButton
+                compact
+                saving={savingAlert}
+                signedIn={signedIn}
+                weeklyAllowed={weeklyAlertsAllowed}
+                onClick={onSaveSearch}
+              />
             ) : null}
             <div className="hidden lg:flex flex-wrap items-center gap-2">
               <HomeTypeFilter draft={draft} setDraft={setDraft} />
@@ -120,7 +131,12 @@ export function SearchHeader({
                 locked={csvExportLocked}
                 onClick={onExportCsv}
               />
-              <SaveSearchButton saving={savingAlert} onClick={onSaveSearch} />
+              <SaveSearchButton
+                saving={savingAlert}
+                signedIn={signedIn}
+                weeklyAllowed={weeklyAlertsAllowed}
+                onClick={onSaveSearch}
+              />
               <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
             </div>
           </div>
@@ -343,22 +359,31 @@ export function SortDropdown({
   );
 }
 
+export type AlertFrequencyChoice = "daily" | "weekly";
+
 export function SaveSearchButton({
   saving,
   compact = false,
+  signedIn = false,
+  weeklyAllowed = false,
   onClick,
 }: {
   saving: boolean;
   compact?: boolean;
-  onClick: () => void;
+  /** Connecté : on propose le choix de la fréquence ; sinon on envoie vers la connexion. */
+  signedIn?: boolean;
+  weeklyAllowed?: boolean;
+  onClick: (options?: { frequency: AlertFrequencyChoice }) => void;
 }) {
-  return (
+  const [open, setOpen] = useState(false);
+  const [frequency, setFrequency] = useState<AlertFrequencyChoice>("daily");
+  const button = (
     <button
       type="button"
-      onClick={onClick}
       disabled={saving}
       aria-label={compact ? "Créer une alerte" : undefined}
       title="Créer une alerte à partir de cette recherche"
+      onClick={signedIn ? undefined : () => onClick()}
       className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-navy-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft ${
         compact ? "size-11" : "h-10 px-3"
       }`}
@@ -366,6 +391,60 @@ export function SaveSearchButton({
       {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
       {compact ? null : "Créer une alerte"}
     </button>
+  );
+  if (!signedIn) return button;
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger asChild>{button}</PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          align="end"
+          sideOffset={8}
+          className="z-[70] w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-white p-4 text-sm text-foreground shadow-xl outline-none"
+        >
+          <p className="font-display text-xl font-semibold">Créer une alerte</p>
+          <p className="mt-1 text-ink-soft">
+            Vous recevez un seul email récapitulatif avec les nouvelles ventes qui correspondent à
+            cette recherche.
+          </p>
+          <fieldset className="mt-3">
+            <legend className="mb-1 font-semibold">Fréquence</legend>
+            <label className="flex min-h-11 cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                name="alert-frequency"
+                checked={frequency === "daily"}
+                onChange={() => setFrequency("daily")}
+              />
+              Quotidienne
+            </label>
+            <label
+              className={`flex min-h-11 items-center gap-2 ${weeklyAllowed ? "cursor-pointer" : "text-ink-soft"}`}
+            >
+              <input
+                type="radio"
+                name="alert-frequency"
+                disabled={!weeklyAllowed}
+                checked={frequency === "weekly"}
+                onChange={() => setFrequency("weekly")}
+              />
+              Hebdomadaire
+              {weeklyAllowed ? null : <span className="text-xs">(offre Analyse)</span>}
+            </label>
+          </fieldset>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onClick({ frequency });
+            }}
+            className="mt-3 inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-md bg-gold font-semibold text-brand-navy hover:bg-gold-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+          >
+            Créer l’alerte
+          </button>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   );
 }
 

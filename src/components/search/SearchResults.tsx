@@ -156,6 +156,7 @@ export const ListingCard = memo(function ListingCard({
   aiReviewStatus = "ready",
   favoriteScope = null,
   initialFavorite = false,
+  onFavoriteChange,
 }: {
   sale: AuctionSale;
   returnTo: string;
@@ -172,6 +173,8 @@ export const ListingCard = memo(function ListingCard({
   aiReviewStatus?: AiReviewRequestStatus;
   favoriteScope?: string | null;
   initialFavorite?: boolean;
+  /** Appelé après l'ajout ou le retrait réussi d'un favori depuis la carte. */
+  onFavoriteChange?: (saleId: string, isFavorite: boolean) => void;
 }) {
   const displaySurface = getDisplaySurface(sale);
   const { isViewed } = useViewedSales();
@@ -300,6 +303,7 @@ export const ListingCard = memo(function ListingCard({
             locked={locked}
             favoriteScope={favoriteScope}
             initialFavorite={initialFavorite}
+            onChange={onFavoriteChange}
           />
         </div>
         <p className="mt-3 text-2xl font-bold leading-none text-gold-text sm:text-[1.7rem]">
@@ -722,11 +726,13 @@ export function CompactFavoriteButton({
   locked,
   favoriteScope,
   initialFavorite = false,
+  onChange,
 }: {
   saleId: string;
   locked: boolean;
   favoriteScope?: string | null;
   initialFavorite?: boolean;
+  onChange?: (saleId: string, isFavorite: boolean) => void;
 }) {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -774,6 +780,7 @@ export function CompactFavoriteButton({
         },
       );
       queryClient.invalidateQueries({ queryKey: ["favorites", user.id] });
+      onChange?.(saleId, !isFavorite);
       await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (error) {
       void queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
