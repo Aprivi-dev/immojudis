@@ -189,6 +189,18 @@ def _is_dvf_comparable_price_context(text: str, start: int, end: int, label: str
     return sum(bool(re.search(pattern, context)) for pattern in dvf_headers) >= 2
 
 
+_ADJUDICATION_MIN_EUR = Decimal("1000")
+_ADJUDICATION_MIN_RATIO = Decimal("0.1")
+_ADJUDICATION_PRICE = r"([0-9][0-9\s.,]*?)\s*(?:€|euros?\b)"
+# « adjugé le 12/03/2025 pour 150 000 € » : la date qui suit le mot ne doit pas être lue comme un prix.
+_ADJUDICATION_DATE = r"(?:(?:le|du|en\s+date\s+du)\s+)?\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}"
+_ADJUDICATION_PATTERNS = (
+    rf"\badjug[ée]e?s?\b\s*(?:{_ADJUDICATION_DATE})?\s*(?:(?:pour|[àa]|au\s+prix\s+de)\s+)?:?\s*{_ADJUDICATION_PRICE}",
+    rf"\bprix\s+d['’]adjudication\s*:?\s*{_ADJUDICATION_PRICE}",
+    rf"\badjudication\s*:?\s*{_ADJUDICATION_PRICE}",
+)
+
+
 def extract_adjudication_price(raw_sale: dict[str, object]) -> Decimal | None:
     explicit = parse_price(
         _field_or_source_block(
@@ -199,26 +211,31 @@ def extract_adjudication_price(raw_sale: dict[str, object]) -> Decimal | None:
             "prix_adjude",
         )
     )
+    starting_price = extract_starting_price(raw_sale)
     if explicit is not None:
-        return explicit
+        return explicit if _is_plausible_adjudication_price(explicit, starting_price) else None
     # A fee clause ending in “prix d’adjudication” must not consume a
     # separate block containing the starting price.
     texts = [raw_sale.get("raw_text"), raw_sale.get("description")]
     texts.extend(value for _, value in _walk_source_blocks(raw_sale.get("source_blocks"))
                  if not isinstance(value, (dict, list)))
-    for pattern in (
-        r"\badjug[ée]\s*:?\s*([0-9][0-9\s.,]*)\s*(?:€|euros?)?",
-        r"\bprix\s+d['’]adjudication\s*:?\s*([0-9][0-9\s.,]*)\s*(?:€|euros?)?",
-        r"\badjudication\s*:?\s*([0-9][0-9\s.,]*)\s*(?:€|euros?\b)",
-    ):
+    for pattern in _ADJUDICATION_PATTERNS:
         for value in texts:
             text = clean_text(value)
             if not text:
                 continue
-            match = re.search(pattern, text, re.I)
-            if match:
-                return parse_price(match.group(1))
+            for match in re.finditer(pattern, text, re.I):
+                price = parse_price(match.group(1))
+                if price is not None and _is_plausible_adjudication_price(price, starting_price):
+                    return price
     return None
+
+
+def _is_plausible_adjudication_price(price: Decimal, starting_price: Decimal | None) -> bool:
+    """A result far below the reserve is a misread number (a day, a lot count), not a price."""
+    if price < _ADJUDICATION_MIN_EUR:
+        return False
+    return starting_price is None or price >= starting_price * _ADJUDICATION_MIN_RATIO
 
 
 def parse_surface(value: object | None) -> Decimal | None:
