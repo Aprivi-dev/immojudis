@@ -469,6 +469,21 @@ if (!columnGrant) {
     }
   }
 }
+const defaultPrivilegeMigration = await readFile(
+  new URL("../supabase/migrations/20261010004000_default_function_privileges.sql", import.meta.url),
+  "utf8",
+);
+if (
+  !/alter\s+default\s+privileges\s+revoke\s+execute\s+on\s+functions\s+from\s+public\s*;/i.test(
+    defaultPrivilegeMigration,
+  ) ||
+  !/alter\s+default\s+privileges\s+in\s+schema\s+public\s+grant\s+execute\s+on\s+functions\s+to\s+service_role/i.test(
+    defaultPrivilegeMigration,
+  )
+) {
+  failures.push("function default privileges still grant EXECUTE to PUBLIC");
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -499,6 +514,7 @@ console.log(
       "competent-court-reconciliation-rls",
       "competent-court-reconciliation-exact-evidence",
       "auction-sales-column-grants",
+      "function-default-privileges",
     ],
   }),
 );
