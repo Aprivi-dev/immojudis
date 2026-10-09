@@ -562,9 +562,19 @@ def extract_postal_code(*values: object | None) -> str | None:
 def extract_department(postal_code: str | None) -> str | None:
     if not postal_code or len(postal_code) < 2:
         return None
-    if re.match(r"^(?:97[1-8]|98[6-8])\d{2}$", postal_code):
+    if postal_code.startswith("20") and re.fullmatch(r"\d{5}", postal_code):
+        # Corsica shares the 20xxx range: 20000-20199 is Corse-du-Sud, the rest Haute-Corse.
+        return "2A" if int(postal_code) < 20200 else "2B"
+    if re.match(r"^9[78]\d{3}$", postal_code):
         return postal_code[:3]
     return postal_code[:2]
+
+
+def _department_code(department: str | None, postal_code: str | None) -> str | None:
+    # « 20 » no longer names a department; the postal code tells 2A from 2B.
+    if department and department != "20":
+        return department
+    return extract_department(postal_code) or department
 
 
 def extract_city(address: str | None, postal_code: str | None) -> str | None:
@@ -1031,8 +1041,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             )
         ),
         tribunal_code=clean_text(raw_sale.get("tribunal_code")),
-        department=clean_text(_field_or_source_block(raw_sale, "department", "departement", "department"))
-        or extract_department(postal_code),
+        department=_department_code(
+            clean_text(_field_or_source_block(raw_sale, "department", "departement", "department")), postal_code
+        ),
         city=city,
         address=address,
         postal_code=postal_code,
