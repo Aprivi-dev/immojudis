@@ -1502,6 +1502,23 @@ def test_worker_outcome_summary_separates_statuses_from_deferred_requests(caplog
     assert "missing=0" in summary
 
 
+def test_worker_job_timing_log_whitelists_job_type(caplog) -> None:
+    job = {
+        "job_type": "https://private.example/client-job?token=secret",
+        "_worker_started_at_monotonic": time.monotonic() - 1.0,
+    }
+    with caplog.at_level("INFO", logger=queued_runner.LOGGER.name):
+        queued_runner._log_worker_job_transition(job, outcome="deferred")
+
+    message = next(
+        record.getMessage()
+        for record in caplog.records
+        if "Enrichment job transition" in record.getMessage()
+    )
+    assert "job_type=unknown" in message
+    assert "private.example" not in message
+
+
 def test_source_detail_claim_batch_size_is_bounded_and_invalid_values_are_safe(monkeypatch) -> None:
     monkeypatch.setenv("PIPELINE_ENRICHMENT_SOURCE_DETAIL_CLAIM_BATCH_SIZE", "99")
     assert queued_runner._enrichment_claim_batch_size(queued_runner.SOURCE_DETAIL_FAMILY) == 5
@@ -2471,7 +2488,7 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
     progress_made,
     should_defer,
 ) -> None:
-    from src.pdf_enrichment import PdfExtractionDeferred
+    from src.pdf_enrichment import PdfDocumentOcrBudgetExceeded
 
     sale = normalize_sale(
         {
@@ -2485,13 +2502,13 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
         'id': 'job-pdf-checkpoint',
         'source_url': sale.source_url,
         'job_type': 'pdf',
-        'attempt_count': 2,
+        'attempt_count': 4,
         'locked_at': '2026-09-13T08:00:00+00:00',
     }
     deferred = []
     finished = []
     checkpoint_calls = []
-    error = PdfExtractionDeferred(
+    error = PdfDocumentOcrBudgetExceeded(
         'OCR pass budget reached; 75/100 pages checkpointed; retry resumes',
         checkpointed_pages=75,
         total_pages=100,
@@ -2528,8 +2545,12 @@ def test_pdf_checkpoint_deferral_does_not_complete_or_loop_without_progress(
         assert checkpoint_calls[0][1]['error'] is error
         assert deferred[0][0] == [job]
         assert deferred[0][0][0]['id'] == job['id']
-        assert deferred[0][0][0]['attempt_count'] == 2
+        assert deferred[0][0][0]['attempt_count'] == 4
         assert deferred[0][0][0]['locked_at'] == job['locked_at']
+    else:
+        assert finished[0][1]['succeeded'] is False
+        assert finished[0][1]['error_message']
+        assert job['attempt_count'] == 4
 
 
 def test_pdf_no_progress_consumes_only_pdf_retry_in_shared_claim(monkeypatch) -> None:
