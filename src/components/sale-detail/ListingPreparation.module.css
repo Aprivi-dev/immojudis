@@ -2,10 +2,10 @@
   max-width: 1260px;
   margin: 30px auto 0;
   padding: 28px;
-  border: 1px solid #e3dfd7;
+  border: 1px solid var(--line-warm);
   border-radius: 24px;
-  background: #fffefa;
-  color: #132238;
+  background: #ffffff;
+  color: var(--brand-navy);
 }
 
 .header {
@@ -17,7 +17,7 @@
 
 .eyebrow {
   margin: 0 0 7px;
-  color: #806133;
+  color: var(--gold-text);
   font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.13em;
@@ -36,7 +36,7 @@
 .summaryIntro {
   max-width: 660px;
   margin: 10px 0 0;
-  color: #536073;
+  color: var(--ink-soft);
   font-size: 14px;
   line-height: 1.6;
 }
@@ -49,7 +49,7 @@
   justify-content: center;
   gap: 8px;
   min-height: 44px;
-  color: #735522;
+  color: var(--gold-text);
   font-size: 13px;
   font-weight: 650;
   text-decoration: underline;
@@ -76,7 +76,7 @@
 .textLink:focus-visible,
 .textButton:focus-visible,
 .secondaryButton:focus-visible {
-  outline: 3px solid #a87936;
+  outline: 3px solid var(--gold-soft);
   outline-offset: 4px;
   border-radius: 4px;
 }
@@ -88,14 +88,14 @@
   gap: 8px 24px;
   margin-top: 22px;
   padding: 14px 0;
-  border-block: 1px solid #e7e3db;
+  border-block: 1px solid var(--line-warm);
   font-size: 13px;
   line-height: 1.6;
 }
 
 .coverageSummary p {
   margin: 0;
-  color: #536073;
+  color: var(--ink-soft);
 }
 .coverageSummary ul {
   display: flex;
@@ -112,7 +112,7 @@
 
 .essentialNotice {
   margin: 14px 0 0;
-  color: #78582b;
+  color: var(--gold-text);
   font-size: 13px;
   line-height: 1.65;
 }
@@ -121,7 +121,7 @@
   margin-top: 24px;
   padding: 22px;
   border-radius: 16px;
-  background: #f5f2eb;
+  background: var(--surface);
 }
 
 .remainingHeader {
@@ -138,7 +138,7 @@
 }
 .remainingHeader p {
   margin: 6px 0 0;
-  color: #536073;
+  color: var(--ink-soft);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -167,7 +167,7 @@
   font-weight: 650;
 }
 .priorityList span {
-  color: #536073;
+  color: var(--ink-soft);
   overflow-wrap: anywhere;
 }
 .remainingActions {
@@ -183,9 +183,9 @@
   width: calc(100vw - 32px);
   max-width: 600px;
   overflow-y: auto;
-  border-color: #e4dacb;
-  background: #fffdf9;
-  color: #132238;
+  border-color: var(--line-warm);
+  background: #ffffff;
+  color: var(--brand-navy);
 }
 
 .dialogContent [data-slot="dialog-title"] {
@@ -195,7 +195,7 @@
 }
 
 .dialogContent [data-slot="dialog-description"] {
-  color: #607086;
+  color: var(--ink-soft);
   line-height: 1.5;
 }
 
@@ -212,9 +212,9 @@
   align-items: flex-start;
   gap: 9px;
   padding: 9px 11px;
-  border: 1px solid #edf0f2;
+  border: 1px solid var(--surface-tint);
   border-radius: 10px;
-  color: #405168;
+  color: var(--ink-strong);
   font-size: 13px;
   line-height: 1.35;
 }
@@ -225,13 +225,13 @@
   width: 10px;
   height: 10px;
   margin-top: 3px;
-  border: 2px solid #c2904e;
+  border: 2px solid var(--gold);
   border-radius: 50%;
 }
 
 .checklistComplete {
-  border-color: #c9e1d5 !important;
-  background: #f3fbf6;
+  border-color: var(--line-warm) !important;
+  background: var(--success-tint);
 }
 
 .checklistComplete .checkMark {
@@ -239,7 +239,7 @@
   height: 17px;
   margin-top: 0;
   border: 0;
-  color: #2e755e;
+  color: var(--success);
   font-weight: 800;
   line-height: 17px;
 }
@@ -247,13 +247,13 @@
 .noteLabel {
   display: grid;
   gap: 3px;
-  color: #263951;
+  color: var(--brand-navy);
   font-size: 13px;
   font-weight: 700;
 }
 
 .noteLabel span {
-  color: #5b6878;
+  color: var(--ink-soft);
   font-size: 11px;
   font-weight: 500;
 }
@@ -261,10 +261,10 @@
 .noteInput {
   width: 100%;
   resize: vertical;
-  border: 1px solid #d8dfe6;
+  border: 1px solid var(--line-soft);
   border-radius: 10px;
-  background: #fff;
-  color: #132238;
+  background: #ffffff;
+  color: var(--brand-navy);
   font: inherit;
   font-size: 13px;
   line-height: 1.5;
@@ -277,7 +277,7 @@
 }
 
 .noteInput:focus {
-  border-color: #a47539;
+  border-color: var(--gold-soft);
   box-shadow: 0 0 0 3px rgb(156 100 43 / 14%);
 }
 
@@ -290,7 +290,7 @@
 
 .status {
   min-height: 18px;
-  color: #5f7186;
+  color: var(--ink-soft);
   font-size: 11px;
   line-height: 1.4;
 }
@@ -310,13 +310,13 @@
 }
 
 .secondaryButton {
-  border: 1px solid #d1b17e;
-  background: #fff8ec;
-  color: #734b18;
+  border: 1px solid var(--gold-light);
+  background: var(--cream);
+  color: var(--gold-text);
 }
 
 .secondaryButton:hover {
-  background: #f7ead5;
+  background: var(--secondary);
 }
 
 @media (max-width: 760px) {
@@ -351,7 +351,7 @@
     margin-top: 10px;
   }
   .priorityList li + li {
-    border-top: 1px solid #e3dfd7;
+    border-top: 1px solid var(--line-warm);
     padding-top: 12px;
   }
   .remainingActions {

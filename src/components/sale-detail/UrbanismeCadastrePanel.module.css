@@ -1,14 +1,14 @@
 .panel {
-  --uc-ink: #132238;
-  --uc-muted: #617187;
-  --uc-border: #dce4ed;
-  --uc-soft: #f5f8fb;
-  --uc-accent: #946724;
-  --uc-accent-soft: #fff8e9;
-  --uc-blue: #155c85;
-  --uc-blue-soft: #eef7ff;
-  --uc-danger: #93433b;
-  --uc-danger-soft: #fff3f1;
+  --uc-ink: var(--brand-navy);
+  --uc-muted: var(--ink-soft);
+  --uc-border: var(--line-soft);
+  --uc-soft: var(--surface-muted);
+  --uc-accent: var(--gold-soft);
+  --uc-accent-soft: var(--warning-tint);
+  --uc-blue: var(--info);
+  --uc-blue-soft: var(--background);
+  --uc-danger: var(--danger);
+  --uc-danger-soft: var(--danger-tint);
   width: 100%;
   color: var(--uc-ink);
 }
@@ -58,7 +58,7 @@
   height: 46px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid #e7d4ac;
+  border: 1px solid var(--gold-light);
   border-radius: 14px;
   background: var(--uc-accent-soft);
   color: var(--uc-accent);
@@ -110,7 +110,7 @@
   gap: 11px;
   margin-top: 15px;
   padding: 14px 15px;
-  border: 1px solid #ead8b6;
+  border: 1px solid var(--sand);
   border-radius: 13px;
   background: var(--uc-accent-soft);
 }
@@ -128,13 +128,13 @@
   flex: 0 0 auto;
   place-items: center;
   border-radius: 8px;
-  background: #fff;
+  background: #ffffff;
   color: var(--uc-accent);
 }
 
 .compactSummaryLabel {
   margin: 0;
-  color: #805b1f;
+  color: var(--gold-text);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -152,8 +152,8 @@
 .compactSummaryCaveat {
   margin: 0;
   padding-top: 10px;
-  border-top: 1px solid #ead8b6;
-  color: #6b5328;
+  border-top: 1px solid var(--sand);
+  color: var(--gold-text);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -169,7 +169,7 @@
   margin-top: 14px;
   border: 1px solid var(--uc-border);
   border-radius: 13px;
-  background: #fff;
+  background: #ffffff;
   overflow: hidden;
 }
 
@@ -321,7 +321,7 @@
   padding: 14px;
   border: 1px solid var(--uc-border);
   border-radius: 13px;
-  background: #fff;
+  background: #ffffff;
 }
 
 .referenceTop,
@@ -352,15 +352,15 @@
 }
 
 .referenceSource {
-  color: #5b6878;
+  color: var(--ink-soft);
   font-size: 11px;
 }
 
 .itemAction {
   margin: 9px 0 0;
   padding-top: 9px;
-  border-top: 1px solid #edf1f5;
-  color: #43586d;
+  border-top: 1px solid var(--surface-tint);
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.48;
 }
@@ -377,8 +377,8 @@
   margin-top: 10px;
   padding: 4px 7px;
   border-radius: 999px;
-  background: #f1f4f7;
-  color: #617187;
+  background: var(--surface-tint);
+  color: var(--ink-soft);
   font-size: 10px;
   font-weight: 750;
   letter-spacing: 0.04em;
@@ -386,18 +386,18 @@
 }
 
 .priorityHigh {
-  background: #fff0ed;
-  color: #93433b;
+  background: var(--danger-tint);
+  color: var(--danger);
 }
 
 .priorityMedium {
-  background: #fff8e8;
-  color: #805b1f;
+  background: var(--warning-tint);
+  color: var(--gold-text);
 }
 
 .priorityLow {
-  background: #eef7ff;
-  color: #286288;
+  background: var(--background);
+  color: var(--info);
 }
 
 .status {
@@ -409,35 +409,35 @@
   padding: 5px 9px;
   border: 1px solid var(--uc-border);
   border-radius: 999px;
-  background: #f8fafc;
-  color: #526479;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
   font-size: 11px;
   font-weight: 750;
   line-height: 1.2;
 }
 
 .statusGood {
-  border-color: #c7e5d2;
-  background: #f0fbf4;
-  color: #2a6a47;
+  border-color: var(--line);
+  background: var(--success-tint);
+  color: var(--success);
 }
 
 .statusWatch {
-  border-color: #ead8b6;
-  background: #fff9ed;
-  color: #805b1f;
+  border-color: var(--sand);
+  background: var(--cream);
+  color: var(--gold-text);
 }
 
 .statusDanger {
-  border-color: #efd3d0;
+  border-color: var(--line-warm);
   background: var(--uc-danger-soft);
   color: var(--uc-danger);
 }
 
 .statusMissing {
-  border-color: #d5dde6;
-  background: #f7f9fb;
-  color: #607086;
+  border-color: var(--line-soft);
+  background: var(--surface-muted);
+  color: var(--ink-soft);
 }
 
 .subsection,
@@ -472,8 +472,8 @@
   padding: 10px 12px;
   border: 1px solid var(--uc-border);
   border-radius: 11px;
-  background: #fbfcfd;
-  color: #43546a;
+  background: #ffffff;
+  color: var(--ink-soft);
   font-size: 13px;
   line-height: 1.48;
 }
@@ -485,7 +485,7 @@
 
 .locationCard {
   padding: 15px;
-  border: 1px solid #cfe4f0;
+  border: 1px solid var(--line-soft);
   border-radius: 14px;
   background: var(--uc-blue-soft);
 }
@@ -507,7 +507,7 @@
 
 .locationText {
   margin: 8px 0 0;
-  color: #435d73;
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.52;
 }
@@ -529,7 +529,7 @@
   padding: 10px 11px;
   border: 1px solid var(--uc-border);
   border-radius: 10px;
-  background: #fbfcfd;
+  background: #ffffff;
 }
 
 .documentItem > svg {
@@ -543,7 +543,7 @@
   min-height: 30px;
   align-items: center;
   gap: 8px;
-  color: #145b82;
+  color: var(--info);
   font-size: 13px;
   font-weight: 700;
   line-height: 1.35;
@@ -570,9 +570,9 @@
   gap: 9px;
   align-items: start;
   padding: 14px;
-  border: 1px dashed #cbd6e2;
+  border: 1px dashed var(--line);
   border-radius: 12px;
-  background: #fbfcfd;
+  background: #ffffff;
   color: var(--uc-muted);
   font-size: 13px;
   line-height: 1.55;
@@ -580,7 +580,7 @@
 
 .empty > svg {
   margin-top: 2px;
-  color: #5b6878;
+  color: var(--ink-soft);
 }
 
 .sourceList {
@@ -591,13 +591,13 @@
 
 .sourceLink {
   min-height: 34px;
-  color: #536a7d;
+  color: var(--ink-soft);
   font-size: 12px;
 }
 
 .footnote {
   margin: 20px 0 0;
-  color: #5b6878;
+  color: var(--ink-soft);
   font-size: 11px;
   line-height: 1.5;
 }

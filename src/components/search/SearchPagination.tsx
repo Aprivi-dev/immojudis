@@ -41,13 +41,13 @@ export function SearchPagination({
           type="button"
           onClick={onPrevious}
           disabled={isFetching}
-          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#cbd5df] bg-white px-4 text-sm font-bold text-[#132238] transition-colors hover:border-[#0f766e] hover:text-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-bold text-brand-navy transition-colors hover:border-brand-navy hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-60"
         >
           Page précédente
         </button>
       ) : null}
       <span
-        className="text-xs font-bold uppercase tracking-[0.16em] text-[#5b6878]"
+        className="text-xs font-bold uppercase tracking-[0.16em] text-ink-soft"
         role="status"
         aria-live="polite"
       >
@@ -66,7 +66,7 @@ export function SearchPagination({
           type="button"
           onClick={onNext}
           disabled={isFetching}
-          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#cbd5df] bg-white px-4 text-sm font-bold text-[#132238] transition-colors hover:border-[#0f766e] hover:text-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-bold text-brand-navy transition-colors hover:border-brand-navy hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isFetching ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
           {isFetching ? "Chargement..." : "Page suivante"}

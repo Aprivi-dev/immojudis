@@ -20,7 +20,7 @@ export function AdminReadinessPanel() {
   const webhookUrl = readiness?.webhookUrl ?? null;
 
   return (
-    <section className="liquid-panel mt-6 rounded-lg p-5">
+    <section className="admin-panel mt-6 rounded-lg p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
@@ -36,7 +36,7 @@ export function AdminReadinessPanel() {
         <button
           type="button"
           onClick={() => void readinessQuery.refetch()}
-          className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
+          className="admin-panel inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${readinessQuery.isFetching ? "animate-spin" : ""}`} />
           Actualiser
@@ -44,7 +44,7 @@ export function AdminReadinessPanel() {
       </div>
 
       {readinessQuery.error ? (
-        <div className="mt-4 rounded-lg border border-red-300/20 bg-red-500/10 p-3 text-sm text-red-100">
+        <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
           {readinessQuery.error instanceof Error
             ? readinessQuery.error.message
             : "Diagnostic indisponible"}
@@ -52,7 +52,7 @@ export function AdminReadinessPanel() {
       ) : null}
 
       <div className="mt-5 grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
-        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+        <div className="rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-4">
           <ReadinessBadge status={readiness?.status ?? "warning"} />
           <div className="mt-4 grid gap-3 text-sm">
             <DiagnosticLine
@@ -113,7 +113,7 @@ export function AdminReadinessPanel() {
             <button
               type="button"
               onClick={() => copyWebhookUrl(webhookUrl)}
-              className="liquid-panel-soft mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
+              className="admin-panel mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
             >
               <Clipboard className="h-3.5 w-3.5" />
               Copier l'URL webhook Stripe
@@ -121,12 +121,12 @@ export function AdminReadinessPanel() {
           ) : null}
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-white/10">
-          <div className="grid grid-cols-[0.62fr_0.38fr] gap-3 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        <div className="overflow-hidden rounded-lg border border-brand-navy/10">
+          <div className="grid grid-cols-[0.62fr_0.38fr] gap-3 bg-brand-navy/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             <span>Contrôle</span>
             <span>État</span>
           </div>
-          <div className="divide-y divide-white/10">
+          <div className="divide-y divide-brand-navy/10">
             {readinessQuery.isLoading ? (
               <div className="p-4 text-sm text-muted-foreground">Chargement du diagnostic</div>
             ) : readiness?.items.length ? (
@@ -139,13 +139,13 @@ export function AdminReadinessPanel() {
       </div>
 
       {readiness?.operations.alerts.length ? (
-        <div className="mt-5 overflow-hidden rounded-lg border border-white/10">
-          <div className="grid grid-cols-[1fr_0.34fr_0.34fr] gap-3 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        <div className="mt-5 overflow-hidden rounded-lg border border-brand-navy/10">
+          <div className="grid grid-cols-[1fr_0.34fr_0.34fr] gap-3 bg-brand-navy/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             <span>Incident opérationnel</span>
             <span>Sévérité</span>
             <span>Livraison</span>
           </div>
-          <div className="divide-y divide-white/10">
+          <div className="divide-y divide-brand-navy/10">
             {readiness.operations.alerts.map((alert) => (
               <div
                 key={alert.key}
@@ -178,7 +178,7 @@ function ReadinessLine({ item }: { item: ReadinessItem }) {
         </div>
         <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{item.detail}</div>
         {item.action ? (
-          <div className="mt-2 text-xs leading-relaxed text-amber-100">{item.action}</div>
+          <div className="mt-2 text-xs leading-relaxed text-warning">{item.action}</div>
         ) : null}
       </div>
       <div className="flex items-start justify-end">
@@ -190,7 +190,7 @@ function ReadinessLine({ item }: { item: ReadinessItem }) {
 
 function DiagnosticLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-2 last:border-b-0 last:pb-0">
+    <div className="flex items-center justify-between gap-4 border-b border-brand-navy/10 pb-2 last:border-b-0 last:pb-0">
       <span className="text-muted-foreground">{label}</span>
       <span className="max-w-[60%] truncate font-mono text-xs text-foreground">{value}</span>
     </div>
@@ -202,7 +202,7 @@ function ReadinessBadge({ status }: { status: ReadinessStatus }) {
     status === "ready" ? "Prêt" : status === "warning" ? "À surveiller" : "Action requise";
   return (
     <div className="flex items-center gap-3">
-      <span className="grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-white/[0.04] text-gold-text">
+      <span className="grid h-10 w-10 place-items-center rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] text-gold-text">
         <StatusIcon status={status} />
       </span>
       <div>
@@ -217,10 +217,10 @@ function ReadinessPill({ status }: { status: ReadinessStatus }) {
   const label = status === "ready" ? "Prêt" : status === "warning" ? "À vérifier" : "Bloquant";
   const tone =
     status === "ready"
-      ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+      ? "border-emerald-300/20 bg-success-tint text-success"
       : status === "warning"
-        ? "border-amber-300/20 bg-amber-400/10 text-amber-100"
-        : "border-red-300/20 bg-red-500/10 text-red-100";
+        ? "border-amber-300/20 bg-warning-tint text-warning"
+        : "border-red-300/20 bg-danger-tint text-danger";
 
   return (
     <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] ${tone}`}>
@@ -230,9 +230,9 @@ function ReadinessPill({ status }: { status: ReadinessStatus }) {
 }
 
 function StatusIcon({ status }: { status: ReadinessStatus }) {
-  if (status === "ready") return <CheckCircle className="h-4 w-4 text-emerald-200" />;
-  if (status === "warning") return <AlertTriangle className="h-4 w-4 text-amber-200" />;
-  return <XCircle className="h-4 w-4 text-red-200" />;
+  if (status === "ready") return <CheckCircle className="h-4 w-4 text-success" />;
+  if (status === "warning") return <AlertTriangle className="h-4 w-4 text-warning" />;
+  return <XCircle className="h-4 w-4 text-danger" />;
 }
 
 async function copyWebhookUrl(url: string) {

@@ -97,7 +97,7 @@ function OutcomeForecastReady({
     <section
       id="outcome-forecast"
       aria-labelledby="outcome-forecast-title"
-      className="scroll-mt-36 border-b border-brand-navy/10 bg-[#eef7ff]"
+      className="scroll-mt-36 border-b border-brand-navy/10 bg-background"
     >
       <div className="mx-auto max-w-[1410px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <h2
@@ -377,13 +377,13 @@ function CeilingCurve({
               </text>
             </g>
           ))}
-          <polyline points={points} fill="none" stroke="#132238" strokeWidth="3" />
+          <polyline points={points} fill="none" stroke="var(--brand-navy)" strokeWidth="3" />
           <line
             x1={padding.left}
             x2={markerX}
             y1={markerY}
             y2={markerY}
-            stroke="#c98d45"
+            stroke="var(--gold)"
             strokeWidth="1.5"
             strokeDasharray="6 5"
           />
@@ -392,11 +392,11 @@ function CeilingCurve({
             x2={markerX}
             y1={markerY}
             y2={height - padding.bottom}
-            stroke="#c98d45"
+            stroke="var(--gold)"
             strokeWidth="1.5"
             strokeDasharray="6 5"
           />
-          <circle cx={markerX} cy={markerY} r="7" fill="#c98d45" />
+          <circle cx={markerX} cy={markerY} r="7" fill="var(--gold)" />
           {ticks.map((tick, index) => (
             <text
               key={`${tick}-${index}`}

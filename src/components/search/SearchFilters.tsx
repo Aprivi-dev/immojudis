@@ -15,16 +15,16 @@ export function MobileMapToggle({
   onOpenMap: () => void;
 }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-2 gap-2 border-t border-[#132238]/10 bg-white/95 p-2 shadow-[0_-14px_34px_rgba(19,34,56,0.12)] backdrop-blur lg:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-2 gap-2 border-t border-brand-navy/10 bg-white/95 p-2 shadow-[0_-14px_34px_rgba(19,34,56,0.12)] backdrop-blur lg:hidden">
       <button
         type="button"
         onClick={onOpenFilters}
-        className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md px-3 text-sm font-extrabold text-[#132238] transition-colors hover:bg-[#f4f7f9]"
+        className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md px-3 text-sm font-extrabold text-brand-navy transition-colors hover:bg-surface-muted"
       >
         <ListFilter className="h-4 w-4" />
         Filtres
         {activeFiltersCount > 0 ? (
-          <span className="rounded-full bg-[#0f766e] px-1.5 py-0.5 text-[10px] text-white">
+          <span className="rounded-full bg-brand-navy px-1.5 py-0.5 text-[10px] text-white">
             {activeFiltersCount}
           </span>
         ) : null}
@@ -32,7 +32,7 @@ export function MobileMapToggle({
       <button
         type="button"
         onClick={onOpenMap}
-        className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-[#132238] px-4 text-sm font-extrabold text-white transition-colors hover:bg-[#1f3657]"
+        className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy px-4 text-sm font-extrabold text-white transition-colors hover:bg-brand-navy-soft"
       >
         <Map className="h-4 w-4" />
         Carte
@@ -42,10 +42,10 @@ export function MobileMapToggle({
 }
 export function NoResultsState() {
   return (
-    <div className="rounded-md border border-[#d8dee4] bg-white p-10 text-center shadow-sm">
-      <SearchIcon className="mx-auto h-8 w-8 text-[#0f766e]" />
-      <h2 className="mt-4 text-xl font-extrabold text-[#132238]">Aucun dossier trouvé</h2>
-      <p className="mt-2 text-sm font-medium text-[#5b6878]">
+    <div className="rounded-md border border-line-soft bg-white p-10 text-center shadow-sm">
+      <SearchIcon className="mx-auto h-8 w-8 text-brand-navy" />
+      <h2 className="mt-4 text-xl font-extrabold text-brand-navy">Aucun dossier trouvé</h2>
+      <p className="mt-2 text-sm font-medium text-ink-soft">
         Aucune annonce référencée ne correspond à ces critères pour le moment. Essayez un autre type
         de vente, une autre zone ou élargissez votre budget.
       </p>
@@ -80,22 +80,22 @@ export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => v
 
 export function ListingCardSkeleton() {
   return (
-    <div className="grid overflow-hidden rounded-md border border-[#d8dee4] bg-white shadow-sm sm:grid-cols-[12.5rem_1fr]">
-      <Skeleton className="aspect-[1.5] w-full rounded-none bg-[#eef2f4] sm:aspect-auto sm:min-h-[13rem]" />
+    <div className="grid overflow-hidden rounded-md border border-line-soft bg-white shadow-sm sm:grid-cols-[12.5rem_1fr]">
+      <Skeleton className="aspect-[1.5] w-full rounded-none bg-surface-tint sm:aspect-auto sm:min-h-[13rem]" />
       <div className="space-y-3 p-4">
         <div className="flex justify-between gap-3">
           <div className="flex-1 space-y-2">
-            <Skeleton className="h-7 w-1/2 bg-[#eef2f4]" />
-            <Skeleton className="h-4 w-3/4 bg-[#eef2f4]" />
+            <Skeleton className="h-7 w-1/2 bg-surface-tint" />
+            <Skeleton className="h-4 w-3/4 bg-surface-tint" />
           </div>
           <div className="flex gap-2">
-            <Skeleton className="h-8 w-8 rounded-full bg-[#eef2f4]" />
-            <Skeleton className="h-8 w-8 rounded-full bg-[#eef2f4]" />
+            <Skeleton className="h-8 w-8 rounded-full bg-surface-tint" />
+            <Skeleton className="h-8 w-8 rounded-full bg-surface-tint" />
           </div>
         </div>
-        <Skeleton className="h-4 w-full bg-[#eef2f4]" />
-        <Skeleton className="h-4 w-4/5 bg-[#eef2f4]" />
-        <Skeleton className="h-5 w-24 bg-[#eef2f4]" />
+        <Skeleton className="h-4 w-full bg-surface-tint" />
+        <Skeleton className="h-4 w-4/5 bg-surface-tint" />
+        <Skeleton className="h-5 w-24 bg-surface-tint" />
       </div>
     </div>
   );
@@ -103,9 +103,9 @@ export function ListingCardSkeleton() {
 
 export function MapPanelSkeleton() {
   return (
-    <div className="grid h-full min-h-[28rem] place-items-center bg-[#e7f4ef]">
-      <div className="inline-flex items-center gap-2 rounded-md border border-[#cbded8] bg-white px-4 py-3 text-sm font-bold text-[#132238] shadow-lg">
-        <LoaderCircle className="h-4 w-4 animate-spin text-[#0f766e]" />
+    <div className="grid h-full min-h-[28rem] place-items-center bg-surface-tint">
+      <div className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-3 text-sm font-bold text-brand-navy shadow-lg">
+        <LoaderCircle className="h-4 w-4 animate-spin text-brand-navy" />
         Chargement de la carte
       </div>
     </div>
@@ -114,7 +114,7 @@ export function MapPanelSkeleton() {
 
 export function Footer() {
   return (
-    <footer className="border-t border-[#132238]/10 px-4 py-8 text-xs font-semibold text-[#5b6878] sm:px-5">
+    <footer className="border-t border-brand-navy/10 px-4 py-8 text-xs font-semibold text-ink-soft sm:px-5">
       Les informations doivent être vérifiées dans les pièces officielles avant toute décision
       d’enchère.
     </footer>

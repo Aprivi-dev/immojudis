@@ -64,7 +64,7 @@ export function LawyerDirectoryPage() {
   const errorMessage = userMessage(directoryQuery.error, "Annuaire indisponible");
 
   return (
-    <main className="min-h-screen bg-[#eef7ff] text-brand-navy">
+    <main className="min-h-screen bg-background text-brand-navy">
       <section className="border-b border-brand-navy/10 bg-white">
         <div className="mx-auto max-w-[1260px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
           <Link

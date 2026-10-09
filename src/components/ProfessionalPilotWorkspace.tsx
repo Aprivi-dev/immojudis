@@ -327,7 +327,7 @@ export function ProfessionalPilotWorkspace({
               {knownFacts.map((fact) => (
                 <div
                   key={fact.label}
-                  className="rounded-lg border border-slate-200 bg-[#fafcfd] p-3"
+                  className="rounded-lg border border-slate-200 bg-surface-muted p-3"
                 >
                   <dt className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                     {fact.label}
@@ -484,7 +484,7 @@ export function ProfessionalPilotWorkspace({
                 </label>
               ))}
             </div>
-            <dl className="mt-4 grid gap-2 rounded-lg bg-[#eef7ff] p-4 text-sm sm:grid-cols-2">
+            <dl className="mt-4 grid gap-2 rounded-lg bg-background p-4 text-sm sm:grid-cols-2">
               <div>
                 <dt>Investissement total</dt>
                 <dd className="font-bold text-brand-navy">

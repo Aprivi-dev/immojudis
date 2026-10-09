@@ -101,7 +101,7 @@ export function SaleTribunalHistory({
             retrying={adjudicationStatisticsQuery.isFetching}
           />
         ) : (
-          <div className="mt-8 rounded-lg border border-brand-navy/12 bg-[#f8fbfe] p-5">
+          <div className="mt-8 rounded-lg border border-brand-navy/12 bg-surface-muted p-5">
             <p className="font-semibold text-brand-navy">
               Prix d’adjudication historiques · Offre Analyse
             </p>
@@ -397,13 +397,13 @@ function AdjudicationPriceScope({
           </p>
           <h4 className="mt-1 font-display text-xl font-semibold text-brand-navy">{heading}</h4>
         </div>
-        <span className="rounded-md border border-brand-navy/12 bg-[#f8fbfe] px-3 py-2 text-xs font-semibold text-brand-navy/65">
+        <span className="rounded-md border border-brand-navy/12 bg-surface-muted px-3 py-2 text-xs font-semibold text-brand-navy/65">
           {scope.sampleSize.toLocaleString("fr-FR")} prix adjugés publiés ·{" "}
           {reliabilityLabel(scope)}
         </span>
       </div>
       <LimitedAdjudicationSample sampleSize={scope.sampleSize} />
-      <dl className="mt-4 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 xl:grid-cols-5">
+      <dl className="mt-4 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-surface-muted sm:grid-cols-2 xl:grid-cols-5">
         <HistoryMetric
           label="Multiplicateur médian"
           value={`× ${scope.metrics.medianHammerToStartingRatio.toLocaleString("fr-FR", { maximumFractionDigits: 2 })}`}
@@ -545,7 +545,7 @@ function NationalActivity({ data }: { data: TribunalJudicialActivityDirectoryRes
       <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
         Historique observé
       </p>
-      <dl className="mt-6 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 lg:grid-cols-4">
+      <dl className="mt-6 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-surface-muted sm:grid-cols-2 lg:grid-cols-4">
         <HistoryMetric
           label="Mise à prix médiane · historique"
           value={formatRangeMedianCurrency(national.startingPriceRangeEur)}
@@ -572,7 +572,7 @@ function NationalActivity({ data }: { data: TribunalJudicialActivityDirectoryRes
       <p className="mt-6 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
         Pipeline à venir
       </p>
-      <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 lg:grid-cols-4">
+      <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-surface-muted sm:grid-cols-2 lg:grid-cols-4">
         <HistoryMetric
           label="Mise à prix médiane · à venir"
           value={formatRangeMedianCurrency(national.upcomingStartingPriceRangeEur)}
@@ -655,7 +655,7 @@ function JudicialActivity({
       ) : null}
 
       {priceComparison ? (
-        <div className="mt-6 border-l-4 border-gold-soft bg-[#fffaf2] px-4 py-4">
+        <div className="mt-6 border-l-4 border-gold-soft bg-surface px-4 py-4">
           <p className="text-sm font-semibold text-brand-navy">{priceComparison}</p>
           <p className="mt-1 text-xs leading-relaxed text-brand-navy/70">
             Positionnement de la mise initiale uniquement : ce repère n’est ni une estimation de
@@ -667,7 +667,7 @@ function JudicialActivity({
       <p className="mt-6 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
         Historique observé
       </p>
-      <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-3">
+      <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-surface-muted sm:grid-cols-3">
         <HistoryMetric
           label="Ventes passées observées"
           value={formatNumberValue(metrics.observedPastSales)}
@@ -689,7 +689,7 @@ function JudicialActivity({
       <p className="mt-7 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
         Pipeline à venir
       </p>
-      <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 lg:grid-cols-4">
+      <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-surface-muted sm:grid-cols-2 lg:grid-cols-4">
         <HistoryMetric
           label="Ventes à venir suivies"
           value={formatNumberValue(metrics.upcomingSales)}
@@ -848,7 +848,7 @@ function ScopeUnavailable({
   retrying?: boolean;
 }) {
   return (
-    <div className="mt-5 flex gap-4 border-y border-brand-navy/10 bg-[#f8fbfe] px-4 py-5">
+    <div className="mt-5 flex gap-4 border-y border-brand-navy/10 bg-surface-muted px-4 py-5">
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-text">
         <BarChart3 className="h-5 w-5" aria-hidden />
       </span>

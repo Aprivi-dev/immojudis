@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export default function NotFound() {
   return (
-    <main className="min-h-screen bg-[#f7f5f1] px-4 py-16 text-foreground sm:px-6">
+    <main className="min-h-screen bg-surface px-4 py-16 text-foreground sm:px-6">
       <section className="mx-auto max-w-2xl rounded-md border border-border bg-white p-8 text-center shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Fiche indisponible

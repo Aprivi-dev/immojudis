@@ -77,7 +77,7 @@ function SponsoredLawyerCard({
   return (
     <section
       aria-labelledby="search-lawyer-placement-title"
-      className={`flex min-h-[320px] flex-col rounded-lg border border-[#d9b477] bg-[#fffaf2] p-4 shadow-sm ${className}`.trim()}
+      className={`flex min-h-[320px] flex-col rounded-lg border border-gold-light bg-surface p-4 shadow-sm ${className}`.trim()}
     >
       <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-gold-text">
         <Megaphone className="h-3.5 w-3.5" aria-hidden />
@@ -85,27 +85,27 @@ function SponsoredLawyerCard({
       </div>
       <h2
         id="search-lawyer-placement-title"
-        className="mt-2 font-display text-lg font-semibold leading-tight text-[#132238]"
+        className="mt-2 font-display text-lg font-semibold leading-tight text-brand-navy"
       >
         {title}
       </h2>
-      <p className="mt-1 text-sm font-medium text-[#526170]">{lawyer.displayName}</p>
-      <p className="mt-3 text-sm leading-relaxed text-[#526170]">
+      <p className="mt-1 text-sm font-medium text-ink-soft">{lawyer.displayName}</p>
+      <p className="mt-3 text-sm leading-relaxed text-ink-soft">
         Ce cabinet présente son activité pour les ventes immobilières judiciaires sur {matchingArea}
         .
       </p>
       {lawyer.barAssociation || lawyer.city || lawyer.department ? (
-        <p className="mt-3 text-xs text-[#5b6878]">
+        <p className="mt-3 text-xs text-ink-soft">
           {[lawyer.barAssociation, lawyer.city, lawyer.department].filter(Boolean).join(" · ")}
         </p>
       ) : null}
       <a
         href={directoryHref(lawyer)}
-        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md border border-[#c98d45]/45 bg-white px-3 py-2 text-xs font-bold text-gold-text transition-colors hover:border-[#c98d45] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98d45] focus-visible:ring-offset-2"
+        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md border border-gold/45 bg-white px-3 py-2 text-xs font-bold text-gold-text transition-colors hover:border-gold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
       >
         Voir l’annuaire du secteur
       </a>
-      <p className="mt-3 text-[11px] leading-relaxed text-[#5b6878]">
+      <p className="mt-3 text-[11px] leading-relaxed text-ink-soft">
         Cette mise en avant est signalée comme sponsorisée et ne constitue ni une recommandation, ni
         une garantie de résultat.
       </p>
@@ -118,24 +118,24 @@ function OpenLawyerPlacement({ loading, className }: { loading: boolean; classNa
     <section
       aria-labelledby="search-lawyer-placement-title"
       aria-busy={loading}
-      className={`flex min-h-[320px] flex-col rounded-lg border border-[#d9b477] bg-[#fffaf2] p-4 shadow-sm ${className}`.trim()}
+      className={`flex min-h-[320px] flex-col rounded-lg border border-gold-light bg-surface p-4 shadow-sm ${className}`.trim()}
     >
-      <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#5b6878]">
+      <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-ink-soft">
         <Megaphone className="h-3.5 w-3.5" aria-hidden />
         Espace partenaire
       </div>
       <h2
         id="search-lawyer-placement-title"
-        className="mt-2 font-display text-lg font-semibold leading-tight text-[#132238]"
+        className="mt-2 font-display text-lg font-semibold leading-tight text-brand-navy"
       >
         Présentez votre cabinet
       </h2>
-      <p className="mt-2 text-sm leading-relaxed text-[#526170]">
+      <p className="mt-2 text-sm leading-relaxed text-ink-soft">
         Présentez votre cabinet aux acquéreurs qui recherchent un bien dans ce secteur.
       </p>
       <a
         href="/contact"
-        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md bg-[#132238] px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-[#29405d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98d45] focus-visible:ring-offset-2"
+        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-md bg-brand-navy px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-brand-navy-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
       >
         Présenter mon cabinet
       </a>

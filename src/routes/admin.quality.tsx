@@ -110,7 +110,7 @@ export function AdminQualityPage() {
         </div>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-          <section className="liquid-panel rounded-lg p-5">
+          <section className="admin-panel rounded-lg p-5">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               <AlertTriangle className="h-4 w-4 text-gold-text" />
               Points à surveiller
@@ -143,11 +143,11 @@ export function AdminQualityPage() {
             </ul>
           </section>
 
-          <section className="liquid-panel rounded-lg p-5">
+          <section className="admin-panel rounded-lg p-5">
             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Dossiers à reprendre en priorité
             </div>
-            <div className="mt-4 divide-y divide-white/10">
+            <div className="mt-4 divide-y divide-brand-navy/10">
               {qualityQuery.error && !qualityReport ? (
                 <p role="status" className="text-sm text-red-800">
                   Les dossiers prioritaires n’ont pas pu être vérifiés. Réessayez avec Actualiser.
@@ -163,7 +163,7 @@ export function AdminQualityPage() {
           </section>
         </div>
 
-        <section className="liquid-panel mt-6 rounded-lg p-5">
+        <section className="admin-panel mt-6 rounded-lg p-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -177,8 +177,8 @@ export function AdminQualityPage() {
               IA, GPS, surface, documents, occupation et confiance score
             </span>
           </div>
-          <div className="mt-4 overflow-x-auto rounded-lg border border-white/10">
-            <div className="grid min-w-[860px] grid-cols-[1.2fr_repeat(7,0.7fr)] gap-3 border-b border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="mt-4 overflow-x-auto rounded-lg border border-brand-navy/10">
+            <div className="grid min-w-[860px] grid-cols-[1.2fr_repeat(7,0.7fr)] gap-3 border-b border-brand-navy/10 bg-brand-navy/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               <span>Source</span>
               <span>Annonces</span>
               <span>IA</span>
@@ -188,7 +188,7 @@ export function AdminQualityPage() {
               <span>Occup.</span>
               <span>Confiance</span>
             </div>
-            <div className="divide-y divide-white/10">
+            <div className="divide-y divide-brand-navy/10">
               {metrics.sources.map((source) => (
                 <SourceQualityLine key={source.name} source={source} />
               ))}
@@ -196,7 +196,7 @@ export function AdminQualityPage() {
           </div>
         </section>
 
-        <section className="liquid-panel mt-6 rounded-lg p-5">
+        <section className="admin-panel mt-6 rounded-lg p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -206,7 +206,7 @@ export function AdminQualityPage() {
                 Les seuils affichés sont identiques aux garde-fous du pipeline d’entraînement.
               </p>
             </div>
-            <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-foreground">
+            <span className="rounded-full border border-brand-navy/10 px-3 py-1 text-xs font-semibold text-foreground">
               {valuationLoading
                 ? "Chargement…"
                 : valuationOverview?.runtime.status === "healthy"
@@ -250,7 +250,7 @@ export function AdminQualityPage() {
             />
           </div>
           {valuationOverview?.runtime.driftSignals.length ? (
-            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-amber-100">
+            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-warning">
               {valuationOverview.runtime.driftSignals.map((signal) => (
                 <li key={signal}>{signal}</li>
               ))}
@@ -260,13 +260,11 @@ export function AdminQualityPage() {
             {(valuationOverview?.activeModels ?? []).map((model) => (
               <article
                 key={model.id}
-                className="rounded-lg border border-white/10 bg-white/[0.03] p-4"
+                className="rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-4"
               >
                 <div className="flex items-center justify-between gap-3">
                   <strong className="text-sm text-foreground">{model.segment}</strong>
-                  <span
-                    className={model.promotionGate.passes ? "text-emerald-200" : "text-red-200"}
-                  >
+                  <span className={model.promotionGate.passes ? "text-success" : "text-danger"}>
                     {model.promotionGate.passes ? "Seuils validés" : "Seuils non validés"}
                   </span>
                 </div>
@@ -298,7 +296,7 @@ function QualityMetric({
   value: string;
 }) {
   return (
-    <div className="liquid-panel-soft rounded-lg p-4">
+    <div className="admin-panel rounded-lg p-4">
       <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
         <span className="text-gold-text [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
         {label}
@@ -373,10 +371,10 @@ function QualityPill({ value }: { value: string }) {
   const numeric = parseInt(value, 10);
   const tone =
     Number.isFinite(numeric) && numeric >= 75
-      ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+      ? "border-emerald-300/20 bg-success-tint text-success"
       : Number.isFinite(numeric) && numeric >= 50
-        ? "border-amber-300/20 bg-amber-400/10 text-amber-100"
-        : "border-red-300/20 bg-red-500/10 text-red-100";
+        ? "border-amber-300/20 bg-warning-tint text-warning"
+        : "border-red-300/20 bg-danger-tint text-danger";
   return (
     <span className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-xs ${tone}`}>
       {value}

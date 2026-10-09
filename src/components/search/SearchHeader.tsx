@@ -18,7 +18,7 @@ import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-s
 import type { SearchDraft } from "./search-page-state";
 
 const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => module.DateFilter), {
-  loading: () => <span className="inline-flex h-10 w-28 rounded-md border border-[#cbd5df]" />,
+  loading: () => <span className="inline-flex h-10 w-28 rounded-md border border-line" />,
 });
 export function SearchHeader({
   draft,
@@ -188,7 +188,7 @@ export function GeographicSearch({
         event.preventDefault();
         apply();
       }}
-      className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-[#cbd5df] bg-white focus-within:ring-2 focus-within:ring-[#c98d45] sm:basis-auto sm:flex-1"
+      className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-line bg-white focus-within:ring-2 focus-within:ring-gold sm:basis-auto sm:flex-1"
     >
       <SearchIcon className="ml-3 h-5 w-5 shrink-0" />
       <input
@@ -210,7 +210,7 @@ export function GeographicSearch({
       <button
         type="submit"
         aria-label="Rechercher la localisation"
-        className="mr-1 grid h-10 w-10 shrink-0 place-items-center rounded hover:bg-[#eef3f8]"
+        className="mr-1 grid h-10 w-10 shrink-0 place-items-center rounded hover:bg-surface-tint"
       >
         <SearchIcon className="h-4 w-4" />
       </button>
@@ -220,10 +220,10 @@ export function GeographicSearch({
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={apply}
-            className="w-full rounded px-3 py-3 text-left text-sm hover:bg-[#eef3f8]"
+            className="w-full rounded px-3 py-3 text-left text-sm hover:bg-surface-tint"
           >
             <strong>{value}</strong>
-            <span className="ml-2 text-[#526170]">{kind}</span>
+            <span className="ml-2 text-ink-soft">{kind}</span>
           </button>
         </div>
       )}
@@ -239,15 +239,15 @@ export function PriceFilter({
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
 }) {
   return (
-    <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-[#cbd5df] bg-white shadow-sm">
-      <span className="px-3 text-sm font-bold text-[#132238]">Mise à prix</span>
+    <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white shadow-sm">
+      <span className="px-3 text-sm font-bold text-brand-navy">Mise à prix</span>
       <input
         aria-label="Prix minimum"
         inputMode="numeric"
         value={draft.minPrice}
         onChange={(event) => setDraft((current) => ({ ...current, minPrice: event.target.value }))}
         placeholder="min"
-        className="h-full w-20 border-l border-[#d6e0dc] bg-transparent px-2 text-sm font-semibold outline-none"
+        className="h-full w-20 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
       />
       <input
         aria-label="Prix maximum"
@@ -255,7 +255,7 @@ export function PriceFilter({
         value={draft.maxPrice}
         onChange={(event) => setDraft((current) => ({ ...current, maxPrice: event.target.value }))}
         placeholder="max"
-        className="h-full w-20 border-l border-[#d6e0dc] bg-transparent px-2 text-sm font-semibold outline-none"
+        className="h-full w-20 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
       />
     </div>
   );
@@ -269,15 +269,15 @@ export function BedsBathsFilter({
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
 }) {
   return (
-    <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-[#cbd5df] bg-white shadow-sm">
-      <span className="px-3 text-sm font-bold text-[#132238]">Chambres / bains</span>
+    <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white shadow-sm">
+      <span className="px-3 text-sm font-bold text-brand-navy">Chambres / bains</span>
       <input
         aria-label="Nombre minimum de chambres"
         inputMode="numeric"
         value={draft.minBeds}
         onChange={(event) => setDraft((current) => ({ ...current, minBeds: event.target.value }))}
         placeholder="ch."
-        className="h-full w-16 border-l border-[#d6e0dc] bg-transparent px-2 text-sm font-semibold outline-none"
+        className="h-full w-16 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
       />
       <input
         aria-label="Nombre minimum de salles de bain"
@@ -285,7 +285,7 @@ export function BedsBathsFilter({
         value={draft.minBaths}
         onChange={(event) => setDraft((current) => ({ ...current, minBaths: event.target.value }))}
         placeholder="sdb"
-        className="h-full w-16 border-l border-[#d6e0dc] bg-transparent px-2 text-sm font-semibold outline-none"
+        className="h-full w-16 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
       />
     </div>
   );
@@ -299,8 +299,8 @@ export function HomeTypeFilter({
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
 }) {
   return (
-    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-[#cbd5df] bg-white shadow-sm">
-      <Building2 className="ml-3 h-4 w-4 text-[#5b6878]" />
+    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
+      <Building2 className="ml-3 h-4 w-4 text-ink-soft" />
       <span className="sr-only">Type de bien</span>
       <select
         value={draft.homeTypes[0] ?? "all"}
@@ -310,7 +310,7 @@ export function HomeTypeFilter({
             homeTypes: event.target.value === "all" ? [] : [event.target.value],
           }))
         }
-        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-[#132238] outline-none"
+        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
       >
         <option value="all">Tous biens</option>
         {HOME_TYPE_OPTIONS.map((option) => (
@@ -319,7 +319,7 @@ export function HomeTypeFilter({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-[#5b6878]" />
+      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
     </label>
   );
 }
@@ -336,13 +336,13 @@ export function SortDropdown({
   onChange: (sort: SearchSortKey) => void;
 }) {
   return (
-    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-[#cbd5df] bg-white shadow-sm">
-      <ArrowUpDown className="ml-3 h-4 w-4 text-[#5b6878]" />
+    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
+      <ArrowUpDown className="ml-3 h-4 w-4 text-ink-soft" />
       <span className="sr-only">Tri</span>
       <select
         value={sort}
         onChange={(event) => onChange(event.target.value as SearchSortKey)}
-        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-[#132238] outline-none"
+        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
       >
         {SORT_OPTIONS.filter(
           (option) =>
@@ -354,7 +354,7 @@ export function SortDropdown({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-[#5b6878]" />
+      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
     </label>
   );
 }
@@ -513,7 +513,7 @@ export function ResultsSummary({
       <h1 className="font-display text-[1.65rem] font-semibold leading-tight">
         {location === "France entière" ? "Les ventes immobilières" : `Les ventes à ${location}`}
       </h1>
-      <p className="mt-1 text-sm text-[#526170]">
+      <p className="mt-1 text-sm text-ink-soft">
         {isLoading
           ? "Recherche en cours…"
           : hasError
@@ -542,7 +542,7 @@ export function InlineTextFilter({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-[#cbd5df] px-3">
+    <label className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-line px-3">
       <Icon className="h-4 w-4 shrink-0" />
       <span className="sr-only">{label}</span>
       <input

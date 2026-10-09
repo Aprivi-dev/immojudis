@@ -67,7 +67,7 @@ export function TribunalJudicialActivityExplorer() {
   );
 
   return (
-    <main className="min-h-screen bg-[#eef7ff] text-brand-navy">
+    <main className="min-h-screen bg-background text-brand-navy">
       <header className="border-b border-brand-navy/10 bg-white/80">
         <div className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
           <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
@@ -471,7 +471,7 @@ function TribunalProfile({
           <select
             value={selectedPropertyType}
             onChange={(event) => onPropertyTypeChange(event.target.value)}
-            className="h-11 w-full rounded-md border border-brand-navy/15 bg-[#f8fbfe] px-3 text-sm font-semibold"
+            className="h-11 w-full rounded-md border border-brand-navy/15 bg-surface-muted px-3 text-sm font-semibold"
           >
             <option value="">Tous types de biens</option>
             {tribunal.activity.propertyTypeBenchmarks.map((benchmark) => (

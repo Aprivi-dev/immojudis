@@ -31,7 +31,7 @@ export function AdminInformationAgentTemplatePanel() {
 
   if (templateQuery.isLoading) {
     return (
-      <AdminPanel className="flex min-h-80 items-center justify-center p-6 text-sm text-[#132238]/60">
+      <AdminPanel className="flex min-h-80 items-center justify-center p-6 text-sm text-brand-navy/60">
         <LoadingIndicator />
         Chargement du template
       </AdminPanel>
@@ -183,10 +183,10 @@ function InformationAgentTemplateEditor({
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
               Agent IA autonome
             </div>
-            <h2 className="mt-2 text-xl font-semibold text-[#132238]">
+            <h2 className="mt-2 text-xl font-semibold text-brand-navy">
               Template de prise de contact
             </h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#132238]/65">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-navy/65">
               Les blocs fixes restent identiques pour toutes les annonces. Les blocs dynamiques
               remplacent automatiquement les variables par les données de la vente et les questions
               détectées par l’agent.
@@ -235,8 +235,8 @@ function InformationAgentTemplateEditor({
               </EditorField>
             </div>
 
-            <div className="mt-5 rounded-xl border border-[#132238]/10 bg-[#f7f9fc] p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#132238]/58">
+            <div className="mt-5 rounded-xl border border-brand-navy/10 bg-surface-muted p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-navy/58">
                 Variables autorisées
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -244,7 +244,7 @@ function InformationAgentTemplateEditor({
                   <span
                     key={variable.key}
                     title={`${variable.label} · Exemple : ${variable.example}`}
-                    className="rounded-md border border-[#132238]/10 bg-white px-2 py-1 font-mono text-[11px] text-gold-text"
+                    className="rounded-md border border-brand-navy/10 bg-white px-2 py-1 font-mono text-[11px] text-gold-text"
                   >
                     {templateVariableToken(variable.key)}
                   </span>
@@ -256,7 +256,7 @@ function InformationAgentTemplateEditor({
               {template.blocks.map((block, index) => (
                 <article
                   key={block.id}
-                  className="rounded-xl border border-[#132238]/10 bg-white p-4"
+                  className="rounded-xl border border-brand-navy/10 bg-white p-4"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -265,14 +265,14 @@ function InformationAgentTemplateEditor({
                           className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
                             block.kind === "dynamic"
                               ? "bg-blue-50 text-blue-700"
-                              : "bg-[#f6eedc] text-gold-text"
+                              : "bg-secondary text-gold-text"
                           }`}
                         >
                           Bloc {block.kind === "dynamic" ? "dynamique" : "fixe"}
                         </span>
-                        <span className="text-sm font-semibold text-[#132238]">{block.label}</span>
+                        <span className="text-sm font-semibold text-brand-navy">{block.label}</span>
                       </div>
-                      <p className="mt-1 font-mono text-[10px] text-[#132238]/45">{block.id}</p>
+                      <p className="mt-1 font-mono text-[10px] text-brand-navy/45">{block.id}</p>
                     </div>
                     <div className="flex gap-1">
                       <OrderButton
@@ -303,8 +303,8 @@ function InformationAgentTemplateEditor({
               ))}
             </div>
 
-            <div className="mt-5 flex flex-col gap-3 border-t border-[#132238]/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-[#132238]/55" role="status" aria-live="polite">
+            <div className="mt-5 flex flex-col gap-3 border-t border-brand-navy/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-brand-navy/55" role="status" aria-live="polite">
                 {dirty ? "Modifications non enregistrées" : "Brouillon synchronisé"}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -353,7 +353,7 @@ function InformationAgentTemplateEditor({
 
         <div className="space-y-4 2xl:sticky 2xl:top-4 2xl:self-start">
           <AdminPanel className="overflow-hidden">
-            <div className="border-b border-[#132238]/10 p-5">
+            <div className="border-b border-brand-navy/10 p-5">
               <AdminSectionHeading
                 title="Prévisualisation"
                 description={
@@ -368,10 +368,10 @@ function InformationAgentTemplateEditor({
                 title="Prévisualisation sécurisée du template d’email"
                 srcDoc={preview.html}
                 sandbox=""
-                className="h-[720px] w-full bg-[#f5f2eb]"
+                className="h-[720px] w-full bg-surface"
               />
             ) : (
-              <div className="grid min-h-[28rem] place-items-center p-8 text-center text-sm text-[#132238]/55">
+              <div className="grid min-h-[28rem] place-items-center p-8 text-center text-sm text-brand-navy/55">
                 <div>
                   <p>Aucun aperçu généré pour ce brouillon.</p>
                 </div>
@@ -384,12 +384,12 @@ function InformationAgentTemplateEditor({
               title="Publication"
               description="Le template publié sera utilisé uniquement pour les prochaines missions créées."
             />
-            <label className="mt-4 flex items-start gap-3 rounded-xl border border-[#132238]/10 bg-[#f7f9fc] p-4 text-sm text-[#132238]/72">
+            <label className="mt-4 flex items-start gap-3 rounded-xl border border-brand-navy/10 bg-surface-muted p-4 text-sm text-brand-navy/72">
               <input
                 type="checkbox"
                 checked={publicationConfirmed}
                 onChange={(event) => setPublicationConfirmed(event.target.checked)}
-                className="mt-0.5 size-4 accent-[#a6792b]"
+                className="mt-0.5 size-4 accent-gold"
               />
               <span>J’ai vérifié l’objet, les blocs dynamiques et l’aperçu de l’email.</span>
             </label>
@@ -409,7 +409,7 @@ function InformationAgentTemplateEditor({
               Publier ce template
             </button>
             {!workspace.draft ? (
-              <p className="mt-2 text-xs text-[#132238]/52">
+              <p className="mt-2 text-xs text-brand-navy/52">
                 Modifiez le contenu puis enregistrez un brouillon avant de publier.
               </p>
             ) : dirty ? (
@@ -424,17 +424,17 @@ function InformationAgentTemplateEditor({
               title="Historique"
               description="Dernières versions publiées ou archivées"
             />
-            <div className="mt-4 divide-y divide-[#132238]/10">
+            <div className="mt-4 divide-y divide-brand-navy/10">
               {workspace.history.slice(0, 8).map((entry) => (
                 <div
                   key={entry.id}
                   className="flex items-center justify-between gap-4 py-3 text-sm"
                 >
                   <div className="min-w-0">
-                    <p className="truncate font-semibold text-[#132238]">
+                    <p className="truncate font-semibold text-brand-navy">
                       v{entry.revision} · {entry.name}
                     </p>
-                    <p className="mt-1 text-xs text-[#132238]/50">
+                    <p className="mt-1 text-xs text-brand-navy/50">
                       {formatDateTime(entry.publishedAt ?? entry.updatedAt)}
                     </p>
                   </div>
@@ -443,7 +443,7 @@ function InformationAgentTemplateEditor({
                       ✓
                     </span>
                   ) : (
-                    <span className="text-[10px] uppercase tracking-[0.12em] text-[#132238]/45">
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-brand-navy/45">
                       Archivé
                     </span>
                   )}
@@ -470,7 +470,7 @@ function templateContentFromWorkspace(
 
 function EditorField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.13em] text-[#132238]/58">
+    <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.13em] text-brand-navy/58">
       {label}
       {children}
     </label>
@@ -504,7 +504,7 @@ function OrderButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-8 place-items-center rounded-md border border-[#132238]/10 text-[#132238]/60 transition hover:bg-[#f4f7fa] disabled:cursor-not-allowed disabled:opacity-30"
+      className="grid size-8 place-items-center rounded-md border border-brand-navy/10 text-brand-navy/60 transition hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-30"
     >
       {children}
     </button>

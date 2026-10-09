@@ -53,7 +53,7 @@ export function AboutPage() {
               </div>
             </div>
 
-            <div className="relative min-h-[24rem] overflow-hidden rounded-lg bg-[#eef7ff]">
+            <div className="relative min-h-[24rem] overflow-hidden rounded-lg bg-background">
               <img
                 src="/media/landing/justice-goddess.webp"
                 alt=""

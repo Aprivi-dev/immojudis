@@ -108,7 +108,7 @@ export function DecisionHero({
   ].join(". ");
 
   return (
-    <section className="relative overflow-hidden border-b border-border bg-[#eef7ff]">
+    <section className="relative overflow-hidden border-b border-border bg-background">
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(238,247,255,0.92)_48%,rgba(255,255,255,0.98))]" />
       <div className="absolute inset-0 bg-[linear-gradient(rgba(19,34,56,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(19,34,56,0.025)_1px,transparent_1px)] [background-size:52px_52px]" />
       <div className="relative mx-auto grid max-w-[1360px] gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(430px,0.95fr)] lg:px-8 lg:py-11">

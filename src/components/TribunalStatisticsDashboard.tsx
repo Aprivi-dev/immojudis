@@ -192,7 +192,7 @@ export function TribunalStatisticsDashboard({
     null;
 
   return (
-    <main className="min-h-screen bg-[#eef7ff] text-brand-navy">
+    <main className="min-h-screen bg-background text-brand-navy">
       <header className="border-b border-brand-navy/10 bg-white/72">
         <div className="mx-auto max-w-[1260px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
           <h1 className="max-w-4xl font-display text-4xl font-medium leading-tight sm:text-5xl lg:text-6xl">
@@ -204,7 +204,7 @@ export function TribunalStatisticsDashboard({
             garantie sur une audience future.
           </p>
           {view.experimental ? (
-            <p className="mt-4 inline-flex items-center gap-2 rounded-md border border-gold/25 bg-[#fffaf2] px-3 py-2 text-xs font-semibold text-brand-navy/72">
+            <p className="mt-4 inline-flex items-center gap-2 rounded-md border border-gold/25 bg-surface px-3 py-2 text-xs font-semibold text-brand-navy/72">
               <AlertTriangle className="h-4 w-4 text-gold-text" aria-hidden />
               Version expérimentale contrôlée · usage descriptif uniquement
             </p>
@@ -288,7 +288,7 @@ export function TribunalStatisticsDashboard({
             {view.national ? (
               <section
                 aria-labelledby="national-reference-title"
-                className="mt-12 border-y border-gold/25 bg-[#fffaf2] px-4 py-8 sm:px-6 lg:px-8"
+                className="mt-12 border-y border-gold/25 bg-surface px-4 py-8 sm:px-6 lg:px-8"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>

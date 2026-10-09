@@ -110,7 +110,7 @@ export function SaleDetailView({
   const documentCount = countDocuments(sale);
 
   return (
-    <main className="min-h-screen bg-[#eef7ff] pb-28 text-foreground lg:pb-20">
+    <main className="min-h-screen bg-background pb-28 text-foreground lg:pb-20">
       <ListingActionBar
         sale={sale}
         title={referenceLabel}
