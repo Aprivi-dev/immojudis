@@ -53,8 +53,10 @@ permissions:
   contents: read
 
 concurrency:
-  # Use the catalogue-wide writer lock shared with scheduled ingestion.
-  group: immojudis-data-pipeline
+  # A manual recompute must never cancel (or be cancelled by) a pending
+  # pipeline run, which a shared group would do. Both serialise on the
+  # catalogue writer advisory lock taken by the Python entry points instead.
+  group: immojudis-recompute
   cancel-in-progress: false
 
 jobs:
@@ -75,14 +77,21 @@ jobs:
     steps:
       - name: Check target confirmation
         working-directory: ${{ github.workspace }}
+        env:
+          # Inputs reach the shell through the environment, never through
+          # ${{ }} interpolation inside the script.
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          REPAIR_ONLY: ${{ inputs.repair_only }}
+          REFRESH_UNKNOWN_ONLY: ${{ inputs.refresh_unknown_only }}
+          READINESS_ONLY: ${{ inputs.readiness_only }}
         run: |
           set -euo pipefail
-          if [ "${{ inputs.confirm_target }}" != "production" ]; then
+          if [ "$CONFIRM_TARGET" != "production" ]; then
             echo "confirm_target must be exactly: production" >&2
             exit 1
           fi
           selected_modes=0
-          for mode in "${{ inputs.repair_only }}" "${{ inputs.refresh_unknown_only }}" "${{ inputs.readiness_only }}"; do
+          for mode in "$REPAIR_ONLY" "$REFRESH_UNKNOWN_ONLY" "$READINESS_ONLY"; do
             if [ "$mode" = "true" ]; then
               selected_modes=$((selected_modes + 1))
             fi
@@ -166,6 +175,8 @@ jobs:
       - name: Publish recomputed sales
         if: ${{ !inputs.dry_run && !inputs.repair_only && !inputs.refresh_unknown_only && !inputs.readiness_only }}
         env:
+          # Direct database session for the catalogue writer lock.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
@@ -182,6 +193,8 @@ jobs:
       - name: Publish catalogue readiness
         if: ${{ !inputs.dry_run && inputs.readiness_only }}
         env:
+          # Direct database session for the catalogue writer lock.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
@@ -198,6 +211,8 @@ jobs:
       - name: Refresh unresolved procedure source pages
         if: ${{ !inputs.dry_run && inputs.refresh_unknown_only }}
         env:
+          # Direct database session for the catalogue writer lock.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
@@ -214,6 +229,8 @@ jobs:
       - name: Repair and verify persisted sale procedures
         if: ${{ !inputs.dry_run && !inputs.readiness_only }}
         env:
+          # Direct database session for the catalogue writer lock.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |

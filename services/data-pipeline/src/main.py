@@ -1980,4 +1980,12 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
 if __name__ == "__main__":
     if os.getenv("PIPELINE_TRACEBACK_SECONDS"):
         faulthandler.dump_traceback_later(max(60, int(os.environ["PIPELINE_TRACEBACK_SECONDS"])), repeat=True)
-    sys.exit(run_from_options(parse_args()))
+    pipeline_options = parse_args()
+    if pipeline_options.upsert:
+        # Writers of the catalogue (this pipeline, the queue worker, the manual
+        # recompute) serialise on a database lock instead of a GitHub group.
+        from src.catalogue_lock import catalogue_writer_lock
+
+        with catalogue_writer_lock(label=f"pipeline ({pipeline_options.source})"):
+            sys.exit(run_from_options(pipeline_options))
+    sys.exit(run_from_options(pipeline_options))

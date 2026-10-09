@@ -353,7 +353,10 @@ def execute(run_id: str) -> int:
     source = row[0]
     register_run(run_id)
     env = {**os.environ, 'PIPELINE_AUTONOMOUS_RUN_ID':run_id, 'PIPELINE_ENRICHMENT_BUDGET_SECONDS':'1200', 'PIPELINE_ENRICHMENT_MAX_JOBS':'180', 'REPLICATE_CANCEL_AFTER':'5m',
-           'CADASTRE_ENRICH_ENABLED':'false', 'DPE_ENRICH_ENABLED':'false'}
+           'CADASTRE_ENRICH_ENABLED':'false', 'DPE_ENRICH_ENABLED':'false',
+           # A scheduled unit must not sit on the catalogue writer lock for
+           # long (its budget is minutes); a busy catalogue fails the unit fast.
+           'PIPELINE_LOCK_WAIT_SECONDS':'300'}
     if source == 'enrichment-queue':
         command = [sys.executable,'-m','src.queued_runner','--enrichment-only']
         budget = 25 * 60
