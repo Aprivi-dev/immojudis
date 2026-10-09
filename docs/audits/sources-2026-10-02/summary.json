@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-02",
+  "sources_identified": 10,
+  "accessible_detail_listings": 16,
+  "additional_catalogue_only_listing": 1,
+  "documented_visits_and_attempts": 27,
+  "access": {
+    "200": 22,
+    "403": 2,
+    "410": 1,
+    "capture_failed": 2
+  },
+  "capture_count_by_source": {
+    "licitor": 2,
+    "avoventes": 3,
+    "encheres_publiques": 2,
+    "info_encheres": 3,
+    "vench": 3,
+    "petites_affiches": 3,
+    "agrasc": 3,
+    "cessions_etat": 2,
+    "notaires": 4,
+    "encheres_immobilieres": 2
+  },
+  "test_results": {
+    "passed": 261,
+    "xfailed": 13
+  },
+  "new_live_replay_tests": {
+    "passed": 48,
+    "known_semantic_gaps": 13
+  },
+  "pipeline_code_unchanged_since_audit_start": true,
+  "checklist_fields": 130,
+  "checklist_categories": 8,
+  "source_limits": [
+    "encheres_publiques: 403",
+    "encheres_immobilieres: transport timeout"
+  ],
+  "scope_excludes": [
+    "production DB values",
+    "PDF/OCR content processing",
+    "paid AI processing",
+    "representative catalogue accuracy estimate",
+    "listing UI completeness score implementation"
+  ],
+  "checklist_sha256": {
+    "docs/audits/checklist-completude-annonces-2026-10-02.md": "796dc951fca9800c4bce689ea9c965043f8525646b6fd794767b8fd77588e534",
+    "docs/audits/completude-annonces-2026-10-02.json": "a723ad99cb727e0616969ae99c5e24aceb521925a2c50556f9f77eb127025819"
+  }
+}

@@ -1,0 +1,169 @@
+[
+  {
+    "source_name": "licitor",
+    "source_url": "https://www.licitor.com/annonce/10/99/32/vente-aux-encheres/une-maison/savigne/vienne/109932.html",
+    "external_id": "109932",
+    "department": "86",
+    "city": "Savigné",
+    "property_type": "Une maison",
+    "title": "Une maison",
+    "description": "comprenant : Au rez-de-chaussée : cuisine, buanderie, salon, wc À l'étage : quatre chambres dont une avec [...]",
+    "surface_m2": null,
+    "starting_price_eur": "50 000 €",
+    "sale_date": "50 000 €",
+    "status": "unknown",
+    "documents": [],
+    "raw_text": "86\nSavigné\nUne maison\ncomprenant : Au rez-de-chaussée : cuisine, buanderie, salon, wc À l'étage : quatre chambres dont une avec [...]\nMise à prix :\n50 000 €",
+    "source_blocks": {
+      "departement": "86",
+      "ville": "Savigné",
+      "titre": "Une maison",
+      "description": "comprenant : Au rez-de-chaussée : cuisine, buanderie, salon, wc À l'étage : quatre chambres dont une avec [...]",
+      "mise_a_prix": "50 000 €",
+      "date_vente": "50 000 €",
+      "page_text": "86\nSavigné\nUne maison\ncomprenant : Au rez-de-chaussée : cuisine, buanderie, salon, wc À l'étage : quatre chambres dont une avec [...]\nMise à prix :\n50 000 €",
+      "lots_publics": "86\nSavigné\nUne maison\ncomprenant : Au rez-de-chaussée : cuisine, buanderie, salon, wc À l'étage : quatre chambres dont une avec [...]\nMise à prix :\n50 000 €"
+    },
+    "source_lots": [
+      {
+        "raw_text": "86\nSavigné\nUne maison\ncomprenant : Au rez-de-chaussée : cuisine, buanderie, salon, wc À l'étage : quatre chambres dont une avec [...]\nMise à prix :\n50 000 €",
+        "title": "Une maison",
+        "starting_price_eur": "50 000 €"
+      }
+    ]
+  },
+  {
+    "source_name": "licitor",
+    "source_url": "https://www.licitor.com/annonce/10/99/33/vente-aux-encheres/un-ensemble-immobilier/saint-germain/vienne/109933.html",
+    "external_id": "109933",
+    "department": "86",
+    "city": "Saint-Germain",
+    "property_type": "Un ensemble immobilier",
+    "title": "Un ensemble immobilier",
+    "description": "consistant en : un hôtel-bar-restaurant avec jardin et caves, et un terrain situé en face [...]",
+    "surface_m2": null,
+    "starting_price_eur": "40 000 €",
+    "sale_date": "40 000 €",
+    "status": "unknown",
+    "documents": [],
+    "raw_text": "86\nSaint-Germain\nUn ensemble immobilier\nconsistant en : un hôtel-bar-restaurant avec jardin et caves, et un terrain situé en face [...]\nMise à prix :\n40 000 €",
+    "source_blocks": {
+      "departement": "86",
+      "ville": "Saint-Germain",
+      "titre": "Un ensemble immobilier",
+      "description": "consistant en : un hôtel-bar-restaurant avec jardin et caves, et un terrain situé en face [...]",
+      "mise_a_prix": "40 000 €",
+      "date_vente": "40 000 €",
+      "page_text": "86\nSaint-Germain\nUn ensemble immobilier\nconsistant en : un hôtel-bar-restaurant avec jardin et caves, et un terrain situé en face [...]\nMise à prix :\n40 000 €",
+      "lots_publics": "86\nSaint-Germain\nUn ensemble immobilier\nconsistant en : un hôtel-bar-restaurant avec jardin et caves, et un terrain situé en face [...]\nMise à prix :\n40 000 €"
+    },
+    "source_lots": [
+      {
+        "raw_text": "86\nSaint-Germain\nUn ensemble immobilier\nconsistant en : un hôtel-bar-restaurant avec jardin et caves, et un terrain situé en face [...]\nMise à prix :\n40 000 €",
+        "title": "Un ensemble immobilier",
+        "starting_price_eur": "40 000 €"
+      }
+    ]
+  },
+  {
+    "source_name": "licitor",
+    "source_url": "https://www.licitor.com/annonce/10/99/84/vente-aux-encheres/une-maison-a-usage-d-habitation/adriers/vienne/109984.html",
+    "external_id": "109984",
+    "department": "86",
+    "city": "Adriers",
+    "property_type": "Une maison à usage d'habitation",
+    "title": "Une maison à usage d'habitation",
+    "description": "de 84,17 m², de plain pied, comprenant : cuisine, séjour, débarras, deux chambres, [...]",
+    "surface_m2": "84,17",
+    "starting_price_eur": "20 000 €",
+    "sale_date": "20 000 €",
+    "status": "unknown",
+    "documents": [],
+    "raw_text": "86\nAdriers\nUne maison à usage d'habitation\nde 84,17 m², de plain pied, comprenant : cuisine, séjour, débarras, deux chambres, [...]\nMise à prix :\n20 000 €",
+    "source_blocks": {
+      "departement": "86",
+      "ville": "Adriers",
+      "titre": "Une maison à usage d'habitation",
+      "description": "de 84,17 m², de plain pied, comprenant : cuisine, séjour, débarras, deux chambres, [...]",
+      "surface": "84,17",
+      "mise_a_prix": "20 000 €",
+      "date_vente": "20 000 €",
+      "page_text": "86\nAdriers\nUne maison à usage d'habitation\nde 84,17 m², de plain pied, comprenant : cuisine, séjour, débarras, deux chambres, [...]\nMise à prix :\n20 000 €",
+      "lots_publics": "86\nAdriers\nUne maison à usage d'habitation\nde 84,17 m², de plain pied, comprenant : cuisine, séjour, débarras, deux chambres, [...]\nMise à prix :\n20 000 €"
+    },
+    "source_lots": [
+      {
+        "raw_text": "86\nAdriers\nUne maison à usage d'habitation\nde 84,17 m², de plain pied, comprenant : cuisine, séjour, débarras, deux chambres, [...]\nMise à prix :\n20 000 €",
+        "title": "Une maison à usage d'habitation",
+        "starting_price_eur": "20 000 €"
+      }
+    ]
+  },
+  {
+    "source_name": "licitor",
+    "source_url": "https://www.licitor.com/annonce/11/00/31/vente-aux-encheres/trois-lots-de-copropriete/poitiers/vienne/110031.html",
+    "external_id": "110031",
+    "department": "86",
+    "city": "Poitiers",
+    "property_type": "Trois lots de copropriété",
+    "title": "Trois lots de copropriété",
+    "description": "d'une surface globale d'environ 144 m², au sous-sol du bâtiment, à usage de laboratoire et [...]",
+    "surface_m2": "144",
+    "starting_price_eur": "30 000 €",
+    "sale_date": "30 000 €",
+    "status": "unknown",
+    "documents": [],
+    "raw_text": "86\nPoitiers\nTrois lots de copropriété\nd'une surface globale d'environ 144 m², au sous-sol du bâtiment, à usage de laboratoire et [...]\nMise à prix :\n30 000 €",
+    "source_blocks": {
+      "departement": "86",
+      "ville": "Poitiers",
+      "titre": "Trois lots de copropriété",
+      "description": "d'une surface globale d'environ 144 m², au sous-sol du bâtiment, à usage de laboratoire et [...]",
+      "surface": "144",
+      "mise_a_prix": "30 000 €",
+      "date_vente": "30 000 €",
+      "page_text": "86\nPoitiers\nTrois lots de copropriété\nd'une surface globale d'environ 144 m², au sous-sol du bâtiment, à usage de laboratoire et [...]\nMise à prix :\n30 000 €",
+      "lots_publics": "86\nPoitiers\nTrois lots de copropriété\nd'une surface globale d'environ 144 m², au sous-sol du bâtiment, à usage de laboratoire et [...]\nMise à prix :\n30 000 €"
+    },
+    "source_lots": [
+      {
+        "raw_text": "86\nPoitiers\nTrois lots de copropriété\nd'une surface globale d'environ 144 m², au sous-sol du bâtiment, à usage de laboratoire et [...]\nMise à prix :\n30 000 €",
+        "title": "Trois lots de copropriété",
+        "starting_price_eur": "30 000 €"
+      }
+    ]
+  },
+  {
+    "source_name": "licitor",
+    "source_url": "https://www.licitor.com/annonce/11/00/82/vente-aux-encheres/une-maison-a-usage-d-habitation/chatellerault/vienne/110082.html",
+    "external_id": "110082",
+    "department": "86",
+    "city": "Châtellerault",
+    "property_type": "Une maison à usage d'habitation",
+    "title": "Une maison à usage d'habitation",
+    "description": "individuelle, comprenant : Au rez-de-chaussée : cuisine, chambre, salle d'eau avec [...]",
+    "surface_m2": null,
+    "starting_price_eur": "38 000 €",
+    "sale_date": "38 000 €",
+    "status": "unknown",
+    "documents": [],
+    "raw_text": "86\nChâtellerault\nUne maison à usage d'habitation\nindividuelle, comprenant : Au rez-de-chaussée : cuisine, chambre, salle d'eau avec [...]\nMise à prix :\n38 000 €",
+    "source_blocks": {
+      "departement": "86",
+      "ville": "Châtellerault",
+      "titre": "Une maison à usage d'habitation",
+      "description": "individuelle, comprenant : Au rez-de-chaussée : cuisine, chambre, salle d'eau avec [...]",
+      "mise_a_prix": "38 000 €",
+      "date_vente": "38 000 €",
+      "page_text": "86\nChâtellerault\nUne maison à usage d'habitation\nindividuelle, comprenant : Au rez-de-chaussée : cuisine, chambre, salle d'eau avec [...]\nMise à prix :\n38 000 €",
+      "lots_publics": "86\nChâtellerault\nUne maison à usage d'habitation\nindividuelle, comprenant : Au rez-de-chaussée : cuisine, chambre, salle d'eau avec [...]\nMise à prix :\n38 000 €"
+    },
+    "source_lots": [
+      {
+        "raw_text": "86\nChâtellerault\nUne maison à usage d'habitation\nindividuelle, comprenant : Au rez-de-chaussée : cuisine, chambre, salle d'eau avec [...]\nMise à prix :\n38 000 €",
+        "title": "Une maison à usage d'habitation",
+        "starting_price_eur": "38 000 €"
+      }
+    ]
+  }
+]

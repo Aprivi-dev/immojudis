@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -11,7 +12,6 @@ from bs4 import BeautifulSoup
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
 from src.normalize import (
-    SURFACE_VALUE_PATTERN,
     clean_text,
     extract_department,
     has_rented_occupancy_signal,
@@ -28,6 +28,12 @@ from src.sources.common import (
     parse_html,
 )
 from src.sources.image_candidates import html_image_candidates
+from src.sources.source_features import cadastral_to_m2 as _cadastral_to_m2
+from src.sources.source_features import extract_parking_count as _extract_parking_count
+from src.sources.source_features import extract_qualified_surface as _extract_qualified_surface_impl
+from src.sources.source_features import extract_rooms_count as _extract_rooms_count
+from src.sources.source_features import is_mixed_property as _is_mixed_property
+from src.sources.source_features import normalize_document_text as _normalize_document_text
 
 BASE_URL = "https://www.licitor.com"
 ALLOWED_ORIGINS = (BASE_URL, "https://licitor.com")
@@ -172,6 +178,11 @@ def scrape_licitor_aquitaine_result(max_pages: int | None = None, fetch_details:
             raw_sales.append(summary)
             continue
         sale = parse_licitor_detail_html(detail_html, detail_url)
+        # The detail page is authoritative for its own fields, but some
+        # catalogue facts (in particular the department) are not repeated on
+        # the detail page. Preserve those facts field by field instead of
+        # replacing the complete list record with a sparse detail record.
+        _merge_listing_fallback_fields(sale, summary)
         if (sale.get('title') or sale.get('description')) and any(
             sale.get(key) for key in ('address', 'city', 'starting_price_eur', 'surface_m2', 'documents')
         ):
@@ -350,10 +361,10 @@ def _collect_detail_urls(client: LicitorClient, max_pages: int, errors: list[str
     detail_urls: list[str] = []
 
     for start_url in _start_urls_for_target_departments():
-        pending = [start_url]
+        pending = deque([start_url])
         visited: set[str] = set()
         while pending and len(visited) < max_pages:
-            page_url = pending.pop(0)
+            page_url = pending.popleft()
             if page_url in visited:
                 continue
             visited.add(page_url)
@@ -376,10 +387,10 @@ def _collect_list_sales(client: LicitorClient, max_pages: int, errors: list[str]
     client.catalogue_evidence = CatalogueEvidence("licitor")
     by_url: dict[str, dict[str, Any]] = {}
     for start_url in _start_urls_for_target_departments():
-        pending = [start_url]
+        pending = deque([start_url])
         visited: set[str] = set()
         while pending and len(visited) < max_pages:
-            page_url = pending.pop(0)
+            page_url = pending.popleft()
             if page_url in visited:
                 continue
             visited.add(page_url)
@@ -417,6 +428,13 @@ def _merge_listing_lots(target: dict[str, Any], incoming: dict[str, Any]) -> Non
     target.setdefault("source_blocks", {})["lots_publics"] = target["raw_text"]
 
 
+def _merge_listing_fallback_fields(target: dict[str, Any], listing: dict[str, Any]) -> None:
+    """Keep catalogue fields missing from a richer Licitor detail record."""
+    for key in ("department", "city", "address", "postal_code", "title", "starting_price_eur"):
+        if not target.get(key) and listing.get(key):
+            target[key] = listing[key]
+
+
 def _start_urls_for_target_departments() -> tuple[str, ...]:
     aquitaine = {"24", "33", "40", "47", "64"}
     if set(TARGET_DEPARTMENTS).issubset(aquitaine):
@@ -449,7 +467,7 @@ def _parse_list_sale(source_url: str, raw_text: str) -> dict[str, Any] | None:
     city = lines[department_index + 1] if department_index >= 0 and department_index + 1 < len(lines) else None
     title = lines[department_index + 2] if department_index >= 0 and department_index + 2 < len(lines) else None
     price = _list_value_after(lines, r"Mise à prix")
-    sale_date = lines[-1] if lines else None
+    sale_date = _extract_list_sale_date(lines)
     description_lines = []
     if department_index >= 0:
         for line in lines[department_index + 3 :]:
@@ -499,6 +517,30 @@ def _list_value_after(lines: list[str], label_pattern: str) -> str | None:
             return clean_text(inline_value)
         if index + 1 < len(lines):
             return clean_text(lines[index + 1])
+    return None
+
+
+def _extract_list_sale_date(lines: list[str]) -> str | None:
+    """Extract a date only when the card labels it as a sale date.
+
+    Licitor cards end with a publishing date in some layouts and with the
+    price in others. A positional ``lines[-1]`` fallback therefore turns a
+    price into ``sale_date``. The catalogue has no reliable sale date unless
+    it explicitly labels one, so an unlabeled date is deliberately ignored.
+    """
+    for index, line in enumerate(lines):
+        if not re.match(r"^(?:date\s+de\s+la\s+vente|vente)\b", line, re.I):
+            continue
+        candidate = re.sub(r"^(?:date\s+de\s+la\s+vente|vente)\s*:?[\s-]*", "", line, flags=re.I)
+        if not candidate and index + 1 < len(lines):
+            candidate = lines[index + 1]
+        if candidate and re.search(
+            r"\b(?:\d{1,2}|1er)\s+(?:janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|"
+            r"septembre|octobre|novembre|décembre|decembre)\s+20\d{2}\b",
+            candidate,
+            re.I,
+        ):
+            return clean_text(candidate)
     return None
 
 
@@ -560,6 +602,7 @@ def _extract_department(raw_text: str) -> str | None:
         "lot-et-garonne": "47",
         "pyrenees-atlantiques": "64",
         "pyrénées-atlantiques": "64",
+        "vienne": "86",
     }
     lowered = raw_text.lower()
     for name, code in department_names.items():
@@ -583,13 +626,25 @@ def _extract_postal_code(soup: BeautifulSoup, raw_text: str, city: str | None = 
         arrondissement_postal_code = _postal_code_from_arrondissement(h1.get_text(" ", strip=True))
         if arrondissement_postal_code:
             return arrondissement_postal_code
-    match = _postal_code_near_city(raw_text, city)
+    # A structured property location is authoritative even when it has no
+    # postcode. Searching the whole page after that point would pick up the
+    # lawyer's Cedex address (for example 86002 Poitiers).
+    if location:
+        return None
+    property_text = _property_text_before_contact(raw_text)
+    match = _postal_code_near_city(property_text, city)
     if match:
         return match
     if city:
         return None
-    match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b", raw_text)
+    match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b", property_text)
     return match.group(1) if match else None
+
+
+def _property_text_before_contact(raw_text: str) -> str:
+    """Limit unstructured fallback parsing to the property section."""
+    match = re.search(r"\n\s*(?:Ma[îi]tre|Avocat|Cabinet|Notaire)\b", raw_text, re.I)
+    return raw_text[: match.start()] if match else raw_text
 
 
 def _postal_code_near_city(raw_text: str, city: str | None) -> str | None:
@@ -651,27 +706,6 @@ def _extract_property_type(title: str | None, detail_text: str | None) -> str | 
     if _is_mixed_property(text):
         return "mixed"
     return clean_text(title)
-
-
-def _is_mixed_property(text: str | None) -> bool:
-    value = clean_text(text) or ""
-    if not value:
-        return False
-    residential = re.search(r"\b(?:habitation|habitations|logement|logements|appartement|maison)\b", value, re.I)
-    commercial = re.search(
-        r"\b(?:commerce|commercial(?:e|es)?|bureaux|local(?:ux)?|industriel(?:le|les)?|centre\s+[ée]questre)\b",
-        value,
-        re.I,
-    )
-    if not (residential and commercial):
-        return False
-    return bool(
-        re.search(
-            r"\b(?:usage\s+mixte|mixte|partie\s+[àa]\s+usage|ensemble\s+immobilier|b[âa]timent|immeuble)\b",
-            value,
-            re.I,
-        )
-    )
 
 
 def _extract_occupancy_status(raw_text: str) -> str | None:
@@ -806,24 +840,6 @@ def _looks_like_document_link(href: str, label: str | None) -> bool:
     )
 
 
-def _normalize_document_text(value: str | None) -> str:
-    text = clean_text(value) or ""
-    return (
-        text.lower()
-        .replace("é", "e")
-        .replace("è", "e")
-        .replace("ê", "e")
-        .replace("à", "a")
-        .replace("â", "a")
-        .replace("î", "i")
-        .replace("ï", "i")
-        .replace("ô", "o")
-        .replace("û", "u")
-        .replace("ù", "u")
-        .replace("ç", "c")
-    )
-
-
 def _extract_images(soup: BeautifulSoup, source_url: str) -> list[str]:
     images: list[str] = []
     for selector in ("meta[property='og:image']", "meta[name='twitter:image']", ".LegalAd img"):
@@ -863,29 +879,7 @@ def _extract_surface_m2(text: str) -> str | None:
 
 
 def _extract_qualified_surface(text: str | None, kind: str) -> str | None:
-    value = clean_text(text) or ""
-    if not value:
-        return None
-    number = rf"{SURFACE_VALUE_PATTERN}\s*(?:m\s*(?:²|2)|²)\b"
-    if kind == "carrez":
-        patterns = (
-            rf"\b{number}\s*(?:de\s+)?(?:surface\s+)?loi\s+carrez\b",
-            rf"(?:surface\s+)?loi\s+carrez(?:\s+(?:totale|privative))?\s*(?:-|:|de)?\s*{number}",
-        )
-    elif kind == "habitable":
-        patterns = (
-            rf"\b(?:surface|superficie)\s+habitable(?:\s+totale)?\s*(?:est\s+)?(?:de|:)\s*{number}",
-            rf"\b{number}\s*(?:de\s+)?surface\s+habitable\b",
-        )
-    else:
-        return None
-    candidates = [
-        normalize_surface_number(match.group(1))
-        for pattern in patterns
-        for match in re.finditer(pattern, value, re.I)
-    ]
-    candidates = [candidate for candidate in candidates if candidate]
-    return candidates[0] if len(candidates) == 1 else None
+    return _extract_qualified_surface_impl(text, kind, normalize_surface_number)
 
 
 def _extract_land_surface_m2(text: str | None) -> str | None:
@@ -925,116 +919,6 @@ def _extract_land_surface_m2(text: str | None) -> str | None:
     return candidates[0]
 
 
-def _cadastral_to_m2(match: re.Match[str]) -> str | None:
-    hectares = int(match.group(1) or 0)
-    ares = int(match.group(2) or 0)
-    centiares = int(match.group(3))
-    return str(hectares * 10000 + ares * 100 + centiares)
-
-
-_ROOM_COUNT_WORDS = {
-    "un": 1,
-    "une": 1,
-    "deux": 2,
-    "trois": 3,
-    "quatre": 4,
-    "cinq": 5,
-    "six": 6,
-    "sept": 7,
-    "huit": 8,
-    "neuf": 9,
-    "dix": 10,
-}
-
-
-def _parse_room_count(value: str) -> int | None:
-    token = value.lower().strip()
-    if token.isdigit():
-        count = int(token)
-        return count if count > 0 else None
-    return _ROOM_COUNT_WORDS.get(token)
-
-
-def _extract_rooms_count(text: str | None, title: str | None = None) -> int | None:
-    detail = clean_text(text) or ""
-    heading = clean_text(title) or ""
-    if not detail and not heading:
-        return None
-
-    direct_title = re.search(r"\b(?:appartement|maison|studio)\b[^.]{0,40}?\b(?:de\s+type\s*)?T?([1-9])\b", heading, re.I)
-    if direct_title:
-        return int(direct_title.group(1))
-
-    combined = " ".join(part for part in (heading, detail) if part)
-    if re.search(
-        r"\b(?:vente\s+en\s+\d+\s+lots?|r[ée]union\s+des\s+lots?|ensemble\s+immobilier|plusieurs\s+(?:appartements?|maisons?|logements?))\b",
-        combined,
-        re.I,
-    ) or len(re.findall(r"\blots?\s*(?:n[°o.]?\s*)?\d+\b", combined, re.I)) >= 2:
-        return None
-
-    qualified_type = re.search(
-        r"\b(?:appartement|maison|studio)\b[^.]{0,100}?\b(?:de\s+type\s*)?T?([1-9])\b",
-        detail,
-        re.I,
-    )
-    if qualified_type:
-        return int(qualified_type.group(1))
-
-    piece_matches = [
-        _parse_room_count(match.group(1))
-        for match in re.finditer(
-            r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+pi[eè]ces?\s+principales?\b",
-            detail,
-            re.I,
-        )
-    ]
-    piece_matches.extend(
-        _parse_room_count(match.group(1))
-        for match in re.finditer(
-            r"\b(?:appartement|maison|villa)\s+(?:de\s+)?([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+pi[eè]ces?\b",
-            detail,
-            re.I,
-        )
-    )
-    unique_pieces = {value for value in piece_matches if value}
-    if len(unique_pieces) == 1:
-        return next(iter(unique_pieces))
-    if len(unique_pieces) > 1:
-        return None
-
-    if len(re.findall(r"\bpi[eè]ce\s+principale\b", detail, re.I)) == 1 and not re.search(
-        r"\b(?:chambres?|\d+\s+pi[eè]ces?)\b", detail, re.I
-    ):
-        return 1
-    return None
-
-
-def _extract_parking_count(text: str | None) -> int | None:
-    detail = clean_text(text) or ""
-    if not detail:
-        return None
-    token = r"[1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix"
-    patterns = (
-        rf"\b({token})\s+(?:emplacements?|places?)\s+(?:de\s+)?(?:parking|stationnement)\b",
-        rf"\b({token})\s+(?:parkings?|stationnements?)\b",
-        rf"\b(?:parking|stationnement)\s*:\s*({token})\b",
-    )
-    values = [
-        _parse_room_count(match.group(1))
-        for pattern in patterns
-        for match in re.finditer(pattern, detail, re.I)
-    ]
-    values = [value for value in values if value is not None]
-    if len(values) == 1:
-        return values[0]
-    if len(values) > 1:
-        return None
-    if re.search(r"\b(?:visiteur|public|proximit[ée]|proche)\b", detail, re.I):
-        return None
-    if len(re.findall(r"\b(?:parking|stationnement|box|garage)\b", detail, re.I)) == 1:
-        return 1
-    return None
 
 
 def _extract_after(text: str, pattern: str) -> str | None:

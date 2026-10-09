@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup, Tag
 from src import source_checkpoint
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
+from src.extraction_profiles import attach_source_property_features as _attach_source_property_features
 from src.normalize import clean_text, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
@@ -52,6 +53,11 @@ DETAIL_FIELDS = {
     "source_blocks",
     "raw_image_url",
     "source_images",
+    "source_property_features",
+    "source_property_feature_evidence",
+    "source_property_features_meta",
+    "source_procedure_profile",
+    "source_field_observations",
 }
 SOURCE_BUDGET_ENV = "PETITES_AFFICHES_SOURCE_BUDGET_SECONDS"
 CURSOR_SCHEMA = "petites_affiches_cursor_v1"
@@ -379,7 +385,9 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
     tribunal = _node_text(card.select_one(".lieuVente strong"))
     city = _node_text(card.select_one(".lot-adresse"))
 
-    return {
+    return _attach_source_property_features({
+        # The card is a public source record too; retaining its observations
+        # lets a restricted detail page remain measurable.
         "source_name": "petites_affiches",
         "source_url": source_url,
         "external_id": _external_id(card, source_url),
@@ -391,7 +399,11 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
         "starting_price_eur": _node_text(card.select_one(".miseAPrix strong")),
         "sale_date": _node_text(card.select_one(".dateVente strong")),
         "surface_m2": extract_surface(raw_text),
-        "postal_code": _extract_postal(raw_text),
+        # The card text starts with the starting price.  Searching that whole
+        # text for five digits turns ``50 000 €`` into the property's postal
+        # code.  Only accept a code in a location-bearing node, immediately
+        # followed by a locality token.
+        "postal_code": _extract_card_postal(card),
         "lawyer_name": _extract_lawyer(raw_text),
         "tribunal": tribunal,
         "status": "upcoming",
@@ -400,7 +412,7 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
         "raw_image_url": image_url,
         "source_images": [image_url] if image_url else [],
         "source_blocks": {"reference": reference, "type_vente": _node_text(card.select_one(".typeVente strong"))},
-    }
+    })
 
 
 def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, Any]:
@@ -439,7 +451,7 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
         f"Visites: {' | '.join(visit_dates)}" if visit_dates else None,
         f"Documents: {'; '.join(document['label'] for document in documents)}" if documents else None,
     ]
-    return {
+    return _attach_source_property_features({
         "source_name": "petites_affiches",
         "source_url": source_url,
         "title": title,
@@ -483,7 +495,7 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
             }.items()
             if value
         },
-    }
+    })
 
 
 def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> None:
@@ -538,6 +550,7 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
             sale[key] = f"{sale['raw_text']}\n{value}"
         elif key == "city" or not sale.get(key):
             sale[key] = value
+    _attach_source_property_features(sale)
 
 
 def _title_reference_type(text: str) -> tuple[str | None, str | None, str | None]:
@@ -699,11 +712,32 @@ def _extract_price(text: str) -> str | None:
 
 
 def _extract_postal(text: str) -> str | None:
-    match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b", text)
+    match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b(?=\s+[A-Za-zÀ-ÿ])", text)
     if match:
         return match.group(1)
-    spaced = re.search(r"(?<!\d)(\d{2})\s+(\d{3})(?!\d)", text)
+    spaced = re.search(r"(?<!\d)(\d{2})\s+(\d{3})(?=\s+[A-Za-zÀ-ÿ])", text)
     return f"{spaced.group(1)}{spaced.group(2)}" if spaced else None
+
+
+def _extract_card_postal(card: Tag) -> str | None:
+    """Extract a card postal code from location context, never from its price.
+
+    Petites Affiches puts ``Mise à Prix`` before the lot fields in the card's
+    flattened text.  A postal code is accepted only from address-like nodes or
+    an informational node containing ``postal + locality``.  This keeps the
+    extractor generic and avoids maintaining a city/postal lookup table.
+    """
+    candidates: list[str] = []
+    for selector in (".lot-adresse", ".adresse", ".infos", "[class*='adresse']"):
+        for node in card.select(selector):
+            text = _node_text(node)
+            if text and text not in candidates:
+                candidates.append(text)
+    for text in candidates:
+        postal = _extract_postal(text)
+        if postal:
+            return postal
+    return None
 
 
 def _extract_lawyer(text: str) -> str | None:

@@ -48,7 +48,17 @@ def classify_document_type(label: str | None, url: str | None = None) -> str:
         )
     ):
         return "cahier_conditions_vente"
-    if "conditions de vente" in text or "conditions_de_vente" in text:
+    if any(
+        pattern in text
+        for pattern in (
+            "conditions de vente",
+            "conditions_de_vente",
+            "reglement de vente",
+            "reglement_de_vente",
+            "reglement des ventes",
+            "reglement vente",
+        )
+    ):
         return "conditions_vente"
     if any(pattern in text for pattern in ("pv notaire", "notaire", "notarié", "notarie")):
         return "pv_notaire"

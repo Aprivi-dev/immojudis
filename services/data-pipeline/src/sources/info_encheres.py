@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 
 from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import TARGET_DEPARTMENTS, load_settings
+from src.extraction_profiles import attach_source_property_features as _attach_source_property_features
 from src.normalize import (
     LATIN_LETTERS_PATTERN,
     SURFACE_VALUE_PATTERN,
@@ -31,6 +32,9 @@ from src.sources.common import (
 )
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
+from src.sources.source_features import merge_documents as _merge_documents
+from src.sources.source_features import merge_text_values as _merge_text_values
+from src.sources.source_features import normalize_document_text as _normalize_document_text
 
 BASE_URL = "https://www.info-encheres.com"
 LIST_URL = f"{BASE_URL}/vente-encheres-immobilieres-annonces.html"
@@ -44,6 +48,9 @@ DETAIL_OVERRIDE_FIELDS = {
     "surface_m2",
     "habitable_surface_m2",
     "land_surface_m2",
+    "surface_scope",
+    "surface_source",
+    "surface_evidence",
     "rooms_count",
     "parking_count",
     "starting_price_eur",
@@ -58,6 +65,11 @@ DETAIL_OVERRIDE_FIELDS = {
     "raw_text",
     "raw_image_url",
     "source_images",
+    "source_property_features",
+    "source_property_feature_evidence",
+    "source_property_features_meta",
+    "source_procedure_profile",
+    "source_field_observations",
 }
 
 
@@ -154,7 +166,7 @@ def parse_info_encheres_list_html(html: str, page_url: str = LIST_URL) -> list[d
             )
         )
         sales.append(
-            {
+            _attach_source_property_features({
                 "source_name": "info_encheres",
                 "source_url": source_url,
                 "external_id": cells[0],
@@ -168,7 +180,7 @@ def parse_info_encheres_list_html(html: str, page_url: str = LIST_URL) -> list[d
                 "status": "unknown",
                 "documents": [],
                 "raw_text": raw_text,
-            }
+            })
         )
     return sales
 
@@ -199,10 +211,24 @@ def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any
         detail_surface=details.get("superficie"),
     )
     land_surface_m2 = _extract_land_surface(description)
+    explicit_total_surface_m2, explicit_total_surface_evidence = _extract_explicit_total_surface(
+        description,
+        page_text,
+    )
+    if explicit_total_surface_m2:
+        surface_m2 = explicit_total_surface_m2
+        surface_scope = "total"
+        surface_source = "source_text"
+        surface_evidence = explicit_total_surface_evidence
+    else:
+        surface_m2 = extract_surface(description, page_text, exclude=_is_cadastral_surface_match)
+        surface_scope = None
+        surface_source = None
+        surface_evidence = None
     rooms_count = _extract_rooms_count(description)
     parking_count = _extract_parking_count(description)
 
-    return {
+    return _attach_source_property_features({
         "source_name": "info_encheres",
         "source_url": source_url,
         "external_id": details.get("reference") or _extract_after(page_text, r"\bref[ée]rence\s*:?\s*(\d+)"),
@@ -213,9 +239,12 @@ def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any
         "property_type": property_type,
         "title": title,
         "description": description,
-        "surface_m2": extract_surface(description, page_text, exclude=_is_cadastral_surface_match),
+        "surface_m2": surface_m2,
         "habitable_surface_m2": habitable_surface_m2,
         "land_surface_m2": land_surface_m2,
+        "surface_scope": surface_scope,
+        "surface_source": surface_source,
+        "surface_evidence": surface_evidence,
         "rooms_count": rooms_count,
         "parking_count": parking_count,
         "starting_price_eur": details.get("mise a prix") or details.get("mise à prix"),
@@ -232,7 +261,7 @@ def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any
         "source_blocks": source_blocks,
         "raw_image_url": source_images[0] if source_images else None,
         "source_images": source_images,
-    }
+    })
 
 
 def _sale_date_with_audience_time(date_text: str | None, text: str) -> str | None:
@@ -278,6 +307,7 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
             sale[key] = value
         elif not sale.get(key):
             sale[key] = value
+    _attach_source_property_features(sale)
 
 
 def _extract_key_values(soup: BeautifulSoup) -> dict[str, str]:
@@ -428,6 +458,31 @@ def _looks_like_property_image(url: str) -> bool:
     if not re.search(r"\.(?:jpe?g|png|webp)(?:\?|$)", text):
         return False
     return not re.search(r"\b(?:logo|favicon|sprite|icon|picto|placeholder|avatar|loader)\b", text)
+
+
+def _extract_explicit_total_surface(*values: object) -> tuple[str | None, str | None]:
+    """Prefer a qualified built/Carrez total over a room measurement.
+
+    Info Enchères pages often list a room first (for example ``séjour de
+    24,10 m²``) and publish the lot total later in the same description.  The
+    total is the value suitable for the canonical listing surface; the quote
+    remains available as evidence.
+    """
+
+    number = rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b"
+    patterns = (
+        rf"\b(?:surface|superficie)\s+(?:(?:privative|habitable)\s+)?(?:(?:loi\s+carrez)\s+)?totale\s*(?:de|:|est)?\s*{number}",
+        rf"\b(?:surface|superficie)\s+totale\s+(?:b[âa]tie\s+)?(?:de|:|est)?\s*{number}",
+    )
+    for value in values:
+        text = str(value or "")
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if not match or _is_cadastral_surface_match(text, match.start(), match.end()):
+                continue
+            quote = text[max(0, match.start() - 100) : min(len(text), match.end() + 100)].strip()
+            return normalize_surface_number(match.group(1)), quote
+    return None, None
 
 
 def _is_cadastral_surface_match(text: str, start: int, end: int) -> bool:
@@ -678,53 +733,6 @@ def _document_type(label: str, href: str) -> str:
     if "cahier" in searchable:
         return "cahier_conditions"
     return "pdf"
-
-
-def _normalize_document_text(value: str | None) -> str:
-    text = clean_text(value) or ""
-    return (
-        text.lower()
-        .replace("é", "e")
-        .replace("è", "e")
-        .replace("ê", "e")
-        .replace("à", "a")
-        .replace("â", "a")
-        .replace("î", "i")
-        .replace("ï", "i")
-        .replace("ô", "o")
-        .replace("û", "u")
-        .replace("ù", "u")
-        .replace("ç", "c")
-    )
-
-
-def _merge_documents(existing: object, incoming: list[dict[str, str]]) -> list[dict[str, str]]:
-    documents = existing if isinstance(existing, list) else []
-    by_url: dict[str, dict[str, str]] = {}
-    for document in [*documents, *incoming]:
-        if isinstance(document, dict) and document.get("url"):
-            by_url[str(document["url"])] = {
-                "label": str(document.get("label") or "document"),
-                "url": str(document["url"]),
-                "type": str(document.get("type") or "pdf"),
-            }
-    return list(by_url.values())
-
-
-def _merge_text_values(existing: object, incoming: object) -> list[str]:
-    values: list[str] = []
-    for item in [*_as_text_list(existing), *_as_text_list(incoming)]:
-        if item not in values:
-            values.append(item)
-    return values
-
-
-def _as_text_list(value: object) -> list[str]:
-    if isinstance(value, str):
-        return [value] if _text(value) else []
-    if not isinstance(value, list):
-        return []
-    return [text for item in value if (text := _text(item))]
 
 
 def _extract_meta(soup: BeautifulSoup, name: str) -> str | None:

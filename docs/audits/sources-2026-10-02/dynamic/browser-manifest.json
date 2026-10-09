@@ -1,0 +1,32 @@
+[
+  {
+    "id": "cessions-39823-saint-junien",
+    "source": "cessions_etat",
+    "url": "https://cessions.immobilier-etat.gouv.fr/biens/parcelle-br-ndeg104-saint-junien-87200"
+  },
+  {
+    "id": "cessions-39632-bordeaux",
+    "source": "cessions_etat",
+    "url": "https://cessions.immobilier-etat.gouv.fr/biens/vendre-hyper-centre-ville-de-bordeaux"
+  },
+  {
+    "id": "notaires-2083008-arcachon",
+    "source": "notaires",
+    "url": "https://www.immobilier.notaires.fr/pub-services/inotr-www-annonces/v1/annonces/2083008"
+  },
+  {
+    "id": "notaires-2074289-bordeaux",
+    "source": "notaires",
+    "url": "https://www.immobilier.notaires.fr/pub-services/inotr-www-annonces/v1/annonces/2074289"
+  },
+  {
+    "id": "encheres-immobilieres-9486-reference",
+    "source": "encheres_immobilieres",
+    "url": "https://encheresimmobilieres.fr/ventes/9486-une-maison-elevee-dun-rez-de-chaussee-a-gignac-la-nerthe-13"
+  },
+  {
+    "id": "encheres-immobilieres-9354-reference",
+    "source": "encheres_immobilieres",
+    "url": "https://encheresimmobilieres.fr/ventes/9354-un-appartement-de-type-3-au-1er-etage-avec-balcon-place-de-parking-garag"
+  }
+]

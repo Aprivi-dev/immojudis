@@ -1,0 +1,18 @@
+[
+  {
+    "viewport": "desktop",
+    "criteria": 130,
+    "state_labels": 130,
+    "horizontal_overflow": false,
+    "blocking_errors": [],
+    "nonblocking_map_request_cancellations": 1
+  },
+  {
+    "viewport": "mobile",
+    "criteria": 130,
+    "state_labels": 130,
+    "horizontal_overflow": false,
+    "blocking_errors": [],
+    "nonblocking_map_request_cancellations": 0
+  }
+]

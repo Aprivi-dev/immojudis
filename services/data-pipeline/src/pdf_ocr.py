@@ -15,6 +15,27 @@ import fitz
 from src.normalize import clean_text
 
 LOGGER = logging.getLogger(__name__)
+DOCUMENT_LOGGER = logging.getLogger("src.pdf_enrichment")
+
+_PDF_DOCUMENT_LOG_TYPES = frozenset(
+    {
+        "pdf",
+        "doc",
+        "docx",
+        "pv_huissier",
+        "pv_notaire",
+        "proces_verbal",
+        "diagnostics_techniques",
+        "cahier_conditions_vente",
+        "conditions_vente",
+        "annonce_vente",
+        "bail",
+        "procedure_saisie",
+        "cadastre",
+        "other",
+        "unknown",
+    }
+)
 
 _PDF_DOCUMENT_OCR_DEADLINE: ContextVar[float | None] = ContextVar(
     "pdf_document_ocr_deadline",
@@ -58,7 +79,11 @@ def pdf_document_ocr_budget_scope(budget_seconds: float | None):
         return
     deadline = time.monotonic() + float(budget_seconds)
     current_deadline = _PDF_DOCUMENT_OCR_DEADLINE.get()
-    effective_deadline = min(current_deadline, deadline) if current_deadline is not None else deadline
+    effective_deadline = (
+        min(current_deadline, deadline)
+        if current_deadline is not None
+        else deadline
+    )
     token = _PDF_DOCUMENT_OCR_DEADLINE.set(effective_deadline)
     try:
         yield
@@ -68,7 +93,9 @@ def pdf_document_ocr_budget_scope(budget_seconds: float | None):
 
 def pdf_document_ocr_budget_remaining() -> float | None:
     deadline = _PDF_DOCUMENT_OCR_DEADLINE.get()
-    return None if deadline is None else deadline - time.monotonic()
+    if deadline is None:
+        return None
+    return deadline - time.monotonic()
 
 
 def pdf_ocr_document_budget_seconds(settings: dict[str, object]) -> float:
@@ -100,6 +127,96 @@ def ensure_pdf_document_ocr_budget(
     return remaining
 
 
+def log_pdf_document_transition(
+    document: dict[str, object],
+    *,
+    status: str,
+    started_at: float,
+    pages: int | None = None,
+    error_type: str | None = None,
+) -> None:
+    """Emit bounded document timing without URLs, text, or provider payloads."""
+
+    raw_document_type = str(document.get("document_type") or document.get("type") or "").strip().casefold()
+    document_type = raw_document_type if raw_document_type in _PDF_DOCUMENT_LOG_TYPES else "unknown"
+    DOCUMENT_LOGGER.info(
+        "PDF document transition: document_type=%s status=%s elapsed_seconds=%.1f "
+        "pages=%s error_type=%s",
+        document_type,
+        status,
+        max(time.monotonic() - started_at, 0.0),
+        pages if pages is not None else "unknown",
+        error_type or "none",
+    )
+
+
+def select_pdf_deadline_exception(
+    message: str,
+    *,
+    worker_remaining: float | None,
+    **kwargs: int,
+) -> BaseException:
+    """Choose the worker or document cutoff after an interruptible OCR timeout."""
+
+    if worker_remaining is None or worker_remaining > 0:
+        document_remaining = pdf_document_ocr_budget_remaining()
+        if document_remaining is not None and document_remaining <= 0:
+            return PdfDocumentOcrBudgetExceeded(
+                message.replace("bounded deadline", "OCR document budget"),
+                **kwargs,
+            )
+    return PdfDeadlineExceeded(message, **kwargs)
+
+
+def ensure_pdf_ocr_deadline(
+    *,
+    worker_deadline: Callable[..., float | None],
+    operation: str,
+    checkpointed_pages: int = 0,
+    total_pages: int = 0,
+    new_progress_pages: int = 0,
+) -> float | None:
+    """Apply the worker and per-document OCR cutoffs to one OCR step."""
+
+    worker_remaining = worker_deadline(
+        operation=operation,
+        checkpointed_pages=checkpointed_pages,
+        total_pages=total_pages,
+        new_progress_pages=new_progress_pages,
+    )
+    document_remaining = ensure_pdf_document_ocr_budget(
+        operation=operation,
+        checkpointed_pages=checkpointed_pages,
+        total_pages=total_pages,
+        new_progress_pages=new_progress_pages,
+    )
+    remaining_values = [value for value in (worker_remaining, document_remaining) if value is not None]
+    return min(remaining_values) if remaining_values else None
+
+
+def deadline_bounded_timeout(
+    timeout_seconds: float,
+    *,
+    ensure_deadline: Callable[..., float | None],
+    operation: str,
+    checkpointed_pages: int = 0,
+    total_pages: int = 0,
+    new_progress_pages: int = 0,
+) -> tuple[float, bool]:
+    """Recompute a subprocess or HTTP timeout after preparation work."""
+
+    requested_timeout = max(0.001, float(timeout_seconds))
+    remaining = ensure_deadline(
+        operation=operation,
+        checkpointed_pages=checkpointed_pages,
+        total_pages=total_pages,
+        new_progress_pages=new_progress_pages,
+    )
+    if remaining is None:
+        return requested_timeout, False
+    return max(0.001, min(requested_timeout, remaining)), remaining <= requested_timeout
+
+
 def extract_page_text_with_ocr_result(
     page: fitz.Page,
     fallback: str,
@@ -116,7 +233,6 @@ def extract_page_text_with_ocr_result(
     new_progress_pages: int = 0,
 ) -> dict[str, object]:
     """Run bounded OCR while keeping the enrichment module's deadline contract."""
-
     tessdata = settings.get("pdf_ocr_tessdata")
     deadline_error_types = (deadline_exception, *deadline_exceptions)
     remaining = ensure_deadline(
@@ -126,6 +242,8 @@ def extract_page_text_with_ocr_result(
         new_progress_pages=new_progress_pages,
     )
     if remaining is not None:
+        # PyMuPDF's native OCR call has no timeout. During a bounded queue pass
+        # use the interruptible tesseract subprocess instead.
         return _extract_page_text_with_tesseract_result(
             page,
             fallback=fallback,
@@ -145,8 +263,10 @@ def extract_page_text_with_ocr_result(
     try:
         text_page = page.get_textpage_ocr(
             language=str(settings["pdf_ocr_language"]),
-            # Preserve the public page's native text layer on mixed pages.
-            full=True,
+            # Preserve the native text layer on mixed pages and OCR only the
+            # image regions. ``full=True`` recreates the entire page and can
+            # discard or duplicate authoritative digital text.
+            full=False,
             tessdata=str(tessdata) if tessdata else None,
         )
         text = page.get_text("text", textpage=text_page)
@@ -198,7 +318,6 @@ def _extract_page_text_with_tesseract_result(
     new_progress_pages: int,
 ) -> dict[str, object]:
     deadline_bounded = False
-    deadline_error_types = (deadline_exception, *deadline_exceptions)
     try:
         ensure_deadline(
             operation="rendering OCR page",
@@ -241,8 +360,14 @@ def _extract_page_text_with_tesseract_result(
                 new_progress_pages=new_progress_pages,
             )
             if result.returncode == 0 and clean_text(result.stdout):
+                # The interruptible fallback OCRs a raster of the whole page.
+                # Keep the native layer as well so a mixed page does not lose
+                # its digital header/footer or structured labels.
+                text = "\n".join(
+                    part for part in (clean_text(fallback), clean_text(result.stdout)) if part
+                )
                 return {
-                    "text": result.stdout,
+                    "text": text,
                     "method": "ocr_tesseract",
                     "confidence": page_text_confidence(result.stdout, method="ocr_tesseract"),
                     "status": "extracted",
@@ -265,7 +390,7 @@ def _extract_page_text_with_tesseract_result(
             new_progress_pages=new_progress_pages,
         )
         LOGGER.debug("Tesseract OCR timed out after %.1fs", timeout)
-    except deadline_error_types:
+    except (deadline_exception, *deadline_exceptions):
         raise
     except Exception as exc:
         LOGGER.debug("Tesseract OCR fallback failed: %s", exc)

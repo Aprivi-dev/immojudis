@@ -46,6 +46,10 @@ def test_pdf_extraction_provenance_is_field_typed() -> None:
         habitable_surface_m2=90,
         carrez_surface_m2=88,
         land_surface_m2=420,
+        documents=[
+            {"url": "https://source.example/pv.pdf", "label": "PV"},
+            {"url": "https://source.example/cadastre.pdf", "label": "Cadastre"},
+        ],
         raw_payload={
             "surface_extraction": {
                 "value_m2": 90,
@@ -79,6 +83,62 @@ def test_pdf_extraction_provenance_is_field_typed() -> None:
     assert by_field["property.land_surface_m2"]["source_url"] == "https://source.example/cadastre.pdf"
 
 
+def test_document_evidence_must_match_a_current_attachment() -> None:
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://source.example/listing-with-foreign-pdf",
+        documents=[{"url": "https://source.example/current.pdf", "label": "PV actuel"}],
+        raw_payload={
+            "starting_price_extraction": {
+                "value_eur": 100000,
+                "evidence": "Mise à prix : 100 000 €",
+                "document_url": "https://other.example/foreign.pdf",
+                "page_number": 2,
+            }
+        },
+    )
+
+    assert build_fact_claim_candidates(sale) == []
+
+
+def test_document_evidence_hash_must_match_attachment_or_cache_proof() -> None:
+    document_url = "https://source.example/current.pdf"
+    attachment_hash = "a" * 64
+    proof_hash = "b" * 64
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url="https://source.example/listing-with-hashed-pdf",
+        documents=[{"url": document_url, "label": "PV actuel", "sha256": attachment_hash}],
+        raw_payload={
+            "starting_price_extraction": {
+                "value_eur": 100000,
+                "evidence": "Mise à prix : 100 000 €",
+                "document_url": document_url,
+                "document_sha256": attachment_hash,
+                "page_number": 2,
+            }
+        },
+    )
+
+    matching = build_fact_claim_candidates(sale)
+    assert len(matching) == 1
+    assert matching[0]["evidence_locator"]["hash_verified"] is True
+    assert matching[0]["evidence_locator"]["document_sha256"] == attachment_hash
+
+    sale.raw_payload["starting_price_extraction"]["document_sha256"] = proof_hash
+    assert build_fact_claim_candidates(sale) == []
+
+    # A reconstructed sale may carry the hash only in the persisted cache
+    # proof; that proof is still sufficient when the URL is a current attach.
+    sale.documents = [{"url": document_url, "label": "PV actuel"}]
+    sale.raw_payload["document_analysis"] = {
+        "cache_proof": {"documents": [{"url": document_url, "sha256": proof_hash}]}
+    }
+    matching_from_proof = build_fact_claim_candidates(sale)
+    assert len(matching_from_proof) == 1
+    assert matching_from_proof[0]["evidence_locator"]["hash_verified"] is True
+
+
 def test_missing_field_provenance_does_not_create_a_claim() -> None:
     sale = AuctionSale(
         source_name="avoventes",
@@ -90,6 +150,31 @@ def test_missing_field_provenance_does_not_create_a_claim() -> None:
     )
 
     assert build_fact_claim_candidates(sale) == []
+
+
+@pytest.mark.parametrize("include_source", [False, True])
+def test_generated_completeness_projection_is_not_independent_source_evidence(include_source: bool) -> None:
+    blocks = {
+        "listing_completeness": {
+            "source_property_features": {"surface": "Maison de 999 m²", "occupation": "Libre"},
+            "source_field_observations": {
+                "occupancy_status": {"value": "vacant", "state": "inferred", "excerpt": "Libre"},
+            },
+        },
+    }
+    if include_source:
+        blocks["surface"] = "Maison de 55 m²"
+    sale = AuctionSale(
+        source_name="info_encheres",
+        source_url="https://source.example/completeness-projection",
+        raw_payload={"source_blocks": blocks},
+    )
+
+    candidates = build_fact_claim_candidates(sale)
+
+    assert [(candidate["field_key"], candidate["value_jsonb"]) for candidate in candidates] == (
+        [("property.surface_m2", 55.0)] if include_source else []
+    )
 
 
 def test_surface_excerpt_only_claims_the_surface_kind_named_by_the_excerpt() -> None:
