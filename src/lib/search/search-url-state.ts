@@ -245,6 +245,22 @@ export function salesSearchToUrlRecord(search: SalesSearchParams): SalesSearchUr
   };
 }
 
+/**
+ * Stable identity of a search, shared by the server (first paint) and the
+ * client (React Query keys) so hydrated rows are found under the same key.
+ */
+export function stableUrlRecord(record: SalesSearchUrlRecord) {
+  return JSON.stringify(
+    Object.entries(record)
+      .filter(([, value]) => value != null && value !== "")
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+}
+
+export function salesSearchSignature(search: SalesSearchParams): string {
+  return stableUrlRecord(salesSearchToUrlRecord(search));
+}
+
 export function mergeSalesSearch(
   current: SalesSearchParams,
   patch: Partial<SalesSearchParams>,

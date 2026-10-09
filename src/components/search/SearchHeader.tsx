@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import ArrowUpDown from "lucide-react/dist/esm/icons/arrow-up-down.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
+import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import Download from "lucide-react/dist/esm/icons/download.js";
 import LayoutPanelLeft from "lucide-react/dist/esm/icons/layout-panel-left.js";
@@ -18,7 +19,18 @@ import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-s
 import type { SearchDraft } from "./search-page-state";
 
 const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => module.DateFilter), {
-  loading: () => <span className="inline-flex h-10 w-28 rounded-md border border-[#cbd5df]" />,
+  // Same box as the real trigger (label, icons, padding): the toolbar must not
+  // change width, and wrap, when the filter finishes loading.
+  loading: () => (
+    <span
+      aria-hidden
+      className="inline-flex h-10 items-center gap-2 rounded-md border border-[#cbd5df] px-3 text-sm font-medium"
+    >
+      <CalendarDays className="h-4 w-4" />
+      Date de vente
+      <ChevronDown className="h-4 w-4" />
+    </span>
+  ),
 });
 export function SearchHeader({
   draft,
@@ -473,7 +485,9 @@ export function ResultsSummary({
         Le catalogue des enchères
       </p>
       <h1 className="font-display text-[1.65rem] font-semibold leading-tight">
-        {location === "France entière" ? "Les ventes immobilières" : `Les ventes à ${location}`}
+        {location === "France entière"
+          ? "Ventes immobilières aux enchères"
+          : `Ventes immobilières aux enchères à ${location}`}
       </h1>
       <p className="mt-1 text-sm text-[#526170]">
         {isLoading
