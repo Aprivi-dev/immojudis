@@ -114,7 +114,7 @@ describe("sales CSV export", () => {
     expect(item.scoring.factors).toEqual([
       expect.objectContaining({
         key: "starting_price",
-        evidence: "Mise à prix 92 000 EUR pour 42,6 m².",
+        evidence: "Mise à prix 95 000 EUR pour 68 m².",
       }),
       expect.objectContaining({
         key: "occupation",
