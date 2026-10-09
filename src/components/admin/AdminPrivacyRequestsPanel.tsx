@@ -5,7 +5,11 @@ import Clock from "lucide-react/dist/esm/icons/clock.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useState } from "react";
 import { toast } from "sonner";
-import { fetchAdminPrivacyRequests, updateAdminPrivacyRequest } from "@/lib/client-api";
+import {
+  executeAdminContractWithdrawal,
+  fetchAdminPrivacyRequests,
+  updateAdminPrivacyRequest,
+} from "@/lib/client-api";
 import type {
   PrivacyRequestAdminSummary,
   PrivacyRequestAdminUpdate,
@@ -37,6 +41,20 @@ export function AdminPrivacyRequestsPanel() {
     onError: (mutationError) => {
       toast.error(
         mutationError instanceof Error ? mutationError.message : "Mise à jour impossible",
+      );
+    },
+  });
+  const withdrawal = useMutation({
+    mutationFn: executeAdminContractWithdrawal,
+    onSuccess: async (result) => {
+      toast.success(
+        `Rétractation exécutée : ${(result.refundedCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })} remboursés.`,
+      );
+      await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
+    },
+    onError: (mutationError) => {
+      toast.error(
+        mutationError instanceof Error ? mutationError.message : "Rétractation impossible",
       );
     },
   });
@@ -95,8 +113,9 @@ export function AdminPrivacyRequestsPanel() {
           <PrivacyRequestEditor
             key={request.id}
             request={request}
-            busy={mutation.isPending}
+            busy={mutation.isPending || withdrawal.isPending}
             onSave={(input) => mutation.mutate(input)}
+            onWithdraw={(refundMode) => withdrawal.mutate({ requestId: request.id, refundMode })}
           />
         ))}
       </div>
@@ -165,11 +184,15 @@ function PrivacyRequestEditor({
   request,
   busy,
   onSave,
+  onWithdraw,
 }: {
   request: PrivacyRequestAdminSummary;
   busy: boolean;
   onSave: (input: PrivacyRequestAdminUpdate) => void;
+  onWithdraw: (refundMode: "prorata" | "full") => void;
 }) {
+  const [withdrawalMode, setWithdrawalMode] = useState<"prorata" | "full">("prorata");
+  const [withdrawalArmed, setWithdrawalArmed] = useState(false);
   const [status, setStatus] = useState<PrivacyRequestStatus>(request.status);
   const [identityStatus, setIdentityStatus] = useState<IdentityStatus>(
     request.identityStatus as IdentityStatus,
@@ -246,6 +269,63 @@ function PrivacyRequestEditor({
           />
         </label>
       </div>
+      {request.requestType === "contract_withdrawal" &&
+      request.status !== "completed" &&
+      request.status !== "rejected" ? (
+        <div className="mt-4 rounded-lg border border-gold/25 bg-gold/5 p-3 text-xs">
+          <p className="font-semibold text-foreground">Exécuter la rétractation</p>
+          <p className="mt-1 text-muted-foreground">
+            Résilie l’abonnement Stripe immédiatement, rembourse selon le mode choisi, coupe l’accès
+            et clôt la demande.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <select
+              aria-label="Mode de remboursement"
+              value={withdrawalMode}
+              disabled={busy}
+              onChange={(event) => {
+                setWithdrawalMode(event.target.value as "prorata" | "full");
+                setWithdrawalArmed(false);
+              }}
+              className="rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs text-foreground"
+            >
+              <option value="prorata">Remboursement au prorata du service fourni</option>
+              <option value="full">Remboursement intégral</option>
+            </select>
+            {withdrawalArmed ? (
+              <>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setWithdrawalArmed(false);
+                    onWithdraw(withdrawalMode);
+                  }}
+                  className="rounded-lg bg-red-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  Confirmer : résilier et rembourser
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWithdrawalArmed(false)}
+                  className="rounded-lg border border-white/10 px-3 py-2 text-xs"
+                >
+                  Annuler
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setWithdrawalArmed(true)}
+                className="rounded-lg border border-red-400/40 px-4 py-2 text-xs font-bold text-red-700 disabled:opacity-50"
+              >
+                Résilier et rembourser
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
       <div className="mt-4 flex justify-end">
         <button
           type="button"

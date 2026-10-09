@@ -1144,6 +1144,18 @@ export async function updateAdminPrivacyRequest(
   return readJson<PrivacyRequestAdminSummary>(response);
 }
 
+export async function executeAdminContractWithdrawal(data: {
+  requestId: string;
+  refundMode: "prorata" | "full";
+}): Promise<{ refundedCents: number; subscriptionCancelled: boolean }> {
+  const response = await fetch("/api/admin/privacy-requests/withdrawal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<{ refundedCents: number; subscriptionCancelled: boolean }>(response);
+}
+
 export async function fetchAdminDashboard(): Promise<AdminDashboardData> {
   const response = await fetch("/api/admin/dashboard", {
     signal: AbortSignal.timeout(30_000),
