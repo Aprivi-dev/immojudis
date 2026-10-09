@@ -15,6 +15,7 @@ from psycopg.types.json import Jsonb
 
 from src.config import load_settings
 from src.run_finalizer import register_run
+from src.source_health import SOURCE_WARNING_EXIT_CODE
 from src.storage.supabase_client import _postgres_connect
 
 INVENTORY_CADENCE = timedelta(hours=6)
@@ -378,10 +379,18 @@ def execute(run_id: str) -> int:
     except Exception as exc:
         code, failure = 1, str(exc)[:1000]
     worker_code = code
+    # Exit 2 from src.main means "published, but an enabled source was empty or
+    # failed": the run itself succeeded, so keep it succeeded and hand the
+    # warning to the workflow instead of recording a worker failure.
+    source_warning = source != 'enrichment-queue' and code == SOURCE_WARNING_EXIT_CODE
+    if source_warning:
+        code = worker_code = 0
     with _postgres_connect(db_url) as db:
         existing_summary = db.execute('select summary from public.auction_runs where id=%s', (run_id,)).fetchone()[0] or {}
         summary = {"scheduler_budget_seconds":budget,"execution_seconds":(datetime.now(UTC)-execution_started).total_seconds(),
-                   "worker_exit_code": worker_code}
+                   "worker_exit_code": SOURCE_WARNING_EXIT_CODE if source_warning else worker_code}
+        if source_warning:
+            summary["source_warning"] = True
         run_errors: dict[str, list[str]] = {}
         counts: dict[object, object] = {}
         exhausted = 0
@@ -448,7 +457,7 @@ def execute(run_id: str) -> int:
              Jsonb(summary),run_id))
         db.execute("update public.auction_runs set summary=coalesce(summary,'{}') || %s where id=%s", (Jsonb(summary),run_id))
     finish_source(db_url, run_id)
-    return code
+    return SOURCE_WARNING_EXIT_CODE if source_warning and not code else code
 
 
 if __name__ == '__main__':
