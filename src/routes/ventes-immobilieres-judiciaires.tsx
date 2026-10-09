@@ -646,6 +646,26 @@ export function ResourcesPage() {
               </Ext>
               .
             </P>
+
+            <SubTitle>Ce qui vous engage quand vous enchérissez</SubTitle>
+            <P>
+              Une enchère n'est pas un simple essai. Avant d'enchérir, retenez ces règles qui
+              s'imposent à l'acheteur :
+            </P>
+            <Checklist
+              items={[
+                "une surenchère d'au moins un dixième du prix peut être formée dans les 10 jours qui suivent l'adjudication : l'achat n'est définitif qu'à l'expiration de ce délai ;",
+                "pour enchérir, il faut consigner 10 % de la mise à prix, avec un minimum de 3 000 €, par chèque de banque ou caution bancaire remis à l'avocat avant l'audience ;",
+                "le prix doit être payé dans les deux mois qui suivent le jour où la vente devient définitive ; au-delà, des intérêts sont dus ;",
+                "les frais préalables de la procédure doivent être réglés rapidement après l'adjudication, en plus du prix ;",
+                "l'avocat qui porte les enchères doit être inscrit au barreau du tribunal judiciaire où se tient la vente.",
+              ]}
+            />
+            <P>
+              Ces règles résument les textes applicables à la date de rédaction. Elles ne remplacent
+              pas le cahier des conditions de vente du dossier ni l'avis de votre avocat, qui
+              confirmera les montants et les délais de votre vente.
+            </P>
           </Section>
 
           <Section id="frais" title="Quels frais prévoir lors d'une vente immobilière judiciaire ?">
