@@ -16,11 +16,19 @@ from src.normalize import (
     extract_department,
     has_rented_occupancy_signal,
     no_lease_occupancy_status,
-    parse_surface,
 )
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
+from src.sources.common import (
+    PoliteHttpClient,
+    ScrapeResult,
+    extract_surface,
+    fetch_detail_html,
+    normalize_surface_number,
+    parse_html,
+    should_fetch_detail,
+    unique_dicts,
+)
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
@@ -281,7 +289,7 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "property_type": property_type,
         "title": title,
         "description": description,
-        "surface_m2": _extract_surface(title, page_text),
+        "surface_m2": extract_surface(title, page_text),
         "habitable_surface_m2": habitable_surface,
         "carrez_surface_m2": carrez_surface,
         "land_surface_m2": land_surface,
@@ -342,13 +350,8 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
-    try:
-        html = client.get(source_url)
-    except Exception as exc:
-        LOGGER.warning("Vench detail fetch failed for %s: %s", source_url, exc)
-        errors.append(f"detail {source_url}: {exc}")
-        sale["_detail_fetch_failed"] = True
-        sale["source_detail_status"] = "failed"
+    html = fetch_detail_html(client, sale, errors, label="Vench")
+    if html is None:
         return
     access_text = parse_html(html, "html.parser").get_text(" ", strip=True)
     restricted = re.search(
@@ -638,25 +641,6 @@ def _looks_like_property_image(url: str) -> bool:
     return not re.search(r"\b(?:logo|favicon|sprite|icon|picto|placeholder|avatar|loader)\b", text)
 
 
-def _extract_surface(*values: object) -> str | None:
-    text = " ".join(str(value) for value in values if value)
-    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
-    surface = parse_surface(match.group(1)) if match else None
-    return str(surface) if surface is not None else None
-
-
-def _normalize_surface_number(value: str) -> str | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    text = text.replace(" ", "")
-    if "," in text:
-        return text.replace(".", "").replace(",", ".")
-    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
-        return text.replace(".", "")
-    return text
-
-
 def _extract_qualified_surface(text: str | None, kind: str) -> str | None:
     value = clean_text(text) or ""
     if not value:
@@ -675,7 +659,7 @@ def _extract_qualified_surface(text: str | None, kind: str) -> str | None:
     else:
         return None
     candidates = [
-        _normalize_surface_number(match.group(1))
+        normalize_surface_number(match.group(1))
         for pattern in patterns
         for match in re.finditer(pattern, value, re.I)
     ]
@@ -720,7 +704,7 @@ def _extract_land_surface_m2(text: str | None) -> str | None:
 
     land_m2_pattern = rf"\b{cadastral_marker}\b[^.;\n]{{0,180}}?\b(?:pour\s+)?(?:une\s+)?(?:surface|superficie)\s+(?:de\s+)?({SURFACE_VALUE_PATTERN})\s*m(?:2|²)\b"
     land_m2 = [
-        _normalize_surface_number(match.group(1))
+        normalize_surface_number(match.group(1))
         for match in re.finditer(land_m2_pattern, value, re.I)
     ]
     land_m2 = [candidate for candidate in land_m2 if candidate]

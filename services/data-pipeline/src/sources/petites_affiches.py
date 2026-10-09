@@ -14,10 +14,18 @@ from bs4 import BeautifulSoup, Tag
 from src import source_checkpoint
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
-from src.normalize import SURFACE_VALUE_PATTERN, clean_text, strip_accents
+from src.normalize import clean_text, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
+from src.sources.common import (
+    PoliteHttpClient,
+    ScrapeResult,
+    extract_surface,
+    fetch_detail_html,
+    parse_html,
+    should_fetch_detail,
+    unique_dicts,
+)
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
@@ -382,7 +390,7 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
         "description": title,
         "starting_price_eur": _node_text(card.select_one(".miseAPrix strong")),
         "sale_date": _node_text(card.select_one(".dateVente strong")),
-        "surface_m2": _extract_surface(raw_text),
+        "surface_m2": extract_surface(raw_text),
         "postal_code": _extract_postal(raw_text),
         "lawyer_name": _extract_lawyer(raw_text),
         "tribunal": tribunal,
@@ -439,7 +447,7 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
         "address": address,
         "city": city,
         "postal_code": _extract_postal(address or ""),
-        "surface_m2": _extract_surface(detail_text),
+        "surface_m2": extract_surface(detail_text),
         "starting_price_eur": price,
         "sale_date": sale_date,
         "property_type": property_type,
@@ -482,13 +490,8 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
-    try:
-        html = client.get(source_url)
-    except Exception as exc:
-        LOGGER.warning("Petites Affiches detail fetch failed for %s: %s", source_url, exc)
-        errors.append(f"detail {source_url}: {exc}")
-        sale["_detail_fetch_failed"] = True
-        sale["source_detail_status"] = "failed"
+    html = fetch_detail_html(client, sale, errors, label="Petites Affiches")
+    if html is None:
         return
     access_text = parse_html(html, "html.parser").get_text(" ", strip=True)
     restricted = re.search(
@@ -688,23 +691,6 @@ def _external_id(card: Tag, source_url: str) -> str:
             return match.group(1)
     match = re.search(r"-(\d+)\.html", source_url)
     return match.group(1) if match else source_url.rstrip("/").split("/")[-1]
-
-
-def _extract_surface(text: str) -> str | None:
-    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b", text, re.I)
-    return _normalize_surface_number(match.group(1)) if match else None
-
-
-def _normalize_surface_number(value: str) -> str | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    text = text.replace(" ", "")
-    if "," in text:
-        return text.replace(".", "")
-    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
-        return text.replace(".", "")
-    return text
 
 
 def _extract_price(text: str) -> str | None:

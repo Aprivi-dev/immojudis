@@ -19,6 +19,9 @@ from src.sources.common import (
     PaginationCoverage,
     PoliteHttpClient,
     ScrapeResult,
+    extract_surface,
+    fetch_detail_html,
+    normalize_surface_number,
     parse_html,
     should_fetch_detail,
     unique_dicts,
@@ -51,6 +54,7 @@ DETAIL_FIELDS = {
     "source_blocks",
 }
 SURFACE_VALUE_PATTERN = r"([0-9]+(?:[ .][0-9]{3})*(?:[,.][0-9]+)?|[0-9]+(?:[,.][0-9]+)?)"
+SURFACE_LABELLED_PATTERNS = (rf"\bSurface\s+en\s+m(?:²|2)\s*:?\s*{SURFACE_VALUE_PATTERN}\b",)
 
 
 def cessions_tls_context() -> ssl.SSLContext:
@@ -158,7 +162,7 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
     )
     description = _description(soup)
     dpe_class, ges_class = _detail_energy_classes(soup)
-    surface = _extract_surface(raw_text)
+    surface = extract_surface(raw_text, number=SURFACE_VALUE_PATTERN, labelled=SURFACE_LABELLED_PATTERNS)
     carrez_surface = _extract_carrez_surface(raw_text)
     # Keep lot-level measurements and amenities tied to the property's own
     # description.  The page-wide text can contain neighboring listings or
@@ -290,7 +294,7 @@ def _parse_card(card: Tag, page_url: str) -> dict[str, Any] | None:
         if code and source_url.rstrip("/").endswith("-" + code[1].lower()):
             city, department = location, code[1]
     postal_code = _extract_postal(raw_text)
-    surface = _extract_surface(raw_text)
+    surface = extract_surface(raw_text, number=SURFACE_VALUE_PATTERN, labelled=SURFACE_LABELLED_PATTERNS)
     reference = _extract_after(raw_text, r"R[ée]f[ée]rence\s*:\s*([^\n]+)")
     property_type = clean_text(card.get("data-type-bien"))
     land_surface = surface if _is_land_property_type(property_type) else None
@@ -342,13 +346,8 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
-    try:
-        html = client.get(source_url)
-    except Exception as exc:
-        LOGGER.warning("Cessions Etat detail fetch failed for %s: %s", source_url, exc)
-        errors.append(f"detail {source_url}: {exc}")
-        sale["_detail_fetch_failed"] = True
-        sale["source_detail_status"] = "failed"
+    html = fetch_detail_html(client, sale, errors, label="Cessions Etat")
+    if html is None:
         return
     sale["source_detail_status"] = "complete"
     detail = parse_cessions_etat_detail_html(html, source_url)
@@ -483,17 +482,6 @@ def _visit_dates(text: str) -> list[str]:
     return visits
 
 
-def _extract_surface(text: str) -> str | None:
-    for pattern in (
-        rf"\bSurface\s+en\s+m(?:²|2)\s*:?\s*{SURFACE_VALUE_PATTERN}\b",
-        rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b",
-    ):
-        match = re.search(pattern, text, flags=re.I)
-        if match:
-            return _normalize_surface_number(match.group(1))
-    return None
-
-
 def _extract_carrez_surface(text: str) -> str | None:
     """Extract an explicitly labelled Carrez measurement.
 
@@ -507,7 +495,7 @@ def _extract_carrez_surface(text: str) -> str | None:
     ):
         match = re.search(pattern, text, flags=re.I)
         if match:
-            return _normalize_surface_number(match.group(1))
+            return normalize_surface_number(match.group(1))
     return None
 
 
@@ -521,7 +509,7 @@ def _extract_land_surface(text: str) -> str | None:
     ):
         match = re.search(pattern, text, flags=re.I)
         if match:
-            return _normalize_surface_number(match.group(1))
+            return normalize_surface_number(match.group(1))
     return None
 
 
@@ -646,16 +634,6 @@ def _sale_date_kind(text: str, schedule: dict[str, str] | None) -> str | None:
     ):
         return "offer_deadline"
     return None
-
-
-def _normalize_surface_number(value: str) -> str | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    text = text.replace(" ", "")
-    if "," not in text and re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
-        text = text.replace(".", "")
-    return text
 
 
 def _looks_like_visit_instruction(text: str) -> bool:

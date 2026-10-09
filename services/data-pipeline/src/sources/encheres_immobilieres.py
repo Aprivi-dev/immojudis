@@ -23,6 +23,7 @@ from src.sources.common import (
     RobotsAccessRefusedError,
     RobotsUnavailableError,
     ScrapeResult,
+    fetch_detail_html,
     parse_html,
     should_fetch_detail,
     unique_dicts,
@@ -290,13 +291,8 @@ def _enrich_sale_from_detail(
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
-    try:
-        html = client.get(source_url)
-    except Exception as exc:
-        LOGGER.warning("EncheresImmobilieres detail fetch failed for %s: %s", source_url, exc)
-        errors.append(f"detail {source_url}: {exc}")
-        sale["_detail_fetch_failed"] = True
-        sale["source_detail_status"] = "failed"
+    html = fetch_detail_html(client, sale, errors, label="EncheresImmobilieres")
+    if html is None:
         return
     detail = parse_encheres_immobilieres_detail_html(html, source_url)
     listing_external_id = _identity_value(sale.get("external_id"))
