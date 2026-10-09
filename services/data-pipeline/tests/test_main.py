@@ -255,6 +255,43 @@ def test_run_scraper_isolates_avoventes_by_default(monkeypatch) -> None:
     assert isolated_calls == ["avoventes"]
 
 
+def test_run_scraper_isolates_petites_affiches_with_existing_source_parameters(monkeypatch) -> None:
+    expected = ScrapeResult([], [], {"coverage_complete": False, "budget_exhausted": True})
+    calls: dict[str, object] = {}
+
+    def fake_isolated(source, **kwargs):
+        calls["source"] = source
+        calls.update(kwargs)
+        return expected, 0.1
+
+    monkeypatch.setattr(main, "run_source_in_subprocess", fake_isolated)
+
+    def progressive_publisher(rows):
+        del rows
+
+    known = {"https://example.test/vente": "sig"}
+
+    result = main._run_scraper(
+        "petites_affiches",
+        lambda: (_ for _ in ()).throw(AssertionError("thread fallback must not run")),
+        {**_settings(), "source_process_isolation": True, "source_scrape_timeout_seconds": 1800},
+        known,
+        {},
+        progressive_publisher,
+    )
+
+    assert result == (expected, 0.1)
+    assert calls == {
+        "source": "petites_affiches",
+        "known": known,
+        "known_details": None,
+        "max_pages": None,
+        "fetch_detail_heavy": True,
+        "timeout_seconds": 1800.0,
+        "on_batch": progressive_publisher,
+    }
+
+
 def test_run_scraper_keeps_other_sources_on_original_thread_path(monkeypatch) -> None:
     expected = ScrapeResult([], [], {"coverage_complete": True})
     isolated_calls: list[str] = []
@@ -275,6 +312,21 @@ def test_run_scraper_keeps_other_sources_on_original_thread_path(monkeypatch) ->
 
     assert result[0] == expected
     assert isolated_calls == []
+
+
+def test_run_scraper_keeps_petites_affiches_thread_path_when_isolation_disabled() -> None:
+    expected = ScrapeResult([], [], {"coverage_complete": True})
+
+    result = main._run_scraper(
+        "petites_affiches",
+        lambda: expected,
+        {**_settings(), "source_process_isolation": False},
+        {},
+        {},
+    )
+
+    assert result[0] == expected
+    assert result[1] >= 0
 
 
 def test_document_facts_version_forces_one_time_pdf_reanalysis(tmp_path, monkeypatch) -> None:

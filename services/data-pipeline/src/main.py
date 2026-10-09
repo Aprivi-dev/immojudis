@@ -1567,10 +1567,16 @@ def _run_scraper(
     cannot interrupt a worker thread and would make the executor wait forever
     during malformed HTML parsing.  The fallback is kept for tests and for
     explicitly disabled or non-allowlisted isolation; production settings
-    enable the process boundary for Vench and Avoventes by default.
+    enable the process boundary for Vench, Avoventes, and Petites Affiches by
+    default.  The source subprocess keeps the existing 1,800-second source
+    timeout; the autonomous runner still owns the 35-minute global budget and
+    the source's progressive publications remain independent of its final
+    result.
     """
 
-    isolated_sources = settings.get("source_process_isolation_sources", ("vench", "avoventes"))
+    isolated_sources = settings.get(
+        "source_process_isolation_sources", ("vench", "avoventes", "petites_affiches")
+    )
     if isinstance(isolated_sources, str):
         isolated_sources = tuple(
             source.strip().lower() for source in isolated_sources.split(",") if source.strip()
