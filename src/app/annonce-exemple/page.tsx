@@ -20,7 +20,7 @@ export default function Page() {
 
 function ExampleFallback() {
   return (
-    <main className="min-h-screen bg-surface-muted px-4 py-12 text-foreground">
+    <main id="contenu" className="min-h-screen bg-surface-muted px-4 py-12 text-foreground">
       <section className="mx-auto max-w-4xl rounded-lg border border-border bg-white p-8 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Démonstration

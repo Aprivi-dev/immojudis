@@ -105,7 +105,7 @@ export function SalePublicPreview({
   );
 
   return (
-    <main className={styles.page}>
+    <main id="contenu" className={styles.page}>
       <div className={styles.container}>
         <Link to={returnTo} className={styles.back}>
           <ArrowLeft className="h-4 w-4" aria-hidden />

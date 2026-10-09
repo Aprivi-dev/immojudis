@@ -91,7 +91,7 @@ function AccountComparisons({ userId }: { userId: string }) {
   const busy = shareMutation.isPending || unshareMutation.isPending || deleteMutation.isPending;
 
   return (
-    <main className="liquid-page min-h-screen px-4 pb-16 pt-28 sm:px-6 lg:px-8">
+    <main id="contenu" className="liquid-page min-h-screen px-4 pb-16 pt-28 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <header className="max-w-3xl">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">

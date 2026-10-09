@@ -110,7 +110,7 @@ export function SaleDetailView({
   const documentCount = countDocuments(sale);
 
   return (
-    <main className="min-h-screen bg-background pb-28 text-foreground lg:pb-20">
+    <main id="contenu" className="min-h-screen bg-background pb-28 text-foreground lg:pb-20">
       <ListingActionBar
         sale={sale}
         title={referenceLabel}
@@ -223,7 +223,10 @@ export function SaleDetailView({
 export function SaleErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center">
+    <main
+      id="contenu"
+      className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center"
+    >
       <div className="max-w-2xl rounded-lg border border-border bg-white p-8 shadow-xl shadow-slate-900/10">
         <h1 className="font-sans text-2xl font-semibold text-foreground">
           Impossible d'afficher cette annonce

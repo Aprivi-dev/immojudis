@@ -39,7 +39,7 @@ export default function Page() {
   };
 
   return (
-    <main className={styles.root}>
+    <main id="contenu" className={styles.root}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{

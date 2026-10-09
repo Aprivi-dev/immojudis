@@ -31,7 +31,10 @@ export function InvestorOnboarding() {
 
   const criteria = firstSearchToUrl(search);
   return (
-    <main className="liquid-page min-h-[calc(100svh-4rem)] px-4 py-10 sm:px-6 sm:py-16">
+    <main
+      id="contenu"
+      className="liquid-page min-h-[calc(100svh-4rem)] px-4 py-10 sm:px-6 sm:py-16"
+    >
       <section className="glass-shell mx-auto max-w-2xl rounded-lg p-6 sm:p-10">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Bienvenue dans votre compte Découverte

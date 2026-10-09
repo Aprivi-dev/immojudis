@@ -22,7 +22,7 @@ export default async function SharedSaleComparisonPage({
   if (!comparison) notFound();
 
   return (
-    <main className="min-h-screen bg-surface-muted px-3 py-8 text-brand-navy sm:px-6">
+    <main id="contenu" className="min-h-screen bg-surface-muted px-3 py-8 text-brand-navy sm:px-6">
       <article className="mx-auto max-w-5xl overflow-hidden rounded-xl border border-line-soft bg-white shadow-sm">
         <header className="border-b border-line-soft px-4 py-5 sm:px-6">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-navy">

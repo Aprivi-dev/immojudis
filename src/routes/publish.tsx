@@ -209,7 +209,10 @@ export function PublishPage() {
 
   if (loading) {
     return (
-      <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
+      <main
+        id="contenu"
+        className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12"
+      >
         <div className="glass-shell mx-auto max-w-3xl rounded-lg p-6">
           <RefreshCw className="h-5 w-5 animate-spin text-gold-text" />
           <p className="mt-4 text-sm text-muted-foreground">Vérification de l'accès pro...</p>
@@ -220,7 +223,10 @@ export function PublishPage() {
 
   if (!isProfessional) {
     return (
-      <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
+      <main
+        id="contenu"
+        className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12"
+      >
         <div className="glass-shell mx-auto max-w-3xl rounded-lg p-6 sm:p-8">
           <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
             <LockKeyhole className="h-4 w-4" />
@@ -247,7 +253,10 @@ export function PublishPage() {
   }
 
   return (
-    <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
+    <main
+      id="contenu"
+      className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12"
+    >
       <div className="mx-auto max-w-7xl">
         <header className="glass-shell mb-8 grid gap-6 rounded-lg p-6 sm:p-8 lg:grid-cols-[1fr_24rem] lg:items-end">
           <div>

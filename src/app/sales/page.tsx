@@ -18,7 +18,7 @@ export default function Page() {
 
 function SalesCatalogFallback() {
   return (
-    <main className="min-h-screen bg-surface-muted px-4 py-10 text-brand-navy sm:px-6">
+    <main id="contenu" className="min-h-screen bg-surface-muted px-4 py-10 text-brand-navy sm:px-6">
       <section className="mx-auto max-w-6xl">
         <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-navy">
           Catalogue Immojudis

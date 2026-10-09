@@ -635,7 +635,10 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   }
 
   return (
-    <main className="min-h-screen bg-surface-muted text-brand-navy [--sales-header-height:8rem] lg:[--sales-header-height:8rem]">
+    <main
+      id="contenu"
+      className="min-h-screen bg-surface-muted text-brand-navy [--sales-header-height:8rem] lg:[--sales-header-height:8rem]"
+    >
       <a
         href="#sales-results"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-brand-navy focus:shadow-lg"

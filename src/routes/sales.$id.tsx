@@ -137,7 +137,7 @@ export function SaleDetailPage({
 
   if (!authLoading && authError) {
     return (
-      <main className="mx-auto my-12 max-w-xl px-4">
+      <main id="contenu" className="mx-auto my-12 max-w-xl px-4">
         <section role="alert" className="rounded-lg border border-border bg-white p-6">
           <h1 className="text-xl font-semibold">Connexion à renouveler</h1>
           <p className="mt-3 text-sm text-muted-foreground">{authError}</p>
@@ -188,7 +188,7 @@ export function SaleDetailPage({
   }
   if (!sale && !session) {
     return (
-      <main className="mx-auto my-16 max-w-xl px-4">
+      <main id="contenu" className="mx-auto my-16 max-w-xl px-4">
         <section className="rounded-lg border border-border bg-white p-6">
           <h1 className="font-display text-2xl font-semibold">Consulter cette annonce</h1>
           <p className="mt-3 text-sm text-muted-foreground">

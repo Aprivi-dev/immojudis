@@ -86,7 +86,7 @@ export function AdminShell({
   }, [mobileOpen]);
 
   return (
-    <main className="admin-console min-h-screen bg-surface-muted text-brand-navy">
+    <main id="contenu" className="admin-console min-h-screen bg-surface-muted text-brand-navy">
       <aside className="admin-sidebar hidden lg:flex">
         <AdminSidebarContent
           activeSection={activeSection}

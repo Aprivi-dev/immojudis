@@ -49,7 +49,7 @@ const steps = [
 
 export default function Page() {
   return (
-    <main className="mx-auto max-w-4xl px-4 pb-20 pt-28">
+    <main id="contenu" className="mx-auto max-w-4xl px-4 pb-20 pt-28">
       <h1 className="text-4xl font-bold">Comment utiliser Immojudis</h1>
       <p className="mt-4 text-muted-foreground">
         Un parcours concret, du catalogue à la préparation de votre dossier.

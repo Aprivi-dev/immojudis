@@ -103,7 +103,6 @@ export function SearchHeader({
             </div>
             <button
               type="button"
-              aria-label="Filtres avancés"
               aria-expanded={filtersOpen}
               onClick={() => onFiltersOpenChange(!filtersOpen)}
               className="hidden min-h-11 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold hover:bg-surface-tint lg:inline-flex"

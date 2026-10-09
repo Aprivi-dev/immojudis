@@ -32,7 +32,7 @@ export function AccountPage() {
   const periodEnd = formatDate(plan?.currentPeriodEnd);
 
   return (
-    <main className="mx-auto max-w-3xl px-4 pb-16 pt-28 sm:px-6">
+    <main id="contenu" className="mx-auto max-w-3xl px-4 pb-16 pt-28 sm:px-6">
       <h1 className="font-display text-4xl text-foreground">Mon compte</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Gérez votre abonnement, votre moyen de paiement et vos données personnelles.
