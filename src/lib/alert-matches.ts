@@ -9,10 +9,11 @@ import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
+import { systemAuthForUser } from "@/lib/system-auth";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
-import type { AuctionSale, UserAlert, UserWatchedZone } from "@/lib/types";
+import type { AuctionSale, SaleFilters, UserAlert, UserWatchedZone } from "@/lib/types";
 import { normalizeWatchedZone } from "@/lib/watched-zones";
 
 type AlertMatchRow = Database["public"]["Tables"]["user_alert_matches"]["Row"];
@@ -44,9 +45,18 @@ export type AlertEvaluationResponse = {
   matches: AlertMatchSummary[];
 };
 
+/** The user's plan does not include alerts: nothing to evaluate, not a failure. */
+export class AlertsNotIncludedError extends Error {
+  constructor() {
+    super("Alertes avancées réservées au plan Analyse.");
+    this.name = "AlertsNotIncludedError";
+  }
+}
+
 export type SmartAlertBatchUserResult = {
   userId: string;
   ok: boolean;
+  skipped?: boolean;
   alertCount: number;
   saleCount: number;
   matchCount: number;
@@ -56,6 +66,8 @@ export type SmartAlertBatchUserResult = {
 
 export type SmartAlertBatchRunResult = {
   ok: true;
+  /** Users not started because the time budget ran out; they go first next run. */
+  deferredUserCount: number;
   startedAt: string;
   finishedAt: string;
   candidateUserCount: number;
@@ -67,10 +79,17 @@ export type SmartAlertBatchRunResult = {
   results: SmartAlertBatchUserResult[];
 };
 
-const DEFAULT_ALERT_EVALUATION_SALE_LIMIT = 160;
-const MAX_ALERT_EVALUATION_SALE_LIMIT = 400;
-const DEFAULT_ALERT_BATCH_USER_LIMIT = 25;
-const MAX_ALERT_BATCH_USER_LIMIT = 100;
+/** Sales read per request while paging through the inventory to evaluate. */
+const ALERT_EVALUATION_PAGE_SIZE = 400;
+/** Safety ceiling on the sales evaluated for one user in one run. */
+const DEFAULT_ALERT_EVALUATION_SALE_LIMIT = 6_000;
+const MAX_ALERT_EVALUATION_SALE_LIMIT = 20_000;
+/** Overlap with the previous evaluation so a sale updated mid-run is never missed. */
+const ALERT_EVALUATION_OVERLAP_MS = 60 * 60 * 1000;
+/** Users evaluated in parallel by the daily batch. */
+const ALERT_BATCH_CONCURRENCY = 4;
+/** The batch stops starting new users after this long; the rest come first next run. */
+const DEFAULT_ALERT_BATCH_TIME_BUDGET_MS = 240_000;
 const DEFAULT_ALERT_MATCH_LIST_LIMIT = 50;
 const MAX_ALERT_MATCH_LIST_LIMIT = 200;
 
@@ -116,7 +135,7 @@ export async function evaluateUserAlertMatches({
 }): Promise<AlertEvaluationResponse> {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.advanced")) {
-    throw new Error("Alertes avancées réservées au plan Analyse.");
+    throw new AlertsNotIncludedError();
   }
 
   const discovery = !plan.hasAnalysisAccess;
@@ -125,21 +144,14 @@ export async function evaluateUserAlertMatches({
   const alerts = discovery
     ? activeAlerts.filter(isDiscoveryAlertCompatible).slice(0, 1)
     : activeAlerts;
-  const sales = await getSales(
-    {
-      status_in: ["active", "upcoming"],
-      ...(discovery && alerts.length === 1
-        ? {
-            city: alerts[0].city ?? undefined,
-            department: alerts[0].department ?? undefined,
-          }
-        : {}),
-    },
-    clampLimit(saleLimit, MAX_ALERT_EVALUATION_SALE_LIMIT),
-    "date_asc",
-    0,
-    { client: auth.supabase, discovery },
-  );
+  const sales = alerts.length
+    ? await loadSalesToEvaluate({
+        auth,
+        alerts,
+        discovery,
+        limit: clampLimit(saleLimit, MAX_ALERT_EVALUATION_SALE_LIMIT),
+      })
+    : [];
   const marketDiscountCache = new Map<string, Promise<number | null>>();
   const watchedZones = await getUserWatchedZonesForAlerts({ auth, alerts });
   const matches: AlertMatchSummary[] = [];
@@ -248,60 +260,125 @@ export async function evaluateUserAlertMatches({
   };
 }
 
-export async function runSmartAlertEvaluationBatch({
-  userLimit = DEFAULT_ALERT_BATCH_USER_LIMIT,
-  saleLimit = DEFAULT_ALERT_EVALUATION_SALE_LIMIT,
+/**
+ * Sales an evaluation must look at: everything still open when an alert has
+ * never been evaluated (or its criteria changed), otherwise only the sales
+ * created or modified since the previous evaluation.  Pages are read until the
+ * inventory is exhausted so no sale is left out by a fixed first-N window.
+ */
+async function loadSalesToEvaluate({
+  auth,
+  alerts,
+  discovery,
+  limit,
 }: {
-  userLimit?: number;
-  saleLimit?: number;
-} = {}): Promise<SmartAlertBatchRunResult> {
-  const startedAt = new Date().toISOString();
-  const candidateUserIds = await getSmartAlertCandidateUserIds(
-    clampLimit(userLimit * 4, MAX_ALERT_BATCH_USER_LIMIT * 4),
+  auth: SupabaseAuthContext;
+  alerts: UserAlert[];
+  discovery: boolean;
+  limit: number;
+}): Promise<AuctionSale[]> {
+  const evaluatedAt = alerts.map((alert) =>
+    alert.last_evaluated_at ? Date.parse(alert.last_evaluated_at) : Number.NaN,
   );
-  const analyseUserIds = candidateUserIds;
-  const selectedUserIds = analyseUserIds.slice(
-    0,
-    clampLimit(userLimit, MAX_ALERT_BATCH_USER_LIMIT),
-  );
-  const results: SmartAlertBatchUserResult[] = [];
+  const neverEvaluated = evaluatedAt.some((time) => !Number.isFinite(time));
+  const filters: SaleFilters = {
+    status_in: ["active", "upcoming"],
+    ...(neverEvaluated
+      ? {}
+      : {
+          updated_since: new Date(
+            Math.min(...evaluatedAt) - ALERT_EVALUATION_OVERLAP_MS,
+          ).toISOString(),
+        }),
+    ...(discovery && alerts.length === 1
+      ? { city: alerts[0].city ?? undefined, department: alerts[0].department ?? undefined }
+      : {}),
+  };
 
-  for (const userId of selectedUserIds) {
-    try {
-      const response = await evaluateUserAlertMatches({
-        auth: systemAuthForUser(userId),
-        saleLimit,
-        persist: true,
-      });
-      results.push({
-        userId,
-        ok: true,
-        alertCount: response.alertCount,
-        saleCount: response.saleCount,
-        matchCount: response.matchCount,
-        notificationCount: response.notificationCount,
-        error: null,
-      });
-    } catch (error) {
-      results.push({
-        userId,
-        ok: false,
-        alertCount: 0,
-        saleCount: 0,
-        matchCount: 0,
-        notificationCount: 0,
-        error: error instanceof Error ? error.message : "Évaluation impossible",
-      });
+  const sales: AuctionSale[] = [];
+  const seen = new Set<string>();
+  for (let offset = 0; offset < limit; offset += ALERT_EVALUATION_PAGE_SIZE) {
+    const pageSize = Math.min(ALERT_EVALUATION_PAGE_SIZE, limit - offset);
+    const page = await getSales(filters, pageSize, "date_asc", offset, {
+      client: auth.supabase,
+      discovery,
+      stableOrder: true,
+    });
+    for (const sale of page) {
+      if (seen.has(sale.id)) continue;
+      seen.add(sale.id);
+      sales.push(sale);
     }
+    if (page.length < pageSize) break;
   }
+  return sales;
+}
+
+export async function runSmartAlertEvaluationBatch({
+  saleLimit = DEFAULT_ALERT_EVALUATION_SALE_LIMIT,
+  timeBudgetMs = DEFAULT_ALERT_BATCH_TIME_BUDGET_MS,
+  concurrency = ALERT_BATCH_CONCURRENCY,
+}: {
+  saleLimit?: number;
+  timeBudgetMs?: number;
+  concurrency?: number;
+} = {}): Promise<SmartAlertBatchRunResult> {
+  const startedAtMs = Date.now();
+  const startedAt = new Date(startedAtMs).toISOString();
+  // Every user with an active alert is processed, oldest evaluation first.
+  const userIds = await getSmartAlertCandidateUserIds();
+  const results: SmartAlertBatchUserResult[] = [];
+  let next = 0;
+  let deferred = 0;
+
+  const worker = async () => {
+    while (next < userIds.length) {
+      const userId = userIds[next];
+      next += 1;
+      if (Date.now() - startedAtMs > timeBudgetMs) {
+        deferred += 1;
+        continue;
+      }
+      try {
+        const response = await evaluateUserAlertMatches({
+          auth: await systemAuthForUser(userId),
+          saleLimit,
+          persist: true,
+        });
+        results.push({
+          userId,
+          ok: true,
+          alertCount: response.alertCount,
+          saleCount: response.saleCount,
+          matchCount: response.matchCount,
+          notificationCount: response.notificationCount,
+          error: null,
+        });
+      } catch (error) {
+        const skipped = error instanceof AlertsNotIncludedError;
+        results.push({
+          userId,
+          ok: skipped,
+          skipped,
+          alertCount: 0,
+          saleCount: 0,
+          matchCount: 0,
+          notificationCount: 0,
+          error: skipped ? null : error instanceof Error ? error.message : "Évaluation impossible",
+        });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
 
   return {
     ok: true,
     startedAt,
     finishedAt: new Date().toISOString(),
-    candidateUserCount: candidateUserIds.length,
-    analysedUserCount: analyseUserIds.length,
-    evaluatedUserCount: results.filter((result) => result.ok).length,
+    candidateUserCount: userIds.length,
+    analysedUserCount: userIds.length - deferred,
+    deferredUserCount: deferred,
+    evaluatedUserCount: results.filter((result) => result.ok && !result.skipped).length,
     failedUserCount: results.filter((result) => !result.ok).length,
     totalMatchCount: results.reduce((total, result) => total + result.matchCount, 0),
     totalNotificationCount: results.reduce((total, result) => total + result.notificationCount, 0),
@@ -516,27 +593,27 @@ async function getUserWatchedZonesForAlerts({
   return new Map((data ?? []).map((row) => [row.id, normalizeWatchedZone(row)]));
 }
 
-async function getSmartAlertCandidateUserIds(limit: number): Promise<string[]> {
-  const { data, error } = await supabaseAdmin
-    .from("user_alerts")
-    .select("user_id")
-    .eq("is_active", true)
-    .order("last_evaluated_at", { ascending: true, nullsFirst: true })
-    .limit(limit);
-
-  if (error) throw error;
-  return Array.from(new Set((data ?? []).map((row) => row.user_id)));
-}
-
-function systemAuthForUser(userId: string): SupabaseAuthContext {
-  return {
-    supabase: supabaseAdmin,
-    userId,
-    claims: {},
-    accountTier: "free",
-    userRole: "user",
-    isAdmin: false,
-  };
+async function getSmartAlertCandidateUserIds(): Promise<string[]> {
+  const pageSize = 1_000;
+  const userIds: string[] = [];
+  const seen = new Set<string>();
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabaseAdmin
+      .from("user_alerts")
+      .select("user_id")
+      .eq("is_active", true)
+      .order("last_evaluated_at", { ascending: true, nullsFirst: true })
+      .order("id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    for (const row of data ?? []) {
+      if (seen.has(row.user_id)) continue;
+      seen.add(row.user_id);
+      userIds.push(row.user_id);
+    }
+    if ((data?.length ?? 0) < pageSize) break;
+  }
+  return userIds;
 }
 
 async function updateAlertEvaluationState({

@@ -37,10 +37,11 @@ describe("alert notifications", () => {
   it("maps alert frequency to notification kind and schedule", () => {
     const now = new Date("2026-07-06T10:15:00.000Z");
 
-    expect(notificationKindForFrequency("instant")).toBe("instant_match");
+    // "instant" never existed as real-time delivery: it behaves as the daily digest.
+    expect(notificationKindForFrequency("instant")).toBe("daily_digest");
     expect(notificationKindForFrequency("daily")).toBe("daily_digest");
     expect(notificationKindForFrequency("weekly")).toBe("weekly_digest");
-    expect(scheduledForFrequency("instant", now)).toBe("2026-07-06T10:15:00.000Z");
+    expect(scheduledForFrequency("instant", now)).toBe("2026-07-07T07:00:00.000Z");
     expect(scheduledForFrequency("daily", now)).toBe("2026-07-07T07:00:00.000Z");
     expect(scheduledForFrequency("weekly", now)).toBe("2026-07-13T07:00:00.000Z");
   });
@@ -59,11 +60,11 @@ describe("alert notifications", () => {
       alert_id: "alert-1",
       match_id: "match-1",
       sale_id: "sale-1",
-      notification_kind: "instant_match",
+      notification_kind: "daily_digest",
       delivery_channel: "in_app",
-      delivery_status: "sent",
-      scheduled_for: "2026-07-06T10:15:00.000Z",
-      sent_at: "2026-07-06T10:15:00.000Z",
+      delivery_status: "queued",
+      scheduled_for: "2026-07-07T07:00:00.000Z",
+      sent_at: null,
     });
   });
 
@@ -82,7 +83,7 @@ describe("alert notifications", () => {
       delivery_channel: "email",
       delivery_status: "queued",
       sent_at: null,
-      scheduled_for: "2026-07-06T10:15:00.000Z",
+      scheduled_for: "2026-07-07T07:00:00.000Z",
     });
   });
 

@@ -327,6 +327,7 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
       .gte("longitude", filters.viewport.west)
       .lte("longitude", filters.viewport.east);
   }
+  if (filters.updated_since) q = q.gte("updated_at", filters.updated_since);
   if (filters.only_new) {
     q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
   }
@@ -434,7 +435,13 @@ export async function getSales(
   limit = 100,
   sort: SortKey = "date_asc",
   offset = 0,
-  options: { preview?: boolean; discovery?: boolean; client?: SupabaseReader } = {},
+  options: {
+    preview?: boolean;
+    discovery?: boolean;
+    client?: SupabaseReader;
+    /** Add a unique tie-breaker so paging through a large result never skips a row. */
+    stableOrder?: boolean;
+  } = {},
 ): Promise<AuctionSale[]> {
   if (!options.client && !assertCloudConfigured()) return [];
   const db = options.client ?? supabase;
@@ -464,8 +471,9 @@ export async function getSales(
     .from(catalogView)
     .select(SALE_LIST_COLUMNS)
     .order("coordinates_rank", { ascending: true })
-    .order(s.column, { ascending: s.ascending, nullsFirst: false })
-    .range(offset, offset + limit - 1);
+    .order(s.column, { ascending: s.ascending, nullsFirst: false });
+  if (options.stableOrder) q = q.order("id", { ascending: true });
+  q = q.range(offset, offset + limit - 1);
 
   q = applyAuthenticatedSaleFilters(q, filters);
 
