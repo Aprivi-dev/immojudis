@@ -14,6 +14,7 @@ from src.config import load_settings
 from src.geocode import coordinates_are_verified
 from src.models import AuctionSale
 from src.normalize import clean_text, strip_accents
+from src.null_text import is_null_text
 
 LOGGER = logging.getLogger(__name__)
 SOURCE_API_NAME = "ADEME DPE Open Data"
@@ -360,7 +361,7 @@ def text_value(value: object) -> str | None:
     if value is None:
         return None
     text = str(value).replace("\x00", "").strip()
-    return text or None
+    return None if is_null_text(text) else text or None
 
 
 def date_value(value: object) -> str | None:

@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dateutil import parser
 
 from src.models import AuctionSale
+from src.null_text import is_null_text
 
 FRENCH_MONTHS = {
     "janvier": "January",
@@ -105,7 +106,8 @@ def clean_text(value: object | None) -> str | None:
     if value is None:
         return None
     text = re.sub(r"\s+", " ", str(value).replace("\xa0", " ")).strip()
-    return text or None
+    # « nan » is what str() makes of a missing pandas/JSON value; it is not a city or a name.
+    return None if is_null_text(text) else text or None
 
 
 def parse_price(value: object | None) -> Decimal | None:
