@@ -172,7 +172,7 @@ export function isTransientError(error: unknown): boolean {
   const message = operationalErrorMessage(error).toLowerCase();
   return (
     /\b(502|503|504|520|521|522|523|524|429)\b/.test(message) ||
-    /econnreset|econnrefused|etimedout|enotfound|eai_again|fetch failed|socket hang up|connection terminated|connection timed out|temporarily unavailable|network/.test(
+    /econnreset|econnrefused|etimedout|enotfound|eai_again|fetch failed|socket hang up|connection terminated|connection timed out|temporarily unavailable|network|canceling statement due to statement timeout|deadlock detected|could not serialize/.test(
       message,
     ) ||
     message.includes("<!doctype html") ||

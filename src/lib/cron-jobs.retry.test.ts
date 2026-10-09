@@ -55,6 +55,7 @@ describe("cron retries and catch-up", () => {
     expect(isTransientError(new Error(gatewayPage))).toBe(true);
     expect(isTransientError(new Error("fetch failed"))).toBe(true);
     expect(isTransientError(new Error("read ECONNRESET"))).toBe(true);
+    expect(isTransientError(new Error("canceling statement due to statement timeout"))).toBe(true);
     expect(isTransientError(new Error("permission denied for table user_profiles"))).toBe(false);
   });
 
