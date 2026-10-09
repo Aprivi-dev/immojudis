@@ -456,12 +456,14 @@ export function ResultsSummary({
   displayCount,
   hasLocalFilters,
   isLoading,
+  hasError = false,
   geocoding,
 }: {
   search: SalesSearchParams;
   displayCount: number;
   hasLocalFilters: boolean;
   isLoading: boolean;
+  hasError?: boolean;
   geocoding: boolean;
 }) {
   const location = search.city || search.department || search.query || "France entière";
@@ -476,7 +478,9 @@ export function ResultsSummary({
       <p className="mt-1 text-sm text-[#526170]">
         {isLoading
           ? "Recherche en cours…"
-          : `${displayCount.toLocaleString("fr-FR")} annonce${displayCount === 1 ? "" : "s"}`}
+          : hasError
+            ? "Catalogue momentanément indisponible"
+            : `${displayCount.toLocaleString("fr-FR")} annonce${displayCount === 1 ? "" : "s"}`}
         {" · "}
         {search.viewport ? "Zone sélectionnée" : location}
         {hasLocalFilters ? " · filtres sur la page affichée" : ""}

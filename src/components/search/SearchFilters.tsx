@@ -3,6 +3,7 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import Map from "lucide-react/dist/esm/icons/map.js";
 import SearchIcon from "lucide-react/dist/esm/icons/search.js";
 import { Skeleton } from "@/components/ui/skeleton";
+import { userMessage } from "@/lib/user-messages";
 
 export function MobileMapToggle({
   activeFiltersCount,
@@ -52,10 +53,27 @@ export function NoResultsState() {
   );
 }
 
-export function ErrorState({ error }: { error: Error }) {
+export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => void }) {
   return (
-    <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
-      {error.message || "Erreur de chargement des résultats"}
+    <div
+      role="alert"
+      className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+    >
+      <div>
+        <p className="font-bold">Le catalogue ne répond pas pour le moment.</p>
+        <p className="mt-1 font-medium">
+          {userMessage(error, "Réessayez dans quelques secondes.")}
+        </p>
+      </div>
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-bold text-red-700 hover:bg-red-100"
+        >
+          Réessayer
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -256,6 +256,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     error,
     isFetching,
     isLoading,
+    refetch: refetchSales,
   } = useQuery({
     queryKey: ["sales-search", searchKeySignature, comparisonScope],
     placeholderData: (previous, query) =>
@@ -667,6 +668,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
               displayCount={displayCount}
               hasLocalFilters={hasLocalFilters}
               isLoading={isInitialLoading || isCountLoading}
+              hasError={Boolean(error) && rawSales.length === 0}
               geocoding={geocoding}
             />
 
@@ -715,6 +717,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
             analysisLocked={isDiscovery}
             isLoading={isInitialLoading}
             error={error}
+            onRetry={() => void refetchSales()}
             selectedSaleId={selectedSaleId}
             hoveredSaleId={hoveredSaleId}
             onHover={setHoveredSaleId}
