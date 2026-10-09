@@ -2539,6 +2539,7 @@ def _apply_extraction_to_sale(
         reference_sale.model_dump(),
     )
     sale.raw_payload["llm_display_evidence_check"] = display_check
+    _log_display_rejection(sale, display_check, "generated")
     if (display_description and confidence.get("display_description", 1.0) >= DISPLAY_DESCRIPTION_MIN_CONFIDENCE
             and not sale.raw_payload.get("operator_land_surface_conflict")
             and not display_check["issues"]):
@@ -2582,6 +2583,7 @@ def _apply_extraction_to_sale(
             # public prose containing a link, contact detail or instruction.
             sale.raw_payload["llm_display_evidence_check"] = final_display_check
             sale.raw_payload["llm_display_status"] = "rejected"
+            _log_display_rejection(sale, final_display_check, "with_source_quotes")
             checked_display = None
     if checked_display:
         sale.raw_payload["llm_display_description"] = checked_display
@@ -2618,12 +2620,26 @@ def _apply_extraction_to_sale(
             reference_sale.model_dump(),
         )
         sale.raw_payload["llm_summary_evidence_check"] = summary_check
+        _log_display_rejection(sale, summary_check, "summary")
         if not summary_check["issues"]:
             sale.description = extraction.summary
 
     due_diligence = _due_diligence_payload(extraction)
     if due_diligence:
         sale.raw_payload["llm_due_diligence"] = due_diligence
+
+
+def _log_display_rejection(sale: AuctionSale, check: dict[str, Any], stage: str) -> None:
+    """Keep a trace of every generated text refused before publication, for review."""
+    issues = check.get("issues") or []
+    if not issues:
+        return
+    LOGGER.warning(
+        "Public text refused for %s (%s): %s",
+        sale.source_url,
+        stage,
+        "; ".join(f"{issue.get('code')}={str(issue.get('claim') or '')[:60]!r}" for issue in issues[:10]),
+    )
 
 
 def _scalar_surface_is_supported(context: str, value: float, evidence: dict[str, Any]) -> bool:

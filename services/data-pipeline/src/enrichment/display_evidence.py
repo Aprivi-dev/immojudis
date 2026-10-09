@@ -31,11 +31,28 @@ PUBLIC_LINK = re.compile(
     re.I,
 )
 PUBLIC_EMAIL = re.compile(r"\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b", re.I)
+# French and international phone numbers, with or without separators. A date followed by an
+# hour (« 01 02 2027 14h ») has the same digit shape and is excluded by the lookahead.
+PUBLIC_PHONE = re.compile(
+    r"(?<![\w/])(?:"
+    r"(?:\+|00)\s?33[ .\-]?(?:\(0\))?[ .\-]?[1-9](?:[ .\-\u00a0]?\d{2}){4}"
+    r"|0[ .\-]?[1-9](?:[ .\-\u00a0]?\d{2}){4}"
+    r"|\+(?!33)\d{1,3}[ .\-]?\d(?:[ .\-]?\d){7,11}"
+    r")(?!\d|\s?h\b)",
+    re.I,
+)
+PUBLIC_PHONE_LABEL = re.compile(
+    r"\b(?:t[ée]l(?:[ée]phone)?|portable|mobile|fax|whatsapp)\b\s*(?:fixe|pro|direct)?\s*[:.\-]?\s*[+(\d]", re.I
+)
 PUBLIC_CALL_TO_ACTION = re.compile(
     r"(?:"
     r"\b(?:contactez|appelez|écrivez|envoyez|cliquez|inscrivez[- ]vous|"
     r"abonnez[- ]vous|connectez[- ]vous|réservez|achetez|vendez|postulez|"
-    r"rejoignez|visitez)\b"
+    r"rejoignez|visitez|"
+    # Other imperatives and polite forms addressed to the reader.
+    r"t[ée]l[ée]chargez|renseignez[- ]vous|n['’]h[ée]sitez|profitez|d[ée]couvrez|venez|"
+    r"demandez|saisissez|prenez\s+contact|faites|investissez|participez|d[ée]posez|"
+    r"ench[ée]rissez|veuillez|merci\s+de|rendez[- ]vous\s+sur)\b"
     r"|\bconsultez\s+(?:notre|le|la)\s+(?:site|lien|page|formulaire)\b"
     r"|\bpour\s+plus\s+d['’]informations?\b[^.!?\n]{0,80}"
     r"\b(?:contactez|appelez|cliquez|consultez)\b"
@@ -151,6 +168,8 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
         issues.append({'code': 'public_link', 'claim': match.group()})
     for match in PUBLIC_EMAIL.finditer(text):
         issues.append({'code': 'public_contact_detail', 'claim': match.group()})
+    for match in (*PUBLIC_PHONE.finditer(text), *PUBLIC_PHONE_LABEL.finditer(text)):
+        issues.append({'code': 'public_phone_number', 'claim': match.group().strip()})
     for match in PUBLIC_CALL_TO_ACTION.finditer(text):
         issues.append({'code': 'public_call_to_action', 'claim': match.group()})
     for match in PUBLIC_ROLE_OVERRIDE.finditer(text):
