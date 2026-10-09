@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   featuredLawyerQuerySchema,
   getFeaturedReferencedLawyerForSale,
@@ -13,9 +14,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json(await getFeaturedReferencedLawyerForSale(query));
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Avocat référencé indisponible sur ce secteur";
-    const status = message.includes("introuvable") ? 404 : 400;
-    return NextResponse.json({ lawyer: null, error: message }, { status });
+    return apiRouteError(error, request, "lawyers.featured", {
+      fallbackMessage: "Avocat référencé indisponible sur ce secteur",
+      extra: { lawyer: null },
+    });
   }
 }

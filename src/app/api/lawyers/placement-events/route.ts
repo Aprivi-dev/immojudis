@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -20,15 +21,9 @@ export async function POST(request: Request) {
     const input = lawyerPlacementEventInputSchema.parse(await request.json());
     return NextResponse.json(await recordLawyerPlacementEvent({ input }));
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Événement de placement avocat impossible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réserv")
-        ? 403
-        : message.includes("introuvable")
-          ? 404
-          : 400;
-    return NextResponse.json({ ok: false, recorded: false, error: message }, { status });
+    return apiRouteError(error, request, "lawyers.placement-events", {
+      fallbackMessage: "Événement de placement avocat impossible",
+      extra: { recorded: false },
+    });
   }
 }

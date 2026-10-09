@@ -144,7 +144,7 @@ describe("information-agent evidence rights review", () => {
     );
 
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: "Pièce indisponible." });
+    expect(await response.json()).toMatchObject({ ok: false, error: "Pièce indisponible." });
     expect(mocks.storageFrom).not.toHaveBeenCalled();
   });
 
@@ -156,7 +156,8 @@ describe("information-agent evidence rights review", () => {
     });
 
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
+      code: "CONFLICT",
       error: expect.stringContaining("objet public"),
     });
     expect(mocks.from).toHaveBeenCalledTimes(1);
@@ -172,8 +173,9 @@ describe("information-agent evidence rights review", () => {
     });
 
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({
-      error: expect.stringContaining("opération atomique"),
+    expect(await response.json()).toMatchObject({
+      code: "CONFLICT",
+      error: expect.stringContaining("révoquez d'abord la publication"),
     });
     expect(mocks.from).toHaveBeenCalledTimes(1);
   });

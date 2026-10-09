@@ -1,5 +1,7 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import { PublicApiError } from "@/lib/api-errors";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -14,10 +16,11 @@ const evidenceRightsReviewSchema = z.object({
 const evidenceAssetIdSchema = z.string().uuid();
 const privateEvidenceBucket = "information-agent-evidence";
 
-const publicationRevocationConflict =
-  "Conflict: cette pièce est déjà publiée ou a déjà été préparée pour publication. " +
-  "Révoquez d'abord la publication par une opération atomique qui supprime l'objet public " +
-  "et toutes ses références dans les ventes, puis marquez la pièce comme restreinte.";
+const publicationRevocationConflict = new PublicApiError(
+  "Cette pièce est déjà publiée ou préparée pour publication : révoquez d'abord la publication " +
+    "(suppression de l'objet public et de ses références dans les ventes), puis marquez la pièce comme restreinte.",
+  409,
+);
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -32,7 +35,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       .single();
     if (assetError) throw assetError;
     if (asset.storage_bucket !== privateEvidenceBucket) {
-      throw new Error("Pièce indisponible.");
+      throw new PublicApiError("Pièce indisponible.", 404);
     }
 
     const { data, error } = await supabaseAdmin.storage
@@ -50,13 +53,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       headers: { "cache-control": "private, no-store", "referrer-policy": "no-referrer" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Pièce indisponible.";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.startsWith("Forbidden")
-        ? 403
-        : 404;
-    return NextResponse.json({ error: message }, { status });
+    return apiRouteError(error, request, "admin.information-agent.evidence.id", {
+      fallbackMessage: "Pièce indisponible.",
+      fallbackStatus: 404,
+    });
   }
 }
 
@@ -78,7 +78,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       input.rightsStatus === "restricted" &&
       (current.review_status === "accepted" || hasApprovedPublication(current.metadata))
     ) {
-      throw new Error(publicationRevocationConflict);
+      throw publicationRevocationConflict;
     }
 
     const metadata =
@@ -109,21 +109,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       .select("id,rights_status,review_status")
       .maybeSingle();
     if (error) throw error;
-    if (!data) throw new Error(publicationRevocationConflict);
+    if (!data) throw publicationRevocationConflict;
     return NextResponse.json(
       { ok: true, asset: data },
       { headers: { "cache-control": "private, no-store" } },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Révision impossible.";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.startsWith("Forbidden")
-        ? 403
-        : message.startsWith("Conflict") || isRightsRestrictionConflict(error)
-          ? 409
-          : 400;
-    return NextResponse.json({ error: message }, { status });
+    return apiRouteError(
+      isRightsRestrictionConflict(error) ? publicationRevocationConflict : error,
+      request,
+      "admin.information-agent.evidence.id",
+      { fallbackMessage: "Révision impossible." },
+    );
   }
 }
 
@@ -141,14 +138,14 @@ function hasNonEmptyString(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function isRightsRestrictionConflict(error: unknown): boolean {
+function isRightsRestrictionConflict(candidate: unknown): boolean {
   return (
-    !!error &&
-    typeof error === "object" &&
-    "code" in error &&
-    error.code === "55000" &&
-    "message" in error &&
-    typeof error.message === "string" &&
-    error.message.startsWith("Published or staged evidence")
+    !!candidate &&
+    typeof candidate === "object" &&
+    "code" in candidate &&
+    candidate.code === "55000" &&
+    "message" in candidate &&
+    typeof candidate.message === "string" &&
+    candidate.message.startsWith("Published or staged evidence")
   );
 }

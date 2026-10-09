@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorDetailForLog } from "@/lib/api-errors";
 import { unsubscribeEmailAlertsByNotificationId } from "@/lib/email-alerts";
 
 export const runtime = "nodejs";
@@ -18,9 +19,18 @@ export async function GET(request: Request) {
       200,
     );
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "La désinscription n'a pas pu être confirmée.";
-    return htmlResponse("Désinscription impossible", message, 400);
+    // Only a neutral message is shown on this public page; the cause stays in the logs.
+    console.error(
+      JSON.stringify({
+        scope: "notification-preferences.unsubscribe",
+        error: errorDetailForLog(error),
+      }),
+    );
+    return htmlResponse(
+      "Désinscription impossible",
+      "La désinscription n'a pas pu être confirmée. Le lien est peut-être expiré ou invalide : gérez vos alertes depuis votre compte.",
+      400,
+    );
   }
 }
 

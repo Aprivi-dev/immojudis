@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -19,12 +20,8 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Analyse de marché indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservée")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "market-analytics", {
+      fallbackMessage: "Analyse de marché indisponible",
+    });
   }
 }

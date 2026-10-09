@@ -85,9 +85,13 @@ describe("admin auction fact claim review route", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({
-      error: "The candidate no longer matches the current canonical sale field.",
+    const body = await response.json();
+    // The driver message stays in the logs; the client gets a French conflict message.
+    expect(body).toMatchObject({
+      code: "CONFLICT",
+      error: "Ce fait a déjà été traité ou est en cours de traitement ailleurs.",
     });
+    expect(JSON.stringify(body)).not.toContain("canonical");
   });
 
   it("returns unauthorized when the auth middleware rejects the request", async () => {

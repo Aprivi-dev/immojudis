@@ -6,6 +6,7 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { errorDetailForLog, isUnauthorizedError } from "@/lib/api-errors";
 import { DETAIL_VIEW } from "@/lib/sale-views";
 import {
   AI_REVIEW_FIELD_KEYS,
@@ -442,16 +443,23 @@ export async function GET(request: Request) {
       ],
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Relecture IA indisponible.";
-    const status = message.startsWith("Unauthorized") ? 401 : 503;
+    // Only the authentication failure is distinguishable; every other failure is the
+    // same neutral outage message and the detail goes to the server logs.
+    const unauthorized = isUnauthorizedError(error);
+    console.error(
+      JSON.stringify({
+        scope: "sales.ai-review",
+        status: unauthorized ? 401 : 503,
+        error: errorDetailForLog(error),
+      }),
+    );
     return response(
       {
-        error:
-          status === 401
-            ? message
-            : "La relecture IA de cette annonce est momentanément indisponible.",
+        error: unauthorized
+          ? "Authentification requise."
+          : "La relecture IA de cette annonce est momentanément indisponible.",
       },
-      status,
+      unauthorized ? 401 : 503,
     );
   }
 }

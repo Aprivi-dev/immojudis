@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -24,9 +25,9 @@ export async function POST(request: Request, { params }: RouteParams) {
 
     return NextResponse.json(response);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Partage impossible";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "property-reports.id.share", {
+      fallbackMessage: "Partage impossible",
+    });
   }
 }
 
@@ -38,8 +39,8 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     const response = await disablePropertyReportShare({ auth, reportId: id, origin: url.origin });
     return NextResponse.json(response);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Désactivation du partage impossible";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "property-reports.id.share", {
+      fallbackMessage: "Désactivation du partage impossible",
+    });
   }
 }

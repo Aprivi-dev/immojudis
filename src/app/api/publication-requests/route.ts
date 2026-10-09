@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -13,11 +14,6 @@ import {
   removePublicationRequestUploads,
 } from "@/lib/publication-requests";
 
-const PRIVATE_AUTH_HEADERS = {
-  "cache-control": "private, no-store",
-  vary: "authorization",
-};
-
 export async function GET(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
@@ -26,7 +22,7 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return errorResponse(error, { requests: [] }, "Demandes de publication indisponibles");
+    return errorResponse(request, error, { requests: [] }, "Demandes de publication indisponibles");
   }
 }
 
@@ -39,7 +35,7 @@ export async function POST(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return errorResponse(error, { request: null }, "Demande de publication impossible");
+    return errorResponse(request, error, { request: null }, "Demande de publication impossible");
   }
 }
 
@@ -51,7 +47,12 @@ export async function PUT(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return errorResponse(error, { requestId: null, uploads: [] }, "Téléversement impossible");
+    return errorResponse(
+      request,
+      error,
+      { requestId: null, uploads: [] },
+      "Téléversement impossible",
+    );
   }
 }
 
@@ -62,7 +63,7 @@ export async function DELETE(request: Request) {
     await removePublicationRequestUploads({ auth, requestId: body.requestId });
     return NextResponse.json({ ok: true }, { headers: { "cache-control": "private, no-store" } });
   } catch (error) {
-    return errorResponse(error, { ok: false }, "Nettoyage du téléversement impossible");
+    return errorResponse(request, error, { ok: false }, "Nettoyage du téléversement impossible");
   }
 }
 
@@ -75,17 +76,14 @@ function parsePage(value: string | null): number {
   return page;
 }
 
-function errorResponse(error: unknown, payload: Record<string, unknown>, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden")
-      ? 403
-      : message.startsWith("NotFound")
-        ? 404
-        : 400;
-  return NextResponse.json(
-    { ...payload, error: message },
-    { status, headers: PRIVATE_AUTH_HEADERS },
-  );
+function errorResponse(
+  request: Request,
+  error: unknown,
+  payload: Record<string, unknown>,
+  fallback: string,
+) {
+  return apiRouteError(error, request, "publication-requests", {
+    fallbackMessage: fallback,
+    extra: payload,
+  });
 }
