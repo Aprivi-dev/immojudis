@@ -241,6 +241,15 @@ python -m src.dvf_import data/raw/dvf/dvf.csv.gz \
   --source-url "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees"
 ```
 
+Remplacement complet (`replace_existing=true` dans le workflow) : chaque fichier
+est chargé dans `dvf_transactions_staging` (`--stage`, avec `--reset-staging` pour
+le premier), puis un seul `python -m src.dvf_import --swap-staging` construit les
+index sur la table de staging et l'échange avec `dvf_transactions` dans une seule
+transaction. Un import interrompu laisse `dvf_transactions` intact ; `--replace-existing`
+reste disponible pour un fichier unique (chargement et échange dans le même appel).
+Les téléchargements ont un délai de 120 s et n'acceptent que `data.gouv.fr`,
+`www.data.gouv.fr`, `files.data.gouv.fr` et `static.data.gouv.fr` (redirections comprises).
+
 Le calcul backend tente d’abord les ventes détaillées normalisées en base, puis
 les fichiers officiels DVF par commune publiés sur data.gouv.fr. Quand cet
 échantillon local reste insuffisant, il utilise les médianes officielles par
