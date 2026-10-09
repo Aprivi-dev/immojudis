@@ -87,9 +87,12 @@ jobs:
           cache-dependency-path: |
             services/data-pipeline/requirements.lock
             services/data-pipeline/requirements-dev.lock
+            services/data-pipeline/requirements-valuation.lock
       - run: python -m pip install --require-hashes -r requirements-dev.lock
-      - name: Resolve optional Docling and valuation stacks
-        run: python -m pip install --dry-run -r requirements-docling.txt -r requirements-valuation.txt
+      - name: Install the valuation stack (LightGBM, MAPIE, H3) for the training tests
+        run: python -m pip install --require-hashes -r requirements-valuation.lock
+      - name: Resolve the optional Docling stack
+        run: python -m pip install --dry-run -r requirements-docling.txt
       - name: Lint
         run: python -m ruff check .
       - name: Run tests

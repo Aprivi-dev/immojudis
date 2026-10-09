@@ -285,6 +285,21 @@ MAPIE pour conformaliser l'intervalle sur un jeu de calibration chronologique.
 La séparation train/calibration/test respecte l'ordre des dates afin d'éviter
 de faire fuiter des ventes futures dans les métriques.
 
+Le modèle est d'abord validé sur ce découpage (70 % / 15 % / 15 %), puis le
+modèle publié est réentraîné sur train + calibration et ses intervalles sont
+recalibrés sur la fenêtre la plus récente (les métriques publiées décrivent le
+modèle de validation). Les variables de marché local (`local_median_log`,
+`local_spread_log`, `local_sample_size_log`) d'une vente ne s'appuient que sur
+les ventes qui la précèdent, par cellule H3 (`resolve_local_market`). Les
+statistiques de cellules sont exportées dans l'artefact (`localMarket`) pour que
+la production recalcule exactement ces variables ; l'implémentation de référence
+est `lookup_exported_local_market`.
+
+Chaque entraînement écrit `<segment>-<version>.report.json`, qui compare le
+nouveau modèle, le modèle actif et deux références naïves (moyenne géométrique
+locale passée et médiane des ventes d'entraînement de la cellule) sur les ventes
+les plus récentes ; le même tableau est ajouté au résumé du run GitHub.
+
 Installer les dépendances optionnelles :
 
 ```bash
@@ -304,10 +319,14 @@ python -m src.valuation_training --segment apartment --publish
 python -m src.valuation_training --segment apartment --activate
 ```
 
-L'activation est refusée si le jeu de test contient moins de 50 ventes, si
+Le modèle est refusé si le jeu de test contient moins de 50 ventes, si
 l'erreur absolue médiane dépasse 30 %, si la MAPE dépasse 40 %, si la couverture
 P10-P90 est inférieure à 72 % ou si la largeur moyenne de l'intervalle dépasse
-110 %. `--force` existe pour les essais contrôlés, pas pour les runs planifiés.
+110 %. `--force` contourne ces seuils absolus pour les essais contrôlés, pas
+pour les runs planifiés. L'activation exige en plus une erreur absolue médiane
+strictement meilleure que celle du modèle actif (évalué sur les mêmes ventes) et
+que celle de la référence naïve la plus forte ; `--force` ne contourne jamais ce
+test, et un modèle qui ne le passe pas est publié en brouillon.
 L'API mélange le modèle actif avec les comparables locaux et revient
 automatiquement au moteur comparable si l'artefact est absent ou invalide.
 La valeur de marché ainsi produite reste distincte du calcul de mise plafond,
@@ -316,8 +335,9 @@ qui retire ensuite travaux, frais et marge de sécurité.
 Le workflow GitHub Actions `Immojudis Valuation Model Training` est uniquement
 déclenché manuellement. Il entraîne chaque segment séparément sur au plus
 750 000 ventes récentes, applique les mêmes seuils de promotion et conserve le
-bundle JSON pendant 30 jours pour audit. Une activation exige la confirmation
-explicite de la cible `production`.
+bundle JSON et le rapport de comparaison pendant 30 jours pour audit. Il publie
+des brouillons par défaut (`activate: false`) ; une activation exige la
+confirmation explicite de la cible `production`.
 
 ## Enrichissement cadastre
 
