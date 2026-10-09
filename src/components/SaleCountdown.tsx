@@ -105,7 +105,7 @@ export function SaleCountdown({
     const label =
       dayRemaining === 0
         ? "Aujourd'hui · heure à confirmer"
-        : `${dayRemaining} jours · heure à confirmer`;
+        : `${dayRemaining} jour${dayRemaining === 1 ? "" : "s"} · heure à confirmer`;
 
     if (variant === "chip") {
       return (
