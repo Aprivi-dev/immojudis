@@ -525,7 +525,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     onSearchAsMoveChange: handleSearchAsMoveChange,
   };
 
-  async function saveSearch() {
+  async function saveSearch(options?: { frequency: "daily" | "weekly" }) {
     if (!user) {
       // La première alerte est gratuite : on invite à se connecter puis on
       // ramène la personne sur sa recherche.
@@ -584,6 +584,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         min_market_discount_pct: search.minMarketDiscount ?? null,
         dpe_classes: search.dpeClasses ?? [],
         require_house_with_land: Boolean(search.houseWithLand),
+        alert_frequency: options?.frequency ?? "daily",
         watched_zone_id: watchedZoneResponse?.zone.id ?? null,
         advanced_criteria: {
           source: "sales_search",
@@ -652,6 +653,8 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         savingAlert={savingAlert}
         exportingCsv={exportingCsv}
         csvExportLocked={csvExportLocked}
+        signedIn={Boolean(user)}
+        weeklyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
         wideMap={wideMap}
         isDesktop={isDesktop}
         onFiltersOpenChange={setFiltersOpen}

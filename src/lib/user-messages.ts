@@ -11,7 +11,7 @@ type ErrorLike = {
 const TECHNICAL_MARKER =
   /\b(pgrst|postgrest|postgres|supabase|stripe|jwt|relation|column|constraint|violates|syntax error|rpc|policy|schema|undefined|null|typeerror|referenceerror|econn|enotfound|etimedout|stack|sql)\b|[{}[\]]/i;
 const FRENCH_SENTENCE =
-  /[àâçéèêëîïôûùüÿœ]|^(vous|votre|vos|le|la|les|une|un|impossible|cette|ce|choisissez|précisez|veuillez|aucun|aucune)\b/i;
+  /[àâçéèêëîïôûùüÿœ]|^(vous|votre|vos|le|la|les|une|un|impossible|cette|ce|choisissez|précisez|veuillez|aucun|aucune)\b|\b(temporairement|indisponibles?|introuvables?|invalides?|requise?|réessayez|vérifiez|pour|des|du|est|sont|pas|trop)\b/i;
 
 const KNOWN_MESSAGES: Array<[RegExp, string]> = [
   [/invalid login credentials/i, "Email ou mot de passe incorrect."],
