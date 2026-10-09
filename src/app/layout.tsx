@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Cormorant_Garamond, IBM_Plex_Sans } from "next/font/google";
 import "./../styles.css";
 import { AppProviders } from "./providers";
+import { cspRequiresDynamicRendering } from "@/lib/security-headers";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
 const cormorantGaramond = Cormorant_Garamond({
@@ -49,7 +51,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // A nonce can only be stamped on scripts at request time. Enforcing the strict CSP (or
+  // previewing it with CSP_NONCE_DYNAMIC=true) therefore renders every page dynamically; in the
+  // default report-only mode static pages stay static and only report.
+  if (cspRequiresDynamicRendering()) await connection();
   return (
     <html lang="fr" className={`${cormorantGaramond.variable} ${ibmPlexSans.variable}`}>
       <body>
