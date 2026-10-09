@@ -152,12 +152,16 @@ def load_settings() -> dict[str, str | float | None]:
         # longer than a normal Licitor/Vench inventory pass; HTTP requests keep
         # their own shorter timeout inside the child.  The default stays below
         # the 35-minute autonomous source budget so its parent can finish
-        # publication and terminate the child cleanly.
+        # publication and terminate the child cleanly.  Petites Affiches
+        # keeps its own 30-minute collection checkpoint budget inside that
+        # 35-minute scheduler window.
         "source_process_isolation": os.getenv("SOURCE_PROCESS_ISOLATION", "true").lower()
         in {"1", "true", "yes", "on"},
         "source_process_isolation_sources": tuple(
             source.strip().lower()
-            for source in os.getenv("SOURCE_PROCESS_ISOLATION_SOURCES", "vench,avoventes").split(",")
+            for source in os.getenv(
+                "SOURCE_PROCESS_ISOLATION_SOURCES", "vench,avoventes,petites_affiches"
+            ).split(",")
             if source.strip()
         ),
         "source_scrape_timeout_seconds": max(
