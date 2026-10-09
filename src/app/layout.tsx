@@ -9,7 +9,9 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 
 const cormorantGaramond = Cormorant_Garamond({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+  // Seules les graisses réellement employées par font-display : 400 (dont l'italique des
+  // accents de titre), 500 et 600. Les graisses 300 et 700 ne sont jamais demandées.
+  weight: ["400", "500", "600"],
   style: ["normal", "italic"],
   display: "swap",
   variable: "--font-cormorant-garamond",
