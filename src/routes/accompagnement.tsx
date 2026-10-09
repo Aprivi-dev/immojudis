@@ -16,21 +16,7 @@ import {
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
 
-import { createFileRoute, Link } from "@/lib/router-compat";
-
-export const Route = createFileRoute("/accompagnement")({
-  head: () => ({
-    meta: [
-      { title: "Offres Découverte et Analyse — Immojudis" },
-      {
-        name: "description",
-        content:
-          "Explorez les ventes et conservez trois favoris gratuitement. Testez les outils Premium pendant sept jours avec carte, puis abonnement récurrent résiliable.",
-      },
-    ],
-  }),
-  component: AccompagnementPage,
-});
+import { Link } from "@/lib/router-compat";
 
 const discoveryFeatures = [
   "Photos du bien",
