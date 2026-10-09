@@ -341,7 +341,7 @@ def test_parse_petites_affiches_detail_keeps_thousands_surface() -> None:
 
     detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
 
-    assert detail["surface_m2"] == "2464,70"
+    assert detail["surface_m2"] == "2464.70"
 
 
 def test_parse_petites_affiches_detail_extracts_documents_when_surface_is_in_attachments() -> None:

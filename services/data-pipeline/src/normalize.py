@@ -119,7 +119,22 @@ def clean_text(value: object | None) -> str | None:
     return None if is_null_text(text) else text or None
 
 
+MIN_PLAUSIBLE_PRICE_EUR = Decimal("100")
+# A number optionally scaled by « k€ » or « M€ » (parse_price applies the factor).
+_PRICE_TOKEN = r"[0-9][0-9\s.,]*(?:\s*(?:[kM]\s*€|millions?\s+d['’]\s*euros?))?"
+_PRICE_SCALES = (
+    (re.compile(r"\s*(?:M\s*€|millions?\b)", re.I), Decimal("1000000")),
+    (re.compile(r"\s*(?:k\s*€|k\s*euros?\b)", re.I), Decimal("1000")),
+)
+
+
 def parse_price(value: object | None) -> Decimal | None:
+    """Parse a euro amount (« 125 000,50 € », « 1,5 M€ », « 85 k€ »); under 100 € is not a price."""
+    price = _parse_price_amount(value)
+    return price if price is not None and price >= MIN_PLAUSIBLE_PRICE_EUR else None
+
+
+def _parse_price_amount(value: object | None) -> Decimal | None:
     if isinstance(value, Decimal):
         return value
     if isinstance(value, int):
@@ -134,9 +149,14 @@ def parse_price(value: object | None) -> Decimal | None:
         return None
     number = _normalize_numeric_token(match.group(1))
     try:
-        return Decimal(number)
+        amount = Decimal(number)
     except InvalidOperation:
         return None
+    rest = text[match.end() :]
+    for scale_pattern, factor in _PRICE_SCALES:
+        if scale_pattern.match(rest):
+            return amount * factor
+    return amount
 
 
 def extract_starting_price(raw_sale: dict[str, object]) -> Decimal | None:
@@ -170,11 +190,11 @@ def resolve_starting_price(raw_sale: dict[str, object]) -> tuple[Decimal | None,
     text_price = None
     lot_scoped = False
     for pattern in (
-        r"(?P<label>mise\s+[àa]\s+prix(?:\s+initiale)?)\s*:?\s*(?P<price>[0-9][0-9\s.,]*)\s*(?:€|euros?)?",
-        r"(?P<label>prix\s+de\s+vente)\s*:\s*(?P<price>[0-9][0-9\s.,]*)\s*(?:€|euros?)?",
-        r"(?P<label>prix\s+plancher)\s*:?\s*(?P<price>[0-9][0-9\s.,]*)\s*(?:€|euros?)?",
+        rf"(?P<label>mise\s+[àa]\s+prix(?:\s+initiale)?)\s*:?\s*(?P<price>{_PRICE_TOKEN})\s*(?:€|euros?)?",
+        rf"(?P<label>prix\s+de\s+vente)\s*:\s*(?P<price>{_PRICE_TOKEN})\s*(?:€|euros?)?",
+        rf"(?P<label>prix\s+plancher)\s*:?\s*(?P<price>{_PRICE_TOKEN})\s*(?:€|euros?)?",
         r"(?P<label>premi[èe]re\s+offre\s+(?:possible\s+)?(?:à\s+partir\s+de\s+)?)"
-        r"(?P<price>[0-9][0-9\s.,]*)\s*(?:€|euros?)?",
+        rf"(?P<price>{_PRICE_TOKEN})\s*(?:€|euros?)?",
     ):
         match = re.search(pattern, text, re.I)
         if match:
@@ -220,7 +240,7 @@ def _is_dvf_comparable_price_context(text: str, start: int, end: int, label: str
 
 _ADJUDICATION_MIN_EUR = Decimal("1000")
 _ADJUDICATION_MIN_RATIO = Decimal("0.1")
-_ADJUDICATION_PRICE = r"([0-9][0-9\s.,]*?)\s*(?:€|euros?\b)"
+_ADJUDICATION_PRICE = r"([0-9][0-9\s.,]*?\s*(?:[kM]\s*€|millions?\s+d['’]\s*euros?\b|€|euros?\b))"
 # « adjugé le 12/03/2025 pour 150 000 € » : la date qui suit le mot ne doit pas être lue comme un prix.
 _ADJUDICATION_DATE = r"(?:(?:le|du|en\s+date\s+du)\s+)?\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}"
 _ADJUDICATION_PATTERNS = (
@@ -1120,7 +1140,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         longitude=parse_decimal(raw_sale.get("longitude")),
         occupancy_status=occupancy_status,
         risk_notes=risk_notes,
-        investment_score=parse_price(raw_sale.get("investment_score")),
+        investment_score=parse_decimal(raw_sale.get("investment_score")),
         investment_summary=clean_text(raw_sale.get("investment_summary")),
         score_version=clean_text(raw_sale.get("score_version")),
         score_confidence=parse_confidence(raw_sale.get("score_confidence")),

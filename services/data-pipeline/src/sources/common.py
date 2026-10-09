@@ -7,6 +7,7 @@ import signal
 import ssl
 import threading
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -755,6 +756,77 @@ def unique_dicts(items: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
         seen.add(marker)
         unique.append(item)
     return unique
+
+
+SURFACE_UNIT = r"m(?:2|²)"
+
+
+def normalize_surface_number(value: object) -> str | None:
+    """Canonical decimal string for a French surface: « 1 234,5 » and « 1.234,5 » give « 1234.5 »."""
+    from src.normalize import clean_text
+
+    text = clean_text(value)
+    if not text:
+        return None
+    text = text.replace(" ", "")
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
+        text = text.replace(".", "")
+    try:
+        float(text)
+    except ValueError:
+        return None
+    return text
+
+
+def extract_surface(
+    *values: object,
+    number: str | None = None,
+    unit: str = SURFACE_UNIT,
+    labelled: tuple[str, ...] = (),
+    exclude: Callable[[str, int, int], bool] | None = None,
+) -> str | None:
+    """First surface in square metres found in the texts, as a canonical decimal string.
+
+    ``labelled`` patterns (number in group 1) are tried first, over every text.
+    ``exclude(text, start, end)`` marks matches to ignore (e.g. cadastral parcels)
+    unless nothing else was found.
+    """
+    from src.normalize import SURFACE_VALUE_PATTERN
+
+    texts = [str(value) for value in values if value]
+    for pattern in labelled:
+        for text in texts:
+            if match := re.search(pattern, text, re.I):
+                return normalize_surface_number(match.group(1))
+    found: list[tuple[re.Match[str], bool]] = []
+    for text in texts:
+        for match in re.finditer(rf"\b{number or SURFACE_VALUE_PATTERN}\s*{unit}\b", text, re.I):
+            found.append((match, bool(exclude and exclude(text, match.start(), match.end()))))
+    kept = [match for match, excluded in found if not excluded]
+    chosen = kept or [match for match, _ in found]
+    return normalize_surface_number(chosen[0].group(1)) if chosen else None
+
+
+def fetch_detail_html(
+    client: Any,
+    sale: dict[str, Any],
+    errors: list[str],
+    *,
+    label: str,
+    url: str | None = None,
+) -> str | None:
+    """Fetch a detail page; on failure record it on the sale and return None."""
+    source_url = url or str(sale.get("source_url") or "")
+    try:
+        return client.get(source_url)
+    except Exception as exc:
+        LOGGER.warning("%s detail fetch failed for %s: %s", label, source_url, exc)
+        errors.append(f"detail {source_url}: {exc}")
+        sale["_detail_fetch_failed"] = True
+        sale["source_detail_status"] = "failed"
+        return None
 
 
 def _robots_match(pattern: str, target: str) -> bool:

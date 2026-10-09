@@ -19,7 +19,14 @@ from src.normalize import (
 )
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, is_allowed_origin_url, parse_html
+from src.sources.common import (
+    PoliteHttpClient,
+    ScrapeResult,
+    extract_surface,
+    is_allowed_origin_url,
+    normalize_surface_number,
+    parse_html,
+)
 from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://www.licitor.com"
@@ -852,8 +859,7 @@ def _is_disallowed_document_url(url: str) -> bool:
 
 def _extract_surface_m2(text: str) -> str | None:
     # Première surface bâtie plausible mentionnée dans la page (en m²).
-    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*(?:m\s*(?:²|2)|²)\b", text, re.I)
-    return _normalize_surface_number(match.group(1)) if match else None
+    return extract_surface(text, unit=r"(?:m\s*(?:²|2)|²)")
 
 
 def _extract_qualified_surface(text: str | None, kind: str) -> str | None:
@@ -874,7 +880,7 @@ def _extract_qualified_surface(text: str | None, kind: str) -> str | None:
     else:
         return None
     candidates = [
-        _normalize_surface_number(match.group(1))
+        normalize_surface_number(match.group(1))
         for pattern in patterns
         for match in re.finditer(pattern, value, re.I)
     ]
@@ -1029,18 +1035,6 @@ def _extract_parking_count(text: str | None) -> int | None:
     if len(re.findall(r"\b(?:parking|stationnement|box|garage)\b", detail, re.I)) == 1:
         return 1
     return None
-
-
-def _normalize_surface_number(value: str) -> str | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    text = text.replace(" ", "")
-    if "," in text:
-        return text.replace(".", "")
-    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
-        return text.replace(".", "")
-    return text
 
 
 def _extract_after(text: str, pattern: str) -> str | None:

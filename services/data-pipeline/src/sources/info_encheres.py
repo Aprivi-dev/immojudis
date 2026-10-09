@@ -19,7 +19,16 @@ from src.normalize import (
 )
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
+from src.sources.common import (
+    PoliteHttpClient,
+    ScrapeResult,
+    extract_surface,
+    fetch_detail_html,
+    normalize_surface_number,
+    parse_html,
+    should_fetch_detail,
+    unique_dicts,
+)
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
@@ -204,7 +213,7 @@ def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any
         "property_type": property_type,
         "title": title,
         "description": description,
-        "surface_m2": _extract_surface(description, page_text),
+        "surface_m2": extract_surface(description, page_text, exclude=_is_cadastral_surface_match),
         "habitable_surface_m2": habitable_surface_m2,
         "land_surface_m2": land_surface_m2,
         "rooms_count": rooms_count,
@@ -246,13 +255,8 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
-    try:
-        html = client.get(source_url)
-    except Exception as exc:
-        LOGGER.warning("Info Encheres detail fetch failed for %s: %s", source_url, exc)
-        errors.append(f"detail {source_url}: {exc}")
-        sale["_detail_fetch_failed"] = True
-        sale["source_detail_status"] = "failed"
+    html = fetch_detail_html(client, sale, errors, label="Info Encheres")
+    if html is None:
         return
     sale["source_detail_status"] = "complete"
     details = parse_info_encheres_detail_html(html, source_url)
@@ -426,20 +430,6 @@ def _looks_like_property_image(url: str) -> bool:
     return not re.search(r"\b(?:logo|favicon|sprite|icon|picto|placeholder|avatar|loader)\b", text)
 
 
-def _extract_surface(*values: object) -> str | None:
-    matches: list[tuple[str, re.Match[str], bool]] = []
-    for value in values:
-        text = str(value or "")
-        for match in re.finditer(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I):
-            matches.append((text, match, _is_cadastral_surface_match(text, match.start(), match.end())))
-    has_non_cadastral_match = any(not is_cadastral for _, _, is_cadastral in matches)
-    for _, match, is_cadastral in matches:
-        if is_cadastral and has_non_cadastral_match:
-            continue
-        return _normalize_surface_number(match.group(1))
-    return None
-
-
 def _is_cadastral_surface_match(text: str, start: int, end: int) -> bool:
     context = text[max(0, start - 100) : end]
     return bool(
@@ -509,13 +499,13 @@ def _extract_habitable_surface(
         if not match:
             continue
         value_match = re.search(number, match.group(0), re.I)
-        value = _normalize_surface_number(value_match.group(1)) if value_match else None
+        value = normalize_surface_number(value_match.group(1)) if value_match else None
         if value and value not in candidates:
             candidates.append(value)
     if len(candidates) != 1:
         return None
     candidate = candidates[0]
-    detail_value = _extract_surface(detail_surface)
+    detail_value = extract_surface(detail_surface, exclude=_is_cadastral_surface_match)
     if detail_value and detail_value != candidate and not _is_mixed_asset(
         " ".join(part for part in (property_type, text) if part)
     ):
@@ -612,18 +602,6 @@ def _parse_count_token(value: str) -> int | None:
         "quatre": 4,
         "cinq": 5,
     }.get(lowered)
-
-
-def _normalize_surface_number(value: str) -> str | None:
-    text = _text(value)
-    if not text:
-        return None
-    text = text.replace(" ", "")
-    if "," in text:
-        return text.replace(".", "").replace(",", ".")
-    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
-        return text.replace(".", "")
-    return text
 
 
 def _extract_occupancy_status(raw_text: str) -> str | None:

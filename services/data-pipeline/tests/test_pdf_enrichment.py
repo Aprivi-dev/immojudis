@@ -381,7 +381,7 @@ def test_enrich_sale_from_ccv_replaces_implausible_source_starting_price() -> No
             "source_name": "info_encheres",
             "source_url": "https://www.info-encheres.com/vente-6008.html",
             "property_type": "Maison",
-            "starting_price_eur": "11 €",
+            "starting_price_eur": "500 €",
         }
     )
     pdf_text = {
@@ -423,7 +423,7 @@ def test_enrich_sale_from_ccv_replaces_implausible_source_starting_price() -> No
         "source": "pdf",
         "status": "resolved",
         "value_eur": 10500.0,
-        "rejected_source_price_eur": 11.0,
+        "rejected_source_price_eur": 500.0,
         "selected_value_eur": 10500.0,
         "document_label": "Cahier des conditions de la vente",
         "document_url": "https://www.info-encheres.com/upload/cahier-6008.pdf",
@@ -444,7 +444,7 @@ def test_enrich_sale_from_ccv_ignores_bid_guarantee_minimum() -> None:
             "source_name": "info_encheres",
             "source_url": "https://www.info-encheres.com/vente-guarantee.html",
             "property_type": "Maison",
-            "starting_price_eur": "11 €",
+            "starting_price_eur": "500 €",
         }
     )
     pdf_text = {
@@ -458,7 +458,7 @@ def test_enrich_sale_from_ccv_ignores_bid_guarantee_minimum() -> None:
 
     enrich_sale_from_pdf_text(sale, [pdf_text])
 
-    assert sale.starting_price_eur == Decimal("11")
+    assert sale.starting_price_eur == Decimal("500")
     assert "starting_price_extraction" not in sale.raw_payload
     assert sale.raw_payload["document_facts_version"] == DOCUMENT_FACTS_VERSION
 
