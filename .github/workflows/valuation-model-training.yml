@@ -26,13 +26,13 @@ on:
         default: "750000"
         type: string
       activate:
-        description: "Activate models that pass the promotion gates"
+        description: "Activate models that pass the promotion gates (median APE better than the active model and than the naive local reference). Off by default: models are published as drafts."
         required: true
-        default: true
+        default: false
         type: boolean
       confirm_target:
         description: "Type production when activate=true"
-        required: true
+        required: false
         type: string
 permissions:
   contents: read
