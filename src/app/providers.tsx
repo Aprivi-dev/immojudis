@@ -5,6 +5,7 @@ import { Suspense, useState } from "react";
 import { Toaster } from "sonner";
 import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
+import { SiteFooter } from "@/components/SiteFooter";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -22,6 +23,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
             <Navbar />
           </Suspense>
           {children}
+          <SiteFooter />
           <Toaster position="top-right" richColors />
         </div>
       </AuthProvider>

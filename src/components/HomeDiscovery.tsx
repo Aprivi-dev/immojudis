@@ -4,7 +4,6 @@ import Image from "next/image";
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
-import { BrandMark } from "@/components/BrandLogo";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import styles from "./HomeDiscovery.module.css";
 
@@ -194,34 +193,6 @@ export function HomeDiscovery() {
           <p>Prenez de meilleures décisions sur les ventes immobilières.</p>
         </div>
       </section>
-
-      <footer className={styles.footer}>
-        <div className={styles.footerTop}>
-          <Link href="/" className={styles.brand} aria-label="ImmoJudis — accueil">
-            <BrandMark variant="transparent" className={styles.brandMark} />
-            <span>
-              Immo<span>Judis</span>
-              <small>Les ventes immobilières en toute clarté.</small>
-            </span>
-          </Link>
-          <nav aria-label="Navigation pied de page">
-            <Link href="/comment-ca-marche">Comment ça marche</Link>
-            <Link href="/sales">Les ventes</Link>
-            <Link href="/ressources">Ressources</Link>
-            <Link href="/accompagnement">Offres</Link>
-            <Link href="/contact">Contact</Link>
-          </nav>
-        </div>
-        <div className={styles.footerBottom}>
-          <span>© 2026 ImmoJudis</span>
-          <nav aria-label="Informations légales">
-            <Link href="/legal">Mentions légales</Link>
-            <Link href="/conditions-generales">Conditions générales</Link>
-            <Link href="/privacy">Confidentialité</Link>
-            <Link href="/mes-droits">Mes droits</Link>
-          </nav>
-        </div>
-      </footer>
     </div>
   );
 }
