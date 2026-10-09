@@ -18,7 +18,7 @@ export function SaleTypesOverview({ detailed = false }: { detailed?: boolean }) 
               key={family.type}
               className="flex flex-col rounded-lg border border-brand-navy/15 bg-white p-5 sm:p-6"
             >
-              <Icon className="mb-4 h-6 w-6 text-gold-soft" aria-hidden />
+              <Icon className="mb-4 h-6 w-6 text-gold-text" aria-hidden />
               <h3 className="font-display text-2xl font-semibold text-brand-navy">
                 {family.title}
               </h3>

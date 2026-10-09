@@ -71,10 +71,10 @@ export function AdminPrivacyRequestsPanel() {
   const totalCount = data?.totalCount ?? requests.length;
 
   return (
-    <section className="liquid-panel mt-6 rounded-lg p-5 sm:p-6">
+    <section className="admin-panel mt-6 rounded-lg p-5 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
             <ShieldCheck className="h-4 w-4" />
             Gouvernance des données
           </div>
@@ -85,7 +85,7 @@ export function AdminPrivacyRequestsPanel() {
           </p>
         </div>
         <span
-          className={`rounded-full border px-3 py-1 text-xs font-semibold ${overdueCount ? "border-red-300/30 bg-red-400/10 text-red-100" : "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"}`}
+          className={`rounded-full border px-3 py-1 text-xs font-semibold ${overdueCount ? "border-red-300/30 bg-red-400/10 text-danger" : "border-emerald-300/25 bg-success-tint text-success"}`}
         >
           Délai cible : 1 mois
         </span>
@@ -93,7 +93,7 @@ export function AdminPrivacyRequestsPanel() {
 
       {isLoading ? <p className="mt-5 text-sm text-muted-foreground">Chargement…</p> : null}
       {error ? (
-        <p className="mt-5 text-sm text-red-200">
+        <p className="mt-5 text-sm text-danger">
           {error instanceof Error ? error.message : "Demandes indisponibles"}
         </p>
       ) : null}
@@ -159,7 +159,7 @@ function AdminPagination({
       <div className="flex gap-2">
         <button
           type="button"
-          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="admin-panel rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={busy || offset === 0}
           onClick={onPrevious}
         >
@@ -167,7 +167,7 @@ function AdminPagination({
         </button>
         <button
           type="button"
-          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="admin-panel rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={busy || !hasMore}
           onClick={onNext}
         >
@@ -203,7 +203,7 @@ function PrivacyRequestEditor({
   const terminal = status === "completed" || status === "rejected";
 
   return (
-    <article className="liquid-panel-soft rounded-lg p-4">
+    <article className="admin-panel rounded-lg p-4">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-semibold text-foreground">{request.requestType}</h3>
         <span className="text-xs text-muted-foreground">{request.requesterEmail}</span>
@@ -212,7 +212,7 @@ function PrivacyRequestEditor({
         {request.message || "Aucune précision fournie."}
       </p>
       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-        <Clock className="h-3.5 w-3.5 text-gold" />
+        <Clock className="h-3.5 w-3.5 text-gold-text" />
         Reçue le {formatDate(request.submittedAt)} · échéance {formatDate(request.dueAt)}
       </div>
 
@@ -223,7 +223,7 @@ function PrivacyRequestEditor({
             value={status}
             disabled={busy}
             onChange={(event) => setStatus(event.target.value as PrivacyRequestStatus)}
-            className="rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
+            className="rounded-lg border border-brand-navy/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
           >
             {statusOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -238,7 +238,7 @@ function PrivacyRequestEditor({
             value={identityStatus}
             disabled={busy}
             onChange={(event) => setIdentityStatus(event.target.value as IdentityStatus)}
-            className="rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
+            className="rounded-lg border border-brand-navy/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
           >
             <option value="authenticated">Compte authentifié</option>
             <option value="additional_verification_required">Complément requis</option>
@@ -253,7 +253,7 @@ function PrivacyRequestEditor({
             disabled={busy}
             onChange={(event) => setResolutionCode(event.target.value)}
             placeholder="Ex. access_copy_delivered"
-            className="rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
+            className="rounded-lg border border-brand-navy/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
           />
         </label>
         <label className="grid gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground md:col-span-2">
@@ -265,7 +265,7 @@ function PrivacyRequestEditor({
             disabled={busy}
             onChange={(event) => setOperatorNotes(event.target.value)}
             placeholder="Vérifications, données remises, motif d’une limitation ou d’un refus…"
-            className="resize-y rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
+            className="resize-y rounded-lg border border-brand-navy/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
           />
         </label>
       </div>
@@ -287,7 +287,7 @@ function PrivacyRequestEditor({
                 setWithdrawalMode(event.target.value as "prorata" | "full");
                 setWithdrawalArmed(false);
               }}
-              className="rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs text-foreground"
+              className="rounded-lg border border-brand-navy/10 bg-background/60 px-3 py-2 text-xs text-foreground"
             >
               <option value="prorata">Remboursement au prorata du service fourni</option>
               <option value="full">Remboursement intégral</option>
@@ -308,7 +308,7 @@ function PrivacyRequestEditor({
                 <button
                   type="button"
                   onClick={() => setWithdrawalArmed(false)}
-                  className="rounded-lg border border-white/10 px-3 py-2 text-xs"
+                  className="rounded-lg border border-brand-navy/10 px-3 py-2 text-xs"
                 >
                   Annuler
                 </button>

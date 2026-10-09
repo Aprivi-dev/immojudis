@@ -37,7 +37,7 @@ export function PremiumAdjudicationExplorer({
       aria-labelledby="adjudications-licitor-title"
       className="scroll-mt-28 rounded-xl border border-brand-navy/15 bg-white p-5 shadow-sm sm:p-7"
     >
-      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.13em] text-gold-soft">
+      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.13em] text-gold-text">
         <BadgeEuro className="h-4 w-4" aria-hidden /> Résultats publiés · Offre Analyse
       </p>
       <h2
@@ -70,7 +70,7 @@ export function PremiumAdjudicationExplorer({
           </button>
         </div>
       ) : !hasAccess ? (
-        <div className="mt-6 rounded-lg border border-brand-navy/12 bg-[#f8fbfe] p-5">
+        <div className="mt-6 rounded-lg border border-brand-navy/12 bg-surface-muted p-5">
           <p className="font-semibold text-brand-navy">
             Les résultats chiffrés sont réservés aux membres Analyse.
           </p>

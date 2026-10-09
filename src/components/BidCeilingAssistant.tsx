@@ -387,8 +387,9 @@ function BidCeilingWorkspace({
       <section className="rounded-lg border border-border bg-white p-5 shadow-sm">
         <AssistantHeader onReset={reset} />
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-          Immojudis ne peut pas calculer une mise plafond fiable tant que la surface du bien n'est
-          pas renseignée. Complète la surface ou relis les pièces pour obtenir une fourchette.
+          Immojudis ne peut pas calculer une enchère plafond fiable tant que la surface du bien
+          n'est pas renseignée. Complétez la surface ou relisez les pièces pour obtenir une
+          fourchette.
         </p>
       </section>
     );
@@ -403,9 +404,9 @@ function BidCeilingWorkspace({
         <div className="mt-6 rounded-lg border border-gold/30 bg-gold/[0.07] p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-5">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
                 <Target className="h-4 w-4" />
-                Votre mise plafond
+                Votre enchère plafond
               </div>
               <div className="mt-3 text-4xl font-semibold leading-none tabular-nums text-foreground sm:text-5xl">
                 {verdictAvailable ? fmt(selected.result.maxBid) : "À compléter"}
@@ -443,7 +444,7 @@ function BidCeilingWorkspace({
                     onClick={() => setState((current) => ({ ...current, scenario: item.key }))}
                     className={`min-h-10 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
                       item.key === state.scenario
-                        ? "bg-gold text-background"
+                        ? "bg-gold text-brand-navy"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -493,7 +494,7 @@ function BidCeilingWorkspace({
           />
 
           {(surfaceInfo.estimated || marketSurfaces.builtSurfaceEstimated) && (
-            <p className="mt-4 rounded-lg border border-gold/20 bg-gold/[0.06] px-3 py-2 text-xs leading-relaxed text-gold-soft">
+            <p className="mt-4 rounded-lg border border-gold/20 bg-gold/[0.06] px-3 py-2 text-xs leading-relaxed text-gold-text">
               {marketSurfaces.builtSurfaceAssumption ?? surfaceInfo.helperText}
             </p>
           )}
@@ -542,7 +543,7 @@ function BidCeilingWorkspace({
 
           {/* Prochaine action */}
           <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4 text-sm">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-text">
               Prochaine action
             </span>
             <span className="text-muted-foreground">{nextAction}</span>
@@ -617,7 +618,7 @@ function BidCeilingWorkspace({
           type="button"
           aria-expanded={detailsOpen}
           onClick={() => setDetailsOpen((current) => !current)}
-          className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-gold-soft transition-colors hover:text-gold"
+          className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-gold-text transition-colors hover:text-gold-text"
         >
           <FileSearch className="h-4 w-4" />
           {detailsOpen
@@ -659,7 +660,7 @@ function BidCeilingWorkspace({
         )}
 
         <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold-text" />
           Ce plafond est une aide à la décision : il intègre enchère, frais estimés, FPT, travaux et
           marge de sécurité. Il ne remplace pas la relecture des pièces ni l'avis d'un
           professionnel.
@@ -697,7 +698,7 @@ function CeilingReferencePair({
     <dl className="mt-5 grid gap-3 sm:grid-cols-2">
       {rows.map((row) => (
         <div key={row.label} className="rounded-lg border border-gold/20 bg-white/75 p-4">
-          <dt className="text-[11px] font-semibold uppercase tracking-[0.1em] text-gold-soft">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.1em] text-gold-text">
             {row.label}
           </dt>
           <dd className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
@@ -830,11 +831,11 @@ function WorksEnvelope({
   const noRoom = maxWorks <= 0;
   return (
     <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-lg border border-border bg-muted/35 p-4">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-gold/30 bg-gold/10 text-gold">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-gold/30 bg-gold/10 text-gold-text">
         <Wrench className="h-5 w-5" />
       </span>
       <div className="min-w-0">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gold-text">
           Enveloppe travaux maximale
         </div>
         <div className="mt-1 text-3xl font-semibold leading-none tabular-nums text-foreground">
@@ -883,7 +884,7 @@ function WorksScenarioSelector({
     <div className="mt-5 rounded-lg border border-border bg-muted/35 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
             <Wrench className="h-4 w-4" />
             Estimation des travaux
           </div>
@@ -893,10 +894,10 @@ function WorksScenarioSelector({
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
             Aucun travaux n’est inclus tant que vous n’en choisissez pas. Le budget calculé sur les{" "}
             {formatSurface(surface)} du bien est affiché pour chaque scénario avant d’être déduit de
-            votre mise plafond.
+            votre enchère plafond.
           </p>
         </div>
-        <span className="rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-xs font-semibold text-gold-soft">
+        <span className="rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-xs font-semibold text-gold-text">
           Surface × prix moyen au m²
         </span>
       </div>
@@ -949,13 +950,13 @@ function WorksScenarioSelector({
                   Scénario {index + 1}
                 </span>
                 {selected ? (
-                  <span className="rounded-full bg-gold px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-background">
+                  <span className="rounded-full bg-gold px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-navy">
                     Retenu
                   </span>
                 ) : null}
               </span>
               <span className="mt-3 text-base font-semibold text-foreground">{scenario.label}</span>
-              <span className="mt-1 text-2xl font-semibold tabular-nums text-gold-soft">
+              <span className="mt-1 text-2xl font-semibold tabular-nums text-gold-text">
                 {ppm2(scenario.pricePerM2)}
               </span>
               <span className="mt-3 text-sm leading-relaxed text-muted-foreground">
@@ -997,7 +998,7 @@ function WorksScenarioSelector({
           {exceedsEnvelope ? (
             <p className="mt-2 text-xs font-medium leading-relaxed text-amber-700">
               Ce budget dépasse de {fmt(works - maxWorks!)} l'enveloppe travaux compatible avec la
-              mise simulée. Le plafond d'enchère baisse en conséquence.
+              mise simulée. L’enchère plafond baisse en conséquence.
             </p>
           ) : null}
         </div>
@@ -1048,7 +1049,7 @@ function AssistantHeader({ onReset }: { onReset: () => void }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-lg border border-gold/30 bg-gold/10 text-gold">
+        <span className="grid h-10 w-10 place-items-center rounded-lg border border-gold/30 bg-gold/10 text-gold-text">
           <Calculator className="h-5 w-5" />
         </span>
         <div>
@@ -1093,9 +1094,9 @@ function MarketInput({
   const automaticPrice = estimate?.medianPricePerM2 ?? null;
   const needsManual = hasError || !automaticPrice;
   const helper = needsManual
-    ? "Le marché local manque de comparables solides. Saisis un prix au m² réaliste pour obtenir un plafond provisoire."
+    ? "Le marché local manque de comparables solides. Saisissez un prix au m² réaliste pour obtenir un plafond provisoire."
     : marketEdited
-      ? `Prix saisi utilisé à la place de la médiane DVF (${ppm2(automaticPrice)}). Efface le champ pour revenir au calcul automatique.`
+      ? `Prix saisi utilisé à la place de la médiane DVF (${ppm2(automaticPrice)}). Effacez le champ pour revenir au calcul automatique.`
       : usingCachedEstimate
         ? `Dernière estimation DVF conservée : médiane ${ppm2(automaticPrice)}.`
         : `Calcul automatique actif : médiane DVF ${ppm2(automaticPrice)}.`;
@@ -1108,7 +1109,7 @@ function MarketInput({
     >
       <div className="grid gap-3 sm:grid-cols-[1fr_180px] sm:items-end">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
             <MapPin className="h-4 w-4" />
             Prix de marché local
           </div>
@@ -1127,7 +1128,7 @@ function MarketInput({
               value={value > 0 ? value : ""}
               placeholder={automaticPrice ? String(Math.round(automaticPrice)) : "ex. 3 200"}
               onChange={(event) => onChange(parseFloat(event.target.value) || 0)}
-              className="w-full bg-transparent px-3 py-2 text-sm tabular-nums outline-none placeholder:text-muted-foreground/60"
+              className="w-full bg-transparent px-3 py-2 text-sm tabular-nums outline-none placeholder:text-muted-foreground"
             />
             <span className="pr-3 text-xs text-muted-foreground">€/m²</span>
           </div>
@@ -1200,7 +1201,7 @@ function MarketLocalCard({
   return (
     <div className="mt-5 rounded-lg border border-border bg-muted/35 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
           <MapPin className="h-4 w-4" />
           Marché local
         </div>
@@ -1222,7 +1223,7 @@ function MarketLocalCard({
         </p>
       ) : !hasRange ? (
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          {unavailableReason} Saisis un prix de marché au m² dans les réglages pour obtenir un
+          {unavailableReason} Saisissez un prix de marché au m² dans les réglages pour obtenir un
           plafond provisoire.
         </p>
       ) : (
@@ -1246,8 +1247,8 @@ function MarketLocalCard({
           <PriceRange estimate={estimate!} />
           {estimate!.actionable === false && (
             <p className="mt-3 rounded-md border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
-              Référence indicative uniquement : elle n'est pas utilisée automatiquement pour le
-              plafond d'enchère. Confirme un prix manuel ou renforce les comparables.
+              Référence indicative uniquement : elle n'est pas utilisée automatiquement pour
+              l’enchère plafond. Confirmez un prix manuel ou renforcez les comparables.
             </p>
           )}
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
@@ -1496,7 +1497,7 @@ function SimulationCard({
       }`}
     >
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        <TrendingDown className="h-4 w-4 text-gold" />
+        <TrendingDown className="h-4 w-4 text-gold-text" />
         Test de la mise simulée
       </div>
       <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
@@ -1522,7 +1523,7 @@ function SimulationCard({
           ? positive
             ? "La mise simulée reste dans la zone défendable du scénario sélectionné."
             : "La mise simulée dépasse la zone défendable : il faut baisser l'enchère ou justifier une meilleure hypothèse de marché."
-          : "Ajoute un prix de marché local pour savoir si la mise simulée reste défendable."}
+          : "Ajoutez un prix de marché local pour savoir si la mise simulée reste défendable."}
       </p>
     </div>
   );
@@ -1537,7 +1538,7 @@ function MethodCard({
 }) {
   return (
     <div className="rounded-lg border border-border bg-muted/35 p-4">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
         <ShieldCheck className="h-4 w-4" />
         Raisonnement retenu
       </div>
@@ -1593,7 +1594,7 @@ function SuccessConditions({
   const conditions = buildSuccessConditions(sale, result, estimate, useManualMarket);
   return (
     <div className="mt-5 rounded-lg border border-border bg-muted/35 p-4">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-soft">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
         <CheckCircle2 className="h-4 w-4" />
         Conditions pour rester gagnant
       </div>
@@ -1601,7 +1602,7 @@ function SuccessConditions({
         {conditions.map((condition) => (
           <div key={condition.title} className="rounded-lg border border-border bg-white p-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <span className="text-gold">{condition.icon}</span>
+              <span className="text-gold-text">{condition.icon}</span>
               {condition.title}
             </div>
             <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{condition.text}</p>
@@ -1741,7 +1742,7 @@ function MethodStep({ index, title, text }: { index: string; title: string; text
   return (
     <li className="rounded-md border border-border bg-white p-3">
       <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
-        <span className="grid h-5 w-5 place-items-center rounded-full bg-gold text-[11px] text-background">
+        <span className="grid h-5 w-5 place-items-center rounded-full bg-gold text-[11px] text-brand-navy">
           {index}
         </span>
         {title}

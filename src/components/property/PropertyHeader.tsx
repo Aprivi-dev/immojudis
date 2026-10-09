@@ -14,12 +14,12 @@ export function PropertyHeader({ property }: { property: Property }) {
           >
             <Link
               to="/"
-              className="font-semibold text-foreground transition-colors hover:text-gold-soft"
+              className="font-semibold text-foreground transition-colors hover:text-gold-text"
             >
               Immojudis
             </Link>
             <ChevronRight className="h-3.5 w-3.5" />
-            <Link to="/sales" className="transition-colors hover:text-gold-soft">
+            <Link to="/sales" className="transition-colors hover:text-gold-text">
               Biens
             </Link>
             <ChevronRight className="h-3.5 w-3.5" />

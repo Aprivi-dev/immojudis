@@ -57,13 +57,13 @@ function AccountNotificationCenter({ mobile, userId }: { mobile: boolean; userId
         className={
           mobile
             ? "ij-login-button relative w-full justify-center gap-2"
-            : "relative inline-grid h-10 w-10 place-items-center rounded-md border border-border bg-white text-foreground hover:border-gold/50 hover:text-gold-soft"
+            : "relative inline-grid h-10 w-10 place-items-center rounded-md border border-border bg-white text-foreground hover:border-gold/50 hover:text-gold-text"
         }
       >
         <Bell className="h-4 w-4" />
         {mobile ? <span>Notifications</span> : null}
         {unreadCount ? (
-          <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-gold px-1 text-[10px] font-bold text-white">
+          <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-gold px-1 text-[10px] font-bold text-brand-navy">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         ) : null}

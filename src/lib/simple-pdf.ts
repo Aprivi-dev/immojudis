@@ -18,7 +18,7 @@ export function createTextPdf({
   const cleanedTitle = sanitizePdfText(title).slice(0, 120);
   const cleanedWatermark = watermark ? sanitizePdfText(watermark).slice(0, 80) : null;
   const pages = paginatePdfLines(lines, headings);
-  if (pages.length === 0) pages.push([{ text: "Rapport ImmoJudis", heading: false }]);
+  if (pages.length === 0) pages.push([{ text: "Rapport Immojudis", heading: false }]);
 
   const objects: string[] = [];
   objects[1] = "<< /Type /Catalog /Pages 2 0 R >>";
@@ -102,7 +102,7 @@ function pageContent({
   out.push("/F1 8 Tf");
   out.push("50 36 Td");
   out.push(
-    `(${escapePdfString(footer ?? "ImmoJudis - rapport indicatif, à vérifier dans les pièces officielles.")}) Tj`,
+    `(${escapePdfString(footer ?? "Immojudis - rapport indicatif, à vérifier dans les pièces officielles.")}) Tj`,
   );
   out.push("420 0 Td");
   out.push(`(${pageNumber}/${pageCount}) Tj`);

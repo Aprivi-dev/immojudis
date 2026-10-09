@@ -716,7 +716,7 @@ function backtestNextActions(summary: ValuationBacktestSummary): string[] {
   }
   return [
     "Compléter la fourchette avec des références manuelles ou un avis local.",
-    "Éviter de fixer la mise maximale uniquement à partir de la médiane DVF.",
+    "Éviter de fixer l’enchère plafond uniquement à partir de la médiane DVF.",
   ];
 }
 

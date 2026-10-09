@@ -53,7 +53,7 @@ export function PropertyPage({ property }: { property: Property }) {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#f7f5f1] text-foreground">
+    <main id="contenu" className="min-h-screen bg-surface text-foreground">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}

@@ -1,4 +1,4 @@
-import { getSales, getSalesCount, getSalesForSearch, getSalesWithCoords } from "@/lib/queries";
+import { getSales, getSalesCount, getSalesForSearch, getSaleMapPoints } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
 import { geocodeAddress } from "@/lib/geo";
 import type { AuctionSale } from "@/lib/types";
@@ -77,13 +77,9 @@ export async function fetchSearchMapResults(
     return (await fetchCompleteFilteredSearch(search, options.discovery ?? false))
       .filter((sale) => sale.latitude != null && sale.longitude != null)
       .slice(0, MAX_MAP_RESULTS);
+  // Tous les points de la recherche (identifiant, position, prix), pas un échantillon de 300.
   return excludeHomepageExampleSales(
-    await getSalesWithCoords(
-      dataFiltersFromSearch(search),
-      MAX_MAP_RESULTS,
-      dataSortFromSearch(search.sort),
-      options,
-    ),
+    await getSaleMapPoints(dataFiltersFromSearch(search), options),
   );
 }
 

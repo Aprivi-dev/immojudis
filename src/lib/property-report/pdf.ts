@@ -41,7 +41,7 @@ export const REPORT_PDF_HEADINGS = [
   "Lecture opportunité",
   "Scénario locatif personnel",
   "Estimation locative indicative",
-  "Plafond d'enchère",
+  "Enchère plafond",
   "Préparation audience",
   "Actions préparation audience",
   "Analyse de bien",
@@ -372,7 +372,7 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       "état à confirmer avant enchère",
     )}`,
     "",
-    "Plafond d'enchère",
+    "Enchère plafond",
     ...(ceiling.personalSimulation
       ? [
           "Scénario personnel sauvegardé",

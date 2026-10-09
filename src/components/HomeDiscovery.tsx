@@ -26,7 +26,7 @@ const methodSteps = [
     number: "03",
     title: "Fixez votre budget",
     description:
-      "Intégrez les frais et les travaux, préparez votre financement et fixez votre enchère maximale.",
+      "Intégrez les frais et les travaux, préparez votre financement et fixez votre enchère plafond.",
   },
   {
     number: "04",
@@ -43,7 +43,7 @@ const discoveryFeatures = [
 ] as const;
 
 const analysisFeatures = [
-  "Mise plafond et travaux",
+  "Enchère plafond et travaux",
   "Estimation et comparables",
   "Pièces et risques, selon la vente",
   "Simulation ajustable",
@@ -174,7 +174,7 @@ export function HomeDiscovery() {
                     </li>
                   ))}
                 </ul>
-                <Link href="/accompagnement" className={styles.primaryLink}>
+                <Link href="/offres" className={styles.primaryLink}>
                   Découvrir Analyse <ArrowRight aria-hidden="true" size={17} />
                 </Link>
                 {checkoutOpen === true ? (

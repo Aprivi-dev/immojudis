@@ -170,7 +170,7 @@ describe("admin lawyer referral requests", () => {
 
   it("builds an email for the assigned referenced lawyer", () => {
     const message = buildLawyerReferralEmailMessage({
-      from: "ImmoJudis <alertes@immojudis.fr>",
+      from: "Immojudis <alertes@immojudis.fr>",
       recipientEmail: "avocat@example.test",
       appUrl: "https://immojudis.example",
       lawyer: {
@@ -202,7 +202,7 @@ describe("admin lawyer referral requests", () => {
     expect(message.text).toContain("126");
     expect(message.text).toContain("Merci de vérifier");
     expect(message.text).not.toContain("source@example.test");
-    expect(message.html).toContain("Mise en relation ImmoJudis");
+    expect(message.html).toContain("Mise en relation Immojudis");
     expect(message.html).not.toContain("Me Source");
   });
 

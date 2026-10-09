@@ -11,8 +11,11 @@ export type BillingOfferResponse = {
 };
 
 export async function fetchBillingOffer(): Promise<BillingOfferResponse> {
+  // L'offre est publique : un visiteur sans session doit aussi savoir si la souscription est
+  // ouverte (sinon la page afficherait « paiement indisponible » à tort).
+  const headers = await authHeaders().catch((): HeadersInit => ({}));
   const response = await fetch("/api/billing/offer", {
-    headers: await authHeaders(),
+    headers,
     cache: "no-store",
   });
   return readJson<BillingOfferResponse>(response);

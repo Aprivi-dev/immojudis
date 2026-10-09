@@ -117,9 +117,9 @@ const routeBudgets = [
   },
   {
     name: "pricing",
-    manifest: ".next/server/app/accompagnement/page_client-reference-manifest.js",
-    routeKey: "/accompagnement/page",
-    entryKey: "[project]/src/app/accompagnement/page",
+    manifest: ".next/server/app/offres/page_client-reference-manifest.js",
+    routeKey: "/offres/page",
+    entryKey: "[project]/src/app/offres/page",
     maxBytes: 500_000,
   },
   {

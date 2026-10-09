@@ -49,8 +49,8 @@ describe("Meteostat display", () => {
         <ListingWeatherHistory saleId="test-sale" enabled locked />
       </QueryClientProvider>,
     );
-    expect(screen.getByRole("link", { name: /avec Premium/ }).getAttribute("href")).toBe(
-      "/accompagnement",
+    expect(screen.getByRole("link", { name: /avec l’offre Analyse/ }).getAttribute("href")).toBe(
+      "/offres",
     );
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByText("0 °C")).toBeNull();

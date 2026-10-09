@@ -15,7 +15,7 @@ export function ResourceLibrary({ articles }: { articles: ResourceSummary[] }) {
     <section className={styles.library} id="articles" aria-labelledby="articles-title">
       <div className={styles.sectionHeading}>
         <div>
-          <p className={styles.eyebrow}>La bibliothèque ImmoJudis</p>
+          <p className={styles.eyebrow}>La bibliothèque Immojudis</p>
           <h2 id="articles-title">À chaque question, une lecture.</h2>
         </div>
         <p className={styles.articleCount} role="status">
@@ -36,8 +36,8 @@ export function ResourceLibrary({ articles }: { articles: ResourceSummary[] }) {
         ))}
       </div>
       <div id="resource-results" className={styles.grid}>
-        {visible.map((article) => (
-          <ResourceCard key={article.slug} article={article} />
+        {visible.map((article, index) => (
+          <ResourceCard key={article.slug} article={article} eager={index < 3} />
         ))}
       </div>
     </section>

@@ -88,7 +88,7 @@ describe("manual admin draft preparation", () => {
       status: "draft",
     });
     expect(result.mission.bodyText).toContain("12 rue du Palais");
-    expect(result.mission.bodyText).toContain("ImmoJudis est un service indépendant");
+    expect(result.mission.bodyText).toContain("Immojudis est un service indépendant");
     expect(result.mission.bodyText).toContain("compte professionnel");
     expect(result.mission.bodyText).toContain("/login?mode=professional&redirect=%2Fespace-pro");
     expect(result.mission.bodyText).toContain("confirmer la date");

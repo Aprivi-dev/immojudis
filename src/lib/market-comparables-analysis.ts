@@ -61,7 +61,7 @@ export function buildMarketComparablesAnalysis(
       addressHistory: [],
       summary: "Aucune référence DVF exploitable n'est encore rattachée au rapport.",
       nextActions: [
-        "Calculer ou renseigner une référence de marché avant de figer la mise maximale.",
+        "Calculer ou renseigner une référence de marché avant de figer l’enchère plafond.",
       ],
       limitations: [
         "Sans comparables DVF, la fourchette de valeur doit être considérée comme provisoire.",

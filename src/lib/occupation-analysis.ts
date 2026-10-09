@@ -242,7 +242,7 @@ function decisionImpact({
   hasEvictionSignal: boolean;
 }): string {
   if (status === "conflicting") {
-    return "Ne pas figer le plafond d'enchère avant arbitrage des pièces contradictoires.";
+    return "Ne pas figer l’enchère plafond avant arbitrage des pièces contradictoires.";
   }
   if (status === "free") {
     return "Hypothèse favorable pour la jouissance et les travaux, sous réserve de confirmation au PV.";

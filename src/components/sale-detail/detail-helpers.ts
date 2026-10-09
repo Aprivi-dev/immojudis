@@ -181,7 +181,7 @@ export function answerDossierQuestion(
       text: ceiling.available
         ? `Le plafond actuel est ${formatPrice(ceiling.maxBid)}. Il peut bouger avec l'occupation, les travaux, les frais particuliers, la surface retenue et le prix/m² local.`
         : "Le plafond n'est pas encore disponible : il manque une surface exploitable ou une référence de marché local.",
-      source: "Assistant de mise plafond",
+      source: "Assistant d’enchère plafond",
     };
   }
 

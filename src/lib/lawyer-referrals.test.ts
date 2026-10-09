@@ -56,7 +56,7 @@ describe("lawyer referrals", () => {
     expect(recordFeatureUsageEvent).not.toHaveBeenCalled();
   });
 
-  it("matches only ImmoJudis referenced lawyers, not source-site lawyer contacts", async () => {
+  it("matches only Immojudis referenced lawyers, not source-site lawyer contacts", async () => {
     vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
     const auth = fakeReferralAuth();
 
@@ -77,7 +77,7 @@ describe("lawyer referrals", () => {
       matchedLawyer: {
         id: LAWYER_ID,
         displayName: "Me Référencé",
-        firmName: "Cabinet ImmoJudis",
+        firmName: "Cabinet Immojudis",
       },
       reusedExisting: false,
     });
@@ -222,7 +222,7 @@ describe("lawyer referrals", () => {
       matchedLawyer: {
         id: LAWYER_ID,
         displayName: "Me Référencé",
-        firmName: "Cabinet ImmoJudis",
+        firmName: "Cabinet Immojudis",
       },
       sale: {
         id: SALE_ID,
@@ -393,7 +393,7 @@ function referencedLawyerRow(overrides: Record<string, unknown> = {}) {
   return {
     id: LAWYER_ID,
     display_name: "Me Référencé",
-    firm_name: "Cabinet ImmoJudis",
+    firm_name: "Cabinet Immojudis",
     bar_association: "Bordeaux",
     city: "Bordeaux",
     department: "33",

@@ -59,7 +59,7 @@ export function LawyerQuestionsList({ questions }: { questions: string[] }) {
       <ul className="mt-3 grid gap-2 text-sm leading-relaxed text-muted-foreground">
         {questions.map((question) => (
           <li key={question} className="flex gap-2">
-            <ClipboardCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" />
+            <ClipboardCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" />
             <span>{question}</span>
           </li>
         ))}
@@ -133,7 +133,7 @@ export function SourcesAndDocumentsBlock({
                     href={link.href}
                     target={isExternalHref(link.href) ? "_blank" : undefined}
                     rel={isExternalHref(link.href) ? "noopener noreferrer" : undefined}
-                    className="inline-flex items-center justify-between gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-soft"
+                    className="inline-flex items-center justify-between gap-2 rounded-md border border-border bg-white px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-gold/50 hover:text-gold-text"
                   >
                     <span className="truncate">{link.label}</span>
                     <ExternalLink className="h-3.5 w-3.5 shrink-0" />
@@ -171,7 +171,7 @@ export function ListingActionBar({
         <div className="flex min-w-0 items-center gap-3">
           <Link
             to={returnTo}
-            className="inline-flex min-h-11 shrink-0 items-center gap-1 text-[11px] font-semibold text-gold-soft hover:text-gold"
+            className="inline-flex min-h-11 shrink-0 items-center gap-1 text-[11px] font-semibold text-gold-text hover:text-gold-text"
           >
             <ChevronRight className="h-3 w-3 rotate-180" />
             Retour

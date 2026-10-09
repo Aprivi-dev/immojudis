@@ -572,7 +572,7 @@ function queryErrorMessage(error: unknown, fallback: string): string {
 
 function AdminPanelLoading({ label }: { label: string }) {
   return (
-    <AdminPanel className="flex min-h-36 items-center justify-center p-6 text-sm text-[#132238]/60">
+    <AdminPanel className="flex min-h-36 items-center justify-center p-6 text-sm text-brand-navy/60">
       <span role="status">Chargement de {label}…</span>
     </AdminPanel>
   );
@@ -675,7 +675,7 @@ function AdminOverview({
             )}
           </span>
           <div>
-            <h2 className="text-xl font-semibold text-[#132238]">
+            <h2 className="text-xl font-semibold text-brand-navy">
               {healthState === "loading"
                 ? "Vérification de la santé…"
                 : healthState === "error"
@@ -686,7 +686,7 @@ function AdminOverview({
                       ? "Aucun échec récent détecté"
                       : "Une intervention est requise"}
             </h2>
-            <p className="mt-2 text-sm text-[#132238]/60">
+            <p className="mt-2 text-sm text-brand-navy/60">
               {data?.checkedAt
                 ? `${error ? "Dernière vérification" : "Vérifié"} ${formatRelativeTime(data.checkedAt)} · santé calculée sur les exécutions récentes`
                 : "Les résultats apparaîtront après la vérification du dashboard."}
@@ -698,7 +698,7 @@ function AdminOverview({
             ) : null}
             <Link
               to="/admin/settings"
-              className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#a96126]"
+              className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-gold-text"
             >
               Configuration rapide <ChevronRight className="size-4" />
             </Link>
@@ -711,7 +711,7 @@ function AdminOverview({
             description="Volumes intégrés lors des dernières exécutions"
           />
           {isLoading && !data ? (
-            <p className="mt-3 text-sm text-[#132238]/58" role="status">
+            <p className="mt-3 text-sm text-brand-navy/58" role="status">
               Chargement de l’activité…
             </p>
           ) : data ? (
@@ -722,7 +722,7 @@ function AdminOverview({
         </AdminPanel>
       </div>
 
-      <AdminPanel className="grid divide-y divide-[#132238]/10 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+      <AdminPanel className="grid divide-y divide-brand-navy/10 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
         <OverviewMetric
           icon={<ScrollText />}
           value={isLoading && !data ? "…" : data ? formatInteger(data.stats.sales) : "—"}
@@ -770,7 +770,7 @@ function AdminOverview({
 
       <div className="grid gap-3 xl:grid-cols-[1.55fr_0.75fr]">
         <AdminPanel className="overflow-hidden">
-          <div className="border-b border-[#132238]/10 px-5 py-4">
+          <div className="border-b border-brand-navy/10 px-5 py-4">
             <AdminSectionHeading
               title="À traiter aujourd’hui"
               description="Les actions qui demandent une décision administrateur"
@@ -778,7 +778,7 @@ function AdminOverview({
           </div>
           {prioritiesLoading && !priorities.length ? (
             <div
-              className="flex min-h-44 items-center justify-center p-6 text-center text-sm text-[#132238]/60"
+              className="flex min-h-44 items-center justify-center p-6 text-center text-sm text-brand-navy/60"
               role="status"
             >
               Chargement des priorités…
@@ -801,14 +801,14 @@ function AdminOverview({
                   être incomplets.
                 </div>
               ) : null}
-              <div className="divide-y divide-[#132238]/10">
+              <div className="divide-y divide-brand-navy/10">
                 {priorities.map((priority) => (
                   <div
                     key={`${priority.href}-${priority.label}`}
                     className="grid gap-3 px-5 py-4 md:grid-cols-[1.1fr_1.2fr_auto_auto] md:items-center"
                   >
-                    <strong className="text-sm text-[#132238]">{priority.label}</strong>
-                    <span className="text-sm text-[#132238]/62">{priority.context}</span>
+                    <strong className="text-sm text-brand-navy">{priority.label}</strong>
+                    <span className="text-sm text-brand-navy/62">{priority.context}</span>
                     <span
                       className={`w-fit rounded px-2 py-1 text-xs font-medium ${
                         priority.urgency === "high"
@@ -826,7 +826,7 @@ function AdminOverview({
               </div>
             </>
           ) : (
-            <div className="flex min-h-44 items-center justify-center p-6 text-center text-sm text-[#132238]/60">
+            <div className="flex min-h-44 items-center justify-center p-6 text-center text-sm text-brand-navy/60">
               Aucune action prioritaire pour le moment.
             </div>
           )}
@@ -841,7 +841,7 @@ function AdminOverview({
           )}
           <Link
             to="/admin/operations"
-            className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-[#a96126]"
+            className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-gold-text"
           >
             Voir le détail <ChevronRight className="size-4" />
           </Link>
@@ -850,7 +850,7 @@ function AdminOverview({
 
       <div className="grid gap-3 xl:grid-cols-[1.55fr_0.75fr]">
         <AdminPanel className="overflow-hidden">
-          <div className="border-b border-[#132238]/10 px-5 py-4">
+          <div className="border-b border-brand-navy/10 px-5 py-4">
             <AdminSectionHeading title="Activité récente" />
           </div>
           <RecentRunsTable
@@ -861,14 +861,14 @@ function AdminOverview({
         </AdminPanel>
         <AdminPanel className="p-5">
           <AdminSectionHeading title="Santé du pipeline" />
-          <div className="mt-4 divide-y divide-[#132238]/10">
+          <div className="mt-4 divide-y divide-brand-navy/10">
             <PipelineStat label="Runs en file" value={data?.stats.queuedRuns ?? null} />
             <PipelineStat label="Runs actifs" value={data?.stats.runningRuns ?? null} />
             <PipelineStat label="Échecs récents" value={failedRuns} danger={Boolean(failedRuns)} />
           </div>
           <Link
             to="/admin/operations"
-            className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-[#a96126]"
+            className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-gold-text"
           >
             Voir le monitoring détaillé <ChevronRight className="size-4" />
           </Link>
@@ -927,12 +927,12 @@ function AdminOperations({
         <AdminPanel className="p-5">
           <AdminSectionHeading title="Lancer une collecte" />
           <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_auto_auto] lg:items-end">
-            <label className="grid gap-2 text-sm font-medium text-[#132238]">
+            <label className="grid gap-2 text-sm font-medium text-brand-navy">
               Source
               <select
                 value={source}
                 onChange={(event) => setSource(event.target.value as AdminScrollSource)}
-                className="h-11 rounded-lg border border-[#132238]/18 bg-white px-3 text-sm outline-none transition focus:border-[#c98d45] focus:ring-2 focus:ring-[#c98d45]/15"
+                className="h-11 rounded-lg border border-brand-navy/18 bg-white px-3 text-sm outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/15"
               >
                 {SOURCE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -941,8 +941,8 @@ function AdminOperations({
                 ))}
               </select>
             </label>
-            <div className="flex h-11 items-center gap-3 text-sm text-[#132238]/75">
-              <span className="grid size-5 place-items-center rounded bg-[#b96f2d] text-white">
+            <div className="flex h-11 items-center gap-3 text-sm text-brand-navy/75">
+              <span className="grid size-5 place-items-center rounded bg-gold-soft text-white">
                 <CheckCircle className="size-3.5" />
               </span>
               Synthèse IA automatique
@@ -957,18 +957,18 @@ function AdminOperations({
             </AdminPrimaryButton>
           </div>
           {collectionTransportNote(source) ? (
-            <p className="mt-3 text-sm text-[#132238]/70" role="status">
+            <p className="mt-3 text-sm text-brand-navy/70" role="status">
               {collectionTransportNote(source)}
             </p>
           ) : null}
         </AdminPanel>
 
         <AdminPanel className="flex items-center gap-4 p-5">
-          <span className="grid size-11 place-items-center rounded-full bg-[#132238] text-white">
+          <span className="grid size-11 place-items-center rounded-full bg-brand-navy text-white">
             <Database className="size-5" />
           </span>
           <div>
-            <div className="flex flex-wrap items-center gap-2 font-semibold text-[#132238]">
+            <div className="flex flex-wrap items-center gap-2 font-semibold text-brand-navy">
               {data ? runnerModeLabel(data.runner.mode) : "Vérification du runner"}
               <span
                 className={runnerStatusClass(
@@ -981,7 +981,7 @@ function AdminOperations({
                 )}
               </span>
             </div>
-            <p className="mt-1 text-sm text-[#132238]/58">
+            <p className="mt-1 text-sm text-brand-navy/58">
               {data?.checkedAt
                 ? `Vérifié ${formatRelativeTime(data.checkedAt)}`
                 : "Vérification du runner en attente"}
@@ -990,7 +990,7 @@ function AdminOperations({
         </AdminPanel>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto border-b border-[#132238]/14">
+      <div className="flex gap-1 overflow-x-auto border-b border-brand-navy/14">
         {(
           [
             ["collections", "Collectes"],
@@ -1005,8 +1005,8 @@ function AdminOperations({
             onClick={() => onTabChange(tab)}
             className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition ${
               activeTab === tab
-                ? "border-[#b96f2d] text-[#a96126]"
-                : "border-transparent text-[#132238]/58 hover:text-[#132238]"
+                ? "border-gold-soft text-gold-text"
+                : "border-transparent text-brand-navy/58 hover:text-brand-navy"
             }`}
           >
             {label}
@@ -1018,7 +1018,7 @@ function AdminOperations({
         <>
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_24rem]">
             <AdminPanel className="overflow-hidden">
-              <div className="border-b border-[#132238]/10 px-5 py-4">
+              <div className="border-b border-brand-navy/10 px-5 py-4">
                 <AdminSectionHeading title="Exécutions" />
               </div>
               <OperationsRunTable
@@ -1091,7 +1091,7 @@ function AdminOperations({
             title="Alertes opérationnelles"
             description="Signaux calculés à partir des exécutions récentes"
           />
-          <div className="mt-5 divide-y divide-[#132238]/10">
+          <div className="mt-5 divide-y divide-brand-navy/10">
             <PipelineStat label="Runs en file" value={data?.stats.queuedRuns ?? null} />
             <PipelineStat label="Runs actifs" value={data?.stats.runningRuns ?? null} />
             <PipelineStat
@@ -1144,7 +1144,7 @@ function AdminPublications({
 }) {
   return (
     <AdminPanel className="overflow-hidden">
-      <div className="border-b border-[#132238]/10 p-5">
+      <div className="border-b border-brand-navy/10 p-5">
         <AdminSectionHeading
           title="File de validation"
           description={
@@ -1155,7 +1155,7 @@ function AdminPublications({
                 : `${totalRequests} demande${totalRequests > 1 ? "s" : ""} correspondant au filtre sélectionné`
           }
           action={
-            <div className="flex flex-wrap gap-1 rounded-lg bg-[#132238]/[0.04] p-1">
+            <div className="flex flex-wrap gap-1 rounded-lg bg-brand-navy/[0.04] p-1">
               {(
                 [
                   ["all", "Toutes"],
@@ -1170,8 +1170,8 @@ function AdminPublications({
                   onClick={() => onFilterChange(value)}
                   className={`rounded-md px-3 py-2 text-xs font-semibold transition ${
                     filter === value
-                      ? "bg-white text-[#132238] shadow-sm"
-                      : "text-[#132238]/55 hover:text-[#132238]"
+                      ? "bg-white text-brand-navy shadow-sm"
+                      : "text-brand-navy/55 hover:text-brand-navy"
                   }`}
                 >
                   {label}
@@ -1216,15 +1216,15 @@ function AdminPublications({
             />
           ))
         ) : (
-          <div className="py-16 text-center text-sm text-[#132238]/58">
+          <div className="py-16 text-center text-sm text-brand-navy/58">
             {error
               ? "Les demandes sont indisponibles pour le moment."
               : "Aucune demande ne correspond aux filtres."}
           </div>
         )}
         {hasMore && !loading && !error ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#132238]/10 pt-4">
-            <span className="text-xs text-[#132238]/58">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-brand-navy/10 pt-4">
+            <span className="text-xs text-brand-navy/58">
               {requests.length} demande{requests.length > 1 ? "s" : ""} affichée
               {requests.length > 1 ? "s" : ""}
               {totalRequests != null ? " sur " + totalRequests : ""} · filtre et recherche serveur
@@ -1253,14 +1253,14 @@ function AdminLawyers({
 }) {
   return (
     <div>
-      <div className="mb-4 flex gap-1 border-b border-[#132238]/14">
+      <div className="mb-4 flex gap-1 border-b border-brand-navy/14">
         <button
           type="button"
           onClick={() => onTabChange("referrals")}
           className={`border-b-2 px-4 py-3 text-sm font-medium ${
             activeTab === "referrals"
-              ? "border-[#b96f2d] text-[#a96126]"
-              : "border-transparent text-[#132238]/58"
+              ? "border-gold-soft text-gold-text"
+              : "border-transparent text-brand-navy/58"
           }`}
         >
           Mises en relation
@@ -1270,8 +1270,8 @@ function AdminLawyers({
           onClick={() => onTabChange("directory")}
           className={`border-b-2 px-4 py-3 text-sm font-medium ${
             activeTab === "directory"
-              ? "border-[#b96f2d] text-[#a96126]"
-              : "border-transparent text-[#132238]/58"
+              ? "border-gold-soft text-gold-text"
+              : "border-transparent text-brand-navy/58"
           }`}
         >
           Réseau référencé
@@ -1370,15 +1370,15 @@ function OverviewMetric({
   tone?: "blue" | "green" | "copper";
 }) {
   const iconTone =
-    tone === "green" ? "text-emerald-700" : tone === "copper" ? "text-[#b96f2d]" : "text-[#1f67b6]";
+    tone === "green" ? "text-emerald-700" : tone === "copper" ? "text-gold-text" : "text-info";
   return (
     <div className="flex min-h-24 items-center gap-4 px-5 py-4">
       <span className={`${iconTone} [&>svg]:size-7`}>{icon}</span>
       <span>
-        <strong className="block text-2xl font-semibold tabular-nums text-[#132238]">
+        <strong className="block text-2xl font-semibold tabular-nums text-brand-navy">
           {value}
         </strong>
-        <span className="mt-0.5 block text-sm text-[#132238]/62">{label}</span>
+        <span className="mt-0.5 block text-sm text-brand-navy/62">{label}</span>
       </span>
     </div>
   );
@@ -1394,35 +1394,35 @@ function RecentRunsTable({
   hasData: boolean;
 }) {
   if (isLoading && !hasData) {
-    return <div className="p-5 text-sm text-[#132238]/58">Chargement de l’activité…</div>;
+    return <div className="p-5 text-sm text-brand-navy/58">Chargement de l’activité…</div>;
   }
   if (!hasData) {
     return <div className="p-5 text-sm text-red-700">Activité indisponible.</div>;
   }
   if (!runs.length) {
-    return <div className="p-5 text-sm text-[#132238]/58">Aucune exécution trouvée.</div>;
+    return <div className="p-5 text-sm text-brand-navy/58">Aucune exécution trouvée.</div>;
   }
   return (
     <div className="overflow-x-auto">
       <div className="min-w-[42rem]">
-        <div className="grid grid-cols-[1.4fr_0.9fr_0.75fr_1fr] gap-4 border-b border-[#132238]/10 px-5 py-3 text-xs font-semibold text-[#132238]/55">
+        <div className="grid grid-cols-[1.4fr_0.9fr_0.75fr_1fr] gap-4 border-b border-brand-navy/10 px-5 py-3 text-xs font-semibold text-brand-navy/55">
           <span>Événement</span>
           <span>Domaine</span>
           <span>Statut</span>
           <span>Date</span>
         </div>
-        <div className="divide-y divide-[#132238]/10">
+        <div className="divide-y divide-brand-navy/10">
           {runs.map((run) => (
             <div
               key={run.id}
               className="grid grid-cols-[1.4fr_0.9fr_0.75fr_1fr] gap-4 px-5 py-3 text-sm"
             >
-              <span className="font-medium text-[#132238]">
+              <span className="font-medium text-brand-navy">
                 Collecte {run.source ?? "toutes sources"}
               </span>
-              <span className="text-[#132238]/62">Opérations</span>
+              <span className="text-brand-navy/62">Opérations</span>
               <StatusPill status={run.status} />
-              <span className="text-[#132238]/62">
+              <span className="text-brand-navy/62">
                 {run.startedAt ? formatDateTime(run.startedAt) : "—"}
               </span>
             </div>
@@ -1444,8 +1444,8 @@ function PipelineStat({
 }) {
   return (
     <div className="flex items-center justify-between py-4 text-sm">
-      <span className="text-[#132238]/68">{label}</span>
-      <strong className={`text-xl tabular-nums ${danger ? "text-red-600" : "text-[#1f67b6]"}`}>
+      <span className="text-brand-navy/68">{label}</span>
+      <strong className={`text-xl tabular-nums ${danger ? "text-red-600" : "text-info"}`}>
         {value == null ? "—" : formatInteger(value)}
       </strong>
     </div>
@@ -1464,15 +1464,15 @@ function OperationsRunTable({
   onSelectRun: (id: string) => void;
 }) {
   if (isLoading) {
-    return <div className="p-5 text-sm text-[#132238]/58">Chargement des exécutions…</div>;
+    return <div className="p-5 text-sm text-brand-navy/58">Chargement des exécutions…</div>;
   }
   if (!runs.length) {
-    return <div className="p-5 text-sm text-[#132238]/58">Aucune exécution trouvée.</div>;
+    return <div className="p-5 text-sm text-brand-navy/58">Aucune exécution trouvée.</div>;
   }
   return (
     <div className="overflow-x-auto">
       <div className="min-w-[58rem]">
-        <div className="grid grid-cols-[1fr_1fr_0.85fr_1.25fr_0.8fr_0.75fr_0.75fr_0.45fr] gap-3 border-b border-[#132238]/10 px-5 py-3 text-xs font-semibold text-[#132238]/55">
+        <div className="grid grid-cols-[1fr_1fr_0.85fr_1.25fr_0.8fr_0.75fr_0.75fr_0.45fr] gap-3 border-b border-brand-navy/10 px-5 py-3 text-xs font-semibold text-brand-navy/55">
           <span>Run</span>
           <span>Source</span>
           <span>Statut</span>
@@ -1482,7 +1482,7 @@ function OperationsRunTable({
           <span>Intégrées</span>
           <span>Err.</span>
         </div>
-        <div className="divide-y divide-[#132238]/10">
+        <div className="divide-y divide-brand-navy/10">
           {runs.map((run) => {
             const selected = run.id === selectedRunId;
             return (
@@ -1490,26 +1490,26 @@ function OperationsRunTable({
                 key={run.id}
                 type="button"
                 onClick={() => onSelectRun(run.id)}
-                className={`grid w-full grid-cols-[1fr_1fr_0.85fr_1.25fr_0.8fr_0.75fr_0.75fr_0.45fr] gap-3 px-5 py-3 text-left text-sm transition hover:bg-[#132238]/[0.025] ${
-                  selected ? "border-l-2 border-[#b96f2d] bg-[#fff7eb] pl-[1.125rem]" : ""
+                className={`grid w-full grid-cols-[1fr_1fr_0.85fr_1.25fr_0.8fr_0.75fr_0.75fr_0.45fr] gap-3 px-5 py-3 text-left text-sm transition hover:bg-brand-navy/[0.025] ${
+                  selected ? "border-l-2 border-gold-soft bg-cream pl-[1.125rem]" : ""
                 }`}
               >
-                <span className="font-mono text-xs font-semibold text-[#132238]">
+                <span className="font-mono text-xs font-semibold text-brand-navy">
                   #{shortId(run.id).toUpperCase()}
                 </span>
-                <span className="truncate text-[#132238]/72">{run.source ?? "—"}</span>
+                <span className="truncate text-brand-navy/72">{run.source ?? "—"}</span>
                 <StatusPill status={run.status} />
-                <span className="text-[#132238]/65">
+                <span className="text-brand-navy/65">
                   {run.startedAt ? formatDateTime(run.startedAt) : "—"}
                 </span>
-                <span className="text-[#132238]/65">{runDuration(run)}</span>
-                <span className="tabular-nums text-[#132238]">
+                <span className="text-brand-navy/65">{runDuration(run)}</span>
+                <span className="tabular-nums text-brand-navy">
                   {summaryNumber(run, "collected")}
                 </span>
-                <span className="tabular-nums text-[#132238]">
+                <span className="tabular-nums text-brand-navy">
                   {summaryNumber(run, "upserted")}
                 </span>
-                <span className={errorCount(run.errors) ? "text-red-600" : "text-[#132238]/65"}>
+                <span className={errorCount(run.errors) ? "text-red-600" : "text-brand-navy/65"}>
                   {errorCount(run.errors)}
                 </span>
               </button>
@@ -1533,7 +1533,7 @@ function RunDetails({
   const [showLogs, setShowLogs] = useState(false);
   if (!run) {
     return (
-      <AdminPanel className="flex min-h-96 items-center justify-center p-6 text-sm text-[#132238]/58">
+      <AdminPanel className="flex min-h-96 items-center justify-center p-6 text-sm text-brand-navy/58">
         Sélectionnez une exécution pour voir son détail.
       </AdminPanel>
     );
@@ -1548,20 +1548,20 @@ function RunDetails({
     <AdminPanel className="p-5">
       <AdminSectionHeading title="Exécution sélectionnée" />
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <strong className="font-mono text-xl text-[#132238]">
+        <strong className="font-mono text-xl text-brand-navy">
           #{shortId(run.id).toUpperCase()}
         </strong>
         <StatusPill status={run.status} />
       </div>
       <dl className="mt-5 grid grid-cols-[6rem_1fr] gap-x-3 gap-y-3 text-sm">
-        <dt className="text-[#132238]/55">Source</dt>
-        <dd className="text-[#132238]">{run.source ?? "—"}</dd>
-        <dt className="text-[#132238]/55">Début</dt>
-        <dd className="text-[#132238]">{run.startedAt ? formatDateTime(run.startedAt) : "—"}</dd>
-        <dt className="text-[#132238]/55">Durée</dt>
-        <dd className="text-[#132238]">{runDuration(run)}</dd>
+        <dt className="text-brand-navy/55">Source</dt>
+        <dd className="text-brand-navy">{run.source ?? "—"}</dd>
+        <dt className="text-brand-navy/55">Début</dt>
+        <dd className="text-brand-navy">{run.startedAt ? formatDateTime(run.startedAt) : "—"}</dd>
+        <dt className="text-brand-navy/55">Durée</dt>
+        <dd className="text-brand-navy">{runDuration(run)}</dd>
       </dl>
-      <div className="mt-5 grid grid-cols-3 divide-x divide-[#132238]/10 border-y border-[#132238]/10 py-4 text-center">
+      <div className="mt-5 grid grid-cols-3 divide-x divide-brand-navy/10 border-y border-brand-navy/10 py-4 text-center">
         <RunSummaryNumber value={summaryNumber(run, "collected")} label="collectées" />
         <RunSummaryNumber value={summaryNumber(run, "deduplicated")} label="dédupliquées" />
         <RunSummaryNumber value={summaryNumber(run, "upserted")} label="intégrées" />
@@ -1572,13 +1572,13 @@ function RunDetails({
             {index < stages.length - 1 ? (
               <span
                 className={`absolute left-[0.47rem] top-5 h-5 w-px ${
-                  runStageState(run, index) === "complete" ? "bg-emerald-300" : "bg-[#132238]/15"
+                  runStageState(run, index) === "complete" ? "bg-emerald-300" : "bg-brand-navy/15"
                 }`}
               />
             ) : null}
             <RunStageIcon state={runStageState(run, index)} />
-            <span className="flex-1 text-[#132238]">{label}</span>
-            <span className="tabular-nums text-[#132238]/58">
+            <span className="flex-1 text-brand-navy">{label}</span>
+            <span className="tabular-nums text-brand-navy/58">
               {value} · {runStageLabel(runStageState(run, index))}
             </span>
           </div>
@@ -1592,11 +1592,11 @@ function RunDetails({
       </div>
       {collectionSourceResults(run.summary).length > 0 ? (
         <div className="mt-5 space-y-2 text-sm" aria-label="Résultats par source">
-          <h3 className="font-semibold text-[#132238]">Résultats par source</h3>
+          <h3 className="font-semibold text-brand-navy">Résultats par source</h3>
           {collectionSourceResults(run.summary).map((result) => (
             <div
               key={result.source}
-              className="flex flex-wrap justify-between gap-2 border-t border-[#132238]/10 pt-2"
+              className="flex flex-wrap justify-between gap-2 border-t border-brand-navy/10 pt-2"
             >
               <span>
                 {SOURCE_OPTIONS.find((option) => option.value === result.source)?.label.replace(
@@ -1604,7 +1604,7 @@ function RunDetails({
                   "",
                 ) ?? result.source}
               </span>
-              <span className={result.failed ? "text-amber-700" : "text-[#132238]/65"}>
+              <span className={result.failed ? "text-amber-700" : "text-brand-navy/65"}>
                 {result.transport} · {result.listings ?? "—"} annonce(s) extraite(s)
                 {result.failed ? " · Erreur signalée" : ""}
               </span>
@@ -1630,23 +1630,23 @@ function RunDetails({
         </AdminPrimaryButton>
       </div>
       {!restartRequest ? (
-        <p className="mt-3 text-sm text-[#132238]/65">
+        <p className="mt-3 text-sm text-brand-navy/65">
           {run.status === "queued" || run.status === "running"
             ? "Cette exécution est déjà en attente ou en cours."
             : "Les paramètres d’origine ne permettent pas cette relance. Utilisez les commandes de collecte ou d’enrichissement de cette page."}
         </p>
       ) : null}
       {showLogs ? (
-        <div className="mt-4 grid gap-4 rounded-lg border border-[#132238]/10 bg-[#132238]/[0.025] p-4 text-xs">
+        <div className="mt-4 grid gap-4 rounded-lg border border-brand-navy/10 bg-brand-navy/[0.025] p-4 text-xs">
           <div>
-            <h3 className="font-semibold text-[#132238]">Résumé JSON</h3>
-            <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[#132238]/72">
+            <h3 className="font-semibold text-brand-navy">Résumé JSON</h3>
+            <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-brand-navy/72">
               {JSON.stringify(run.summary, null, 2)}
             </pre>
           </div>
           <div>
-            <h3 className="font-semibold text-[#132238]">Erreurs JSON</h3>
-            <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[#132238]/72">
+            <h3 className="font-semibold text-brand-navy">Erreurs JSON</h3>
+            <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-brand-navy/72">
               {JSON.stringify(run.errors, null, 2)}
             </pre>
           </div>
@@ -1709,8 +1709,8 @@ function RunStageIcon({ state }: { state: RunStageState }) {
 function RunSummaryNumber({ value, label }: { value: string; label: string }) {
   return (
     <span className="px-2">
-      <strong className="block text-xl tabular-nums text-[#132238]">{value}</strong>
-      <span className="mt-1 block text-xs text-[#132238]/55">{label}</span>
+      <strong className="block text-xl tabular-nums text-brand-navy">{value}</strong>
+      <span className="mt-1 block text-xs text-brand-navy/55">{label}</span>
     </span>
   );
 }
@@ -1747,7 +1747,7 @@ function AiBackfillPanel({
       />
       <div className="mt-5 grid gap-5 md:grid-cols-[auto_1fr_auto_auto] md:items-center">
         <div
-          className="grid size-20 place-items-center rounded-full text-lg font-semibold text-[#132238]"
+          className="grid size-20 place-items-center rounded-full text-lg font-semibold text-brand-navy"
           style={{
             background: `radial-gradient(circle closest-side, white 78%, transparent 80% 100%), conic-gradient(#216ac0 ${progress}%, #e6edf5 0)`,
           }}
@@ -1756,15 +1756,15 @@ function AiBackfillPanel({
           {progress}%
         </div>
         <div>
-          <strong className="text-2xl tabular-nums text-[#132238]">
+          <strong className="text-2xl tabular-nums text-brand-navy">
             {formatInteger(aiDescriptions?.ready ?? 0)} /{" "}
             {formatInteger(aiDescriptions?.activeOrUpcoming ?? 0)}
           </strong>
-          <p className="mt-1 text-sm text-[#132238]/62">
+          <p className="mt-1 text-sm text-brand-navy/62">
             {remaining} annonce{remaining > 1 ? "s" : ""} à traiter
           </p>
         </div>
-        <label className="grid gap-2 text-sm font-medium text-[#132238]">
+        <label className="grid gap-2 text-sm font-medium text-brand-navy">
           Taille du lot
           <input
             type="number"
@@ -1775,7 +1775,7 @@ function AiBackfillPanel({
             value={Number.isNaN(backfillLimit) ? "" : backfillLimit}
             aria-invalid={!validLimit}
             onChange={(event) => setBackfillLimit(event.target.valueAsNumber)}
-            className="h-11 w-32 rounded-lg border border-[#132238]/18 bg-white px-3 text-sm outline-none focus:border-[#c98d45]"
+            className="h-11 w-32 rounded-lg border border-brand-navy/18 bg-white px-3 text-sm outline-none focus:border-gold"
           />
           {!validLimit ? <span role="alert">Saisissez un entier de 1 à 100.</span> : null}
         </label>
@@ -1808,7 +1808,7 @@ function runnerStatusLabel(status: AdminDashboardData["runner"]["status"] | unde
 function runnerStatusClass(status: AdminDashboardData["runner"]["status"] | undefined): string {
   if (status === "active") return "text-emerald-700";
   if (status === "suspended") return "text-red-700";
-  return "text-[#132238]/55";
+  return "text-brand-navy/55";
 }
 
 function formatInteger(value: number): string {
@@ -1836,7 +1836,7 @@ function PublicationRequestCard({
   const documents = asUploadedDocuments(request.submitted_documents);
 
   return (
-    <article className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+    <article className="rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-4">
       <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -1859,25 +1859,25 @@ function PublicationRequestCard({
               request.document_types.slice(0, 4).map((type) => (
                 <span
                   key={type}
-                  className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-muted-foreground"
+                  className="rounded-full border border-brand-navy/10 px-2.5 py-1 text-xs text-muted-foreground"
                 >
                   {type}
                 </span>
               ))
             ) : (
-              <span className="rounded-full border border-amber-300/20 bg-amber-400/10 px-2.5 py-1 text-xs text-amber-100">
+              <span className="rounded-full border border-amber-300/20 bg-warning-tint px-2.5 py-1 text-xs text-warning">
                 Types de pièces à vérifier
               </span>
             )}
             {request.document_types.length > 4 ? (
-              <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-muted-foreground">
+              <span className="rounded-full border border-brand-navy/10 px-2.5 py-1 text-xs text-muted-foreground">
                 +{request.document_types.length - 4} autre
                 {request.document_types.length - 4 > 1 ? "s" : ""}
               </span>
             ) : null}
           </div>
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <span className="rounded-full border border-white/10 px-2.5 py-1">
+            <span className="rounded-full border border-brand-navy/10 px-2.5 py-1">
               {request.anonymize_documents
                 ? "Anonymisation demandée"
                 : "Anonymisation non demandée"}
@@ -1885,7 +1885,7 @@ function PublicationRequestCard({
             {request.promotion_options.map((option) => (
               <span
                 key={option}
-                className="rounded-full border border-gold/20 px-2.5 py-1 text-gold"
+                className="rounded-full border border-gold/20 px-2.5 py-1 text-gold-text"
               >
                 {publicationPromotionLabel(option)}
               </span>
@@ -1896,7 +1896,7 @@ function PublicationRequestCard({
             {documents.length > 1 ? "s" : ""} privé{documents.length > 1 ? "s" : ""}
           </div>
           {request.published_sale_id ? (
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-emerald-100">
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-success">
               <a
                 href={`/sales/${encodeURIComponent(request.published_sale_id)}`}
                 className="font-semibold underline underline-offset-2"
@@ -1916,13 +1916,13 @@ function PublicationRequestCard({
                   key={document.path ?? document.name}
                   type="button"
                   onClick={() => void openPublicationDocument(document)}
-                  className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-gold transition hover:border-gold"
+                  className="rounded-full border border-brand-navy/10 px-2.5 py-1 text-xs text-gold-text transition hover:border-gold"
                 >
                   {document.name ?? "Ouvrir la pièce"}
                 </button>
               ))}
               {documents.length > 4 ? (
-                <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-muted-foreground">
+                <span className="rounded-full border border-brand-navy/10 px-2.5 py-1 text-xs text-muted-foreground">
                   +{documents.length - 4} autre{documents.length - 4 > 1 ? "s" : ""}
                 </span>
               ) : null}
@@ -1935,7 +1935,7 @@ function PublicationRequestCard({
             type="button"
             disabled={disabled || request.status === "approved"}
             onClick={() => onReview("approved")}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-100 transition hover:border-emerald-200 disabled:cursor-not-allowed disabled:opacity-45"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-300/20 bg-success-tint px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-success transition hover:border-emerald-200 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <CheckCircle className="h-3.5 w-3.5" />
             Valider
@@ -1944,7 +1944,7 @@ function PublicationRequestCard({
             type="button"
             disabled={disabled || request.status === "rejected"}
             onClick={() => onReview("rejected")}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-red-100 transition hover:border-red-200 disabled:cursor-not-allowed disabled:opacity-45"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-300/20 bg-danger-tint px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-danger transition hover:border-red-200 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <XCircle className="h-3.5 w-3.5" />
             Refuser
@@ -1960,10 +1960,10 @@ function PublicationStatusPill({ status }: { status: PublicationRequestStatus })
     status === "approved" ? "Validée" : status === "rejected" ? "Refusée" : "En attente";
   const tone =
     status === "approved"
-      ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+      ? "border-emerald-300/20 bg-success-tint text-success"
       : status === "rejected"
-        ? "border-red-300/20 bg-red-500/10 text-red-100"
-        : "border-amber-300/20 bg-amber-400/10 text-amber-100";
+        ? "border-red-300/20 bg-danger-tint text-danger"
+        : "border-amber-300/20 bg-warning-tint text-warning";
 
   return (
     <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs ${tone}`}>
@@ -1987,10 +1987,10 @@ function LatestRun({ run }: { run: AuctionRun }) {
           <div className="font-mono text-xs text-muted-foreground">{shortId(run.id)}</div>
           <div className="mt-2 flex flex-wrap gap-2">
             <StatusPill status={run.status} />
-            <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-muted-foreground">
+            <span className="rounded-full border border-brand-navy/10 px-2.5 py-1 text-xs text-muted-foreground">
               {run.source ?? "source inconnue"}
             </span>
-            <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-muted-foreground">
+            <span className="rounded-full border border-brand-navy/10 px-2.5 py-1 text-xs text-muted-foreground">
               {run.useLlm === false ? "Sans LLM" : "LLM auto"}
             </span>
           </div>
@@ -2008,12 +2008,12 @@ function LatestRun({ run }: { run: AuctionRun }) {
       </div>
 
       {errorCount(run.errors) > 0 ? (
-        <div className="mt-4 rounded-lg border border-amber-300/20 bg-amber-400/10 p-3 text-xs text-amber-100">
+        <div className="mt-4 rounded-lg border border-amber-300/20 bg-warning-tint p-3 text-xs text-warning">
           <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
           {errorCount(run.errors)} erreur{errorCount(run.errors) > 1 ? "s" : ""} à inspecter.
         </div>
       ) : (
-        <div className="mt-4 rounded-lg border border-emerald-300/20 bg-emerald-400/10 p-3 text-xs text-emerald-100">
+        <div className="mt-4 rounded-lg border border-emerald-300/20 bg-success-tint p-3 text-xs text-success">
           <CheckCircle className="mr-1 inline h-3.5 w-3.5" />
           Aucun signal d'erreur remonté sur ce run.
         </div>
@@ -2024,7 +2024,7 @@ function LatestRun({ run }: { run: AuctionRun }) {
 
 function RunMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="liquid-panel-soft rounded-lg p-3">
+    <div className="admin-panel rounded-lg p-3">
       <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {label}
       </div>
@@ -2036,12 +2036,12 @@ function RunMetric({ label, value }: { label: string; value: string }) {
 function StatusPill({ status }: { status: string }) {
   const tone =
     status === "succeeded"
-      ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+      ? "border-emerald-300/20 bg-success-tint text-success"
       : status === "failed"
-        ? "border-red-300/20 bg-red-500/10 text-red-100"
+        ? "border-red-300/20 bg-danger-tint text-danger"
         : status === "running"
-          ? "border-sky-300/20 bg-sky-400/10 text-sky-100"
-          : "border-amber-300/20 bg-amber-400/10 text-amber-100";
+          ? "border-sky-300/20 bg-info-tint text-info"
+          : "border-amber-300/20 bg-warning-tint text-warning";
   return (
     <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs ${tone}`}>
       {status}

@@ -79,7 +79,7 @@ export function FeaturedLawyerPlacement({
 
   return (
     <section ref={sectionRef} className={shellClassName}>
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-soft">
+      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-text">
         <Scale className="h-3.5 w-3.5" />
         Avocat partenaire · profil sponsorisé
       </div>
@@ -95,7 +95,7 @@ export function FeaturedLawyerPlacement({
         <FeaturedLawyerSummary lawyer={lawyer} />
       ) : (
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          ImmoJudis peut rechercher un avocat référencé disponible sur ce secteur.
+          Immojudis peut rechercher un avocat référencé disponible sur ce secteur.
         </p>
       )}
       <div className="mt-4">

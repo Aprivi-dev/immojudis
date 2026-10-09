@@ -1,37 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { BrandMark } from "@/components/BrandLogo";
+import { useEffect } from "react";
+import { Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
 
 export default function Error({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
 
   return (
-    <main className="liquid-page flex min-h-screen items-center justify-center px-4 py-10">
-      <section className="glass-shell max-w-xl rounded-lg p-6 text-center sm:p-8">
-        <BrandMark className="mx-auto h-14 w-14" />
-        <h1 className="mt-5 font-display text-2xl tracking-tight text-foreground">
-          Cette page n'a pas charge
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Une erreur est survenue. Vous pouvez reessayer ou revenir a l'accueil.
+    <main id="contenu" className="mx-auto w-full max-w-2xl px-4 py-16 sm:px-6 sm:py-24">
+      <title>Cette page n’a pas chargé</title>
+      <Card role="alert" className="text-center sm:!p-10">
+        <Eyebrow>Incident temporaire</Eyebrow>
+        <h1 className="mt-3 font-display text-4xl font-semibold">Cette page n’a pas chargé</h1>
+        <p className="mx-auto mt-3 max-w-md text-ink-soft">
+          Une erreur est survenue. Vos données n’ont pas été modifiées : vous pouvez réessayer ou
+          revenir à l’accueil.
         </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <button
-            type="button"
-            onClick={reset}
-            className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-background transition hover:brightness-105"
-          >
-            Reessayer
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          <button type="button" onClick={reset} className={buttonClasses({ variant: "primary" })}>
+            Réessayer
           </button>
-          <Link
-            href="/"
-            className="liquid-panel-soft inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-gold transition hover:border-gold"
-          >
-            Retour a l'accueil
+          <Link href="/" className={buttonClasses()}>
+            Retour à l’accueil
           </Link>
         </div>
-      </section>
+      </Card>
     </main>
   );
 }

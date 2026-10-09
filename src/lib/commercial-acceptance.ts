@@ -167,7 +167,7 @@ export async function sendCommercialConfirmation({
       ? evidence.offer_label
       : isRecurringOffer
         ? resolveAnalysisOfferLabel()
-        : "ImmoJudis Analyse — 30 jours";
+        : "Immojudis Analyse — 30 jours";
   const subscriptionEvidence = jsonRecord(subscription?.metadata);
   const amountCents =
     acceptance?.amount_cents ?? numberValue(subscriptionEvidence.stripe_price_amount_cents);
@@ -221,8 +221,8 @@ export async function sendCommercialConfirmation({
   });
   const text = [
     isRecurringOffer
-      ? "Confirmation de votre abonnement ImmoJudis Analyse"
-      : "Confirmation de votre commande ImmoJudis Analyse",
+      ? "Confirmation de votre abonnement Immojudis Analyse"
+      : "Confirmation de votre commande Immojudis Analyse",
     "",
     `Offre : ${offerLabel}`,
     offerDescription,
@@ -250,10 +250,10 @@ export async function sendCommercialConfirmation({
         from: config.from,
         to: recipient,
         subject: isRecurringOffer
-          ? "Confirmation de votre abonnement ImmoJudis Analyse"
-          : "Confirmation de votre commande ImmoJudis Analyse",
+          ? "Confirmation de votre abonnement Immojudis Analyse"
+          : "Confirmation de votre commande Immojudis Analyse",
         text,
-        html: `<h1>${isRecurringOffer ? "Abonnement" : "Commande"} ImmoJudis Analyse confirmé${isRecurringOffer ? "" : "e"}</h1><p><strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription)}</p><p>Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${escapeHtml(checkoutSessionId)}</p><p>Conditions version ${LEGAL_DOCUMENTS.terms.version} · Confidentialité version ${LEGAL_DOCUMENTS.privacy.version}</p><p><a href="${termsUrl}">Conditions générales</a> · <a href="${privacyUrl}">Confidentialité</a> · <a href="${rightsUrl}">Mes droits et rétractation</a></p><pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(withdrawalLines.join("\n"))}</pre><p>Empreinte SHA-256 des conditions acceptées : ${LEGAL_DOCUMENTS.terms.sha256}</p>`,
+        html: `<h1>${isRecurringOffer ? "Abonnement" : "Commande"} Immojudis Analyse confirmé${isRecurringOffer ? "" : "e"}</h1><p><strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription)}</p><p>Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${escapeHtml(checkoutSessionId)}</p><p>Conditions version ${LEGAL_DOCUMENTS.terms.version} · Confidentialité version ${LEGAL_DOCUMENTS.privacy.version}</p><p><a href="${termsUrl}">Conditions générales</a> · <a href="${privacyUrl}">Confidentialité</a> · <a href="${rightsUrl}">Mes droits et rétractation</a></p><pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(withdrawalLines.join("\n"))}</pre><p>Empreinte SHA-256 des conditions acceptées : ${LEGAL_DOCUMENTS.terms.sha256}</p>`,
       },
     });
     await recordConfirmationDelivery({

@@ -14,11 +14,11 @@ import {
 import { privacyRequestAdminUpdateSchema, privacyRequestInputSchema } from "@/lib/privacy-requests";
 
 const completeLegalEnvironment = {
-  NEXT_PUBLIC_LEGAL_ENTITY_NAME: "ImmoJudis SAS",
+  NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS",
   NEXT_PUBLIC_LEGAL_ENTITY_FORM: "SAS",
   NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS: "1 rue de Paris, 75001 Paris",
   NEXT_PUBLIC_LEGAL_REGISTRATION: "RCS Paris 000 000 000",
-  NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR: "Direction ImmoJudis",
+  NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR: "Direction Immojudis",
   NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "contact@immojudis.fr",
   NEXT_PUBLIC_LEGAL_CONTACT_PHONE: "+33 1 00 00 00 00",
   NEXT_PUBLIC_LEGAL_MEDIATOR_NAME: "Médiateur de la consommation",
@@ -60,7 +60,7 @@ describe("phase 6 compliance contracts", () => {
         ...completeLegalEnvironment,
         NEXT_PUBLIC_APP_URL: "https://immojudis.example",
         RESEND_API_KEY: "re_test",
-        ALERT_EMAIL_FROM: "ImmoJudis <commandes@immojudis.example>",
+        ALERT_EMAIL_FROM: "Immojudis <commandes@immojudis.example>",
       }),
     ).not.toThrow();
   });

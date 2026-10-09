@@ -18,6 +18,7 @@ import { collectSaleDocuments } from "@/lib/sale-documents";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { isUuid } from "@/lib/sale-workspace-shared";
 import type { AuctionSale } from "@/lib/types";
+import { userMessage } from "@/lib/user-messages";
 
 type AmountField =
   | "priceEur"
@@ -207,9 +208,7 @@ export function ProfessionalPilotWorkspace({
         });
       }
       setSaveMessage(
-        error instanceof Error
-          ? `Synchronisation impossible : ${error.message}`
-          : "Synchronisation impossible. Le brouillon reste sur cet appareil.",
+        `Synchronisation impossible. ${userMessage(error, "Le brouillon reste sur cet appareil.")}`,
       );
     } finally {
       if (activeStorageKey.current === savingStorageKey) setSaving(false);
@@ -328,7 +327,7 @@ export function ProfessionalPilotWorkspace({
               {knownFacts.map((fact) => (
                 <div
                   key={fact.label}
-                  className="rounded-lg border border-slate-200 bg-[#fafcfd] p-3"
+                  className="rounded-lg border border-slate-200 bg-surface-muted p-3"
                 >
                   <dt className="text-xs font-semibold uppercase tracking-wide text-slate-600">
                     {fact.label}
@@ -342,7 +341,7 @@ export function ProfessionalPilotWorkspace({
                       href={fact.sourceUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mt-1 inline-block text-xs font-semibold text-[#946724] underline"
+                      className="mt-1 inline-block text-xs font-semibold text-gold-text underline"
                     >
                       Voir la source
                     </a>
@@ -405,7 +404,7 @@ export function ProfessionalPilotWorkspace({
                       href={document.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="font-semibold text-[#946724] underline"
+                      className="font-semibold text-gold-text underline"
                     >
                       {document.label ?? document.type ?? "Document du dossier"}
                     </a>
@@ -485,7 +484,7 @@ export function ProfessionalPilotWorkspace({
                 </label>
               ))}
             </div>
-            <dl className="mt-4 grid gap-2 rounded-lg bg-[#eef7ff] p-4 text-sm sm:grid-cols-2">
+            <dl className="mt-4 grid gap-2 rounded-lg bg-background p-4 text-sm sm:grid-cols-2">
               <div>
                 <dt>Investissement total</dt>
                 <dd className="font-bold text-brand-navy">

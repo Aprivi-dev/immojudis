@@ -55,7 +55,7 @@ export function SaleComparisonTable({
       role="region"
       aria-label="Tableau comparatif, défilement horizontal et vertical"
       tabIndex={0}
-      className="overflow-auto outline-offset-[-2px] focus-visible:outline-2 focus-visible:outline-[#0f766e]"
+      className="overflow-auto outline-offset-[-2px] focus-visible:outline-2 focus-visible:outline-gold"
     >
       <table
         className="w-full table-fixed border-collapse text-left text-sm"
@@ -66,7 +66,7 @@ export function SaleComparisonTable({
           <tr>
             <th
               scope="col"
-              className="sticky left-0 top-0 z-20 w-[140px] border-b border-r border-[#d6e3e8] bg-[#f4faf8] p-3 align-bottom text-xs font-bold text-[#526170]"
+              className="sticky left-0 top-0 z-20 w-[140px] border-b border-r border-line-soft bg-surface-tint p-3 align-bottom text-xs font-bold text-ink-soft"
             >
               Critères
             </th>
@@ -74,9 +74,9 @@ export function SaleComparisonTable({
               <th
                 key={sale.id}
                 scope="col"
-                className="sticky top-0 z-10 border-b border-r border-[#d6e3e8] bg-white p-4 align-top"
+                className="sticky top-0 z-10 border-b border-r border-line-soft bg-white p-4 align-top"
               >
-                <p className="text-xs font-bold text-[#0f766e]">Bien {index + 1}</p>
+                <p className="text-xs font-bold text-brand-navy">Bien {index + 1}</p>
                 <p className="mt-1 break-words font-extrabold">{comparedSaleTitle(sale)}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3">
                   <Link
@@ -85,7 +85,7 @@ export function SaleComparisonTable({
                     search={{ from: returnTo }}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex min-h-11 items-center text-xs font-bold text-[#0f766e] underline underline-offset-2"
+                    className="inline-flex min-h-11 items-center text-xs font-bold text-brand-navy underline underline-offset-2"
                     aria-label={`Voir la fiche du bien ${index + 1} (nouvel onglet)`}
                   >
                     Voir la fiche ↗
@@ -98,7 +98,7 @@ export function SaleComparisonTable({
                         onRemove(sale.id);
                       }}
                       aria-label={`Retirer le bien ${index + 1} de la comparaison`}
-                      className="min-h-11 rounded-md px-1 text-xs font-bold text-[#526170] hover:bg-[#f4f7f9] focus-visible:outline-2 focus-visible:outline-[#0f766e]"
+                      className="min-h-11 rounded-md px-1 text-xs font-bold text-ink-soft hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-gold"
                     >
                       Retirer
                     </button>
@@ -113,14 +113,14 @@ export function SaleComparisonTable({
             <tr key={row.label}>
               <th
                 scope="row"
-                className="sticky left-0 z-10 border-b border-r border-[#d6e3e8] bg-[#f4faf8] p-3 text-xs font-bold"
+                className="sticky left-0 z-10 border-b border-r border-line-soft bg-surface-tint p-3 text-xs font-bold"
               >
                 {row.label}
               </th>
               {items.map((sale) => (
                 <td
                   key={sale.id}
-                  className="break-words border-b border-r border-[#e2e8ee] px-4 py-3 tabular-nums"
+                  className="break-words border-b border-r border-line-soft px-4 py-3 tabular-nums"
                 >
                   {row.value(sale)}
                 </td>

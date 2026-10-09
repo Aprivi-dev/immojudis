@@ -1,7 +1,7 @@
 .page {
   min-height: 100vh;
-  background: #f4f6f9;
-  color: #132238;
+  background: var(--surface-muted);
+  color: var(--brand-navy);
 }
 
 .container {
@@ -15,13 +15,13 @@
   min-height: 44px;
   align-items: center;
   gap: 8px;
-  color: #132238;
+  color: var(--brand-navy);
   font-size: 14px;
   font-weight: 650;
 }
 
 .back:hover {
-  color: #946724;
+  color: var(--gold-text, var(--gold-text));
 }
 
 .hero {
@@ -34,9 +34,9 @@
 .summary,
 .procedure,
 .access {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--line-soft);
   border-radius: 22px;
-  background: #fff;
+  background: #ffffff;
 }
 
 .summary {
@@ -44,21 +44,21 @@
 }
 
 .heroNotary .summary {
-  border-top: 5px solid #946724;
+  border-top: 5px solid var(--gold-soft);
 }
 
 .heroState .summary {
-  border-top: 5px solid #246b87;
+  border-top: 5px solid var(--info);
 }
 
 .heroNotary .fact:first-child {
-  background: #fffaf2;
-  border-color: #e5cfa9;
+  background: var(--surface);
+  border-color: var(--gold-light);
 }
 
 .heroState .fact:first-child {
-  background: #eef7ff;
-  border-color: #b9d0df;
+  background: var(--background);
+  border-color: var(--line);
 }
 
 .title {
@@ -74,7 +74,7 @@
 .intro {
   max-width: 650px;
   margin-top: 16px;
-  color: #607086;
+  color: var(--ink-soft);
   font-size: 16px;
   line-height: 1.65;
 }
@@ -142,16 +142,16 @@
 
 .priceLabel {
   margin-top: 30px;
-  color: #64748b;
+  color: var(--ink-soft);
   font-size: 15px;
 }
 
 .priceUnavailable {
   margin-top: 28px;
   border-radius: 12px;
-  background: #f4f6f9;
+  background: var(--surface-muted);
   padding: 14px 16px;
-  color: #405168;
+  color: var(--ink-strong);
   font-size: 14px;
   font-weight: 600;
 }
@@ -168,7 +168,7 @@
 
 .priceNote {
   margin-top: 8px;
-  color: #64748b;
+  color: var(--ink-soft);
   font-size: 14px;
 }
 
@@ -180,13 +180,13 @@
 
 .fact {
   min-width: 0;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--line-soft);
   border-radius: 16px;
   padding: 16px;
 }
 
 .fact dt {
-  color: #64748b;
+  color: var(--ink-soft);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -215,7 +215,7 @@
 
 .procedureText {
   margin-top: 16px;
-  color: #405168;
+  color: var(--ink-strong);
   font-size: 15px;
   line-height: 1.75;
 }
@@ -225,9 +225,9 @@
   align-items: flex-start;
   gap: 10px;
   margin-top: 22px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--line-soft);
   padding-top: 20px;
-  color: #405168;
+  color: var(--ink-strong);
   font-size: 14px;
   line-height: 1.6;
 }
@@ -237,15 +237,15 @@
   height: 18px;
   flex: none;
   margin-top: 2px;
-  color: #17865d;
+  color: var(--success);
 }
 
 .catalogueNote {
   margin-top: auto;
   border-radius: 14px;
-  background: #f5f8fb;
+  background: var(--surface-muted);
   padding: 16px;
-  color: #405168;
+  color: var(--ink-strong);
   font-size: 14px;
   line-height: 1.65;
 }
@@ -253,7 +253,7 @@
 .catalogueNote strong {
   display: block;
   margin-bottom: 4px;
-  color: #132238;
+  color: var(--brand-navy);
 }
 
 .access {
@@ -270,7 +270,7 @@
 .accessIntro {
   max-width: 680px;
   margin-top: 8px;
-  color: #607086;
+  color: var(--ink-soft);
   font-size: 15px;
   line-height: 1.65;
 }
@@ -299,46 +299,46 @@
 }
 
 .primary {
-  border: 1px solid #132238;
-  background: #132238;
-  color: #fff;
+  border: 1px solid var(--brand-navy);
+  background: var(--brand-navy);
+  color: #ffffff;
 }
 
 .primary:hover {
-  background: #243c58;
+  background: var(--brand-navy-soft);
 }
 
 .secondary {
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  color: #132238;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--brand-navy);
 }
 
 .secondary:hover {
-  border-color: #946724;
-  color: #946724;
+  border-color: var(--gold-soft);
+  color: var(--gold-text, var(--gold-text));
 }
 
 .tiers {
   display: grid;
   gap: 12px;
   margin-top: 26px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--line-soft);
   padding-top: 24px;
 }
 
 .tier {
   min-width: 0;
-  border-left: 3px solid #dbe1e9;
+  border-left: 3px solid var(--line-soft);
   padding: 4px 4px 4px 14px;
 }
 
 .tierFree {
-  border-left-color: #17865d;
+  border-left-color: var(--success);
 }
 
 .tierAnalysis {
-  border-left-color: #946724;
+  border-left-color: var(--gold-soft);
 }
 
 .tierTitle {
@@ -357,13 +357,13 @@
 
 .tier p {
   margin-top: 7px;
-  color: #607086;
+  color: var(--ink-soft);
   font-size: 13px;
   line-height: 1.6;
 }
 
 .page :is(a, button):focus-visible {
-  outline: 2px solid #946724;
+  outline: 2px solid var(--gold-soft);
   outline-offset: 4px;
 }
 

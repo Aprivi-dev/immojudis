@@ -464,7 +464,7 @@ export async function exportPropertyReportPdf({
     lines,
     headings: REPORT_PDF_HEADINGS,
     footer:
-      "ImmoJudis - rapport indicatif. Vérifiez les pièces officielles et votre conseil avant toute enchère.",
+      "Immojudis - rapport indicatif. Vérifiez les pièces officielles et votre conseil avant toute enchère.",
     watermark: pdfWatermarkForPlan(plan),
   });
 

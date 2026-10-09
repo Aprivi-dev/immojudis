@@ -1,3 +1,4 @@
+import * as PopoverPrimitive from "@radix-ui/react-popover";
 import dynamic from "next/dynamic";
 import type * as React from "react";
 import { useEffect, useRef, useState } from "react";
@@ -9,10 +10,9 @@ import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import Download from "lucide-react/dist/esm/icons/download.js";
 import LayoutPanelLeft from "lucide-react/dist/esm/icons/layout-panel-left.js";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
-import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import SearchIcon from "lucide-react/dist/esm/icons/search.js";
 import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
-import { Link } from "@/lib/router-compat";
+import { SiteHeader } from "@/components/SiteHeader";
 import { HOME_TYPE_OPTIONS, SORT_OPTIONS } from "@/lib/search/search-filters";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
@@ -24,7 +24,7 @@ const LazyDateFilter = dynamic(() => import("./DateFilter").then((module) => mod
   loading: () => (
     <span
       aria-hidden
-      className="inline-flex h-10 items-center gap-2 rounded-md border border-[#cbd5df] px-3 text-sm font-medium"
+      className="inline-flex h-10 items-center gap-2 rounded-md border border-line px-3 text-sm font-medium"
     >
       <CalendarDays className="h-4 w-4" />
       Date de vente
@@ -40,9 +40,10 @@ export function SearchHeader({
   isFetching,
   filtersOpen,
   savingAlert,
-  alertsLocked,
   exportingCsv,
   csvExportLocked,
+  signedIn = false,
+  weeklyAlertsAllowed = false,
   wideMap,
   isDesktop = false,
   onFiltersOpenChange,
@@ -58,14 +59,15 @@ export function SearchHeader({
   isFetching: boolean;
   filtersOpen: boolean;
   savingAlert: boolean;
-  alertsLocked: boolean;
   exportingCsv: boolean;
   csvExportLocked: boolean;
+  signedIn?: boolean;
+  weeklyAlertsAllowed?: boolean;
   wideMap: boolean;
   isDesktop?: boolean;
   onFiltersOpenChange: (open: boolean) => void;
   onReset: () => void;
-  onSaveSearch: () => void;
+  onSaveSearch: (options?: { frequency: AlertFrequencyChoice }) => void;
   onExportCsv: () => void;
   onToggleLayout: () => void;
 }) {
@@ -83,101 +85,80 @@ export function SearchHeader({
     return () => observer.disconnect();
   }, []);
   return (
-    <header
-      ref={headerRef}
-      className="sales-header sticky top-0 z-40 border-b border-[#132238]/10 bg-white"
-    >
-      <div className="flex min-h-16 items-center justify-between gap-4 border-b border-[#132238]/10 px-4 lg:px-5">
-        <Link
-          to="/"
-          aria-label="ImmoJudis — accueil"
-          className="shrink-0 font-display text-2xl font-semibold tracking-tight text-[#132238]"
-        >
-          Immo<span className="text-[#9c642b]">Judis</span>
-        </Link>
-        {isDesktop ? (
-          <div className="flex min-w-0 max-w-md flex-1">
-            <GeographicSearch draft={draft} setDraft={setDraft} />
-          </div>
-        ) : null}
-        <nav
-          aria-label="Navigation du catalogue"
-          className="flex items-center gap-4 text-xs font-semibold sm:text-sm"
-        >
-          <Link
-            to="/sales"
-            aria-current="page"
-            className="hidden border-b-2 border-[#9c642b] py-5 xl:block"
-          >
-            Annonces
-          </Link>
-          <Link to="/favoris" className="py-4">
-            Favoris
-          </Link>
-          <Link to="/comparaisons" className="py-4">
-            Comparaisons
-          </Link>
-          <Link to="/accompagnement" className="hidden py-4 sm:block">
-            Offres
-          </Link>
-        </nav>
-        <div className="hidden lg:flex">
-          <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
-        </div>
-      </div>
-      <div className="px-4 py-2.5 lg:px-5">
-        <div className="flex flex-wrap items-center gap-2">
-          {!isDesktop ? (
-            <div className="flex min-w-0 flex-1">
-              <GeographicSearch draft={draft} setDraft={setDraft} />
+    <SiteHeader
+      theme="light"
+      placement="sticky"
+      headerRef={headerRef}
+      className="sales-header"
+      center={isDesktop ? <GeographicSearch draft={draft} setDraft={setDraft} /> : undefined}
+      belowBar={
+        <div className="border-t border-border px-4 py-2.5 lg:px-5">
+          <div className="flex flex-wrap items-center gap-2">
+            {!isDesktop ? (
+              <div className="flex min-w-0 flex-1">
+                <GeographicSearch draft={draft} setDraft={setDraft} />
+              </div>
+            ) : null}
+            {!isDesktop ? (
+              <SaveSearchButton
+                compact
+                saving={savingAlert}
+                signedIn={signedIn}
+                weeklyAllowed={weeklyAlertsAllowed}
+                onClick={onSaveSearch}
+              />
+            ) : null}
+            <div className="hidden lg:flex flex-wrap items-center gap-2">
+              <HomeTypeFilter draft={draft} setDraft={setDraft} />
+              <PriceFilter draft={draft} setDraft={setDraft} />
+              <LazyDateFilter draft={draft} setDraft={setDraft} />
             </div>
-          ) : null}
-          <div className="hidden lg:flex flex-wrap items-center gap-2">
-            <HomeTypeFilter draft={draft} setDraft={setDraft} />
-            <PriceFilter draft={draft} setDraft={setDraft} />
-            <LazyDateFilter draft={draft} setDraft={setDraft} />
-          </div>
-          <button
-            type="button"
-            aria-label="Filtres avancés"
-            aria-expanded={filtersOpen}
-            onClick={() => onFiltersOpenChange(!filtersOpen)}
-            className="inline-flex min-h-11 items-center gap-2 rounded-md border border-[#cbd5df] bg-white px-3 text-sm font-semibold hover:bg-[#f8f9fa]"
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            <span className="hidden sm:inline">Tous les filtres</span>
-            <span className="sm:hidden">Filtres</span>
-            {activeFiltersCount > 0 && (
-              <span className="rounded-full bg-[#132238] px-2 py-0.5 text-xs text-white">
-                {activeFiltersCount}
-              </span>
-            )}
-          </button>
-          {activeFiltersCount > 0 && (
             <button
               type="button"
-              onClick={onReset}
-              className="hidden min-h-11 px-2 text-xs font-semibold text-[#526170] underline underline-offset-4 lg:block"
+              aria-expanded={filtersOpen}
+              onClick={() => onFiltersOpenChange(!filtersOpen)}
+              className="hidden min-h-11 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold hover:bg-surface-tint lg:inline-flex"
             >
-              Effacer les filtres
+              <SlidersHorizontal className="h-4 w-4" />
+              Tous les filtres
+              {activeFiltersCount > 0 && (
+                <span className="rounded-full bg-brand-navy px-2 py-0.5 text-xs text-white">
+                  {activeFiltersCount}
+                </span>
+              )}
             </button>
-          )}
-          <div className="ml-auto hidden items-center gap-2 lg:flex">
-            <CsvExportButton
-              exporting={exportingCsv}
-              locked={csvExportLocked}
-              onClick={onExportCsv}
-            />
-            <SaveSearchButton saving={savingAlert} locked={alertsLocked} onClick={onSaveSearch} />
+            {activeFiltersCount > 0 && (
+              <button
+                type="button"
+                onClick={onReset}
+                className="hidden min-h-11 px-2 text-xs font-semibold text-ink-soft underline underline-offset-4 lg:block"
+              >
+                Effacer les filtres
+              </button>
+            )}
+            <div className="ml-auto hidden items-center gap-2 lg:flex">
+              <CsvExportButton
+                exporting={exportingCsv}
+                locked={csvExportLocked}
+                onClick={onExportCsv}
+              />
+              <SaveSearchButton
+                saving={savingAlert}
+                signedIn={signedIn}
+                weeklyAllowed={weeklyAlertsAllowed}
+                onClick={onSaveSearch}
+              />
+              <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
+            </div>
           </div>
+          {isFetching && !isLoading && (
+            <p role="status" className="sr-only">
+              Mise à jour des résultats
+            </p>
+          )}
         </div>
-        {isFetching && !isLoading && (
-          <p role="status" className="sr-only">
-            Mise à jour des résultats
-          </p>
-        )}
-      </div>
-    </header>
+      }
+    />
   );
 }
 
@@ -218,7 +199,7 @@ export function GeographicSearch({
         event.preventDefault();
         apply();
       }}
-      className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-[#cbd5df] bg-white focus-within:ring-2 focus-within:ring-[#c98d45] sm:basis-auto sm:flex-1"
+      className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-line bg-white focus-within:ring-2 focus-within:ring-gold sm:basis-auto sm:flex-1"
     >
       <SearchIcon className="ml-3 h-5 w-5 shrink-0" />
       <input
@@ -240,7 +221,7 @@ export function GeographicSearch({
       <button
         type="submit"
         aria-label="Rechercher la localisation"
-        className="mr-1 grid h-10 w-10 shrink-0 place-items-center rounded hover:bg-[#eef3f8]"
+        className="mr-1 grid h-10 w-10 shrink-0 place-items-center rounded hover:bg-surface-tint"
       >
         <SearchIcon className="h-4 w-4" />
       </button>
@@ -250,10 +231,10 @@ export function GeographicSearch({
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={apply}
-            className="w-full rounded px-3 py-3 text-left text-sm hover:bg-[#eef3f8]"
+            className="w-full rounded px-3 py-3 text-left text-sm hover:bg-surface-tint"
           >
             <strong>{value}</strong>
-            <span className="ml-2 text-[#526170]">{kind}</span>
+            <span className="ml-2 text-ink-soft">{kind}</span>
           </button>
         </div>
       )}
@@ -264,20 +245,51 @@ export function GeographicSearch({
 export function PriceFilter({
   draft,
   setDraft,
+  stacked = false,
 }: {
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
+  /** Dans le panneau de filtres : un libellé visible au-dessus de chaque champ. */
+  stacked?: boolean;
 }) {
+  if (stacked) {
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        <StackedField label="Minimum (€)">
+          <input
+            inputMode="numeric"
+            value={draft.minPrice}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, minPrice: event.target.value }))
+            }
+            placeholder="Aucun"
+            className="form-input h-11"
+          />
+        </StackedField>
+        <StackedField label="Maximum (€)">
+          <input
+            inputMode="numeric"
+            value={draft.maxPrice}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, maxPrice: event.target.value }))
+            }
+            placeholder="Aucun"
+            className="form-input h-11"
+          />
+        </StackedField>
+      </div>
+    );
+  }
   return (
-    <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-[#cbd5df] bg-white shadow-sm">
-      <span className="px-3 text-sm font-bold text-[#132238]">Mise à prix</span>
+    <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white shadow-sm">
+      <span className="px-3 text-sm font-bold text-brand-navy">Mise à prix</span>
       <input
         aria-label="Prix minimum"
         inputMode="numeric"
         value={draft.minPrice}
         onChange={(event) => setDraft((current) => ({ ...current, minPrice: event.target.value }))}
         placeholder="min"
-        className="h-full w-20 border-l border-[#d6e0dc] bg-transparent px-2 text-sm font-semibold outline-none"
+        className="h-full w-20 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
       />
       <input
         aria-label="Prix maximum"
@@ -285,29 +297,68 @@ export function PriceFilter({
         value={draft.maxPrice}
         onChange={(event) => setDraft((current) => ({ ...current, maxPrice: event.target.value }))}
         placeholder="max"
-        className="h-full w-20 border-l border-[#d6e0dc] bg-transparent px-2 text-sm font-semibold outline-none"
+        className="h-full w-20 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
       />
     </div>
+  );
+}
+
+function StackedField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="font-semibold text-brand-navy">{label}</span>
+      {children}
+    </label>
   );
 }
 
 export function BedsBathsFilter({
   draft,
   setDraft,
+  stacked = false,
 }: {
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
+  stacked?: boolean;
 }) {
+  if (stacked) {
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        <StackedField label="Chambres minimum">
+          <input
+            inputMode="numeric"
+            value={draft.minBeds}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, minBeds: event.target.value }))
+            }
+            placeholder="Aucun"
+            className="form-input h-11"
+          />
+        </StackedField>
+        <StackedField label="Salles de bain minimum">
+          <input
+            inputMode="numeric"
+            value={draft.minBaths}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, minBaths: event.target.value }))
+            }
+            placeholder="Aucun"
+            className="form-input h-11"
+          />
+        </StackedField>
+      </div>
+    );
+  }
   return (
-    <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-[#cbd5df] bg-white shadow-sm">
-      <span className="px-3 text-sm font-bold text-[#132238]">Chambres / bains</span>
+    <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white shadow-sm">
+      <span className="px-3 text-sm font-bold text-brand-navy">Chambres / bains</span>
       <input
         aria-label="Nombre minimum de chambres"
         inputMode="numeric"
         value={draft.minBeds}
         onChange={(event) => setDraft((current) => ({ ...current, minBeds: event.target.value }))}
         placeholder="ch."
-        className="h-full w-16 border-l border-[#d6e0dc] bg-transparent px-2 text-sm font-semibold outline-none"
+        className="h-full w-16 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
       />
       <input
         aria-label="Nombre minimum de salles de bain"
@@ -315,7 +366,7 @@ export function BedsBathsFilter({
         value={draft.minBaths}
         onChange={(event) => setDraft((current) => ({ ...current, minBaths: event.target.value }))}
         placeholder="sdb"
-        className="h-full w-16 border-l border-[#d6e0dc] bg-transparent px-2 text-sm font-semibold outline-none"
+        className="h-full w-16 border-l border-line-soft bg-transparent px-2 text-sm font-semibold outline-none"
       />
     </div>
   );
@@ -329,8 +380,8 @@ export function HomeTypeFilter({
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
 }) {
   return (
-    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-[#cbd5df] bg-white shadow-sm">
-      <Building2 className="ml-3 h-4 w-4 text-[#667482]" />
+    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
+      <Building2 className="ml-3 h-4 w-4 text-ink-soft" />
       <span className="sr-only">Type de bien</span>
       <select
         value={draft.homeTypes[0] ?? "all"}
@@ -340,7 +391,7 @@ export function HomeTypeFilter({
             homeTypes: event.target.value === "all" ? [] : [event.target.value],
           }))
         }
-        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-[#132238] outline-none"
+        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
       >
         <option value="all">Tous biens</option>
         {HOME_TYPE_OPTIONS.map((option) => (
@@ -349,7 +400,7 @@ export function HomeTypeFilter({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-[#667482]" />
+      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
     </label>
   );
 }
@@ -366,13 +417,13 @@ export function SortDropdown({
   onChange: (sort: SearchSortKey) => void;
 }) {
   return (
-    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-[#cbd5df] bg-white shadow-sm">
-      <ArrowUpDown className="ml-3 h-4 w-4 text-[#667482]" />
+    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
+      <ArrowUpDown className="ml-3 h-4 w-4 text-ink-soft" />
       <span className="sr-only">Tri</span>
       <select
         value={sort}
         onChange={(event) => onChange(event.target.value as SearchSortKey)}
-        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-[#132238] outline-none"
+        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
       >
         {SORT_OPTIONS.filter(
           (option) =>
@@ -384,36 +435,97 @@ export function SortDropdown({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-[#667482]" />
+      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
     </label>
   );
 }
 
+export type AlertFrequencyChoice = "daily" | "weekly";
+
 export function SaveSearchButton({
   saving,
-  locked,
+  compact = false,
+  signedIn = false,
+  weeklyAllowed = false,
   onClick,
 }: {
   saving: boolean;
-  locked: boolean;
-  onClick: () => void;
+  compact?: boolean;
+  /** Connecté : on propose le choix de la fréquence ; sinon on envoie vers la connexion. */
+  signedIn?: boolean;
+  weeklyAllowed?: boolean;
+  onClick: (options?: { frequency: AlertFrequencyChoice }) => void;
 }) {
-  return (
+  const [open, setOpen] = useState(false);
+  const [frequency, setFrequency] = useState<AlertFrequencyChoice>("daily");
+  const button = (
     <button
       type="button"
-      onClick={onClick}
       disabled={saving}
-      className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md bg-[#132238] px-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#263c58] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98d45] disabled:cursor-not-allowed disabled:opacity-60"
+      aria-label={compact ? "Créer une alerte" : undefined}
+      title="Créer une alerte à partir de cette recherche"
+      onClick={signedIn ? undefined : () => onClick()}
+      className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-navy-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft ${
+        compact ? "size-11" : "h-10 px-3"
+      }`}
     >
-      {saving ? (
-        <LoaderCircle className="h-4 w-4 animate-spin" />
-      ) : locked ? (
-        <LockKeyhole className="h-4 w-4" />
-      ) : (
-        <Bell className="h-4 w-4" />
-      )}
-      {locked ? "Créer une alerte · Analyse" : "Créer une alerte"}
+      {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+      {compact ? null : "Créer une alerte"}
     </button>
+  );
+  if (!signedIn) return button;
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger asChild>{button}</PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          align="end"
+          sideOffset={8}
+          className="z-[70] w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-white p-4 text-sm text-foreground shadow-xl outline-none"
+        >
+          <p className="font-display text-xl font-semibold">Créer une alerte</p>
+          <p className="mt-1 text-ink-soft">
+            Vous recevez un seul email récapitulatif avec les nouvelles ventes qui correspondent à
+            cette recherche.
+          </p>
+          <fieldset className="mt-3">
+            <legend className="mb-1 font-semibold">Fréquence</legend>
+            <label className="flex min-h-11 cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                name="alert-frequency"
+                checked={frequency === "daily"}
+                onChange={() => setFrequency("daily")}
+              />
+              Quotidienne
+            </label>
+            <label
+              className={`flex min-h-11 items-center gap-2 ${weeklyAllowed ? "cursor-pointer" : "text-ink-soft"}`}
+            >
+              <input
+                type="radio"
+                name="alert-frequency"
+                disabled={!weeklyAllowed}
+                checked={frequency === "weekly"}
+                onChange={() => setFrequency("weekly")}
+              />
+              Hebdomadaire
+              {weeklyAllowed ? null : <span className="text-xs">(offre Analyse)</span>}
+            </label>
+          </fieldset>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onClick({ frequency });
+            }}
+            className="mt-3 inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-md bg-gold font-semibold text-brand-navy hover:bg-gold-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+          >
+            Créer l’alerte
+          </button>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   );
 }
 
@@ -431,34 +543,29 @@ export function CsvExportButton({
       type="button"
       onClick={onClick}
       disabled={exporting}
-      title={locked ? "Export CSV réservé au plan Analyse" : "Exporter les résultats en CSV"}
-      className={`inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm font-extrabold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60 ${
-        locked
-          ? "border-[#d6e0dc] bg-white text-[#667482]"
-          : "border-[#0f766e] bg-white text-[#0f766e] hover:bg-[#eefaf3]"
-      }`}
+      title={locked ? "Export CSV réservé à l'offre Analyse" : "Exporter les résultats en CSV"}
+      className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-brand-navy shadow-sm transition-colors hover:border-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:bg-surface-tint disabled:text-ink-soft"
     >
       {exporting ? (
         <LoaderCircle className="h-4 w-4 animate-spin" />
       ) : (
         <Download className="h-4 w-4" />
       )}
-      CSV
+      Exporter en CSV
     </button>
   );
 }
 
 export function LayoutToggle({ wideMap, onToggle }: { wideMap: boolean; onToggle: () => void }) {
+  const label = wideMap ? "Plus de résultats" : "Agrandir la carte";
   return (
     <button
       type="button"
       onClick={onToggle}
-      className="hidden h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-[#cbd5df] bg-white px-3 text-sm font-bold text-[#132238] shadow-sm transition-colors hover:border-[#0f766e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] lg:inline-flex"
-      aria-label={wideMap ? "Afficher plus de résultats" : "Afficher plus de carte"}
-      title={wideMap ? "Afficher plus de résultats" : "Afficher plus de carte"}
+      className="hidden h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-brand-navy shadow-sm transition-colors hover:border-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold 2xl:inline-flex"
     >
       <LayoutPanelLeft className="h-4 w-4" />
-      {wideMap ? "Plus de résultats" : "Agrandir la carte"}
+      {label}
     </button>
   );
 }
@@ -481,7 +588,7 @@ export function ResultsSummary({
   const location = search.city || search.department || search.query || "France entière";
   return (
     <div className="min-w-0 px-4 py-4 sm:px-5" aria-live="polite">
-      <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-[#92724d]">
+      <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gold-text">
         Le catalogue des enchères
       </p>
       <h1 className="font-display text-[1.65rem] font-semibold leading-tight">
@@ -489,7 +596,7 @@ export function ResultsSummary({
           ? "Ventes immobilières aux enchères"
           : `Ventes immobilières aux enchères à ${location}`}
       </h1>
-      <p className="mt-1 text-sm text-[#526170]">
+      <p className="mt-1 text-sm text-ink-soft">
         {isLoading
           ? "Recherche en cours…"
           : hasError
@@ -518,15 +625,17 @@ export function InlineTextFilter({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-[#cbd5df] px-3">
-      <Icon className="h-4 w-4 shrink-0" />
-      <span className="sr-only">{label}</span>
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none"
-      />
+    <label className="grid min-w-0 gap-1.5 text-sm">
+      <span className="font-semibold text-brand-navy">{label}</span>
+      <span className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-line px-3 focus-within:ring-2 focus-within:ring-gold">
+        <Icon className="h-4 w-4 shrink-0" />
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none"
+        />
+      </span>
     </label>
   );
 }

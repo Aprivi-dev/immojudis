@@ -262,7 +262,7 @@ function buildChecklist({
     },
     {
       key: "bid_ceiling",
-      label: "Mise maximale",
+      label: "Enchère plafond",
       status: bidCeilingAvailable ? "done" : "to_do",
       priority: "high",
       source: "Calcul de plafond",

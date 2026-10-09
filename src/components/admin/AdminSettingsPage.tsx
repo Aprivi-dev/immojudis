@@ -105,7 +105,7 @@ export function AdminSettingsPage() {
     >
       <div className="space-y-6">
         <AdminPanel className="p-5 sm:p-6">
-          <p className="text-xs font-semibold uppercase tracking-widest text-[#a36f2c]">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gold-text">
             Centre de configuration
           </p>
           <h2 className="mt-2 text-xl font-semibold">Les bons réglages, au même endroit</h2>
@@ -300,7 +300,7 @@ function PipelineControls({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
         <fieldset disabled={mutation.isPending} className="space-y-5 disabled:opacity-60">
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4">
             <input
-              className="mt-1 size-4 accent-[#a36f2c]"
+              className="mt-1 size-4 accent-gold-soft"
               type="checkbox"
               checked={current.enabled}
               onChange={(event) => update("enabled", event.target.checked)}
@@ -316,7 +316,7 @@ function PipelineControls({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =
           </label>
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4">
             <input
-              className="mt-1 size-4 accent-[#a36f2c]"
+              className="mt-1 size-4 accent-gold-soft"
               type="checkbox"
               checked={current.source_details_enabled}
               onChange={(event) => update("source_details_enabled", event.target.checked)}

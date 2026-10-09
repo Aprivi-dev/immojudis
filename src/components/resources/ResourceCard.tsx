@@ -4,7 +4,14 @@ import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import type { ResourceSummary } from "@/lib/resource-articles";
 import styles from "./Resources.module.css";
 
-export function ResourceCard({ article }: { article: ResourceSummary }) {
+export function ResourceCard({
+  article,
+  eager = false,
+}: {
+  article: ResourceSummary;
+  /** Cartes visibles dès le premier écran : chargées sans attendre. */
+  eager?: boolean;
+}) {
   return (
     <article className={styles.card}>
       <Link
@@ -18,6 +25,7 @@ export function ResourceCard({ article }: { article: ResourceSummary }) {
             alt=""
             fill
             sizes="(max-width: 700px) 100vw, (max-width: 1050px) 50vw, 33vw"
+            loading={eager ? "eager" : undefined}
           />
           <span className={styles.imageLabel}>{article.category}</span>
         </div>

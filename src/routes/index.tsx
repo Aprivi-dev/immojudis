@@ -10,7 +10,7 @@ export const Route = createFileRoute("/")({
 
 export function HomePage() {
   return (
-    <main className="ij-page ij-cinematic-page">
+    <main id="contenu" className="ij-page ij-cinematic-page">
       <CinematicHero />
       <HomeDiscovery />
     </main>
