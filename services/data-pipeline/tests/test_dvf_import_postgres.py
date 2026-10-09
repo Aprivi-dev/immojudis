@@ -90,8 +90,12 @@ def dvf_connection():
             root_db.execute(
                 sql.SQL(
                     "do $$ begin if not exists(select from pg_roles where rolname={name}) "
-                    "then create role {ident}; end if; end $$"
-                ).format(name=sql.Literal(role), ident=sql.Identifier(role))
+                    "then create role {ident} nologin {attributes}; end if; end $$"
+                ).format(
+                    name=sql.Literal(role),
+                    ident=sql.Identifier(role),
+                    attributes=sql.SQL("bypassrls" if role == "service_role" else ""),
+                )
             )
         root_db.execute(sql.SQL("create database {}").format(sql.Identifier(database_name)))
     database_dsn = make_conninfo(root_dsn, dbname=database_name)
