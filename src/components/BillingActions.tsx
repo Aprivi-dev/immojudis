@@ -26,6 +26,7 @@ import {
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
+import { userMessage } from "@/lib/user-messages";
 
 export function BillingActions({
   className = "",
@@ -129,7 +130,7 @@ export function BillingActions({
       });
       window.location.assign(response.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Paiement indisponible");
+      toast.error(userMessage(error, "Paiement indisponible"));
       setBusy(null);
     }
   }
@@ -146,7 +147,7 @@ export function BillingActions({
       const response = await openBillingPortal();
       window.location.assign(response.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Portail de paiement indisponible");
+      toast.error(userMessage(error, "Portail de paiement indisponible"));
       setBusy(null);
     }
   }

@@ -93,6 +93,7 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 import type { AuctionSale } from "@/lib/types";
+import { userMessage } from "@/lib/user-messages";
 
 const ListingStatistics = dynamic(
   () =>
@@ -648,9 +649,10 @@ function SaleDetailWorkspace({
                     <strong>Estimation de marché à compléter</strong>
                     <p>
                       {marketQuery.data?.error ??
-                        (marketQuery.error instanceof Error
-                          ? marketQuery.error.message
-                          : "L’estimation est momentanément indisponible.")}
+                        userMessage(
+                          marketQuery.error,
+                          "L’estimation est momentanément indisponible.",
+                        )}
                     </p>
                   </div>
                   <button

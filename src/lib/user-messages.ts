@@ -22,6 +22,10 @@ const KNOWN_MESSAGES: Array<[RegExp, string]> = [
     /password.*(weak|pwned|known to be)/i,
     "Ce mot de passe est trop faible. Choisissez-en un autre.",
   ],
+  [
+    /connexion requise|not authenticated|not logged in|auth session missing/i,
+    "Connectez-vous pour continuer.",
+  ],
   [/new password should be different/i, "Le nouveau mot de passe doit être différent de l'ancien."],
   [/unable to validate email address|invalid email/i, "Cette adresse email n'est pas valide."],
   [
@@ -75,6 +79,12 @@ export function userMessage(error: unknown, fallback: string = GENERIC_ERROR_MES
   for (const [pattern, text] of KNOWN_MESSAGES) {
     if (pattern.test(haystack)) return text;
   }
-  if (message && FRENCH_SENTENCE.test(message) && !TECHNICAL_MARKER.test(message)) return message;
+  const applicationMessage =
+    Boolean(message) && FRENCH_SENTENCE.test(message) && !TECHNICAL_MARKER.test(message);
+  if (applicationMessage) return message;
+  if (status === 401) return "Votre session a expiré. Reconnectez-vous.";
+  if (typeof status === "number" && status >= 500) {
+    return "Le service est momentanément indisponible. Réessayez dans quelques instants.";
+  }
   return fallback;
 }

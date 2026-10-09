@@ -22,6 +22,7 @@ import {
   readSaleComparisonSnapshot,
   type ComparedSale,
 } from "@/lib/search/sale-comparison";
+import { userMessage } from "@/lib/user-messages";
 
 export function SavedSaleComparisons({
   items,
@@ -107,8 +108,7 @@ function AuthenticatedSavedSaleComparisons({
       setName(response.set.name);
       toast.success(existingSingleSet ? "Comparaison remplacée." : "Comparaison enregistrée.");
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Enregistrement impossible"),
+    onError: (error) => toast.error(userMessage(error, "Enregistrement impossible")),
   });
 
   const deleteMutation = useMutation({
@@ -121,8 +121,7 @@ function AuthenticatedSavedSaleComparisons({
       setName("Ma comparaison");
       toast.success("Comparaison supprimée.");
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Suppression impossible"),
+    onError: (error) => toast.error(userMessage(error, "Suppression impossible")),
   });
 
   const shareMutation = useMutation({
@@ -139,7 +138,7 @@ function AuthenticatedSavedSaleComparisons({
         }
       }
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Partage impossible"),
+    onError: (error) => toast.error(userMessage(error, "Partage impossible")),
   });
 
   const unshareMutation = useMutation({
@@ -149,8 +148,7 @@ function AuthenticatedSavedSaleComparisons({
       updateSharing(queryClient, queryKey, setId, share);
       toast.success("Lien de partage désactivé.");
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Désactivation impossible"),
+    onError: (error) => toast.error(userMessage(error, "Désactivation impossible")),
   });
 
   const saveName = existingSingleSet?.name ?? name.trim();
@@ -190,9 +188,7 @@ function AuthenticatedSavedSaleComparisons({
 
       {setsQuery.isError ? (
         <p role="alert" className="mt-2 text-xs font-semibold text-red-700">
-          {setsQuery.error instanceof Error
-            ? setsQuery.error.message
-            : "Chargement des sauvegardes impossible."}
+          {userMessage(setsQuery.error, "Chargement des sauvegardes impossible.")}
         </p>
       ) : null}
 

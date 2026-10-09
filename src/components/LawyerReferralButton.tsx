@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "@/lib/router-compat";
 import { fetchAccessPlan, fetchLawyerReferrals, requestLawyerReferral } from "@/lib/client-api";
 import type { LawyerReferralSummary } from "@/lib/lawyer-referrals";
+import { userMessage } from "@/lib/user-messages";
 
 export function LawyerReferralButton({
   saleId,
@@ -80,7 +81,7 @@ export function LawyerReferralButton({
         queryKey: ["lawyer-referrals", user.id, saleId],
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Demande impossible");
+      toast.error(userMessage(error, "Demande impossible"));
     } finally {
       setBusy(false);
     }

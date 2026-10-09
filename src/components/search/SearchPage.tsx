@@ -64,6 +64,7 @@ import {
   useMediaQuery,
   watchedZoneInputFromSearch,
 } from "./search-page-state";
+import { userMessage } from "@/lib/user-messages";
 
 const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPanel), {
   ssr: false,
@@ -599,7 +600,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         watchedZoneResponse ? "Zone surveillée et alerte créées" : "Recherche enregistrée",
       );
     } catch (saveError) {
-      toast.error(saveError instanceof Error ? saveError.message : "Erreur");
+      toast.error(userMessage(saveError));
     } finally {
       setSavingAlert(false);
     }
@@ -626,7 +627,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
       downloadBlob(blob, filename);
       toast.success("Export CSV prêt");
     } catch (exportError) {
-      toast.error(exportError instanceof Error ? exportError.message : "Export impossible");
+      toast.error(userMessage(exportError, "Export impossible"));
     } finally {
       setExportingCsv(false);
     }
@@ -775,9 +776,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
                 loading={entitlementsLoading || statisticsLoading}
                 dpeExplorer={dpeExplorerData}
                 dpeExplorerLoading={dpeExplorerLoading}
-                dpeExplorerError={
-                  dpeExplorerError instanceof Error ? dpeExplorerError.message : null
-                }
+                dpeExplorerError={dpeExplorerError ? userMessage(dpeExplorerError) : null}
                 dpeExplorerRequested={dpeExplorerOpen}
                 onLoadDpeExplorer={() => {
                   setDpeExplorerOpen(true);

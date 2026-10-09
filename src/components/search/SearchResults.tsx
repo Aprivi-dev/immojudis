@@ -37,6 +37,7 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
+import { userMessage } from "@/lib/user-messages";
 export function SearchResultsList({
   sales,
   sponsoredPlacement,
@@ -776,7 +777,7 @@ export function CompactFavoriteButton({
       await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (error) {
       void queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-      toast.error(error instanceof Error ? error.message : "Erreur");
+      toast.error(userMessage(error));
     } finally {
       setBusy(false);
     }

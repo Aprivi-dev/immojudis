@@ -18,6 +18,7 @@ import { collectSaleDocuments } from "@/lib/sale-documents";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { isUuid } from "@/lib/sale-workspace-shared";
 import type { AuctionSale } from "@/lib/types";
+import { userMessage } from "@/lib/user-messages";
 
 type AmountField =
   | "priceEur"
@@ -207,9 +208,7 @@ export function ProfessionalPilotWorkspace({
         });
       }
       setSaveMessage(
-        error instanceof Error
-          ? `Synchronisation impossible : ${error.message}`
-          : "Synchronisation impossible. Le brouillon reste sur cet appareil.",
+        `Synchronisation impossible. ${userMessage(error, "Le brouillon reste sur cet appareil.")}`,
       );
     } finally {
       if (activeStorageKey.current === savingStorageKey) setSaving(false);

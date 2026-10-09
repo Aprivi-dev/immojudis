@@ -33,6 +33,7 @@ import {
   documentPagesToReview,
   documentReviewPrompt,
 } from "./detail-helpers";
+import { userMessage } from "@/lib/user-messages";
 export function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
   const { user, loading } = useAuth();
   const queryClient = useQueryClient();
@@ -89,7 +90,7 @@ export function DocumentsWorkspace({ sale }: { sale: AuctionSale }) {
       await queryClient.invalidateQueries({ queryKey: ["sale-workspace", sale.id] });
       toast.success("Annotations synchronisées");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Synchronisation impossible");
+      toast.error(userMessage(error, "Synchronisation impossible"));
     } finally {
       setSavingWorkspace(false);
     }

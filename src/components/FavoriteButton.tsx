@@ -9,6 +9,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-messages";
 
 export function FavoriteButton({
   saleId,
@@ -79,7 +80,7 @@ export function FavoriteButton({
       await qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (e: unknown) {
       void qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-      toast.error(e instanceof Error ? e.message : "Erreur");
+      toast.error(userMessage(e));
     } finally {
       setBusy(false);
     }

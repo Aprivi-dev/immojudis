@@ -22,6 +22,7 @@ import {
   submitPublicationRequestClient,
   type PublicationRequestSummary,
 } from "@/lib/publication-requests-client";
+import { userMessage } from "@/lib/user-messages";
 
 export const Route = createFileRoute("/publish")({
   head: () => ({
@@ -200,11 +201,7 @@ export function PublishPage() {
       setDraft(INITIAL_DRAFT);
       setFiles([]);
     } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Impossible d'enregistrer la demande de publication.",
-      );
+      toast.error(userMessage(error, "Impossible d'enregistrer la demande de publication."));
     } finally {
       setSubmitting(false);
     }

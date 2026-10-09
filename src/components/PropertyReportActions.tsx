@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { userMessage } from "@/lib/user-messages";
 
 export function PropertyReportActions({
   saleId,
@@ -110,7 +111,7 @@ function PropertyReportWorkspace({
       });
       toast.success("Rapport sauvegardé.");
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Erreur"),
+    onError: (error) => toast.error(userMessage(error)),
   });
 
   const updateMutation = useMutation({
@@ -130,7 +131,7 @@ function PropertyReportWorkspace({
       setDialogOpen(false);
       toast.success("Rapport mis à jour.");
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Erreur"),
+    onError: (error) => toast.error(userMessage(error)),
   });
 
   const shareMutation = useMutation({
@@ -155,7 +156,7 @@ function PropertyReportWorkspace({
         toast.success("Partage activé.");
       }
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Partage impossible"),
+    onError: (error) => toast.error(userMessage(error, "Partage impossible")),
   });
 
   const unshareMutation = useMutation({
@@ -168,8 +169,7 @@ function PropertyReportWorkspace({
       });
       toast.success("Lien de partage désactivé.");
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Désactivation impossible"),
+    onError: (error) => toast.error(userMessage(error, "Désactivation impossible")),
   });
 
   const exportMutation = useMutation({
@@ -183,7 +183,7 @@ function PropertyReportWorkspace({
       void queryClient.invalidateQueries({ queryKey: reportQueryKey });
       toast.success("PDF exporté.");
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Export impossible"),
+    onError: (error) => toast.error(userMessage(error, "Export impossible")),
   });
 
   const requireUser = () => {
