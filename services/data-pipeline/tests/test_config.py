@@ -51,6 +51,7 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
         "LLM_FACT_MAX_CHUNKS",
         "LLM_DISPLAY_CONTEXT_CHARS",
         "PDF_OCR_ENABLED",
+        "PDF_OCR_DOCUMENT_BUDGET_SECONDS",
         "PDF_DOCLING_ENABLED",
         "PDF_MAX_DOCUMENTS_PER_SALE",
     ):
@@ -85,6 +86,7 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["llm_fact_max_chunks"] == 0
     assert settings["llm_display_context_chars"] == 12000
     assert settings["pdf_ocr_enabled"] is False
+    assert settings["pdf_ocr_document_budget_seconds"] == 120
     assert settings["pdf_docling_enabled"] is False
     assert settings["pdf_max_documents_per_sale"] == 6
 

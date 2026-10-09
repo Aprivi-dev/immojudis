@@ -22,12 +22,15 @@ def extract_page_text_with_ocr_result(
     deadline_bounded_timeout: Callable[..., tuple[float, bool]],
     page_text_confidence: Callable[..., float],
     deadline_exception: type[BaseException],
+    deadline_exceptions: tuple[type[BaseException], ...] = (),
+    deadline_exception_factory: Callable[..., BaseException] | None = None,
     checkpointed_pages: int = 0,
     total_pages: int = 0,
     new_progress_pages: int = 0,
 ) -> dict[str, object]:
     """Run bounded OCR while keeping the enrichment module's deadline contract."""
     tessdata = settings.get("pdf_ocr_tessdata")
+    deadline_error_types = (deadline_exception, *deadline_exceptions)
     remaining = ensure_deadline(
         operation="starting OCR",
         checkpointed_pages=checkpointed_pages,
@@ -47,6 +50,8 @@ def extract_page_text_with_ocr_result(
             deadline_bounded_timeout=deadline_bounded_timeout,
             page_text_confidence=page_text_confidence,
             deadline_exception=deadline_exception,
+            deadline_exceptions=deadline_exceptions,
+            deadline_exception_factory=deadline_exception_factory,
             checkpointed_pages=checkpointed_pages,
             total_pages=total_pages,
             new_progress_pages=new_progress_pages,
@@ -69,7 +74,7 @@ def extract_page_text_with_ocr_result(
                 "status": "extracted",
                 "retryable": False,
             }
-    except deadline_exception:
+    except deadline_error_types:
         raise
     except Exception as exc:
         LOGGER.debug("PDF OCR unavailable or failed: %s", exc)
@@ -83,6 +88,8 @@ def extract_page_text_with_ocr_result(
         deadline_bounded_timeout=deadline_bounded_timeout,
         page_text_confidence=page_text_confidence,
         deadline_exception=deadline_exception,
+        deadline_exceptions=deadline_exceptions,
+        deadline_exception_factory=deadline_exception_factory,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
         new_progress_pages=new_progress_pages,
@@ -100,6 +107,8 @@ def _extract_page_text_with_tesseract_result(
     deadline_bounded_timeout: Callable[..., tuple[float, bool]],
     page_text_confidence: Callable[..., float],
     deadline_exception: type[BaseException],
+    deadline_exceptions: tuple[type[BaseException], ...] = (),
+    deadline_exception_factory: Callable[..., BaseException] | None,
     checkpointed_pages: int,
     total_pages: int,
     new_progress_pages: int,
@@ -125,6 +134,9 @@ def _extract_page_text_with_tesseract_result(
             timeout, deadline_bounded = deadline_bounded_timeout(
                 timeout,
                 operation="starting OCR subprocess",
+                checkpointed_pages=checkpointed_pages,
+                total_pages=total_pages,
+                new_progress_pages=new_progress_pages,
             )
             env = os.environ.copy()
             if tessdata:
@@ -160,8 +172,9 @@ def _extract_page_text_with_tesseract_result(
             LOGGER.debug("Tesseract OCR returned %s: %s", result.returncode, result.stderr)
     except subprocess.TimeoutExpired as exc:
         if deadline_bounded:
-            raise deadline_exception(
-                "PDF worker deadline reached during OCR; retry resumes from checkpoint",
+            error_factory = deadline_exception_factory or deadline_exception
+            raise error_factory(
+                "PDF bounded deadline reached during OCR; retry resumes from checkpoint",
                 checkpointed_pages=checkpointed_pages,
                 total_pages=total_pages,
                 new_progress_pages=new_progress_pages,
@@ -173,7 +186,7 @@ def _extract_page_text_with_tesseract_result(
             new_progress_pages=new_progress_pages,
         )
         LOGGER.debug("Tesseract OCR timed out after %.1fs", timeout)
-    except deadline_exception:
+    except (deadline_exception, *deadline_exceptions):
         raise
     except Exception as exc:
         LOGGER.debug("Tesseract OCR fallback failed: %s", exc)
