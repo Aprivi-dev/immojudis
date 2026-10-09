@@ -91,6 +91,22 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["pdf_max_documents_per_sale"] == 6
 
 
+def test_source_isolation_defaults_cover_petites_affiches_inside_existing_budgets(monkeypatch) -> None:
+    monkeypatch.delenv("SOURCE_PROCESS_ISOLATION", raising=False)
+    monkeypatch.delenv("SOURCE_PROCESS_ISOLATION_SOURCES", raising=False)
+    monkeypatch.delenv("SOURCE_SCRAPE_TIMEOUT_SECONDS", raising=False)
+
+    settings = load_settings()
+
+    assert settings["source_process_isolation"] is True
+    assert settings["source_process_isolation_sources"] == (
+        "vench",
+        "avoventes",
+        "petites_affiches",
+    )
+    assert settings["source_scrape_timeout_seconds"] == 1800.0
+
+
 def test_replicate_wait_seconds_stays_within_provider_header_limit(monkeypatch) -> None:
     monkeypatch.setenv("REPLICATE_WAIT_SECONDS", "120")
     assert load_settings()["replicate_wait_seconds"] == 60

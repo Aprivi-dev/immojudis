@@ -5,7 +5,9 @@ BeautifulSoup parse that is stuck in native or Python code, and a
 ``ThreadPoolExecutor`` context manager waits for that thread before returning.
 This module keeps the source contract small and uses a short JSON protocol so
 the parent can terminate the whole source process without losing the other
-collectors.
+collectors.  The child interpreter enables Python's fatal-signal handler so a
+native crash leaves a bounded stack trace in stderr for diagnosis; it does not
+log source payloads or local variables.
 """
 
 from __future__ import annotations
@@ -73,7 +75,14 @@ def run_source_in_subprocess(
         "fetch_detail_heavy": bool(fetch_detail_heavy),
         "publish_batches": on_batch is not None,
     }
-    command = [python_executable or sys.executable, "-m", WORKER_MODULE, source]
+    command = [
+        python_executable or sys.executable,
+        "-X",
+        "faulthandler",
+        "-m",
+        WORKER_MODULE,
+        source,
+    ]
     child_env = os.environ.copy()
     if env:
         child_env.update(env)
