@@ -340,8 +340,8 @@ export function LoginPage() {
                   type="password"
                   autoComplete={isSignup ? "new-password" : "current-password"}
                   required
-                  minLength={isSignup ? 8 : 6}
-                  placeholder={isSignup ? "8 caractères minimum" : "Votre mot de passe"}
+                  minLength={isSignup ? 12 : 6}
+                  placeholder={isSignup ? "12 caractères minimum" : "Votre mot de passe"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="form-input pl-10"
