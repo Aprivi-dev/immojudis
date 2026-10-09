@@ -71,7 +71,8 @@ export default function Page() {
               alt=""
               fill
               sizes="(max-width: 700px) 100vw, 42vw"
-              priority
+              loading="eager"
+              fetchPriority="high"
             />
             <span className={styles.artCaption}>Comprendre avant d’enchérir</span>
           </div>

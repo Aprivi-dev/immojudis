@@ -36,8 +36,8 @@ export function ResourceLibrary({ articles }: { articles: ResourceSummary[] }) {
         ))}
       </div>
       <div id="resource-results" className={styles.grid}>
-        {visible.map((article) => (
-          <ResourceCard key={article.slug} article={article} />
+        {visible.map((article, index) => (
+          <ResourceCard key={article.slug} article={article} eager={index < 3} />
         ))}
       </div>
     </section>

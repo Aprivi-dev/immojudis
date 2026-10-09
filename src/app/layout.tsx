@@ -36,9 +36,13 @@ export const metadata: Metadata = {
   description:
     "Tribunal, notaire ou État : annonces immobilières référencées, procédures expliquées et analyses pour préparer votre achat.",
   authors: [{ name: "Immojudis" }],
+  manifest: "/manifest.webmanifest",
   icons: {
-    icon: "/brand/immojudis-justice-temple.svg",
-    apple: "/brand/immojudis-justice-temple.svg",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/brand/immojudis-justice-temple.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   openGraph: {
     title: "Immojudis - Les enchères immobilières en toute clarté",

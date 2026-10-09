@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { getMapboxAccessToken } from "@/lib/mapbox";
+import { disableMapboxTelemetry, getMapboxAccessToken } from "@/lib/mapbox";
 import {
   mapboxPreviewCamera,
   mapboxPreviewLoadingLabel,
@@ -134,6 +134,7 @@ function MapboxPreviewCanvas({
         if (cancelled || !container.isConnected) return;
 
         const mapboxgl = module.default;
+        disableMapboxTelemetry(mapboxgl);
         mapboxgl.accessToken = token;
 
         map = new mapboxgl.Map({
