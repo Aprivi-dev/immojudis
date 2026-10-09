@@ -6,26 +6,28 @@ import hashlib
 import importlib
 import json
 import logging
-import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unicodedata
-import zipfile
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote, unquote, urljoin, urlparse, urlsplit, urlunsplit
-from xml.etree import ElementTree
 
 import fitz
 import httpx
 
 from src.config import DOCLING_TEXTS_DIR, DOCUMENTS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
-from src.document_politeness import DocumentPoliteness, DocumentRobotsDisallowed
+from src.document_politeness import (
+    DocumentPoliteness,
+    DocumentRobotsDisallowed,
+    fetch_robots_document,
+    pause_within_deadline,
+)
 from src.freshness import invalidate_analysis, timestamp_is_fresh
 from src.models import AuctionSale
 from src.normalize import (
@@ -65,17 +67,24 @@ from src.pdf_ocr import (
     PdfDeadlineExceeded,
     PdfDocumentOcrBudgetExceeded,
     PdfExtractionDeferred,
+    _PDF_DOCUMENT_OCR_DEADLINE,  # noqa: F401
+    _PDF_DOCUMENT_LOG_TYPES,  # noqa: F401
+    deadline_bounded_timeout as _deadline_bounded_timeout_impl,
     ensure_pdf_document_ocr_budget as _ensure_pdf_document_ocr_budget,
+    ensure_pdf_ocr_deadline as _ensure_pdf_ocr_deadline_impl,
     extract_page_text_with_ocr_result as _extract_page_text_with_ocr_result_impl,
-    pdf_document_ocr_budget_remaining,
+    log_pdf_document_transition as _log_pdf_document_transition,
+    pdf_document_ocr_budget_remaining,  # noqa: F401
     pdf_document_ocr_budget_scope,
     pdf_ocr_document_budget_seconds as _pdf_ocr_document_budget_seconds,
+    select_pdf_deadline_exception as _select_pdf_deadline_exception,
 )
 from src.pdf_page_analysis import (
     VISUAL_BLANK_INK_RATIO_MAX,  # noqa: F401
     VISUAL_BLANK_INK_THRESHOLD,  # noqa: F401
     VISUAL_BLANK_RENDER_MAX_DIMENSION,  # noqa: F401
     _is_objectively_blank_page,
+    _page_has_substantial_image,
     _page_requires_retry,
     _page_text_confidence,
     _visual_page_profile,
@@ -83,7 +92,9 @@ from src.pdf_page_analysis import (
 from src.pdf_page_analysis import (
     is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
 )
+from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
+from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections
 
 LOGGER = logging.getLogger(__name__)
 
@@ -91,31 +102,12 @@ DOCUMENT_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 
 MAX_DOCUMENT_REDIRECTS = 5
 
-DOCUMENT_FACTS_VERSION = "document_facts_v2_surface_reasoning"
+# Deterministic PDF facts include page/document candidates and multi-lot
+# decisions; bump this marker when projection semantics change.
+DOCUMENT_FACTS_VERSION = "document_facts_v3_pdf_scope_diagnostics"
 
-# Keep a fixed part of the queue worker budget for the sale write, lease
-# telemetry, and claim cleanup after a bounded PDF pass returns.  The worker
-# still owns the 1,200-second budget; this is only the PDF's effective cutoff.
+# Keep a fixed margin for queue finalization after a bounded PDF pass.
 PDF_FINALIZATION_MARGIN_SECONDS = 60.0
-_PDF_DOCUMENT_LOG_TYPES = frozenset(
-    {
-        "pdf",
-        "doc",
-        "docx",
-        "pv_huissier",
-        "pv_notaire",
-        "proces_verbal",
-        "diagnostics_techniques",
-        "cahier_conditions_vente",
-        "conditions_vente",
-        "annonce_vente",
-        "bail",
-        "procedure_saisie",
-        "cadastre",
-        "other",
-        "unknown",
-    }
-)
 
 _PDF_DEADLINE: ContextVar[float | None] = ContextVar("pdf_enrichment_deadline", default=None)
 
@@ -158,45 +150,8 @@ def pdf_deadline_remaining() -> float | None:
     return deadline - time.monotonic()
 
 
-def _log_pdf_document_transition(
-    document: dict[str, object],
-    *,
-    status: str,
-    started_at: float,
-    pages: int | None = None,
-    error_type: str | None = None,
-) -> None:
-    """Emit bounded document timing without URLs, text, or provider payloads."""
-
-    raw_document_type = str(document.get("document_type") or document.get("type") or "").strip().casefold()
-    document_type = (
-        raw_document_type
-        if raw_document_type in _PDF_DOCUMENT_LOG_TYPES
-        else "unknown"
-    )
-    LOGGER.info(
-        "PDF document transition: document_type=%s status=%s elapsed_seconds=%.1f "
-        "pages=%s error_type=%s",
-        document_type,
-        status,
-        max(time.monotonic() - started_at, 0.0),
-        pages if pages is not None else "unknown",
-        error_type or "none",
-    )
-
-
 def _pdf_deadline_exception(message: str, **kwargs: int) -> BaseException:
-    """Select the cutoff class after an interruptible OCR timeout."""
-
-    worker_remaining = pdf_deadline_remaining()
-    if worker_remaining is None or worker_remaining > 0:
-        document_remaining = pdf_document_ocr_budget_remaining()
-        if document_remaining is not None and document_remaining <= 0:
-            return PdfDocumentOcrBudgetExceeded(
-                message.replace("bounded deadline", "OCR document budget"),
-                **kwargs,
-            )
-    return PdfDeadlineExceeded(message, **kwargs)
+    return _select_pdf_deadline_exception(message, worker_remaining=pdf_deadline_remaining(), **kwargs)
 
 
 def _ensure_pdf_deadline(
@@ -224,26 +179,13 @@ def _ensure_pdf_ocr_deadline(
     total_pages: int = 0,
     new_progress_pages: int = 0,
 ) -> float | None:
-    """Apply both the worker and per-document OCR cutoffs to one OCR step."""
-
-    worker_remaining = _ensure_pdf_deadline(
+    return _ensure_pdf_ocr_deadline_impl(
+        worker_deadline=_ensure_pdf_deadline,
         operation=operation,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
         new_progress_pages=new_progress_pages,
     )
-    document_remaining = _ensure_pdf_document_ocr_budget(
-        operation=operation,
-        checkpointed_pages=checkpointed_pages,
-        total_pages=total_pages,
-        new_progress_pages=new_progress_pages,
-    )
-    remaining_values = [
-        value
-        for value in (worker_remaining, document_remaining)
-        if value is not None
-    ]
-    return min(remaining_values) if remaining_values else None
 
 
 def _deadline_bounded_timeout(
@@ -254,18 +196,14 @@ def _deadline_bounded_timeout(
     total_pages: int = 0,
     new_progress_pages: int = 0,
 ) -> tuple[float, bool]:
-    """Recompute a subprocess/HTTP timeout after preparation work."""
-
-    requested_timeout = max(0.001, float(timeout_seconds))
-    remaining = _ensure_pdf_ocr_deadline(
+    return _deadline_bounded_timeout_impl(
+        timeout_seconds,
+        ensure_deadline=_ensure_pdf_ocr_deadline,
         operation=operation,
         checkpointed_pages=checkpointed_pages,
         total_pages=total_pages,
         new_progress_pages=new_progress_pages,
     )
-    if remaining is None:
-        return requested_timeout, False
-    return max(0.001, min(requested_timeout, remaining)), remaining <= requested_timeout
 
 
 def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
@@ -351,6 +289,31 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
     merged_pdf_texts = merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures)
     if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures:
         _write_pdf_text_cache(sale, merged_pdf_texts)
+        terminal_urls = set(stats.blocked_document_urls) | {
+            item.get("url") for item in stats.permanent_document_failures if item.get("url")
+        }
+        if terminal_urls:
+            # Revoke a terminal piece even when another PDF remains readable.
+            # Unbound projections may depend on the revoked text; rebuild them
+            # from the retained texts. Explicit proofs from other URLs survive.
+            sale.raw_text = clean_text((sale.raw_text or "").split("--- PDF TEXT ENRICHMENT ---", 1)[0])
+            declared_urls = {item.get("url") for item in sale.documents if item.get("url")}
+            if declared_urls and declared_urls.issubset(terminal_urls):
+                _clear_pdf_fact_projections(sale)
+            else:
+                traces = sale.raw_payload.get("pdf_fact_provenance") or {}
+                if not isinstance(traces, dict):
+                    traces = {}
+                affected = {
+                    key for key, trace in traces.items()
+                    if isinstance(trace, dict)
+                    and (not trace.get("document_url") or trace.get("document_url") in terminal_urls)
+                }
+                if "surface_m2" in affected:
+                    affected.update({"app_surface_m2", "app_surface_kind"})
+                _clear_pdf_fact_projections(sale, fields=affected)
+                _clear_pdf_derived_source_description(sale, None)
+            invalidate_analysis(sale.raw_payload, "document_access_changed")
         before = sale.raw_text or ""
         enrich_sale_from_pdf_text(sale, merged_pdf_texts)
         if len(sale.raw_text or "") > len(before):
@@ -372,31 +335,69 @@ def _invalidate_replaced_document_facts(sale: AuctionSale, documents: list[dict]
     hashes = {profile.get("url"): profile.get("sha256") for profile in previous.get("profiles", [])}
     changed = any(hashes.get(doc.get("url")) and doc.get("sha256")
                   and hashes[doc.get("url")] != doc["sha256"] for doc in documents)
-    if not changed:
+    # A failed download or a bounded pass does not prove that a source removed
+    # a piece. Only the complete source manifest can establish that absence.
+    current_urls = {doc.get("url") for doc in sale.documents if isinstance(doc, dict) and doc.get("url")}
+    removed = sale.raw_payload.get("source_detail_status") == "complete" and bool(set(hashes) - current_urls)
+    if not changed and not removed:
         return
-    invalidate_analysis(sale.raw_payload, "document_bytes_changed")
+    built_pdf = sale.surface_source == "pdf" or (sale.raw_payload.get("surface_extraction") or {}).get("source") == "pdf"
+    land_pdf = (sale.raw_payload.get("land_surface_extraction") or {}).get("source") == "pdf"
+    projection_state = _clear_pdf_fact_projections(sale)
+    preserved_projection_fields = projection_state.get("preserved", set())
+    invalidate_analysis(sale.raw_payload, "document_manifest_changed" if removed else "document_bytes_changed")
     sale.raw_payload["superseded_document_analysis"] = previous
     snapshot = sale.raw_payload.get("source_factual_snapshot") or {
         "source_name": sale.source_name, "source_url": sale.source_url,
     }
     factual = normalize_sale(snapshot)
-    built_pdf = sale.surface_source == "pdf" or (sale.raw_payload.get("surface_extraction") or {}).get("source") == "pdf"
-    land_pdf = (sale.raw_payload.get("land_surface_extraction") or {}).get("source") == "pdf"
     fields = []
     if built_pdf:
-        fields += ["surface_m2", "habitable_surface_m2", "carrez_surface_m2", "app_surface_m2",
-                   "app_surface_kind", "surface_scope", "surface_source", "surface_confidence", "surface_evidence"]
+        fields += [
+            field
+            for field in (
+                "surface_m2", "habitable_surface_m2", "carrez_surface_m2", "app_surface_m2",
+                "app_surface_kind", "surface_scope", "surface_source", "surface_confidence", "surface_evidence",
+            )
+            if field not in preserved_projection_fields
+        ]
     if land_pdf:
-        fields += ["land_surface_m2"]
+        if "land_surface_m2" not in preserved_projection_fields:
+            fields += ["land_surface_m2"]
     if sale.raw_payload.get("starting_price_extraction"):
-        fields += ["starting_price_eur"]
+        if "starting_price_eur" not in preserved_projection_fields:
+            fields += ["starting_price_eur"]
+    if sale.raw_payload.get("pdf_sale_date_extraction"):
+        if "sale_date" not in preserved_projection_fields:
+            fields += ["sale_date"]
+    if sale.raw_payload.get("pdf_visit_dates_extraction"):
+        if "visit_dates" not in preserved_projection_fields:
+            fields += ["visit_dates"]
     for key in fields:
         setattr(sale, key, getattr(factual, key))
         sale.raw_payload.pop(key, None)
-    for key in ("surface_extraction", "surface_analysis", "land_surface_extraction", "starting_price_extraction"):
+    for key in (
+        "surface_extraction",
+        "surface_analysis",
+        "land_surface_extraction",
+        "starting_price_extraction",
+        "pdf_sale_date_extraction",
+        "pdf_energy_diagnostics",
+        "pdf_energy_diagnostics_candidates",
+        "pdf_surface_candidates",
+        "pdf_land_surface_candidates",
+        "pdf_rooms_candidates",
+        "pdf_bedrooms_candidates",
+        "pdf_occupancy_candidates",
+        "pdf_multi_lot_guard",
+        "pdf_visit_dates_extraction",
+        "pdf_fact_provenance",
+    ):
         sale.raw_payload.pop(key, None)
-    if snapshot.get("raw_text"):
-        sale.raw_text = str(snapshot["raw_text"])
+    if "raw_text" in snapshot:
+        sale.raw_text = clean_text(snapshot.get("raw_text"))
+    else:
+        sale.raw_text = clean_text((sale.raw_text or "").split("--- PDF TEXT ENRICHMENT ---", 1)[0])
 
 
 def download_documents(
@@ -741,23 +742,11 @@ def _send_pinned_document_request(
 
 
 def _fetch_document_robots(robots_url: str) -> httpx.Response:
-    settings = load_settings()
-    return _send_pinned_document_request(
-        robots_url,
-        headers={"User-Agent": str(settings["user_agent"]), "Accept": "text/plain,*/*;q=0.5"},
-        timeout_seconds=float(settings["request_timeout_seconds"]),
-    )
+    return fetch_robots_document(robots_url, send=_send_pinned_document_request, settings=load_settings())
 
 
 def _document_pause(seconds: float) -> None:
-    """Sleep between requests to one host without outliving the worker deadline."""
-    end = time.monotonic() + seconds
-    while True:
-        pause = end - time.monotonic()
-        if pause <= 0:
-            return
-        remaining = _ensure_pdf_deadline(operation="waiting between document requests")
-        time.sleep(min(pause, remaining) if remaining is not None else pause)
+    pause_within_deadline(seconds, lambda: _ensure_pdf_deadline(operation="waiting between document requests"))
 
 
 _DOCUMENT_POLITENESS = DocumentPoliteness(
@@ -798,82 +787,10 @@ def extract_attached_document(
     if file_format == "pdf":
         return extract_pdf_document(path, document=document)
     if file_format == "doc":
-        return _extract_legacy_word_document(path)
+        return extract_legacy_word_document(path)
     if file_format == "docx":
-        return _extract_docx_document(path)
+        return extract_docx_document(path)
     raise ValueError(f"unsupported attached document format: {file_format or 'unknown'}")
-
-
-def _extract_legacy_word_document(path: Path) -> dict[str, object]:
-    commands: list[tuple[list[str], str]] = []
-    if shutil.which("antiword"):
-        commands.append((["antiword", str(path)], "antiword"))
-    if shutil.which("textutil"):
-        commands.append((["textutil", "-convert", "txt", "-stdout", str(path)], "textutil"))
-    if not commands:
-        raise RuntimeError("legacy Word extraction requires antiword or textutil")
-
-    last_error = ""
-    for command, method in commands:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-            check=False,
-        )
-        text = clean_text(result.stdout) or ""
-        if result.returncode == 0 and text:
-            return _single_page_document_payload(path, text, extraction_method=method)
-        last_error = clean_text(result.stderr) or f"exit code {result.returncode}"
-    raise RuntimeError(f"legacy Word extraction failed: {last_error}")
-
-
-def _extract_docx_document(path: Path) -> dict[str, object]:
-    max_chars = int(load_settings()["document_max_extracted_text_chars"])
-    with zipfile.ZipFile(path) as archive:
-        info = archive.getinfo("word/document.xml")
-        if info.file_size > max_chars * 4:
-            raise ValueError("DOCX XML exceeds the extraction limit")
-        xml = archive.read("word/document.xml")
-    root = ElementTree.fromstring(xml)
-    text = clean_text(" ".join(node.text or "" for node in root.iter() if node.tag.endswith("}t"))) or ""
-    if not text:
-        raise ValueError("DOCX document contains no extractable text")
-    if len(text) > max_chars:
-        raise ValueError("DOCX text exceeds the extraction limit")
-    return _single_page_document_payload(path, text, extraction_method="docx_xml")
-
-
-def _single_page_document_payload(
-    path: Path,
-    text: str,
-    *,
-    extraction_method: str,
-) -> dict[str, object]:
-    confidence = _page_text_confidence(text, method="pymupdf_text")
-    return {
-        "cache_version": PDF_TEXT_CACHE_VERSION,
-        "text": text,
-        "pages": [
-            {
-                "page": 1,
-                "text": text,
-                "chars": len(text),
-                "raw_text_chars": len(text),
-                "method": extraction_method,
-                "confidence": confidence,
-            }
-        ],
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        "page_count": 1,
-        "text_chars": len(text),
-        "extraction_method": extraction_method,
-        "confidence": confidence,
-        "ocr_pages": 0,
-    }
 
 
 def extract_pdf_text(file: str | Path, document: dict[str, str] | None = None) -> str:
@@ -1175,7 +1092,7 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
             text = raw_text
             status = "extracted" if clean_text(raw_text) else "failed"
             failure_reason = "empty_page_not_proven_blank" if not clean_text(raw_text) else None
-            needs_ocr = _should_try_ocr(raw_text)
+            needs_ocr = _should_try_ocr(raw_text, page=page)
             if needs_ocr:
                 _ensure_pdf_deadline(
                     operation=f"checking OCR budget for page {index}",
@@ -1286,11 +1203,16 @@ def extract_pdf_pages(file: str | Path) -> list[dict[str, object]]:
     return pages
 
 
-def _should_try_ocr(text: str) -> bool:
+def _should_try_ocr(text: str, *, page: fitz.Page | None = None) -> bool:
     settings = load_settings()
     if not settings["pdf_ocr_enabled"]:
         return False
-    return len(clean_text(text) or "") < 80
+    if len(clean_text(text) or "") < 80:
+        return True
+    # Mixed PDFs often have a native header/footer over a scanned page. The
+    # text-length gate alone would mark those pages complete and hide the
+    # image-only body from fact extraction.
+    return page is not None and _page_has_substantial_image(page)
 
 
 def _extract_page_text_with_ocr(page: fitz.Page, fallback: str) -> str:
@@ -1307,7 +1229,7 @@ def _extract_page_text_with_ocr_result(
 ) -> dict[str, object]:
     return _extract_page_text_with_ocr_result_impl(
         page,
-        fallback=fallback,
+        fallback,
         settings=load_settings(),
         ensure_deadline=_ensure_pdf_ocr_deadline,
         deadline_bounded_timeout=_deadline_bounded_timeout,

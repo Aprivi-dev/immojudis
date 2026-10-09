@@ -310,6 +310,7 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
         "tribunal",
         "description",
         "lawyer_contact",
+        "visit_contact",
         "surface_m2",
         "carrez_surface_m2",
         "land_surface_m2",
@@ -347,10 +348,11 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
     tribunal = _extract_after_label(raw_text, r"(?:Tribunal\s+Judiciaire|TJ)\s+de?\s*([^\n]+)")
     description = _property_description(soup) or _extract_description(raw_text)
     location = _extract_property_location(description, title)
-    lawyer_contact = _extract_after_label(raw_text, r"(?:Téléphone|Tél\.?|Tel\.?)\s*:?\s*([^\n]+)")
+    lawyer_contact = _extract_lawyer_contact(raw_text)
     adjudication_price = _extract_after_label(raw_text, r"Adjug[ée]\s*:?\s*([0-9][0-9\s,.]*\s*(?:€|euros?)?)")
     sale_date = _extract_detail_sale_date(soup, raw_text)
     visit_dates = _extract_detail_visit_dates(soup, raw_text)
+    visit_contact = _extract_phone_from_visit_dates(visit_dates)
     property_type = _extract_detail_property_type(title, description, raw_text)
     rooms_count = _extract_detail_rooms_count(raw_text, property_type, title)
     carrez_surface = _extract_carrez_surface(description, raw_text)
@@ -382,6 +384,7 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
         "tribunal": tribunal,
         "description": description,
         "lawyer_contact": lawyer_contact,
+        "visit_contact": visit_contact,
         "adjudication_price_eur": adjudication_price,
         "sale_date": sale_date,
         "visit_dates": visit_dates,
@@ -401,6 +404,7 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
                 "description": description,
                 "tribunal": tribunal,
                 "contact_avocat": lawyer_contact,
+                "contact_visite": visit_contact,
                 "prix_adjudication": adjudication_price,
                 "type_bien": property_type,
                 "adresse": location.get("address"),
@@ -998,7 +1002,8 @@ def _extract_carrez_surface(*values: object | None) -> str | None:
     patterns = (
         r"([0-9][0-9\s.,]*)\s*m(?:²|2)\s*(?:de\s+)?(?:surface\s+)?loi\s+carrez\b",
         r"(?:surface\s+)?loi\s+carrez(?:\s+(?:totale|privative))?\s*(?:-|:|de)?\s*([0-9][0-9\s.,]*)\s*m(?:²|2)\b",
-        r"(?:superficie|surface)\s*\([^)]*loi\s+carrez[^)]*\)\s*:?\s*([0-9][0-9\s.,]*)\s*m(?:²|2)\b",
+        r"(?:superficie|surface)\s+(?:privative|totale|habitable)?\s*"
+        r"\([^)]*loi\s+carrez[^)]*\)\s*:?\s*([0-9][0-9\s.,]*)\s*m(?:²|2)\b",
     )
     for value in values:
         text = clean_text(value)
@@ -1156,6 +1161,45 @@ def _extract_detail_energy_diagnostics(raw_text: str) -> dict[str, object] | Non
 def _extract_after_label(text: str, pattern: str) -> str | None:
     match = re.search(pattern, text, re.I)
     return clean_text(match.group(1)) if match else None
+
+
+def _extract_lawyer_contact(raw_text: str) -> str | None:
+    """Return the phone from the cabinet block, excluding visit phones."""
+    lines = [clean_text(part) for part in raw_text.splitlines() if clean_text(part)]
+    phone_pattern = r"(?:\+33\s*(?:\(0\)\s*)?[1-9](?:[\s.()-]?\d{2}){4}|0[1-9](?:[\s.()-]?\d{2}){4})"
+    for index, line in enumerate(lines):
+        if not re.search(r"^T(?:[ée]l[ée]?phone|[ée]l\.?)\s*:?", line, re.I):
+            continue
+        context = " ".join(lines[max(0, index - 5) : index])
+        if not re.search(r"\bcabinet\b", context, re.I):
+            continue
+        inline = re.search(phone_pattern, line)
+        if inline:
+            return clean_text(inline.group(0))
+        for candidate in lines[index + 1 : index + 3]:
+            match = re.search(phone_pattern, candidate)
+            if match:
+                return clean_text(match.group(0))
+
+    # Some older detail templates put the cabinet phone on the same line as
+    # the label. Keep this fallback restricted to a cabinet context and never
+    # use a phone embedded in a VISITE sentence.
+    for index, line in enumerate(lines):
+        if re.search(r"\bVISITE(?:S)?\b", line, re.I):
+            continue
+        match = re.search(phone_pattern, line)
+        if match and re.search(r"\bcabinet\b", " ".join(lines[max(0, index - 5) : index + 1]), re.I):
+            return clean_text(match.group(0))
+    return None
+
+
+def _extract_phone_from_visit_dates(values: list[str]) -> str | None:
+    phone_pattern = r"(?:\+33\s*(?:\(0\)\s*)?[1-9](?:[\s.()-]?\d{2}){4}|0[1-9](?:[\s.()-]?\d{2}){4})"
+    for value in values:
+        match = re.search(phone_pattern, value or "")
+        if match:
+            return clean_text(match.group(0))
+    return None
 
 
 def _extract_visit_dates(text: str) -> list[str]:

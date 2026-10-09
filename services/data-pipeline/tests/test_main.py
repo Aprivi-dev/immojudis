@@ -1283,14 +1283,23 @@ def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
         raw_payload={"source_blocks": {"description": "Appartement."}},
     )
     calls: list[str] = []
+    progress_summaries: list[dict[str, object]] = []
+    finish_summaries: list[dict[str, object]] = []
 
     monkeypatch.setattr(main, "load_settings", lambda: settings)
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-backfill")
-    monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: calls.append("finish"))
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda *args, **kwargs: (calls.append("finish"), finish_summaries.append(args[2])),
+    )
     monkeypatch.setattr(
         main,
         "update_run_progress_in_supabase",
-        lambda run_id, summary, errors=None: calls.append(f"progress:{summary['completed']}"),
+        lambda run_id, summary, errors=None: (
+            calls.append(f"progress:{summary['completed']}"),
+            progress_summaries.append(summary),
+        ),
     )
     monkeypatch.setattr(main, "fetch_sales_needing_llm_descriptions", lambda **kwargs: [stale, failed])
     monkeypatch.setattr(main, "create_llm_client", lambda: object())
@@ -1319,10 +1328,47 @@ def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
 
     monkeypatch.setattr(main, "upsert_sales_to_supabase", fake_upsert)
 
-    assert main.run_llm_description_backfill(main.PipelineOptions(llm_backfill=True, upsert=True)) == 1
+    assert (
+        main.run_llm_description_backfill(
+            main.PipelineOptions(llm_backfill=True, upsert=True, limit=7)
+        )
+        == 1
+    )
     assert calls.count("upsert:1") == 2
     assert calls[-1] == "finish"
     assert failed.raw_payload["llm_display_error_count"] == 1
+    assert progress_summaries
+    assert all(summary["limit"] == 7 for summary in progress_summaries)
+    assert finish_summaries[-1]["limit"] == 7
+
+
+def test_run_llm_description_backfill_persists_limit_when_no_sales(monkeypatch) -> None:
+    settings = {**_settings(), "pipeline_llm_backfill_max_targets": 20}
+    finished: list[dict[str, object]] = []
+
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "fetch_sales_needing_llm_descriptions", lambda **_: [])
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finished.append(summary),
+    )
+
+    assert (
+        main.run_llm_description_backfill(
+            main.PipelineOptions(llm_backfill=True, upsert=True, limit=7, run_id="run-backfill")
+        )
+        == 0
+    )
+    assert len(finished) == 1
+    assert finished[0]["mode"] == "llm_description_backfill"
+    assert finished[0]["limit"] == 7
+    assert finished[0]["selected"] == 0
+    assert finished[0]["processed"] == 0
+    assert finished[0]["updated"] == 0
+    assert finished[0]["prompt_version"] == settings["llm_prompt_version"]
+    assert finished[0]["statuses"] == ["active", "upcoming"]
+    assert finished[0]["skipped_unauthorized"] == 0
 
 
 def test_llm_backfill_progress_is_batched() -> None:
@@ -1537,6 +1583,121 @@ def test_known_pdf_surface_is_preserved_before_incremental_publication() -> None
     assert raw["surface_source"] == "pdf"
     assert raw["surface_extraction"] == {"source": "pdf", "value_m2": "3.78"}
     assert raw["document_analysis"]["documents_extracted"] == 3
+
+
+def test_cold_worker_roundtrip_keeps_pdf_provenance_and_matching_source_facts() -> None:
+    source_url = "https://example.test/cold-roundtrip/source-confirmed"
+    document = {"url": "https://example.test/cold-roundtrip/pv.pdf", "label": "PV"}
+    # These values were projected by the old PDF pass and are independently
+    # confirmed by the new source payload.  The snapshot must therefore be
+    # available if a later PDF replacement invalidates the projection.
+    source_facts = {
+        "raw_text": "Appartement 3 pièces, 2 chambres, libre.",
+        "starting_price_eur": 180000,
+        "surface_m2": 82.5,
+        "habitable_surface_m2": 80.0,
+        "carrez_surface_m2": 79.0,
+        "land_surface_m2": 120.0,
+        "app_surface_m2": 80.0,
+        "app_surface_kind": "habitable",
+        "surface_scope": "total",
+        "surface_source": "source_listing",
+        "surface_confidence": 0.94,
+        "surface_evidence": "Surface habitable : 80 m²",
+        "rooms_count": 3,
+        "bedrooms_count": 2,
+        "occupancy_status": "vacant",
+        "sale_date": "2027-02-15T14:00:00+01:00",
+        "visit_dates": ["2027-02-01 10:00"],
+        "property_type": "apartment",
+        "description": "Appartement confirmé par la source.",
+        "risk_notes": "DPE à vérifier",
+    }
+    pdf_markers = {
+        "pdf_fact_provenance": {
+            "rooms_count": {
+                "value": 3,
+                "source": "pdf",
+                "payload_keys": ["pdf_rooms_candidates"],
+            }
+        },
+        "pdf_sale_date_extraction": {"value": source_facts["sale_date"], "source": "pdf"},
+        "pdf_visit_dates_extraction": {"visit_dates": source_facts["visit_dates"], "source": "pdf"},
+        "pdf_energy_diagnostics": {"dpe_class": "C", "source": "pdf"},
+        "pdf_energy_diagnostics_candidates": [{"dpe_class": "C", "document_url": document["url"]}],
+        "pdf_surface_candidates": [{"value": source_facts["surface_m2"], "document_url": document["url"]}],
+        "pdf_land_surface_candidates": [{"value": source_facts["land_surface_m2"], "document_url": document["url"]}],
+        "pdf_rooms_candidates": [{"value": source_facts["rooms_count"], "document_url": document["url"]}],
+        "pdf_bedrooms_candidates": [{"value": source_facts["bedrooms_count"], "document_url": document["url"]}],
+        "pdf_occupancy_candidates": [{"value": source_facts["occupancy_status"], "document_url": document["url"]}],
+        "pdf_multi_lot_guard": {"status": "clear"},
+    }
+    raw = {
+        "source_name": "licitor",
+        "source_url": source_url,
+        "documents": [document],
+        **source_facts,
+    }
+    known = {
+        source_url: {
+            "source_name": "licitor",
+            "source_url": source_url,
+            "documents": [document],
+            **source_facts,
+            "raw_payload": pdf_markers,
+        }
+    }
+
+    main._preserve_known_enrichment_payloads([raw], known)
+
+    snapshot = raw["source_factual_snapshot"]
+    assert {key: snapshot[key] for key in source_facts} == source_facts
+    assert "pdf_fact_provenance" not in snapshot
+    assert "pdf_rooms_candidates" not in snapshot
+    assert raw["rooms_count"] == pdf_markers["pdf_rooms_candidates"][0]["value"]
+    for key, value in pdf_markers.items():
+        assert raw[key] == value
+
+    # Reconstruct the next cold worker from the row that would be returned by
+    # auction_sales.  It must receive both the source snapshot and PDF trace;
+    # no PDF read is needed to keep the confirmed value stable.
+    persisted_row = {
+        **known[source_url],
+        "raw_payload": {**pdf_markers, "source_factual_snapshot": snapshot},
+    }
+    cold_raw = {
+        "source_name": "licitor",
+        "source_url": source_url,
+        "_known_unchanged": True,
+    }
+    main._hydrate_known_unchanged_sales([cold_raw], {source_url: persisted_row})
+    main._preserve_known_enrichment_payloads([cold_raw], {source_url: persisted_row})
+
+    assert cold_raw["source_factual_snapshot"] == snapshot
+    assert cold_raw["pdf_fact_provenance"] == pdf_markers["pdf_fact_provenance"]
+    assert cold_raw["rooms_count"] == source_facts["rooms_count"]
+    assert cold_raw["surface_m2"] == source_facts["surface_m2"]
+
+
+def test_cold_worker_preserves_vench_source_contract_from_bounded_snapshot() -> None:
+    source_url = "https://example.test/vench/source-contract"
+    contract = {
+        "source_property_features": {"energy": {"dpe_class": "D"}},
+        "source_property_feature_evidence": {"energy": [{"text": "DPE D"}]},
+        "source_property_features_meta": {"version": "source_features_v2"},
+        "source_procedure_profile": {"family": "judicial", "confidence": 0.9},
+        "source_field_observations": {"sale_date": {"state": "observed"}},
+        "source_evidence": {"sale_date": [{"value": "2027-02-15"}]},
+        "source_evidence_provenance": {"sale_date": {"source": "vench"}},
+        "source_energy_diagnostics": {"dpe_class": "D"},
+    }
+    raw = {"source_name": "vench", "source_url": source_url}
+    known = {source_url: {"raw_payload": contract}}
+
+    main._preserve_known_enrichment_payloads([raw], known)
+
+    for key, value in contract.items():
+        assert raw[key] == value
 
 
 def test_known_pdf_price_resolution_is_preserved_until_source_price_changes() -> None:
@@ -1772,24 +1933,3 @@ def test_superseded_enrichment_checkpoint_is_skipped(monkeypatch):
     monkeypatch.setattr(main, "upsert_sales_to_supabase", lambda sales, **kwargs: 0)
 
     assert main._checkpoint_enrichment(sale) is False
-
-
-def test_cold_worker_preserves_vench_source_contract_from_bounded_snapshot() -> None:
-    source_url = "https://example.test/vench/source-contract"
-    contract = {
-        "source_property_features": {"energy": {"dpe_class": "D"}},
-        "source_property_feature_evidence": {"energy": [{"text": "DPE D"}]},
-        "source_property_features_meta": {"version": "source_features_v2"},
-        "source_procedure_profile": {"family": "judicial", "confidence": 0.9},
-        "source_field_observations": {"sale_date": {"state": "observed"}},
-        "source_evidence": {"sale_date": [{"value": "2027-02-15"}]},
-        "source_evidence_provenance": {"sale_date": {"source": "vench"}},
-        "source_energy_diagnostics": {"dpe_class": "D"},
-    }
-    raw = {"source_name": "vench", "source_url": source_url}
-    known = {source_url: {"raw_payload": contract}}
-
-    main._preserve_known_enrichment_payloads([raw], known)
-
-    for key, value in contract.items():
-        assert raw[key] == value
