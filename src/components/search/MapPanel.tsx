@@ -3,7 +3,7 @@
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
-import mapboxgl from "mapbox-gl";
+import type mapboxgl from "mapbox-gl";
 import type {
   CircleLayerSpecification,
   FillLayerSpecification,
@@ -39,6 +39,7 @@ import { firstPropertyImage } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { getDisplaySurface, getSaleSurface } from "@/lib/surface";
 import { hasCoordinates } from "@/lib/search/search-filters";
+import { clusterSalesLabel, framingPoints, isInMetropolitanFrance } from "@/lib/search/map-framing";
 import type { ViewportBounds } from "@/lib/search/search-url-state";
 import type { AuctionSale } from "@/lib/types";
 import {
@@ -49,6 +50,9 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
+
+// Chargé à la demande par l'effet de création de la carte (import dynamique).
+let mapboxRuntime: typeof mapboxgl | null = null;
 
 const SALES_SOURCE_ID = "immojudis-sales";
 const BOUNDARY_SOURCE_ID = "immojudis-search-boundary";
@@ -332,167 +336,182 @@ export function MapPanel({
 
   useEffect(() => {
     if (!containerRef.current || !accessToken) return;
-
-    mapboxgl.accessToken = accessToken;
-    let map: MapboxMap;
-    try {
-      map = new mapboxgl.Map({
-        accessToken,
-        container: containerRef.current,
-        style: mapStyle,
-        language: "fr",
-        center: DEFAULT_MAP_CENTER,
-        zoom: defaultMapZoomForViewport(containerRef.current),
-        minZoom: MIN_MAP_ZOOM,
-        maxZoom: MAX_MAP_ZOOM,
-        attributionControl: true,
-        pitchWithRotate: false,
-        dragRotate: false,
-        cooperativeGestures: false,
-      });
-    } catch {
-      setMapError("La carte n’a pas pu démarrer sur cet appareil.");
-      return;
-    }
-
-    mapRef.current = map;
-    const loadTimeout = window.setTimeout(() => {
-      setMapError("Le chargement de la carte prend trop de temps.");
-    }, 12_000);
-
-    const emitViewport = () => {
-      onViewportChangeRef.current({
-        bounds: boundsFromMap(map),
-        zoom: Number(map.getZoom().toFixed(2)),
-      });
-    };
-
-    const handleMapError = (event: mapboxgl.ErrorEvent) => {
-      if (event.error?.message) setMapError(event.error.message);
-    };
-
-    map.on("load", () => {
-      window.clearTimeout(loadTimeout);
-      setMapError(null);
-      addSalesLayers(map, featureCollection);
-      addBoundaryLayers(map, boundary);
-      if (!hasUserInteractedRef.current) centerMapOnFrance(map, false, containerRef.current);
-      emitViewport();
-      setMapReady(true);
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+    // Mapbox (plusieurs centaines de Ko) ne se charge que lorsque la carte s'affiche.
+    void import("mapbox-gl").then((module) => {
+      if (cancelled || !containerRef.current) return;
+      mapboxRuntime = module.default;
+      cleanup = startMap(module.default);
     });
-    map.on("moveend", () => {
-      emitViewport();
-      if (mapGestureRef.current) {
-        setViewportDirty(true);
-        mapGestureRef.current = false;
-      }
-    });
-    map.on("zoomend", emitViewport);
-    map.on("error", handleMapError);
-
-    const handlePointEnter = (event: MapLayerMouseEvent) => {
-      map.getCanvas().style.cursor = "pointer";
-      const saleId = saleIdFromFeature(event.features?.[0]);
-      if (saleId) onHoverRef.current(saleId);
-    };
-
-    const handlePointLeave = () => {
-      map.getCanvas().style.cursor = "";
-      onHoverRef.current(null);
-    };
-
-    const handlePointClick = (event: MapLayerMouseEvent) => {
-      markUserInteracted();
-      const saleId = saleIdFromFeature(event.features?.[0]);
-      if (!saleId) return;
-      const sale = salesByIdRef.current.get(saleId);
-      if (!sale || !hasCoordinates(sale)) return;
-      event.preventDefault();
-      onSelectRef.current(saleId);
-      popupSaleIdRef.current = saleId;
-      const detailSale =
-        selectedSaleDetailRef.current?.id === saleId ? selectedSaleDetailRef.current : null;
-      const popupSale = detailSale
-        ? saleForMapReview(
-            detailSale,
-            aiReviewBySaleIdRef.current?.[saleId],
-            aiReviewStatusRef.current,
-            previewRef.current,
-          )
-        : sale;
-      popupRef.current = showSalePopup(
-        map,
-        { ...popupSale, latitude: sale.latitude, longitude: sale.longitude },
-        popupRef.current,
-        popupAccessRef.current,
-      );
-    };
-
-    const handleClusterEnter = () => {
-      map.getCanvas().style.cursor = "pointer";
-    };
-
-    const handleClusterLeave = () => {
-      map.getCanvas().style.cursor = "";
-    };
-
-    const handleClusterClick = (event: MapMouseEvent) => {
-      markUserInteracted();
-      const features = map.queryRenderedFeatures(event.point, { layers: [CLUSTER_LAYER_ID] });
-      const feature = features[0] as QueriedMapFeature | undefined;
-      const clusterId = Number(feature?.properties?.cluster_id);
-      if (!Number.isFinite(clusterId)) return;
-      const source = map.getSource(SALES_SOURCE_ID) as GeoJSONSource | undefined;
-      source?.getClusterExpansionZoom(clusterId, (error, zoom) => {
-        if (error || zoom == null) return;
-        const coordinates =
-          feature?.geometry?.type === "Point" && Array.isArray(feature.geometry.coordinates)
-            ? feature.geometry.coordinates
-            : null;
-        if (!coordinates) return;
-        map.easeTo({
-          center: [Number(coordinates[0]), Number(coordinates[1])],
-          zoom: Math.min(zoom + 0.4, MAX_MAP_ZOOM),
-          duration: 420,
-        });
-      });
-    };
-
-    map.on("mouseenter", SALE_HIT_LAYER_ID, handlePointEnter);
-    map.on("mouseleave", SALE_HIT_LAYER_ID, handlePointLeave);
-    map.on("click", SALE_HIT_LAYER_ID, handlePointClick);
-    map.on("mouseenter", CLUSTER_LAYER_ID, handleClusterEnter);
-    map.on("mouseleave", CLUSTER_LAYER_ID, handleClusterLeave);
-    map.on("click", CLUSTER_LAYER_ID, handleClusterClick);
-
-    const canvas = map.getCanvas();
-    const handleDirectMapInteraction = () => {
-      markUserInteracted();
-      mapGestureRef.current = true;
-    };
-    canvas.addEventListener("pointerdown", handleDirectMapInteraction, { passive: true });
-    canvas.addEventListener("wheel", handleDirectMapInteraction, { passive: true });
-    canvas.addEventListener("touchstart", handleDirectMapInteraction, { passive: true });
-
-    const observer = new ResizeObserver(() => {
-      map.resize();
-      emitViewport();
-    });
-    observer.observe(containerRef.current);
-
     return () => {
-      window.clearTimeout(loadTimeout);
-      observer.disconnect();
-      canvas.removeEventListener("pointerdown", handleDirectMapInteraction);
-      canvas.removeEventListener("wheel", handleDirectMapInteraction);
-      canvas.removeEventListener("touchstart", handleDirectMapInteraction);
-      popupRef.current?.remove();
-      popupRef.current = null;
-      popupSaleIdRef.current = null;
-      map.remove();
-      mapRef.current = null;
-      setMapReady(false);
+      cancelled = true;
+      cleanup?.();
     };
+
+    function startMap(runtime: typeof mapboxgl): (() => void) | undefined {
+      if (!containerRef.current) return undefined;
+      runtime.accessToken = accessToken;
+      let map: MapboxMap;
+      try {
+        map = new runtime.Map({
+          accessToken,
+          container: containerRef.current,
+          style: mapStyle,
+          language: "fr",
+          center: DEFAULT_MAP_CENTER,
+          zoom: defaultMapZoomForViewport(containerRef.current),
+          minZoom: MIN_MAP_ZOOM,
+          maxZoom: MAX_MAP_ZOOM,
+          attributionControl: true,
+          pitchWithRotate: false,
+          dragRotate: false,
+          cooperativeGestures: false,
+        });
+      } catch {
+        setMapError("La carte n’a pas pu démarrer sur cet appareil.");
+        return;
+      }
+
+      mapRef.current = map;
+      const loadTimeout = window.setTimeout(() => {
+        setMapError("Le chargement de la carte prend trop de temps.");
+      }, 12_000);
+
+      const emitViewport = () => {
+        onViewportChangeRef.current({
+          bounds: boundsFromMap(map),
+          zoom: Number(map.getZoom().toFixed(2)),
+        });
+      };
+
+      const handleMapError = (event: mapboxgl.ErrorEvent) => {
+        if (event.error?.message) setMapError(event.error.message);
+      };
+
+      map.on("load", () => {
+        window.clearTimeout(loadTimeout);
+        setMapError(null);
+        addSalesLayers(map, featureCollection);
+        addBoundaryLayers(map, boundary);
+        if (!hasUserInteractedRef.current) centerMapOnFrance(map, false, containerRef.current);
+        emitViewport();
+        setMapReady(true);
+      });
+      map.on("moveend", () => {
+        emitViewport();
+        if (mapGestureRef.current) {
+          setViewportDirty(true);
+          mapGestureRef.current = false;
+        }
+      });
+      map.on("zoomend", emitViewport);
+      map.on("error", handleMapError);
+
+      const handlePointEnter = (event: MapLayerMouseEvent) => {
+        map.getCanvas().style.cursor = "pointer";
+        const saleId = saleIdFromFeature(event.features?.[0]);
+        if (saleId) onHoverRef.current(saleId);
+      };
+
+      const handlePointLeave = () => {
+        map.getCanvas().style.cursor = "";
+        onHoverRef.current(null);
+      };
+
+      const handlePointClick = (event: MapLayerMouseEvent) => {
+        markUserInteracted();
+        const saleId = saleIdFromFeature(event.features?.[0]);
+        if (!saleId) return;
+        const sale = salesByIdRef.current.get(saleId);
+        if (!sale || !hasCoordinates(sale)) return;
+        event.preventDefault();
+        onSelectRef.current(saleId);
+        popupSaleIdRef.current = saleId;
+        const detailSale =
+          selectedSaleDetailRef.current?.id === saleId ? selectedSaleDetailRef.current : null;
+        const popupSale = detailSale
+          ? saleForMapReview(
+              detailSale,
+              aiReviewBySaleIdRef.current?.[saleId],
+              aiReviewStatusRef.current,
+              previewRef.current,
+            )
+          : sale;
+        popupRef.current = showSalePopup(
+          map,
+          { ...popupSale, latitude: sale.latitude, longitude: sale.longitude },
+          popupRef.current,
+          popupAccessRef.current,
+        );
+      };
+
+      const handleClusterEnter = () => {
+        map.getCanvas().style.cursor = "pointer";
+      };
+
+      const handleClusterLeave = () => {
+        map.getCanvas().style.cursor = "";
+      };
+
+      const handleClusterClick = (event: MapMouseEvent) => {
+        markUserInteracted();
+        const features = map.queryRenderedFeatures(event.point, { layers: [CLUSTER_LAYER_ID] });
+        const feature = features[0] as QueriedMapFeature | undefined;
+        const clusterId = Number(feature?.properties?.cluster_id);
+        if (!Number.isFinite(clusterId)) return;
+        const source = map.getSource(SALES_SOURCE_ID) as GeoJSONSource | undefined;
+        source?.getClusterExpansionZoom(clusterId, (error, zoom) => {
+          if (error || zoom == null) return;
+          const coordinates =
+            feature?.geometry?.type === "Point" && Array.isArray(feature.geometry.coordinates)
+              ? feature.geometry.coordinates
+              : null;
+          if (!coordinates) return;
+          map.easeTo({
+            center: [Number(coordinates[0]), Number(coordinates[1])],
+            zoom: Math.min(zoom + 0.4, MAX_MAP_ZOOM),
+            duration: 420,
+          });
+        });
+      };
+
+      map.on("mouseenter", SALE_HIT_LAYER_ID, handlePointEnter);
+      map.on("mouseleave", SALE_HIT_LAYER_ID, handlePointLeave);
+      map.on("click", SALE_HIT_LAYER_ID, handlePointClick);
+      map.on("mouseenter", CLUSTER_LAYER_ID, handleClusterEnter);
+      map.on("mouseleave", CLUSTER_LAYER_ID, handleClusterLeave);
+      map.on("click", CLUSTER_LAYER_ID, handleClusterClick);
+
+      const canvas = map.getCanvas();
+      const handleDirectMapInteraction = () => {
+        markUserInteracted();
+        mapGestureRef.current = true;
+      };
+      canvas.addEventListener("pointerdown", handleDirectMapInteraction, { passive: true });
+      canvas.addEventListener("wheel", handleDirectMapInteraction, { passive: true });
+      canvas.addEventListener("touchstart", handleDirectMapInteraction, { passive: true });
+
+      const observer = new ResizeObserver(() => {
+        map.resize();
+        emitViewport();
+      });
+      observer.observe(containerRef.current!);
+
+      return () => {
+        window.clearTimeout(loadTimeout);
+        observer.disconnect();
+        canvas.removeEventListener("pointerdown", handleDirectMapInteraction);
+        canvas.removeEventListener("wheel", handleDirectMapInteraction);
+        canvas.removeEventListener("touchstart", handleDirectMapInteraction);
+        popupRef.current?.remove();
+        popupRef.current = null;
+        popupSaleIdRef.current = null;
+        map.remove();
+        mapRef.current = null;
+        setMapReady(false);
+      };
+    }
     // Mapbox owns the imperative instance; data and callbacks are updated through refs/effects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, mapStyle]);
@@ -594,7 +613,7 @@ export function MapPanel({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    if (locationCenter)
+    if (locationCenter && isInMetropolitanFrance(locationCenter.lat, locationCenter.lng))
       map.easeTo({
         center: [locationCenter.lng, locationCenter.lat],
         zoom: locationCenter.zoom ?? 10,
@@ -773,8 +792,13 @@ export function MapPanel({
       <div className="absolute bottom-10 left-4 z-30 max-w-[calc(100%-2rem)] rounded-md bg-white/95 px-3 py-2 text-xs text-ink-soft">
         {geocodedSales.length.toLocaleString("fr-FR")} annonces situées
         {totalCount != null && totalCount > geocodedSales.length
-          ? ` sur ${totalCount.toLocaleString("fr-FR")} résultats${preview ? " · positions approximatives de cette page" : " · échantillon cartographié"}`
+          ? ` sur ${totalCount.toLocaleString("fr-FR")} résultats${preview ? " · positions approximatives de cette page" : ""}`
           : ""}
+        <span className="sr-only">
+          {" "}
+          Les ronds dorés regroupent plusieurs ventes ({clusterSalesLabel(2)} ou plus) ; zoomez pour
+          les séparer.
+        </span>
       </div>
 
       <a
@@ -841,7 +865,8 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
     source: SALES_SOURCE_ID,
     filter: ["has", "point_count"],
     paint: {
-      "circle-color": "#132238",
+      // Or : un groupe de ventes se distingue d'une vente isolée (pastille marine avec son prix).
+      "circle-color": "#c98d45",
       "circle-radius": ["step", ["get", "point_count"], 18, 10, 24, 30, 30],
       "circle-stroke-color": "#ffffff",
       "circle-stroke-width": 3,
@@ -861,9 +886,8 @@ function addSalesLayers(map: MapboxMap, data: MapboxSaleFeatureCollection) {
       "text-ignore-placement": true,
     },
     paint: {
-      "text-color": "#ffffff",
-      "text-halo-color": "rgba(19,34,56,0.22)",
-      "text-halo-width": 1,
+      "text-color": "#132238",
+      "text-halo-width": 0,
     },
   };
 
@@ -958,7 +982,8 @@ function fitSalesOnMap(
   animate: boolean,
   container: HTMLDivElement | null,
 ) {
-  const points = sales.filter(hasCoordinates);
+  // Seuls les points plausiblement en métropole servent au cadrage (jamais l'Afrique du Nord).
+  const points = framingPoints(sales.filter(hasCoordinates));
   const duration = animate ? 520 : 0;
   const padding = isMobileMap(container) ? MOBILE_FIT_PADDING : FIT_PADDING;
 
@@ -977,7 +1002,7 @@ function fitSalesOnMap(
     return;
   }
 
-  const bounds = new mapboxgl.LngLatBounds();
+  const bounds = new mapboxRuntime!.LngLatBounds();
   points.forEach((sale) => bounds.extend([sale.longitude, sale.latitude]));
   map.fitBounds(bounds, {
     duration,
@@ -1012,7 +1037,7 @@ function showSalePopup(
   access: PopupAccess,
 ) {
   currentPopup?.remove();
-  return new mapboxgl.Popup({
+  return new mapboxRuntime!.Popup({
     closeButton: true,
     closeOnClick: true,
     className: "immo-mapbox-popup",

@@ -289,8 +289,10 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
       catalogPlaceholder(previous, query?.queryKey, comparisonScope),
     queryFn: () => fetchSearchMapResults(search, { discovery: isDiscovery }),
     enabled: catalogReady && !isPreview && mapVisible,
-    staleTime: 60_000,
-    refetchInterval: 60_000,
+    // Tous les points de la recherche (quelques milliers de lignes légères) : on les rafraîchit
+    // moins souvent qu'un échantillon.
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
   });
 
   const filteredSales = useMemo(
