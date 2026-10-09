@@ -4,8 +4,11 @@ import hashlib
 import json
 import logging
 import math
+import os
+import threading
 import time
 import uuid
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -74,6 +77,12 @@ CLAIM_RPC_MAX_WAIT_SECONDS = 60.0
 POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE = 50
 POSTGRES_CONNECT_TIMEOUT = 15
 POSTGRES_CONNECT_RETRY_DELAYS = (1.0, 3.0, 8.0)
+# A blocked statement must fail after two minutes instead of holding the job
+# until the role or workflow limit. Long jobs (model training, bulk imports)
+# pass their own larger value, or 0 to disable the limit explicitly.
+POSTGRES_STATEMENT_TIMEOUT_MS = 120_000
+POSTGRES_TRAINING_STATEMENT_TIMEOUT_MS = 900_000
+POSTGRES_SHARED_CONNECTION_PING_AFTER_SECONDS = 20.0
 POSTGRES_OBSERVATION_BATCH_SIZE = 25
 PDF_EXTRACTION_PROVIDER = "pdf_text"
 PDF_EXTRACTION_MODEL = "docling+pymupdf+tesseract"
@@ -4748,26 +4757,55 @@ def _postgres_upsert(
     return None
 
 
+def _statement_timeout_options(db_url: str, statement_timeout_ms: int | None) -> str | None:
+    """Server option applying the default statement timeout to the whole session.
+
+    A URL that already carries its own ``options`` keeps full control.
+    """
+    if statement_timeout_ms is None or "options=" in db_url.lower():
+        return None
+    return f"-c statement_timeout={max(0, int(statement_timeout_ms))}"
+
+
 def _postgres_connect(
     db_url: str,
     *,
     connect_timeout: int = POSTGRES_CONNECT_TIMEOUT,
     retry_delays: tuple[float, ...] | None = None,
+    statement_timeout_ms: int | None = POSTGRES_STATEMENT_TIMEOUT_MS,
 ) -> Any:
     if psycopg is None:
         raise RuntimeError("psycopg is required for direct Postgres writes")
     delays = POSTGRES_CONNECT_RETRY_DELAYS if retry_delays is None else retry_delays
+    options = _statement_timeout_options(db_url, statement_timeout_ms)
     for attempt, delay in enumerate((0.0, *delays), start=1):
         if delay:
             time.sleep(delay)
         try:
-            return psycopg.connect(
-                db_url,
-                connect_timeout=connect_timeout,
-                prepare_threshold=None,
-            )
+            connect_kwargs: dict[str, Any] = {
+                "connect_timeout": connect_timeout,
+                "prepare_threshold": None,
+            }
+            if options:
+                connect_kwargs["options"] = options
+            return psycopg.connect(db_url, **connect_kwargs)
         except Exception as exc:
             message = str(exc).lower()
+            if options and "unsupported startup parameter" in message:
+                # Transaction poolers reject startup options. Fall back to a
+                # session-level SET once connected (statements that need a
+                # guaranteed limit still use SET LOCAL).
+                LOGGER.warning("PostgreSQL pooler rejected startup options; using SET statement_timeout")
+                connection = psycopg.connect(
+                    db_url, connect_timeout=connect_timeout, prepare_threshold=None
+                )
+                try:
+                    connection.execute(f"set statement_timeout = {max(0, int(statement_timeout_ms or 0))}")
+                    connection.commit()
+                except Exception:
+                    connection.close()
+                    raise
+                return connection
             transient = any(
                 marker in message
                 for marker in (
@@ -4788,6 +4826,59 @@ def _postgres_connect(
                 exc,
             )
     raise AssertionError("unreachable")
+
+
+_SHARED_CONNECTIONS: dict[tuple[int, str], tuple[Any, float]] = {}
+_SHARED_CONNECTION_LOCK = threading.RLock()
+
+
+@contextmanager
+def _shared_postgres_connection(db_url: str):
+    """Yield one autocommit connection per process, instead of one per call.
+
+    Meant for the short single-statement calls made once per LLM prediction or
+    per source-detail request. Callers are serialised by a lock, a connection
+    that sat idle is pinged before use, and a connection that failed is
+    discarded so the next call reconnects.
+    """
+    key = (os.getpid(), db_url)
+    with _SHARED_CONNECTION_LOCK:
+        entry = _SHARED_CONNECTIONS.get(key)
+        connection = entry[0] if entry else None
+        if connection is not None:
+            usable = not getattr(connection, "closed", False)
+            if usable and time.monotonic() - entry[1] > POSTGRES_SHARED_CONNECTION_PING_AFTER_SECONDS:
+                try:
+                    connection.execute("select 1")
+                except Exception:
+                    usable = False
+            if not usable:
+                _discard_shared_connection(key)
+                connection = None
+        if connection is None:
+            connection = _postgres_connect(db_url)
+            connection.autocommit = True
+            _SHARED_CONNECTIONS[key] = (connection, time.monotonic())
+        try:
+            yield connection
+        except BaseException as exc:
+            # An SQL error in autocommit mode leaves the session usable; a
+            # transport failure, cancellation or interrupt does not.
+            broken_types = (psycopg.OperationalError, psycopg.InterfaceError) if psycopg else ()
+            if not isinstance(exc, Exception) or isinstance(exc, broken_types) or getattr(connection, "closed", False):
+                _discard_shared_connection(key)
+            raise
+        else:
+            _SHARED_CONNECTIONS[key] = (connection, time.monotonic())
+
+
+def _discard_shared_connection(key: tuple[int, str]) -> None:
+    entry = _SHARED_CONNECTIONS.pop(key, None)
+    if entry is not None:
+        try:
+            entry[0].close()
+        except Exception:
+            pass
 
 
 def _postgres_value(column: str, value: object) -> object:

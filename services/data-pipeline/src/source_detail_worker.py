@@ -356,7 +356,7 @@ def source_detail_source_enabled(source_name: str, settings: dict[str, Any]) -> 
     if not db_url:
         return False
     try:
-        with storage._postgres_connect(db_url) as db:
+        with storage._shared_postgres_connection(db_url) as db:
             row = db.execute(
                 """select c.enabled,c.source_details_enabled,s.enabled,s.suspended_until
                    from public.auction_pipeline_control c

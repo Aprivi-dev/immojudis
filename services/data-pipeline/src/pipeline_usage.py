@@ -142,8 +142,8 @@ def _utc_day_start() -> datetime:
 
 
 def _spend_groups_via_postgres(db_url: str, since: datetime) -> list[tuple[str, int, int, int, int]]:
-    from src.storage.supabase_client import _postgres_connect
-    with _postgres_connect(db_url) as db:
+    from src.storage.supabase_client import _shared_postgres_connection
+    with _shared_postgres_connection(db_url) as db:
         rows = db.execute(
             """select model, count(*),
                       count(*) filter (where coalesce(input_tokens_estimate,0)=0 and coalesce(output_tokens_estimate,0)=0),
@@ -227,9 +227,9 @@ def reserve_prediction(model: str, *, input_token_ceiling: int, output_token_cei
     run_id = os.getenv('PIPELINE_AUTONOMOUS_RUN_ID')
     if not run_id:
         return None
-    from src.storage.supabase_client import _postgres_connect
+    from src.storage.supabase_client import _shared_postgres_connection
     try:
-        with _postgres_connect(str(load_settings()['supabase_db_url'])) as db:
+        with _shared_postgres_connection(str(load_settings()['supabase_db_url'])) as db:
             return str(db.execute(
                 'select public.reserve_pipeline_prediction(%s,%s,%s,%s)',
                 (run_id, model, input_token_ceiling, output_token_ceiling),
@@ -275,14 +275,14 @@ def record_prediction(prediction: dict, *, reservation: str | None = None, model
     run_id = os.getenv('PIPELINE_AUTONOMOUS_RUN_ID')
     if not run_id:
         return
-    from src.storage.supabase_client import _postgres_connect
+    from src.storage.supabase_client import _shared_postgres_connection
     metrics = {key:value for key,value in (prediction.get('metrics') or {}).items()
                if key in {'predict_time','total_time','input_token_count','output_token_count',
                           'token_input_count','token_output_count'}
                and isinstance(value,(int,float)) and math.isfinite(value) and value>=0}
     model = model or str(prediction.get('model') or PINNED_MODEL)
     cost, rate_source = _prediction_cost(model, prediction, metrics)
-    with _postgres_connect(str(load_settings()['supabase_db_url'])) as db:
+    with _shared_postgres_connection(str(load_settings()['supabase_db_url'])) as db:
         db.execute("""update public.auction_pipeline_usage set prediction_id=coalesce(%s,prediction_id),
           status=%s,metrics=%s,estimated_usd=case when model=%s then coalesce(%s::numeric,estimated_usd) else estimated_usd end,
           rate_source=coalesce(%s,rate_source),updated_at=now() where run_id=%s and (id=%s or prediction_id=%s)""",
