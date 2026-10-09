@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getSales, getSalesForSearch, getSalesWithCoords, rpc } = vi.hoisted(() => ({
+const { getSales, getSalesForSearch, getSaleMapPoints, rpc } = vi.hoisted(() => ({
   getSales: vi.fn(),
   getSalesForSearch: vi.fn(),
-  getSalesWithCoords: vi.fn(),
+  getSaleMapPoints: vi.fn(),
   rpc: vi.fn(),
 }));
 
@@ -15,7 +15,7 @@ vi.mock("@/lib/queries", () => ({
   getSales,
   getSalesForSearch,
   getSalesCount: vi.fn(),
-  getSalesWithCoords,
+  getSaleMapPoints,
 }));
 
 import { fetchSearchCount, fetchSearchMapResults, fetchSearchResults } from "./search-service";
@@ -24,7 +24,7 @@ describe("public preview search service", () => {
   beforeEach(() => {
     getSales.mockReset();
     getSalesForSearch.mockReset();
-    getSalesWithCoords.mockReset();
+    getSaleMapPoints.mockReset();
     rpc.mockReset();
   });
 
@@ -146,7 +146,7 @@ describe("public preview search service", () => {
     };
     const realSale = { id: "49deebe5-bbba-4c8a-9f4e-237a2edbae94" };
     getSalesForSearch.mockResolvedValue([example, realSale]);
-    getSalesWithCoords.mockResolvedValue([realSale, example]);
+    getSaleMapPoints.mockResolvedValue([realSale, example]);
 
     await expect(fetchSearchResults({ search: {}, preview: false })).resolves.toEqual([realSale]);
     await expect(fetchSearchMapResults({})).resolves.toEqual([realSale]);
