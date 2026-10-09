@@ -6,6 +6,7 @@ import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combi
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import { ListingPhoto } from "@/components/ListingPhoto";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { formatPrice } from "@/lib/format";
 import { saleDetailPath } from "@/lib/navigation";
@@ -16,6 +17,15 @@ import {
   saleVerificationLabel,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
+import {
+  saleHeadline,
+  saleHearingTime,
+  saleReference,
+  seoLongDate,
+  seoPropertyLabel,
+  seoSurface,
+  tribunalDisplayName,
+} from "@/lib/seo";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
@@ -67,6 +77,61 @@ export function SalePublicPreview({
   const state = procedure.venueType === "state";
   const notary = procedure.venueType === "notary";
   const price = preview.starting_price_eur != null && preview.starting_price_eur > 0;
+  const headline = saleHeadline(preview);
+  const photo = preview.media?.find((item) => item?.url && (item.type ?? "image") === "image");
+  const surface = seoSurface(preview.app_surface_m2);
+  const hearingDate = seoLongDate(preview.sale_date);
+  const hearingTime = saleHearingTime(preview.sale_date);
+  const tribunal = procedure.venueType === "tribunal" ? tribunalDisplayName(preview) : null;
+  const location = [preview.city, preview.department].filter(Boolean).join(" · ");
+  const propertyFacts = (
+    <dl className={styles.facts}>
+      <div className={styles.fact}>
+        <dt>Type de bien</dt>
+        <dd>{seoPropertyLabel(preview.property_type)}</dd>
+      </div>
+      {surface ? (
+        <div className={styles.fact}>
+          <dt>Surface</dt>
+          <dd>{surface}</dd>
+        </div>
+      ) : null}
+      {preview.rooms_count != null && preview.rooms_count > 0 ? (
+        <div className={styles.fact}>
+          <dt>Pièces</dt>
+          <dd>{preview.rooms_count}</dd>
+        </div>
+      ) : null}
+      {location ? (
+        <div className={styles.fact}>
+          <dt>Localisation</dt>
+          <dd>{location}</dd>
+        </div>
+      ) : null}
+      {hearingDate ? (
+        <div className={styles.fact}>
+          <dt>{procedure.venueType === "tribunal" ? "Date de l’audience" : "Date de la vente"}</dt>
+          <dd>
+            {hearingDate}
+            {hearingTime ? ` à ${hearingTime}` : ""}
+          </dd>
+        </div>
+      ) : null}
+      {tribunal ? (
+        <div className={styles.fact}>
+          <dt>Tribunal</dt>
+          <dd>{tribunal}</dd>
+        </div>
+      ) : null}
+    </dl>
+  );
+  const dossierAdds = [
+    procedure.venueType === "tribunal"
+      ? "Une mise plafond simulée, avec une enveloppe travaux ajustable"
+      : null,
+    "Les ventes comparables du secteur et l’estimation du bien",
+    "Les documents du dossier et les risques repérés, lorsqu’ils sont disponibles",
+  ].filter((item): item is string => item !== null);
   const priceBlock =
     price || !state ? (
       <div className={styles.priceBlock}>
@@ -117,13 +182,30 @@ export function SalePublicPreview({
         >
           <section className={styles.summary} aria-labelledby="public-sale-title">
             <SaleProcedureBadge sale={preview} />
+            <p className={styles.kicker}>{venueCopy.title}</p>
             <h1 id="public-sale-title" className={styles.title}>
-              {venueCopy.title}
+              {headline}
+              <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
             </h1>
-            <p className={styles.intro}>
-              Cet aperçu protège les informations détaillées du bien tout en vous indiquant
-              clairement comment la vente est organisée.
-            </p>
+            {photo?.url ? (
+              <figure className={styles.photo}>
+                <ListingPhoto
+                  src={photo.url}
+                  alt={`Photo du bien : ${headline}`}
+                  className="h-full w-full object-cover"
+                  fetchPriority="high"
+                />
+              </figure>
+            ) : null}
+            {propertyFacts}
+            <div className={styles.adds}>
+              <h2 className={styles.addsTitle}>Le dossier complet ajoute</h2>
+              <ul>
+                {dossierAdds.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
 
             {state || notary ? factsBlock : priceBlock}
             {state || notary ? priceBlock : factsBlock}
@@ -187,8 +269,8 @@ export function SalePublicPreview({
               </h3>
               <p>
                 {state
-                  ? "Type de vente, prix s'il est publié et niveau de vérification."
-                  : "Mise à prix, type de vente et niveau de vérification."}
+                  ? "Le bien, la commune, la date de la vente, le prix s'il est publié et le niveau de vérification."
+                  : "Le bien, la commune, la date de la vente, la mise à prix et le niveau de vérification."}
               </p>
             </div>
             <div className={`${styles.tier} ${styles.tierFree}`}>
