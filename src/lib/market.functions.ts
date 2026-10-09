@@ -35,7 +35,12 @@ import { fetchCadastreSurfaceAtPoint } from "@/lib/market-cadastre";
 //   4. Base parcellaire : la dernière vente bâtie de CHAQUE parcelle du rayon
 //      (une seule par parcelle) → fourchette de prix au m² (p25 / médiane / p75).
 
-const CEREMA_BASE = "https://apidf-preprod.cerema.fr/dvf_opendata/geomutations/";
+// Cerema publishes its open DVF+ API under this host (its own `next` links point
+// to it); no other public host exists. Overridable should that change.
+const CEREMA_BASE =
+  process.env.CEREMA_DVF_BASE_URL?.trim() ||
+  "https://apidf-preprod.cerema.fr/dvf_opendata/geomutations/";
+const DVF_REVALIDATE_SECONDS = 7 * 24 * 60 * 60;
 const GEO_COMMUNES = "https://geo.api.gouv.fr/communes";
 const GEO_GEOCODING = "https://data.geopf.fr/geocodage/search";
 const DVF_USER_AGENT = "immojudis/1.0 (+https://immojudis-dezt.vercel.app/contact)";
@@ -509,6 +514,7 @@ async function fetchDvfPage(
     try {
       const response = await fetch(url, {
         cache: "force-cache",
+        next: { revalidate: DVF_REVALIDATE_SECONDS },
         headers: { Accept: "application/json", "User-Agent": DVF_USER_AGENT },
         signal: AbortSignal.timeout(12_000),
       });

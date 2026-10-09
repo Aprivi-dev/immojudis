@@ -337,6 +337,9 @@ async function fetchOfficialCommuneYear(
       const response = await fetch(url, {
         headers: { Accept: "text/csv", "User-Agent": "immojudis/1.0" },
         cache: "force-cache",
+        // DVF is republished twice a year: a week keeps answers fresh without
+        // pinning a page to the first response forever.
+        next: { revalidate: 7 * 24 * 60 * 60 },
         signal: AbortSignal.timeout(12_000),
       });
       if (response.status === 404) return { ok: true, rows: [] };
