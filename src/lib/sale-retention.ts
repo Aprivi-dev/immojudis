@@ -1,3 +1,4 @@
+import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 type Result<T> = { data: T | null; error: { message?: string } | null };

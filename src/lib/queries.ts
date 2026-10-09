@@ -2,12 +2,13 @@ import { saleDateBoundary } from "./search/sale-date-range";
 import { supabase } from "@/integrations/supabase/client";
 import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
 import type { AuctionSale, SaleFilters, SortKey } from "./types";
+import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "./sale-views";
 import { assertCloudConfigured } from "./query-configuration";
 import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
 export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
 export type { CreateAlertPayload } from "./alert-queries";
+export { DETAIL_VIEW, SALE_LIST_COLUMNS };
 
-export const DETAIL_VIEW = "v_auction_sales_app";
 const DISCOVERY_VIEW = "v_auction_sales_discovery" as typeof DETAIL_VIEW;
 const SEARCH_VIEW = "v_auction_sales_app_search" as typeof DETAIL_VIEW;
 const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAIL_VIEW;
@@ -20,77 +21,6 @@ type SupabaseQueryError = {
 };
 
 type SupabaseReader = Pick<typeof supabase, "from">;
-
-export const SALE_LIST_COLUMNS = [
-  "source_checks",
-  "source_conflicts",
-  "analysis_status",
-  "source_presence",
-  "sale_procedure",
-  "sale_venue_type",
-  "sale_legal_framework",
-  "sale_verification_status",
-  "id",
-  "title",
-  "description",
-  "source_description",
-  "llm_display_description",
-  "about_description",
-  "city",
-  "department",
-  "postal_code",
-  "address",
-  "tribunal",
-  "tribunal_code",
-  "tribunal_name",
-  "tribunal_city",
-  "property_type",
-  "starting_price_eur",
-  "sale_date",
-  "visit_dates",
-  "lawyer_name",
-  "lawyer_contact",
-  "adjudication_price_eur",
-  "latitude",
-  "longitude",
-  "occupancy_status",
-  "surface_m2",
-  "habitable_surface_m2",
-  "carrez_surface_m2",
-  "land_surface_m2",
-  "app_surface_m2",
-  "app_surface_kind",
-  "surface_scope",
-  "surface_source",
-  "rooms_count",
-  "bedrooms_count",
-  "bathrooms_count",
-  "has_garden",
-  "has_terrace",
-  "has_garage",
-  "has_pool",
-  "has_air_conditioning",
-  "has_double_glazing",
-  "investment_score",
-  "score_confidence",
-  "surface_confidence",
-  "surface_evidence",
-  "risks",
-  "documents",
-  "documents_rich",
-  "media",
-  "source_name",
-  "source_url",
-  "primary_source",
-  "source_urls",
-  "source_blocks",
-  "source_blocks_by_source",
-  "dedupe_confidence",
-  "quality_flags",
-  "status",
-  "created_at",
-  "updated_at",
-].join(",");
 
 // Fields needed by the search result card only. Keep heavy descriptions,
 // documents, source payloads and analysis evidence on the detail route.

@@ -4,7 +4,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { DETAIL_VIEW } from "@/lib/queries";
+import { DETAIL_VIEW } from "@/lib/sale-views";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";

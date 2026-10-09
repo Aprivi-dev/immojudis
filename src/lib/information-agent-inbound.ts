@@ -1,3 +1,4 @@
+import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { Parser } from "htmlparser2";
 import { Resend, type AttachmentData, type EmailReceivedEvent } from "resend";

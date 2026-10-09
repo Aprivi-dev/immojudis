@@ -4,7 +4,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { DETAIL_VIEW } from "@/lib/queries";
+import { DETAIL_VIEW } from "@/lib/sale-views";
 import { getMeteostatHistoricalWeather, type MeteostatResult } from "@/lib/meteostat";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
