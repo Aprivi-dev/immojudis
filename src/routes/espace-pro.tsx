@@ -28,6 +28,7 @@ import {
   type PublicationRequestDetail,
   type PublicationRequestSummary,
 } from "@/lib/publication-requests-client";
+import { userMessage } from "@/lib/user-messages";
 
 export const Route = createFileRoute("/espace-pro")({
   head: () => ({
@@ -234,9 +235,7 @@ export function ProfessionalWorkspacePage() {
                   Impossible de charger vos demandes.
                 </div>
                 <p className="mt-2 text-xs leading-relaxed text-red-100/80">
-                  {requestsQuery.error instanceof Error
-                    ? requestsQuery.error.message
-                    : "Réessayez dans quelques instants."}
+                  {userMessage(requestsQuery.error, "Réessayez dans quelques instants.")}
                 </p>
               </div>
             ) : requests.length ? (
@@ -429,7 +428,7 @@ function RequestDetailPanel({
           </div>
         ) : error ? (
           <p className="mt-4 text-sm text-red-100">
-            {error instanceof Error ? error.message : "Impossible de charger les pièces."}
+            {userMessage(error, "Impossible de charger les pièces.")}
           </p>
         ) : detail?.documents.length ? (
           <div className="mt-4 grid gap-2">

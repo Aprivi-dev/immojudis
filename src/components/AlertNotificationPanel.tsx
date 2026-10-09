@@ -14,6 +14,7 @@ import {
 } from "@/lib/client-api";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
+import { userMessage } from "@/lib/user-messages";
 
 export default function AlertNotificationPanel({
   mobile,
@@ -52,7 +53,7 @@ export default function AlertNotificationPanel({
   const updateMutation = useMutation({
     mutationFn: updateAlertNotification,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: NOTIFICATION_QUERY_KEY }),
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(userMessage(error, "Action impossible")),
   });
   const preferencesMutation = useMutation({
     mutationFn: updateNotificationPreferences,
@@ -60,8 +61,7 @@ export default function AlertNotificationPanel({
       queryClient.invalidateQueries({ queryKey: ["notification-preferences", userId] });
       toast.success("Préférences mises à jour");
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Préférences impossibles"),
+    onError: (error) => toast.error(userMessage(error, "Préférences impossibles")),
   });
 
   return (

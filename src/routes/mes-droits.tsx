@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { createFileRoute, Link } from "@/lib/router-compat";
 import { createPrivacyRequestClient, fetchPrivacyRequests } from "@/lib/client-api";
 import type { PrivacyRequestType } from "@/lib/privacy-requests";
+import { userMessage } from "@/lib/user-messages";
 
 export const Route = createFileRoute("/mes-droits")({
   head: () => ({
@@ -83,7 +84,7 @@ export function RightsPage() {
       await queryClient.invalidateQueries({ queryKey: ["privacy-requests"] });
     },
     onError: (mutationError) => {
-      toast.error(mutationError instanceof Error ? mutationError.message : "Demande impossible");
+      toast.error(userMessage(mutationError, "Demande impossible"));
     },
   });
 
@@ -166,7 +167,7 @@ export function RightsPage() {
             {isLoading ? <p className="mt-5 text-sm text-muted-foreground">Chargement…</p> : null}
             {error ? (
               <p className="mt-5 text-sm text-red-200">
-                {error instanceof Error ? error.message : "Suivi indisponible"}
+                {userMessage(error, "Suivi indisponible")}
               </p>
             ) : null}
             {!isLoading && !data?.requests.length ? (

@@ -11,6 +11,7 @@ import {
   fetchSaleAnalysisSets,
 } from "@/lib/client-api";
 import { formatDate, formatPrice } from "@/lib/format";
+import { userMessage } from "@/lib/user-messages";
 import type {
   SaleAnalysisItem,
   SaleAnalysisSet,
@@ -376,7 +377,7 @@ function comparisonCountLabel(count: number, data: SaleAnalysisSetListResponse) 
 }
 
 function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
+  return userMessage(error, fallback);
 }
 
 function applyShareResponse(

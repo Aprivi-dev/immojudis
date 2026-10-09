@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { getAlerts, updateAlert, deleteAlert } from "@/lib/queries";
 import { fetchWatchedZones, deleteWatchedZone, evaluateAlertMatches } from "@/lib/client-api";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-messages";
 
 export function SavedAlerts() {
   const { user, loading } = useAuth();
@@ -32,8 +33,7 @@ function AccountAlerts({ userId }: { userId: string }) {
         client.invalidateQueries({ queryKey: zonesKey }),
       ]);
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Modification impossible"),
+    onError: (error) => toast.error(userMessage(error, "Modification impossible")),
   });
   const evaluation = useMutation({
     mutationFn: () => evaluateAlertMatches({ persist: true }),
@@ -43,8 +43,7 @@ function AccountAlerts({ userId }: { userId: string }) {
       );
       await client.invalidateQueries({ queryKey: alertsKey });
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Évaluation impossible"),
+    onError: (error) => toast.error(userMessage(error, "Évaluation impossible")),
   });
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-4 pb-16 pt-28">

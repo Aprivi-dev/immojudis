@@ -18,6 +18,7 @@ import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { fetchLawyerDirectory } from "@/lib/client-api";
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { createFileRoute, Link } from "@/lib/router-compat";
+import { userMessage } from "@/lib/user-messages";
 
 type DirectorySearch = {
   saleId?: string;
@@ -60,8 +61,7 @@ export function LawyerDirectoryPage() {
     queryFn: () => fetchLawyerDirectory(search),
     staleTime: 5 * 60_000,
   });
-  const errorMessage =
-    directoryQuery.error instanceof Error ? directoryQuery.error.message : "Annuaire indisponible";
+  const errorMessage = userMessage(directoryQuery.error, "Annuaire indisponible");
 
   return (
     <main className="min-h-screen bg-[#eef7ff] text-brand-navy">

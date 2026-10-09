@@ -7,6 +7,7 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import { userMessage } from "@/lib/user-messages";
 import { supabase } from "@/integrations/supabase/client";
 
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
@@ -716,5 +717,5 @@ function formatBytes(value: number): string {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
+  return userMessage(error, fallback);
 }

@@ -18,7 +18,10 @@ export async function readJson<T>(response: Response): Promise<T> {
   const payload = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
 
   if (!response.ok) {
-    throw new Error(payload?.error ?? `Erreur HTTP ${response.status}`);
+    // Le statut accompagne l'erreur pour que userMessage() choisisse la bonne phrase (429, 401, 5xx).
+    throw Object.assign(new Error(payload?.error ?? `Erreur HTTP ${response.status}`), {
+      status: response.status,
+    });
   }
 
   return payload as T;
