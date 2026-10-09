@@ -2,8 +2,8 @@
 
 import { createFileRoute, Link } from "@/lib/router-compat";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
-import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
-import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import { ContactForm } from "@/components/ContactForm";
+import { Card, PageShell } from "@/components/ui/primitives";
 import { publicLegalPublisher } from "@/lib/legal-documents";
 
 export const Route = createFileRoute("/contact")({
@@ -22,110 +22,87 @@ export const Route = createFileRoute("/contact")({
 export function ContactPage() {
   const publisher = publicLegalPublisher();
   return (
-    <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
-      <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_24rem] lg:items-stretch">
-        <section className="glass-shell rounded-lg p-6 sm:p-8">
-          <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
-            <ShieldCheck className="h-4 w-4" />
-            Support Immojudis
+    <PageShell
+      eyebrow="Contact"
+      title="Une question sur une vente, un accès ou vos données ?"
+      description="Écrivez-nous : nous répondons par email. Si votre question concerne une annonce, indiquez son adresse ou son identifiant pour accélérer la réponse."
+      width="wide"
+    >
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+        <Card as="section" aria-labelledby="contact-form-title">
+          <h2 id="contact-form-title" className="font-display text-2xl font-semibold">
+            Envoyer un message
+          </h2>
+          <div className="mt-4">
+            <ContactForm />
           </div>
-          <h1 className="mt-4 font-display text-4xl leading-tight text-foreground sm:text-5xl">
-            Une question sur un dossier, une source ou un accès ?
-          </h1>
-          <p className="mt-5 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-            Pour une question sur une annonce, une source documentaire ou un accès Analyse, préparez
-            l'identifiant de la vente concernée afin de faciliter le traitement.
-          </p>
+        </Card>
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
-            <div className="liquid-panel-soft rounded-lg p-5">
-              <FileSearch className="h-5 w-5 text-gold-text" />
-              <h2 className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
-                Découverte / Analyse
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Centralisez vos biens à suivre depuis les favoris et revenez avec l'identifiant de
-                vente si une lecture semble incohérente.
-              </p>
-              <Link
-                to="/sales"
-                className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text hover:text-gold-text"
-              >
-                Parcourir les annonces <ArrowUpRight className="h-4 w-4" />
-              </Link>
-            </div>
-            <div className="liquid-panel-soft rounded-lg p-5">
-              <ShieldCheck className="h-5 w-5 text-gold-text" />
-              <h2 className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
-                Professionnel
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Pour préparer une publication, l'espace pro permet déjà de structurer une annonce
-                premium et ses pièces.
-              </p>
-              <Link
-                to="/publish"
-                className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text hover:text-gold-text"
-              >
-                Préparer une annonce <ArrowUpRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </div>
-
-          <div className="liquid-panel-soft mt-4 rounded-lg p-5">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
-              Contacter le support
+        <div className="grid gap-4">
+          <Card as="section" aria-labelledby="contact-direct">
+            <h2 id="contact-direct" className="font-display text-xl font-semibold">
+              Par email ou par téléphone
             </h2>
             {publisher.contactEmail ? (
-              <a
-                className="mt-3 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-4 py-2 text-sm font-semibold text-white"
-                href={`mailto:${publisher.contactEmail}?subject=${encodeURIComponent("Question sur Immojudis")}`}
-              >
-                Écrire au support — {publisher.contactEmail}
-              </a>
+              <p className="mt-2 text-sm">
+                <a
+                  className="font-semibold text-gold-text underline"
+                  href={`mailto:${publisher.contactEmail}?subject=${encodeURIComponent("Question sur Immojudis")}`}
+                >
+                  {publisher.contactEmail}
+                </a>
+              </p>
             ) : (
-              <p role="status" className="mt-2 text-sm leading-relaxed text-brand-navy">
-                Le contact support n’est pas encore disponible. Les coordonnées seront publiées ici
-                avant l’ouverture des achats Analyse.
+              <p className="mt-2 text-sm text-ink-soft">
+                Les coordonnées directes seront publiées ici avant l’ouverture des achats Analyse.
+                Le formulaire reste le moyen le plus simple de nous écrire.
               </p>
             )}
             {publisher.contactPhone ? (
-              <p className="mt-3 text-sm">
+              <p className="mt-2 text-sm">
                 Téléphone :{" "}
                 <a
-                  className="underline"
+                  className="font-semibold text-gold-text underline"
                   href={`tel:${publisher.contactPhone.replace(/[^+\d]/g, "")}`}
                 >
                   {publisher.contactPhone}
                 </a>
               </p>
             ) : null}
-            <h3 className="mt-5 text-sm font-semibold text-foreground">Exercice des droits</h3>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Pour une demande RGPD ou une rétractation, utilisez l’espace authentifié afin
-              d’obtenir un numéro de suivi et une échéance.
+          </Card>
+
+          <Card as="section" aria-labelledby="contact-rights">
+            <h2 id="contact-rights" className="font-display text-xl font-semibold">
+              Exercer vos droits
+            </h2>
+            <p className="mt-2 text-sm text-ink-soft">
+              Pour une demande sur vos données personnelles ou une rétractation, utilisez l’espace
+              connecté : vous obtenez un numéro de suivi et une échéance.
             </p>
             <Link
               to="/mes-droits"
-              className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text hover:text-gold-text"
+              className="mt-3 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-gold-text underline"
             >
-              Ouvrir Mes droits <ArrowUpRight className="h-4 w-4" />
+              Ouvrir Mes droits <ArrowUpRight className="size-4" aria-hidden />
             </Link>
-          </div>
-        </section>
+          </Card>
 
-        <aside className="glass-shell relative min-h-[28rem] overflow-hidden rounded-lg p-6">
-          <div className="cinematic-grid absolute inset-0 opacity-35" />
-          <div className="relative z-10">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-text">
-              Signal Immojudis
-            </div>
-            <p className="mt-4 max-w-xs font-display text-2xl leading-tight text-foreground">
-              Un bon support commence par une preuve claire.
+          <Card as="section" aria-labelledby="contact-pro">
+            <h2 id="contact-pro" className="font-display text-xl font-semibold">
+              Vous êtes professionnel ?
+            </h2>
+            <p className="mt-2 text-sm text-ink-soft">
+              L’espace professionnel permet de préparer une annonce et ses pièces.
             </p>
-          </div>
-        </aside>
+            <Link
+              to="/publish"
+              className="mt-3 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-gold-text underline"
+            >
+              Préparer une annonce <ArrowUpRight className="size-4" aria-hidden />
+            </Link>
+          </Card>
+        </div>
       </div>
-    </main>
+    </PageShell>
   );
 }
