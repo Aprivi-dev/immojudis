@@ -287,7 +287,6 @@ export function buildAlertNotificationRows({
       const frequency = frequencyByAlert.get(match.alertId) ?? "daily";
       const notificationKind = notificationKindForFrequency(frequency);
       const scheduledFor = scheduledForFrequency(frequency, now);
-      const isInstant = frequency === "instant";
       const snapshot = asJson({
         ...buildNotificationSnapshot({
           match: discovery
@@ -309,9 +308,9 @@ export function buildAlertNotificationRows({
         sale_id: match.saleId,
         notification_kind: notificationKind,
         delivery_channel: "in_app",
-        delivery_status: isInstant ? "sent" : "queued",
+        delivery_status: "queued",
         scheduled_for: scheduledFor,
-        sent_at: isInstant ? now.toISOString() : null,
+        sent_at: null,
         notification_snapshot: snapshot,
       };
 
@@ -396,7 +395,7 @@ export function buildAlertNotificationDispatchPatch(now = new Date()): Notificat
 export function notificationKindForFrequency(
   frequency: UserAlert["alert_frequency"],
 ): AlertNotificationKind {
-  if (frequency === "instant") return "instant_match";
+  // "instant" was never delivered in real time: it is folded into the daily digest.
   if (frequency === "weekly") return "weekly_digest";
   return "daily_digest";
 }
@@ -405,8 +404,6 @@ export function scheduledForFrequency(
   frequency: UserAlert["alert_frequency"],
   now = new Date(),
 ): string {
-  if (frequency === "instant") return now.toISOString();
-
   const scheduled = new Date(now);
   if (frequency === "weekly") {
     const day = scheduled.getUTCDay();
