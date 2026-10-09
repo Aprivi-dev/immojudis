@@ -17,9 +17,7 @@ export function SaleTypeFilter({
       </legend>
       <div
         className={
-          compact
-            ? "flex items-center gap-1.5 overflow-x-auto pb-1"
-            : "flex flex-wrap items-center gap-2"
+          compact ? "flex flex-wrap items-center gap-1.5" : "flex flex-wrap items-center gap-2"
         }
       >
         {[{ value: "" as const, label: "Toutes" }, ...SALE_TYPE_OPTIONS].map((option) => (

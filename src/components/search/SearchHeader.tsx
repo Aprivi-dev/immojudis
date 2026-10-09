@@ -233,10 +233,41 @@ export function GeographicSearch({
 export function PriceFilter({
   draft,
   setDraft,
+  stacked = false,
 }: {
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
+  /** Dans le panneau de filtres : un libellé visible au-dessus de chaque champ. */
+  stacked?: boolean;
 }) {
+  if (stacked) {
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        <StackedField label="Minimum (€)">
+          <input
+            inputMode="numeric"
+            value={draft.minPrice}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, minPrice: event.target.value }))
+            }
+            placeholder="Aucun"
+            className="form-input h-11"
+          />
+        </StackedField>
+        <StackedField label="Maximum (€)">
+          <input
+            inputMode="numeric"
+            value={draft.maxPrice}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, maxPrice: event.target.value }))
+            }
+            placeholder="Aucun"
+            className="form-input h-11"
+          />
+        </StackedField>
+      </div>
+    );
+  }
   return (
     <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white shadow-sm">
       <span className="px-3 text-sm font-bold text-brand-navy">Mise à prix</span>
@@ -260,13 +291,52 @@ export function PriceFilter({
   );
 }
 
+function StackedField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="font-semibold text-brand-navy">{label}</span>
+      {children}
+    </label>
+  );
+}
+
 export function BedsBathsFilter({
   draft,
   setDraft,
+  stacked = false,
 }: {
   draft: SearchDraft;
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
+  stacked?: boolean;
 }) {
+  if (stacked) {
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        <StackedField label="Chambres minimum">
+          <input
+            inputMode="numeric"
+            value={draft.minBeds}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, minBeds: event.target.value }))
+            }
+            placeholder="Aucun"
+            className="form-input h-11"
+          />
+        </StackedField>
+        <StackedField label="Salles de bain minimum">
+          <input
+            inputMode="numeric"
+            value={draft.minBaths}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, minBaths: event.target.value }))
+            }
+            placeholder="Aucun"
+            className="form-input h-11"
+          />
+        </StackedField>
+      </div>
+    );
+  }
   return (
     <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white shadow-sm">
       <span className="px-3 text-sm font-bold text-brand-navy">Chambres / bains</span>
@@ -541,15 +611,17 @@ export function InlineTextFilter({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-line px-3">
-      <Icon className="h-4 w-4 shrink-0" />
-      <span className="sr-only">{label}</span>
-      <input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none"
-      />
+    <label className="grid min-w-0 gap-1.5 text-sm">
+      <span className="font-semibold text-brand-navy">{label}</span>
+      <span className="flex min-h-11 min-w-0 items-center gap-2 rounded-md border border-line px-3 focus-within:ring-2 focus-within:ring-gold">
+        <Icon className="h-4 w-4 shrink-0" />
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none"
+        />
+      </span>
     </label>
   );
 }

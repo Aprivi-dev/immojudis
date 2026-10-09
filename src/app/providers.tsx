@@ -2,10 +2,10 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, useState } from "react";
-import { Toaster } from "sonner";
 import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
 import { SiteFooter } from "@/components/SiteFooter";
+import { AppToaster } from "@/components/AppToaster";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -24,7 +24,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           </Suspense>
           {children}
           <SiteFooter />
-          <Toaster position="top-right" richColors />
+          <AppToaster />
         </div>
       </AuthProvider>
     </QueryClientProvider>

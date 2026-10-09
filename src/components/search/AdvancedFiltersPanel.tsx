@@ -123,14 +123,16 @@ export function MobileFilterDrawer({
           />
         </div>
         <div className="mb-5 grid gap-4 sm:grid-cols-2">
-          <div>
-            <p className="mb-2 text-sm font-semibold">Mise à prix</p>
-            <PriceFilter draft={draft} setDraft={setDraft} />
-          </div>
-          <div>
-            <p className="mb-2 text-sm font-semibold">Chambres et salles de bains</p>
-            <BedsBathsFilter draft={draft} setDraft={setDraft} />
-          </div>
+          <fieldset className="min-w-0">
+            <legend className="mb-2 text-sm font-extrabold text-brand-navy">Mise à prix</legend>
+            <PriceFilter stacked draft={draft} setDraft={setDraft} />
+          </fieldset>
+          <fieldset className="min-w-0">
+            <legend className="mb-2 text-sm font-extrabold text-brand-navy">
+              Chambres et salles de bain
+            </legend>
+            <BedsBathsFilter stacked draft={draft} setDraft={setDraft} />
+          </fieldset>
           <InlineTextFilter
             label="Ville"
             icon={MapPin}
@@ -286,8 +288,8 @@ export function MobileFilterDrawer({
                 Maison avec terrain
               </label>
               <div>
-                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-ink-soft">
-                  DPE
+                <span className="mb-2 block text-sm font-semibold text-brand-navy">
+                  Classe énergétique (DPE)
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {DPE_CLASSES.map((dpeClass) => (
@@ -416,9 +418,7 @@ export function AdvancedGroup({
 export function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="space-y-1">
-      <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-ink-soft">
-        {label}
-      </span>
+      <span className="block text-sm font-semibold text-brand-navy">{label}</span>
       {children}
     </label>
   );
