@@ -24,6 +24,7 @@ const AUTH_NAV_ITEMS = [
   { to: "/favoris", label: "Mes favoris" },
   { to: "/alertes", label: "Mes alertes" },
   { to: "/comparaisons", label: "Mes comparaisons" },
+  { to: "/compte", label: "Mon compte" },
   { to: "/sales", label: "Annonces" },
   { to: "/tribunaux", label: "Statistiques Tribunaux" },
   { to: "/avocats", label: "Avocats" },

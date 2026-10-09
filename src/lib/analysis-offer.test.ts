@@ -14,12 +14,12 @@ describe("approved Analyse offer", () => {
     expect(ANALYSIS_RECURRING_CURRENCY).toBe("eur");
     expect(ANALYSIS_RECURRING_INTERVAL).toBe("month");
     expect(ANALYSIS_RECURRING_INTERVAL_COUNT).toBe(1);
-    expect(DEFAULT_ANALYSIS_OFFER_LABEL).toBe("29 € / mois");
+    expect(DEFAULT_ANALYSIS_OFFER_LABEL).toBe("29 € TTC / mois");
   });
 
   it("falls back to the approved public label when no override is set", () => {
-    expect(resolveAnalysisOfferLabel(null)).toBe("29 € / mois");
-    expect(resolveAnalysisOfferLabel("  ")).toBe("29 € / mois");
+    expect(resolveAnalysisOfferLabel(null)).toBe("29 € TTC / mois");
+    expect(resolveAnalysisOfferLabel("  ")).toBe("29 € TTC / mois");
     expect(resolveAnalysisOfferLabel("29 € / mois")).toBe("29 € / mois");
   });
 });

@@ -19,7 +19,7 @@ export const ANALYSIS_BILLING_MODEL = "subscription_trial_7_days" as const;
 export const ANALYSIS_SUBSCRIPTION_OFFER_CODE = "analyse_subscription_recurring" as const;
 export const ANALYSIS_SUBSCRIPTION_BILLING_MODEL = "subscription_recurring" as const;
 
-export const DEFAULT_ANALYSIS_OFFER_LABEL = "29 € / mois";
+export const DEFAULT_ANALYSIS_OFFER_LABEL = "29 € TTC / mois";
 
 export function resolveAnalysisOfferLabel(
   value: string | undefined | null = process.env.NEXT_PUBLIC_ANALYSIS_OFFER_LABEL,
