@@ -178,7 +178,7 @@ export function LoginPage() {
           <div className="cinematic-grid absolute inset-0 opacity-35" />
           <div className="absolute inset-x-10 top-16 h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
           <div className="relative z-10 max-w-xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-soft">
+            <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-text">
               <ShieldCheck className="h-3.5 w-3.5" />
               Accès Immojudis
             </div>
@@ -243,7 +243,7 @@ export function LoginPage() {
             </ModeButton>
           </div>
 
-          <div className="mt-6 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-gold">
+          <div className="mt-6 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-text">
             {mode === "professional" ? (
               <BriefcaseBusiness className="h-4 w-4" />
             ) : mode === "investor" ? (
@@ -315,7 +315,7 @@ export function LoginPage() {
                     />
                   </div>
                 </label>
-                <div className="rounded-lg border border-gold/20 bg-gold/10 px-4 py-3 text-xs leading-relaxed text-gold-soft">
+                <div className="rounded-lg border border-gold/20 bg-gold/10 px-4 py-3 text-xs leading-relaxed text-gold-text">
                   L'accès pro permet de préparer une annonce. La publication et les options de
                   référencement pourront être validées séparément.
                 </div>
@@ -385,7 +385,7 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={busy}
-              className="liquid-button inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold text-brand-navy transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+              className="liquid-button inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? "Chargement..." : copy.submit}
               {!busy ? <ArrowRight className="h-4 w-4" /> : null}
@@ -469,7 +469,7 @@ function FeatureLine({
 }) {
   return (
     <div className="liquid-panel-soft flex items-start gap-3 rounded-lg p-4">
-      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-gold" />
+      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-gold-text" />
       <div>
         <div className="text-sm font-semibold text-foreground">{title}</div>
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{text}</p>

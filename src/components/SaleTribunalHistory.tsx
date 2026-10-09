@@ -74,7 +74,7 @@ export function SaleTribunalHistory({
     >
       <div className="mx-auto max-w-[1260px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <div>
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             <Landmark className="h-4 w-4" aria-hidden />
             Statistiques des ventes judiciaires
           </p>
@@ -112,7 +112,7 @@ export function SaleTribunalHistory({
             </p>
             <a
               href="/accompagnement"
-              className="mt-3 inline-block text-sm font-semibold text-gold-soft underline underline-offset-4"
+              className="mt-3 inline-block text-sm font-semibold text-gold-text underline underline-offset-4"
             >
               Découvrir l’offre Analyse
             </a>
@@ -192,7 +192,7 @@ export function SaleTribunalHistory({
           </div>
           <a
             href="/tribunaux"
-            className="inline-flex min-h-10 shrink-0 items-center gap-2 text-xs font-semibold text-gold-soft hover:text-gold"
+            className="inline-flex min-h-10 shrink-0 items-center gap-2 text-xs font-semibold text-gold-text hover:text-gold-text"
           >
             Explorer tous les tribunaux
             <ArrowUpRight className="h-4 w-4" aria-hidden />
@@ -227,14 +227,14 @@ function AdjudicationPriceStatistics({
   );
   return (
     <div className="mt-10 border-t border-brand-navy/12 pt-8">
-      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
         <BadgeEuro className="h-4 w-4" aria-hidden />
         Résultats d’adjudication · Offre Analyse
       </p>
       <h3 className="mt-2 font-display text-2xl font-semibold text-brand-navy sm:text-3xl">
         Du prix de départ au prix adjugé
       </h3>
-      <p className="mt-3 max-w-3xl text-sm leading-relaxed text-brand-navy/62">
+      <p className="mt-3 max-w-3xl text-sm leading-relaxed text-brand-navy/65">
         Prix déclarés par Licitor, source tierce non officielle. Ils ne sont pas vérifiés auprès du
         greffe et ne prouvent pas le caractère définitif de la vente. Les ventes sans prix publié,
         les issues inconnues et les carences ne font pas partie de cet échantillon. Le type de bien
@@ -484,7 +484,7 @@ function AdjudicationPriceScope({
       {scope.propertyTypes?.length ? (
         <div className="mt-6">
           <h5 className="font-semibold text-brand-navy">Repères par type de bien</h5>
-          <p className="mt-1 text-xs text-brand-navy/60">
+          <p className="mt-1 text-xs text-brand-navy/65">
             Types comptant au moins 10 résultats. Les fourchettes couvrent les 50 % centraux, sans
             constituer une estimation du bien.
           </p>
@@ -529,7 +529,7 @@ function ScopeHeading({ level, title }: { level: string; title: string }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">{level}</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">{level}</p>
         <h3 className="mt-2 font-display text-2xl font-semibold text-brand-navy sm:text-3xl">
           {title}
         </h3>
@@ -542,7 +542,7 @@ function NationalActivity({ data }: { data: TribunalJudicialActivityDirectoryRes
   const { national, period } = data;
   return (
     <>
-      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
         Historique observé
       </p>
       <dl className="mt-6 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 lg:grid-cols-4">
@@ -569,7 +569,7 @@ function NationalActivity({ data }: { data: TribunalJudicialActivityDirectoryRes
         />
       </dl>
 
-      <p className="mt-6 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+      <p className="mt-6 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
         Pipeline à venir
       </p>
       <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 lg:grid-cols-4">
@@ -642,7 +642,7 @@ function JudicialActivity({
   return (
     <>
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <p className="max-w-3xl text-sm leading-relaxed text-brand-navy/62">
+        <p className="max-w-3xl text-sm leading-relaxed text-brand-navy/65">
           Activité des annonces rattachées exactement à {court.name}
           {court.judicialRegion ? `, ressort de ${court.judicialRegion}` : ""}. Les rattachements
           incertains et les annonces en conflit sont exclus.
@@ -664,7 +664,7 @@ function JudicialActivity({
         </div>
       ) : null}
 
-      <p className="mt-6 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+      <p className="mt-6 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
         Historique observé
       </p>
       <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-3">
@@ -686,7 +686,7 @@ function JudicialActivity({
         />
       </dl>
 
-      <p className="mt-7 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+      <p className="mt-7 text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
         Pipeline à venir
       </p>
       <dl className="mt-3 grid overflow-hidden rounded-lg border border-brand-navy/12 bg-[#f8fbfe] sm:grid-cols-2 lg:grid-cols-4">
@@ -773,7 +773,7 @@ function HistoryMetric({
         {label}
       </dt>
       <dd
-        className={`mt-3 font-display text-3xl font-semibold tabular-nums ${accent ? "text-gold-soft" : "text-brand-navy"}`}
+        className={`mt-3 font-display text-3xl font-semibold tabular-nums ${accent ? "text-gold-text" : "text-brand-navy"}`}
       >
         {value}
       </dd>
@@ -793,7 +793,7 @@ function ActivityFact({
 }) {
   return (
     <div className="flex gap-3">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" aria-hidden />
+      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" aria-hidden />
       <div>
         <dt className="text-xs text-brand-navy/70">{label}</dt>
         <dd className="mt-1 text-sm font-semibold text-brand-navy">{value}</dd>
@@ -849,12 +849,12 @@ function ScopeUnavailable({
 }) {
   return (
     <div className="mt-5 flex gap-4 border-y border-brand-navy/10 bg-[#f8fbfe] px-4 py-5">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-soft">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-text">
         <BarChart3 className="h-5 w-5" aria-hidden />
       </span>
       <div>
         <p className="font-semibold text-brand-navy">{title}</p>
-        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-brand-navy/62">{detail}</p>
+        <p className="mt-1 max-w-3xl text-sm leading-relaxed text-brand-navy/65">{detail}</p>
         {onRetry ? (
           <button
             type="button"

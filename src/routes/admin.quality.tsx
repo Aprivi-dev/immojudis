@@ -112,7 +112,7 @@ export function AdminQualityPage() {
         <div className="mt-6 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
           <section className="liquid-panel rounded-lg p-5">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <AlertTriangle className="h-4 w-4 text-gold" />
+              <AlertTriangle className="h-4 w-4 text-gold-text" />
               Points à surveiller
             </div>
             <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
@@ -300,7 +300,7 @@ function QualityMetric({
   return (
     <div className="liquid-panel-soft rounded-lg p-4">
       <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-        <span className="text-gold [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
+        <span className="text-gold-text [&>svg]:h-4 [&>svg]:w-4">{icon}</span>
         {label}
       </div>
       <div className="mt-3 text-2xl font-semibold tabular-nums text-foreground">{value}</div>
@@ -322,7 +322,7 @@ function WeakSaleLine({ sale }: { sale: DataQualityPrioritySale }) {
     <Link
       to="/sales/$id"
       params={{ id: sale.id }}
-      className="flex items-center justify-between gap-4 py-3 text-sm transition hover:text-gold-soft"
+      className="flex items-center justify-between gap-4 py-3 text-sm transition hover:text-gold-text"
     >
       <span className="min-w-0">
         <span className="block truncate font-medium text-foreground">

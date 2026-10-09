@@ -81,7 +81,7 @@ export function SearchHeader({
           aria-label="ImmoJudis — accueil"
           className="shrink-0 font-display text-2xl font-semibold tracking-tight text-[#132238]"
         >
-          Immo<span className="text-[#9c642b]">Judis</span>
+          Immo<span className="text-gold-text">Judis</span>
         </Link>
         {isDesktop ? (
           <div className="flex min-w-0 max-w-md flex-1">
@@ -318,7 +318,7 @@ export function HomeTypeFilter({
 }) {
   return (
     <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-[#cbd5df] bg-white shadow-sm">
-      <Building2 className="ml-3 h-4 w-4 text-[#667482]" />
+      <Building2 className="ml-3 h-4 w-4 text-[#5b6878]" />
       <span className="sr-only">Type de bien</span>
       <select
         value={draft.homeTypes[0] ?? "all"}
@@ -337,7 +337,7 @@ export function HomeTypeFilter({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-[#667482]" />
+      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-[#5b6878]" />
     </label>
   );
 }
@@ -355,7 +355,7 @@ export function SortDropdown({
 }) {
   return (
     <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-[#cbd5df] bg-white shadow-sm">
-      <ArrowUpDown className="ml-3 h-4 w-4 text-[#667482]" />
+      <ArrowUpDown className="ml-3 h-4 w-4 text-[#5b6878]" />
       <span className="sr-only">Tri</span>
       <select
         value={sort}
@@ -372,7 +372,7 @@ export function SortDropdown({
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-[#667482]" />
+      <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-[#5b6878]" />
     </label>
   );
 }
@@ -422,7 +422,7 @@ export function CsvExportButton({
       title={locked ? "Export CSV réservé au plan Analyse" : "Exporter les résultats en CSV"}
       className={`inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm font-extrabold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60 ${
         locked
-          ? "border-[#d6e0dc] bg-white text-[#667482]"
+          ? "border-[#d6e0dc] bg-white text-[#5b6878]"
           : "border-[#0f766e] bg-white text-[#0f766e] hover:bg-[#eefaf3]"
       }`}
     >
@@ -469,7 +469,7 @@ export function ResultsSummary({
   const location = search.city || search.department || search.query || "France entière";
   return (
     <div className="min-w-0 px-4 py-4 sm:px-5" aria-live="polite">
-      <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-[#92724d]">
+      <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gold-text">
         Le catalogue des enchères
       </p>
       <h1 className="font-display text-[1.65rem] font-semibold leading-tight">

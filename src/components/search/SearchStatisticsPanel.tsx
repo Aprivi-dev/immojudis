@@ -40,7 +40,7 @@ export function SearchStatisticsPanel({
         <h2 className="text-sm font-bold text-[#132238]">
           Repérez un bien, puis préparez votre analyse
         </h2>
-        <p className="mt-1 text-sm leading-relaxed text-[#667482]">
+        <p className="mt-1 text-sm leading-relaxed text-[#5b6878]">
           Le compte gratuit ouvre la fiche et la localisation complète. Analyse ajoute les
           comparables, les risques et le calcul de votre mise plafond.
         </p>
@@ -86,7 +86,7 @@ export function SearchStatisticsPanel({
           Repères sur votre recherche
         </div>
         {locked ? (
-          <span className="inline-flex items-center gap-1 rounded-md border border-[#ead8c5] bg-[#fffaf2] px-2 py-1 text-[10px] font-bold text-[#8a5b24]">
+          <span className="inline-flex items-center gap-1 rounded-md border border-[#ead8c5] bg-[#fffaf2] px-2 py-1 text-[10px] font-bold text-gold-text">
             <LockKeyhole className="h-3 w-3" />
             Analyse
           </span>
@@ -98,7 +98,7 @@ export function SearchStatisticsPanel({
             key={item.label}
             className="min-w-0 rounded-md border border-[#dce7ee] bg-[#f8fbfd] px-3 py-2"
           >
-            <dt className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#667482]">
+            <dt className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#5b6878]">
               <span className="text-[#0f766e]">{item.icon}</span>
               {item.label}
             </dt>
@@ -162,7 +162,7 @@ export function SearchStatisticsPanel({
                         >
                           {cleanSaleTitle(item.title) ?? "Vente judiciaire"}
                         </Link>
-                        <div className="mt-0.5 text-[#667482]">
+                        <div className="mt-0.5 text-[#5b6878]">
                           {[item.city, item.department, propertyTypeLabel(item.propertyType)]
                             .filter(Boolean)
                             .join(" · ")}
@@ -175,7 +175,7 @@ export function SearchStatisticsPanel({
                   ))}
                 </div>
               ) : (
-                <p className="mt-3 border-t border-[#132238]/10 pt-3 text-xs text-[#667482]">
+                <p className="mt-3 border-t border-[#132238]/10 pt-3 text-xs text-[#5b6878]">
                   Aucun DPE repéré avec ces filtres.
                 </p>
               )}
@@ -192,7 +192,7 @@ export function SearchStatisticsPanel({
 export function DpeExplorerMetric({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#667482]">{label}</div>
+      <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#5b6878]">{label}</div>
       <div className="mt-1 text-sm font-extrabold tabular-nums text-[#132238]">
         {value.toLocaleString("fr-FR")}
       </div>

@@ -100,7 +100,7 @@ export function Navbar() {
             >
               <BrandMark variant="transparent" className="h-7 w-7" />
               <span>
-                Immo<span className="text-[#8a5b24]">Judis</span>
+                Immo<span className="text-gold-text">Judis</span>
               </span>
             </Link>
 
@@ -146,7 +146,7 @@ export function Navbar() {
                   <button
                     type="button"
                     onClick={() => supabase.auth.signOut()}
-                    className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-gold/50 hover:text-gold-soft"
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-gold/50 hover:text-gold-text"
                   >
                     <LogOut className="h-3.5 w-3.5" />
                     Déconnexion
@@ -157,14 +157,14 @@ export function Navbar() {
                   <Link
                     to="/login"
                     search={{ redirect: undefined }}
-                    className="rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-gold/50 hover:text-gold-soft"
+                    className="rounded-md border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-gold/50 hover:text-gold-text"
                   >
                     Connexion
                   </Link>
                   <Link
                     to="/login"
                     search={{ mode: "investor", redirect: undefined }}
-                    className="rounded-md bg-gold-soft px-3 py-2 text-sm font-semibold text-white hover:bg-gold"
+                    className="rounded-md bg-gold-soft px-3 py-2 text-sm font-semibold text-white hover:bg-gold-text"
                   >
                     S'inscrire
                   </Link>
@@ -531,8 +531,8 @@ function NavLink({
     <Link
       to={to}
       activeOptions={{ exact: true }}
-      className="rounded-full px-3 py-2 transition-colors hover:bg-[#c98d45]/10 hover:text-[#8a5b24]"
-      activeProps={{ className: "bg-[#c98d45]/10 text-[#8a5b24]" }}
+      className="rounded-full px-3 py-2 transition-colors hover:bg-[#c98d45]/10 hover:text-gold-text"
+      activeProps={{ className: "bg-[#c98d45]/10 text-gold-text" }}
     >
       {children}
       {chevron ? <ChevronDown aria-hidden className="h-4 w-4" /> : null}
@@ -554,8 +554,8 @@ function MobileNavLink({
       to={to}
       onClick={onClick}
       activeOptions={{ exact: true }}
-      className="border-b border-[rgb(19_34_56_/_8%)] py-4 transition-colors hover:text-[#8a5b24]"
-      activeProps={{ className: "text-[#8a5b24]" }}
+      className="border-b border-[rgb(19_34_56_/_8%)] py-4 transition-colors hover:text-gold-text"
+      activeProps={{ className: "text-gold-text" }}
     >
       {children}
     </Link>

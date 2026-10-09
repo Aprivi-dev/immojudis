@@ -192,7 +192,7 @@ function AdminSidebarContent({
       <Link
         to="/"
         onClick={onNavigate}
-        className="shrink-0 px-6 pb-8 pt-7 font-display text-[2rem] font-semibold leading-none text-[#d99549]"
+        className="shrink-0 px-6 pb-8 pt-7 font-display text-[2rem] font-semibold leading-none text-gold-text"
         aria-label="ImmoJudis — accueil"
       >
         ImmoJudis

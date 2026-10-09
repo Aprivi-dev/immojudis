@@ -56,7 +56,7 @@ export function AdminSubscriptionsPanel() {
     <section className="liquid-panel mt-6 rounded-lg p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
             <CreditCard className="h-4 w-4" />
             Accès payants
           </div>
@@ -69,7 +69,7 @@ export function AdminSubscriptionsPanel() {
         <button
           type="button"
           onClick={() => void subscriptionsQuery.refetch()}
-          className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold transition hover:border-gold"
+          className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
         >
           <RefreshCw
             className={`h-3.5 w-3.5 ${subscriptionsQuery.isFetching ? "animate-spin" : ""}`}
@@ -156,7 +156,7 @@ export function AdminSubscriptionsPanel() {
           <button
             type="submit"
             disabled={grantMutation.isPending}
-            className="liquid-button mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-background disabled:cursor-not-allowed disabled:opacity-60"
+            className="liquid-button mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save className="h-3.5 w-3.5" />
             {grantMutation.isPending ? "Attribution" : "Attribuer le plan"}

@@ -68,14 +68,14 @@ export function AccompagnementPage() {
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link
                 href="/annonce-exemple"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-gold-soft px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gold"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-gold-soft px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gold-text"
               >
                 Voir une analyse exemple
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
               <Link
                 to="/sales"
-                className="inline-flex min-h-12 items-center justify-center rounded-md border border-brand-navy/35 bg-white px-5 py-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-soft"
+                className="inline-flex min-h-12 items-center justify-center rounded-md border border-brand-navy/35 bg-white px-5 py-3 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-text"
               >
                 Explorer gratuitement
               </Link>
@@ -214,14 +214,14 @@ function DecisionEquation() {
             </span>
             <p
               className={`mt-3 text-xs font-semibold leading-tight sm:text-sm ${
-                item.accent ? "text-gold-soft" : "text-brand-navy"
+                item.accent ? "text-gold-text" : "text-brand-navy"
               }`}
             >
               {item.label}
             </p>
             {item.sign ? (
               <span
-                className="absolute -right-2 top-5 text-2xl font-semibold text-gold-soft"
+                className="absolute -right-2 top-5 text-2xl font-semibold text-gold-text"
                 aria-hidden
               >
                 {item.sign}
@@ -274,7 +274,7 @@ function PlanPanel({
         <ul className="mx-auto my-7 grid w-full max-w-md gap-3">
           {features.map((feature) => (
             <li key={feature} className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-3 text-sm">
-              <Check className="mt-0.5 h-4 w-4 text-gold-soft" aria-hidden />
+              <Check className="mt-0.5 h-4 w-4 text-gold-text" aria-hidden />
               <span className="leading-relaxed text-brand-navy/78">{feature}</span>
             </li>
           ))}
@@ -288,7 +288,7 @@ function PlanPanel({
 function OfferProof({ icon, title, text }: { icon: ReactNode; title: string; text: string }) {
   return (
     <article className="grid grid-cols-[2rem_minmax(0,1fr)] gap-4 py-5">
-      <span className="mt-1 text-gold-soft" aria-hidden>
+      <span className="mt-1 text-gold-text" aria-hidden>
         {icon}
       </span>
       <div>

@@ -224,13 +224,13 @@ export function ResourcesPage() {
       <article className="mx-auto max-w-5xl px-4 pt-10 sm:px-6">
         <Link
           to="/ressources"
-          className="mb-6 inline-flex text-sm text-gold-soft underline underline-offset-4"
+          className="mb-6 inline-flex text-sm text-gold-text underline underline-offset-4"
         >
           ← Tous les articles du blog
         </Link>
         {/* ── Hero ─────────────────────────────────────────────────────── */}
         <header className="glass-shell rounded-lg p-6 sm:p-9">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
             Immojudis · Ressources ventes judiciaires
           </p>
           <h1 className="mt-4 max-w-3xl font-display text-4xl leading-[1.08] text-foreground sm:text-5xl md:text-6xl">
@@ -269,7 +269,7 @@ export function ResourcesPage() {
               <li key={item.href}>
                 <a
                   href={item.href}
-                  className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-gold-soft hover:underline"
+                  className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-gold-text hover:underline"
                 >
                   {item.label}
                 </a>
@@ -729,7 +729,7 @@ export function ResourcesPage() {
               {METHOD.map((step) => (
                 <div key={step.n} className="liquid-panel-soft rounded-lg p-5">
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gold text-xs font-bold text-background">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gold text-xs font-bold text-brand-navy">
                       {step.n}
                     </span>
                     <h3 className="text-base font-semibold text-foreground">{step.title}</h3>
@@ -774,7 +774,9 @@ export function ResourcesPage() {
                 <details key={item.q} className="group py-4">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-foreground">
                     {item.q}
-                    <span className="text-gold transition-transform group-open:rotate-45">+</span>
+                    <span className="text-gold-text transition-transform group-open:rotate-45">
+                      +
+                    </span>
                   </summary>
                   <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{item.a}</p>
                 </details>
@@ -798,7 +800,7 @@ export function ResourcesPage() {
           </p>
           <Link
             to="/sales"
-            className="liquid-button mt-6 inline-flex items-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background transition hover:brightness-105"
+            className="liquid-button mt-6 inline-flex items-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] transition hover:brightness-105"
           >
             Accéder aux ventes référencées <ArrowRight className="h-4 w-4" />
           </Link>
@@ -846,7 +848,7 @@ function P({ children, className }: { children: React.ReactNode; className?: str
 }
 
 function SubTitle({ children }: { children: React.ReactNode }) {
-  return <h3 className="mt-8 text-lg font-semibold text-gold-soft">{children}</h3>;
+  return <h3 className="mt-8 text-lg font-semibold text-gold-text">{children}</h3>;
 }
 
 function Checklist({ items }: { items: string[] }) {
@@ -857,7 +859,7 @@ function Checklist({ items }: { items: string[] }) {
           key={item}
           className="flex items-start gap-2.5 text-[15px] leading-relaxed text-muted-foreground"
         >
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" />
           <span>{item}</span>
         </li>
       ))}
@@ -879,7 +881,7 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-gold-soft underline underline-offset-4 transition-colors hover:text-gold"
+      className="inline-flex items-center gap-1 text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
     >
       {children}
       <ExternalLink className="h-3 w-3 shrink-0" />

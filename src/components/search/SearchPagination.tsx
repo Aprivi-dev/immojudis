@@ -47,7 +47,7 @@ export function SearchPagination({
         </button>
       ) : null}
       <span
-        className="text-xs font-bold uppercase tracking-[0.16em] text-[#8b949e]"
+        className="text-xs font-bold uppercase tracking-[0.16em] text-[#5b6878]"
         role="status"
         aria-live="polite"
       >

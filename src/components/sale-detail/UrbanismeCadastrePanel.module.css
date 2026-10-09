@@ -352,7 +352,7 @@
 }
 
 .referenceSource {
-  color: #738298;
+  color: #5b6878;
   font-size: 11px;
 }
 
@@ -580,7 +580,7 @@
 
 .empty > svg {
   margin-top: 2px;
-  color: #7c8da1;
+  color: #5b6878;
 }
 
 .sourceList {
@@ -597,7 +597,7 @@
 
 .footnote {
   margin: 20px 0 0;
-  color: #77879a;
+  color: #5b6878;
   font-size: 11px;
   line-height: 1.5;
 }

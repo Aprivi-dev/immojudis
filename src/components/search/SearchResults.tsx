@@ -301,7 +301,7 @@ export const ListingCard = memo(function ListingCard({
             initialFavorite={initialFavorite}
           />
         </div>
-        <p className="mt-3 text-2xl font-bold leading-none text-[#9c642b] sm:text-[1.7rem]">
+        <p className="mt-3 text-2xl font-bold leading-none text-gold-text sm:text-[1.7rem]">
           <AiReviewField
             fieldKey="sale.starting_price_eur"
             projections={aiReviewProjections}
@@ -635,7 +635,7 @@ export function ListingBadge({
     tone === "teal"
       ? "bg-[#0f766e] text-white"
       : tone === "cream"
-        ? "bg-[#fffaf2] text-[#8a5b24]"
+        ? "bg-[#fffaf2] text-gold-text"
         : "bg-[#132238] text-white";
 
   return (
@@ -674,7 +674,7 @@ export function ListingSignal({
 }) {
   return (
     <span className="min-w-0 border-r border-[#e2e8ee] px-2 py-2 last:border-r-0">
-      <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-[#8b949e]">
+      <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-[#5b6878]">
         {label}
       </span>
       <span className={`mt-0.5 block truncate font-extrabold ${tone}`}>{value}</span>
@@ -798,7 +798,7 @@ export function CompactFavoriteButton({
       className="relative z-20 grid h-8 w-8 cursor-pointer place-items-center rounded-full text-[#132238] transition-colors hover:bg-[#eef2f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
     >
       {locked ? (
-        <LockKeyhole className="h-4 w-4 text-[#8a5b24]" />
+        <LockKeyhole className="h-4 w-4 text-gold-text" />
       ) : (
         <Heart className={`h-5 w-5 ${isFavorite ? "fill-[#c2410c] text-[#c2410c]" : ""}`} />
       )}

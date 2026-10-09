@@ -75,7 +75,7 @@ function SearchStatisticsLoading() {
       role="status"
       aria-live="polite"
       aria-label="Chargement des repères"
-      className="border-b border-[#132238]/10 bg-white px-4 py-4 text-sm font-semibold text-[#667482] sm:px-5"
+      className="border-b border-[#132238]/10 bg-white px-4 py-4 text-sm font-semibold text-[#5b6878] sm:px-5"
     >
       Chargement des repères…
     </div>

@@ -36,7 +36,7 @@ function NavigationFallback() {
     <header className="ij-site-header">
       <div className="ij-site-header-inner">
         <a href="/" className="font-display text-2xl font-semibold text-foreground">
-          Immo<span className="text-gold">Judis</span>
+          Immo<span className="text-gold-text">Judis</span>
         </a>
         <nav className="ij-home-nav" aria-label="Navigation principale">
           <a href="/sales">Rechercher un bien</a>

@@ -12,7 +12,7 @@ export function SaleTypeFilter({
 }) {
   return (
     <fieldset className="min-w-0 border-0 p-0">
-      <legend className={compact ? "sr-only" : "mb-2 text-xs font-semibold text-[#55626f]"}>
+      <legend className={compact ? "sr-only" : "mb-2 text-xs font-semibold text-[#5b6878]"}>
         Type de vente
       </legend>
       <div

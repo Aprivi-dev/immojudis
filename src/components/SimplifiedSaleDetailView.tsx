@@ -505,7 +505,7 @@ function SaleDetailWorkspace({
         <div className={listingStyles.topbar}>
           <Link
             href={returnTo ?? "/sales"}
-            className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+            className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
             {backLabel}
@@ -1736,14 +1736,14 @@ function SaleDocumentsSection({
             onOpenChange(!open);
           }}
         >
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-soft">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-text">
             <FileText className="h-5 w-5" aria-hidden />
           </span>
           <span>
             <span className="block font-display text-2xl font-semibold text-brand-navy">
               Consulter les pièces du dossier
             </span>
-            <span className="mt-1 block text-sm text-brand-navy/62">
+            <span className="mt-1 block text-sm text-brand-navy/65">
               {documents.length > 0
                 ? "Consultez les pièces jointes ; vérifiez leur nature et leur date."
                 : "Aucune pièce attachée à cette annonce pour le moment."}
@@ -1812,7 +1812,7 @@ function CeilingExplanation({
             <dt className="text-sm font-medium text-brand-navy sm:text-base">{label}</dt>
             <dd
               className={`font-display text-xl font-semibold sm:text-2xl ${
-                value != null && value < 0 ? "text-gold-soft" : "text-brand-navy"
+                value != null && value < 0 ? "text-gold-text" : "text-brand-navy"
               }`}
             >
               {value == null ? "À compléter" : signedPrice(value)}
@@ -2046,7 +2046,7 @@ function MarketEvidence({
           </ul>
         </div>
       ) : (
-        <p className="mt-7 border-y border-brand-navy/12 py-5 text-sm leading-relaxed text-brand-navy/64">
+        <p className="mt-7 border-y border-brand-navy/12 py-5 text-sm leading-relaxed text-brand-navy/65">
           {usesAggregateStatistics
             ? `Estimation indicative fondée sur la médiane DVF à l’échelle ${aggregateScopeLabel(marketEstimate?.geographyLevel)}. Les ventes détaillées apparaîtront dès qu’un échantillon local homogène sera disponible.`
             : "Les ventes comparables seront affichées ici dès qu'un échantillon homogène est disponible."}
@@ -2065,7 +2065,7 @@ function aggregateScopeLabel(level: MarketEstimate["geographyLevel"]): string {
 function MarketFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-3">
-      <span className="text-gold-soft" aria-hidden>
+      <span className="text-gold-text" aria-hidden>
         {icon}
       </span>
       <dt className="text-sm font-medium text-brand-navy sm:text-base">{label}</dt>
@@ -2178,7 +2178,7 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
             </p>
           </div>
           <div className="rounded-lg border border-brand-navy/14 bg-white p-5 shadow-sm sm:flex sm:items-center sm:gap-5">
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-soft">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-text">
               <Scale className="h-6 w-6" aria-hidden />
             </span>
             <div className="mt-3 min-w-0 flex-1 sm:mt-0">

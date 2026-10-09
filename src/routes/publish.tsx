@@ -214,7 +214,7 @@ export function PublishPage() {
     return (
       <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
         <div className="glass-shell mx-auto max-w-3xl rounded-lg p-6">
-          <RefreshCw className="h-5 w-5 animate-spin text-gold" />
+          <RefreshCw className="h-5 w-5 animate-spin text-gold-text" />
           <p className="mt-4 text-sm text-muted-foreground">Vérification de l'accès pro...</p>
         </div>
       </main>
@@ -225,7 +225,7 @@ export function PublishPage() {
     return (
       <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
         <div className="glass-shell mx-auto max-w-3xl rounded-lg p-6 sm:p-8">
-          <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+          <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
             <LockKeyhole className="h-4 w-4" />
             Accès professionnel
           </div>
@@ -240,7 +240,7 @@ export function PublishPage() {
           <Link
             to="/login"
             search={{ mode: "professional", redirect: "/publish" }}
-            className="liquid-button mt-6 inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background"
+            className="liquid-button mt-6 inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
           >
             Créer un compte pro
           </Link>
@@ -254,7 +254,7 @@ export function PublishPage() {
       <div className="mx-auto max-w-7xl">
         <header className="glass-shell mb-8 grid gap-6 rounded-lg p-6 sm:p-8 lg:grid-cols-[1fr_24rem] lg:items-end">
           <div>
-            <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+            <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
               <Megaphone className="h-4 w-4" />
               Demande de publication pro
             </div>
@@ -274,9 +274,9 @@ export function PublishPage() {
                 <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                   Préparation
                 </div>
-                <div className="mt-2 font-display text-3xl text-gold-soft">{completion}%</div>
+                <div className="mt-2 font-display text-3xl text-gold-text">{completion}%</div>
               </div>
-              <BadgeCheck className="h-8 w-8 text-gold" />
+              <BadgeCheck className="h-8 w-8 text-gold-text" />
             </div>
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
               <div
@@ -350,7 +350,7 @@ export function PublishPage() {
                 </Field>
                 <Field label="Pièces transmises">
                   <label className="form-dropzone">
-                    <ImagePlus className="h-5 w-5 text-gold" />
+                    <ImagePlus className="h-5 w-5 text-gold-text" />
                     <span>{files.length > 0 ? `${files.length} fichier(s)` : "Ajouter"}</span>
                     <input
                       type="file"
@@ -430,7 +430,7 @@ export function PublishPage() {
                       onChange={() => toggleDocument(name)}
                       className="sr-only"
                     />
-                    <FileText className="h-4 w-4 text-gold" />
+                    <FileText className="h-4 w-4 text-gold-text" />
                     <span>{name}</span>
                   </label>
                 ))}
@@ -445,7 +445,7 @@ export function PublishPage() {
                 />
                 <span>
                   <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <EyeOff className="h-4 w-4 text-gold" />
+                    <EyeOff className="h-4 w-4 text-gold-text" />
                     Demander l'anonymisation avant diffusion
                   </span>
                   <span className="mt-1 block text-sm leading-relaxed text-muted-foreground">
@@ -489,7 +489,7 @@ export function PublishPage() {
             </section>
 
             <section className="liquid-panel-soft rounded-lg p-5">
-              <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gold">
+              <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-text">
                 <UploadCloud className="h-4 w-4" />
                 Prochaine étape
               </div>
@@ -503,7 +503,7 @@ export function PublishPage() {
               <button
                 type="submit"
                 disabled={submitting || !user?.email?.trim()}
-                className="liquid-button mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background disabled:cursor-not-allowed disabled:opacity-60"
+                className="liquid-button mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {submitting ? (
                   <>
@@ -516,7 +516,7 @@ export function PublishPage() {
               </button>
               <Link
                 to="/espace-pro"
-                className="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-white/10 px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold hover:border-gold"
+                className="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-white/10 px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold-text hover:border-gold"
               >
                 Ouvrir mon espace pro
               </Link>
@@ -524,7 +524,7 @@ export function PublishPage() {
 
             <section className="liquid-panel rounded-lg p-5">
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
                   <Clock className="h-4 w-4" />
                   Mes demandes
                 </div>
@@ -569,7 +569,10 @@ function PublicationRequestLine({ request }: { request: PublicationRequestSummar
         <span>{formatDate(request.createdAt)}</span>
       </div>
       {request.publishedUrl ? (
-        <Link to={request.publishedUrl} className="mt-3 inline-block text-xs text-gold underline">
+        <Link
+          to={request.publishedUrl}
+          className="mt-3 inline-block text-xs text-gold-text underline"
+        >
           Voir la vente publiée
         </Link>
       ) : null}
@@ -588,7 +591,7 @@ function SectionTitle({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gold/20 bg-gold/10 text-gold">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-gold/20 bg-gold/10 text-gold-text">
         <Icon className="h-5 w-5" />
       </span>
       <div>

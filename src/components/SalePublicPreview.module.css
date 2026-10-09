@@ -21,7 +21,7 @@
 }
 
 .back:hover {
-  color: #946724;
+  color: var(--gold-text, #84602e);
 }
 
 .hero {
@@ -255,7 +255,7 @@
 
 .secondary:hover {
   border-color: #946724;
-  color: #946724;
+  color: var(--gold-text, #84602e);
 }
 
 .tiers {

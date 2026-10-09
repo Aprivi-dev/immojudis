@@ -205,19 +205,19 @@ export function TribunalStatisticsDashboard({
           </p>
           {view.experimental ? (
             <p className="mt-4 inline-flex items-center gap-2 rounded-md border border-gold/25 bg-[#fffaf2] px-3 py-2 text-xs font-semibold text-brand-navy/72">
-              <AlertTriangle className="h-4 w-4 text-gold-soft" aria-hidden />
+              <AlertTriangle className="h-4 w-4 text-gold-text" aria-hidden />
               Version expérimentale contrôlée · usage descriptif uniquement
             </p>
           ) : null}
 
           <div className="mt-8 grid gap-4 border-y border-brand-navy/12 py-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <label className="block">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
                 Rechercher un tribunal
               </span>
               <span className="relative mt-2 block max-w-2xl">
                 <Search
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/45"
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/65"
                   aria-hidden
                 />
                 <Input
@@ -231,7 +231,7 @@ export function TribunalStatisticsDashboard({
             </label>
 
             <fieldset>
-              <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+              <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
                 Période observée
               </legend>
               <div className="mt-2 inline-flex rounded-md border border-brand-navy/15 bg-white p-1">
@@ -267,7 +267,7 @@ export function TribunalStatisticsDashboard({
         {!isLoading && !error && selected ? (
           <>
             <label className="block max-w-2xl">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
                 Tribunal affiché
               </span>
               <select
@@ -326,7 +326,7 @@ function TribunalDetail({ item }: { item: DashboardItem }) {
     <article className="mt-8" aria-labelledby="tribunal-statistics-title">
       <div className="flex flex-col gap-4 border-b border-brand-navy/14 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="flex items-center gap-2 text-sm font-semibold text-gold-soft">
+          <p className="flex items-center gap-2 text-sm font-semibold text-gold-text">
             <Landmark className="h-4 w-4" aria-hidden />
             {item.code}
           </p>
@@ -336,7 +336,7 @@ function TribunalDetail({ item }: { item: DashboardItem }) {
           >
             {item.name}
           </h2>
-          <p className="mt-2 text-sm text-brand-navy/62">{formatPeriod(item)}</p>
+          <p className="mt-2 text-sm text-brand-navy/65">{formatPeriod(item)}</p>
         </div>
         <ReliabilityLabel level={item.reliability} />
       </div>
@@ -354,7 +354,7 @@ function TribunalDetail({ item }: { item: DashboardItem }) {
             >
               Déroulement des audiences
             </h3>
-            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/62">
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/65">
               Chaque taux conserve son propre dénominateur connu. Une issue inconnue n’est jamais
               assimilée à zéro.
             </p>
@@ -400,7 +400,7 @@ function CoverageRail({ item }: { item: DashboardItem }) {
           className="border-b border-brand-navy/10 px-3 py-5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0 lg:border-b-0 lg:border-r lg:last:border-r-0"
         >
           <dt className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-3 text-xs leading-relaxed text-brand-navy/65">
-            <Icon className="mt-0.5 h-5 w-5 text-gold-soft" aria-hidden />
+            <Icon className="mt-0.5 h-5 w-5 text-gold-text" aria-hidden />
             <span>{label}</span>
           </dt>
           <dd className="ml-9 mt-1 font-display text-2xl font-semibold tabular-nums">{value}</dd>
@@ -453,18 +453,18 @@ function MetricTable({ item, compact = false }: { item: DashboardItem; compact?:
               <tr key={key}>
                 <th scope="row" className="px-4 py-3 font-semibold text-brand-navy">
                   {label}
-                  <span className="mt-0.5 block text-xs font-normal text-brand-navy/58">
+                  <span className="mt-0.5 block text-xs font-normal text-brand-navy/65">
                     {detail}
                   </span>
                 </th>
                 <td className="px-4 py-3 text-right font-semibold tabular-nums">
                   {publishable ? formatPercent(metric.raw) : "Non publié"}
                 </td>
-                <td className="px-4 py-3 text-right font-semibold tabular-nums text-gold-soft">
+                <td className="px-4 py-3 text-right font-semibold tabular-nums text-gold-text">
                   {publishable ? (
                     <>
                       {formatPercent(metric.adjusted)}
-                      <span className="mt-0.5 block text-[11px] font-normal text-brand-navy/52">
+                      <span className="mt-0.5 block text-[11px] font-normal text-brand-navy/65">
                         {formatMethod(metric.method)}
                       </span>
                     </>
@@ -475,10 +475,10 @@ function MetricTable({ item, compact = false }: { item: DashboardItem; compact?:
                 <td className="px-4 py-3 text-right tabular-nums">
                   {metric.n == null ? "—" : metric.n < 10 ? "< 10" : formatInteger(metric.n)}
                 </td>
-                <td className="px-4 py-3 text-xs leading-relaxed text-brand-navy/62">
+                <td className="px-4 py-3 text-xs leading-relaxed text-brand-navy/65">
                   {publishable ? <MetricCoverage metric={metric} /> : suppressionLabel(item)}
                 </td>
-                <td className="px-4 py-3 text-brand-navy/62">
+                <td className="px-4 py-3 text-brand-navy/65">
                   {publishable ? formatInterval(metric.lower, metric.upper, formatPercent) : "—"}
                 </td>
               </tr>
@@ -529,7 +529,7 @@ function DistributionSection({ item }: { item: DashboardItem }) {
       <h3 id="distribution-title" className="font-display text-2xl font-semibold sm:text-3xl">
         Prix et délais observés
       </h3>
-      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/62">
+      <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/65">
         Les médianes et fourchettes ont chacune leur propre échantillon. Le délai de connaissance
         ImmoJudis n’est pas présenté comme un délai de traitement interne du tribunal.
       </p>
@@ -603,11 +603,11 @@ function DistributionRow({
       <td className="px-4 py-3 text-right tabular-nums">
         {publishable ? formatQuantiles(distribution.raw, formatter) : "Non publié"}
       </td>
-      <td className="px-4 py-3 text-right font-semibold tabular-nums text-gold-soft">
+      <td className="px-4 py-3 text-right font-semibold tabular-nums text-gold-text">
         {publishable ? (
           <>
             {formatQuantiles(distribution.adjusted, formatter)}
-            <span className="mt-0.5 block text-[11px] font-normal text-brand-navy/52">
+            <span className="mt-0.5 block text-[11px] font-normal text-brand-navy/65">
               {formatMethod(distribution.method)}
             </span>
           </>
@@ -645,12 +645,12 @@ function DistributionCoverage({ distribution }: { distribution: Distribution }) 
       <span className="font-semibold text-brand-navy">
         {formatInteger(distribution.n)} connu(s) · {formatPercent(rate)}
       </span>
-      <span className="text-brand-navy/62">
+      <span className="text-brand-navy/65">
         {formatInteger(distribution.unknownCount)} inconnu(s) ·{" "}
         {formatInteger(distribution.excludedCount)} exclu(s)
       </span>
       {reasonSummary ? (
-        <span className="text-brand-navy/52" title={reasonSummary}>
+        <span className="text-brand-navy/65" title={reasonSummary}>
           {reasonSummary}
         </span>
       ) : null}
@@ -730,7 +730,7 @@ function ReliabilityLabel({ level }: { level: ReliabilityLevel }) {
     robust: "Robuste pour une description historique",
   };
   const classes: Record<ReliabilityLevel, string> = {
-    insufficient_data: "border-brand-navy/15 bg-white text-brand-navy/62",
+    insufficient_data: "border-brand-navy/15 bg-white text-brand-navy/65",
     smoothed: "border-amber-300/50 bg-amber-50 text-amber-900",
     descriptive: "border-sky-300/50 bg-sky-50 text-sky-900",
     robust: "border-emerald-300/50 bg-emerald-50 text-emerald-900",
@@ -750,7 +750,7 @@ function InsufficientData({ item }: { item: DashboardItem }) {
   return (
     <section className="mt-8 border-y border-brand-navy/14 py-8" aria-live="polite">
       <div className="flex max-w-3xl gap-4">
-        <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-gold-soft" aria-hidden />
+        <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-gold-text" aria-hidden />
         <div>
           <h3 className="font-display text-2xl font-semibold">Pas de statistique autonome</h3>
           <div className="mt-2 space-y-2 text-sm leading-relaxed text-brand-navy/65">
@@ -813,9 +813,9 @@ function DashboardError({ error, onRetry }: { error: Error; onRetry?: () => void
 function DashboardEmpty() {
   return (
     <section className="border-y border-brand-navy/14 py-10 text-center" aria-live="polite">
-      <Landmark className="mx-auto h-8 w-8 text-gold-soft" aria-hidden />
+      <Landmark className="mx-auto h-8 w-8 text-gold-text" aria-hidden />
       <h2 className="mt-4 font-display text-2xl font-semibold">Données en consolidation</h2>
-      <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-brand-navy/62">
+      <p className="mx-auto mt-2 max-w-2xl text-sm leading-relaxed text-brand-navy/65">
         Aucun instantané tribunal publiable n’est disponible pour cette période. ImmoJudis n’affiche
         pas de valeurs déduites de candidats non revus.
       </p>
@@ -826,9 +826,9 @@ function DashboardEmpty() {
 function NoCourtMatch({ search }: { search: string }) {
   return (
     <section className="border-y border-brand-navy/14 py-10 text-center" aria-live="polite">
-      <Search className="mx-auto h-8 w-8 text-gold-soft" aria-hidden />
+      <Search className="mx-auto h-8 w-8 text-gold-text" aria-hidden />
       <h2 className="mt-4 font-display text-2xl font-semibold">Aucun tribunal correspondant</h2>
-      <p className="mt-2 text-sm text-brand-navy/62">
+      <p className="mt-2 text-sm text-brand-navy/65">
         Aucun nom ou code ne correspond à « {search} » dans la période sélectionnée.
       </p>
     </section>

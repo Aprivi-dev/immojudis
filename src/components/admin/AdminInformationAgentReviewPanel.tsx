@@ -130,7 +130,7 @@ export function AdminInformationAgentReviewPanel() {
   return (
     <section className="overflow-hidden rounded-xl border bg-white">
       <div className="border-b px-5 py-4">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#a36f2c]">
+        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           <Inbox className="size-4" />
           Réponses reçues
         </div>
@@ -200,7 +200,7 @@ export function AdminInformationAgentReviewPanel() {
                   <Link
                     to="/sales/$id"
                     params={{ id: informationCase.sale_id }}
-                    className="mt-1 inline-block font-medium text-[#7c5222] underline"
+                    className="mt-1 inline-block font-medium text-gold-text underline"
                   >
                     Voir l’annonce {shortId(informationCase.sale_id)}
                   </Link>
@@ -284,7 +284,7 @@ export function AdminInformationAgentReviewPanel() {
                       <Link
                         to="/sales/$id"
                         params={{ id: fact.sale_id }}
-                        className="inline-flex items-center gap-1 font-medium text-[#7c5222] underline"
+                        className="inline-flex items-center gap-1 font-medium text-gold-text underline"
                       >
                         Voir l’annonce {shortId(fact.sale_id)}
                         <ExternalLink className="size-3" />
@@ -389,7 +389,7 @@ export function AdminInformationAgentReviewPanel() {
                                   </p>
                                   <button
                                     type="button"
-                                    className="text-xs font-medium text-[#7c5222] underline"
+                                    className="text-xs font-medium text-gold-text underline"
                                     onClick={() => setPreview(null)}
                                   >
                                     Fermer l’aperçu

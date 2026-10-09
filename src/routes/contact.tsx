@@ -25,7 +25,7 @@ export function ContactPage() {
     <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_24rem] lg:items-stretch">
         <section className="glass-shell rounded-lg p-6 sm:p-8">
-          <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+          <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
             <ShieldCheck className="h-4 w-4" />
             Support Immojudis
           </div>
@@ -39,7 +39,7 @@ export function ContactPage() {
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             <div className="liquid-panel-soft rounded-lg p-5">
-              <FileSearch className="h-5 w-5 text-gold" />
+              <FileSearch className="h-5 w-5 text-gold-text" />
               <h2 className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
                 Découverte / Analyse
               </h2>
@@ -49,13 +49,13 @@ export function ContactPage() {
               </p>
               <Link
                 to="/sales"
-                className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold hover:text-gold-soft"
+                className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text hover:text-gold-text"
               >
                 Parcourir les annonces <ArrowUpRight className="h-4 w-4" />
               </Link>
             </div>
             <div className="liquid-panel-soft rounded-lg p-5">
-              <ShieldCheck className="h-5 w-5 text-gold" />
+              <ShieldCheck className="h-5 w-5 text-gold-text" />
               <h2 className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
                 Professionnel
               </h2>
@@ -65,7 +65,7 @@ export function ContactPage() {
               </p>
               <Link
                 to="/publish"
-                className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold hover:text-gold-soft"
+                className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text hover:text-gold-text"
               >
                 Préparer une annonce <ArrowUpRight className="h-4 w-4" />
               </Link>
@@ -107,7 +107,7 @@ export function ContactPage() {
             </p>
             <Link
               to="/mes-droits"
-              className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold hover:text-gold-soft"
+              className="mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text hover:text-gold-text"
             >
               Ouvrir Mes droits <ArrowUpRight className="h-4 w-4" />
             </Link>
@@ -117,7 +117,7 @@ export function ContactPage() {
         <aside className="glass-shell relative min-h-[28rem] overflow-hidden rounded-lg p-6">
           <div className="cinematic-grid absolute inset-0 opacity-35" />
           <div className="relative z-10">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-text">
               Signal Immojudis
             </div>
             <p className="mt-4 max-w-xs font-display text-2xl leading-tight text-foreground">

@@ -11,7 +11,7 @@ export function MapSection({ property }: { property: Property }) {
   return (
     <AnimatedSection id="map" aria-labelledby="map-title">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Localisation
         </p>
         <h2 id="map-title" className="mt-2 font-display text-3xl text-foreground">

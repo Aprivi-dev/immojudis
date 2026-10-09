@@ -707,7 +707,7 @@ function AdminOverview({
             ) : null}
             <Link
               to="/admin/settings"
-              className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#a96126]"
+              className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-gold-text"
             >
               Configuration rapide <ChevronRight className="size-4" />
             </Link>
@@ -850,7 +850,7 @@ function AdminOverview({
           )}
           <Link
             to="/admin/operations"
-            className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-[#a96126]"
+            className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-gold-text"
           >
             Voir le détail <ChevronRight className="size-4" />
           </Link>
@@ -877,7 +877,7 @@ function AdminOverview({
           </div>
           <Link
             to="/admin/operations"
-            className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-[#a96126]"
+            className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-gold-text"
           >
             Voir le monitoring détaillé <ChevronRight className="size-4" />
           </Link>
@@ -1014,7 +1014,7 @@ function AdminOperations({
             onClick={() => onTabChange(tab)}
             className={`shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition ${
               activeTab === tab
-                ? "border-[#b96f2d] text-[#a96126]"
+                ? "border-[#b96f2d] text-gold-text"
                 : "border-transparent text-[#132238]/58 hover:text-[#132238]"
             }`}
           >
@@ -1268,7 +1268,7 @@ function AdminLawyers({
           onClick={() => onTabChange("referrals")}
           className={`border-b-2 px-4 py-3 text-sm font-medium ${
             activeTab === "referrals"
-              ? "border-[#b96f2d] text-[#a96126]"
+              ? "border-[#b96f2d] text-gold-text"
               : "border-transparent text-[#132238]/58"
           }`}
         >
@@ -1279,7 +1279,7 @@ function AdminLawyers({
           onClick={() => onTabChange("directory")}
           className={`border-b-2 px-4 py-3 text-sm font-medium ${
             activeTab === "directory"
-              ? "border-[#b96f2d] text-[#a96126]"
+              ? "border-[#b96f2d] text-gold-text"
               : "border-transparent text-[#132238]/58"
           }`}
         >
@@ -1379,7 +1379,7 @@ function OverviewMetric({
   tone?: "blue" | "green" | "copper";
 }) {
   const iconTone =
-    tone === "green" ? "text-emerald-700" : tone === "copper" ? "text-[#b96f2d]" : "text-[#1f67b6]";
+    tone === "green" ? "text-emerald-700" : tone === "copper" ? "text-gold-text" : "text-[#1f67b6]";
   return (
     <div className="flex min-h-24 items-center gap-4 px-5 py-4">
       <span className={`${iconTone} [&>svg]:size-7`}>{icon}</span>
@@ -1894,7 +1894,7 @@ function PublicationRequestCard({
             {request.promotion_options.map((option) => (
               <span
                 key={option}
-                className="rounded-full border border-gold/20 px-2.5 py-1 text-gold"
+                className="rounded-full border border-gold/20 px-2.5 py-1 text-gold-text"
               >
                 {publicationPromotionLabel(option)}
               </span>
@@ -1925,7 +1925,7 @@ function PublicationRequestCard({
                   key={document.path ?? document.name}
                   type="button"
                   onClick={() => void openPublicationDocument(document)}
-                  className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-gold transition hover:border-gold"
+                  className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-gold-text transition hover:border-gold"
                 >
                   {document.name ?? "Ouvrir la pièce"}
                 </button>

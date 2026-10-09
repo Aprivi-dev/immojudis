@@ -353,7 +353,7 @@ export function AdminInformationAgentMissionsPanel({
     >
       <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#a36f2c]">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
             <Bot className="size-4" />
             Enrichissement administré
           </div>

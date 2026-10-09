@@ -45,7 +45,7 @@ export function NoResultsState() {
     <div className="rounded-md border border-[#d8dee4] bg-white p-10 text-center shadow-sm">
       <SearchIcon className="mx-auto h-8 w-8 text-[#0f766e]" />
       <h2 className="mt-4 text-xl font-extrabold text-[#132238]">Aucun dossier trouvé</h2>
-      <p className="mt-2 text-sm font-medium text-[#55626f]">
+      <p className="mt-2 text-sm font-medium text-[#5b6878]">
         Aucune annonce référencée ne correspond à ces critères pour le moment. Essayez un autre type
         de vente, une autre zone ou élargissez votre budget.
       </p>
@@ -114,7 +114,7 @@ export function MapPanelSkeleton() {
 
 export function Footer() {
   return (
-    <footer className="border-t border-[#132238]/10 px-4 py-8 text-xs font-semibold text-[#667482] sm:px-5">
+    <footer className="border-t border-[#132238]/10 px-4 py-8 text-xs font-semibold text-[#5b6878] sm:px-5">
       Les informations doivent être vérifiées dans les pièces officielles avant toute décision
       d’enchère.
     </footer>

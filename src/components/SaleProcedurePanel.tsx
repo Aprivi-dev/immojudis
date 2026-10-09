@@ -96,7 +96,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
               )}
             </span>
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
                 Organisation de la vente
               </p>
               <h2
@@ -216,7 +216,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
             </div>
             {procedure.venueAddress ? (
               <p className="mt-3 flex items-start gap-2 border-t border-brand-navy/10 pt-3 text-sm text-brand-navy/75">
-                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" aria-hidden />
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" aria-hidden />
                 {procedure.venueAddress}
               </p>
             ) : null}
@@ -278,7 +278,7 @@ function ProcedureFact({
   return (
     <dl className="rounded-md border border-brand-navy/10 p-4">
       <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
-        <Icon className="h-4 w-4 text-gold-soft" aria-hidden />
+        <Icon className="h-4 w-4 text-gold-text" aria-hidden />
         {label}
       </dt>
       <dd className="mt-3 text-base font-semibold leading-snug text-brand-navy">{value}</dd>
@@ -316,7 +316,7 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
     <details className="group border-t border-brand-navy/10 bg-[#f8fbfe] px-5 py-4 sm:px-7 lg:px-8">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-brand-navy">
         <span className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-gold-soft" aria-hidden />
+          <ShieldCheck className="h-4 w-4 text-gold-text" aria-hidden />
           Vérification Immojudis · {sourceLinks.length} source{sourceLinks.length > 1 ? "s" : ""}
         </span>
         <span className="text-xs font-normal text-brand-navy/75">
@@ -338,7 +338,7 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
                     href={source.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-start gap-2 text-sm font-semibold text-brand-navy underline decoration-gold/45 underline-offset-4 hover:text-gold-soft"
+                    className="inline-flex items-start gap-2 text-sm font-semibold text-brand-navy underline decoration-gold/45 underline-offset-4 hover:text-gold-text"
                   >
                     <span>{source.label}</span>
                     <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />

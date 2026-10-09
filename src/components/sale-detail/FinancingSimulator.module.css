@@ -20,7 +20,7 @@
 .eyebrow,
 .panelKicker {
   margin: 0;
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, #84602e);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -54,7 +54,7 @@
   border: 1px solid rgb(156 100 43 / 24%);
   border-radius: 999px;
   background: rgb(201 141 69 / 10%);
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, #84602e);
   padding: 7px 11px;
   font-size: 11px;
   font-weight: 700;
@@ -165,7 +165,7 @@
 }
 
 .modeBadge {
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, #84602e);
   font-weight: 750;
 }
 
@@ -204,7 +204,7 @@
 
 .rangeMeta span:nth-child(2) {
   text-align: center;
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, #84602e);
   font-weight: 700;
 }
 
@@ -292,7 +292,7 @@
 
 .resultLabel {
   grid-column: 1 / -1;
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, #84602e);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
