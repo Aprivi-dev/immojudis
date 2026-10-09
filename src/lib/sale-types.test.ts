@@ -23,3 +23,22 @@ describe("sale family vocabulary", () => {
     expect(saleEventLabel("state")).toBe("Vente");
   });
 });
+
+describe("pilot sale types", () => {
+  it("masque le notarial et le domanial tant que le drapeau est fermé", async () => {
+    const { visibleSaleTypeOptions, visibleSaleFamilies } = await import("./sale-types");
+    expect(visibleSaleTypeOptions({}).map((option) => option.value)).toEqual([
+      "tribunal",
+      "unknown",
+    ]);
+    expect(visibleSaleFamilies({}).map((family) => family.type)).toEqual(["tribunal"]);
+    const open = { NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED: "true" };
+    expect(visibleSaleTypeOptions(open).map((option) => option.value)).toEqual([
+      "tribunal",
+      "notary",
+      "state",
+      "unknown",
+    ]);
+    expect(visibleSaleFamilies(open)).toHaveLength(3);
+  });
+});

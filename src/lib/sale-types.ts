@@ -55,3 +55,33 @@ export const SALE_FAMILIES = [
     linkLabel: "Voir les ventes domaniales référencées",
   },
 ] as const;
+
+/**
+ * The notarial and State-sale sources are still pilots: their listings are not
+ * reliable enough to be offered as filters or entry points.  They stay in the
+ * data and can be reopened with NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED=true
+ * once the share of verified listings is above 90 % over 30 days.
+ */
+export function notaryAndStatePilotsEnabled(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): boolean {
+  return env.NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED === "true";
+}
+
+const PILOT_TYPES: ReadonlyArray<SaleTypeFilter> = ["notary", "state"];
+
+export function visibleSaleTypeOptions(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): ReadonlyArray<(typeof SALE_TYPE_OPTIONS)[number]> {
+  return notaryAndStatePilotsEnabled(env)
+    ? SALE_TYPE_OPTIONS
+    : SALE_TYPE_OPTIONS.filter((option) => !PILOT_TYPES.includes(option.value));
+}
+
+export function visibleSaleFamilies(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): ReadonlyArray<(typeof SALE_FAMILIES)[number]> {
+  return notaryAndStatePilotsEnabled(env)
+    ? SALE_FAMILIES
+    : SALE_FAMILIES.filter((family) => !PILOT_TYPES.includes(family.type));
+}
