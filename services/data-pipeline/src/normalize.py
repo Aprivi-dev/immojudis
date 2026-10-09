@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil import parser
 
+from src.admission import is_date_only, sale_date_has_passed
 from src.models import AuctionSale
 from src.null_text import is_null_text
 
@@ -519,7 +520,13 @@ def has_no_lease_signal(text: str) -> bool:
     )
 
 
-def normalize_status(value: object | None, sale_date: datetime | None = None) -> str:
+def normalize_status(
+    value: object | None,
+    sale_date: datetime | None = None,
+    *,
+    date_only: bool = False,
+    now: datetime | None = None,
+) -> str:
     text = strip_accents(clean_text(value) or "").lower()
     if re.search(r"\b(reportee?s?|postponed|reported)\b", text):
         return "postponed"
@@ -536,7 +543,8 @@ def normalize_status(value: object | None, sale_date: datetime | None = None) ->
     if text in VALID_STATUSES and text != "unknown":
         return text
     if sale_date:
-        return "past" if sale_date < datetime.now(UTC) else "upcoming"
+        # Compared on the Paris civil day: a date-only hearing stays upcoming until the next day.
+        return "past" if sale_date_has_passed(sale_date, date_only=date_only, now=now) else "upcoming"
     return "unknown"
 
 
@@ -770,26 +778,33 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     city = clean_text(_field_or_source_block(raw_sale, "city", "ville", "commune", "city")) or extract_city(
         address, postal_code
     )
-    sale_date = parse_french_datetime(
-        _field_or_source_block(
-            raw_sale,
-            "sale_date",
-            "sale_date",
-            "date_vente",
-            "vente_le",
-            "detail_vente_le",
-            "audience",
-            "date_de_l_audience",
-            "seance_date",
-        ),
-        local_timezone=source_sale_timezone(raw_sale),
+    raw_sale_date = _field_or_source_block(
+        raw_sale,
+        "sale_date",
+        "sale_date",
+        "date_vente",
+        "vente_le",
+        "detail_vente_le",
+        "audience",
+        "date_de_l_audience",
+        "seance_date",
     )
+    sale_date = parse_french_datetime(raw_sale_date, local_timezone=source_sale_timezone(raw_sale))
+    sale_date_only = False
+    if sale_date is not None:
+        precision = clean_text(raw_sale.get("date_precision")) or clean_text(raw_sale.get("sale_date_precision"))
+        sale_date_only = is_date_only(clean_text(raw_sale_date), precision)
+        if sale_date_only and not precision:
+            # Lets admission and the front end read the stored midnight as « day only ».
+            raw_sale["date_precision"] = "day"
     starting_price, price_conflict = resolve_starting_price(raw_sale)
     if price_conflict:
         raw_sale["price_conflict"] = True
         raw_sale["quality_flags"] = [*dict.fromkeys([*(raw_sale.get("quality_flags") or []), "price_conflict"])]
     adjudication_price = extract_adjudication_price(raw_sale)
-    status = normalize_status(_field_or_source_block(raw_sale, "status", "status", "statut"), sale_date)
+    status = normalize_status(
+        _field_or_source_block(raw_sale, "status", "status", "statut"), sale_date, date_only=sale_date_only
+    )
     if adjudication_price is not None:
         if sale_date is not None and sale_date > datetime.now(UTC):
             raw_sale = {**raw_sale, "unverified_adjudication_candidate": str(adjudication_price),

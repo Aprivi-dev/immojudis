@@ -1031,12 +1031,8 @@ def test_parse_encheres_immobilieres_rendered_listing_fallback(monkeypatch) -> N
 
     from src.sources import encheres_immobilieres
 
-    class FixtureDate(date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 8, 1)
-
-    monkeypatch.setattr(encheres_immobilieres, "date", FixtureDate)
+    # La carte n'a pas d'année : la source calcule « aujourd'hui » à l'heure de Paris.
+    monkeypatch.setattr(encheres_immobilieres, "_paris_today", lambda: date(2026, 8, 1))
     html = """
     <main>
       <a href="/ventes/9162-une-maison-dhabitation-a-bonne-74-">

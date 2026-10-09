@@ -1,7 +1,31 @@
 """Minimum collection admission shared by publication entry points."""
+import re
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
 from src.models import AuctionSale
+
+DATE_ONLY_PRECISIONS = {"day", "date", "day_only", "date_only", "unknown_time", "time_unknown"}
+PARIS = ZoneInfo("Europe/Paris")
+
+
+def is_date_only(raw_date: object, precision: object = None) -> bool:
+    """Whether a source gave a day without an hour (the stored midnight is a convention)."""
+    raw = str(raw_date or "")
+    if str(precision or "").strip().lower() in DATE_ONLY_PRECISIONS:
+        return True
+    return bool(raw and not re.search(r"[0-9]{1,2}\s*([hH]|:[0-9]{2})", raw))
+
+
+def sale_date_has_passed(sale_date: datetime, *, date_only: bool, now: datetime | None = None) -> bool:
+    """A timed sale is over once its instant has passed; a date-only one only the next Paris day."""
+    now = now or datetime.now(UTC)
+    if sale_date.tzinfo is None:
+        sale_date = sale_date.replace(tzinfo=UTC)
+    if date_only:
+        return now.astimezone(PARIS).date() > sale_date.astimezone(PARIS).date()
+    return sale_date <= now
 
 
 def has_price_or_surface(sale: AuctionSale) -> bool:
@@ -56,9 +80,7 @@ def retention_deadline(sale: AuctionSale):
         str(sale.raw_payload.get('date_precision') or '').strip()
         or str(sale.raw_payload.get('sale_date_precision') or '').strip()
     ).lower()
-    date_only = precision in {'day', 'date', 'day_only', 'date_only', 'unknown_time', 'time_unknown'}
-    date_only = date_only or bool(raw_date and not re.search(r'[0-9]{1,2}\s*([hH]|:[0-9]{2})', raw_date))
-    if date_only:
+    if is_date_only(raw_date, precision):
         next_paris_midnight = datetime.combine(
             sale_datetime.astimezone(ZoneInfo('Europe/Paris')).date() + timedelta(days=1),
             datetime.min.time(),
@@ -84,7 +106,6 @@ def catalogue_expiry_deadline(sale: AuctionSale, *, policy: str | None = None):
     upcoming catalogue item.  The SQL catalogue uses the same rule.
     """
     import os
-    import re
     from datetime import UTC, datetime, timedelta
     from zoneinfo import ZoneInfo
 
@@ -119,8 +140,7 @@ def catalogue_expiry_deadline(sale: AuctionSale, *, policy: str | None = None):
         str(raw_payload.get("date_precision") or "").strip()
         or str(raw_payload.get("sale_date_precision") or "").strip()
     ).lower()
-    date_only = precision in {"day", "date", "day_only", "date_only", "unknown_time", "time_unknown"}
-    date_only = date_only or bool(raw_date and not re.search(r"[0-9]{1,2}\s*([hH]|:[0-9]{2})", raw_date))
+    date_only = is_date_only(raw_date, precision)
 
     selected_policy = (
         policy
