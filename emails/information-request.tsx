@@ -116,7 +116,7 @@ export function InformationRequestEmail({
           </Section>
 
           <Section style={styles.footer}>
-            <Text style={styles.footerBrand}>ImmoJudis</Text>
+            <Text style={styles.footerBrand}>Immojudis</Text>
             <Text style={styles.footerText}>
               Service indépendant d’aide à l’analyse des ventes immobilières judiciaires
             </Text>
@@ -130,12 +130,12 @@ export function InformationRequestEmail({
               Adresse de réponse : <Link href={replyHref}>{replyTo}</Link>
             </Text>
             <Text style={styles.footerLegal}>
-              ImmoJudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses
+              Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses
               ; notre équipe vérifie les informations avant toute mise à jour de la fiche.
               <br />
               Merci de ne transmettre que des pièces que vous êtes autorisé à partager.
               <br />
-              Si vous ne souhaitez plus être contacté par ImmoJudis, indiquez-le simplement en
+              Si vous ne souhaitez plus être contacté par Immojudis, indiquez-le simplement en
               réponse.
             </Text>
           </Section>

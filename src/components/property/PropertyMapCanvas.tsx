@@ -43,7 +43,7 @@ export function PropertyMapCanvas({ property }: { property: Property }) {
           type="button"
           onClick={() => setZoom((value) => Math.min(value + 1, 18))}
           aria-label="Zoomer"
-          className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-border bg-white text-foreground shadow-sm transition-colors hover:text-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-border bg-white text-foreground shadow-sm transition-colors hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
         >
           <Plus className="h-4 w-4" />
         </button>
@@ -51,7 +51,7 @@ export function PropertyMapCanvas({ property }: { property: Property }) {
           type="button"
           onClick={() => setZoom((value) => Math.max(value - 1, 9))}
           aria-label="Dezoomer"
-          className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-border bg-white text-foreground shadow-sm transition-colors hover:text-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-border bg-white text-foreground shadow-sm transition-colors hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
         >
           <Minus className="h-4 w-4" />
         </button>
@@ -66,7 +66,7 @@ export function PropertyMapCanvas({ property }: { property: Property }) {
           description={property.address}
           ariaLabel={`Afficher la vue aérienne 3D Mapbox de ${property.address}`}
           icon={Navigation}
-          className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-sm transition-colors hover:border-gold/50 hover:text-gold-soft focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
+          className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-border bg-white px-3 text-sm font-semibold text-foreground shadow-sm transition-colors hover:border-gold/50 hover:text-gold-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
         />
       </div>
     </div>

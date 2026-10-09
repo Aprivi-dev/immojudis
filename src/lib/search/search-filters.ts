@@ -14,7 +14,7 @@ import {
 import type { SalesSearchParams, SearchSortKey, ViewportBounds } from "./search-url-state";
 
 export const DEFAULT_SEARCH_LIMIT = 24;
-export const MAX_MAP_RESULTS = 300;
+export const MAX_MAP_RESULTS = 10_000;
 
 export const TRANSACTION_OPTIONS = [{ label: "Ventes aux enchères", value: "for_sale" }] as const;
 

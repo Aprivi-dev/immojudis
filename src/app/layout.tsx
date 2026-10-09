@@ -4,11 +4,14 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Cormorant_Garamond, IBM_Plex_Sans } from "next/font/google";
 import "./../styles.css";
 import { AppProviders } from "./providers";
+import { SkipLink } from "@/components/SkipLink";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
 const cormorantGaramond = Cormorant_Garamond({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+  // Seules les graisses réellement employées par font-display : 400 (dont l'italique des
+  // accents de titre), 500 et 600. Les graisses 300 et 700 ne sont jamais demandées.
+  weight: ["400", "500", "600"],
   style: ["normal", "italic"],
   display: "swap",
   variable: "--font-cormorant-garamond",
@@ -33,9 +36,13 @@ export const metadata: Metadata = {
   description:
     "Tribunal, notaire ou État : annonces immobilières référencées, procédures expliquées et analyses pour préparer votre achat.",
   authors: [{ name: "Immojudis" }],
+  manifest: "/manifest.webmanifest",
   icons: {
-    icon: "/brand/immojudis-justice-temple.svg",
-    apple: "/brand/immojudis-justice-temple.svg",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/brand/immojudis-justice-temple.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   openGraph: {
     title: "Immojudis - Les enchères immobilières en toute clarté",
@@ -55,6 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fr" className={`${cormorantGaramond.variable} ${ibmPlexSans.variable}`}>
       <body>
+        <SkipLink />
         <AppProviders>{children}</AppProviders>
         <Analytics />
         <SpeedInsights />

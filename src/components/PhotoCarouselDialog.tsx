@@ -127,7 +127,7 @@ export function PhotoCarouselDialog({
       aria-modal="true"
       aria-label="Galerie photos"
       tabIndex={-1}
-      className="fixed inset-0 z-[70] flex h-[100dvh] flex-col overflow-hidden bg-[#07111f] text-white outline-none"
+      className="fixed inset-0 z-[70] flex h-[100dvh] flex-col overflow-hidden bg-night text-white outline-none"
     >
       <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-white/10 px-3 pt-[env(safe-area-inset-top)] sm:min-h-16 sm:px-5">
         <div className="min-w-0">
@@ -199,7 +199,7 @@ export function PhotoCarouselDialog({
           )}
         </div>
 
-        <div className="min-h-0 shrink-0 border-t border-white/10 bg-[#0b1625] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:border-l lg:border-t-0 lg:p-3">
+        <div className="min-h-0 shrink-0 border-t border-white/10 bg-night px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:border-l lg:border-t-0 lg:p-3">
           <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] lg:grid lg:max-h-full lg:grid-cols-1 lg:overflow-y-auto lg:pb-0 [&::-webkit-scrollbar]:hidden">
             {images.map((image, thumbnailIndex) => (
               <button

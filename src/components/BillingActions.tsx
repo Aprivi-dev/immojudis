@@ -26,6 +26,7 @@ import {
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
+import { userMessage } from "@/lib/user-messages";
 
 export function BillingActions({
   className = "",
@@ -90,7 +91,7 @@ export function BillingActions({
     const redirect =
       typeof window !== "undefined"
         ? `${window.location.pathname}${window.location.search}`
-        : "/accompagnement";
+        : "/offres";
     await navigate({ to: "/login", search: { redirect } });
   }
 
@@ -129,7 +130,7 @@ export function BillingActions({
       });
       window.location.assign(response.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Paiement indisponible");
+      toast.error(userMessage(error, "Paiement indisponible"));
       setBusy(null);
     }
   }
@@ -146,7 +147,7 @@ export function BillingActions({
       const response = await openBillingPortal();
       window.location.assign(response.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Portail de paiement indisponible");
+      toast.error(userMessage(error, "Portail de paiement indisponible"));
       setBusy(null);
     }
   }
@@ -235,7 +236,7 @@ export function BillingActions({
           <div className="rounded-lg border border-border bg-muted/35 p-4 text-sm">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <strong className="text-foreground">ImmoJudis Analyse</strong>
+                <strong className="text-foreground">Immojudis Analyse</strong>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {trialAvailable ? ANALYSIS_TRIAL_LABEL : "Abonnement immédiat, sans nouvel essai"}
                 </p>
@@ -265,7 +266,7 @@ export function BillingActions({
               <Link
                 to="/conditions-generales"
                 target="_blank"
-                className="font-semibold text-gold underline"
+                className="font-semibold text-gold-text underline"
               >
                 conditions générales
               </Link>{" "}
@@ -286,7 +287,11 @@ export function BillingActions({
               Je demande l’exécution immédiate avant la fin du délai de rétractation et reconnais
               avoir reçu l’information sur mon droit de 14 jours et sur le montant proportionnel
               éventuellement dû pour le service déjà fourni. La{" "}
-              <Link to="/privacy" target="_blank" className="font-semibold text-gold underline">
+              <Link
+                to="/privacy"
+                target="_blank"
+                className="font-semibold text-gold-text underline"
+              >
                 politique de confidentialité
               </Link>{" "}
               est accessible avant la commande.

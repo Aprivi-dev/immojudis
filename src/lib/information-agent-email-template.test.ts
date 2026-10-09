@@ -28,10 +28,10 @@ describe("information agent email content template", () => {
       values,
     });
 
-    expect(rendered.subject).toBe("Appartement T3 à Bordeaux — précisions pour ImmoJudis");
+    expect(rendered.subject).toBe("Appartement T3 à Bordeaux — précisions pour Immojudis");
     expect(rendered.bodyText).toContain("Bonjour Maître Dupont");
     expect(rendered.bodyText).toContain(
-      "ImmoJudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires.",
+      "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires.",
     );
     expect(rendered.bodyText).toContain(
       "Une réponse même partielle nous aide à présenter un dossier plus clair et à limiter les demandes répétées.",
@@ -66,7 +66,7 @@ describe("information agent email content template", () => {
         return {
           ...block,
           content:
-            "ImmoJudis est un service indépendant d’analyse des ventes immobilières judiciaires. Nous vous contactons au sujet de cette vente.",
+            "Immojudis est un service indépendant d’analyse des ventes immobilières judiciaires. Nous vous contactons au sujet de cette vente.",
         };
       }
       if (block.id === "reply_instructions") {

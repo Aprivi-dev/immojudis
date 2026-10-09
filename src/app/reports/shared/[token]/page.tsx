@@ -26,7 +26,7 @@ export default async function SharedReportPage({ params }: PageParams) {
   if (!report) notFound();
   if (report instanceof ReportSourceChangedError) {
     return (
-      <main className="mx-auto max-w-2xl px-6 py-16">
+      <main id="contenu" className="mx-auto max-w-2xl px-6 py-16">
         <h1 className="text-3xl font-semibold">Rapport à actualiser</h1>
         <p className="mt-4 text-slate-700">
           Les données de cette analyse ne peuvent plus être confirmées. Demandez à la personne qui
@@ -115,11 +115,11 @@ export default async function SharedReportPage({ params }: PageParams) {
   const personalSimulation = reportSimulationSchema.safeParse(ceiling.personalSimulation);
 
   return (
-    <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
+    <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <article className="mx-auto max-w-4xl rounded-lg border border-border bg-white/94 p-6 shadow-sm sm:p-8">
         <header className="border-b border-border pb-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gold-soft">
-            Rapport partagé ImmoJudis
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gold-text">
+            Rapport partagé Immojudis
           </p>
           <h1 className="mt-3 font-display text-3xl leading-tight text-foreground sm:text-4xl">
             {report.title}
@@ -611,7 +611,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 label="Impact décision"
                 value={stringValue(
                   urbanPlanningAnalysis.decisionImpact,
-                  "À intégrer avant le plafond d'enchère",
+                  "À intégrer avant l’enchère plafond",
                 )}
               />
             </div>
@@ -890,7 +890,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                   </p>
                   {entry.url ? (
                     <a
-                      className="mt-2 inline-flex text-xs font-semibold text-gold-soft underline-offset-4 hover:underline"
+                      className="mt-2 inline-flex text-xs font-semibold text-gold-text underline-offset-4 hover:underline"
                       href={entry.url}
                       rel="noreferrer"
                       target={entry.url.startsWith("http") ? "_blank" : undefined}
@@ -917,7 +917,7 @@ export default async function SharedReportPage({ params }: PageParams) {
           </section>
         ) : null}
 
-        <footer className="mt-4 rounded-lg border border-[#1e40af]/15 bg-[#1e40af]/8 p-4 text-sm leading-relaxed text-[#1e3a8a]">
+        <footer className="mt-4 rounded-lg border border-info/15 bg-info/8 p-4 text-sm leading-relaxed text-info">
           {report.disclaimer}
         </footer>
       </article>

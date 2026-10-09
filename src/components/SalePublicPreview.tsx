@@ -14,6 +14,7 @@ import { Link } from "@/lib/router-compat";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
+  saleVerificationExplanation,
   saleVerificationLabel,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
@@ -127,7 +128,7 @@ export function SalePublicPreview({
   );
   const dossierAdds = [
     procedure.venueType === "tribunal"
-      ? "Une mise plafond simulée, avec une enveloppe travaux ajustable"
+      ? "Une enchère plafond simulée, avec une enveloppe travaux ajustable"
       : null,
     "Les ventes comparables du secteur et l’estimation du bien",
     "Les documents du dossier et les risques repérés, lorsqu’ils sont disponibles",
@@ -170,7 +171,7 @@ export function SalePublicPreview({
   );
 
   return (
-    <main className={styles.page}>
+    <main id="contenu" className={styles.page}>
       <div className={styles.container}>
         <Link to={returnTo} className={styles.back}>
           <ArrowLeft className="h-4 w-4" aria-hidden />
@@ -221,7 +222,7 @@ export function SalePublicPreview({
               <p>
                 <strong>{saleVerificationLabel(procedure.verificationStatus)}</strong>
                 <br />
-                La qualification affichée est rapprochée des sources disponibles par Immojudis.
+                {saleVerificationExplanation(procedure.verificationStatus)}
               </p>
             </div>
             <p className={styles.catalogueNote}>
@@ -290,7 +291,7 @@ export function SalePublicPreview({
               </h3>
               <p>
                 {procedure.venueType === "tribunal"
-                  ? "Marché local, risques du dossier, historique météo et estimation de votre mise plafond."
+                  ? "Marché local, risques du dossier, historique météo et estimation de votre enchère plafond."
                   : "Marché local, risques du dossier et historique météo lorsque les données le permettent."}
               </p>
             </div>

@@ -32,7 +32,7 @@ export function PremiumFeaturePreview({
           </div>
         ))}
       </div>
-      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gold-soft">
+      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gold-text">
         <LockKeyhole aria-hidden className="h-4 w-4" /> Offre Analyse
       </p>
       <h3 className="mt-2 font-display text-2xl text-foreground">{title}</h3>
@@ -49,7 +49,7 @@ export function PremiumFeaturePreview({
         </p>
       ) : null}
       <Link
-        href="/accompagnement"
+        href="/offres"
         className="mt-4 inline-flex rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-brand-navy hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
       >
         Découvrir l’offre Analyse

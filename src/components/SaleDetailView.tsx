@@ -26,6 +26,7 @@ import {
 } from "./sale-detail/decision-view";
 import { buildDecisionSummary, countDocuments, saleLocation } from "./sale-detail/detail-helpers";
 import { ListingActionBar, saleImages } from "./sale-detail/detail-primitives";
+import { userMessage } from "@/lib/user-messages";
 
 export { SaleDetailSkeleton, SaleNotFoundComponent } from "./SaleDetailFallbacks";
 /**
@@ -109,7 +110,7 @@ export function SaleDetailView({
   const documentCount = countDocuments(sale);
 
   return (
-    <main className="min-h-screen bg-[#eef7ff] pb-28 text-foreground lg:pb-20">
+    <main id="contenu" className="min-h-screen bg-background pb-28 text-foreground lg:pb-20">
       <ListingActionBar
         sale={sale}
         title={referenceLabel}
@@ -140,9 +141,7 @@ export function SaleDetailView({
                 <p className="font-semibold">Estimation de marché à compléter</p>
                 <p className="mt-0.5">
                   {marketQuery.data?.error ??
-                    (marketQuery.error instanceof Error
-                      ? marketQuery.error.message
-                      : "L’estimation est momentanément indisponible.")}
+                    userMessage(marketQuery.error, "L’estimation est momentanément indisponible.")}
                 </p>
               </div>
             </div>
@@ -224,12 +223,20 @@ export function SaleDetailView({
 export function SaleErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center">
+    <main
+      id="contenu"
+      className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center"
+    >
       <div className="max-w-2xl rounded-lg border border-border bg-white p-8 shadow-xl shadow-slate-900/10">
         <h1 className="font-sans text-2xl font-semibold text-foreground">
           Impossible d'afficher cette annonce
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {userMessage(
+            error,
+            "Cette annonce est momentanément indisponible. Réessayez dans un instant.",
+          )}
+        </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {

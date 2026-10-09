@@ -266,7 +266,7 @@ export function buildBidCeilingAnalysis({
     plan,
     compliance: {
       limitations: [
-        "Le plafond d'enchère est une aide à la décision et ne constitue pas une recommandation d'achat.",
+        "L’enchère plafond est une aide à la décision et ne constitue pas une recommandation d'achat.",
         "Les frais, travaux, conditions d'occupation et pièces officielles doivent être confirmés avant l'audience.",
         "Aucun rendement, gain ou prix d'adjudication n'est garanti.",
       ],
@@ -277,7 +277,7 @@ export function buildBidCeilingAnalysis({
 async function assertBidCeilingAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "property.bidCeiling")) {
-    throw new Error("Calcul de mise maximale réservé au plan Analyse.");
+    throw new Error("Calcul d’enchère plafond réservé au plan Analyse.");
   }
   return plan;
 }

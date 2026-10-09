@@ -4,7 +4,7 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 import { HomePage } from "@/routes/index";
 
 export const metadata: Metadata = {
-  title: { absolute: "ImmoJudis - Les enchères immobilières en toute clarté" },
+  title: { absolute: "Immojudis - Les enchères immobilières en toute clarté" },
   description:
     "Ventes au tribunal, notariales et domaniales référencées : distinguez les procédures, trouvez une annonce et préparez votre achat immobilier.",
   alternates: { canonical: "/" },

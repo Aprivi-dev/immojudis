@@ -192,7 +192,9 @@ function nextActions({
     actions.push("Rechercher DPE, amiante, plomb, termites, gaz et électricité dans les pièces.");
   }
   if (renovationPriority === "high") {
-    actions.push("Chiffrer un scénario de rénovation énergétique avant de fixer la mise maximale.");
+    actions.push(
+      "Chiffrer un scénario de rénovation énergétique avant de fixer l’enchère plafond.",
+    );
   } else if (renovationPriority === "medium") {
     actions.push("Prévoir une enveloppe de travaux ou d'amélioration énergétique dans le plafond.");
   }

@@ -353,14 +353,14 @@ export function AdminInformationAgentMissionsPanel({
     >
       <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#a36f2c]">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
             <Bot className="size-4" />
             Enrichissement administré
           </div>
           <h2 ref={composerHeadingRef} tabIndex={-1} className="mt-2 font-semibold">
             Demandes d’informations
           </h2>
-          <p className="mt-1 text-sm text-[#132238]/60">
+          <p className="mt-1 text-sm text-brand-navy/60">
             Le brouillon est préparé automatiquement, puis modifié et envoyé uniquement sur
             validation admin.
           </p>
@@ -375,8 +375,8 @@ export function AdminInformationAgentMissionsPanel({
       {selection && !activeMission ? (
         <div className="border-b bg-amber-50/50 p-5">
           <h3 className="font-semibold">Préparation du message · {selection.title}</h3>
-          <p className="mt-1 text-xs text-[#132238]/55">Annonce {selection.saleId}</p>
-          <p className="mt-3 text-sm text-[#132238]/70" role="status" aria-live="polite">
+          <p className="mt-1 text-xs text-brand-navy/55">Annonce {selection.saleId}</p>
+          <p className="mt-3 text-sm text-brand-navy/70" role="status" aria-live="polite">
             {preparingSelectionKey
               ? "Le brouillon est en cours de préparation avec le contact vérifié côté serveur…"
               : draftError
@@ -437,7 +437,7 @@ export function AdminInformationAgentMissionsPanel({
               <h3 className="font-semibold">
                 Brouillon pour {recipientEmail.trim() || "destinataire à vérifier"}
               </h3>
-              <p className="mt-1 text-xs text-[#132238]/55">
+              <p className="mt-1 text-xs text-brand-navy/55">
                 Statut : {missionStatusLabel(activeMission.status)} · annonce {activeMission.saleId}
               </p>
             </div>
@@ -484,7 +484,7 @@ export function AdminInformationAgentMissionsPanel({
                 message avant l’envoi ; le contenu saisi n’est pas réécrit automatiquement.
               </p>
             ) : null}
-            <p className="text-xs text-[#132238]/65">
+            <p className="text-xs text-brand-navy/65">
               Le mail envoyé ajoutera une adresse de réponse propre au dossier et un lien privé
               permettant de déposer une réponse, des liens ou des pièces sans compte.
             </p>
@@ -601,7 +601,7 @@ export function AdminInformationAgentMissionsPanel({
       <div className="p-5">
         <h3 className="text-sm font-semibold">Missions récentes</h3>
         {missionsQuery.isPending ? (
-          <p className="mt-3 text-sm text-[#132238]/55">Chargement…</p>
+          <p className="mt-3 text-sm text-brand-navy/55">Chargement…</p>
         ) : missionsQuery.error ? (
           <p role="alert" className="mt-3 text-sm text-red-700">
             {missionsQuery.error instanceof Error
@@ -617,7 +617,7 @@ export function AdminInformationAgentMissionsPanel({
               >
                 <div className="min-w-0">
                   <p className="truncate font-medium">{mission.recipientEmail}</p>
-                  <p className="mt-0.5 text-xs text-[#132238]/50">
+                  <p className="mt-0.5 text-xs text-brand-navy/50">
                     {missionStatusLabel(mission.status)} · {formatDateTime(mission.updatedAt)}
                   </p>
                 </div>
@@ -634,7 +634,7 @@ export function AdminInformationAgentMissionsPanel({
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-[#132238]/55">Aucune mission.</p>
+          <p className="mt-3 text-sm text-brand-navy/55">Aucune mission.</p>
         )}
       </div>
     </section>

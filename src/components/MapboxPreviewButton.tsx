@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { getMapboxAccessToken } from "@/lib/mapbox";
+import { disableMapboxTelemetry, getMapboxAccessToken } from "@/lib/mapbox";
 import {
   mapboxPreviewCamera,
   mapboxPreviewLoadingLabel,
@@ -50,13 +50,14 @@ export function MapboxPreviewButton({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button type="button" aria-label={ariaLabel} data-mapbox-mode={mode} className={className}>
-          <Icon className="h-3.5 w-3.5" />
+        <button type="button" data-mapbox-mode={mode} className={className}>
+          <Icon className="h-3.5 w-3.5" aria-hidden />
           <span>{label}</span>
+          <span className="sr-only"> — {ariaLabel}</span>
         </button>
       </DialogTrigger>
-      <DialogContent className="max-h-[94vh] w-[calc(100vw-1rem)] max-w-6xl gap-0 overflow-hidden border-white/10 bg-[#07111f] p-0 text-white shadow-2xl sm:rounded-lg">
-        <DialogHeader className="border-b border-white/10 bg-[#0b1625] px-4 py-3 pr-12 text-left sm:px-5">
+      <DialogContent className="max-h-[94vh] w-[calc(100vw-1rem)] max-w-6xl gap-0 overflow-hidden border-white/10 bg-night p-0 text-white shadow-2xl sm:rounded-lg">
+        <DialogHeader className="border-b border-white/10 bg-night px-4 py-3 pr-12 text-left sm:px-5">
           <DialogTitle className="text-base text-white">
             {title || mapboxPreviewModeLabel(mode)}
           </DialogTitle>
@@ -133,6 +134,7 @@ function MapboxPreviewCanvas({
         if (cancelled || !container.isConnected) return;
 
         const mapboxgl = module.default;
+        disableMapboxTelemetry(mapboxgl);
         mapboxgl.accessToken = token;
 
         map = new mapboxgl.Map({
@@ -154,11 +156,11 @@ function MapboxPreviewCanvas({
 
         const markerPulse = document.createElement("span");
         markerPulse.className =
-          "absolute h-7 w-7 rounded-full bg-[#0f766e]/20 shadow-[0_0_0_10px_rgba(15,118,110,0.14)]";
+          "absolute h-7 w-7 rounded-full bg-brand-navy/20 shadow-[0_0_0_10px_rgba(15,118,110,0.14)]";
         markerElement.appendChild(markerPulse);
 
         const markerDot = document.createElement("span");
-        markerDot.className = "relative h-3.5 w-3.5 rounded-full bg-[#0f766e]";
+        markerDot.className = "relative h-3.5 w-3.5 rounded-full bg-brand-navy";
         markerElement.appendChild(markerDot);
 
         marker = new mapboxgl.Marker({ element: markerElement, anchor: "center" })
@@ -223,7 +225,7 @@ function MapboxPreviewCanvas({
   }
 
   return (
-    <div className="relative h-[68vh] min-h-[21rem] bg-[#101418]">
+    <div className="relative h-[68vh] min-h-[21rem] bg-night">
       <div
         ref={containerRef}
         className="h-full w-full"
@@ -232,14 +234,14 @@ function MapboxPreviewCanvas({
       />
       {status === "ready" && (
         <div className="pointer-events-none absolute bottom-8 left-3 right-24 flex flex-col gap-2 sm:bottom-3 sm:right-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="max-w-sm rounded-lg border border-white/12 bg-[#07111f]/82 px-3 py-2 text-white shadow-lg backdrop-blur">
+          <div className="max-w-sm rounded-lg border border-white/12 bg-night/82 px-3 py-2 text-white shadow-lg backdrop-blur">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/58">
               {mapboxPreviewModeLabel(mode)}
             </p>
             <p className="mt-1 truncate text-sm font-semibold">{title}</p>
           </div>
           {coordinateLabel && (
-            <div className="hidden w-fit rounded-full border border-white/12 bg-[#07111f]/82 px-3 py-1.5 text-xs font-semibold tabular-nums text-white/75 shadow-lg backdrop-blur sm:block">
+            <div className="hidden w-fit rounded-full border border-white/12 bg-night/82 px-3 py-1.5 text-xs font-semibold tabular-nums text-white/75 shadow-lg backdrop-blur sm:block">
               {coordinateLabel}
             </div>
           )}
@@ -263,8 +265,8 @@ function MapboxPreviewStatus({
     <div
       className={
         overlay
-          ? "absolute inset-0 flex items-center justify-center bg-[#101418] px-6 text-center text-white"
-          : "relative flex h-[68vh] min-h-[22rem] items-center justify-center bg-[#101418] px-6 text-center text-white"
+          ? "absolute inset-0 flex items-center justify-center bg-night px-6 text-center text-white"
+          : "relative flex h-[68vh] min-h-[22rem] items-center justify-center bg-night px-6 text-center text-white"
       }
     >
       <div className="max-w-sm">

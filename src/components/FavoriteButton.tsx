@@ -9,6 +9,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-messages";
 
 export function FavoriteButton({
   saleId,
@@ -79,7 +80,7 @@ export function FavoriteButton({
       await qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (e: unknown) {
       void qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-      toast.error(e instanceof Error ? e.message : "Erreur");
+      toast.error(userMessage(e));
     } finally {
       setBusy(false);
     }
@@ -97,7 +98,7 @@ export function FavoriteButton({
       aria-pressed={isFav}
       aria-label={isFav ? "Ne plus suivre cette vente" : "Suivre cette vente"}
       title={isFav ? "Ne plus suivre cette vente" : "Suivre cette vente"}
-      className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-soft disabled:opacity-50 ${className}`}
+      className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-text disabled:opacity-50 ${className}`}
     >
       <Heart
         aria-hidden

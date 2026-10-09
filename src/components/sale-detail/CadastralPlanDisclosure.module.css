@@ -1,10 +1,10 @@
 .root {
   margin-top: 14px;
   overflow: hidden;
-  border: 1px solid #dce4ed;
+  border: 1px solid var(--line-soft);
   border-radius: 13px;
-  background: #fff;
-  color: #132238;
+  background: #ffffff;
+  color: var(--brand-navy);
 }
 
 .header {
@@ -28,8 +28,8 @@
   flex: 0 0 auto;
   place-items: center;
   border-radius: 10px;
-  background: #eef7ff;
-  color: #155c85;
+  background: var(--background);
+  color: var(--info);
 }
 
 .summaryText {
@@ -44,7 +44,7 @@
 }
 
 .summaryText small {
-  color: #617187;
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.35;
 }
@@ -53,7 +53,7 @@
   display: grid;
   gap: 11px;
   padding: 14px;
-  border-top: 1px solid #dce4ed;
+  border-top: 1px solid var(--line-soft);
 }
 
 .placeholder {
@@ -63,8 +63,8 @@
   gap: 12px;
   padding: 20px;
   border-radius: 11px;
-  background: #f5f8fb;
-  color: #617187;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
   font-size: 13px;
   text-align: center;
 }
@@ -73,7 +73,7 @@
   justify-self: center;
   border: 0;
   background: none;
-  color: #155c85;
+  color: var(--info);
   font: inherit;
   font-weight: 700;
   text-decoration: underline;
@@ -84,7 +84,7 @@
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  color: #405168;
+  color: var(--ink-strong);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -94,7 +94,7 @@
 }
 
 .caveat {
-  color: #617187;
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.45;
 }
@@ -104,7 +104,7 @@
   align-items: center;
   gap: 5px;
   justify-self: start;
-  color: #155c85;
+  color: var(--info);
   font-size: 12px;
   font-weight: 700;
   text-decoration: none;

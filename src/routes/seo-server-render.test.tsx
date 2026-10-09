@@ -29,7 +29,7 @@ vi.mock("@/lib/client-api", () => ({
 }));
 vi.mock("@/lib/client-billing", () => ({}));
 
-import { AccompagnementPage } from "./accompagnement";
+import { OffersPage } from "./offres";
 import { LawyerDirectoryPage } from "./avocats";
 
 function html(node: React.ReactNode) {
@@ -40,7 +40,7 @@ function html(node: React.ReactNode) {
 
 describe("pages that crawlers must read", () => {
   it("/accompagnement renders its heading without reading the URL", () => {
-    const output = html(<AccompagnementPage />);
+    const output = html(<OffersPage />);
     expect(output.match(/<h1/g)).toHaveLength(1);
     expect(output).toContain("Préparez votre limite avant l’enchère");
     expect(mocks.useSearchParams).not.toHaveBeenCalled();

@@ -680,7 +680,7 @@ type ExampleSaleConfig = {
 function createExampleSale(config: ExampleSaleConfig): AuctionSale {
   const guarantee = Math.round(config.startingPrice * 0.1);
   const procedure = EXAMPLE_SALE.source_blocks.sale_procedure;
-  const description = `${config.description} Cette fiche fictive illustre l'analyse complète Immojudis : marché local, risques, frais, pièces et mise maximale avant audience.`;
+  const description = `${config.description} Cette fiche fictive illustre l'analyse complète Immojudis : marché local, risques, frais, pièces et enchère plafond avant audience.`;
 
   return {
     ...EXAMPLE_SALE,

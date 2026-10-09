@@ -541,13 +541,13 @@ function referralNextStep(
   matchingStatus: LawyerReferralMatchingStatus,
 ): string {
   if (status === "manual_review" || matchingStatus === "manual_review") {
-    return "ImmoJudis vérifie la zone, le tribunal et les avocats référencés disponibles.";
+    return "Immojudis vérifie la zone, le tribunal et les avocats référencés disponibles.";
   }
   if (status === "sent_to_lawyer") {
     return "L'avocat référencé a reçu les éléments utiles et peut revenir vers vous.";
   }
   if (status === "responded") {
-    return "Un retour avocat est disponible ou en cours de traitement par ImmoJudis.";
+    return "Un retour avocat est disponible ou en cours de traitement par Immojudis.";
   }
   if (status === "closed") {
     return "La demande est terminée. Vous pouvez en créer une nouvelle si le dossier évolue.";
@@ -556,7 +556,7 @@ function referralNextStep(
     return "La demande a été annulée. Vous pouvez relancer une mise en relation si besoin.";
   }
   if (hasMatchedLawyer) {
-    return "Votre demande est qualifiée avec un avocat référencé ImmoJudis sur cette zone.";
+    return "Votre demande est qualifiée avec un avocat référencé Immojudis sur cette zone.";
   }
   return "Votre demande est enregistrée et attend une attribution à un avocat référencé.";
 }

@@ -4,7 +4,7 @@ import { AdminDashboardPage } from "@/routes/admin";
 
 export const metadata: Metadata = {
   title: "Publications admin",
-  description: "Validation des demandes de publication ImmoJudis.",
+  description: "Validation des demandes de publication Immojudis.",
   robots: { index: false, follow: false },
 };
 

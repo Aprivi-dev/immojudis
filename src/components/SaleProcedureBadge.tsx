@@ -1,6 +1,10 @@
 import CircleAlert from "lucide-react/dist/esm/icons/circle-alert.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import { saleVerificationLabel, saleVenueLabel, getSaleProcedure } from "@/lib/sale-procedure";
+import {
+  getSaleProcedure,
+  saleVenueLabel,
+  saleVerificationExplanation,
+} from "@/lib/sale-procedure";
 import type { AuctionSale } from "@/lib/types";
 
 export function SaleProcedureBadge({ sale }: { sale: AuctionSale }) {
@@ -16,7 +20,7 @@ export function SaleProcedureBadge({ sale }: { sale: AuctionSale }) {
             ? "border-red-200 bg-red-50/95 text-red-900"
             : "border-amber-200 bg-amber-50/95 text-amber-950"
       }`}
-      title={`${saleVenueLabel(procedure.venueType)} · ${saleVerificationLabel(procedure.verificationStatus)}`}
+      title={`${saleVenueLabel(procedure.venueType)} · ${saleVerificationExplanation(procedure.verificationStatus)}`}
     >
       {verified ? (
         <ShieldCheck className="h-3 w-3" aria-hidden />

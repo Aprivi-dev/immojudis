@@ -6,19 +6,19 @@ export function Footer() {
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-8 text-sm text-muted-foreground sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <p>Immojudis · Fiche immobiliere de demonstration</p>
         <nav className="flex flex-wrap gap-4" aria-label="Liens de pied de page">
-          <Link to="/legal" className="transition-colors hover:text-gold-soft">
+          <Link to="/legal" className="transition-colors hover:text-gold-text">
             Mentions legales
           </Link>
-          <Link to="/conditions-generales" className="transition-colors hover:text-gold-soft">
+          <Link to="/conditions-generales" className="transition-colors hover:text-gold-text">
             Conditions generales
           </Link>
-          <Link to="/privacy" className="transition-colors hover:text-gold-soft">
+          <Link to="/privacy" className="transition-colors hover:text-gold-text">
             Confidentialite
           </Link>
-          <Link to="/mes-droits" className="transition-colors hover:text-gold-soft">
+          <Link to="/mes-droits" className="transition-colors hover:text-gold-text">
             Mes droits
           </Link>
-          <Link to="/contact" className="transition-colors hover:text-gold-soft">
+          <Link to="/contact" className="transition-colors hover:text-gold-text">
             Contact
           </Link>
         </nav>

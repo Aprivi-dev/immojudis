@@ -3,8 +3,8 @@
   margin-top: 24px;
   border: 1px solid rgb(19 34 56 / 12%);
   border-radius: 18px;
-  background: var(--surface, #fffaf2);
-  color: var(--brand-navy, #132238);
+  background: var(--surface, var(--surface));
+  color: var(--brand-navy, var(--brand-navy));
   box-shadow: 0 12px 34px rgb(19 34 56 / 6%);
   overflow: hidden;
 }
@@ -20,7 +20,7 @@
 .eyebrow,
 .panelKicker {
   margin: 0;
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, var(--gold-text));
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -54,7 +54,7 @@
   border: 1px solid rgb(156 100 43 / 24%);
   border-radius: 999px;
   background: rgb(201 141 69 / 10%);
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, var(--gold-text));
   padding: 7px 11px;
   font-size: 11px;
   font-weight: 700;
@@ -74,7 +74,7 @@
   min-width: 0;
   border: 1px solid rgb(19 34 56 / 10%);
   border-radius: 16px;
-  background: #fff;
+  background: #ffffff;
   padding: 18px;
 }
 
@@ -109,7 +109,7 @@
 }
 
 .label {
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-size: 13px;
   font-weight: 700;
 }
@@ -124,8 +124,8 @@
   min-height: 44px;
   border: 1px solid rgb(19 34 56 / 16%);
   border-radius: 9px;
-  background: var(--cream, #fff7eb);
-  color: var(--brand-navy, #132238);
+  background: var(--cream, var(--cream));
+  color: var(--brand-navy, var(--brand-navy));
   padding: 9px 11px;
   font: inherit;
   font-size: 16px;
@@ -148,14 +148,14 @@
 .input:focus-visible,
 .range:focus-visible,
 .checkboxLabel input:focus-visible {
-  border-color: var(--gold-soft, #9c642b);
-  outline: 2px solid var(--gold-soft, #9c642b);
+  border-color: var(--gold-soft, var(--gold-soft));
+  outline: 2px solid var(--gold-soft, var(--gold-soft));
   outline-offset: 2px;
   box-shadow: 0 0 0 3px rgb(201 141 69 / 14%);
 }
 
 .input[aria-invalid="true"] {
-  border-color: #b42318;
+  border-color: var(--danger);
 }
 
 .help {
@@ -165,7 +165,7 @@
 }
 
 .modeBadge {
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, var(--gold-text));
   font-weight: 750;
 }
 
@@ -178,14 +178,14 @@
 
 .error {
   margin: 0;
-  color: #a61b13;
+  color: var(--danger);
   font-size: 12px;
   line-height: 1.45;
 }
 
 .range {
   width: 100%;
-  accent-color: var(--gold-soft, #9c642b);
+  accent-color: var(--gold-soft, var(--gold-soft));
   cursor: pointer;
 }
 
@@ -204,7 +204,7 @@
 
 .rangeMeta span:nth-child(2) {
   text-align: center;
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, var(--gold-text));
   font-weight: 700;
 }
 
@@ -244,7 +244,7 @@
   display: flex;
   align-items: flex-start;
   gap: 9px;
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   cursor: pointer;
   font-size: 13px;
   font-weight: 650;
@@ -256,7 +256,7 @@
   height: 17px;
   margin: 0;
   flex: 0 0 auto;
-  accent-color: var(--gold-soft, #9c642b);
+  accent-color: var(--gold-soft, var(--gold-soft));
 }
 
 .insuranceField {
@@ -267,7 +267,7 @@
 }
 
 .resultPanel {
-  background: linear-gradient(180deg, #fff 0%, rgb(255 247 235 / 70%) 100%);
+  background: linear-gradient(180deg, #ffffff 0%, rgb(255 247 235 / 70%) 100%);
 }
 
 .resultTitle {
@@ -292,7 +292,7 @@
 
 .resultLabel {
   grid-column: 1 / -1;
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, var(--gold-text));
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -301,7 +301,7 @@
 
 .resultStatus strong {
   min-width: 0;
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-size: clamp(30px, 4vw, 42px);
   line-height: 1.05;
   letter-spacing: -0.045em;
@@ -358,7 +358,7 @@
 
 .resultRows dd {
   margin: 0;
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-size: 14px;
   font-weight: 700;
   text-align: right;
@@ -369,13 +369,13 @@
   margin-top: 8px;
   border: 0;
   border-radius: 10px;
-  background: var(--brand-navy, #132238);
+  background: var(--brand-navy, var(--brand-navy));
   padding: 13px;
 }
 
 .resultRows .totalRow dt,
 .resultRows .totalRow dd {
-  color: #fff;
+  color: #ffffff;
 }
 
 .resultRows .costTotalRow {
@@ -390,7 +390,7 @@
 .resultRows .costTotalRow dd,
 .resultRows .financedRow dt,
 .resultRows .financedRow dd {
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-weight: 750;
 }
 

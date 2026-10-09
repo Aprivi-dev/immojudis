@@ -506,7 +506,7 @@ describe("information-agent offline inbound scenarios", () => {
         "La surface habitable est de 84 m².",
         "",
         "--",
-        "Le 20 septembre, ImmoJudis a écrit :",
+        "Le 20 septembre, Immojudis a écrit :",
         "> La surface habitable est de 18 m².",
       ].join("\n"),
     });
@@ -1303,7 +1303,7 @@ describe("information-agent offline inbound scenarios", () => {
   it("does not turn quoted request text into a new fact", async () => {
     const state = fixture();
     receivedEmail({
-      text: "Je vérifie et reviens vers vous.\n\nLe 20 septembre, ImmoJudis a écrit :\n> Surface 84 m² et 4 pièces",
+      text: "Je vérifie et reviens vers vous.\n\nLe 20 septembre, Immojudis a écrit :\n> Surface 84 m² et 4 pièces",
     });
 
     expect(await webhook()).toMatchObject({ factCount: 0 });

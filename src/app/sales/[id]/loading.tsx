@@ -1,6 +1,6 @@
 export default function SaleLoading() {
   return (
-    <main className="min-h-screen bg-white px-4 py-8 sm:px-6" aria-busy="true">
+    <main id="contenu" className="min-h-screen bg-white px-4 py-8 sm:px-6" aria-busy="true">
       <p className="sr-only" role="status">
         Chargement de l’annonce…
       </p>

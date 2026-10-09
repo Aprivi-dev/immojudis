@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSales, getSalesForSearch, getSalesWithCoords } from "./queries";
+import { getSaleMapPoints, getSales, getSalesForSearch, getSalesWithCoords } from "./queries";
 
 describe("Supabase sale search query", () => {
   it.each([false, true])(
@@ -124,6 +124,27 @@ describe("Supabase sale search query", () => {
       }
     },
   );
+
+  it("charge tous les points de la carte, par pages de 1 000, avec des colonnes minimales", async () => {
+    const page = (start: number, count: number) =>
+      Array.from({ length: count }, (_, index) => ({ id: `p-${start + index}` }));
+    const client = new QueryClient([page(0, 1000), page(1000, 1000), page(2000, 250)]);
+
+    const rows = await getSaleMapPoints({ city: "Bordeaux" }, { client: client as never });
+
+    expect(rows).toHaveLength(2250);
+    expect(client.builders).toHaveLength(3);
+    expect(client.builders[1].calls).toContainEqual(["range", 1000, 1999]);
+    const calls = client.builders[0].calls;
+    expect(calls).toContainEqual(["not", "latitude", "is", null]);
+    expect(calls).toContainEqual(["order", "id", { ascending: true }]);
+    const columns = String(calls.find((call) => call[0] === "select")?.[1]).split(",");
+    expect(columns).toEqual(
+      expect.arrayContaining(["id", "latitude", "longitude", "starting_price_eur"]),
+    );
+    expect(columns.length).toBeLessThanOrEqual(10);
+    expect(columns).not.toContain("title");
+  });
 
   it("keeps discovery on one request because its security barrier makes two phases slower", async () => {
     const client = new QueryClient([[{ id: "discovery" }]]);

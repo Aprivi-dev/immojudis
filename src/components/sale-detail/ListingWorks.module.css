@@ -1,7 +1,7 @@
 .section {
   scroll-margin-top: 9rem;
-  background: #fff;
-  color: var(--brand-navy, #132238);
+  background: #ffffff;
+  color: var(--brand-navy, var(--brand-navy));
 }
 
 .inner {
@@ -22,7 +22,7 @@
 .eyebrow,
 .resultLabel {
   margin: 0;
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, var(--gold-text));
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -64,7 +64,7 @@
   border: 1px solid rgb(156 100 43 / 24%);
   border-radius: 999px;
   background: rgb(201 141 69 / 10%);
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, var(--gold-text));
   padding: 7px 11px;
   font-size: 11px;
   font-weight: 700;
@@ -82,14 +82,14 @@
   min-width: 0;
   border: 1px solid rgb(19 34 56 / 12%);
   border-radius: 16px;
-  background: #fffaf2;
+  background: var(--surface);
   padding: 20px;
 }
 
 .primaryResult {
-  border-color: var(--brand-navy, #132238);
-  background: var(--brand-navy, #132238);
-  color: #fff;
+  border-color: var(--brand-navy, var(--brand-navy));
+  background: var(--brand-navy, var(--brand-navy));
+  color: #ffffff;
 }
 
 .primaryResult .resultLabel,
@@ -100,7 +100,7 @@
 .primaryResult .sourceBadge {
   border-color: rgb(255 255 255 / 25%);
   background: rgb(255 255 255 / 10%);
-  color: #fff;
+  color: #ffffff;
 }
 
 .resultTopline {
@@ -149,10 +149,10 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid var(--brand-navy, #132238);
+  border: 1px solid var(--brand-navy, var(--brand-navy));
   border-radius: 10px;
-  background: var(--brand-navy, #132238);
-  color: #fff;
+  background: var(--brand-navy, var(--brand-navy));
+  color: #ffffff;
   cursor: pointer;
   font: inherit;
   font-size: 13px;
@@ -170,15 +170,15 @@
 
 .applyButton {
   margin-top: 18px;
-  border-color: #fff;
-  background: #fff;
-  color: var(--brand-navy, #132238);
+  border-color: #ffffff;
+  background: #ffffff;
+  color: var(--brand-navy, var(--brand-navy));
 }
 
 .applyButton:hover {
-  border-color: #fffaf2;
-  background: #fffaf2;
-  color: var(--brand-navy, #132238);
+  border-color: #ffffff;
+  background: var(--surface);
+  color: var(--brand-navy, var(--brand-navy));
 }
 
 .applyButton:disabled {
@@ -188,8 +188,8 @@
 
 .addButton:hover,
 .secondaryButton:hover {
-  background: #263953;
-  border-color: #263953;
+  background: var(--brand-navy-soft);
+  border-color: var(--brand-navy);
 }
 
 .addButton:active,
@@ -202,7 +202,7 @@
 .applyButton:focus-visible,
 .removeButton:focus-visible,
 .evidenceDisclosure summary:focus-visible {
-  outline: 2px solid var(--gold-soft, #9c642b);
+  outline: 2px solid var(--gold-soft, var(--gold-soft));
   outline-offset: 2px;
 }
 
@@ -216,7 +216,7 @@
   margin-top: 16px;
   border: 1px solid rgb(19 34 56 / 12%);
   border-radius: 16px;
-  background: #fff;
+  background: #ffffff;
   overflow: hidden;
 }
 
@@ -253,10 +253,9 @@
 .lineHeader,
 .line {
   display: grid;
-  grid-template-columns: minmax(180px, 1.5fr) minmax(90px, 0.65fr) minmax(90px, 0.65fr) minmax(
-      120px,
-      0.9fr
-    ) minmax(105px, 0.8fr) 38px;
+  grid-template-columns:
+    minmax(180px, 1.5fr) minmax(90px, 0.65fr) minmax(90px, 0.65fr) minmax(120px, 0.9fr)
+    minmax(105px, 0.8fr) 38px;
   align-items: center;
   gap: 10px;
   padding: 0 20px;
@@ -264,7 +263,7 @@
 
 .lineHeader {
   min-height: 38px;
-  background: #fffaf2;
+  background: var(--surface);
   color: rgb(19 34 56 / 58%);
   font-size: 11px;
   font-weight: 700;
@@ -296,8 +295,8 @@
   min-height: 40px;
   border: 1px solid rgb(19 34 56 / 16%);
   border-radius: 9px;
-  background: #fffaf2;
-  color: var(--brand-navy, #132238);
+  background: var(--surface);
+  color: var(--brand-navy, var(--brand-navy));
   padding: 8px 9px;
   font: inherit;
   font-size: 14px;
@@ -313,14 +312,14 @@
 }
 
 .input:focus-visible {
-  border-color: var(--gold-soft, #9c642b);
-  outline: 2px solid var(--gold-soft, #9c642b);
+  border-color: var(--gold-soft, var(--gold-soft));
+  outline: 2px solid var(--gold-soft, var(--gold-soft));
   outline-offset: 1px;
   box-shadow: 0 0 0 3px rgb(201 141 69 / 14%);
 }
 
 .lineTotal {
-  color: var(--brand-navy, #132238);
+  color: var(--brand-navy, var(--brand-navy));
   font-size: 13px;
   font-weight: 700;
   line-height: 1.35;
@@ -334,14 +333,14 @@
   justify-content: center;
   border: 1px solid rgb(19 34 56 / 14%);
   border-radius: 9px;
-  background: #fff;
+  background: #ffffff;
   color: rgb(19 34 56 / 68%);
   cursor: pointer;
 }
 
 .removeButton:hover {
-  border-color: #a61b13;
-  color: #a61b13;
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .totalRow {
@@ -350,7 +349,7 @@
   justify-content: space-between;
   gap: 16px;
   border-top: 1px solid rgb(19 34 56 / 14%);
-  background: #fffaf2;
+  background: var(--surface);
   padding: 15px 20px 17px;
 }
 
@@ -395,21 +394,21 @@
 .secondaryButton {
   flex: 0 0 auto;
   border-color: rgb(19 34 56 / 20%);
-  background: #fff;
-  color: var(--brand-navy, #132238);
+  background: #ffffff;
+  color: var(--brand-navy, var(--brand-navy));
 }
 
 .secondaryButton:hover {
-  background: #fffaf2;
-  border-color: var(--brand-navy, #132238);
-  color: var(--brand-navy, #132238);
+  background: var(--surface);
+  border-color: var(--brand-navy, var(--brand-navy));
+  color: var(--brand-navy, var(--brand-navy));
 }
 
 .evidenceDisclosure {
   margin-top: 16px;
   border: 1px solid rgb(19 34 56 / 12%);
   border-radius: 12px;
-  background: #fff;
+  background: #ffffff;
   overflow: hidden;
 }
 
@@ -480,7 +479,7 @@
 }
 
 .evidenceText a {
-  color: var(--gold-soft, #9c642b);
+  color: var(--gold-text, var(--gold-text));
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 4px;

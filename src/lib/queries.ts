@@ -613,6 +613,54 @@ export async function getSalesWithCoords(
   return (data ?? []) as unknown as AuctionSale[];
 }
 
+/** Colonnes minimales d'un point de carte : identifiant, position et de quoi étiqueter la pastille. */
+const SALE_MAP_POINT_COLUMNS = [
+  "id",
+  "latitude",
+  "longitude",
+  "starting_price_eur",
+  "city",
+  "department",
+  "property_type",
+  "sale_date",
+  "sale_venue_type",
+  "sale_verification_status",
+].join(",");
+const MAP_POINT_PAGE_SIZE = 1000;
+/** Garde-fou : le catalogue entier (quelques milliers de ventes) tient largement dessous. */
+export const MAP_POINTS_HARD_LIMIT = 10_000;
+
+/**
+ * Tous les points géolocalisés d'une recherche (et non un échantillon), en colonnes
+ * minimales, par pages de 1 000 lignes triées par identifiant pour une pagination stable.
+ */
+export async function getSaleMapPoints(
+  filters: SaleFilters = {},
+  options: { discovery?: boolean; client?: SupabaseReader } = {},
+): Promise<AuctionSale[]> {
+  if (!options.client && !assertCloudConfigured()) return [];
+  const db = options.client ?? supabase;
+  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  const points: AuctionSale[] = [];
+
+  for (let from = 0; from < MAP_POINTS_HARD_LIMIT; from += MAP_POINT_PAGE_SIZE) {
+    let q = db
+      .from(catalogView)
+      .select(SALE_MAP_POINT_COLUMNS)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + MAP_POINT_PAGE_SIZE - 1);
+    q = applyAuthenticatedSaleFilters(q, filters);
+    const { data, error } = await q;
+    if (error) throw error;
+    const page = (data ?? []) as unknown as AuctionSale[];
+    points.push(...page);
+    if (page.length < MAP_POINT_PAGE_SIZE) break;
+  }
+  return points;
+}
+
 /**
  * Fetch sales within a bounding box around (lat,lng).
  * radiusKm is the half-side of the bbox; the caller is expected to filter

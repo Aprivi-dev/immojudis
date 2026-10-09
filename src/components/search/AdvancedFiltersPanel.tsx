@@ -43,7 +43,7 @@ export function MoreFiltersModal({
       }}
     >
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[#132238]/55 backdrop-blur-sm" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-brand-navy/55 backdrop-blur-sm" />
         <DialogPrimitive.Content
           onOpenAutoFocus={() => {
             triggerRef.current = document.activeElement as HTMLElement;
@@ -89,12 +89,12 @@ export function MobileFilterDrawer({
 }) {
   return (
     <aside className="relative ml-auto flex h-full w-full max-w-3xl flex-col overflow-hidden bg-white shadow-2xl sm:rounded-md">
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-[#132238]/10 px-4">
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-brand-navy/10 px-4">
         <div>
-          <h2 id="more-filters-title" className="text-base font-extrabold text-[#132238]">
+          <h2 id="more-filters-title" className="text-base font-extrabold text-brand-navy">
             Filtres avancés
           </h2>
-          <p className="text-xs font-semibold text-[#667482]">
+          <p className="text-xs font-semibold text-ink-soft">
             {activeFiltersCount.toLocaleString("fr-FR")} filtre{activeFiltersCount === 1 ? "" : "s"}{" "}
             actif{activeFiltersCount === 1 ? "" : "s"}
           </p>
@@ -102,7 +102,7 @@ export function MobileFilterDrawer({
         <button
           type="button"
           onClick={onClose}
-          className="grid h-10 w-10 cursor-pointer place-items-center rounded-md border border-[#d6e0dc] bg-white transition-colors hover:bg-[#f4f7f9]"
+          className="grid h-10 w-10 cursor-pointer place-items-center rounded-md border border-line-soft bg-white transition-colors hover:bg-surface-muted"
           aria-label="Fermer"
         >
           <X className="h-5 w-5" />
@@ -123,14 +123,16 @@ export function MobileFilterDrawer({
           />
         </div>
         <div className="mb-5 grid gap-4 sm:grid-cols-2">
-          <div>
-            <p className="mb-2 text-sm font-semibold">Mise à prix</p>
-            <PriceFilter draft={draft} setDraft={setDraft} />
-          </div>
-          <div>
-            <p className="mb-2 text-sm font-semibold">Chambres et salles de bains</p>
-            <BedsBathsFilter draft={draft} setDraft={setDraft} />
-          </div>
+          <fieldset className="min-w-0">
+            <legend className="mb-2 text-sm font-extrabold text-brand-navy">Mise à prix</legend>
+            <PriceFilter stacked draft={draft} setDraft={setDraft} />
+          </fieldset>
+          <fieldset className="min-w-0">
+            <legend className="mb-2 text-sm font-extrabold text-brand-navy">
+              Chambres et salles de bain
+            </legend>
+            <BedsBathsFilter stacked draft={draft} setDraft={setDraft} />
+          </fieldset>
           <InlineTextFilter
             label="Ville"
             icon={MapPin}
@@ -274,20 +276,20 @@ export function MobileFilterDrawer({
                 />
               </FilterField>
 
-              <label className="flex cursor-pointer items-center gap-3 rounded-md border border-[#d6e0dc] bg-[#f8fbfd] px-3 py-2 text-sm font-bold text-[#132238]">
+              <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">
                 <input
                   type="checkbox"
                   checked={draft.houseWithLand}
                   onChange={(event) =>
                     setDraft((current) => ({ ...current, houseWithLand: event.target.checked }))
                   }
-                  className="h-4 w-4 accent-[#0f766e]"
+                  className="h-4 w-4 accent-brand-navy"
                 />
                 Maison avec terrain
               </label>
               <div>
-                <span className="mb-2 block text-[10px] font-bold uppercase tracking-[0.12em] text-[#667482]">
-                  DPE
+                <span className="mb-2 block text-sm font-semibold text-brand-navy">
+                  Classe énergétique (DPE)
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {DPE_CLASSES.map((dpeClass) => (
@@ -320,7 +322,7 @@ export function MobileFilterDrawer({
               />
             </FilterField>
 
-            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-[#d6e0dc] bg-[#f8fbfd] px-3 py-2 text-sm font-bold text-[#132238]">
+            <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-soft bg-surface-muted px-3 py-2 text-sm font-bold text-brand-navy">
               <input
                 type="checkbox"
                 disabled={analysisLocked}
@@ -328,7 +330,7 @@ export function MobileFilterDrawer({
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, openHouse: event.target.checked }))
                 }
-                className="h-4 w-4 accent-[#0f766e]"
+                className="h-4 w-4 accent-brand-navy"
               />
               Visite renseignée
               {analysisLocked && <span className="text-xs">· offre Analyse</span>}
@@ -375,11 +377,11 @@ export function MobileFilterDrawer({
         </AdvancedGroup>
       </div>
 
-      <div className="flex shrink-0 flex-col gap-2 border-t border-[#132238]/10 p-4 sm:flex-row sm:justify-between">
+      <div className="flex shrink-0 flex-col gap-2 border-t border-brand-navy/10 p-4 sm:flex-row sm:justify-between">
         <button
           type="button"
           onClick={onReset}
-          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-[#ead8c5] bg-[#fffaf2] px-4 text-sm font-bold text-[#8a5b24] transition-colors hover:border-[#c98d45]"
+          className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-sand bg-surface px-4 text-sm font-bold text-gold-text transition-colors hover:border-gold"
         >
           <RotateCcw className="h-4 w-4" />
           Réinitialiser
@@ -387,7 +389,7 @@ export function MobileFilterDrawer({
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md bg-[#132238] px-4 text-sm font-bold text-white transition-colors hover:bg-[#1f3657]"
+          className="inline-flex h-10 cursor-pointer items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-bold text-white transition-colors hover:bg-brand-navy-soft"
         >
           Afficher les résultats
         </button>
@@ -407,7 +409,7 @@ export function AdvancedGroup({
 }) {
   return (
     <section className={className}>
-      <h3 className="mb-3 text-sm font-extrabold text-[#132238]">{title}</h3>
+      <h3 className="mb-3 text-sm font-extrabold text-brand-navy">{title}</h3>
       <div className="grid gap-3">{children}</div>
     </section>
   );
@@ -416,9 +418,7 @@ export function AdvancedGroup({
 export function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="space-y-1">
-      <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-[#667482]">
-        {label}
-      </span>
+      <span className="block text-sm font-semibold text-brand-navy">{label}</span>
       {children}
     </label>
   );
@@ -438,10 +438,10 @@ export function ChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex h-9 cursor-pointer items-center rounded-md border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] ${
+      className={`inline-flex h-9 cursor-pointer items-center rounded-md border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold ${
         active
-          ? "border-[#0f766e] bg-[#0f766e] text-white"
-          : "border-[#d6e0dc] bg-white text-[#132238] hover:border-[#0f766e]"
+          ? "border-brand-navy bg-brand-navy text-white"
+          : "border-line-soft bg-white text-brand-navy hover:border-brand-navy"
       }`}
     >
       {children}
@@ -465,11 +465,11 @@ export function DpeChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="inline-flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-extrabold transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
+      className="inline-flex h-9 min-w-9 cursor-pointer items-center justify-center rounded-md border px-2 text-sm font-extrabold transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
       style={{
         backgroundColor: active ? color?.background : "#ffffff",
         borderColor: color?.border,
-        color: active ? color?.foreground : "#132238",
+        color: active ? color?.foreground : "var(--brand-navy)",
       }}
     >
       {dpeClass}
