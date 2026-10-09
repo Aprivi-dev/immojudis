@@ -45,6 +45,7 @@ export function SearchResultsList({
   analysisLocked,
   isLoading,
   error,
+  onRetry,
   selectedSaleId,
   hoveredSaleId,
   onHover,
@@ -62,6 +63,7 @@ export function SearchResultsList({
   analysisLocked: boolean;
   isLoading: boolean;
   error: Error | null;
+  onRetry?: () => void;
   selectedSaleId: string | null;
   hoveredSaleId: string | null;
   onHover: (saleId: string | null) => void;
@@ -95,7 +97,7 @@ export function SearchResultsList({
 
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
-      {error ? <ErrorState error={error} /> : null}
+      {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
 
       {!isLoading && sales.length === 0 && !error ? <NoResultsState /> : null}
 

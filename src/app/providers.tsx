@@ -7,7 +7,12 @@ import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: { queries: { retry: 1, staleTime: 60_000 } },
+      }),
+  );
 
   return (
     <QueryClientProvider client={queryClient}>
