@@ -24,9 +24,60 @@ jobs:
           node-version-file: .node-version
       - run: npm run check:manual-collection
 
-  web:
-    name: Web (typecheck + lint)
+  typecheck:
+    name: Web — typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Pin npm
+        run: npm install --global npm@11.18.0
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+  lint:
+    name: Web — lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Pin npm
+        run: npm install --global npm@11.18.0
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+
+  unit:
+    name: Web — unit tests and security invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Pin npm
+        run: npm install --global npm@11.18.0
+      - run: npm ci
+      - name: Unit tests
+        run: npm run test
+      - name: Static security invariants
+        run: npm run test:security-invariants
+
+  audit:
+    name: Web — dependency audit and secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -38,14 +89,29 @@ jobs:
       - run: npm ci
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
-      - name: Typecheck
-        run: npx tsc --noEmit
-      - name: Lint
-        run: npm run lint
-      - name: Unit tests
-        run: npm run test
-      - name: Static security invariants
-        run: npm run test:security-invariants
+      - name: Secret scan
+        run: npm run check:secrets
+
+  build:
+    name: Web — production build and budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Pin npm
+        run: npm install --global npm@11.18.0
+      - run: npm ci
+      - name: Cache the Next.js build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
       - name: Production build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL || 'https://ci.supabase.co' }}
@@ -53,6 +119,15 @@ jobs:
         run: npm run build
       - name: SSR, bundle and media budgets
         run: npm run build:budgets
+
+  web:
+    # Aggregate gate under the historical check name, so branch protection that
+    # requires "Web (typecheck + lint)" keeps working now that the jobs run in parallel.
+    name: Web (typecheck + lint)
+    runs-on: ubuntu-latest
+    needs: [typecheck, lint, unit, audit, build]
+    steps:
+      - run: echo "Typecheck, lint, tests, audit and build passed."
 
   pipeline:
     name: Data pipeline (Python ${{ matrix.python-version }})

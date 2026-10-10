@@ -17,6 +17,8 @@ const allowedVercelCronPaths = new Set([
   "/api/cron/alert-notifications",
   "/api/cron/sale-change-monitor",
   "/api/cron/data-retention",
+  // Monthly refresh of the lawyers' directory: it collects no auction listing.
+  "/api/cron/cnb-lawyer-directory",
   "/api/cron/sale-retention",
   "/api/cron/operational-health",
 ]);
