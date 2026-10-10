@@ -8,10 +8,13 @@ import {
   workspaceAnnotationUpdateSchema,
 } from "@/lib/sale-workspace-collaboration";
 
-const { serverFrom } = vi.hoisted(() => ({ serverFrom: vi.fn() }));
+const { serverFrom, getUserById } = vi.hoisted(() => ({
+  serverFrom: vi.fn(),
+  getUserById: vi.fn(),
+}));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { from: serverFrom },
+  supabaseAdmin: { from: serverFrom, auth: { admin: { getUserById } } },
 }));
 
 const SALE_ID = "7d335032-e935-4550-9347-ed22b0f63449";
@@ -22,6 +25,8 @@ const COLLABORATOR_USER_ID = "ff15be97-c82c-4b10-9847-e4b05f32d1e3";
 describe("sale workspace collaboration schemas", () => {
   beforeEach(() => {
     serverFrom.mockReset();
+    getUserById.mockReset();
+    getUserById.mockResolvedValue(confirmedUser("avocat@example.fr"));
   });
 
   it("normalizes collaborator invitations and defaults to commenter role", () => {
@@ -103,6 +108,34 @@ describe("sale workspace collaboration schemas", () => {
     expect(collaboration.current.status).toBe("accepted");
   });
 
+  it("refuses an invitation when the account email is not confirmed", async () => {
+    const collaboration = installInvitationCompareAndSetMock(false);
+    getUserById.mockResolvedValue(confirmedUser("avocat@example.fr", null));
+
+    await expect(
+      acceptSaleWorkspaceInvitation({
+        auth: collaboratorAuth(),
+        input: { collaboratorId: COLLABORATOR_ID },
+      }),
+    ).rejects.toThrow("Confirmez votre adresse email");
+
+    expect(collaboration.current.status).toBe("invited");
+  });
+
+  it("does not let an administrator accept an invitation addressed to someone else", async () => {
+    const collaboration = installInvitationCompareAndSetMock(false);
+    getUserById.mockResolvedValue(confirmedUser("admin@immojudis.test"));
+
+    await expect(
+      acceptSaleWorkspaceInvitation({
+        auth: { ...collaboratorAuth(), isAdmin: true, userRole: "admin" } as SupabaseAuthContext,
+        input: { collaboratorId: COLLABORATOR_ID },
+      }),
+    ).rejects.toThrow("Cette invitation ne correspond pas à votre email.");
+
+    expect(collaboration.current).toMatchObject({ status: "invited", collaborator_user_id: null });
+  });
+
   it("does not overwrite an owner revocation that wins the acceptance race", async () => {
     const collaboration = installInvitationCompareAndSetMock(true);
 
@@ -120,6 +153,13 @@ describe("sale workspace collaboration schemas", () => {
     });
   });
 });
+
+function confirmedUser(email: string, confirmedAt: string | null = "2026-07-01T10:00:00.000Z") {
+  return {
+    data: { user: { id: COLLABORATOR_USER_ID, email, email_confirmed_at: confirmedAt } },
+    error: null,
+  };
+}
 
 function collaboratorAuth(): SupabaseAuthContext {
   return {

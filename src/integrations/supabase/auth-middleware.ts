@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { AccountTier, UserRole } from "@/lib/account";
+import { isAdminMfaRequired, sessionAssuranceLevel } from "@/lib/admin-mfa";
 import type { Database } from "./types";
 
 type Claims = Record<string, unknown> & {
@@ -83,7 +84,14 @@ export async function requireSupabaseAuthContext(token: string): Promise<Supabas
     .maybeSingle();
 
   if (profileError) {
-    throw new Error(`Unauthorized: User access profile unavailable (${profileError.message})`);
+    // Keep the database detail in the server logs; callers only see a generic 401.
+    console.error(
+      JSON.stringify({
+        scope: "auth.profile",
+        error: profileError.message ?? String(profileError),
+      }),
+    );
+    throw new Error("Unauthorized: User access profile unavailable");
   }
 
   const accountTier: AccountTier = profile?.account_tier === "premium" ? "premium" : "free";
@@ -95,6 +103,9 @@ export async function requireSupabaseAuthContext(token: string): Promise<Supabas
     claims,
     accountTier,
     userRole,
-    isAdmin: userRole === "admin",
+    // With ADMIN_MFA_REQUIRED=true an administrator only keeps admin rights on an aal2 session
+    // (TOTP verified); an aal1 session is treated like a regular account.
+    isAdmin:
+      userRole === "admin" && (!isAdminMfaRequired() || sessionAssuranceLevel(claims) === "aal2"),
   };
 }

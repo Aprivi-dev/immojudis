@@ -27,6 +27,10 @@ export function AdminInformationAgentReviewPanel() {
   const [previewingAssetId, setPreviewingAssetId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ assetId: string; signedUrl: string } | null>(null);
   const [rightsNotes, setRightsNotes] = useState<Record<string, string>>({});
+  // "Caviardage vérifié": checkbox + name of the person, required before a piece goes public.
+  const [redaction, setRedaction] = useState<Record<string, { confirmed: boolean; by: string }>>(
+    {},
+  );
   const query = useInfiniteQuery({
     queryKey: QUERY_KEY,
     queryFn: ({ pageParam }) => fetchAdminInformationAgentReview(pageParam),
@@ -253,10 +257,14 @@ export function AdminInformationAgentReviewPanel() {
             const extraction = asset ? extractionsByAssetId.get(asset.id) : undefined;
             const caseCanAccept =
               informationCase !== undefined && REVIEWABLE_CASE_STATUSES.has(informationCase.status);
+            const redactionCheck = redaction[fact.id] ?? { confirmed: false, by: "" };
+            const redactionOk = redactionCheck.confirmed && redactionCheck.by.trim().length >= 3;
             const canAccept =
               caseCanAccept &&
               (!requiresRights ||
-                (asset?.rights_status === "authorized" && extraction?.status === "completed"));
+                (asset?.rights_status === "authorized" &&
+                  extraction?.status === "completed" &&
+                  redactionOk));
             return (
               <article key={fact.id} className="p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -434,10 +442,48 @@ export function AdminInformationAgentReviewPanel() {
                             Pièce jointe introuvable : impossible de contrôler ses droits.
                           </p>
                         )}
+                        <fieldset className="mt-3 rounded border border-amber-300 bg-amber-50/60 p-3">
+                          <legend className="px-1 text-xs font-semibold text-amber-900">
+                            Caviardage vérifié
+                          </legend>
+                          <label className="flex items-start gap-2 text-xs text-brand-navy">
+                            <input
+                              type="checkbox"
+                              checked={redactionCheck.confirmed}
+                              onChange={(event) =>
+                                setRedaction((current) => ({
+                                  ...current,
+                                  [fact.id]: { ...redactionCheck, confirmed: event.target.checked },
+                                }))
+                              }
+                            />
+                            J’ai contrôlé la pièce : les données personnelles (noms, téléphones,
+                            adresses de tiers) sont caviardées sur toutes les pages visibles.
+                          </label>
+                          <label className="mt-2 block text-xs text-brand-navy">
+                            Nom de la personne qui a contrôlé
+                            <input
+                              className="mt-1 block w-full rounded border px-2 py-1 text-sm"
+                              maxLength={120}
+                              value={redactionCheck.by}
+                              onChange={(event) =>
+                                setRedaction((current) => ({
+                                  ...current,
+                                  [fact.id]: { ...redactionCheck, by: event.target.value },
+                                }))
+                              }
+                            />
+                          </label>
+                          <p className="mt-2 text-[11px] text-brand-navy/60">
+                            Le PDF sera aplati en images sans métadonnées avant publication ; le
+                            fichier est servi par lien signé de 10 minutes.
+                          </p>
+                        </fieldset>
                         {!canAccept ? (
                           <p className="mt-2 text-xs text-amber-800">
                             L’acceptation restera désactivée tant que les droits ne sont pas
-                            autorisés et que l’analyse n’est pas terminée.
+                            autorisés, que l’analyse n’est pas terminée et que le caviardage n’est
+                            pas vérifié.
                           </p>
                         ) : null}
                       </div>
@@ -455,7 +501,17 @@ export function AdminInformationAgentReviewPanel() {
                       className="admin-button-primary inline-flex items-center gap-2"
                       disabled={review.isPending || !canAccept}
                       onClick={() =>
-                        review.mutate({ factId: fact.id, decision: "accepted", notes: null })
+                        review.mutate({
+                          factId: fact.id,
+                          decision: "accepted",
+                          notes: null,
+                          ...(requiresRights
+                            ? {
+                                redactionConfirmed: redactionCheck.confirmed,
+                                redactionVerifiedBy: redactionCheck.by.trim(),
+                              }
+                            : {}),
+                        })
                       }
                     >
                       <CheckCircle className="size-4" /> Accepter

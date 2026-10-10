@@ -136,9 +136,7 @@ const routeBudgets = [
   },
 ];
 
-const requiredHtml = [
-  [".next/server/app/index.html", "Les enchères immobilières"],
-];
+const requiredHtml = [[".next/server/app/index.html", "Les enchères immobilières"]];
 
 for (const [path, expectedText] of requiredHtml) {
   const html = await readFile(path, "utf8");

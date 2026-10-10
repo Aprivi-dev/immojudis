@@ -433,6 +433,73 @@ for (const relation of [
   if (grant.test(schema)) failures.push(`pipeline bootstrap re-grants obsolete view ${relation}`);
 }
 
+// P4-01 / P4-07: Data API exposure of auction_sales and default function privileges.
+const columnGrantMigration = await readFile(
+  new URL(
+    "../supabase/migrations/20261010003000_restrict_auction_sales_columns.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+if (
+  !/revoke\s+select\s+on\s+table\s+public\.auction_sales\s+from\s+authenticated/i.test(
+    columnGrantMigration,
+  )
+) {
+  failures.push("auction_sales keeps a table-wide SELECT grant for authenticated");
+}
+const columnGrant =
+  /grant\s+select\s*\(([\s\S]*?)\)\s+on\s+table\s+public\.auction_sales\s+to\s+authenticated/i.exec(
+    columnGrantMigration,
+  )?.[1];
+if (!columnGrant) {
+  failures.push("auction_sales has no column-level grant for authenticated");
+} else {
+  for (const internal of [
+    "raw_text",
+    "content_hash",
+    "last_run_id",
+    "external_id",
+    "premium_readiness_status",
+    "premium_readiness_override_reason",
+    "retention_deadline",
+  ]) {
+    if (new RegExp(`\\b${internal}\\b`).test(columnGrant)) {
+      failures.push(`auction_sales column grant exposes internal column ${internal}`);
+    }
+  }
+}
+const defaultPrivilegeMigration = await readFile(
+  new URL("../supabase/migrations/20261010004000_default_function_privileges.sql", import.meta.url),
+  "utf8",
+);
+if (
+  !/alter\s+default\s+privileges\s+revoke\s+execute\s+on\s+functions\s+from\s+public\s*;/i.test(
+    defaultPrivilegeMigration,
+  ) ||
+  !/alter\s+default\s+privileges\s+in\s+schema\s+public\s+grant\s+execute\s+on\s+functions\s+to\s+service_role/i.test(
+    defaultPrivilegeMigration,
+  )
+) {
+  failures.push("function default privileges still grant EXECUTE to PUBLIC");
+}
+
+// P4-11: approved evidence is served through signed URLs from a private bucket.
+const privateBucketMigration = await readFile(
+  new URL(
+    "../supabase/migrations/20261010005000_private_approved_evidence_bucket.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+if (
+  !/update\s+storage\.buckets\s+set\s+public\s*=\s*false\s+where\s+id\s*=\s*'information-agent-approved'/i.test(
+    privateBucketMigration,
+  )
+) {
+  failures.push("information-agent-approved is not made private");
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -462,6 +529,9 @@ console.log(
       "outcome-model-evaluation-promotion-gate",
       "competent-court-reconciliation-rls",
       "competent-court-reconciliation-exact-evidence",
+      "auction-sales-column-grants",
+      "function-default-privileges",
+      "approved-evidence-private-bucket",
     ],
   }),
 );

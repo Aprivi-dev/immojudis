@@ -160,7 +160,7 @@ describe("sale fact reliability route", () => {
 
     const response = await GET(request(), context);
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(404);
     expect(claimQuery.in).not.toHaveBeenCalled();
   });
 

@@ -68,7 +68,7 @@ describe("login page", () => {
     fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
       target: { value: "nouvel.utilisateur@example.test" },
     });
-    fireEvent.change(screen.getByPlaceholderText("8 caractères minimum"), {
+    fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
       target: { value: "un-mot-de-passe-solide" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));

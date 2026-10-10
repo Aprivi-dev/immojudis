@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
-import {
-  professionalPilotSaveSchema,
-  SaleWorkspaceConflictError,
-  saveProfessionalPilot,
-} from "@/lib/sale-workspaces";
+import { professionalPilotSaveSchema, saveProfessionalPilot } from "@/lib/sale-workspaces";
 
 export async function PUT(request: Request) {
   try {
@@ -21,15 +18,9 @@ export async function PUT(request: Request) {
     const input = professionalPilotSaveSchema.parse(await request.json());
     return NextResponse.json(await saveProfessionalPilot({ auth, input }));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Enregistrement impossible";
-    const status =
-      error instanceof SaleWorkspaceConflictError
-        ? 409
-        : message.startsWith("Unauthorized")
-          ? 401
-          : message.includes("réservé")
-            ? 403
-            : 400;
-    return NextResponse.json({ workspace: null, error: message }, { status });
+    return apiRouteError(error, request, "sale-workspace.professional-pilot", {
+      fallbackMessage: "Enregistrement impossible",
+      extra: { workspace: null },
+    });
   }
 }

@@ -1,3 +1,4 @@
+import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -30,6 +31,13 @@ import {
   renderInformationAgentEmailContent,
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
+import {
+  describeInformationAgentAddressOrigin,
+  informationAgentControllerIdentity,
+  INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS,
+  type InformationAgentLegalFooter,
+} from "@/lib/information-agent-compliance";
+import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-opt-out";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { publishedDay } from "@/lib/listing-evidence";
 import { propertyImages } from "@/lib/sale-media";
@@ -358,7 +366,6 @@ export function buildInformationRequestDraft({
   const trimmedRecipientName = recipientName?.replace(/\s+/g, " ").trim();
   return renderInformationAgentEmailContent({
     template,
-    appUrl: informationAgentAppOrigin(),
     values: {
       recipient_name: trimmedRecipientName || "Madame, Monsieur",
       salutation: trimmedRecipientName ? `Bonjour ${trimmedRecipientName},` : "Madame, Monsieur,",
@@ -586,6 +593,13 @@ async function approveAndSendMission({
   // Otherwise a configuration error can leave an approved case with no delivery attempt.
   const config = resolveInformationAgentEmailConfig();
 
+  // GDPR art. 14 prerequisites: a named controller, and at most one email per recipient per 30 days.
+  assertInformationAgentControllerIdentity();
+  await assertInformationAgentRecipientCooldown({
+    email: input.recipientEmail,
+    missionId: mission.id,
+  });
+
   // An admin may replace a source-derived address while approving the draft.
   // Preserve the provenance only when the normalized address is unchanged;
   // otherwise the canonical case must record an explicit manual recipient.
@@ -633,6 +647,19 @@ async function approveAndSendMission({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
     });
+    // Approval is already recorded: if a concurrent approval for the same recipient is older,
+    // this one stands down, so only the earliest request is ever sent within the 30 days.
+    const approvedMission = await loadOwnedMission(adminId, mission.id);
+    await assertInformationAgentRecipientCooldown({
+      email: edited.recipient_email,
+      missionId: mission.id,
+      approvedAt: approvedMission.approved_at,
+    });
+    const legalFooter = await buildInformationAgentLegalFooter({
+      appUrl: config.appUrl,
+      email: edited.recipient_email,
+      saleId: subscribedMission.sale_id,
+    });
     const renderedEmail = await renderInformationRequestEmail({
       subject: edited.subject,
       bodyText: edited.body_text,
@@ -640,6 +667,7 @@ async function approveAndSendMission({
       caseReference: informationAgentCaseReference(approval.case_id),
       appUrl: config.appUrl,
       contributionUrl,
+      legalFooter,
     });
     await assertInformationAgentContactAllowed({
       saleId: subscribedMission.sale_id,
@@ -708,6 +736,111 @@ async function approveAndSendMission({
     });
     throw error;
   }
+}
+
+/** Refuses to send while the data controller identity (art. 14 GDPR) is not configured. */
+export function assertInformationAgentControllerIdentity(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): void {
+  if (!informationAgentControllerIdentity(env)) {
+    throw new Error(
+      "Identité du responsable de traitement non configurée : envoi impossible (NEXT_PUBLIC_LEGAL_ENTITY_NAME et NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS).",
+    );
+  }
+}
+
+const COOLDOWN_BLOCKING_MISSION_STATUSES = [
+  "approved",
+  "sending",
+  "sent",
+  "replied",
+  "completed",
+] as const;
+
+function escapeIlike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+/**
+ * One email per recipient and per 30 days, all sales combined (plan P4-12). Counts every other
+ * mission to the same address that was approved in the window and not failed. With `approvedAt`
+ * (post-approval check) only strictly older approvals count, which makes concurrent approvals
+ * deterministic: the earliest one proceeds, the others stand down.
+ */
+export async function assertInformationAgentRecipientCooldown({
+  email,
+  missionId,
+  approvedAt,
+  now = new Date(),
+}: {
+  email: string;
+  missionId: string;
+  approvedAt?: string | null;
+  now?: Date;
+}): Promise<void> {
+  const normalized = normalizedEmail(email);
+  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  const since = new Date(
+    now.getTime() - INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  let query = supabaseAdmin
+    .from("information_agent_missions")
+    .select("id,approved_at")
+    .ilike("recipient_email", escapeIlike(normalized))
+    .in("status", [...COOLDOWN_BLOCKING_MISSION_STATUSES])
+    .neq("id", missionId)
+    .gte("approved_at", since);
+  if (approvedAt) query = query.lte("approved_at", approvedAt);
+  const { data, error } = await query.limit(1);
+  if (error) throw error;
+  if (data?.length) {
+    throw new Error(
+      `Ce destinataire a déjà été sollicité au cours des ${INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS} derniers jours : un seul email est autorisé par période.`,
+    );
+  }
+}
+
+async function buildInformationAgentLegalFooter({
+  appUrl,
+  email,
+  saleId,
+  env = process.env,
+}: {
+  appUrl: string;
+  email: string;
+  saleId: string | null;
+  env?: NodeJS.ProcessEnv;
+}): Promise<InformationAgentLegalFooter> {
+  const controller = informationAgentControllerIdentity(env);
+  if (!controller) assertInformationAgentControllerIdentity(env);
+  const secret = env.INFORMATION_AGENT_PORTAL_SECRET?.trim();
+  if (!secret || Buffer.byteLength(secret, "utf8") < 32) {
+    throw new Error("Secret du lien d'opposition non configuré : envoi impossible.");
+  }
+  const normalized = normalizedEmail(email);
+  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_contacts")
+    .select("source_name,source_url,scope_sale_id")
+    .eq("normalized_email", normalized)
+    .order("last_seen_at", { ascending: false, nullsFirst: false })
+    .limit(5);
+  if (error) throw error;
+  const origin =
+    (data ?? []).find(
+      (row) => row.scope_sale_id === saleId && (row.source_name || row.source_url),
+    ) ?? (data ?? []).find((row) => row.source_name || row.source_url);
+  return {
+    controllerName: controller!.name,
+    controllerAddress: controller!.address,
+    contactEmail: controller!.contactEmail,
+    addressOrigin: describeInformationAgentAddressOrigin({
+      sourceName: origin?.source_name,
+      sourceUrl: origin?.source_url,
+    }),
+    privacyUrl: new URL("/privacy", appUrl).toString(),
+    optOutUrl: buildInformationAgentOptOutUrl({ appUrl, email: normalized, secret }),
+  };
 }
 
 export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = process.env): void {

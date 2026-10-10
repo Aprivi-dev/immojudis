@@ -439,8 +439,23 @@ describe("AdminInformationAgentReviewPanel", () => {
     );
 
     expect(await screen.findByText(/Droits de diffusion : autorisés/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Accepter" }) as HTMLButtonElement).disabled).toBe(
-      false,
+    const accept = () => screen.getByRole("button", { name: "Accepter" }) as HTMLButtonElement;
+    // Rights and analysis are fine, but the "Caviardage vérifié" step is still pending.
+    expect(accept().disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText(/J’ai contrôlé la pièce/));
+    expect(accept().disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Nom de la personne qui a contrôlé/), {
+      target: { value: "Claire Martin" },
+    });
+    expect(accept().disabled).toBe(false);
+    fireEvent.click(accept());
+    await waitFor(() =>
+      expect(mocks.reviewFact.mock.calls[0]?.[0]).toMatchObject({
+        factId: "fact-ready",
+        decision: "accepted",
+        redactionConfirmed: true,
+        redactionVerifiedBy: "Claire Martin",
+      }),
     );
   });
 

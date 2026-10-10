@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { errorDetailForLog } from "@/lib/api-errors";
 import {
   deactivateAlertForUser,
   revokeEmailAlertConsent,
@@ -102,7 +103,12 @@ export async function POST(request: Request) {
       { href: "/alertes", label: "Gérer mes alertes" },
     );
   } catch (error) {
-    console.error("[unsubscribe] failed", error);
+    console.error(
+      JSON.stringify({
+        scope: "notification-preferences.unsubscribe",
+        error: errorDetailForLog(error),
+      }),
+    );
     return htmlResponse(
       "Désinscription impossible",
       "La désinscription n'a pas pu être confirmée. Réessayez ou gérez vos emails depuis votre compte.",

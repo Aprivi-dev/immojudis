@@ -138,20 +138,20 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
                     autoComplete="new-password"
                     type="password"
                     required
-                    minLength={8}
+                    minLength={12}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     className="form-input"
                   />
                 </label>
-                <p className="text-xs text-muted-foreground">Au moins 8 caractères.</p>
+                <p className="text-xs text-muted-foreground">Au moins 12 caractères.</p>
                 <label className="grid gap-2 text-sm">
                   Confirmer le mot de passe
                   <input
                     autoComplete="new-password"
                     type="password"
                     required
-                    minLength={8}
+                    minLength={12}
                     value={confirmation}
                     onChange={(event) => setConfirmation(event.target.value)}
                     className="form-input"
