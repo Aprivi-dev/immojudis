@@ -239,7 +239,7 @@ def drop_insufficient_sales(
     from src.config import load_settings
     from src.information_sufficiency import load_contact_blocklist
     from src.recompute_scoring import _fetch_sales, _load_env_fallbacks, _sale_from_storage_row
-    from src.storage.supabase_client import _postgres_connect
+    from src.storage.supabase_client import connect
 
     _load_env_fallbacks()
     settings = load_settings()
@@ -276,7 +276,7 @@ def drop_insufficient_sales(
     todo = [c for c in candidates if include_user_linked or c.sale_id not in protected]
     deleted = skipped = 0
     for start in range(0, len(todo), DELETE_BATCH_SIZE):
-        with _postgres_connect(db_url) as connection:
+        with connect(db_url) as connection:
             batch_deleted, batch_skipped = delete_batch(connection, todo[start : start + DELETE_BATCH_SIZE])
         deleted += batch_deleted
         skipped += batch_skipped

@@ -23,7 +23,7 @@ import unicodedata
 
 # Types de voie reconnus dans une adresse déjà extraite (colonne ``address``).
 _STREET_TYPES = (
-    r"rue|avenue|av\.?|boulevard|bd\.?|chemin|route|rte|impasse|all[ée]es?|place|quai|cours|faubourg|passage|"
+    r"rue|avenue|av\.?|boulevard|bd\.?|chemin|chem|route|rte|impasse|imp|all[ée]es?|place|quai|cours|faubourg|passage|"
     r"square|voie|lotissement|hameau|r[ée]sidence|chauss[ée]e|esplanade|sentier|ruelle|traverse|rond-point|"
     r"parvis|clos|cit[ée]|villa|domaine|za|zi|zac|mont[ée]e|venelle|sente"
 )
@@ -61,21 +61,52 @@ def _clean(value: str | None) -> str:
     return re.sub(r"\s+", " ", (value or "").replace("\xa0", " ")).strip()
 
 
-def classify_address(text: str | None) -> str | None:
+# Cabinet d'avocat, étude, tribunal : un bloc professionnel n'est pas l'adresse d'un bien.
+_PROFESSIONAL_RE = re.compile(
+    r"\b(?:SELARL|SELAS|SCP|avocats?|commissaires?\s+de\s+justice|huissiers?|notaires?|cabinet|[ée]tude|tribunal)\b",
+    re.I,
+)
+
+
+_STREET_NAME_RE = re.compile(
+    rf"\b(?:{_STREET_TYPES})\b\s+(?:{_PARTICLE}\s*)?\S+(?:\s+\S+){{0,2}}", re.I
+)
+
+
+def is_professional_block(text: str | None) -> bool:
+    """Cabinet, étude ou tribunal. Un nom de rue (« rue du Tribunal ») ne compte pas."""
+    return bool(_PROFESSIONAL_RE.search(_STREET_NAME_RE.sub(" ", _clean(text))))
+
+
+def _is_named_place_before_commune(value: str, city: str | None) -> bool:
+    """« Le Hameau Exemple, Autreville » ou « Les Prés Exemple, 18150 Autreville » : un lieu nommé, puis la commune."""
+    parts = [part.strip() for part in re.sub(r",\s*France$", "", value, flags=re.I).split(",") if part.strip()]
+    if len(parts) < 2:
+        return False
+    head = _fold(parts[0])
+    tail = re.sub(r"\b\d{5}\b", "", _fold(" ".join(parts[1:]))).strip()
+    if len(head) < 3 or re.search(r"\d{5}", head) or head in {tail, _fold(city or "")}:
+        return False
+    return True
+
+
+def classify_address(text: str | None, city: str | None = None) -> str | None:
     """Niveau de précision d'un libellé d'adresse.
 
-    ``street`` : une voie (avec ou sans numéro) ; ``lieu_dit`` ; ``parcel`` :
-    référence cadastrale ; ``commune`` : seulement une commune et/ou un code
-    postal ; ``None`` : texte vide. Une valeur monétaire n'est pas une adresse.
+    ``street`` : une voie (avec ou sans numéro) ; ``lieu_dit`` : lieu-dit ou lieu nommé suivi de la commune ;
+    ``parcel`` : référence cadastrale ; ``commune`` : seulement une commune et/ou un code postal ;
+    ``None`` : texte vide, valeur monétaire, bloc d'avocat/tribunal ou mention « lots multiples ».
     """
     value = _clean(text)
     if not value or _MONEY_RE.search(value) and not _STREET_RE.search(value):
         return None
     if re.fullmatch(r"(?:lots?\s+multiples?|non\s+communiqu[ée]e?|n/?c|inconnue?)", value, re.I):
         return None
+    if is_professional_block(value):
+        return None
     if _STREET_RE.search(value) or _NUMBERED_RE.match(value):
         return "street"
-    if _LIEU_DIT_RE.search(value):
+    if _LIEU_DIT_RE.search(value) or _is_named_place_before_commune(value, city):
         return "lieu_dit"
     if _PARCEL_RE.search(value):
         return "parcel"
@@ -126,7 +157,7 @@ def extract_adresse_du_bien(lines: list[str]) -> str | None:
 
 
 _PROPERTY_STREET_PATTERNS = (
-    # avoventes : « À CHAVENAY (78450) - 21 rue Haute Sur un terrain cadastré ... »
+    # avoventes : « À EXEMPLEVILLE (78450) - 21 rue Haute Sur un terrain cadastré ... »
     re.compile(
         rf"\b[àÀ]\s+[A-ZÀ-Ý][\wÀ-ÿ'’ -]{{1,40}}\(\s*\d{{5}}\s*\)\s*[-–:,]\s*"
         rf"(?P<street>\d{{1,4}}\s*(?:bis|ter|quater)?\s*,?\s*{_T}\s+"
@@ -192,14 +223,23 @@ def extract_designation(text: str | None) -> str | None:
 
 
 def reject_monetary_address(raw_sale: dict, address: str | None) -> tuple[dict, str | None]:
-    """Une valeur monétaire (« 30 000 € ») lue dans le champ adresse n'est pas une adresse."""
+    """Écarte une « adresse » qui n'en est pas une : un prix (« 30 000 € ») ou le bloc d'un cabinet/tribunal.
+
+    La raison est conservée dans ``invalid_address_evidence`` et la vente est marquée ``address_unverified`` ;
+    les coordonnées déduites de cette fausse adresse sont retirées.
+    """
+    reason = None
     if address and re.fullmatch(r"[\d\s.,]+\s*(?:€|euros?|EUR)", address, re.I):
-        raw_sale = dict(raw_sale)
-        raw_sale["invalid_address_evidence"] = {"value": address, "reason": "monetary_value_is_not_address"}
-        raw_sale["quality_flags"] = [*(raw_sale.get("quality_flags") or []), "address_unverified"]
-        raw_sale["latitude"] = raw_sale["longitude"] = None
-        return raw_sale, None
-    return raw_sale, address
+        reason = "monetary_value_is_not_address"
+    elif address and is_professional_block(address):
+        reason = "professional_block_is_not_address"
+    if reason is None:
+        return raw_sale, address
+    raw_sale = dict(raw_sale)
+    raw_sale["invalid_address_evidence"] = {"value": address, "reason": reason}
+    raw_sale["quality_flags"] = [*(raw_sale.get("quality_flags") or []), "address_unverified"]
+    raw_sale["latitude"] = raw_sale["longitude"] = None
+    return raw_sale, None
 
 
 def recover_listing_address(raw_sale: dict, address: str | None) -> str | None:

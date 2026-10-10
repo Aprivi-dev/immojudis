@@ -200,7 +200,7 @@ def address_level(sale: AuctionSale) -> tuple[str | None, str | None]:
     L'origine est une étiquette technique (``address``, ``cadastral_reference``,
     ``description``), jamais le texte lui-même.
     """
-    level = classify_address(sale.address)
+    level = classify_address(sale.address, sale.city)
     if level in EXPLOITABLE_ADDRESS_LEVELS and _commune_context(sale):
         return level, "address"
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}

@@ -59,6 +59,9 @@ CASES = {
                                                                                          "adresse": "30 000 €"}}), "kept"),
     "commune_only": (sale_row("k", source_name="vench", primary_source="vench", address="59000 Exempleville",
                               surface_m2=40), "insufficient"),
+    "named_place": (sale_row("m", city="Autreville", address="Le Bourg Exemple, 59000 Autreville", surface_m2=60), "kept"),
+    "law_firm_as_address": (sale_row("n", address="SELARL Exemple et Associés, Commissaires de Justice, 12 rue du Cabinet",
+                                     surface_m2=60), "insufficient"),
     "email_in_observation": (sale_row("l", observations=[{"raw_payload": {"source_blocks": {
         "contact_avocat": "avocat@cabinet-secondaire.test"}}}]), "kept"),
 }

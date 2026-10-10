@@ -134,7 +134,7 @@ def test_sources_without_a_reliable_location_block_stay_empty():
     raw = {
         "source_name": "petites_affiches",
         "source_blocks": {
-            "page_text": "Avocat Poursuivant Maître Exemple 0100000000 Lieu de Vente TJ D EXEMPLE 9 Rue des Mazières, 91012 EVRY"
+            "page_text": "Avocat Poursuivant Maître Exemple 0100000000 Lieu de Vente TJ D EXEMPLE 9 Rue du Palais, 91012 EXEMPLE"
         },
         "description": "UNE MAISON D'HABITATION à Exempleville",
     }
@@ -143,7 +143,7 @@ def test_sources_without_a_reliable_location_block_stay_empty():
 
 def test_classification_levels():
     assert classify_address("23 bis, rue Exemple") == "street"
-    assert classify_address("Lieudit Les Escaputeous , 06510 GATTIÈRES") == "lieu_dit"
+    assert classify_address("Lieudit Les Exemples , 06510 EXEMPLEVILLE") == "lieu_dit"
     assert classify_address("Section AB n° 12") == "parcel"
     assert classify_address("60260 Exempleville") == "commune"
     assert classify_address("LOTS MULTIPLES") is None
@@ -161,7 +161,7 @@ def test_free_text_street_needs_a_property_marker_and_a_proper_name():
 
 
 def test_designation_levels_for_state_sales():
-    assert extract_designation("Ensemble immobilier Rue De La Manufacture à Exempleville") == "street"
+    assert extract_designation("Ensemble immobilier Rue De La Fabrique à Exempleville") == "street"
     assert extract_designation("cadastrée Section BR n° 345 bâtiment A") == "parcel"
     assert extract_designation("lieudit « La Garenne » sur la commune") == "lieu_dit"
     assert extract_designation("Maison forestière sur un terrain arboré entièrement clos.") is None
@@ -235,3 +235,50 @@ def test_recompute_keeps_the_commune_address_when_the_description_has_no_numbere
         "source_blocks": {"description": "Dans un ensemble immobilier sis à EXEMPLEVILLE (89400), place du Test"},
     }
     assert normalize_sale(raw).address == "89400 Exempleville, France"
+
+
+# ----------------------------------------------------------- lieu nommé, bloc professionnel, licitor
+def test_a_named_place_followed_by_the_commune_is_a_lieu_dit():
+    assert classify_address("Le Bourg Exemple, Autreville") == "lieu_dit"
+    assert classify_address("Les Prés Exemple, 60127 Autreville") == "lieu_dit"
+    assert classify_address("Les Grandes Terrasses Exemple, 83440 Autreville, France") == "lieu_dit"
+    # la tête qui répète la commune, ou un code postal, ne désigne rien de plus précis
+    assert classify_address("Exempleville, 59000 Exempleville") == "commune"
+    assert classify_address("92230 Exempleville, France") == "commune"
+    assert classify_address("Exempleville, France") == "commune"
+    assert classify_address("Exempleville, Exempleville") == "commune"
+    assert classify_address("Exemple, Autreville", city="Exemple") == "commune"
+
+
+def test_a_law_firm_or_court_block_is_never_a_property_address():
+    firm = "SELARL Exemple et Associés, Commissaires de Justice Associés, 12 rue du Cabinet, 59000 Exempleville"
+    assert classify_address(firm) is None
+    assert classify_address("Tribunal judiciaire de Exempleville, 3 place du Palais") is None
+    # un nom de rue contenant un mot professionnel reste une rue
+    assert classify_address("12 rue de l'Étude, 59000 Exempleville") == "street"
+    assert classify_address("Rue du Tribunal, Exempleville") == "street"
+
+
+def test_a_law_firm_stored_as_address_is_rejected_on_recompute_with_its_evidence():
+    firm = "SELARL Exemple et Associés, Commissaires de Justice Associés, 12 rue du Cabinet"
+    raw = {"address": firm, "latitude": 1, "longitude": 2, "quality_flags": []}
+    cleaned, address = reject_monetary_address(raw, firm)
+    assert address is None
+    assert cleaned["invalid_address_evidence"]["reason"] == "professional_block_is_not_address"
+    assert cleaned["latitude"] is None and "address_unverified" in cleaned["quality_flags"]
+    sale = normalize_sale({"source_name": "licitor", "source_url": "https://example.test/licitor/1", "address": firm,
+                           "city": "Exempleville", "postal_code": "59000"})
+    assert sale.address is None
+
+
+def test_licitor_does_not_take_the_lawyer_line_following_the_city_as_the_property_address():
+    from bs4 import BeautifulSoup
+
+    from src.sources import licitor
+
+    soup = BeautifulSoup("<html></html>", "html.parser")
+    firm = "SELARL Exemple et Associés, Commissaires de Justice Associés, 12 rue du Cabinet"
+    assert licitor._extract_address(soup, ["Exempleville", firm], "Exempleville", "59000") is None
+    assert licitor._extract_address(soup, ["Exempleville", "Le Hameau Exemple"], "Exempleville", "59000") == (
+        "Le Hameau Exemple, 59000 Exempleville"
+    )

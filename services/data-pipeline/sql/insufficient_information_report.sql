@@ -30,6 +30,7 @@ base as (
     lower(coalesce(a.property_type, 'unknown')) as ptype,
     (nullif(btrim(coalesce(a.city, '')), '') is not null or nullif(btrim(coalesce(a.postal_code, '')), '') is not null) as has_commune,
     coalesce(a.address, '') as address,
+    coalesce(a.city, '') as city,
     coalesce(a.title, '') || ' ' || coalesce(a.description, '') || ' ' || coalesce(a.raw_payload->'source_blocks'->>'description', '') as prop_text,
     a.raw_payload->'source_blocks' as blocks,
     (coalesce(a.surface_m2, 0) > 0 or coalesce(a.habitable_surface_m2, 0) > 0
@@ -64,7 +65,12 @@ verdict as (
     (b.status in ('past', 'adjudicated', 'cancelled', 'withdrawn', 'quarantined')) as exempt,
     b.has_commune and (
          -- adresse stockée précise
-         (b.address !~* '[0-9]{1,3}\s*(€|euros?)' and (b.address ~* v.re_street or b.address ~* v.re_lieu_dit or b.address ~* v.re_parcel))
+         (b.address !~* '[0-9]{1,3}\s*(€|euros?)'
+          and b.address !~* '\m(selarl|selas|scp|avocats?|commissaires? de justice|huissiers?|notaires?|cabinet|tribunal)\M'
+          and (b.address ~* v.re_street or b.address ~* v.re_lieu_dit or b.address ~* v.re_parcel
+               -- « Le Hameau Exemple, Autreville » : lieu nommé puis commune (la tête n'est ni la commune ni un code postal)
+               or (b.address ~ '^[^,0-9]{3,},\s*([0-9]{5}\s+)?[^,]+(,\s*France)?$'
+                   and lower(btrim(split_part(b.address, ',', 1))) <> lower(btrim(b.city)))))
          -- encheres_immobilieres : bloc « Adresse du bien » (libellé puis prix, voie, « , », code postal, commune)
          or (b.src = 'encheres_immobilieres'
              and b.blocks->>'page_text' ~ E'Adresse du bien\n(?:[^\n]*\n){0,4}?[^\n]*(rue|avenue|chemin|route|impasse|all[ée]e|place|quai|cours|boulevard|lieu)[^\n]*\n,\n[0-9]{5}\n')

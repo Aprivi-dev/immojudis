@@ -151,7 +151,7 @@ def test_cessions_etat_street_in_title_is_an_exploitable_designation():
     sale = make_sale(
         source_name="cessions_etat",
         primary_source="cessions_etat",
-        title="Ensemble immobilier Rue De La Manufacture à Exempleville",
+        title="Ensemble immobilier Rue De La Fabrique à Exempleville",
         surface_m2=Decimal("3824"),
     )
     verdict = sufficient_information(sale)
@@ -180,7 +180,7 @@ def test_court_address_in_free_text_of_a_source_with_mixed_blocks_is_not_a_prope
         primary_source="petites_affiches",
         address="Exempleville",
         surface_m2=Decimal("50"),
-        description="Avocat Poursuivant Maître Exemple Lieu de Vente TJ D EXEMPLE 9 Rue des Mazières, 91012 EVRY",
+        description="Avocat Poursuivant Maître Exemple Lieu de Vente TJ D EXEMPLE 9 Rue du Palais, 91012 EXEMPLE",
     )
     verdict = sufficient_information(sale)
     assert not verdict.sufficient and verdict.address_level == "commune"
