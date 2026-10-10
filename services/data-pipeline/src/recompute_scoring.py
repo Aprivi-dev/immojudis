@@ -707,10 +707,28 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Backfill borné des seules annonces actives encore non évaluées pour le catalogue Premium.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--drop-insufficient",
+        action="store_true",
+        help="Rapport (dry-run) des ventes aux informations insuffisantes ; ne supprime rien sans --execute-drop.",
+    )
+    parser.add_argument("--execute-drop", action="store_true", help="Avec --drop-insufficient : supprime réellement.")
+    parser.add_argument("--max-deletions", type=int, default=100, help="Plafond de suppressions d'une exécution.")
+    parser.add_argument(
+        "--include-user-linked",
+        action="store_true",
+        help="Supprime aussi les ventes liées à des favoris, rapports ou dossiers (protégées par défaut).",
+    )
+    parser.add_argument("--drop-report", default="insufficient-sales-report.json", help="Fichier JSON des identifiants.")
+    args = parser.parse_args()
+    if (args.execute_drop or args.include_user_linked) and not args.drop_insufficient:
+        parser.error("--execute-drop et --include-user-linked n'ont de sens qu'avec --drop-insufficient")
+    return args
 
 
 def _writes_catalogue(args: argparse.Namespace) -> bool:
+    if args.drop_insufficient:
+        return args.execute_drop
     if args.verify_only:
         return False
     # Refreshing or repairing procedures always writes; the other modes only
@@ -729,6 +747,17 @@ def main() -> int:
 
 
 def _run(args: argparse.Namespace) -> int:
+    if args.drop_insufficient:
+        from src.insufficient_sales import drop_insufficient_sales
+
+        return drop_insufficient_sales(
+            source=args.source,
+            limit=args.limit,
+            execute=args.execute_drop,
+            max_deletions=args.max_deletions,
+            include_user_linked=args.include_user_linked,
+            report_path=args.drop_report,
+        )
     if args.refresh_unknown_procedures:
         return refresh_unknown_sale_procedures(source=args.source, limit=args.limit)
     if args.repair_invalid_procedures:
