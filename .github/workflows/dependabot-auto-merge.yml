@@ -1,0 +1,32 @@
+name: Dependabot auto-merge (patch)
+
+# Enables auto-merge on Dependabot pull requests that only bump a patch version.
+# GitHub merges them once every required check is green; minor and major bumps stay manual.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  patch-only:
+    name: Enable auto-merge for patch updates
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge when every bump in the title is a patch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          from="$(sed -nE 's/.* from ([0-9]+)\.([0-9]+)\.[0-9]+.* to ([0-9]+)\.([0-9]+)\.[0-9]+.*/\1.\2/p' <<<"$PR_TITLE")"
+          to="$(sed -nE 's/.* from ([0-9]+)\.([0-9]+)\.[0-9]+.* to ([0-9]+)\.([0-9]+)\.[0-9]+.*/\3.\4/p' <<<"$PR_TITLE")"
+          if [ -n "$from" ] && [ "$from" = "$to" ]; then
+            gh pr merge --auto --squash "$PR_URL"
+          else
+            echo "Not a single patch bump (from='$from' to='$to'): left for manual review."
+          fi
