@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
     // which Turbopack cannot parse. Enable persistence only on a reliable cache.
     turbopackFileSystemCacheForBuild: process.env.IMMOJUDIS_BUILD_CACHE === "true",
   },
-  serverExternalPackages: ["pdfjs-dist"],
+  serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas"],
   outputFileTracingIncludes: {
     // Published PDFs are flattened server-side (pdf.js + native canvas) at acceptance time.
     "/api/admin/information-agent": [
