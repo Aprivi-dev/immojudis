@@ -141,8 +141,9 @@ jobs:
       fail-fast: false
       matrix:
         # The hashed lockfiles are resolved for CPython 3.12, the version every
-        # workflow runs.
-        python-version: ["3.12"]
+        # workflow runs; 3.11 stays a required branch-protection check and
+        # installs from the ranges.
+        python-version: ["3.11", "3.12"]
     services:
       postgres:
         image: postgres:17
@@ -168,9 +169,20 @@ jobs:
             services/data-pipeline/requirements.lock
             services/data-pipeline/requirements-dev.lock
             services/data-pipeline/requirements-valuation.lock
-      - run: python -m pip install --require-hashes -r requirements-dev.lock
+      - name: Install the pinned, hashed dependencies (CPython 3.12) or the ranges (3.11)
+        run: |
+          if [ "${{ matrix.python-version }}" = "3.12" ]; then
+            python -m pip install --require-hashes -r requirements-dev.lock
+          else
+            python -m pip install -r requirements-dev.txt
+          fi
       - name: Install the valuation stack (LightGBM, MAPIE, H3) for the training tests
-        run: python -m pip install --require-hashes -r requirements-valuation.lock
+        run: |
+          if [ "${{ matrix.python-version }}" = "3.12" ]; then
+            python -m pip install --require-hashes -r requirements-valuation.lock
+          else
+            python -m pip install -r requirements-valuation.txt
+          fi
       - name: Resolve the optional Docling stack
         run: python -m pip install --dry-run -r requirements-docling.txt
       - name: Lint
