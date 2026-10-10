@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverEnv } from "@/lib/env";
 
 export type OperationalAlertNotification = {
   alert_key: string;
@@ -127,7 +128,8 @@ export async function deliverOperationalAlertNotifications({
 export function resolveOperationalAlertDeliveryConfig(
   env: Pick<NodeJS.ProcessEnv, string>,
 ): AlertDeliveryConfig | null {
-  const webhookUrl = firstFilledEnv(env.OPERATIONS_ALERT_WEBHOOK_URL);
+  const { alerts, pipeline } = serverEnv(env);
+  const webhookUrl = alerts.webhookUrl;
   if (webhookUrl) {
     const url = new URL(webhookUrl);
     if (url.protocol !== "https:" || url.username || url.password) {
@@ -136,20 +138,14 @@ export function resolveOperationalAlertDeliveryConfig(
     return {
       channel: "webhook",
       url: url.toString(),
-      secret: firstFilledEnv(env.OPERATIONS_ALERT_WEBHOOK_SECRET) ?? null,
+      secret: alerts.webhookSecret ?? null,
     };
   }
 
-  const token = firstFilledEnv(
-    env.GITHUB_SCROLL_TOKEN,
-    env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN,
-    env.GITHUB_ACTIONS_DISPATCH_TOKEN,
-  );
+  const token = pipeline.githubToken;
   if (!token) return null;
 
-  const repository =
-    firstFilledEnv(env.OPERATIONS_ALERT_GITHUB_REPOSITORY, env.GITHUB_SCROLL_REPOSITORY) ??
-    "Aprivi-dev/immojudis";
+  const repository = alerts.githubRepository;
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
     throw new Error("Operational alert GitHub repository is invalid.");
   }
@@ -158,8 +154,8 @@ export function resolveOperationalAlertDeliveryConfig(
     channel: "github_actions",
     token,
     repository,
-    workflow: firstFilledEnv(env.OPERATIONS_ALERT_GITHUB_WORKFLOW) ?? "operational-alert.yml",
-    ref: firstFilledEnv(env.OPERATIONS_ALERT_GITHUB_REF, env.GITHUB_SCROLL_REF) ?? "main",
+    workflow: alerts.githubWorkflow,
+    ref: alerts.githubRef,
   };
 }
 
@@ -229,7 +225,7 @@ function operationalAlertPayload(
 ) {
   return {
     service: "immojudis",
-    environment: firstFilledEnv(env.VERCEL_ENV, env.NODE_ENV) ?? "unknown",
+    environment: serverEnv(env).alerts.environment,
     alertKey: alert.alert_key,
     category: alert.category,
     severity: alert.severity,
@@ -262,10 +258,6 @@ async function completeDelivery(
 function positiveInteger(value: string | undefined, fallback: number, maximum: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, maximum) : fallback;
-}
-
-function firstFilledEnv(...values: Array<string | undefined>): string | undefined {
-  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
 }
 
 function logDelivery(level: "info" | "warn" | "error", fields: Record<string, unknown>) {

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { createHash } from "node:crypto";
+import { serverEnv } from "@/lib/env";
 import { createUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { canCreateEmailAlertNotification } from "@/lib/notification-preferences";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
@@ -65,13 +66,12 @@ const notificationIdSchema = z.string().uuid();
 export function resolveEmailAlertDeliveryConfig(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): EmailAlertDeliveryConfig {
-  const apiKey = firstFilledEnv(env.RESEND_API_KEY);
-  const from = firstFilledEnv(env.ALERT_EMAIL_FROM, env.RESEND_FROM_EMAIL);
+  const { resendApiKey: apiKey, from } = serverEnv(env).email;
   const appUrl = resolveSiteOrigin(env);
   const missing = [
     ...(!apiKey ? ["RESEND_API_KEY"] : []),
     ...(!from ? ["ALERT_EMAIL_FROM"] : []),
-    ...(!appUrl ? ["NEXT_PUBLIC_APP_URL"] : []),
+    ...(!appUrl ? ["SITE_URL"] : []),
   ];
 
   return {
@@ -750,10 +750,6 @@ function buildAlertDigestHtml({
     </div>
   </body>
 </html>`;
-}
-
-function firstFilledEnv(...values: Array<string | undefined>) {
-  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
 }
 
 function arrayOfStrings(value: unknown): string[] {

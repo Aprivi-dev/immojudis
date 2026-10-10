@@ -8,8 +8,6 @@ import {
 import { verifyUnsubscribeToken } from "@/lib/email-unsubscribe-token";
 import { escapeHtml } from "@/lib/guards";
 
-export const runtime = "nodejs";
-
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
