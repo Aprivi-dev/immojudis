@@ -136,6 +136,8 @@ import type {
 import type {
   PrivacyRequestAdminListResponse,
   PrivacyRequestAdminSummary,
+  PrivacyErasureExecuteInput,
+  PrivacyErasureReport,
   PrivacyRequestAdminUpdate,
   PrivacyRequestInput,
   PrivacyRequestListResponse,
@@ -1142,6 +1144,17 @@ export async function updateAdminPrivacyRequest(
     body: JSON.stringify(data),
   });
   return readJson<PrivacyRequestAdminSummary>(response);
+}
+
+export async function executeAdminPrivacyErasure(
+  data: PrivacyErasureExecuteInput,
+): Promise<PrivacyErasureReport> {
+  const response = await fetch("/api/admin/privacy-requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<PrivacyErasureReport>(response);
 }
 
 export async function fetchAdminDashboard(): Promise<AdminDashboardData> {
