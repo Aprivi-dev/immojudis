@@ -1,8 +1,10 @@
 // Browser-safe constants shared by client queries and server routes. Keep this module
 // free of Supabase client imports so server code never pulls the browser client in.
+import { joinColumns } from "@/lib/supabase-select";
+
 export const DETAIL_VIEW = "v_auction_sales_app";
 
-export const SALE_LIST_COLUMNS = [
+const SALE_LIST_COLUMN_NAMES = [
   "source_checks",
   "source_conflicts",
   "analysis_status",
@@ -71,4 +73,7 @@ export const SALE_LIST_COLUMNS = [
   "status",
   "created_at",
   "updated_at",
-].join(",");
+] as const;
+
+// Littéral typé : le client Supabase infère ainsi les lignes sélectionnées.
+export const SALE_LIST_COLUMNS = joinColumns(SALE_LIST_COLUMN_NAMES);
