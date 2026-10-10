@@ -23,6 +23,8 @@ async function handleGET(request: Request) {
     const response = await listAdminInformationAgentMissionsForToken({
       authToken: bearerTokenFromRequest(request),
       saleId: input.saleId,
+      offset: input.offset,
+      limit: input.limit,
     });
     return NextResponse.json(response, {
       headers: { "cache-control": "private, no-store" },

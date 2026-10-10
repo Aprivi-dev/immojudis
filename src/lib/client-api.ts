@@ -1,4 +1,5 @@
 import { authHeaders, readJson } from "@/lib/client-api-core";
+import { ADMIN_PAGE_SIZE } from "@/lib/admin-pagination";
 import type { AudienceTrackingResponse } from "@/lib/audience-tracking";
 import type {
   AlertNotificationListResponse,
@@ -149,6 +150,7 @@ import type {
 import type {
   InformationAgentAdminActionPayload,
   InformationAgentAdminListResponse,
+  InformationAgentAdminMissionPage,
   InformationAgentAdminResponse,
   InformationAgentCreateInput,
 } from "@/lib/information-agent";
@@ -1234,7 +1236,7 @@ export async function runAdminCatalogueReadinessActionClient(
 }
 
 export type AdminAuctionFactClaimReviewPageParam = {
-  cursor?: string;
+  offset?: number;
   limit?: number;
   status?: "candidate" | "conflicted";
 };
@@ -1243,8 +1245,8 @@ export async function fetchAdminAuctionFactClaimReview(
   pageParam: AdminAuctionFactClaimReviewPageParam = {},
 ): Promise<AdminAuctionFactClaimReviewResponse> {
   const search = new URLSearchParams();
-  search.set("limit", String(pageParam.limit ?? 25));
-  if (pageParam.cursor) search.set("cursor", pageParam.cursor);
+  search.set("offset", String(pageParam.offset ?? 0));
+  search.set("limit", String(pageParam.limit ?? ADMIN_PAGE_SIZE));
   if (pageParam.status) search.set("status", pageParam.status);
   const response = await fetch(`/api/admin/fact-claims/review?${search.toString()}`, {
     signal: AbortSignal.timeout(30_000),
@@ -1267,16 +1269,19 @@ export async function reviewAdminAuctionFactClaimClient(
 
 export async function fetchAdminInformationAgentMissions(args?: {
   saleId?: string;
-}): Promise<InformationAgentAdminListResponse> {
+  offset?: number;
+  limit?: number;
+}): Promise<InformationAgentAdminMissionPage> {
   const search = new URLSearchParams();
   if (args?.saleId) search.set("saleId", args.saleId);
-  const suffix = search.size ? `?${search.toString()}` : "";
-  const response = await fetch(`/api/admin/information-agent/missions${suffix}`, {
+  search.set("offset", String(args?.offset ?? 0));
+  search.set("limit", String(args?.limit ?? ADMIN_PAGE_SIZE));
+  const response = await fetch(`/api/admin/information-agent/missions?${search.toString()}`, {
     signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
     cache: "no-store",
   });
-  return readJson<InformationAgentAdminListResponse>(response);
+  return readJson<InformationAgentAdminMissionPage>(response);
 }
 
 export async function createAdminInformationAgentMission(
@@ -1325,18 +1330,17 @@ export async function requestAdminSourceRefresh(
 }
 
 export type AdminInformationAgentReviewPageParam = {
-  factCursor?: string;
-  messageCursor?: string;
+  offset?: number;
+  limit?: number;
 };
 
 export async function fetchAdminInformationAgentReview(
   pageParam: AdminInformationAgentReviewPageParam = {},
 ): Promise<AdminInformationAgentReviewResponse> {
   const search = new URLSearchParams();
-  if (pageParam.factCursor) search.set("factCursor", pageParam.factCursor);
-  if (pageParam.messageCursor) search.set("messageCursor", pageParam.messageCursor);
-  const suffix = search.size ? `?${search.toString()}` : "";
-  const response = await fetch(`/api/admin/information-agent${suffix}`, {
+  search.set("offset", String(pageParam.offset ?? 0));
+  search.set("limit", String(pageParam.limit ?? ADMIN_PAGE_SIZE));
+  const response = await fetch(`/api/admin/information-agent?${search.toString()}`, {
     signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
     cache: "no-store",

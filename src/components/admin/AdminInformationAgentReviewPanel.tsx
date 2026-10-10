@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import Inbox from "lucide-react/dist/esm/icons/inbox.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { toast } from "sonner";
+import { AdminPagination } from "@/components/admin/AdminPagination";
+import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import { Link } from "@/lib/router-compat";
 import {
   fetchAdminInformationAgentEvidenceUrlClient,
@@ -14,11 +16,9 @@ import {
   reviewAdminInformationAgentFactClient,
   updateAdminInformationAgentEvidenceRightsClient,
   type AdminInformationAgentEvidenceRightsStatus,
-  type AdminInformationAgentReviewPageParam,
 } from "@/lib/client-api";
 
 const QUERY_KEY = ["admin-information-agent-review"] as const;
-const REVIEW_DONE_CURSOR = "__done__";
 const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"]);
 
 export function AdminInformationAgentReviewPanel() {
@@ -31,24 +31,20 @@ export function AdminInformationAgentReviewPanel() {
   const [redaction, setRedaction] = useState<Record<string, { confirmed: boolean; by: string }>>(
     {},
   );
-  const query = useInfiniteQuery({
-    queryKey: QUERY_KEY,
-    queryFn: ({ pageParam }) => fetchAdminInformationAgentReview(pageParam),
-    initialPageParam: {} satisfies AdminInformationAgentReviewPageParam,
-    getNextPageParam: (lastPage, _pages, lastPageParam) => {
-      if (!lastPage.hasMoreFacts && !lastPage.hasMoreMessages) return undefined;
-      return {
-        ...lastPageParam,
-        factCursor: lastPage.hasMoreFacts
-          ? (lastPage.nextFactsCursor ?? REVIEW_DONE_CURSOR)
-          : REVIEW_DONE_CURSOR,
-        messageCursor: lastPage.hasMoreMessages
-          ? (lastPage.nextMessagesCursor ?? REVIEW_DONE_CURSOR)
-          : REVIEW_DONE_CURSOR,
-      };
-    },
+  const [offset, setOffset] = useState(0);
+  const query = useQuery({
+    queryKey: [...QUERY_KEY, offset],
+    queryFn: () => fetchAdminInformationAgentReview({ offset, limit: ADMIN_PAGE_SIZE }),
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
+  // Après traitement des dernières lignes d'une page, revient sur la dernière page non vide.
+  useEffect(() => {
+    const data = query.data;
+    if (data && data.facts.length === 0 && data.messages.length === 0 && data.offset > 0) {
+      setOffset(adminClampOffset(data.offset, data.limit, data.total));
+    }
+  }, [query.data]);
   const review = useMutation({
     mutationFn: reviewAdminInformationAgentFactClient,
     onSuccess: () => {
@@ -119,18 +115,14 @@ export function AdminInformationAgentReviewPanel() {
     });
   };
 
-  const pages = query.data?.pages ?? [];
-  const facts = pages.flatMap((page) => page.facts ?? []);
-  const messages = pages.flatMap((page) => page.messages ?? []);
-  const assetsById = new Map(
-    pages.flatMap((page) => page.assets).map((asset) => [asset.id, asset]),
-  );
+  const page = query.data;
+  const facts = page?.facts ?? [];
+  const messages = page?.messages ?? [];
+  const assetsById = new Map((page?.assets ?? []).map((asset) => [asset.id, asset]));
   const extractionsByAssetId = new Map(
-    pages
-      .flatMap((page) => page.extractions)
-      .map((extraction) => [extraction.asset_id, extraction]),
+    (page?.extractions ?? []).map((extraction) => [extraction.asset_id, extraction]),
   );
-  const casesById = new Map(pages.flatMap((page) => page.cases).map((item) => [item.id, item]));
+  const casesById = new Map((page?.cases ?? []).map((item) => [item.id, item]));
   return (
     <section className="overflow-hidden rounded-xl border bg-white">
       <div className="border-b px-5 py-4">
@@ -531,22 +523,15 @@ export function AdminInformationAgentReviewPanel() {
               </article>
             );
           })}
-          {query.hasNextPage ? (
-            <div className="p-5">
-              <button
-                type="button"
-                className="admin-button-secondary"
-                disabled={query.isFetchingNextPage}
-                onClick={() => void query.fetchNextPage()}
-              >
-                {query.isFetchingNextPage
-                  ? "Chargement…"
-                  : pages.at(-1)?.hasMoreFacts
-                    ? "Charger plus d’informations"
-                    : "Charger les réponses précédentes"}
-              </button>
-            </div>
-          ) : null}
+          <AdminPagination
+            label="réponses et informations à contrôler"
+            offset={page?.offset ?? 0}
+            limit={page?.limit ?? ADMIN_PAGE_SIZE}
+            total={page?.total ?? 0}
+            shown={Math.max(facts.length, messages.length)}
+            busy={query.isFetching}
+            onOffsetChange={setOffset}
+          />
         </div>
       ) : (
         <p className="p-5 text-sm text-brand-navy/55">Aucune information en attente de contrôle.</p>
