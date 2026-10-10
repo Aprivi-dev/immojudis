@@ -4,7 +4,7 @@ import {
   readAiDescriptionStats,
   readAiDescriptionStatsCached,
   resetAiDescriptionStatsCache,
-} from "@/lib/admin.functions";
+} from "@/lib/admin.server";
 
 describe("admin dashboard AI description stats", () => {
   it("counts active missing and stale AI descriptions", () => {

@@ -5,7 +5,7 @@ import {
   getAdminDashboard,
   getAdminDashboardSection,
   type AdminDashboardSection,
-} from "@/lib/admin.functions";
+} from "@/lib/admin.server";
 import { withAdminDeadline } from "@/lib/admin-route-deadline";
 import { adminErrorResponse } from "@/lib/api-route-errors";
 

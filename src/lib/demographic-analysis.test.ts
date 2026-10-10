@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildDemographicAnalysis } from "@/lib/demographic-analysis";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 import { buildNearbyServicesAnalysis, type NearbyServicesAnalysis } from "@/lib/nearby-services";
 
 const EMPTY_NEARBY: NearbyServicesAnalysis = {

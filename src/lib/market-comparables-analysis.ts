@@ -1,4 +1,4 @@
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 
 export type MarketComparableRow = {
   kind: "retained_comparable" | "address_history";

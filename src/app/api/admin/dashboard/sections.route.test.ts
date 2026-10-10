@@ -33,7 +33,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   },
 }));
 
-import { resetAiDescriptionStatsCache } from "@/lib/admin.functions";
+import { resetAiDescriptionStatsCache } from "@/lib/admin.server";
 import { GET } from "./route";
 
 const get = (query = "") =>
