@@ -276,13 +276,20 @@ def gate_enabled() -> bool:
     return (os.getenv(GATE_ENV) or "on").strip().lower() not in {"off", "0", "false", "no"}
 
 
-def publication_gate(
-    sale: AuctionSale, *, blocklist: ContactBlocklist = NO_BLOCKLIST
-) -> SufficiencyVerdict:
+_ACTIVE_BLOCKLIST: ContactBlocklist = NO_BLOCKLIST
+
+
+def set_active_blocklist(blocklist: ContactBlocklist) -> None:
+    """Registre de refus chargé une fois par run (``_open_run``) et lu par la porte de publication."""
+    global _ACTIVE_BLOCKLIST
+    _ACTIVE_BLOCKLIST = blocklist
+
+
+def publication_gate(sale: AuctionSale, *, blocklist: ContactBlocklist | None = None) -> SufficiencyVerdict:
     """Verdict utilisé à la publication ; toujours suffisant si le garde-fou est coupé."""
     if not gate_enabled():
         return SufficiencyVerdict(True, exemption="gate_disabled")
-    return sufficient_information(sale, blocklist=blocklist)
+    return sufficient_information(sale, blocklist=_ACTIVE_BLOCKLIST if blocklist is None else blocklist)
 
 
 def summarize_verdicts(verdicts: Iterable[tuple[str, SufficiencyVerdict]]) -> dict[str, Any]:
