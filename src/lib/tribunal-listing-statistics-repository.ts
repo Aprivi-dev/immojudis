@@ -182,24 +182,6 @@ const storedEstimateSchema = z
   })
   .passthrough();
 
-type DatabaseResult = {
-  data: unknown;
-  error: { message: string } | null;
-};
-
-type ListingQuery = PromiseLike<DatabaseResult> & {
-  select(columns: string): ListingQuery;
-  eq(column: string, value: unknown): ListingQuery;
-  is(column: string, value: null): ListingQuery;
-  in(column: string, values: unknown[]): ListingQuery;
-  order(column: string, options?: { ascending?: boolean }): ListingQuery;
-  limit(count: number): ListingQuery;
-  range(from: number, to: number): PromiseLike<DatabaseResult>;
-  maybeSingle(): PromiseLike<DatabaseResult>;
-};
-
-const listingAdmin = supabaseAdmin as unknown as { from(table: string): ListingQuery };
-
 export class TribunalListingStatisticsUnavailableError extends Error {
   constructor(
     message = "Les statistiques d’annonces du tribunal sont temporairement indisponibles.",
@@ -266,7 +248,7 @@ async function resolveListingSaleCourtCode(saleId: string): Promise<string> {
     if (!(error instanceof TribunalCourtUnresolvedError)) throw error;
   }
 
-  const saleResult = await listingAdmin
+  const saleResult = await supabaseAdmin
     .from("auction_sales")
     .select(
       "tribunal_code,tribunal,sale_venue_type,sale_verification_status,status,publication_quarantine:raw_payload->>publication_quarantine",
@@ -296,12 +278,12 @@ async function resolveListingSaleCourtCode(saleId: string): Promise<string> {
   }
 
   const [referenceResult, officialResult] = await Promise.all([
-    listingAdmin
+    supabaseAdmin
       .from("tribunals")
       .select("code,canonical_name,aliases")
       .order("code", { ascending: true })
       .range(0, 250),
-    listingAdmin
+    supabaseAdmin
       .from("outcome_court_official_references")
       .select("court_code,official_name")
       .order("observed_on", { ascending: false })
@@ -348,7 +330,7 @@ async function resolveListingSaleCourtCode(saleId: string): Promise<string> {
 
 async function fetchCourt(courtCode: string) {
   const normalizedCode = normalizeCourtCode(courtCode);
-  const result = await listingAdmin
+  const result = await supabaseAdmin
     .from("outcome_courts")
     .select("code,name,judicial_region")
     .eq("code", normalizedCode)
@@ -366,7 +348,7 @@ async function fetchCourt(courtCode: string) {
   // outcome_courts stores the canonical justice code. Resolve this only
   // through an exact legacy tribunal reference or a prefix-bearing tribunal
   // code; a bare city name must never become a geographic guess.
-  const legacyResult = await listingAdmin
+  const legacyResult = await supabaseAdmin
     .from("tribunals")
     .select("code,canonical_name,aliases")
     .eq("code", normalizedCode)
@@ -391,7 +373,7 @@ async function fetchCourt(courtCode: string) {
     );
   }
 
-  const courtsResult = await listingAdmin
+  const courtsResult = await supabaseAdmin
     .from("outcome_courts")
     .select("code,name,judicial_region")
     .eq("active", true)
@@ -425,13 +407,13 @@ function legacyCourtLabelFromCode(code: string): string | null {
 
 async function fetchCourtAliases(court: z.infer<typeof storedCourtSchema>): Promise<Set<string>> {
   const [legacyResult, officialResult] = await Promise.all([
-    listingAdmin
+    supabaseAdmin
       .from("tribunals")
       .select("code,canonical_name,aliases")
       .eq("code", court.code)
       .limit(1)
       .maybeSingle(),
-    listingAdmin
+    supabaseAdmin
       .from("outcome_court_official_references")
       .select("court_code,official_name")
       .eq("court_code", court.code)
@@ -477,7 +459,7 @@ async function loadPagedRows(input: {
 }): Promise<StoredListingSale[]> {
   const rows: StoredListingSale[] = [];
   for (let offset = 0; offset < input.maxRows; offset += PAGE_SIZE) {
-    let query = listingAdmin
+    let query = supabaseAdmin
       .from("auction_sales")
       .select(SALE_COLUMNS)
       .eq("sale_venue_type", "tribunal")
@@ -517,7 +499,7 @@ async function loadNullCodeRows(input: {
 }): Promise<StoredListingSale[]> {
   const matchingIds: string[] = [];
   for (let offset = 0; offset < input.maxRows; offset += PAGE_SIZE) {
-    const result = await listingAdmin
+    const result = await supabaseAdmin
       .from("auction_sales")
       .select(SALE_SCAN_COLUMNS)
       .is("tribunal_code", null)
@@ -548,7 +530,7 @@ async function loadNullCodeRows(input: {
   const rows: StoredListingSale[] = [];
   for (let offset = 0; offset < matchingIds.length; offset += MARKET_ESTIMATE_CHUNK_SIZE) {
     const ids = matchingIds.slice(offset, offset + MARKET_ESTIMATE_CHUNK_SIZE);
-    const result = await listingAdmin.from("auction_sales").select(SALE_COLUMNS).in("id", ids);
+    const result = await supabaseAdmin.from("auction_sales").select(SALE_COLUMNS).in("id", ids);
     if (result.error) {
       throw new TribunalListingStatisticsUnavailableError(
         `Détails des annonces sans code tribunal indisponibles : ${result.error.message}`,
@@ -985,7 +967,7 @@ async function loadMarketEstimates(
   if (!sales.length) return map;
   for (let offset = 0; offset < sales.length; offset += MARKET_ESTIMATE_CHUNK_SIZE) {
     const chunk = sales.slice(offset, offset + MARKET_ESTIMATE_CHUNK_SIZE);
-    const result = await listingAdmin
+    const result = await supabaseAdmin
       .from("auction_sale_market_estimates")
       .select("*")
       .in(

@@ -1,7 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { apiRouteError } from "@/lib/api-observability";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -9,7 +8,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
-const client = supabaseAdmin as unknown as SupabaseClient;
+const client = supabaseAdmin;
 
 const pipelineControlSettingsSchema = z
   .object({
