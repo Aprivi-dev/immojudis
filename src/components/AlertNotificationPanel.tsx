@@ -5,7 +5,7 @@ import Loader2 from "lucide-react/dist/esm/icons/loader-2.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2.js";
 import { toast } from "sonner";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 import {
   fetchAccessPlan,
   fetchNotificationPreferences,
@@ -181,7 +181,7 @@ function NotificationItem({
   return (
     <div className="border-b border-border last:border-b-0">
       <div className="grid grid-cols-[1fr_auto] gap-3 px-4 py-3">
-        <Link to={`/sales/${notification.saleId}`} onClick={onOpen} className="min-w-0">
+        <Link href={`/sales/${notification.saleId}`} onClick={onOpen} className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             {unread ? <span className="h-2 w-2 rounded-full bg-gold" aria-hidden /> : null}
             <span className="truncate text-sm font-semibold text-foreground">{title}</span>

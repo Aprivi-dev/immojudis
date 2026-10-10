@@ -11,14 +11,6 @@ import {
   buildAlertName,
 } from "./search-page-state";
 
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({ href, children, ...props }: React.ComponentProps<"a">) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}));
-
 import { SaleTypeFilter } from "./SaleTypeFilter";
 
 function FilterHarness() {

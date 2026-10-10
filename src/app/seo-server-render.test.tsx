@@ -29,8 +29,8 @@ vi.mock("@/lib/client-api", () => ({
 }));
 vi.mock("@/lib/client-billing", () => ({}));
 
-import { OffersPage } from "./offres";
-import { LawyerDirectoryPage } from "./avocats";
+import { OffersPage } from "./offres/offers-page";
+import { LawyerDirectoryPage } from "./avocats/lawyer-directory-page";
 
 function html(node: React.ReactNode) {
   return renderToString(

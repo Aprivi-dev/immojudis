@@ -7,7 +7,7 @@ import {
   buildTribunalJudicialActivityDirectory,
   type TribunalJudicialActivityDirectorySale,
 } from "@/lib/tribunal-judicial-activity-directory";
-import { TribunalsPage } from "@/routes/tribunaux";
+import Page from "./page";
 
 const mocks = vi.hoisted(() => ({
   fetchDirectory: vi.fn(),
@@ -24,10 +24,6 @@ vi.mock("@/components/PremiumAdjudicationExplorer", () => ({
   PremiumAdjudicationExplorer: () => <section aria-label="Résultats premium Licitor" />,
 }));
 
-vi.mock("@/lib/router-compat", () => ({
-  createFileRoute: () => (options: unknown) => options,
-}));
-
 const AS_OF = new Date("2026-08-20T12:00:00.000Z");
 const DIRECTORY = buildTribunalJudicialActivityDirectory({
   courts: [
@@ -39,7 +35,7 @@ const DIRECTORY = buildTribunalJudicialActivityDirectory({
   historyMonths: 36,
 });
 
-describe("TribunalsPage", () => {
+describe("/tribunaux", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.useAuth.mockReturnValue({
@@ -132,7 +128,7 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <TribunalsPage />
+      <Page />
     </QueryClientProvider>,
   );
 }

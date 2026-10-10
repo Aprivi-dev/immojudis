@@ -1,4 +1,4 @@
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
 
 export type ValuationAuditStatus = "robust" | "usable" | "fragile" | "missing";

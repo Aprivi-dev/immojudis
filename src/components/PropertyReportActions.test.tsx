@@ -22,7 +22,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: mocks.user, loading: mocks.loading }),
 }));
-vi.mock("@/lib/router-compat", () => ({ useNavigate: () => mocks.navigate }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mocks.navigate, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+}));
 vi.mock("sonner", () => ({ toast: { success: mocks.success, error: mocks.error } }));
 vi.mock("@/lib/client-api", () => ({
   fetchPropertyReports: mocks.fetchReports,
@@ -181,7 +183,7 @@ describe("report export from the listing", () => {
     mocks.user = null;
     renderActions();
     fireEvent.click(screen.getByRole("button", { name: "Export PDF" }));
-    expect(mocks.navigate).toHaveBeenCalledWith(expect.objectContaining({ to: "/login" }));
+    expect(mocks.navigate).toHaveBeenCalledWith("/login?redirect=%2F");
     expect(mocks.fetchReports).not.toHaveBeenCalled();
     expect(mocks.save).not.toHaveBeenCalled();
     expect(mocks.exportPdf).not.toHaveBeenCalled();

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AdminQualityPage } from "@/routes/admin.quality";
+import { AdminQualityPage } from "./admin-quality-page";
 
 const mocks = vi.hoisted(() => ({ quality: vi.fn(), sales: vi.fn(), valuation: vi.fn() }));
 vi.mock("@/lib/client-api", () => ({
@@ -12,10 +12,6 @@ vi.mock("@/lib/client-api", () => ({
   fetchValuationAdminOverview: mocks.valuation,
 }));
 vi.mock("@/lib/queries", () => ({ getSales: mocks.sales }));
-vi.mock("@/lib/router-compat", () => ({
-  createFileRoute: () => (options: unknown) => options,
-  Link: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-}));
 vi.mock("@/components/admin/AdminShell", () => ({
   AdminShell: ({ children, onRefresh }: { children: ReactNode; onRefresh: () => void }) => (
     <main>

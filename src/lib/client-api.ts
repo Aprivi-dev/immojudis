@@ -13,7 +13,7 @@ import type {
   AdminScrollMode,
   AdminScrollSource,
   StartScrollResult,
-} from "@/lib/admin.functions";
+} from "@/lib/admin.server";
 import type { ApiKeyCreateInput, ApiKeyCreateResponse, ApiKeyListResponse } from "@/lib/api-keys";
 import type {
   AdminReferencedLawyerInput,
@@ -46,7 +46,7 @@ import type {
 import type { AlertEvaluationResponse, AlertMatchSummary } from "@/lib/alert-matches";
 import type { BidCeilingAnalysisResponse, BidCeilingRequestInput } from "@/lib/bid-ceiling";
 import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
-import type { EnvironmentalContextResponse } from "@/lib/environment.functions";
+import type { EnvironmentalContextResponse } from "@/lib/environmental-context";
 import type { FeaturedReferencedLawyerResponse } from "@/lib/featured-lawyers";
 import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
@@ -67,7 +67,7 @@ import type {
   LawyerReferralResponse,
 } from "@/lib/lawyer-referrals";
 import type { MarketAnalyticsResponse } from "@/lib/market-analytics";
-import type { MarketContext } from "@/lib/market.functions";
+import type { MarketContext } from "@/lib/market.server";
 import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
 import type {
   NotificationPreferencesResponse,

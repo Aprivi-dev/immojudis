@@ -7,7 +7,7 @@ import {
   salesSearchQueryKey,
 } from "@/lib/search/catalog-placeholder";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
-import { SalesPage } from "@/routes/sales.index";
+import { SalesPage } from "./sales-page";
 
 export const metadata: Metadata = {
   title: "Ventes immobilières aux enchères : tribunal, notaire, État",

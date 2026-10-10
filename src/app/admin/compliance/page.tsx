@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AdminCompliancePage } from "@/routes/admin.compliance";
+import { AdminCompliancePage } from "./admin-compliance-page";
 
 export const metadata: Metadata = {
   title: "Conformité admin",

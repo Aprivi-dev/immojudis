@@ -30,7 +30,7 @@ import {
 } from "@/lib/profitability";
 import { saleCostContext } from "@/lib/sale-cost-context";
 import { fetchPrecomputedMarketEstimate } from "@/lib/client-api";
-import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.server";
 import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
 import { collectSaleDocuments } from "@/lib/sale-documents";
 import {
