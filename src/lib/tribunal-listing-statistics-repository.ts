@@ -16,9 +16,14 @@ import {
   type TribunalListingStatisticsMarketEstimate,
   type TribunalListingStatisticsQuery,
   type TribunalListingStatisticsResponse,
-  type TribunalListingStatisticsSale,
 } from "@/lib/tribunal-listing-statistics";
 import { asRecordOrNull } from "@/lib/guards";
+import {
+  normalizeLabel,
+  normalizeLegalReference,
+  positive,
+  type StoredListingSale,
+} from "@/lib/tribunal-listing-statistics/shared";
 
 const PAGE_SIZE = 1_000;
 const MAX_SALES_PER_COURT = 5_000;
@@ -190,17 +195,6 @@ export class TribunalListingStatisticsUnavailableError extends Error {
     this.name = "TribunalListingStatisticsUnavailableError";
   }
 }
-
-type StoredListingSale = TribunalListingStatisticsSale & {
-  tribunal: string | null;
-  sourceUrl: string | null;
-  externalId: string | null;
-  contentHash: string | null;
-  identityAddress: string | null;
-  legalReference: string | null;
-  lotNumber: string | null;
-  valuationSource: Record<string, unknown>;
-};
 
 export async function getTribunalListingStatistics(
   input: TribunalListingStatisticsQuery,
@@ -633,15 +627,6 @@ function normalizeCourtCode(value: string): string {
   return value.trim().toLocaleLowerCase("fr-FR");
 }
 
-function normalizeLabel(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("fr-FR")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
 function hasCourtPrefix(value: string): boolean {
   return /^(?:tj|tribunal)\b/.test(value);
 }
@@ -783,16 +768,6 @@ export function extractTribunalLegalReference(
     if (reference) return reference;
   }
   return null;
-}
-
-function normalizeLegalReference(value: string | null): string | null {
-  if (!value) return null;
-  const match = /^\s*(\d{1,4})\s*\/\s*(\d{1,8})\s*$/.exec(value);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const serial = Number(match[2]);
-  if (!Number.isSafeInteger(year) || !Number.isSafeInteger(serial) || serial <= 0) return null;
-  return `${year}/${serial}`;
 }
 
 function sourceBlocksForIdentity(
@@ -1013,10 +988,6 @@ async function loadMarketEstimates(
 
 function saleValuationSource(sale: StoredListingSale): Record<string, unknown> {
   return sale.valuationSource;
-}
-
-function positive(value: number | null | undefined): value is number {
-  return value != null && Number.isFinite(value) && value > 0;
 }
 
 export function deduplicateTribunalListingSales(sales: StoredListingSale[]): {
