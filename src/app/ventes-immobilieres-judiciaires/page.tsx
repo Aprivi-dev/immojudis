@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ResourcesPage } from "@/routes/ventes-immobilieres-judiciaires";
+import { ResourcesPage } from "./resources-guide";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/ventes-immobilieres-judiciaires" },
