@@ -673,9 +673,13 @@ async function ingestReceivedEmail({
     });
 
     const now = new Date().toISOString();
-    const hasReviewableEvidence = Boolean(
+    const hasEvidence = Boolean(
       bodyEvidence || extractedFacts.length || storedAssets.length || rejected.length,
     );
+    // P4-12: a reply that is neither a recognised opposition nor a recognised agreement/answer
+    // is never closed automatically: a human reads it.
+    const replyIntent = classifyInformationAgentReplyIntent(bodyText, { hasEvidence });
+    const hasReviewableEvidence = hasEvidence || replyIntent === "ambiguous";
     await ensureInboundJobLease(assertJobLease);
     const caseUpdated = await updateInboundReplyCase({
       sharedCase,
@@ -686,6 +690,7 @@ async function ingestReceivedEmail({
         last_inbound_email_id: event.data.email_id,
         last_inbound_sender_matches_recipient: senderMatches,
         last_inbound_sender_authentication_status: senderAuthentication.status,
+        last_inbound_reply_intent: replyIntent,
       }),
       expectedUpdatedAt: sharedCase.updated_at,
       leaseFence,
@@ -736,10 +741,7 @@ async function ingestReceivedEmail({
       if (updateMissionsError) throw updateMissionsError;
     }
 
-    const processingStatus =
-      bodyEvidence || extractedFacts.length || storedAssets.length || rejected.length
-        ? "review"
-        : "completed";
+    const processingStatus = hasReviewableEvidence ? "review" : "completed";
     await ensureInboundJobLease(assertJobLease);
     await updateInboundProcessingState(
       messageId,
@@ -750,7 +752,12 @@ async function ingestReceivedEmail({
         providerEmailId: event.data.email_id,
         queuedAt: existingProcessing?.queuedAt ?? receivedAt,
         completedAt: now,
-        reason: processingStatus === "review" ? "candidate_or_attachment_review" : undefined,
+        reason:
+          processingStatus === "review"
+            ? replyIntent === "ambiguous"
+              ? "ambiguous_reply_review"
+              : "candidate_or_attachment_review"
+            : undefined,
       },
       leaseId,
     );
@@ -2085,6 +2092,34 @@ export function detectInformationAgentContactOptOut(bodyText: string): boolean {
     /(?:^|\n)\s*(?:stop|unsubscribe|désinscription|desinscription)(?:\s+merci)?\s*[.!…]*\s*$/imu,
     /\b(?:merci\s+de\s+ne\s+plus\s+(?:me|nous)\s+contacter|merci\s+de\s+(?:supprimer|retirer)\s+(?:mon\s+adresse|moi|nous)(?:\s+de\s+vos\s+listes?)?|(?:supprimez|retirez)\s+mon\s+adresse(?:\s+de\s+vos\s+listes?)?|ne\s+(?:me|nous)\s+contact(?:e|ez|er)\s+plus|retirez[-\s]?(?:moi|nous)(?:\s+de\s+vos\s+listes?)?|supprimez[-\s]?(?:moi|nous)(?:\s+de\s+vos\s+listes?)?|désinscrivez[-\s]?(?:moi|nous)|desinscrivez[-\s]?(?:moi|nous)|je\s+ne\s+souhaite\s+plus\s+(?:être\s+contact[ée]|recevoir\s+vos\s+(?:e-?mails?|courriels?))|je\s+ne\s+veux\s+plus\s+(?:être\s+contact[ée]|recevoir\s+vos\s+(?:e-?mails?|courriels?))|je\s+m['’]oppose\s+à\s+(?:tout|ce|votre)\s+contact|please\s+(?:remove|unsubscribe)\s+me|do\s+not\s+contact\s+me\s+again)\b/iu,
   ].some((pattern) => pattern.test(text));
+}
+
+export type InformationAgentReplyIntent = "opposition" | "agreement" | "ambiguous";
+
+// Short, unambiguous confirmations ("oui", "d'accord", "confirmé"…) with no negation.
+const EXPLICIT_AGREEMENT =
+  /\b(?:oui|d['’]accord|bien\s+volontiers|volontiers|avec\s+plaisir|confirm[ée]s?|je\s+confirme|c['’]est\s+exact|ci[-\s]?joint(?:e|es|s)?|veuillez\s+trouver|pi[èe]ces?\s+jointes?)\b/iu;
+const NEGATION =
+  /\b(?:non|pas|jamais|aucun(?:e)?|refus(?:e|ons)?|impossible|n['’](?:est|ai|avons|a)\b|ne\s+\w+\s+pas)\b/iu;
+
+/**
+ * Classifies a reply from an authenticated sender. Only two outcomes are trusted without a
+ * human: an explicit request to stop contact, and an explicit agreement or answer (information
+ * extracted, or a plain confirmation without negation). Anything else is "ambiguous" and goes to
+ * human review instead of being closed automatically.
+ */
+export function classifyInformationAgentReplyIntent(
+  bodyText: string,
+  { hasEvidence }: { hasEvidence: boolean },
+): InformationAgentReplyIntent {
+  if (detectInformationAgentContactOptOut(bodyText)) return "opposition";
+  const text = replyTextForExtraction(bodyText)
+    .replace(/\u00a0/g, " ")
+    .trim();
+  if (!text) return hasEvidence ? "agreement" : "ambiguous";
+  if (NEGATION.test(text)) return hasEvidence ? "agreement" : "ambiguous";
+  if (hasEvidence || EXPLICIT_AGREEMENT.test(text)) return "agreement";
+  return "ambiguous";
 }
 
 function collectInboundTokens(addresses: readonly string[], inboundDomain: string): string[] {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
-  INFORMATION_AGENT_ACCOUNT_INVITATION_CTA,
+  containsInformationAgentAccountInvitation,
   INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING,
   informationAgentEmailTemplateContentSchema,
   renderInformationAgentEmailContent,
@@ -39,11 +39,7 @@ describe("information agent email content template", () => {
     expect(rendered.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(rendered.bodyText).toContain("cahier des conditions de vente");
     expect(rendered.bodyText).toContain("Aucun compte n’est nécessaire.");
-    expect(rendered.bodyText).toContain(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING);
-    expect(rendered.bodyText).toContain(
-      `${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} : https://immojudis.com/login?mode=professional&redirect=%2Fespace-pro`,
-    );
-    expect(rendered.bodyText.match(/Vous avez d’autres ventes à partager \?/g)).toHaveLength(1);
+    expect(rendered.bodyText).not.toContain(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING);
     expect(rendered.bodyText).toContain("Bien cordialement");
     expect(rendered.bodyText).toContain("documents ou photos");
     expect(rendered.bodyText).toContain(
@@ -57,55 +53,42 @@ describe("information agent email content template", () => {
     expect(rendered.bodyText).not.toContain("{{");
   });
 
-  it("adds the protected invitation to a legacy seven-block template before closing", () => {
-    const legacyTemplate = structuredClone(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE);
-    legacyTemplate.name = "Demande d’informations — modèle initial";
-    legacyTemplate.subjectTemplate = "Demande d’informations — {{sale_title}}";
-    legacyTemplate.blocks = legacyTemplate.blocks.map((block) => {
-      if (block.id === "identity") {
-        return {
-          ...block,
-          content:
-            "ImmoJudis est un service indépendant d’analyse des ventes immobilières judiciaires. Nous vous contactons au sujet de cette vente.",
-        };
-      }
-      if (block.id === "reply_instructions") {
-        return {
-          ...block,
-          content:
-            "Vous pouvez répondre directement à cet email et y joindre les documents ou photographies que vous êtes autorisé à communiquer.",
-        };
-      }
-      return block;
-    });
-
+  it("never adds the professional-account invitation (prospecting) to a request", () => {
     const rendered = renderInformationAgentEmailContent({
-      template: legacyTemplate,
+      template: DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
       values,
       appUrl: "https://staging.immojudis.com",
     });
 
-    const invitationIndex = rendered.bodyText.indexOf(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING);
-    const closingIndex = rendered.bodyText.indexOf("Bien cordialement");
-    expect(invitationIndex).toBeGreaterThan(-1);
-    expect(invitationIndex).toBeLessThan(closingIndex);
-    expect(rendered.bodyText).toContain(
-      "https://staging.immojudis.com/login?mode=professional&redirect=%2Fespace-pro",
-    );
-    expect(rendered.bodyText.match(/Vous avez d’autres ventes à partager \?/g)).toHaveLength(1);
-    expect(rendered.bodyText).toContain("Nous vous contactons au sujet de cette vente.");
+    expect(rendered.bodyText).not.toContain(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING);
+    expect(rendered.bodyText).not.toContain("Créer un compte professionnel");
+    expect(rendered.bodyText).not.toContain("mode=professional");
+    expect(rendered.bodyText).toContain("Bien cordialement");
   });
 
-  it("accepts an already-built account URL", () => {
-    const rendered = renderInformationAgentEmailContent({
-      template: DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
-      values,
-      accountUrl: "https://staging.immojudis.com/professional/start",
-    });
-
-    expect(rendered.bodyText).toContain(
-      "Créer un compte professionnel : https://staging.immojudis.com/professional/start",
+  it("strips the legacy invitation that older published templates still contain", () => {
+    const legacyTemplate = structuredClone(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE);
+    legacyTemplate.blocks = legacyTemplate.blocks.map((block) =>
+      block.id === "closing"
+        ? {
+            ...block,
+            content: [
+              "POUR LES PROFESSIONNELS",
+              INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING,
+              "Vous pouvez créer un compte professionnel ImmoJudis.",
+              "Créer un compte professionnel : https://immojudis.com/login?mode=professional",
+              "",
+              "Bien cordialement,",
+            ].join("\n"),
+          }
+        : block,
     );
+
+    const rendered = renderInformationAgentEmailContent({ template: legacyTemplate, values });
+
+    expect(containsInformationAgentAccountInvitation(rendered.bodyText)).toBe(false);
+    expect(rendered.bodyText).toContain("Bien cordialement");
+    expect(rendered.bodyText).not.toContain("POUR LES PROFESSIONNELS");
   });
 
   it("rejects unknown variables and removal of the questions placeholder", () => {
