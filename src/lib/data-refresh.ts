@@ -14,21 +14,6 @@ type RefreshSaleRow = Pick<AuctionSaleRow, "id" | "title" | "city" | "department
   source_url: string;
 };
 
-type DataRefreshAdmissionRpcClient = {
-  rpc(
-    name: "enqueue_data_refresh_bounded",
-    args: {
-      p_force: boolean;
-      p_request_kind: DataRefreshKind;
-      p_sale_id: string;
-      p_user_id: string;
-    },
-  ): Promise<{
-    data: Array<{ request_id: string; reused: boolean }> | null;
-    error: { message?: string } | null;
-  }>;
-};
-
 export const DATA_REFRESH_KINDS = ["cadastre", "dpe", "full"] as const;
 export type DataRefreshKind = (typeof DATA_REFRESH_KINDS)[number];
 export const DATA_REFRESH_REQUESTS_PER_MINUTE = 5;
@@ -218,8 +203,7 @@ async function admitRefreshRequest({
   kind: DataRefreshKind;
   force: boolean;
 }): Promise<{ requestId: string; reused: boolean }> {
-  const client = supabaseAdmin as unknown as DataRefreshAdmissionRpcClient;
-  const { data, error } = await client.rpc("enqueue_data_refresh_bounded", {
+  const { data, error } = await supabaseAdmin.rpc("enqueue_data_refresh_bounded", {
     p_force: force,
     p_request_kind: kind,
     p_sale_id: saleId,
