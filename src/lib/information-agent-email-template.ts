@@ -113,26 +113,37 @@ export type InformationAgentEmailTemplatePreview = {
 };
 
 /**
- * This invitation is appended while rendering an email, rather than stored in
- * the editable seven-block template. That keeps the account CTA present for
- * legacy templates already published in the database and prevents an admin
- * from accidentally removing it while editing the copy.
+ * Legacy wording of the "create a professional account" invitation that older published templates
+ * still contain. It is prospecting, which a GDPR art. 14 information request must not mix with
+ * (plan P4-12): it is removed from every rendered email and is never appended any more.
  */
-export const INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW = "POUR LES PROFESSIONNELS";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
   "Vous avez d’autres ventes à partager ?";
-export const INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION =
-  "Vous pouvez créer un compte professionnel ImmoJudis pour transmettre vos propres annonces à notre équipe, faire connaître les ventes retenues dans notre catalogue et suivre leur examen. Chaque publication reste soumise à validation. C’est facultatif : répondre à cet email suffit pour ce dossier.";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
 
-export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 4;
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 5;
 
 export type InformationAgentEmailRenderOptions = {
-  /** Environment origin used to build the professional account URL. */
+  /** Environment origin of the site (kept for callers that build absolute links). */
   appUrl?: string;
-  /** Fully-qualified account URL, useful when the caller already built it. */
-  accountUrl?: string;
 };
+
+/** True for the legacy prospecting block that must never reach a recipient. */
+export function containsInformationAgentAccountInvitation(text: string): boolean {
+  return (
+    text.includes(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING) ||
+    text.includes(`${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} :`)
+  );
+}
+
+/** Drops every paragraph of `text` that belongs to the legacy account invitation. */
+export function stripInformationAgentAccountInvitation(text: string): string {
+  return text
+    .split(/\n\s*\n/)
+    .filter((paragraph) => !containsInformationAgentAccountInvitation(paragraph))
+    .join("\n\n")
+    .trim();
+}
 
 const variableKeySchema = z.enum(
   INFORMATION_AGENT_EMAIL_VARIABLES.map((variable) => variable.key) as [
@@ -294,9 +305,9 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
       "Le message rappelle que seules les pièces autorisées peuvent être transmises et que la réponse doit suivre l’adresse liée au dossier.",
   },
   {
-    title: "Invitation au compte professionnel",
+    title: "Informations RGPD et opposition",
     description:
-      "Une invitation facultative à créer un compte professionnel ImmoJudis est ajoutée automatiquement avant la conclusion, y compris pour les anciens modèles publiés.",
+      "Le pied du message est ajouté automatiquement : responsable de traitement, origine de l’adresse (art. 14 RGPD), lien vers la politique de confidentialité et lien d’opposition en un clic. Aucune invitation commerciale n’est insérée.",
   },
 ] as const;
 
@@ -311,30 +322,15 @@ export function parseInformationAgentEmailTemplateContent(input: {
 export function renderInformationAgentEmailContent({
   template,
   values,
-  appUrl,
-  accountUrl,
 }: {
   template: InformationAgentEmailTemplateContent;
   values: Record<InformationAgentEmailVariable, string>;
 } & InformationAgentEmailRenderOptions): { subject: string; bodyText: string } {
   const parsed = informationAgentEmailTemplateContentSchema.parse(template);
-  const resolvedAccountUrl = buildInformationAgentAccountUrl({ appUrl, accountUrl });
-  const renderedBlocks: Array<{
-    id: InformationAgentEmailBlockId | "account_invitation";
-    content: string;
-  }> = parsed.blocks.map((block) => ({
+  const renderedBlocks = parsed.blocks.map((block) => ({
     id: block.id,
-    content: renderTemplateText(block.content, values).trim(),
+    content: stripInformationAgentAccountInvitation(renderTemplateText(block.content, values)),
   }));
-  const invitation = renderInformationAgentAccountInvitation(resolvedAccountUrl);
-
-  if (!renderedBlocks.some((block) => block.content.includes(invitation))) {
-    const closingIndex = renderedBlocks.findIndex((block) => block.id === "closing");
-    renderedBlocks.splice(closingIndex < 0 ? renderedBlocks.length : closingIndex, 0, {
-      id: "account_invitation",
-      content: invitation,
-    });
-  }
 
   const bodyText = renderedBlocks
     .map((block) => block.content)
@@ -347,34 +343,6 @@ export function renderInformationAgentEmailContent({
     subject: renderTemplateText(parsed.subjectTemplate, values).slice(0, 200),
     bodyText,
   };
-}
-
-export function buildInformationAgentAccountUrl({
-  appUrl = "https://immojudis.com",
-  accountUrl,
-}: InformationAgentEmailRenderOptions = {}): string {
-  if (accountUrl) return validateInformationAgentUrl(accountUrl);
-  const url = new URL("/login", validateInformationAgentUrl(appUrl));
-  url.searchParams.set("mode", "professional");
-  url.searchParams.set("redirect", "/espace-pro");
-  return url.toString();
-}
-
-export function renderInformationAgentAccountInvitation(accountUrl: string): string {
-  return [
-    INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW,
-    INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING,
-    INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION,
-    `${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} : ${accountUrl}`,
-  ].join("\n");
-}
-
-function validateInformationAgentUrl(value: string): string {
-  const parsed = new URL(value);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error("L’URL de compte professionnel doit utiliser HTTP ou HTTPS.");
-  }
-  return parsed.toString();
 }
 
 export function templateVariableToken(key: InformationAgentEmailVariable): string {
