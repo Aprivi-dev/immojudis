@@ -1,7 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { apiRouteError } from "@/lib/api-observability";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -13,7 +12,7 @@ import { withAdminDeadline } from "@/lib/admin-route-deadline";
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
 
-const client = supabaseAdmin as unknown as SupabaseClient;
+const client = supabaseAdmin;
 async function authorize(request: Request) {
   const context = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
   if (!context.isAdmin) throw new Error("Forbidden: accès administrateur requis");

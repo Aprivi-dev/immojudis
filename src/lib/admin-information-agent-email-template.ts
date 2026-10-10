@@ -235,7 +235,7 @@ function templateSummaryFromRow(row: TemplateRow): InformationAgentEmailTemplate
   return {
     id: row.id,
     revision: Number(row.revision),
-    status: row.status,
+    status: row.status as InformationAgentEmailTemplateSummary["status"],
     ...content,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

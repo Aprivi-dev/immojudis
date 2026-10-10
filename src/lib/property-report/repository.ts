@@ -352,7 +352,7 @@ export async function queryActiveComparableSales({
   for (let offset = 0; matches.length < limit; offset += batchSize) {
     const { data, error } = await query.range(offset, offset + batchSize - 1);
     if (error) throw error;
-    const rows = (data ?? []) as unknown as AppSaleRow[];
+    const rows = data ?? [];
     matches.push(
       ...rows.filter((row) => isActiveComparableSale(appSaleRowToAuctionSale(row), now)),
     );

@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { nullableRpcArg } from "@/lib/rpc-args";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { adminPageQueryShape } from "@/lib/admin-page-query";
@@ -206,7 +207,7 @@ export async function runAdminCatalogueReadinessAction({
       p_sale_id: input.saleId,
       p_decision: input.decision,
       p_reason: input.reason,
-      p_expires_at: input.expiresAt ?? null,
+      p_expires_at: nullableRpcArg(input.expiresAt ?? null),
     });
     if (error) throw error;
   } else {

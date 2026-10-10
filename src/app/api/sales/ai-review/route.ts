@@ -38,19 +38,7 @@ const citationStatuses = new Set<AiReviewCitationStatus>([
   "not_required",
 ]);
 
-type ProjectionQuery = {
-  select: (columns: string) => ProjectionQuery;
-  in: (
-    column: string,
-    values: string[],
-  ) => Promise<{ data: unknown[] | null; error: { message: string } | null }>;
-};
-
-type ProjectionReader = {
-  from: (table: string) => ProjectionQuery;
-};
-
-const projectionReader = supabaseAdmin as unknown as ProjectionReader;
+const projectionReader = supabaseAdmin;
 
 export type SaleAiReviewResponse = {
   projections: AiReviewProjectionReadModel[];

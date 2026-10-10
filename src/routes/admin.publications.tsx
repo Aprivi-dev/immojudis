@@ -13,8 +13,11 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json, Tables } from "@/integrations/supabase/types";
 import { fetchAdminPublicationRequests, reviewAdminPublicationRequest } from "@/lib/client-api";
 
-type PublicationRequest = Tables<"listing_publication_requests">;
-type PublicationRequestStatus = PublicationRequest["status"];
+type PublicationRequestStatus = "pending" | "approved" | "rejected";
+// The `status` column is guarded by a CHECK constraint: the generated type is a plain string.
+type PublicationRequest = Omit<Tables<"listing_publication_requests">, "status"> & {
+  status: PublicationRequestStatus;
+};
 type PublicationFilter = "all" | PublicationRequestStatus;
 
 type UploadedPublicationDocument = {

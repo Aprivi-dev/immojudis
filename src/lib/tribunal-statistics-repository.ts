@@ -106,20 +106,6 @@ export const tribunalStatisticsQuerySchema = z
 
 export type TribunalStatisticsQuery = z.infer<typeof tribunalStatisticsQuerySchema>;
 
-type DatabaseError = { message: string };
-type DatabaseResult = { data: unknown; error: DatabaseError | null };
-type SnapshotQuery = PromiseLike<DatabaseResult> & {
-  select(columns: string): SnapshotQuery;
-  eq(column: string, value: unknown): SnapshotQuery;
-  ilike(column: string, pattern: string): SnapshotQuery;
-  order(column: string, options?: { ascending?: boolean }): SnapshotQuery;
-  limit(count: number): SnapshotQuery;
-  maybeSingle(): PromiseLike<DatabaseResult>;
-};
-type TribunalStatisticsAdminClient = { from(table: string): SnapshotQuery };
-
-const tribunalStatisticsAdmin = supabaseAdmin as unknown as TribunalStatisticsAdminClient;
-
 const SNAPSHOT_COLUMNS = [
   "id",
   "scope_type",
@@ -246,7 +232,7 @@ export function decodeStoredTribunalStatisticsResponse(input: {
 async function fetchLatestNationalSnapshot(
   windowMonths: TribunalStatisticsWindowMonths,
 ): Promise<ParsedStoredTribunalStatisticsSnapshot | null> {
-  const result = await tribunalStatisticsAdmin
+  const result = await supabaseAdmin
     .from("tribunal_statistics_snapshots")
     .select(SNAPSHOT_COLUMNS)
     .eq("scope_type", "national")
@@ -270,7 +256,7 @@ async function fetchCompatibleTribunalSnapshots(
   national: ParsedStoredTribunalStatisticsSnapshot,
   courtCode?: string,
 ): Promise<ParsedStoredTribunalStatisticsSnapshot[]> {
-  let query = tribunalStatisticsAdmin
+  let query = supabaseAdmin
     .from("tribunal_statistics_snapshots")
     .select(SNAPSHOT_COLUMNS)
     .eq("scope_type", "tribunal")
