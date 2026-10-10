@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { DETAIL_VIEW } from "@/lib/queries";
+import { DETAIL_VIEW } from "@/lib/sale-views";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
@@ -87,12 +88,8 @@ export async function GET(
       },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Fiabilité des données indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.startsWith("Forbidden")
-        ? 403
-        : 400;
-    return NextResponse.json({ error: message }, { status });
+    return apiRouteError(error, request, "sales.id.facts", {
+      fallbackMessage: "Fiabilité des données indisponible",
+    });
   }
 }

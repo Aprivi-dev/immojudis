@@ -266,7 +266,7 @@ def test_parse_licitor_detail_html_keeps_thousands_surface() -> None:
     )
     sale = normalize_sale(raw)
 
-    assert raw["surface_m2"] == "2464,70"
+    assert raw["surface_m2"] == "2464.70"
     assert sale.surface_m2 == Decimal("2464.70")
 
 
@@ -292,7 +292,7 @@ def test_parse_licitor_detail_html_accepts_square_symbol_without_m() -> None:
     )
     sale = normalize_sale(raw)
 
-    assert raw["surface_m2"] == "636,70"
+    assert raw["surface_m2"] == "636.70"
     assert sale.surface_m2 == Decimal("636.70")
 
 
@@ -340,7 +340,7 @@ def test_licitor_detail_extracts_qualified_surfaces_rooms_and_parking() -> None:
         "https://www.licitor.com/annonce/10/00/01/vente-aux-encheres/un-appartement/test/100001.html",
     )
 
-    assert raw["carrez_surface_m2"] == "74,20"
+    assert raw["carrez_surface_m2"] == "74.20"
     assert raw["habitable_surface_m2"] is None
     assert raw["rooms_count"] == 4
     assert raw["parking_count"] == 2

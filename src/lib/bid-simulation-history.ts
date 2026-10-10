@@ -10,6 +10,15 @@ export type BidAssistantState = {
   works: number;
   worksScenario: WorksScenarioKey | null;
   fpt: number;
+  /** Honoraires de l'avocat enchérisseur (TTC). */
+  lawyerFees?: number;
+  /** Taux de droits de mutation saisi, en % (ex. 6.32) ; absent = taux du département. */
+  registrationRatePct?: number;
+  /** `vat` : bien soumis à TVA, les droits sont remplacés par la TVA. */
+  taxRegime?: "registration" | "vat";
+  occupancyDiscountPct?: number;
+  carryMonths?: number;
+  monthlyCarryCharges?: number;
   scenario: MarketCeilingScenarioKey | "custom";
   customSafetyDiscountPct?: number;
   manualMarketPricePerM2: number;
@@ -58,6 +67,16 @@ export function isBidAssistantState(value: unknown): value is BidAssistantState 
     (value.scenario !== "custom" || value.customSafetyDiscountPct !== undefined) &&
     (value.customSafetyDiscountPct === undefined ||
       (amount(value.customSafetyDiscountPct) && value.customSafetyDiscountPct <= 40)) &&
+    [
+      value.lawyerFees,
+      value.registrationRatePct,
+      value.occupancyDiscountPct,
+      value.carryMonths,
+      value.monthlyCarryCharges,
+    ].every((item) => item === undefined || amount(item)) &&
+    (value.taxRegime === undefined ||
+      value.taxRegime === "registration" ||
+      value.taxRegime === "vat") &&
     (value.worksScenario === null ||
       WORKS_SCENARIOS.some((scenario) => scenario.key === value.worksScenario))
   );

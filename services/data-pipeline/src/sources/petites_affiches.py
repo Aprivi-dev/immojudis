@@ -14,10 +14,19 @@ from bs4 import BeautifulSoup, Tag
 from src import source_checkpoint
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRANCE_DEPARTMENTS, FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
-from src.normalize import SURFACE_VALUE_PATTERN, clean_text, strip_accents
+from src.extraction_profiles import attach_source_property_features as _attach_source_property_features
+from src.normalize import clean_text, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
+from src.sources.common import (
+    PoliteHttpClient,
+    ScrapeResult,
+    extract_surface,
+    fetch_detail_html,
+    parse_html,
+    should_fetch_detail,
+    unique_dicts,
+)
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
@@ -44,6 +53,11 @@ DETAIL_FIELDS = {
     "source_blocks",
     "raw_image_url",
     "source_images",
+    "source_property_features",
+    "source_property_feature_evidence",
+    "source_property_features_meta",
+    "source_procedure_profile",
+    "source_field_observations",
 }
 SOURCE_BUDGET_ENV = "PETITES_AFFICHES_SOURCE_BUDGET_SECONDS"
 CURSOR_SCHEMA = "petites_affiches_cursor_v1"
@@ -164,7 +178,7 @@ def scrape_petites_affiches_aquitaine_result(
     deadline = _source_budget_deadline()
     client = PoliteHttpClient(
         base_url=BASE_URL,
-        user_agent=str(settings["browser_user_agent"]),
+        user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
         accept="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -371,7 +385,9 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
     tribunal = _node_text(card.select_one(".lieuVente strong"))
     city = _node_text(card.select_one(".lot-adresse"))
 
-    return {
+    return _attach_source_property_features({
+        # The card is a public source record too; retaining its observations
+        # lets a restricted detail page remain measurable.
         "source_name": "petites_affiches",
         "source_url": source_url,
         "external_id": _external_id(card, source_url),
@@ -382,8 +398,12 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
         "description": title,
         "starting_price_eur": _node_text(card.select_one(".miseAPrix strong")),
         "sale_date": _node_text(card.select_one(".dateVente strong")),
-        "surface_m2": _extract_surface(raw_text),
-        "postal_code": _extract_postal(raw_text),
+        "surface_m2": extract_surface(raw_text),
+        # The card text starts with the starting price.  Searching that whole
+        # text for five digits turns ``50 000 €`` into the property's postal
+        # code.  Only accept a code in a location-bearing node, immediately
+        # followed by a locality token.
+        "postal_code": _extract_card_postal(card),
         "lawyer_name": _extract_lawyer(raw_text),
         "tribunal": tribunal,
         "status": "upcoming",
@@ -392,7 +412,7 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
         "raw_image_url": image_url,
         "source_images": [image_url] if image_url else [],
         "source_blocks": {"reference": reference, "type_vente": _node_text(card.select_one(".typeVente strong"))},
-    }
+    })
 
 
 def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, Any]:
@@ -431,7 +451,7 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
         f"Visites: {' | '.join(visit_dates)}" if visit_dates else None,
         f"Documents: {'; '.join(document['label'] for document in documents)}" if documents else None,
     ]
-    return {
+    return _attach_source_property_features({
         "source_name": "petites_affiches",
         "source_url": source_url,
         "title": title,
@@ -439,7 +459,7 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
         "address": address,
         "city": city,
         "postal_code": _extract_postal(address or ""),
-        "surface_m2": _extract_surface(detail_text),
+        "surface_m2": extract_surface(detail_text),
         "starting_price_eur": price,
         "sale_date": sale_date,
         "property_type": property_type,
@@ -475,20 +495,15 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
             }.items()
             if value
         },
-    }
+    })
 
 
 def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> None:
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
-    try:
-        html = client.get(source_url)
-    except Exception as exc:
-        LOGGER.warning("Petites Affiches detail fetch failed for %s: %s", source_url, exc)
-        errors.append(f"detail {source_url}: {exc}")
-        sale["_detail_fetch_failed"] = True
-        sale["source_detail_status"] = "failed"
+    html = fetch_detail_html(client, sale, errors, label="Petites Affiches")
+    if html is None:
         return
     access_text = parse_html(html, "html.parser").get_text(" ", strip=True)
     restricted = re.search(
@@ -535,6 +550,7 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
             sale[key] = f"{sale['raw_text']}\n{value}"
         elif key == "city" or not sale.get(key):
             sale[key] = value
+    _attach_source_property_features(sale)
 
 
 def _title_reference_type(text: str) -> tuple[str | None, str | None, str | None]:
@@ -690,34 +706,38 @@ def _external_id(card: Tag, source_url: str) -> str:
     return match.group(1) if match else source_url.rstrip("/").split("/")[-1]
 
 
-def _extract_surface(text: str) -> str | None:
-    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b", text, re.I)
-    return _normalize_surface_number(match.group(1)) if match else None
-
-
-def _normalize_surface_number(value: str) -> str | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    text = text.replace(" ", "")
-    if "," in text:
-        return text.replace(".", "")
-    if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
-        return text.replace(".", "")
-    return text
-
-
 def _extract_price(text: str) -> str | None:
     match = re.search(r"Mise\s*[àa]\s*Prix\s*:?\s*([0-9][0-9\s.,]+)\s*€", text, re.I)
     return clean_text(match.group(1)) if match else None
 
 
 def _extract_postal(text: str) -> str | None:
-    match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b", text)
+    match = re.search(rf"\b({FRENCH_POSTAL_CODE_PATTERN})\b(?=\s+[A-Za-zÀ-ÿ])", text)
     if match:
         return match.group(1)
-    spaced = re.search(r"(?<!\d)(\d{2})\s+(\d{3})(?!\d)", text)
+    spaced = re.search(r"(?<!\d)(\d{2})\s+(\d{3})(?=\s+[A-Za-zÀ-ÿ])", text)
     return f"{spaced.group(1)}{spaced.group(2)}" if spaced else None
+
+
+def _extract_card_postal(card: Tag) -> str | None:
+    """Extract a card postal code from location context, never from its price.
+
+    Petites Affiches puts ``Mise à Prix`` before the lot fields in the card's
+    flattened text.  A postal code is accepted only from address-like nodes or
+    an informational node containing ``postal + locality``.  This keeps the
+    extractor generic and avoids maintaining a city/postal lookup table.
+    """
+    candidates: list[str] = []
+    for selector in (".lot-adresse", ".adresse", ".infos", "[class*='adresse']"):
+        for node in card.select(selector):
+            text = _node_text(node)
+            if text and text not in candidates:
+                candidates.append(text)
+    for text in candidates:
+        postal = _extract_postal(text)
+        if postal:
+            return postal
+    return None
 
 
 def _extract_lawyer(text: str) -> str | None:

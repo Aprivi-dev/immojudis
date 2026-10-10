@@ -1,3 +1,4 @@
+import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 type Result<T> = { data: T | null; error: { message?: string } | null };
@@ -12,7 +13,7 @@ type RetentionClient = {
     select(columns: string): {
       order(column: string): { limit(count: number): Promise<Result<StorageItem[]>> };
     };
-    delete(): { eq(column: string, value: string): Promise<Result<unknown>> };
+    delete(): { in(column: string, values: string[]): Promise<Result<unknown>> };
   };
   storage: { from(bucket: string): { remove(paths: string[]): Promise<Result<unknown>> } };
 };
@@ -51,16 +52,34 @@ export async function runSaleRetention(
     .order("created_at")
     .limit(100);
   if (queue.error) throw new Error(queue.error.message || "Storage retention queue unavailable");
-  let filesDeleted = 0;
+  // One Storage call per bucket, then a single acknowledgement for every object
+  // that was really removed. Removing an already-deleted object is a no-op, so
+  // a retry after a partial failure is safe.
+  const byBucket = new Map<string, StorageItem[]>();
   for (const item of queue.data ?? []) {
-    if (!["information-agent-evidence", "information-agent-approved"].includes(item.bucket)) {
-      throw new Error("Unexpected retention bucket");
-    }
-    const removal = await client.storage.from(item.bucket).remove([item.object_path]);
-    if (removal.error) throw new Error(removal.error.message || "Storage retention failed");
-    const ack = await client.from("sale_retention_storage_queue").delete().eq("id", item.id);
-    if (ack.error) throw new Error(ack.error.message || "Storage retention acknowledgement failed");
-    filesDeleted++;
+    byBucket.set(item.bucket, [...(byBucket.get(item.bucket) ?? []), item]);
   }
+  const removedIds: string[] = [];
+  let removalFailure: Error | null = null;
+  for (const [bucket, items] of byBucket) {
+    if (!["information-agent-evidence", "information-agent-approved"].includes(bucket)) {
+      removalFailure = new Error("Unexpected retention bucket");
+      break;
+    }
+    const removal = await client.storage.from(bucket).remove(items.map((item) => item.object_path));
+    if (removal.error) {
+      removalFailure = new Error(removal.error.message || "Storage retention failed");
+      break;
+    }
+    removedIds.push(...items.map((item) => item.id));
+  }
+  // Acknowledge what was removed even when a later bucket failed, so only the
+  // failed work stays queued for the next run.
+  if (removedIds.length) {
+    const ack = await client.from("sale_retention_storage_queue").delete().in("id", removedIds);
+    if (ack.error) throw new Error(ack.error.message || "Storage retention acknowledgement failed");
+  }
+  if (removalFailure) throw removalFailure;
+  const filesDeleted = removedIds.length;
   return { deleted, remaining, busy, orphanUploadsQueued: orphanQueue.data, filesDeleted };
 }

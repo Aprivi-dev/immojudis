@@ -16,7 +16,7 @@ export function PropertyImage({ src, alt, className, priority = false }: Propert
         alt={alt}
         fill
         sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 760px"
-        priority={priority}
+        preload={priority}
         loading={priority ? "eager" : "lazy"}
         fetchPriority={priority ? "high" : "auto"}
         className={cn("object-cover", className)}

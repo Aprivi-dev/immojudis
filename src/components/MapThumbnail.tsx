@@ -50,7 +50,7 @@ export function MapThumbnail({
         className={`relative flex items-center justify-center overflow-hidden bg-slate-50 ${className ?? ""}`}
       >
         <div className="relative flex flex-col items-center gap-2 px-4 text-center">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gold/40 bg-gold/15 text-gold">
+          <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gold/40 bg-gold/15 text-gold-text">
             <MapPin className="h-4 w-4" />
           </span>
           <span className="text-sm font-medium text-slate-700">Aperçu Mapbox indisponible</span>
@@ -74,7 +74,7 @@ export function MapThumbnail({
         className="h-full w-full object-cover"
       />
       {markerLabel ? (
-        <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[130%] whitespace-nowrap rounded-xl border-2 border-white bg-[#132238] px-3 py-2 text-base font-bold text-white shadow-md">
+        <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[130%] whitespace-nowrap rounded-xl border-2 border-white bg-brand-navy px-3 py-2 text-base font-bold text-white shadow-md">
           {markerLabel}
         </span>
       ) : null}
@@ -82,7 +82,7 @@ export function MapThumbnail({
         href={MAPBOX_COPYRIGHT_URL}
         target="_blank"
         rel="noreferrer"
-        className="absolute bottom-1 right-1 rounded bg-white/85 px-1.5 py-0.5 text-[9px] font-semibold text-[#1f2937] shadow-sm"
+        className="absolute bottom-1 right-1 rounded bg-white/85 px-1.5 py-0.5 text-[9px] font-semibold text-brand-navy shadow-sm"
       >
         {MAPBOX_ATTRIBUTION}
       </a>

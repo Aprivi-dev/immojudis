@@ -5,7 +5,7 @@ export function PropertyDetailsTable({ property }: { property: Property }) {
   return (
     <AnimatedSection id="details" aria-labelledby="details-title">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Caracteristiques
         </p>
         <h2 id="details-title" className="mt-2 font-display text-3xl text-foreground">

@@ -15,6 +15,7 @@ import type { TribunalListingStatisticsResponse } from "@/lib/tribunal-listing-s
 import { fetchTribunalListingStatistics } from "@/lib/tribunal-listing-statistics-client";
 import type { AuctionSale } from "@/lib/types";
 import styles from "./ListingStatistics.module.css";
+import { queryKeys } from "@/lib/query-keys";
 
 type ListingHistoryMonths = 3 | 12 | 36;
 
@@ -428,7 +429,7 @@ export function ListingStatistics({
   }, [historyMonths, publicDemo, sale]);
 
   const activityQuery = useQuery<TribunalListingStatisticsResponse>({
-    queryKey: ["listing-statistics", sale.id, historyMonths, publicDemo ? "demo" : "live"],
+    queryKey: queryKeys.listingStatistics(sale.id, historyMonths, publicDemo ? "demo" : "live"),
     queryFn: async () => {
       if (publicDemo) {
         if (!demoFixture) throw new Error("La fixture de démonstration est indisponible.");
@@ -446,7 +447,7 @@ export function ListingStatistics({
   });
 
   const priceQuery = useQuery<AdjudicationPriceStatisticsResponse>({
-    queryKey: ["listing-statistics-prices", sale.id],
+    queryKey: queryKeys.listingStatisticsPrices(sale.id),
     queryFn: () => fetchAdjudicationPriceStatistics(sale.id),
     enabled: Boolean(sale.id) && premium && !publicDemo && activityQuery.isSuccess,
     retry: false,

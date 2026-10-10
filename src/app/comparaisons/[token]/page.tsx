@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Comparaison partagée",
-  description: "Comparaison de biens issue du catalogue ImmoJudis.",
+  description: "Comparaison de biens issue du catalogue Immojudis.",
   robots: { index: false, follow: false },
 };
 
@@ -22,14 +22,14 @@ export default async function SharedSaleComparisonPage({
   if (!comparison) notFound();
 
   return (
-    <main className="min-h-screen bg-[#f4f7f9] px-3 py-8 text-[#132238] sm:px-6">
-      <article className="mx-auto max-w-5xl overflow-hidden rounded-xl border border-[#d6e3e8] bg-white shadow-sm">
-        <header className="border-b border-[#d6e3e8] px-4 py-5 sm:px-6">
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0f766e]">
-            Comparaison partagée ImmoJudis
+    <main id="contenu" className="min-h-screen bg-surface-muted px-3 py-8 text-brand-navy sm:px-6">
+      <article className="mx-auto max-w-5xl overflow-hidden rounded-xl border border-line-soft bg-white shadow-sm">
+        <header className="border-b border-line-soft px-4 py-5 sm:px-6">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-navy">
+            Comparaison partagée Immojudis
           </p>
           <h1 className="mt-2 text-2xl font-extrabold sm:text-3xl">{comparison.name}</h1>
-          <p className="mt-2 text-sm text-[#526170]">
+          <p className="mt-2 text-sm text-ink-soft">
             Instantané mis à jour le {formatDate(comparison.updatedAt)} · lien valable jusqu’au{" "}
             {formatDate(comparison.expiresAt)}
           </p>
@@ -37,7 +37,7 @@ export default async function SharedSaleComparisonPage({
 
         <SaleComparisonTable items={comparison.items} returnTo="/sales" />
 
-        <footer className="space-y-2 border-t border-[#d6e3e8] bg-[#fbfdff] px-4 py-4 text-xs leading-relaxed text-[#526170] sm:px-6">
+        <footer className="space-y-2 border-t border-line-soft bg-white px-4 py-4 text-xs leading-relaxed text-ink-soft sm:px-6">
           <p>
             Cet instantané contient seulement des informations publiques du catalogue. Il n’inclut
             ni score d’investissement, ni adresse détaillée, ni donnée personnelle.
@@ -48,7 +48,7 @@ export default async function SharedSaleComparisonPage({
           </p>
           <a
             href="/sales"
-            className="inline-flex min-h-11 items-center font-bold text-[#0f766e] underline underline-offset-2"
+            className="inline-flex min-h-11 items-center font-bold text-brand-navy underline underline-offset-2"
           >
             Explorer le catalogue
           </a>

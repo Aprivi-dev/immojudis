@@ -4,7 +4,7 @@ export function SearchResultsSkeleton() {
   return (
     <div
       aria-hidden="true"
-      className="overflow-hidden rounded-xl border border-[#dce3eb] bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)]"
+      className="overflow-hidden rounded-xl border border-line-soft bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)]"
     >
       <div className={`${styles.skeletonMedia} animate-pulse`} />
       <div className="space-y-3 p-4">

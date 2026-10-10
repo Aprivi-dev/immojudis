@@ -1,3 +1,4 @@
+import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -150,8 +151,7 @@ export async function acceptSaleWorkspaceInvitation({
   auth: SupabaseAuthContext;
   input: CollaboratorAcceptPayload;
 }): Promise<{ collaborator: SaleWorkspaceCollaborator }> {
-  const email = normalizeEmail(String(auth.claims.email ?? ""));
-  if (!email) throw new Error("Invitation impossible à accepter sans email authentifié.");
+  const email = await confirmedAccountEmail(auth.userId);
 
   const { data: invitation, error } = await supabaseAdmin
     .from("sale_workspace_collaborators")
@@ -164,7 +164,8 @@ export async function acceptSaleWorkspaceInvitation({
   if (invitation.status !== "invited") {
     throw new Error("Cette invitation n'est plus disponible.");
   }
-  if (normalizeEmail(invitation.invited_email) !== email && !auth.isAdmin) {
+  // No administrator override: only the invited, verified address can accept.
+  if (normalizeEmail(invitation.invited_email) !== email) {
     throw new Error("Cette invitation ne correspond pas à votre email.");
   }
 
@@ -186,6 +187,23 @@ export async function acceptSaleWorkspaceInvitation({
   if (updateError) throw updateError;
   if (!data) throw new Error("Cette invitation n'est plus disponible.");
   return { collaborator: data };
+}
+
+/**
+ * The invitation is bound to an email address, so accepting it requires an account
+ * whose address was confirmed. The JWT claim alone is not trusted for this decision.
+ */
+async function confirmedAccountEmail(userId: string): Promise<string> {
+  const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (error || !data.user) {
+    throw new Error("Invitation impossible à accepter sans email authentifié.");
+  }
+  const email = normalizeEmail(data.user.email ?? "");
+  if (!email) throw new Error("Invitation impossible à accepter sans email authentifié.");
+  if (!data.user.email_confirmed_at) {
+    throw new Error("Confirmez votre adresse email avant d'accepter cette invitation.");
+  }
+  return email;
 }
 
 export async function revokeSaleWorkspaceCollaborator({

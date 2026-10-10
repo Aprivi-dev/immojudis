@@ -1,6 +1,6 @@
 begin;
 
-select plan(8);
+select plan(9);
 
 select has_function(
   'public',
@@ -66,11 +66,18 @@ select is(
   'estimate coverage remains separately visible as a data-quality diagnostic'
 );
 
+-- An incident only resolves after the failing condition has been clear for two
+-- hours, so a source that flaps does not open and close an incident each time.
+select lives_ok(
+  $$select public.evaluate_market_valuation_health(statement_timestamp() + interval '3 hours')$$,
+  'valuation health is evaluated again once the queue has been clear for two hours'
+);
+
 select is(
   (select status from public.operational_alerts
    where alert_key = 'valuation.queue.degraded'),
   'resolved',
-  'an empty due queue with valid terminal outcomes resolves the stalled-queue alert'
+  'an empty due queue with valid terminal outcomes resolves the stalled-queue alert after two clear hours'
 );
 
 select * from finish();

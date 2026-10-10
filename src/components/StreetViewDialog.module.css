@@ -5,7 +5,7 @@
   gap: 0;
   overflow: hidden;
   border: 1px solid rgb(255 255 255 / 12%);
-  background: #07111f;
+  background: var(--night);
   padding: 0;
   color: white;
   box-shadow: 0 24px 80px rgb(0 0 0 / 38%);
@@ -13,7 +13,7 @@
 
 .header {
   border-bottom: 1px solid rgb(255 255 255 / 10%);
-  background: #0b1625;
+  background: var(--night);
   padding: 0.85rem 3.5rem 0.85rem 1rem;
   text-align: left;
 }
@@ -29,7 +29,7 @@
   position: relative;
   min-height: 21rem;
   height: min(68dvh, 46rem);
-  background: #101418;
+  background: var(--night);
 }
 
 .iframe {

@@ -97,7 +97,7 @@ function OutcomeForecastReady({
     <section
       id="outcome-forecast"
       aria-labelledby="outcome-forecast-title"
-      className="scroll-mt-36 border-b border-brand-navy/10 bg-[#eef7ff]"
+      className="scroll-mt-36 border-b border-brand-navy/10 bg-background"
     >
       <div className="mx-auto max-w-[1410px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <h2
@@ -134,7 +134,7 @@ function OutcomeForecastReady({
             />
             <p className="mt-6 text-base font-medium text-brand-navy sm:text-lg">
               Probabilité de surenchère{" "}
-              <strong className="ml-1 font-display text-2xl font-semibold text-gold-soft">
+              <strong className="ml-1 font-display text-2xl font-semibold text-gold-text">
                 {formatProbability(displayedForecast.surenchereProbability)}
               </strong>
             </p>
@@ -163,7 +163,7 @@ function OutcomeForecastReady({
                 />
                 <span
                   aria-hidden
-                  className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-display text-xl text-brand-navy/60"
+                  className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-display text-xl text-brand-navy/65"
                 >
                   €
                 </span>
@@ -176,13 +176,13 @@ function OutcomeForecastReady({
               </p>
 
               <div className="mt-7 border-t border-brand-navy/12 pt-6">
-                <p className="font-display text-6xl font-medium leading-none text-gold-soft sm:text-7xl">
+                <p className="font-display text-6xl font-medium leading-none text-gold-text sm:text-7xl">
                   {formatProbability(ceiling.finalPriceBelowOrEqualIfAdjudicatedProbability)}
                 </p>
                 <p className="mt-3 max-w-sm text-sm font-medium leading-relaxed text-brand-navy sm:text-base">
                   Probabilité que le prix final reste inférieur ou égal à votre plafond
                 </p>
-                <p className="mt-4 text-xs leading-relaxed text-brand-navy/62">
+                <p className="mt-4 text-xs leading-relaxed text-brand-navy/65">
                   Probabilité combinée avec une adjudication :{" "}
                   <strong className="text-brand-navy">
                     {formatProbability(ceiling.adjudicationAndFinalPriceBelowOrEqualProbability)}
@@ -242,8 +242,8 @@ function FlowStep({
     tone === "navy"
       ? "border-brand-navy bg-brand-navy text-white"
       : tone === "gold"
-        ? "border-gold bg-white text-gold-soft"
-        : "border-brand-navy/18 bg-white text-brand-navy/55";
+        ? "border-gold bg-white text-gold-text"
+        : "border-brand-navy/18 bg-white text-brand-navy/65";
   return (
     <div className="relative grid grid-cols-[2.75rem_minmax(0,1fr)] gap-4 pb-7 last:pb-0 md:block md:pb-0 md:text-center">
       <span
@@ -253,12 +253,12 @@ function FlowStep({
       </span>
       <div className="pt-0.5 md:mt-3 md:pt-0">
         <p
-          className={`text-sm font-medium ${tone === "gold" ? "text-gold-soft" : "text-brand-navy/72"}`}
+          className={`text-sm font-medium ${tone === "gold" ? "text-gold-text" : "text-brand-navy/72"}`}
         >
           {label}
         </p>
         <p
-          className={`mt-1 font-display text-4xl font-medium leading-none ${tone === "gold" ? "text-gold-soft" : "text-brand-navy"}`}
+          className={`mt-1 font-display text-4xl font-medium leading-none ${tone === "gold" ? "text-gold-text" : "text-brand-navy"}`}
         >
           {formatProbability(value)}
         </p>
@@ -284,7 +284,7 @@ function PriceDistribution({
       </p>
       <p className="mt-4 text-sm text-brand-navy/72 sm:text-base">
         Fourchette probable à 80 % :{" "}
-        <strong className="font-display text-xl font-semibold text-gold-soft">
+        <strong className="font-display text-xl font-semibold text-gold-text">
           {formatPrice(euros(quantiles.p10Cents))} – {formatPrice(euros(quantiles.p90Cents))}
         </strong>
       </p>
@@ -302,7 +302,7 @@ function PriceDistribution({
         </div>
         <div className="mt-2 grid grid-cols-3 font-display text-base font-semibold text-brand-navy/72 sm:text-lg">
           <span>{formatPrice(euros(quantiles.p10Cents))}</span>
-          <span className="text-center text-gold-soft">
+          <span className="text-center text-gold-text">
             {formatPrice(euros(quantiles.p50Cents))}
           </span>
           <span className="text-right">{formatPrice(euros(quantiles.p90Cents))}</span>
@@ -377,13 +377,13 @@ function CeilingCurve({
               </text>
             </g>
           ))}
-          <polyline points={points} fill="none" stroke="#132238" strokeWidth="3" />
+          <polyline points={points} fill="none" stroke="var(--brand-navy)" strokeWidth="3" />
           <line
             x1={padding.left}
             x2={markerX}
             y1={markerY}
             y2={markerY}
-            stroke="#c98d45"
+            stroke="var(--gold)"
             strokeWidth="1.5"
             strokeDasharray="6 5"
           />
@@ -392,11 +392,11 @@ function CeilingCurve({
             x2={markerX}
             y1={markerY}
             y2={height - padding.bottom}
-            stroke="#c98d45"
+            stroke="var(--gold)"
             strokeWidth="1.5"
             strokeDasharray="6 5"
           />
-          <circle cx={markerX} cy={markerY} r="7" fill="#c98d45" />
+          <circle cx={markerX} cy={markerY} r="7" fill="var(--gold)" />
           {ticks.map((tick, index) => (
             <text
               key={`${tick}-${index}`}
@@ -460,7 +460,7 @@ function ForecastMeta({ forecast }: { forecast: OutcomeGraphForecast }) {
           key={item.label}
           className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-3 border-b border-brand-navy/10 px-3 py-5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0 lg:border-b-0 lg:border-r lg:last:border-r-0"
         >
-          <item.icon className="mt-0.5 h-5 w-5 text-gold-soft" aria-hidden />
+          <item.icon className="mt-0.5 h-5 w-5 text-gold-text" aria-hidden />
           <dl>
             <dt className="text-xs text-brand-navy/70">{item.label}</dt>
             <dd className="mt-1 text-sm font-semibold text-brand-navy">{item.value}</dd>

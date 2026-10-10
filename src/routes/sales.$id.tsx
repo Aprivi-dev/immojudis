@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { useSearch } from "@/lib/router-compat";
 import { useQuery } from "@tanstack/react-query";
 import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailFallbacks";
 
@@ -12,8 +11,8 @@ import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { fetchAccessPlan } from "@/lib/client-api";
 import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
-import { GENERIC_SALE_SEO_TITLE, saleSeoTitle } from "@/lib/seo";
 import type { AuctionSale } from "@/lib/types";
+import { queryKeys } from "@/lib/query-keys";
 
 const DiscoverySaleDetailView = dynamic(
   () =>
@@ -52,16 +51,21 @@ export function SaleDetailPage({
   initialData?: SaleDetailRouteData;
   adjudicationStatisticsEnabled?: boolean;
 }) {
-  const search = useSearch() as { from?: unknown };
-  const returnTo = safeSalesReturnTo(search.from) ?? "/sales";
+  // The page is statically generated and cached (ISR): it must not read the URL
+  // during rendering (useSearchParams would force client-side rendering and hide
+  // the public content from crawlers). The return link and the hash are read from
+  // the browser location once mounted.
+  const [from, setFrom] = useState<string | null>(null);
   const [requestedHash, setRequestedHash] = useState("");
   useEffect(() => {
+    setFrom(new URLSearchParams(window.location.search).get("from"));
     const updateHash = () => setRequestedHash(window.location.hash);
     updateHash();
     window.addEventListener("hashchange", updateHash);
     return () => window.removeEventListener("hashchange", updateHash);
   }, [id]);
-  const loginReturnTo = `${saleDetailPath(id, safeSalesReturnTo(search.from))}${requestedHash}`;
+  const returnTo = safeSalesReturnTo(from) ?? "/sales";
+  const loginReturnTo = `${saleDetailPath(id, safeSalesReturnTo(from))}${requestedHash}`;
   const { session, loading: authLoading, authError } = useAuth();
   const sessionKey = session?.user.id ?? "anonymous";
   const {
@@ -70,7 +74,7 @@ export function SaleDetailPage({
     error: entitlementsError,
     refetch: retryEntitlements,
   } = useQuery({
-    queryKey: ["feature-entitlements", sessionKey, "plan"],
+    queryKey: queryKeys.featureEntitlementsPlan(sessionKey),
     queryFn: fetchAccessPlan,
     enabled: Boolean(session) && !authLoading,
     staleTime: 5 * 60_000,
@@ -80,7 +84,7 @@ export function SaleDetailPage({
   const canUseServerInitialData =
     initialData?.sale?.id === id || (!session && initialData?.preview?.id === id);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["sale-detail", id, sessionKey, discovery ? "discovery" : "analysis"],
+    queryKey: queryKeys.saleDetail(id, sessionKey, discovery ? "discovery" : "analysis"),
     queryFn: () => loadSaleDetailRouteData(id, { discovery, authenticated: Boolean(session) }),
     enabled: !authLoading && accessReady,
     initialData: canUseServerInitialData ? initialData : undefined,
@@ -88,23 +92,6 @@ export function SaleDetailPage({
   });
   const sale = data?.sale ?? null;
   const preview = data?.preview ?? null;
-  // The authenticated sale is still raw until the detail view receives and
-  // applies its AI review projection. Keep sensitive fields out of the tab
-  // title during that gap; the public preview has an intentionally limited
-  // shape and can keep its generic publication title.
-  const titleSale = sale ? null : preview;
-  const pageTitle = `${
-    !authLoading && accessReady && titleSale ? saleSeoTitle(titleSale) : GENERIC_SALE_SEO_TITLE
-  } - Immojudis`;
-
-  useEffect(() => {
-    const previousTitle = document.title;
-    document.title = pageTitle;
-    return () => {
-      document.title = previousTitle;
-    };
-  }, [pageTitle]);
-
   useEffect(() => {
     if (sale?.id) markSaleViewed(sale.id);
   }, [sale?.id]);
@@ -137,7 +124,7 @@ export function SaleDetailPage({
 
   if (!authLoading && authError) {
     return (
-      <main className="mx-auto my-12 max-w-xl px-4">
+      <main id="contenu" className="mx-auto my-12 max-w-xl px-4">
         <section role="alert" className="rounded-lg border border-border bg-white p-6">
           <h1 className="text-xl font-semibold">Connexion à renouveler</h1>
           <p className="mt-3 text-sm text-muted-foreground">{authError}</p>
@@ -172,6 +159,20 @@ export function SaleDetailPage({
       </section>
     );
   }
+  // The server already rendered the public page of this sale. Keep it on screen
+  // while the session is being restored: crawlers and signed-out visitors see
+  // the real content immediately instead of a skeleton.
+  const serverPreview = initialData?.preview?.id === id ? initialData.preview : null;
+  if (authLoading && serverPreview && !initialData?.sale) {
+    return (
+      <SalePublicPreview
+        saleId={id}
+        preview={serverPreview}
+        returnTo={returnTo}
+        requestedHash={requestedHash}
+      />
+    );
+  }
   if (authLoading || entitlementsLoading || !accessReady || isLoading) {
     return <SaleDetailSkeleton />;
   }
@@ -188,7 +189,7 @@ export function SaleDetailPage({
   }
   if (!sale && !session) {
     return (
-      <main className="mx-auto my-16 max-w-xl px-4">
+      <main id="contenu" className="mx-auto my-16 max-w-xl px-4">
         <section className="rounded-lg border border-border bg-white p-6">
           <h1 className="font-display text-2xl font-semibold">Consulter cette annonce</h1>
           <p className="mt-3 text-sm text-muted-foreground">

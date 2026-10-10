@@ -1,10 +1,10 @@
 .root {
-  border: 1px solid #cbd7cf;
+  border: 1px solid var(--line-warm);
   border-radius: 16px;
   padding: 22px;
   margin: 20px 0;
-  background: #f7faf7;
-  color: #17392a;
+  background: var(--surface-muted);
+  color: var(--success);
 }
 .header {
   display: flex;
@@ -23,14 +23,14 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 700;
-  color: #446652;
+  color: var(--success);
   margin: 0;
 }
 .intro {
   margin: 0;
   max-width: 700px;
   font-size: 0.88rem;
-  color: #41584a;
+  color: var(--success);
   line-height: 1.6;
 }
 .actions {
@@ -53,14 +53,14 @@
   cursor: pointer;
 }
 .primaryButton {
-  background: #215c3c;
+  background: var(--success);
   color: white;
-  border: 1px solid #215c3c;
+  border: 1px solid var(--success);
 }
 .secondaryButton {
   background: white;
-  color: #17392a;
-  border: 1px solid #a7b8ae;
+  color: var(--success);
+  border: 1px solid var(--line);
 }
 .primaryButton:disabled,
 .secondaryButton:disabled {
@@ -71,7 +71,7 @@
 .secondaryButton:focus-visible,
 .select:focus-visible,
 .sourceLink:focus-visible {
-  outline: 3px solid #b79356;
+  outline: 3px solid var(--gold);
   outline-offset: 3px;
 }
 .notice,
@@ -82,7 +82,7 @@
   border-radius: 8px;
   font-size: 0.82rem;
   line-height: 1.6;
-  background: #edf2ed;
+  background: var(--success-tint);
 }
 .notice a {
   display: inline-flex;
@@ -92,17 +92,17 @@
   text-decoration: underline;
 }
 .error {
-  background: #fff1e7;
-  color: #853912;
-  border: 1px solid #efc8ac;
+  background: var(--cream);
+  color: var(--danger);
+  border: 1px solid var(--line);
 }
 .timestamp {
   margin: 18px 0 0;
   font-size: 0.75rem;
-  color: #536556;
+  color: var(--success);
 }
 .section {
-  border-top: 1px solid #d7e1d9;
+  border-top: 1px solid var(--line);
   margin-top: 22px;
   padding-top: 22px;
 }
@@ -113,7 +113,7 @@
 }
 .caption {
   font-size: 0.8rem;
-  color: #536556;
+  color: var(--success);
   line-height: 1.65;
   margin: 0 0 12px;
 }
@@ -131,7 +131,7 @@
   align-items: flex-start;
   gap: 5px;
   padding: 14px;
-  border: 1px solid #d8e2db;
+  border: 1px solid var(--line);
   border-radius: 9px;
   background: white;
   min-width: 0;
@@ -143,14 +143,14 @@
   font-weight: 650;
 }
 .card small {
-  color: #617468;
+  color: var(--success);
   font-size: 0.72rem;
 }
 .sourceLink {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: #235d42;
+  color: var(--success);
   font-size: 0.77rem;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -163,7 +163,7 @@
 }
 .document {
   background: white;
-  border: 1px solid #d8e2db;
+  border: 1px solid var(--line);
   border-radius: 9px;
   padding: 12px 14px;
   margin-top: 10px;
@@ -190,12 +190,12 @@
   min-height: 42px;
   min-width: 235px;
   max-width: 100%;
-  border: 1px solid #adc0b2;
+  border: 1px solid var(--line);
   border-radius: 8px;
   background: white;
   padding: 8px 12px;
   font-size: 0.85rem;
-  color: #17392a;
+  color: var(--success);
 }
 .projectSummary {
   margin: 13px 0;
@@ -212,7 +212,7 @@
 .rule,
 .risk {
   padding: 16px;
-  border: 1px solid #d8e2db;
+  border: 1px solid var(--line);
   border-radius: 10px;
   background: white;
   font-size: 0.82rem;
@@ -230,16 +230,16 @@
 }
 .cardTop span {
   font-size: 0.72rem;
-  color: #5b6b5e;
+  color: var(--success);
   flex-shrink: 0;
 }
 .ruleMeta {
   font-size: 0.72rem;
-  color: #617468;
+  color: var(--success);
   margin: 5px 0;
 }
 .rule blockquote {
-  border-left: 3px solid #92b09d;
+  border-left: 3px solid var(--line);
   padding-left: 12px;
   margin: 10px 0;
   white-space: pre-line;
@@ -271,15 +271,15 @@
   margin: 0 0 5px;
 }
 .attention {
-  background: #fff5df;
-  color: #805c19;
+  background: var(--warning-tint);
+  color: var(--gold-text);
   border-radius: 5px;
   padding: 8px;
   margin: 5px 0;
   font-size: 0.77rem;
 }
 .scope {
-  background: #edf2ed;
+  background: var(--success-tint);
   border-radius: 20px;
   padding: 3px 8px;
 }
@@ -288,14 +288,14 @@
   font-weight: 650;
 }
 .consequences {
-  background: #f6f8f5;
+  background: var(--surface-muted);
   border-radius: 7px;
   padding: 10px 12px;
   margin-top: 10px;
 }
 .coverage {
   margin-top: 22px;
-  border-top: 1px solid #d7e1d9;
+  border-top: 1px solid var(--line);
   padding-top: 18px;
   font-size: 0.8rem;
 }
@@ -314,7 +314,7 @@
 .sourceChecks li {
   padding: 12px;
   background: white;
-  border: 1px solid #d8e2db;
+  border: 1px solid var(--line);
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -324,7 +324,7 @@
 }
 .sourceChecks span,
 .sourceChecks small {
-  color: #536556;
+  color: var(--success);
   font-size: 0.72rem;
 }
 .sourceChecks p {
@@ -334,7 +334,7 @@
 }
 .warnings {
   font-size: 0.77rem;
-  color: #536556;
+  color: var(--success);
   line-height: 1.65;
 }
 @media (max-width: 640px) {
@@ -370,5 +370,5 @@
 .riskGroups h5 {
   margin: 0 0 10px;
   font-size: 0.9rem;
-  color: #215c3c;
+  color: var(--success);
 }

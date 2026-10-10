@@ -1,4 +1,9 @@
+import "server-only";
 import { z } from "zod";
+import {
+  describeInformationAgentAddressOrigin,
+  informationAgentControllerIdentity,
+} from "@/lib/information-agent-compliance";
 import { renderInformationRequestEmail } from "../../emails/information-request";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -181,6 +186,7 @@ async function publishDraft({ adminId, draftId }: { adminId: string; draftId: st
 async function previewTemplate(template: InformationAgentEmailTemplateContent) {
   const previewAppUrl =
     resolveSiteOrigin(process.env, "https://immojudis.com") ?? "https://immojudis.com";
+  const controller = informationAgentControllerIdentity();
   const renderedContent = renderInformationAgentEmailContent({
     template,
     appUrl: previewAppUrl,
@@ -194,6 +200,21 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
     replyTo: "enquete+exemple@reponses.immojudis.com",
     caseReference: "IJ-EXEMPLE",
     appUrl: previewAppUrl,
+    // The legal footer is added to every real send; show it so the template can be validated whole.
+    legalFooter: {
+      controllerName: controller?.name ?? "[Responsable de traitement à configurer]",
+      controllerAddress: controller?.address ?? "[Adresse à configurer]",
+      contactEmail: controller?.contactEmail ?? null,
+      addressOrigin: describeInformationAgentAddressOrigin({
+        sourceName: "Source publique",
+        sourceUrl: "https://exemple.example/annonce",
+      }),
+      privacyUrl: new URL("/privacy", previewAppUrl).toString(),
+      optOutUrl: new URL(
+        "/api/information-agent/opt-out?e=exemple&t=exemple",
+        previewAppUrl,
+      ).toString(),
+    },
   });
   return {
     preview: {

@@ -109,7 +109,7 @@ describe("DPE analysis", () => {
     });
     expect(analysis.nextActions).toEqual(
       expect.arrayContaining([
-        "Chiffrer un scénario de rénovation énergétique avant de fixer la mise maximale.",
+        "Chiffrer un scénario de rénovation énergétique avant de fixer l’enchère plafond.",
       ]),
     );
   });

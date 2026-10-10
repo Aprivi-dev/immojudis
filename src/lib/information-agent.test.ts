@@ -177,6 +177,22 @@ describe("supervised information agent", () => {
           return this;
         }
 
+        ilike() {
+          return this;
+        }
+
+        neq() {
+          return this;
+        }
+
+        gte() {
+          return this;
+        }
+
+        lte() {
+          return this;
+        }
+
         order() {
           return this;
         }
@@ -257,6 +273,8 @@ describe("supervised information agent", () => {
         "portal-secret-that-is-at-least-32-characters-long",
       );
       vi.stubEnv("SITE_URL", "https://immojudis.example");
+      vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_NAME", "Immojudis SAS");
+      vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS", "1 rue de la Paix, 33000 Bordeaux");
 
       try {
         const operation = runAdminInformationAgentAction({
@@ -285,10 +303,17 @@ describe("supervised information agent", () => {
           expect(emailMocks.sendResendEmail.mock.calls[0][0].message).toMatchObject({
             to: "new-contact@example.test",
             replyTo: mission.reply_to_email,
-            text: expect.stringContaining("mode=professional"),
+            text: expect.stringContaining("Responsable de traitement"),
           });
+          const sent = emailMocks.sendResendEmail.mock.calls[0][0].message.text as string;
+          expect(sent).toContain("Immojudis SAS");
+          expect(sent).toContain("https://immojudis.example/privacy");
+          expect(sent).toContain("https://immojudis.example/api/information-agent/opt-out?e=");
+          expect(sent).not.toContain("mode=professional");
+          expect(sent).not.toContain("Créer un compte professionnel");
         }
-        expect(contactReads).toBe(6);
+        // Registry reads: three recipient checks (two scopes each) plus the origin lookup for the legal footer.
+        expect(contactReads).toBe(7);
         expect(mission.recipient_kind).toBe("manual_professional");
       } finally {
         vi.unstubAllEnvs();
@@ -452,7 +477,7 @@ describe("supervised information agent", () => {
       questionKeys: ["documents", "photos", "visit"],
     });
 
-    expect(draft.subject).toBe("Appartement T3 à Bordeaux — précisions pour ImmoJudis");
+    expect(draft.subject).toBe("Appartement T3 à Bordeaux — précisions pour Immojudis");
     expect(draft.bodyText).toContain("service indépendant");
     expect(draft.bodyText).toContain("réponse même partielle");
     expect(draft.bodyText).toContain("Audience annoncée : 14 septembre 2026");
@@ -525,7 +550,7 @@ describe("supervised information agent", () => {
     });
 
     expect(draft.subject.length).toBeLessThanOrEqual(100);
-    expect(draft.subject).toContain("… — précisions pour ImmoJudis");
+    expect(draft.subject).toContain("… — précisions pour Immojudis");
     expect(draft.bodyText).toContain("plusieurs lots à Bordeaux");
   });
 

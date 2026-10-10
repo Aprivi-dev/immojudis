@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -17,9 +18,9 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Préférences indisponibles";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "notification-preferences", {
+      fallbackMessage: "Préférences indisponibles",
+    });
   }
 }
 
@@ -32,8 +33,8 @@ export async function PATCH(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Préférences impossibles";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "notification-preferences", {
+      fallbackMessage: "Préférences impossibles",
+    });
   }
 }

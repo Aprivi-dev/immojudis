@@ -183,7 +183,7 @@ function scoreCandidate({
     reasons.unshift("Hors du secteur géographique confirmé : référence locale à vérifier");
     score = Math.min(score, 69);
   }
-  return { score: clamp(score), reasons: reasons.slice(0, 5) };
+  return { score: clampScore(score), reasons: reasons.slice(0, 5) };
 }
 
 function confidenceForStatus({
@@ -309,6 +309,6 @@ function isFutureSale(value: string | null, now: Date): boolean {
   return Number.isFinite(date.getTime()) && date.getTime() >= now.getTime();
 }
 
-function clamp(value: number): number {
+function clampScore(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }

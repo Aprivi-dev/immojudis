@@ -14,6 +14,8 @@ import {
 } from "@/lib/client-api";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
+import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export default function AlertNotificationPanel({
   mobile,
@@ -34,16 +36,16 @@ export default function AlertNotificationPanel({
   onRefresh: () => unknown;
   onClose: () => void;
 }) {
-  const NOTIFICATION_QUERY_KEY = ["alert-notifications", userId] as const;
+  const NOTIFICATION_QUERY_KEY = queryKeys.alertNotifications(userId);
   const queryClient = useQueryClient();
   const unreadCount = notifications.filter((notification) => !notification.readAt).length;
   const entitlements = useQuery({
-    queryKey: ["feature-entitlements", userId, "plan"],
+    queryKey: queryKeys.featureEntitlementsPlan(userId),
     queryFn: fetchAccessPlan,
   });
   const emailAvailable = entitlements.data?.plan.hasAnalysisAccess === true;
   const preferencesQuery = useQuery({
-    queryKey: ["notification-preferences", userId],
+    queryKey: queryKeys.notificationPreferences(userId),
     queryFn: fetchNotificationPreferences,
     staleTime: 60_000,
   });
@@ -52,16 +54,15 @@ export default function AlertNotificationPanel({
   const updateMutation = useMutation({
     mutationFn: updateAlertNotification,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: NOTIFICATION_QUERY_KEY }),
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Action impossible"),
+    onError: (error) => toast.error(userMessage(error, "Action impossible")),
   });
   const preferencesMutation = useMutation({
     mutationFn: updateNotificationPreferences,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notification-preferences", userId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notificationPreferences(userId) });
       toast.success("Préférences mises à jour");
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Préférences impossibles"),
+    onError: (error) => toast.error(userMessage(error, "Préférences impossibles")),
   });
 
   return (
@@ -83,7 +84,7 @@ export default function AlertNotificationPanel({
           type="button"
           aria-label="Rafraîchir"
           onClick={() => void onRefresh()}
-          className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-soft"
+          className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text"
         >
           {isFetching ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -193,7 +194,7 @@ function NotificationItem({
             {notification.reasons.slice(0, 2).map((reason) => (
               <span
                 key={reason}
-                className="rounded-full bg-gold/10 px-2 py-0.5 text-[11px] font-semibold text-gold-soft"
+                className="rounded-full bg-gold/10 px-2 py-0.5 text-[11px] font-semibold text-gold-text"
               >
                 {reason}
               </span>
@@ -215,7 +216,7 @@ function NotificationItem({
             aria-label={unread ? "Marquer comme lue" : "Marquer comme non lue"}
             disabled={disabled}
             onClick={onRead}
-            className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-soft disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Check className="h-3.5 w-3.5" />
           </button>

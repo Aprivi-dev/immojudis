@@ -1,5 +1,17 @@
-import { describe, expect, it } from "vitest";
-import { buildLawyerPlacementEventInsert } from "@/lib/lawyer-placement-events";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({ featured: vi.fn(), consume: vi.fn(), insert: vi.fn() }));
+vi.mock("@/lib/featured-lawyers", () => ({ getFeaturedReferencedLawyerForSale: mocks.featured }));
+vi.mock("@/lib/rate-limit", () => ({ tryConsumeUserRateLimit: mocks.consume }));
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { from: () => ({ insert: mocks.insert }) },
+}));
+
+import {
+  buildLawyerPlacementEventInsert,
+  placementEventDedupeKey,
+  recordLawyerPlacementEvent,
+} from "@/lib/lawyer-placement-events";
 import type { FeaturedReferencedLawyer } from "@/lib/featured-lawyers";
 import type { LawyerPlacementEventPayload } from "@/lib/lawyer-placement-events";
 
@@ -65,7 +77,7 @@ function featuredLawyer(
   return {
     id: LAWYER_ID,
     displayName: "Me Reference",
-    firmName: "Cabinet ImmoJudis",
+    firmName: "Cabinet Immojudis",
     barAssociation: "Bordeaux",
     city: "Bordeaux",
     department: "33",
@@ -76,3 +88,45 @@ function featuredLawyer(
     ...overrides,
   };
 }
+
+describe("lawyer placement event deduplication", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.featured.mockResolvedValue({ lawyer: featuredLawyer() });
+    mocks.insert.mockResolvedValue({ error: null });
+  });
+
+  it("records the first event of the day for a user, placement and event type", async () => {
+    mocks.consume.mockResolvedValue(true);
+
+    const result = await recordLawyerPlacementEvent({ input: eventPayload(), userId: "user-1" });
+
+    expect(result).toEqual({ ok: true, recorded: true, reason: "recorded" });
+    expect(mocks.insert).toHaveBeenCalledTimes(1);
+    expect(mocks.consume).toHaveBeenCalledWith({
+      userId: "user-1",
+      bucketKey: placementEventDedupeKey(eventPayload()),
+      limit: 1,
+      windowSeconds: 86_400,
+    });
+  });
+
+  it("drops a repeat of the same event by the same user on the same day", async () => {
+    mocks.consume.mockResolvedValue(false);
+
+    const result = await recordLawyerPlacementEvent({ input: eventPayload(), userId: "user-1" });
+
+    expect(result).toEqual({ ok: true, recorded: false, reason: "duplicate" });
+    expect(mocks.insert).not.toHaveBeenCalled();
+  });
+
+  it("keys the daily counter by event type, lawyer, sale and slot", () => {
+    const impression = placementEventDedupeKey(eventPayload());
+    expect(placementEventDedupeKey(eventPayload({ eventType: "cta_click" }))).not.toBe(impression);
+    expect(placementEventDedupeKey(eventPayload({ placementSlot: "other_slot" }))).not.toBe(
+      impression,
+    );
+    expect(impression).toContain(SALE_ID);
+    expect(impression).toContain(LAWYER_ID);
+  });
+});

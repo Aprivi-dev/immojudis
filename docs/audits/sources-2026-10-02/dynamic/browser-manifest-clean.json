@@ -1,0 +1,36 @@
+[
+  {
+    "id": "cessions-39823-saint-junien",
+    "source": "cessions_etat",
+    "url": "https://cessions.immobilier-etat.gouv.fr/biens/parcelle-br-ndeg104-saint-junien-87200",
+    "dismissCookieButton": "Tout refuser"
+  },
+  {
+    "id": "cessions-39632-bordeaux",
+    "source": "cessions_etat",
+    "url": "https://cessions.immobilier-etat.gouv.fr/biens/vendre-hyper-centre-ville-de-bordeaux",
+    "dismissCookieButton": "Tout refuser"
+  },
+  {
+    "id": "notaires-2083008-arcachon",
+    "source": "notaires",
+    "url": "https://www.immobilier.notaires.fr/pub-services/inotr-www-annonces/v1/annonces/2083008"
+  },
+  {
+    "id": "notaires-2074289-bordeaux",
+    "source": "notaires",
+    "url": "https://www.immobilier.notaires.fr/pub-services/inotr-www-annonces/v1/annonces/2074289"
+  },
+  {
+    "id": "notaires-public-2083008-arcachon",
+    "source": "notaires_public_page",
+    "url": "https://www.immo-interactif.fr/encheres-en-ligne/appartement/arcachon-33/2083008",
+    "dismissCookieButton": "Cookies : Tout refuser"
+  },
+  {
+    "id": "notaires-public-2074289-bordeaux",
+    "source": "notaires_public_page",
+    "url": "https://www.immo-interactif.fr/encheres-en-ligne/maison/bordeaux-33/2074289",
+    "dismissCookieButton": "Cookies : Tout refuser"
+  }
+]

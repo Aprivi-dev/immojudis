@@ -121,6 +121,48 @@ describe("Meteostat historical weather provider", () => {
     expect(store.quotaCalls).toBe(1);
   });
 
+  it("stops before the shared quota when the caller's daily upstream budget is spent", async () => {
+    const store = new InMemoryStore();
+    const fetcher = vi.fn(async () => response(monthlyPayload(2025))) as unknown as typeof fetch;
+    const beforeUpstreamFetch = vi.fn(async () => false);
+
+    const result = await getMeteostatHistoricalWeather(44.837789, -0.57918, {
+      apiKey: "test-key",
+      fetcher,
+      now: () => NOW,
+      store,
+      beforeUpstreamFetch,
+    });
+
+    expect(result).toMatchObject({ status: "unavailable", reason: "quota_exhausted" });
+    expect(beforeUpstreamFetch).toHaveBeenCalledTimes(1);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(store.quotaCalls).toBe(0);
+  });
+
+  it("does not charge the caller's budget when the commune is already cached", async () => {
+    const store = new InMemoryStore();
+    const fetcher = vi.fn(async () => response(monthlyPayload(2025))) as unknown as typeof fetch;
+    await getMeteostatHistoricalWeather(44.837789, -0.57918, {
+      apiKey: "test-key",
+      fetcher,
+      now: () => NOW,
+      store,
+    });
+    const beforeUpstreamFetch = vi.fn(async () => false);
+
+    const result = await getMeteostatHistoricalWeather(44.8377, -0.5791, {
+      apiKey: "test-key",
+      fetcher,
+      now: () => NOW,
+      store,
+      beforeUpstreamFetch,
+    });
+
+    expect(result.status).toBe("ready");
+    expect(beforeUpstreamFetch).not.toHaveBeenCalled();
+  });
+
   it("serves a fresh grid-year cache without consuming another upstream request", async () => {
     const store = new InMemoryStore();
     const fetcher = vi.fn(async () => response(monthlyPayload(2025))) as unknown as typeof fetch;

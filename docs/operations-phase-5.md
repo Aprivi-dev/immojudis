@@ -64,10 +64,23 @@ npm run ops:smoke -- --origin https://immojudis.com
 
 ## Politique navigateur
 
-La CSP est appliquée par défaut avec HSTS en production. Elle inclut `frame-ancestors 'none'`,
-`object-src 'none'`, `nosniff`, une politique de référent strict et une Permissions Policy
-restrictive. Utiliser `CSP_REPORT_ONLY=true` uniquement pendant un diagnostic temporaire de
-déploiement.
+Deux politiques coexistent (plan P4-04) :
+
+- la politique historique (`'unsafe-inline'`), appliquée par `next.config.ts` avec HSTS en production ;
+- une CSP stricte à nonce (`src/proxy.ts`, `script-src 'nonce-…' 'strict-dynamic'`, `connect-src` limité au projet
+  Supabase, `frame-src` explicite), envoyée en `Content-Security-Policy-Report-Only` tant que
+  `CSP_REPORT_ONLY` n'est pas `false` (défaut : rapport seul). Les violations arrivent sur
+  `POST /api/csp-report` et sont journalisées (`scope: "csp-report"`).
+
+Passage à l'application, à faire après 7 jours sans violation (à relever dans les logs Vercel) :
+
+1. Prévisualiser avec `CSP_NONCE_DYNAMIC=true` : toutes les pages deviennent dynamiques pour recevoir un
+   nonce (coût : plus de cache statique ni CDN). Vérifier les violations restantes (widget ClimaScore en
+   iframe `srcdoc`, lecteur de documents sur des hôtes tiers : les ajouter à `CSP_FRAME_SRC_EXTRA`).
+2. Mettre `CSP_REPORT_ONLY=false` : la politique stricte est appliquée, la politique historique retirée et
+   le rendu dynamique forcé automatiquement.
+
+Rollback : remettre `CSP_REPORT_ONLY=true` (ou retirer la variable) et redéployer.
 
 ## Validation de livraison
 

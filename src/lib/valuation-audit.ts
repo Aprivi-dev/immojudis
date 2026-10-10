@@ -83,7 +83,7 @@ function missingAudit(): ValuationAudit {
         label: "Référence marché",
         status: "missing",
         detail: "Aucune estimation DVF exploitable.",
-        action: "Calculer ou renseigner une fourchette de marché avant de fixer la mise maximale.",
+        action: "Calculer ou renseigner une fourchette de marché avant de fixer l’enchère plafond.",
       },
     ],
     riskFlags: ["Référence marché"],

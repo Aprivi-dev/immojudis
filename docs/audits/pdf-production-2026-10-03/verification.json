@@ -1,0 +1,49 @@
+{
+  "testedAt": "2026-10-03T09:25:27.181Z",
+  "results": [
+    {
+      "name": "desktop",
+      "responses": [
+        {
+          "path": "/",
+          "status": 200
+        },
+        {
+          "path": "/sales",
+          "status": 200
+        },
+        {
+          "path": "/annonce-exemple",
+          "status": 200
+        }
+      ],
+      "layout": {
+        "viewport": 1440,
+        "document": 1440
+      },
+      "pageErrors": []
+    },
+    {
+      "name": "mobile",
+      "responses": [
+        {
+          "path": "/",
+          "status": 200
+        },
+        {
+          "path": "/sales",
+          "status": 200
+        },
+        {
+          "path": "/annonce-exemple",
+          "status": 200
+        }
+      ],
+      "layout": {
+        "viewport": 412,
+        "document": 412
+      },
+      "pageErrors": []
+    }
+  ]
+}

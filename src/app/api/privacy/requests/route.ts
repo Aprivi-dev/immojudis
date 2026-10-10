@@ -3,6 +3,8 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
   createPrivacyRequest,
   listPrivacyRequests,
@@ -26,6 +28,11 @@ export async function POST(request: Request) {
   const context = createApiRequestContext(request, "api.privacy.requests.create");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "privacy-requests.create",
+      ...RATE_LIMIT_POLICIES.formSubmit,
+    });
     const input = privacyRequestInputSchema.parse(await request.json());
     const response = await createPrivacyRequest({ auth, input });
     return apiJson(response, context, { status: 201 });

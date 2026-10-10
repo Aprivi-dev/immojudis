@@ -47,7 +47,7 @@ export type ReportTraceability = {
 };
 
 export const REPORT_COMPLIANCE_NOTICE =
-  "Rapport indicatif ImmoJudis : les estimations, scores et plafonds d’enchère sont des aides à la décision, sans promesse de gain. Vérifiez les pièces officielles, la visite, le cahier des conditions de vente et votre conseil avant toute enchère.";
+  "Rapport indicatif Immojudis : les estimations, scores et enchères plafonds sont des aides à la décision, sans promesse de gain. Vérifiez les pièces officielles, la visite, le cahier des conditions de vente et votre conseil avant toute enchère.";
 
 const GENERIC_REPORT_LIMITATIONS = [
   "Les estimations reposent sur les données disponibles au moment de la génération du rapport.",
@@ -136,7 +136,7 @@ function urbanPlanningEntries(signals: StructuredUrbanPlanningSignal[]): SourceT
         sourceName:
           cleanText(signal.documentLabel) ??
           cleanText(signal.sourceName) ??
-          "Signal urbanisme ImmoJudis",
+          "Signal urbanisme Immojudis",
         url: cleanText(signal.documentUrl),
         capturedAt: cleanText(signal.updatedAt),
         confidenceLabel:
@@ -270,7 +270,7 @@ function surfaceEntries(sale: AuctionSale): SourceTraceEntry[] {
       confidenceLabel: confidence,
       detail: truncate(evidence, 260),
       limitation:
-        "Une surface erronnee modifie le prix au metre carre, les comparables et le plafond d’enchère.",
+        "Une surface erronnee modifie le prix au metre carre, les comparables et l’enchère plafond.",
     },
   ];
 }

@@ -68,8 +68,8 @@ import {
   type MarketCeilingResult,
   DEFAULT_MARKET_CEILING_SCENARIO,
   DEFAULTS,
-  estimateWorksBudget,
 } from "@/lib/profitability";
+import { saleCostContext } from "@/lib/sale-cost-context";
 import { Link } from "@/lib/router-compat";
 import { listingCoordinates } from "@/lib/sale-listing";
 import { propertyImages } from "@/lib/sale-media";
@@ -93,6 +93,8 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 import type { AuctionSale } from "@/lib/types";
+import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 const ListingStatistics = dynamic(
   () =>
@@ -215,7 +217,7 @@ function SaleDetailWorkspace({
   const [rentalDraft, setRentalDraft] = useState<ListingRentalDraft | null>(null);
   const { user, loading: authLoading } = useAuth();
   const aiReviewQuery = useQuery({
-    queryKey: ["sale-ai-review", sale.id, user?.id ?? "anonymous"],
+    queryKey: queryKeys.saleAiReview(sale.id, user?.id ?? "anonymous"),
     queryFn: () => fetchSaleAiReviewProjections(sale.id),
     enabled: Boolean(
       access === "analysis" && user && !publicDemo && !authLoading && aiReviewProjections == null,
@@ -242,7 +244,7 @@ function SaleDetailWorkspace({
     [aiReviewStatus, resolvedAiReviewProjections, sale],
   );
   const factReliabilityQuery = useQuery({
-    queryKey: ["sale-fact-reliability", sale.id, user?.id ?? "anonymous"],
+    queryKey: queryKeys.saleFactReliability(sale.id, user?.id ?? "anonymous"),
     queryFn: () => fetchSaleFactReliabilities(sale.id),
     enabled: Boolean(access === "analysis" && user && !publicDemo && !authLoading),
     staleTime: 5 * 60_000,
@@ -292,7 +294,7 @@ function SaleDetailWorkspace({
   const marketSurfaces = getMarketValuationSurfaces(displaySale);
   const surface = criticalAnalysisInputsBlocked ? null : marketSurfaces.builtSurfaceM2;
   const marketQuery = useQuery({
-    queryKey: ["precomputed-market-estimate", sale.id],
+    queryKey: queryKeys.precomputedMarketEstimate(sale.id),
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
     enabled:
       access === "analysis" &&
@@ -313,10 +315,15 @@ function SaleDetailWorkspace({
         surface,
         price: Math.max(0, displaySale.starting_price_eur ?? 0),
         fpt: DEFAULTS.fpt,
+        ...saleCostContext(displaySale),
         scenario: DEFAULT_MARKET_CEILING_SCENARIO,
         medianPricePerM2:
           isTribunalSale && marketEstimate?.actionable === true
             ? marketEstimate.medianPricePerM2
+            : null,
+        p10PricePerM2:
+          isTribunalSale && marketEstimate?.actionable === true
+            ? marketEstimate.p10PricePerM2
             : null,
         p25PricePerM2:
           isTribunalSale && marketEstimate?.actionable === true
@@ -327,28 +334,29 @@ function SaleDetailWorkspace({
             ? marketEstimate.p75PricePerM2
             : null,
       }),
-    [displaySale.starting_price_eur, isTribunalSale, marketEstimate, surface],
+    [displaySale, isTribunalSale, marketEstimate, surface],
   );
-  const worksBudget =
-    access === "analysis" ? estimateWorksBudget(surface, "rafraichissement") : null;
+  // Aucun travaux n'est supposé tant que l'utilisateur n'en a pas chiffré.
   const retainedWorks =
     access !== "analysis" ||
     valuationConflict ||
     criticalAnalysisInputsBlocked ||
     activeSimulation?.worksKnown === false
       ? null
-      : (activeSimulation?.works ?? personalWorksBudget ?? (surface == null ? null : worksBudget));
+      : (activeSimulation?.works ?? personalWorksBudget ?? 0);
   const heroCeilingResult =
     activeSimulation?.result ??
     (personalWorksBudget == null
-      ? recommendations.withRefreshWorks
+      ? recommendations.withoutWorks
       : computeMarketCeiling({
           surface,
           price: displaySale.starting_price_eur ?? 0,
           works: personalWorksBudget,
           fpt: DEFAULTS.fpt,
+          ...saleCostContext(displaySale),
           scenario: DEFAULT_MARKET_CEILING_SCENARIO,
           medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
+          p10PricePerM2: marketEstimate?.actionable ? marketEstimate.p10PricePerM2 : null,
           p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
           p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
         }));
@@ -363,6 +371,10 @@ function SaleDetailWorkspace({
           price: activeSimulation?.reportInput?.price ?? displaySale.starting_price_eur!,
           works: retainedWorks,
           fpt: activeSimulation?.reportInput?.fpt ?? DEFAULTS.fpt,
+          lawyerFees: activeSimulation?.reportInput?.lawyerFees,
+          registrationRate: activeSimulation?.reportInput?.registrationRate,
+          taxRegime: activeSimulation?.reportInput?.taxRegime,
+          department: displaySale.department,
         })
       : null;
   const activeFinancingResult =
@@ -401,6 +413,12 @@ function SaleDetailWorkspace({
         activeSimulation?.reportInput?.price ?? Math.max(0, displaySale.starting_price_eur ?? 0),
       works: amount,
       fpt: activeSimulation?.reportInput?.fpt ?? DEFAULTS.fpt,
+      lawyerFees: activeSimulation?.reportInput?.lawyerFees,
+      registrationRate: activeSimulation?.reportInput?.registrationRate,
+      taxRegime: activeSimulation?.reportInput?.taxRegime,
+      occupancyDiscountPct: activeSimulation?.reportInput?.occupancyDiscountPct,
+      carryMonths: activeSimulation?.reportInput?.carryMonths,
+      monthlyCarryCharges: activeSimulation?.reportInput?.monthlyCarryCharges,
       scenario: activeSimulation?.reportInput?.scenario ?? DEFAULT_MARKET_CEILING_SCENARIO,
       customSafetyDiscountPct: activeSimulation?.reportInput?.customSafetyDiscountPct,
       manualMarketPricePerM2: activeSimulation?.reportInput?.manualMarketPricePerM2 ?? null,
@@ -408,7 +426,9 @@ function SaleDetailWorkspace({
     const result = computeMarketCeiling({
       ...inputs,
       surface,
+      ...saleCostContext(displaySale),
       medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
+      p10PricePerM2: marketEstimate?.actionable ? marketEstimate.p10PricePerM2 : null,
       p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
       p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
     });
@@ -500,12 +520,12 @@ function SaleDetailWorkspace({
   };
 
   return (
-    <main className={listingStyles.page} onClickCapture={handleSectionLink}>
+    <main id="contenu" className={listingStyles.page} onClickCapture={handleSectionLink}>
       <div className={listingStyles.container}>
         <div className={listingStyles.topbar}>
           <Link
             href={returnTo ?? "/sales"}
-            className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+            className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
             {backLabel}
@@ -632,7 +652,7 @@ function SaleDetailWorkspace({
             <>
               <PanelIntro
                 eyebrow="02 / Prix"
-                title={isTribunalSale ? "Prix et mise plafond" : "Prix et marché"}
+                title={isTribunalSale ? "Prix et enchère plafond" : "Prix et marché"}
                 description={
                   isTribunalSale
                     ? "Les trois montants à comparer avant de définir votre scénario."
@@ -648,9 +668,10 @@ function SaleDetailWorkspace({
                     <strong>Estimation de marché à compléter</strong>
                     <p>
                       {marketQuery.data?.error ??
-                        (marketQuery.error instanceof Error
-                          ? marketQuery.error.message
-                          : "L’estimation est momentanément indisponible.")}
+                        userMessage(
+                          marketQuery.error,
+                          "L’estimation est momentanément indisponible.",
+                        )}
                     </p>
                   </div>
                   <button
@@ -670,7 +691,7 @@ function SaleDetailWorkspace({
                       <p>{valuationConflict}</p>
                       {access === "analysis" ? (
                         <p>
-                          Les caractéristiques seront vérifiées par ImmoJudis avant toute mise à
+                          Les caractéristiques seront vérifiées par Immojudis avant toute mise à
                           jour.
                         </p>
                       ) : (
@@ -683,7 +704,11 @@ function SaleDetailWorkspace({
                     sale={displaySale}
                     marketEstimate={marketEstimate}
                     marketLoading={marketQuery.isLoading && marketEstimate == null}
-                    worksBudget={activeSimulation?.worksKnown === false ? null : retainedWorks}
+                    worksBudget={
+                      activeSimulation?.worksKnown === false || !retainedWorks
+                        ? null
+                        : retainedWorks
+                    }
                     recommendedCeiling={heroCeilingResult.maxBid}
                     ceilingAvailable={heroCeilingResult.available}
                     onAdjust={() => setCalculationOpen(true)}
@@ -799,7 +824,7 @@ function SaleDetailWorkspace({
               />
             ) : (
               <PremiumFeaturePreview
-                title="Les statistiques du tribunal avec Premium"
+                title="Les statistiques du tribunal avec l’offre Analyse"
                 description="Consultez les tendances, les adjudications et les indicateurs disponibles pour préparer votre enchère."
                 labels={["Activité du tribunal", "Prix d’adjudication", "Tendances"]}
               />
@@ -840,7 +865,7 @@ function SaleDetailWorkspace({
               </>
             ) : (
               <PremiumFeaturePreview
-                title="Estimez vos travaux avec Premium"
+                title="Estimez vos travaux avec l’offre Analyse"
                 description="Préparez une enveloppe par poste et intégrez-la à votre scénario d’achat."
                 labels={["Budget travaux", "Détail par poste", "Coût du projet"]}
               />
@@ -1130,7 +1155,7 @@ function UrbanismeSection({
   loadStructuredUrbanism?: boolean;
 }) {
   const urbanismQuery = useQuery({
-    queryKey: ["sale-urbanisme-cadastre", sale.id, sale.source_url],
+    queryKey: queryKeys.saleUrbanismeCadastre(sale.id, sale.source_url),
     queryFn: () => fetchSaleUrbanismeCadastre(sale.id),
     enabled: loadStructuredUrbanism && Boolean(sale.source_url) && Boolean(sale.city),
     staleTime: 10 * 60_000,
@@ -1676,9 +1701,9 @@ function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
         </div>
       </dl>
       <PremiumFeaturePreview
-        title="La valeur du bien et votre mise plafond avec Premium"
-        description="Comparez le prix de départ aux références de marché et préparez un plafond d’enchère avec vos propres hypothèses."
-        labels={["Valeur de marché", "Mise plafond", "Références comparables"]}
+        title="La valeur du bien et votre enchère plafond avec l’offre Analyse"
+        description="Comparez le prix de départ aux références de marché et préparez une enchère plafond avec vos propres hypothèses."
+        labels={["Valeur de marché", "Enchère plafond", "Références comparables"]}
       />
     </aside>
   );
@@ -1702,7 +1727,7 @@ function comparisonMarkerPositions({
 
   return [
     { label: "Mise à prix", value: start, position: position(start, 8) },
-    { label: "Mise plafond", value: ceiling, position: position(ceiling, 50) },
+    { label: "Enchère plafond", value: ceiling, position: position(ceiling, 50) },
     { label: "Valeur estimée", value: market, position: position(market, 92) },
   ];
 }
@@ -1736,14 +1761,14 @@ function SaleDocumentsSection({
             onOpenChange(!open);
           }}
         >
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-soft">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-text">
             <FileText className="h-5 w-5" aria-hidden />
           </span>
           <span>
             <span className="block font-display text-2xl font-semibold text-brand-navy">
               Consulter les pièces du dossier
             </span>
-            <span className="mt-1 block text-sm text-brand-navy/62">
+            <span className="mt-1 block text-sm text-brand-navy/65">
               {documents.length > 0
                 ? "Consultez les pièces jointes ; vérifiez leur nature et leur date."
                 : "Aucune pièce attachée à cette annonce pour le moment."}
@@ -1776,12 +1801,15 @@ function CeilingExplanation({
   resultOverride?: MarketCeilingResult;
   worksOverride?: number;
 }) {
-  const result = resultOverride ?? recommendations.withRefreshWorks;
-  const works = worksOverride ?? recommendations.refreshWorksBudget;
+  const result = resultOverride ?? recommendations.withoutWorks;
+  const works = worksOverride ?? 0;
   const ceilingCosts = computeAcquisitionCosts({
     price: result.maxBid,
     works,
     fpt: result.simulated.fpt,
+    lawyerFees: result.simulated.lawyerFees,
+    registrationRate: result.simulated.registrationRate,
+    taxRegime: result.simulated.taxRegime,
   });
   const marketBase = result.available
     ? Math.round(result.marketReferencePricePerM2 * Math.max(0, surface ?? 0))
@@ -1791,6 +1819,19 @@ function CeilingExplanation({
   const rows = [
     ["Référence de marché du scénario", marketBase],
     ["Marge de sécurité", safetyMargin == null ? null : -safetyMargin],
+    ...(result.available && result.occupancy?.applied
+      ? ([
+          [
+            result.occupancy.status === "unknown"
+              ? "Décote d’occupation (occupation non confirmée)"
+              : "Décote d’occupation",
+            -result.occupancy.discountAmount,
+          ],
+          ...(result.occupancy.carryingCost > 0
+            ? ([["Portage avant libération", -result.occupancy.carryingCost]] as const)
+            : []),
+        ] as const)
+      : []),
     [
       "Frais estimés au plafond",
       result.available ? -Math.round(ceilingCosts.acquisitionFeesTotal) : null,
@@ -1812,7 +1853,7 @@ function CeilingExplanation({
             <dt className="text-sm font-medium text-brand-navy sm:text-base">{label}</dt>
             <dd
               className={`font-display text-xl font-semibold sm:text-2xl ${
-                value != null && value < 0 ? "text-gold-soft" : "text-brand-navy"
+                value != null && value < 0 ? "text-gold-text" : "text-brand-navy"
               }`}
             >
               {value == null ? "À compléter" : signedPrice(value)}
@@ -1821,7 +1862,7 @@ function CeilingExplanation({
         ))}
         <div className="flex items-baseline justify-between gap-4 border-t border-brand-navy/50 py-5">
           <dt className="font-display text-2xl font-semibold text-brand-navy">
-            Mise plafond recommandée
+            Enchère plafond selon vos hypothèses
           </dt>
           <dd className="font-display text-3xl font-semibold text-brand-navy sm:text-4xl">
             {result.available ? formatPrice(result.maxBid) : "À compléter"}
@@ -1829,7 +1870,7 @@ function CeilingExplanation({
         </div>
       </dl>
       <p className="mt-6 max-w-2xl text-sm leading-relaxed text-brand-navy/70 sm:text-base">
-        Calcul selon les hypothèses du simulateur. Les frais sont estimés au prix plafond ; les
+        Calcul selon les hypothèses du simulateur. Les frais sont estimés à l’enchère plafond ; les
         arrondis peuvent produire un léger écart avec le total affiché.
       </p>
     </div>
@@ -2046,7 +2087,7 @@ function MarketEvidence({
           </ul>
         </div>
       ) : (
-        <p className="mt-7 border-y border-brand-navy/12 py-5 text-sm leading-relaxed text-brand-navy/64">
+        <p className="mt-7 border-y border-brand-navy/12 py-5 text-sm leading-relaxed text-brand-navy/65">
           {usesAggregateStatistics
             ? `Estimation indicative fondée sur la médiane DVF à l’échelle ${aggregateScopeLabel(marketEstimate?.geographyLevel)}. Les ventes détaillées apparaîtront dès qu’un échantillon local homogène sera disponible.`
             : "Les ventes comparables seront affichées ici dès qu'un échantillon homogène est disponible."}
@@ -2065,7 +2106,7 @@ function aggregateScopeLabel(level: MarketEstimate["geographyLevel"]): string {
 function MarketFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-3">
-      <span className="text-gold-soft" aria-hidden>
+      <span className="text-gold-text" aria-hidden>
         {icon}
       </span>
       <dt className="text-sm font-medium text-brand-navy sm:text-base">{label}</dt>
@@ -2160,7 +2201,7 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
   return (
     <section id="lawyer" className="scroll-mt-36 bg-white">
       <div className="mx-auto max-w-[1380px] px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-        <div className="grid gap-7 rounded-lg border border-[#a9c9df] bg-[#eef7ff] p-6 sm:p-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.15fr)] lg:items-center">
+        <div className="grid gap-7 rounded-lg border border-line bg-background p-6 sm:p-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.15fr)] lg:items-center">
           <div>
             <h2 className="font-display text-3xl font-medium leading-tight text-brand-navy sm:text-4xl">
               {saleStatus
@@ -2178,7 +2219,7 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
             </p>
           </div>
           <div className="rounded-lg border border-brand-navy/14 bg-white p-5 shadow-sm sm:flex sm:items-center sm:gap-5">
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-soft">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-text">
               <Scale className="h-6 w-6" aria-hidden />
             </span>
             <div className="mt-3 min-w-0 flex-1 sm:mt-0">
@@ -2212,7 +2253,7 @@ function LawyerSection({ sale }: { sale: AuctionSale }) {
               </a>
             ) : (
               <p className="mt-4 text-sm text-brand-navy/70 sm:mt-0">
-                Coordonnées à confirmer par ImmoJudis.
+                Coordonnées à confirmer par Immojudis.
               </p>
             )}
           </div>
@@ -2231,10 +2272,10 @@ function InformationAvailabilityNotice() {
   return (
     <section
       aria-labelledby="information-availability-title"
-      className="border-b border-brand-navy/10 bg-[#eef7ff]"
+      className="border-b border-brand-navy/10 bg-background"
     >
       <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8">
-        <div className="rounded-lg border border-[#a9c9df] bg-white p-5 shadow-sm sm:p-7">
+        <div className="rounded-lg border border-line bg-white p-5 shadow-sm sm:p-7">
           <h2
             id="information-availability-title"
             className="font-display text-2xl font-semibold text-brand-navy"
@@ -2242,7 +2283,7 @@ function InformationAvailabilityNotice() {
             Informations complémentaires
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/70">
-            Les enrichissements sont initiés et validés par ImmoJudis. Les informations et pièces
+            Les enrichissements sont initiés et validés par Immojudis. Les informations et pièces
             confirmées seront ajoutées à cette annonce lorsqu’elles seront disponibles.
           </p>
         </div>

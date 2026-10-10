@@ -4,7 +4,7 @@ import { AdminDashboardPage } from "@/routes/admin";
 
 export const metadata: Metadata = {
   title: "Clients et abonnements admin",
-  description: "Gestion des accès et abonnements ImmoJudis.",
+  description: "Gestion des accès et abonnements Immojudis.",
   robots: { index: false, follow: false },
 };
 

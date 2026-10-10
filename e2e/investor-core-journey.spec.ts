@@ -109,7 +109,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   });
   await page.route("**/api/billing/checkout", async (route) => {
     journey.push("payment");
-    await route.fulfill({ status: 200, json: { url: "/accompagnement?checkout=success" } });
+    await route.fulfill({ status: 200, json: { url: "/offres?checkout=success" } });
   });
   await page.route("**/api/property-reports/report-e2e/share", async (route) => {
     journey.push("share");
@@ -121,11 +121,11 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
 
   await page.goto("/login");
   await expect(async () => {
-    await page.getByRole("button", { name: "Découverte", exact: true }).click();
+    await page.getByRole("button", { name: "Créer un compte", exact: true }).click();
     await expect(page).toHaveURL(/mode=investor/);
   }).toPass();
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Mot de passe").fill("password-e2e");
+  await page.getByLabel("Mot de passe", { exact: true }).fill("password-e2e");
   await page.getByRole("button", { name: "Créer mon compte gratuit" }).click();
   await expect(page).toHaveURL(/\/bienvenue/);
   await page.getByLabel("Ville, département ou région").fill("Bordeaux");
@@ -149,7 +149,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   });
   expect(reportId).toBe("report-e2e");
 
-  await page.goto("/accompagnement");
+  await page.goto("/offres");
   await page.getByRole("button", { name: "Démarrer l’essai Analyse" }).click();
   await expect(page.getByRole("heading", { name: "Récapitulatif avant paiement" })).toBeVisible();
   const consentCheckboxes = page.getByRole("checkbox");
@@ -178,8 +178,8 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
     route.fulfill({ status: 200, json: { zones: [], plan: {} } }),
   );
   await page.goto("/favoris");
-  await expect(page.getByRole("heading", { name: "Mes ventes suivies" })).toBeVisible();
-  await expect(page.getByText(/Aucune vente suivie disponible/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Mes favoris" })).toBeVisible();
+  await expect(page.getByText("Aucun favori pour le moment")).toBeVisible();
   await page.goto("/alertes");
   await expect(page.getByRole("heading", { name: "Mes alertes", exact: true })).toBeVisible();
   await expect(page.getByText("Aucune alerte enregistrée.")).toBeVisible();

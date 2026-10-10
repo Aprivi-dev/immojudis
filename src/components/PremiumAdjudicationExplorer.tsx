@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { fetchAccessPlan } from "@/lib/client-api";
 import { fetchAdjudicationPriceStatisticsDirectory } from "@/lib/adjudication-price-statistics-client";
 import { AdjudicationBarometer } from "@/components/AdjudicationBarometer";
+import { queryKeys } from "@/lib/query-keys";
 
 export function PremiumAdjudicationExplorer({
   selectedCourtCode = null,
@@ -15,7 +16,7 @@ export function PremiumAdjudicationExplorer({
 } = {}) {
   const { session, loading: authLoading } = useAuth();
   const planQuery = useQuery({
-    queryKey: ["adjudication-statistics-plan", session?.user.id],
+    queryKey: queryKeys.adjudicationStatisticsPlan(session?.user.id),
     queryFn: fetchAccessPlan,
     enabled: Boolean(session) && !authLoading,
     retry: false,
@@ -23,7 +24,7 @@ export function PremiumAdjudicationExplorer({
   });
   const hasAccess = planQuery.data?.plan.hasAnalysisAccess === true;
   const statisticsQuery = useQuery({
-    queryKey: ["adjudication-price-statistics-directory", session?.user.id],
+    queryKey: queryKeys.adjudicationPriceStatisticsDirectory(session?.user.id),
     queryFn: fetchAdjudicationPriceStatisticsDirectory,
     enabled: Boolean(session) && hasAccess,
     retry: false,
@@ -37,7 +38,7 @@ export function PremiumAdjudicationExplorer({
       aria-labelledby="adjudications-licitor-title"
       className="scroll-mt-28 rounded-xl border border-brand-navy/15 bg-white p-5 shadow-sm sm:p-7"
     >
-      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.13em] text-gold-soft">
+      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.13em] text-gold-text">
         <BadgeEuro className="h-4 w-4" aria-hidden /> Résultats publiés · Offre Analyse
       </p>
       <h2
@@ -70,7 +71,7 @@ export function PremiumAdjudicationExplorer({
           </button>
         </div>
       ) : !hasAccess ? (
-        <div className="mt-6 rounded-lg border border-brand-navy/12 bg-[#f8fbfe] p-5">
+        <div className="mt-6 rounded-lg border border-brand-navy/12 bg-surface-muted p-5">
           <p className="font-semibold text-brand-navy">
             Les résultats chiffrés sont réservés aux membres Analyse.
           </p>

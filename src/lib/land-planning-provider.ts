@@ -12,6 +12,7 @@ import type {
   LandSourceStatus,
   LandZone,
 } from "./land-report-types";
+import { asRecord, decimalCommaNumberValue } from "@/lib/guards";
 
 const API_CARTO_BASE_URL = "https://apicarto.ign.fr/api";
 const CADASTRE_URL = `${API_CARTO_BASE_URL}/cadastre/parcelle`;
@@ -133,22 +134,9 @@ type LocationResolution = {
   warnings: string[];
 };
 
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
-}
-
 function text(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return null;
-}
-
-function numberValue(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value.replace(",", "."));
-    return Number.isFinite(parsed) ? parsed : null;
-  }
   return null;
 }
 
@@ -169,7 +157,7 @@ function codeInseeValue(value: unknown): string | null {
 }
 
 function finiteCoordinate(value: unknown, min: number, max: number): number | null {
-  const parsed = numberValue(value);
+  const parsed = decimalCommaNumberValue(value);
   return parsed != null && parsed >= min && parsed <= max ? parsed : null;
 }
 
@@ -323,7 +311,7 @@ function geocodeCandidates(data: unknown): GeocodeCandidate[] | null {
     return [
       {
         coordinates,
-        score: numberValue(properties.score),
+        score: decimalCommaNumberValue(properties.score),
         codeInsee: codeInseeValue(
           properties.citycode ??
             properties.city_code ??
@@ -603,7 +591,7 @@ async function fetchJson(url: string, options: ProviderOptions): Promise<FetchJs
         },
       };
     }
-    const declaredLength = numberValue(response.headers.get("content-length"));
+    const declaredLength = decimalCommaNumberValue(response.headers.get("content-length"));
     if (declaredLength != null && declaredLength > maxResponseBytes) {
       return {
         ok: false,
@@ -739,8 +727,8 @@ async function fetchCollection(
     }
 
     const metadata = asRecord(response.data);
-    const matched = numberValue(metadata.numberMatched ?? metadata.totalFeatures);
-    const returned = numberValue(metadata.numberReturned) ?? boundedPageFeatures.length;
+    const matched = decimalCommaNumberValue(metadata.numberMatched ?? metadata.totalFeatures);
+    const returned = decimalCommaNumberValue(metadata.numberReturned) ?? boundedPageFeatures.length;
     const hasMoreByTotal = matched != null && start + returned < matched;
     const hasMoreByPage = matched == null && boundedPageFeatures.length >= limit;
     if (!hasMoreByTotal && !hasMoreByPage) break;
@@ -803,7 +791,9 @@ function buildParcel(
     number,
     prefix: text(properties.prefix ?? properties.com_abs ?? properties.prefixe) ?? "000",
     city: text(properties.nom_com ?? properties.commune ?? properties.city) ?? undefined,
-    surfaceM2: numberValue(properties.contenance ?? properties.surface ?? properties.surface_m2),
+    surfaceM2: decimalCommaNumberValue(
+      properties.contenance ?? properties.surface ?? properties.surface_m2,
+    ),
     geometry,
     match,
     sourceUrl,

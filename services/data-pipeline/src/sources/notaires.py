@@ -14,6 +14,7 @@ from src.normalize import LATIN_LETTERS_PATTERN, SURFACE_VALUE_PATTERN, clean_te
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.common import PaginationCoverage, PoliteHttpClient, ScrapeResult, unique_dicts
+from src.sources.source_features import extract_parking_count
 
 BASE_URL = "https://www.immobilier.notaires.fr"
 API_URL = f"{BASE_URL}/pub-services/inotr-www-annonces/v1/annonces"
@@ -613,6 +614,9 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
     generic_text_surface, generic_text_evidence = text_surface, text_surface_evidence
     text_surface, text_surface_evidence = _habitable_surface_from_text(description_text, description.get("short"))
     text_carrez_surface, _ = _carrez_surface_from_text(description_text, description.get("short"))
+    surface_features = _surface_features_from_description(description_text, description.get("short"))
+    aggregate_carrez = surface_features.get("aggregate_carrez_m2")
+    aggregate_carrez_evidence = surface_features.get("aggregate_carrez_evidence")
     api_habitable_surface = _usable_habitable_surface(property_block.get("surfaceHabitable"), description_text)
     if _should_prefer_text_surface(api_habitable_surface, text_surface, text_surface_evidence):
         habitable_surface = text_surface
@@ -636,9 +640,12 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         habitable_surface_evidence = None
     api_carrez_surface = _surface_value(property_block.get("surfaceCarrez"))
     carrez_surface = (
-        text_carrez_surface
-        if _should_prefer_text_surface(api_carrez_surface, text_carrez_surface, "surface Carrez")
-        else api_carrez_surface or text_carrez_surface
+        aggregate_carrez
+        or (
+            text_carrez_surface
+            if _should_prefer_text_surface(api_carrez_surface, text_carrez_surface, "surface Carrez")
+            else api_carrez_surface or text_carrez_surface
+        )
     )
     source_land_surface = _surface_value(property_block.get("surfaceTerrain"))
     cadastral_surface, cadastral_evidence = _cadastral_surface_from_text(description_text)
@@ -679,6 +686,17 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         surface_source = None
         surface_confidence = None
         surface_evidence = None
+    api_parking_count = _numeric_value(property_block.get("nbStationnements"))
+    description_parking_count = (
+        api_parking_count
+        if api_parking_count is not None
+        else _explicit_description_parking_count(description_text)
+    )
+    description_features = _description_property_features(
+        description_text,
+        property_block=property_block,
+        parking_count=description_parking_count,
+    )
     raw_text = _raw_text(
         [
             clean_text(transaction.get("reference")),
@@ -693,6 +711,18 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
     )
 
     conflicts = []
+    if api_carrez_surface is not None and aggregate_carrez is not None and api_carrez_surface != aggregate_carrez:
+        conflicts.append(
+            {
+                "code": "source_carrez_aggregate_precision",
+                "field": "carrez_surface_m2",
+                "selected": aggregate_carrez,
+                "alternative": api_carrez_surface,
+                "selected_source": "notaires.description",
+                "alternative_source": "notaires.surfaceCarrez",
+                "evidence": aggregate_carrez_evidence,
+            }
+        )
     if api_habitable_surface and text_surface and abs(float(api_habitable_surface) - float(text_surface)) > max(1, float(text_surface) * 0.01):
         source_url = (fallback or {}).get("source_url") or f"{API_URL}/{data.get('id', '')}"
         conflicts.append({"code": "source_surface_disagreement", "field": "habitable_surface_m2",
@@ -719,7 +749,55 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         "sous_type": clean_text(property_block.get("sousType")),
         "dpe_classe": clean_text(property_block.get("consommationClasse")),
         "ges_classe": clean_text(property_block.get("emissionGesClasse")),
+        "dpe_value": _numeric_value(property_block.get("consommation")),
+        "dpe_consommation": _numeric_value(property_block.get("consommation")),
+        "dpe_unit": "kWh/m²/an" if _numeric_value(property_block.get("consommation")) is not None else None,
+        "ges_value": _numeric_value(property_block.get("emissionGes")),
+        "ges_emission": _numeric_value(property_block.get("emissionGes")),
+        "ges_unit": "kgCO2/m²/an" if _numeric_value(property_block.get("emissionGes")) is not None else None,
+        "dpe_date": clean_text(property_block.get("dateRealisationDpe")),
+        "date_realisation_dpe": clean_text(property_block.get("dateRealisationDpe")),
+        "energy_cost_min_eur": _numeric_value(property_block.get("depensesEnergieMin")),
+        "energy_cost_max_eur": _numeric_value(property_block.get("depensesEnergieMax")),
+        "energy_cost_year": _integer_value(property_block.get("depensesEnergieAnnee")),
         "nb_etages": property_block.get("nbEtages"),
+        "nombre_etages_batiment": _integer_value(property_block.get("nbEtages")),
+        "etage": _numeric_value(property_block.get("etage")),
+        "floor": _numeric_value(property_block.get("etage")),
+        "etage_lot": _numeric_value(property_block.get("etage")),
+        "property_tax_eur": _numeric_value(property_block.get("taxeFonciere")),
+        "taxe_fonciere": _numeric_value(property_block.get("taxeFonciere")),
+        "charges_copropriete_annuelles_eur": _numeric_value(
+            (bien.get("copropriete") or {}).get("montantChargesAnnuelles")
+            if isinstance(bien.get("copropriete"), dict)
+            else None
+        ),
+        "charges_annuelles_copropriete": _numeric_value(
+            (bien.get("copropriete") or {}).get("montantChargesAnnuelles")
+            if isinstance(bien.get("copropriete"), dict)
+            else None
+        ),
+        "copropriete": _known_source_value(
+            (bien.get("copropriete") or {}).get("copropriete")
+            if isinstance(bien.get("copropriete"), dict)
+            else None
+        ),
+        "copropriete_nb_lots": _integer_value(
+            (bien.get("copropriete") or {}).get("nbLots")
+            if isinstance(bien.get("copropriete"), dict)
+            else None
+        ),
+        "copropriete_syndic": _known_source_value(
+            (bien.get("copropriete") or {}).get("coordonneesSyndic")
+            if isinstance(bien.get("copropriete"), dict)
+            else None
+        ),
+        "chauffage": _known_source_value(property_block.get("chauffage")),
+        "energie": _known_source_value(property_block.get("energie")),
+        "exposition": _known_source_value(property_block.get("exposition")),
+        "ascenseur": _known_source_value(property_block.get("ascenseur")),
+        "epoque_construction": _known_source_value(property_block.get("epoqueConstruction")),
+        "type_cuisine": _known_source_value(property_block.get("typeCuisine")),
         "detail_enriched": True,
     }
     quality_flags = []
@@ -739,26 +817,42 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         ),
         "title": description.get("short"),
         "description": description.get("long") or description.get("short"),
-        "surface_m2": habitable_surface or generic_surface,
+        "surface_m2": aggregate_carrez or habitable_surface or generic_surface,
         "habitable_surface_m2": habitable_surface,
         "carrez_surface_m2": carrez_surface,
         "land_surface_m2": land_surface,
-        "surface_source": surface_source,
+        "surface_scope": "total" if aggregate_carrez is not None else None,
+        "surface_source": (
+            "notaires.description.carrez_total"
+            if aggregate_carrez is not None
+            else surface_source
+        ),
         "surface_confidence": surface_confidence,
-        "surface_evidence": surface_evidence,
+        "surface_evidence": aggregate_carrez_evidence or surface_evidence,
         "rooms_count": property_block.get("nbPieces"),
         "bedrooms_count": property_block.get("nbChambres") or _bedrooms_from_text(description_text),
         "bathrooms_count": property_block.get("nbSdb") or _bathrooms_from_text(description_text),
-        "parking_count": property_block.get("nbStationnements"),
-        "has_garden": _yes_no(property_block.get("jardin")),
-        "has_terrace": _yes_no(property_block.get("terrasse")),
+        "parking_count": description_features.get("parking_count")
+        if description_features.get("parking_count") is not None
+        else api_parking_count,
+        "has_garden": _first_known(
+            _yes_no(property_block.get("jardin")), description_features.get("has_garden")
+        ),
+        "has_terrace": _first_known(
+            _yes_no(property_block.get("terrasse")), description_features.get("has_terrace")
+        ),
         "has_garage": _first_known(
             _has_word(description_text, "garage"),
             _yes_no(property_block.get("boxFerme")),
             _yes_no(property_block.get("stationnement")),
+            description_features.get("has_garage"),
         ),
-        "has_pool": _yes_no(property_block.get("piscine")),
-        "has_air_conditioning": _yes_no(property_block.get("climatisation")),
+        "has_pool": _first_known(
+            _yes_no(property_block.get("piscine")), description_features.get("has_pool")
+        ),
+        "has_air_conditioning": _first_known(
+            _yes_no(property_block.get("climatisation")), description_features.get("has_air_conditioning")
+        ),
         "starting_price_eur": transaction.get("miseAPrix")
         or transaction.get("premierPrix")
         or transaction.get("prixMin"),
@@ -778,7 +872,350 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         "source_images": source_images,
         "quality_flags": quality_flags,
         "source_blocks": source_blocks,
+        "source_property_features": _notaires_property_features(
+            property_block=property_block,
+            coproperty=bien.get("copropriete") if isinstance(bien.get("copropriete"), dict) else {},
+            transaction=transaction,
+            contact=contact,
+            description_features=description_features,
+            surface_features=surface_features,
+            source_images=source_images,
+        ),
+        "source_evidence": _notaires_source_evidence(
+            property_block=property_block,
+            transaction=transaction,
+            coproperty=bien.get("copropriete") if isinstance(bien.get("copropriete"), dict) else {},
+            description_features=description_features,
+            surface_features=surface_features,
+            aggregate_carrez_evidence=aggregate_carrez_evidence,
+        ),
     }
+
+
+def _known_source_value(value: object | None) -> str | None:
+    text = clean_text(value)
+    if not text or text.upper() in {"INCONNU", "NC", "N/A", "NON COMMUNIQUE"}:
+        return None
+    return text
+
+
+def _numeric_value(value: object | None) -> int | float | None:
+    parsed = parse_surface(value)
+    if parsed is None or parsed < 0:
+        return None
+    return int(parsed) if parsed == parsed.to_integral_value() else float(parsed)
+
+
+def _explicit_description_parking_count(value: str | None) -> int | None:
+    """Count parking only when the description gives a parking quantity.
+
+    A bare ``garage`` is an annex fact, not proof that the source publishes a
+    parking count.  Keeping that distinction preserves unknown values for the
+    completeness contract while still accepting phrases such as ``deux
+    parkings`` or ``une place de parking``.
+    """
+    text = clean_text(value) or ""
+    if not text:
+        return None
+    token = r"[1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix"
+    explicit_patterns = (
+        rf"\b(?:{token})\s+(?:emplacements?|places?)\s+(?:de\s+)?(?:parking|stationnement)\b",
+        rf"\b(?:{token})\s+(?:parkings?|stationnements?)\b",
+        rf"\b(?:parking|stationnement)\s*:\s*(?:{token})\b",
+    )
+    if not any(re.search(pattern, text, re.I) for pattern in explicit_patterns):
+        return None
+    return extract_parking_count(text)
+
+
+def _integer_value(value: object | None) -> int | None:
+    parsed = _numeric_value(value)
+    if parsed is None:
+        return None
+    try:
+        return int(parsed)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _number_from_match(match: re.Match[str]) -> int | float | None:
+    for index in range(match.re.groups, 0, -1):
+        value = _numeric_value(match.group(index))
+        if value is not None:
+            return value
+    return None
+
+
+def _surface_features_from_description(*values: str | None) -> dict[str, Any]:
+    text = clean_text("\n".join(value for value in values if value)) or ""
+    number = r"([0-9]+(?:[ .][0-9]{3})*(?:[,.][0-9]+)?)"
+    aggregate_match = re.search(
+        rf"\bsurface\s+(?:loi\s+)?carrez\s+totale\s*(?:de|:)?\s*{number}\s*m(?:2|²)\b",
+        text,
+        re.I,
+    )
+    aggregate = _number_from_match(aggregate_match) if aggregate_match else None
+    assets: list[dict[str, Any]] = []
+    asset_pattern = re.compile(
+        rf"\b(?P<label>appartement(?:\s+t[1-9][0-9]?)?|studio(?:\s+ind[ée]pendant)?)\b"
+        rf"[^.\n]{{0,120}}?{number}\s*m(?:2|²)\s*(?:loi\s+)?carrez\b",
+        re.I,
+    )
+    for match in asset_pattern.finditer(text):
+        value = _number_from_match(match)
+        if value is None:
+            continue
+        label = clean_text(match.group("label"))
+        item = {
+            "asset_id": "independent_studio" if "studio" in label.lower() else "main_apartment",
+            "label": label,
+            "carrez_surface_m2": value,
+            "scope": "asset",
+            "evidence": _evidence_sentence(text, match.start(), match.end()),
+        }
+        if not any(
+            item["asset_id"] == existing["asset_id"]
+            and item["carrez_surface_m2"] == existing["carrez_surface_m2"]
+            for existing in assets
+        ):
+            assets.append(item)
+
+    annexes: list[dict[str, Any]] = []
+    annex_patterns = (
+        ("balcon", rf"\bbalcon[^.\n]{{0,100}}?(?:surface\s+de\s+)?{number}\s*m(?:2|²)\b"),
+        ("cave", rf"\bcave[^.\n:]{{0,50}}:\s*{number}\s*m(?:2|²)\b"),
+        ("celliers", rf"\bcelliers?[^.\n:]{{0,50}}:\s*{number}\s*m(?:2|²)\b"),
+        ("patio", rf"\bpatio[^.\n]{{0,100}}?(?:surface\s+de\s+)?{number}\s*m(?:2|²)\b"),
+    )
+    for label, pattern in annex_patterns:
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        value = _number_from_match(match)
+        if value is not None:
+            annexes.append(
+                {
+                    "asset_id": "shared_or_annex",
+                    "label": label,
+                    "surface_m2": value,
+                    "scope": "annex",
+                    "evidence": _evidence_sentence(text, match.start(), match.end()),
+                }
+            )
+
+    total_operands = [item["carrez_surface_m2"] for item in assets]
+    sum_check = None
+    if len(total_operands) >= 2 and aggregate is not None:
+        total = round(sum(float(value) for value in total_operands), 2)
+        sum_check = {
+            "operands_m2": total_operands,
+            "total_m2": aggregate,
+            "calculated_m2": total,
+            "status": "matches" if abs(total - float(aggregate)) <= 0.02 else "conflict",
+        }
+    return {
+        "aggregate_carrez_m2": aggregate,
+        "aggregate_carrez_evidence": (
+            _evidence_sentence(text, aggregate_match.start(), aggregate_match.end())
+            if aggregate_match
+            else None
+        ),
+        "assets": assets,
+        "annexes": annexes,
+        "sum_check": sum_check,
+    }
+
+
+def _description_property_features(
+    text: str | None,
+    *,
+    property_block: dict[str, Any],
+    parking_count: object | None,
+) -> dict[str, Any]:
+    value = clean_text(text) or ""
+    api_heating = _known_source_value(property_block.get("chauffage"))
+    heating_match = re.search(
+        r"\bchauffage\s+(.+?)(?=\s+(?:cumulus|panneaux|arr[êe]t|1[èe]re|visites?|d[ée]but|fin)\b|[.;]|$)",
+        value,
+        re.I,
+    )
+    heating = api_heating or (clean_text(heating_match.group(1)) if heating_match else None)
+    solar = bool(re.search(r"\bpanneaux?\s+solaires?\b", value, re.I))
+    thermodynamic = bool(re.search(r"\bcumulus\s+thermodynamique\b", value, re.I))
+    works = bool(re.search(r"\b(?:pr[ée]voir\s+travaux|travaux\s+[àa]\s+pr[ée]voir)\b", value, re.I))
+    patio = bool(re.search(r"\bpatio\b", value, re.I))
+    garage = bool(re.search(r"\b(?:garage|box)\b", value, re.I))
+    garden = bool(re.search(r"\bjardin\b", value, re.I))
+    air_conditioning = bool(re.search(r"\b(?:climatisation|climatis[ée]e?)\b", value, re.I))
+    technical = {
+        "heating": heating,
+        "energy": _known_source_value(property_block.get("energie")),
+        "solar_panels": solar,
+        "thermodynamic_water_heater": thermodynamic,
+        "condition": _known_source_value(property_block.get("etat")),
+        "construction_period": _known_source_value(property_block.get("epoqueConstruction")),
+        "orientation": _known_source_value(property_block.get("exposition")),
+        "kitchen_type": _known_source_value(property_block.get("typeCuisine")),
+        "works_to_plan": works,
+    }
+    annexes = {
+        "parking_count": _numeric_value(parking_count),
+        "balcony": bool(re.search(r"\bbalcons?\b", value, re.I)),
+        "terrace": bool(re.search(r"\bterrasses?\b", value, re.I)),
+        "patio": patio,
+        "cellar": bool(re.search(r"\bcave\b", value, re.I)),
+        "celliers": bool(re.search(r"\bcelliers?\b", value, re.I)),
+        "garage": garage,
+        "garden": garden,
+        "pool": bool(re.search(r"\bpiscine\b", value, re.I)),
+        "air_conditioning": air_conditioning,
+    }
+    return {
+        "parking_count": _numeric_value(parking_count),
+        "has_garden": garden if garden else None,
+        "has_terrace": annexes["terrace"] if annexes["terrace"] else None,
+        "has_garage": garage if garage else None,
+        "has_pool": annexes["pool"] if annexes["pool"] else None,
+        "has_air_conditioning": air_conditioning if air_conditioning else None,
+        "technical": technical,
+        "annexes": annexes,
+        "works_to_plan": works,
+        "evidence": {
+            "heating": _evidence_sentence(value, heating_match.start(), heating_match.end())
+            if heating_match
+            else None,
+            "solar_panels": "Panneaux solaires" if solar else None,
+            "thermodynamic_water_heater": "Cumulus thermodynamique" if thermodynamic else None,
+            "works_to_plan": "Prévoir travaux" if works else None,
+        },
+    }
+
+
+def _notaires_property_features(
+    *,
+    property_block: dict[str, Any],
+    coproperty: dict[str, Any],
+    transaction: dict[str, Any],
+    contact: dict[str, Any],
+    description_features: dict[str, Any],
+    surface_features: dict[str, Any],
+    source_images: list[str],
+) -> dict[str, Any]:
+    dpe_value = _numeric_value(property_block.get("consommation"))
+    ges_value = _numeric_value(property_block.get("emissionGes"))
+    energy = {
+        "dpe": {
+            "class": _known_source_value(property_block.get("consommationClasse")),
+            "value": dpe_value,
+            "unit": "kWh/m²/an" if dpe_value is not None else None,
+            "date": clean_text(property_block.get("dateRealisationDpe")),
+        },
+        "ges": {
+            "class": _known_source_value(property_block.get("emissionGesClasse")),
+            "value": ges_value,
+            "unit": "kgCO2/m²/an" if ges_value is not None else None,
+            "date": clean_text(property_block.get("dateRealisationDpe")),
+        },
+        "estimated_cost": {
+            "min_eur": _numeric_value(property_block.get("depensesEnergieMin")),
+            "max_eur": _numeric_value(property_block.get("depensesEnergieMax")),
+            "year": _integer_value(property_block.get("depensesEnergieAnnee")),
+        },
+    }
+    coownership = {
+        "is_coownership": _yes_no(coproperty.get("copropriete")),
+        "annual_charges_eur": _numeric_value(coproperty.get("montantChargesAnnuelles")),
+        "lot_count": _integer_value(coproperty.get("nbLots")),
+        "syndic": _known_source_value(coproperty.get("coordonneesSyndic")),
+        "administrator_status": _known_source_value(coproperty.get("adminProvisoire")),
+        "safeguard_plan": _known_source_value(coproperty.get("planSauvegarde")),
+    }
+    technical = dict(description_features.get("technical") or {})
+    technical.update(
+        {
+            "heating_api": _known_source_value(property_block.get("chauffage")),
+            "energy_api": _known_source_value(property_block.get("energie")),
+            "elevator": _yes_no(property_block.get("ascenseur")),
+            "accessibility": _yes_no(property_block.get("accesHandicapes")),
+            "double_glazing": _yes_no(property_block.get("doubleVitrage")),
+        }
+    )
+    return {
+        "floor": _numeric_value(property_block.get("etage")),
+        "building_floors_count": _integer_value(property_block.get("nbEtages")),
+        "energy": energy,
+        "property_tax": {
+            "amount_eur": _numeric_value(property_block.get("taxeFonciere")),
+            "year": None,
+        },
+        "coownership": coownership,
+        "technical": technical,
+        "annexes": description_features.get("annexes") or {},
+        "works_to_plan": description_features.get("works_to_plan"),
+        "surfaces": surface_features,
+        "contact": {
+            "name": _known_source_value(contact.get("nom")),
+            "phone": _known_source_value(contact.get("telephone")),
+            "email": _known_source_value(contact.get("mail")),
+        },
+        "sale": {
+            "first_offer_eur": _numeric_value(
+                transaction.get("premierPrix") or transaction.get("prixMin")
+            ),
+            "offer_step_eur": _numeric_value(transaction.get("pasOffres")),
+        },
+        "media": {"image_count": len(source_images), "images": list(source_images)},
+    }
+
+
+def _notaires_source_evidence(
+    *,
+    property_block: dict[str, Any],
+    transaction: dict[str, Any],
+    coproperty: dict[str, Any],
+    description_features: dict[str, Any],
+    surface_features: dict[str, Any],
+    aggregate_carrez_evidence: str | None,
+) -> dict[str, Any]:
+    evidence: dict[str, Any] = {
+        "floor": {"source": "notaires_detail_api", "field": "etage", "value": property_block.get("etage")},
+        "building_floors_count": {
+            "source": "notaires_detail_api",
+            "field": "nbEtages",
+            "value": property_block.get("nbEtages"),
+        },
+        "dpe": {
+            "source": "notaires_detail_api",
+            "class": property_block.get("consommationClasse"),
+            "value": property_block.get("consommation"),
+            "date": property_block.get("dateRealisationDpe"),
+        },
+        "ges": {
+            "source": "notaires_detail_api",
+            "class": property_block.get("emissionGesClasse"),
+            "value": property_block.get("emissionGes"),
+            "date": property_block.get("dateRealisationDpe"),
+        },
+        "property_tax": {
+            "source": "notaires_detail_api",
+            "field": "taxeFonciere",
+            "value": property_block.get("taxeFonciere"),
+        },
+        "coownership_charges": {
+            "source": "notaires_detail_api",
+            "field": "montantChargesAnnuelles",
+            "value": coproperty.get("montantChargesAnnuelles"),
+        },
+        "surfaces": {
+            "source": "notaires.description",
+            "aggregate_quote": aggregate_carrez_evidence,
+            "assets": surface_features.get("assets", []),
+            "sum_check": surface_features.get("sum_check"),
+        },
+    }
+    if description_features.get("evidence"):
+        evidence["description_features"] = description_features["evidence"]
+    return evidence
 
 
 def _api_url(page: int, transaction_type: str, department: str | None) -> str:
@@ -849,6 +1286,9 @@ def _merge_detail(sale: dict[str, Any], detail: dict[str, Any]) -> None:
             continue
         if key == "source_blocks" and isinstance(sale.get(key), dict) and isinstance(value, dict):
             sale[key].update({k: v for k, v in value.items() if v not in (None, "")})
+        elif key in {"source_property_features", "source_evidence"} and isinstance(value, dict):
+            existing = sale.get(key) if isinstance(sale.get(key), dict) else {}
+            sale[key] = {**existing, **value}
         else:
             sale[key] = value
 
@@ -1137,11 +1577,34 @@ def _descriptive_land_surface_from_text(
 
 
 def _evidence_sentence(text: str, start: int, end: int) -> str:
-    before = text.rfind(".", 0, start)
-    before = text.rfind("\n", 0, start) if before == -1 else before
-    after = text.find(".", end)
-    after = len(text) if after == -1 else after + 1
-    return clean_text(text[max(0, before + 1) : after]) or text[start:end]
+    normalized = clean_text(text) or ""
+    if not normalized:
+        return ""
+    start = max(0, min(start, len(normalized)))
+    end = max(start, min(end, len(normalized)))
+
+    # Descriptions from the public API are often a single long paragraph with
+    # a final full stop only.  Returning that whole paragraph makes each
+    # evidence item unreadable and needlessly duplicates the raw description.
+    separators = (".", ";", "!", "?")
+    left_boundary = max((normalized.rfind(mark, 0, start) for mark in separators), default=-1)
+    right_candidates = [
+        position
+        for mark in separators
+        if (position := normalized.find(mark, end)) != -1
+    ]
+    right_boundary = min(right_candidates, default=-1)
+    if left_boundary >= 0 and right_boundary >= 0 and right_boundary - left_boundary <= 800:
+        return normalized[left_boundary + 1 : right_boundary + 1].strip()
+
+    window_start = max(0, start - 240)
+    window_end = min(len(normalized), end + 240)
+    excerpt = normalized[window_start:window_end].strip()
+    if window_start:
+        excerpt = f"…{excerpt}"
+    if window_end < len(normalized):
+        excerpt = f"{excerpt}…"
+    return excerpt[:800] or normalized[start:end]
 
 
 def _multimedia_images(value: object | None) -> list[str]:

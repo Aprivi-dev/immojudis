@@ -1065,6 +1065,7 @@ export type Database = {
           investment_score: number | null;
           investment_summary: string | null;
           land_surface_m2: number | null;
+          lawyer_name: string | null;
           latitude: number | null;
           longitude: number | null;
           media: Json | null;
@@ -1133,6 +1134,7 @@ export type Database = {
           investment_score?: number | null;
           investment_summary?: string | null;
           land_surface_m2?: number | null;
+          lawyer_name?: string | null;
           latitude?: number | null;
           longitude?: number | null;
           occupancy_status?: string | null;
@@ -1200,6 +1202,7 @@ export type Database = {
           investment_score?: number | null;
           investment_summary?: string | null;
           land_surface_m2?: number | null;
+          lawyer_name?: string | null;
           latitude?: number | null;
           longitude?: number | null;
           occupancy_status?: string | null;
@@ -2131,6 +2134,7 @@ export type Database = {
           share_enabled: boolean;
           share_expires_at: string | null;
           share_token: string | null;
+          share_token_hash: string | null;
           share_view_count: number;
           shared_at: string | null;
           title: string;
@@ -2152,6 +2156,7 @@ export type Database = {
           share_enabled?: boolean;
           share_expires_at?: string | null;
           share_token?: string | null;
+          share_token_hash?: string | null;
           share_view_count?: number;
           shared_at?: string | null;
           title: string;
@@ -2173,6 +2178,7 @@ export type Database = {
           share_enabled?: boolean;
           share_expires_at?: string | null;
           share_token?: string | null;
+          share_token_hash?: string | null;
           share_view_count?: number;
           shared_at?: string | null;
           title?: string;
@@ -4309,6 +4315,36 @@ export type Database = {
         Returns: {
           access_end: string;
           granted: boolean;
+        }[];
+      };
+      get_public_sale_summary: {
+        Args: { p_sale_id: string };
+        Returns: {
+          id: string;
+          starting_price_eur: number | null;
+          sale_venue_type: string;
+          sale_verification_status: string;
+          city: string | null;
+          department: string | null;
+          property_type: string | null;
+          sale_date: string | null;
+          app_surface_m2: number | null;
+          app_surface_kind: string | null;
+          rooms_count: number | null;
+          bedrooms_count: number | null;
+          bathrooms_count: number | null;
+          tribunal_name: string | null;
+          tribunal_city: string | null;
+          thumbnail_url: string | null;
+          updated_at: string | null;
+        }[];
+      };
+      list_public_sale_sitemap_entries: {
+        Args: { p_limit?: number; p_offset?: number };
+        Returns: {
+          id: string;
+          updated_at: string | null;
+          total_count: number;
         }[];
       };
       search_auction_sales_preview: {

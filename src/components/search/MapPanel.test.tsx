@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/mapbox", () => ({
   getMapboxAccessToken: () => mocks.token,
+  disableMapboxTelemetry: vi.fn(),
   getMapboxStyleUrl: () => "test-style",
   MAPBOX_ATTRIBUTION: "Mapbox",
   MAPBOX_COPYRIGHT_URL: "https://www.mapbox.com/about/maps/",
@@ -129,12 +130,18 @@ function mapElement(props: Partial<MapPanelProps> = {}) {
   );
 }
 
-function showMap(props: Partial<MapPanelProps> = {}) {
-  return render(mapElement(props));
+async function showMap(props: Partial<MapPanelProps> = {}) {
+  const view = render(mapElement(props));
+  // Mapbox est chargé à la demande (import dynamique) : on laisse la promesse se résoudre.
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  return view;
 }
 
 describe("public map resilience", () => {
-  it("keeps popup facts public and never presents missing analysis as low risk", () => {
+  it("keeps popup facts public and never presents missing analysis as low risk", async () => {
     const sale = {
       id: "preview",
       title: "Private source title",
@@ -147,7 +154,7 @@ describe("public map resilience", () => {
       investment_score: 85,
       media: [],
     } as unknown as AuctionSale;
-    showMap({ sales: [sale], selectedSaleId: sale.id });
+    await showMap({ sales: [sale], selectedSaleId: sale.id });
     act(() => mocks.handlers.get("load")?.());
     const html = mocks.setHtml.mock.calls.at(-1)?.[0];
     expect(html).toContain("Appartement à Bordeaux");
@@ -157,7 +164,7 @@ describe("public map resilience", () => {
     expect(html).not.toContain("Score 85");
     expect(html).not.toContain("Private source title");
   });
-  it("masks an authenticated popup value when the review projection is blocked", () => {
+  it("masks an authenticated popup value when the review projection is blocked", async () => {
     const sale = {
       id: "guarded",
       title: "Maison privée à Bordeaux",
@@ -170,7 +177,7 @@ describe("public map resilience", () => {
       source_blocks: { dpe_classe: "D" },
       media: [],
     } as unknown as AuctionSale;
-    showMap({
+    await showMap({
       sales: [sale],
       preview: false,
       showDpeLegend: true,
@@ -197,8 +204,8 @@ describe("public map resilience", () => {
     expect(html).not.toContain("90 000");
     expect(html).not.toContain("Maison privée à Bordeaux");
   });
-  it("replaces a stalled loading state after 12 seconds and recovers on a late load", () => {
-    showMap();
+  it("replaces a stalled loading state after 12 seconds and recovers on a late load", async () => {
+    await showMap();
     expect(screen.getByText("Chargement de la carte")).toBeTruthy();
     act(() => vi.advanceTimersByTime(12000));
     expect(screen.queryByText("Chargement de la carte")).toBeNull();
@@ -208,22 +215,22 @@ describe("public map resilience", () => {
     expect(screen.getByText(/Positions approximatives/)).toBeTruthy();
     expect(screen.queryByText("DPE")).toBeNull();
   });
-  it("clears the load timer on unmount", () => {
-    const view = showMap();
+  it("clears the load timer on unmount", async () => {
+    const view = await showMap();
     view.unmount();
     expect(vi.getTimerCount()).toBe(0);
     expect(mocks.remove).toHaveBeenCalledOnce();
   });
-  it("keeps a helpful fallback when no token is configured", () => {
+  it("keeps a helpful fallback when no token is configured", async () => {
     mocks.token = "";
-    showMap();
+    await showMap();
     expect(screen.getByText(/continuer à consulter les annonces dans la liste/)).toBeTruthy();
     expect(screen.queryByText("Chargement de la carte")).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
   });
-  it("does not crash the search page when WebGL cannot start", () => {
+  it("does not crash the search page when WebGL cannot start", async () => {
     mocks.throws = true;
-    showMap();
+    await showMap();
     expect(screen.getByText(/annonces restent accessibles dans la liste/)).toBeTruthy();
     expect(screen.queryByText("Chargement de la carte")).toBeNull();
   });
@@ -249,7 +256,7 @@ describe("public map resilience", () => {
       ),
     );
 
-    showMap({ geographicLabel: "Bordeaux" });
+    await showMap({ geographicLabel: "Bordeaux" });
 
     await act(async () => {
       await Promise.resolve();
@@ -263,7 +270,7 @@ describe("public map resilience", () => {
     );
   });
 
-  it("offers an explicit viewport search after a manual map movement", () => {
+  it("offers an explicit viewport search after a manual map movement", async () => {
     const onSearchViewport = vi.fn();
     const sale = {
       id: "mapped",
@@ -276,7 +283,7 @@ describe("public map resilience", () => {
       media: [],
     } as unknown as AuctionSale;
 
-    showMap({
+    await showMap({
       preview: false,
       showDpeLegend: true,
       sales: [sale],
@@ -294,7 +301,7 @@ describe("public map resilience", () => {
     expect(screen.queryByTestId("search-map-viewport")).toBeNull();
   });
 
-  it("updates the selected popup in place when its authenticated detail arrives", () => {
+  it("updates the selected popup in place when its authenticated detail arrives", async () => {
     const sale = {
       id: "detail-sale",
       title: "Annonce légère",
@@ -312,7 +319,7 @@ describe("public map resilience", () => {
       source_blocks: { dpe_classe: "D" },
     } as unknown as AuctionSale;
 
-    const view = showMap({
+    const view = await showMap({
       sales: [sale],
       preview: false,
       showDpeLegend: true,
@@ -341,7 +348,7 @@ describe("public map resilience", () => {
     expect(mocks.setHtml.mock.calls.at(-1)?.[0]).toContain("Maison détaillée");
   });
 
-  it("reopens the same cached detailed popup after the user closes it", () => {
+  it("reopens the same cached detailed popup after the user closes it", async () => {
     const sale = {
       id: "cached-sale",
       title: "Annonce légère",
@@ -358,7 +365,7 @@ describe("public map resilience", () => {
       property_type: "house",
     } as unknown as AuctionSale;
 
-    showMap({
+    await showMap({
       sales: [sale],
       preview: false,
       showDpeLegend: true,
@@ -380,7 +387,7 @@ describe("public map resilience", () => {
     expect(mocks.setHtml.mock.calls.at(-1)?.[0]).toContain("Maison détaillée en cache");
   });
 
-  it("ignores a late detail response after the selected popup was closed", () => {
+  it("ignores a late detail response after the selected popup was closed", async () => {
     const firstSale = {
       id: "first-sale",
       title: "Première annonce",
@@ -396,7 +403,7 @@ describe("public map resilience", () => {
       title: "Détail d’un autre compte",
     } as unknown as AuctionSale;
 
-    const view = showMap({
+    const view = await showMap({
       sales: [firstSale],
       preview: false,
       showDpeLegend: true,

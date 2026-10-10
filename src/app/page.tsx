@@ -1,31 +1,25 @@
 import type { Metadata } from "next";
+import { organizationStructuredData } from "@/lib/seo";
+import { resolveSiteOrigin } from "@/lib/site-url";
 import { HomePage } from "@/routes/index";
+import { jsonLdString } from "@/lib/json-ld";
 
 export const metadata: Metadata = {
-  title: { absolute: "ImmoJudis - Les enchères immobilières en toute clarté" },
+  title: { absolute: "Immojudis - Les enchères immobilières en toute clarté" },
   description:
     "Ventes au tribunal, notariales et domaniales référencées : distinguez les procédures, trouvez une annonce et préparez votre achat immobilier.",
   alternates: { canonical: "/" },
 };
 
 export default function Page() {
-  const structuredData = {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    name: "ImmoJudis",
-    url: "/",
-    potentialAction: {
-      "@type": "SearchAction",
-      target: "/sales?q={search_term_string}",
-      "query-input": "required name=search_term_string",
-    },
-  };
+  const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
+  const structuredData = organizationStructuredData(origin);
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+          __html: jsonLdString(structuredData),
         }}
       />
       <HomePage />

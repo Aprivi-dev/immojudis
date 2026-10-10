@@ -19,6 +19,7 @@ import {
   fetchSalesStatistics,
 } from "@/lib/client-api";
 import { createAlert, getSaleById } from "@/lib/queries";
+import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
@@ -30,7 +31,12 @@ import {
   sortClientSearchResults,
 } from "@/lib/search/search-filters";
 import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
-import { catalogPlaceholder } from "@/lib/search/catalog-placeholder";
+import {
+  ANONYMOUS_PREVIEW_SCOPE,
+  catalogPlaceholder,
+  salesSearchCountQueryKey,
+  salesSearchQueryKey,
+} from "@/lib/search/catalog-placeholder";
 import {
   mergeSalesSearch,
   salesSearchToUrlRecord,
@@ -63,6 +69,8 @@ import {
   useMediaQuery,
   watchedZoneInputFromSearch,
 } from "./search-page-state";
+import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPanel), {
   ssr: false,
@@ -75,7 +83,7 @@ function SearchStatisticsLoading() {
       role="status"
       aria-live="polite"
       aria-label="Chargement des repères"
-      className="border-b border-[#132238]/10 bg-white px-4 py-4 text-sm font-semibold text-[#667482] sm:px-5"
+      className="border-b border-brand-navy/10 bg-white px-4 py-4 text-sm font-semibold text-ink-soft sm:px-5"
     >
       Chargement des repères…
     </div>
@@ -92,7 +100,18 @@ const LazySearchStatisticsPanel = dynamic(
   { loading: () => <SearchStatisticsLoading /> },
 );
 
-export function SearchPage({ search }: { search: SalesSearchParams }) {
+/**
+ * `serverSeeded` is true when the server already rendered (and dehydrated) the
+ * anonymous first page for this exact search. The list then stays visible while
+ * the session is being restored instead of being replaced by a skeleton.
+ */
+export function SearchPage({
+  search,
+  serverSeeded = false,
+}: {
+  search: SalesSearchParams;
+  serverSeeded?: boolean;
+}) {
   const navigate = useNavigate({ from: "/sales" });
   const currentLocation = useLocation();
   const { user, loading: authLoading } = useAuth();
@@ -239,7 +258,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     [search],
   );
   const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
-    queryKey: ["feature-entitlements", user?.id ?? "anonymous", "plan"],
+    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
     queryFn: fetchAccessPlan,
     enabled: Boolean(user) && !authLoading,
     staleTime: 5 * 60_000,
@@ -250,16 +269,22 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     ? `${user?.id ?? "anonymous"}:${isPreview ? "preview" : isDiscovery ? "discovery" : "analysis"}`
     : null;
   const comparison = useSaleComparison(comparisonScope);
+  // While the session is restored, a server-seeded page reads the rows the
+  // server rendered for the signed-out catalogue (same keys as the dehydrated
+  // queries). They are replaced by the signed-in rows as soon as auth settles.
+  const serverSeededScope = authLoading && serverSeeded ? ANONYMOUS_PREVIEW_SCOPE : null;
+  const catalogScope = comparisonScope ?? serverSeededScope;
 
   const {
     data: rawSales = [],
     error,
     isFetching,
     isLoading,
+    refetch: refetchSales,
   } = useQuery({
-    queryKey: ["sales-search", searchKeySignature, comparisonScope],
+    queryKey: salesSearchQueryKey(searchKeySignature, catalogScope),
     placeholderData: (previous, query) =>
-      catalogPlaceholder(previous, query?.queryKey, comparisonScope),
+      catalogPlaceholder(previous, query?.queryKey, catalogScope),
     queryFn: () => fetchSearchResults({ search, preview: isPreview, discovery: isDiscovery }),
     enabled: catalogReady,
     staleTime: 60_000,
@@ -267,9 +292,9 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   });
 
   const { data: totalCount, isLoading: isCountLoading } = useQuery({
-    queryKey: ["sales-search-count", searchKeySignature, comparisonScope],
+    queryKey: salesSearchCountQueryKey(searchKeySignature, catalogScope),
     placeholderData: (previous, query) =>
-      catalogPlaceholder(previous, query?.queryKey, comparisonScope),
+      catalogPlaceholder(previous, query?.queryKey, catalogScope),
     queryFn: () => fetchSearchCount({ search, preview: isPreview, discovery: isDiscovery }),
     enabled: catalogReady,
     staleTime: 60_000,
@@ -281,13 +306,15 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     isLoading: isMapLoading,
     isFetching: isMapFetching,
   } = useQuery({
-    queryKey: ["sales-search-map", mapSearchKeySignature, comparisonScope],
+    queryKey: queryKeys.salesSearchMap(mapSearchKeySignature, comparisonScope),
     placeholderData: (previous, query) =>
       catalogPlaceholder(previous, query?.queryKey, comparisonScope),
     queryFn: () => fetchSearchMapResults(search, { discovery: isDiscovery }),
     enabled: catalogReady && !isPreview && mapVisible,
-    staleTime: 60_000,
-    refetchInterval: 60_000,
+    // Tous les points de la recherche (quelques milliers de lignes légères) : on les rafraîchit
+    // moins souvent qu'un échantillon.
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
   });
 
   const filteredSales = useMemo(
@@ -326,7 +353,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const selectedMapSaleId =
     selectedSaleId && mapSales.some((sale) => sale.id === selectedSaleId) ? selectedSaleId : null;
   const { data: selectedMapSaleDetail, isFetching: selectedMapSaleDetailLoading } = useQuery({
-    queryKey: ["sales-map-detail", comparisonScope, selectedMapSaleId],
+    queryKey: queryKeys.salesMapDetail(comparisonScope, selectedMapSaleId),
     queryFn: () => getSaleById(selectedMapSaleId!, { discovery: isDiscovery }),
     enabled: Boolean(catalogReady && user && mapVisible && selectedMapSaleId && comparisonScope),
     staleTime: 5 * 60_000,
@@ -340,7 +367,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     [displayedSales, mapSales],
   );
   const { data: aiReviewData, isError: aiReviewError } = useQuery({
-    queryKey: ["sales-ai-review", user?.id ?? "anonymous", aiReviewSaleIds],
+    queryKey: queryKeys.salesAiReview(user?.id ?? "anonymous", aiReviewSaleIds),
     queryFn: () => fetchSalesAiReviewProjections(aiReviewSaleIds),
     // Discovery rows already use the public redacted view. The AI review
     // endpoint reads Analyse-only projections and must not blank valid public
@@ -366,7 +393,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           ? "ready"
           : "loading";
   const hasLocalFilters = false;
-  const isInitialLoading = authLoading || entitlementsLoading || isLoading;
+  const isInitialLoading = (authLoading && !serverSeeded) || entitlementsLoading || isLoading;
   const activeFiltersCount = countActiveSearchFilters(search);
   const displayCount = totalCount ?? filteredSales.length;
   const filteredCount = displayedSales.length;
@@ -390,7 +417,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
   const alertsLocked =
     !user || !entitlementsData || entitlementsData.plan.features.smartAlerts === "locked";
   const { data: salesStatisticsData, isFetching: salesStatisticsLoading } = useQuery({
-    queryKey: ["sales-statistics", searchKeySignature],
+    queryKey: queryKeys.salesStatistics(searchKeySignature),
     queryFn: () => fetchSalesStatistics({ search }),
     enabled: statisticsOpen && !statisticsLocked && !authLoading && Boolean(user),
     retry: false,
@@ -411,7 +438,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     isFetching: dpeExplorerLoading,
     refetch: refetchDpeExplorer,
   } = useQuery({
-    queryKey: ["dpe-explorer", searchKeySignature],
+    queryKey: queryKeys.dpeExplorer(searchKeySignature),
     queryFn: () =>
       fetchDpeExplorer({
         department: search.department,
@@ -522,14 +549,20 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
     onSearchAsMoveChange: handleSearchAsMoveChange,
   };
 
-  async function saveSearch() {
+  async function saveSearch(options?: { frequency: "daily" | "weekly" }) {
     if (!user) {
-      toast.error("Connectez-vous pour enregistrer une recherche");
+      // La première alerte est gratuite : on invite à se connecter puis on
+      // ramène la personne sur sa recherche.
+      navigate(loginPathWithRedirect(currentLocation.href));
+      return;
+    }
+    if (entitlementsLoading || !entitlementsData) {
+      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
       return;
     }
     if (alertsLocked) {
-      toast.message("Alertes réservées au plan Analyse");
-      navigate({ to: "/accompagnement" });
+      toast.message("Les alertes de cette recherche sont réservées à l'offre Analyse.");
+      navigate(OFFERS_PATH);
       return;
     }
     if (activeFiltersCount === 0) {
@@ -575,6 +608,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         min_market_discount_pct: search.minMarketDiscount ?? null,
         dpe_classes: search.dpeClasses ?? [],
         require_house_with_land: Boolean(search.houseWithLand),
+        alert_frequency: options?.frequency ?? "daily",
         watched_zone_id: watchedZoneResponse?.zone.id ?? null,
         advanced_criteria: {
           source: "sales_search",
@@ -591,7 +625,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         watchedZoneResponse ? "Zone surveillée et alerte créées" : "Recherche enregistrée",
       );
     } catch (saveError) {
-      toast.error(saveError instanceof Error ? saveError.message : "Erreur");
+      toast.error(userMessage(saveError));
     } finally {
       setSavingAlert(false);
     }
@@ -599,11 +633,16 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
 
   async function exportCsv() {
     if (!user) {
-      toast.error("Connectez-vous pour exporter les ventes");
+      navigate(loginPathWithRedirect(currentLocation.href));
+      return;
+    }
+    if (entitlementsLoading || !entitlementsData) {
+      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
       return;
     }
     if (csvExportLocked) {
-      toast.error("Export CSV réservé au plan Analyse");
+      toast.message("L'export CSV est réservé à l'offre Analyse.");
+      navigate(OFFERS_PATH);
       return;
     }
 
@@ -613,17 +652,20 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
       downloadBlob(blob, filename);
       toast.success("Export CSV prêt");
     } catch (exportError) {
-      toast.error(exportError instanceof Error ? exportError.message : "Export impossible");
+      toast.error(userMessage(exportError, "Export impossible"));
     } finally {
       setExportingCsv(false);
     }
   }
 
   return (
-    <main className="min-h-screen bg-[#f7f8fa] text-[#132238] [--sales-header-height:8rem] lg:[--sales-header-height:8rem]">
+    <main
+      id="contenu"
+      className="min-h-screen bg-surface-muted text-brand-navy [--sales-header-height:8rem] lg:[--sales-header-height:8rem]"
+    >
       <a
         href="#sales-results"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-[#132238] focus:shadow-lg"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-brand-navy focus:shadow-lg"
       >
         Aller aux résultats
       </a>
@@ -636,9 +678,10 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
         isFetching={isFetching}
         filtersOpen={filtersOpen}
         savingAlert={savingAlert}
-        alertsLocked={alertsLocked}
         exportingCsv={exportingCsv}
         csvExportLocked={csvExportLocked}
+        signedIn={Boolean(user)}
+        weeklyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
         wideMap={wideMap}
         isDesktop={isDesktop}
         onFiltersOpenChange={setFiltersOpen}
@@ -649,24 +692,23 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
       />
 
       <div
-        className={`grid min-h-[calc(100svh_-_var(--sales-header-height))] ${
-          isDesktop ? splitClass : "grid-cols-1"
-        }`}
+        className={`grid min-h-[calc(100svh_-_var(--sales-header-height))] grid-cols-1 ${splitClass}`}
       >
         <section
           id="sales-results"
           tabIndex={-1}
           style={{ scrollMarginTop: "calc(var(--sales-header-height) + 12px)" }}
-          className="min-w-0 bg-[#f7f8fa] lg:order-1 lg:border-r lg:border-[#dce3eb]"
+          className="min-w-0 bg-surface-muted lg:order-1 lg:border-r lg:border-line-soft"
           aria-label="Résultats de recherche"
           aria-busy={isFetching}
         >
-          <div className="flex flex-wrap items-center justify-between gap-1 border-b border-[#e3e8ee] bg-white pr-4">
+          <div className="flex flex-wrap items-center justify-between gap-1 border-b border-line-soft bg-white pr-4">
             <ResultsSummary
               search={search}
               displayCount={displayCount}
               hasLocalFilters={hasLocalFilters}
               isLoading={isInitialLoading || isCountLoading}
+              hasError={Boolean(error) && rawSales.length === 0}
               geocoding={geocoding}
             />
 
@@ -679,7 +721,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
               />
             </div>
           </div>
-          <div className="border-b border-[#e3e8ee] bg-white px-4 py-3 sm:px-5">
+          <div className="border-b border-line-soft bg-white px-4 py-3 sm:px-5">
             <SaleTypeFilter
               compact
               value={draft.saleType}
@@ -704,7 +746,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           />
 
           {isFetching && !isInitialLoading ? (
-            <p role="status" className="px-5 pt-3 text-xs font-medium text-[#526170]">
+            <p role="status" className="px-5 pt-3 text-xs font-medium text-ink-soft">
               Actualisation des annonces…
             </p>
           ) : null}
@@ -715,6 +757,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
             analysisLocked={isDiscovery}
             isLoading={isInitialLoading}
             error={error}
+            onRetry={() => void refetchSales()}
             selectedSaleId={selectedSaleId}
             hoveredSaleId={hoveredSaleId}
             onHover={setHoveredSaleId}
@@ -747,7 +790,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           />
 
           <details
-            className="mx-4 mt-3 rounded-lg border border-[#dce3eb] bg-white sm:mx-5"
+            className="mx-4 mt-3 rounded-lg border border-line-soft bg-white sm:mx-5"
             onToggle={(event) => setStatisticsOpen(event.currentTarget.open)}
           >
             <summary className="cursor-pointer px-4 py-2 text-sm font-medium">
@@ -761,9 +804,7 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
                 loading={entitlementsLoading || statisticsLoading}
                 dpeExplorer={dpeExplorerData}
                 dpeExplorerLoading={dpeExplorerLoading}
-                dpeExplorerError={
-                  dpeExplorerError instanceof Error ? dpeExplorerError.message : null
-                }
+                dpeExplorerError={dpeExplorerError ? userMessage(dpeExplorerError) : null}
                 dpeExplorerRequested={dpeExplorerOpen}
                 onLoadDpeExplorer={() => {
                   setDpeExplorerOpen(true);
@@ -775,13 +816,15 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
           <Footer />
         </section>
 
-        {isDesktop ? (
-          <aside className="relative min-h-[calc(100svh_-_var(--sales-header-height))] bg-[#dfe7eb] lg:order-2">
+        {/* Always rendered (hidden below lg): the two-column layout is decided by CSS
+            alone, so nothing shifts when the media query resolves after hydration. */}
+        <aside className="relative hidden min-h-[calc(100svh_-_var(--sales-header-height))] bg-line-soft lg:order-2 lg:block">
+          {isDesktop ? (
             <div className="sticky top-[var(--sales-header-height)] h-[calc(100svh_-_var(--sales-header-height))]">
               <LazyMapPanel {...mapPanelProps} />
             </div>
-          </aside>
-        ) : null}
+          ) : null}
+        </aside>
       </div>
 
       {filtersOpen ? (
@@ -819,19 +862,19 @@ export function SearchPage({ search }: { search: SalesSearchParams }) {
               event.preventDefault();
               mapTriggerRef.current?.focus();
             }}
-            className="fixed inset-0 z-50 bg-[#e7f4ef] outline-none"
+            className="fixed inset-0 z-50 bg-surface-tint outline-none"
           >
             <DialogPrimitive.Title className="sr-only">Carte des annonces</DialogPrimitive.Title>
-            <div className="absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-between border-b border-[#132238]/10 bg-white/95 px-3 backdrop-blur">
+            <div className="absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-between border-b border-brand-navy/10 bg-white/95 px-3 backdrop-blur">
               <button
                 type="button"
                 onClick={() => updateSearch({ map: false })}
-                className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md border border-[#d6e0dc] bg-white px-3 text-sm font-bold text-[#132238] shadow-sm"
+                className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md border border-line-soft bg-white px-3 text-sm font-bold text-brand-navy shadow-sm"
               >
                 <X className="h-4 w-4" />
                 Liste
               </button>
-              <span className="text-sm font-bold text-[#3d4b57]">
+              <span className="text-sm font-bold text-ink-strong">
                 {mapSales.length.toLocaleString("fr-FR")} biens sur la carte
               </span>
             </div>

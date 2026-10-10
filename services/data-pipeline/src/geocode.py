@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -9,7 +10,7 @@ import httpx
 
 from src.config import load_settings
 from src.models import AuctionSale
-from src.normalize import clean_text, extract_department
+from src.normalize import clean_text, extract_department, strip_accents
 
 LOGGER = logging.getLogger(__name__)
 # ponytail: only departments with known historical false positives need bboxes.
@@ -21,6 +22,16 @@ DEPARTMENT_BOUNDS = {
     "64": (42.75, 43.65, -1.95, 0.15),
 }
 NEGATIVE_GEOCODE_CACHE_TTL = timedelta(days=14)
+# A house number or street match below this score is usually another street of the same name.
+ADDRESS_MIN_SCORE = 0.6
+ADDRESS_RESULT_TYPES = frozenset({"housenumber", "street"})
+RATE_LIMIT_BACKOFF_SECONDS = (1, 2, 4)
+GEO_PRECISION_BY_TYPE = {
+    "housenumber": "address",
+    "street": "street",
+    "locality": "street",
+    "municipality": "municipality",
+}
 
 
 @dataclass(frozen=True)
@@ -56,19 +67,30 @@ def geocode_sale(sale: AuctionSale) -> AuctionSale:
     if not settings["geocode_enabled"]:
         return sale
 
+    _fill_location_from_city(sale, settings)
     query = _build_query(sale)
     if not query:
         return sale
     if _has_recent_negative_geocode_cache(sale, query):
         return sale
 
+    api_url = str(settings["geocode_api_url"])
+    min_score = float(settings["geocode_min_score"])
     try:
-        result = geocode_address(
-            query=query,
-            api_url=str(settings["geocode_api_url"]),
-            min_score=float(settings["geocode_min_score"]),
-            postcode=sale.postal_code,
-        )
+        result = geocode_address(query=query, api_url=api_url, min_score=min_score, postcode=sale.postal_code)
+        if result is None and sale.city and (sale.latitude is None or sale.longitude is None):
+            # The address failed: a commune centroid is better than no point at all,
+            # as long as the sale keeps saying it is approximate.
+            result = geocode_address(
+                query=sale.city,
+                api_url=api_url,
+                min_score=min_score,
+                postcode=sale.postal_code,
+                result_type="municipality",
+            )
+            if result is not None and not _result_matches_department(result, sale):
+                _reject_outside_department(sale, query=query, result=result)
+                return sale
     except Exception as exc:
         LOGGER.warning("Geocoding failed for %s: %s", sale.source_url, exc)
         return sale
@@ -79,22 +101,31 @@ def geocode_sale(sale: AuctionSale) -> AuctionSale:
 
     department = sale.department or extract_department(sale.postal_code) or extract_department(result.postcode)
     if department and not _coordinates_in_department(result.latitude, result.longitude, department):
-        LOGGER.warning("Ignoring BAN result outside department for %s", sale.source_url)
-        if "geocode_outside_department" not in sale.quality_flags:
-            sale.quality_flags.append("geocode_outside_department")
-        _store_geocode_evidence(
-            sale,
-            query=query,
-            result=result,
-            accepted=False,
-            rejection_reason="outside_department",
-        )
+        _reject_outside_department(sale, query=query, result=result)
         return sale
 
     sale.latitude = result.latitude
     sale.longitude = result.longitude
+    precision = GEO_PRECISION_BY_TYPE.get(result.result_type or "")
+    if precision:
+        sale.raw_payload["geo_precision"] = precision
+    else:
+        sale.raw_payload.pop("geo_precision", None)
     _store_geocode_evidence(sale, query=query, result=result, accepted=True)
     return sale
+
+
+def _reject_outside_department(sale: AuctionSale, *, query: str, result: GeocodeResult) -> None:
+    LOGGER.warning("Ignoring BAN result outside department for %s", sale.source_url)
+    if "geocode_outside_department" not in sale.quality_flags:
+        sale.quality_flags.append("geocode_outside_department")
+    _store_geocode_evidence(
+        sale,
+        query=query,
+        result=result,
+        accepted=False,
+        rejection_reason="outside_department",
+    )
 
 
 def coordinates_are_verified(sale: AuctionSale) -> bool:
@@ -121,21 +152,54 @@ def geocode_address(
     api_url: str = "https://data.geopf.fr/geocodage/search/",
     min_score: float = 0.45,
     postcode: str | None = None,
+    result_type: str | None = None,
 ) -> GeocodeResult | None:
-    params: dict[str, str | int] = {"q": query, "limit": 1}
+    features = _fetch_features(api_url, query=query, postcode=postcode, result_type=result_type, limit=1)
+    return _result_from_feature(features[0], min_score) if features else None
+
+
+def search_municipalities(
+    city: str,
+    api_url: str = "https://data.geopf.fr/geocodage/search/",
+    min_score: float = 0.45,
+    limit: int = 5,
+) -> list[GeocodeResult]:
+    features = _fetch_features(api_url, query=city, postcode=None, result_type="municipality", limit=limit)
+    results = (_result_from_feature(feature, min_score) for feature in features)
+    return [result for result in results if result is not None]
+
+
+def _fetch_features(
+    api_url: str,
+    *,
+    query: str,
+    postcode: str | None,
+    result_type: str | None,
+    limit: int,
+) -> list[dict]:
+    params: dict[str, str | int] = {"q": query, "limit": limit}
     if postcode:
         params["postcode"] = postcode
+    if result_type:
+        params["type"] = result_type
     response = httpx.get(api_url, params=params, timeout=10)
+    for delay in RATE_LIMIT_BACKOFF_SECONDS:
+        if getattr(response, "status_code", None) != 429:
+            break
+        LOGGER.warning("BAN rate limit reached; retrying in %ss", delay)
+        time.sleep(delay)
+        response = httpx.get(api_url, params=params, timeout=10)
     response.raise_for_status()
-    payload = response.json()
-    features = payload.get("features") or []
-    if not features:
-        return None
+    return response.json().get("features") or []
 
-    feature = features[0]
+
+def _result_from_feature(feature: dict, min_score: float) -> GeocodeResult | None:
     properties = feature.get("properties") or {}
     score = float(properties.get("score") or 0)
     if score < min_score:
+        return None
+    result_type = clean_text(properties.get("type"))
+    if result_type in ADDRESS_RESULT_TYPES and score < ADDRESS_MIN_SCORE:
         return None
 
     coordinates = (feature.get("geometry") or {}).get("coordinates") or []
@@ -148,11 +212,68 @@ def geocode_address(
         longitude=Decimal(str(longitude)),
         score=score,
         label=clean_text(properties.get("label")),
-        result_type=clean_text(properties.get("type")),
+        result_type=result_type,
         city=clean_text(properties.get("city")),
         citycode=clean_text(properties.get("citycode")),
-        postcode=clean_text(properties.get("postcode")),
+        postcode=_single_postcode(properties.get("postcode")),
     )
+
+
+def _single_postcode(value: object) -> str | None:
+    """A commune with several postcodes has no single one to show."""
+    if isinstance(value, (list, tuple)):
+        codes = {code for item in value if (code := clean_text(item))}
+        return codes.pop() if len(codes) == 1 else None
+    return clean_text(value)
+
+
+def _fill_location_from_city(sale: AuctionSale, settings: dict) -> None:
+    """Recover department and postal code from the commune when the source gave neither."""
+    if sale.department or sale.postal_code or not sale.city:
+        return
+    try:
+        results = search_municipalities(
+            sale.city,
+            api_url=str(settings["geocode_api_url"]),
+            min_score=max(float(settings["geocode_min_score"]), ADDRESS_MIN_SCORE),
+        )
+    except Exception as exc:
+        LOGGER.warning("City lookup failed for %s: %s", sale.source_url, exc)
+        return
+    if not results:
+        return
+    best = results[0]
+    wanted = strip_accents(best.city or "").lower()
+    homonyms = [result for result in results if strip_accents(result.city or "").lower() == wanted]
+    departments = {_department_of_result(result) for result in homonyms}
+    if len(departments) != 1 or None in departments:
+        # Saint-Denis, Beaulieu… without a postal code there is no way to pick one.
+        LOGGER.info("Ambiguous commune %r for %s", sale.city, sale.source_url)
+        return
+    sale.department = departments.pop()
+    sale.postal_code = best.postcode
+    sale.raw_payload["location_inferred_from_city"] = {
+        "provider": best.provider,
+        "city": sale.city,
+        "citycode": best.citycode,
+        "department": sale.department,
+        "postal_code": best.postcode,
+    }
+
+
+def _department_of_result(result: GeocodeResult) -> str | None:
+    citycode = result.citycode or ""
+    if citycode[:2] in {"2A", "2B"}:
+        return citycode[:2]
+    if len(citycode) == 5 and citycode.isdigit():
+        return citycode[:3] if citycode[:2] in {"97", "98"} else citycode[:2]
+    return extract_department(result.postcode)
+
+
+def _result_matches_department(result: GeocodeResult, sale: AuctionSale) -> bool:
+    department = sale.department or extract_department(sale.postal_code)
+    found = _department_of_result(result)
+    return not department or not found or department == found
 
 
 def _build_query(sale: AuctionSale) -> str | None:

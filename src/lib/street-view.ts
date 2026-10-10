@@ -1,3 +1,4 @@
+import { clamp } from "@/lib/guards";
 export type StreetViewTarget = {
   lat?: number | null;
   lng?: number | null;
@@ -96,8 +97,4 @@ function formatLocation(lat: number, lng: number) {
 
 function formatCoordinate(value: number) {
   return value.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
 }

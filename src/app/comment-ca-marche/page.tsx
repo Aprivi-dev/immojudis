@@ -1,83 +1,119 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
+import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
+import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
+import Scale from "lucide-react/dist/esm/icons/scale.js";
+import Search from "lucide-react/dist/esm/icons/search.js";
+import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/comment-ca-marche" },
-  title: "Comment utiliser Immojudis",
+  title: "Comment ça marche : rechercher et préparer une vente",
   description:
-    "Rechercher une vente, comparer des biens, sauvegarder ses favoris et préparer une simulation.",
+    "Trouver une vente aux enchères, comprendre le bien, fixer son enchère plafond et se faire accompagner : les quatre étapes d’Immojudis.",
 };
 
-const steps = [
+const STEPS = [
   {
-    title: "Rechercher une vente",
-    text: "Dans le catalogue, saisissez une commune ou un département. Choisissez le type de vente, le prix maximum et les caractéristiques recherchées. La liste reste utilisable si la carte ne charge pas. Une donnée absente ne signifie pas que le bien ne présente aucun risque.",
-    href: "/sales",
-    label: "Ouvrir le catalogue",
+    icon: Search,
+    title: "Trouver une vente",
+    text: "Cherchez par ville, département ou région, puis filtrez par type de vente (tribunal, notaire, domaine), budget et surface. Créez une alerte : un email récapitulatif vous signale les nouvelles ventes qui vous correspondent.",
+    links: [{ href: "/sales", label: "Ouvrir le catalogue" }],
   },
   {
-    title: "Comparer jusqu’à trois biens",
-    text: "Cochez Comparer sur les cartes, puis ouvrez le tableau. Comparez les dates, mises à prix et surfaces de même nature. La sélection temporaire disparaît au rechargement. Avec un compte gratuit, enregistrez une comparaison et retrouvez-la dans Mes comparaisons.",
-    href: "/sales",
-    label: "Choisir les biens à comparer",
+    icon: FileSearch,
+    title: "Comprendre le bien",
+    text: "La fiche réunit les photos, la procédure, les pièces du dossier, l’occupation, les risques de la commune et des ventes comparables. Comparez jusqu’à trois biens côte à côte pour repérer le bon dossier.",
+    links: [{ href: "/annonce-exemple", label: "Voir une fiche exemple" }],
   },
   {
-    title: "Retrouver les ventes suivies",
-    text: "Le cœur ajoute une vente à vos favoris. Le compte gratuit permet d’en conserver trois, accessibles sur vos appareils. Retirez une vente pour libérer une place. Les favoris seuls n’envoient pas de notification automatique.",
-    href: "/favoris",
-    label: "Ouvrir mes favoris",
+    icon: BadgeEuro,
+    title: "Fixer son enchère plafond",
+    text: "Le simulateur chiffre votre enchère plafond : valeur estimée, frais, travaux et marge de sécurité, que vous ajustez selon votre projet. Fixez la limite avant l’audience, puis tenez-vous-y.",
+    links: [
+      { href: "/annonce-exemple", label: "Essayer le simulateur" },
+      { href: "/offres", label: "Voir les offres" },
+    ],
   },
   {
-    title: "Tester l’analyse et les scénarios",
-    text: "Ouvrez l’annonce exemple pour essayer le simulateur sans compte. Modifiez les travaux, frais et objectifs, puis comparez les résultats. Une sauvegarde du simulateur est locale au navigateur : elle ne se synchronise pas sur vos autres appareils. Reprendre une sauvegarde recalcule avec les données actuelles.",
-    href: "/annonce-exemple",
-    label: "Essayer le simulateur",
+    icon: Scale,
+    title: "Se faire accompagner",
+    text: "Pour une vente au tribunal, un avocat du barreau compétent porte vos enchères. L’annuaire gratuit vous aide à le trouver ; nos guides expliquent chaque type de vente et chaque étape.",
+    links: [
+      { href: "/avocats", label: "Trouver un avocat" },
+      { href: "/ressources", label: "Lire les guides" },
+    ],
   },
-  {
-    title: "Passer au dossier réel",
-    text: "Le plan Analyse ouvre les modules disponibles sur les fiches réelles. Pour les ventes au tribunal, le PDF reprend votre scénario d’achat et de travaux ainsi que vos hypothèses locatives, le coût complet et la mensualité calculée. L’apport, le taux et la durée du financement ne sont pas encore détaillés séparément dans le PDF. Vérifiez les données et documents disponibles avant de décider ; aucune estimation ne garantit le résultat de la vente.",
-    href: "/accompagnement",
-    label: "Consulter les accès et tarifs",
-  },
-  {
-    title: "Préparer la suite",
-    text: "Consultez les ressources propres au type de vente et l’annuaire d’avocats. La présence d’un professionnel dans l’annuaire ne confirme ni sa disponibilité ni l’acceptation de votre dossier. Contactez-le pour vérifier ces points.",
-    href: "/avocats",
-    label: "Consulter l’annuaire",
-  },
-];
+] as const;
 
 export default function Page() {
   return (
-    <main className="mx-auto max-w-4xl px-4 pb-20 pt-28">
-      <h1 className="text-4xl font-bold">Comment utiliser Immojudis</h1>
-      <p className="mt-4 text-muted-foreground">
-        Un parcours concret, du catalogue à la préparation de votre dossier.
-      </p>
-      <ol className="mt-10 space-y-6">
-        {steps.map((step, index) => (
-          <li key={step.href + index} className="rounded-xl border p-6">
-            <h2 className="text-xl font-bold">
-              {index + 1}. {step.title}
-            </h2>
-            <p className="mt-3 leading-relaxed">{step.text}</p>
-            <Link href={step.href} className="mt-4 inline-block font-semibold underline">
-              {step.label}
-            </Link>
+    <PageShell
+      eyebrow="Comment ça marche"
+      title="De la recherche à l’enchère, en quatre étapes"
+      description="Immojudis rassemble les ventes immobilières aux enchères, les explique et vous aide à préparer votre limite."
+      width="narrow"
+    >
+      <ol className="grid gap-5">
+        {STEPS.map((step, index) => (
+          <li key={step.title}>
+            <Card className="flex gap-4 sm:gap-6">
+              <div className="flex flex-col items-center gap-2">
+                <span
+                  aria-hidden
+                  className="grid size-14 place-items-center rounded-full bg-gold/10 text-gold-text sm:size-16"
+                >
+                  <step.icon className="size-7 sm:size-8" />
+                </span>
+                <span className="font-display text-lg font-semibold text-gold-text" aria-hidden>
+                  {index + 1}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-display text-2xl font-semibold">
+                  <span className="sr-only">Étape {index + 1} : </span>
+                  {step.title}
+                </h2>
+                <p className="mt-2 leading-relaxed text-ink-soft">{step.text}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {step.links.map((link, linkIndex) => (
+                    <Link
+                      key={link.href + link.label}
+                      href={link.href}
+                      className={buttonClasses({
+                        variant: linkIndex === 0 ? "primary" : "secondary",
+                        size: "sm",
+                      })}
+                    >
+                      {link.label}
+                      {linkIndex === 0 ? <ArrowRight className="size-4" aria-hidden /> : null}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </Card>
           </li>
         ))}
       </ol>
-      <section className="mt-10 rounded-xl border p-6">
-        <h2 className="text-xl font-bold">Une page vide ou une information manquante ?</h2>
-        <p className="mt-3">
-          Réinitialisez les filtres puis réessayez. La couverture n’est pas exhaustive : aucun
-          résultat ne prouve l’absence de vente dans votre secteur. Les modules sans données
-          suffisantes restent indisponibles.
+
+      <Card as="section" className="mt-8 bg-surface-muted" aria-labelledby="couverture">
+        <h2 id="couverture" className="font-display text-2xl font-semibold">
+          Couverture et limites
+        </h2>
+        <p className="mt-2 text-ink-soft">
+          Le catalogue couvre la France entière, mais la couverture varie selon les sources : un
+          secteur sans résultat ne prouve pas qu’aucune vente n’y est prévue. Les données et les
+          estimations sont des aides à la décision à vérifier dans les pièces officielles ; aucune
+          estimation ne garantit le résultat d’une vente.
         </p>
-        <Link href="/contact" className="mt-4 inline-block underline">
-          Signaler un problème
+        <Link
+          href="/contact"
+          className="mt-3 inline-flex min-h-11 items-center font-semibold text-gold-text underline"
+        >
+          Signaler une information manquante
         </Link>
-      </section>
-    </main>
+      </Card>
+    </PageShell>
   );
 }

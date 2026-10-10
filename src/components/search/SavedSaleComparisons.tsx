@@ -22,6 +22,8 @@ import {
   readSaleComparisonSnapshot,
   type ComparedSale,
 } from "@/lib/search/sale-comparison";
+import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export function SavedSaleComparisons({
   items,
@@ -36,15 +38,15 @@ export function SavedSaleComparisons({
 }) {
   if (!userId) {
     return (
-      <div className="rounded-lg border border-[#d6e3e8] bg-white p-3">
-        <p className="font-bold text-[#132238]">Retrouver cette comparaison plus tard</p>
-        <p className="mt-1 text-[#526170]">
+      <div className="rounded-lg border border-line-soft bg-white p-3">
+        <p className="font-bold text-brand-navy">Retrouver cette comparaison plus tard</p>
+        <p className="mt-1 text-ink-soft">
           Créez un compte gratuit pour enregistrer une comparaison de trois biens et la partager.
         </p>
         <Link
           to="/login"
           search={{ redirect: localRedirect(returnTo) }}
-          className="mt-2 inline-flex min-h-11 items-center rounded-md bg-[#0f766e] px-3 font-bold text-white"
+          className="mt-2 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-3 font-bold text-white"
         >
           Se connecter ou créer un compte
         </Link>
@@ -74,7 +76,7 @@ function AuthenticatedSavedSaleComparisons({
   const queryClient = useQueryClient();
   const [name, setName] = useState("Ma comparaison");
   const [shareLink, setShareLink] = useState<{ setId: string; url: string } | null>(null);
-  const queryKey = ["sale-analysis-sets", userId] as const;
+  const queryKey = queryKeys.saleAnalysisSets(userId);
   const setsQuery = useQuery({
     queryKey,
     queryFn: () => fetchSaleAnalysisSets(),
@@ -107,8 +109,7 @@ function AuthenticatedSavedSaleComparisons({
       setName(response.set.name);
       toast.success(existingSingleSet ? "Comparaison remplacée." : "Comparaison enregistrée.");
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Enregistrement impossible"),
+    onError: (error) => toast.error(userMessage(error, "Enregistrement impossible")),
   });
 
   const deleteMutation = useMutation({
@@ -121,8 +122,7 @@ function AuthenticatedSavedSaleComparisons({
       setName("Ma comparaison");
       toast.success("Comparaison supprimée.");
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Suppression impossible"),
+    onError: (error) => toast.error(userMessage(error, "Suppression impossible")),
   });
 
   const shareMutation = useMutation({
@@ -139,7 +139,7 @@ function AuthenticatedSavedSaleComparisons({
         }
       }
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : "Partage impossible"),
+    onError: (error) => toast.error(userMessage(error, "Partage impossible")),
   });
 
   const unshareMutation = useMutation({
@@ -149,15 +149,14 @@ function AuthenticatedSavedSaleComparisons({
       updateSharing(queryClient, queryKey, setId, share);
       toast.success("Lien de partage désactivé.");
     },
-    onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Désactivation impossible"),
+    onError: (error) => toast.error(userMessage(error, "Désactivation impossible")),
   });
 
   const saveName = existingSingleSet?.name ?? name.trim();
   const canSave = items.length > 0 && saveName.length >= 2;
 
   return (
-    <div className="rounded-lg border border-[#d6e3e8] bg-white p-3 text-[#132238]">
+    <div className="rounded-lg border border-line-soft bg-white p-3 text-brand-navy">
       <div className="flex flex-wrap items-end gap-2">
         <label className="min-w-[14rem] flex-1 text-xs font-bold">
           Nom de la comparaison
@@ -166,14 +165,14 @@ function AuthenticatedSavedSaleComparisons({
             onChange={(event) => setName(event.target.value.slice(0, 140))}
             disabled={Boolean(existingSingleSet)}
             maxLength={140}
-            className="mt-1 min-h-11 w-full rounded-md border border-[#b8c9d1] bg-white px-3 font-normal outline-none focus:border-[#0f766e] focus:ring-2 focus:ring-[#0f766e]/20 disabled:bg-[#f4f7f9]"
+            className="mt-1 min-h-11 w-full rounded-md border border-line bg-white px-3 font-normal outline-none focus:border-brand-navy focus:ring-2 focus:ring-gold/20 disabled:bg-surface-muted"
           />
         </label>
         <button
           type="button"
           onClick={() => saveMutation.mutate()}
           disabled={!canSave || saveMutation.isPending || setsQuery.isLoading}
-          className="min-h-11 rounded-md bg-[#0f766e] px-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-11 rounded-md bg-brand-navy px-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saveMutation.isPending
             ? "Enregistrement…"
@@ -182,7 +181,7 @@ function AuthenticatedSavedSaleComparisons({
               : "Enregistrer"}
         </button>
       </div>
-      <p className="mt-1 text-[11px] text-[#526170]">
+      <p className="mt-1 text-[11px] text-ink-soft">
         {setsQuery.data?.limit == null
           ? "Comparaisons enregistrées sans limite fixe."
           : `${savedSets.length}/${setsQuery.data?.limit ?? 1} comparaison enregistrée · ${setsQuery.data?.itemLimit ?? 3} biens maximum.`}
@@ -190,9 +189,7 @@ function AuthenticatedSavedSaleComparisons({
 
       {setsQuery.isError ? (
         <p role="alert" className="mt-2 text-xs font-semibold text-red-700">
-          {setsQuery.error instanceof Error
-            ? setsQuery.error.message
-            : "Chargement des sauvegardes impossible."}
+          {userMessage(setsQuery.error, "Chargement des sauvegardes impossible.")}
         </p>
       ) : null}
 
@@ -203,7 +200,7 @@ function AuthenticatedSavedSaleComparisons({
             readOnly
             value={shareLink.url}
             onFocus={(event) => event.currentTarget.select()}
-            className="mt-1 min-h-11 w-full rounded-md border border-[#b8c9d1] px-3 font-normal"
+            className="mt-1 min-h-11 w-full rounded-md border border-line px-3 font-normal"
           />
         </label>
       ) : null}
@@ -244,7 +241,7 @@ function AuthenticatedSavedSaleComparisons({
           ))}
         </ul>
       ) : setsQuery.isLoading ? (
-        <p className="mt-3 text-xs text-[#526170]">Chargement de vos comparaisons…</p>
+        <p className="mt-3 text-xs text-ink-soft">Chargement de vos comparaisons…</p>
       ) : null}
     </div>
   );
@@ -266,10 +263,10 @@ function SavedComparisonRow({
   onDelete: () => void;
 }) {
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-[#f4faf8] px-3 py-2">
+    <li className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-surface-tint px-3 py-2">
       <div>
         <p className="font-bold">{set.name}</p>
-        <p className="text-[11px] text-[#526170]">
+        <p className="text-[11px] text-ink-soft">
           {readSaleComparisonSnapshot(set.summary_snapshot).length} bien(s) · mise à jour le{" "}
           {formatDate(set.updated_at)}
           {set.sharing.enabled ? ` · lien actif jusqu’au ${formatDate(set.sharing.expiresAt)}` : ""}
@@ -311,7 +308,7 @@ function SmallButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`min-h-11 rounded-md px-2 text-xs font-bold disabled:opacity-50 ${tone === "danger" ? "text-red-700" : "text-[#0f766e]"}`}
+      className={`min-h-11 rounded-md px-2 text-xs font-bold disabled:opacity-50 ${tone === "danger" ? "text-red-700" : "text-brand-navy"}`}
     >
       {children}
     </button>

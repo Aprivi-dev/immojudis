@@ -26,7 +26,7 @@ export function FiltersLoadingFallback() {
         aria-modal="true"
         aria-labelledby="filters-loading-title"
         tabIndex={-1}
-        className="fixed inset-0 z-50 bg-[#132238]/55 backdrop-blur-sm outline-none"
+        className="fixed inset-0 z-50 bg-brand-navy/55 backdrop-blur-sm outline-none"
       >
         <div className="absolute inset-y-0 right-0 grid w-full max-w-3xl place-items-center bg-white px-6 shadow-xl">
           <h2 id="filters-loading-title" className="sr-only">
@@ -36,7 +36,7 @@ export function FiltersLoadingFallback() {
             role="status"
             aria-live="polite"
             aria-label="Chargement des filtres avancés…"
-            className="text-sm font-bold text-[#132238]"
+            className="text-sm font-bold text-brand-navy"
           >
             Chargement des filtres avancés…
           </p>

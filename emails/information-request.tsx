@@ -12,13 +12,8 @@ import {
   Text,
   render,
 } from "react-email";
-import {
-  buildInformationAgentAccountUrl,
-  INFORMATION_AGENT_ACCOUNT_INVITATION_CTA,
-  INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION,
-  INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW,
-  INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING,
-} from "../src/lib/information-agent-email-template";
+import { containsInformationAgentAccountInvitation } from "../src/lib/information-agent-email-template";
+import type { InformationAgentLegalFooter } from "../src/lib/information-agent-compliance";
 
 export type InformationRequestEmailProps = {
   subject: string;
@@ -26,17 +21,17 @@ export type InformationRequestEmailProps = {
   replyTo: string;
   caseReference: string;
   appUrl?: string;
-  accountUrl?: string;
   contributionUrl?: string;
+  /** GDPR art. 14 information and one-click objection link, mandatory for real sends. */
+  legalFooter?: InformationAgentLegalFooter;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v4";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v5";
 
 type BodyBlock =
   | { kind: "paragraph"; lines: string[] }
   | { kind: "questions"; lines: string[] }
-  | { kind: "sale"; lines: string[] }
-  | { kind: "account"; lines: string[] };
+  | { kind: "sale"; lines: string[] };
 
 const BRAND = {
   ink: "#172036",
@@ -54,20 +49,11 @@ export function InformationRequestEmail({
   replyTo,
   caseReference,
   appUrl = "https://immojudis.com",
-  accountUrl,
   contributionUrl,
+  legalFooter,
 }: InformationRequestEmailProps) {
   const blocks = parseBodyBlocks(bodyText);
   const replyHref = `mailto:${replyTo}`;
-  const professionalSignupUrl = buildInformationAgentAccountUrl({ appUrl, accountUrl });
-  const hasAccountInvitation = blocks.some(
-    (block) =>
-      block.kind === "account" &&
-      block.lines.includes(
-        `${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} : ${professionalSignupUrl}`,
-      ),
-  );
-
   return (
     <Html lang="fr">
       <Head />
@@ -90,11 +76,7 @@ export function InformationRequestEmail({
             <Hr style={styles.hr} />
 
             {blocks.map((block, blockIndex) => (
-              <BodyBlockView
-                key={`${block.kind}-${blockIndex}`}
-                block={block}
-                accountUrl={professionalSignupUrl}
-              />
+              <BodyBlockView key={`${block.kind}-${blockIndex}`} block={block} />
             ))}
             {contributionUrl ? (
               <Section style={styles.salePanel}>
@@ -110,13 +92,10 @@ export function InformationRequestEmail({
                 </Text>
               </Section>
             ) : null}
-            {!hasAccountInvitation ? (
-              <AccountInvitationPanel accountUrl={professionalSignupUrl} />
-            ) : null}
           </Section>
 
           <Section style={styles.footer}>
-            <Text style={styles.footerBrand}>ImmoJudis</Text>
+            <Text style={styles.footerBrand}>Immojudis</Text>
             <Text style={styles.footerText}>
               Service indépendant d’aide à l’analyse des ventes immobilières judiciaires
             </Text>
@@ -129,14 +108,14 @@ export function InformationRequestEmail({
             <Text style={styles.footerText}>
               Adresse de réponse : <Link href={replyHref}>{replyTo}</Link>
             </Text>
+            {legalFooter ? <LegalFooter footer={legalFooter} /> : null}
             <Text style={styles.footerLegal}>
-              ImmoJudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses
+              Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses
               ; notre équipe vérifie les informations avant toute mise à jour de la fiche.
               <br />
               Merci de ne transmettre que des pièces que vous êtes autorisé à partager.
               <br />
-              Si vous ne souhaitez plus être contacté par ImmoJudis, indiquez-le simplement en
-              réponse.
+              Vous pouvez aussi vous opposer à tout contact en répondant simplement à ce message.
             </Text>
           </Section>
         </Container>
@@ -159,11 +138,7 @@ export async function renderInformationRequestEmail(
   };
 }
 
-function BodyBlockView({ block, accountUrl }: { block: BodyBlock; accountUrl: string }) {
-  if (block.kind === "account") {
-    return <AccountInvitationPanel accountUrl={accountUrl} />;
-  }
-
+function BodyBlockView({ block }: { block: BodyBlock }) {
   if (block.kind === "questions") {
     return (
       <Section style={styles.questionsPanel}>
@@ -208,51 +183,65 @@ function BodyBlockView({ block, accountUrl }: { block: BodyBlock; accountUrl: st
 }
 
 function parseBodyBlocks(bodyText: string): BodyBlock[] {
-  return bodyText
-    .replace(/\r\n?/g, "\n")
-    .split(/\n\s*\n/)
-    .map((block) =>
-      block
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean),
-    )
-    .filter((lines) => lines.length > 0)
-    .map((lines) => {
-      if (
-        lines[0] === INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW &&
-        lines[1] === INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING &&
-        lines[2] === INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION &&
-        lines[3]?.startsWith(`${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} : `)
-      ) {
-        return { kind: "account" as const, lines };
-      }
-      if (lines.every((line) => /^[-•]\s+/.test(line))) {
-        return { kind: "questions" as const, lines };
-      }
-      if (
-        lines.every((line) =>
-          /^(Référence|Audience annoncée|Date annoncée|Mise à prix annoncée)\s*:/i.test(line),
-        )
-      ) {
-        return { kind: "sale" as const, lines };
-      }
-      return { kind: "paragraph" as const, lines };
-    });
+  return (
+    bodyText
+      .replace(/\r\n?/g, "\n")
+      .split(/\n\s*\n/)
+      .map((block) =>
+        block
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+      )
+      .filter((lines) => lines.length > 0)
+      // Defence in depth: a legacy prospecting block is dropped even if it reached the body.
+      .filter((lines) => !containsInformationAgentAccountInvitation(lines.join("\n")))
+      .map((lines) => {
+        if (lines.every((line) => /^[-•]\s+/.test(line))) {
+          return { kind: "questions" as const, lines };
+        }
+        if (
+          lines.every((line) =>
+            /^(Référence|Audience annoncée|Date annoncée|Mise à prix annoncée)\s*:/i.test(line),
+          )
+        ) {
+          return { kind: "sale" as const, lines };
+        }
+        return { kind: "paragraph" as const, lines };
+      })
+  );
 }
 
-function AccountInvitationPanel({ accountUrl }: { accountUrl: string }) {
+function LegalFooter({ footer }: { footer: InformationAgentLegalFooter }) {
   return (
-    <Section style={styles.professionalPanel}>
-      <Text style={styles.professionalEyebrow}>{INFORMATION_AGENT_ACCOUNT_INVITATION_EYEBROW}</Text>
-      <Text style={styles.professionalHeading}>{INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING}</Text>
-      <Text style={styles.paragraph}>{INFORMATION_AGENT_ACCOUNT_INVITATION_DESCRIPTION}</Text>
-      <Text style={styles.professionalCta}>
-        <Link href={accountUrl} style={styles.professionalLink}>
-          {INFORMATION_AGENT_ACCOUNT_INVITATION_CTA}
+    <>
+      <Text style={styles.footerLegal}>
+        <strong>Responsable de traitement :</strong> {footer.controllerName},{" "}
+        {footer.controllerAddress}
+        {footer.contactEmail ? (
+          <>
+            {" — "}
+            <Link href={`mailto:${footer.contactEmail}`}>{footer.contactEmail}</Link>
+          </>
+        ) : null}
+        .
+        <br />
+        {footer.addressOrigin}
+        <br />
+        Finalité et base légale : vous demander des informations sur cette vente, dans notre intérêt
+        légitime à fiabiliser l’annonce. Aucune autre sollicitation ne vous sera adressée pour ce
+        motif pendant 30 jours.
+      </Text>
+      <Text style={styles.footerLegal}>
+        <Link href={footer.privacyUrl} style={styles.footerLink}>
+          Politique de confidentialité et vos droits
+        </Link>
+        {" · "}
+        <Link href={footer.optOutUrl} style={styles.footerLink}>
+          Ne plus être contacté (un clic)
         </Link>
       </Text>
-    </Section>
+    </>
   );
 }
 
@@ -328,30 +317,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderLeft: `3px solid ${BRAND.gold}`,
     backgroundColor: "#FCFBF8",
   },
-  professionalPanel: {
-    margin: "6px 0 4px",
-    padding: "14px 14px 4px",
-    backgroundColor: BRAND.goldSoft,
-    border: "1px solid #D9C08D",
-    borderRadius: "10px",
-  },
-  professionalEyebrow: {
-    margin: "0 0 5px",
-    color: BRAND.gold,
-    fontSize: "10px",
-    fontWeight: 700,
-    letterSpacing: "0.1em",
-  },
-  professionalHeading: {
-    margin: "0 0 6px",
-    color: BRAND.ink,
-    fontFamily: "Georgia, 'Times New Roman', serif",
-    fontSize: "18px",
-    lineHeight: "23px",
-    fontWeight: 600,
-  },
-  professionalCta: { margin: "0 0 10px", fontSize: "14px", lineHeight: "20px" },
-  professionalLink: { color: BRAND.ink, fontWeight: 700, textDecoration: "underline" },
   questionItem: { margin: "7px 0", color: "#303A50", fontSize: "14px", lineHeight: "20px" },
   footer: {
     padding: "18px 28px 22px",

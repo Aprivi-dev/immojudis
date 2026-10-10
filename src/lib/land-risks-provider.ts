@@ -13,7 +13,8 @@ import type {
 /**
  * The official API is deliberately called from this server-side adapter only.
  * Keep the token out of URLs and out of the serialised report.
- */
+ */ import { asRecordOrNull } from "@/lib/guards";
+
 export const GEORISQUES_BASE_URL = "https://www.georisques.gouv.fr";
 export const GEORISQUES_OPENAPI_VERSION = "1.12.2";
 export const GEORISQUES_V1_QUOTAS = {
@@ -607,7 +608,7 @@ async function readBoundedResponseText(
 
 function responseMessage(body: string): string | null {
   try {
-    const record = asRecord(JSON.parse(body) as unknown);
+    const record = asRecordOrNull(JSON.parse(body) as unknown);
     return text(record, ["message", "error"]);
   } catch {
     return null;
@@ -1051,7 +1052,9 @@ function parsePprn(payload: unknown): RawFinding[] {
       "zonageReglementaire",
     ]);
     const category = categoryFromText(textValue);
-    const zone = asRecord(recordValue(record, ["zonageReglementaire", "zonage_reglementaire"]));
+    const zone = asRecordOrNull(
+      recordValue(record, ["zonageReglementaire", "zonage_reglementaire"]),
+    );
     const zoneExists = Boolean(recordValue(zone, ["zoneRegExists", "zoneReglementaire", "exists"]));
     return {
       category,
@@ -1162,7 +1165,7 @@ function parseSeismic(payload: unknown): RawFinding[] {
 
 function parseSsp(payload: unknown): RawFinding[] {
   const result: RawFinding[] = [];
-  const root = asRecord(payload);
+  const root = asRecordOrNull(payload);
   const nestedKeys = [
     ["casias", "CASIAS"],
     ["instructions", "Instruction"],
@@ -1298,13 +1301,17 @@ function parseNuclear(payload: unknown): RawFinding[] {
 
 function records(value: unknown, directKeys: string[] = []): Record<string, unknown>[] {
   if (Array.isArray(value))
-    return value.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item));
-  const record = asRecord(value);
+    return value
+      .map(asRecordOrNull)
+      .filter((item): item is Record<string, unknown> => Boolean(item));
+  const record = asRecordOrNull(value);
   if (!record) return [];
   for (const key of ["content", "results", "data"]) {
     const list = record[key];
     if (Array.isArray(list))
-      return list.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item));
+      return list
+        .map(asRecordOrNull)
+        .filter((item): item is Record<string, unknown> => Boolean(item));
   }
   if (directKeys.some((key) => key in record)) return [record];
   return [];
@@ -1322,7 +1329,7 @@ function matchesRequestedCommune(
 function payloadHasNoRecords(value: unknown): boolean {
   if (value === null || value === undefined) return true;
   if (Array.isArray(value)) return value.length === 0;
-  const record = asRecord(value);
+  const record = asRecordOrNull(value);
   if (!record) return true;
   const pagedLists = ["content", "results", "data"].map((key) => record[key]).filter(Array.isArray);
   if (pagedLists.length > 0) return pagedLists.every((list) => list.length === 0);
@@ -1346,7 +1353,7 @@ function payloadHasNoRecords(value: unknown): boolean {
     "conclusionsSup",
   ]
     .map((key) => record[key])
-    .filter((item): item is Record<string, unknown> => Boolean(asRecord(item)));
+    .filter((item): item is Record<string, unknown> => Boolean(asRecordOrNull(item)));
   if (nestedValues.length > 0) return nestedValues.every((item) => payloadHasNoRecords(item));
   return Object.keys(record).length === 0;
 }
@@ -1356,17 +1363,13 @@ function values(record: Record<string, unknown> | null, keys: string[]): Record<
   for (const key of keys) {
     const value = record[key];
     if (Array.isArray(value))
-      return value.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item));
-    const nested = asRecord(value);
+      return value
+        .map(asRecordOrNull)
+        .filter((item): item is Record<string, unknown> => Boolean(item));
+    const nested = asRecordOrNull(value);
     if (nested) return [nested];
   }
   return [];
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }
 
 function recordValue(record: Record<string, unknown> | null, keys: string[]): unknown {
@@ -1393,7 +1396,7 @@ function formatUnknown(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (Array.isArray(value)) return value.map(formatUnknown).filter(Boolean).join(" ");
-  const record = asRecord(value);
+  const record = asRecordOrNull(value);
   return record ? Object.values(record).map(formatUnknown).filter(Boolean).join(" ") : "";
 }
 

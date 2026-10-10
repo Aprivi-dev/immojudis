@@ -1,0 +1,4 @@
+name: Immojudis CodeQL
+# Third-party pages captured as audit evidence are data, not code we ship.
+paths-ignore:
+  - docs/audits/**

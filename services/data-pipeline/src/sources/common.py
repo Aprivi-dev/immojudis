@@ -7,6 +7,7 @@ import signal
 import ssl
 import threading
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -246,42 +247,53 @@ class ScrapeResult:
 @dataclass
 class RobotsRules:
     rules: tuple[tuple[str, str], ...] = ()
+    # Seconds requested by "Crawl-delay" for our user agent; None when absent.
+    crawl_delay: float | None = None
 
     @classmethod
     def parse(cls, text: str, user_agent: str) -> RobotsRules:
-        groups: list[tuple[list[str], list[tuple[str, str]]]] = []
+        groups: list[tuple[list[str], list[tuple[str, str]], float | None]] = []
         agents: list[str] = []
         rules: list[tuple[str, str]] = []
+        delay: float | None = None
         for raw_line in text.splitlines():
             line = raw_line.split("#", 1)[0].strip()
             if not line:
                 if agents or rules:
-                    groups.append((agents, rules))
-                    agents, rules = [], []
+                    groups.append((agents, rules, delay))
+                    agents, rules, delay = [], [], None
                 continue
             if ":" not in line:
                 continue
             key, value = [part.strip() for part in line.split(":", 1)]
             key = key.lower()
             if key == "user-agent":
-                if rules:
-                    groups.append((agents, rules))
-                    agents, rules = [], []
+                if rules or delay is not None:
+                    groups.append((agents, rules, delay))
+                    agents, rules, delay = [], [], None
                 agents.append(value.lower())
             elif key in {"allow", "disallow"} and agents:
                 rules.append((key, value))
+            elif key == "crawl-delay" and agents:
+                try:
+                    parsed_delay = float(value)
+                except ValueError:
+                    continue
+                if math.isfinite(parsed_delay) and parsed_delay >= 0:
+                    delay = parsed_delay
         if agents or rules:
-            groups.append((agents, rules))
+            groups.append((agents, rules, delay))
 
         ua = user_agent.lower()
         selected: list[tuple[str, str]] = []
-        for group_agents, group_rules in groups:
+        selected_delay: float | None = None
+        for group_agents, group_rules, group_delay in groups:
             if any(agent != "*" and agent in ua for agent in group_agents):
-                selected = group_rules
+                selected, selected_delay = group_rules, group_delay
                 break
-            if not selected and "*" in group_agents:
-                selected = group_rules
-        return cls(tuple(selected))
+            if not selected and selected_delay is None and "*" in group_agents:
+                selected, selected_delay = group_rules, group_delay
+        return cls(tuple(selected), selected_delay)
 
     def can_fetch(self, url: str) -> bool:
         parsed = urlparse(url)
@@ -548,6 +560,17 @@ class PoliteHttpClient:
             self._robots_by_origin[self._last_robots_origin] = rules
         return rules
 
+    def _request_delay(self, url: str) -> float:
+        """Our configured cadence, raised to the origin's published Crawl-delay."""
+        try:
+            crawl_delay = self._robots_for_url(url).crawl_delay
+        except SourceTaskDeadlineExceeded:
+            raise
+        except Exception:
+            # An unverifiable policy is reported by _guard before any request.
+            return self.delay_seconds
+        return max(self.delay_seconds, crawl_delay or 0.0)
+
     def get(self, url: str) -> str:
         self._guard(url)
         response = self._request("GET", url)
@@ -578,10 +601,11 @@ class PoliteHttpClient:
             raise RuntimeError(f"Source deferred until {self._retry_not_before}")
         if self._access_denials >= 2:
             raise RuntimeError("Source suspended after repeated access refusals")
+        delay_seconds = self._request_delay(url)
         elapsed = time.monotonic() - self._last_request_at
-        if elapsed < self.delay_seconds:
+        if elapsed < delay_seconds:
             _source_task_sleep(
-                self.delay_seconds - elapsed,
+                delay_seconds - elapsed,
                 "waiting for source request cadence",
             )
         ensure_source_task_deadline("starting source request")
@@ -683,7 +707,7 @@ class PoliteHttpClient:
 
 
 def listing_signature(sale: dict[str, Any]) -> str | None:
-    """Change-signature of a scraped list item (date + price).
+    """Change-signature of a scraped list item (date + price + interrupted status).
 
     Both values must be present on the current list card before a known detail
     page can be skipped.  A partial signature can match a database row whose
@@ -697,7 +721,32 @@ def listing_signature(sale: dict[str, Any]) -> str | None:
     if sale_date is None or price is None:
         return None
     date_part = sale_date.date().isoformat() if sale_date else None
-    return make_sale_signature(date_part, price)
+    return make_sale_signature(date_part, price, _card_interrupted_status(sale))
+
+
+_CARD_STATUS_KEYS = ("status", "statut", "badge", "status_label")
+_CARD_BADGE_TEXT = re.compile(r"\b(annul[ée]e?s?|report[ée]e?s?|retir[ée]e?s?)\b", re.I)
+_CARD_SENTENCE = re.compile(r"\bvente\s+(?:est\s+)?(annul[ée]e?|report[ée]e?|retir[ée]e?)\b", re.I)
+
+
+def _card_interrupted_status(sale: dict[str, Any]) -> str | None:
+    """The cancelled/postponed/withdrawn state a list card shows, if any."""
+    from src.normalize import INTERRUPTED_SALE_STATUSES, normalize_status
+
+    for key in _CARD_STATUS_KEYS:
+        value = sale.get(key)
+        # A badge such as « Vente annulée » is short; a long text is not one.
+        if not isinstance(value, str) or len(value) > 60:
+            continue
+        match = _CARD_BADGE_TEXT.search(value)
+        status = normalize_status(match.group(1) if match else value)
+        if status in INTERRUPTED_SALE_STATUSES:
+            return status
+    sentence = _CARD_SENTENCE.search(str(sale.get("raw_text") or ""))
+    if sentence:
+        status = normalize_status(sentence.group(1))
+        return status if status in INTERRUPTED_SALE_STATUSES else None
+    return None
 
 
 def should_fetch_detail(sale: dict[str, Any], known: dict[str, str] | None) -> bool:
@@ -730,6 +779,77 @@ def unique_dicts(items: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
         seen.add(marker)
         unique.append(item)
     return unique
+
+
+SURFACE_UNIT = r"m(?:2|²)"
+
+
+def normalize_surface_number(value: object) -> str | None:
+    """Canonical decimal string for a French surface: « 1 234,5 » and « 1.234,5 » give « 1234.5 »."""
+    from src.normalize import clean_text
+
+    text = clean_text(value)
+    if not text:
+        return None
+    text = text.replace(" ", "")
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
+        text = text.replace(".", "")
+    try:
+        float(text)
+    except ValueError:
+        return None
+    return text
+
+
+def extract_surface(
+    *values: object,
+    number: str | None = None,
+    unit: str = SURFACE_UNIT,
+    labelled: tuple[str, ...] = (),
+    exclude: Callable[[str, int, int], bool] | None = None,
+) -> str | None:
+    """First surface in square metres found in the texts, as a canonical decimal string.
+
+    ``labelled`` patterns (number in group 1) are tried first, over every text.
+    ``exclude(text, start, end)`` marks matches to ignore (e.g. cadastral parcels)
+    unless nothing else was found.
+    """
+    from src.normalize import SURFACE_VALUE_PATTERN
+
+    texts = [str(value) for value in values if value]
+    for pattern in labelled:
+        for text in texts:
+            if match := re.search(pattern, text, re.I):
+                return normalize_surface_number(match.group(1))
+    found: list[tuple[re.Match[str], bool]] = []
+    for text in texts:
+        for match in re.finditer(rf"\b{number or SURFACE_VALUE_PATTERN}\s*{unit}\b", text, re.I):
+            found.append((match, bool(exclude and exclude(text, match.start(), match.end()))))
+    kept = [match for match, excluded in found if not excluded]
+    chosen = kept or [match for match, _ in found]
+    return normalize_surface_number(chosen[0].group(1)) if chosen else None
+
+
+def fetch_detail_html(
+    client: Any,
+    sale: dict[str, Any],
+    errors: list[str],
+    *,
+    label: str,
+    url: str | None = None,
+) -> str | None:
+    """Fetch a detail page; on failure record it on the sale and return None."""
+    source_url = url or str(sale.get("source_url") or "")
+    try:
+        return client.get(source_url)
+    except Exception as exc:
+        LOGGER.warning("%s detail fetch failed for %s: %s", label, source_url, exc)
+        errors.append(f"detail {source_url}: {exc}")
+        sale["_detail_fetch_failed"] = True
+        sale["source_detail_status"] = "failed"
+        return None
 
 
 def _robots_match(pattern: str, target: str) -> bool:

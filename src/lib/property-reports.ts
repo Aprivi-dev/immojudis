@@ -1,3 +1,4 @@
+import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -6,10 +7,13 @@ import { getEnvironmentalContext } from "@/lib/environment.functions";
 import {
   isPlanPeriodActive,
   normalizePlanCode,
+  pastDueGraceEnd,
   PLAN_LIMITS,
   type FeatureAccess,
   type FeatureKey,
+  type PlanBilling,
   type PlanCode,
+  type PlanStatus,
 } from "@/lib/plans";
 import { createTextPdf } from "@/lib/simple-pdf";
 import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
@@ -48,11 +52,11 @@ import {
 } from "./property-report/repository";
 import {
   asJson,
-  asRecord,
   attachPlan,
   createShareToken,
   defaultReportTitle,
   emptyToNull,
+  hashShareToken,
   normalizeShareExpiresAt,
   normalizeShareToken,
   normalizeSourceTrace,
@@ -61,8 +65,8 @@ import {
   saleLocation,
   shareIsExpired,
   slugify,
-  stringValue,
 } from "./property-report/serialization";
+import { asRecord, stringOrNumberValue } from "@/lib/guards";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
 export type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 export type SavedReportRow = Database["public"]["Tables"]["saved_property_reports"]["Row"];
@@ -102,6 +106,7 @@ export type PlanEntitlements = {
   label: string;
   hasAnalysisAccess: boolean;
   currentPeriodEnd: string | null;
+  billing?: PlanBilling;
   limits: (typeof PLAN_LIMITS)[PlanCode];
   features: {
     salesStatistics: FeatureAccess;
@@ -460,7 +465,7 @@ export async function exportPropertyReportPdf({
     lines,
     headings: REPORT_PDF_HEADINGS,
     footer:
-      "ImmoJudis - rapport indicatif. Vérifiez les pièces officielles et votre conseil avant toute enchère.",
+      "Immojudis - rapport indicatif. Vérifiez les pièces officielles et votre conseil avant toute enchère.",
     watermark: pdfWatermarkForPlan(plan),
   });
 
@@ -496,7 +501,9 @@ export async function enablePropertyReportShare({
     .from("saved_property_reports")
     .update({
       share_enabled: true,
-      share_token: shareToken,
+      // Only the digest is persisted; the clear token goes back to the owner once.
+      share_token: null,
+      share_token_hash: hashShareToken(shareToken),
       shared_at: now,
       share_expires_at: shareExpiresAt,
     })
@@ -510,7 +517,7 @@ export async function enablePropertyReportShare({
   return {
     report: attachPlan(data, plan),
     plan,
-    share: buildPropertyReportShare(data, origin),
+    share: buildPropertyReportShare(data, origin, shareToken),
   };
 }
 
@@ -532,6 +539,7 @@ export async function disablePropertyReportShare({
     .update({
       share_enabled: false,
       share_token: null,
+      share_token_hash: null,
       share_expires_at: null,
     })
     .eq("id", reportId)
@@ -561,14 +569,18 @@ export async function getSharedPropertyReport({
   const { data, error } = await supabaseAdmin
     .from("saved_property_reports")
     .select(
-      "id,sale_id,title,report_kind,report_snapshot,market_snapshot,environmental_snapshot,ceiling_snapshot,share_enabled,share_token,shared_at,share_expires_at,share_view_count,updated_at",
+      "id,user_id,sale_id,title,report_kind,report_snapshot,market_snapshot,environmental_snapshot,ceiling_snapshot,share_enabled,shared_at,share_expires_at,share_view_count,updated_at",
     )
-    .eq("share_token", normalized)
+    .eq("share_token_hash", hashShareToken(normalized))
     .eq("share_enabled", true)
     .maybeSingle();
 
   if (error) throw error;
   if (!data || shareIsExpired(data.share_expires_at)) {
+    throw new Error("Rapport partagé introuvable ou expiré.");
+  }
+  // A link stops working as soon as its owner no longer has an active Analyse plan.
+  if (!(await shareOwnerKeepsSavedReports(data.user_id))) {
     throw new Error("Rapport partagé introuvable ou expiré.");
   }
 
@@ -586,16 +598,48 @@ export async function getSharedPropertyReport({
   return buildPublicSharedPropertyReport(data);
 }
 
+/**
+ * Whether the owner of a shared report still holds a plan that includes saved reports.
+ * Shared links are cut when the subscription ends (no active period, past due, cancelled).
+ */
+export async function shareOwnerKeepsSavedReports(userId: string): Promise<boolean> {
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("user_profiles")
+    .select("account_tier,user_role")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (profileError) throw profileError;
+  if (profile?.user_role === "admin" || profile?.account_tier === "premium") return true;
+
+  const { data: subscription, error } = await supabaseAdmin
+    .from("user_subscriptions")
+    .select("plan_code,status,current_period_end")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  const plan =
+    subscription && isPlanPeriodActive(subscription.status, subscription.current_period_end)
+      ? normalizePlanCode(subscription.plan_code)
+      : "decouverte";
+  return featureUnlocked(buildPlanEntitlements(plan).features.savedReports);
+}
+
 export function buildPropertyReportShare(
   report: Pick<
     SavedReportRow,
-    "share_enabled" | "share_token" | "shared_at" | "share_expires_at" | "share_view_count"
-  >,
+    "share_enabled" | "shared_at" | "share_expires_at" | "share_view_count"
+  > &
+    Partial<Pick<SavedReportRow, "share_token" | "share_token_hash">>,
   origin?: string | null,
+  // The clear token exists only in the response that creates the link; the database
+  // keeps its digest, so an existing share cannot be re-displayed (rotate to get a new URL).
+  issuedToken?: string | null,
 ): PropertyReportShare {
-  const token = report.share_token;
+  const token = issuedToken ?? report.share_token ?? null;
   const enabled = Boolean(
-    report.share_enabled && token && !shareIsExpired(report.share_expires_at),
+    report.share_enabled &&
+    (token || report.share_token_hash) &&
+    !shareIsExpired(report.share_expires_at),
   );
 
   return {
@@ -647,7 +691,7 @@ export function buildPublicSharedPropertyReport(
     ceiling: report.ceiling_snapshot,
     sourceTrace: normalizeSourceTrace(traceability.entries),
     limitations: normalizeStringList(traceability.limitations),
-    disclaimer: stringValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE),
+    disclaimer: stringOrNumberValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE),
   };
 }
 
@@ -663,7 +707,7 @@ export async function resolvePlanEntitlements(
 
   const { data, error } = await auth.supabase
     .from("user_subscriptions")
-    .select("plan_code,status,current_period_end")
+    .select("plan_code,status,current_period_end,stripe_customer_id")
     .eq("user_id", auth.userId)
     .maybeSingle();
 
@@ -672,7 +716,11 @@ export async function resolvePlanEntitlements(
     data && isPlanPeriodActive(data.status, data.current_period_end)
       ? normalizePlanCode(data.plan_code)
       : "decouverte";
-  return buildPlanEntitlements(plan, data?.current_period_end ?? null);
+  return buildPlanEntitlements(plan, data?.current_period_end ?? null, PLAN_LIMITS[plan], {
+    status: (data?.status as PlanStatus | undefined) ?? null,
+    hasStripeCustomer: Boolean(data?.stripe_customer_id),
+    graceEndsAt: data?.status === "past_due" ? pastDueGraceEnd(data.current_period_end) : null,
+  });
 }
 
 export async function assertFeatureEntitlement(

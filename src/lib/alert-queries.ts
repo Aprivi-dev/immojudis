@@ -31,7 +31,8 @@ export async function createAlert(userId: string, payload: CreateAlertPayload) {
     is_active: payload.is_active ?? true,
     dpe_classes: payload.dpe_classes ?? [],
     require_house_with_land: payload.require_house_with_land ?? false,
-    alert_frequency: payload.alert_frequency ?? "daily",
+    // "instant" was never delivered in real time: only daily and weekly exist.
+    alert_frequency: payload.alert_frequency === "weekly" ? "weekly" : "daily",
     advanced_criteria: payload.advanced_criteria ?? {},
   };
   const { error } = await supabase.from("user_alerts").insert(insertPayload);

@@ -67,10 +67,10 @@ export function AdminReferencedLawyersPanel() {
   });
 
   return (
-    <section className="liquid-panel mt-6 rounded-lg p-5">
+    <section className="admin-panel mt-6 rounded-lg p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
             <Scale className="h-4 w-4" />
             Avocats référencés
           </div>
@@ -79,7 +79,7 @@ export function AdminReferencedLawyersPanel() {
         <button
           type="button"
           onClick={() => void lawyersQuery.refetch()}
-          className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold transition hover:border-gold"
+          className="admin-panel inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${lawyersQuery.isFetching ? "animate-spin" : ""}`} />
           Actualiser
@@ -87,7 +87,7 @@ export function AdminReferencedLawyersPanel() {
       </div>
 
       {lawyersQuery.error ? (
-        <div className="mt-4 rounded-lg border border-red-300/20 bg-red-500/10 p-3 text-sm text-red-100">
+        <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
           {lawyersQuery.error instanceof Error
             ? lawyersQuery.error.message
             : "Chargement impossible"}
@@ -96,7 +96,7 @@ export function AdminReferencedLawyersPanel() {
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <form
-          className="rounded-lg border border-white/10 bg-white/[0.03] p-4"
+          className="rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-4"
           onSubmit={(event) => {
             event.preventDefault();
             saveMutation.mutate();
@@ -220,7 +220,7 @@ export function AdminReferencedLawyersPanel() {
             />
           </div>
 
-          <div className="mt-4 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs leading-relaxed text-muted-foreground">
+          <div className="mt-4 rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-3 text-xs leading-relaxed text-muted-foreground">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-semibold uppercase tracking-[0.14em]">
                 Éligibilité bloc fiche
@@ -237,7 +237,7 @@ export function AdminReferencedLawyersPanel() {
             </p>
           </div>
 
-          <div className="mt-4 grid gap-3 rounded-lg border border-white/10 p-3 md:grid-cols-2">
+          <div className="mt-4 grid gap-3 rounded-lg border border-brand-navy/10 p-3 md:grid-cols-2">
             <label className="flex items-start gap-3 text-sm text-muted-foreground">
               <input
                 type="checkbox"
@@ -248,7 +248,7 @@ export function AdminReferencedLawyersPanel() {
                     acceptsJudicialAuctions: event.target.checked,
                   }))
                 }
-                className="mt-0.5 size-4 accent-[#b96f2d]"
+                className="mt-0.5 size-4 accent-gold-soft"
               />
               <span>
                 <span className="block font-semibold text-foreground">
@@ -269,7 +269,7 @@ export function AdminReferencedLawyersPanel() {
                     acceptsRemoteContact: event.target.checked,
                   }))
                 }
-                className="mt-0.5 size-4 accent-[#b96f2d]"
+                className="mt-0.5 size-4 accent-gold-soft"
               />
               <span>
                 <span className="block font-semibold text-foreground">
@@ -290,11 +290,11 @@ export function AdminReferencedLawyersPanel() {
                 setForm((current) => ({ ...current, profileSummary: event.target.value }))
               }
               rows={3}
-              className="rounded-lg border border-white/10 bg-background/45 px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+              className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
             />
           </label>
 
-          <div className="mt-4 rounded-lg border border-white/10 p-3">
+          <div className="mt-4 rounded-lg border border-brand-navy/10 p-3">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Couverture
@@ -307,7 +307,7 @@ export function AdminReferencedLawyersPanel() {
                     coverage: [...current.coverage, emptyCoverageDraft()],
                   }))
                 }
-                className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2.5 py-1 text-xs text-gold transition hover:border-gold"
+                className="inline-flex items-center gap-1 rounded-md border border-brand-navy/10 px-2.5 py-1 text-xs text-gold-text transition hover:border-gold"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Zone
@@ -341,7 +341,7 @@ export function AdminReferencedLawyersPanel() {
             <button
               type="submit"
               disabled={saveMutation.isPending}
-              className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-background disabled:cursor-not-allowed disabled:opacity-60"
+              className="bg-gold-soft text-white shadow-sm hover:bg-gold-text inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Save className="h-3.5 w-3.5" />
               {saveMutation.isPending ? "Sauvegarde" : form.id ? "Mettre à jour" : "Créer"}
@@ -349,22 +349,22 @@ export function AdminReferencedLawyersPanel() {
             <button
               type="button"
               onClick={() => setForm(emptyLawyerForm())}
-              className="liquid-panel-soft inline-flex items-center justify-center rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold transition hover:border-gold"
+              className="admin-panel inline-flex items-center justify-center rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
             >
               Nouveau
             </button>
           </div>
         </form>
 
-        <div className="overflow-hidden rounded-lg border border-white/10">
-          <div className="grid grid-cols-[1fr_0.7fr_0.75fr_0.45fr_auto] gap-3 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        <div className="overflow-hidden rounded-lg border border-brand-navy/10">
+          <div className="grid grid-cols-[1fr_0.7fr_0.75fr_0.45fr_auto] gap-3 bg-brand-navy/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             <span>Avocat</span>
             <span>Statut</span>
             <span>30 jours</span>
             <span>Zones</span>
             <span />
           </div>
-          <div className="divide-y divide-white/10">
+          <div className="divide-y divide-brand-navy/10">
             {lawyersQuery.isLoading ? (
               <div className="p-4 text-sm text-muted-foreground">Chargement</div>
             ) : lawyers.length ? (
@@ -421,7 +421,7 @@ function LawyerLine({
       <button
         type="button"
         onClick={onEdit}
-        className="inline-grid h-8 w-8 place-items-center rounded-md border border-white/10 text-gold transition hover:border-gold"
+        className="inline-grid h-8 w-8 place-items-center rounded-md border border-brand-navy/10 text-gold-text transition hover:border-gold"
         aria-label="Modifier"
       >
         <Pencil className="h-3.5 w-3.5" />
@@ -469,7 +469,7 @@ function CoverageRow({
       <button
         type="button"
         onClick={onRemove}
-        className="inline-grid h-9 w-9 place-items-center rounded-md border border-white/10 text-muted-foreground transition hover:border-red-300/40 hover:text-red-100 md:self-end"
+        className="inline-grid h-9 w-9 place-items-center rounded-md border border-brand-navy/10 text-muted-foreground transition hover:border-red-300/40 hover:text-danger md:self-end"
         aria-label="Retirer la zone"
       >
         <XCircle className="h-4 w-4" />
@@ -499,7 +499,7 @@ function TextField({
         onChange={(event) => onChange(event.target.value)}
         type={type}
         required={required}
-        className="rounded-lg border border-white/10 bg-background/45 px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+        className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
       />
     </label>
   );
@@ -520,7 +520,7 @@ function CompactField({
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded-md border border-white/10 bg-background/45 px-2 py-2 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+        className="rounded-md border border-brand-navy/10 bg-white px-2 py-2 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
       />
     </label>
   );
@@ -543,7 +543,7 @@ function SelectField({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded-lg border border-white/10 bg-background/45 px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+        className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
       >
         {options.map(([optionValue, label]) => (
           <option key={optionValue} value={optionValue}>
@@ -560,8 +560,8 @@ function StatusPill({ label, active }: { label: string; active: boolean }) {
     <span
       className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-[11px] ${
         active
-          ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
-          : "border-amber-300/20 bg-amber-400/10 text-amber-100"
+          ? "border-emerald-300/20 bg-success-tint text-success"
+          : "border-amber-300/20 bg-warning-tint text-warning"
       }`}
     >
       {label}

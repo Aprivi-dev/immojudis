@@ -9,6 +9,8 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export function FavoriteButton({
   saleId,
@@ -24,7 +26,7 @@ export function FavoriteButton({
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
 
-  const favoriteKey = ["favorite-status", user?.id ?? null, saleId];
+  const favoriteKey = queryKeys.favoriteStatus(user?.id ?? null, saleId);
   const favorite = useQuery({
     queryKey: favoriteKey,
     enabled: Boolean(user) && !loading,
@@ -56,7 +58,7 @@ export function FavoriteButton({
       return;
     }
     setBusy(true);
-    const searchFavoriteQueryKey = ["search-favorite-status", user.id] as const;
+    const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(user.id);
     try {
       await qc.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFav) {
@@ -75,11 +77,11 @@ export function FavoriteButton({
           return [...nextFavoriteSaleIds];
         },
       );
-      qc.invalidateQueries({ queryKey: ["favorites", user.id] });
+      qc.invalidateQueries({ queryKey: queryKeys.favorites(user.id) });
       await qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (e: unknown) {
       void qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-      toast.error(e instanceof Error ? e.message : "Erreur");
+      toast.error(userMessage(e));
     } finally {
       setBusy(false);
     }
@@ -97,7 +99,7 @@ export function FavoriteButton({
       aria-pressed={isFav}
       aria-label={isFav ? "Ne plus suivre cette vente" : "Suivre cette vente"}
       title={isFav ? "Ne plus suivre cette vente" : "Suivre cette vente"}
-      className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-soft disabled:opacity-50 ${className}`}
+      className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-text disabled:opacity-50 ${className}`}
     >
       <Heart
         aria-hidden

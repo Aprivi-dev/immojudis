@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -7,11 +8,18 @@ import {
   environmentalContextCacheControl,
   getEnvironmentalContext,
 } from "@/lib/environment.functions";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 
 export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "environment-context",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     await assertFeatureEntitlement(
       auth,
       "property.neighborhoodAnalysis",
@@ -24,12 +32,9 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Contexte indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réserv")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message, context: null }, { status });
+    return apiRouteError(error, request, "environment-context", {
+      fallbackMessage: "Contexte indisponible",
+      extra: { context: null },
+    });
   }
 }

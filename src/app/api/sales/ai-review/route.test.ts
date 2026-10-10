@@ -249,7 +249,7 @@ describe("GET /api/sales/ai-review", () => {
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toEqual({
-      error: "Unauthorized: session required",
+      error: "Authentification requise.",
     });
     expect(mocks.adminFrom).not.toHaveBeenCalled();
   });

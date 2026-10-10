@@ -107,7 +107,7 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
 
   const invalid = reset && !checking && (!ready || needsNewRecoveryLink);
   return (
-    <main className="liquid-page min-h-[75vh] px-4 py-12 text-foreground">
+    <main id="contenu" className="liquid-page min-h-[75vh] px-4 py-12 text-foreground">
       <section className="glass-shell mx-auto max-w-md rounded-lg p-6 sm:p-8">
         <h1 className="font-display text-3xl">
           {reset ? "Nouveau mot de passe" : "Mot de passe oublié"}
@@ -138,20 +138,20 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
                     autoComplete="new-password"
                     type="password"
                     required
-                    minLength={8}
+                    minLength={12}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     className="form-input"
                   />
                 </label>
-                <p className="text-xs text-muted-foreground">Au moins 8 caractères.</p>
+                <p className="text-xs text-muted-foreground">Au moins 12 caractères.</p>
                 <label className="grid gap-2 text-sm">
                   Confirmer le mot de passe
                   <input
                     autoComplete="new-password"
                     type="password"
                     required
-                    minLength={8}
+                    minLength={12}
                     value={confirmation}
                     onChange={(event) => setConfirmation(event.target.value)}
                     className="form-input"

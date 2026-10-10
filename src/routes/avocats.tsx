@@ -17,14 +17,10 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { fetchLawyerDirectory } from "@/lib/client-api";
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
-import { createFileRoute, Link } from "@/lib/router-compat";
-
-type DirectorySearch = {
-  saleId?: string;
-  bar?: string;
-  city?: string;
-  department?: string;
-};
+import type { DirectorySearch } from "@/lib/lawyer-directory-search";
+import { Link } from "@/lib/router-compat";
+import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
@@ -33,43 +29,26 @@ const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
   timeZone: "Europe/Paris",
 });
 
-export const Route = createFileRoute("/avocats")({
-  validateSearch: (search: Record<string, unknown>): DirectorySearch => ({
-    saleId: stringValue(search.saleId),
-    bar: stringValue(search.bar),
-    city: stringValue(search.city),
-    department: stringValue(search.department),
-  }),
-  head: () => ({
-    meta: [
-      { title: "Annuaire des avocats en droit immobilier — Immojudis" },
-      {
-        name: "description",
-        content:
-          "Trouvez un avocat en droit immobilier par barreau et identifiez clairement les profils partenaires sponsorisés.",
-      },
-    ],
-  }),
-  component: LawyerDirectoryPage,
-});
-
-export function LawyerDirectoryPage() {
-  const search = Route.useSearch<DirectorySearch>();
+/**
+ * The filters come from the server page as props: the page reads the URL on the
+ * server, so its heading and form are part of the HTML sent to crawlers instead
+ * of waiting for a client-side `useSearchParams`.
+ */
+export function LawyerDirectoryPage({ search }: { search: DirectorySearch }) {
   const directoryQuery = useQuery({
-    queryKey: ["lawyer-directory", search.saleId, search.bar, search.city, search.department],
+    queryKey: queryKeys.lawyerDirectory(search.saleId, search.bar, search.city, search.department),
     queryFn: () => fetchLawyerDirectory(search),
     staleTime: 5 * 60_000,
   });
-  const errorMessage =
-    directoryQuery.error instanceof Error ? directoryQuery.error.message : "Annuaire indisponible";
+  const errorMessage = userMessage(directoryQuery.error, "Annuaire indisponible");
 
   return (
-    <main className="min-h-screen bg-[#eef7ff] text-brand-navy">
+    <main id="contenu" className="min-h-screen bg-background text-brand-navy">
       <section className="border-b border-brand-navy/10 bg-white">
         <div className="mx-auto max-w-[1260px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
           <Link
             to={search.saleId ? `/sales/${search.saleId}` : "/sales"}
-            className="inline-flex items-center gap-2 text-sm font-semibold text-brand-navy/70 transition-colors hover:text-gold-soft"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-brand-navy/70 transition-colors hover:text-gold-text"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />
             {search.saleId ? "Retour à l'annonce" : "Retour aux ventes"}
@@ -97,14 +76,14 @@ export function LawyerDirectoryPage() {
               </label>
               <div className="mt-2 flex gap-2">
                 <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md border border-brand-navy/16 px-3 focus-within:border-gold-soft focus-within:ring-2 focus-within:ring-gold/15">
-                  <Search className="h-4 w-4 shrink-0 text-brand-navy/45" aria-hidden />
+                  <Search className="h-4 w-4 shrink-0 text-brand-navy/65" aria-hidden />
                   <input
                     id="lawyer-bar"
                     name="bar"
                     defaultValue={search.bar ?? search.city ?? ""}
                     placeholder="Bordeaux, Paris, Lyon…"
                     autoComplete="address-level2"
-                    className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-brand-navy/40"
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-brand-navy/65"
                   />
                 </div>
                 <button
@@ -165,7 +144,7 @@ function DirectoryResults({
   if (!lawyers.length) {
     return (
       <div className="rounded-lg border border-brand-navy/12 bg-white p-7 text-center shadow-sm sm:p-10">
-        <Scale className="mx-auto h-9 w-9 text-gold-soft" aria-hidden />
+        <Scale className="mx-auto h-9 w-9 text-gold-text" aria-hidden />
         <h2 className="mt-4 font-display text-3xl font-semibold text-brand-navy">
           Aucun avocat trouvé pour ce barreau
         </h2>
@@ -199,7 +178,7 @@ function DirectoryResults({
         <h2 className="font-display text-3xl font-semibold text-brand-navy sm:text-4xl">
           {sectorLabel ? `Avocats — ${sectorLabel}` : "Annuaire des avocats"}
         </h2>
-        <p className="text-sm font-medium text-brand-navy/55">
+        <p className="text-sm font-medium text-brand-navy/65">
           {lawyers.length} profil{lawyers.length > 1 ? "s" : ""}
         </p>
       </div>
@@ -208,7 +187,7 @@ function DirectoryResults({
         <section aria-labelledby="partner-lawyers-title">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-gold-soft">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-gold-text">
                 <Megaphone className="h-4 w-4" aria-hidden />
                 Profils sponsorisés
               </div>
@@ -219,7 +198,7 @@ function DirectoryResults({
                 Avocats partenaires
               </h3>
             </div>
-            <p className="max-w-xl text-sm leading-relaxed text-brand-navy/60 sm:text-right">
+            <p className="max-w-xl text-sm leading-relaxed text-brand-navy/65 sm:text-right">
               Ces avocats rémunèrent Immojudis pour une visibilité renforcée sur ce barreau.
             </p>
           </div>
@@ -237,7 +216,7 @@ function DirectoryResults({
       >
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-brand-navy/12 pb-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.15em] text-brand-navy/50">
+            <p className="text-xs font-bold uppercase tracking-[0.15em] text-brand-navy/65">
               Résultats naturels
             </p>
             <h3
@@ -247,7 +226,7 @@ function DirectoryResults({
               Spécialistes en droit immobilier
             </h3>
           </div>
-          <p className="text-sm text-brand-navy/55">
+          <p className="text-sm text-brand-navy/65">
             {directoryLawyers.length} fiche{directoryLawyers.length > 1 ? "s" : ""} standard
           </p>
         </div>
@@ -296,7 +275,7 @@ function DirectoryResults({
 
       <div className="mt-10 flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white p-5 text-sm leading-relaxed text-brand-navy/65 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-3">
-          <Info className="mt-0.5 h-5 w-5 shrink-0 text-gold-soft" aria-hidden />
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-gold-text" aria-hidden />
           <p>
             La mise en avant payante ne constitue ni une notation, ni une recommandation juridique,
             ni une garantie de résultat. Vérifiez directement auprès de l'avocat sa disponibilité et
@@ -340,7 +319,7 @@ function LawyerCard({
         </span>
         <div className="min-w-0">
           {sponsored ? (
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-gold-soft">
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-gold-text">
               Profil sponsorisé
             </p>
           ) : lawyer.source === "cnb" ? (
@@ -351,7 +330,7 @@ function LawyerCard({
           <h3 className="font-display text-2xl font-semibold leading-tight text-brand-navy">
             {lawyer.displayName}
           </h3>
-          <p className="mt-1 text-sm text-brand-navy/62">
+          <p className="mt-1 text-sm text-brand-navy/65">
             {[lawyer.firmName, lawyer.barAssociation].filter(Boolean).join(" · ") ||
               "Avocat inscrit à l'annuaire"}
           </p>
@@ -470,7 +449,7 @@ function CnbDirectoryLink({ barAssociation }: { barAssociation: string | null })
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+      className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-md border border-brand-navy/16 px-4 text-sm font-semibold text-brand-navy transition-colors hover:border-gold hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
     >
       Résultats officiels du CNB
       <ExternalLink className="h-4 w-4" aria-hidden />
@@ -489,7 +468,7 @@ function DirectoryFact({
 }) {
   return (
     <div className="grid grid-cols-[1.25rem_5.5rem_minmax(0,1fr)] gap-2">
-      <span className="text-gold-soft" aria-hidden>
+      <span className="text-gold-text" aria-hidden>
         {icon}
       </span>
       <dt className="font-semibold text-brand-navy">{label}</dt>
@@ -518,10 +497,6 @@ function DirectorySkeleton() {
       ))}
     </div>
   );
-}
-
-function stringValue(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function lawyerInitials(displayName: string) {

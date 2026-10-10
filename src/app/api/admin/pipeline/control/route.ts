@@ -1,4 +1,6 @@
+import "server-only";
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
@@ -27,20 +29,10 @@ async function authorize(request: Request) {
   if (!context.isAdmin) throw new Error("Forbidden: accès administrateur requis");
 }
 
-function failure(error: unknown) {
-  const message = error instanceof Error ? error.message : "Contrôle du pipeline indisponible";
-  return NextResponse.json(
-    { error: message },
-    {
-      status: message.startsWith("Unauthorized")
-        ? 401
-        : message.startsWith("Forbidden")
-          ? 403
-          : error instanceof z.ZodError || error instanceof SyntaxError
-            ? 400
-            : 500,
-    },
-  );
+function failure(error: unknown, request: Request) {
+  return apiRouteError(error, request, "admin.pipeline.control", {
+    fallbackMessage: "Contrôle du pipeline indisponible",
+  });
 }
 
 export async function PATCH(request: Request) {
@@ -54,13 +46,13 @@ export async function PATCH(request: Request) {
       .select("*")
       .maybeSingle();
 
-    if (error) throw new Error(error.message);
+    if (error) throw error;
     if (!data) {
       return NextResponse.json({ error: "Contrôle du pipeline introuvable" }, { status: 404 });
     }
 
     return NextResponse.json(data, { headers: { "cache-control": "no-store" } });
   } catch (error) {
-    return failure(error);
+    return failure(error, request);
   }
 }

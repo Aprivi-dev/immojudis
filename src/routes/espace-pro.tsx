@@ -28,17 +28,10 @@ import {
   type PublicationRequestDetail,
   type PublicationRequestSummary,
 } from "@/lib/publication-requests-client";
+import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/espace-pro")({
-  head: () => ({
-    meta: [
-      { title: "Espace pro — Immojudis" },
-      {
-        name: "description",
-        content: "Suivre vos demandes de publication, leurs pièces et les ventes mises en ligne.",
-      },
-    ],
-  }),
   component: ProfessionalWorkspacePage,
 });
 
@@ -49,7 +42,7 @@ export function ProfessionalWorkspacePage() {
   const professional = isProfessionalAccount(user, profile);
   const admin = isAdminAccount(user, profile);
   const requestsQuery = useQuery({
-    queryKey: ["publication-requests", "workspace", user?.id],
+    queryKey: queryKeys.publicationRequestsWorkspace(user?.id),
     queryFn: fetchAllPublicationRequestsClient,
     enabled: Boolean(user),
     staleTime: 15_000,
@@ -60,7 +53,7 @@ export function ProfessionalWorkspacePage() {
   );
   const selectedRequest = requests.find((request) => request.id === selectedId) ?? null;
   const detailQuery = useQuery({
-    queryKey: ["publication-request", selectedId],
+    queryKey: queryKeys.publicationRequest(selectedId),
     queryFn: () => fetchPublicationRequestClient(selectedId as string),
     enabled: Boolean(selectedId && user),
     staleTime: 15_000,
@@ -86,7 +79,7 @@ export function ProfessionalWorkspacePage() {
         <Link
           to="/login"
           search={{ mode: "professional", redirect: "/espace-pro" }}
-          className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background"
+          className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
         >
           Se connecter <ArrowRight className="h-4 w-4" />
         </Link>
@@ -103,7 +96,7 @@ export function ProfessionalWorkspacePage() {
       >
         <Link
           to="/login"
-          className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background"
+          className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
         >
           Gérer mon compte <ArrowRight className="h-4 w-4" />
         </Link>
@@ -124,7 +117,7 @@ export function ProfessionalWorkspacePage() {
       >
         <Link
           to="/contact"
-          className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold hover:border-gold"
+          className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold-text hover:border-gold"
         >
           Contacter Immojudis <ArrowRight className="h-4 w-4" />
         </Link>
@@ -142,7 +135,7 @@ export function ProfessionalWorkspacePage() {
         <Link
           to="/login"
           search={{ mode: "professional", redirect: "/espace-pro" }}
-          className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background"
+          className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
         >
           Demander un accès pro <ArrowRight className="h-4 w-4" />
         </Link>
@@ -153,11 +146,14 @@ export function ProfessionalWorkspacePage() {
   const selectedDetail = detailQuery.data?.request ?? null;
 
   return (
-    <main className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12">
+    <main
+      id="contenu"
+      className="liquid-page min-h-screen px-4 py-8 text-foreground sm:px-6 lg:py-12"
+    >
       <div className="mx-auto max-w-7xl">
         <header className="glass-shell grid gap-6 rounded-lg p-6 sm:p-8 lg:grid-cols-[1fr_19rem] lg:items-end">
           <div>
-            <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+            <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
               <BriefcaseBusiness className="h-4 w-4" />
               Espace professionnel
             </div>
@@ -175,11 +171,11 @@ export function ProfessionalWorkspacePage() {
               Compte connecté
             </div>
             <div className="mt-3 flex items-start gap-3">
-              <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+              <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" />
               <span className="break-all text-sm text-foreground">{user.email}</span>
             </div>
             <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-              <ShieldCheck className="h-4 w-4 text-gold" />
+              <ShieldCheck className="h-4 w-4 text-gold-text" />
               {admin
                 ? "Accès administrateur"
                 : pendingProfessional
@@ -193,7 +189,7 @@ export function ProfessionalWorkspacePage() {
           <section className="liquid-panel rounded-lg p-5 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-gold">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-text">
                   <FileCheck2 className="h-4 w-4" />
                   Mes demandes
                 </div>
@@ -207,7 +203,7 @@ export function ProfessionalWorkspacePage() {
               ) : (
                 <Link
                   to="/publish"
-                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.14em] text-gold hover:border-gold"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.14em] text-gold-text hover:border-gold"
                 >
                   Nouvelle demande <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
@@ -224,7 +220,7 @@ export function ProfessionalWorkspacePage() {
 
             {requestsQuery.isPending ? (
               <div className="mt-6 flex items-center gap-3 text-sm text-muted-foreground">
-                <RefreshCw className="h-4 w-4 animate-spin text-gold" />
+                <RefreshCw className="h-4 w-4 animate-spin text-gold-text" />
                 Chargement des demandes...
               </div>
             ) : requestsQuery.isError ? (
@@ -234,9 +230,7 @@ export function ProfessionalWorkspacePage() {
                   Impossible de charger vos demandes.
                 </div>
                 <p className="mt-2 text-xs leading-relaxed text-red-100/80">
-                  {requestsQuery.error instanceof Error
-                    ? requestsQuery.error.message
-                    : "Réessayez dans quelques instants."}
+                  {userMessage(requestsQuery.error, "Réessayez dans quelques instants.")}
                 </p>
               </div>
             ) : requests.length ? (
@@ -252,7 +246,7 @@ export function ProfessionalWorkspacePage() {
               </div>
             ) : (
               <div className="mt-6 rounded-lg border border-white/10 bg-white/[0.03] p-5">
-                <FileText className="h-5 w-5 text-gold" />
+                <FileText className="h-5 w-5 text-gold-text" />
                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                   Aucune demande n'est encore associée à ce compte.
                 </p>
@@ -263,7 +257,7 @@ export function ProfessionalWorkspacePage() {
                 ) : (
                   <Link
                     to="/publish"
-                    className="mt-4 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-gold underline"
+                    className="mt-4 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-gold-text underline"
                   >
                     Préparer un dépôt <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
@@ -281,7 +275,7 @@ export function ProfessionalWorkspacePage() {
               />
             ) : (
               <div className="flex min-h-80 flex-col items-center justify-center text-center">
-                <FileCheck2 className="h-8 w-8 text-gold" />
+                <FileCheck2 className="h-8 w-8 text-gold-text" />
                 <h2 className="mt-4 font-display text-2xl">Sélectionnez une demande</h2>
                 <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
                   Les informations détaillées, notes de validation et pièces privées apparaîtront
@@ -330,7 +324,7 @@ function RequestCard({
       {request.publishedUrl ? (
         <a
           href={request.publishedUrl}
-          className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-gold underline"
+          className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-gold-text underline"
         >
           Voir la vente publiée <ExternalLink className="h-3.5 w-3.5" />
         </a>
@@ -354,7 +348,7 @@ function RequestDetailPanel({
     <div>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-gold">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-text">
             <FileText className="h-4 w-4" />
             Dossier de publication
           </div>
@@ -400,7 +394,7 @@ function RequestDetailPanel({
       {request.publishedUrl ? (
         <a
           href={request.publishedUrl}
-          className="mt-6 inline-flex items-center gap-2 rounded-lg border border-gold/35 bg-gold/10 px-4 py-3 text-xs font-bold uppercase tracking-[0.14em] text-gold"
+          className="mt-6 inline-flex items-center gap-2 rounded-lg border border-gold/35 bg-gold/10 px-4 py-3 text-xs font-bold uppercase tracking-[0.14em] text-gold-text"
         >
           Ouvrir la vente publiée <ExternalLink className="h-4 w-4" />
         </a>
@@ -418,18 +412,18 @@ function RequestDetailPanel({
       ) : null}
 
       <div className="mt-6 border-t border-white/10 pt-5">
-        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold-text">
           <FileCheck2 className="h-4 w-4" />
           Pièces privées
         </div>
         {loading ? (
           <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
-            <RefreshCw className="h-4 w-4 animate-spin text-gold" />
+            <RefreshCw className="h-4 w-4 animate-spin text-gold-text" />
             Génération des liens sécurisés...
           </div>
         ) : error ? (
           <p className="mt-4 text-sm text-red-100">
-            {error instanceof Error ? error.message : "Impossible de charger les pièces."}
+            {userMessage(error, "Impossible de charger les pièces.")}
           </p>
         ) : detail?.documents.length ? (
           <div className="mt-4 grid gap-2">
@@ -462,7 +456,7 @@ function DocumentRow({ document }: { document: PublicationDocumentView }) {
           href={document.signedUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-gold underline"
+          className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-gold-text underline"
         >
           Ouvrir <ExternalLink className="h-3.5 w-3.5" />
         </a>
@@ -495,7 +489,7 @@ function InfoCard({
 }) {
   return (
     <div className="rounded-lg border border-gold/20 bg-gold/10 p-4">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.15em] text-gold">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.15em] text-gold-text">
         <Icon className="h-4 w-4" />
         {label}
       </div>
@@ -536,9 +530,12 @@ function StatusPill({ status }: { status: PublicationRequestSummary["status"] })
 
 function WorkspaceLoading() {
   return (
-    <main className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 text-foreground">
+    <main
+      id="contenu"
+      className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 text-foreground"
+    >
       <div className="glass-shell flex w-full max-w-2xl items-center gap-3 rounded-lg p-6">
-        <RefreshCw className="h-5 w-5 animate-spin text-gold" />
+        <RefreshCw className="h-5 w-5 animate-spin text-gold-text" />
         <span className="text-sm text-muted-foreground">Vérification de votre espace pro...</span>
       </div>
     </main>
@@ -557,9 +554,12 @@ function WorkspaceMessage({
   children: React.ReactNode;
 }) {
   return (
-    <main className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 text-foreground sm:px-6">
+    <main
+      id="contenu"
+      className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 text-foreground sm:px-6"
+    >
       <div className="glass-shell w-full max-w-2xl rounded-lg p-6 sm:p-8">
-        <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-gold/25 bg-gold/10 text-gold">
+        <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-gold/25 bg-gold/10 text-gold-text">
           <Icon className="h-5 w-5" />
         </div>
         <h1 className="mt-5 font-display text-3xl leading-tight">{title}</h1>

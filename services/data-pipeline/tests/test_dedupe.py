@@ -56,6 +56,7 @@ def _make(
     starting_price: str | None = "100 000 €",
     sale_date: str | None = "10 janvier 2027 à 9h00",
     surface_m2: str | None = None,
+    property_type: str | None = None,
     documents: list[dict[str, str]] | None = None,
 ):
     raw: dict[str, object] = {
@@ -73,20 +74,31 @@ def _make(
         raw["sale_date"] = sale_date
     if surface_m2 is not None:
         raw["surface_m2"] = surface_m2
+    if property_type is not None:
+        raw["property_type"] = property_type
     if documents is not None:
         raw["documents"] = documents
     return normalize_sale(raw)
 
 
-def test_dedupe_merges_same_address_across_sources_when_price_differs() -> None:
-    # Même adresse précise + même date, mais prix légèrement différent selon la
-    # source (frais inclus/exclus) → content_hash diffère, l'adresse rapproche.
+def test_dedupe_keeps_same_address_apart_when_prices_differ() -> None:
+    # Même adresse précise et même date, mais deux prix différents : deux lots ou
+    # une surenchère, jamais une fusion (P2-14).
     avoventes = _make("https://avoventes.fr/enchere/9", starting_price="100 000 €")
     licitor = _make(
         "https://www.licitor.com/annonce/9.html",
         source_name="licitor",
         starting_price="105 000 €",
     )
+
+    result = dedupe_sales([avoventes, licitor])
+
+    assert len(result) == 2
+
+
+def test_dedupe_merges_same_address_across_sources_when_date_and_price_match() -> None:
+    avoventes = _make("https://avoventes.fr/enchere/9", address="12 av. de la République 33000 Bordeaux")
+    licitor = _make("https://www.licitor.com/annonce/9.html", source_name="licitor")
 
     result = dedupe_sales([avoventes, licitor])
 
@@ -200,7 +212,26 @@ def test_dedupe_merges_merignac_duplicate_with_location_suffixes() -> None:
     assert "https://www.encheres-publiques.com/encheres/immobilier/maisons/merignac-33/belle-maison_129746" in result[0].source_urls
 
 
-def test_dedupe_merges_same_address_when_one_is_missing_date_and_price() -> None:
+def test_dedupe_merges_same_address_when_one_is_missing_date_and_price_but_surface_matches() -> None:
+    # Sans date ni prix côté licitor, la surface identique reste une preuve suffisante (P2-14).
+    avoventes = _make("https://avoventes.fr/enchere/10", surface_m2="72 m²", property_type="maison")
+    licitor = _make(
+        "https://www.licitor.com/annonce/10.html",
+        source_name="licitor",
+        starting_price=None,
+        sale_date=None,
+        surface_m2="72 m²",
+        property_type="maison",
+    )
+    assert avoventes.app_surface_m2 == licitor.app_surface_m2 is not None
+
+    result = dedupe_sales([avoventes, licitor])
+
+    assert len(result) == 1
+
+
+def test_dedupe_keeps_same_address_apart_without_any_matching_evidence() -> None:
+    # Date, prix et surface absents d'un côté : rien ne prouve que c'est le même lot.
     avoventes = _make("https://avoventes.fr/enchere/10")
     licitor = _make(
         "https://www.licitor.com/annonce/10.html",
@@ -209,9 +240,7 @@ def test_dedupe_merges_same_address_when_one_is_missing_date_and_price() -> None
         sale_date=None,
     )
 
-    result = dedupe_sales([avoventes, licitor])
-
-    assert len(result) == 1
+    assert len(dedupe_sales([avoventes, licitor])) == 2
 
 
 def test_dedupe_keeps_distinct_lots_at_same_address() -> None:
@@ -249,7 +278,8 @@ def test_dedupe_merges_duplicate_lots_independently_at_same_address() -> None:
     lot_b_duplicate = _make(
         "https://www.info-encheres.com/vente-11-b.html",
         source_name="info_encheres",
-        starting_price="262 000 €",
+        address="12 av. de la République 33000 Bordeaux",
+        starting_price="260 000 €",
         sale_date="15 mars 2027 à 9h00",
         surface_m2="72 m²",
     )

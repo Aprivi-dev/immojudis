@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { PublicApiError } from "@/lib/api-errors";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -24,7 +26,7 @@ export async function GET(request: Request): Promise<Response> {
       },
     });
   } catch (error) {
-    return reviewErrorResponse(error);
+    return reviewErrorResponse(error, request);
   }
 }
 
@@ -40,32 +42,24 @@ export async function POST(request: Request): Promise<Response> {
       },
     });
   } catch (error) {
-    return reviewErrorResponse(error);
+    return reviewErrorResponse(error, request);
   }
 }
 
-function reviewErrorResponse(error: unknown): Response {
-  const message = errorMessage(error);
+function reviewErrorResponse(error: unknown, request: Request): Response {
   const code = error && typeof error === "object" && "code" in error ? error.code : null;
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden") || code === "42501"
-      ? 403
-      : code === "55000" || message.includes("canonical") || message.includes("concurrent")
-        ? 409
-        : 400;
-  return NextResponse.json({ error: message }, { status });
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-  return "Revue du fait indisponible.";
+  // Database conflicts (trigger 55000) and permission failures (42501) keep their HTTP
+  // meaning but are reported with a French message; the driver detail stays in the logs.
+  const translated =
+    code === "42501"
+      ? new PublicApiError("Action non autorisée.", 403)
+      : code === "55000"
+        ? new PublicApiError(
+            "Ce fait a déjà été traité ou est en cours de traitement ailleurs.",
+            409,
+          )
+        : error;
+  return apiRouteError(translated, request, "admin.fact-claims.review", {
+    fallbackMessage: "Revue du fait indisponible.",
+  });
 }

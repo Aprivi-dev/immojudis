@@ -1,6 +1,6 @@
 begin;
 
-select plan(14);
+select plan(15);
 
 select is(
   (select jsonb_agg(jsonb_build_array(ordinal_position, column_name, data_type) order by ordinal_position)
@@ -189,20 +189,37 @@ select ok(
     select 1
     from unnest(array[
       'app_private.search_auction_sales_preview(text[],text,text,text,text[],text[],numeric,numeric,numeric,numeric,integer,integer,text,numeric,text[],double precision,double precision,double precision,double precision,text,integer,integer)',
-      'app_private.search_auction_sales_preview_v2(text[],text,text,text,text[],text[],numeric,numeric,numeric,numeric,integer,integer,text,numeric,text[],double precision,double precision,double precision,double precision,text,integer,integer,text)',
-      'app_private.search_auction_sales_preview_v3(text[],text,text,text,text[],text[],numeric,numeric,numeric,numeric,integer,integer,text,numeric,text[],double precision,double precision,double precision,double precision,text,integer,integer,text)'
+      'app_private.search_auction_sales_preview_v2(text[],text,text,text,text[],text[],numeric,numeric,numeric,numeric,integer,integer,text,numeric,text[],double precision,double precision,double precision,double precision,text,integer,integer,text)'
     ]::text[]) as signature
     where position(
       'publication_quarantine' in
       pg_catalog.pg_get_functiondef(signature::regprocedure)
     ) = 0
   ),
-  'v1, v2 and v3 definitions retain the quarantine predicate after migration'
+  'v1 and v2 definitions retain the quarantine predicate after migration'
+);
+
+-- v3 and v4 read the materialized catalogue_quarantined column, which the
+-- projection trigger derives from the same publication_quarantine flag.
+select ok(
+  position(
+    'catalogue_quarantined' in
+    pg_catalog.pg_get_functiondef(
+      'app_private.search_auction_sales_preview_v3(text[],text,text,text,text[],text[],numeric,numeric,numeric,numeric,integer,integer,text,numeric,text[],double precision,double precision,double precision,double precision,text,integer,integer,text)'::regprocedure
+    )
+  ) > 0
+  and position(
+    'publication_quarantine' in
+    pg_catalog.pg_get_functiondef(
+      'app_private.sync_auction_sale_catalogue_projection()'::regprocedure
+    )
+  ) > 0,
+  'v3 filters on the materialized quarantine column, derived from publication_quarantine'
 );
 
 select ok(
   position(
-    'publication_quarantine' in
+    'catalogue_quarantined' in
     pg_catalog.pg_get_functiondef(
       'app_private.search_auction_sales_preview_v4(text[],text,text,text,text[],text[],numeric,numeric,numeric,numeric,integer,integer,text,numeric,text[],double precision,double precision,double precision,double precision,text,integer,integer,text,date,date)'::regprocedure
     )

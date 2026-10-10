@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -23,11 +24,10 @@ export async function POST(request: Request, context: RouteContext) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Partage impossible";
-    return NextResponse.json(
-      { enabled: false, url: null, expiresAt: null, error: message },
-      { status: message.startsWith("Unauthorized") ? 401 : 400 },
-    );
+    return apiRouteError(error, request, "sale-analysis-sets.id.share", {
+      fallbackMessage: "Partage impossible",
+      extra: { enabled: false, url: null, expiresAt: null },
+    });
   }
 }
 
@@ -43,10 +43,9 @@ export async function DELETE(request: Request, context: RouteContext) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Désactivation impossible";
-    return NextResponse.json(
-      { enabled: false, url: null, expiresAt: null, error: message },
-      { status: message.startsWith("Unauthorized") ? 401 : 400 },
-    );
+    return apiRouteError(error, request, "sale-analysis-sets.id.share", {
+      fallbackMessage: "Désactivation impossible",
+      extra: { enabled: false, url: null, expiresAt: null },
+    });
   }
 }

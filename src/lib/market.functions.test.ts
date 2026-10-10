@@ -339,3 +339,28 @@ function feature(index: number) {
     },
   };
 }
+
+describe("market estimate failure logging", () => {
+  it("journalise les cas métier en info et les vraies pannes en erreur", async () => {
+    const { logMarketEstimateFailure } = await import("./market.functions");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    for (const code of [
+      "MISSING_SURFACE",
+      "MISSING_LOCATION",
+      "UNSUPPORTED_SEGMENT",
+      "NO_COMPARABLES",
+    ] as const) {
+      logMarketEstimateFailure(code, "cas métier", new Error("cas métier"));
+    }
+    expect(error).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledTimes(4);
+
+    logMarketEstimateFailure("UPSTREAM_UNAVAILABLE", "HTTP 503", new Error("HTTP 503"));
+    logMarketEstimateFailure("INTERNAL_ERROR", "boom", new Error("boom"));
+    expect(error).toHaveBeenCalledTimes(2);
+    info.mockRestore();
+    error.mockRestore();
+  });
+});

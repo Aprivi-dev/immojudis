@@ -21,7 +21,7 @@ export function MortgageCalculator({ property }: { property: Property }) {
   return (
     <AnimatedSection id="mortgage" aria-labelledby="mortgage-title">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Financement
         </p>
         <h2 id="mortgage-title" className="mt-2 font-display text-3xl text-foreground">
@@ -70,7 +70,7 @@ export function MortgageCalculator({ property }: { property: Property }) {
           </label>
         </div>
         <div className="rounded-md bg-muted/40 p-5">
-          <Calculator className="h-5 w-5 text-gold-soft" />
+          <Calculator className="h-5 w-5 text-gold-text" />
           <div className="mt-4 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             Mensualite estimee
           </div>

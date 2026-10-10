@@ -127,6 +127,20 @@ describe("structured sale status", () => {
     );
     expect(text).toContain("La vente est prévue le 15 octobre 2026");
   });
+  it("names the tribunal with its article, never 'auprès de Tribunal judiciaire'", () => {
+    const text = buildStructuredDescription(
+      sale({
+        sale_venue_type: "tribunal",
+        tribunal_name: "Tribunal judiciaire de Bordeaux",
+        sale_date: "2026-10-15T09:30:00+02:00",
+      }),
+      new Date("2026-09-10T10:00:00Z"),
+    );
+    expect(text).toContain(
+      "La vente est prévue le 15 octobre 2026 au tribunal judiciaire de Bordeaux.",
+    );
+    expect(text).not.toMatch(/auprès de Tribunal/i);
+  });
 });
 
 it("does not call the inherited surface of a commercial building habitable", () => {

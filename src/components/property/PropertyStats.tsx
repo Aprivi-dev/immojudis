@@ -36,7 +36,7 @@ export function PropertyStats({ property }: { property: Property }) {
         return (
           <div key={stat.label} className="rounded-md border border-border bg-white p-4 shadow-sm">
             <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              <Icon className="h-4 w-4 text-gold-soft" />
+              <Icon className="h-4 w-4 text-gold-text" />
               {stat.label}
             </dt>
             <dd className="mt-2 truncate text-lg font-semibold text-foreground">{stat.value}</dd>

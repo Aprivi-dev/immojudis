@@ -2271,6 +2271,7 @@ def test_postgres_connect_disables_prepared_statements_for_pooler(monkeypatch) -
     assert calls["kwargs"] == {
         "connect_timeout": supabase_client.POSTGRES_CONNECT_TIMEOUT,
         "prepare_threshold": None,
+        "options": "-c statement_timeout=120000",
     }
 
 
@@ -2308,7 +2309,9 @@ def test_postgres_connect_can_skip_retries_for_optional_telemetry(monkeypatch) -
             "postgresql://example", connect_timeout=3, retry_delays=()
         )
 
-    assert calls == [{"connect_timeout": 3, "prepare_threshold": None}]
+    assert calls == [
+        {"connect_timeout": 3, "prepare_threshold": None, "options": "-c statement_timeout=120000"}
+    ]
 
 
 def test_asset_table_cleanup_batches_source_url_deletes(monkeypatch) -> None:

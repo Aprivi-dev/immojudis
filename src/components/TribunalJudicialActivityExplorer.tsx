@@ -21,6 +21,7 @@ import type {
   TribunalJudicialActivityRangeMetric,
   TribunalJudicialActivityResponse,
 } from "@/lib/tribunal-judicial-activity";
+import { queryKeys } from "@/lib/query-keys";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 
@@ -32,7 +33,7 @@ export function TribunalJudicialActivityExplorer() {
   const [selectedCourtCode, setSelectedCourtCode] = useState("");
   const [selectedPropertyType, setSelectedPropertyType] = useState("");
   const planQuery = useQuery({
-    queryKey: ["tribunal-judicial-activity-plan", session?.user.id],
+    queryKey: queryKeys.tribunalJudicialActivityPlan(session?.user.id),
     queryFn: fetchAccessPlan,
     enabled: Boolean(session) && !authLoading,
     retry: false,
@@ -40,7 +41,7 @@ export function TribunalJudicialActivityExplorer() {
   });
   const hasAccess = planQuery.data?.plan.hasAnalysisAccess === true;
   const query = useQuery({
-    queryKey: ["tribunal-judicial-activity-directory", historyMonths],
+    queryKey: queryKeys.tribunalJudicialActivityDirectory(historyMonths),
     queryFn: () => fetchTribunalJudicialActivityDirectory(historyMonths),
     enabled: Boolean(session) && hasAccess,
     retry: false,
@@ -67,10 +68,10 @@ export function TribunalJudicialActivityExplorer() {
   );
 
   return (
-    <main className="min-h-screen bg-[#eef7ff] text-brand-navy">
+    <main id="contenu" className="min-h-screen bg-background text-brand-navy">
       <header className="border-b border-brand-navy/10 bg-white/80">
         <div className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
             <Landmark className="h-4 w-4" aria-hidden />
             Observatoire des ventes judiciaires
           </p>
@@ -132,12 +133,12 @@ export function TribunalJudicialActivityExplorer() {
               className="grid gap-4 lg:grid-cols-[1fr_auto]"
             >
               <label>
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
                   Rechercher un tribunal
                 </span>
                 <span className="relative mt-2 block">
                   <Search
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/45"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/65"
                     aria-hidden
                   />
                   <Input
@@ -150,7 +151,7 @@ export function TribunalJudicialActivityExplorer() {
                 </span>
               </label>
               <fieldset>
-                <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+                <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
                   Historique observé
                 </legend>
                 <div className="mt-2 inline-flex rounded-md border border-brand-navy/15 bg-white p-1">
@@ -207,7 +208,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
     <section aria-labelledby="national-overview-title" className="mb-10">
       <div className="flex flex-col gap-3 border-b border-brand-navy/14 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             Niveau 1 · Périmètre suivi
           </p>
           <h2
@@ -216,13 +217,13 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
           >
             Repères du périmètre suivi
           </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/62">
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/65">
             Les annonces retenues sont judiciaires, vérifiées ou recoupées et rattachées à un
             tribunal actif du référentiel Justice. Ce périmètre ne prétend pas couvrir toute la
             France.
           </p>
         </div>
-        <p className="text-xs font-semibold text-brand-navy/58">
+        <p className="text-xs font-semibold text-brand-navy/65">
           Historique observé de {data.period.historyMonths} mois · pipeline à venir sur 12 mois
         </p>
       </div>
@@ -233,7 +234,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
           aria-labelledby="national-observed-title"
         >
           <div className="border-b border-brand-navy/10 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
               Historique observé
             </p>
             <h3 id="national-observed-title" className="mt-1 font-display text-2xl font-semibold">
@@ -254,7 +255,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
               detail={formatDaysRange(national.discoveryLeadRangeDays)}
             />
           </div>
-          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/58">
+          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/65">
             {formatNumber(national.observedPastSales)} ventes passées observées depuis le{" "}
             {formatDate(data.period.historyStart)}.
           </p>
@@ -265,7 +266,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
           aria-labelledby="national-upcoming-title"
         >
           <div className="border-b border-brand-navy/10 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
               Pipeline à venir
             </p>
             <h3 id="national-upcoming-title" className="mt-1 font-display text-2xl font-semibold">
@@ -286,7 +287,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
               detail={formatDaysRange(national.upcomingDiscoveryLeadRangeDays)}
             />
           </div>
-          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/58">
+          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/65">
             {formatNumber(national.upcomingSales)} ventes à venir suivies, dont{" "}
             {formatNumber(national.upcomingSales90Days)} dans les 90 prochains jours.
           </p>
@@ -309,7 +310,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
         />
       </div>
 
-      <p className="mt-4 text-xs leading-relaxed text-brand-navy/55">
+      <p className="mt-4 text-xs leading-relaxed text-brand-navy/65">
         Ces agrégats décrivent seulement le catalogue suivi par Immojudis. Les prix d’adjudication
         déclarés par Licitor sont présentés séparément aux membres Analyse ; les taux d’issue
         définitive ne sont pas déduits de ces prix.
@@ -338,7 +339,7 @@ function RegionalCoverage({
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             Niveau 2 · Ressorts judiciaires
           </p>
           <h2
@@ -375,7 +376,7 @@ function RegionalCoverage({
               <span className="font-display text-xl font-semibold">{region.name}</span>
               <span
                 className={`mt-2 block text-xs ${
-                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/58"
+                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/65"
                 }`}
               >
                 {region.coverage.publishableCourtProfiles}/{region.coverage.trackedCourts} profils
@@ -383,14 +384,14 @@ function RegionalCoverage({
               </span>
               <span
                 className={`mt-3 block text-sm font-semibold ${
-                  selectedRegion === region.name ? "text-white" : "text-gold-soft"
+                  selectedRegion === region.name ? "text-white" : "text-gold-text"
                 }`}
               >
                 Historique · mise médiane {formatCurrencyMedian(region.startingPriceRangeEur)}
               </span>
               <span
                 className={`mt-1 block text-xs ${
-                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/58"
+                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/65"
                 }`}
               >
                 Pipeline · {formatNumber(region.upcomingSales)} à venir · mise médiane{" "}
@@ -431,18 +432,18 @@ function TribunalProfile({
     <article className="mt-8 border-t border-brand-navy/14 pt-7" aria-labelledby="court-title">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             Profil statistique du tribunal
           </p>
           <h2 id="court-title" className="mt-2 font-display text-3xl font-semibold sm:text-5xl">
             {tribunal.court.name}
           </h2>
-          <p className="mt-2 text-sm text-brand-navy/60">
+          <p className="mt-2 text-sm text-brand-navy/65">
             {tribunal.court.judicialRegion ?? "Ressort judiciaire non publié"}
           </p>
         </div>
         <label>
-          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
             Tribunal affiché
           </span>
           <select
@@ -462,7 +463,7 @@ function TribunalProfile({
       <div className="mt-7 flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold">Affiner l’historique observé par type de bien</p>
-          <p className="mt-1 text-xs text-brand-navy/55">
+          <p className="mt-1 text-xs text-brand-navy/65">
             Les petits groupes restent masqués sous cinq annonces passées.
           </p>
         </div>
@@ -471,7 +472,7 @@ function TribunalProfile({
           <select
             value={selectedPropertyType}
             onChange={(event) => onPropertyTypeChange(event.target.value)}
-            className="h-11 w-full rounded-md border border-brand-navy/15 bg-[#f8fbfe] px-3 text-sm font-semibold"
+            className="h-11 w-full rounded-md border border-brand-navy/15 bg-surface-muted px-3 text-sm font-semibold"
           >
             <option value="">Tous types de biens</option>
             {tribunal.activity.propertyTypeBenchmarks.map((benchmark) => (
@@ -485,7 +486,7 @@ function TribunalProfile({
 
       <section aria-labelledby="court-observed-title" className="mt-6">
         <div className="mb-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             Historique observé
           </p>
           <h3 id="court-observed-title" className="mt-1 font-display text-2xl font-semibold">
@@ -516,7 +517,7 @@ function TribunalProfile({
 
       <section aria-labelledby="court-upcoming-title" className="mt-7">
         <div className="mb-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             Pipeline à venir
           </p>
           <h3 id="court-upcoming-title" className="mt-1 font-display text-2xl font-semibold">
@@ -562,7 +563,7 @@ function TribunalProfile({
             bien sera adjugé à ce montant. Les frais, l’état du bien et la concurrence restent
             déterminants.
           </p>
-          <p className="mt-3 text-xs leading-relaxed text-brand-navy/54">
+          <p className="mt-3 text-xs leading-relaxed text-brand-navy/65">
             Échantillons : {priceRange.sampleSize} mises à prix et {leadRange.sampleSize} délais ·
             annonces judiciaires vérifiées ou recoupées uniquement.
           </p>
@@ -590,8 +591,8 @@ function TribunalProfile({
         </section>
       </div>
 
-      <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-brand-navy/55">
-        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" aria-hidden />
+      <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-brand-navy/65">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" aria-hidden />
         Indicateurs de couverture Immojudis, non exhaustifs du greffe et non prédictifs d’une vente
         individuelle. Données en attente, conflictuelles ou sans rattachement exact exclues.
       </p>
@@ -612,12 +613,12 @@ function ProfileMetric({
 }) {
   return (
     <div className="border-b border-brand-navy/10 p-5 last:border-b-0 md:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0 xl:border-r xl:last:border-r-0">
-      <Icon className="h-5 w-5 text-gold-soft" aria-hidden />
-      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/55">
+      <Icon className="h-5 w-5 text-gold-text" aria-hidden />
+      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/65">
         {label}
       </p>
       <p className="mt-2 font-display text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-2 text-xs leading-relaxed text-brand-navy/55">{detail}</p>
+      <p className="mt-2 text-xs leading-relaxed text-brand-navy/65">{detail}</p>
     </div>
   );
 }

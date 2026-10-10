@@ -1,3 +1,4 @@
+import { clamp } from "@/lib/guards";
 export type LightGbmTreeNode = {
   split_feature?: number;
   threshold?: number | string;
@@ -110,8 +111,4 @@ function finiteOrNaN(value: number | null | undefined): number {
 
 function finiteOrZero(value: number | null | undefined): number {
   return value != null && Number.isFinite(value) ? value : 0;
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.max(minimum, Math.min(maximum, value));
 }

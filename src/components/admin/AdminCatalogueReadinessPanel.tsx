@@ -74,14 +74,14 @@ export function AdminCatalogueReadinessPanel({
       <section className="rounded-xl border bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#a36f2c]">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
               <ShieldCheck className="size-4" />
-              Sélection Premium
+              Sélection Analyse
             </div>
             <h2 className="mt-2 text-xl font-semibold">Seuil de maturité du catalogue</h2>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#132238]/65">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-brand-navy/65">
               Les fiches restent conservées en base. Lorsque le filtre est actif, seules les fiches
-              prêtes ou publiées par dérogation alimentent l’analyse Premium.
+              prêtes ou publiées par dérogation alimentent l’offre Analyse.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -131,9 +131,9 @@ export function AdminCatalogueReadinessPanel({
           <Metric label="À évaluer" value={overview.pendingEvaluations} tone="amber" />
           <Metric label="Internes" value={overview.counts.internal_only} tone="red" />
           <Metric label="À enrichir" value={overview.counts.needs_enrichment} tone="amber" />
-          <Metric label="Prêtes Premium" value={overview.counts.premium_ready} tone="green" />
+          <Metric label="Prêtes Analyse" value={overview.counts.premium_ready} tone="green" />
         </div>
-        <p className="mt-3 text-xs text-[#132238]/55">
+        <p className="mt-3 text-xs text-brand-navy/55">
           Politique {overview.policy.policyVersion} · seuil {overview.policy.premiumReadyMin}/100 ·
           confiance minimale {Math.round(overview.policy.minimumScoreConfidence * 100)} %
         </p>
@@ -142,7 +142,7 @@ export function AdminCatalogueReadinessPanel({
       <section className="overflow-hidden rounded-xl border bg-white">
         <div className="border-b px-5 py-4">
           <h2 className="font-semibold">File d’enrichissement</h2>
-          <p className="mt-1 text-sm text-[#132238]/60">
+          <p className="mt-1 text-sm text-brand-navy/60">
             {overview.queueTotal} dossier{overview.queueTotal > 1 ? "s" : ""} à reprendre, classés
             par proximité avec le seuil.
           </p>
@@ -160,11 +160,11 @@ export function AdminCatalogueReadinessPanel({
             ))}
           </div>
         ) : (
-          <p className="p-5 text-sm text-[#132238]/60">Aucun dossier à reprendre.</p>
+          <p className="p-5 text-sm text-brand-navy/60">Aucun dossier à reprendre.</p>
         )}
         {overview.queueTotal > overview.queueLimit ? (
           <div className="flex items-center justify-between gap-3 border-t px-5 py-3 text-sm">
-            <span className="text-[#132238]/55">
+            <span className="text-brand-navy/55">
               {overview.queueOffset + 1}–
               {Math.min(overview.queueOffset + overview.items.length, overview.queueTotal)} sur{" "}
               {overview.queueTotal}
@@ -221,7 +221,7 @@ function QueueLine({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <ReadinessPill status={item.readinessStatus} />
-            <span className="font-mono text-xs text-[#132238]/50">
+            <span className="font-mono text-xs text-brand-navy/50">
               {item.readinessScore == null ? "Non scorée" : `${item.readinessScore}/100`}
             </span>
             {item.override ? (
@@ -231,7 +231,7 @@ function QueueLine({
             ) : null}
           </div>
           <h3 className="mt-2 truncate font-semibold">{title}</h3>
-          <p className="mt-1 text-xs text-[#132238]/55">
+          <p className="mt-1 text-xs text-brand-navy/55">
             {[item.city, item.department, item.sourceName].filter(Boolean).join(" · ") ||
               "Source inconnue"}
           </p>
@@ -239,11 +239,11 @@ function QueueLine({
             <p className="mt-3 text-sm text-red-700">Blocages : {item.blockers.join(" · ")}</p>
           ) : null}
           {item.missingFields.length ? (
-            <p className="mt-2 text-sm text-[#132238]/65">
+            <p className="mt-2 text-sm text-brand-navy/65">
               Manques : {item.missingFields.join(" · ")}
             </p>
           ) : null}
-          <p className="mt-2 text-xs text-[#132238]/50">
+          <p className="mt-2 text-xs text-brand-navy/50">
             Contact : {item.lawyerContact || item.lawyerName || "aucun contact détecté"}
           </p>
         </div>
@@ -355,11 +355,11 @@ function Metric({
         ? "text-amber-700"
         : tone === "red"
           ? "text-red-700"
-          : "text-[#132238]";
+          : "text-brand-navy";
   return (
     <div className="rounded-lg border bg-slate-50 p-3">
       <div className={`text-2xl font-semibold tabular-nums ${color}`}>{value}</div>
-      <div className="mt-1 text-xs text-[#132238]/55">{label}</div>
+      <div className="mt-1 text-xs text-brand-navy/55">{label}</div>
     </div>
   );
 }
@@ -369,7 +369,7 @@ function ReadinessPill({ status }: { status: CatalogueReadinessStatus }) {
     unassessed: ["Non évaluée", "border-slate-300 bg-slate-50 text-slate-700"],
     internal_only: ["Interne", "border-red-200 bg-red-50 text-red-700"],
     needs_enrichment: ["À enrichir", "border-amber-200 bg-amber-50 text-amber-800"],
-    premium_ready: ["Prête Premium", "border-emerald-200 bg-emerald-50 text-emerald-700"],
+    premium_ready: ["Prête Analyse", "border-emerald-200 bg-emerald-50 text-emerald-700"],
   }[status];
   return (
     <span

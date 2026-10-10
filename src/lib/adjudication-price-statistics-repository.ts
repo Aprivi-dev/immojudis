@@ -1,3 +1,4 @@
+import "server-only";
 import { z } from "zod";
 import { adjudicationEnrichmentSchema } from "@/lib/adjudication-distributions";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";

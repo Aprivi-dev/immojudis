@@ -4,7 +4,7 @@ _Version initiale du contrat au 30 juillet 2026._
 
 ## Portée et lecture
 
-Ce dictionnaire couvre uniquement les tables, vocabulaires et contrats d’Outcome Graph. Il décrit la cible fonctionnelle; la migration SQL versionnée reste la source de vérité pour les objets effectivement présents. L’avancement physique est indiqué dans [`IMPLEMENTATION_STATUS.md`](../IMPLEMENTATION_STATUS.md).
+Ce dictionnaire couvre uniquement les tables, vocabulaires et contrats d’Outcome Graph. Il décrit la cible fonctionnelle; la migration SQL versionnée reste la source de vérité pour les objets effectivement présents. L’avancement physique est indiqué dans [`IMPLEMENTATION_STATUS.md`](archive/IMPLEMENTATION_STATUS.md).
 
 Les tables historiques `auction_sales`, `properties` et `judicial_sales` restent des modèles de catalogue et de lecture pendant la migration. Elles ne remplacent aucune entité du registre. `user_profiles`, `user_subscriptions` et `public.has_analysis_access()` sont réutilisés comme intégration d’identité et d’entitlement, mais ne font pas partie du registre judiciaire lui-même.
 

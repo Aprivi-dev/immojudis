@@ -241,7 +241,7 @@ export function BidSimulationHistory({
                             `Hypothèses « ${entry.label} » rechargées. Le plafond est recalculé avec les données actuelles.`,
                           );
                         }}
-                        className="block py-2.5 font-medium text-gold-soft underline underline-offset-2"
+                        className="block py-2.5 font-medium text-gold-text underline underline-offset-2"
                       >
                         Reprendre
                       </button>

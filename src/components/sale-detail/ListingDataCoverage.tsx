@@ -32,6 +32,7 @@ import {
 } from "@/lib/listing-public-information";
 import styles from "./ListingDataCoverage.module.css";
 import type { AuctionSale } from "@/lib/types";
+import { asRecordOrNull } from "@/lib/guards";
 
 const MISSING_TEXT_MARKERS = new Set([
   "-",
@@ -116,12 +117,6 @@ function hasMeaningfulText(value: unknown): value is string {
   return !MISSING_TEXT_MARKERS.has(normalized);
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
 function hasPropertyType(sale: AuctionSale): boolean {
   if (!hasMeaningfulText(sale.property_type)) return false;
   const normalized = sale.property_type
@@ -178,8 +173,9 @@ function hasOrganizer(sale: AuctionSale): boolean {
 }
 
 function hasParticipationDetails(sale: AuctionSale): boolean {
-  const embedded = asRecord(sale.sale_procedure) ?? asRecord(sale.source_blocks?.sale_procedure);
-  const rules = asRecord(embedded?.rules);
+  const embedded =
+    asRecordOrNull(sale.sale_procedure) ?? asRecordOrNull(sale.source_blocks?.sale_procedure);
+  const rules = asRecordOrNull(embedded?.rules);
   const participationMode = embedded?.participation_mode;
   const stateSaleMethod = embedded?.state_sale_method;
 

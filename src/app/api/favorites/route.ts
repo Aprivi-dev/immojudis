@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -18,11 +19,10 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Favoris indisponibles";
-    return NextResponse.json(
-      { favorites: [], error: message },
-      { status: statusFromErrorMessage(message) },
-    );
+    return apiRouteError(error, request, "favorites", {
+      fallbackMessage: "Favoris indisponibles",
+      extra: { favorites: [] },
+    });
   }
 }
 
@@ -35,11 +35,10 @@ export async function POST(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Ajout aux favoris impossible";
-    return NextResponse.json(
-      { favorite: null, error: message },
-      { status: statusFromErrorMessage(message) },
-    );
+    return apiRouteError(error, request, "favorites", {
+      fallbackMessage: "Ajout aux favoris impossible",
+      extra: { favorite: null },
+    });
   }
 }
 
@@ -53,16 +52,8 @@ export async function DELETE(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Retrait des favoris impossible";
-    return NextResponse.json(
-      { ok: false, error: message },
-      { status: statusFromErrorMessage(message) },
-    );
+    return apiRouteError(error, request, "favorites", {
+      fallbackMessage: "Retrait des favoris impossible",
+    });
   }
-}
-
-function statusFromErrorMessage(message: string): number {
-  if (message.startsWith("Unauthorized")) return 401;
-  if (message.includes("réservés")) return 403;
-  return 400;
 }

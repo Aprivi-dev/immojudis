@@ -11,6 +11,7 @@ from typing import Literal
 
 import httpx
 
+from src.config import DEFAULT_USER_AGENT
 from src.official_sources.base import canonical_sha256, has_exact_origin, safe_endpoint_name
 
 STATJUR_INDEX_URL = "https://www.stats.justice.gouv.fr/statjur/html/index.php"
@@ -240,7 +241,7 @@ class JusticeActivityClient:
         self._client = client or httpx.Client(
             follow_redirects=True,
             timeout=httpx.Timeout(30.0, connect=10.0),
-            headers={"User-Agent": "immojudis-justice-activity/1.0"},
+            headers={"User-Agent": DEFAULT_USER_AGENT},
             transport=httpx.HTTPTransport(retries=3),
         )
         self._minimum_request_interval_seconds = minimum_request_interval_seconds

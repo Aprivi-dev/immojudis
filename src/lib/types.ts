@@ -148,6 +148,8 @@ export type SaleFilters = {
   around_address?: string;
   around_radius_km?: number;
   only_new?: boolean;
+  /** Sales created or modified at or after this instant (ISO timestamp). */
+  updated_since?: string;
 };
 
 export const SORT_KEYS = [

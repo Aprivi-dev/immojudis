@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -26,16 +27,9 @@ export async function GET(request: Request, { params }: RouteParams) {
     const response = await getPropertyReport({ auth, reportId: id });
     return NextResponse.json(response, { headers: PRIVATE_AUTH_HEADERS });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Rapport indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : /^(Rapport|Vente) introuvable/.test(message)
-        ? 404
-        : 400;
-    return NextResponse.json(
-      { ok: false, error: message },
-      { status, headers: PRIVATE_AUTH_HEADERS },
-    );
+    return apiRouteError(error, request, "property-reports.id", {
+      fallbackMessage: "Rapport indisponible",
+    });
   }
 }
 
@@ -47,9 +41,9 @@ export async function PATCH(request: Request, { params }: RouteParams) {
     const response = await updatePropertyReport({ auth, reportId: id, input });
     return NextResponse.json(response);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Rapport impossible à modifier";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "property-reports.id", {
+      fallbackMessage: "Rapport impossible à modifier",
+    });
   }
 }
 
@@ -60,8 +54,8 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     const response = await deletePropertyReport({ auth, reportId: id });
     return NextResponse.json(response);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Rapport impossible à supprimer";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "property-reports.id", {
+      fallbackMessage: "Rapport impossible à supprimer",
+    });
   }
 }

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ImmoJudis Premium Analytics API
-  version: 1.3.0
+  version: 1.4.0
   description: >-
     Contrats de lecture pour l'activité publique des ventes judiciaires, Outcome
     Graph et les statistiques descriptives expérimentales par tribunal. Les
@@ -211,6 +211,207 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TribunalStatisticsResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
+  /sales/{saleId}/adjudication-statistics:
+    get:
+      operationId: getSaleAdjudicationStatistics
+      summary: Lire les statistiques de prix d'adjudication d'une vente
+      description: >-
+        Réservé au plan Analyse. Référence nationale et tribunal compétent pour la vente, expérimentales et descriptives. Indisponible tant que le drapeau serveur `ADJUDICATION_PRICE_STATISTICS_ENABLED` n'est pas exactement `true`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: saleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Réponse JSON
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Toujours `private, no-store`.
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
+  /sales/{saleId}/land-report:
+    get:
+      operationId: getSaleLandReport
+      summary: Lire l'analyse du terrain d'une vente (PLU, risques, cadastre)
+      description: >-
+        Réservé au plan Analyse. `format=pdf` renvoie le rapport en PDF et exige en plus le droit d'export PDF ; `refresh=1` recalcule au lieu d'utiliser le cache (12 appels par minute et par utilisateur).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: saleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, pdf]
+            default: json
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["0", "1"]
+            default: "0"
+      responses:
+        "200":
+          description: Réponse JSON
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Toujours `private, no-store`.
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
+  /sales/{saleId}/urbanisme-cadastre:
+    get:
+      operationId: getSaleUrbanismeCadastre
+      summary: Lire les parcelles cadastrales et les signaux d'urbanisme d'une vente
+      description: >-
+        Réservé au plan Analyse. Renvoie `cadastralParcels` et `urbanPlanningSignals` tels que rattachés à la vente.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: saleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Réponse JSON
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Toujours `private, no-store`.
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
+  /tribunals/listing-statistics:
+    get:
+      operationId: getTribunalListingStatistics
+      summary: Lire les statistiques des annonces d'un tribunal
+      description: >-
+        Réservé au plan Analyse. Répond 422 `COURT_UNRESOLVED` quand le rattachement exact au tribunal reste à confirmer.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Réponse JSON
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Toujours `private, no-store`.
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "422":
+          description: Le rattachement exact au tribunal reste à confirmer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
+  /tribunals/adjudication-statistics:
+    get:
+      operationId: getTribunalAdjudicationStatistics
+      summary: Lire l'annuaire des statistiques de prix d'adjudication
+      description: >-
+        Réservé au plan Analyse. Référence nationale et liste des tribunaux dont l'effectif est publiable. Indisponible tant que `ADJUDICATION_PRICE_STATISTICS_ENABLED` n'est pas exactement `true`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Réponse JSON
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Toujours `private, no-store`.
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         "400":
           $ref: "#/components/responses/InvalidRequest"
         "401":
