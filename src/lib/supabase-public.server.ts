@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
+import { serverEnv, type EnvSource } from "@/lib/env";
 
 /**
  * Anonymous Supabase client for server components, sitemap and metadata.
@@ -8,16 +9,8 @@ import type { Database } from "@/integrations/supabase/types";
  * RLS policies, views and RPC as a signed-out visitor. It never carries a
  * session and must not be used for anything that depends on the viewer.
  */
-function firstFilledEnv(...values: Array<string | undefined>) {
-  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
-}
-
-export function createPublicSupabaseClient(env: NodeJS.ProcessEnv = process.env) {
-  const url = firstFilledEnv(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_URL);
-  const key = firstFilledEnv(
-    env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  );
+export function createPublicSupabaseClient(env?: EnvSource) {
+  const { publicUrl: url, publishableKey: key } = serverEnv(env).supabase;
   if (!url || !key) return null;
 
   return createClient<Database>(url, key, {

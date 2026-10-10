@@ -7,8 +7,10 @@ import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import MailPlus from "lucide-react/dist/esm/icons/mail-plus.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AdminPagination } from "@/components/admin/AdminPagination";
+import { ADMIN_PAGE_SIZE as PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import { Link } from "@/lib/router-compat";
 import {
   fetchAdminCatalogueReadiness,
@@ -20,7 +22,6 @@ import type {
 } from "@/lib/admin-catalogue-readiness";
 
 const QUERY_KEY = ["admin-catalogue-readiness"] as const;
-const PAGE_SIZE = 100;
 
 export type InformationRequestSelection = {
   saleId: string;
@@ -41,6 +42,13 @@ export function AdminCatalogueReadinessPanel({
     queryFn: () => fetchAdminCatalogueReadiness({ offset: pageOffset, limit: PAGE_SIZE }),
     staleTime: 30_000,
   });
+  // Après traitement des dernières lignes d'une page, revient sur la dernière page non vide.
+  useEffect(() => {
+    const data = query.data;
+    if (data && data.items.length === 0 && data.queueOffset > 0) {
+      setPageOffset(adminClampOffset(data.queueOffset, data.queueLimit, data.queueTotal));
+    }
+  }, [query.data]);
   const action = useMutation({
     mutationFn: runAdminCatalogueReadinessActionClient,
     onSuccess: () => {
@@ -162,36 +170,15 @@ export function AdminCatalogueReadinessPanel({
         ) : (
           <p className="p-5 text-sm text-brand-navy/60">Aucun dossier à reprendre.</p>
         )}
-        {overview.queueTotal > overview.queueLimit ? (
-          <div className="flex items-center justify-between gap-3 border-t px-5 py-3 text-sm">
-            <span className="text-brand-navy/55">
-              {overview.queueOffset + 1}–
-              {Math.min(overview.queueOffset + overview.items.length, overview.queueTotal)} sur{" "}
-              {overview.queueTotal}
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="admin-button-secondary"
-                disabled={overview.queueOffset === 0 || query.isFetching}
-                onClick={() => setPageOffset(Math.max(0, overview.queueOffset - PAGE_SIZE))}
-              >
-                Précédent
-              </button>
-              <button
-                type="button"
-                className="admin-button-secondary"
-                disabled={
-                  overview.queueOffset + overview.items.length >= overview.queueTotal ||
-                  query.isFetching
-                }
-                onClick={() => setPageOffset(overview.queueOffset + PAGE_SIZE)}
-              >
-                Suivant
-              </button>
-            </div>
-          </div>
-        ) : null}
+        <AdminPagination
+          label="file d’enrichissement"
+          offset={overview.queueOffset}
+          limit={overview.queueLimit}
+          total={overview.queueTotal}
+          shown={overview.items.length}
+          busy={query.isFetching}
+          onOffsetChange={setPageOffset}
+        />
       </section>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Bot from "lucide-react/dist/esm/icons/bot.js";
 import Copy from "lucide-react/dist/esm/icons/copy.js";
 import MailCheck from "lucide-react/dist/esm/icons/mail-check.js";
@@ -9,6 +9,8 @@ import X from "lucide-react/dist/esm/icons/x.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { InformationRequestSelection } from "@/components/admin/AdminCatalogueReadinessPanel";
+import { AdminPagination } from "@/components/admin/AdminPagination";
+import { ADMIN_PAGE_MAX_LIMIT, ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import {
   createAdminInformationAgentMission,
   fetchAdminInformationAgentMissions,
@@ -38,9 +40,12 @@ export function AdminInformationAgentMissionsPanel({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const [listOffset, setListOffset] = useState(0);
   const missionsQuery = useQuery({
-    queryKey: QUERY_KEY,
-    queryFn: () => fetchAdminInformationAgentMissions(),
+    queryKey: [...QUERY_KEY, listOffset],
+    queryFn: () =>
+      fetchAdminInformationAgentMissions({ offset: listOffset, limit: ADMIN_PAGE_SIZE }),
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
   const sourceRefreshQuery = useQuery({
@@ -67,6 +72,7 @@ export function AdminInformationAgentMissionsPanel({
   const preparedDraftsRef = useRef(new Map<string, InformationAgentMission>());
   const preparingKeysRef = useRef(new Set<string>());
   const availableMissionsRef = useRef<InformationAgentMission[]>([]);
+  const missionsTotalRef = useRef<number | null>(null);
   const composerSectionRef = useRef<HTMLElement | null>(null);
   const composerHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const editedDraftsRef = useRef(new Map<string, EditedMissionDraft>());
@@ -75,7 +81,25 @@ export function AdminInformationAgentMissionsPanel({
 
   useEffect(() => {
     availableMissionsRef.current = missionsQuery.data?.missions ?? [];
-  }, [missionsQuery.data?.missions]);
+    // Tant que la liste n'est pas arrivée le total reste inconnu (null) ; une réponse sans total
+    // (ancienne version de l'API) compte comme une liste complète.
+    if (missionsQuery.data) {
+      missionsTotalRef.current = missionsQuery.data.total ?? missionsQuery.data.missions.length;
+    }
+    if (
+      missionsQuery.data &&
+      !missionsQuery.data.missions.length &&
+      missionsQuery.data.offset > 0
+    ) {
+      setListOffset(
+        adminClampOffset(
+          missionsQuery.data.offset,
+          missionsQuery.data.limit,
+          missionsQuery.data.total,
+        ),
+      );
+    }
+  }, [missionsQuery.data]);
 
   const hydrateMission = useCallback((mission: InformationAgentMission) => {
     const edited = editedDraftsRef.current.get(mission.id);
@@ -116,6 +140,16 @@ export function AdminInformationAgentMissionsPanel({
       const isCurrentSelection = () =>
         selectionRef.current != null &&
         selectionIdentityKey(selectionRef.current) === selectionIdentityKey(requestSelection);
+      const uniqueEditableMission = (missions: InformationAgentMission[]) => {
+        const candidates = missions.filter(
+          (mission) =>
+            mission.saleId === requestSelection.saleId &&
+            isMissionEditable(mission.status) &&
+            (!recipientEmail ||
+              normalizeEmail(mission.recipientEmail) === normalizeEmail(recipientEmail)),
+        );
+        return candidates.length === 1 ? candidates[0] : undefined;
+      };
 
       if (!options.force) {
         const cached = preparedDraftsRef.current.get(requestKey);
@@ -123,14 +157,7 @@ export function AdminInformationAgentMissionsPanel({
           if (isCurrentSelection()) hydrateMission(cached);
           return;
         }
-        const existingCandidates = availableMissionsRef.current.filter(
-          (mission) =>
-            mission.saleId === requestSelection.saleId &&
-            isMissionEditable(mission.status) &&
-            (!recipientEmail ||
-              normalizeEmail(mission.recipientEmail) === normalizeEmail(recipientEmail)),
-        );
-        const existing = existingCandidates.length === 1 ? existingCandidates[0] : undefined;
+        const existing = uniqueEditableMission(availableMissionsRef.current);
         if (existing) {
           preparedDraftsRef.current.set(requestKey, existing);
           if (isCurrentSelection()) hydrateMission(existing);
@@ -158,38 +185,70 @@ export function AdminInformationAgentMissionsPanel({
       // The one-click path deliberately sends only the sale id. The server
       // must choose a unique, permitted contact and reject missing or
       // ambiguous contacts instead of trusting the first email in a label.
-      void createDraftAsync({
-        saleId: requestSelection.saleId,
-        ...(options.force || recipientEmail || recipientName
-          ? {
-              recipientEmail,
-              recipientName,
-            }
-          : {}),
-      })
-        .then((response) => {
-          if (!response?.mission) throw new Error("Le brouillon reçu est incomplet.");
-          preparingKeysRef.current.delete(requestKey);
-          preparedDraftsRef.current.set(requestKey, response.mission);
-          if (isCurrentSelection()) {
-            setPreparingSelectionKey(null);
-            setDraftError(null);
-            hydrateMission(response.mission);
-            toast.success("Brouillon généré. Aucun email n’a encore été envoyé.");
-          }
-          void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      const create = () =>
+        createDraftAsync({
+          saleId: requestSelection.saleId,
+          ...(options.force || recipientEmail || recipientName
+            ? {
+                recipientEmail,
+                recipientName,
+              }
+            : {}),
         })
-        .catch((error: unknown) => {
+          .then((response) => {
+            if (!response?.mission) throw new Error("Le brouillon reçu est incomplet.");
+            preparingKeysRef.current.delete(requestKey);
+            preparedDraftsRef.current.set(requestKey, response.mission);
+            if (isCurrentSelection()) {
+              setPreparingSelectionKey(null);
+              setDraftError(null);
+              hydrateMission(response.mission);
+              toast.success("Brouillon généré. Aucun email n’a encore été envoyé.");
+            }
+            void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+          })
+          .catch((error: unknown) => {
+            preparingKeysRef.current.delete(requestKey);
+            if (isCurrentSelection()) {
+              setPreparingSelectionKey(null);
+              setDraftError(error instanceof Error ? error.message : "Brouillon indisponible.");
+            }
+          });
+
+      // La liste est paginée (50 par page) : un brouillon de cette vente peut se trouver sur une
+      // page non chargée. On le cherche par vente avant d'en créer un second.
+      const hasUnloadedMissions =
+        missionsTotalRef.current === null ||
+        missionsTotalRef.current > availableMissionsRef.current.length;
+      if (options.force || !hasUnloadedMissions) {
+        void create();
+        return;
+      }
+      void queryClient
+        .fetchQuery({
+          queryKey: [...QUERY_KEY, "sale", requestSelection.saleId],
+          queryFn: () =>
+            fetchAdminInformationAgentMissions({
+              saleId: requestSelection.saleId,
+              limit: ADMIN_PAGE_MAX_LIMIT,
+            }),
+          staleTime: 0,
+        })
+        .then((response) => response.missions)
+        .catch(() => [] as InformationAgentMission[])
+        .then((saleMissions) => {
+          const existing = uniqueEditableMission(saleMissions);
+          if (!existing) return create();
           preparingKeysRef.current.delete(requestKey);
+          preparedDraftsRef.current.set(requestKey, existing);
           if (isCurrentSelection()) {
             setPreparingSelectionKey(null);
-            setDraftError(error instanceof Error ? error.message : "Brouillon indisponible.");
+            hydrateMission(existing);
           }
         });
     },
     [createDraftAsync, hydrateMission, queryClient],
   );
-
   useEffect(() => {
     selectionRef.current = selection;
     if (!selection) {
@@ -610,7 +669,7 @@ export function AdminInformationAgentMissionsPanel({
           </p>
         ) : missionsQuery.data?.missions.length ? (
           <div className="mt-3 divide-y rounded-lg border">
-            {missionsQuery.data.missions.slice(0, 12).map((mission) => (
+            {missionsQuery.data.missions.map((mission) => (
               <div
                 key={mission.id}
                 className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 text-sm"
@@ -632,6 +691,16 @@ export function AdminInformationAgentMissionsPanel({
                 ) : null}
               </div>
             ))}
+            <AdminPagination
+              label="missions récentes"
+              offset={missionsQuery.data.offset ?? 0}
+              limit={missionsQuery.data.limit ?? ADMIN_PAGE_SIZE}
+              total={missionsQuery.data.total ?? missionsQuery.data.missions.length}
+              shown={missionsQuery.data.missions.length}
+              busy={missionsQuery.isFetching}
+              onOffsetChange={setListOffset}
+              className="!px-3"
+            />
           </div>
         ) : (
           <p className="mt-3 text-sm text-brand-navy/55">Aucune mission.</p>

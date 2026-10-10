@@ -1,8 +1,11 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { nullableRpcArg } from "@/lib/rpc-args";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { adminPageQueryShape } from "@/lib/admin-page-query";
+import { ADMIN_PAGE_SIZE, adminPageMeta } from "@/lib/admin-pagination";
 import { optimizeInformationAgentPhoto } from "@/lib/information-agent-image";
 import { flattenPdfForPublication } from "@/lib/information-agent-pdf";
 import {
@@ -14,6 +17,7 @@ import {
   runAdminInformationAgentAction,
   type InformationAgentAdminActionPayload,
   type InformationAgentAdminListResponse,
+  type InformationAgentAdminMissionPage,
   type InformationAgentAdminResponse,
 } from "@/lib/information-agent";
 
@@ -26,12 +30,16 @@ export type AdminInformationAgentAction = InformationAgentAdminActionPayload;
 export async function listAdminInformationAgentMissionsForToken({
   authToken,
   saleId,
+  offset,
+  limit,
 }: {
   authToken: string;
   saleId?: string;
-}): Promise<InformationAgentAdminListResponse> {
+  offset?: number;
+  limit?: number;
+}): Promise<InformationAgentAdminMissionPage> {
   const auth = await requireAdmin(authToken);
-  return listAdminInformationAgentMissions({ auth, saleId });
+  return listAdminInformationAgentMissions({ auth, saleId, offset, limit });
 }
 
 export async function createAdminInformationAgentMissionForToken({
@@ -67,63 +75,56 @@ export const adminInformationAgentReviewSchema = z.object({
 
 export type AdminInformationAgentReviewInput = z.output<typeof adminInformationAgentReviewSchema>;
 
-const REVIEW_PAGE_SIZE = 100;
-const REVIEW_DONE_CURSOR = "__done__";
-const reviewCursorSchema = z.object({
-  createdAt: z.string().datetime({ offset: true }),
-  id: z.string().uuid(),
-});
+export const adminInformationAgentReviewQuerySchema = z.object(adminPageQueryShape);
 
 type AdminInformationAgentReviewListOptions = {
-  factCursor?: string;
-  messageCursor?: string;
+  offset?: number;
+  limit?: number;
 };
 
+/**
+ * Réponses reçues et faits à contrôler, 50 par page (`offset` / `limit`, validés par zod à la
+ * route). Les deux listes avancent ensemble : la page N montre les lignes N·limit … de chacune,
+ * `factsTotal` et `messagesTotal` donnent leur taille, `total` la plus grande des deux.
+ */
 export async function listAdminInformationAgentReview(
   authToken: string,
   options: AdminInformationAgentReviewListOptions = {},
 ) {
   await requireAdmin(authToken);
-  const factCursor = parseReviewCursor(options.factCursor);
-  const messageCursor = parseReviewCursor(options.messageCursor);
+  const offset = options.offset ?? 0;
+  const limit = options.limit ?? ADMIN_PAGE_SIZE;
+  const to = offset + limit - 1;
 
-  let factQuery = supabaseAdmin
-    .from("information_agent_fact_candidates")
-    .select("*")
-    .in("status", ["pending", "conflict"])
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true });
-  if (factCursor && factCursor !== REVIEW_DONE_CURSOR) {
-    factQuery = factQuery.or(cursorFilter(factCursor, "asc"));
-  }
-  const { data: factRows, error: factsError } =
-    factCursor === REVIEW_DONE_CURSOR
-      ? { data: [], error: null }
-      : await factQuery.range(0, REVIEW_PAGE_SIZE);
-  if (factsError) throw factsError;
-  const facts = (factRows ?? []).slice(0, REVIEW_PAGE_SIZE);
-
-  // created_at is non-null for every message; pairing it with the UUID keeps
-  // the cursor stable when several replies share the same timestamp.
-  let messageQuery = supabaseAdmin
-    .from("information_agent_messages")
-    .select("id,case_id,from_email,subject,body_text,created_at,received_at,metadata")
-    .eq("direction", "inbound")
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false });
-  if (messageCursor && messageCursor !== REVIEW_DONE_CURSOR) {
-    messageQuery = messageQuery.or(cursorFilter(messageCursor, "desc"));
-  }
-  const { data: messageRows, error: messagesError } =
-    messageCursor === REVIEW_DONE_CURSOR
-      ? { data: [], error: null }
-      : await messageQuery.range(0, REVIEW_PAGE_SIZE);
-  if (messagesError) throw messagesError;
-  const messages = (messageRows ?? []).slice(0, REVIEW_PAGE_SIZE);
+  const [factsResult, messagesResult] = await Promise.all([
+    supabaseAdmin
+      .from("information_agent_fact_candidates")
+      .select("*", { count: "exact" })
+      .in("status", ["pending", "conflict"])
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, to),
+    // created_at est non nul pour chaque message ; l'id départage les réponses simultanées.
+    supabaseAdmin
+      .from("information_agent_messages")
+      .select("id,case_id,from_email,subject,body_text,created_at,received_at,metadata", {
+        count: "exact",
+      })
+      .eq("direction", "inbound")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, to),
+  ]);
+  if (factsResult.error) throw factsResult.error;
+  if (messagesResult.error) throw messagesResult.error;
+  const facts = factsResult.data ?? [];
+  const messages = messagesResult.data ?? [];
+  const factsTotal = factsResult.count ?? offset + facts.length;
+  const messagesTotal = messagesResult.count ?? offset + messages.length;
 
   const caseIds = [
     ...new Set([
-      ...(facts ?? []).map((fact) => fact.case_id),
+      ...facts.map((fact) => fact.case_id),
       ...messages.flatMap((message) => (message.case_id ? [message.case_id] : [])),
     ]),
   ];
@@ -138,8 +139,8 @@ export async function listAdminInformationAgentReview(
     : { data: [], error: null };
   if (casesError) throw casesError;
 
-  // A case can accumulate more evidence than PostgREST's default response
-  // cap. The review page only needs assets linked to its facts.
+  // Un dossier peut accumuler plus de pièces que la limite de réponse de PostgREST : la page
+  // de revue n'a besoin que des pièces liées à ses faits.
   const evidenceAssetIds = [
     ...new Set(facts.flatMap((fact) => (fact.evidence_asset_id ? [fact.evidence_asset_id] : []))),
   ];
@@ -170,41 +171,10 @@ export async function listAdminInformationAgentReview(
     assets: assets ?? [],
     extractions: extractions ?? [],
     messages,
-    hasMoreFacts: (factRows ?? []).length > REVIEW_PAGE_SIZE,
-    nextFactsCursor:
-      (factRows ?? []).length > REVIEW_PAGE_SIZE && facts.length
-        ? encodeReviewCursor(facts[facts.length - 1])
-        : null,
-    hasMoreMessages: (messageRows ?? []).length > REVIEW_PAGE_SIZE,
-    nextMessagesCursor:
-      (messageRows ?? []).length > REVIEW_PAGE_SIZE && messages.length
-        ? encodeReviewCursor(messages[messages.length - 1])
-        : null,
+    factsTotal,
+    messagesTotal,
+    ...adminPageMeta({ offset, limit, total: Math.max(factsTotal, messagesTotal) }),
   };
-}
-
-function parseReviewCursor(
-  value: string | undefined,
-): typeof REVIEW_DONE_CURSOR | z.output<typeof reviewCursorSchema> | null {
-  if (!value) return null;
-  if (value === REVIEW_DONE_CURSOR) return REVIEW_DONE_CURSOR;
-  try {
-    return reviewCursorSchema.parse(JSON.parse(value));
-  } catch {
-    throw new Error("Curseur de revue invalide.");
-  }
-}
-
-function encodeReviewCursor(row: { created_at: string; id: string }): string {
-  return JSON.stringify({ createdAt: row.created_at, id: row.id });
-}
-
-function cursorFilter(
-  cursor: z.output<typeof reviewCursorSchema>,
-  direction: "asc" | "desc",
-): string {
-  const operator = direction === "asc" ? "gt" : "lt";
-  return `created_at.${operator}.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.${operator}.${cursor.id})`;
 }
 
 export type AdminInformationAgentReviewResponse = Awaited<
@@ -249,7 +219,7 @@ export async function reviewAdminInformationAgentFact({
     p_reviewer_id: auth.userId,
     p_fact_id: input.factId,
     p_decision: input.decision,
-    p_notes: input.notes || null,
+    p_notes: nullableRpcArg(input.notes || null),
   });
   if (error) throw error;
   return { ok: true, result: data };

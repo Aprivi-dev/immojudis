@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { AuthGate } from "@/components/AuthGate";
 import { AdminQualityPage } from "@/routes/admin.quality";
 
 export const metadata: Metadata = {
@@ -9,9 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return (
-    <AuthGate>
-      <AdminQualityPage />
-    </AuthGate>
-  );
+  return <AdminQualityPage />;
 }

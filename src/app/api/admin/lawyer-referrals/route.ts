@@ -6,8 +6,12 @@ import {
   updateAdminLawyerReferralRequest,
 } from "@/lib/admin-lawyer-referrals";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const url = new URL(request.url);
     const offset = Number(url.searchParams.get("offset") ?? 0);
@@ -33,7 +37,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     const input = adminLawyerReferralUpdateInputSchema.parse(await request.json());
     const response = await updateAdminLawyerReferralRequest({
@@ -45,3 +49,6 @@ export async function PATCH(request: Request) {
     return adminErrorResponse(error);
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const PATCH = withAdminDeadline(handlePATCH);

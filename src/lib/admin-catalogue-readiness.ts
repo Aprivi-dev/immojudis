@@ -1,7 +1,10 @@
 import "server-only";
 import { z } from "zod";
+import { nullableRpcArg } from "@/lib/rpc-args";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { adminPageQueryShape } from "@/lib/admin-page-query";
+import { ADMIN_PAGE_MAX_LIMIT, ADMIN_PAGE_SIZE } from "@/lib/admin-pagination";
 import type { Json } from "@/integrations/supabase/types";
 
 const ACTIVE_SALE_STATUSES = ["upcoming", "unknown", "postponed"];
@@ -52,10 +55,7 @@ export type CatalogueReadinessOverview = {
   items: CatalogueReadinessQueueItem[];
 };
 
-export const adminCatalogueReadinessQuerySchema = z.object({
-  offset: z.coerce.number().int().min(0).max(100_000).default(0),
-  limit: z.coerce.number().int().min(1).max(250).default(100),
-});
+export const adminCatalogueReadinessQuerySchema = z.object(adminPageQueryShape);
 
 export const adminCatalogueReadinessActionSchema = z.discriminatedUnion("action", [
   z.object({
@@ -83,7 +83,7 @@ export async function getAdminCatalogueReadinessOverview(
 ): Promise<CatalogueReadinessOverview> {
   await requireAdmin(authToken);
   const offset = Math.max(0, options.offset ?? 0);
-  const limit = Math.max(1, Math.min(250, options.limit ?? 100));
+  const limit = Math.max(1, Math.min(ADMIN_PAGE_MAX_LIMIT, options.limit ?? ADMIN_PAGE_SIZE));
   const [
     { data: policy, error: policyError },
     { data: sales, error: salesError, count: queueTotal },
@@ -207,7 +207,7 @@ export async function runAdminCatalogueReadinessAction({
       p_sale_id: input.saleId,
       p_decision: input.decision,
       p_reason: input.reason,
-      p_expires_at: input.expiresAt ?? null,
+      p_expires_at: nullableRpcArg(input.expiresAt ?? null),
     });
     if (error) throw error;
   } else {

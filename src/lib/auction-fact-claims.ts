@@ -59,22 +59,6 @@ const CLAIM_FIELD_KEYS = [
   ...new Set([...Object.values(CLAIM_FIELD_ALIASES)].flatMap((set) => [...set])),
 ];
 
-type ClaimQuery = {
-  select(columns: string): ClaimQuery;
-  eq(column: string, value: string): ClaimQuery;
-  in(
-    column: string,
-    values: string[],
-  ): Promise<{
-    data: unknown[] | null;
-    error: { code?: string; message?: string } | null;
-  }>;
-};
-
-type ClaimReader = {
-  from(table: string): ClaimQuery;
-};
-
 /**
  * Reads the private claim view with a service role and keeps the result inside
  * server workflows. `claimsBacked` distinguishes an empty migrated view from
@@ -85,8 +69,7 @@ export async function readSaleFactClaims(saleId: string): Promise<{
   claimsBacked: boolean;
 }> {
   try {
-    const reader = supabaseAdmin as unknown as ClaimReader;
-    const { data, error } = await reader
+    const { data, error } = await supabaseAdmin
       .from("v_auction_fact_claims_read_model")
       .select("field_key,fact_status,value_jsonb,confidence_score,captured_at")
       .eq("auction_sale_id", saleId)

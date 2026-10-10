@@ -1592,7 +1592,50 @@ Ce qui ralentit chaque évolution. À traiter au fil de l'eau.
 
 **Terminé quand**
 
-- [ ] Une fiche publique servie deux fois de suite ne déclenche qu'une requête Supabase.
+- [x] Une fiche publique servie deux fois de suite ne déclenche qu'une requête Supabase.
+
+**Bilan d'exécution (10 octobre 2026)**
+
+| Point                                       | Résultat                                                                                                                                                                                                       |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. `force-dynamic` de `geographic-boundary` | Fait. Retiré : le `fetch` amont (`next: { revalidate: 86_400 }`) n'est plus forcé en `no-store`. Non mesuré en bout en bout (pas d'accès sortant à `geo.api.gouv.fr` depuis l'environnement de développement). |
+| 2. `cacheComponents`                        | **Non activé** (décision ci-dessous). Remplacé par le cache de données `unstable_cache` + `export const revalidate = 300` déjà en place sur `app/sales/[id]/page.tsx`.                                         |
+| 3. Route d'invalidation                     | Fait : `POST /api/pipeline/revalidate-sale`, voir ci-dessous. L'appel depuis le pipeline Python n'est pas câblé (voir « Reste à faire »).                                                                      |
+| 4. `runtime = "nodejs"` redondants          | Fait : 14 exports supprimés (le runtime Node.js est le défaut ; l'export est de toute façon refusé par `cacheComponents`).                                                                                     |
+
+**Décision : ne pas activer `cacheComponents` maintenant**
+
+Essai réalisé en activant le drapeau dans `next.config.ts` (Next.js 16.3.8, Turbopack), puis annulé :
+
+1. Le build s'arrête d'abord sur **23 erreurs de configuration** : `dynamic` (7 fichiers, dont `sitemap.ts`, `robots.ts`, `sales/sitemap.ts`), `dynamicParams` (`ressources/[slug]`), `revalidate` (`sales/[id]`) et `runtime` (14 routes) sont refusés.
+2. Une fois ces exports retirés, `/sales/[id]` échoue : avec `cacheComponents`, `generateStaticParams()` **doit renvoyer au moins un résultat** (validation au build). Notre `return []` (génération à la première visite) devient impossible ; il faudrait un identifiant de fiche réel au moment du build, alors que la CI construit avec un Supabase factice (`https://ci.supabase.co`).
+3. Le build échoue ensuite sur `/_not-found` : `SiteFooter.tsx` appelle `new Date().getFullYear()` dans un composant client. Cette erreur « E/S synchrone » **ne peut pas être différée** avec `instant = false` ; elle se retrouvera partout où une date, un aléa ou un `Date.now()` est évalué pendant le rendu. Le build n'a pas été poussé plus loin : chaque erreur levée en révèle d'autres.
+4. Le modèle de rendu change pour tout le site : `RootLayout` appelle `connection()` quand la CSP stricte à nonce est appliquée (`cspRequiresDynamicRendering()`), ce qui impose de repenser la coque statique et les frontières `<Suspense>` de l'ensemble des 42 pages, avec `app/loading.tsx` racine déjà en jeu. Les routes d'API (`request.url`, en-têtes, cookies) sont aussi concernées.
+
+Le gain visé (une fiche = une requête Supabase) est obtenu sans le drapeau et sans toucher au modèle de rendu. Réévaluer `cacheComponents` dans un chantier dédié, avec le skill `next-cache-components-adoption` (adoption incrémentale par `instant = false`), après avoir tranché la question de la CSP à nonce.
+
+**Cache de l'aperçu public (sans `cacheComponents`)**
+
+- `lookupPublicSale` (`src/lib/public-sale.server.ts`) enveloppe la lecture Supabase dans `unstable_cache`, clé `["public-sale-lookup", <id en minuscules>]`, étiquette `sale-<id>`, `revalidate: 300` s. Les erreurs de base de données et la réponse « indisponible » (pas de Supabase configuré) ne sont jamais mises en cache ; l'absence d'une fiche l'est (5 minutes au plus, ou jusqu'à l'invalidation).
+- `app/sales/[id]/page.tsx` garde `export const revalidate = 300` (cache de la page elle-même). Un test garde les deux durées égales.
+- Mesure faite sur un build de production (`next start`) pointé sur un faux Supabase qui compte les appels : 3 requêtes `GET /sales/<id>` d'affilée = **1** appel à `get_public_sale_summary` ; invalidation, puis 2 requêtes = 1 appel de plus (2 au total).
+
+**Route d'invalidation**
+
+`POST /api/pipeline/revalidate-sale`, en-tête `Authorization: Bearer $CRON_SECRET` (le secret et la comparaison à temps constant des routes Vercel Cron, factorisés dans `src/lib/cron-auth.ts`). La route est sous `/api/pipeline/` et non `/api/cron/` : ce n'est pas une tâche planifiée, et `scheduled-jobs.test.ts` exige que chaque route `/api/cron/*` soit planifiée et documentée dans `docs/operations/planification.md`. Corps JSON `{ "saleId": "<uuid>" }` ou `{ "saleIds": ["<uuid>", …] }` (100 au plus). Pour chaque fiche : `revalidateTag("sale-<id>", { expire: 0 })` et `revalidatePath("/sales/<id>")`. Réponses : 401 sans secret, avec un mauvais secret ou si `CRON_SECRET` n'est pas configuré (la route refuse tout) ; 400 pour un corps invalide ; 405 pour tout autre verbe ; 200 sinon.
+
+Exemple d'appel depuis le pipeline :
+
+```bash
+curl -fsS -X POST "$SITE_URL/api/pipeline/revalidate-sale" \
+  -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" \
+  -d '{"saleIds":["<uuid>","<uuid>"]}'
+```
+
+**Reste à faire**
+
+- Appeler cette route depuis le pipeline de données (étape finale de `data-pipeline.yml` ou module Python qui met à jour les fiches) en passant les identifiants modifiés ; il faut pour cela le secret `CRON_SECRET` et `SITE_URL` dans les secrets du workflow. D'ici là, une fiche se rafraîchit au plus tard 5 minutes après sa modification (fenêtre de `revalidate`).
+- Constat hors périmètre, à traiter dans le chantier CSP : avec `CSP_REPORT_ONLY=false`, `/sales/[id]` répond 500 (`DYNAMIC_SERVER_USAGE`) dans un build de production, car `RootLayout` appelle `connection()` sous une page à `revalidate`. L'erreur survient avant toute lecture Supabase ; elle n'a pas été comparée au commit précédent.
 
 ### P6-07 · Synchroniser la documentation de l'API
 

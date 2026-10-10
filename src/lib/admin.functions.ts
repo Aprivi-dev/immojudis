@@ -3,6 +3,12 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
+import {
+  AdminRouteTimeoutError,
+  adminDeadlineSignal,
+  throwIfAdminDeadlineExceeded,
+} from "@/lib/admin-route-deadline";
+import { serverEnv } from "@/lib/env";
 
 const SCROLL_SOURCES = [
   "all",
@@ -91,6 +97,38 @@ export type AdminDashboardData = {
     aiDescriptions: AiDescriptionDashboardStats;
   };
   runs: AuctionRun[];
+};
+
+/**
+ * Le tableau de bord est découpé en sections pour que chaque vue admin ne calcule que ce qu'elle
+ * affiche : `runs` (rapide : 25 derniers runs, état du runner), `ai` (lecture de toutes les
+ * synthèses IA : la partie coûteuse) et `counts` (comptages exacts de six tables).
+ */
+export const ADMIN_DASHBOARD_SECTIONS = ["runs", "ai", "counts"] as const;
+export type AdminDashboardSection = (typeof ADMIN_DASHBOARD_SECTIONS)[number];
+export const adminDashboardQuerySchema = z
+  .object({ section: z.enum(ADMIN_DASHBOARD_SECTIONS).optional() })
+  .strict();
+
+export type AdminDashboardRunsData = {
+  checkedAt: string;
+  adminEmail: string;
+  runner: AdminDashboardData["runner"];
+  stats: Pick<AdminDashboardData["stats"], "queuedRuns" | "runningRuns" | "failedRuns">;
+  runs: AuctionRun[];
+};
+
+export type AdminDashboardAiData = {
+  checkedAt: string;
+  aiDescriptions: AiDescriptionDashboardStats;
+};
+
+export type AdminDashboardCountsData = {
+  checkedAt: string;
+  counts: Pick<
+    AdminDashboardData["stats"],
+    "sales" | "documents" | "extractions" | "riskOccurrences" | "scoreFactors" | "runs"
+  >;
 };
 
 export type StartScrollResult = {
@@ -310,6 +348,8 @@ export async function readAiDescriptionStats(
   const rows: AuctionSaleAiDescriptionRow[] = [];
 
   for (let from = 0; ; from += AI_DESCRIPTION_PAGE_SIZE) {
+    // Arrête la lecture de tout le catalogue dès que la route a répondu 504.
+    throwIfAdminDeadlineExceeded();
     const to = from + AI_DESCRIPTION_PAGE_SIZE - 1;
     const result = await admin
       .from<AuctionSaleAiDescriptionRow>("auction_sales")
@@ -330,41 +370,71 @@ export async function readAiDescriptionStats(
   }
 }
 
+/**
+ * La lecture des synthèses IA parcourt `raw_payload` de toutes les ventes (≈ 100 Mo compressés au
+ * 10 octobre 2026). Le tableau de bord la redemandait toutes les 10 s tant qu'un run était actif ;
+ * plusieurs onglets ouverts empilaient alors des lectures complètes. Le résultat est donc gardé
+ * 60 s et les appels simultanés partagent une seule lecture.
+ */
+const AI_STATS_TTL_MS = 60_000;
+let aiStatsCache: { expiresAt: number; value: AiDescriptionDashboardStats } | null = null;
+let aiStatsInflight: Promise<AiDescriptionDashboardStats> | null = null;
+
+export function resetAiDescriptionStatsCache(): void {
+  aiStatsCache = null;
+  aiStatsInflight = null;
+}
+
+export async function readAiDescriptionStatsCached(
+  admin: AdminClient,
+  now: () => number = Date.now,
+): Promise<AiDescriptionDashboardStats> {
+  if (aiStatsCache && aiStatsCache.expiresAt > now()) return aiStatsCache.value;
+  for (let attempt = 0; ; attempt += 1) {
+    const inflight =
+      aiStatsInflight ??
+      (aiStatsInflight = readAiDescriptionStats(admin)
+        .then((value) => {
+          aiStatsCache = { expiresAt: now() + AI_STATS_TTL_MS, value };
+          return value;
+        })
+        .finally(() => {
+          aiStatsInflight = null;
+        }));
+    try {
+      return await inflight;
+    } catch (error) {
+      // La lecture partagée a été interrompue par le délai d'une autre requête : on la relance
+      // une fois pour cette requête-ci, qui dispose encore de son propre délai.
+      const abortedByOtherRequest =
+        error instanceof AdminRouteTimeoutError && !adminDeadlineSignal()?.aborted;
+      if (!abortedByOtherRequest || attempt >= 1) throw error;
+    }
+  }
+}
+
 function scrollWebhookUrl(): string | null {
-  return firstFilledEnv(process.env.SCROLL_WEBHOOK_URL, process.env.IMMOJUDIS_SCROLL_WEBHOOK_URL);
+  return serverEnv().pipeline.webhookUrl ?? null;
 }
 
 function scrollWebhookSecret(): string | null {
-  return firstFilledEnv(
-    process.env.SCROLL_WEBHOOK_SECRET,
-    process.env.IMMOJUDIS_SCROLL_WEBHOOK_SECRET,
-  );
+  return serverEnv().pipeline.webhookSecret ?? null;
 }
 
 function githubActionsToken(): string | null {
-  return firstFilledEnv(
-    process.env.GITHUB_SCROLL_TOKEN,
-    process.env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN,
-    process.env.GITHUB_ACTIONS_DISPATCH_TOKEN,
-  );
+  return serverEnv().pipeline.githubToken ?? null;
 }
 
 function githubActionsRepository(): string {
-  return firstFilledEnv(process.env.GITHUB_SCROLL_REPOSITORY) ?? "Aprivi-dev/immojudis";
+  return serverEnv().pipeline.repository;
 }
 
 function githubActionsWorkflow(): string {
-  return firstFilledEnv(process.env.GITHUB_SCROLL_WORKFLOW) ?? "data-pipeline.yml";
+  return serverEnv().pipeline.workflow;
 }
 
 function githubActionsRef(): string {
-  return firstFilledEnv(process.env.GITHUB_SCROLL_REF) ?? "main";
-}
-
-function firstFilledEnv(...values: Array<string | undefined>): string | null {
-  return (
-    values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim() ?? null
-  );
+  return serverEnv().pipeline.ref;
 }
 
 function runnerMode(): RunnerMode {
@@ -458,41 +528,17 @@ async function dispatchGitHubActionsRun(
   });
 }
 
-export async function getAdminDashboard(authToken: string): Promise<AdminDashboardData> {
-  const context = await requireSupabaseAuthContext(authToken);
-  const adminUser = await assertAdminContext(context as AdminContext);
-  const admin = getAdminClient();
-
-  const runsQuery = admin
-    .from<AuctionRunRow>("auction_runs")
-    .select(RUN_COLUMNS)
-    .order("created_at", { ascending: false, nullsFirst: false })
-    .limit(25);
-  const pipelineControlQuery = admin
-    .from<PipelineControlRow>("auction_pipeline_control")
-    .select("enabled")
-    .limit(1);
-
-  const [
-    runsResult,
-    sales,
-    documents,
-    extractions,
-    riskOccurrences,
-    scoreFactors,
-    runsCount,
-    aiDescriptions,
-    pipelineControl,
-  ] = await Promise.all([
-    runsQuery,
-    countRows("auction_sales"),
-    countRows("auction_documents"),
-    countRows("auction_extractions"),
-    countRows("auction_risk_occurrences"),
-    countRows("auction_score_factors"),
-    countRows("auction_runs"),
-    readAiDescriptionStats(admin),
-    pipelineControlQuery,
+async function readRunsSection(
+  admin: AdminClient,
+  adminEmail: string,
+): Promise<AdminDashboardRunsData> {
+  const [runsResult, pipelineControl] = await Promise.all([
+    admin
+      .from<AuctionRunRow>("auction_runs")
+      .select(RUN_COLUMNS)
+      .order("created_at", { ascending: false, nullsFirst: false })
+      .limit(25),
+    admin.from<PipelineControlRow>("auction_pipeline_control").select("enabled").limit(1),
   ]);
 
   if (runsResult.error) {
@@ -507,7 +553,7 @@ export async function getAdminDashboard(authToken: string): Promise<AdminDashboa
 
   return {
     checkedAt: new Date().toISOString(),
-    adminEmail: adminUser.email,
+    adminEmail,
     runner: {
       instantDispatchConfigured: runnerMode() !== "queue_worker",
       mode: runnerMode(),
@@ -516,18 +562,77 @@ export async function getAdminDashboard(authToken: string): Promise<AdminDashboa
         controlEnabled === true ? "active" : controlEnabled === false ? "suspended" : "unknown",
     },
     stats: {
-      sales,
-      documents,
-      extractions,
-      riskOccurrences,
-      scoreFactors,
-      runs: runsCount,
       queuedRuns: statusCount(runs, "queued"),
       runningRuns: statusCount(runs, "running"),
       failedRuns: statusCount(runs, "failed"),
-      aiDescriptions,
     },
     runs,
+  };
+}
+
+async function readCountsSection(): Promise<AdminDashboardCountsData> {
+  const [sales, documents, extractions, riskOccurrences, scoreFactors, runs] = await Promise.all([
+    countRows("auction_sales"),
+    countRows("auction_documents"),
+    countRows("auction_extractions"),
+    countRows("auction_risk_occurrences"),
+    countRows("auction_score_factors"),
+    countRows("auction_runs"),
+  ]);
+  return {
+    checkedAt: new Date().toISOString(),
+    counts: { sales, documents, extractions, riskOccurrences, scoreFactors, runs },
+  };
+}
+
+/** Une seule section du tableau de bord : seule celle-ci est calculée. */
+export async function getAdminDashboardSection(
+  authToken: string,
+  section: "runs",
+): Promise<AdminDashboardRunsData>;
+export async function getAdminDashboardSection(
+  authToken: string,
+  section: "ai",
+): Promise<AdminDashboardAiData>;
+export async function getAdminDashboardSection(
+  authToken: string,
+  section: "counts",
+): Promise<AdminDashboardCountsData>;
+export async function getAdminDashboardSection(
+  authToken: string,
+  section: AdminDashboardSection,
+): Promise<AdminDashboardRunsData | AdminDashboardAiData | AdminDashboardCountsData>;
+export async function getAdminDashboardSection(
+  authToken: string,
+  section: AdminDashboardSection,
+): Promise<AdminDashboardRunsData | AdminDashboardAiData | AdminDashboardCountsData> {
+  const context = await requireSupabaseAuthContext(authToken);
+  const adminUser = await assertAdminContext(context as AdminContext);
+  const admin = getAdminClient();
+  if (section === "runs") return readRunsSection(admin, adminUser.email);
+  if (section === "ai") {
+    const aiDescriptions = await readAiDescriptionStatsCached(admin);
+    return { checkedAt: new Date().toISOString(), aiDescriptions };
+  }
+  return readCountsSection();
+}
+
+/** Forme historique : toutes les sections en un seul appel (sans `?section=`). */
+export async function getAdminDashboard(authToken: string): Promise<AdminDashboardData> {
+  const context = await requireSupabaseAuthContext(authToken);
+  const adminUser = await assertAdminContext(context as AdminContext);
+  const admin = getAdminClient();
+  const [runsData, countsData, aiDescriptions] = await Promise.all([
+    readRunsSection(admin, adminUser.email),
+    readCountsSection(),
+    readAiDescriptionStatsCached(admin),
+  ]);
+  return {
+    checkedAt: runsData.checkedAt,
+    adminEmail: runsData.adminEmail,
+    runner: runsData.runner,
+    stats: { ...countsData.counts, ...runsData.stats, aiDescriptions },
+    runs: runsData.runs,
   };
 }
 

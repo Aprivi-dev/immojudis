@@ -155,8 +155,8 @@ export async function createLawyerReferralRequest({
   if (existing) {
     return {
       requestId: existing.id,
-      status: existing.status,
-      matchingStatus: existing.matching_status,
+      status: existing.status as LawyerReferralStatus,
+      matchingStatus: existing.matching_status as LawyerReferralMatchingStatus,
       matchedLawyer: existing.requested_lawyer_id
         ? await getReferencedLawyerSummary(auth.supabase, existing.requested_lawyer_id)
         : null,
@@ -232,8 +232,8 @@ export async function createLawyerReferralRequest({
 
   return {
     requestId: data.id,
-    status: data.status,
-    matchingStatus: data.matching_status,
+    status: data.status as LawyerReferralStatus,
+    matchingStatus: data.matching_status as LawyerReferralMatchingStatus,
     matchedLawyer,
     reusedExisting: false,
   };
@@ -466,17 +466,21 @@ function referralRowToSummary(
   matchedLawyer: LawyerReferralResponse["matchedLawyer"] | undefined,
 ): LawyerReferralSummary {
   const sale = referralSaleSummary(row.sale_snapshot, row.sale_id);
+  // Colonnes text protégées par des contraintes CHECK : les types générés les exposent en string.
+  const status = row.status as LawyerReferralStatus;
+  const matchingStatus = row.matching_status as LawyerReferralMatchingStatus;
 
   return {
     id: row.id,
-    status: row.status,
-    statusLabel: referralStatusLabel(row.status),
-    matchingStatus: row.matching_status,
+    status,
+    statusLabel: referralStatusLabel(status),
+    matchingStatus,
     requestedLawyerId: row.requested_lawyer_id,
     matchedLawyer: matchedLawyer ?? null,
     saleId: row.sale_id,
     sale,
-    preferredContactMethod: row.preferred_contact_method,
+    preferredContactMethod:
+      row.preferred_contact_method as LawyerReferralSummary["preferredContactMethod"],
     financingReady: row.financing_ready,
     maxBidEur: row.max_bid_eur,
     assignedAt: row.assigned_at,
@@ -484,7 +488,7 @@ function referralRowToSummary(
     respondedAt: row.responded_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    nextStep: referralNextStep(row.status, Boolean(matchedLawyer), row.matching_status),
+    nextStep: referralNextStep(status, Boolean(matchedLawyer), matchingStatus),
   };
 }
 

@@ -1,15 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
+import { publicEnv } from "@/lib/env";
+import type { Database } from "./types";
 
 const isBrowser = typeof window !== "undefined";
 
-const firstFilledEnv = (...values: Array<string | undefined>) =>
-  values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
-
-const url = firstFilledEnv(process.env.NEXT_PUBLIC_SUPABASE_URL);
-const anon = firstFilledEnv(
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-);
+const { supabaseUrl: url, supabasePublishableKey: anon } = publicEnv();
 
 export const isSupabaseConfigured = Boolean(url && anon);
 
@@ -19,7 +14,7 @@ if (!isSupabaseConfigured && isBrowser) {
   );
 }
 
-export const supabase = createClient(
+export const supabase = createClient<Database>(
   url || "https://placeholder.supabase.co",
   anon || "placeholder-key",
   {

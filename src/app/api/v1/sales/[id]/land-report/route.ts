@@ -17,7 +17,6 @@ import { getCachedLandReport } from "@/lib/land-report";
 import { landReportToLines, LAND_REPORT_HEADINGS } from "@/lib/land-report-export";
 import { createTextPdf } from "@/lib/simple-pdf";
 
-export const runtime = "nodejs";
 export const maxDuration = 180;
 const paramsSchema = z.object({ id: z.string().uuid() });
 const querySchema = z.object({
