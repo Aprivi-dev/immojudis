@@ -21,6 +21,12 @@ const nextConfig: NextConfig = {
   },
   serverExternalPackages: ["pdfjs-dist"],
   outputFileTracingIncludes: {
+    // Published PDFs are flattened server-side (pdf.js + native canvas) at acceptance time.
+    "/api/admin/information-agent": [
+      "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "./node_modules/@napi-rs/canvas/**/*",
+      "./node_modules/@napi-rs/canvas-*/**/*",
+    ],
     "/api/v1/sales/*/land-report": [
       "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
       "./node_modules/@napi-rs/canvas/**/*",
