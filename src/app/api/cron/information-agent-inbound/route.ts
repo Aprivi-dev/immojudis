@@ -1,7 +1,6 @@
 import { runInformationAgentInboundQueue } from "@/lib/information-agent-inbound";
 import { runMonitoredCron } from "@/lib/cron-jobs";
 
-export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export async function GET(request: Request) {

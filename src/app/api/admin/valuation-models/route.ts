@@ -3,8 +3,6 @@ import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware"
 import { getValuationAdminOverview } from "@/lib/valuation-admin";
 import { adminErrorResponse } from "@/lib/api-route-errors";
 
-export const runtime = "nodejs";
-
 export async function GET(request: Request) {
   try {
     const overview = await getValuationAdminOverview(bearerTokenFromRequest(request));
