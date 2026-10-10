@@ -54,11 +54,10 @@ export const queryKeys = {
   saleUrbanismeCadastre: (saleId: string, sourceUrl: string | null | undefined) =>
     ["sale-urbanisme-cadastre", saleId, sourceUrl] as const,
   saleWeather: (saleId: string) => ["sale-weather", saleId] as const,
+  saleRisks: (saleId: string) => ["sale-risks", saleId] as const,
   saleWorkspace: (saleId: string) => ["sale-workspace", saleId] as const,
   precomputedMarketEstimate: (saleId: string) => ["precomputed-market-estimate", saleId] as const,
   outcomeGraph: (saleId: string) => ["outcome-graph", saleId] as const,
-  climascoreCommune: (city: string | null | undefined, postalCode: string | null | undefined) =>
-    ["climascore-commune", city, postalCode] as const,
   listingStatistics: (saleId: string, historyMonths: number, mode: "demo" | "live") =>
     ["listing-statistics", saleId, historyMonths, mode] as const,
   listingStatisticsPrices: (saleId: string) => ["listing-statistics-prices", saleId] as const,

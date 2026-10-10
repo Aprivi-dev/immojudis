@@ -47,10 +47,64 @@
   text-underline-offset: 3px;
   font-size: 0.875rem;
 }
-.widget {
-  border: 0;
-  width: 100%;
-  height: 120px;
+
+.subheading {
+  margin: 0.4rem 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+.facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: 0.6rem;
+}
+.facts > div {
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.7rem;
+  background: var(--surface-tint);
+}
+.facts dt {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+.facts dd {
+  margin: 0.2rem 0 0;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.facts dd span,
+.normal {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.chips li {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.chips li span {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+.list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 .tableWrap {
   width: 100%;

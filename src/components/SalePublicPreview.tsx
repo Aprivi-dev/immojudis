@@ -279,8 +279,8 @@ export function SalePublicPreview({
                 Découverte · gratuit
               </h3>
               <p>
-                Informations pratiques, sources publiques de la procédure, Street View et ClimaScore
-                communal selon disponibilité.
+                Informations pratiques, sources publiques de la procédure, Street View et risques
+                naturels et technologiques de la commune (Géorisques).
               </p>
             </div>
             <div className={`${styles.tier} ${styles.tierAnalysis}`}>

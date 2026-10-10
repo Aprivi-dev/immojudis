@@ -51,13 +51,7 @@ function legacyContentSecurityPolicy(options: SecurityHeaderOptions): string {
   const origin = safeOrigin(options.supabaseUrl);
   if (origin) connectSources.add(origin);
 
-  const scriptSources = [
-    "'self'",
-    "'unsafe-inline'",
-    "https://js.stripe.com",
-    // The official communal widget runs only in a sandboxed iframe.
-    "https://climascore.fr/widget/",
-  ];
+  const scriptSources = ["'self'", "'unsafe-inline'", "https://js.stripe.com"];
   if (!options.isProduction) scriptSources.push("'unsafe-eval'");
 
   const directives = [
@@ -136,7 +130,6 @@ export function buildStrictContentSecurityPolicy(options: StrictCspOptions): str
     "'strict-dynamic'",
     // Ignored by browsers that support strict-dynamic; kept as the CSP2 fallback.
     "https://js.stripe.com",
-    "https://climascore.fr/widget/",
   ];
   if (!options.isProduction) scriptSources.push("'unsafe-eval'");
 
@@ -144,9 +137,8 @@ export function buildStrictContentSecurityPolicy(options: StrictCspOptions): str
     "'self'",
     "https://js.stripe.com",
     "https://hooks.stripe.com",
-    // Google Maps Embed (Street View dialog) and the ClimaScore commune widget.
+    // Google Maps Embed (Street View dialog).
     "https://www.google.com",
-    "https://climascore.fr",
     ...(supabaseOrigin ? [supabaseOrigin] : []),
   ]);
   for (const candidate of (options.extraFrameSources ?? "").split(/[\s,]+/)) {

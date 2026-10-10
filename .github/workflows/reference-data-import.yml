@@ -1,0 +1,66 @@
+name: Reference data import
+
+# Official open data behind the "Risques environnementaux" and "Historique
+# météo" blocks of a listing: communes (geo.api.gouv.fr), GASPAR risks
+# (Géorisques) and Météo-France monthly climatology. Sources refresh at most
+# monthly, so the import stays manual like every other collection workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: "Dataset to import."
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - communes
+          - risks
+          - climate
+      dry_run:
+        description: "Download and parse without writing to Supabase."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-reference-data-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: Import official reference data
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.lock
+
+      - name: Install Python dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Import reference data
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          REQUESTED_DATASET: ${{ github.event.inputs.dataset }}
+          REQUESTED_DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=("${REQUESTED_DATASET:-all}")
+          if [ "${REQUESTED_DRY_RUN:-false}" = "true" ]; then
+            args+=("--dry-run")
+          fi
+          python -m src.reference_data "${args[@]}"
