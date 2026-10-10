@@ -5,7 +5,10 @@ import type {
   AlertNotificationSummary,
 } from "@/lib/alert-notifications";
 import type {
-  AdminDashboardData,
+  AdminDashboardAiData,
+  AdminDashboardCountsData,
+  AdminDashboardRunsData,
+  AdminDashboardSection,
   AdminScrollMode,
   AdminScrollSource,
   StartScrollResult,
@@ -1169,13 +1172,29 @@ export async function executeAdminPrivacyErasure(
   return readJson<PrivacyErasureReport>(response);
 }
 
-export async function fetchAdminDashboard(): Promise<AdminDashboardData> {
-  const response = await fetch("/api/admin/dashboard", {
+/**
+ * Chaque vue admin ne demande que la section du tableau de bord qu'elle affiche : `runs` est
+ * rapide, `ai` lit toutes les synthèses IA, `counts` fait six comptages exacts.
+ */
+async function fetchAdminDashboardSection<T>(section: AdminDashboardSection): Promise<T> {
+  const response = await fetch(`/api/admin/dashboard?section=${section}`, {
     signal: AbortSignal.timeout(30_000),
     headers: await authHeaders(),
   });
 
-  return readJson<AdminDashboardData>(response);
+  return readJson<T>(response);
+}
+
+export function fetchAdminDashboardRuns(): Promise<AdminDashboardRunsData> {
+  return fetchAdminDashboardSection<AdminDashboardRunsData>("runs");
+}
+
+export function fetchAdminDashboardAi(): Promise<AdminDashboardAiData> {
+  return fetchAdminDashboardSection<AdminDashboardAiData>("ai");
+}
+
+export function fetchAdminDashboardCounts(): Promise<AdminDashboardCountsData> {
+  return fetchAdminDashboardSection<AdminDashboardCountsData>("counts");
 }
 
 export async function fetchAdminInformationAgentEmailTemplate(): Promise<InformationAgentEmailTemplateWorkspace> {

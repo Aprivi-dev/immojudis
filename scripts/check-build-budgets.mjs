@@ -22,7 +22,14 @@ const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
 // rebuilt example listing, favourites/alerts digests, consent and trial flows)
 // measured 4,954,919 bytes. The ceiling is raised once, to 5,000,000, with the
 // per-route initial-load budgets below left as the real guard for public pages.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_000_000;
+//
+// P3-11 splits the administration into one page per view. Each page now carries
+// its own copy of the shared console frame (AdminShell and its icons), so the
+// all-chunks total grows (5,004,731 -> 5,144,513 bytes measured) while every
+// admin page loads LESS: initial JavaScript fell from 566,921 bytes (all views
+// in every page) to 470,093-537,561 bytes. The ceiling is raised once, to
+// 5,200,000, and each admin view gets its own initial-load budget below.
+const MAX_TOTAL_CLIENT_JS_BYTES = 5_200_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -127,12 +134,56 @@ const routeBudgets = [
     entryKey: "[project]/src/app/offres/page",
     maxBytes: 500_000,
   },
+  // Administration: one page per view (P3-11). Measured 470-538 KB each, against
+  // 566,921 bytes for every view before the split.
+  {
+    name: "admin-home",
+    manifest: ".next/server/app/admin/page_client-reference-manifest.js",
+    routeKey: "/admin/page",
+    entryKey: "[project]/src/app/admin/page",
+    maxBytes: 540_000,
+  },
+  {
+    name: "admin-operations",
+    manifest: ".next/server/app/admin/operations/page_client-reference-manifest.js",
+    routeKey: "/admin/operations/page",
+    entryKey: "[project]/src/app/admin/operations/page",
+    maxBytes: 565_000,
+  },
   {
     name: "admin-agent",
     manifest: ".next/server/app/admin/agent-ia/page_client-reference-manifest.js",
     routeKey: "/admin/agent-ia/page",
     entryKey: "[project]/src/app/admin/agent-ia/page",
-    maxBytes: 600_000,
+    maxBytes: 500_000,
+  },
+  {
+    name: "admin-publications",
+    manifest: ".next/server/app/admin/publications/page_client-reference-manifest.js",
+    routeKey: "/admin/publications/page",
+    entryKey: "[project]/src/app/admin/publications/page",
+    maxBytes: 545_000,
+  },
+  {
+    name: "admin-clients",
+    manifest: ".next/server/app/admin/clients/page_client-reference-manifest.js",
+    routeKey: "/admin/clients/page",
+    entryKey: "[project]/src/app/admin/clients/page",
+    maxBytes: 545_000,
+  },
+  {
+    name: "admin-lawyers",
+    manifest: ".next/server/app/admin/lawyers/page_client-reference-manifest.js",
+    routeKey: "/admin/lawyers/page",
+    entryKey: "[project]/src/app/admin/lawyers/page",
+    maxBytes: 565_000,
+  },
+  {
+    name: "admin-compliance",
+    manifest: ".next/server/app/admin/compliance/page_client-reference-manifest.js",
+    routeKey: "/admin/compliance/page",
+    entryKey: "[project]/src/app/admin/compliance/page",
+    maxBytes: 555_000,
   },
 ];
 

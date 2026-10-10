@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { AuthGate } from "@/components/AuthGate";
 import { AdminSecurityPage } from "@/components/admin/AdminSecurityPage";
 
 export const metadata: Metadata = {
@@ -9,9 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return (
-    <AuthGate>
-      <AdminSecurityPage />
-    </AuthGate>
-  );
+  return <AdminSecurityPage />;
 }

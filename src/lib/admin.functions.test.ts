@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { buildAiDescriptionDashboardStats, readAiDescriptionStats } from "@/lib/admin.functions";
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  buildAiDescriptionDashboardStats,
+  readAiDescriptionStats,
+  readAiDescriptionStatsCached,
+  resetAiDescriptionStatsCache,
+} from "@/lib/admin.functions";
 
 describe("admin dashboard AI description stats", () => {
   it("counts active missing and stale AI descriptions", () => {
@@ -113,5 +118,92 @@ describe("admin dashboard AI description stats", () => {
     expect(stats.activeOrUpcoming).toBe(1);
     expect(stats.ready).toBe(1);
     expect(stats.backfillRemaining).toBe(0);
+  });
+});
+
+describe("readAiDescriptionStatsCached", () => {
+  function countingAdmin() {
+    const reads = { count: 0 };
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const admin = {
+      from() {
+        return {
+          select() {
+            return {
+              order() {
+                return {
+                  async range() {
+                    reads.count += 1;
+                    await gate;
+                    return {
+                      data: [
+                        {
+                          status: "upcoming",
+                          llm_display_description: null,
+                          llm_prompt_version: null,
+                        },
+                      ],
+                      error: null,
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    } as unknown as Parameters<typeof readAiDescriptionStats>[0];
+    return { admin, reads, release };
+  }
+
+  beforeEach(() => resetAiDescriptionStatsCache());
+
+  it("shares one catalogue read between simultaneous callers", async () => {
+    const { admin, reads, release } = countingAdmin();
+    const pending = Promise.all([
+      readAiDescriptionStatsCached(admin),
+      readAiDescriptionStatsCached(admin),
+      readAiDescriptionStatsCached(admin),
+    ]);
+    release();
+    const results = await pending;
+    expect(reads.count).toBe(1);
+    expect(new Set(results.map((stats) => stats.backfillRemaining))).toEqual(new Set([1]));
+  });
+
+  it("serves the cached stats for 60 s, then reads again", async () => {
+    const { admin, reads, release } = countingAdmin();
+    release();
+    let clock = 1_000_000;
+    const now = () => clock;
+    await readAiDescriptionStatsCached(admin, now);
+    clock += 59_000;
+    await readAiDescriptionStatsCached(admin, now);
+    expect(reads.count).toBe(1);
+    clock += 2_000;
+    await readAiDescriptionStatsCached(admin, now);
+    expect(reads.count).toBe(2);
+  });
+
+  it("does not cache a failed read", async () => {
+    let calls = 0;
+    const admin = {
+      from() {
+        return {
+          select: () => ({
+            order: () => ({
+              range: async () => {
+                calls += 1;
+                return { data: null, error: { message: "statement timeout" } };
+              },
+            }),
+          }),
+        };
+      },
+    } as unknown as Parameters<typeof readAiDescriptionStats>[0];
+    await expect(readAiDescriptionStatsCached(admin)).rejects.toThrow("statement timeout");
+    await expect(readAiDescriptionStatsCached(admin)).rejects.toThrow("statement timeout");
+    expect(calls).toBe(2);
   });
 });
