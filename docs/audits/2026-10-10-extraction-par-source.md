@@ -28,7 +28,7 @@ session, le total de 2 828 à 2 826).
    l'« adresse exploitable » (voie, lieu-dit ou parcelle, pas seulement la commune), **1 627 ventes sur 2 826 (58 %)**
    sont aujourd'hui insuffisantes, dont `vench` (535/538) et `petites_affiches` (849/969) presque entières, car ces deux
    sources ne donnent que la commune et n'ont aucun e-mail. Si la commune seule suffit, on tombe à **926 (33 %)**.
-   **C'est la décision à prendre avant de laisser la porte active en production** (§7).
+   **C'est la décision à prendre avant de laisser la porte active en production** (§8).
 4. **Rien n'est supprimé.** La porte empêche seulement la publication de *nouvelles* ventes insuffisantes. Pour
    l'existant : rapport SQL (ids) + `recompute_scoring --drop-insufficient` (rapport par défaut, suppression explicite,
    sans tombstone, ventes liées à des utilisateurs protégées).
@@ -49,7 +49,7 @@ Légende « manquant » : ventes de la base de production au 2026-10-10 (tous st
 | `petites_affiches` | **Commune seule** (page « restricted » pour la plupart) ; « Lieu de Vente » = adresse du **tribunal**, « Avocat Poursuivant » = cabinet | Commune | 34/969 vides, **740 communales** | Aucun : la rue du bien n'est pas publiée. Test négatif : l'adresse du tribunal n'est jamais prise |
 | `vench` | **Commune seule** (code postal + commune) ; descriptif réservé aux abonnés | Idem | 0 vide, **537/538 communales** | Aucun (paywall) |
 | `agrasc` | Pas d'adresse publique (vente par opérateurs) | — | 2/8 | Aucun |
-| `notaires`, `info_encheres`, `encheres_publiques` | Champs structurés | Corrects | 0 vide ; quelques lieux nommés (« Vaudrampont, CP Commune ») | Lieu nommé reconnu comme lieu-dit |
+| `notaires`, `info_encheres`, `encheres_publiques` | Champs structurés | Corrects | 0 vide ; quelques lieux nommés (« Les Prés Exemple, CP Commune ») | Lieu nommé reconnu comme lieu-dit |
 
 ### 2.2 Superficie
 
