@@ -21,8 +21,9 @@ Le site s'ouvre quand toutes les lignes suivantes sont cochées.
 | Frais, rendement, plafond justes                                      | P2-01 à P2-07  | Livré (barème à confirmer sur Légifrance par un juriste)                                  |
 | Production alignée sur `main`, crons qui se rattrapent, base soulagée | P3-01 à P3-04  | Fusion livrée, déploiement et nettoyage de données à faire                                |
 
-Tant qu'une ligne n'est pas cochée, le paiement reste fermé (`NEXT_PUBLIC_ANALYSIS_CHECKOUT_ENABLED` absent ou `false`) :
-le site peut être public en lecture, l'offre Analyse ne se vend pas.
+Tant que les mentions légales ne sont pas toutes renseignées ou que `STRIPE_ANALYSIS_PRICE_ID` est absent,
+le paiement se ferme de lui-même (le code refuse le checkout et masque l'essai) : le site peut être public en
+lecture, l'offre Analyse ne se vend pas.
 
 ## Chantier gelé : Outcome Graph
 
