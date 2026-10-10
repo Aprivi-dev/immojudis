@@ -2,66 +2,13 @@ import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Json } from "@/integrations/supabase/types";
 import { deliverOperationalAlertNotifications } from "@/lib/operational-alerts";
 import { resolveRequestId } from "@/lib/request-id";
-
-type CronRpcClient = {
-  rpc(
-    name: "begin_operational_job_run",
-    args: { p_job_name: string },
-  ): Promise<{ data: string | null; error: { message?: string } | null }>;
-  rpc(
-    name: "finish_operational_job_run",
-    args: {
-      p_error_message: string | null;
-      p_run_id: string;
-      p_status: "success" | "failed";
-      p_summary: Record<string, unknown>;
-    },
-  ): Promise<{ data: null; error: { message?: string } | null }>;
-  rpc(
-    name: "run_data_retention",
-    args: { p_now: string },
-  ): Promise<{ data: Record<string, number> | null; error: { message?: string } | null }>;
-  rpc(
-    name: "evaluate_operational_health",
-    args: { p_now: string },
-  ): Promise<{ data: Record<string, unknown> | null; error: { message?: string } | null }>;
-  rpc(
-    name: "evaluate_market_valuation_health" | "observe_autonomous_pipeline",
-    args: { p_now: string },
-  ): Promise<{ data: Record<string, unknown> | null; error: { message?: string } | null }>;
-};
+import { nullableRpcArg } from "@/lib/rpc-args";
 
 /** Waits between attempts when the database or the network is briefly unreachable. */
 const DEFAULT_RETRY_DELAYS_MS = [5_000, 20_000, 60_000];
-
-/** `operational_job_runs` is not part of the generated database types. */
-type JobRunsReader = {
-  from(table: "operational_job_runs"): {
-    select(columns: string): {
-      eq(
-        column: string,
-        value: string,
-      ): {
-        eq(
-          column: string,
-          value: string,
-        ): {
-          gte(
-            column: string,
-            value: string,
-          ): {
-            limit(count: number): Promise<{
-              data: Array<{ id: string }> | null;
-              error: { message?: string } | null;
-            }>;
-          };
-        };
-      };
-    };
-  };
-};
 
 export type MonitoredCronOptions = {
   /**
@@ -201,7 +148,7 @@ async function withTransientRetries<T>(
 async function succeededRecently(jobName: string, windowHours: number): Promise<boolean> {
   try {
     const since = new Date(Date.now() - windowHours * 3_600_000).toISOString();
-    const { data, error } = await (supabaseAdmin as unknown as JobRunsReader)
+    const { data, error } = await supabaseAdmin
       .from("operational_job_runs")
       .select("id")
       .eq("job_name", jobName)
@@ -247,8 +194,9 @@ export function operationalErrorMessage(error: unknown): string {
 }
 
 export async function runDataRetention(now = new Date()): Promise<Record<string, unknown>> {
-  const client = supabaseAdmin as unknown as CronRpcClient;
-  const { data, error } = await client.rpc("run_data_retention", { p_now: now.toISOString() });
+  const { data, error } = await supabaseAdmin.rpc("run_data_retention", {
+    p_now: now.toISOString(),
+  });
   if (error) throw new Error(error.message || "Data retention failed.");
   return { deleted: data ?? {} };
 }
@@ -256,12 +204,11 @@ export async function runDataRetention(now = new Date()): Promise<Record<string,
 export async function evaluateOperationalHealth(
   now = new Date(),
 ): Promise<Record<string, unknown>> {
-  const client = supabaseAdmin as unknown as CronRpcClient;
   const args = { p_now: now.toISOString() };
   const results = await Promise.allSettled([
-    client.rpc("evaluate_operational_health", args),
-    client.rpc("evaluate_market_valuation_health", args),
-    client.rpc("observe_autonomous_pipeline", args),
+    supabaseAdmin.rpc("evaluate_operational_health", args),
+    supabaseAdmin.rpc("evaluate_market_valuation_health", args),
+    supabaseAdmin.rpc("observe_autonomous_pipeline", args),
   ]);
   // Deliver incidents even when an independent evaluator fails.
   const delivery = await deliverOperationalAlertNotifications();
@@ -309,8 +256,7 @@ async function beginRun(
 ): Promise<string | null> {
   try {
     return await withTransientRetries(async () => {
-      const client = supabaseAdmin as unknown as CronRpcClient;
-      const { data, error } = await client.rpc("begin_operational_job_run", {
+      const { data, error } = await supabaseAdmin.rpc("begin_operational_job_run", {
         p_job_name: jobName,
       });
       if (error) throw new Error(error.message || "Unable to create job run.");
@@ -334,12 +280,11 @@ async function finishRun(
 ): Promise<void> {
   if (!runId) return;
   try {
-    const client = supabaseAdmin as unknown as CronRpcClient;
-    const { error } = await client.rpc("finish_operational_job_run", {
-      p_error_message: errorMessage,
+    const { error } = await supabaseAdmin.rpc("finish_operational_job_run", {
+      p_error_message: nullableRpcArg(errorMessage),
       p_run_id: runId,
       p_status: status,
-      p_summary: summary,
+      p_summary: summary as Json,
     });
     if (error) throw new Error(error.message || "Unable to finish job run.");
   } catch (error) {
