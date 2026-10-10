@@ -200,7 +200,7 @@ describe("SalePublicPreview", () => {
     renderPreview({ sale_venue_type: "tribunal", sale_verification_status: "verified" });
     expect(screen.queryByText(/protège les informations/)).toBeNull();
     const list = screen.getByText("Le dossier complet ajoute").parentElement!;
-    expect(list.textContent).toContain("mise plafond simulée");
+    expect(list.textContent).toContain("enchère plafond simulée");
     expect(list.textContent).toContain("ventes comparables");
     expect(list.textContent).toContain("documents du dossier");
   });
