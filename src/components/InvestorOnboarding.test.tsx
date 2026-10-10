@@ -1,17 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
 import { InvestorOnboarding } from "./InvestorOnboarding";
 
 const navigate = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/router-compat", () => ({
-  useNavigate: () => navigate,
-  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
-    <a href={to} {...props}>
-      {children}
-    </a>
-  ),
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: navigate, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
 afterEach(() => {
   cleanup();
@@ -46,10 +40,9 @@ describe("investor welcome flow", () => {
       "/annonce-exemple",
     );
     fireEvent.click(screen.getByRole("button", { name: "Voir les biens" }));
-    expect(navigate).toHaveBeenCalledWith({
-      to: "/sales",
-      search: { query: "Bordeaux", maxPrice: 150000, homeTypes: "apartment" },
-    });
+    expect(navigate).toHaveBeenCalledWith(
+      "/sales?query=Bordeaux&maxPrice=150000&homeTypes=apartment",
+    );
   });
   it("allows all fields to be skipped without payment or a write request", () => {
     render(<InvestorOnboarding />);
@@ -59,9 +52,6 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     fireEvent.click(screen.getByRole("button", { name: "Voir les biens" }));
-    expect(navigate).toHaveBeenCalledWith({
-      to: "/sales",
-      search: { query: undefined, maxPrice: undefined, homeTypes: undefined },
-    });
+    expect(navigate).toHaveBeenCalledWith("/sales");
   });
 });

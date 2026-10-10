@@ -1,4 +1,4 @@
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 import { visibleSaleTypeOptions, type SaleTypeFilter as SaleTypeValue } from "@/lib/sale-types";
 
 export function SaleTypeFilter({

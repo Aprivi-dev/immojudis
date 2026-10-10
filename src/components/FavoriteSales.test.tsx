@@ -2,7 +2,6 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { FavoriteSalesResponse } from "@/lib/favorites";
@@ -30,22 +29,8 @@ vi.mock("@/lib/client-api", () => ({
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 vi.mock("@/hooks/use-viewed-sales", () => ({ useViewedSales: () => ({ isViewed: () => false }) }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: vi.fn() } }));
-vi.mock("@/lib/router-compat", () => ({
-  useNavigate: () => vi.fn(),
-  Link: ({
-    to,
-    params,
-    children,
-    ...props
-  }: {
-    to: string;
-    params?: { id: string };
-    children: ReactNode;
-  }) => (
-    <a href={params ? to.replace("$id", params.id) : to} {...props}>
-      {children}
-    </a>
-  ),
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
 
 vi.mock("./FavoriteButton", () => ({

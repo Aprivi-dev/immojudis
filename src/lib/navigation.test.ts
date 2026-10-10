@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loginPathWithRedirect, SITE_NAV_LINKS } from "./navigation";
+import { loginPathWithRedirect, pathWithSearch, SITE_NAV_LINKS } from "./navigation";
 
 describe("loginPathWithRedirect", () => {
   it("ramène la personne sur sa recherche après la connexion", () => {
@@ -26,5 +26,19 @@ describe("SITE_NAV_LINKS", () => {
       "Ressources",
       "Offres",
     ]);
+  });
+});
+
+describe("pathWithSearch", () => {
+  it("laisse l’adresse intacte sans paramètre renseigné", () => {
+    expect(pathWithSearch("/sales")).toBe("/sales");
+    expect(pathWithSearch("/sales", { saleType: undefined, from: null, q: "" })).toBe("/sales");
+  });
+
+  it("encode les valeurs et ignore les paramètres vides", () => {
+    expect(
+      pathWithSearch("/login", { mode: "investor", redirect: "/sales?city=Aix en Provence" }),
+    ).toBe("/login?mode=investor&redirect=%2Fsales%3Fcity%3DAix+en+Provence");
+    expect(pathWithSearch("/sales", { page: 2, saleType: undefined })).toBe("/sales?page=2");
   });
 });
