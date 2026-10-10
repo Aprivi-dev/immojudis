@@ -9,7 +9,7 @@ import {
   type MarketContext,
   type MarketEstimate,
   type MarketEstimateErrorCode,
-} from "@/lib/market.functions";
+} from "@/lib/market.server";
 import { assertPublicationVisibleSaleRow } from "@/lib/sale-publication-guard";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 

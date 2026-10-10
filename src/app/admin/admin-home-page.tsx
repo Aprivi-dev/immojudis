@@ -31,7 +31,7 @@ import {
   StatusPill,
 } from "@/components/admin/admin-ui";
 import { useAuth } from "@/hooks/use-auth";
-import type { AuctionRun } from "@/lib/admin.functions";
+import type { AuctionRun } from "@/lib/admin.server";
 import { fetchAdminDashboardRuns } from "@/lib/client-api";
 import Link from "next/link";
 

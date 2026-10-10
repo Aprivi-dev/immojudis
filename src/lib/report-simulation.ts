@@ -4,7 +4,7 @@ import { saleCostContext } from "./sale-cost-context";
 import { getMarketValuationSurfaces } from "./surface";
 import { listingValuationConflict } from "./listing-evidence";
 import type { AuctionSale } from "./types";
-import type { MarketEstimate } from "./market.functions";
+import type { MarketEstimate } from "./market.server";
 
 const amount = z.number().finite().min(0).max(1_000_000_000);
 const positiveAmount = amount.gt(0);

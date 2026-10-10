@@ -8,7 +8,7 @@ import type {
   AdminDashboardAiData,
   AdminDashboardCountsData,
   AdminDashboardRunsData,
-} from "@/lib/admin.functions";
+} from "@/lib/admin.server";
 import { AdminOperationsPage } from "./admin-operations-page";
 
 const mocks = vi.hoisted(() => ({

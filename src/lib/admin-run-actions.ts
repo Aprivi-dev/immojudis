@@ -1,4 +1,4 @@
-import type { AdminScrollMode, AdminScrollSource, AuctionRun } from "@/lib/admin.functions";
+import type { AdminScrollMode, AdminScrollSource, AuctionRun } from "@/lib/admin.server";
 
 export type AdminRunRequest = {
   source: AdminScrollSource;

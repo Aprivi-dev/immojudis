@@ -1,4 +1,4 @@
-import type { AuctionRun } from "@/lib/admin.functions";
+import type { AuctionRun } from "@/lib/admin.server";
 
 export function queryErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;

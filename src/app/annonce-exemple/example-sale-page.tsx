@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
 
 const AnalysisSaleDetailView = dynamic(
