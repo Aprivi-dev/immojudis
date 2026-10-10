@@ -27,7 +27,7 @@ def record_items(run_id: str | None, raws: list[dict], *, decision: str = 'disco
         return
     from psycopg.types.json import Jsonb
 
-    from src.storage.supabase_client import _postgres_connect
+    from src.storage.supabase_client import connect
     now = datetime.now(UTC).isoformat()
     rows = []
     for raw in raws:
@@ -39,7 +39,7 @@ def record_items(run_id: str | None, raws: list[dict], *, decision: str = 'disco
             'canonical_source_url': canonical_url or raw.get('source_url'),
             'decision': decision, 'reason': reason, 'evidence': json.loads(json.dumps(evidence, default=str)),
             'discovered_at': raw.get('_discovered_at') or now, 'updated_at': now, 'published_at': now if decision == 'published' else None})
-    with nullcontext(connection) if connection is not None else _postgres_connect(str(settings['supabase_db_url'])) as db:
+    with nullcontext(connection) if connection is not None else connect(str(settings['supabase_db_url'])) as db:
         db.execute("""insert into public.auction_collection_items
             (run_id,source_name,source_url,identity_hash,canonical_source_url,decision,reason,evidence,discovered_at,updated_at,published_at)
             select run_id,source_name,source_url,identity_hash,canonical_source_url,decision,reason,evidence,discovered_at,updated_at,published_at
@@ -67,8 +67,8 @@ def record_sale_decisions(run_id: str | None, sales: list, *, decision: str, rea
         return
     from psycopg.types.json import Jsonb
 
-    from src.storage.supabase_client import _postgres_connect
-    with nullcontext(connection) if connection is not None else _postgres_connect(str(settings['supabase_db_url'])) as db:
+    from src.storage.supabase_client import connect
+    with nullcontext(connection) if connection is not None else connect(str(settings['supabase_db_url'])) as db:
         db.execute("""update public.auction_collection_items i set
             canonical_source_url=r.canonical_source_url, decision=%s,
             reason=r.reason,updated_at=now(),
