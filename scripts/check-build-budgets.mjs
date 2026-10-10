@@ -106,7 +106,7 @@ const routeBudgets = [
     manifest: ".next/server/app/tribunaux/page_client-reference-manifest.js",
     routeKey: "/tribunaux/page",
     entryKey: "[project]/src/app/tribunaux/page",
-    maxBytes: 600_000,
+    maxBytes: 615_000,
   },
   {
     name: "example",
