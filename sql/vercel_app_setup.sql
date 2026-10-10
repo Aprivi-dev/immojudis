@@ -1,3 +1,5 @@
+-- OBSOLÈTE : ce script ne reflète plus la base. La source de vérité est supabase/migrations/.
+-- Ne plus l'exécuter ; conservé pour mémoire de l'installation initiale.
 -- =====================================================================
 -- Immojudis — Setup SQL pour l'app web
 -- À exécuter dans le SQL editor du projet Supabase.
