@@ -33,7 +33,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import type { AuctionRun } from "@/lib/admin.functions";
 import { fetchAdminDashboardRuns } from "@/lib/client-api";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 
 const ADMIN_VIEW_LINKS: Array<{
   href: string;
@@ -122,7 +122,7 @@ export function AdminHomePage() {
       onRefresh={retry}
       isRefreshing={isFetching}
       primaryAction={
-        <Link to="/admin/operations" className="admin-button-primary">
+        <Link href="/admin/operations" className="admin-button-primary">
           <Play className="size-4" />
           Lancer une collecte
         </Link>
@@ -185,7 +185,7 @@ export function AdminHomePage() {
                 </div>
               ) : null}
               <Link
-                to="/admin/settings"
+                href="/admin/settings"
                 className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-gold-text"
               >
                 Configuration rapide <ChevronRight className="size-4" />
@@ -219,7 +219,7 @@ export function AdminHomePage() {
               <EmptyState label={data ? "Aucun run trouvé" : "Données indisponibles"} />
             )}
             <Link
-              to="/admin/operations"
+              href="/admin/operations"
               className="mt-5 inline-flex items-center gap-1 text-sm font-semibold text-gold-text"
             >
               Voir le détail <ChevronRight className="size-4" />
@@ -250,7 +250,7 @@ export function AdminHomePage() {
               return (
                 <li key={view.href}>
                   <Link
-                    to={view.href}
+                    href={view.href}
                     className="admin-panel flex h-full flex-col gap-2 p-4 transition hover:border-gold-soft"
                   >
                     <span className="flex items-center gap-2 font-semibold text-brand-navy">
