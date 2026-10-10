@@ -131,7 +131,7 @@ declare
     || 'AND public.catalogue_readiness_allows_premium(s.premium_readiness_status, '
     || 's.premium_readiness_override, s.premium_readiness_override_expires_at) '
     || 'AND COALESCE(s.status, ''unknown''::text) <> ''quarantined''::text '
-    || 'AND COALESCE(s.raw_payload ->> ''publication_quarantine''::text, ::text) = ::text)) AND ';
+    || 'AND COALESCE(s.raw_payload ->> ''publication_quarantine''::text, ''''::text) = ''''::text)) AND ';
 begin
   select coalesce(c.reloptions @> array['security_invoker=false'], false)
     into already_definer

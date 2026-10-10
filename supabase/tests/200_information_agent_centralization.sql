@@ -132,8 +132,8 @@ select results_eq(
 );
 select results_eq(
   $$select public from storage.buckets where id = 'information-agent-approved'$$,
-  $$values (true)$$,
-  'only the separately approved evidence bucket is public'
+  $$values (false)$$,
+  'the approved evidence bucket is private too: files are served through signed URLs (P4-11)'
 );
 select is(
   (select file_size_limit::bigint from storage.buckets where id = 'information-agent-evidence'),
