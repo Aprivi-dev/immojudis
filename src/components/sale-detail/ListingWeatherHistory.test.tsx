@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { MeteostatWeather } from "@/lib/meteostat";
-import { ListingWeatherHistory, MeteostatMonthlyTable } from "./ListingWeatherHistory";
+import type { ClimateHistory, ClimateMonth } from "@/lib/environment-reference";
+import { ClimateHistoryView, ListingWeatherHistory } from "./ListingWeatherHistory";
 
 vi.mock("@/lib/client-api-core", () => ({
   authHeaders: async () => ({ Authorization: "Bearer test" }),
@@ -13,69 +13,131 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-const weather: MeteostatWeather = {
+
+const emptyMonth = (month: number): ClimateMonth => ({
+  month,
+  meanTemperatureC: null,
+  meanMinTemperatureC: null,
+  meanMaxTemperatureC: null,
+  precipitationMm: null,
+  rainDays: null,
+  sunshineHours: null,
+  frostDays: null,
+  hotDays: null,
+  normalTemperatureC: null,
+  normalPrecipitationMm: null,
+  normalSunshineHours: null,
+});
+
+const weather: ClimateHistory = {
   status: "ready",
-  source: "Meteostat",
-  sourceUrl: "https://meteostat.net/",
   year: 2025,
-  grid: { latitude: 44.84, longitude: -0.58 },
-  coverage: { observedMonths: 1, expectedMonths: 12 },
-  unsupportedMetrics: ["humidity", "uvIndex"],
-  fetchedAt: "2026-10-06T00:00:00Z",
-  stale: false,
+  normalPeriod: { startYear: 2016, endYear: 2024 },
+  stations: {
+    temperature: { id: "33281001", name: "Bordeaux-Merignac", distanceKm: 9, altitudeM: 47 },
+    precipitation: { id: "33281001", name: "Bordeaux-Merignac", distanceKm: 9, altitudeM: 47 },
+    sunshine: null,
+  },
   months: [
     {
-      month: "2025-01",
-      averageTemperatureC: 0,
-      minimumTemperatureC: -3,
-      maximumTemperatureC: 5,
-      precipitationMm: null,
-      snowDepthMm: null,
-      sunshineMinutes: 120,
-      windSpeedKmh: 8,
-      windGustKmh: 15,
-      pressureHpa: null,
+      ...emptyMonth(1),
+      meanTemperatureC: 0,
+      meanMinTemperatureC: -3,
+      meanMaxTemperatureC: 5,
+      precipitationMm: 143.1,
+      normalTemperatureC: 6.8,
+      normalPrecipitationMm: 92.4,
     },
+    ...Array.from({ length: 11 }, (_, index) => emptyMonth(index + 2)),
   ],
+  summary: {
+    meanTemperatureC: null,
+    precipitationMm: null,
+    sunshineHours: null,
+    frostDays: 12,
+    hotDays: 0,
+    rainDays: null,
+  },
+  normal: {
+    meanTemperatureC: 14.2,
+    precipitationMm: 851,
+    sunshineHours: null,
+    frostDays: 18.4,
+    hotDays: 21.3,
+    rainDays: 128,
+  },
+  locationSource: "listing",
+  sourceUrl: "https://meteo.data.gouv.fr/datasets/donnees-climatologiques-de-base-mensuelles",
 };
-describe("Meteostat display", () => {
-  it("keeps the Premium preview free of provider calls and observations", () => {
+
+function renderWithClient(node: React.ReactNode, client = new QueryClient()) {
+  return render(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
+}
+
+describe("Météo-France climate history", () => {
+  it("keeps the locked preview free of calls and observations", () => {
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);
     const client = new QueryClient();
     client.setQueryData(["sale-weather", "test-sale"], { weather });
-    render(
-      <QueryClientProvider client={client}>
-        <ListingWeatherHistory saleId="test-sale" enabled locked />
-      </QueryClientProvider>,
-    );
+    renderWithClient(<ListingWeatherHistory saleId="test-sale" enabled locked />, client);
+
     expect(screen.getByRole("link", { name: /avec l’offre Analyse/ }).getAttribute("href")).toBe(
       "/offres",
     );
     expect(screen.queryByRole("table")).toBeNull();
-    expect(screen.queryByText("0 °C")).toBeNull();
     expect(fetcher).not.toHaveBeenCalled();
   });
-  it("keeps zero values and missing observations distinct; only converts sunshine units", () => {
-    render(<MeteostatMonthlyTable weather={weather} />);
-    expect(screen.getByText("0 °C")).toBeTruthy();
-    expect(screen.getByText("—", { exact: true })).toBeTruthy();
-    expect(screen.getByText("2 h")).toBeTruthy();
-    expect(screen.getByText(/1 mois disponibles sur 12/)).toBeTruthy();
-  });
-  it("does not spend provider quota until the user opens the history", async () => {
-    const fetcher = vi.fn().mockResolvedValue(Response.json({ weather }));
+
+  it("loads the history as soon as the block is shown to an Analyse member", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ weather })));
     vi.stubGlobal("fetch", fetcher);
-    const { container } = render(
-      <QueryClientProvider client={new QueryClient()}>
-        <ListingWeatherHistory saleId="test-sale" enabled />
-      </QueryClientProvider>,
+    renderWithClient(<ListingWeatherHistory saleId="test-sale" enabled />);
+
+    await waitFor(() => expect(screen.getByRole("table")).toBeTruthy());
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/sales/test-sale/weather",
+      expect.objectContaining({ headers: { Authorization: "Bearer test" } }),
     );
-    expect(fetcher).not.toHaveBeenCalled();
-    const details = container.querySelector("details")!;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
-    await waitFor(() => expect(screen.getByText("0 °C")).toBeTruthy());
-    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains why no history is shown instead of failing silently", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ weather: { status: "unavailable", reason: "no_station_nearby" } }),
+          ),
+      ),
+    );
+    renderWithClient(<ListingWeatherHistory saleId="test-sale" enabled />);
+
+    expect(await screen.findByText(/Aucune station Météo-France/)).toBeTruthy();
+  });
+
+  it("keeps zero values and missing observations distinct and shows the normals", () => {
+    render(<ClimateHistoryView weather={weather} />);
+    const january = screen.getByRole("row", { name: /janvier/ });
+
+    expect(within(january).getByText(/^0 °C/)).toBeTruthy();
+    expect(within(january).getByText("(6,8 °C)")).toBeTruthy();
+    expect(within(january).getByText(/143,1 mm/)).toBeTruthy();
+    expect(screen.getByRole("row", { name: /février/ }).textContent).toBe("février—— / ——");
+    expect(screen.queryByText("Soleil")).toBeNull();
+  });
+
+  it("names the station, its distance and the open licence", () => {
+    render(<ClimateHistoryView weather={weather} />);
+
+    expect(
+      screen.getByText("Station Bordeaux-Merignac, à 9 km, altitude 47 m : températures, pluie."),
+    ).toBeTruthy();
+    expect(screen.getByText(/Licence Ouverte Etalab 2.0/)).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: /Météo-France, données climatologiques/ })
+        .getAttribute("href"),
+    ).toBe(weather.sourceUrl);
   });
 });

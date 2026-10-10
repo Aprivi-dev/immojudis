@@ -135,6 +135,7 @@ def test_secrets_are_never_in_the_environment_of_pip_and_apt_steps(path: Path) -
         "recompute-existing-sales.yml",
         "information-agent-evidence.yml",
         "dvf-import.yml",
+        "reference-data-import.yml",
         "valuation-model-training.yml",
     ],
 )
@@ -206,6 +207,7 @@ def test_information_agent_always_runs_main_with_secrets_on_its_two_business_ste
 def test_dvf_and_training_secrets_reach_only_their_python_step() -> None:
     for name, step_name in (
         ("dvf-import.yml", "Download and import DVF resources"),
+        ("reference-data-import.yml", "Import reference data"),
         ("valuation-model-training.yml", "Train, validate and publish"),
     ):
         steps = parse_jobs((WORKFLOWS / name).read_text(encoding="utf-8"))[0].steps

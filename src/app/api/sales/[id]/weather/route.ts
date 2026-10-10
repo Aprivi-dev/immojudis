@@ -6,18 +6,20 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { DETAIL_VIEW } from "@/lib/sale-views";
-import { getMeteostatHistoricalWeather, type MeteostatResult } from "@/lib/meteostat";
+import { getClimateHistory } from "@/lib/climate-history.server";
+import { resolveSaleCommune, validCoordinates } from "@/lib/commune-risks.server";
+import type { ClimateResult } from "@/lib/environment-reference";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
-import { enforceUserRateLimit, tryConsumeUserRateLimit } from "@/lib/rate-limit";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
 
 const saleIdSchema = z.string().uuid();
-const WEATHER_COLUMNS = "id,latitude,longitude";
+const WEATHER_COLUMNS = "id,latitude,longitude,city,postal_code,department";
 
 type SaleWeatherResponse = {
   saleId: string;
-  weather: MeteostatResult;
+  weather: ClimateResult;
 };
 
 const PRIVATE_WEATHER_HEADERS = {
@@ -65,31 +67,30 @@ export async function GET(
 
     const latitude = typeof sale.latitude === "number" ? sale.latitude : null;
     const longitude = typeof sale.longitude === "number" ? sale.longitude : null;
-    const weather =
-      latitude == null || longitude == null
-        ? {
-            status: "unavailable" as const,
-            source: "Meteostat" as const,
-            sourceUrl: "https://dev.meteostat.net/api/point/monthly.html",
-            reason: "coordinates_missing" as const,
-            message: "Cette annonce ne possède pas de coordonnées exploitables.",
-          }
-        : await getMeteostatHistoricalWeather(latitude, longitude, {
-            // Cached communes cost nothing; only a miss that would reach Meteostat is
-            // charged to the caller's daily budget (5 per user per day).
-            beforeUpstreamFetch: () =>
-              tryConsumeUserRateLimit({
-                userId: auth.userId,
-                bucketKey: "sales.weather.upstream",
-                ...RATE_LIMIT_POLICIES.weatherUpstream,
-              }),
-          });
+    let weather: ClimateResult;
+    if (validCoordinates(latitude, longitude)) {
+      weather = await getClimateHistory(latitude, longitude, { locationSource: "listing" });
+    } else {
+      // Without coordinates, the centre of the listing's commune is close enough
+      // to pick the nearest Météo-France station.
+      const commune = await resolveSaleCommune({
+        latitude: null,
+        longitude: null,
+        city: typeof sale.city === "string" ? sale.city : null,
+        postalCode: typeof sale.postal_code === "string" ? sale.postal_code : null,
+        department: typeof sale.department === "string" ? sale.department : null,
+      });
+      weather = commune
+        ? await getClimateHistory(commune.latitude, commune.longitude, {
+            locationSource: "commune",
+          })
+        : { status: "unavailable", reason: "location_missing" };
+    }
 
     return NextResponse.json(
       { saleId: parsedId.data, weather },
       {
-        // The durable cache lives in Supabase. Do not let a shared CDN serve
-        // one user's authorization result to another user.
+        // Do not let a shared CDN serve one user's authorization result to another user.
         headers: PRIVATE_WEATHER_HEADERS,
       },
     );
