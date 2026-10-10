@@ -4,6 +4,7 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { normalizePlanCode, type PlanCode, type PlanStatus } from "@/lib/plans";
+import { nullableRpcArg } from "@/lib/rpc-args";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import {
   assertCommercialConfirmationReadiness,
@@ -40,105 +41,8 @@ export type StripeWebhookResult = {
   duplicate?: boolean;
 };
 
-type StripeWebhookEventRpcClient = {
-  rpc(
-    name: "begin_stripe_webhook_event",
-    args: { p_event_id: string; p_event_type: string; p_livemode: boolean },
-  ): Promise<{ data: boolean | null; error: { message?: string } | null }>;
-  rpc(
-    name: "complete_stripe_webhook_event",
-    args: { p_error_message: string | null; p_event_id: string; p_processing_status: string },
-  ): Promise<{ data: null; error: { message?: string } | null }>;
-};
-
 type StripePaymentLifecycleState = "disputed" | "dispute_lost" | "cleared" | "refunded";
 type StripeReconciledPlanStatus = "active" | "paused" | "cancelled" | "expired";
-
-type StripePaymentLifecycleRpcClient = {
-  rpc(
-    name: "record_stripe_payment_state",
-    args: {
-      p_entitlement_status: StripeReconciledPlanStatus;
-      p_event_created: number;
-      p_event_id: string;
-      p_event_type: string;
-      p_payment_intent_id: string;
-      p_revoke_immediately: boolean;
-      p_state: StripePaymentLifecycleState;
-      p_user_id: string;
-    },
-  ): Promise<{
-    data: Array<{
-      effective_state: string;
-      entitlement_updated: boolean;
-      recorded: boolean;
-    }> | null;
-    error: { message?: string } | null;
-  }>;
-  rpc(
-    name: "grant_analysis_access_from_payment",
-    args: {
-      p_amount_total: number;
-      p_checkout_session_id: string;
-      p_currency: string;
-      p_duration_days: number;
-      p_event_created: number;
-      p_event_id: string;
-      p_paid_at: string;
-      p_payment_intent_id: string;
-      p_stripe_customer_id: string | null;
-      p_user_id: string;
-    },
-  ): Promise<{
-    data: Array<{ access_end: string | null; granted: boolean }> | null;
-    error: { message?: string } | null;
-  }>;
-};
-
-type TrialCardRpcClient = {
-  rpc(
-    name: "claim_trial_card",
-    args: { p_fingerprint_hash: string; p_user_id: string },
-  ): Promise<{ data: boolean | null; error: { message?: string } | null }>;
-};
-
-type StripeSubscriptionRpcClient = {
-  rpc(
-    name: "apply_stripe_subscription_state",
-    args: {
-      p_current_period_end: string | null;
-      p_event_created: number;
-      p_metadata: Json;
-      p_plan_code: PlanCode;
-      p_status: PlanStatus;
-      p_stripe_customer_id: string | null;
-      p_stripe_subscription_id: string;
-      p_user_id: string;
-    },
-  ): Promise<{
-    data: Array<{ applied: boolean; reason: string }> | null;
-    error: { message?: string } | null;
-  }>;
-};
-
-type StripeCheckoutReservationRpcClient = {
-  rpc(
-    name: "reserve_analyse_checkout",
-    args: { p_checkout_token: string; p_user_id: string },
-  ): Promise<{ data: boolean | null; error: { message?: string } | null }>;
-  rpc(
-    name: "release_analyse_checkout",
-    args: { p_checkout_token: string; p_user_id: string },
-  ): Promise<{ data: boolean | null; error: { message?: string } | null }>;
-  rpc(
-    name: "attach_analyse_checkout_customer",
-    args: {
-      p_checkout_token: string;
-      p_stripe_customer_id: string;
-      p_user_id: string;
-    },
-  ): Promise<{ data: string | null; error: { message?: string } | null }>;
-};
 
 const STRIPE_API_VERSION = "2026-06-24.dahlia";
 export {
@@ -466,8 +370,7 @@ async function resolveConfiguredAnalysisPrice(
 }
 
 async function reserveAnalyseCheckout(userId: string, checkoutToken: string): Promise<boolean> {
-  const client = supabaseAdmin as unknown as StripeCheckoutReservationRpcClient;
-  const { data, error } = await client.rpc("reserve_analyse_checkout", {
+  const { data, error } = await supabaseAdmin.rpc("reserve_analyse_checkout", {
     p_checkout_token: checkoutToken,
     p_user_id: userId,
   });
@@ -476,8 +379,7 @@ async function reserveAnalyseCheckout(userId: string, checkoutToken: string): Pr
 }
 
 async function releaseAnalyseCheckout(userId: string, checkoutToken: string): Promise<void> {
-  const client = supabaseAdmin as unknown as StripeCheckoutReservationRpcClient;
-  const { error } = await client.rpc("release_analyse_checkout", {
+  const { error } = await supabaseAdmin.rpc("release_analyse_checkout", {
     p_checkout_token: checkoutToken,
     p_user_id: userId,
   });
@@ -660,9 +562,7 @@ async function ensureStripeCustomer(
       idempotencyKey: stripeCustomerIdempotencyKey(auth.userId),
     },
   );
-
-  const client = supabaseAdmin as unknown as StripeCheckoutReservationRpcClient;
-  const { data, error } = await client.rpc("attach_analyse_checkout_customer", {
+  const { data, error } = await supabaseAdmin.rpc("attach_analyse_checkout_customer", {
     p_checkout_token: reservationToken,
     p_stripe_customer_id: customer.id,
     p_user_id: auth.userId,
@@ -699,9 +599,7 @@ async function handleCheckoutCompleted(
     if (session.metadata?.access_duration_days !== String(ANALYSIS_ACCESS_DAYS)) return false;
     const paymentIntentId = stripeObjectId(session.payment_intent);
     if (!paymentIntentId) return false;
-
-    const client = supabaseAdmin as unknown as StripePaymentLifecycleRpcClient;
-    const { data, error } = await client.rpc("grant_analysis_access_from_payment", {
+    const { data, error } = await supabaseAdmin.rpc("grant_analysis_access_from_payment", {
       p_amount_total: session.amount_total,
       p_checkout_session_id: session.id,
       p_currency: session.currency,
@@ -710,7 +608,7 @@ async function handleCheckoutCompleted(
       p_event_id: event.id,
       p_paid_at: new Date(event.created * 1000).toISOString(),
       p_payment_intent_id: paymentIntentId,
-      p_stripe_customer_id: stripeObjectId(session.customer),
+      p_stripe_customer_id: nullableRpcArg(stripeObjectId(session.customer)),
       p_user_id: userId,
     });
 
@@ -808,8 +706,7 @@ async function releaseCheckoutReservation(session: Stripe.Checkout.Session): Pro
 }
 
 async function beginStripeWebhookEvent(event: Stripe.Event): Promise<boolean> {
-  const client = supabaseAdmin as unknown as StripeWebhookEventRpcClient;
-  const { data, error } = await client.rpc("begin_stripe_webhook_event", {
+  const { data, error } = await supabaseAdmin.rpc("begin_stripe_webhook_event", {
     p_event_id: event.id,
     p_event_type: event.type,
     p_livemode: event.livemode,
@@ -823,9 +720,8 @@ async function completeStripeWebhookEvent(
   status: "processed" | "ignored" | "failed",
   errorMessage: string | null,
 ): Promise<void> {
-  const client = supabaseAdmin as unknown as StripeWebhookEventRpcClient;
-  const { error } = await client.rpc("complete_stripe_webhook_event", {
-    p_error_message: errorMessage,
+  const { error } = await supabaseAdmin.rpc("complete_stripe_webhook_event", {
+    p_error_message: nullableRpcArg(errorMessage),
     p_event_id: eventId,
     p_processing_status: status,
   });
@@ -918,9 +814,7 @@ export async function enforceSingleTrialPerCard(
   const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
   const fingerprint = paymentMethod.card?.fingerprint;
   if (!fingerprint) return "unknown";
-
-  const client = supabaseAdmin as unknown as TrialCardRpcClient;
-  const { data, error } = await client.rpc("claim_trial_card", {
+  const { data, error } = await supabaseAdmin.rpc("claim_trial_card", {
     p_fingerprint_hash: createHash("sha256").update(fingerprint).digest("hex"),
     p_user_id: userId,
   });
@@ -1016,8 +910,7 @@ async function recordStripePaymentState({
   event: Stripe.Event;
   revokeImmediately: boolean;
 }): Promise<boolean> {
-  const client = supabaseAdmin as unknown as StripePaymentLifecycleRpcClient;
-  const { data, error } = await client.rpc("record_stripe_payment_state", {
+  const { data, error } = await supabaseAdmin.rpc("record_stripe_payment_state", {
     p_entitlement_status: status,
     p_event_created: event.created,
     p_event_id: event.id,
@@ -1080,10 +973,8 @@ async function syncStripeSubscription(
       price: price?.id ?? null,
     });
   }
-
-  const client = supabaseAdmin as unknown as StripeSubscriptionRpcClient;
-  const { data, error } = await client.rpc("apply_stripe_subscription_state", {
-    p_current_period_end: stripeCurrentPeriodEndIso(current),
+  const { data, error } = await supabaseAdmin.rpc("apply_stripe_subscription_state", {
+    p_current_period_end: nullableRpcArg(stripeCurrentPeriodEndIso(current)),
     p_event_created: eventCreated,
     p_metadata: asJson({
       stripe_status: current.status,
@@ -1104,7 +995,7 @@ async function syncStripeSubscription(
     }),
     p_plan_code: plan,
     p_status: status,
-    p_stripe_customer_id: customerId,
+    p_stripe_customer_id: nullableRpcArg(customerId),
     p_stripe_subscription_id: current.id,
     p_user_id: userId,
   });
