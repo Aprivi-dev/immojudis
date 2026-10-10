@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { validateDirectorySearch } from "@/lib/lawyer-directory-search";
-import { LawyerDirectoryPage } from "@/routes/avocats";
+import { LawyerDirectoryPage } from "./lawyer-directory-page";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/avocats" },

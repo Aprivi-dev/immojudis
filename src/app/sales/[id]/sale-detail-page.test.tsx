@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SaleDetailPage } from "./sales.$id";
+import { SaleDetailPage } from "./sale-detail-page";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 
 const mocks = vi.hoisted(() => ({

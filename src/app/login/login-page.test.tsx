@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -20,20 +19,13 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: mocks.toastError } }));
-vi.mock("@/lib/router-compat", () => ({
-  createFileRoute: () => (options: Record<string, unknown>) => ({
-    ...options,
-    useSearch: () => mocks.search,
-  }),
-  useNavigate: () => vi.fn(),
-  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
-    <a href={to} {...props}>
-      {children}
-    </a>
-  ),
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/login",
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(mocks.search),
 }));
 
-import { LoginPage } from "./login";
+import { LoginPage } from "./login-page";
 
 beforeEach(() => {
   mocks.search = {};

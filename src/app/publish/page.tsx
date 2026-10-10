@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AuthGate } from "@/components/AuthGate";
-import { PublishPage } from "@/routes/publish";
+import { PublishPage } from "./publish-page";
 
 export const metadata: Metadata = {
   title: "Publier une vente",
