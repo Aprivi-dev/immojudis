@@ -31,6 +31,12 @@ import {
   safeFilename,
   stringArray,
 } from "@/lib/information-agent-inbound/text";
+import {
+  ensureInboundJobLease,
+  type InboundJobLeaseGuard,
+  type InboundLeaseFence,
+  InformationAgentInboundLeaseLostError,
+} from "@/lib/information-agent-inbound/lease";
 
 export {
   replyTextForExtraction,
@@ -187,19 +193,6 @@ export class InformationAgentWebhookPayloadTooLargeError extends Error {
     this.name = "InformationAgentWebhookPayloadTooLargeError";
   }
 }
-
-class InformationAgentInboundLeaseLostError extends Error {
-  constructor() {
-    super("Lease de traitement entrant perdu ; traitement abandonné.");
-    this.name = "InformationAgentInboundLeaseLostError";
-  }
-}
-
-type InboundJobLeaseGuard = () => Promise<boolean>;
-type InboundLeaseFence = {
-  leaseId: string;
-  messageId: string;
-};
 
 type StoredInboundEvidenceAsset = {
   id: string;
@@ -1043,12 +1036,6 @@ async function renewInformationAgentInboundJobLease(
     .maybeSingle();
   if (error) throw error;
   return Boolean(data?.id);
-}
-
-async function ensureInboundJobLease(assertJobLease?: InboundJobLeaseGuard): Promise<void> {
-  if (assertJobLease && !(await assertJobLease())) {
-    throw new InformationAgentInboundLeaseLostError();
-  }
 }
 
 async function settleInformationAgentInboundJob(
