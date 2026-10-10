@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -14,12 +15,8 @@ export async function POST(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Calcul de mise maximale impossible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservé")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "bid-ceiling", {
+      fallbackMessage: "Calcul de mise maximale impossible",
+    });
   }
 }

@@ -48,7 +48,7 @@ test.describe("admin information agent", () => {
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).toContainText(
       "ImmoJudis est un service indépendant",
     );
-    await expect(page.getByRole("textbox", { name: "Message", exact: true })).toContainText(
+    await expect(page.getByRole("textbox", { name: "Message", exact: true })).not.toContainText(
       "compte professionnel",
     );
     const initialDrafts = state.events.filter(

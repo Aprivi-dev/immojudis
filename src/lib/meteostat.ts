@@ -1,3 +1,4 @@
+import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const METEOSTAT_API_URL = "https://meteostat.p.rapidapi.com/point/monthly";
@@ -106,6 +107,12 @@ type ProviderOptions = {
   fetcher?: typeof fetch;
   store?: MeteostatCacheStore;
   apiKey?: string | null;
+  /**
+   * Called only on a cache miss, right before the shared monthly quota is consumed.
+   * Returning false stops the lookup (per-user daily budget). Because the answer is
+   * specific to the caller, the in-flight de-duplication map is bypassed when set.
+   */
+  beforeUpstreamFetch?: () => Promise<boolean>;
 };
 
 type ParsedPayload = {
@@ -222,6 +229,7 @@ export function getMeteostatHistoricalWeather(
   if (
     !options.store &&
     !options.fetcher &&
+    !options.beforeUpstreamFetch &&
     apiKey?.trim() &&
     validLatitude(latitude) &&
     validLongitude(longitude)
@@ -327,6 +335,25 @@ async function fetchMeteostatHistoricalWeather(
       reason: "cooldown",
       message: "La source météo a échoué récemment. Un nouvel essai sera effectué plus tard.",
       retryAfter: cached.retry_after ?? undefined,
+    };
+  }
+
+  if (options.beforeUpstreamFetch && !(await options.beforeUpstreamFetch())) {
+    if (parsedCached) {
+      return readyResult({
+        grid,
+        year,
+        parsed: parsedCached,
+        fetchedAt: cached?.fetched_at ?? now.toISOString(),
+        stale: true,
+      });
+    }
+    return {
+      ...unavailableBase,
+      status: "unavailable",
+      reason: "quota_exhausted",
+      message:
+        "Votre limite quotidienne de nouvelles consultations météo est atteinte. Réessayez demain.",
     };
   }
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return apiKeyErrorResponse(error);
+    return apiKeyErrorResponse(error, request);
   }
 }
 
@@ -27,16 +28,12 @@ export async function POST(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return apiKeyErrorResponse(error);
+    return apiKeyErrorResponse(error, request);
   }
 }
 
-function apiKeyErrorResponse(error: unknown) {
-  const message = error instanceof Error ? error.message : "Clés API indisponibles";
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.includes("réservées") || message.includes("Limite")
-      ? 403
-      : 400;
-  return NextResponse.json({ ok: false, error: message }, { status });
+function apiKeyErrorResponse(error: unknown, request: Request) {
+  return apiRouteError(error, request, "api-keys", {
+    fallbackMessage: "Clés API indisponibles",
+  });
 }

@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
-import { DETAIL_VIEW } from "@/lib/queries";
+import { DETAIL_VIEW } from "@/lib/sale-views";
 import { getMeteostatHistoricalWeather, type MeteostatResult } from "@/lib/meteostat";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { enforceUserRateLimit, tryConsumeUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
 
 const saleIdSchema = z.string().uuid();
@@ -39,6 +42,11 @@ export async function GET(
       "property.weatherHistory",
       "Historique météo réservé au plan Analyse.",
     );
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "sales.weather",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     const { data: sale, error: saleError } = await auth.supabase
       .from(DETAIL_VIEW)
       .select(WEATHER_COLUMNS)
@@ -66,7 +74,16 @@ export async function GET(
             reason: "coordinates_missing" as const,
             message: "Cette annonce ne possède pas de coordonnées exploitables.",
           }
-        : await getMeteostatHistoricalWeather(latitude, longitude);
+        : await getMeteostatHistoricalWeather(latitude, longitude, {
+            // Cached communes cost nothing; only a miss that would reach Meteostat is
+            // charged to the caller's daily budget (5 per user per day).
+            beforeUpstreamFetch: () =>
+              tryConsumeUserRateLimit({
+                userId: auth.userId,
+                bucketKey: "sales.weather.upstream",
+                ...RATE_LIMIT_POLICIES.weatherUpstream,
+              }),
+          });
 
     return NextResponse.json(
       { saleId: parsedId.data, weather },
@@ -77,15 +94,8 @@ export async function GET(
       },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Historique météo indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.startsWith("Forbidden") || message.includes("réserv")
-        ? 403
-        : 400;
-    return NextResponse.json(
-      { error: message },
-      { status, headers: status === 401 || status === 403 ? PRIVATE_WEATHER_HEADERS : undefined },
-    );
+    return apiRouteError(error, request, "sales.id.weather", {
+      fallbackMessage: "Historique météo indisponible",
+    });
   }
 }

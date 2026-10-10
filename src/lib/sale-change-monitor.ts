@@ -1,10 +1,11 @@
+import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
-import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
+import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/sale-views";
 import {
   getPublicationVisibleSaleIds,
   SalePublicationUnavailableError,

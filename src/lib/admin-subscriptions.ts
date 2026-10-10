@@ -1,3 +1,4 @@
+import "server-only";
 import { z } from "zod";
 import type { User } from "@supabase/supabase-js";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";

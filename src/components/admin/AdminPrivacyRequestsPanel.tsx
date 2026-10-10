@@ -7,9 +7,11 @@ import { useState } from "react";
 import { toast } from "sonner";
 import {
   executeAdminContractWithdrawal,
+  executeAdminPrivacyErasure,
   fetchAdminPrivacyRequests,
   updateAdminPrivacyRequest,
 } from "@/lib/client-api";
+import { privacyDeadlineLabel } from "@/lib/privacy-deadline";
 import type {
   PrivacyRequestAdminSummary,
   PrivacyRequestAdminUpdate,
@@ -58,7 +60,21 @@ export function AdminPrivacyRequestsPanel() {
       );
     },
   });
+  const erasure = useMutation({
+    mutationFn: (input: { requestId: string; confirmEmail: string }) =>
+      executeAdminPrivacyErasure(input),
+    onSuccess: async () => {
+      toast.success(
+        "Effacement exécuté : compte, données applicatives et client Stripe supprimés.",
+      );
+      await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
+    },
+    onError: (mutationError) => {
+      toast.error(mutationError instanceof Error ? mutationError.message : "Effacement impossible");
+    },
+  });
   const requests = data?.requests ?? [];
+  const dueSoonCount = requests.filter((request) => request.deadline?.dueSoon).length;
   const openCount =
     data?.openCount ??
     requests.filter((request) => !["completed", "rejected"].includes(request.status)).length;
@@ -83,6 +99,12 @@ export function AdminPrivacyRequestsPanel() {
             {openCount} demande{openCount > 1 ? "s" : ""} ouverte{openCount > 1 ? "s" : ""}
             {overdueCount ? ` · ${overdueCount} en retard` : " · aucune échéance dépassée"}.
           </p>
+          {dueSoonCount ? (
+            <p role="alert" className="mt-2 text-sm font-semibold text-amber-200">
+              {dueSoonCount} demande{dueSoonCount > 1 ? "s" : ""} à traiter avant J-7 : l'échéance
+              d'un mois approche.
+            </p>
+          ) : null}
         </div>
         <span
           className={`rounded-full border px-3 py-1 text-xs font-semibold ${overdueCount ? "border-red-300/30 bg-red-400/10 text-danger" : "border-emerald-300/25 bg-success-tint text-success"}`}
@@ -113,9 +135,10 @@ export function AdminPrivacyRequestsPanel() {
           <PrivacyRequestEditor
             key={request.id}
             request={request}
-            busy={mutation.isPending || withdrawal.isPending}
+            busy={mutation.isPending || withdrawal.isPending || erasure.isPending}
             onSave={(input) => mutation.mutate(input)}
             onWithdraw={(refundMode) => withdrawal.mutate({ requestId: request.id, refundMode })}
+            onErase={(input) => erasure.mutate(input)}
           />
         ))}
       </div>
@@ -185,14 +208,17 @@ function PrivacyRequestEditor({
   busy,
   onSave,
   onWithdraw,
+  onErase,
 }: {
   request: PrivacyRequestAdminSummary;
   busy: boolean;
   onSave: (input: PrivacyRequestAdminUpdate) => void;
   onWithdraw: (refundMode: "prorata" | "full") => void;
+  onErase: (input: { requestId: string; confirmEmail: string }) => void;
 }) {
   const [withdrawalMode, setWithdrawalMode] = useState<"prorata" | "full">("prorata");
   const [withdrawalArmed, setWithdrawalArmed] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState("");
   const [status, setStatus] = useState<PrivacyRequestStatus>(request.status);
   const [identityStatus, setIdentityStatus] = useState<IdentityStatus>(
     request.identityStatus as IdentityStatus,
@@ -214,6 +240,19 @@ function PrivacyRequestEditor({
       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
         <Clock className="h-3.5 w-3.5 text-gold-text" />
         Reçue le {formatDate(request.submittedAt)} · échéance {formatDate(request.dueAt)}
+        {request.deadline ? (
+          <span
+            className={`rounded-full border px-2 py-0.5 font-semibold ${
+              request.deadline.overdue
+                ? "border-red-300/30 bg-red-400/10 text-red-100"
+                : request.deadline.dueSoon
+                  ? "border-amber-300/30 bg-amber-400/10 text-amber-100"
+                  : "border-white/10 text-muted-foreground"
+            }`}
+          >
+            {privacyDeadlineLabel(request.deadline)}
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -323,6 +362,36 @@ function PrivacyRequestEditor({
                 Résilier et rembourser
               </button>
             )}
+          </div>
+        </div>
+      ) : null}
+      {request.requestType === "erasure" && !terminal && request.userId ? (
+        <div className="mt-4 rounded-lg border border-red-300/25 bg-red-400/5 p-3">
+          <p className="text-xs text-red-100">
+            Exécuter l'effacement supprime définitivement le client Stripe, les données applicatives
+            et le compte. Identité vérifiée requise ; action irréversible.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <input
+              value={confirmEmail}
+              disabled={busy}
+              onChange={(event) => setConfirmEmail(event.target.value)}
+              placeholder="Retapez l'email du demandeur pour confirmer"
+              aria-label="Email du demandeur pour confirmer l'effacement"
+              className="flex-1 rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs text-foreground"
+            />
+            <button
+              type="button"
+              disabled={
+                busy ||
+                request.identityStatus !== "verified" ||
+                confirmEmail.trim().toLowerCase() !== request.requesterEmail.toLowerCase()
+              }
+              onClick={() => onErase({ requestId: request.id, confirmEmail })}
+              className="rounded-lg border border-red-300/40 bg-red-500/20 px-4 py-2 text-xs font-bold text-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Exécuter l'effacement
+            </button>
           </div>
         </div>
       ) : null}

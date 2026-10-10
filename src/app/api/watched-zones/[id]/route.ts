@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -20,13 +21,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Mise à jour de zone impossible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservées")
-        ? 403
-        : 400;
-    return NextResponse.json({ zone: null, error: message }, { status });
+    return apiRouteError(error, request, "watched-zones.id", {
+      fallbackMessage: "Mise à jour de zone impossible",
+      extra: { zone: null },
+    });
   }
 }
 
@@ -41,8 +39,8 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Suppression de zone impossible";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "watched-zones.id", {
+      fallbackMessage: "Suppression de zone impossible",
+    });
   }
 }
