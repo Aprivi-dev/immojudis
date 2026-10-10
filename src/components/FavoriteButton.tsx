@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export function FavoriteButton({
   saleId,
@@ -25,7 +26,7 @@ export function FavoriteButton({
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
 
-  const favoriteKey = ["favorite-status", user?.id ?? null, saleId];
+  const favoriteKey = queryKeys.favoriteStatus(user?.id ?? null, saleId);
   const favorite = useQuery({
     queryKey: favoriteKey,
     enabled: Boolean(user) && !loading,
@@ -57,7 +58,7 @@ export function FavoriteButton({
       return;
     }
     setBusy(true);
-    const searchFavoriteQueryKey = ["search-favorite-status", user.id] as const;
+    const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(user.id);
     try {
       await qc.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFav) {
@@ -76,7 +77,7 @@ export function FavoriteButton({
           return [...nextFavoriteSaleIds];
         },
       );
-      qc.invalidateQueries({ queryKey: ["favorites", user.id] });
+      qc.invalidateQueries({ queryKey: queryKeys.favorites(user.id) });
       await qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (e: unknown) {
       void qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });

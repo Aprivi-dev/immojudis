@@ -10,6 +10,7 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 import styles from "./FinancingSimulator.module.css";
+import { clamp } from "@/lib/guards";
 
 const TERM_OPTIONS = [10, 15, 20, 25, 30] as const;
 const DEFAULT_DOWN_PAYMENT_RATE = 0.2;
@@ -176,10 +177,6 @@ function parseInput(value: string): number | null {
   if (!normalized) return null;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 function normalizeTerm(value: number | undefined): number {

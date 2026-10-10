@@ -18,6 +18,7 @@ import type {
   SaleAnalysisSetListResponse,
   SaleComparisonShareResponse,
 } from "@/lib/sale-analysis-sets";
+import { queryKeys } from "@/lib/query-keys";
 
 const DECISION_STATUS_LABELS: Record<SaleAnalysisItem["decision_status"], string> = {
   watching: "À surveiller",
@@ -37,7 +38,7 @@ export function ComparisonsPage() {
 
 function AccountComparisons({ userId }: { userId: string }) {
   const queryClient = useQueryClient();
-  const queryKey = ["sale-analysis-sets", userId] as const;
+  const queryKey = queryKeys.saleAnalysisSets(userId);
   const [shareLinks, setShareLinks] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
 

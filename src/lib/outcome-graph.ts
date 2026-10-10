@@ -1,3 +1,4 @@
+import { clamp } from "@/lib/guards";
 export type OutcomeGraphHorizon = "T-30" | "T-14" | "T-7" | "T-1" | "T-2h";
 
 export type OutcomeGraphConfidenceLabel = "faible" | "moyen" | "élevé";
@@ -562,8 +563,4 @@ function approximatelyOne(value: number): boolean {
 
 function validIsoDate(value: unknown): value is string {
   return typeof value === "string" && Number.isFinite(new Date(value).getTime());
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.min(maximum, Math.max(minimum, value));
 }

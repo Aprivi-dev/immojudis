@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { asRecord } from "@/lib/guards";
 
 const METEOSTAT_API_URL = "https://meteostat.p.rapidapi.com/point/monthly";
 const METEOSTAT_DOCS_URL = "https://dev.meteostat.net/api/point/monthly.html";
@@ -99,8 +100,6 @@ export type MeteostatCacheStore = {
   }): Promise<void>;
   consumeQuota(monthStart: string): Promise<boolean>;
 };
-
-type JsonRecord = Record<string, unknown>;
 
 type ProviderOptions = {
   now?: () => Date;
@@ -618,10 +617,6 @@ function isFutureDate(value: string | null | undefined, now: Date): boolean {
 function upstreamErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "Meteostat upstream error";
   return message.length > 240 ? message.slice(0, 240) : message;
-}
-
-function asRecord(value: unknown): JsonRecord {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
 }
 
 function textValue(value: unknown): string | null {

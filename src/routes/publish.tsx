@@ -23,6 +23,7 @@ import {
   type PublicationRequestSummary,
 } from "@/lib/publication-requests-client";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/publish")({
   component: PublishPage,
@@ -95,7 +96,7 @@ export function PublishPage() {
   const professionalStatus = getProfessionalStatus(profile);
 
   const { data: recentRequestsData, isFetching: requestsLoading } = useQuery({
-    queryKey: ["publication-requests", user?.id],
+    queryKey: queryKeys.publicationRequests(user?.id),
     enabled: Boolean(user?.id && isProfessional),
     queryFn: () => fetchPublicationRequestsClient(1),
   });
@@ -185,7 +186,7 @@ export function PublishPage() {
         files,
       });
 
-      await queryClient.invalidateQueries({ queryKey: ["publication-requests"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.publicationRequestsAll() });
       toast.success("Demande envoyée. Elle apparaît maintenant dans la file de validation admin.");
       setDraft(INITIAL_DRAFT);
       setFiles([]);

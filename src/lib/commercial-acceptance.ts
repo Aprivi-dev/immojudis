@@ -16,6 +16,7 @@ import {
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
+import { escapeHtml, numberValue, stringValue } from "@/lib/guards";
 
 export const checkoutConsentSchema = z.object({
   termsAccepted: z.literal(true),
@@ -393,14 +394,6 @@ function jsonRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
 function formatMoney(amountCents: number, currency: string): string {
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
@@ -423,13 +416,4 @@ function formatOfferDate(value: string): string {
     timeStyle: "short",
     timeZone: "Europe/Paris",
   }).format(date);
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }

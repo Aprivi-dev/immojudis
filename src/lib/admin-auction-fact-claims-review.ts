@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { asRecord } from "@/lib/guards";
 
 const REVIEW_PAGE_SIZE = 50;
 const MAX_REVIEW_PAGE_SIZE = 100;
@@ -358,12 +359,6 @@ function parseClaimReadRow(value: unknown): ClaimReadRow | null {
 
 function nullableString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 function normalizeConfidence(value: number | string | null): number | null {

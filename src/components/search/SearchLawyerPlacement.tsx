@@ -5,6 +5,7 @@ import Megaphone from "lucide-react/dist/esm/icons/megaphone.js";
 import { fetchLawyerDirectory } from "@/lib/client-api";
 import type { LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
+import { queryKeys } from "@/lib/query-keys";
 
 export type SearchLawyerPlacementProps = {
   geographicLabel?: string;
@@ -36,7 +37,7 @@ export function SearchLawyerPlacement({
     "votre secteur";
 
   const directoryQuery = useQuery({
-    queryKey: ["search-lawyer-placement", cityValue, departmentValue],
+    queryKey: queryKeys.searchLawyerPlacement(cityValue, departmentValue),
     queryFn: () =>
       fetchLawyerDirectory({
         city: cityValue ?? undefined,

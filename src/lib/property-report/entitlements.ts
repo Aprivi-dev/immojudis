@@ -15,7 +15,7 @@ import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 import { buildUrbanPlanningAnalysis } from "@/lib/urban-planning-analysis";
 import { assertUsageLimitAvailable } from "@/lib/usage";
 import { ActiveComparableSales, PlanEntitlements } from "../property-reports";
-import { asRecord } from "./serialization";
+import { asRecord } from "@/lib/guards";
 export function buildPlanEntitlements(
   plan: PlanCode,
   currentPeriodEnd: string | null = null,

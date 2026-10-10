@@ -9,6 +9,7 @@ import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { systemAuthForUser } from "@/lib/system-auth";
+import { asRecord, escapeHtml, numberValue, stringValue } from "@/lib/guards";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 
@@ -755,34 +756,10 @@ function firstFilledEnv(...values: Array<string | undefined>) {
   return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
 function arrayOfStrings(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => {
-    if (char === "&") return "&amp;";
-    if (char === "<") return "&lt;";
-    if (char === ">") return "&gt;";
-    if (char === '"') return "&quot;";
-    return "&#39;";
-  });
 }
 
 function escapeAttribute(value: string): string {

@@ -1,5 +1,6 @@
 // Calcul d'un seuil d'enchère basé sur le marché local DVF.
 // Toutes les valeurs sont en euros sauf indication.
+import { clamp } from "@/lib/guards";
 import { departmentCode } from "@/lib/department-code";
 import { defaultRentPerM2, RENT_REFERENCE_UNAVAILABLE } from "@/lib/rent-reference";
 
@@ -881,10 +882,6 @@ function roundPct(value: number): number {
 
 function clampScore(value: number): number {
   return clamp(value, 0, 100);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 function formatSigned(value: number): string {

@@ -51,6 +51,7 @@ import {
   parseBidDraft,
   type BidAssistantState as AssistantState,
 } from "@/lib/bid-simulation-history";
+import { queryKeys } from "@/lib/query-keys";
 
 type ScenarioResult = {
   key: MarketCeilingScenarioKey | "custom";
@@ -265,7 +266,7 @@ function BidCeilingWorkspace({
   }, [draftKey, sale.id, state, stateSaleId]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["precomputed-market-estimate", sale.id],
+    queryKey: queryKeys.precomputedMarketEstimate(sale.id),
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
     enabled: !hasMarketEstimateOverride,
     staleTime: 24 * 60 * 60_000,

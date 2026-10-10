@@ -8,6 +8,7 @@ import type {
   SaleVenueType,
   SaleVerificationStatus,
 } from "./types";
+import { asRecordOrNull } from "@/lib/guards";
 
 export const COMPLETENESS_STATES = [
   "observed",
@@ -348,12 +349,6 @@ type DirectValue = {
 
 type CollectedDocuments = ReturnType<typeof collectSaleDocuments>;
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
 function isMeaningfulText(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const normalized = value
@@ -386,7 +381,7 @@ function normalized(value: unknown): string {
 }
 
 function rawPayload(sale: AuctionSale): Record<string, unknown> {
-  return asRecord(sale.raw_payload) ?? {};
+  return asRecordOrNull(sale.raw_payload) ?? {};
 }
 
 /**
@@ -396,10 +391,10 @@ function rawPayload(sale: AuctionSale): Record<string, unknown> {
  */
 function completenessPayloads(sale: AuctionSale): Record<string, unknown>[] {
   const raw = rawPayload(sale);
-  const rawBlocks = asRecord(raw.source_blocks);
-  const projectedFromBlocks = asRecord(sale.source_blocks?.listing_completeness);
-  const projectedFromRawBlocks = asRecord(rawBlocks?.listing_completeness);
-  const projectedRoot = asRecord(raw.listing_completeness);
+  const rawBlocks = asRecordOrNull(raw.source_blocks);
+  const projectedFromBlocks = asRecordOrNull(sale.source_blocks?.listing_completeness);
+  const projectedFromRawBlocks = asRecordOrNull(rawBlocks?.listing_completeness);
+  const projectedRoot = asRecordOrNull(raw.listing_completeness);
   return [raw, projectedFromRawBlocks, projectedFromBlocks, projectedRoot].filter(
     (value): value is Record<string, unknown> => Boolean(value),
   );
@@ -412,7 +407,7 @@ function firstDefined(...values: unknown[]): unknown {
 function pathValue(value: unknown, path: string[]): unknown {
   let current: unknown = value;
   for (const key of path) {
-    const record = asRecord(current);
+    const record = asRecordOrNull(current);
     if (!record || !(key in record)) return undefined;
     current = record[key];
   }
@@ -431,7 +426,7 @@ function evidenceList(value: unknown): CompletenessEvidence[] {
   const values = Array.isArray(value) ? value : value ? [value] : [];
   return values.flatMap((entry) => {
     if (typeof entry === "string") return [{ excerpt: entry }];
-    const record = asRecord(entry);
+    const record = asRecordOrNull(entry);
     return record ? [record as CompletenessEvidence] : [];
   });
 }
@@ -537,21 +532,21 @@ function featureCandidate(sale: AuctionSale, field: string): Record<string, unkn
     for (const containerValue of containers) {
       if (Array.isArray(containerValue)) {
         for (const entry of containerValue) {
-          const record = asRecord(entry);
+          const record = asRecordOrNull(entry);
           if (record?.field === field) candidates.push(record);
         }
         continue;
       }
-      const container = asRecord(containerValue);
+      const container = asRecordOrNull(containerValue);
       const nestedArray = Array.isArray(container?.fields) ? container.fields : [];
       for (const entry of nestedArray) {
-        const record = asRecord(entry);
+        const record = asRecordOrNull(entry);
         if (record?.field === field) candidates.push(record);
       }
-      const nestedFields = asRecord(container?.fields);
+      const nestedFields = asRecordOrNull(container?.fields);
       const candidate = container?.[field] ?? nestedFields?.[field];
       if (candidate !== undefined) {
-        const record = asRecord(candidate);
+        const record = asRecordOrNull(candidate);
         if (record) candidates.push(record);
       }
     }
@@ -576,8 +571,8 @@ function observationFromFeature(
     ? (rawState as CompletenessState)
     : "unknown";
   const evidence = evidenceList(candidate.evidence);
-  const reason = asRecord(candidate.reason) as CompletenessReason | null;
-  const inference = asRecord(candidate.inference) as CompletenessInference | null;
+  const reason = asRecordOrNull(candidate.reason) as CompletenessReason | null;
+  const inference = asRecordOrNull(candidate.inference) as CompletenessInference | null;
   const conflicts = Array.isArray(candidate.conflicts) ? candidate.conflicts : [];
   const value = candidate.value ?? null;
   const canonicalValue = candidate.canonical_value ?? value;
@@ -628,7 +623,7 @@ function observationFromFeature(
 }
 
 function directObservation(field: string, value: DirectValue | unknown): FieldObservation {
-  const direct = asRecord(value);
+  const direct = asRecordOrNull(value);
   if (direct && "value" in direct) {
     const state = COMPLETENESS_STATES.includes(direct.state as CompletenessState)
       ? (direct.state as CompletenessState)
@@ -669,8 +664,8 @@ function normalizedPropertyType(value: unknown): string {
 }
 
 function procedureContext(sale: AuctionSale): ProcedureContext {
-  const rawProcedure = asRecord(sale.sale_procedure);
-  const verification = asRecord(rawProcedure?.verification);
+  const rawProcedure = asRecordOrNull(sale.sale_procedure);
+  const verification = asRecordOrNull(rawProcedure?.verification);
   const rawStatus = verification?.status ?? sale.sale_verification_status;
   const verificationStatus = ["verified", "cross_checked", "pending", "conflict"].includes(
     String(rawStatus),
@@ -817,13 +812,13 @@ function contextLabel(procedure: CompletenessProcedure): string {
 }
 
 function procedureRecord(sale: AuctionSale): Record<string, unknown> {
-  const direct = asRecord(sale.sale_procedure);
-  const fromBlocks = asRecord(sale.source_blocks?.sale_procedure);
+  const direct = asRecordOrNull(sale.sale_procedure);
+  const fromBlocks = asRecordOrNull(sale.source_blocks?.sale_procedure);
   return direct ?? fromBlocks ?? {};
 }
 
 function procedureRules(sale: AuctionSale): Record<string, unknown> {
-  return asRecord(procedureRecord(sale).rules) ?? {};
+  return asRecordOrNull(procedureRecord(sale).rules) ?? {};
 }
 
 function rawFeatureValue(sale: AuctionSale, field: string): unknown {
@@ -838,8 +833,8 @@ function mediaUrls(sale: AuctionSale): string[] {
   return [
     ...new Set(
       [
-        ...media.map((item) => asRecord(item)?.url),
-        ...rawImages.map((item) => (typeof item === "string" ? item : asRecord(item)?.url)),
+        ...media.map((item) => asRecordOrNull(item)?.url),
+        ...rawImages.map((item) => (typeof item === "string" ? item : asRecordOrNull(item)?.url)),
       ].filter((value): value is string => isMeaningfulText(value)),
     ),
   ];
@@ -853,15 +848,15 @@ function directFieldValue(
 ): FieldObservation {
   const raw = rawPayload(sale);
   const evidencePayloads = completenessPayloads(sale);
-  const blocks = sale.source_blocks ?? asRecord(raw.source_blocks) ?? {};
+  const blocks = sale.source_blocks ?? asRecordOrNull(raw.source_blocks) ?? {};
   const procedure = procedureRecord(sale);
   const rules = procedureRules(sale);
   const docsWithType = documents.filter(
     (document) => isMeaningfulText(document.type) || isMeaningfulText(document.label),
   );
-  const sourceChecks = asRecord(sale.source_checks) ?? asRecord(raw.source_checks);
+  const sourceChecks = asRecordOrNull(sale.source_checks) ?? asRecordOrNull(raw.source_checks);
   const sourceCheckValues = sourceChecks
-    ? Object.values(sourceChecks).map(asRecord).filter(Boolean)
+    ? Object.values(sourceChecks).map(asRecordOrNull).filter(Boolean)
     : [];
   const rawValue = (...paths: string[][]): unknown =>
     firstDefined(...evidencePayloads.map((payload) => firstPathValue(payload, paths)));
@@ -935,7 +930,7 @@ function directFieldValue(
         ),
       );
     case 10:
-      return direct(sale.source_presence ?? asRecord(raw.source_presence));
+      return direct(sale.source_presence ?? asRecordOrNull(raw.source_presence));
     case 11:
       {
         const conflicts = Array.isArray(sale.source_conflicts)
@@ -995,7 +990,7 @@ function directFieldValue(
     case 38:
       return direct(
         firstDefined(
-          asRecord(rules.guarantee)?.amount_eur,
+          asRecordOrNull(rules.guarantee)?.amount_eur,
           rawValue(["consignation"]),
           blockValue("consignation"),
         ),
@@ -1009,13 +1004,13 @@ function directFieldValue(
       return direct(
         firstDefined(
           rawValue(["payment_terms"]),
-          asRecord(rules)?.payment_deadline_days,
+          asRecordOrNull(rules)?.payment_deadline_days,
           blockValue("payment_terms", "seance_paiement"),
         ),
       );
     case 41:
       return direct(
-        firstDefined(rawValue(["surenchere_window"]), asRecord(rules.overbid)?.window_days),
+        firstDefined(rawValue(["surenchere_window"]), asRecordOrNull(rules.overbid)?.window_days),
       );
     case 46:
       return direct(
@@ -1156,12 +1151,12 @@ function extractionUnavailable(sale: AuctionSale, observation: FieldObservation)
   if (observation.state !== "unknown") return false;
   const availability = normalized(observation.reason?.availability_reason);
   if (SOURCE_UNAVAILABLE_REASONS.has(availability)) return true;
-  const presence = asRecord(sale.source_presence);
-  const rawPresence = asRecord(rawPayload(sale).source_presence);
+  const presence = asRecordOrNull(sale.source_presence);
+  const rawPresence = asRecordOrNull(rawPayload(sale).source_presence);
   const projectedPresence = completenessPayloads(sale)
-    .map((payload) => asRecord(payload.source_presence)?.[observation.field])
+    .map((payload) => asRecordOrNull(payload.source_presence)?.[observation.field])
     .find((value) => value !== undefined);
-  const entry = asRecord(
+  const entry = asRecordOrNull(
     presence?.[observation.field] ?? rawPresence?.[observation.field] ?? projectedPresence,
   );
   const entryAvailability = normalized(entry?.availability ?? entry?.state);
@@ -1286,7 +1281,7 @@ function buildGates(
     );
   })();
   const stateMethod = normalized(
-    asRecord(procedureRecord(sale).rules)?.state_sale_method ??
+    asRecordOrNull(procedureRecord(sale).rules)?.state_sale_method ??
       procedureRecord(sale).state_sale_method,
   );
   const noStartingPriceConcept =

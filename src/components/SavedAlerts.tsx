@@ -23,6 +23,7 @@ import type { UserAlert, UserWatchedZone } from "@/lib/types";
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-messages";
 import { Badge, Button, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
+import { queryKeys } from "@/lib/query-keys";
 
 export function SavedAlerts() {
   const { user, loading } = useAuth();
@@ -65,8 +66,8 @@ function alertPayload(alert: UserAlert) {
 
 function AccountAlerts({ userId }: { userId: string }) {
   const client = useQueryClient();
-  const alertsKey = ["saved-alerts", userId];
-  const zonesKey = ["watched-zones", userId];
+  const alertsKey = queryKeys.savedAlerts(userId);
+  const zonesKey = queryKeys.watchedZones(userId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const alerts = useQuery({ queryKey: alertsKey, queryFn: () => getAlerts(userId) });
   const zones = useQuery({

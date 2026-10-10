@@ -21,6 +21,7 @@ import type {
   TribunalJudicialActivityRangeMetric,
   TribunalJudicialActivityResponse,
 } from "@/lib/tribunal-judicial-activity";
+import { queryKeys } from "@/lib/query-keys";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 
@@ -32,7 +33,7 @@ export function TribunalJudicialActivityExplorer() {
   const [selectedCourtCode, setSelectedCourtCode] = useState("");
   const [selectedPropertyType, setSelectedPropertyType] = useState("");
   const planQuery = useQuery({
-    queryKey: ["tribunal-judicial-activity-plan", session?.user.id],
+    queryKey: queryKeys.tribunalJudicialActivityPlan(session?.user.id),
     queryFn: fetchAccessPlan,
     enabled: Boolean(session) && !authLoading,
     retry: false,
@@ -40,7 +41,7 @@ export function TribunalJudicialActivityExplorer() {
   });
   const hasAccess = planQuery.data?.plan.hasAnalysisAccess === true;
   const query = useQuery({
-    queryKey: ["tribunal-judicial-activity-directory", historyMonths],
+    queryKey: queryKeys.tribunalJudicialActivityDirectory(historyMonths),
     queryFn: () => fetchTribunalJudicialActivityDirectory(historyMonths),
     enabled: Boolean(session) && hasAccess,
     retry: false,

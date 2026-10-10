@@ -15,6 +15,7 @@ import {
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export default function AlertNotificationPanel({
   mobile,
@@ -35,16 +36,16 @@ export default function AlertNotificationPanel({
   onRefresh: () => unknown;
   onClose: () => void;
 }) {
-  const NOTIFICATION_QUERY_KEY = ["alert-notifications", userId] as const;
+  const NOTIFICATION_QUERY_KEY = queryKeys.alertNotifications(userId);
   const queryClient = useQueryClient();
   const unreadCount = notifications.filter((notification) => !notification.readAt).length;
   const entitlements = useQuery({
-    queryKey: ["feature-entitlements", userId, "plan"],
+    queryKey: queryKeys.featureEntitlementsPlan(userId),
     queryFn: fetchAccessPlan,
   });
   const emailAvailable = entitlements.data?.plan.hasAnalysisAccess === true;
   const preferencesQuery = useQuery({
-    queryKey: ["notification-preferences", userId],
+    queryKey: queryKeys.notificationPreferences(userId),
     queryFn: fetchNotificationPreferences,
     staleTime: 60_000,
   });
@@ -58,7 +59,7 @@ export default function AlertNotificationPanel({
   const preferencesMutation = useMutation({
     mutationFn: updateNotificationPreferences,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notification-preferences", userId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notificationPreferences(userId) });
       toast.success("Préférences mises à jour");
     },
     onError: (error) => toast.error(userMessage(error, "Préférences impossibles")),

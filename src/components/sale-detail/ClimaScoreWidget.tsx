@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { climaScoreWidgetDocument, type ClimaScoreCommune } from "@/lib/climascore";
 import styles from "./ListingEnvironment.module.css";
+import { queryKeys } from "@/lib/query-keys";
 
 export function ClimaScoreWidget({
   city,
@@ -14,7 +15,7 @@ export function ClimaScoreWidget({
 }) {
   const [opened, setOpened] = useState(false);
   const query = useQuery({
-    queryKey: ["climascore-commune", city, postalCode],
+    queryKey: queryKeys.climascoreCommune(city, postalCode),
     queryFn: async ({ signal }): Promise<ClimaScoreCommune | null> => {
       const params = new URLSearchParams({ city: city!, postalCode: postalCode! });
       const response = await fetch(`/api/climascore/commune?${params}`, { signal });

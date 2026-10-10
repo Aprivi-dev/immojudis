@@ -52,7 +52,6 @@ import {
 } from "./property-report/repository";
 import {
   asJson,
-  asRecord,
   attachPlan,
   createShareToken,
   defaultReportTitle,
@@ -66,8 +65,8 @@ import {
   saleLocation,
   shareIsExpired,
   slugify,
-  stringValue,
 } from "./property-report/serialization";
+import { asRecord, stringOrNumberValue } from "@/lib/guards";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
 export type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 export type SavedReportRow = Database["public"]["Tables"]["saved_property_reports"]["Row"];
@@ -692,7 +691,7 @@ export function buildPublicSharedPropertyReport(
     ceiling: report.ceiling_snapshot,
     sourceTrace: normalizeSourceTrace(traceability.entries),
     limitations: normalizeStringList(traceability.limitations),
-    disclaimer: stringValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE),
+    disclaimer: stringOrNumberValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE),
   };
 }
 

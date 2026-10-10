@@ -30,6 +30,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export function PropertyReportActions({
   saleId,
@@ -76,7 +77,7 @@ function PropertyReportWorkspace({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
-  const reportQueryKey = ["property-reports", user?.id ?? "anonymous", saleId] as const;
+  const reportQueryKey = queryKeys.propertyReports(user?.id ?? "anonymous", saleId);
 
   const reportsQuery = useQuery({
     queryKey: reportQueryKey,
