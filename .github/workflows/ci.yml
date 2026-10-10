@@ -134,6 +134,18 @@ jobs:
     steps:
       - run: echo "Typecheck, lint, tests, audit and build passed."
 
+  pipeline-py311:
+    # pyproject.toml supports CPython >=3.11,<3.13 and branch protection still requires this
+    # check name: the source must keep compiling on 3.11 (syntax only, nothing is installed).
+    name: Data pipeline (Python 3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container: python:3.11-slim
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Byte-compile the pipeline on CPython 3.11
+        run: python -m compileall -q services/data-pipeline/src services/data-pipeline/scripts
+
   pipeline:
     name: Data pipeline (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -141,9 +153,8 @@ jobs:
       fail-fast: false
       matrix:
         # The hashed lockfiles are resolved for CPython 3.12, the version every
-        # workflow runs; 3.11 stays a required branch-protection check and
-        # installs from the ranges.
-        python-version: ["3.11", "3.12"]
+        # workflow runs.
+        python-version: ["3.12"]
     services:
       postgres:
         image: postgres:17
@@ -169,20 +180,9 @@ jobs:
             services/data-pipeline/requirements.lock
             services/data-pipeline/requirements-dev.lock
             services/data-pipeline/requirements-valuation.lock
-      - name: Install the pinned, hashed dependencies (CPython 3.12) or the ranges (3.11)
-        run: |
-          if [ "${{ matrix.python-version }}" = "3.12" ]; then
-            python -m pip install --require-hashes -r requirements-dev.lock
-          else
-            python -m pip install -r requirements-dev.txt
-          fi
+      - run: python -m pip install --require-hashes -r requirements-dev.lock
       - name: Install the valuation stack (LightGBM, MAPIE, H3) for the training tests
-        run: |
-          if [ "${{ matrix.python-version }}" = "3.12" ]; then
-            python -m pip install --require-hashes -r requirements-valuation.lock
-          else
-            python -m pip install -r requirements-valuation.txt
-          fi
+        run: python -m pip install --require-hashes -r requirements-valuation.lock
       - name: Resolve the optional Docling stack
         run: python -m pip install --dry-run -r requirements-docling.txt
       - name: Lint
