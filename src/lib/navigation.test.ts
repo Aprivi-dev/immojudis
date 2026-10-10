@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { loginPathWithRedirect, pathWithSearch, SITE_NAV_LINKS } from "./navigation";
+import {
+  loginPathWithRedirect,
+  pathWithSearch,
+  searchParamsToRecord,
+  SITE_NAV_LINKS,
+} from "./navigation";
+import { validateSalesSearch } from "./search/search-url-state";
 
 describe("loginPathWithRedirect", () => {
   it("ramène la personne sur sa recherche après la connexion", () => {
@@ -40,5 +46,26 @@ describe("pathWithSearch", () => {
       pathWithSearch("/login", { mode: "investor", redirect: "/sales?city=Aix en Provence" }),
     ).toBe("/login?mode=investor&redirect=%2Fsales%3Fcity%3DAix+en+Provence");
     expect(pathWithSearch("/sales", { page: 2, saleType: undefined })).toBe("/sales?page=2");
+  });
+});
+
+describe("searchParamsToRecord", () => {
+  it("garde les zéros initiaux des codes géographiques pendant que le validateur convertit les nombres", () => {
+    const record = searchParamsToRecord(
+      new URLSearchParams("q=06000&department=01&page=2&maxPrice=150000"),
+    );
+    expect(record).toEqual({ q: "06000", department: "01", page: "2", maxPrice: "150000" });
+    expect(validateSalesSearch(record)).toMatchObject({
+      query: "06000",
+      department: "01",
+      page: 2,
+      maxPrice: 150000,
+    });
+  });
+
+  it("retient la dernière valeur d'un paramètre répété, comme les pages serveur", () => {
+    expect(searchParamsToRecord(new URLSearchParams("city=Lyon&city=Nice"))).toEqual({
+      city: "Nice",
+    });
   });
 });
