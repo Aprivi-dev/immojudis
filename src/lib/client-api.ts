@@ -62,12 +62,6 @@ import type {
   SaleComparisonShareResponse,
 } from "@/lib/sale-analysis-sets";
 import type {
-  WatchedZoneInput,
-  WatchedZoneResponse,
-  WatchedZonesResponse,
-  WatchedZoneUpdateInput,
-} from "@/lib/watched-zones";
-import type {
   PrivacyRequestAdminListResponse,
   PrivacyRequestAdminSummary,
   PrivacyErasureExecuteInput,
@@ -90,6 +84,13 @@ import type {
   InformationAgentEmailTemplateWorkspace,
 } from "@/lib/information-agent-email-template";
 import type { PipelineControlSettings, PipelineStatus } from "@/lib/pipeline-status";
+
+export {
+  fetchWatchedZones,
+  createWatchedZone,
+  updateWatchedZone,
+  deleteWatchedZone,
+} from "@/lib/client-api/watched-zones";
 
 export {
   fetchSaleWorkspace,
@@ -164,60 +165,6 @@ export type {
 } from "@/lib/client-api/sale-analysis";
 
 export { fetchAccessPlan, openBillingPortal, startAnalyseCheckout } from "@/lib/client-billing";
-
-export async function fetchWatchedZones(
-  args: {
-    includeInactive?: boolean;
-  } = {},
-): Promise<WatchedZonesResponse> {
-  const search = new URLSearchParams();
-  if (args.includeInactive) search.set("includeInactive", "true");
-  const response = await fetch(`/api/watched-zones${search.size ? `?${search.toString()}` : ""}`, {
-    headers: await authHeaders(),
-  });
-
-  return readJson<WatchedZonesResponse>(response);
-}
-
-export async function createWatchedZone(args: {
-  data: WatchedZoneInput;
-}): Promise<WatchedZoneResponse> {
-  const response = await fetch("/api/watched-zones", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
-  });
-
-  return readJson<WatchedZoneResponse>(response);
-}
-
-export async function updateWatchedZone(args: {
-  zoneId: string;
-  data: WatchedZoneUpdateInput;
-}): Promise<WatchedZoneResponse> {
-  const response = await fetch(`/api/watched-zones/${args.zoneId}`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
-  });
-
-  return readJson<WatchedZoneResponse>(response);
-}
-
-export async function deleteWatchedZone(args: { zoneId: string }): Promise<{ ok: true }> {
-  const response = await fetch(`/api/watched-zones/${args.zoneId}`, {
-    method: "DELETE",
-    headers: await authHeaders(),
-  });
-
-  return readJson<{ ok: true }>(response);
-}
 
 export async function fetchSaleAnalysisSets(
   args: {
