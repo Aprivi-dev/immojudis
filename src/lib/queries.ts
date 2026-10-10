@@ -5,7 +5,7 @@ import type { AuctionSale, SaleFilters, SortKey } from "./types";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "./sale-views";
 import { assertCloudConfigured } from "./query-configuration";
 import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
-import { fetchPublicSaleSummary, type PublicSaleSummaryClient } from "./public-sale-summary";
+import { fetchPublicSaleSummary } from "./public-sale-summary";
 export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
 export type { CreateAlertPayload } from "./alert-queries";
 export { DETAIL_VIEW, SALE_LIST_COLUMNS };
@@ -149,18 +149,21 @@ function accentTolerantPatterns(term: string): string[] {
   return patterns;
 }
 
+// Les requêtes PostgREST sont construites avec des listes de colonnes et des vues dynamiques :
+// le client ne peut pas en déduire le type des lignes, ni de la requête. On les manipule donc
+// via la surface minimale de filtrage ci-dessus.
 function applySaleTypeFilter<TQuery>(query: TQuery, filters: SaleFilters): TQuery {
-  let q = query as unknown as FilterableQuery;
+  let q = query as FilterableQuery;
   if (filters.sale_venue_type === "unknown") {
     q = q.in("sale_venue_type", ["unknown", "online"]);
   } else if (filters.sale_venue_type) {
     q = q.eq("sale_venue_type", filters.sale_venue_type);
   }
-  return q as unknown as TQuery;
+  return q as TQuery;
 }
 
 function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilters) {
-  let q = applySaleTypeFilter(query, filters) as unknown as FilterableQuery;
+  let q = applySaleTypeFilter(query, filters) as FilterableQuery;
 
   if (filters.min_sale_date) q = q.gte("sale_date", saleDateBoundary(filters.min_sale_date));
   if (filters.max_sale_date) q = q.lte("sale_date", saleDateBoundary(filters.max_sale_date, true));
@@ -230,7 +233,12 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
     filters.keywords,
   );
 
-  return q as unknown as TQuery;
+  return q as TQuery;
+}
+
+/** Les colonnes sélectionnées dynamiquement ne sont pas typées par le client : on les déclare ici. */
+function saleRows(data: unknown): AuctionSale[] {
+  return (data ?? []) as AuctionSale[];
 }
 
 const SALE_ID_BATCH_SIZE = 100;
@@ -275,7 +283,7 @@ async function fetchSaleRowsByIds(
         q = applyAuthenticatedSaleFilters(q, filters);
         const { data, error } = await q.in("id", batch);
         if (error) throw error;
-        return (data ?? []) as unknown as AuctionSale[];
+        return saleRows(data);
       }),
     );
     rows.push(...batchRows.flat());
@@ -335,7 +343,7 @@ export async function getSales(
 
     const { data, error } = await q;
     if (error) throw error;
-    return (data ?? []) as unknown as AuctionSale[];
+    return saleRows(data);
   }
 
   const s = SORT_MAP[sort];
@@ -352,7 +360,7 @@ export async function getSales(
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
 
 export async function getSalesForSearch(
@@ -391,7 +399,7 @@ export async function getSalesForSearch(
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
 
 export async function getSalesCount(
@@ -443,7 +451,7 @@ export async function getSalePreviewById(id: string): Promise<AuctionSale | null
   // Card-level facts of the public catalogue (type, surface, city, hearing date…).
   // `unsupported` means the database function is not deployed yet: keep the
   // minimal preview below so the page still works during a staggered release.
-  const summary = await fetchPublicSaleSummary(supabase as unknown as PublicSaleSummaryClient, id);
+  const summary = await fetchPublicSaleSummary(supabase, id);
   if (summary.kind === "found") return summary.sale;
   if (summary.kind === "missing") return null;
   const { data, error } = await supabase
@@ -452,7 +460,7 @@ export async function getSalePreviewById(id: string): Promise<AuctionSale | null
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
-  return data as unknown as AuctionSale | null;
+  return data as AuctionSale | null;
 }
 
 export async function getSalesWithCoords(
@@ -478,7 +486,7 @@ export async function getSalesWithCoords(
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
 
 /** Colonnes minimales d'un point de carte : identifiant, position et de quoi étiqueter la pastille. */
@@ -522,7 +530,7 @@ export async function getSaleMapPoints(
     q = applyAuthenticatedSaleFilters(q, filters);
     const { data, error } = await q;
     if (error) throw error;
-    const page = (data ?? []) as unknown as AuctionSale[];
+    const page = saleRows(data);
     points.push(...page);
     if (page.length < MAP_POINT_PAGE_SIZE) break;
   }
@@ -557,7 +565,7 @@ export async function getNearbySales(
   if (excludeId) q = q.neq("id", excludeId);
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
 
 export async function getStats(): Promise<{
@@ -615,7 +623,7 @@ export async function getFavorites(userId: string): Promise<AuctionSale[]> {
     .select(SALE_LIST_COLUMNS)
     .in("id", ids);
   if (e2) throw e2;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
 
 export async function getFavoriteIds(userId: string): Promise<Set<string>> {
