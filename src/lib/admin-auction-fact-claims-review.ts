@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { nullableRpcArg } from "@/lib/rpc-args";
 import { asRecord } from "@/lib/guards";
 
 const REVIEW_PAGE_SIZE = 50;
@@ -89,37 +90,6 @@ type ClaimReadRow = {
   resolution_note: string | null;
 };
 
-type PrivateQueryResult = {
-  data: unknown[] | null;
-  error: { code?: string; message?: string } | null;
-};
-
-type PrivateClaimQuery = PromiseLike<PrivateQueryResult> & {
-  select(columns: string): PrivateClaimQuery;
-  in(column: string, values: string[]): PrivateClaimQuery;
-  eq(column: string, value: string): PrivateClaimQuery;
-  not(column: string, operator: string, value: string | null): PrivateClaimQuery;
-  order(column: string, options: { ascending: boolean }): PrivateClaimQuery;
-  range(from: number, to: number): PrivateClaimQuery;
-  or(filters: string): PrivateClaimQuery;
-};
-
-type PrivateClaimReader = {
-  from(table: string): PrivateClaimQuery;
-};
-
-type ReviewRpcClient = {
-  rpc(
-    functionName: "review_auction_fact_claim",
-    args: {
-      p_reviewer_id: string;
-      p_claim_id: string;
-      p_decision: AdminAuctionFactClaimDecision["decision"];
-      p_resolution_note: string | null;
-    },
-  ): Promise<{ data: unknown; error: { code?: string; message?: string } | null }>;
-};
-
 /**
  * Lists source-backed candidates for a trusted admin review surface.
  *
@@ -136,7 +106,7 @@ export async function listAdminAuctionFactClaims({
 }): Promise<AdminAuctionFactClaimReviewResponse> {
   requireAdmin(auth);
   const cursor = parseReviewCursor(input.cursor);
-  const query = (supabaseAdmin as unknown as PrivateClaimReader)
+  const query = supabaseAdmin
     .from("v_auction_fact_claims_read_model")
     .select(
       "claim_id,auction_sale_id,lot_id,field_key,value_jsonb,fact_status,conflict_group,evidence_kind,source_id,raw_artifact_id,source_record_id,artifact_extraction_id,source_url,evidence_locator,confidence_score,captured_at,created_at,updated_at,resolution_note",
@@ -188,12 +158,11 @@ export async function reviewAdminAuctionFactClaim({
   input: AdminAuctionFactClaimDecision;
 }): Promise<{ ok: true; result: unknown }> {
   requireAdmin(auth);
-  const client = supabaseAdmin as unknown as ReviewRpcClient;
-  const { data, error } = await client.rpc("review_auction_fact_claim", {
+  const { data, error } = await supabaseAdmin.rpc("review_auction_fact_claim", {
     p_reviewer_id: auth.userId,
     p_claim_id: input.claimId,
     p_decision: input.decision,
-    p_resolution_note: input.resolutionNote || null,
+    p_resolution_note: nullableRpcArg(input.resolutionNote || null),
   });
   if (error) throw error;
   return { ok: true, result: data };

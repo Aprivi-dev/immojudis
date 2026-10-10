@@ -6,6 +6,7 @@ import { extractDpe } from "@/lib/dpe";
 import { DETAIL_VIEW } from "@/lib/queries";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { getSaleSurface } from "@/lib/surface";
+import { joinColumns } from "@/lib/supabase-select";
 import type { AuctionSale } from "@/lib/types";
 
 // Leave headroom below PostgREST's statement timeout while workers are active.
@@ -57,7 +58,7 @@ export const DATA_QUALITY_SALE_COLUMNS = [
   "updated_at",
 ] as const;
 
-const DATA_QUALITY_SALE_SELECT = DATA_QUALITY_SALE_COLUMNS.join(",");
+const DATA_QUALITY_SALE_SELECT = joinColumns(DATA_QUALITY_SALE_COLUMNS);
 
 export type DataQualityStatus = "healthy" | "watch" | "critical";
 
@@ -135,31 +136,6 @@ type AuctionRunRow = {
   finished_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
-};
-
-type QueryError = {
-  message?: string;
-};
-
-type RunQueryResult = {
-  data: AuctionRunRow[] | null;
-  error: QueryError | null;
-};
-
-type RunQueryBuilder = PromiseLike<RunQueryResult> & {
-  order: (
-    column: string,
-    options?: { ascending?: boolean; nullsFirst?: boolean },
-  ) => RunQueryBuilder;
-  limit: (count: number) => RunQueryBuilder;
-};
-
-type RunTableClient = {
-  select: (columns: string) => RunQueryBuilder;
-};
-
-type RunAdminClient = {
-  from: (table: string) => RunTableClient;
 };
 
 export async function getDataQualityReport(authToken: string): Promise<DataQualityReport> {
@@ -558,7 +534,7 @@ async function loadAllSales(): Promise<AuctionSale[]> {
       .in("id", ids);
 
     if (error) throw error;
-    const page = (data ?? []) as unknown as AuctionSale[];
+    const page = (data ?? []) as AuctionSale[];
     sales.push(...page);
     // A full candidate batch can contain no visible sales. Continue scanning.
     if (ids.length < DATA_QUALITY_PAGE_SIZE) return sales;
@@ -566,8 +542,7 @@ async function loadAllSales(): Promise<AuctionSale[]> {
 }
 
 async function loadRecentRuns(): Promise<AuctionRunRow[]> {
-  const runsClient = supabaseAdmin as unknown as RunAdminClient;
-  const { data, error } = await runsClient
+  const { data, error } = await supabaseAdmin
     .from("auction_runs")
     .select("status,started_at,finished_at,created_at,updated_at")
     .order("created_at", { ascending: false, nullsFirst: false })
