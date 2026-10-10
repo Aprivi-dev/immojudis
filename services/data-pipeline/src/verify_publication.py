@@ -11,7 +11,7 @@ def main() -> int:
     settings = load_settings()
     if not settings.get("supabase_db_url"):
         raise RuntimeError("Publication verification requires SUPABASE_DB_URL")
-    with storage._postgres_connect(str(settings["supabase_db_url"])) as connection:
+    with storage.connect(str(settings["supabase_db_url"])) as connection:
         source = connection.execute("""
             select source_url from public.auction_sales
             where status in ('active', 'upcoming') order by updated_at desc limit 1
@@ -22,7 +22,7 @@ def main() -> int:
     if sale is None:
         raise RuntimeError("Cannot hydrate verification sale")
     try:
-        with storage._postgres_connect(str(settings["supabase_db_url"])) as connection:
+        with storage.connect(str(settings["supabase_db_url"])) as connection:
             connection.execute("set local lock_timeout='10s'")
             connection.execute("set local statement_timeout='60s'")
             token = storage._PUBLICATION_CONNECTION.set(connection)

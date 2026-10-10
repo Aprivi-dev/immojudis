@@ -209,3 +209,56 @@ def test_valuation_training_reads_with_the_training_timeout(monkeypatch) -> None
         )
 
     assert seen == [supabase_client.POSTGRES_TRAINING_STATEMENT_TIMEOUT_MS]
+
+
+def test_public_connect_keeps_the_private_connection_behaviour(fake_psycopg) -> None:
+    connection = supabase_client.connect(
+        "postgresql://example/db", connect_timeout=3, retry_delays=(), statement_timeout_ms=0
+    )
+
+    assert connection is fake_psycopg.connections[0]
+    assert fake_psycopg.connects[0][1] == {
+        "connect_timeout": 3,
+        "prepare_threshold": None,
+        "options": "-c statement_timeout=0",
+    }
+
+
+def test_public_connect_follows_a_patched_private_connect(monkeypatch) -> None:
+    seen: list[tuple[str, dict]] = []
+
+    def fake_connect(url, **options):
+        seen.append((url, options))
+        return "patched"
+
+    monkeypatch.setattr(supabase_client, "_postgres_connect", fake_connect)
+
+    assert supabase_client.connect("postgresql://x/db", retry_delays=()) == "patched"
+    assert seen == [("postgresql://x/db", {"retry_delays": ()})]
+
+
+def test_no_module_reaches_for_the_private_connect_symbol() -> None:
+    """Outside supabase_client, connections go through the public ``connect``."""
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    offenders: list[str] = []
+    for folder in ("src", "scripts"):
+        for path in (root / folder).rglob("*.py"):
+            if path.name == "supabase_client.py":
+                continue
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                private_import = isinstance(node, ast.ImportFrom) and any(
+                    alias.name == "_postgres_connect" and (node.module or "").startswith("src.storage")
+                    for alias in node.names
+                )
+                private_attribute = (
+                    isinstance(node, ast.Attribute)
+                    and node.attr == "_postgres_connect"
+                    and isinstance(node.value, ast.Name)
+                    and node.value.id in {"storage", "supabase_client"}
+                )
+                if private_import or private_attribute:
+                    offenders.append(f"{path.relative_to(root)}:{node.lineno}")
+    assert offenders == []

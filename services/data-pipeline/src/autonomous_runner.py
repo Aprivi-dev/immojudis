@@ -16,7 +16,10 @@ from psycopg.types.json import Jsonb
 from src.config import load_settings
 from src.run_finalizer import register_run
 from src.source_health import SOURCE_WARNING_EXIT_CODE
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect
+
+# Alias de compatibilité : des tests patchent ce nom de module.
+_postgres_connect = connect
 
 INVENTORY_CADENCE = timedelta(hours=6)
 INVENTORY_DISPATCH_MARGIN = timedelta(minutes=45)

@@ -54,7 +54,10 @@ if str(PIPELINE_ROOT) not in sys.path:
 from src.config import PROCESSED_DIR, load_settings  # noqa: E402
 from src.fact_claims import materialize_fact_claim_rows  # noqa: E402
 from src.models import AuctionSale  # noqa: E402
-from src.storage.supabase_client import _postgres_connect  # noqa: E402
+from src.storage.supabase_client import connect  # noqa: E402
+
+# Alias de compatibilité : des tests patchent ce nom de module.
+_postgres_connect = connect
 
 try:  # pragma: no cover - the production dependency is installed in CI.
     from psycopg.types.json import Jsonb

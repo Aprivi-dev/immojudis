@@ -24,7 +24,10 @@ except ModuleNotFoundError:  # pragma: no cover - optional for dry-run parsing t
     Jsonb = None
 
 from src.config import load_settings
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect
+
+# Alias de compatibilité : des tests patchent ce nom de module.
+_postgres_connect = connect
 
 LOGGER = logging.getLogger(__name__)
 
