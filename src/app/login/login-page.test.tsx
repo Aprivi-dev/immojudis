@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   search: {} as { mode?: "investor" | "professional"; redirect?: string },
+  replace: vi.fn(),
   signIn: vi.fn(),
   signUp: vi.fn(),
   toastError: vi.fn(),
@@ -21,7 +22,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: mocks.toastError } }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/login",
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: mocks.replace, refresh: vi.fn(), back: vi.fn() }),
   useSearchParams: () => new URLSearchParams(mocks.search),
 }));
 
@@ -95,5 +96,35 @@ describe("login page", () => {
     expect(field.type).toBe("password");
     fireEvent.click(screen.getByRole("button", { name: "Afficher le mot de passe" }));
     expect(field.type).toBe("text");
+  });
+
+  it("change de mode en gardant l'adresse de retour dans la requête", () => {
+    mocks.search = { redirect: "/sales?city=Bordeaux" };
+    render(<LoginPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Créer un compte" }));
+    expect(mocks.replace).toHaveBeenLastCalledWith(
+      "/login?redirect=%2Fsales%3Fcity%3DBordeaux&mode=investor",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Professionnel" }));
+    expect(mocks.replace).toHaveBeenLastCalledWith(
+      "/login?redirect=%2Fsales%3Fcity%3DBordeaux&mode=professional",
+    );
+  });
+
+  it("revient au mode connexion en retirant seulement le paramètre mode", () => {
+    mocks.search = { mode: "investor", redirect: "/sales" };
+    render(<LoginPage />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Se connecter" })[0]);
+    expect(mocks.replace).toHaveBeenLastCalledWith("/login?redirect=%2Fsales");
+  });
+
+  it("ignore une adresse de retour extérieure au site", () => {
+    mocks.search = { redirect: "https://evil.example/phish" };
+    render(<LoginPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Créer un compte" }));
+    // La requête brute est conservée telle quelle ; seule la destination après connexion est filtrée.
+    expect(mocks.replace).toHaveBeenLastCalledWith(
+      "/login?redirect=https%3A%2F%2Fevil.example%2Fphish&mode=investor",
+    );
   });
 });
