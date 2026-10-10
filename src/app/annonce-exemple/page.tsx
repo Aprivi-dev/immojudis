@@ -8,7 +8,7 @@ import { ExampleSalePage } from "@/routes/annonce-exemple";
 export const metadata: Metadata = {
   title: "Annonce exemple : l’analyse d’une vente au tribunal",
   description:
-    "Exemple fictif d’analyse Immojudis pour un appartement vendu au tribunal : mise à prix, valeur estimée, frais, travaux, risques et plafond d’enchère.",
+    "Exemple fictif d’analyse Immojudis pour un appartement vendu au tribunal : mise à prix, valeur estimée, frais, travaux, risques et enchère plafond.",
   alternates: { canonical: "/annonce-exemple" },
   robots: { index: true, follow: true },
 };

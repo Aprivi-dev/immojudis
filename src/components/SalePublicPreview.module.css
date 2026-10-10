@@ -81,7 +81,7 @@
 
 .kicker {
   margin-top: 18px;
-  color: #946724;
+  color: var(--gold-text);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -96,7 +96,7 @@
 .reference {
   display: block;
   margin-top: 10px;
-  color: #64748b;
+  color: var(--ink-soft);
   font-family: var(--font-ibm-plex-sans), system-ui, sans-serif;
   font-size: 13px;
   font-weight: 600;
@@ -111,18 +111,18 @@
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: 16px;
-  background: #e8edf3;
+  background: var(--line-soft);
 }
 
 .adds {
   margin-top: 26px;
   border-radius: 16px;
-  background: #f5f8fb;
+  background: var(--surface-tint);
   padding: 18px 20px;
 }
 
 .addsTitle {
-  color: #132238;
+  color: var(--brand-navy);
   font-size: 15px;
   font-weight: 750;
 }
@@ -130,7 +130,7 @@
 .adds ul {
   margin-top: 10px;
   padding-left: 18px;
-  color: #405168;
+  color: var(--ink-strong);
   font-size: 14px;
   line-height: 1.65;
   list-style: disc;
