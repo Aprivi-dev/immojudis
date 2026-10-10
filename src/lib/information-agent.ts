@@ -51,6 +51,10 @@ import type { AuctionSale } from "@/lib/types";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
 
 type MissionRow = Database["public"]["Tables"]["information_agent_missions"]["Row"];
+export type InformationAgentRecipientKind =
+  | "source_lawyer"
+  | "source_contact"
+  | "manual_professional";
 type CaseRow = Database["public"]["Tables"]["information_agent_cases"]["Row"];
 type FactRow = Database["public"]["Tables"]["information_agent_fact_candidates"]["Row"];
 
@@ -185,7 +189,7 @@ export type InformationAgentContactCandidate = {
   email: string;
   name: string | null;
   role: InformationAgentContactRole;
-  recipientKind: Extract<MissionRow["recipient_kind"], "source_lawyer" | "source_contact">;
+  recipientKind: Extract<InformationAgentRecipientKind, "source_lawyer" | "source_contact">;
   confidence: "high" | "medium" | "low";
   score: number;
   provenance: InformationAgentContactProvenance[];
@@ -231,7 +235,7 @@ export type InformationAgentMission = {
   caseId: string | null;
   saleId: string | null;
   status: MissionRow["status"];
-  recipientKind: MissionRow["recipient_kind"];
+  recipientKind: InformationAgentRecipientKind;
   recipientName: string | null;
   recipientEmail: string;
   subject: string;
@@ -1185,7 +1189,8 @@ function missionFromRow(row: MissionRow): InformationAgentMission {
     caseId: row.case_id,
     saleId: row.sale_id,
     status: row.status,
-    recipientKind: row.recipient_kind,
+    // Colonne text protégée par une contrainte CHECK : le type généré est string.
+    recipientKind: row.recipient_kind as InformationAgentRecipientKind,
     recipientName: row.recipient_name,
     recipientEmail: row.recipient_email,
     subject: row.subject,

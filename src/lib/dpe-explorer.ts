@@ -15,28 +15,15 @@ import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import type { SaleDocumentRich } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import type { SelectedRow } from "@/lib/supabase-select";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 type DpeDiagnosticRow = Database["public"]["Tables"]["auction_dpe_diagnostics"]["Row"];
 
-const DPE_COLUMNS = [
-  "id",
-  "title",
-  "city",
-  "department",
-  "postal_code",
-  "address",
-  "property_type",
-  "starting_price_eur",
-  "sale_date",
-  "updated_at",
-  "latitude",
-  "longitude",
-  "documents_rich",
-  "source_blocks",
-  "source_name",
-  "source_url",
-].join(",");
+const DPE_COLUMNS =
+  "id,title,city,department,postal_code,address,property_type,starting_price_eur,sale_date,updated_at,latitude,longitude,documents_rich,source_blocks,source_name,source_url";
+
+type DpeSaleRow = SelectedRow<AppSaleRow, typeof DPE_COLUMNS>;
 
 const optionalText = (max = 140) =>
   z.preprocess(
@@ -234,7 +221,7 @@ async function queryDpeSales({
 }: {
   auth: SupabaseAuthContext;
   input: DpeExplorerQuery;
-}): Promise<AppSaleRow[]> {
+}): Promise<DpeSaleRow[]> {
   let query = auth.supabase
     .from("v_auction_sales_app")
     .select(DPE_COLUMNS)
@@ -247,7 +234,7 @@ async function queryDpeSales({
 
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as unknown as AppSaleRow[];
+  return data ?? [];
 }
 
 async function getDpeDiagnosticsBySourceUrl(
@@ -304,7 +291,7 @@ function dpeDiagnosticRowToExplorer(row: DpeDiagnosticRow): StructuredDpeDiagnos
 }
 
 function rowToDpeItem(
-  row: AppSaleRow,
+  row: DpeSaleRow,
   structuredDiagnostics: StructuredDpeDiagnostic[] = [],
 ): DpeExplorerItem | null {
   const dpe = extractDpe(
@@ -314,7 +301,7 @@ function rowToDpeItem(
           ? (row.source_blocks as Record<string, unknown>)
           : null,
       documents_rich: Array.isArray(row.documents_rich)
-        ? (row.documents_rich as unknown as SaleDocumentRich[])
+        ? (row.documents_rich as SaleDocumentRich[])
         : null,
     },
     structuredDiagnostics,

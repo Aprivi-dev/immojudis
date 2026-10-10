@@ -4,6 +4,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { featureAccess, featureIncluded, type FeatureAccess, type PlanCode } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
+import { saleRows } from "@/lib/sale-rows";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { AuctionSale } from "@/lib/types";
 
@@ -234,7 +235,7 @@ async function loadSalesByIds(
     .select(SALE_LIST_COLUMNS)
     .in("id", ids);
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
 
 async function insertFavoriteRow(

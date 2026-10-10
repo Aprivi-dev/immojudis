@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { nullableRpcArg } from "@/lib/rpc-args";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -130,8 +131,8 @@ export type AdminReferencedLawyerCoverage = {
 
 export type AdminReferencedLawyerSummary = {
   id: string;
-  status: ReferencedLawyerRow["status"];
-  paidPlacementStatus: ReferencedLawyerRow["paid_placement_status"];
+  status: z.infer<typeof lawyerStatusSchema>;
+  paidPlacementStatus: z.infer<typeof paidPlacementStatusSchema>;
   displayName: string;
   firmName: string | null;
   email: string | null;
@@ -209,7 +210,7 @@ export async function saveAdminReferencedLawyer({
   const coverageRows = referencedLawyerCoveragePayload(input.coverage);
   const { data: savedLawyer, error } = await supabaseAdmin
     .rpc("save_referenced_lawyer_with_coverage", {
-      p_lawyer_id: input.id ?? null,
+      p_lawyer_id: nullableRpcArg(input.id ?? null),
       p_lawyer: asJson({
         ...lawyerPayload,
         ...(input.id ? {} : { created_by: auth.userId }),
@@ -321,8 +322,9 @@ function referencedLawyerToSummary(
 ): AdminReferencedLawyerSummary {
   return {
     id: lawyer.id,
-    status: lawyer.status,
-    paidPlacementStatus: lawyer.paid_placement_status,
+    status: lawyer.status as AdminReferencedLawyerSummary["status"],
+    paidPlacementStatus:
+      lawyer.paid_placement_status as AdminReferencedLawyerSummary["paidPlacementStatus"],
     displayName: lawyer.display_name,
     firmName: lawyer.firm_name,
     email: lawyer.email,

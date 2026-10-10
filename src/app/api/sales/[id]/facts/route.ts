@@ -9,7 +9,7 @@ import { DETAIL_VIEW } from "@/lib/sale-views";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { getFactReliabilitiesFromClaims } from "@/lib/fact-reliability";
 import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
-import type { AuctionSale } from "@/lib/types";
+import { saleRow } from "@/lib/sale-rows";
 
 const saleIdSchema = z.string().uuid();
 
@@ -73,7 +73,7 @@ export async function GET(
     await assertSalePublicationVisible(parsedId.data);
 
     const claimRead = await readSaleFactClaims(parsedId.data);
-    const facts = getFactReliabilitiesFromClaims(sale as unknown as AuctionSale, claimRead.claims);
+    const facts = getFactReliabilitiesFromClaims(saleRow(sale), claimRead.claims);
 
     return NextResponse.json(
       {

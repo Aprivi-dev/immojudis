@@ -397,7 +397,7 @@ async function resolveAccessibleWorkspace({
   const collaborator = (collaboratorRows ?? []).find((row) => row.workspace_id === workspace.id);
   return {
     workspace,
-    role: collaborator?.role ?? "viewer",
+    role: (collaborator?.role ?? "viewer") as WorkspaceCollaborationRole,
   };
 }
 

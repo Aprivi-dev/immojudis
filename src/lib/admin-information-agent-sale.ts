@@ -92,16 +92,6 @@ type AdminInformationAgentSaleRow = Record<string, unknown> & {
 
 type AuctionDocumentRow = Record<string, unknown>;
 
-type DatabaseResult = { data: unknown; error: { code?: string; message: string } | null };
-type SourcePresenceQuery = PromiseLike<DatabaseResult> & {
-  select(columns: string): SourcePresenceQuery;
-  eq(column: string, value: unknown): SourcePresenceQuery;
-};
-
-const sourcePresenceAdmin = supabaseAdmin as unknown as {
-  from(table: string): SourcePresenceQuery;
-};
-
 export type AdminInformationAgentSaleAuth = Pick<SupabaseAuthContext, "isAdmin">;
 
 /**
@@ -163,7 +153,7 @@ async function loadAdminInformationAgentDocuments(sourceUrl: unknown): Promise<S
   if (error) throw error;
 
   return (data ?? [])
-    .map((value) => toDocument(value as unknown as AuctionDocumentRow))
+    .map((value) => toDocument(value))
     .filter((document): document is SaleDocumentRich => document !== null);
 }
 
@@ -171,7 +161,7 @@ async function loadAdminInformationAgentSourcePresence(
   saleId: string,
   rawPayload: unknown,
 ): Promise<AuctionSale["source_presence"]> {
-  const { data, error } = await sourcePresenceAdmin
+  const { data, error } = await supabaseAdmin
     .from("auction_sale_source_presence")
     .select("source_name,availability,state,attempted_at,checked_at,run_id,extras")
     .eq("sale_id", saleId);

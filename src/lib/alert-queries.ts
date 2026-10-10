@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 import type { UserAlert } from "./types";
 import { assertCloudConfigured } from "./query-configuration";
 
@@ -41,9 +41,14 @@ export async function createAlert(userId: string, payload: CreateAlertPayload) {
 
 export async function updateAlert(userId: string, alertId: string, patch: Partial<UserAlert>) {
   assertCloudConfigured();
+  const { advanced_criteria: advancedCriteria, ...rest } = patch;
   const { error } = await supabase
     .from("user_alerts")
-    .update({ ...patch, updated_at: new Date().toISOString() })
+    .update({
+      ...rest,
+      ...(advancedCriteria === undefined ? {} : { advanced_criteria: advancedCriteria as Json }),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", alertId)
     .eq("user_id", userId);
   if (error) throw error;

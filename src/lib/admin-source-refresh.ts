@@ -2,47 +2,24 @@ import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Database } from "@/integrations/supabase/types";
+import type { SelectedRow } from "@/lib/supabase-select";
 
 const ADMIN_SOURCE_REFRESH_RPC = "enqueue_admin_source_detail_bounded" as const;
 
 type SourceDetailStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 
-type SourceDetailJobRow = {
-  id: string;
-  source_url: string;
-  job_type: "source_detail";
-  status: SourceDetailStatus;
-  priority: number;
-  detail_source_name: string | null;
-  detail_source_url: string | null;
-  attempt_count: number;
-  max_attempts: number;
-  locked_at: string | null;
-  completed_at: string | null;
-  last_error: string | null;
-  created_at: string;
-  updated_at: string;
-  request_origin: "system" | "admin_information_agent";
-  requested_by: string | null;
-};
+const SOURCE_DETAIL_JOB_COLUMNS =
+  "id,source_url,job_type,status,priority,detail_source_name,detail_source_url,attempt_count,max_attempts,locked_at,completed_at,last_error,created_at,updated_at,request_origin,requested_by";
 
-type SourceDetailQueryBuilder = PromiseLike<{
-  data: SourceDetailJobRow[] | null;
-  error: { message?: string } | null;
-}> & {
-  eq: (column: string, value: unknown) => SourceDetailQueryBuilder;
-  order: (
-    column: string,
-    options?: { ascending?: boolean; nullsFirst?: boolean },
-  ) => SourceDetailQueryBuilder;
-  limit: (count: number) => SourceDetailQueryBuilder;
-};
-
-type SourceDetailDatabaseClient = {
-  from: (table: "auction_enrichment_jobs") => {
-    select: (columns: string) => SourceDetailQueryBuilder;
-  };
-};
+/** `status` est protégé par une contrainte CHECK : le type généré le déclare en string. */
+type SourceDetailJobRow = Omit<
+  SelectedRow<
+    Database["public"]["Tables"]["auction_enrichment_jobs"]["Row"],
+    typeof SOURCE_DETAIL_JOB_COLUMNS
+  >,
+  "status"
+> & { status: SourceDetailStatus };
 
 export const adminSourceRefreshRequestSchema = z.object({
   saleId: z.string().uuid(),
@@ -81,20 +58,6 @@ export type AdminSourceRefreshResponse = {
   history: AdminSourceRefreshItem[];
 };
 
-type AdminSourceRefreshRpcClient = {
-  rpc(
-    name: typeof ADMIN_SOURCE_REFRESH_RPC,
-    args: {
-      p_admin_id: string;
-      p_force: boolean;
-      p_sale_id: string;
-    },
-  ): Promise<{
-    data: Array<{ job_id: string; reused: boolean }> | null;
-    error: { code?: string; message?: string } | null;
-  }>;
-};
-
 type RefreshableSale = {
   id: string;
   source_url: string | null;
@@ -110,8 +73,7 @@ export async function requestAdminSourceRefresh({
 }): Promise<AdminSourceRefreshResponse> {
   requireAdmin(auth);
 
-  const client = supabaseAdmin as unknown as AdminSourceRefreshRpcClient;
-  const { data, error } = await client.rpc(ADMIN_SOURCE_REFRESH_RPC, {
+  const { data, error } = await supabaseAdmin.rpc(ADMIN_SOURCE_REFRESH_RPC, {
     p_admin_id: auth.userId,
     p_force: input.force,
     p_sale_id: input.saleId,
@@ -167,12 +129,9 @@ async function loadAdminSourceRefreshHistory(saleId: string): Promise<AdminSourc
   if (saleError) throw saleError;
   if (!sale?.source_url || !sale.source_name) return [];
 
-  const client = supabaseAdmin as unknown as SourceDetailDatabaseClient;
-  const { data, error } = await client
+  const { data, error } = await supabaseAdmin
     .from("auction_enrichment_jobs")
-    .select(
-      "id,source_url,job_type,status,priority,detail_source_name,detail_source_url,attempt_count,max_attempts,locked_at,completed_at,last_error,created_at,updated_at,request_origin,requested_by",
-    )
+    .select(SOURCE_DETAIL_JOB_COLUMNS)
     .eq("source_url", sale.source_url)
     .eq("job_type", "source_detail")
     .eq("detail_source_name", sale.source_name)
@@ -181,7 +140,9 @@ async function loadAdminSourceRefreshHistory(saleId: string): Promise<AdminSourc
     .limit(20);
   if (error) throw error;
 
-  return (data ?? []).map((row) => rowToRefreshItem(row, sale));
+  return (data ?? []).map((row) =>
+    rowToRefreshItem({ ...row, status: row.status as SourceDetailStatus }, sale),
+  );
 }
 
 function rowToRefreshItem(

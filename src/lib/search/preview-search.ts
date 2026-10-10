@@ -15,8 +15,16 @@ export type PreviewSearchResponse = {
   count: number;
 };
 
-type PreviewSearchRow =
+type GeneratedPreviewSearchRow =
   Database["public"]["Functions"]["search_auction_sales_preview_v3"]["Returns"][number];
+
+/**
+ * Le générateur de types déclare les colonnes de `RETURNS TABLE` non nulles ; la miniature
+ * peut pourtant être absente, et `mapPreviewRows` la filtre.
+ */
+export type PreviewSearchRow = Omit<GeneratedPreviewSearchRow, "thumbnail_url"> & {
+  thumbnail_url: string | null;
+};
 
 /** Minimal surface of a Supabase client needed to run the public search RPC. */
 export type PreviewRpcClient = {

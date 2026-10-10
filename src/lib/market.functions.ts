@@ -775,16 +775,11 @@ async function analyzeStoredDvfAtRadius(
 
     const minimumDate = new Date();
     minimumDate.setUTCFullYear(minimumDate.getUTCFullYear() - HISTORY_YEARS);
-    const rpcClient = supabaseAdmin as unknown as {
-      rpc?: (
-        functionName: string,
-        args: Record<string, unknown>,
-      ) => Promise<{ data: unknown; error: { message?: string } | null }>;
-    };
     let data: unknown;
     let error: { message?: string } | null = null;
-    if (typeof rpcClient.rpc === "function") {
-      const result = await rpcClient.rpc("search_dvf_market_comparables", {
+    // `rpc` est absent des doubles de test minimalistes de supabaseAdmin.
+    if (typeof supabaseAdmin.rpc === "function") {
+      const result = await supabaseAdmin.rpc("search_dvf_market_comparables", {
         p_latitude: lat,
         p_longitude: lng,
         p_radius_m: radiusM,
@@ -1621,8 +1616,8 @@ export async function getMarketEstimate(
         engineKind: estimate.engineKind ?? "comparable_ensemble",
         segment: estimate.segment!,
         marketCell: estimate.marketCell ?? null,
-        requestInput: data as unknown as Record<string, unknown>,
-        result: estimate as unknown as Record<string, unknown>,
+        requestInput: data as Record<string, unknown>,
+        result: estimate as Record<string, unknown>,
         valueP10Eur: estimate.estimatedValueLowEur ?? null,
         valueP50Eur: estimate.estimatedValueEur ?? null,
         valueP90Eur: estimate.estimatedValueHighEur ?? null,

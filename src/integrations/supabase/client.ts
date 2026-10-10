@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { publicEnv } from "@/lib/env";
+import type { Database } from "./types";
 
 const isBrowser = typeof window !== "undefined";
 
@@ -13,7 +14,7 @@ if (!isSupabaseConfigured && isBrowser) {
   );
 }
 
-export const supabase = createClient(
+export const supabase = createClient<Database>(
   url || "https://placeholder.supabase.co",
   anon || "placeholder-key",
   {

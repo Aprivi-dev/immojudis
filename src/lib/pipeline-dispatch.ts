@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { serverEnv } from "@/lib/env";
+import { nullableRpcArg } from "@/lib/rpc-args";
 
 type Dispatch = {
   id: string;
@@ -16,17 +17,6 @@ type DispatchResult = {
   reason?: string;
   status?: string;
 };
-type Rpc = {
-  rpc(
-    name: "claim_autonomous_pipeline_run",
-    args?: Record<string, unknown>,
-  ): Promise<{ data: Dispatch | null; error: { message?: string } | null }>;
-  rpc(
-    name: "record_autonomous_pipeline_dispatch",
-    args?: Record<string, unknown>,
-  ): Promise<{ data: DispatchResult | null; error: { message?: string } | null }>;
-};
-
 const DISPATCH_INTERVAL_MS = 15 * 60 * 1000;
 
 /** Parse both forms allowed by RFC 9110 Retry-After. */
@@ -60,7 +50,6 @@ function dispatchErrorMessage(error: unknown): string {
 }
 
 async function recordDispatchResult(
-  client: Rpc,
   dispatch: Dispatch,
   result: {
     outcome: "accepted" | "rejected" | "unknown";
@@ -70,17 +59,17 @@ async function recordDispatchResult(
     error?: string;
   },
 ): Promise<DispatchResult | null> {
-  const { data, error } = await client.rpc("record_autonomous_pipeline_dispatch", {
+  const { data, error } = await supabaseAdmin.rpc("record_autonomous_pipeline_dispatch", {
     p_run_id: dispatch.id,
     p_attempt: dispatch.attempt,
     p_outcome: result.outcome,
-    p_status: result.status ?? null,
-    p_retry_after_at: result.retryAfterAt?.toISOString() ?? null,
+    p_status: nullableRpcArg(result.status ?? null),
+    p_retry_after_at: nullableRpcArg(result.retryAfterAt?.toISOString() ?? null),
     p_retryable: result.retryable ?? true,
-    p_error: result.error ?? null,
+    p_error: nullableRpcArg(result.error ?? null),
   });
   if (error) throw new Error(error.message ?? "Unable to record pipeline dispatch result");
-  return data;
+  return data as DispatchResult | null;
 }
 
 /** Called by the existing authenticated 15-minute health tick. SQL owns due times. */
@@ -90,10 +79,10 @@ export async function dispatchDuePipeline(): Promise<Record<string, unknown>> {
   // create a lease that the scheduler cannot deliver.
   if (!token) throw new Error("Pipeline dispatch token missing; scheduled collection unavailable");
 
-  const client = supabaseAdmin as unknown as Rpc;
-  const { data, error } = await client.rpc("claim_autonomous_pipeline_run");
+  const { data: claimed, error } = await supabaseAdmin.rpc("claim_autonomous_pipeline_run");
   if (error) throw new Error(error.message ?? "Unable to claim scheduled pipeline work");
-  if (!data) return { dispatched: false, reason: "disabled_busy_or_not_due" };
+  if (!claimed) return { dispatched: false, reason: "disabled_busy_or_not_due" };
+  const data = claimed as Dispatch;
 
   let observedResult: {
     outcome: "accepted" | "rejected";
@@ -133,7 +122,7 @@ export async function dispatchDuePipeline(): Promise<Record<string, unknown>> {
         retryAfterAt: null,
         retryable: false,
       };
-      await recordDispatchResult(client, data, observedResult);
+      await recordDispatchResult(data, observedResult);
       resultRecorded = true;
       return {
         dispatched: true,
@@ -156,7 +145,7 @@ export async function dispatchDuePipeline(): Promise<Record<string, unknown>> {
       retryable,
       error: outcomeMessage,
     };
-    await recordDispatchResult(client, data, observedResult);
+    await recordDispatchResult(data, observedResult);
     resultRecorded = true;
     throw new Error(outcomeMessage);
   } catch (error) {
@@ -166,7 +155,7 @@ export async function dispatchDuePipeline(): Promise<Record<string, unknown>> {
       // a known Retry-After/status with an unknown outcome.
       if (!resultRecorded) {
         try {
-          await recordDispatchResult(client, data, observedResult);
+          await recordDispatchResult(data, observedResult);
           resultRecorded = true;
         } catch (recordError) {
           throw new Error(
@@ -191,7 +180,7 @@ export async function dispatchDuePipeline(): Promise<Record<string, unknown>> {
       // have accepted the request. The next tick retries the same run id, and
       // the worker's queued-to-running CAS prevents duplicate execution.
       try {
-        await recordDispatchResult(client, data, {
+        await recordDispatchResult(data, {
           outcome: "unknown",
           retryAfterAt: null,
           retryable: true,

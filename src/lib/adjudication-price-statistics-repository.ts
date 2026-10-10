@@ -78,18 +78,6 @@ const storedSaleSchema = z
   })
   .strict();
 
-type DatabaseResult = { data: unknown; error: { message: string } | null };
-type StatisticsQuery = PromiseLike<DatabaseResult> & {
-  select(columns: string): StatisticsQuery;
-  eq(column: string, value: unknown): StatisticsQuery;
-  ilike(column: string, pattern: string): StatisticsQuery;
-  order(column: string, options?: { ascending?: boolean }): StatisticsQuery;
-  limit(count: number): StatisticsQuery;
-  maybeSingle(): PromiseLike<DatabaseResult>;
-};
-
-const statisticsAdmin = supabaseAdmin as unknown as { from(table: string): StatisticsQuery };
-
 export class AdjudicationPriceStatisticsUnavailableError extends Error {
   constructor(message = "Adjudication price statistics are temporarily unavailable.") {
     super(message);
@@ -117,7 +105,7 @@ export async function getAdjudicationPriceStatisticsForSale(
   }
 
   const [saleResult, nationalResult] = await Promise.all([
-    statisticsAdmin
+    supabaseAdmin
       .from("auction_sales")
       .select("tribunal_code,sale_venue_type,status,raw_payload")
       .eq("id", saleId)
@@ -189,7 +177,7 @@ export async function getAdjudicationPriceStatisticsDirectory(): Promise<Adjudic
     throw unavailable("The reviewed national statistics row has an invalid scope.");
   }
 
-  const tribunalResult = await statisticsAdmin
+  const tribunalResult = await supabaseAdmin
     .from("published_adjudication_price_statistics")
     .select(STORED_COLUMNS)
     .eq("build_id", national.build_id)
@@ -223,7 +211,7 @@ export async function getAdjudicationPriceStatisticsDirectory(): Promise<Adjudic
 }
 
 function fetchNationalRow(pinnedBuildId: string | null) {
-  let query = statisticsAdmin
+  let query = supabaseAdmin
     .from("published_adjudication_price_statistics")
     .select(STORED_COLUMNS)
     .eq("scope_type", "national");
@@ -236,7 +224,7 @@ function fetchNationalRow(pinnedBuildId: string | null) {
 }
 
 async function fetchTribunalRow(buildId: string, courtCode: string) {
-  const result = await statisticsAdmin
+  const result = await supabaseAdmin
     .from("published_adjudication_price_statistics")
     .select(STORED_COLUMNS)
     .eq("build_id", buildId)

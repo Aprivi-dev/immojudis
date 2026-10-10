@@ -6,6 +6,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/sale-views";
+import { saleRows } from "@/lib/sale-rows";
 import {
   getPublicationVisibleSaleIds,
   SalePublicationUnavailableError,
@@ -467,10 +468,10 @@ export function saleChangeEventRowToSummary(row: SaleChangeEventRow): SaleChange
   return {
     id: row.id,
     saleId: row.sale_id,
-    watchKind: row.watch_kind,
+    watchKind: row.watch_kind as SaleWatchKind,
     watchId: row.watch_id,
-    eventKind: row.event_kind,
-    severity: row.severity,
+    eventKind: row.event_kind as SaleChangeEventKind,
+    severity: row.severity as SaleChangeSeverity,
     fingerprint: row.fingerprint,
     summaryLabel: row.summary_label,
     changeSummary: asRecord(row.change_summary),
@@ -652,7 +653,7 @@ async function loadSalesByIds(
     .in("id", ids);
 
   if (error) throw error;
-  const rows = (data ?? []) as unknown as AuctionSale[];
+  const rows = saleRows(data);
   const visibleSaleIds = await getPublicationVisibleSaleIds(rows.map((sale) => sale.id));
   return rows.filter((sale) => visibleSaleIds.has(sale.id));
 }

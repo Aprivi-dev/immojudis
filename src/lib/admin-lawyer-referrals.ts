@@ -11,6 +11,7 @@ import {
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { escapeHtml } from "@/lib/guards";
 
+type LawyerReferralMatchingStatus = "unmatched" | "matched" | "manual_review";
 type LawyerReferralRow = Database["public"]["Tables"]["lawyer_referral_requests"]["Row"];
 type LawyerReferralUpdate = Database["public"]["Tables"]["lawyer_referral_requests"]["Update"];
 type ReferencedLawyerRow = Database["public"]["Tables"]["referenced_lawyers"]["Row"];
@@ -88,8 +89,8 @@ export type AdminLawyerReferralLawyerOption = {
 
 export type AdminLawyerReferralSummary = {
   id: string;
-  status: LawyerReferralRow["status"];
-  matchingStatus: LawyerReferralRow["matching_status"];
+  status: z.infer<typeof referralStatusSchema>;
+  matchingStatus: LawyerReferralMatchingStatus;
   requestedLawyerId: string | null;
   requestedLawyer: AdminLawyerReferralLawyerOption | null;
   requesterEmail: string | null;
@@ -105,7 +106,7 @@ export type AdminLawyerReferralSummary = {
     saleDate: string | null;
     startingPriceEur: number | null;
   };
-  preferredContactMethod: LawyerReferralRow["preferred_contact_method"];
+  preferredContactMethod: "email" | "phone" | "either";
   phone: string | null;
   message: string | null;
   financingReady: boolean | null;
@@ -633,8 +634,9 @@ function referralRequestToSummary(
   const sale = jsonObject(request.sale_snapshot);
   return {
     id: request.id,
-    status: request.status,
-    matchingStatus: request.matching_status,
+    // Colonnes text protégées par des contraintes CHECK : les types générés les exposent en string.
+    status: request.status as AdminLawyerReferralSummary["status"],
+    matchingStatus: request.matching_status as LawyerReferralMatchingStatus,
     requestedLawyerId: request.requested_lawyer_id,
     requestedLawyer,
     requesterEmail: request.requester_email,
@@ -650,7 +652,8 @@ function referralRequestToSummary(
       saleDate: stringOrNull(sale.sale_date),
       startingPriceEur: numberOrNull(sale.starting_price_eur),
     },
-    preferredContactMethod: request.preferred_contact_method,
+    preferredContactMethod:
+      request.preferred_contact_method as AdminLawyerReferralSummary["preferredContactMethod"],
     phone: request.phone,
     message: request.message,
     financingReady: request.financing_ready,

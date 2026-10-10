@@ -6,28 +6,14 @@ import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import type { SelectedRow } from "@/lib/supabase-select";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
-const MARKET_COLUMNS = [
-  "id",
-  "title",
-  "city",
-  "department",
-  "tribunal_code",
-  "tribunal_name",
-  "property_type",
-  "starting_price_eur",
-  "adjudication_price_eur",
-  "sale_date",
-  "created_at",
-  "status",
-  "app_surface_m2",
-  "habitable_surface_m2",
-  "carrez_surface_m2",
-  "land_surface_m2",
-  "investment_score",
-].join(",");
+const MARKET_COLUMNS =
+  "id,title,city,department,tribunal_code,tribunal_name,property_type,starting_price_eur,adjudication_price_eur,sale_date,created_at,status,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,investment_score";
+
+type MarketSaleRow = SelectedRow<AppSaleRow, typeof MARKET_COLUMNS>;
 
 const optionalText = (max = 140) =>
   z.preprocess(
@@ -187,7 +173,7 @@ export async function getMarketAnalytics({
   const fromDate = addMonthsIso(now, -input.months);
   const toDate = addMonthsIso(now, input.futureMonths);
   let selectedScope = scopes[0];
-  let rows: AppSaleRow[] = [];
+  let rows: MarketSaleRow[] = [];
 
   for (const scope of scopes) {
     rows = await queryMarketSales({
@@ -286,7 +272,7 @@ export function buildMarketAnalyticsSnapshot(
 async function getReferenceSale(
   auth: SupabaseAuthContext,
   saleId: string,
-): Promise<AppSaleRow | null> {
+): Promise<MarketSaleRow | null> {
   const { data, error } = await auth.supabase
     .from("v_auction_sales_app")
     .select(MARKET_COLUMNS)
@@ -294,10 +280,10 @@ async function getReferenceSale(
     .maybeSingle();
 
   if (error) throw error;
-  return (data ?? null) as unknown as AppSaleRow | null;
+  return data ?? null;
 }
 
-function buildAnalyticsScopes(input: MarketAnalyticsQuery, referenceSale: AppSaleRow | null) {
+function buildAnalyticsScopes(input: MarketAnalyticsQuery, referenceSale: MarketSaleRow | null) {
   const base = {
     city: input.city ?? referenceSale?.city ?? null,
     department: input.department ?? referenceSale?.department ?? null,
@@ -354,7 +340,7 @@ async function queryMarketSales({
   fromDate: string;
   toDate: string;
   limit: number;
-}): Promise<AppSaleRow[]> {
+}): Promise<MarketSaleRow[]> {
   let query = auth.supabase
     .from("v_auction_sales_app")
     .select(MARKET_COLUMNS)
@@ -372,10 +358,10 @@ async function queryMarketSales({
 
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as unknown as AppSaleRow[];
+  return data ?? [];
 }
 
-function rowToMarketItem(row: AppSaleRow, now: Date): MarketAnalyticsItem {
+function rowToMarketItem(row: MarketSaleRow, now: Date): MarketAnalyticsItem {
   const surface = getSaleSurface(row).value;
   const startingPrice = positiveNumber(row.starting_price_eur);
   const adjudicationPrice = positiveNumber(row.adjudication_price_eur);

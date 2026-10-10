@@ -29,6 +29,7 @@
     "audit:ai-descriptions": "node scripts/audit-ai-descriptions.mjs",
     "env:check:prod": "node scripts/verify-production-env.mjs",
     "check:migrations": "node scripts/apply-supabase-migrations.mjs --check",
+    "db:types": "npx --yes supabase@2.110.0 gen types typescript --local > src/integrations/supabase/types.ts && prettier --config .prettierrc --write src/integrations/supabase/types.ts",
     "db:migrate": "node scripts/apply-supabase-migrations.mjs",
     "db:indexes:concurrent": "node scripts/apply-supabase-concurrent-index-operations.mjs",
     "ops:health-scheduler:configure": "node scripts/configure-operational-health-scheduler.mjs",
