@@ -37,11 +37,12 @@ de tribunaux, JudiLibre et l'activité de la justice.
 - Aucune PR « Outcome Graph » avant le lancement. Les workflows `outcome-*` ne doivent pas être planifiés.
 - Le code reste dans `main` : le retirer coûterait plus cher qu'il ne rapporte tant qu'il est inactif.
 
-## Pilotes masqués
+## Ventes notariales et domaniales
 
-Les filtres et entrées « Chez le notaire » et « Domaniales » sont masqués par
-`NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED` (fermé). À rouvrir quand plus de 90 % des fiches de ces sources sont
-vérifiées sur 30 jours.
+Elles font partie du projet au même titre que les ventes au tribunal : les filtres « Chez le notaire » et
+« Domaniales » et leurs pages d'entrée sont affichés par défaut. `NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED=false`
+permet de les masquer (les annonces restent dans le catalogue). Les cessions de l'État sans date de vente
+(appels d'offres, ventes amiables) ne sont pas listées : voir la décision en attente dans le rapport de suivi.
 
 ## Fréquence de collecte
 

@@ -31,11 +31,17 @@ describe("sale type search controls", () => {
     cleanup();
     vi.unstubAllEnvs();
   });
-  it("hides the notarial and State pilots while their flag is closed", () => {
+  it("offers the notarial and State sales by default", () => {
+    render(<FilterHarness />);
+    expect(screen.getByRole("button", { name: "Chez le notaire" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Domaniales" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Au tribunal" })).toBeTruthy();
+  });
+  it("hides them only when the flag is explicitly set to false", () => {
+    vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "false");
     render(<FilterHarness />);
     expect(screen.queryByRole("button", { name: "Chez le notaire" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Domaniales" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Au tribunal" })).toBeTruthy();
   });
   it("exposes an accessible selection and a working comparison anchor", () => {
     vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "true");

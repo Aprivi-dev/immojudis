@@ -57,15 +57,14 @@ export const SALE_FAMILIES = [
 ] as const;
 
 /**
- * The notarial and State-sale sources are still pilots: their listings are not
- * reliable enough to be offered as filters or entry points.  They stay in the
- * data and can be reopened with NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED=true
- * once the share of verified listings is above 90 % over 30 days.
+ * Notarial and State sales are part of the product, like court sales: their filters and entry
+ * points are shown by default.  `NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED=false` hides them again
+ * (the listings themselves stay in the catalogue either way).
  */
 export function notaryAndStatePilotsEnabled(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): boolean {
-  return env.NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED === "true";
+  return env.NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED !== "false";
 }
 
 const PILOT_TYPES: ReadonlyArray<SaleTypeFilter> = ["notary", "state"];
