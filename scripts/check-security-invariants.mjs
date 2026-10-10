@@ -484,6 +484,22 @@ if (
   failures.push("function default privileges still grant EXECUTE to PUBLIC");
 }
 
+// P4-11: approved evidence is served through signed URLs from a private bucket.
+const privateBucketMigration = await readFile(
+  new URL(
+    "../supabase/migrations/20261010005000_private_approved_evidence_bucket.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+if (
+  !/update\s+storage\.buckets\s+set\s+public\s*=\s*false\s+where\s+id\s*=\s*'information-agent-approved'/i.test(
+    privateBucketMigration,
+  )
+) {
+  failures.push("information-agent-approved is not made private");
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -515,6 +531,7 @@ console.log(
       "competent-court-reconciliation-exact-evidence",
       "auction-sales-column-grants",
       "function-default-privileges",
+      "approved-evidence-private-bucket",
     ],
   }),
 );
