@@ -4,6 +4,13 @@ begin;
 -- implicit EXECUTE-to-PUBLIC default for this rolled-back transaction only.
 alter default privileges grant execute on functions to public;
 
+-- P4-07 revokes browser EXECUTE on the admin review RPCs (the app uses the service role); this
+-- test exercises their internal admin checks, so it re-grants them inside its rolled-back transaction.
+grant execute on function public.decide_outcome_claim_eligibility(uuid, text, text, uuid[], text, uuid) to authenticated;
+grant execute on function public.review_judilibre_match_candidate(uuid, text, text) to authenticated;
+grant execute on function public.review_outcome_evidence(uuid, text, text, jsonb, text) to authenticated;
+
+
 select plan(43);
 
 select ok(
