@@ -15,7 +15,10 @@ except ModuleNotFoundError:  # pragma: no cover - optional for parsing-only test
     sql = None
 
 from src.config import load_settings
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect
+
+# Alias de compatibilité : des tests patchent ce nom de module.
+_postgres_connect = connect
 
 DEFAULT_SOURCE_URL = "https://www.data.gouv.fr/datasets/statistiques-dvf"
 DEFAULT_BATCH_SIZE = 1_000

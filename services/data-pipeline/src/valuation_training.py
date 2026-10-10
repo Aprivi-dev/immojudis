@@ -156,11 +156,11 @@ def train_valuation_models(options: TrainingOptions) -> list[ModelBundle]:
             bundles.append(bundle)
         return bundles
 
-    from src.storage.supabase_client import POSTGRES_TRAINING_STATEMENT_TIMEOUT_MS, _postgres_connect
+    from src.storage.supabase_client import POSTGRES_TRAINING_STATEMENT_TIMEOUT_MS, connect
 
     assert db_url is not None
     # Reading millions of DVF rows legitimately outlasts the default 2-minute limit.
-    with _postgres_connect(
+    with connect(
         db_url, statement_timeout_ms=POSTGRES_TRAINING_STATEMENT_TIMEOUT_MS
     ) as connection:
         for segment in options.segments:
@@ -1003,9 +1003,9 @@ def fetch_active_model(connection: Any, segment: str) -> ActiveModel | None:
 
 
 def fetch_active_model_for_segment(db_url: str, segment: str) -> ActiveModel | None:
-    from src.storage.supabase_client import _postgres_connect
+    from src.storage.supabase_client import connect
 
-    with _postgres_connect(db_url) as connection:
+    with connect(db_url) as connection:
         return fetch_active_model(connection, segment)
 
 
@@ -1205,13 +1205,13 @@ def format_step_summary(bundles: Sequence[ModelBundle]) -> str:
 
 
 def publish_model_bundle(db_url: str, bundle: ModelBundle, *, activate: bool) -> None:
-    from src.storage.supabase_client import _postgres_connect
+    from src.storage.supabase_client import connect
 
     if Jsonb is None:
         raise RuntimeError("psycopg Jsonb support is required to publish a valuation model.")
     now = datetime.now(UTC)
     status = "active" if activate else "draft"
-    with _postgres_connect(db_url) as connection, connection.cursor() as cursor:
+    with connect(db_url) as connection, connection.cursor() as cursor:
         if activate:
             cursor.execute(
                 """

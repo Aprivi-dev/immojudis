@@ -218,7 +218,7 @@ def _reserve_via_rest(settings: dict[str, Any], payload: dict[str, Any]) -> str:
 def _reserve_via_postgres(settings: dict[str, Any], payload: dict[str, Any]) -> str:
     # Reuse the repository's bounded connection helper without changing its
     # storage module or introducing another database dependency.
-    from src.storage.supabase_client import _postgres_connect
+    from src.storage.supabase_client import connect
 
     parameters = tuple(payload[key] for key in (
         "p_provider",
@@ -234,7 +234,7 @@ def _reserve_via_postgres(settings: dict[str, Any], payload: dict[str, Any]) -> 
         "p_reason",
     ))
     try:
-        with _postgres_connect(str(settings["supabase_db_url"])) as connection:
+        with connect(str(settings["supabase_db_url"])) as connection:
             row = connection.execute(
                 """
                 select public.reserve_llm_request(
@@ -334,7 +334,7 @@ def _finalize_via_rest(settings: dict[str, Any], payload: dict[str, Any]) -> Non
 
 
 def _finalize_via_postgres(settings: dict[str, Any], payload: dict[str, Any]) -> None:
-    from src.storage.supabase_client import _postgres_connect
+    from src.storage.supabase_client import connect
 
     parameters = tuple(payload[key] for key in (
         "p_request_id",
@@ -348,7 +348,7 @@ def _finalize_via_postgres(settings: dict[str, Any], payload: dict[str, Any]) ->
         "p_output_tokens_estimate",
         "p_error_message",
     ))
-    with _postgres_connect(str(settings["supabase_db_url"])) as connection:
+    with connect(str(settings["supabase_db_url"])) as connection:
         connection.execute(
             """
             select public.finalize_llm_request(

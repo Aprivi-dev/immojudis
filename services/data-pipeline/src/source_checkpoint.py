@@ -30,9 +30,9 @@ CHECKPOINT_STATEMENT_TIMEOUT = "15s"
 
 def _checkpoint_connect(db_url: str):
     """Open a short-lived checkpoint connection with no long retry tail."""
-    from src.storage.supabase_client import _postgres_connect
+    from src.storage.supabase_client import connect
 
-    return _postgres_connect(
+    return connect(
         str(db_url),
         connect_timeout=CHECKPOINT_CONNECT_TIMEOUT,
         retry_delays=CHECKPOINT_RETRY_DELAYS,

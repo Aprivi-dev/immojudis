@@ -17,7 +17,7 @@ except ModuleNotFoundError:  # pragma: no cover - parser-only installations.
 
 from src.official_sources.base import canonical_sha256
 from src.outcome_ingestion.artifact_store import StoredRawArtifact
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect as connect_postgres
 
 IngestionChannel = Literal["automated", "manual", "partner"]
 CaptureTransport = Literal["http", "local_file"]
@@ -216,7 +216,7 @@ class OutcomeIngestionRepository:
         self,
         db_url: str,
         *,
-        connect: Callable[[str], Any] = _postgres_connect,
+        connect: Callable[[str], Any] = connect_postgres,
     ) -> None:
         if not db_url.strip():
             raise OutcomeIngestionError("SUPABASE_DB_URL is required for Outcome ingestion")
@@ -228,7 +228,7 @@ class OutcomeIngestionRepository:
         cls,
         settings: Mapping[str, Any],
         *,
-        connect: Callable[[str], Any] = _postgres_connect,
+        connect: Callable[[str], Any] = connect_postgres,
     ) -> OutcomeIngestionRepository:
         return cls(str(settings.get("supabase_db_url") or ""), connect=connect)
 

@@ -73,8 +73,8 @@ class QueueJobDeferred(RuntimeError):
 
 
 def defer_budget_jobs(jobs: list, error: PipelineBudgetExhausted | QueueJobDeferred) -> None:
-    from src.storage.supabase_client import _postgres_connect
-    with _postgres_connect(str(load_settings()['supabase_db_url'])) as db:
+    from src.storage.supabase_client import connect
+    with connect(str(load_settings()['supabase_db_url'])) as db:
         for job in jobs:
             lease_filter = ' and locked_at=%s' if job.get('locked_at') is not None else ''
             parameters = (error.next_attempt_at,str(error),job['id'],job['attempt_count'])

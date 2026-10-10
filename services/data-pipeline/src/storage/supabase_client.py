@@ -4828,6 +4828,22 @@ def _postgres_connect(
     raise AssertionError("unreachable")
 
 
+def connect(db_url: str, **options: Any) -> Any:
+    """Public entry point for opening a direct PostgreSQL connection.
+
+    Every module outside ``src.storage`` goes through here instead of importing
+    the private ``_postgres_connect``. The keyword ``options`` are forwarded
+    untouched (``connect_timeout``, ``retry_delays``, ``statement_timeout_ms``),
+    so the timeouts, startup options, SSL handling and retry behaviour are
+    exactly those of ``_postgres_connect``.
+
+    The call is resolved through the module attribute ``_postgres_connect`` at
+    call time, so tests that patch ``supabase_client._postgres_connect`` keep
+    intercepting every caller, including those that imported ``connect`` by name.
+    """
+    return _postgres_connect(db_url, **options)
+
+
 _SHARED_CONNECTIONS: dict[tuple[int, str], tuple[Any, float]] = {}
 _SHARED_CONNECTION_LOCK = threading.RLock()
 

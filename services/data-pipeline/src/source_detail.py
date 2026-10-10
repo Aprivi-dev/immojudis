@@ -173,7 +173,7 @@ def publish_source_revision(sale, job: dict, settings: dict) -> bool:
     """
     from src.storage import supabase_client as storage
 
-    with storage._postgres_connect(str(settings['supabase_db_url'])) as db:
+    with storage.connect(str(settings['supabase_db_url'])) as db:
         db.execute("set local lock_timeout = '15s'")
         db.execute("set local statement_timeout = '120s'")
         db.execute("select pg_advisory_xact_lock(hashtextextended('immojudis:outcome_catalogue_bridge:v1',0))")

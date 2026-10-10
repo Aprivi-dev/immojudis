@@ -16,7 +16,7 @@ from src.official_sources.justice_activity import (
     JusticeActivityParseResult,
     JusticeJurisdictionActivityRecord,
 )
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect as connect_postgres
 
 MatchStatus = Literal["exact_official_reference", "exact_code", "exact_name", "ambiguous", "unmatched"]
 _PUBLISHABLE_CATALOGUE_SAMPLE = 5
@@ -361,7 +361,7 @@ def select_pilot_regions(
 
 
 class JusticeActivityRepository:
-    def __init__(self, *, connect: Callable[[str], Any] = _postgres_connect) -> None:
+    def __init__(self, *, connect: Callable[[str], Any] = connect_postgres) -> None:
         self._connect = connect
 
     def load_courts_and_catalogue_counts(
