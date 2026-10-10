@@ -2,7 +2,8 @@ import Landmark from "lucide-react/dist/esm/icons/landmark.js";
 import ScrollText from "lucide-react/dist/esm/icons/scroll-text.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
+import { pathWithSearch } from "@/lib/navigation";
 import { visibleSaleFamilies } from "@/lib/sale-types";
 
 const FAMILY_ICONS = { tribunal: Landmark, notary: ScrollText, state: Building2 };
@@ -33,8 +34,7 @@ export function SaleTypesOverview({ detailed = false }: { detailed?: boolean }) 
                 <p className="mt-3 text-sm leading-relaxed text-brand-navy/75">{family.nextStep}</p>
               ) : null}
               <Link
-                to="/sales"
-                search={{ saleType: family.type }}
+                href={pathWithSearch("/sales", { saleType: family.type })}
                 className="mt-auto flex items-center gap-2 pt-5 text-sm font-semibold text-brand-navy underline underline-offset-4"
               >
                 {family.linkLabel}

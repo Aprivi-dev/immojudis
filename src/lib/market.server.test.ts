@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getMarketEstimate, officialDvfCommuneCode } from "@/lib/market.functions";
+import { getMarketEstimate, officialDvfCommuneCode } from "@/lib/market.server";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -342,7 +342,7 @@ function feature(index: number) {
 
 describe("market estimate failure logging", () => {
   it("journalise les cas métier en info et les vraies pannes en erreur", async () => {
-    const { logMarketEstimateFailure } = await import("./market.functions");
+    const { logMarketEstimateFailure } = await import("./market.server");
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
 

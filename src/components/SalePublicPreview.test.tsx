@@ -1,33 +1,10 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { axe } from "vitest-axe";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
-
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({
-    to,
-    search,
-    children,
-    ...props
-  }: {
-    to: string;
-    search?: Record<string, unknown>;
-    children: ReactNode;
-  }) => {
-    const query = new URLSearchParams(
-      Object.entries(search ?? {}).map(([key, value]) => [key, String(value)]),
-    ).toString();
-    return (
-      <a href={`${to}${query ? `?${query}` : ""}`} {...props}>
-        {children}
-      </a>
-    );
-  },
-}));
 
 afterEach(cleanup);
 

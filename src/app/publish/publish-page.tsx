@@ -1,6 +1,7 @@
 "use client";
 
-import { createFileRoute, Link } from "@/lib/router-compat";
+import Link from "next/link";
+import { pathWithSearch } from "@/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type * as React from "react";
 import { useMemo, useState } from "react";
@@ -24,10 +25,6 @@ import {
 } from "@/lib/publication-requests-client";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
-
-export const Route = createFileRoute("/publish")({
-  component: PublishPage,
-});
 
 type PublishDraft = {
   title: string;
@@ -231,8 +228,7 @@ export function PublishPage() {
             commissaire de justice ou tribunal.
           </p>
           <Link
-            to="/login"
-            search={{ mode: "professional", redirect: "/publish" }}
+            href={pathWithSearch("/login", { mode: "professional", redirect: "/publish" })}
             className="liquid-button mt-6 inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
           >
             Créer un compte pro
@@ -511,7 +507,7 @@ export function PublishPage() {
                 )}
               </button>
               <Link
-                to="/espace-pro"
+                href="/espace-pro"
                 className="mt-3 inline-flex w-full items-center justify-center rounded-lg border border-white/10 px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold-text hover:border-gold"
               >
                 Ouvrir mon espace pro
@@ -566,7 +562,7 @@ function PublicationRequestLine({ request }: { request: PublicationRequestSummar
       </div>
       {request.publishedUrl ? (
         <Link
-          to={request.publishedUrl}
+          href={request.publishedUrl}
           className="mt-3 inline-block text-xs text-gold-text underline"
         >
           Voir la vente publiée

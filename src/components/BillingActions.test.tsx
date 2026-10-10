@@ -1,14 +1,8 @@
 // @vitest-environment jsdom
 
-import type * as React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BillingActions } from "./BillingActions";
-
-type MockLinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
-  to?: string;
-  search?: Record<string, unknown>;
-};
 
 const mocks = vi.hoisted(() => ({
   user: { id: "investor" } as { id: string } | null,
@@ -26,13 +20,8 @@ vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: mocks.user, loading: mocks.loading }),
 }));
 
-vi.mock("@/lib/router-compat", () => ({
-  useNavigate: () => mocks.navigate,
-  Link: ({ children, to, search: _search, ...props }: MockLinkProps) => (
-    <a href={to} {...props}>
-      {children}
-    </a>
-  ),
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mocks.navigate, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
 
 vi.mock("@/lib/client-billing", () => ({
@@ -184,10 +173,7 @@ describe("BillingActions", () => {
     fireEvent.click(purchase);
 
     await waitFor(() =>
-      expect(mocks.navigate).toHaveBeenCalledWith({
-        to: "/login",
-        search: { redirect: expect.stringContaining("/") },
-      }),
+      expect(mocks.navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?redirect=%2F/)),
     );
   });
 });

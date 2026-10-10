@@ -8,7 +8,7 @@ import {
   saleStructuredData,
 } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
-import { SaleDetailPage } from "@/routes/sales.$id";
+import { SaleDetailPage } from "./sale-detail-page";
 import { jsonLdString } from "@/lib/json-ld";
 
 type PageProps = {

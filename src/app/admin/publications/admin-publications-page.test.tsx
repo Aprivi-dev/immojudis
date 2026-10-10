@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AdminPublicationsPage } from "@/routes/admin.publications";
+import { AdminPublicationsPage } from "./admin-publications-page";
 
 const mocks = vi.hoisted(() => ({ publicationResult: vi.fn() }));
 

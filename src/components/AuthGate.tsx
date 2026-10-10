@@ -2,8 +2,9 @@
 
 import type { ReactNode } from "react";
 import { useEffect } from "react";
-import { useLocation, useNavigate } from "@/lib/router-compat";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { pathWithSearch } from "@/lib/navigation";
 import {
   getAccountType,
   getProfessionalStatus,
@@ -41,9 +42,8 @@ function normalizePath(pathname: string) {
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { user, profile, loading } = useAuth();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const pathname = normalizePath(location.pathname);
+  const router = useRouter();
+  const pathname = normalizePath(usePathname());
   const isPublic =
     PUBLIC_PATHS.has(pathname) ||
     pathname.startsWith("/ressources/") ||
@@ -58,8 +58,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (isPublic || loading || user) return;
-    void navigate({ to: "/login", search: { redirect: location.href }, replace: true });
-  }, [isPublic, loading, location.href, navigate, user]);
+    // The query string is only needed at redirect time, so it is read from the browser then:
+    // subscribing to it with useSearchParams() would push every protected page out of the
+    // prerendered HTML.
+    const redirect = `${window.location.pathname}${window.location.search}`;
+    router.replace(pathWithSearch("/login", { redirect }));
+  }, [isPublic, loading, router, user]);
 
   if (isPublic) return <>{children}</>;
 

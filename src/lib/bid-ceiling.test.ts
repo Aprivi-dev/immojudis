@@ -5,7 +5,7 @@ import {
   type BidCeilingPlanAccess,
 } from "@/lib/bid-ceiling";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 
 const ANALYSE_PLAN: BidCeilingPlanAccess = {
   code: "analyse",

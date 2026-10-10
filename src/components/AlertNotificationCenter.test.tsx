@@ -19,11 +19,6 @@ vi.mock("@/lib/client-api", () => ({
   updateAlertNotification: vi.fn(),
   updateNotificationPreferences: vi.fn(),
 }));
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
-    <a href={to}>{children}</a>
-  ),
-}));
 afterEach(cleanup);
 beforeEach(() => {
   vi.clearAllMocks();

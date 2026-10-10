@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AdminHomePage } from "@/routes/admin";
+import { AdminHomePage } from "./admin-home-page";
 
 export const metadata: Metadata = {
   title: "Admin",

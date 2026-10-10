@@ -2,14 +2,13 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   PublicationRequestDetail,
   PublicationRequestSummary,
 } from "@/lib/publication-requests-client";
 import type { AccountProfile } from "@/lib/account";
-import { ProfessionalWorkspacePage } from "./espace-pro";
+import { ProfessionalWorkspacePage } from "./professional-workspace-page";
 
 const mocks = vi.hoisted(() => ({
   auth: {
@@ -45,15 +44,6 @@ vi.mock("@/hooks/use-auth", () => ({
 vi.mock("@/lib/publication-requests-client", () => ({
   fetchAllPublicationRequestsClient: mocks.list,
   fetchPublicationRequestClient: mocks.detail,
-}));
-
-vi.mock("@/lib/router-compat", () => ({
-  createFileRoute: () => (options: unknown) => options,
-  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
-    <a href={to} {...props}>
-      {children}
-    </a>
-  ),
 }));
 
 afterEach(cleanup);

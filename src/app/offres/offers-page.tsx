@@ -17,21 +17,8 @@ import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives"
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { fetchBillingOffer } from "@/lib/client-billing";
 import { offerComparisonRows } from "@/lib/offer-comparison";
-import { createFileRoute, Link } from "@/lib/router-compat";
-
-export const Route = createFileRoute("/offres")({
-  head: () => ({
-    meta: [
-      { title: "Offres Découverte et Analyse — Immojudis" },
-      {
-        name: "description",
-        content:
-          "Découverte est gratuite. Analyse chiffre votre enchère plafond, suit les nouvelles ventes avec des alertes et s’appuie sur des ventes comparables réelles : 29 € TTC par mois.",
-      },
-    ],
-  }),
-  component: OffersPage,
-});
+import Link from "next/link";
+import { pathWithSearch } from "@/lib/navigation";
 
 type OfferState = { configured: boolean | null; trialAvailable: boolean };
 
@@ -202,7 +189,7 @@ export function OffersPage() {
                 Voir une analyse exemple
                 <ArrowRight className="size-4" aria-hidden />
               </Link>
-              <Link to="/sales" className={buttonClasses({ size: "lg" })}>
+              <Link href="/sales" className={buttonClasses({ size: "lg" })}>
                 Explorer gratuitement
               </Link>
             </div>
@@ -252,8 +239,7 @@ export function OffersPage() {
             features={DISCOVERY_FEATURES}
           >
             <Link
-              to="/login"
-              search={{ mode: "investor", redirect: "/sales" }}
+              href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
               className={buttonClasses({ size: "lg", className: "w-full" })}
             >
               Créer mon compte gratuit
