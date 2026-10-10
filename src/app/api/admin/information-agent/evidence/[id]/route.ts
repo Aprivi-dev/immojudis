@@ -8,6 +8,10 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
+
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
 
 const evidenceRightsReviewSchema = z.object({
   rightsStatus: z.enum(["authorized", "restricted"]),
@@ -22,7 +26,7 @@ const publicationRevocationConflict = new PublicApiError(
   409,
 );
 
-export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+async function handleGET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
@@ -60,7 +64,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   }
 }
 
-export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+async function handlePATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
@@ -149,3 +153,6 @@ function isRightsRestrictionConflict(candidate: unknown): boolean {
     candidate.message.startsWith("Published or staged evidence")
   );
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const PATCH = withAdminDeadline(handlePATCH);

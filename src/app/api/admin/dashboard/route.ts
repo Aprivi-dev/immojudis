@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getAdminDashboard } from "@/lib/admin.functions";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const dashboard = await getAdminDashboard(bearerTokenFromRequest(request));
     return NextResponse.json(dashboard, {
@@ -15,3 +19,5 @@ export async function GET(request: Request) {
     return adminErrorResponse(error, { fallbackStatus: 500 });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);

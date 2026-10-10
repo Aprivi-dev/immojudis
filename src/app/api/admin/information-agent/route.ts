@@ -7,8 +7,12 @@ import {
   reviewAdminInformationAgentFact,
 } from "@/lib/admin-information-agent";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const searchParams = new URL(request.url).searchParams;
     const cursor = z.string().max(500).optional();
@@ -26,7 +30,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     const input = adminInformationAgentReviewSchema.parse(await request.json());
     const response = await reviewAdminInformationAgentFact({
@@ -40,3 +44,6 @@ export async function PATCH(request: Request) {
     return adminErrorResponse(error);
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const PATCH = withAdminDeadline(handlePATCH);

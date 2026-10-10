@@ -9,8 +9,12 @@ import {
   requestAdminSourceRefresh,
 } from "@/lib/admin-source-refresh";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = adminSourceRefreshStatusQuerySchema.parse(
@@ -25,7 +29,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = adminSourceRefreshRequestSchema.parse(await request.json());
@@ -38,3 +42,6 @@ export async function POST(request: Request) {
     return adminErrorResponse(error, { fallbackMessage: "Refresh source indisponible." });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const POST = withAdminDeadline(handlePOST);

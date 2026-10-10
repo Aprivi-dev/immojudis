@@ -6,8 +6,12 @@ import {
   runAdminInformationAgentEmailTemplateAction,
 } from "@/lib/admin-information-agent-email-template";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const response = await getAdminInformationAgentEmailTemplateWorkspace(
       bearerTokenFromRequest(request),
@@ -20,7 +24,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const input = adminInformationAgentEmailTemplateActionSchema.parse(await request.json());
     const response = await runAdminInformationAgentEmailTemplateAction({
@@ -34,3 +38,6 @@ export async function POST(request: Request) {
     return adminErrorResponse(error);
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const POST = withAdminDeadline(handlePOST);

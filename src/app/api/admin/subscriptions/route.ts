@@ -6,8 +6,12 @@ import {
   listAdminSubscriptions,
 } from "@/lib/admin-subscriptions";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const url = new URL(request.url);
     const offset = Number(url.searchParams.get("offset") ?? 0);
@@ -33,7 +37,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const input = adminSubscriptionGrantInputSchema.parse(await request.json());
     const response = await grantAdminSubscription({
@@ -45,3 +49,6 @@ export async function POST(request: Request) {
     return adminErrorResponse(error, { fallbackMessage: "Erreur admin abonnement" });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const POST = withAdminDeadline(handlePOST);
