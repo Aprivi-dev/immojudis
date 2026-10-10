@@ -4,8 +4,12 @@ import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware"
 import { startAdminScroll } from "@/lib/admin.functions";
 import { isPublicErrorMessage } from "@/lib/api-errors";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function POST(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handlePOST(request: Request) {
   try {
     const result = await startAdminScroll(bearerTokenFromRequest(request), await request.json());
     if (!result.ok || !result.dispatched) {
@@ -26,3 +30,5 @@ export async function POST(request: Request) {
     });
   }
 }
+
+export const POST = withAdminDeadline(handlePOST);

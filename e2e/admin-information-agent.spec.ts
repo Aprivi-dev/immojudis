@@ -27,6 +27,10 @@ type AgentMockState = {
   reviewAssetRights: "authorized" | "restricted";
   sourceRefresh: Record<string, unknown>;
   template: Record<string, unknown>;
+  /** Taille simulée des listes longues (pagination 50 par page) ; null = une seule ligne. */
+  longListTotal: number | null;
+  /** Décalages (offset) demandés à chaque liste paginée, dans l'ordre. */
+  requestedOffsets: Record<"claims" | "missions" | "review" | "catalogue", number[]>;
 };
 
 test.describe("admin information agent", () => {
@@ -107,10 +111,12 @@ test.describe("admin information agent", () => {
 
     await reviewPanel.getByRole("button", { name: "Autoriser la diffusion" }).click();
     await expect(reviewPanel.getByText(/Droits de diffusion : autorisés/i)).toBeVisible();
-    // Rights alone are not enough: the redaction check (P4-11) must be confirmed too.
+    // Les droits ne suffisent pas : le caviardage doit aussi être vérifié par une personne nommée.
     await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeDisabled();
-    await reviewPanel.getByLabel(/J’ai contrôlé la pièce/).check();
-    await reviewPanel.getByLabel("Nom de la personne qui a contrôlé").fill("Admin E2E");
+    await reviewPanel.getByRole("checkbox", { name: /J’ai contrôlé la pièce/ }).check();
+    await reviewPanel
+      .getByRole("textbox", { name: "Nom de la personne qui a contrôlé" })
+      .fill("Contrôleur E2E");
     await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeEnabled();
 
     await reviewPanel.getByRole("button", { name: "Prévisualiser la pièce" }).click();
@@ -145,7 +151,7 @@ test.describe("admin information agent", () => {
       decision: "accepted",
       notes: null,
       redactionConfirmed: true,
-      redactionVerifiedBy: "Admin E2E",
+      redactionVerifiedBy: "Contrôleur E2E",
     });
     const rejectedClaimRequest = state.events.find(
       (event) => event.path === "/api/admin/fact-claims/review" && event.method === "POST",
@@ -155,6 +161,58 @@ test.describe("admin information agent", () => {
       decision: "rejected",
       resolutionNote: "La valeur contredit la pièce source.",
     });
+    expect(state.unexpectedRequests).toEqual([]);
+  });
+
+  test("pages every long agent list 50 rows at a time", async ({ page }) => {
+    const state = await prepareAdminInformationAgentPage(page);
+    state.longListTotal = 120;
+
+    await page.goto("/admin/agent-ia");
+    const lists = [
+      {
+        nav: "Pagination — file d’enrichissement",
+        first: "Dossier à reprendre 49",
+        next: "Dossier à reprendre 50",
+        offsets: state.requestedOffsets.catalogue,
+      },
+      {
+        nav: "Pagination — missions récentes",
+        first: "mission49@example.test",
+        next: "mission50@example.test",
+        offsets: state.requestedOffsets.missions,
+      },
+      {
+        nav: "Pagination — faits à vérifier",
+        first: "Vente à vérifier 49",
+        next: "Vente à vérifier 50",
+        offsets: state.requestedOffsets.claims,
+      },
+      {
+        nav: "Pagination — réponses et informations à contrôler",
+        first: "Valeur à contrôler 49",
+        next: "Valeur à contrôler 50",
+        offsets: state.requestedOffsets.review,
+      },
+    ];
+
+    for (const list of lists) {
+      const nav = page.getByRole("navigation", { name: list.nav });
+      await expect(nav).toContainText("1–50 sur 120 · page 1 sur 3");
+      await expect(page.getByText(list.first, { exact: true })).toBeVisible();
+      await expect(page.getByText(list.next, { exact: true })).toHaveCount(0);
+      await expect(nav.getByRole("button", { name: /Précédent/ })).toBeDisabled();
+
+      await nav.getByRole("button", { name: /Suivant/ }).click();
+      await expect(nav).toContainText("51–100 sur 120 · page 2 sur 3");
+      await expect(page.getByText(list.next, { exact: true })).toBeVisible();
+      await expect(page.getByText(list.first, { exact: true })).toHaveCount(0);
+      expect(list.offsets).toEqual([0, 50]);
+
+      await nav.getByRole("button", { name: /Suivant/ }).click();
+      await expect(nav).toContainText("101–120 sur 120 · page 3 sur 3");
+      await expect(nav.getByRole("button", { name: /Suivant/ })).toBeDisabled();
+    }
     expect(state.unexpectedRequests).toEqual([]);
   });
 
@@ -223,6 +281,8 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
     reviewAssetRights: "restricted",
     sourceRefresh: sourceRefreshFixture(null),
     template: templateFixture(),
+    longListTotal: null,
+    requestedOffsets: { claims: [], missions: [], review: [], catalogue: [] },
   };
 
   await page.addInitScript(
@@ -276,14 +336,28 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
     const payload = request.postDataJSON() ?? null;
     state.events.push({ method, path, payload });
 
+    const offset = Number(url.searchParams.get("offset") ?? 0);
     if (path === "/api/admin/catalogue-readiness" && method === "GET") {
-      await route.fulfill({ status: 200, json: catalogueReadinessFixture() });
+      state.requestedOffsets.catalogue.push(offset);
+      await route.fulfill({
+        status: 200,
+        json: catalogueReadinessFixture(state.longListTotal, offset),
+      });
       return;
     }
     if (path === "/api/admin/fact-claims/review" && method === "GET") {
+      state.requestedOffsets.claims.push(offset);
+      const items = state.longListTotal
+        ? pageOf(state.longListTotal, offset).map((index) => ({
+            ...factClaimFixture(),
+            claimId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+            sale: { ...(factClaimFixture().sale as object), title: `Vente à vérifier ${index}` },
+          }))
+        : state.claimItems;
+      const total = state.longListTotal ?? items.length;
       await route.fulfill({
         status: 200,
-        json: { ok: true, items: state.claimItems, hasMore: false, nextCursor: null },
+        json: { ok: true, items, offset, limit: 50, total, hasMore: offset + 50 < total },
       });
       return;
     }
@@ -293,9 +367,28 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       return;
     }
     if (path === "/api/admin/information-agent/missions" && method === "GET") {
+      state.requestedOffsets.missions.push(offset);
+      const missions = state.longListTotal
+        ? pageOf(state.longListTotal, offset).map((index) => ({
+            ...missionFixture("sent"),
+            id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+            recipientEmail: `mission${index}@example.test`,
+          }))
+        : state.mission
+          ? [state.mission]
+          : [];
+      const total = state.longListTotal ?? missions.length;
       await route.fulfill({
         status: 200,
-        json: { ok: true, missions: state.mission ? [state.mission] : [], facts: [] },
+        json: {
+          ok: true,
+          missions,
+          facts: [],
+          offset,
+          limit: 50,
+          total,
+          hasMore: offset + 50 < total,
+        },
       });
       return;
     }
@@ -336,9 +429,10 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       return;
     }
     if (path === "/api/admin/information-agent" && method === "GET") {
+      state.requestedOffsets.review.push(offset);
       await route.fulfill({
         status: 200,
-        json: informationAgentReviewFixture(state),
+        json: informationAgentReviewFixture(state, offset),
       });
       return;
     }
@@ -423,7 +517,7 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
   return state;
 }
 
-function catalogueReadinessFixture() {
+function catalogueReadinessFixture(longListTotal: number | null = null, offset = 0) {
   return {
     policy: {
       enforcementEnabled: true,
@@ -436,33 +530,36 @@ function catalogueReadinessFixture() {
     activeSales: 1,
     pendingEvaluations: 0,
     canEnableEnforcement: true,
-    queueTotal: 1,
-    queueOffset: 0,
-    queueLimit: 100,
-    items: [
-      {
-        id: SALE_ID,
-        title: "Appartement E2E à Bordeaux",
-        city: "Bordeaux",
-        department: "33",
-        saleDate: "2026-11-14",
-        sourceName: "source-e2e",
-        lawyerName: "Cabinet E2E",
-        lawyerContact: "Cabinet E2E <contact@example.test>",
-        scoreConfidence: 0.91,
-        readinessScore: 62,
-        readinessStatus: "needs_enrichment",
-        policyVersion: "e2e-v1",
-        factors: {},
-        blockers: ["document manquant"],
-        missingFields: ["documents"],
-        evaluatedAt: "2026-10-04T09:00:00.000Z",
-        override: null,
-        overrideReason: null,
-        overrideExpiresAt: null,
-      },
-    ],
+    queueTotal: longListTotal ?? 1,
+    queueOffset: offset,
+    queueLimit: 50,
+    items: (longListTotal ? pageOf(longListTotal, offset) : [0]).map((index) => ({
+      id: index === 0 ? SALE_ID : `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      title: index === 0 ? "Appartement E2E à Bordeaux" : `Dossier à reprendre ${index}`,
+      city: "Bordeaux",
+      department: "33",
+      saleDate: "2026-11-14",
+      sourceName: "source-e2e",
+      lawyerName: "Cabinet E2E",
+      lawyerContact: "Cabinet E2E <contact@example.test>",
+      scoreConfidence: 0.91,
+      readinessScore: 62,
+      readinessStatus: "needs_enrichment",
+      policyVersion: "e2e-v1",
+      factors: {},
+      blockers: ["document manquant"],
+      missingFields: ["documents"],
+      evaluatedAt: "2026-10-04T09:00:00.000Z",
+      override: null,
+      overrideReason: null,
+      overrideExpiresAt: null,
+    })),
   };
+}
+
+/** Indices (à partir de 0) des lignes d'une page de 50 dans une liste de `total` lignes. */
+function pageOf(total: number, offset: number): number[] {
+  return Array.from({ length: Math.max(0, Math.min(50, total - offset)) }, (_, i) => offset + i);
 }
 
 function missionFixture(status: "draft" | "sent") {
@@ -572,7 +669,17 @@ function informationAgentFactFixture() {
   };
 }
 
-function informationAgentReviewFixture(state: AgentMockState) {
+function informationAgentReviewFixture(state: AgentMockState, offset = 0) {
+  const facts = state.longListTotal
+    ? pageOf(state.longListTotal, offset).map((index) => ({
+        ...informationAgentFactFixture(),
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        display_value: `Valeur à contrôler ${index}`,
+        evidence_asset_id: null,
+      }))
+    : state.reviewFacts;
+  const factsTotal = state.longListTotal ?? facts.length;
+  const messages = state.longListTotal ? [] : [reviewMessageFixture()];
   return {
     cases: [
       {
@@ -587,7 +694,7 @@ function informationAgentReviewFixture(state: AgentMockState) {
         updated_at: "2026-10-04T09:30:00.000Z",
       },
     ],
-    facts: state.reviewFacts,
+    facts,
     assets: [
       {
         id: ASSET_ID,
@@ -620,22 +727,26 @@ function informationAgentReviewFixture(state: AgentMockState) {
         updated_at: "2026-10-04T09:38:00.000Z",
       },
     ],
-    messages: [
-      {
-        id: MESSAGE_ID,
-        case_id: CASE_ID,
-        from_email: "contact@example.test",
-        subject: "Re: Questions concernant la vente",
-        body_text: "DPE joint à ce message.",
-        created_at: "2026-10-04T09:30:00.000Z",
-        received_at: "2026-10-04T09:30:00.000Z",
-        metadata: {},
-      },
-    ],
-    hasMoreFacts: false,
-    nextFactsCursor: null,
-    hasMoreMessages: false,
-    nextMessagesCursor: null,
+    messages,
+    factsTotal,
+    messagesTotal: messages.length,
+    offset,
+    limit: 50,
+    total: Math.max(factsTotal, messages.length),
+    hasMore: offset + 50 < Math.max(factsTotal, messages.length),
+  };
+}
+
+function reviewMessageFixture() {
+  return {
+    id: MESSAGE_ID,
+    case_id: CASE_ID,
+    from_email: "contact@example.test",
+    subject: "Re: Questions concernant la vente",
+    body_text: "DPE joint à ce message.",
+    created_at: "2026-10-04T09:30:00.000Z",
+    received_at: "2026-10-04T09:30:00.000Z",
+    metadata: {},
   };
 }
 

@@ -7,8 +7,12 @@ import {
   runAdminCatalogueReadinessAction,
 } from "@/lib/admin-catalogue-readiness";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const input = adminCatalogueReadinessQuerySchema.parse(
       Object.fromEntries(new URL(request.url).searchParams.entries()),
@@ -25,7 +29,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     const input = adminCatalogueReadinessActionSchema.parse(await request.json());
     const response = await runAdminCatalogueReadinessAction({
@@ -39,3 +43,6 @@ export async function PATCH(request: Request) {
     return adminErrorResponse(error, { fallbackMessage: "Maturité catalogue indisponible" });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const PATCH = withAdminDeadline(handlePATCH);

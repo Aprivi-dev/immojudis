@@ -11,8 +11,12 @@ import {
   listAdminAuctionFactClaims,
   reviewAdminAuctionFactClaim,
 } from "@/lib/admin-auction-fact-claims-review";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request): Promise<Response> {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request): Promise<Response> {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = adminAuctionFactClaimReviewQuerySchema.parse(
@@ -30,7 +34,7 @@ export async function GET(request: Request): Promise<Response> {
   }
 }
 
-export async function POST(request: Request): Promise<Response> {
+async function handlePOST(request: Request): Promise<Response> {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = adminAuctionFactClaimDecisionSchema.parse(await request.json());
@@ -63,3 +67,6 @@ function reviewErrorResponse(error: unknown, request: Request): Response {
     fallbackMessage: "Revue du fait indisponible.",
   });
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const POST = withAdminDeadline(handlePOST);

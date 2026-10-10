@@ -8,6 +8,10 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
+
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
 
 const client = supabaseAdmin as unknown as SupabaseClient;
 async function authorize(request: Request) {
@@ -19,7 +23,7 @@ function failure(error: unknown, request: Request) {
     fallbackMessage: "Supervision indisponible",
   });
 }
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   try {
     await authorize(request);
     const [sourcesResult, controlResult, alertsResult, usageResult] = await Promise.all([
@@ -74,7 +78,7 @@ export async function GET(request: Request) {
     return failure(error, request);
   }
 }
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     await authorize(request);
     const input = z
@@ -98,3 +102,6 @@ export async function PATCH(request: Request) {
     return failure(error, request);
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const PATCH = withAdminDeadline(handlePATCH);

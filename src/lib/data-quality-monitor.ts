@@ -2,6 +2,7 @@ import "server-only";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
+import { throwIfAdminDeadlineExceeded } from "@/lib/admin-route-deadline";
 import { extractDpe } from "@/lib/dpe";
 import { DETAIL_VIEW } from "@/lib/queries";
 import { getSaleProcedure } from "@/lib/sale-procedure";
@@ -540,6 +541,8 @@ async function loadAllSales(): Promise<AuctionSale[]> {
   const sales: AuctionSale[] = [];
 
   for (let from = 0; ; from += DATA_QUALITY_PAGE_SIZE) {
+    // Stop scanning the catalogue once the route has already answered 504.
+    throwIfAdminDeadlineExceeded();
     const to = from + DATA_QUALITY_PAGE_SIZE - 1;
     // Bound the input before the view evaluates visibility and lateral joins.
     // LIMIT on the view alone can sort/aggregate the whole catalogue first.
