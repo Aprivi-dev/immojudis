@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { organizationStructuredData } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { HomePage } from "@/routes/index";
+import { jsonLdString } from "@/lib/json-ld";
 
 export const metadata: Metadata = {
   title: { absolute: "Immojudis - Les enchères immobilières en toute clarté" },
@@ -18,7 +19,7 @@ export default function Page() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+          __html: jsonLdString(structuredData),
         }}
       />
       <HomePage />

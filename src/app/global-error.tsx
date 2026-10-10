@@ -6,10 +6,10 @@
  * marine #132238, or #c98d45 avec texte marine à 5,6:1).
  */
 export default function GlobalError({
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   return (
     <html lang="fr">
@@ -58,7 +58,7 @@ export default function GlobalError({
             </p>
             <button
               type="button"
-              onClick={reset}
+              onClick={retry}
               style={{
                 background: "#c98d45",
                 border: 0,

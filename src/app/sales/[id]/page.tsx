@@ -9,6 +9,7 @@ import {
 } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { SaleDetailPage } from "@/routes/sales.$id";
+import { jsonLdString } from "@/lib/json-ld";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -78,7 +79,7 @@ export default async function Page({ params }: PageProps) {
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
-            __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+            __html: jsonLdString(structuredData),
           }}
         />
       ) : null}

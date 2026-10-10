@@ -7,6 +7,7 @@ import { ResourcesNextStep } from "@/components/resources/ResourcesNextStep";
 import { EXISTING_GUIDE, RESOURCE_SUMMARIES } from "@/lib/resource-articles";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import styles from "@/components/resources/Resources.module.css";
+import { jsonLdString } from "@/lib/json-ld";
 
 const title = "Ressources : le blog des enchères immobilières";
 const description =
@@ -54,7 +55,7 @@ export default function Page() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+          __html: jsonLdString(structuredData),
         }}
       />
       <div className={styles.container}>

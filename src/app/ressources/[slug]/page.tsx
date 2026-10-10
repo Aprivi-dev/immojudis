@@ -12,6 +12,7 @@ import {
 } from "@/lib/resource-articles";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import styles from "@/components/resources/Resources.module.css";
+import { jsonLdString } from "@/lib/json-ld";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -91,7 +92,7 @@ export default async function Page({ params }: Props) {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+          __html: jsonLdString(structuredData),
         }}
       />
       <div className={styles.container}>
@@ -127,7 +128,7 @@ export default async function Page({ params }: Props) {
               alt=""
               fill
               sizes="(max-width: 700px) 100vw, 1240px"
-              priority
+              preload
             />
           </div>
           <div className={styles.articleLayout}>
