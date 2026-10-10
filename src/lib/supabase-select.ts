@@ -14,14 +14,16 @@ export type SelectedRow<TRow, TSelect extends string> = Pick<
   ColumnNames<TSelect> & keyof TRow
 >;
 
-type JoinColumns<TColumns extends readonly string[]> = TColumns extends readonly [
-  infer Head extends string,
-  ...infer Tail extends readonly string[],
-]
-  ? Tail extends readonly []
-    ? Head
-    : `${Head},${JoinColumns<Tail>}`
-  : string;
+// Récursion terminale (accumulateur) : sinon les listes de plus de ~50 colonnes dépassent la
+// profondeur d'instanciation de TypeScript.
+type JoinColumns<
+  TColumns extends readonly string[],
+  TAccumulator extends string = "",
+> = TColumns extends readonly [infer Head extends string, ...infer Tail extends readonly string[]]
+  ? JoinColumns<Tail, TAccumulator extends "" ? Head : `${TAccumulator},${Head}`>
+  : TColumns extends readonly []
+    ? TAccumulator
+    : string;
 
 /**
  * `columns.join(",")` avec le type littéral de la chaîne obtenue, pour que le client typé

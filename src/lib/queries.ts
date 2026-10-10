@@ -6,6 +6,7 @@ import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "./sale-views";
 import { assertCloudConfigured } from "./query-configuration";
 import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
 import { fetchPublicSaleSummary } from "./public-sale-summary";
+import { saleRows } from "./sale-rows";
 export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
 export type { CreateAlertPayload } from "./alert-queries";
 export { DETAIL_VIEW, SALE_LIST_COLUMNS };
@@ -234,11 +235,6 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
   );
 
   return q as TQuery;
-}
-
-/** Les colonnes sélectionnées dynamiquement ne sont pas typées par le client : on les déclare ici. */
-function saleRows(data: unknown): AuctionSale[] {
-  return (data ?? []) as AuctionSale[];
 }
 
 const SALE_ID_BATCH_SIZE = 100;

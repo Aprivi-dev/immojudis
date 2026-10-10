@@ -15,6 +15,7 @@ import {
 } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
+import { saleRow } from "@/lib/sale-rows";
 import type { MarketEstimate } from "@/lib/market.functions";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import { saleCostContext } from "@/lib/sale-cost-context";
@@ -317,7 +318,7 @@ async function loadSaleForBidCeiling(
     .single();
 
   if (error) throw error;
-  return data as unknown as AuctionSale;
+  return saleRow(data);
 }
 
 async function resolveMarketEstimate(

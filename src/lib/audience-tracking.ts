@@ -3,6 +3,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { featureAccess, featureIncluded, type FeatureAccess, type PlanCode } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/sale-views";
+import { saleRows } from "@/lib/sale-rows";
 import {
   DEFAULT_SALE_CHECKLIST,
   DOCUMENT_REVIEW_STATUSES,
@@ -544,5 +545,5 @@ async function loadSalesByIds(
     .select(SALE_LIST_COLUMNS)
     .in("id", ids);
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
