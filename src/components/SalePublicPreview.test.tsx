@@ -29,12 +29,6 @@ vi.mock("@/lib/router-compat", () => ({
   },
 }));
 
-vi.mock("@/components/SaleTribunalHistory", () => ({
-  SaleTribunalHistory: ({ sale }: { sale: AuctionSale }) => (
-    <section>Activité publique du tribunal pour {sale.id}</section>
-  ),
-}));
-
 afterEach(cleanup);
 
 describe("SalePublicPreview", () => {

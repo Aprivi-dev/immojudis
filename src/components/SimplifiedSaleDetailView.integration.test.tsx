@@ -71,9 +71,6 @@ vi.mock("@/components/UrbanismeCadastrePanel", () => ({
   UrbanismeCadastrePanel: () => <div>Urbanisme</div>,
 }));
 
-vi.mock("@/components/SaleTribunalHistory", () => ({
-  SaleTribunalHistory: () => <section id="tribunal-history">Historique du tribunal</section>,
-}));
 vi.mock("@/components/OutcomeForecast", () => ({
   OutcomeForecast: () => <div>Prévision de l’audience</div>,
 }));

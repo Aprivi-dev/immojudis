@@ -15,12 +15,6 @@ const SEARCH_VIEW = "v_auction_sales_app_search" as typeof DETAIL_VIEW;
 const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAIL_VIEW;
 const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
 
-type SupabaseQueryError = {
-  code?: string;
-  message?: string;
-  details?: string;
-};
-
 type SupabaseReader = Pick<typeof supabase, "from">;
 
 // Fields needed by the search result card only. Keep heavy descriptions,
@@ -104,57 +98,8 @@ const SALE_MAP_COLUMNS = [
   "created_at",
 ].join(",");
 
-function isMissingPreviewViewError(error: SupabaseQueryError | null): boolean {
-  if (!error) return false;
-  const text = `${error.code ?? ""} ${error.message ?? ""} ${error.details ?? ""}`;
-  return text.includes("PGRST205") || text.includes(PUBLIC_PREVIEW_VIEW);
-}
-
 function previewSortDirection(sort: SortKey): boolean {
   return sort === "price_desc" ? false : true;
-}
-
-async function getSalesFromLegacyPreview(
-  filters: SaleFilters,
-  limit: number,
-  sort: SortKey,
-  offset: number,
-): Promise<AuctionSale[]> {
-  let q = supabase
-    .from(DETAIL_VIEW)
-    .select(SALE_PREVIEW_COLUMNS)
-    .order("starting_price_eur", { ascending: previewSortDirection(sort), nullsFirst: false })
-    .range(offset, offset + limit - 1);
-
-  q = applySaleTypeFilter(q, filters);
-  if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
-  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
-
-  const { data, error } = await q;
-  if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
-}
-
-async function getSalePreviewFromLegacyView(id: string): Promise<AuctionSale | null> {
-  const { data, error } = await supabase
-    .from(DETAIL_VIEW)
-    .select(SALE_PREVIEW_COLUMNS)
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw error;
-  return data as unknown as AuctionSale | null;
-}
-
-async function getSalesPreviewCountFromLegacyView(filters: SaleFilters): Promise<number> {
-  let q = supabase.from(DETAIL_VIEW).select("id", { count: "exact" }).range(0, 999);
-
-  q = applySaleTypeFilter(q, filters);
-  if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
-  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
-
-  const { count, data, error } = await q;
-  if (error) throw error;
-  return count && count > 0 ? count : (data?.length ?? 0);
 }
 
 const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst?: boolean }> = {
@@ -389,9 +334,6 @@ export async function getSales(
     if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
 
     const { data, error } = await q;
-    if (isMissingPreviewViewError(error)) {
-      return getSalesFromLegacyPreview(filters, limit, sort, offset);
-    }
     if (error) throw error;
     return (data ?? []) as unknown as AuctionSale[];
   }
@@ -476,9 +418,6 @@ export async function getSalesPreviewCount(filters: SaleFilters = {}): Promise<n
   if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
 
   const { count, error } = await q;
-  if (isMissingPreviewViewError(error)) {
-    return getSalesPreviewCountFromLegacyView(filters);
-  }
   if (error) throw error;
   return count ?? 0;
 }
@@ -512,7 +451,6 @@ export async function getSalePreviewById(id: string): Promise<AuctionSale | null
     .select(SALE_PREVIEW_COLUMNS)
     .eq("id", id)
     .maybeSingle();
-  if (isMissingPreviewViewError(error)) return getSalePreviewFromLegacyView(id);
   if (error) throw error;
   return data as unknown as AuctionSale | null;
 }
@@ -631,17 +569,8 @@ export async function getStats(): Promise<{
   const { count, error } = await supabase
     .from(PUBLIC_PREVIEW_VIEW)
     .select("*", { count: "exact", head: true });
-  let totalSales = count ?? 0;
-
-  if (isMissingPreviewViewError(error)) {
-    const { count: legacyCount, error: legacyError } = await supabase
-      .from(DETAIL_VIEW)
-      .select("id", { count: "exact", head: true });
-    if (legacyError) throw legacyError;
-    totalSales = legacyCount ?? 0;
-  } else if (error) {
-    throw error;
-  }
+  if (error) throw error;
+  const totalSales = count ?? 0;
 
   if (typeof window === "undefined") {
     return { totalSales, departments: 0, nextSale: null };
