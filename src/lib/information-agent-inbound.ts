@@ -6,6 +6,19 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { z } from "zod";
 import { asRecord, trimmedStringValue } from "@/lib/guards";
+import {
+  INBOUND_ATTACHMENT_LINK_TTL_MS,
+  INBOUND_PROCESSING_VERSION,
+  type InboundMessageRef,
+  type InboundProcessingState,
+  type InformationAgentInboundResult,
+  type Mission,
+  OPEN_INFORMATION_AGENT_CASE_STATUSES,
+  optionalText,
+  type SharedCase,
+} from "@/lib/information-agent-inbound/types";
+
+export type { InformationAgentInboundResult } from "@/lib/information-agent-inbound/types";
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 40 * 1024 * 1024;
@@ -13,9 +26,6 @@ const MAX_LISTED_ATTACHMENTS = 500;
 const MAX_HTML_BODY_CHARS = 500_000;
 const MAX_EXTRACTED_BODY_CHARS = 20_000;
 const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
-const INBOUND_ATTACHMENT_LINK_TTL_MS = 55 * 60 * 1000;
-const INBOUND_PROCESSING_VERSION = "inbound-v2";
-const OPEN_INFORMATION_AGENT_CASE_STATUSES = ["sending", "sent", "replied", "review"] as const;
 const HTML_LINE_BREAK_TAGS = new Set([
   "blockquote",
   "br",
@@ -62,9 +72,6 @@ const ATTACHMENT_EXTENSION_MIME_TYPES: Record<string, string> = {
   ".webp": "image/webp",
 };
 
-type SharedCase = Database["public"]["Tables"]["information_agent_cases"]["Row"];
-type Mission = Database["public"]["Tables"]["information_agent_missions"]["Row"];
-
 const RESEND_AUTHENTICATION_RESULTS = [
   "pass",
   "fail",
@@ -104,41 +111,6 @@ export type ExtractedInformationAgentFact = {
   evidenceExcerpt: string;
   confidence: number;
 };
-
-export type InformationAgentInboundResult = {
-  accepted: boolean;
-  ignored?: boolean;
-  duplicate?: boolean;
-  caseId?: string;
-  messageId?: string;
-  factCount?: number;
-  attachmentCount?: number;
-  processingStatus?: "completed" | "review" | "ignored" | "queued";
-};
-
-type InboundMessageRef = {
-  id: string;
-  duplicate: boolean;
-  metadata: Json;
-};
-
-type InboundProcessingState = {
-  version: string;
-  status: "queued" | "processing" | "completed" | "failed" | "review" | "ignored";
-  attempts: number;
-  providerEmailId: string;
-  queuedAt: string;
-  leaseId?: string;
-  startedAt?: string;
-  completedAt?: string;
-  failedAt?: string;
-  attachmentLinkExpiresAt?: string;
-  nextAttemptAt?: string;
-  lastError?: string;
-  reason?: string;
-};
-
-const optionalText = z.unknown().transform((value) => trimmedStringValue(value));
 
 /**
  * Provider fields the Resend SDK types do not (reliably) expose. Every field is
