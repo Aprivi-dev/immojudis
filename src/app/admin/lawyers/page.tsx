@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { AuthGate } from "@/components/AuthGate";
-import { AdminDashboardPage } from "@/routes/admin";
+import { AdminLawyersPage } from "@/routes/admin.lawyers";
 
 export const metadata: Metadata = {
   title: "Avocats admin",
@@ -9,9 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return (
-    <AuthGate>
-      <AdminDashboardPage initialView="lawyers" />
-    </AuthGate>
-  );
+  return <AdminLawyersPage />;
 }

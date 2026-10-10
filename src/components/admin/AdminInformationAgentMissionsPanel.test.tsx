@@ -491,6 +491,110 @@ describe("AdminInformationAgentMissionsPanel", () => {
     );
     expect(screen.queryByRole("heading", { name: "Brouillon pour first@example.test" })).toBeNull();
   });
+
+  it("pages the history 50 missions at a time with offset/limit and the exact total", async () => {
+    mocks.list.mockImplementation(async ({ offset }: { offset: number }) => ({
+      ok: true,
+      missions: [
+        {
+          ...mission("sent"),
+          id: `mission-${offset}`,
+          recipientEmail: `page${offset}@example.test`,
+        },
+      ],
+      facts: [],
+      offset,
+      limit: 50,
+      total: 120,
+      hasMore: offset + 50 < 120,
+    }));
+
+    renderPanel(null);
+
+    expect(await screen.findByText("page0@example.test")).toBeTruthy();
+    expect(mocks.list).toHaveBeenLastCalledWith({ offset: 0, limit: 50 });
+    expect(screen.getByText(/1–1 sur 120 · page 1 sur 3/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Suivant — missions récentes" }));
+    expect(await screen.findByText("page50@example.test")).toBeTruthy();
+    expect(mocks.list).toHaveBeenLastCalledWith({ offset: 50, limit: 50 });
+    fireEvent.click(screen.getByRole("button", { name: "Précédent — missions récentes" }));
+    expect(await screen.findByText("page0@example.test")).toBeTruthy();
+  });
+
+  it("looks up the sale's own drafts before creating one when the history has more pages", async () => {
+    const saleId = "11111111-1111-4111-8111-111111111111";
+    const existing = { ...mission("draft", saleId, "existing@example.test"), id: "old-draft" };
+    mocks.list.mockImplementation(async (args: { saleId?: string; offset?: number }) =>
+      args.saleId
+        ? {
+            ok: true,
+            missions: [existing],
+            facts: [],
+            offset: 0,
+            limit: 100,
+            total: 1,
+            hasMore: false,
+          }
+        : {
+            ok: true,
+            missions: [{ ...mission("sent"), id: "recent", saleId: "other-sale" }],
+            facts: [],
+            offset: 0,
+            limit: 50,
+            total: 80,
+            hasMore: true,
+          },
+    );
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+
+    renderPanel({
+      saleId,
+      title: "Appartement à Bordeaux",
+      recipientName: null,
+      recipientContact: null,
+    });
+
+    expect(
+      await screen.findByRole("heading", { name: "Brouillon pour existing@example.test" }),
+    ).toBeTruthy();
+    expect(mocks.list).toHaveBeenCalledWith({ saleId, limit: 100 });
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it("creates the draft when the sale has none even though the history has more pages", async () => {
+    const saleId = "11111111-1111-4111-8111-111111111111";
+    mocks.list.mockImplementation(async (args: { saleId?: string }) =>
+      args.saleId
+        ? { ok: true, missions: [], facts: [], offset: 0, limit: 100, total: 0, hasMore: false }
+        : {
+            ok: true,
+            missions: [{ ...mission("sent"), id: "recent", saleId: "other-sale" }],
+            facts: [],
+            offset: 0,
+            limit: 50,
+            total: 80,
+            hasMore: true,
+          },
+    );
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: mission("draft", saleId, "created@example.test"),
+      gaps: [],
+      facts: [],
+    });
+
+    renderPanel({
+      saleId,
+      title: "Appartement à Bordeaux",
+      recipientName: null,
+      recipientContact: null,
+    });
+
+    expect(
+      await screen.findByRole("heading", { name: "Brouillon pour created@example.test" }),
+    ).toBeTruthy();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
 });
 
 function renderPanel(

@@ -67,8 +67,10 @@ beforeEach(() => {
         resolutionNote: null,
       },
     ],
+    offset: 0,
+    limit: 50,
+    total: 1,
     hasMore: false,
-    nextCursor: null,
   });
   mocks.review.mockResolvedValue({ ok: true, result: { claim_id: claimId } });
 });
@@ -87,6 +89,50 @@ describe("AdminAuctionFactClaimReviewPanel", () => {
     expect(screen.getByRole("link", { name: /Ouvrir la source/ }).getAttribute("href")).toBe(
       "https://source.example/sale",
     );
+  });
+
+  it("shows 50 facts per page and moves between pages with offset/limit", async () => {
+    const firstItem = (await mocks.fetchReview()).items[0];
+    mocks.fetchReview.mockImplementation(async ({ offset }: { offset: number }) => ({
+      ok: true,
+      items: [
+        {
+          ...firstItem,
+          claimId: `claim-${offset}`,
+          sale: { ...firstItem.sale, title: `Vente ${offset}` },
+        },
+      ],
+      offset,
+      limit: 50,
+      total: 120,
+      hasMore: offset + 50 < 120,
+    }));
+    renderPanel();
+
+    expect(await screen.findByText("Vente 0")).toBeTruthy();
+    expect(mocks.fetchReview).toHaveBeenLastCalledWith({ offset: 0, limit: 50 });
+    expect(screen.getByText(/1–1 sur 120 · page 1 sur 3/)).toBeTruthy();
+    const previous = screen.getByRole("button", { name: "Précédent — faits à vérifier" });
+    expect((previous as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Suivant — faits à vérifier" }));
+    expect(await screen.findByText("Vente 50")).toBeTruthy();
+    expect(mocks.fetchReview).toHaveBeenLastCalledWith({ offset: 50, limit: 50 });
+    expect(screen.getByText(/51–51 sur 120 · page 2 sur 3/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Suivant — faits à vérifier" }));
+    expect(await screen.findByText("Vente 100")).toBeTruthy();
+    const next = screen.getByRole("button", { name: "Suivant — faits à vérifier" });
+    expect((next as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Précédent — faits à vérifier" }));
+    expect(await screen.findByText("Vente 50")).toBeTruthy();
+  });
+
+  it("hides the pagination when everything fits on one page", async () => {
+    renderPanel();
+    await screen.findByText("Appartement T3");
+    expect(screen.queryByRole("navigation", { name: /Pagination/ })).toBeNull();
   });
 
   it("sends an accepted decision without a justification", async () => {
@@ -172,8 +218,10 @@ describe("AdminAuctionFactClaimReviewPanel", () => {
           resolutionNote: "Valeur source contredite.",
         },
       ],
+      offset: 0,
+      limit: 50,
+      total: 1,
       hasMore: false,
-      nextCursor: null,
     });
 
     renderPanel();

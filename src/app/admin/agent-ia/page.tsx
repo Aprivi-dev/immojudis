@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { AuthGate } from "@/components/AuthGate";
-import { AdminDashboardPage } from "@/routes/admin";
+import { AdminAgentPage } from "@/routes/admin.agent-ia";
 
 export const metadata: Metadata = {
   title: "Agent IA admin",
@@ -9,9 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return (
-    <AuthGate>
-      <AdminDashboardPage initialView="agent" />
-    </AuthGate>
-  );
+  return <AdminAgentPage />;
 }

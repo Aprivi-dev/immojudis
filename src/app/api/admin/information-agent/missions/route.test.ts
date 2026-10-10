@@ -49,6 +49,59 @@ describe("admin information request authorization", () => {
     expect(mocks.send).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "?limit=0",
+    "?limit=101",
+    "?offset=-1",
+    "?offset=1.5",
+    "?offset=abc",
+    "?offset=100001",
+    `?saleId=not-a-uuid`,
+  ])("rejects the invalid list query %s before any read", async (query) => {
+    mocks.auth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
+    const response = await GET(
+      new Request(`https://immojudis.test/api/admin/information-agent/missions${query}`, {
+        headers: { authorization: "Bearer test-token" },
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.from).not.toHaveBeenCalled();
+  });
+
+  it("lists missions 50 per page from the requested offset and returns the total", async () => {
+    mocks.auth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
+    const calls: Array<[string, unknown[]]> = [];
+    const result = { data: [], error: null, count: 120 };
+    const chain: Record<string, unknown> = {
+      then: (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve),
+    };
+    for (const method of ["select", "eq", "order", "range"]) {
+      chain[method] = (...args: unknown[]) => {
+        calls.push([method, args]);
+        return chain;
+      };
+    }
+    mocks.from.mockReturnValue(chain);
+
+    const response = await GET(
+      new Request("https://immojudis.test/api/admin/information-agent/missions?offset=50", {
+        headers: { authorization: "Bearer test-token" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      missions: [],
+      offset: 50,
+      limit: 50,
+      total: 120,
+      hasMore: true,
+    });
+    expect(calls).toContainEqual(["select", ["*", { count: "exact" }]]);
+    expect(calls).toContainEqual(["range", [50, 99]]);
+  });
+
   it("denies visitors before loading a sale or a mission", async () => {
     expect((await POST(request("POST", { saleId }, false))).status).toBe(401);
     expect(mocks.auth).not.toHaveBeenCalled();

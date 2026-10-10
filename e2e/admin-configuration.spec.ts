@@ -14,6 +14,8 @@ type MockOptions = {
   collectionErrors?: boolean;
   runSource?: string;
   runStatus?: string;
+  /** Réponse 504 du délai de 30 s sur la section `runs` du tableau de bord. */
+  dashboardTimeout?: boolean;
 };
 
 type MockState = {
@@ -34,6 +36,10 @@ type MockState = {
   scrollPayloads: Array<Record<string, unknown>>;
   runStatus: string;
   dashboardCalls: number;
+  /** Sections demandées à /api/admin/dashboard, dans l'ordre. */
+  dashboardSections: string[];
+  /** Tous les appels GET à /api/admin/* (chemin seul), dans l'ordre. */
+  adminRequests: string[];
 };
 
 test.describe("admin configuration", () => {
@@ -263,6 +269,64 @@ test.describe("admin configuration", () => {
     await expect(page.getByText("Aucun échec récent détecté", { exact: true })).toBeVisible();
   });
 
+  test("keeps the overview light: one fast request and a link to every view", async ({ page }) => {
+    test.skip(test.info().project.name.includes("mobile"), "Desktop-only overview check");
+    const state = await prepareAdminPage(page, { runSource: "avoventes", runStatus: "succeeded" });
+    await page.goto("/admin");
+
+    await expect(page.getByRole("heading", { name: "Aucun échec récent détecté" })).toBeVisible();
+    const views = page.getByRole("navigation", { name: "Vues de l’administration" });
+    for (const [label, href] of [
+      ["Opérations", "/admin/operations"],
+      ["Agent IA", "/admin/agent-ia"],
+      ["Qualité des données", "/admin/quality"],
+      ["Publications", "/admin/publications"],
+      ["Clients & abonnements", "/admin/clients"],
+      ["Avocats", "/admin/lawyers"],
+      ["Conformité", "/admin/compliance"],
+      ["Configuration", "/admin/settings"],
+    ]) {
+      await expect(views.getByRole("link", { name: label })).toHaveAttribute("href", href);
+    }
+    await page.waitForLoadState("networkidle");
+    expect(state.dashboardSections).toEqual(["runs"]);
+    expect([...new Set(state.adminRequests)]).toEqual(["/api/admin/dashboard"]);
+  });
+
+  test("loads the AI coverage after the runs and the table counts only on the Documents tab", async ({
+    page,
+  }) => {
+    const state = await prepareAdminPage(page, { runSource: "avoventes", runStatus: "succeeded" });
+    await page.goto("/admin/operations");
+
+    await expect(page.getByText("5 annonces à traiter")).toBeVisible();
+    expect(state.dashboardSections).toContain("runs");
+    expect(state.dashboardSections).toContain("ai");
+    expect(state.dashboardSections).not.toContain("counts");
+
+    await page.getByRole("button", { name: "Documents", exact: true }).click();
+    await expect(page.getByText("Documents indexés")).toBeVisible();
+    await expect.poll(() => state.dashboardSections.includes("counts")).toBe(true);
+    await expect(page.getByText("4", { exact: true })).toBeVisible();
+    expect(state.adminRequests).not.toContain("/api/admin/publications");
+    expect(state.adminRequests).not.toContain("/api/admin/subscriptions");
+    expect(state.adminRequests).not.toContain("/api/admin/readiness");
+  });
+
+  test("tells the administrator when a request exceeded the 30 s limit", async ({ page }) => {
+    test.skip(test.info().project.name.includes("mobile"), "Desktop-only overview check");
+    await prepareAdminPage(page, { dashboardTimeout: true });
+    await page.goto("/admin");
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "dépassé le délai de 30 secondes" }),
+    ).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("heading", { name: "État de santé indisponible" })).toBeVisible();
+    await expect(page.getByText("Aucun échec récent détecté", { exact: true })).toHaveCount(0);
+  });
+
   test("denies the settings route to a signed-in non-admin", async ({ page }) => {
     await prepareAdminPage(page, { admin: false });
     await page.goto("/admin/settings");
@@ -315,6 +379,8 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
     scrollPayloads: [],
     runStatus: options.runStatus ?? "failed",
     dashboardCalls: 0,
+    dashboardSections: [],
+    adminRequests: [],
   };
   let pipelineFailures = options.pipelineFailures ?? 0;
 
@@ -364,6 +430,7 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
     const url = new URL(route.request().url());
     const path = url.pathname;
     const method = route.request().method();
+    if (method === "GET") state.adminRequests.push(path);
 
     if (path === "/api/admin/pipeline" && method === "PATCH") {
       const payload = route.request().postDataJSON();
@@ -414,7 +481,29 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
     }
 
     if (path === "/api/admin/dashboard") {
+      const section = url.searchParams.get("section") ?? "all";
+      state.dashboardSections.push(section);
+      if (section === "ai") {
+        await route.fulfill({ status: 200, json: dashboardAiPayload(options.runSource) });
+        return;
+      }
+      if (section === "counts") {
+        await route.fulfill({ status: 200, json: dashboardCountsPayload() });
+        return;
+      }
       state.dashboardCalls += 1;
+      if (options.dashboardTimeout) {
+        await route.fulfill({
+          status: 504,
+          json: {
+            error:
+              "Cette requête admin a dépassé le délai de 30 secondes et a été interrompue. Réessayez dans un instant.",
+            code: "ADMIN_TIMEOUT",
+            requestId: "req-e2e-timeout",
+          },
+        });
+        return;
+      }
       if (options.dashboardPending) {
         await new Promise<void>((resolve) => {
           state.releaseDashboard = () => resolve();
@@ -422,7 +511,7 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
       }
       await route.fulfill({
         status: 200,
-        json: dashboardPayload(options.runSource, state.runStatus),
+        json: dashboardRunsPayload(options.runSource, state.runStatus),
       });
       return;
     }
@@ -509,30 +598,15 @@ function pipelinePayload(state: MockState, collectionErrors = false) {
   };
 }
 
-function dashboardPayload(runSource?: string, runStatus = "failed") {
+function dashboardRunsPayload(runSource?: string, runStatus = "failed") {
   return {
     checkedAt: "2026-09-19T10:00:00.000Z",
     adminEmail,
     runner: { instantDispatchConfigured: true, mode: "webhook" },
     stats: {
-      sales: 12,
-      documents: 4,
-      extractions: 8,
-      riskOccurrences: 2,
-      scoreFactors: 10,
-      runs: 1,
       queuedRuns: 0,
       runningRuns: runSource && runStatus === "running" ? 1 : 0,
       failedRuns: 0,
-      aiDescriptions: {
-        expectedPromptVersion: "auction_llm_v10_structured_display",
-        total: 12,
-        activeOrUpcoming: 12,
-        ready: runSource ? 7 : 12,
-        missing: runSource ? 5 : 0,
-        promptVersionMismatch: 0,
-        backfillRemaining: runSource ? 5 : 0,
-      },
     },
     runs: runSource
       ? [
@@ -553,6 +627,35 @@ function dashboardPayload(runSource?: string, runStatus = "failed") {
           },
         ]
       : [],
+  };
+}
+
+function dashboardAiPayload(runSource?: string) {
+  return {
+    checkedAt: "2026-09-19T10:00:00.000Z",
+    aiDescriptions: {
+      expectedPromptVersion: "auction_llm_v10_structured_display",
+      total: 12,
+      activeOrUpcoming: 12,
+      ready: runSource ? 7 : 12,
+      missing: runSource ? 5 : 0,
+      promptVersionMismatch: 0,
+      backfillRemaining: runSource ? 5 : 0,
+    },
+  };
+}
+
+function dashboardCountsPayload() {
+  return {
+    checkedAt: "2026-09-19T10:00:00.000Z",
+    counts: {
+      sales: 12,
+      documents: 4,
+      extractions: 8,
+      riskOccurrences: 2,
+      scoreFactors: 10,
+      runs: 1,
+    },
   };
 }
 

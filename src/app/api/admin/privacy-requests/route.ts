@@ -10,8 +10,12 @@ import {
   privacyRequestAdminUpdateSchema,
   updatePrivacyRequestForAdmin,
 } from "@/lib/privacy-requests";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   const context = createApiRequestContext(request, "api.admin.privacy_requests.list");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
@@ -36,7 +40,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   const context = createApiRequestContext(request, "api.admin.privacy_requests.update");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
@@ -51,7 +55,7 @@ export async function PATCH(request: Request) {
 }
 
 /** Executes a verified erasure request (Stripe customer, application data, files, auth user). */
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   const context = createApiRequestContext(request, "api.admin.privacy_requests.erase");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
@@ -64,3 +68,7 @@ export async function POST(request: Request) {
     });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const PATCH = withAdminDeadline(handlePATCH);
+export const POST = withAdminDeadline(handlePOST);

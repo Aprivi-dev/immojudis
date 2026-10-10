@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getDataQualityReport } from "@/lib/data-quality-monitor";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const report = await getDataQualityReport(bearerTokenFromRequest(request));
     return NextResponse.json(report, {
@@ -19,3 +23,5 @@ export async function GET(request: Request) {
     });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);

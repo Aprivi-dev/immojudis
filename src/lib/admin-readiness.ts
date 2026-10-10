@@ -298,6 +298,8 @@ async function readMigrationReadiness(
 
   const sql = postgres(dbUrl, {
     max: 1,
+    // Une base injoignable ne doit pas immobiliser la route jusqu'au délai de 30 s.
+    connect_timeout: 8,
     ssl: env.POSTGRES_SSL === "disable" ? false : "require",
   });
 
@@ -361,6 +363,8 @@ async function readAiDescriptionReadiness(
 
   const sql = postgres(dbUrl, {
     max: 1,
+    // Une base injoignable ne doit pas immobiliser la route jusqu'au délai de 30 s.
+    connect_timeout: 8,
     ssl: env.POSTGRES_SSL === "disable" ? false : "require",
   });
 
@@ -456,6 +460,8 @@ async function readOperationalHealthReadiness(
 
   const sql = postgres(dbUrl, {
     max: 1,
+    // Une base injoignable ne doit pas immobiliser la route jusqu'au délai de 30 s.
+    connect_timeout: 8,
     ssl: env.POSTGRES_SSL === "disable" ? false : "require",
   });
 

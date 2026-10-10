@@ -3,18 +3,11 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { asRecord } from "@/lib/guards";
-
-const REVIEW_PAGE_SIZE = 50;
-const MAX_REVIEW_PAGE_SIZE = 100;
-
-const reviewCursorSchema = z.object({
-  createdAt: z.string().datetime({ offset: true }),
-  claimId: z.string().uuid(),
-});
+import { adminPageQueryShape } from "@/lib/admin-page-query";
+import { adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
 
 export const adminAuctionFactClaimReviewQuerySchema = z.object({
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(MAX_REVIEW_PAGE_SIZE).default(REVIEW_PAGE_SIZE),
+  ...adminPageQueryShape,
   status: z.enum(["candidate", "conflicted"]).optional(),
 });
 
@@ -60,11 +53,9 @@ export type AdminAuctionFactClaimReviewItem = {
   resolutionNote: string | null;
 };
 
-export type AdminAuctionFactClaimReviewResponse = {
+export type AdminAuctionFactClaimReviewResponse = AdminPageMeta & {
   ok: true;
   items: AdminAuctionFactClaimReviewItem[];
-  hasMore: boolean;
-  nextCursor: string | null;
 };
 
 type ClaimReadRow = {
@@ -92,16 +83,16 @@ type ClaimReadRow = {
 type PrivateQueryResult = {
   data: unknown[] | null;
   error: { code?: string; message?: string } | null;
+  count?: number | null;
 };
 
 type PrivateClaimQuery = PromiseLike<PrivateQueryResult> & {
-  select(columns: string): PrivateClaimQuery;
+  select(columns: string, options?: { count: "exact" }): PrivateClaimQuery;
   in(column: string, values: string[]): PrivateClaimQuery;
   eq(column: string, value: string): PrivateClaimQuery;
   not(column: string, operator: string, value: string | null): PrivateClaimQuery;
   order(column: string, options: { ascending: boolean }): PrivateClaimQuery;
   range(from: number, to: number): PrivateClaimQuery;
-  or(filters: string): PrivateClaimQuery;
 };
 
 type PrivateClaimReader = {
@@ -135,11 +126,11 @@ export async function listAdminAuctionFactClaims({
   input: AdminAuctionFactClaimReviewQuery;
 }): Promise<AdminAuctionFactClaimReviewResponse> {
   requireAdmin(auth);
-  const cursor = parseReviewCursor(input.cursor);
   const query = (supabaseAdmin as unknown as PrivateClaimReader)
     .from("v_auction_fact_claims_read_model")
     .select(
       "claim_id,auction_sale_id,lot_id,field_key,value_jsonb,fact_status,conflict_group,evidence_kind,source_id,raw_artifact_id,source_record_id,artifact_extraction_id,source_url,evidence_locator,confidence_score,captured_at,created_at,updated_at,resolution_note",
+      { count: "exact" },
     )
     .not("auction_sale_id", "is", null)
     .order("created_at", { ascending: true })
@@ -147,16 +138,13 @@ export async function listAdminAuctionFactClaims({
 
   if (input.status) query.eq("fact_status", input.status);
   else query.in("fact_status", ["candidate", "conflicted"]);
-  if (cursor) query.or(cursorFilter(cursor));
 
-  const { data, error } = await query.range(0, input.limit);
+  const { data, error, count } = await query.range(input.offset, input.offset + input.limit - 1);
   if (error) throw error;
 
-  const rows = (data ?? [])
+  const pageRows = (data ?? [])
     .map(parseClaimReadRow)
     .filter((row): row is ClaimReadRow => row != null);
-  const pageRows = rows.slice(0, input.limit);
-  const hasMore = rows.length > input.limit;
   const sales = await loadSaleSummaries(
     pageRows.flatMap((row) => (row.auction_sale_id ? [row.auction_sale_id] : [])),
   );
@@ -169,9 +157,11 @@ export async function listAdminAuctionFactClaims({
         return sale ? toReviewItem(row, sale) : null;
       })
       .filter((item): item is AdminAuctionFactClaimReviewItem => item != null),
-    hasMore,
-    nextCursor:
-      hasMore && pageRows.length ? encodeReviewCursor(pageRows[pageRows.length - 1]) : null,
+    ...adminPageMeta({
+      offset: input.offset,
+      limit: input.limit,
+      total: count ?? input.offset + pageRows.length,
+    }),
   };
 }
 
@@ -201,23 +191,6 @@ export async function reviewAdminAuctionFactClaim({
 
 function requireAdmin(auth: SupabaseAuthContext): void {
   if (!auth.isAdmin) throw new Error("Forbidden: accès administrateur requis.");
-}
-
-function parseReviewCursor(value: string | undefined): z.output<typeof reviewCursorSchema> | null {
-  if (!value) return null;
-  try {
-    return reviewCursorSchema.parse(JSON.parse(value));
-  } catch {
-    throw new Error("Curseur de revue des faits invalide.");
-  }
-}
-
-function encodeReviewCursor(row: Pick<ClaimReadRow, "created_at" | "claim_id">): string {
-  return JSON.stringify({ createdAt: row.created_at, claimId: row.claim_id });
-}
-
-function cursorFilter(cursor: z.output<typeof reviewCursorSchema>): string {
-  return `created_at.gt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},claim_id.gt.${cursor.claimId})`;
 }
 
 async function loadSaleSummaries(ids: string[]): Promise<Map<string, SaleSummary>> {

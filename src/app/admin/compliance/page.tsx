@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { AuthGate } from "@/components/AuthGate";
-import { AdminDashboardPage } from "@/routes/admin";
+import { AdminCompliancePage } from "@/routes/admin.compliance";
 
 export const metadata: Metadata = {
   title: "Conformité admin",
@@ -9,9 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return (
-    <AuthGate>
-      <AdminDashboardPage initialView="compliance" />
-    </AuthGate>
-  );
+  return <AdminCompliancePage />;
 }

@@ -1,17 +1,18 @@
 "use client";
 
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AdminPagination } from "@/components/admin/AdminPagination";
+import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import {
   fetchAdminAuctionFactClaimReview,
   reviewAdminAuctionFactClaimClient,
-  type AdminAuctionFactClaimReviewPageParam,
 } from "@/lib/client-api";
 import type {
   AdminAuctionFactClaimDecision,
@@ -19,23 +20,26 @@ import type {
 } from "@/lib/admin-auction-fact-claims-review";
 
 const QUERY_KEY = ["admin-auction-fact-claim-review"] as const;
-const PAGE_SIZE = 25;
 
 type ReviewDecision = AdminAuctionFactClaimDecision["decision"];
 
 export function AdminAuctionFactClaimReviewPanel() {
   const queryClient = useQueryClient();
   const [drafts, setDrafts] = useState<Record<string, ReviewDraft>>({});
-  const query = useInfiniteQuery({
-    queryKey: QUERY_KEY,
-    queryFn: ({ pageParam }) => fetchAdminAuctionFactClaimReview(pageParam),
-    initialPageParam: { limit: PAGE_SIZE } satisfies AdminAuctionFactClaimReviewPageParam,
-    getNextPageParam: (lastPage) =>
-      lastPage.hasMore && lastPage.nextCursor
-        ? { limit: PAGE_SIZE, cursor: lastPage.nextCursor }
-        : undefined,
+  const [offset, setOffset] = useState(0);
+  const query = useQuery({
+    queryKey: [...QUERY_KEY, offset],
+    queryFn: () => fetchAdminAuctionFactClaimReview({ offset, limit: ADMIN_PAGE_SIZE }),
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
+  // Après décision sur les dernières lignes d'une page, revient sur la dernière page non vide.
+  useEffect(() => {
+    const data = query.data;
+    if (data && data.items.length === 0 && data.offset > 0) {
+      setOffset(adminClampOffset(data.offset, data.limit, data.total));
+    }
+  }, [query.data]);
   const review = useMutation({
     mutationFn: reviewAdminAuctionFactClaimClient,
     onSuccess: () => {
@@ -48,7 +52,7 @@ export function AdminAuctionFactClaimReviewPanel() {
       toast.error(error instanceof Error ? error.message : "Décision impossible."),
   });
 
-  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const items = query.data?.items ?? [];
   const startDecision = (claimId: string, decision: ReviewDecision) => {
     setDrafts((previous) => ({
       ...previous,
@@ -142,18 +146,15 @@ export function AdminAuctionFactClaimReviewPanel() {
               }
             />
           ))}
-          {query.hasNextPage ? (
-            <div className="border-t px-5 py-3">
-              <button
-                type="button"
-                className="admin-button-secondary"
-                disabled={query.isFetchingNextPage}
-                onClick={() => void query.fetchNextPage()}
-              >
-                {query.isFetchingNextPage ? "Chargement…" : "Charger les faits suivants"}
-              </button>
-            </div>
-          ) : null}
+          <AdminPagination
+            label="faits à vérifier"
+            offset={query.data?.offset ?? 0}
+            limit={query.data?.limit ?? ADMIN_PAGE_SIZE}
+            total={query.data?.total ?? 0}
+            shown={items.length}
+            busy={query.isFetching}
+            onOffsetChange={setOffset}
+          />
         </div>
       ) : (
         <p className="p-5 text-sm text-brand-navy/60">Aucun fait en attente de revue.</p>

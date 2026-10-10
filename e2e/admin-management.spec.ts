@@ -16,6 +16,8 @@ type ManagementState = {
   referralPayloads: Array<Record<string, unknown>>;
   privacyPayloads: Array<Record<string, unknown>>;
   publicationPayloads: Array<Record<string, unknown>>;
+  /** Chemins des GET /api/admin/* reçus, dans l'ordre (chaque vue ne charge que les siens). */
+  adminGetPaths: string[];
   subscriptionGranted: boolean;
   lawyerSaved: boolean;
   referralStatus: "manual_review" | "sent_to_lawyer";
@@ -116,6 +118,23 @@ test.describe("admin management", () => {
     });
     await expect(page.getByText("Validée", { exact: true })).toBeVisible();
   });
+
+  test("loads only its own data on every management view", async ({ page }) => {
+    const state = await prepareAdminManagementPage(page);
+    const own: Array<[string, string[]]> = [
+      ["/admin/clients", ["/api/admin/subscriptions"]],
+      ["/admin/lawyers", ["/api/admin/lawyer-referrals"]],
+      ["/admin/compliance", ["/api/admin/privacy-requests", "/api/admin/readiness"]],
+      ["/admin/publications", ["/api/admin/publications"]],
+    ];
+    for (const [url, expected] of own) {
+      state.adminGetPaths.length = 0;
+      await page.goto(url);
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      expect([...new Set(state.adminGetPaths)].sort()).toEqual([...expected].sort());
+    }
+  });
 });
 
 async function prepareAdminManagementPage(page: Page): Promise<ManagementState> {
@@ -125,6 +144,7 @@ async function prepareAdminManagementPage(page: Page): Promise<ManagementState> 
     referralPayloads: [],
     privacyPayloads: [],
     publicationPayloads: [],
+    adminGetPaths: [],
     subscriptionGranted: false,
     lawyerSaved: false,
     referralStatus: "manual_review",
@@ -179,6 +199,7 @@ async function prepareAdminManagementPage(page: Page): Promise<ManagementState> 
     const url = new URL(route.request().url());
     const path = url.pathname;
     const method = route.request().method();
+    if (method === "GET") state.adminGetPaths.push(path);
 
     if (path === "/api/admin/subscriptions" && method === "GET") {
       await route.fulfill({ status: 200, json: subscriptionsPayload(state) });

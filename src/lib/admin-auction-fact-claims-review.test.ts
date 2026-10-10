@@ -10,6 +10,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 import {
+  adminAuctionFactClaimReviewQuerySchema,
   listAdminAuctionFactClaims,
   reviewAdminAuctionFactClaim,
 } from "./admin-auction-fact-claims-review";
@@ -23,7 +24,7 @@ const adminAuth = {
   isAdmin: true,
 } as never;
 
-function queryResult(result: { data: unknown[] | null; error: null }) {
+function queryResult(result: { data: unknown[] | null; error: null; count?: number | null }) {
   const query = {
     select: vi.fn(),
     in: vi.fn(),
@@ -72,6 +73,7 @@ describe("admin auction fact claim review", () => {
         },
       ],
       error: null,
+      count: 1,
     });
     const saleQuery = queryResult({
       data: [
@@ -94,9 +96,10 @@ describe("admin auction fact claim review", () => {
 
     const response = await listAdminAuctionFactClaims({
       auth: adminAuth,
-      input: { limit: 20 },
+      input: { offset: 0, limit: 20 },
     });
 
+    expect(response).toMatchObject({ total: 1, offset: 0, limit: 20, hasMore: false });
     expect(response.items).toHaveLength(1);
     expect(response.items[0]).toMatchObject({
       claimId,
@@ -112,30 +115,47 @@ describe("admin auction fact claim review", () => {
     expect(claimQuery.in).toHaveBeenCalledWith("fact_status", ["candidate", "conflicted"]);
   });
 
-  it("uses a keyset cursor and status filter for the next page", async () => {
-    const claimQuery = queryResult({ data: [], error: null });
+  it("reads the requested page with offset/limit, the exact total and the status filter", async () => {
+    const claimQuery = queryResult({ data: [], error: null, count: 130 });
     mocks.from.mockReturnValue(claimQuery);
 
-    await listAdminAuctionFactClaims({
+    const response = await listAdminAuctionFactClaims({
       auth: adminAuth,
-      input: {
-        limit: 10,
-        status: "conflicted",
-        cursor: JSON.stringify({ createdAt: "2026-09-28T10:00:00Z", claimId }),
-      },
+      input: { offset: 50, limit: 50, status: "conflicted" },
     });
 
+    expect(claimQuery.select).toHaveBeenCalledWith(expect.any(String), { count: "exact" });
     expect(claimQuery.eq).toHaveBeenCalledWith("fact_status", "conflicted");
-    expect(claimQuery.or).toHaveBeenCalledWith(
-      `created_at.gt.2026-09-28T10:00:00Z,and(created_at.eq.2026-09-28T10:00:00Z,claim_id.gt.${claimId})`,
-    );
+    expect(claimQuery.range).toHaveBeenCalledWith(50, 99);
+    expect(response).toMatchObject({ total: 130, offset: 50, limit: 50, hasMore: true });
+  });
+
+  it("reports the last page without a next page", async () => {
+    mocks.from.mockReturnValue(queryResult({ data: [], error: null, count: 100 }));
+    const response = await listAdminAuctionFactClaims({
+      auth: adminAuth,
+      input: { offset: 50, limit: 50 },
+    });
+    expect(response.hasMore).toBe(false);
+  });
+
+  it("validates offset and limit with the shared admin page schema", () => {
+    const parse = (value: Record<string, string>) =>
+      adminAuctionFactClaimReviewQuerySchema.safeParse(value);
+    expect(parse({}).data).toMatchObject({ offset: 0, limit: 50 });
+    expect(parse({ offset: "100", limit: "25" }).data).toMatchObject({ offset: 100, limit: 25 });
+    expect(parse({ limit: "101" }).success).toBe(false);
+    expect(parse({ limit: "0" }).success).toBe(false);
+    expect(parse({ offset: "-1" }).success).toBe(false);
+    expect(parse({ offset: "1.5" }).success).toBe(false);
+    expect(parse({ status: "accepted" }).success).toBe(false);
   });
 
   it("refuses list and decision operations for a non-admin", async () => {
     const nonAdmin = { userId: "66666666-6666-4666-8666-666666666666", isAdmin: false } as never;
 
     await expect(
-      listAdminAuctionFactClaims({ auth: nonAdmin, input: { limit: 10 } }),
+      listAdminAuctionFactClaims({ auth: nonAdmin, input: { offset: 0, limit: 10 } }),
     ).rejects.toThrow("Forbidden");
     await expect(
       reviewAdminAuctionFactClaim({
