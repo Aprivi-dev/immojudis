@@ -6,10 +6,11 @@ import { z } from "zod";
  * - `publicEnv()` is safe in browser code: it reads ONLY `process.env.NEXT_PUBLIC_*`
  *   through static member accesses, which Next.js inlines at build time. Never add a
  *   dynamic `process.env[name]` access to it, nor a non-public variable: they would be
- *   `undefined` in the browser.
- * - `serverEnv()` is for server code (route handlers, server components, jobs, tests).
- *   It reads from `process.env` by default or from an explicit source, which is how the
- *   unit tests inject a configuration.
+ *   `undefined` in the browser. It does not use zod (bundle budget: the Supabase client
+ *   imports this module in every page).
+ * - `serverEnv()` is for server code (route handlers, server components, jobs, tests),
+ *   validated and normalised by a zod schema. It reads from `process.env` by default or
+ *   from an explicit source, which is how the unit tests inject a configuration.
  *
  * The canonical public origin is `SITE_URL`, with `NEXT_PUBLIC_APP_URL` and the other legacy
  * aliases as fallbacks: it is resolved and validated by `resolveSiteOrigin` (site-url.ts).
@@ -41,15 +42,6 @@ export function firstFilled(...values: Array<string | undefined>): string | unde
     if (result) return result;
   }
   return undefined;
-}
-
-const text = z
-  .string()
-  .optional()
-  .transform((value) => filled(value));
-
-function textShape<const Keys extends readonly string[]>(keys: Keys) {
-  return Object.fromEntries(keys.map((key) => [key, text])) as Record<Keys[number], typeof text>;
 }
 
 const PUBLIC_KEYS = [
@@ -96,8 +88,26 @@ const SERVER_KEYS = [
   "NODE_ENV",
 ] as const;
 
-const publicSchema = z.object(textShape(PUBLIC_KEYS));
-const serverSchema = z.object(textShape(SERVER_KEYS));
+/**
+ * zod schema of the server variables, built on first use. It is kept out of module scope
+ * (and `publicEnv()` does not use zod at all) so that the browser bundle, which imports
+ * this module through the Supabase client, does not pay for zod nor for the server names:
+ * bundlers drop the unused `serverEnv()` and everything it alone references.
+ */
+function buildServerSchema() {
+  const text = z
+    .string()
+    .optional()
+    .transform((value) => filled(value));
+  return z.object(
+    Object.fromEntries(SERVER_KEYS.map((key) => [key, text])) as Record<
+      (typeof SERVER_KEYS)[number],
+      typeof text
+    >,
+  );
+}
+
+let serverSchemaCache: ReturnType<typeof buildServerSchema> | undefined;
 
 const DEFAULT_PIPELINE_REPOSITORY = "Aprivi-dev/immojudis";
 const DEFAULT_PIPELINE_WORKFLOW = "data-pipeline.yml";
@@ -116,26 +126,21 @@ type PublicEnv = {
  * statically so that Next.js can inline them; a source can be injected for tests.
  */
 export function publicEnv(source?: EnvSource): PublicEnv {
-  const raw = publicSchema.parse(
-    source
-      ? {
-          NEXT_PUBLIC_SUPABASE_URL: source.NEXT_PUBLIC_SUPABASE_URL,
-          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: source.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: source.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        }
-      : {
-          // Static accesses on purpose: Next.js replaces them at build time.
-          NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        },
-  );
+  const raw = source
+    ? {
+        url: source.NEXT_PUBLIC_SUPABASE_URL,
+        publishableKey: source.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+        anonKey: source.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      }
+    : {
+        // Static accesses on purpose: Next.js replaces them at build time.
+        url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        publishableKey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+        anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      };
   return {
-    supabaseUrl: raw.NEXT_PUBLIC_SUPABASE_URL,
-    supabasePublishableKey: firstFilled(
-      raw.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-      raw.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    ),
+    supabaseUrl: filled(raw.url),
+    supabasePublishableKey: firstFilled(raw.publishableKey, raw.anonKey),
   };
 }
 
@@ -146,7 +151,8 @@ export function publicEnv(source?: EnvSource): PublicEnv {
  * next.config.ts) also applies on the server.
  */
 export function serverEnv(source?: EnvSource) {
-  const env = serverSchema.parse(source ?? processEnvWithInlinedPublicValues());
+  serverSchemaCache ??= buildServerSchema();
+  const env = serverSchemaCache.parse(source ?? processEnvWithInlinedPublicValues());
 
   return {
     supabase: {
