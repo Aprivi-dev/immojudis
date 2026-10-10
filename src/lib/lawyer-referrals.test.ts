@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import {
-  buildLawyerReferralSectorCriteria,
   createLawyerReferralRequest,
+  lawyerReferralRequestInputSchema,
   listLawyerReferralRequests,
 } from "@/lib/lawyer-referrals";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
@@ -49,6 +49,7 @@ describe("lawyer referrals", () => {
         input: {
           saleId: SALE_ID,
           preferredContactMethod: "email",
+          dataSharingConfirmed: true,
         },
       }),
     ).rejects.toThrow("Mise en relation avocat réservée au plan Analyse ou Investisseur.");
@@ -68,6 +69,7 @@ describe("lawyer referrals", () => {
         message: "Je souhaite préparer l'audience.",
         financingReady: true,
         maxBidEur: 126_000,
+        dataSharingConfirmed: true,
       },
     });
 
@@ -85,13 +87,13 @@ describe("lawyer referrals", () => {
     expect(auth.calls.map((call) => call.table)).toEqual([
       "auction_sales",
       "lawyer_referral_requests",
-      "referenced_lawyer_coverage",
       "referenced_lawyers",
       "lawyer_referral_requests",
     ]);
-    expect(auth.calls[0]?.selected).not.toContain("lawyer_name");
+    // lawyer_name is read only to exclude the prosecuting lawyer; it is never copied nor shared.
+    expect(auth.calls[0]?.selected).toContain("lawyer_name");
     expect(auth.calls[0]?.selected).not.toContain("lawyer_contact");
-    expect(auth.calls[3]).toMatchObject({
+    expect(auth.calls[2]).toMatchObject({
       table: "referenced_lawyers",
       filters: {
         status: "active",
@@ -109,7 +111,10 @@ describe("lawyer referrals", () => {
       preferred_contact_method: "either",
       metadata: {
         source: "sale_detail",
-        matching_basis: "referenced_lawyer_coverage",
+        matching_basis: "tribunal_bar_association",
+        sale_bar_association: "Bordeaux",
+        shared_with_lawyer: expect.arrayContaining(["requester_email", "sale_reference"]),
+        data_sharing_confirmed_at: expect.any(String),
       },
     });
     expect(auth.inserts[0]?.sale_snapshot).not.toHaveProperty("lawyer_name");
@@ -139,6 +144,7 @@ describe("lawyer referrals", () => {
       input: {
         saleId: SALE_ID,
         preferredContactMethod: "email",
+        dataSharingConfirmed: true,
       },
     });
 
@@ -158,47 +164,110 @@ describe("lawyer referrals", () => {
     });
   });
 
-  it("prioritizes precise referral coverage before department coverage", () => {
-    const criteria = buildLawyerReferralSectorCriteria({
-      tribunal_code: null,
-      postal_code: "33000",
-      city: "Bordeaux",
-      department: "33",
-    });
-
-    expect(criteria.map((criterion) => `${criterion.column}:${criterion.value}`)).toEqual([
-      "postal_code_prefix:33000",
-      "postal_code_prefix:3300",
-      "postal_code_prefix:330",
-      "city:Bordeaux",
-      "department:33",
-    ]);
+  it("requires the explicit data-sharing confirmation", () => {
+    const base = { saleId: SALE_ID, preferredContactMethod: "email" as const };
+    expect(lawyerReferralRequestInputSchema.safeParse(base).success).toBe(false);
+    expect(
+      lawyerReferralRequestInputSchema.safeParse({ ...base, dataSharingConfirmed: false }).success,
+    ).toBe(false);
+    expect(
+      lawyerReferralRequestInputSchema.safeParse({ ...base, dataSharingConfirmed: true }).success,
+    ).toBe(true);
   });
 
-  it("matches city referral coverage without case sensitivity", async () => {
+  it("only proposes lawyers of the bar of the sale's tribunal", async () => {
     vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
     const auth = fakeReferralAuth({
-      saleRow: {
-        tribunal_code: null,
-        postal_code: null,
-        city: "BORDEAUX",
-        department: null,
-      },
+      referencedLawyerRows: [
+        referencedLawyerRow({ id: "other", display_name: "Me Lyonnais", bar_association: "Lyon" }),
+      ],
     });
+
+    const response = await createLawyerReferralRequest({ auth, input: confirmedInput() });
+
+    expect(response).toMatchObject({ matchingStatus: "manual_review", matchedLawyer: null });
+    expect(auth.inserts[0]).toMatchObject({
+      requested_lawyer_id: null,
+      metadata: { matching_basis: "manual_review", sale_bar_association: "Bordeaux" },
+    });
+  });
+
+  it("never proposes the prosecuting lawyer of the sale, even in the right bar", async () => {
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
+    const auth = fakeReferralAuth({
+      saleRow: { lawyer_name: "Maître Jean-Paul Poursuivant" },
+      referencedLawyerRows: [
+        referencedLawyerRow({
+          id: "prosecuting",
+          display_name: "Me Jean-Paul Poursuivant",
+          firm_name: "SCP Poursuivant & Associés",
+        }),
+        referencedLawyerRow({ id: LAWYER_ID, display_name: "Me Référencé" }),
+      ],
+    });
+
+    const response = await createLawyerReferralRequest({ auth, input: confirmedInput() });
+
+    expect(response.matchedLawyer?.id).toBe(LAWYER_ID);
+    expect(auth.inserts[0]).toMatchObject({ requested_lawyer_id: LAWYER_ID });
+  });
+
+  it("refuses a lawyer chosen by hand who is the prosecuting lawyer or in another bar", async () => {
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
+
+    const prosecuting = fakeReferralAuth({
+      saleRow: { lawyer_name: "Me Référencé" },
+      referencedLawyerRows: [referencedLawyerRow()],
+    });
+    await expect(
+      createLawyerReferralRequest({
+        auth: prosecuting,
+        input: confirmedInput({ lawyerId: LAWYER_ID }),
+      }),
+    ).rejects.toThrow("n'est pas proposé pour cette vente");
+    expect(prosecuting.inserts).toHaveLength(0);
+
+    const otherBar = fakeReferralAuth({
+      referencedLawyerRows: [referencedLawyerRow({ bar_association: "Lyon" })],
+    });
+    await expect(
+      createLawyerReferralRequest({
+        auth: otherBar,
+        input: confirmedInput({ lawyerId: LAWYER_ID }),
+      }),
+    ).rejects.toThrow("n'est pas proposé pour cette vente");
+    expect(otherBar.inserts).toHaveLength(0);
+  });
+
+  it("accepts a lawyer chosen by hand when he belongs to the bar of the tribunal", async () => {
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
+    const auth = fakeReferralAuth();
 
     const response = await createLawyerReferralRequest({
       auth,
-      input: {
-        saleId: SALE_ID,
-        preferredContactMethod: "email",
-      },
+      input: confirmedInput({ lawyerId: LAWYER_ID }),
     });
 
-    expect(response.matchingStatus).toBe("matched");
-    expect(auth.calls.find((call) => call.table === "referenced_lawyer_coverage")).toMatchObject({
-      filters: {
-        "ilike:city": "BORDEAUX",
-      },
+    expect(response.matchedLawyer?.id).toBe(LAWYER_ID);
+    expect(auth.inserts[0]).toMatchObject({
+      metadata: { source: "lawyer_directory", selected_lawyer_id: LAWYER_ID },
+    });
+  });
+
+  it("does not fall back to the city, postal code or department of the sale", async () => {
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
+    // The tribunal label does not name a seat and no tribunal code: the bar is unknown, so the
+    // request goes to manual review even though a lawyer sits in the sale's own city.
+    const auth = fakeReferralAuth({
+      saleRow: { tribunal: "Cour d'appel", tribunal_code: null, city: "BORDEAUX" },
+    });
+
+    const response = await createLawyerReferralRequest({ auth, input: confirmedInput() });
+
+    expect(response.matchingStatus).toBe("manual_review");
+    expect(auth.calls.map((call) => call.table)).not.toContain("referenced_lawyer_coverage");
+    expect(auth.inserts[0]).toMatchObject({
+      metadata: { matching_basis: "manual_review", sale_bar_association: null },
     });
   });
 
@@ -244,6 +313,15 @@ describe("lawyer referrals", () => {
     });
   });
 });
+
+function confirmedInput(overrides: Record<string, unknown> = {}) {
+  return {
+    saleId: SALE_ID,
+    preferredContactMethod: "email" as const,
+    dataSharingConfirmed: true as const,
+    ...overrides,
+  };
+}
 
 function planEntitlements(plan: "decouverte" | "analyse") {
   return {

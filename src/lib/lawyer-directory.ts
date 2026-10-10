@@ -2,10 +2,18 @@ import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
-import { findCnbBarAssociation } from "@/lib/cnb-directory";
-import { CNB_DATASET_PAGE_URL, normalizeBarKey, OPEN_LICENSE_URL } from "@/lib/cnb-open-data";
+import { CNB_DATASET_PAGE_URL, OPEN_LICENSE_URL } from "@/lib/cnb-open-data";
+import {
+  isProsecutingLawyer,
+  isSameBar,
+  resolveCnbDatasetBarKey,
+  tribunalBarAssociation,
+} from "@/lib/lawyer-bar";
 import { LAWYER_DIRECTORY_PAGE_SIZE } from "@/lib/rate-limit-policies";
+import { resolveSaleBarAssociation } from "@/lib/sale-lawyer-bar";
 import { isPublicationQuarantined } from "@/lib/sale-publication-guard";
+
+export { resolveCnbDatasetBarKey };
 
 type LawyerRow = Pick<
   Database["public"]["Tables"]["referenced_lawyers"]["Row"],
@@ -52,7 +60,7 @@ type CnbLawyerRow = Pick<
 
 type SaleSector = Pick<
   Database["public"]["Tables"]["auction_sales"]["Row"],
-  "id" | "city" | "department" | "postal_code" | "tribunal" | "tribunal_code"
+  "id" | "department" | "tribunal" | "tribunal_code" | "lawyer_name"
 >;
 
 export const lawyerDirectoryQuerySchema = z.object({
@@ -153,6 +161,23 @@ export async function listLawyerDirectory(
       }
     }
   }
+  // With a sale, only the bar of the sale's tribunal judiciaire is proposed (plan P4-13): never
+  // the sale's own city, postal code or department, and never the prosecuting lawyer.
+  const saleBar = sale ? await resolveSaleBarAssociation(sale) : null;
+  const resolvedBarAssociation = sale
+    ? saleBar
+    : (cleanBarLabel(query.bar) ?? cleanBarLabel(query.city));
+  if (sale && !saleBar) {
+    return {
+      lawyers: [],
+      pagination: paginateLawyerDirectory([], query.page).pagination,
+      sectorLabel: null,
+      barAssociation: null,
+      isDemo: false,
+      officialSource: null,
+    };
+  }
+  const prosecutingLawyerName = sale?.lawyer_name ?? null;
   let data: unknown[] | null;
   try {
     const response = await supabaseAdmin
@@ -174,8 +199,7 @@ export async function listLawyerDirectory(
   }
 
   const activeLawyers = (data ?? []) as LawyerRow[];
-  const criteria = buildCriteria(sale, query);
-  const resolvedBarAssociation = resolveBarAssociation(sale, query);
+  const criteria = buildCriteria(resolvedBarAssociation, sale != null, query);
   const [coverage, cnbLawyers] = await Promise.all([
     getCoverage(activeLawyers.map((lawyer) => lawyer.id)),
     getCnbLawyers(resolvedBarAssociation),
@@ -191,6 +215,13 @@ export async function listLawyerDirectory(
       };
     })
     .filter((item) => criteria.length === 0 || item.match != null)
+    .filter(
+      (item) =>
+        !isProsecutingLawyer(
+          { displayName: item.lawyer.display_name, firmName: item.lawyer.firm_name },
+          prosecutingLawyerName,
+        ),
+    )
     .sort((left, right) => {
       const scoreDifference = (right.match?.score ?? 0) - (left.match?.score ?? 0);
       if (scoreDifference) return scoreDifference;
@@ -209,6 +240,13 @@ export async function listLawyerDirectory(
   );
   const referencedIdentities = new Set(referencedProfiles.map(directoryIdentityKey));
   const officialProfiles = cnbLawyers
+    .filter(
+      (lawyer) =>
+        !isProsecutingLawyer(
+          { displayName: lawyer.display_name, firmName: lawyer.firm_name },
+          prosecutingLawyerName,
+        ),
+    )
     .map(toCnbDirectoryProfile)
     .filter((profile) => !referencedIdentities.has(directoryIdentityKey(profile)));
   const sourceUpdatedAt = cnbLawyers[0]?.source_updated_at ?? null;
@@ -242,7 +280,7 @@ function demoLawyerDirectory(
   query: LawyerDirectoryQuery,
   sale: SaleSector | null,
 ): LawyerDirectoryResponse {
-  const barAssociation = resolveBarAssociation(sale, query) ?? "Bordeaux";
+  const barAssociation = cleanBarLabel(query.bar) ?? cleanBarLabel(query.city) ?? "Bordeaux";
   const coverageLabels = [`Barreau de ${barAssociation}`];
   const baseProfile = {
     phone: "05 00 00 00 00",
@@ -318,7 +356,7 @@ function demoLawyerDirectory(
 async function getSaleSector(saleId: string): Promise<SaleSector> {
   const { data, error } = await supabaseAdmin
     .from("auction_sales")
-    .select("id,city,department,postal_code,tribunal,tribunal_code,status,raw_payload")
+    .select("id,department,tribunal,tribunal_code,lawyer_name,status,raw_payload")
     .eq("id", saleId)
     .maybeSingle();
 
@@ -360,49 +398,28 @@ async function getCnbLawyers(barAssociation: string | null): Promise<CnbLawyerRo
   return (data ?? []) as CnbLawyerRow[];
 }
 
-export function resolveCnbDatasetBarKey(value: string | null | undefined): string | null {
-  const officialBar = findCnbBarAssociation(value);
-  const datasetLabel = officialBar?.label.replace(/\s*\([^)]+\)\s*/g, " ") ?? value;
-  const normalized = normalizeBarKey(datasetLabel);
-  if (normalized === "thonon les bains du leman et du genevois") {
-    return "thonon les bains leman et genevois";
-  }
-  return normalized;
-}
-
 type Criterion = {
-  kind: "bar" | "tribunal" | "postal" | "city" | "department";
+  kind: "bar" | "city" | "department";
   value: string;
   score: number;
   label: string;
 };
 
-function buildCriteria(sale: SaleSector | null, query: LawyerDirectoryQuery): Criterion[] {
+function buildCriteria(
+  barAssociation: string | null,
+  saleMode: boolean,
+  query: LawyerDirectoryQuery,
+): Criterion[] {
   const criteria: Criterion[] = [];
-  const requestedBar = clean(query.bar);
-  if (requestedBar) {
-    const label = cleanBarLabel(requestedBar) ?? requestedBar;
-    pushCriterion(criteria, "bar", requestedBar, 70, `Barreau de ${label}`);
+  if (barAssociation) {
+    pushCriterion(criteria, "bar", barAssociation, 70, `Barreau de ${barAssociation}`);
     return criteria;
   }
-
-  const resolvedBarAssociation = resolveBarAssociation(sale, query);
-  pushCriterion(
-    criteria,
-    "bar",
-    resolvedBarAssociation,
-    60,
-    resolvedBarAssociation ? `Barreau de ${resolvedBarAssociation}` : undefined,
-  );
-  pushCriterion(criteria, "tribunal", sale?.tribunal_code, 40, sale?.tribunal ?? undefined);
-  const postalCode = clean(sale?.postal_code);
-  if (postalCode) {
-    for (let length = postalCode.length; length >= 3; length -= 1) {
-      pushCriterion(criteria, "postal", postalCode.slice(0, length), 30 + length, postalCode);
-    }
+  // Free browsing of the directory (no sale): city / department filters stay available.
+  if (!saleMode) {
+    pushCriterion(criteria, "city", query.city, 25);
+    pushCriterion(criteria, "department", query.department, 15);
   }
-  pushCriterion(criteria, "city", sale?.city ?? query.city, 25);
-  pushCriterion(criteria, "department", sale?.department ?? query.department, 15);
   return criteria;
 }
 
@@ -426,7 +443,7 @@ function bestMatch(
   let best: { score: number; label: string } | null = null;
   for (const criterion of criteria) {
     const matches =
-      (criterion.kind === "bar" && equalBar(lawyer.bar_association, criterion.value)) ||
+      (criterion.kind === "bar" && isSameBar(lawyer.bar_association, criterion.value)) ||
       coverage.some((row) => coverageMatches(row, criterion)) ||
       (criterion.kind === "city" && equal(lawyer.city, criterion.value)) ||
       (criterion.kind === "department" && equal(lawyer.department, criterion.value));
@@ -439,8 +456,6 @@ function bestMatch(
 
 function coverageMatches(row: CoverageRow, criterion: Criterion): boolean {
   if (criterion.kind === "bar") return false;
-  if (criterion.kind === "tribunal") return equal(row.tribunal_code, criterion.value);
-  if (criterion.kind === "postal") return equal(row.postal_code_prefix, criterion.value);
   if (criterion.kind === "city") return equal(row.city, criterion.value);
   return equal(row.department, criterion.value);
 }
@@ -557,36 +572,8 @@ function equal(left: string | null | undefined, right: string) {
   return clean(left)?.localeCompare(right, "fr", { sensitivity: "base" }) === 0;
 }
 
-function equalBar(left: string | null | undefined, right: string) {
-  const leftKey = normalizedBarKey(left);
-  const rightKey = normalizedBarKey(right);
-  return Boolean(leftKey && rightKey && leftKey === rightKey);
-}
-
-function resolveBarAssociation(
-  sale: SaleSector | null,
-  query: LawyerDirectoryQuery,
-): string | null {
-  return (
-    cleanBarLabel(query.bar) ??
-    (sale ? inferBarAssociation(sale.tribunal, sale.city) : null) ??
-    cleanBarLabel(query.city)
-  );
-}
-
-export function inferBarAssociation(
-  tribunal: string | null | undefined,
-  fallbackCity: string | null | undefined,
-): string | null {
-  const label = clean(tribunal);
-  if (label) {
-    const match = label.match(
-      /(?:tribunal\s+(?:judiciaire|de\s+grande\s+instance)|\btj\b)\s+(?:de|d[’'])\s*([^,;()]+?)(?:\s*[-–—]|$)/i,
-    );
-    const inferred = cleanBarLabel(match?.[1]);
-    if (inferred) return inferred;
-  }
-  return cleanBarLabel(fallbackCity);
+export function inferBarAssociation(tribunal: string | null | undefined): string | null {
+  return cleanBarLabel(tribunalBarAssociation(tribunal));
 }
 
 function cleanBarLabel(value: string | null | undefined): string | null {
@@ -599,10 +586,6 @@ function cleanBarLabel(value: string | null | undefined): string | null {
         .replace(/\s+/g, " "),
     ) ?? null
   );
-}
-
-function normalizedBarKey(value: string | null | undefined): string | null {
-  return normalizeBarKey(value);
 }
 
 function safeWebsiteUrl(value: string | null): string | null {

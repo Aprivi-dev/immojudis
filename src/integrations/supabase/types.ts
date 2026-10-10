@@ -1065,6 +1065,7 @@ export type Database = {
           investment_score: number | null;
           investment_summary: string | null;
           land_surface_m2: number | null;
+          lawyer_name: string | null;
           latitude: number | null;
           longitude: number | null;
           media: Json | null;
@@ -1133,6 +1134,7 @@ export type Database = {
           investment_score?: number | null;
           investment_summary?: string | null;
           land_surface_m2?: number | null;
+          lawyer_name?: string | null;
           latitude?: number | null;
           longitude?: number | null;
           occupancy_status?: string | null;
@@ -1200,6 +1202,7 @@ export type Database = {
           investment_score?: number | null;
           investment_summary?: string | null;
           land_surface_m2?: number | null;
+          lawyer_name?: string | null;
           latitude?: number | null;
           longitude?: number | null;
           occupancy_status?: string | null;
