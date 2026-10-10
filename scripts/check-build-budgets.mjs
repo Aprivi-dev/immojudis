@@ -133,7 +133,6 @@ const routeBudgets = [
 
 const requiredHtml = [
   [".next/server/app/index.html", "Les enchères immobilières"],
-  [".next/server/app/sales.html", "Ventes immobilières aux enchères"],
   [".next/server/app/annonce-exemple.html", "Exemple de rapport"],
 ];
 
@@ -143,6 +142,10 @@ for (const [path, expectedText] of requiredHtml) {
     throw new Error(`${path} ne contient pas le HTML SSR utile attendu (${expectedText}).`);
   }
 }
+
+// /sales is rendered on demand (it reads the search parameters): there is no
+// prerendered HTML to inspect, only the server entry that must exist.
+await readFile(".next/server/app/sales/page.js", "utf8");
 
 const businessModuleLines = Object.fromEntries(
   await Promise.all(

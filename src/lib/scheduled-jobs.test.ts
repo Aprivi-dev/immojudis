@@ -24,12 +24,18 @@ function migrationText(): string {
     .join("\n");
 }
 
+/** Routes that are triggered by hand on purpose (see docs/operations/planification.md). */
+const MANUAL_ROUTES = new Set(["cnb-lawyer-directory"]);
+
 describe("scheduled jobs inventory", () => {
   it("planifie chaque route /api/cron/* dans vercel.json ou dans une migration pg_cron", () => {
     const vercel = vercelCronPaths();
     const migrations = migrationText();
     const unscheduled = cronRoutes().filter(
-      (route) => !vercel.has(`/api/cron/${route}`) && !migrations.includes(`api/cron/${route}`),
+      (route) =>
+        !MANUAL_ROUTES.has(route) &&
+        !vercel.has(`/api/cron/${route}`) &&
+        !migrations.includes(`api/cron/${route}`),
     );
     expect(unscheduled).toEqual([]);
   });

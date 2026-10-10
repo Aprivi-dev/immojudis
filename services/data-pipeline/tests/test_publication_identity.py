@@ -364,10 +364,10 @@ def test_targeted_alias_publication_reuses_existing_identity_under_lock():
         try:
             db.execute("""create table auction_sales(id uuid default gen_random_uuid(),source_url text primary key,
                 source_urls jsonb,source_name text,postal_code text,content_hash text,
-                address text,city text,starting_price_eur numeric,raw_payload jsonb default '{}')""")
-            original_id = db.execute("""insert into auction_sales(source_url,source_urls,source_name,postal_code,address,city,starting_price_eur)
+                address text,city text,starting_price_eur numeric,sale_date timestamptz,raw_payload jsonb default '{}')""")
+            original_id = db.execute("""insert into auction_sales(source_url,source_urls,source_name,postal_code,address,city,starting_price_eur,sale_date)
                 values ('https://example.test/canonical','["https://example.test/alias"]','avoventes','33000',
-                '12 rue Victor Hugo','Bordeaux',100000) returning id""").fetchone()[0]
+                '12 rue Victor Hugo','Bordeaux',100000,'2026-10-01T10:00:00+00:00') returning id""").fetchone()[0]
             alias = sale('https://example.test/alias', 120000)
             result = resolve_publication_identities(db, [alias])
             assert len(result) == 1

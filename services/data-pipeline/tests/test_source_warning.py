@@ -60,6 +60,9 @@ def test_annotations_follow_the_workflow_command_format_and_escape_data() -> Non
 
 
 def _run(monkeypatch, scraper, *, upsert=lambda sales, **kwargs: len(sales), publish=True, pdf=lambda sale: None):
+    # In GitHub Actions GITHUB_ENV is set and register_run would write to it
+    # (and require a UUID run id).
+    monkeypatch.delenv("GITHUB_ENV", raising=False)
     settings = _settings()
     settings["pipeline_pdf_max_targets"] = 5
     monkeypatch.setattr(main, "load_settings", lambda: settings)

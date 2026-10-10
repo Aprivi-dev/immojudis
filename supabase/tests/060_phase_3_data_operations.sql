@@ -1,6 +1,6 @@
 begin;
 
-select plan(30);
+select plan(32);
 
 select has_extension('pg_cron', 'pg_cron is available for the 15-minute health scheduler');
 select has_extension('pg_net', 'pg_net is available for the authenticated health callback');
@@ -298,6 +298,47 @@ insert into public.operational_job_runs (
 select lives_ok(
   $$select public.evaluate_operational_health('2026-07-27T16:22:00Z'::timestamptz)$$,
   'recovery is evaluated'
+);
+
+select is(
+  (
+    select status || ':' || notification_event || ':' || notification_status
+    from public.operational_alerts
+    where alert_key = 'cron.stale'
+  ),
+  'open:opened:delivered',
+  'a first clear evaluation keeps the incident open (two-hour hysteresis)'
+);
+
+insert into public.operational_job_runs (
+  job_name,
+  status,
+  started_at,
+  finished_at,
+  duration_ms
+) values (
+  'operational-health',
+  'success',
+  '2026-07-27T18:28:00Z'::timestamptz,
+  '2026-07-27T18:29:00Z'::timestamptz,
+  60000
+), (
+  'sale-retention',
+  'success',
+  '2026-07-27T18:28:00Z'::timestamptz,
+  '2026-07-27T18:29:00Z'::timestamptz,
+  60000
+), (
+  'information-agent-inbound',
+  'success',
+  '2026-07-27T18:28:00Z'::timestamptz,
+  '2026-07-27T18:29:00Z'::timestamptz,
+  60000
+);
+
+select lives_ok(
+  $$select public.evaluate_operational_health('2026-07-27T18:30:00Z'::timestamptz)$$,
+  'recovery is evaluated again after two clear hours'
 );
 
 select is(
