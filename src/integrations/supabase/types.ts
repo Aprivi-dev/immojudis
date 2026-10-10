@@ -4565,6 +4565,101 @@ export type Database = {
         };
         Relationships: [];
       };
+      climate_station_months: {
+        Row: {
+          frost_days: number | null;
+          hot_days: number | null;
+          mean_max_temperature_c: number | null;
+          mean_min_temperature_c: number | null;
+          mean_temperature_c: number | null;
+          month: string;
+          precipitation_mm: number | null;
+          rain_days: number | null;
+          station_id: string;
+          sunshine_minutes: number | null;
+        };
+        Insert: {
+          frost_days?: number | null;
+          hot_days?: number | null;
+          mean_max_temperature_c?: number | null;
+          mean_min_temperature_c?: number | null;
+          mean_temperature_c?: number | null;
+          month: string;
+          precipitation_mm?: number | null;
+          rain_days?: number | null;
+          station_id: string;
+          sunshine_minutes?: number | null;
+        };
+        Update: {
+          frost_days?: number | null;
+          hot_days?: number | null;
+          mean_max_temperature_c?: number | null;
+          mean_min_temperature_c?: number | null;
+          mean_temperature_c?: number | null;
+          month?: string;
+          precipitation_mm?: number | null;
+          rain_days?: number | null;
+          station_id?: string;
+          sunshine_minutes?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "climate_station_months_station_id_fkey";
+            columns: ["station_id"];
+            isOneToOne: false;
+            referencedRelation: "climate_stations";
+            referencedColumns: ["station_id"];
+          },
+        ];
+      };
+      climate_stations: {
+        Row: {
+          altitude_m: number | null;
+          department_code: string;
+          first_month: string;
+          has_precipitation: boolean;
+          has_sunshine: boolean;
+          has_temperature: boolean;
+          imported_at: string;
+          last_month: string;
+          latitude: number;
+          longitude: number;
+          name: string;
+          source_url: string;
+          station_id: string;
+        };
+        Insert: {
+          altitude_m?: number | null;
+          department_code: string;
+          first_month: string;
+          has_precipitation?: boolean;
+          has_sunshine?: boolean;
+          has_temperature?: boolean;
+          imported_at?: string;
+          last_month: string;
+          latitude: number;
+          longitude: number;
+          name: string;
+          source_url: string;
+          station_id: string;
+        };
+        Update: {
+          altitude_m?: number | null;
+          department_code?: string;
+          first_month?: string;
+          has_precipitation?: boolean;
+          has_sunshine?: boolean;
+          has_temperature?: boolean;
+          imported_at?: string;
+          last_month?: string;
+          latitude?: number;
+          longitude?: number;
+          name?: string;
+          source_url?: string;
+          station_id?: string;
+        };
+        Relationships: [];
+      };
       cnb_lawyer_directory: {
         Row: {
           address_line_1: string | null;
@@ -4900,6 +4995,54 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      commune_risk_profiles: {
+        Row: {
+          catnat_by_type: Json;
+          catnat_recent: Json;
+          catnat_total: number;
+          code_insee: string;
+          commune_name: string;
+          gaspar_snapshot: string | null;
+          imported_at: string;
+          prevention_plans: Json;
+          radon_class: number | null;
+          risks: Json;
+          seismic_zone: number | null;
+          source_url: string;
+          zoning_checked_at: string | null;
+        };
+        Insert: {
+          catnat_by_type?: Json;
+          catnat_recent?: Json;
+          catnat_total?: number;
+          code_insee: string;
+          commune_name: string;
+          gaspar_snapshot?: string | null;
+          imported_at?: string;
+          prevention_plans?: Json;
+          radon_class?: number | null;
+          risks?: Json;
+          seismic_zone?: number | null;
+          source_url: string;
+          zoning_checked_at?: string | null;
+        };
+        Update: {
+          catnat_by_type?: Json;
+          catnat_recent?: Json;
+          catnat_total?: number;
+          code_insee?: string;
+          commune_name?: string;
+          gaspar_snapshot?: string | null;
+          imported_at?: string;
+          prevention_plans?: Json;
+          radon_class?: number | null;
+          risks?: Json;
+          seismic_zone?: number | null;
+          source_url?: string;
+          zoning_checked_at?: string | null;
+        };
+        Relationships: [];
       };
       data_refresh_requests: {
         Row: {
@@ -8226,6 +8369,42 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      reference_communes: {
+        Row: {
+          code_insee: string;
+          department_code: string;
+          imported_at: string;
+          latitude: number | null;
+          longitude: number | null;
+          name: string;
+          name_normalized: string;
+          postal_codes: string[];
+          source_url: string;
+        };
+        Insert: {
+          code_insee: string;
+          department_code: string;
+          imported_at?: string;
+          latitude?: number | null;
+          longitude?: number | null;
+          name: string;
+          name_normalized: string;
+          postal_codes?: string[];
+          source_url: string;
+        };
+        Update: {
+          code_insee?: string;
+          department_code?: string;
+          imported_at?: string;
+          latitude?: number | null;
+          longitude?: number | null;
+          name?: string;
+          name_normalized?: string;
+          postal_codes?: string[];
+          source_url?: string;
+        };
+        Relationships: [];
       };
       referenced_lawyer_coverage: {
         Row: {

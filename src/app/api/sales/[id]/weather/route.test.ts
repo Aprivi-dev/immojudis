@@ -7,12 +7,11 @@ const mocks = vi.hoisted(() => ({
   weather: vi.fn(),
   assertPublicationVisible: vi.fn(),
   enforceUser: vi.fn(),
-  tryConsume: vi.fn(),
+  resolveCommune: vi.fn(),
 }));
 
 vi.mock("@/lib/rate-limit", () => ({
   enforceUserRateLimit: mocks.enforceUser,
-  tryConsumeUserRateLimit: mocks.tryConsume,
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -20,8 +19,14 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 
-vi.mock("@/lib/meteostat", () => ({
-  getMeteostatHistoricalWeather: mocks.weather,
+vi.mock("@/lib/climate-history.server", () => ({
+  getClimateHistory: mocks.weather,
+}));
+
+vi.mock("@/lib/commune-risks.server", () => ({
+  resolveSaleCommune: mocks.resolveCommune,
+  validCoordinates: (latitude: unknown, longitude: unknown) =>
+    typeof latitude === "number" && typeof longitude === "number",
 }));
 
 vi.mock("@/lib/property-reports", () => ({
@@ -37,18 +42,26 @@ import { GET } from "./route";
 const saleId = "11111111-1111-4111-8111-111111111111";
 const readyWeather = {
   status: "ready",
-  source: "Meteostat",
-  sourceUrl: "https://dev.meteostat.net/api/point/monthly.html",
   year: 2025,
-  grid: { latitude: 44.84, longitude: -0.58 },
+  normalPeriod: { startYear: 2016, endYear: 2024 },
+  stations: { temperature: null, precipitation: null, sunshine: null },
   months: [],
-  coverage: { observedMonths: 0, expectedMonths: 12 },
-  unsupportedMetrics: ["humidity", "uvIndex"],
-  fetchedAt: "2026-10-06T10:00:00.000Z",
-  stale: false,
+  summary: {},
+  normal: {},
+  locationSource: "listing",
+  sourceUrl: "https://meteo.data.gouv.fr/",
 } as const;
 
-function setup(sale: { id: string; latitude: number | null; longitude: number | null } | null) {
+type SaleRow = {
+  id: string;
+  latitude: number | null;
+  longitude: number | null;
+  city?: string | null;
+  postal_code?: string | null;
+  department?: string | null;
+};
+
+function setup(sale: SaleRow | null) {
   const query = {
     select: vi.fn(),
     eq: vi.fn(),
@@ -63,17 +76,6 @@ function setup(sale: { id: string; latitude: number | null; longitude: number | 
   return { query, from, auth };
 }
 
-function setupQuery() {
-  const query = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn() };
-  query.select.mockReturnValue(query);
-  query.eq.mockReturnValue(query);
-  query.maybeSingle.mockResolvedValue({
-    data: { id: saleId, latitude: 44.8378, longitude: -0.5792 },
-    error: null,
-  });
-  return query;
-}
-
 const request = () => new Request(`https://example.test/api/sales/${saleId}/weather`);
 const context = { params: Promise.resolve({ id: saleId }) };
 
@@ -82,11 +84,10 @@ beforeEach(() => {
   mocks.assertEntitlement.mockResolvedValue({ plan: "analyse" });
   mocks.weather.mockResolvedValue(readyWeather);
   mocks.enforceUser.mockResolvedValue(1);
-  mocks.tryConsume.mockResolvedValue(true);
 });
 
 describe("sale weather route", () => {
-  it("returns the provider result for a visible geocoded sale", async () => {
+  it("returns the Météo-France history for a visible geocoded sale", async () => {
     const { query, auth } = setup({ id: saleId, latitude: 44.8378, longitude: -0.5792 });
 
     const response = await GET(request(), context);
@@ -99,25 +100,44 @@ describe("sale weather route", () => {
       "property.weatherHistory",
       "Historique météo réservé au plan Analyse.",
     );
-    expect(query.select).toHaveBeenCalledWith("id,latitude,longitude");
-    expect(mocks.weather).toHaveBeenCalledWith(44.8378, -0.5792, {
-      beforeUpstreamFetch: expect.any(Function),
-    });
+    expect(query.select).toHaveBeenCalledWith("id,latitude,longitude,city,postal_code,department");
+    expect(mocks.weather).toHaveBeenCalledWith(44.8378, -0.5792, { locationSource: "listing" });
+    expect(mocks.resolveCommune).not.toHaveBeenCalled();
     expect(mocks.assertPublicationVisible).toHaveBeenCalledWith(saleId);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
-  it("returns a structured unavailable state when coordinates are missing", async () => {
+  it("falls back to the commune centre when the listing has no coordinates", async () => {
+    setup({ id: saleId, latitude: null, longitude: null, city: "Bordeaux", postal_code: "33000" });
+    mocks.resolveCommune.mockResolvedValue({
+      code: "33063",
+      name: "Bordeaux",
+      latitude: 44.8572,
+      longitude: -0.5874,
+    });
+
+    const response = await GET(request(), context);
+
+    expect(response.status).toBe(200);
+    expect(mocks.resolveCommune).toHaveBeenCalledWith({
+      latitude: null,
+      longitude: null,
+      city: "Bordeaux",
+      postalCode: "33000",
+      department: null,
+    });
+    expect(mocks.weather).toHaveBeenCalledWith(44.8572, -0.5874, { locationSource: "commune" });
+  });
+
+  it("returns a structured unavailable state when the sale cannot be located", async () => {
     setup({ id: saleId, latitude: null, longitude: null });
+    mocks.resolveCommune.mockResolvedValue(null);
 
     const response = await GET(request(), context);
     const payload = await response.json();
 
     expect(response.status).toBe(200);
-    expect(payload.weather).toMatchObject({
-      status: "unavailable",
-      reason: "coordinates_missing",
-    });
+    expect(payload.weather).toEqual({ status: "unavailable", reason: "location_missing" });
     expect(mocks.weather).not.toHaveBeenCalled();
   });
 
@@ -131,7 +151,7 @@ describe("sale weather route", () => {
     expect(mocks.assertPublicationVisible).not.toHaveBeenCalled();
   });
 
-  it("returns 403 for Découverte before the sale or Meteostat quota path", async () => {
+  it("returns 403 for Découverte before reading the sale", async () => {
     const { from, auth } = setup({ id: saleId, latitude: 44.8378, longitude: -0.5792 });
     mocks.assertEntitlement.mockRejectedValue(
       new Error("Historique météo réservé au plan Analyse."),
@@ -172,27 +192,6 @@ describe("sale weather route", () => {
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("37");
     expect(mocks.weather).not.toHaveBeenCalled();
-  });
-
-  it("charges only upstream cache misses to the 5-per-day Meteostat budget", async () => {
-    setup({ id: saleId, latitude: 44.8378, longitude: -0.5792 });
-    mocks.auth.mockResolvedValue({
-      userId: "user-1",
-      supabase: { from: vi.fn().mockReturnValue(setupQuery()) },
-    });
-    await GET(request(), context);
-
-    expect(mocks.tryConsume).not.toHaveBeenCalled();
-    const options = mocks.weather.mock.calls[0]?.[2] as {
-      beforeUpstreamFetch: () => Promise<boolean>;
-    };
-    await options.beforeUpstreamFetch();
-    expect(mocks.tryConsume).toHaveBeenCalledWith({
-      userId: "user-1",
-      bucketKey: "sales.weather.upstream",
-      limit: 5,
-      windowSeconds: 86_400,
-    });
   });
 
   it("rejects malformed ids before authentication", async () => {

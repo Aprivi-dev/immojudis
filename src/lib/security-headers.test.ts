@@ -80,7 +80,6 @@ describe("strict nonce-based CSP", () => {
         "https://js.stripe.com",
         "https://hooks.stripe.com",
         "https://www.google.com",
-        "https://climascore.fr",
         "https://sgpakxtyvenlpeihuucm.supabase.co",
       ]),
     );

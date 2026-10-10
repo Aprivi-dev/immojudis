@@ -11,6 +11,7 @@ import type { BidSimulationSnapshot } from "@/components/BidCeilingAssistant";
 import { useAuth } from "@/hooks/use-auth";
 import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
 import { ListingWeatherHistory } from "@/components/sale-detail/ListingWeatherHistory";
+import { EXAMPLE_COMMUNE_RISKS } from "@/lib/example-commune-risks";
 import { SaleProcedurePanel } from "@/components/SaleProcedurePanel";
 import { ProfessionalPilotLauncher } from "@/components/ProfessionalPilotLauncher";
 import { buildTribunalPilot } from "@/lib/professional-pilot-tribunal";
@@ -616,18 +617,20 @@ function SaleDetailWorkspace({
                 }
               />
               <ListingEnvironmentalRisks
-                city={
-                  getAiReviewFieldResult(
+                saleId={sale.id}
+                demoProfile={publicDemo ? EXAMPLE_COMMUNE_RISKS : undefined}
+                enabled={
+                  !getAiReviewFieldResult(
                     resolvedAiReviewProjections,
                     "property.city",
                     aiReviewStatus,
-                  ).blocked
-                    ? null
-                    : displaySale.city
+                  ).blocked &&
+                  Boolean(
+                    displaySale.city || displaySale.postal_code || listingCoordinates(displaySale),
+                  )
                 }
-                postalCode={displaySale.postal_code}
               />
-              {!publicDemo && listingCoordinates(displaySale) ? (
+              {!publicDemo ? (
                 <ListingWeatherHistory
                   key={`${user?.id ?? "guest"}:${sale.id}`}
                   saleId={sale.id}
