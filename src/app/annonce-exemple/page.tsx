@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { getExampleSaleRecords, isExampleSaleKey } from "@/lib/example-sale";
-import { ExampleSalePage } from "@/routes/annonce-exemple";
+import { ExampleSalePage } from "./example-sale-page";
 
 // Indexed on purpose: it is the public illustration of what the offers add. The
 // "Exemple fictif" banner and the absence of structured data keep it from being
