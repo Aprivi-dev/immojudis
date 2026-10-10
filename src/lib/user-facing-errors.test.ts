@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const SRC = join(process.cwd(), "src");
 // La console d'administration est réservée à l'équipe : elle garde les détails techniques.
-const EXCLUDED = ["components/admin/", "routes/admin", "app/api/"];
+const EXCLUDED = ["components/admin/", "app/admin/", "app/api/"];
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

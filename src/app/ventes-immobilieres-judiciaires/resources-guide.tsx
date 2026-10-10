@@ -1,6 +1,4 @@
-"use client";
-
-import { createFileRoute, Link } from "@/lib/router-compat";
+import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import { SaleTypesOverview } from "@/components/SaleTypesOverview";
@@ -188,10 +186,6 @@ const FAQ_JSON_LD = {
   })),
 };
 
-export const Route = createFileRoute("/ventes-immobilieres-judiciaires")({
-  component: ResourcesPage,
-});
-
 export function ResourcesPage() {
   return (
     <main id="contenu" className="liquid-page min-h-screen bg-background pb-24 text-foreground">
@@ -202,7 +196,7 @@ export function ResourcesPage() {
 
       <article className="mx-auto max-w-5xl px-4 pt-10 sm:px-6">
         <Link
-          to="/ressources"
+          href="/ressources"
           className="mb-6 inline-flex text-sm text-gold-text underline underline-offset-4"
         >
           ← Tous les articles du blog
@@ -798,7 +792,7 @@ export function ResourcesPage() {
             votre limite.
           </p>
           <Link
-            to="/sales"
+            href="/sales"
             className="liquid-button mt-6 inline-flex items-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] transition hover:brightness-105"
           >
             Accéder aux ventes référencées <ArrowRight className="h-4 w-4" />

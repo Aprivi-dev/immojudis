@@ -11,7 +11,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/use-auth";
-import { Link, useNavigate } from "@/lib/router-compat";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { pathWithSearch } from "@/lib/navigation";
 import {
   fetchAccessPlan,
   fetchBillingOffer,
@@ -36,7 +38,7 @@ export function BillingActions({
   hideHelper?: boolean;
 }) {
   const { user, loading } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const [plan, setPlan] = useState<PlanCode | null>(null);
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
   const [hasStripeCustomer, setHasStripeCustomer] = useState(false);
@@ -87,18 +89,18 @@ export function BillingActions({
     };
   }, [user]);
 
-  async function redirectToLogin() {
+  function redirectToLogin() {
     const redirect =
       typeof window !== "undefined"
         ? `${window.location.pathname}${window.location.search}`
         : "/offres";
-    await navigate({ to: "/login", search: { redirect } });
+    router.push(pathWithSearch("/login", { redirect }));
   }
 
   async function openCheckoutReview() {
     if (loading || busy || !checkoutAvailable || !offerConfigured) return;
     if (!user) {
-      await redirectToLogin();
+      redirectToLogin();
       return;
     }
 
@@ -138,7 +140,7 @@ export function BillingActions({
   async function openPortal() {
     if (loading || busy) return;
     if (!user) {
-      await redirectToLogin();
+      redirectToLogin();
       return;
     }
 
@@ -211,7 +213,7 @@ export function BillingActions({
         <p role="status" className="mt-3 text-sm leading-relaxed text-brand-navy/80">
           Les souscriptions sont temporairement indisponibles. Vous pouvez explorer gratuitement le
           catalogue.{" "}
-          <Link to="/legal" className="underline">
+          <Link href="/legal" className="underline">
             Voir les mentions légales
           </Link>
           .
@@ -264,7 +266,7 @@ export function BillingActions({
             <span>
               J’accepte les{" "}
               <Link
-                to="/conditions-generales"
+                href="/conditions-generales"
                 target="_blank"
                 className="font-semibold text-gold-text underline"
               >
@@ -288,7 +290,7 @@ export function BillingActions({
               avoir reçu l’information sur mon droit de 14 jours et sur le montant proportionnel
               éventuellement dû pour le service déjà fourni. La{" "}
               <Link
-                to="/privacy"
+                href="/privacy"
                 target="_blank"
                 className="font-semibold text-gold-text underline"
               >

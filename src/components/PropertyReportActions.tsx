@@ -7,7 +7,8 @@ import Pencil from "lucide-react/dist/esm/icons/pencil.js";
 import Save from "lucide-react/dist/esm/icons/save.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import { toast } from "sonner";
-import { useNavigate } from "@/lib/router-compat";
+import { useRouter } from "next/navigation";
+import { pathWithSearch } from "@/lib/navigation";
 import {
   disablePropertyReportShare,
   enablePropertyReportShare,
@@ -72,7 +73,7 @@ function PropertyReportWorkspace({
   simulation?: ReportSimulation;
   requireSimulation: boolean;
 }) {
-  const navigate = useNavigate();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -194,7 +195,7 @@ function PropertyReportWorkspace({
       typeof window !== "undefined"
         ? `${window.location.pathname}${window.location.search}`
         : "/sales";
-    navigate({ to: "/login", search: { redirect } });
+    router.push(pathWithSearch("/login", { redirect }));
     return false;
   };
 

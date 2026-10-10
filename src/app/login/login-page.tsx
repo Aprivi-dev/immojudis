@@ -1,6 +1,7 @@
 "use client";
 
-import { createFileRoute, Link, useNavigate } from "@/lib/router-compat";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import BriefcaseBusiness from "lucide-react/dist/esm/icons/briefcase-business.js";
@@ -22,27 +23,25 @@ import {
   type AccountType,
   type ProfessionalRole,
 } from "@/lib/account";
-import { loginPageMode, type LoginPageMode } from "@/lib/navigation";
+import { loginPageMode, searchParamsToRecord, type LoginPageMode } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { postAuthDestination } from "@/lib/onboarding";
 import { userMessage } from "@/lib/user-messages";
-
-export const Route = createFileRoute("/login")({
-  validateSearch: (search: Record<string, unknown>): LoginSearch => {
-    const redirect = safeRedirect(search.redirect);
-    const mode = loginPageMode(search.mode);
-    return {
-      ...(redirect ? { redirect } : {}),
-      ...(mode !== "login" ? { mode } : {}),
-    };
-  },
-  component: LoginPage,
-});
 
 type LoginSearch = {
   redirect?: string;
   mode?: Exclude<LoginPageMode, "login">;
 };
+
+/** Keeps only a same-site `redirect` and a known `mode` from the query string. */
+function parseLoginSearch(search: Record<string, unknown>): LoginSearch {
+  const redirect = safeRedirect(search.redirect);
+  const mode = loginPageMode(search.mode);
+  return {
+    ...(redirect ? { redirect } : {}),
+    ...(mode !== "login" ? { mode } : {}),
+  };
+}
 
 type LoginMode = LoginPageMode;
 
@@ -78,8 +77,14 @@ const modeCopy: Record<
 
 export function LoginPage() {
   const { user, profile, loading } = useAuth();
-  const { redirect, mode: requestedMode } = Route.useSearch();
-  const navigate = useNavigate();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const { redirect, mode: requestedMode } = useMemo(
+    () => parseLoginSearch(searchParamsToRecord(new URLSearchParams(queryString))),
+    [queryString],
+  );
   const mode: LoginMode = requestedMode ?? "login";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -104,8 +109,17 @@ export function LoginPage() {
   );
 
   useEffect(() => {
-    if (user && !loading) navigate({ to: postAuthTarget });
-  }, [loading, navigate, postAuthTarget, user]);
+    if (user && !loading) router.push(postAuthTarget);
+  }, [loading, postAuthTarget, router, user]);
+
+  /** Switches the form mode and keeps the rest of the query string (the `redirect`). */
+  function switchMode(next: LoginMode) {
+    const params = new URLSearchParams(queryString);
+    if (next === "login") params.delete("mode");
+    else params.set("mode", next);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -208,37 +222,13 @@ export function LoginPage() {
 
         <section className="glass-shell rounded-lg p-6 sm:p-8">
           <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-1">
-            <ModeButton
-              active={mode === "login"}
-              onClick={() =>
-                navigate({
-                  search: (previous) => ({ ...previous, mode: undefined }),
-                  replace: true,
-                })
-              }
-            >
+            <ModeButton active={mode === "login"} onClick={() => switchMode("login")}>
               Se connecter
             </ModeButton>
-            <ModeButton
-              active={mode === "investor"}
-              onClick={() =>
-                navigate({
-                  search: (previous) => ({ ...previous, mode: "investor" }),
-                  replace: true,
-                })
-              }
-            >
+            <ModeButton active={mode === "investor"} onClick={() => switchMode("investor")}>
               Créer un compte
             </ModeButton>
-            <ModeButton
-              active={mode === "professional"}
-              onClick={() =>
-                navigate({
-                  search: (previous) => ({ ...previous, mode: "professional" }),
-                  replace: true,
-                })
-              }
-            >
+            <ModeButton active={mode === "professional"} onClick={() => switchMode("professional")}>
               Professionnel
             </ModeButton>
           </div>
@@ -369,7 +359,7 @@ export function LoginPage() {
 
             {!isSignup ? (
               <div className="pb-2 text-right">
-                <Link to="/mot-de-passe-oublie" className="text-sm underline">
+                <Link href="/mot-de-passe-oublie" className="text-sm underline">
                   Mot de passe oublié ?
                 </Link>
               </div>
@@ -393,11 +383,11 @@ export function LoginPage() {
             {isSignup ? (
               <p className="text-center text-xs leading-relaxed text-muted-foreground">
                 En créant un compte, vous acceptez les{" "}
-                <Link to="/conditions-generales" className="underline">
+                <Link href="/conditions-generales" className="underline">
                   conditions générales
                 </Link>{" "}
                 et la{" "}
-                <Link to="/privacy" className="underline">
+                <Link href="/privacy" className="underline">
                   politique de confidentialité
                 </Link>
                 .
@@ -406,7 +396,7 @@ export function LoginPage() {
           </form>
 
           <div className="mt-6 border-t border-white/10 pt-4 text-center text-xs text-muted-foreground">
-            <Link to="/" className="hover:text-foreground">
+            <Link href="/" className="hover:text-foreground">
               Retour à la présentation
             </Link>
           </div>

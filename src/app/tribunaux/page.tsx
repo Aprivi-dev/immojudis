@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { TribunalsPage } from "@/routes/tribunaux";
+import { TribunalJudicialActivityExplorer } from "@/components/TribunalJudicialActivityExplorer";
 
 export const metadata: Metadata = {
   title: "Statistiques Tribunaux",
@@ -10,5 +10,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <TribunalsPage />;
+  return <TribunalJudicialActivityExplorer />;
 }

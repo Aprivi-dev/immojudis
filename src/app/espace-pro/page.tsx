@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ProfessionalWorkspacePage } from "@/routes/espace-pro";
+import { ProfessionalWorkspacePage } from "./professional-workspace-page";
 
 export const metadata: Metadata = {
   title: "Espace pro",

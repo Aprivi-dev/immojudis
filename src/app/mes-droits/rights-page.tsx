@@ -7,15 +7,11 @@ import Send from "lucide-react/dist/esm/icons/send.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useState } from "react";
 import { toast } from "sonner";
-import { createFileRoute, Link } from "@/lib/router-compat";
+import Link from "next/link";
 import { createPrivacyRequestClient, fetchPrivacyRequests } from "@/lib/client-api";
 import type { PrivacyRequestType } from "@/lib/privacy-requests";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
-
-export const Route = createFileRoute("/mes-droits")({
-  component: RightsPage,
-});
 
 const requestOptions: Array<{ value: PrivacyRequestType; label: string; detail: string }> = [
   {
@@ -143,11 +139,11 @@ export function RightsPage() {
             </button>
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
               Consultez la{" "}
-              <Link to="/privacy" className="text-gold-text underline">
+              <Link href="/privacy" className="text-gold-text underline">
                 politique de confidentialité
               </Link>{" "}
               et les{" "}
-              <Link to="/conditions-generales" className="text-gold-text underline">
+              <Link href="/conditions-generales" className="text-gold-text underline">
                 conditions générales
               </Link>
               .

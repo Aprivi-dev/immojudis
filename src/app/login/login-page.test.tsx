@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   search: {} as { mode?: "investor" | "professional"; redirect?: string },
+  replace: vi.fn(),
   signIn: vi.fn(),
   signUp: vi.fn(),
   toastError: vi.fn(),
@@ -20,20 +20,13 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: mocks.toastError } }));
-vi.mock("@/lib/router-compat", () => ({
-  createFileRoute: () => (options: Record<string, unknown>) => ({
-    ...options,
-    useSearch: () => mocks.search,
-  }),
-  useNavigate: () => vi.fn(),
-  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
-    <a href={to} {...props}>
-      {children}
-    </a>
-  ),
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/login",
+  useRouter: () => ({ push: vi.fn(), replace: mocks.replace, refresh: vi.fn(), back: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(mocks.search),
 }));
 
-import { LoginPage } from "./login";
+import { LoginPage } from "./login-page";
 
 beforeEach(() => {
   mocks.search = {};
@@ -103,5 +96,35 @@ describe("login page", () => {
     expect(field.type).toBe("password");
     fireEvent.click(screen.getByRole("button", { name: "Afficher le mot de passe" }));
     expect(field.type).toBe("text");
+  });
+
+  it("change de mode en gardant l'adresse de retour dans la requête", () => {
+    mocks.search = { redirect: "/sales?city=Bordeaux" };
+    render(<LoginPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Créer un compte" }));
+    expect(mocks.replace).toHaveBeenLastCalledWith(
+      "/login?redirect=%2Fsales%3Fcity%3DBordeaux&mode=investor",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Professionnel" }));
+    expect(mocks.replace).toHaveBeenLastCalledWith(
+      "/login?redirect=%2Fsales%3Fcity%3DBordeaux&mode=professional",
+    );
+  });
+
+  it("revient au mode connexion en retirant seulement le paramètre mode", () => {
+    mocks.search = { mode: "investor", redirect: "/sales" };
+    render(<LoginPage />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Se connecter" })[0]);
+    expect(mocks.replace).toHaveBeenLastCalledWith("/login?redirect=%2Fsales");
+  });
+
+  it("ignore une adresse de retour extérieure au site", () => {
+    mocks.search = { redirect: "https://evil.example/phish" };
+    render(<LoginPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Créer un compte" }));
+    // La requête brute est conservée telle quelle ; seule la destination après connexion est filtrée.
+    expect(mocks.replace).toHaveBeenLastCalledWith(
+      "/login?redirect=https%3A%2F%2Fevil.example%2Fphish&mode=investor",
+    );
   });
 });

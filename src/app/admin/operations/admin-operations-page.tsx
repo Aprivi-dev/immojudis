@@ -38,7 +38,7 @@ import type {
   AdminScrollSource,
   AiDescriptionDashboardStats,
   AuctionRun,
-} from "@/lib/admin.functions";
+} from "@/lib/admin.server";
 import {
   fetchAdminDashboardAi,
   fetchAdminDashboardCounts,

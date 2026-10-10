@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => ({
   remove: vi.fn(),
 }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth }));
-vi.mock("@/lib/router-compat", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+}));
 vi.mock("@/lib/client-api", () => ({
   addFavoriteSale: mocks.add,
   removeFavoriteSale: mocks.remove,

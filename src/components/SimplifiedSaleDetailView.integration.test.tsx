@@ -25,23 +25,6 @@ vi.mock("@/lib/client-api", () => ({
   fetchSaleUrbanismeCadastre: vi.fn(),
 }));
 
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({
-    href,
-    to,
-    children,
-    ...props
-  }: {
-    href?: string;
-    to?: string;
-    children: React.ReactNode;
-  }) => (
-    <a href={href ?? to} {...props}>
-      {children}
-    </a>
-  ),
-}));
-
 vi.mock("@/components/FavoriteButton", () => ({
   FavoriteButton: () => <button type="button">Suivre cette vente</button>,
 }));

@@ -1,6 +1,7 @@
 "use client";
 
-import { createFileRoute, Link } from "@/lib/router-compat";
+import Link from "next/link";
+import { saleDetailPath } from "@/lib/navigation";
 import { useQuery } from "@tanstack/react-query";
 import Activity from "lucide-react/dist/esm/icons/activity.js";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
@@ -18,10 +19,6 @@ import type {
   DataQualitySourceCoverage,
 } from "@/lib/data-quality-monitor";
 import { queryKeys } from "@/lib/query-keys";
-
-export const Route = createFileRoute("/admin/quality")({
-  component: AdminQualityPage,
-});
 
 export function AdminQualityPage() {
   const qualityQuery = useQuery({
@@ -310,8 +307,7 @@ function QualityLine({ label, value }: { label: string; value: string }) {
 function WeakSaleLine({ sale }: { sale: DataQualityPrioritySale }) {
   return (
     <Link
-      to="/sales/$id"
-      params={{ id: sale.id }}
+      href={saleDetailPath(sale.id)}
       className="flex items-center justify-between gap-4 py-3 text-sm transition hover:text-gold-text"
     >
       <span className="min-w-0">

@@ -1,5 +1,5 @@
-import type { EnvironmentalContext } from "@/lib/environment.functions";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { EnvironmentalContext } from "@/lib/environmental-context";
+import type { MarketEstimate } from "@/lib/market.server";
 import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { StreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 import type { AuctionSale, SaleRisk } from "@/lib/types";

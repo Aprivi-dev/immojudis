@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ offer: vi.fn() }));
@@ -9,27 +8,7 @@ vi.mock("@/lib/client-billing", () => ({ fetchBillingOffer: mocks.offer }));
 vi.mock("@/components/BillingActions", () => ({
   BillingActions: () => <button>Démarrer l’essai Analyse</button>,
 }));
-vi.mock("@/lib/router-compat", () => ({
-  createFileRoute: () => () => ({}),
-  Link: ({
-    to,
-    href,
-    children,
-    search: _search,
-    ...props
-  }: {
-    to?: string;
-    href?: string;
-    search?: unknown;
-    children: ReactNode;
-  }) => (
-    <a href={href ?? to} {...props}>
-      {children}
-    </a>
-  ),
-}));
-
-import { OffersPage } from "./offres";
+import { OffersPage } from "./offers-page";
 
 beforeEach(() => {
   mocks.offer.mockResolvedValue({

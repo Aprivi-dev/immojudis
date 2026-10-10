@@ -1,12 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { MoreFiltersModal } from "./AdvancedFiltersPanel";
 import { emptySearchDraft } from "./search-page-state";
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
-}));
 afterEach(cleanup);
 
 function Harness() {

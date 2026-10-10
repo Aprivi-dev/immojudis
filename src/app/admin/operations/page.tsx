@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AdminOperationsPage } from "@/routes/admin.operations";
+import { AdminOperationsPage } from "./admin-operations-page";
 
 export const metadata: Metadata = {
   title: "Opérations admin",

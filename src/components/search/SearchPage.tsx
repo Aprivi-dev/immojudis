@@ -9,7 +9,7 @@ import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
-import { useLocation, useNavigate } from "@/lib/router-compat";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   createWatchedZone as createWatchedZoneRequest,
   fetchAccessPlan,
@@ -19,7 +19,7 @@ import {
   fetchSalesStatistics,
 } from "@/lib/client-api";
 import { createAlert, getSaleById } from "@/lib/queries";
-import { OFFERS_PATH, loginPathWithRedirect } from "@/lib/navigation";
+import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { AiReviewProjectionReadModel, AiReviewRequestStatus } from "@/lib/ai-review-guard";
@@ -41,6 +41,7 @@ import {
   mergeSalesSearch,
   salesSearchToUrlRecord,
   type SalesSearchParams,
+  type SalesSearchUrlRecord,
 } from "@/lib/search/search-url-state";
 import {
   fetchSearchCount,
@@ -112,8 +113,19 @@ export function SearchPage({
   search: SalesSearchParams;
   serverSeeded?: boolean;
 }) {
-  const navigate = useNavigate({ from: "/sales" });
-  const currentLocation = useLocation();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const currentHref = queryString ? `${pathname}?${queryString}` : pathname;
+  // The filters live in the URL: updating them rewrites the query string in place, without a
+  // server round trip. Next.js keeps `useSearchParams` in sync with `history.replaceState`.
+  const replaceSearch = useCallback(
+    (record: SalesSearchUrlRecord) => {
+      window.history.replaceState(null, "", pathWithSearch(pathname, record));
+    },
+    [pathname],
+  );
   const { user, loading: authLoading } = useAuth();
   const isPreview = !user;
   const searchRef = useRef(search);
@@ -219,11 +231,11 @@ export function SearchPage({
       const nextRecord = salesSearchToUrlRecord(nextSearch);
       if (stableUrlRecord(currentRecord) === stableUrlRecord(nextRecord)) return;
       ownDraftNavigations.current.add(JSON.stringify(searchToDraft(nextSearch)));
-      navigate({ search: nextRecord, replace: true, shallow: true });
+      replaceSearch(nextRecord);
     }, 320);
 
     return () => window.clearTimeout(timeout);
-  }, [draft, draftSignature, navigate]);
+  }, [draft, draftSignature, replaceSearch]);
 
   useEffect(() => {
     if (!search.aroundAddress) {
@@ -456,19 +468,15 @@ export function SearchPage({
   const updateSearch = useCallback(
     (patch: Partial<SalesSearchParams>) => {
       const next = mergeSalesSearch(searchRef.current, patch);
-      navigate({ search: salesSearchToUrlRecord(next), replace: true, shallow: true });
+      replaceSearch(salesSearchToUrlRecord(next));
     },
-    [navigate],
+    [replaceSearch],
   );
 
   const resetFilters = useCallback(() => {
     setDraft(emptySearchDraft());
-    navigate({
-      search: salesSearchToUrlRecord({ sort: search.sort }),
-      replace: true,
-      shallow: true,
-    });
-  }, [navigate, search.sort]);
+    replaceSearch(salesSearchToUrlRecord({ sort: search.sort }));
+  }, [replaceSearch, search.sort]);
 
   const previousPageRef = useRef(page);
   useEffect(() => {
@@ -553,7 +561,7 @@ export function SearchPage({
     if (!user) {
       // La première alerte est gratuite : on invite à se connecter puis on
       // ramène la personne sur sa recherche.
-      navigate(loginPathWithRedirect(currentLocation.href));
+      router.push(loginPathWithRedirect(currentHref));
       return;
     }
     if (entitlementsLoading || !entitlementsData) {
@@ -562,7 +570,7 @@ export function SearchPage({
     }
     if (alertsLocked) {
       toast.message("Les alertes de cette recherche sont réservées à l'offre Analyse.");
-      navigate(OFFERS_PATH);
+      router.push(OFFERS_PATH);
       return;
     }
     if (activeFiltersCount === 0) {
@@ -633,7 +641,7 @@ export function SearchPage({
 
   async function exportCsv() {
     if (!user) {
-      navigate(loginPathWithRedirect(currentLocation.href));
+      router.push(loginPathWithRedirect(currentHref));
       return;
     }
     if (entitlementsLoading || !entitlementsData) {
@@ -642,7 +650,7 @@ export function SearchPage({
     }
     if (csvExportLocked) {
       toast.message("L'export CSV est réservé à l'offre Analyse.");
-      navigate(OFFERS_PATH);
+      router.push(OFFERS_PATH);
       return;
     }
 
@@ -737,7 +745,7 @@ export function SearchPage({
           <SaleComparisonBar
             key={comparisonScope ?? "loading"}
             items={comparison.items}
-            returnTo={currentLocation.href}
+            returnTo={currentHref}
             userId={user?.id ?? null}
             onRemove={comparison.remove}
             onClear={comparison.clear}
@@ -752,7 +760,7 @@ export function SearchPage({
           ) : null}
           <SearchResultsList
             sales={displayedSales}
-            returnTo={currentLocation.href}
+            returnTo={currentHref}
             locked={isPreview}
             analysisLocked={isDiscovery}
             isLoading={isInitialLoading}

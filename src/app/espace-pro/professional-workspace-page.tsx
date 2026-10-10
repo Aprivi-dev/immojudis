@@ -13,7 +13,8 @@ import Mail from "lucide-react/dist/esm/icons/mail.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, Link } from "@/lib/router-compat";
+import Link from "next/link";
+import { pathWithSearch } from "@/lib/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import {
   getAccountType,
@@ -30,10 +31,6 @@ import {
 } from "@/lib/publication-requests-client";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
-
-export const Route = createFileRoute("/espace-pro")({
-  component: ProfessionalWorkspacePage,
-});
 
 export function ProfessionalWorkspacePage() {
   const { user, profile, loading } = useAuth();
@@ -77,8 +74,7 @@ export function ProfessionalWorkspacePage() {
         description="Votre espace rassemble les demandes de publication envoyées depuis votre compte et les ventes validées."
       >
         <Link
-          to="/login"
-          search={{ mode: "professional", redirect: "/espace-pro" }}
+          href={pathWithSearch("/login", { mode: "professional", redirect: "/espace-pro" })}
           className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
         >
           Se connecter <ArrowRight className="h-4 w-4" />
@@ -95,7 +91,7 @@ export function ProfessionalWorkspacePage() {
         description="Ajoutez et confirmez une adresse email dans votre compte avant de déposer ou suivre une demande de publication."
       >
         <Link
-          to="/login"
+          href="/login"
           className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
         >
           Gérer mon compte <ArrowRight className="h-4 w-4" />
@@ -116,7 +112,7 @@ export function ProfessionalWorkspacePage() {
         description="Contactez Immojudis si votre situation professionnelle a changé ou si vous souhaitez préciser votre demande."
       >
         <Link
-          to="/contact"
+          href="/contact"
           className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold-text hover:border-gold"
         >
           Contacter Immojudis <ArrowRight className="h-4 w-4" />
@@ -133,8 +129,7 @@ export function ProfessionalWorkspacePage() {
         description="Les avocats, notaires, commissaires de justice et tribunaux peuvent demander la publication et suivre leurs dossiers ici."
       >
         <Link
-          to="/login"
-          search={{ mode: "professional", redirect: "/espace-pro" }}
+          href={pathWithSearch("/login", { mode: "professional", redirect: "/espace-pro" })}
           className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
         >
           Demander un accès pro <ArrowRight className="h-4 w-4" />
@@ -202,7 +197,7 @@ export function ProfessionalWorkspacePage() {
                 </span>
               ) : (
                 <Link
-                  to="/publish"
+                  href="/publish"
                   className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.14em] text-gold-text hover:border-gold"
                 >
                   Nouvelle demande <ArrowRight className="h-3.5 w-3.5" />
@@ -256,7 +251,7 @@ export function ProfessionalWorkspacePage() {
                   </p>
                 ) : (
                   <Link
-                    to="/publish"
+                    href="/publish"
                     className="mt-4 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-gold-text underline"
                   >
                     Préparer un dépôt <ArrowRight className="h-3.5 w-3.5" />

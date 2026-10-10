@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import type { AnchorHTMLAttributes } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,21 +10,6 @@ const mocks = vi.hoisted(() => ({ fetch: vi.fn(), action: vi.fn() }));
 vi.mock("@/lib/client-api", () => ({
   fetchAdminCatalogueReadiness: mocks.fetch,
   runAdminCatalogueReadinessActionClient: mocks.action,
-}));
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({
-    to,
-    params,
-    children,
-    ...props
-  }: AnchorHTMLAttributes<HTMLAnchorElement> & {
-    to: string;
-    params?: Record<string, string>;
-  }) => (
-    <a href={params?.id ? `/sales/${params.id}` : to} {...props}>
-      {children}
-    </a>
-  ),
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 

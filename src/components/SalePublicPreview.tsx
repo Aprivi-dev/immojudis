@@ -9,8 +9,8 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { formatPrice } from "@/lib/format";
-import { saleDetailPath } from "@/lib/navigation";
-import { Link } from "@/lib/router-compat";
+import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
+import Link from "next/link";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
@@ -173,7 +173,7 @@ export function SalePublicPreview({
   return (
     <main id="contenu" className={styles.page}>
       <div className={styles.container}>
-        <Link to={returnTo} className={styles.back}>
+        <Link href={returnTo} className={styles.back}>
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Retour aux ventes
         </Link>
@@ -246,17 +246,16 @@ export function SalePublicPreview({
             </div>
             <div className={styles.actions}>
               <Link
-                to="/login"
-                search={{
+                href={pathWithSearch("/login", {
                   mode: "investor",
                   redirect: `${saleDetailPath(saleId, returnTo)}${requestedHash.startsWith("#") ? requestedHash : ""}`,
-                }}
+                })}
                 className={styles.primary}
               >
                 Voir gratuitement le dossier
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
-              <Link to={returnTo} className={styles.secondary}>
+              <Link href={returnTo} className={styles.secondary}>
                 Continuer ma recherche
               </Link>
             </div>

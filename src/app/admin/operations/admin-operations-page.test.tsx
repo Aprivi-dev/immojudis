@@ -8,8 +8,8 @@ import type {
   AdminDashboardAiData,
   AdminDashboardCountsData,
   AdminDashboardRunsData,
-} from "@/lib/admin.functions";
-import { AdminOperationsPage } from "@/routes/admin.operations";
+} from "@/lib/admin.server";
+import { AdminOperationsPage } from "./admin-operations-page";
 
 const mocks = vi.hoisted(() => ({
   fetchRuns: vi.fn(),
