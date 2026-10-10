@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
+import type { PublicationRequestStatus } from "@/lib/publication-requests-client";
 
 export const PUBLICATION_DOCUMENT_BUCKET = "listing-request-documents" as const;
 export const PUBLICATION_DOCUMENT_URL_TTL_SECONDS = 5 * 60;
@@ -88,7 +89,7 @@ export type PublicationRequestSummary = {
   id: string;
   requesterId: string;
   requesterEmail: string | null;
-  status: Database["public"]["Tables"]["listing_publication_requests"]["Row"]["status"];
+  status: PublicationRequestStatus;
   title: string;
   location: string | null;
   startingPriceEur: number | null;
@@ -338,7 +339,7 @@ function publicationRequestToSummary(row: PublicationRequestRow): PublicationReq
     id: row.id,
     requesterId: row.requester_id,
     requesterEmail: row.requester_email,
-    status: row.status,
+    status: row.status as PublicationRequestStatus,
     title: row.title,
     location: row.location,
     startingPriceEur: row.starting_price_eur,

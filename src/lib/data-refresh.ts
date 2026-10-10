@@ -271,7 +271,7 @@ function rowToRefreshItem(row: DataRefreshRequestRow, reused: boolean): DataRefr
     id: row.id,
     saleId: row.sale_id,
     sourceUrl: row.source_url,
-    kind: row.request_kind,
+    kind: row.request_kind as DataRefreshKind,
     status: row.status,
     priority: row.priority,
     reused,

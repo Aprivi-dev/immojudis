@@ -35,7 +35,9 @@ import {
 } from "@/components/admin/AdminShell";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
-import type { Json, Tables } from "@/integrations/supabase/types";
+import type { PublicationRequest } from "@/lib/admin-publication-requests";
+import type { PublicationRequestStatus as PublicationRequestApiStatus } from "@/lib/publication-requests-client";
+import type { Json } from "@/integrations/supabase/types";
 import {
   fetchAdminDashboard,
   fetchAdminLawyerReferralRequests,
@@ -53,8 +55,7 @@ import {
 
 type RunnerMode = AdminDashboardData["runner"]["mode"];
 export type AdminDashboardView = Exclude<AdminSection, "quality" | "settings">;
-type PublicationRequest = Tables<"listing_publication_requests">;
-type PublicationRequestStatus = PublicationRequest["status"];
+type PublicationRequestStatus = PublicationRequestApiStatus;
 
 type UploadedPublicationDocument = {
   bucket?: string;

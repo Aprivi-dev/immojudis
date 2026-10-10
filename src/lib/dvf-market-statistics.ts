@@ -5,6 +5,7 @@ import type { MarketPropertySegment } from "@/lib/market-estimation-engine";
 
 type StatisticRow = Database["public"]["Tables"]["dvf_market_statistics"]["Row"];
 type StatisticSegment = StatisticRow["segment"];
+export type DvfGeographyLevel = "department" | "epci" | "commune";
 
 export type DvfMarketStatisticLocation = {
   code: string;
@@ -13,7 +14,7 @@ export type DvfMarketStatisticLocation = {
 };
 
 export type DvfMarketStatisticsFallback = {
-  geographyLevel: StatisticRow["geography_level"];
+  geographyLevel: DvfGeographyLevel;
   geographyCode: string;
   geographyLabel: string;
   salesCount: number;
@@ -124,7 +125,7 @@ export function buildDvfMarketStatisticsFallback(input: {
   }
 
   return {
-    geographyLevel: input.row.geography_level,
+    geographyLevel: input.row.geography_level as DvfGeographyLevel,
     geographyCode: input.row.geography_code,
     geographyLabel: input.row.geography_label,
     salesCount: input.row.sales_count,
@@ -141,7 +142,7 @@ export function buildDvfMarketStatisticsFallback(input: {
 }
 
 async function fetchStatistic(
-  geographyLevel: StatisticRow["geography_level"],
+  geographyLevel: DvfGeographyLevel,
   geographyCode: string,
   segment: StatisticSegment,
 ): Promise<StatisticRow | null> {

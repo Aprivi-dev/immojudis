@@ -4,7 +4,11 @@ import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middlew
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Tables } from "@/integrations/supabase/types";
 
-type PublicationRequest = Tables<"listing_publication_requests">;
+type PublicationRequestRow = Tables<"listing_publication_requests">;
+/** Colonne `status` protégée par une contrainte CHECK : le type généré est string. */
+export type PublicationRequest = Omit<PublicationRequestRow, "status"> & {
+  status: "pending" | "approved" | "rejected";
+};
 type PublicationSaleInsert = Database["public"]["Tables"]["auction_sales"]["Insert"] & {
   description?: string | null;
 };
@@ -168,7 +172,7 @@ async function updatePublicationRequestStatus({
 }
 
 async function createPublicationSale(
-  request: PublicationRequest,
+  request: PublicationRequestRow,
 ): Promise<Pick<Database["public"]["Tables"]["auction_sales"]["Row"], "id">> {
   assertPublicationDateIsPublishable(request.hearing_date);
   const sourceUrl = publicationSourceUrl(request.id);
@@ -210,7 +214,7 @@ async function createPublicationSale(
 }
 
 function publicationSalePayload(
-  request: PublicationRequest,
+  request: PublicationRequestRow,
   sourceUrl: string,
 ): PublicationSaleInsert {
   const location = request.location?.trim() || null;
