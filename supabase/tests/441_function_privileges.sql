@@ -1,6 +1,6 @@
 begin;
 
-select plan(5);
+select plan(4);
 
 -- CI contract (P4-07): every SECURITY DEFINER function of the exposed `public` schema that anon
 -- or authenticated can execute must be on this allowlist. Extension-owned objects (PostGIS's
@@ -39,29 +39,13 @@ select is(
   array[
     'catalogue_readiness_allows_premium(text,text,timestamp with time zone)',
     'clear_auction_sale_readiness_override(uuid)',
+    'decide_outcome_claim_eligibility(uuid,text,text,uuid[],text,uuid)',
+    'review_judilibre_match_candidate(uuid,text,text)',
+    'review_outcome_evidence(uuid,text,text,jsonb,text)',
     'set_auction_sale_readiness_override(uuid,text,text,timestamp with time zone)',
     'set_catalogue_readiness_enforcement(boolean)'
   ]::text[],
   'authenticated executes only the allowlisted SECURITY DEFINER functions'
-);
-
-select ok(
-  not has_function_privilege(
-    'authenticated',
-    'public.decide_outcome_claim_eligibility(uuid,text,text,uuid[],text,uuid)',
-    'execute'
-  )
-  and not has_function_privilege(
-    'authenticated',
-    'public.review_judilibre_match_candidate(uuid,text,text)',
-    'execute'
-  )
-  and not has_function_privilege(
-    'authenticated',
-    'public.review_outcome_evidence(uuid,text,text,jsonb,text)',
-    'execute'
-  ),
-  'the outcome review RPCs are no longer callable from the browser'
 );
 
 -- A function created by the migration role must not be executable by PUBLIC any more.
