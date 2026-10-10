@@ -1,0 +1,130 @@
+{
+  "worker": {
+    "tag": "immojudis-workers-cf546459",
+    "commit": "cf54645949d06b961656875025bed93100089a75",
+    "immutableRuleset": 24414021
+  },
+  "web": {
+    "id": "dpl_Da792qSoKJfGdE6FWgRqbEkoYSSM",
+    "url": "immojudis-dezt-pn1nkjje1-antoine-s-projects7.vercel.app",
+    "readyState": "READY",
+    "domain": "https://immojudis.com"
+  },
+  "validation": {
+    "ci": "https://github.com/Aprivi-dev/immojudis/actions/runs/37116760995",
+    "codeql": "https://github.com/Aprivi-dev/immojudis/actions/runs/37116760973",
+    "publicationCanary": "https://github.com/Aprivi-dev/immojudis/actions/runs/37116793832",
+    "python": {
+      "passed": 2229,
+      "skipped": 105
+    },
+    "webTests": {
+      "passed": 1568,
+      "skipped": 3
+    },
+    "smoke": {
+      "testedAt": "2026-10-03T10:39:29.487Z",
+      "results": [
+        {
+          "name": "desktop",
+          "responses": [
+            {
+              "path": "/",
+              "status": 200
+            },
+            {
+              "path": "/sales",
+              "status": 200
+            },
+            {
+              "path": "/annonce-exemple",
+              "status": 200
+            }
+          ],
+          "layout": {
+            "viewport": 1440,
+            "document": 1440
+          },
+          "pageErrors": []
+        },
+        {
+          "name": "mobile",
+          "responses": [
+            {
+              "path": "/",
+              "status": 200
+            },
+            {
+              "path": "/sales",
+              "status": 200
+            },
+            {
+              "path": "/annonce-exemple",
+              "status": 200
+            }
+          ],
+          "layout": {
+            "viewport": 412,
+            "document": 412
+          },
+          "pageErrors": []
+        }
+      ]
+    },
+    "supplementalVenchRun": {
+      "url": "https://github.com/Aprivi-dev/immojudis/actions/runs/37116802947",
+      "status": "cancelled_before_start",
+      "reason": "limit applies after upstream collection; not counted as passed"
+    }
+  },
+  "repairs": {
+    "stalePendingDocumentRowsRemoved": 87,
+    "falseNotarialLabelsCorrected": 99,
+    "explicitCarrezSurfaceSalesCorrected": 1
+  },
+  "databaseCheck": {
+    "checkedAt": "2026-10-03T10:29:12.021883Z",
+    "declaredPairs": 2740,
+    "missingDocuments": 0,
+    "staleAfterCompleteManifest": 0,
+    "falseNotarialLabels": 0,
+    "missingCompletenessProjection": 0
+  },
+  "liveSourceScreenshots": [
+    {
+      "path": "output/playwright/final-audit-2026-10-03/avoventes.png",
+      "sha256": "bb7686a51bc57e452a11eb2167953111e3a01d37b8a8c3eabe4c9f90031c8bea"
+    },
+    {
+      "path": "output/playwright/final-audit-2026-10-03/notaires.png",
+      "sha256": "f480ad587cd406ad0f683b18bc9b95618a1d9cf6c7024448c4a2226e2b1efd03"
+    },
+    {
+      "path": "output/playwright/final-audit-2026-10-03/notaires-description.png",
+      "sha256": "84d6577ecba09f8feba4a13bd25982e27b7d867b852b33e61abf9ee110378d75"
+    },
+    {
+      "path": "output/playwright/final-audit-2026-10-03/cessions-etat.png",
+      "sha256": "50f838e1fe0ea0660005ab95aff56550259507e2cbd990aa97372eb2f433bbfc"
+    }
+  ],
+  "limits": [
+    "Three source pages revisited; all connector fixtures replayed, not every live listing.",
+    "Historical PDFs not all reprocessed.",
+    "Four graphical DPE classes remain unextracted in the previous corpus."
+  ],
+  "lastDatabaseCheck": {
+    "checked_at": "2026-10-03 10:46:30.446844+00",
+    "declared_pairs": 2740,
+    "missing_documents": 0,
+    "stale_documents": 0,
+    "false_notary_labels": 0,
+    "missing_completeness_projection": 0,
+    "arcachon": {
+      "carrez": 117.58,
+      "display": 117.58,
+      "observation": 117,
+      "precisionNote": "117 is the source API rounded observation; source_carrez_aggregate_precision retains the explicit 117.58 total as selected and 117 as the alternative."
+    }
+  }
+}
