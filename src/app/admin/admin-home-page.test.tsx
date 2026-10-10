@@ -5,7 +5,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminDashboardRunsData } from "@/lib/admin.functions";
-import { AdminHomePage } from "@/routes/admin";
+import { AdminHomePage } from "./admin-home-page";
 
 const mocks = vi.hoisted(() => ({ fetchRuns: vi.fn() }));
 
@@ -33,14 +33,6 @@ vi.mock("@/components/admin/AdminShell", () => ({
       {primaryAction}
       {children}
     </main>
-  ),
-}));
-
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => (
-    <a href={to} {...props}>
-      {children}
-    </a>
   ),
 }));
 
