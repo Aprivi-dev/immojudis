@@ -21,7 +21,7 @@ from src.outcome_statistics.models import (
     StatisticsBundle,
     StatisticsSnapshot,
 )
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect as connect_postgres
 
 
 class OutcomeStatisticsRepositoryError(RuntimeError):
@@ -142,7 +142,7 @@ class OutcomeStatisticsRepository:
         self,
         db_url: str,
         *,
-        connect: Callable[[str], Any] = _postgres_connect,
+        connect: Callable[[str], Any] = connect_postgres,
     ) -> None:
         if not db_url.strip():
             raise OutcomeStatisticsRepositoryError("SUPABASE_DB_URL is required")

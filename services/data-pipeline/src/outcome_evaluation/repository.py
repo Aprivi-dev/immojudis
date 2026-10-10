@@ -12,7 +12,7 @@ from typing import Any
 from src.outcome_evaluation.engine import evaluate, validate_public_report
 from src.outcome_evaluation.models import EvaluationConfig, EvaluationInputError, EvaluationRecord, PriceQuantiles
 from src.outcome_evaluation.reporting import build_promotion_summary
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect as connect_postgres
 
 
 class OutcomeEvaluationRepositoryError(RuntimeError):
@@ -402,7 +402,7 @@ class OutcomeEvaluationRepository:
         self,
         db_url: str,
         *,
-        connect: Callable[[str], Any] = _postgres_connect,
+        connect: Callable[[str], Any] = connect_postgres,
     ) -> None:
         if not db_url.strip():
             raise OutcomeEvaluationRepositoryError("SUPABASE_DB_URL is required")

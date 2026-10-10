@@ -54,7 +54,7 @@ def complete_already_verified_detail_job(
     ):
         return None
     try:
-        with storage._postgres_connect(str(db_url), connect_timeout=3, retry_delays=()) as db:
+        with storage.connect(str(db_url), connect_timeout=3, retry_delays=()) as db:
             db.execute("set local lock_timeout='2s'")
             db.execute("set local statement_timeout='3s'")
             db.execute("select pg_advisory_xact_lock(hashtextextended('immojudis:outcome_catalogue_bridge:v1',0))")

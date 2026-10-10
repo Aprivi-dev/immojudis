@@ -77,10 +77,10 @@ def catalogue_writer_lock(
         return
 
     if connect is None:
-        from src.storage.supabase_client import _postgres_connect
+        from src.storage.supabase_client import connect as connect_postgres
 
         def connect(target: str) -> Any:
-            return _postgres_connect(target)
+            return connect_postgres(target)
 
     wait = _lock_wait_seconds() if wait_seconds is None else float(wait_seconds)
     connection = connect(url)

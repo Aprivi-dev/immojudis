@@ -8,14 +8,14 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from src.config import load_settings
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect
 
 
 def main(*, report_only: bool = False) -> int:
     settings = load_settings()
     if not settings.get("supabase_db_url"):
         raise RuntimeError("Pipeline health requires SUPABASE_DB_URL")
-    with _postgres_connect(str(settings["supabase_db_url"])) as connection:
+    with connect(str(settings["supabase_db_url"])) as connection:
         connection.execute("set transaction read only")
         rows = connection.execute("""
             select job_type, status, count(*) as row_count,

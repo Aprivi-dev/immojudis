@@ -9,7 +9,7 @@ import sys
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
@@ -298,8 +298,119 @@ class CollectionIncompleteError(RuntimeError):
     """The observed inventory is insufficient for catalogue maintenance."""
 
 
+@dataclass
+class _PipelineRun:
+    """State shared by the stages of one ``run_pipeline`` call.
+
+    The stages run in a fixed order (see ``run_pipeline``); each one reads what
+    the previous stages stored here and writes its own results back.
+    """
+
+    options: PipelineOptions
+    settings: dict[str, Any]
+    run_id: str | None
+    errors: dict[str, list[str]] = field(default_factory=lambda: {source: [] for source in SOURCE_NAMES})
+    raw_sales: list[dict[str, object]] = field(default_factory=list)
+    raw_by_source: dict[str, int] = field(default_factory=lambda: {source: 0 for source in SOURCE_NAMES})
+    scrape_coverage: dict[str, dict[str, object]] = field(default_factory=dict)
+    timings: dict[str, Any] = field(default_factory=dict)
+    # Collection.
+    known_details: dict[str, dict[str, object]] = field(default_factory=dict)
+    known_signatures: dict[str, str] = field(default_factory=dict)
+    known_payload_urls: set[str] = field(default_factory=set)
+    known_payload_lock: Lock = field(default_factory=Lock)
+    scrape_overall_started: float = 0.0
+    collection_failed: bool = False
+    broken_sources: Any = None
+    coverage_incomplete: bool = False
+    scoped_collection_complete: bool = False
+    skipped_detail: Any = 0
+    # Normalisation.
+    normalized_observations: list[AuctionSale] = field(default_factory=list)
+    canonical_sales: list[AuctionSale] = field(default_factory=list)
+    enriched_hashes: set[str] = field(default_factory=set)
+    current_llm_description_hashes: set[str] = field(default_factory=set)
+    # Enrichment.
+    pdf_stats: PdfEnrichmentStats = field(default_factory=PdfEnrichmentStats)
+    llm_stats: LLMEnrichmentStats = field(default_factory=LLMEnrichmentStats)
+    llm_client: Any = None
+    pdf_workers: int = 1
+    llm_workers: int = 1
+    enrich_started: float = 0.0
+    failed_urls: set[str] = field(default_factory=set)
+    early_upserted: int = 0
+    early_observations_upserted: int = 0
+    app_ready: list[AuctionSale] = field(default_factory=list)
+    early_publication_fingerprints: dict[str, str] = field(default_factory=dict)
+    lifecycle_stats: SaleLifecycleStats = field(default_factory=SaleLifecycleStats)
+    expired_before_enrichment: list[AuctionSale] = field(default_factory=list)
+    enrichment_sales: list[AuctionSale] = field(default_factory=list)
+    cached_llm_display_refreshed: int = 0
+    prompt_version: str = ""
+    pdf_targets: list[AuctionSale] = field(default_factory=list)
+    llm_targets: list[AuctionSale] = field(default_factory=list)
+    cadastre_rows: list[dict[str, object]] = field(default_factory=list)
+    dpe_rows: list[dict[str, object]] = field(default_factory=list)
+    heavy_enrich_skipped: int = 0
+    # Admission, reports and publication.
+    admission_rejected: list[AuctionSale] = field(default_factory=list)
+    expired_rejected: int = 0
+    enriched: list[AuctionSale] = field(default_factory=list)
+    quality_report: Any = None
+    extraction_gap_report: Any = None
+    json_path: Any = None
+    csv_path: Any = None
+    summary: dict[str, Any] = field(default_factory=dict)
+    upserted: int = 0
+    observations_upserted: int = 0
+    final_upserted: int = 0
+    final_observations_upserted: int = 0
+    cadastre_upserted: int = 0
+    dpe_upserted: int = 0
+    supabase_cleaned_past: int = 0
+    supabase_deleted_secondary: int = 0
+    supabase_reconciled_duplicates: int = 0
+    supabase_deleted_expired: int = 0
+    supabase_deleted_vench_without_surface: int = 0
+    outcome_bridge_scanned: int = 0
+    outcome_bridge_created: int = 0
+    outcome_bridge_reused: int = 0
+    publication_failed: bool = False
+
+
 def run_pipeline(options: PipelineOptions | None = None) -> int:
+    """Run one collection, enrichment and publication pass.
+
+    Each numbered stage is a named function; the order below is the order of
+    execution, and stages 2 and 4 can end the run early with exit code 1.
+    """
     options = options or PipelineOptions()
+    run = _open_run(options)
+    if not _load_known_sale_details(run):
+        return 1
+    scrapers = _scrape_sources(run)
+    if not _hydrate_collected_payloads(run):
+        return 1
+    _assess_collection(run, scrapers)
+    _restore_known_unchanged_sales(run)
+    _normalize_and_deduplicate(run)
+    _lookup_incremental_hashes(run)
+    _prepare_and_publish_early(run)
+    _select_enrichment_scope(run)
+    _enrich_pdf_documents(run)
+    _enrich_with_llm(run)
+    _finalize_enriched_sales(run)
+    _apply_admission_and_reports(run)
+    _publish_run(run)
+    _print_run_summary(run)
+    if run.publication_failed:
+        return 1
+    # Publication itself worked: exit 2 is a warning for the workflows.
+    return SOURCE_WARNING_EXIT_CODE if run.broken_sources else 0
+
+
+def _open_run(options: PipelineOptions) -> _PipelineRun:
+    """Stage 1: settings, encheres-publiques gate and run registration."""
     settings = load_settings()
     # Do this before creating a run or looking up catalogue state.  ``all``
     # only enters this gate when its EP benchmark toggle is explicitly on;
@@ -311,12 +422,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         require_encheres_publiques_access(settings)
     run_id = create_run_in_supabase(options.source, options.use_llm, run_id=options.run_id) if options.upsert else None
     register_run(run_id)
-    errors: dict[str, list[str]] = {source: [] for source in SOURCE_NAMES}
-    raw_sales: list[dict[str, object]] = []
-    raw_by_source = {source: 0 for source in SOURCE_NAMES}
-    scrape_coverage: dict[str, dict[str, object]] = {}
-    timings: dict[str, float] = {}
+    return _PipelineRun(options=options, settings=settings, run_id=run_id)
 
+
+def _load_known_sale_details(run: _PipelineRun) -> bool:
+    """Stage 2: sales already known in the database. False when the run was failed."""
+    options = run.options
+    settings = run.settings
     # Données connues en base : Vench s'en sert comme fallback quand la page est
     # paywall/sparse ; la fraîcheur source est indépendante de l’analyse IA.
     try:
@@ -327,30 +439,42 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         )
     except Exception as exc:
         LOGGER.exception("Known enriched sale lookup failed; publication aborted: %s", exc)
-        errors.setdefault("supabase", []).append(str(exc))
-        finish_run_in_supabase(run_id, "failed", {"stage": "known_sale_lookup"}, errors)
-        return 1
-    known_signatures = {
+        run.errors.setdefault("supabase", []).append(str(exc))
+        finish_run_in_supabase(run.run_id, "failed", {"stage": "known_sale_lookup"}, run.errors)
+        return False
+    run.known_details = known_details
+    run.known_signatures = {
         source_url: str(row["_signature"])
         for source_url, row in known_details.items()
         if row.get("_signature") and detail_is_fresh(row, source_url)
     }
-    known_payload_urls: set[str] = (
+    run.known_payload_urls = (
         set(known_details)
         if not settings.get("supabase_db_url")
         else set()
     )
-    known_payload_lock = Lock()
+    return True
 
-    def hydrate_known_payloads(rows: list[dict[str, object]]) -> None:
-        _hydrate_known_payloads_for_rows(
-            rows,
-            known_details,
-            known_payload_urls,
-            fetch_details=fetch_known_sale_details,
-            lock=known_payload_lock,
-        )
 
+def _hydrate_run_payloads(run: _PipelineRun, rows: list[dict[str, object]]) -> None:
+    _hydrate_known_payloads_for_rows(
+        rows,
+        run.known_details,
+        run.known_payload_urls,
+        fetch_details=fetch_known_sale_details,
+        lock=run.known_payload_lock,
+    )
+
+
+def _scrape_sources(run: _PipelineRun) -> dict[str, Callable[..., Any]]:
+    """Stage 3: scrape every enabled source in parallel. Returns the scrapers used."""
+    options = run.options
+    settings = run.settings
+    errors = run.errors
+    timings = run.timings
+    run_id = run.run_id
+    known_signatures = run.known_signatures
+    known_details = run.known_details
     # ── Scraping des sources en parallèle ────────────────────────────────────
     # Chaque source est indépendante (domaine + client HTTP + délai propres), donc
     # on lance un slot parallèle par source. Les slots démarrent chacun un
@@ -367,12 +491,12 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     progressive_publisher = None
     if os.getenv("PIPELINE_AUTONOMOUS_RUN_ID") and options.upsert:
         def publish_progressive(rows: list[dict[str, object]]) -> None:
-            hydrate_known_payloads(rows)
+            _hydrate_run_payloads(run, rows)
             publish_factual_batch(run_id, rows, known_details, errors)
 
         progressive_publisher = publish_progressive
     configure_publisher(progressive_publisher)
-    scrape_overall_started = time.perf_counter()
+    run.scrape_overall_started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=max(1, len(scrapers))) as executor:
         futures = {
             executor.submit(
@@ -396,55 +520,73 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                 continue
             timings[f"scrape_{name}_seconds"] = seconds
             errors.setdefault(name, []).extend(result.errors)
-            raw_by_source[name] = len(result.sales)
-            scrape_coverage[name] = {
+            run.raw_by_source[name] = len(result.sales)
+            run.scrape_coverage[name] = {
                 **result.coverage,
                 "duration_seconds": seconds,
                 "configured_page_limit": _configured_page_limit(name, settings),
             }
             if options.upsert:
                 record_items(run_id, result.sales)
-            raw_sales.extend(result.sales)
+            run.raw_sales.extend(result.sales)
             LOGGER.info("Source complete source=%s rows=%s seconds=%.1f errors=%s", name, len(result.sales), seconds, len(result.errors))
             if options.upsert:
-                _report_collection_progress(run_id, "scraping", raw_by_source, scrape_coverage, timings, errors)
+                _report_collection_progress(run_id, "scraping", run.raw_by_source, run.scrape_coverage, timings, errors)
     flush_publications()
     configure_publisher()
+    return scrapers
+
+
+def _hydrate_collected_payloads(run: _PipelineRun) -> bool:
+    """Stage 4: restore known enrichment payloads on the scraped rows. False when the run was failed."""
     try:
-        hydrate_known_payloads(raw_sales)
+        _hydrate_run_payloads(run, run.raw_sales)
     except Exception as exc:
         LOGGER.exception("Known enrichment payload lookup failed; publication aborted: %s", exc)
-        errors.setdefault("supabase", []).append(str(exc))
-        finish_run_in_supabase(run_id, "failed", {"stage": "known_payload_lookup"}, errors)
-        return 1
-    collection_failed = any(errors.get(name) for name in scrapers)
+        run.errors.setdefault("supabase", []).append(str(exc))
+        finish_run_in_supabase(run.run_id, "failed", {"stage": "known_payload_lookup"}, run.errors)
+        return False
+    return True
+
+
+def _assess_collection(run: _PipelineRun, scrapers: dict[str, Callable[..., Any]]) -> None:
+    """Stage 5: judge the collection (failed sources, coverage)."""
+    errors = run.errors
+    run.collection_failed = any(errors.get(name) for name in scrapers)
     # Judge sources on what collection returned. Errors recorded later (PDF,
     # LLM, publication) are attributed to a source name but are not collection
     # failures.
-    broken_sources = failed_sources(scrapers, raw_by_source, errors)
-    coverage_incomplete = any(item.get("coverage_complete") is False for item in scrape_coverage.values())
-    scoped_collection_complete = bool(
-        options.source == "agrasc"
-        and not collection_failed
-        and scrape_coverage.get("agrasc", {}).get("scoped_inventory_complete") is True
+    run.broken_sources = failed_sources(scrapers, run.raw_by_source, errors)
+    run.coverage_incomplete = any(item.get("coverage_complete") is False for item in run.scrape_coverage.values())
+    run.scoped_collection_complete = bool(
+        run.options.source == "agrasc"
+        and not run.collection_failed
+        and run.scrape_coverage.get("agrasc", {}).get("scoped_inventory_complete") is True
     )
-    timings["scrape_total_seconds"] = round(time.perf_counter() - scrape_overall_started, 2)
+    run.timings["scrape_total_seconds"] = round(time.perf_counter() - run.scrape_overall_started, 2)
 
+
+def _restore_known_unchanged_sales(run: _PipelineRun) -> None:
+    """Stage 6: re-hydrate listings whose detail page was skipped, then apply ``--limit``."""
     # Les scrapers peuvent sauter une fiche détail inchangée. On garde quand
     # même l'annonce dans le flux pour republier les champs app-ready, en
     # l'hydratant avec la dernière version riche connue afin de ne pas écraser
     # Supabase avec les seules données clairsemées de listing.
-    skipped_detail = _hydrate_known_unchanged_sales(raw_sales, known_details)
-    preserved_enrichment = _preserve_known_enrichment_payloads(raw_sales, known_details)
-    timings["known_enrichment_payloads_preserved"] = preserved_enrichment
-    record_source_checks(raw_sales, known_details)
+    run.skipped_detail = _hydrate_known_unchanged_sales(run.raw_sales, run.known_details)
+    preserved_enrichment = _preserve_known_enrichment_payloads(run.raw_sales, run.known_details)
+    run.timings["known_enrichment_payloads_preserved"] = preserved_enrichment
+    record_source_checks(run.raw_sales, run.known_details)
 
-    if options.limit is not None:
-        raw_sales = raw_sales[: options.limit]
+    if run.options.limit is not None:
+        run.raw_sales = run.raw_sales[: run.options.limit]
 
+
+def _normalize_and_deduplicate(run: _PipelineRun) -> None:
+    """Stage 7: normalise each observation and merge duplicates into canonical sales."""
+    run_id = run.run_id
     normalized_observations = []
     started = time.perf_counter()
-    for raw_sale in raw_sales:
+    for raw_sale in run.raw_sales:
         try:
             sale = normalize_sale(raw_sale)
             normalized_observations.append(sale)
@@ -452,12 +594,19 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             LOGGER.exception("Initial normalization failed for %s: %s", raw_sale.get("source_url"), exc)
             record_items(run_id, [raw_sale], decision="normalization_failed", reason=str(exc)[:1000])
             source_name = str(raw_sale.get("source_name") or "unknown")
-            errors.setdefault(source_name, []).append(str(exc))
-    timings["normalize_seconds"] = round(time.perf_counter() - started, 2)
+            run.errors.setdefault(source_name, []).append(str(exc))
+    run.timings["normalize_seconds"] = round(time.perf_counter() - started, 2)
+    run.normalized_observations = normalized_observations
 
-    canonical_sales = merge_duplicate_sales(normalized_observations)
-    record_sale_decisions(run_id, canonical_sales, decision="normalized")
+    run.canonical_sales = merge_duplicate_sales(normalized_observations)
+    record_sale_decisions(run_id, run.canonical_sales, decision="normalized")
 
+
+def _lookup_incremental_hashes(run: _PipelineRun) -> None:
+    """Stage 8: incremental mode, skip only the heavy work already done."""
+    options = run.options
+    settings = run.settings
+    timings = run.timings
     # ── Incrémental : éviter seulement le lourd déjà fait ─────────────────────
     # Les annonces continuent de passer dans la finalisation + upsert pour que
     # les champs récemment collectés (avocat, visites, images, source_blocks,
@@ -465,7 +614,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     enriched_hashes: set[str] = set()
     current_llm_description_hashes: set[str] = set()
     if settings["incremental_enrichment"] and options.upsert and (options.heavy_enrichment or options.use_llm):
-        content_hashes = [sale.content_hash for sale in canonical_sales if sale.content_hash]
+        content_hashes = [sale.content_hash for sale in run.canonical_sales if sale.content_hash]
         if options.heavy_enrichment:
             enriched_hashes = fetch_enriched_content_hashes(
                 content_hashes,
@@ -485,15 +634,27 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             )
         timings["incremental_enriched_hashes"] = len(enriched_hashes)
         timings["incremental_current_llm_hashes"] = len(current_llm_description_hashes)
+    run.enriched_hashes = enriched_hashes
+    run.current_llm_description_hashes = current_llm_description_hashes
 
-    pdf_stats = PdfEnrichmentStats()
-    llm_stats = LLMEnrichmentStats()
-    llm_client = None
 
-    pdf_workers = max(1, int(settings["pipeline_pdf_workers"]))
-    llm_workers = max(1, int(settings["pipeline_llm_workers"]))
-    enrich_started = time.perf_counter()
-    failed_urls: set[str] = set()
+def _prepare_and_publish_early(run: _PipelineRun) -> None:
+    """Stage 9: light finalisation and early publication, 25 listings at a time."""
+    options = run.options
+    settings = run.settings
+    errors = run.errors
+    timings = run.timings
+    run_id = run.run_id
+    canonical_sales = run.canonical_sales
+
+    run.pdf_stats = PdfEnrichmentStats()
+    run.llm_stats = LLMEnrichmentStats()
+    run.llm_client = None
+
+    run.pdf_workers = max(1, int(settings["pipeline_pdf_workers"]))
+    run.llm_workers = max(1, int(settings["pipeline_llm_workers"]))
+    run.enrich_started = time.perf_counter()
+    run.failed_urls = set()
 
     for sale in canonical_sales:
         sale.last_run_id = run_id
@@ -501,11 +662,11 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     # Les ventes doivent être visibles même si PDF/OCR/LLM prend trop longtemps
     # ou échoue. On prépare donc une version exploitable par l'app, puis le lourd
     # ne fait qu'améliorer ces lignes.
-    early_upserted = 0
-    early_observations_upserted = 0
-    app_ready: list[AuctionSale] = []
-    early_publication_fingerprints = {}
-    lifecycle_stats = SaleLifecycleStats()
+    run.early_upserted = 0
+    run.early_observations_upserted = 0
+    run.app_ready = []
+    run.early_publication_fingerprints = {}
+    run.lifecycle_stats = SaleLifecycleStats()
     preparation_seconds = 0.0
     publication_seconds = 0.0
     for offset in range(0, len(canonical_sales), 25):
@@ -522,8 +683,8 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                 LOGGER.exception("Light finalisation failed for %s: %s", sale.source_url, exc)
                 errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
         preparation_seconds += time.perf_counter() - started
-        lifecycle_stats.marked_past += mark_past_sales(batch).marked_past
-        app_ready.extend(batch)
+        run.lifecycle_stats.marked_past += mark_past_sales(batch).marked_past
+        run.app_ready.extend(batch)
         record_sale_decisions(run_id, [sale for sale in batch if is_expired(sale)], decision="expired", reason="retention_deadline_reached_not_evidence_of_sale")
         record_sale_decisions(run_id, [sale for sale in batch if not is_expired(sale) and not has_price_or_surface(sale)], decision="excluded", reason="missing_price_and_surface")
         admitted = [sale for sale in batch if has_price_or_surface(sale) and not is_expired(sale)]
@@ -531,28 +692,36 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         if options.upsert and admitted:
             started = time.perf_counter()
             try:
-                early_upserted += upsert_sales_to_supabase(admitted)
-                early_publication_fingerprints.update(_sale_publication_fingerprints(admitted))
-                early_observations_upserted += upsert_observations_to_supabase(admitted)
+                run.early_upserted += upsert_sales_to_supabase(admitted)
+                run.early_publication_fingerprints.update(_sale_publication_fingerprints(admitted))
+                run.early_observations_upserted += upsert_observations_to_supabase(admitted)
             except Exception as exc:
                 record_sale_decisions(run_id, admitted, decision="publication_failed", reason=str(exc)[:1000])
                 LOGGER.exception("Early Supabase batch failed at offset %s: %s", offset, exc)
                 errors.setdefault("supabase", []).append(str(exc))
             publication_seconds += time.perf_counter() - started
-        LOGGER.info("Collection prepared=%s/%s published=%s", min(offset + 25, len(canonical_sales)), len(canonical_sales), early_upserted)
+        LOGGER.info("Collection prepared=%s/%s published=%s", min(offset + 25, len(canonical_sales)), len(canonical_sales), run.early_upserted)
         if options.upsert:
-            _report_collection_progress(run_id, "publishing", raw_by_source, scrape_coverage, timings, errors,
-                                        prepared=min(offset + 25, len(canonical_sales)), published=early_upserted)
+            _report_collection_progress(run_id, "publishing", run.raw_by_source, run.scrape_coverage, timings, errors,
+                                        prepared=min(offset + 25, len(canonical_sales)), published=run.early_upserted)
     timings["app_ready_seconds"] = round(preparation_seconds, 2)
     timings["early_supabase_seconds"] = round(publication_seconds, 2)
+
+
+def _select_enrichment_scope(run: _PipelineRun) -> None:
+    """Stage 10: pick the sales to enrich and the PDF targets, create the LLM client."""
+    options = run.options
+    settings = run.settings
+    timings = run.timings
     # Expired listings remain counted in the final admission report, but do not
     # consume document, AI or network enrichment before being rejected.
-    expired_before_enrichment = [sale for sale in app_ready if is_expired(sale)]
-    app_ready = [sale for sale in app_ready if not is_expired(sale)]
-    enrichment_sales, skipped_unauthorized = _filter_unauthorized_encheres_publiques_sales(
-        app_ready,
+    run.expired_before_enrichment = [sale for sale in run.app_ready if is_expired(sale)]
+    run.app_ready = [sale for sale in run.app_ready if not is_expired(sale)]
+    run.enrichment_sales, skipped_unauthorized = _filter_unauthorized_encheres_publiques_sales(
+        run.app_ready,
         settings,
     )
+    enrichment_sales = run.enrichment_sales
     timings["enrichment_unauthorized_skipped"] = skipped_unauthorized
 
     # The public description is a lightweight product requirement of every
@@ -562,14 +731,15 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     # entirely of unauthorized EP rows never opens an AI client.
     if options.use_llm and enrichment_sales:
         try:
-            llm_client = create_llm_client()
+            run.llm_client = create_llm_client()
         except LLMClientUnavailable as exc:
             LOGGER.warning("LLM client unavailable: %s", exc)
-            llm_stats.unavailable = True
+            run.llm_stats.unavailable = True
 
     cached_llm_display_refreshed = 0
 
-    prompt_version = str(settings["llm_prompt_version"])
+    run.prompt_version = str(settings["llm_prompt_version"])
+    prompt_version = run.prompt_version
     if options.use_llm:
         for sale in enrichment_sales:
             if refresh_operational_display(sale):
@@ -583,6 +753,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                 prompt_version=prompt_version,
             ):
                 cached_llm_display_refreshed += 1
+    run.cached_llm_display_refreshed = cached_llm_display_refreshed
     timings["llm_display_from_cached_extraction"] = cached_llm_display_refreshed
 
     pdf_targets = (
@@ -590,27 +761,34 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             sale
             for sale in enrichment_sales
             if _needs_structured_heavy_enrichment(sale)
-            and not _heavy_enrichment_already_current(sale, enriched_hashes, use_llm=False)
+            and not _heavy_enrichment_already_current(sale, run.enriched_hashes, use_llm=False)
         ]
         if options.heavy_enrichment
         else []
     )
     pdf_targets_before_limit = len(pdf_targets)
     pdf_targets = _limit_pdf_targets(pdf_targets, settings)
+    run.pdf_targets = pdf_targets
     timings["pdf_targets_before_limit"] = pdf_targets_before_limit
     timings["pdf_targets_deferred"] = max(0, pdf_targets_before_limit - len(pdf_targets))
     print(
         "Pipeline enrichment targets: "
-        f"app_ready={len(app_ready)}, pdf_targets={len(pdf_targets)}, "
+        f"app_ready={len(run.app_ready)}, pdf_targets={len(pdf_targets)}, "
         f"pdf_deferred={timings['pdf_targets_deferred']}, "
         f"cached_llm_display_refreshed={cached_llm_display_refreshed}",
         flush=True,
     )
 
+
+def _enrich_pdf_documents(run: _PipelineRun) -> None:
+    """Stage 11, phase 1: PDF / Docling / OCR (CPU+RAM), moderate concurrency."""
+    options = run.options
+    errors = run.errors
+    pdf_targets = run.pdf_targets
     # ── Phase 1 : PDF / Docling / OCR (CPU+RAM) — concurrence modérée ─────────
     started = time.perf_counter()
     if pdf_targets:
-        with ThreadPoolExecutor(max_workers=pdf_workers) as executor:
+        with ThreadPoolExecutor(max_workers=run.pdf_workers) as executor:
             futures = {
                 executor.submit(_enrich_pdf_target, sale, restore_progress=options.upsert): sale
                 for sale in pdf_targets
@@ -619,7 +797,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                 sale = futures[future]
                 try:
                     item_stats = future.result()
-                    _merge_pdf_stats(pdf_stats, item_stats)
+                    _merge_pdf_stats(run.pdf_stats, item_stats)
                     if options.upsert:
                         _checkpoint_enrichment(sale)
                     if item_stats.errors:
@@ -627,24 +805,34 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                 except Exception as exc:
                     LOGGER.exception("PDF enrichment failed for %s: %s", sale.source_url, exc)
                     errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
-                    failed_urls.add(sale.source_url)
-    timings["pdf_seconds"] = round(time.perf_counter() - started, 2)
+                    run.failed_urls.add(sale.source_url)
+    run.timings["pdf_seconds"] = round(time.perf_counter() - started, 2)
 
+
+def _enrich_with_llm(run: _PipelineRun) -> None:
+    """Stage 11, phase 2: LLM extraction and display descriptions (network), high concurrency."""
+    options = run.options
+    settings = run.settings
+    errors = run.errors
+    timings = run.timings
+    prompt_version = run.prompt_version
+    llm_stats = run.llm_stats
+    llm_client = run.llm_client
     # ── Phase 2 : LLM Replicate (réseau) — forte concurrence ─────────────────
     started = time.perf_counter()
     llm_targets = (
         [
             sale
-            for sale in enrichment_sales
+            for sale in run.enrichment_sales
             if _can_use_paid_llm(sale)
             and (
                 needs_fact_extraction(sale)
                 or (
                     _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
-                    and not _llm_description_already_current(sale, current_llm_description_hashes)
+                    and not _llm_description_already_current(sale, run.current_llm_description_hashes)
                 )
             )
-            and sale.source_url not in failed_urls
+            and sale.source_url not in run.failed_urls
             and not (
                 options.upsert
                 and settings.get("pipeline_enrichment_queue_enabled")
@@ -656,6 +844,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     )
     llm_targets_before_limit = len(llm_targets)
     llm_targets = _limit_llm_targets(llm_targets, settings)
+    run.llm_targets = llm_targets
     timings["llm_targets_before_limit"] = llm_targets_before_limit
     timings["llm_targets_deferred"] = max(0, llm_targets_before_limit - len(llm_targets))
     print(
@@ -665,7 +854,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         flush=True,
     )
     if options.use_llm and llm_client is not None and llm_targets:
-        with ThreadPoolExecutor(max_workers=llm_workers) as executor:
+        with ThreadPoolExecutor(max_workers=run.llm_workers) as executor:
             futures = {
                 executor.submit(
                     enrich_sale_with_llm,
@@ -705,6 +894,14 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
                         errors.setdefault("supabase", []).append(str(exc))
     timings["llm_seconds"] = round(time.perf_counter() - started, 2)
 
+
+def _finalize_enriched_sales(run: _PipelineRun) -> None:
+    """Stage 11, phase 3: final geocoding, tribunal, scoring, cadastre and DPE."""
+    options = run.options
+    settings = run.settings
+    errors = run.errors
+    timings = run.timings
+    app_ready = run.app_ready
     # ── Phase 3 : finition (géocode réseau léger, tribunal, scoring) ─────────
     started = time.perf_counter()
     warm_image_validations(app_ready)
@@ -715,207 +912,211 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             LOGGER.exception("Finalisation failed for %s: %s", sale.source_url, exc)
             errors.setdefault(str(sale.source_name or "unknown"), []).append(str(exc))
     timings["geocode_seconds"] = round(time.perf_counter() - started, 2)
-    cadastre_rows: list[dict[str, object]] = []
+    run.cadastre_rows = []
     if options.upsert and app_ready and bool(settings.get("cadastre_enrich_enabled", False)):
         started = time.perf_counter()
-        cadastre_rows = enrich_cadastre_sales(app_ready, settings=settings)
+        run.cadastre_rows = enrich_cadastre_sales(app_ready, settings=settings)
         timings["cadastre_seconds"] = round(time.perf_counter() - started, 2)
-    timings["cadastre_rows"] = len(cadastre_rows)
-    dpe_rows: list[dict[str, object]] = []
+    timings["cadastre_rows"] = len(run.cadastre_rows)
+    run.dpe_rows = []
     if options.upsert and app_ready and bool(settings.get("dpe_enrich_enabled", False)):
         started = time.perf_counter()
-        dpe_rows = enrich_dpe_sales(app_ready, settings=settings)
+        run.dpe_rows = enrich_dpe_sales(app_ready, settings=settings)
         timings["dpe_seconds"] = round(time.perf_counter() - started, 2)
-    timings["dpe_rows"] = len(dpe_rows)
-    timings["enrich_wall_seconds"] = round(time.perf_counter() - enrich_started, 2)
-    timings["enrich_pdf_workers"] = pdf_workers
-    timings["enrich_llm_workers"] = llm_workers
-    timings["heavy_enrich_targets"] = len(pdf_targets)
-    timings["pdf_targets"] = len(pdf_targets)
-    timings["llm_targets"] = len(llm_targets)
-    heavy_enrich_skipped = len(app_ready) - len(pdf_targets)
-    timings["heavy_enrich_skipped"] = heavy_enrich_skipped
+    timings["dpe_rows"] = len(run.dpe_rows)
+    timings["enrich_wall_seconds"] = round(time.perf_counter() - run.enrich_started, 2)
+    timings["enrich_pdf_workers"] = run.pdf_workers
+    timings["enrich_llm_workers"] = run.llm_workers
+    timings["heavy_enrich_targets"] = len(run.pdf_targets)
+    timings["pdf_targets"] = len(run.pdf_targets)
+    timings["llm_targets"] = len(run.llm_targets)
+    run.heavy_enrich_skipped = len(app_ready) - len(run.pdf_targets)
+    timings["heavy_enrich_skipped"] = run.heavy_enrich_skipped
 
-    admission_rejected = [sale for sale in app_ready if not has_price_or_surface(sale)]
-    for sale in admission_rejected:
+
+def _apply_admission_and_reports(run: _PipelineRun) -> None:
+    """Stage 12: final admission filter, quality reports, local export and run summary."""
+    options = run.options
+    timings = run.timings
+    pdf_stats = run.pdf_stats
+    llm_stats = run.llm_stats
+    app_ready = run.app_ready
+    run.admission_rejected = [sale for sale in app_ready if not has_price_or_surface(sale)]
+    for sale in run.admission_rejected:
         LOGGER.info("Collection admission rejected source=%s url=%s reason=missing_price_and_surface",
                     sale.source_name, sale.source_url)
-    expired_rejected = len(expired_before_enrichment) + sum(is_expired(sale) for sale in app_ready)
-    app_ready = [sale for sale in app_ready if has_price_or_surface(sale) and not is_expired(sale)]
-    admitted_urls = {sale.source_url for sale in app_ready}
-    cadastre_rows = [row for row in cadastre_rows if row.get("source_url") in admitted_urls]
-    dpe_rows = [row for row in dpe_rows if row.get("source_url") in admitted_urls]
-    enriched = app_ready
-    lifecycle_stats.marked_past += mark_past_sales(enriched).marked_past
-    quality_report = build_quality_report(enriched, pdf_stats=pdf_stats, llm_stats=llm_stats)
-    extraction_gap_report = build_extraction_gap_report(enriched)
-    json_path, csv_path = export_sales(enriched)
+    run.expired_rejected = len(run.expired_before_enrichment) + sum(is_expired(sale) for sale in app_ready)
+    run.app_ready = [sale for sale in app_ready if has_price_or_surface(sale) and not is_expired(sale)]
+    admitted_urls = {sale.source_url for sale in run.app_ready}
+    run.cadastre_rows = [row for row in run.cadastre_rows if row.get("source_url") in admitted_urls]
+    run.dpe_rows = [row for row in run.dpe_rows if row.get("source_url") in admitted_urls]
+    run.enriched = run.app_ready
+    enriched = run.enriched
+    run.lifecycle_stats.marked_past += mark_past_sales(enriched).marked_past
+    run.quality_report = build_quality_report(enriched, pdf_stats=pdf_stats, llm_stats=llm_stats)
+    run.extraction_gap_report = build_extraction_gap_report(enriched)
+    run.json_path, run.csv_path = export_sales(enriched)
 
-    upserted = 0
-    observations_upserted = 0
-    final_upserted = 0
-    final_observations_upserted = 0
-    cadastre_upserted = 0
-    dpe_upserted = 0
-    supabase_cleaned_past = 0
-    supabase_deleted_secondary = 0
-    supabase_reconciled_duplicates = 0
-    supabase_deleted_expired = 0
-    supabase_deleted_vench_without_surface = 0
-    outcome_bridge_scanned = 0
-    outcome_bridge_created = 0
-    outcome_bridge_reused = 0
-    publication_failed = False
-    summary = {
-        "admission_rejected_expired": expired_rejected,
-        "admission_rejected_missing_price_and_surface": len(admission_rejected),
-        "collected": len(raw_sales),
-        "collected_by_source": raw_by_source,
-        "scrape_coverage": scrape_coverage,
-        "normalized": len(normalized_observations),
-        "deduplicated": len(canonical_sales),
-        "skipped_detail": skipped_detail,
-        "skipped_unchanged": heavy_enrich_skipped,
+    run.summary = {
+        "admission_rejected_expired": run.expired_rejected,
+        "admission_rejected_missing_price_and_surface": len(run.admission_rejected),
+        "collected": len(run.raw_sales),
+        "collected_by_source": run.raw_by_source,
+        "scrape_coverage": run.scrape_coverage,
+        "normalized": len(run.normalized_observations),
+        "deduplicated": len(run.canonical_sales),
+        "skipped_detail": run.skipped_detail,
+        "skipped_unchanged": run.heavy_enrich_skipped,
         "enriched": len(enriched),
-        "quality_report": quality_report,
-        "extraction_gap_report": extraction_gap_report,
+        "quality_report": run.quality_report,
+        "extraction_gap_report": run.extraction_gap_report,
         "timings": timings,
         "heavy_enrichment_enabled": options.heavy_enrichment,
         "stage_status": {
-            "collection": "failed" if collection_failed else "scoped_complete" if coverage_incomplete and scoped_collection_complete else "partial" if coverage_incomplete else "unverified" if any(item.get("coverage_complete") is None for item in scrape_coverage.values()) else "complete",
+            "collection": "failed" if run.collection_failed else "scoped_complete" if run.coverage_incomplete and run.scoped_collection_complete else "partial" if run.coverage_incomplete else "unverified" if any(item.get("coverage_complete") is None for item in run.scrape_coverage.values()) else "complete",
             "enrichment": "partial" if pdf_stats.errors or llm_stats.errors or llm_stats.unavailable or timings.get("pdf_targets_deferred") or timings.get("llm_targets_deferred") else "complete",
             "publication": "pending",
         },
     }
+
+
+def _publish_run(run: _PipelineRun) -> None:
+    """Stage 13: final upserts, catalogue maintenance and run closing (only with ``--upsert``)."""
+    options = run.options
+    settings = run.settings
+    errors = run.errors
+    timings = run.timings
+    summary = run.summary
+    app_ready = run.app_ready
+    llm_stats = run.llm_stats
     if options.upsert:
         try:
             started = time.perf_counter()
-            final_sales = _sales_changed_since_publication(app_ready, early_publication_fingerprints)
+            final_sales = _sales_changed_since_publication(app_ready, run.early_publication_fingerprints)
             timings["final_supabase_sales_changed"] = len(final_sales)
             if final_sales:
-                final_upserted = upsert_sales_to_supabase(final_sales)
-                final_observations_upserted = upsert_observations_to_supabase(final_sales)
+                run.final_upserted = upsert_sales_to_supabase(final_sales)
+                run.final_observations_upserted = upsert_observations_to_supabase(final_sales)
             if app_ready:
-                if cadastre_rows:
+                if run.cadastre_rows:
                     try:
-                        cadastre_upserted = upsert_cadastre_parcels_to_supabase(cadastre_rows)
+                        run.cadastre_upserted = upsert_cadastre_parcels_to_supabase(run.cadastre_rows)
                     except Exception as exc:
                         LOGGER.exception("Cadastre Supabase upsert failed: %s", exc)
                         errors.setdefault("cadastre", []).append(str(exc))
-                if dpe_rows:
+                if run.dpe_rows:
                     try:
-                        dpe_upserted = upsert_dpe_diagnostics_to_supabase(dpe_rows)
+                        run.dpe_upserted = upsert_dpe_diagnostics_to_supabase(run.dpe_rows)
                     except Exception as exc:
                         LOGGER.exception("DPE Supabase upsert failed: %s", exc)
                         errors.setdefault("dpe", []).append(str(exc))
-            upserted = max(early_upserted, final_upserted)
-            observations_upserted = max(early_observations_upserted, final_observations_upserted)
+            run.upserted = max(run.early_upserted, run.final_upserted)
+            run.observations_upserted = max(run.early_observations_upserted, run.final_observations_upserted)
             # Fail closed before every path below that can delete catalogue
             # rows. The database also rejects deletion of any unbridged sale.
-            if collection_failed or (coverage_incomplete and not scoped_collection_complete):
+            if run.collection_failed or (run.coverage_incomplete and not run.scoped_collection_complete):
                 raise CollectionIncompleteError("Collection incomplete; catalogue cleanup is disabled.")
             # Bounded/source refreshes publish only; all destructive maintenance
             # requires a complete catalogue archive and an unbounded global scan.
             if app_ready and options.source == "all" and options.limit is None:
                 outcome_bridge = bridge_auction_sales_before_cleanup(settings)
-                outcome_bridge_scanned = outcome_bridge.scanned_count
-                outcome_bridge_created = outcome_bridge.created_count
-                outcome_bridge_reused = outcome_bridge.reused_count
-                supabase_deleted_secondary = delete_secondary_sales_in_supabase(app_ready)
+                run.outcome_bridge_scanned = outcome_bridge.scanned_count
+                run.outcome_bridge_created = outcome_bridge.created_count
+                run.outcome_bridge_reused = outcome_bridge.reused_count
+                run.supabase_deleted_secondary = delete_secondary_sales_in_supabase(app_ready)
                 if settings.get("dedupe_reconcile_enabled", True):
-                    supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase(
+                    run.supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase(
                         limit=int(settings.get("dedupe_reconcile_max_rows") or 2000)
                     )
-                supabase_cleaned_past = mark_past_sales_in_supabase()
-                supabase_deleted_expired = delete_expired_sales_in_supabase()
-                supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()
+                run.supabase_cleaned_past = mark_past_sales_in_supabase()
+                run.supabase_deleted_expired = delete_expired_sales_in_supabase()
+                run.supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()
             else:
                 summary["global_cleanup_skipped"] = "targeted_or_bounded_collection"
             timings["supabase_seconds"] = round(time.perf_counter() - started, 2)
             summary.update(
                 {
-                    "upserted": upserted,
-                    "observations_upserted": observations_upserted,
-                    "early_upserted": early_upserted,
-                    "early_observations_upserted": early_observations_upserted,
-                    "final_upserted": final_upserted,
-                    "final_observations_upserted": final_observations_upserted,
-                    "cadastre_upserted": cadastre_upserted,
-                    "dpe_upserted": dpe_upserted,
-                    "outcome_bridge_scanned": outcome_bridge_scanned,
-                    "outcome_bridge_created": outcome_bridge_created,
-                    "outcome_bridge_reused": outcome_bridge_reused,
-                    "marked_past_in_run": lifecycle_stats.marked_past,
-                    "deleted_secondary_sales": supabase_deleted_secondary,
-                    "reconciled_duplicate_sales": supabase_reconciled_duplicates,
-                    "marked_past_in_supabase": supabase_cleaned_past,
-                    "deleted_expired_sales": supabase_deleted_expired,
-                    "deleted_vench_without_surface": supabase_deleted_vench_without_surface,
+                    "upserted": run.upserted,
+                    "observations_upserted": run.observations_upserted,
+                    "early_upserted": run.early_upserted,
+                    "early_observations_upserted": run.early_observations_upserted,
+                    "final_upserted": run.final_upserted,
+                    "final_observations_upserted": run.final_observations_upserted,
+                    "cadastre_upserted": run.cadastre_upserted,
+                    "dpe_upserted": run.dpe_upserted,
+                    "outcome_bridge_scanned": run.outcome_bridge_scanned,
+                    "outcome_bridge_created": run.outcome_bridge_created,
+                    "outcome_bridge_reused": run.outcome_bridge_reused,
+                    "marked_past_in_run": run.lifecycle_stats.marked_past,
+                    "deleted_secondary_sales": run.supabase_deleted_secondary,
+                    "reconciled_duplicate_sales": run.supabase_reconciled_duplicates,
+                    "marked_past_in_supabase": run.supabase_cleaned_past,
+                    "deleted_expired_sales": run.supabase_deleted_expired,
+                    "deleted_vench_without_surface": run.supabase_deleted_vench_without_surface,
                 }
             )
-            summary["completion_status"] = "partial_success" if coverage_incomplete or any(errors.values()) or llm_stats.unavailable or timings.get("pdf_targets_deferred") or timings.get("llm_targets_deferred") else "complete"
+            summary["completion_status"] = "partial_success" if run.coverage_incomplete or any(errors.values()) or llm_stats.unavailable or timings.get("pdf_targets_deferred") or timings.get("llm_targets_deferred") else "complete"
             summary["stage_status"]["publication"] = "complete"
-            finish_run_in_supabase(run_id, "succeeded", summary, errors)
+            finish_run_in_supabase(run.run_id, "succeeded", summary, errors)
         except CollectionIncompleteError as exc:
             LOGGER.warning("Collection remains incomplete after safe publication: %s", exc)
             errors.setdefault("collection", []).append(str(exc))
             summary.update({
-                "upserted": upserted,
-                "observations_upserted": observations_upserted,
+                "upserted": run.upserted,
+                "observations_upserted": run.observations_upserted,
                 "global_cleanup_skipped": "collection_incomplete",
-                "completion_status": "partial_success" if upserted else "incomplete",
+                "completion_status": "partial_success" if run.upserted else "incomplete",
             })
-            summary["stage_status"]["publication"] = "partial" if upserted else "skipped"
-            finish_run_in_supabase(run_id, "failed", summary, errors)
-            publication_failed = True
+            summary["stage_status"]["publication"] = "partial" if run.upserted else "skipped"
+            finish_run_in_supabase(run.run_id, "failed", summary, errors)
+            run.publication_failed = True
         except Exception as exc:
             LOGGER.exception("Supabase upsert failed: %s", exc)
             errors.setdefault("supabase", []).append(str(exc))
             summary["stage_status"]["publication"] = "partial_or_failed"
-            finish_run_in_supabase(run_id, "failed", summary, errors)
-            publication_failed = True
+            finish_run_in_supabase(run.run_id, "failed", summary, errors)
+            run.publication_failed = True
 
+
+def _print_run_summary(run: _PipelineRun) -> None:
+    """Stage 14: console report read by the workflows, with per-source annotations."""
     print("Immojudis data pipeline summary")
-    print(f"- collected: {len(raw_sales)}")
-    print(f"- collected_by_source: {raw_by_source}")
-    print(f"- scrape_coverage: {scrape_coverage}")
-    print(f"- normalized: {len(normalized_observations)}")
-    print(f"- deduplicated: {len(canonical_sales)}")
-    print(f"- skipped_detail: {skipped_detail}")
-    print(f"- skipped_unchanged: {heavy_enrich_skipped}")
-    print(f"- enriched: {len(enriched)}")
-    print(f"- upserted: {upserted}")
-    print(f"- observations_upserted: {observations_upserted}")
-    print(f"- early_upserted: {early_upserted}")
-    print(f"- final_upserted: {final_upserted}")
-    print(f"- cadastre_upserted: {cadastre_upserted}")
-    print(f"- dpe_upserted: {dpe_upserted}")
-    print(f"- outcome_bridge_scanned: {outcome_bridge_scanned}")
-    print(f"- outcome_bridge_created: {outcome_bridge_created}")
-    print(f"- outcome_bridge_reused: {outcome_bridge_reused}")
-    print(f"- marked_past_in_run: {lifecycle_stats.marked_past}")
-    print(f"- deleted_secondary_sales: {supabase_deleted_secondary}")
-    print(f"- reconciled_duplicate_sales: {supabase_reconciled_duplicates}")
-    print(f"- marked_past_in_supabase: {supabase_cleaned_past}")
-    print(f"- deleted_expired_sales: {supabase_deleted_expired}")
-    print(f"- deleted_vench_without_surface: {supabase_deleted_vench_without_surface}")
-    print(f"- json: {json_path}")
-    print(f"- csv: {csv_path}")
-    for line in format_quality_report(quality_report):
+    print(f"- collected: {len(run.raw_sales)}")
+    print(f"- collected_by_source: {run.raw_by_source}")
+    print(f"- scrape_coverage: {run.scrape_coverage}")
+    print(f"- normalized: {len(run.normalized_observations)}")
+    print(f"- deduplicated: {len(run.canonical_sales)}")
+    print(f"- skipped_detail: {run.skipped_detail}")
+    print(f"- skipped_unchanged: {run.heavy_enrich_skipped}")
+    print(f"- enriched: {len(run.enriched)}")
+    print(f"- upserted: {run.upserted}")
+    print(f"- observations_upserted: {run.observations_upserted}")
+    print(f"- early_upserted: {run.early_upserted}")
+    print(f"- final_upserted: {run.final_upserted}")
+    print(f"- cadastre_upserted: {run.cadastre_upserted}")
+    print(f"- dpe_upserted: {run.dpe_upserted}")
+    print(f"- outcome_bridge_scanned: {run.outcome_bridge_scanned}")
+    print(f"- outcome_bridge_created: {run.outcome_bridge_created}")
+    print(f"- outcome_bridge_reused: {run.outcome_bridge_reused}")
+    print(f"- marked_past_in_run: {run.lifecycle_stats.marked_past}")
+    print(f"- deleted_secondary_sales: {run.supabase_deleted_secondary}")
+    print(f"- reconciled_duplicate_sales: {run.supabase_reconciled_duplicates}")
+    print(f"- marked_past_in_supabase: {run.supabase_cleaned_past}")
+    print(f"- deleted_expired_sales: {run.supabase_deleted_expired}")
+    print(f"- deleted_vench_without_surface: {run.supabase_deleted_vench_without_surface}")
+    print(f"- json: {run.json_path}")
+    print(f"- csv: {run.csv_path}")
+    for line in format_quality_report(run.quality_report):
         print(line)
-    for line in format_extraction_gap_report(extraction_gap_report):
+    for line in format_extraction_gap_report(run.extraction_gap_report):
         print(line)
-    for key, value in timings.items():
+    for key, value in run.timings.items():
         print(f"- timing_{key}: {value}")
-    print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
+    print(f"- errors: { {source: len(items) for source, items in run.errors.items()} }")
     # An enabled source that raised or returned nothing must be visible in the
     # GitHub run whatever else happened, as a per-source annotation.
-    for annotation in warning_annotations(broken_sources):
+    for annotation in warning_annotations(run.broken_sources):
         print(annotation)
-    if publication_failed:
-        return 1
-    # Publication itself worked: exit 2 is a warning for the workflows.
-    return SOURCE_WARNING_EXIT_CODE if broken_sources else 0
 
 
 def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:

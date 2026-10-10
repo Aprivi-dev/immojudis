@@ -54,9 +54,9 @@ from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
 from src.source_task_deadline import source_task_deadline_scope
 from src.storage.supabase_client import (
-    _postgres_connect,
     claim_auction_enrichment_jobs_family_from_supabase,
     claim_auction_enrichment_jobs_from_supabase,
+    connect,
     fail_stale_running_runs_in_supabase,
     fetch_next_data_refresh_request_from_supabase,
     fetch_next_queued_run_from_supabase,
@@ -78,6 +78,9 @@ from src.storage.supabase_client import (
     upsert_sales_to_supabase,
 )
 from src.tribunal import fill_tribunal
+
+# Alias de compatibilité : des tests patchent ce nom de module.
+_postgres_connect = connect
 
 LOGGER = logging.getLogger(__name__)
 VALID_SOURCES = {"all", *SOURCE_NAMES}
