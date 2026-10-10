@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from src.catalogue_proof import public_page_proof
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.enrichment.surface_reasoning import extract_surface_facts_from_text
+from src.listing_location import extract_adresse_du_bien
 from src.normalize import clean_text, has_rented_occupancy_signal, no_lease_occupancy_status, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
@@ -561,9 +562,11 @@ def _detail_description(lines: list[str]) -> str | None:
 
 
 def _detail_asset_address(lines: list[str], compact_text: str) -> str | None:
-    address = _line_after_label(lines, "Adresse du bien")
-    if address:
-        return address
+    if _line_index(lines, "Adresse du bien") is not None:
+        # Les libellés de la page précèdent leurs valeurs (prix, puis voie, « , », code postal, commune) :
+        # la ligne qui suit « Adresse du bien » est le prix, pas l'adresse. Le texte libre ci-dessous
+        # contient l'adresse de l'avocat ou du tribunal : on ne s'y replie pas quand le bloc existe.
+        return extract_adresse_du_bien(lines)
     for line in lines:
         match = re.search(r"^(?:À|A)\s+[A-ZÀ-Ÿ' -]+\s+\(\d{2,3}\),\s*(.+)$", line)
         if match:
