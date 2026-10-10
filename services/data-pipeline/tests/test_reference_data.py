@@ -203,3 +203,35 @@ def test_upsert_statement_targets_the_primary_key() -> None:
     assert "jsonb_to_recordset" in statement
     assert "imported_at" not in statement
     assert "imported_at = now()" in storage.upsert_statement("commune_risk_profiles")
+
+
+def test_each_write_sets_its_own_statement_timeout() -> None:
+    executed: list[str] = []
+
+    class Cursor:
+        rowcount = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, statement, params=None):
+            executed.append(statement)
+
+    class Connection:
+        commits = 0
+
+        def cursor(self):
+            return Cursor()
+
+        def commit(self):
+            self.commits += 1
+
+    connection = Connection()
+    rows = [{"code_insee": f"{index:05d}"} for index in range(2_500)]
+
+    assert storage.upsert_rows(connection, "reference_communes", rows) == 2_500
+    assert connection.commits == 3
+    assert executed[0::2] == ["set local statement_timeout = '5min'"] * 3
