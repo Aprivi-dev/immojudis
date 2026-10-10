@@ -37,6 +37,11 @@ const SALE_INPUT_COLUMNS = [
   "updated_at",
 ] as const;
 
+// Littéral (et non `SALE_INPUT_COLUMNS.join(",")`) pour que le client type les lignes ;
+// buildSaleValuationInput échoue à la compilation si une colonne de SALE_INPUT_COLUMNS manque ici.
+const SALE_INPUT_SELECT =
+  "id,title,address,city,postal_code,property_type,latitude,longitude,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,app_surface_kind,surface_scope,rooms_count,bedrooms_count,updated_at";
+
 type SaleValuationSource = Pick<AuctionSaleRow, (typeof SALE_INPUT_COLUMNS)[number]>;
 
 export type SaleValuationInput = {
@@ -191,9 +196,7 @@ export async function getStoredSaleMarketContext(saleId: string): Promise<Market
   if (error) throw error;
   if (!data?.estimate) return marketContextFromStoredRow(data);
 
-  const fingerprint = saleValuationFingerprint(
-    buildSaleValuationInput(sale as unknown as SaleValuationSource),
-  );
+  const fingerprint = saleValuationFingerprint(buildSaleValuationInput(sale));
   return marketContextFromStoredRow(data, fingerprint);
 }
 
@@ -247,7 +250,7 @@ export async function runSaleValuationPrecomputeBatch({
     },
   );
   if (claimError) throw claimError;
-  return processClaimedValuations((claimedRows ?? []) as unknown as StoredEstimateRow[], now);
+  return processClaimedValuations(claimedRows ?? [], now);
 }
 
 export async function runSaleValuationPrecomputeForSale(
@@ -263,7 +266,7 @@ export async function runSaleValuationPrecomputeForSale(
     },
   );
   if (claimError) throw claimError;
-  return processClaimedValuations((claimedRows ?? []) as unknown as StoredEstimateRow[], now);
+  return processClaimedValuations(claimedRows ?? [], now);
 }
 
 async function processClaimedValuations(
@@ -275,13 +278,11 @@ async function processClaimedValuations(
   const saleIds = claimedRows.map((row) => row.auction_sale_id);
   const { data: sales, error: salesError } = await supabaseAdmin
     .from("auction_sales")
-    .select(SALE_INPUT_COLUMNS.join(","))
+    .select(SALE_INPUT_SELECT)
     .in("id", saleIds);
   if (salesError) throw salesError;
 
-  const salesById = new Map(
-    ((sales ?? []) as unknown as SaleValuationSource[]).map((sale) => [sale.id, sale]),
-  );
+  const salesById = new Map((sales ?? []).map((sale) => [sale.id, sale]));
   const result = emptyBatchResult();
   result.scanned = claimedRows.length;
   result.claimed = claimedRows.length;
@@ -411,7 +412,7 @@ async function processClaimedValuations(
         status: "ready",
         input_fingerprint: fingerprint,
         source_updated_at: sale.updated_at,
-        estimate: estimate as unknown as Json,
+        estimate: estimate as Json,
         error_message: null,
         last_error_code: null,
         last_finished_at: new Date().toISOString(),
@@ -502,7 +503,7 @@ export async function publishStoredEstimateForClaim(
 function storedEstimate(value: Json | null): MarketEstimate | null {
   if (!value || Array.isArray(value) || typeof value !== "object") return null;
   const parsed = storedEstimateSchema.safeParse(value);
-  return parsed.success ? (parsed.data as unknown as MarketEstimate) : null;
+  return parsed.success ? (parsed.data as MarketEstimate) : null;
 }
 
 function emptyBatchResult(): SaleValuationPrecomputeResult {
