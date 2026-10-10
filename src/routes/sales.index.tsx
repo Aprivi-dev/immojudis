@@ -6,20 +6,10 @@ import { validateSalesSearch } from "@/lib/search/search-url-state";
 
 export const Route = createFileRoute("/sales/")({
   validateSearch: validateSalesSearch,
-  head: () => ({
-    meta: [
-      { title: "Recherche immobilière — Immojudis" },
-      {
-        name: "description",
-        content:
-          "Recherchez les ventes immobilières avec filtres, tri, carte interactive et URL partageable.",
-      },
-    ],
-  }),
   component: SalesPage,
 });
 
-export function SalesPage() {
+export function SalesPage({ serverSeeded = false }: { serverSeeded?: boolean }) {
   const search = Route.useSearch();
-  return <SearchPage search={search} />;
+  return <SearchPage search={search} serverSeeded={serverSeeded} />;
 }

@@ -15,6 +15,7 @@ import { PropertyHero } from "./PropertyHero";
 import { SectionNav, type PropertySectionItem } from "./SectionNav";
 import { SimilarListings } from "./SimilarListings";
 import { StickyContactCard } from "./StickyContactCard";
+import { jsonLdString } from "@/lib/json-ld";
 
 const PROPERTY_SECTIONS: PropertySectionItem[] = [
   { id: "overview", label: "Apercu" },
@@ -53,10 +54,10 @@ export function PropertyPage({ property }: { property: Property }) {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#f7f5f1] text-foreground">
+    <main id="contenu" className="min-h-screen bg-surface text-foreground">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdString(structuredData) }}
       />
       <PropertyHeader property={property} />
       <PropertyHero property={property} />

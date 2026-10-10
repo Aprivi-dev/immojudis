@@ -57,7 +57,7 @@ describe("active comparables analysis", () => {
           id: "close-match",
           title: "Appartement T2 comparable",
           starting_price_eur: 95_000,
-          app_surface_m2: 44,
+          app_surface_m2: 66,
           sale_date: "2026-09-20T09:00:00+02:00",
           investment_score: 76,
         },
@@ -82,7 +82,7 @@ describe("active comparables analysis", () => {
     expect(analysis.items[0]).toMatchObject({
       id: "close-match",
       matchLabel: "Très comparable",
-      pricePerM2: 2159,
+      pricePerM2: 1439,
     });
     expect(analysis.items[0].matchScore).toBeGreaterThan(analysis.items[1].matchScore);
     expect(analysis.items[0].reasons).toEqual(expect.arrayContaining(["Surface très proche"]));

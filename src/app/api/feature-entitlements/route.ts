@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -21,11 +22,8 @@ export async function GET(request: Request) {
     const usage = await getPlanUsageSummary({ auth, plan });
     return NextResponse.json({ plan, usage }, { headers: PRIVATE_AUTH_HEADERS });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Accès indisponible";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
-    return NextResponse.json(
-      { ok: false, error: message },
-      { status, headers: PRIVATE_AUTH_HEADERS },
-    );
+    return apiRouteError(error, request, "feature-entitlements", {
+      fallbackMessage: "Accès indisponible",
+    });
   }
 }

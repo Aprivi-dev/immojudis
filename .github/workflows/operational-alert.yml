@@ -82,10 +82,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Raise external incident signal
-        if: inputs.event_type != 'resolved'
+        if: inputs.event_type == 'opened'
         run: |
           echo "::error title=ImmoJudis ${ALERT_SEVERITY}::Operational alert ${ALERT_KEY} is ${ALERT_EVENT}."
           exit 1
+
+      - name: Daily reminder for an incident that is still open
+        if: inputs.event_type == 'updated'
+        run: echo "::warning title=ImmoJudis reminder::Operational alert ${ALERT_KEY} is still open (reminder sent at most once per 24 hours)."
 
       - name: Confirm recovery signal
         if: inputs.event_type == 'resolved'

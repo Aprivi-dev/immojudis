@@ -1,36 +1,25 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
-import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
+import { getExampleSaleRecords, isExampleSaleKey } from "@/lib/example-sale";
 import { ExampleSalePage } from "@/routes/annonce-exemple";
 
+// Indexed on purpose: it is the public illustration of what the offers add. The
+// "Exemple fictif" banner and the absence of structured data keep it from being
+// mistaken for a real listing.
 export const metadata: Metadata = {
-  title: "Annonce exemple",
-  description: "Exemple de fiche analysée Immojudis.",
+  title: "Annonce exemple : l’analyse d’une vente au tribunal",
+  description:
+    "Exemple fictif d’analyse Immojudis pour un appartement vendu au tribunal : mise à prix, valeur estimée, frais, travaux, risques et enchère plafond.",
   alternates: { canonical: "/annonce-exemple" },
-  robots: { index: false, follow: false },
+  robots: { index: true, follow: true },
 };
 
-export default function Page() {
-  return (
-    <Suspense fallback={<ExampleFallback />}>
-      <ExampleSalePage examples={EXAMPLE_SALE_RECORDS} />
-    </Suspense>
-  );
-}
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
-function ExampleFallback() {
-  return (
-    <main className="min-h-screen bg-[#f7f5f3] px-4 py-12 text-foreground">
-      <section className="mx-auto max-w-4xl rounded-lg border border-border bg-white p-8 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
-          Démonstration
-        </p>
-        <h1 className="mt-3 font-display text-4xl">Exemple de rapport d’opportunité</h1>
-        <p className="mt-4 max-w-2xl text-muted-foreground">
-          Découvrez la lecture ImmoJudis d’une vente judiciaire : prix, marché, frais, risques et
-          plafond d’enchère.
-        </p>
-      </section>
-    </main>
-  );
+export default async function Page({ searchParams }: PageProps) {
+  const requested = (await searchParams).bien;
+  const key = isExampleSaleKey(requested) ? requested : "bordeaux";
+  // Dates are computed now (hearing in 21 days), never frozen at build time.
+  return <ExampleSalePage example={getExampleSaleRecords()[key]} />;
 }

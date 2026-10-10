@@ -12,7 +12,7 @@ import {
   useSearchParams,
 } from "next/navigation";
 import type * as React from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 
 type SearchRecord = Record<string, unknown>;
 type ParamsRecord = Record<string, string | string[] | undefined>;
@@ -189,13 +189,6 @@ type NavigateOptions = {
 export function useNavigate(_options?: unknown) {
   const router = useNextRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const searchParamsKey = searchParams.toString();
-  const searchParamsKeyRef = useRef(searchParamsKey);
-
-  useEffect(() => {
-    searchParamsKeyRef.current = searchParamsKey;
-  }, [searchParamsKey]);
 
   return useCallback(
     (options: string | NavigateOptions) => {
@@ -204,7 +197,14 @@ export function useNavigate(_options?: unknown) {
         return;
       }
 
-      const previous = searchParamsToObject(new URLSearchParams(searchParamsKeyRef.current));
+      // The current query string is only needed when a navigation is requested,
+      // so it is read from the browser then. Subscribing to it with
+      // useSearchParams() during render would force every page that merely
+      // *can* navigate (a button, a link handler) into client-side rendering
+      // and hide its content from crawlers.
+      const previous = searchParamsToObject(
+        new URLSearchParams(typeof window === "undefined" ? "" : window.location.search),
+      );
       const nextSearch =
         typeof options.search === "function" ? options.search(previous) : options.search;
       const href = buildHref({

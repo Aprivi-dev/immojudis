@@ -1,6 +1,6 @@
 .page {
-  background: #f6f5f1;
-  color: #132238;
+  background: var(--surface);
+  color: var(--brand-navy);
   min-height: 100vh;
   overflow-wrap: anywhere;
 }
@@ -28,15 +28,15 @@
   gap: 8px;
   min-height: 44px;
   padding: 0 15px;
-  border: 1px solid #dbe1e9;
+  border: 1px solid var(--line-soft);
   border-radius: 10px;
-  background: #fff;
-  color: #132238;
+  background: #ffffff;
+  color: var(--brand-navy);
   font-size: 13px;
   font-weight: 650;
 }
 .share:hover {
-  background: #edf1f5;
+  background: var(--surface-tint);
 }
 .upper,
 .lower {
@@ -46,9 +46,9 @@
 }
 .heroSummary {
   min-width: 0;
-  border: 1px solid #dbe1e9;
+  border: 1px solid var(--line-soft);
   border-radius: 20px;
-  background: #fff;
+  background: #ffffff;
   padding: 22px 24px;
   box-shadow: 0 12px 32px rgb(19 34 56 / 5%);
 }
@@ -70,7 +70,7 @@
   position: relative;
   overflow: hidden;
   border-radius: 20px;
-  background: #e2e8f0;
+  background: var(--line-soft);
 }
 .heroGallery {
   min-width: 0;
@@ -92,7 +92,7 @@
   overflow-wrap: anywhere;
 }
 .muted {
-  color: #607086;
+  color: var(--ink-soft);
   font-size: 14px;
   line-height: 1.6;
 }
@@ -102,7 +102,7 @@
   align-items: center;
   gap: 6px;
   margin-top: 0;
-  color: #475569;
+  color: var(--ink-soft);
   font-size: 12px;
   font-weight: 650;
   line-height: 1.35;
@@ -115,16 +115,16 @@
   margin-top: 20px;
   padding: 14px 16px;
   border-radius: 14px;
-  background: #f4f2eb;
+  background: var(--surface);
 }
 .premiumPrice {
   min-width: 0;
   padding-left: 18px;
-  border-left: 1px solid #dbe1e9;
+  border-left: 1px solid var(--line-soft);
 }
 .premiumPriceValue {
   margin: 4px 0 2px;
-  color: #9c642b;
+  color: var(--gold-text, var(--gold-text));
   font-size: clamp(25px, 3vw, 36px);
   font-weight: 700;
   line-height: 1.16;
@@ -133,7 +133,7 @@
 }
 .premiumTeaser {
   margin-top: 7px;
-  color: #132238;
+  color: var(--brand-navy);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.45;
@@ -141,7 +141,7 @@
 .priceExplanation {
   display: inline-block;
   margin-top: 7px;
-  color: #9c642b;
+  color: var(--gold-text, var(--gold-text));
   font-size: 13px;
   font-weight: 600;
   text-decoration: underline;
@@ -152,14 +152,14 @@
   gap: 6px;
   margin-top: 22px;
   padding: 18px 20px;
-  border: 1px solid #b9d0df;
-  border-left: 4px solid #946724;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--gold-soft);
   border-radius: 14px;
-  background: #eef7ff;
-  color: #132238;
+  background: var(--background);
+  color: var(--brand-navy);
 }
 .procedureLeadEyebrow {
-  color: #946724;
+  color: var(--gold-text, var(--gold-text));
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -170,7 +170,7 @@
   line-height: 1.3;
 }
 .procedureLead span {
-  color: #405168;
+  color: var(--ink-strong);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -190,17 +190,17 @@
   align-items: center;
   margin-top: 18px;
   padding: 14px 0;
-  border-top: 1px solid #e2e8f0;
-  border-bottom: 1px solid #e2e8f0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
 }
 .heroEvent > svg {
   width: 20px;
   height: 20px;
-  color: #9c642b;
+  color: var(--gold-text, var(--gold-text));
 }
 .heroEvent span {
   display: block;
-  color: #607086;
+  color: var(--ink-soft);
   font-size: 12px;
 }
 .heroEvent strong {
@@ -210,7 +210,7 @@
   line-height: 1.4;
 }
 .heroEvent a {
-  color: #9c642b;
+  color: var(--gold-text, var(--gold-text));
   font-size: 13px;
   font-weight: 600;
   text-decoration: underline;
@@ -229,7 +229,7 @@
   flex-direction: column-reverse;
   justify-content: flex-end;
   padding: 0 12px;
-  border-left: 1px solid #e2e8f0;
+  border-left: 1px solid var(--line-soft);
   min-width: 0;
 }
 .fact:nth-child(odd) {
@@ -247,13 +247,13 @@
   overflow-wrap: anywhere;
 }
 .factLabel {
-  color: #64748b;
+  color: var(--ink-soft);
   font-size: 11px;
   line-height: 1.4;
   margin-top: 4px;
 }
 .factValue.factMissing {
-  color: #526176;
+  color: var(--ink-soft);
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0;
@@ -270,14 +270,14 @@
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: #132238;
+  color: var(--brand-navy);
   font-size: 14px;
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 4px;
 }
 .sourceLink:hover {
-  color: #9c642b;
+  color: var(--gold-text, var(--gold-text));
 }
 .textLink {
   display: inline-flex;
@@ -286,7 +286,7 @@
   min-height: 44px;
   font-size: 14px;
   font-weight: 600;
-  color: #946724;
+  color: var(--gold-text, var(--gold-text));
   text-underline-offset: 4px;
 }
 .textLink:hover {
@@ -304,25 +304,25 @@
   scroll-margin-top: 110px;
 }
 .card {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--line-soft);
   border-radius: 20px;
-  background: #fff;
+  background: #ffffff;
   padding: 20px;
   min-width: 0;
 }
 .descriptionDisclosure {
   overflow: hidden;
-  border: 1px solid #dbe1e9;
+  border: 1px solid var(--line-soft);
   border-radius: 16px;
-  background: #fff;
+  background: #ffffff;
 }
 .descriptionPreview {
   padding: 22px 24px;
   margin-bottom: 12px;
-  border: 1px solid #deded5;
+  border: 1px solid var(--line-warm);
   border-radius: 16px;
-  background: #fff;
-  color: #405168;
+  background: #ffffff;
+  color: var(--ink-strong);
   font-size: 15px;
   line-height: 1.75;
 }
@@ -333,7 +333,7 @@
   gap: 12px;
   min-height: 56px;
   padding: 15px 18px;
-  color: #132238;
+  color: var(--brand-navy);
   cursor: pointer;
   font-size: 14px;
   font-weight: 650;
@@ -347,7 +347,7 @@
 }
 .descriptionDisclosure > .card {
   border: 0;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--line-soft);
   border-radius: 0;
 }
 .rows {
@@ -358,7 +358,7 @@
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   padding: 17px 0;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--line-soft);
 }
 .row:first-child {
   padding-top: 0;
@@ -371,7 +371,7 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  color: #64748b;
+  color: var(--ink-soft);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -392,7 +392,7 @@
   margin-top: 7px;
 }
 .contact {
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--line-soft);
   margin-top: 20px;
   padding-top: 20px;
 }
@@ -425,7 +425,7 @@
 .attribution {
   display: flex;
   gap: 8px;
-  color: #64748b;
+  color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.6;
   margin-top: 16px;
@@ -440,7 +440,7 @@
   gap: 10px;
   min-height: 44px;
   cursor: pointer;
-  color: #946724;
+  color: var(--gold-text, var(--gold-text));
   font-size: 14px;
   font-weight: 600;
   list-style: none;
@@ -477,9 +477,9 @@
   gap: 8px;
   width: 100%;
   min-height: 46px;
-  border: 1px solid #132238;
+  border: 1px solid var(--brand-navy);
   border-radius: 10px;
-  background: #132238;
+  background: var(--brand-navy);
   color: white;
   padding: 10px 16px;
   font-size: 14px;
@@ -487,15 +487,15 @@
   cursor: pointer;
 }
 .button:hover {
-  background: #243c58;
+  background: var(--brand-navy-soft);
 }
 .outline {
-  background: #fff;
-  color: #132238;
+  background: #ffffff;
+  color: var(--brand-navy);
   margin-top: 16px;
 }
 .outline:hover {
-  background: #f4f6f9;
+  background: var(--surface-muted);
 }
 .budgetPrice {
   font-size: 30px;
@@ -507,7 +507,7 @@
 .budgetRows {
   margin-top: 20px;
   padding-top: 18px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--line-soft);
   display: grid;
   gap: 14px;
 }
@@ -520,12 +520,12 @@
 }
 .budgetRows dd {
   text-align: right;
-  color: #64748b;
+  color: var(--ink-soft);
 }
 .notice {
-  border: 1px solid #e9dfce;
+  border: 1px solid var(--sand);
   border-radius: 10px;
-  background: #faf8f4;
+  background: var(--surface);
   padding: 12px;
   margin-top: 20px;
   font-size: 13px;
@@ -550,15 +550,15 @@
 }
 .field input {
   width: 100%;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--line);
   border-radius: 9px;
   padding: 11px 12px;
   font-size: 16px;
   background: white;
-  color: #132238;
+  color: var(--brand-navy);
 }
 .total {
-  background: #f4f6f9;
+  background: var(--surface-muted);
   border-radius: 12px;
   padding: 16px;
   margin-top: 16px;
@@ -574,14 +574,14 @@
   align-items: center;
   gap: 12px;
   padding: 36px 0 18px;
-  border-top: 1px solid #dbe1e9;
+  border-top: 1px solid var(--line-soft);
   margin-top: 36px;
 }
 .analysisHeading .heading {
   margin-bottom: 3px;
 }
 .page :is(button, a, summary, input):focus-visible {
-  outline: 2px solid #946724;
+  outline: 2px solid var(--gold-soft);
   outline-offset: 4px;
 }
 @media (max-width: 767px) {
@@ -593,7 +593,7 @@
   .premiumPrice {
     padding-top: 16px;
     padding-left: 0;
-    border-top: 1px solid #dbe1e9;
+    border-top: 1px solid var(--line-soft);
     border-left: 0;
   }
   .photo {
@@ -605,7 +605,7 @@
     margin: -20px -16px 0;
     padding: 20px 16px 0;
     border-radius: 24px 24px 0 0;
-    background: #f4f6f9;
+    background: var(--surface-muted);
   }
 }
 @media (min-width: 640px) {
@@ -661,9 +661,9 @@
 
 .scenarioSummary {
   margin-top: 16px;
-  border: 1px solid #e8d9bc;
+  border: 1px solid var(--sand);
   border-radius: 14px;
-  background: #fcf8ef;
+  background: var(--surface);
   overflow: hidden;
 }
 .scenarioSummaryToggle {
@@ -674,7 +674,7 @@
   min-width: 0;
   min-height: 46px;
   padding: 11px 16px;
-  color: #805722;
+  color: var(--gold-text);
   cursor: pointer;
   font-size: 13px;
   font-weight: 750;
@@ -685,7 +685,7 @@
   display: none;
 }
 .scenarioSummary[open] > .scenarioSummaryToggle {
-  border-bottom: 1px solid #e8d9bc;
+  border-bottom: 1px solid var(--sand);
 }
 .scenarioSummary[open] > .scenarioSummaryToggle svg {
   transform: rotate(180deg);
@@ -700,7 +700,7 @@
   gap: 10px;
   align-items: center;
   padding-top: 11px;
-  color: #805722;
+  color: var(--gold-text);
   font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.06em;
@@ -726,7 +726,7 @@
   margin-top: 3px;
 }
 .projectCost > span {
-  color: #405168;
+  color: var(--ink-strong);
   font-size: 13px;
 }
 .projectCost > strong {
@@ -741,7 +741,7 @@
 .scenarioBasis {
   margin-top: 4px;
   font-size: 11px;
-  color: #607086;
+  color: var(--ink-soft);
   line-height: 1.5;
 }
 .scenarioMetrics {
@@ -750,13 +750,13 @@
   gap: 12px;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #e8d9bc;
+  border-top: 1px solid var(--sand);
 }
 .scenarioMetrics span {
   display: block;
   font-size: 10px;
   line-height: 1.2;
-  color: #607086;
+  color: var(--ink-soft);
 }
 .scenarioMetrics strong {
   display: block;
@@ -769,7 +769,7 @@
 }
 .scenarioNote {
   margin-top: 6px;
-  color: #6d665a;
+  color: var(--ink-soft);
   font-size: 10px;
   line-height: 1.4;
 }
@@ -778,7 +778,7 @@
     background: transparent;
   }
   .heroSummary {
-    border: 1px solid #deded5;
+    border: 1px solid var(--line-warm);
     border-radius: 18px;
     padding: 22px 18px;
   }
@@ -789,7 +789,7 @@
   }
   .premiumPrice {
     border-top: 0;
-    border-left: 1px solid #ded9cf;
+    border-left: 1px solid var(--line-warm);
     padding: 0 0 0 12px;
   }
   .price,
@@ -834,5 +834,5 @@
   }
 }
 .discoveryBilling > button {
-  color: #0c1828;
+  color: var(--night);
 }

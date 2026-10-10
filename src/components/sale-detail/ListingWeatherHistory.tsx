@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { authHeaders, readJson } from "@/lib/client-api-core";
 import type { MeteostatResult, MeteostatWeather } from "@/lib/meteostat";
 import styles from "./ListingEnvironment.module.css";
+import { queryKeys } from "@/lib/query-keys";
 
 export function ListingWeatherHistory({
   saleId,
@@ -18,7 +19,7 @@ export function ListingWeatherHistory({
 }) {
   const [opened, setOpened] = useState(false);
   const query = useQuery({
-    queryKey: ["sale-weather", saleId],
+    queryKey: queryKeys.saleWeather(saleId),
     queryFn: async ({ signal }) =>
       readJson<{ weather: MeteostatResult }>(
         await fetch(`/api/sales/${encodeURIComponent(saleId)}/weather`, {
@@ -41,7 +42,7 @@ export function ListingWeatherHistory({
           Températures, précipitations et soleil observé mois par mois dans ce secteur. Inclus dans
           l’offre Analyse.
         </p>
-        <Link href="/accompagnement">Découvrir l’historique météo avec Premium</Link>
+        <Link href="/offres">Découvrir l’historique météo avec l’offre Analyse</Link>
       </section>
     );
   }

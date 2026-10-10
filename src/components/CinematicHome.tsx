@@ -5,7 +5,12 @@ import Form from "next/form";
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
+import { exampleHeadlineFigures } from "@/lib/example-sale";
+import { formatPrice } from "@/lib/format";
 import styles from "./CinematicHome.module.css";
+
+// Same figures as /annonce-exemple: computed once from the example, not typed here.
+const EXAMPLE_FIGURES = exampleHeadlineFigures();
 
 export function CinematicHero() {
   return (
@@ -66,32 +71,36 @@ export function CinematicHero() {
               fill
               sizes="(max-width: 760px) calc(100vw - 48px), (max-width: 1100px) 38vw, 480px"
               quality={85}
+              loading="eager"
+              fetchPriority="high"
             />
             <span className={styles.fictionBadge}>Exemple fictif</span>
           </div>
           <div className={styles.dossierBody}>
-            <h2 id="home-dossier-title">Appartement · Bordeaux · 68 m²</h2>
+            <h2 id="home-dossier-title">
+              Appartement · {EXAMPLE_FIGURES.city} · {EXAMPLE_FIGURES.surfaceM2} m²
+            </h2>
             <dl className={styles.figures}>
               <div>
                 <dt>Mise à prix</dt>
-                <dd>95 000 €</dd>
+                <dd>{formatPrice(EXAMPLE_FIGURES.startingPrice)}</dd>
               </div>
               <div>
                 <dt>Valeur estimée</dt>
-                <dd>230 000 €</dd>
+                <dd>{formatPrice(EXAMPLE_FIGURES.marketValue)}</dd>
               </div>
               <div>
                 <dt>Frais et travaux</dt>
-                <dd>−50 000 €</dd>
+                <dd>−{formatPrice(EXAMPLE_FIGURES.feesAndWorks)}</dd>
               </div>
               <div>
                 <dt>Marge de sécurité</dt>
-                <dd>−25 000 €</dd>
+                <dd>−{formatPrice(EXAMPLE_FIGURES.safetyMargin)}</dd>
               </div>
             </dl>
             <div className={styles.ceiling}>
               <span>Plafond simulé</span>
-              <strong>155 000 €</strong>
+              <strong>{formatPrice(EXAMPLE_FIGURES.ceiling)}</strong>
             </div>
             <p className={styles.assumptions}>
               Simulation simplifiée, selon les hypothèses du scénario. Hors financement et

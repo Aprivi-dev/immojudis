@@ -3,14 +3,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ bien: "bordeaux" }));
-
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => ({
-    get: (key: string) => (key === "bien" ? mocks.bien : null),
-  }),
-}));
-
 vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   AnalysisSaleDetailView: ({
     sale,
@@ -35,7 +27,7 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   ),
 }));
 
-import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
+import { getExampleSaleRecords } from "@/lib/example-sale";
 import { ExampleSalePage } from "@/routes/annonce-exemple";
 
 describe("ExampleSalePage", () => {
@@ -46,8 +38,7 @@ describe("ExampleSalePage", () => {
     ["nantes", "Nantes"],
     ["toulouse", "Toulouse"],
   ] as const)("rend l'exemple %s avec l'analyse publique complète", async (bien, city) => {
-    mocks.bien = bien;
-    render(<ExampleSalePage examples={EXAMPLE_SALE_RECORDS} />);
+    render(<ExampleSalePage example={getExampleSaleRecords()[bien]} />);
 
     const detail = await screen.findByTestId("example-detail");
     expect(detail.dataset.city).toBe(city);
@@ -56,10 +47,17 @@ describe("ExampleSalePage", () => {
     expect(detail.dataset.returnTo).toBe("/#exemples");
   });
 
-  it("ignore l'ancien paramètre de limitation et conserve l'analyse complète", async () => {
-    mocks.bien = "decouverte";
-    render(<ExampleSalePage examples={EXAMPLE_SALE_RECORDS} />);
+  it("annonce clairement que l'exemple est fictif, avant tout chiffre", () => {
+    const { container } = render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
+    const banner = screen.getByRole("note");
+    expect(banner.textContent).toMatch(/Exemple fictif/);
+    expect(banner.textContent).toMatch(/Aucune vente réelle/);
+    // The banner comes first in the page.
+    expect(container.firstElementChild).toBe(banner);
+  });
 
-    expect((await screen.findByTestId("example-detail")).dataset.city).toBe("Bordeaux");
+  it("ne contient pas de lien externe ni de données structurées d'annonce", () => {
+    const { container } = render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
+    expect(container.querySelector('script[type="application/ld+json"]')).toBeNull();
   });
 });

@@ -27,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
+      # Honest, contactable crawler identity; a repository variable overrides it.
+      AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
       ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: ${{ vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED || 'false' }}
       ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED: ${{ vars.ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED || 'false' }}
     steps:
@@ -41,11 +43,11 @@ jobs:
           fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/data-pipeline/requirements.txt
+          cache-dependency-path: services/data-pipeline/requirements.lock
       - name: Install collector dependencies
-        run: python -m pip install -r services/data-pipeline/requirements.txt
+        run: python -m pip install --require-hashes -r services/data-pipeline/requirements.lock
       - name: Inventory public listings only
         if: inputs.audit_kind == 'inventory'
         working-directory: services/data-pipeline

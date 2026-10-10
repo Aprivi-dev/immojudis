@@ -1,3 +1,4 @@
+import "server-only";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
@@ -396,7 +397,7 @@ function buildCapabilityMetrics(sales: AuctionSale[]): DataQualityMetric[] {
     }),
     metric({
       key: "bid_ceiling",
-      label: "Calcul de mise maximale",
+      label: "Calcul d’enchère plafond",
       sales,
       predicate: (sale) => hasPrice(sale) && hasSurface(sale),
       productImpact: "Rend le simulateur actionnable avant audience.",

@@ -148,7 +148,7 @@ def build_fact_claim_candidates(sale: AuctionSale) -> list[dict[str, object]]:
             payload = {}
         for field_key, value_key, aliases in _FIELD_SPECS:
             for evidence_kind, locator, confidence, evidence_value, evidence_source_url in _field_provenances(
-                value_key, aliases, payload
+                value_key, aliases, payload, sale=sale
             ):
                 candidate_value = _normalized_value(value_key, evidence_value)
                 if candidate_value is None:
@@ -286,6 +286,8 @@ def _field_provenances(
     field: str,
     aliases: tuple[str, ...],
     payload: dict[str, object],
+    *,
+    sale: AuctionSale,
 ) -> list[_Provenance]:
     provenances: list[_Provenance] = []
     if _has_value(payload.get(field)):
@@ -300,7 +302,7 @@ def _field_provenances(
         )
 
     normalized_aliases = {_normalize_key(alias) for alias in aliases}
-    for path, key, value in _walk_values(payload.get("source_blocks")):
+    for path, key, value in _walk_values(_source_evidence_blocks(payload)):
         if _normalize_key(key) not in normalized_aliases or not _has_value(value):
             continue
         provenances.append(
@@ -328,7 +330,7 @@ def _field_provenances(
             continue
         if not _extraction_matches_field(field, extraction_key, extraction):
             continue
-        document_url = _document_source_url(extraction)
+        document_url = _document_source_url(sale, extraction)
         # A document-derived value without its exact document URL would be
         # incorrectly attributed to the listing URL by the caller.  Keep the
         # candidate out of the append-only claims table until the extractor
@@ -340,6 +342,14 @@ def _field_provenances(
             value = extraction.get(key)
             if _has_value(value):
                 locator[key] = value
+        document_hash = _extraction_document_hash(extraction)
+        if document_hash:
+            # The hash was checked against the current attachment or its
+            # persisted cache proof by _document_source_url.  Preserve that
+            # fact in the locator so a later reviewer can distinguish a URL
+            # match from a byte-identity match.
+            locator["document_sha256"] = document_hash
+            locator["hash_verified"] = True
         if _has_value(extraction.get("evidence")):
             locator["quote"] = _quote(extraction.get("evidence"))
         page_confidence = extraction.get("page_confidence")
@@ -381,17 +391,88 @@ def _field_provenances(
     return provenances
 
 
-def _document_source_url(extraction: dict[str, object]) -> str | None:
+def _document_source_url(sale: AuctionSale, extraction: dict[str, object]) -> str | None:
     """Return a usable URL for the exact document behind an extraction.
 
     A document label, page number, or OCR method is not enough to identify the
-    bytes that produced a value.  The caller must therefore drop document
-    evidence when the extractor did not preserve an HTTPS document URL.
+    bytes that produced a value.  The URL must also be present in the current
+    sale attachment manifest.  Otherwise a stale or cross-sale extraction can
+    publish a claim against an unrelated document.  When an extractor does
+    provide a PDF hash, it must agree with the current attachment or its
+    persisted cache proof.
     """
     document_url = clean_text(extraction.get("document_url"))
     if not document_url or not document_url.startswith("https://"):
         return None
+    attachments = _current_document_attachments(sale)
+    attachment = attachments.get(document_url)
+    if attachment is None:
+        return None
+    document_hash = _extraction_document_hash(extraction)
+    if document_hash:
+        if not _is_sha256(document_hash):
+            return None
+        expected_hashes = {
+            expected
+            for expected in (
+                _document_hash(attachment),
+                _document_hash(_cache_proof_for_url(sale, document_url)),
+            )
+            if expected
+        }
+        if not expected_hashes or any(
+            document_hash.casefold() != expected for expected in expected_hashes
+        ):
+            return None
     return document_url
+
+
+def _current_document_attachments(sale: AuctionSale) -> dict[str, dict[str, object]]:
+    """Index the current attachment manifest by its exact URL."""
+    attachments: dict[str, dict[str, object]] = {}
+    for document in sale.documents or []:
+        if not isinstance(document, dict):
+            continue
+        url = clean_text(document.get("url"))
+        if url:
+            attachments[url] = document
+    return attachments
+
+
+def _cache_proof_for_url(sale: AuctionSale, url: str) -> dict[str, object] | None:
+    raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    analysis = raw_payload.get("document_analysis")
+    proof = analysis.get("cache_proof") if isinstance(analysis, dict) else None
+    proof_documents = proof.get("documents") if isinstance(proof, dict) else None
+    if not isinstance(proof_documents, list):
+        return None
+    for item in proof_documents:
+        if isinstance(item, dict) and clean_text(item.get("url")) == url:
+            return item
+    return None
+
+
+def _extraction_document_hash(extraction: dict[str, object]) -> str | None:
+    for key in ("document_sha256", "sha256", "document_hash"):
+        value = clean_text(extraction.get(key))
+        if value:
+            return value
+    return None
+
+
+def _document_hash(document: dict[str, object] | None) -> str | None:
+    if not isinstance(document, dict):
+        return None
+    for key in ("sha256", "document_sha256", "document_hash"):
+        value = clean_text(document.get(key))
+        if value and _is_sha256(value):
+            return value.casefold()
+    return None
+
+
+def _is_sha256(value: object) -> bool:
+    text = clean_text(value) or ""
+    return len(text) == 64 and all(character in "0123456789abcdefABCDEF" for character in text)
 
 
 def _surface_evidence_matches_field(field: str, evidence: str) -> bool:
@@ -449,10 +530,19 @@ def _source_text(payload: dict[str, object]) -> str:
         value = clean_text(payload.get(key))
         if value:
             parts.append(value)
-    for _, _, value in _walk_values(payload.get("source_blocks")):
+    for _, _, value in _walk_values(_source_evidence_blocks(payload)):
         if not isinstance(value, (dict, list)) and (text := clean_text(value)):
             parts.append(text)
     return "\n".join(parts)
+
+
+def _source_evidence_blocks(payload: dict[str, object]) -> dict[str, object]:
+    blocks = payload.get("source_blocks")
+    if not isinstance(blocks, dict):
+        return {}
+    # This projection is generated from the source. Reading it as a new source
+    # block would turn inferred facts into independent evidence on later runs.
+    return {key: value for key, value in blocks.items() if key != "listing_completeness"}
 
 
 def _occupancy_quote(text: str) -> str | None:

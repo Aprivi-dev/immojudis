@@ -41,5 +41,26 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
+  {
+    // Système visuel : les couleurs passent par les jetons de src/styles.css
+    // (text-brand-navy, bg-surface-tint, border-line…), jamais par text-[#hex].
+    files: ["src/**/*.{ts,tsx}", "emails/**/*.tsx"],
+    ignores: ["**/*.test.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Literal[value=/-\\[#[0-9a-fA-F]{3,8}\\]/]",
+          message:
+            "Couleur codée en dur dans une classe : utilisez un jeton (text-brand-navy, bg-surface-tint, border-line…) défini dans src/styles.css.",
+        },
+        {
+          selector: "TemplateElement[value.raw=/-\\[#[0-9a-fA-F]{3,8}\\]/]",
+          message:
+            "Couleur codée en dur dans une classe : utilisez un jeton (text-brand-navy, bg-surface-tint, border-line…) défini dans src/styles.css.",
+        },
+      ],
+    },
+  },
   eslintPluginPrettier,
 );

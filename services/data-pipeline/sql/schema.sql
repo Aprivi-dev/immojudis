@@ -1,3 +1,5 @@
+-- OBSOLÈTE : schéma initial du pipeline. La source de vérité est supabase/migrations/.
+-- Ne plus l'exécuter sur une base existante.
 create extension if not exists pgcrypto;
 create extension if not exists postgis;
 create schema if not exists app_private;

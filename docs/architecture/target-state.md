@@ -1,6 +1,6 @@
 # Outcome Graph — architecture cible
 
-_Architecture normative issue de `CODEX_OUTCOME_GRAPH_SPEC_V2.md`. Ce document décrit la destination; il ne certifie pas que chaque composant est déjà livré. Voir [`IMPLEMENTATION_STATUS.md`](../../IMPLEMENTATION_STATUS.md) pour l’écart réel._
+_Architecture normative issue de `CODEX_OUTCOME_GRAPH_SPEC_V2.md`. Ce document décrit la destination; il ne certifie pas que chaque composant est déjà livré. Voir [`IMPLEMENTATION_STATUS.md`](../archive/IMPLEMENTATION_STATUS.md) pour l’écart réel._
 
 ## Objectif d’architecture
 

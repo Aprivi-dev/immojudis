@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any
 from urllib.parse import urljoin
+from zoneinfo import ZoneInfo
 
 import httpx
 from bs4 import BeautifulSoup
@@ -22,6 +23,7 @@ from src.sources.common import (
     RobotsAccessRefusedError,
     RobotsUnavailableError,
     ScrapeResult,
+    fetch_detail_html,
     parse_html,
     should_fetch_detail,
     unique_dicts,
@@ -289,13 +291,8 @@ def _enrich_sale_from_detail(
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
-    try:
-        html = client.get(source_url)
-    except Exception as exc:
-        LOGGER.warning("EncheresImmobilieres detail fetch failed for %s: %s", source_url, exc)
-        errors.append(f"detail {source_url}: {exc}")
-        sale["_detail_fetch_failed"] = True
-        sale["source_detail_status"] = "failed"
+    html = fetch_detail_html(client, sale, errors, label="EncheresImmobilieres")
+    if html is None:
         return
     detail = parse_encheres_immobilieres_detail_html(html, source_url)
     listing_external_id = _identity_value(sale.get("external_id"))
@@ -411,7 +408,6 @@ def _raw_sale_from_listing_text(text: str | None, source_url: str) -> dict[str, 
         "starting_price_eur": price,
         "sale_date": sale_date,
         "tribunal": tribunal,
-        "status": "upcoming",
         "documents": [],
         "raw_text": raw_text,
         "source_blocks": {
@@ -671,6 +667,13 @@ def _extract_sale_date(text: str | None) -> str | None:
     return None
 
 
+PAST_SALE_TOLERANCE = timedelta(days=30)
+
+
+def _paris_today() -> date:
+    return datetime.now(ZoneInfo("Europe/Paris")).date()
+
+
 def _list_sale_date(text: str | None) -> str | None:
     match = re.search(r"^\s*(\d{1,2})\s+([A-ZÉÈÊÀÂÎÏÔÛÙÇ]{3,})\b", text or "", re.I)
     if not match:
@@ -679,14 +682,22 @@ def _list_sale_date(text: str | None) -> str | None:
     if not month:
         return None
     day = int(match.group(1))
-    year = date.today().year
     month_number = MONTH_NUMBERS[month]
-    try:
-        candidate = date(year, month_number, day)
-    except ValueError:
+    # The card gives no year. Keep the nearest year that is not more than
+    # PAST_SALE_TOLERANCE in the past, so a hearing held a few weeks ago is not
+    # pushed to next year (and so reported upcoming).
+    oldest = _paris_today() - PAST_SALE_TOLERANCE
+    year = None
+    for candidate_year in range(oldest.year, oldest.year + 3):
+        try:
+            candidate = date(candidate_year, month_number, day)
+        except ValueError:
+            continue
+        if candidate >= oldest:
+            year = candidate_year
+            break
+    if year is None:
         return None
-    if candidate < date.today():
-        year += 1
     return f"{day} {month} {year}"
 
 

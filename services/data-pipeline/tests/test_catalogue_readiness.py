@@ -125,6 +125,49 @@ def test_missing_source_proof_is_a_hard_blocker() -> None:
     assert result.status == "needs_enrichment"
 
 
+def test_generated_completeness_projection_is_not_source_proof() -> None:
+    projection_only = _complete_sale(
+        title=None,
+        description=None,
+        raw_text=None,
+        raw_payload={
+            "source_blocks": {
+                "listing_completeness": {
+                    "source_field_observations": {
+                        "description": {"value": "projection interne", "state": "observed"}
+                    }
+                }
+            }
+        },
+        documents=[],
+        source_urls=[],
+    )
+
+    projection_result = assess_catalogue_readiness(projection_only)
+
+    assert "source_proof" in projection_result.blockers
+
+    with_real_block = _complete_sale(
+        title=None,
+        description=None,
+        raw_text=None,
+        raw_payload={
+            "source_blocks": {
+                "listing_completeness": {
+                    "source_field_observations": {
+                        "description": {"value": "projection interne", "state": "observed"}
+                    }
+                },
+                "description": "Description réellement publiée par la source.",
+            }
+        },
+        documents=[],
+        source_urls=[],
+    )
+
+    assert "source_proof" not in assess_catalogue_readiness(with_real_block).blockers
+
+
 def test_state_sale_may_have_no_starting_price() -> None:
     sale = _complete_sale(source_name="cessions_etat", starting_price_eur=None)
 

@@ -5,12 +5,7 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import { SaleTypesOverview } from "@/components/SaleTypesOverview";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
-
-const RESOURCES_CANONICAL = "https://immojudis-dezt.vercel.app/ventes-immobilieres-judiciaires";
-const RESOURCES_TITLE =
-  "Ressources ventes immobilières judiciaires : annonces, risques et prix plafond | Immojudis";
-const DESCRIPTION =
-  "Immojudis référence et analyse les ventes immobilières judiciaires : annonces, cahier des conditions de vente, risques, frais, occupation, prix plafond et enchères au tribunal.";
+import { jsonLdString } from "@/lib/json-ld";
 
 const FAQ: Array<{ q: string; a: string }> = [
   {
@@ -103,8 +98,8 @@ const METHOD: Array<{ n: string; title: string; text: string }> = [
   },
   {
     n: "6",
-    title: "Fixer un prix plafond",
-    text: "Le prix plafond est la limite à ne pas dépasser. Il doit être défini avant l'audience et respecté strictement.",
+    title: "Fixer une enchère plafond",
+    text: "L’enchère plafond est la limite à ne pas dépasser. Il doit être défini avant l'audience et respecté strictement.",
   },
 ];
 
@@ -134,7 +129,7 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
     def: "Prix de départ de la vente aux enchères. Elle ne doit pas être confondue avec la valeur réelle du bien.",
   },
   {
-    term: "Prix plafond",
+    term: "Enchère plafond",
     def: "Montant maximum à ne pas dépasser, calculé à partir du marché, des frais, des travaux, des risques et de la stratégie de l'acheteur.",
   },
   {
@@ -194,43 +189,27 @@ const FAQ_JSON_LD = {
 };
 
 export const Route = createFileRoute("/ventes-immobilieres-judiciaires")({
-  head: () => ({
-    meta: [
-      { title: RESOURCES_TITLE },
-      { name: "description", content: DESCRIPTION },
-      { name: "robots", content: "index, follow" },
-      { property: "og:type", content: "website" },
-      { property: "og:title", content: RESOURCES_TITLE },
-      {
-        property: "og:description",
-        content:
-          "Trouvez, analysez et préparez vos ventes immobilières judiciaires avec Immojudis : annonces, risques, frais, occupation et prix plafond.",
-      },
-      { property: "og:url", content: RESOURCES_CANONICAL },
-    ],
-    links: [{ rel: "canonical", href: RESOURCES_CANONICAL }],
-  }),
   component: ResourcesPage,
 });
 
 export function ResourcesPage() {
   return (
-    <main className="liquid-page min-h-screen bg-background pb-24 text-foreground">
+    <main id="contenu" className="liquid-page min-h-screen bg-background pb-24 text-foreground">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_JSON_LD) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdString(FAQ_JSON_LD) }}
       />
 
       <article className="mx-auto max-w-5xl px-4 pt-10 sm:px-6">
         <Link
           to="/ressources"
-          className="mb-6 inline-flex text-sm text-gold-soft underline underline-offset-4"
+          className="mb-6 inline-flex text-sm text-gold-text underline underline-offset-4"
         >
           ← Tous les articles du blog
         </Link>
         {/* ── Hero ─────────────────────────────────────────────────────── */}
         <header className="glass-shell rounded-lg p-6 sm:p-9">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
             Immojudis · Ressources ventes judiciaires
           </p>
           <h1 className="mt-4 max-w-3xl font-display text-4xl leading-[1.08] text-foreground sm:text-5xl md:text-6xl">
@@ -252,7 +231,7 @@ export function ResourcesPage() {
               Identifiez les éléments clés : occupation, cahier des conditions de vente,
               diagnostics, frais, travaux et contraintes.
             </IntroCard>
-            <IntroCard title="Prix plafond">
+            <IntroCard title="Enchère plafond">
               Décidez avec méthode grâce à une approche en coût complet, intégrant les frais, les
               risques et la valeur de marché.
             </IntroCard>
@@ -269,7 +248,7 @@ export function ResourcesPage() {
               <li key={item.href}>
                 <a
                   href={item.href}
-                  className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-gold-soft hover:underline"
+                  className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-gold-text hover:underline"
                 >
                   {item.label}
                 </a>
@@ -400,7 +379,7 @@ export function ResourcesPage() {
                 "Le procès-verbal descriptif permet-il d'identifier des travaux importants ?",
                 "La mise à prix est-elle réellement attractive par rapport au marché local ?",
                 "Quel budget total faut-il prévoir après frais, travaux et marge de sécurité ?",
-                "Quel est le prix plafond à ne pas dépasser pour que l'opération reste rationnelle ?",
+                "Quel est l’enchère plafond à ne pas dépasser pour que l'opération reste rationnelle ?",
               ]}
             />
             <Callout>
@@ -537,7 +516,7 @@ export function ResourcesPage() {
               honoraires d'avocat, frais de publication, travaux, charges, financement et marge de
               sécurité.
             </P>
-            <P>Cette approche permet de fixer un prix plafond rationnel avant l'audience.</P>
+            <P>Cette approche permet de fixer une enchère plafond rationnel avant l'audience.</P>
 
             <SubTitle>Préparer le financement</SubTitle>
             <P>
@@ -585,7 +564,7 @@ export function ResourcesPage() {
             </P>
             <P>
               Le détail des frais doit être demandé à l'avocat. Il est indispensable de les intégrer
-              dans le prix plafond.
+              dans l’enchère plafond.
             </P>
 
             <SubTitle>2. Le jour de l'audience : enchérir au tribunal</SubTitle>
@@ -645,6 +624,26 @@ export function ResourcesPage() {
                 articles R. 322-61 à R. 322-63 du Code des procédures civiles d’exécution
               </Ext>
               .
+            </P>
+
+            <SubTitle>Ce qui vous engage quand vous enchérissez</SubTitle>
+            <P>
+              Une enchère n'est pas un simple essai. Avant d'enchérir, retenez ces règles qui
+              s'imposent à l'acheteur :
+            </P>
+            <Checklist
+              items={[
+                "une surenchère d'au moins un dixième du prix peut être formée dans les 10 jours qui suivent l'adjudication : l'achat n'est définitif qu'à l'expiration de ce délai ;",
+                "pour enchérir, il faut consigner 10 % de la mise à prix, avec un minimum de 3 000 €, par chèque de banque ou caution bancaire remis à l'avocat avant l'audience ;",
+                "le prix doit être payé dans les deux mois qui suivent le jour où la vente devient définitive ; au-delà, des intérêts sont dus ;",
+                "les frais préalables de la procédure doivent être réglés rapidement après l'adjudication, en plus du prix ;",
+                "l'avocat qui porte les enchères doit être inscrit au barreau du tribunal judiciaire où se tient la vente.",
+              ]}
+            />
+            <P>
+              Ces règles résument les textes applicables à la date de rédaction. Elles ne remplacent
+              pas le cahier des conditions de vente du dossier ni l'avis de votre avocat, qui
+              confirmera les montants et les délais de votre vente.
             </P>
           </Section>
 
@@ -715,7 +714,7 @@ export function ResourcesPage() {
             </P>
             <P>
               Le cinquième risque est émotionnel. En audience, la concurrence peut pousser à
-              dépasser son prix plafond. C'est précisément ce qu'il faut éviter.
+              dépasser son enchère plafond. C'est précisément ce qu'il faut éviter.
             </P>
             <Callout>
               Immojudis a été pensé pour limiter ces risques en donnant une lecture structurée du
@@ -729,7 +728,7 @@ export function ResourcesPage() {
               {METHOD.map((step) => (
                 <div key={step.n} className="liquid-panel-soft rounded-lg p-5">
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gold text-xs font-bold text-background">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gold text-xs font-bold text-brand-navy">
                       {step.n}
                     </span>
                     <h3 className="text-base font-semibold text-foreground">{step.title}</h3>
@@ -774,7 +773,9 @@ export function ResourcesPage() {
                 <details key={item.q} className="group py-4">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-foreground">
                     {item.q}
-                    <span className="text-gold transition-transform group-open:rotate-45">+</span>
+                    <span className="text-gold-text transition-transform group-open:rotate-45">
+                      +
+                    </span>
                   </summary>
                   <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{item.a}</p>
                 </details>
@@ -791,14 +792,14 @@ export function ResourcesPage() {
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             Immojudis vous aide à repérer les ventes immobilières judiciaires, lire les informations
-            utiles, identifier les risques et construire votre prix plafond avant l'audience. Avant
-            d'enchérir, ne vous arrêtez pas à la mise à prix : analysez le dossier, vérifiez
+            utiles, identifier les risques et construire votre enchère plafond avant l'audience.
+            Avant d'enchérir, ne vous arrêtez pas à la mise à prix : analysez le dossier, vérifiez
             l'occupation, estimez les frais, comparez le marché, sécurisez votre financement, fixez
             votre limite.
           </p>
           <Link
             to="/sales"
-            className="liquid-button mt-6 inline-flex items-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background transition hover:brightness-105"
+            className="liquid-button mt-6 inline-flex items-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] transition hover:brightness-105"
           >
             Accéder aux ventes référencées <ArrowRight className="h-4 w-4" />
           </Link>
@@ -846,7 +847,7 @@ function P({ children, className }: { children: React.ReactNode; className?: str
 }
 
 function SubTitle({ children }: { children: React.ReactNode }) {
-  return <h3 className="mt-8 text-lg font-semibold text-gold-soft">{children}</h3>;
+  return <h3 className="mt-8 text-lg font-semibold text-gold-text">{children}</h3>;
 }
 
 function Checklist({ items }: { items: string[] }) {
@@ -857,7 +858,7 @@ function Checklist({ items }: { items: string[] }) {
           key={item}
           className="flex items-start gap-2.5 text-[15px] leading-relaxed text-muted-foreground"
         >
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-gold" />
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" />
           <span>{item}</span>
         </li>
       ))}
@@ -879,7 +880,7 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-gold-soft underline underline-offset-4 transition-colors hover:text-gold"
+      className="inline-flex items-center gap-1 text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
     >
       {children}
       <ExternalLink className="h-3 w-3 shrink-0" />

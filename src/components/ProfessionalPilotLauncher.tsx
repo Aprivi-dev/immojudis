@@ -63,7 +63,7 @@ export function ProfessionalPilotLauncher({
     >
       <div className="flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-brand-navy/55">
+          <p className="text-xs font-semibold uppercase tracking-wide text-brand-navy/65">
             Outil de travail
           </p>
           <h2 className="mt-1 font-display text-xl font-semibold text-brand-navy">

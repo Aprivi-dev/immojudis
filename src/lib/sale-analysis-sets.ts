@@ -1,3 +1,4 @@
+import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
@@ -12,6 +13,7 @@ import {
   readSaleComparisonSnapshot,
   type ComparedSale,
 } from "@/lib/search/sale-comparison";
+import { asRecord } from "@/lib/guards";
 
 type AnalysisSetRow = Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
 type AnalysisSetInsert = Database["public"]["Tables"]["user_sale_analysis_sets"]["Insert"];
@@ -798,10 +800,4 @@ function normalizeShareToken(value: string): string | null {
 
 function hashShareToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -24,13 +25,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Mise à jour d'analyse impossible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservée")
-        ? 403
-        : 400;
-    return NextResponse.json({ set: null, error: message }, { status });
+    return apiRouteError(error, request, "sale-analysis-sets.id", {
+      fallbackMessage: "Mise à jour d'analyse impossible",
+      extra: { set: null },
+    });
   }
 }
 
@@ -45,8 +43,8 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Suppression d'analyse impossible";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "sale-analysis-sets.id", {
+      fallbackMessage: "Suppression d'analyse impossible",
+    });
   }
 }

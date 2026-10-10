@@ -53,8 +53,10 @@ permissions:
   contents: read
 
 concurrency:
-  # Use the catalogue-wide writer lock shared with scheduled ingestion.
-  group: immojudis-data-pipeline
+  # A manual recompute must never cancel (or be cancelled by) a pending
+  # pipeline run, which a shared group would do. Both serialise on the
+  # catalogue writer advisory lock taken by the Python entry points instead.
+  group: immojudis-recompute
   cancel-in-progress: false
 
 jobs:
@@ -66,21 +68,30 @@ jobs:
       run:
         working-directory: services/data-pipeline
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # Honest, contactable crawler identity; a repository variable overrides it.
+      AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
       ENABLE_ENCHERES_PUBLIQUES_BENCHMARK: ${{ vars.ENCHERES_PUBLIQUES_BENCHMARK_ENABLED || 'false' }}
       ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED: ${{ vars.ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED || 'false' }}
+      # No credential here: the pip and cache steps must not see any. Only the
+      # recompute steps below receive SUPABASE_* secrets.
     steps:
       - name: Check target confirmation
         working-directory: ${{ github.workspace }}
+        env:
+          # Inputs reach the shell through the environment, never through
+          # ${{ }} interpolation inside the script.
+          CONFIRM_TARGET: ${{ inputs.confirm_target }}
+          REPAIR_ONLY: ${{ inputs.repair_only }}
+          REFRESH_UNKNOWN_ONLY: ${{ inputs.refresh_unknown_only }}
+          READINESS_ONLY: ${{ inputs.readiness_only }}
         run: |
           set -euo pipefail
-          if [ "${{ inputs.confirm_target }}" != "production" ]; then
+          if [ "$CONFIRM_TARGET" != "production" ]; then
             echo "confirm_target must be exactly: production" >&2
             exit 1
           fi
           selected_modes=0
-          for mode in "${{ inputs.repair_only }}" "${{ inputs.refresh_unknown_only }}" "${{ inputs.readiness_only }}"; do
+          for mode in "$REPAIR_ONLY" "$REFRESH_UNKNOWN_ONLY" "$READINESS_ONLY"; do
             if [ "$mode" = "true" ]; then
               selected_modes=$((selected_modes + 1))
             fi
@@ -107,17 +118,21 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/data-pipeline/requirements.txt
+          cache-dependency-path: services/data-pipeline/requirements.lock
 
       - name: Install Python dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Compute cache day
+        id: date
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Restore verified Justice reference cache
         if: ${{ !inputs.readiness_only }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: services/data-pipeline/data/raw/outcome_sources/justice_courts
-          key: immojudis-justice-reference-${{ runner.os }}-${{ github.run_id }}
+          key: immojudis-justice-reference-${{ runner.os }}-${{ steps.date.outputs.day }}
           restore-keys: |
             immojudis-justice-reference-${{ runner.os }}-
 
@@ -128,6 +143,8 @@ jobs:
       - name: Validate recompute without writing
         if: ${{ !inputs.repair_only && !inputs.refresh_unknown_only && !inputs.readiness_only }}
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
@@ -144,6 +161,8 @@ jobs:
       - name: Validate catalogue readiness without writing
         if: ${{ inputs.readiness_only }}
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
@@ -160,6 +179,10 @@ jobs:
       - name: Publish recomputed sales
         if: ${{ !inputs.dry_run && !inputs.repair_only && !inputs.refresh_unknown_only && !inputs.readiness_only }}
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Direct database session for the catalogue writer lock.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
@@ -176,6 +199,10 @@ jobs:
       - name: Publish catalogue readiness
         if: ${{ !inputs.dry_run && inputs.readiness_only }}
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Direct database session for the catalogue writer lock.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
@@ -192,6 +219,10 @@ jobs:
       - name: Refresh unresolved procedure source pages
         if: ${{ !inputs.dry_run && inputs.refresh_unknown_only }}
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Direct database session for the catalogue writer lock.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |
@@ -208,6 +239,10 @@ jobs:
       - name: Repair and verify persisted sale procedures
         if: ${{ !inputs.dry_run && !inputs.readiness_only }}
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Direct database session for the catalogue writer lock.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_SOURCE: ${{ inputs.source }}
           REQUESTED_LIMIT: ${{ inputs.limit }}
         run: |

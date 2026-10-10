@@ -3,7 +3,7 @@ import ScrollText from "lucide-react/dist/esm/icons/scroll-text.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import { Link } from "@/lib/router-compat";
-import { SALE_FAMILIES } from "@/lib/sale-types";
+import { visibleSaleFamilies } from "@/lib/sale-types";
 
 const FAMILY_ICONS = { tribunal: Landmark, notary: ScrollText, state: Building2 };
 
@@ -11,14 +11,14 @@ export function SaleTypesOverview({ detailed = false }: { detailed?: boolean }) 
   return (
     <div>
       <div className="grid gap-4 lg:grid-cols-3">
-        {SALE_FAMILIES.map((family) => {
+        {visibleSaleFamilies().map((family) => {
           const Icon = FAMILY_ICONS[family.type];
           return (
             <article
               key={family.type}
               className="flex flex-col rounded-lg border border-brand-navy/15 bg-white p-5 sm:p-6"
             >
-              <Icon className="mb-4 h-6 w-6 text-gold-soft" aria-hidden />
+              <Icon className="mb-4 h-6 w-6 text-gold-text" aria-hidden />
               <h3 className="font-display text-2xl font-semibold text-brand-navy">
                 {family.title}
               </h3>

@@ -1,10 +1,10 @@
 .root {
-  --cadastre-ink: #132238;
-  --cadastre-muted: #617187;
-  --cadastre-border: #dce4ed;
-  --cadastre-soft: #f5f8fb;
-  --cadastre-accent: #946724;
-  --cadastre-accent-soft: #fff8e9;
+  --cadastre-ink: var(--brand-navy);
+  --cadastre-muted: var(--ink-soft);
+  --cadastre-border: var(--line-soft);
+  --cadastre-soft: var(--surface-muted);
+  --cadastre-accent: var(--gold-soft);
+  --cadastre-accent-soft: var(--warning-tint);
   display: grid;
   gap: 11px;
   width: 100%;
@@ -49,10 +49,10 @@
 .sourcePill {
   flex: 0 0 auto;
   padding: 6px 9px;
-  border: 1px solid #e7d4ac;
+  border: 1px solid var(--gold-light);
   border-radius: 999px;
   background: var(--cadastre-accent-soft);
-  color: #805b1f;
+  color: var(--gold-text);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.06em;
@@ -67,7 +67,7 @@
   overflow: hidden;
   border: 1px solid var(--cadastre-border);
   border-radius: 16px;
-  background: #e9eef3;
+  background: var(--surface-tint);
   box-shadow: 0 14px 30px rgb(19 34 56 / 8%);
   isolation: isolate;
 }
@@ -105,12 +105,12 @@
   max-width: min(70vw, 360px);
   border-radius: 6px;
   background: rgb(255 255 255 / 84%);
-  color: #52647a;
+  color: var(--ink-soft);
   font-size: 9px;
 }
 
 .mapFrame :global(.mapboxgl-ctrl-attrib a) {
-  color: #345a78;
+  color: var(--info);
 }
 
 .status {
@@ -137,7 +137,7 @@
 .spinner {
   width: 25px;
   height: 25px;
-  border: 3px solid #d7e0e9;
+  border: 3px solid var(--line-soft);
   border-top-color: var(--cadastre-accent);
   border-radius: 50%;
   animation: spin 800ms linear infinite;
@@ -148,10 +148,10 @@
   align-items: center;
   min-height: 35px;
   padding: 8px 12px;
-  border: 1px solid #d7c092;
+  border: 1px solid var(--gold-light);
   border-radius: 999px;
-  background: #fff;
-  color: #805b1f;
+  background: #ffffff;
+  color: var(--gold-text);
   font-size: 12px;
   font-weight: 750;
   text-decoration: none;
@@ -174,10 +174,10 @@
   max-width: min(430px, calc(100% - 84px));
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid #e7d4ac;
+  border: 1px solid var(--gold-light);
   border-radius: 9px;
   background: rgb(255 248 233 / 94%);
-  color: #6b5328;
+  color: var(--gold-text);
   font-size: 11px;
   line-height: 1.35;
   box-shadow: 0 4px 14px rgb(19 34 56 / 12%);
@@ -207,14 +207,14 @@
 }
 
 .legendPoint {
-  border: 3px solid #fff;
+  border: 3px solid #ffffff;
   border-radius: 50%;
-  background: #946724;
-  box-shadow: 0 0 0 1px #946724;
+  background: var(--gold-soft);
+  box-shadow: 0 0 0 1px var(--gold-soft);
 }
 
 .legendParcel {
-  border: 2px solid #c47e22;
+  border: 2px solid var(--gold);
   border-radius: 2px;
   background: rgb(255 205 94 / 30%);
 }
@@ -255,8 +255,8 @@
 .markerDot {
   width: 14px;
   height: 14px;
-  border: 3px solid #fff;
-  background: #946724;
+  border: 3px solid #ffffff;
+  background: var(--gold-soft);
   box-shadow: 0 5px 12px rgb(19 34 56 / 28%);
 }
 

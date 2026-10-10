@@ -18,6 +18,7 @@ import type {
 } from "@/lib/land-report-types";
 import { LandParcelDiagram } from "./LandParcelDiagram";
 import styles from "./LandPotentialPanel.module.css";
+import { userMessage } from "@/lib/user-messages";
 
 type Props = { saleId: string; enabled: boolean; initialReport?: LandReport };
 const PROJECT_LABELS: Record<LandProjectKind, string> = {
@@ -41,9 +42,7 @@ export function LandPotentialPanel({ saleId, enabled, initialReport }: Props) {
     try {
       setReport(await fetchSaleLandReport(saleId, refresh));
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Les sources n’ont pas pu être consultées.",
-      );
+      setError(userMessage(cause, "Les sources n’ont pas pu être consultées."));
     } finally {
       setLoading(false);
     }
@@ -55,7 +54,7 @@ export function LandPotentialPanel({ saleId, enabled, initialReport }: Props) {
     try {
       await downloadSaleLandReport(saleId);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "L’export est indisponible.");
+      setError(userMessage(cause, "L’export est indisponible."));
     } finally {
       setExporting(false);
     }
@@ -92,9 +91,9 @@ export function LandPotentialPanel({ saleId, enabled, initialReport }: Props) {
 
       {!enabled ? (
         <div className={styles.notice}>
-          <p>Le plan Analyse donne accès au dossier PLU et risques de chaque annonce.</p>
-          <a href="/accompagnement">
-            Découvrir le plan Analyse <ArrowUpRight size={15} aria-hidden="true" />
+          <p>L’offre Analyse donne accès au dossier PLU et risques de chaque annonce.</p>
+          <a href="/offres">
+            Découvrir l’offre Analyse <ArrowUpRight size={15} aria-hidden="true" />
           </a>
         </div>
       ) : (

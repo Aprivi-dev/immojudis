@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from src.config import load_settings
+from src.config import DEFAULT_USER_AGENT, load_settings
 from src.models import AuctionSale
 
 LOGGER = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ def enrich_cadastre_sales(
                     source_ign=str(settings.get("cadastre_source_ign") or ""),
                     max_parcels=int(settings.get("cadastre_max_parcels") or 4),
                     timeout_seconds=float(settings.get("cadastre_timeout_seconds") or 10),
-                    user_agent=str(settings.get("user_agent") or "immojudis-data-pipeline/1.0"),
+                    user_agent=str(settings.get("user_agent") or DEFAULT_USER_AGENT),
                 )
             )
         except Exception as exc:
@@ -94,7 +94,7 @@ def fetch_cadastre_parcels_for_sale(
     source_ign: str = "PCI",
     max_parcels: int = 4,
     timeout_seconds: float = 10,
-    user_agent: str = "immojudis-data-pipeline/1.0",
+    user_agent: str = DEFAULT_USER_AGENT,
 ) -> list[CadastreParcel]:
     if not sale.source_url or sale.latitude is None or sale.longitude is None:
         return []

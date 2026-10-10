@@ -75,12 +75,11 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"
       PIPELINE_TRACEBACK_SECONDS: "300"
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      # Honest, contactable crawler identity; a repository variable overrides it.
+      AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
+      # Secrets are not part of the job environment: the pip and apt steps
+      # must not see them. Only the Python business steps below receive them.
       SOURCE_FETCH_RELAY_URL: ${{ vars.SOURCE_FETCH_RELAY_URL }}
-      SOURCE_FETCH_RELAY_TOKEN: ${{ secrets.SOURCE_FETCH_RELAY_TOKEN }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
       REPLICATE_MODEL: qwen/qwen3-7-plus
       PIPELINE_ENRICH_WORKERS: 2
       PIPELINE_LLM_WORKERS: 1
@@ -122,6 +121,9 @@ jobs:
       PIPELINE_ENRICHMENT_QUEUE_BATCH_SIZE: 4
       LLM_ENABLED: true
       LLM_PROVIDER: replicate
+      INFORMATION_AGENT_EVIDENCE_OCR_ENABLED: "true"
+      INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED: "true"
+      INFORMATION_AGENT_EVIDENCE_VISION_ENABLED: "true"
       PDF_EXTRACTOR: auto
       PDF_DOCLING_ENABLED: false
       PDF_OCR_ENABLED: true
@@ -167,9 +169,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/data-pipeline/requirements.txt
+          cache-dependency-path: services/data-pipeline/requirements.lock
+
+      - name: Compute cache day
+        id: date
+        run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Restore pipeline extraction cache
         id: extraction-cache
@@ -180,7 +186,9 @@ jobs:
             services/data-pipeline/data/raw/pdf_texts
             services/data-pipeline/data/raw/docling_texts
             services/data-pipeline/data/processed/llm_extractions
-          key: immojudis-data-pipeline-${{ runner.os }}-${{ github.run_id }}
+          # One entry per UTC day instead of one per run: the newest earlier
+          # entry is restored by prefix, and the repository cache stays bounded.
+          key: immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}
           restore-keys: |
             immojudis-data-pipeline-${{ runner.os }}-
 
@@ -188,7 +196,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: services/data-pipeline/data/raw/outcome_sources/justice_courts
-          key: immojudis-justice-reference-${{ runner.os }}-${{ github.run_id }}
+          key: immojudis-justice-reference-${{ runner.os }}-${{ steps.date.outputs.day }}
           restore-keys: |
             immojudis-justice-reference-${{ runner.os }}-
 
@@ -202,7 +210,7 @@ jobs:
           sudo apt-get install -y "${packages[@]}"
 
       - name: Install Python dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install --require-hashes -r requirements.lock
 
       - name: Refresh and verify official Justice references
         run: python -m src.official_sources.justice_reference_sync
@@ -210,6 +218,11 @@ jobs:
       - name: Run manually requested pipeline
         id: pipeline
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SOURCE_FETCH_RELAY_TOKEN: ${{ secrets.SOURCE_FETCH_RELAY_TOKEN }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
           REQUESTED_AUTOMATIC: ${{ inputs.automatic }}
           REQUESTED_PUBLICATION_CHECK: ${{ github.event.inputs.publication_check }}
           REQUESTED_ENRICHMENT_ONLY: ${{ github.event.inputs.enrichment_only }}
@@ -221,8 +234,10 @@ jobs:
           set -euo pipefail
           : "${SUPABASE_DB_URL:?Transactional publication requires SUPABASE_DB_URL}"
 
+          # Exit code 2 means "published, but an enabled source was empty or
+          # failed": a warning that must not stop the steps that follow.
           if [ "$REQUESTED_AUTOMATIC" = "true" ]; then
-            python -m src.autonomous_runner --run-id "$REQUESTED_RUN_ID"
+            bash scripts/allow_source_warning.sh python -m src.autonomous_runner --run-id "$REQUESTED_RUN_ID"
             exit 0
           fi
 
@@ -231,7 +246,7 @@ jobs:
             exit 0
           fi
           if [ "$REQUESTED_ENRICHMENT_ONLY" = "true" ]; then
-            python -m src.queued_runner --enrichment-only
+            bash scripts/allow_source_warning.sh python -m src.queued_runner --enrichment-only
             exit 0
           fi
 
@@ -246,21 +261,40 @@ jobs:
           if [ -n "$REQUESTED_LIMIT" ]; then
             args+=(--limit "$REQUESTED_LIMIT")
           fi
-          python -m src.main "${args[@]}"
+          bash scripts/allow_source_warning.sh python -m src.main "${args[@]}"
 
       - name: Finalize unfinished run
         if: always() && inputs.publication_check != true
         env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_AUTOMATIC: ${{ inputs.automatic }}
           REQUESTED_RUN_ID: ${{ inputs.run_id }}
         run: python -m src.run_finalizer
 
       - name: Report source coverage and enrichment backlog
         if: always()
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python -m src.pipeline_health --report-only
 
+      - name: Flag partial collection
+        if: always() && steps.pipeline.outputs.source_warning == 'true'
+        run: |
+          {
+            echo "### Collecte partielle"
+            echo "Au moins une source activée a rendu 0 annonce ou a levé une erreur. Voir les annotations « Source … en échec » de cette exécution."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Bound extraction cache
+        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true && steps.extraction-cache.outputs.cache-hit != 'true'
+        run: >
+          python scripts/prune_cache_dirs.py --max-age-days 14 --max-total-mb 300
+          data/documents data/raw/pdf_texts data/raw/docling_texts data/processed/llm_extractions
+
       - name: Save extraction checkpoints
-        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true
+        # A cache entry cannot be overwritten: once today's entry exists, later
+        # runs of the same day restore it and skip the save.
+        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true && steps.extraction-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -268,7 +302,7 @@ jobs:
             services/data-pipeline/data/raw/pdf_texts
             services/data-pipeline/data/raw/docling_texts
             services/data-pipeline/data/processed/llm_extractions
-          key: immojudis-data-pipeline-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}
 
   model-benchmark:
     if: github.event_name == 'workflow_dispatch' && inputs.model_benchmark
@@ -279,7 +313,6 @@ jobs:
       run:
         working-directory: services/data-pipeline
     env:
-      REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
       LLM_PROVIDER: replicate
       LLM_ENABLED: true
       APP_ENV: benchmark
@@ -291,14 +324,16 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/data-pipeline/requirements.txt
+          cache-dependency-path: services/data-pipeline/requirements.lock
 
       - name: Install pipeline dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install --require-hashes -r requirements.lock
 
       - name: Compare existing and candidate models
+        env:
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
         run: python -m scripts.benchmark_replicate_models --output model-benchmark.json
 
       - name: Save model comparison

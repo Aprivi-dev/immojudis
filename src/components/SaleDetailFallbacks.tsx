@@ -4,7 +4,7 @@ import { Link } from "@/lib/router-compat";
 
 export function SaleDetailSkeleton() {
   return (
-    <main className="min-h-screen bg-white px-4 py-8 sm:px-6">
+    <main id="contenu" className="min-h-screen bg-white px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-7xl">
         <Skeleton className="h-4 w-20 bg-muted" />
         <Skeleton className="mt-4 h-8 w-2/3 bg-muted" />
@@ -27,7 +27,10 @@ export function SaleDetailSkeleton() {
 
 export function SaleNotFoundComponent() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center">
+    <main
+      id="contenu"
+      className="flex min-h-screen items-center justify-center bg-white px-4 py-16 text-center"
+    >
       <div className="max-w-2xl rounded-lg border border-border bg-white p-8 shadow-xl shadow-slate-900/10">
         <BrandMark className="mx-auto h-14 w-14" />
         <h1 className="mt-5 font-sans text-2xl font-semibold text-foreground">

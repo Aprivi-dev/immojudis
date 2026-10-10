@@ -8,23 +8,26 @@ import {
   PLAN_LIMITS,
   type FeatureAccess,
   type FeatureKey,
+  type PlanBilling,
   type PlanCode,
 } from "@/lib/plans";
 import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 import { buildUrbanPlanningAnalysis } from "@/lib/urban-planning-analysis";
 import { assertUsageLimitAvailable } from "@/lib/usage";
 import { ActiveComparableSales, PlanEntitlements } from "../property-reports";
-import { asRecord } from "./serialization";
+import { asRecord } from "@/lib/guards";
 export function buildPlanEntitlements(
   plan: PlanCode,
   currentPeriodEnd: string | null = null,
   limits: PlanEntitlements["limits"] = PLAN_LIMITS[plan],
+  billing?: PlanBilling,
 ): PlanEntitlements {
   return {
     plan,
     label: PLAN_LABELS[plan],
     hasAnalysisAccess: plan === "analyse",
     currentPeriodEnd,
+    ...(billing ? { billing } : {}),
     limits,
     features: {
       salesStatistics: featureAccess(plan, "sales.statistics"),

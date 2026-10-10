@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -21,13 +22,8 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Backtest de valorisation indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservé")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "valuation-backtest", {
+      fallbackMessage: "Backtest de valorisation indisponible",
+    });
   }
 }

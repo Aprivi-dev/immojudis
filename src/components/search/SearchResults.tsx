@@ -37,6 +37,8 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
+import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 export function SearchResultsList({
   sales,
   sponsoredPlacement,
@@ -45,6 +47,7 @@ export function SearchResultsList({
   analysisLocked,
   isLoading,
   error,
+  onRetry,
   selectedSaleId,
   hoveredSaleId,
   onHover,
@@ -62,6 +65,7 @@ export function SearchResultsList({
   analysisLocked: boolean;
   isLoading: boolean;
   error: Error | null;
+  onRetry?: () => void;
   selectedSaleId: string | null;
   hoveredSaleId: string | null;
   onHover: (saleId: string | null) => void;
@@ -76,7 +80,7 @@ export function SearchResultsList({
   const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
   const favoriteQueryIds = useMemo(() => [...saleIds].sort(), [saleIds]);
   const favoriteQuery = useQuery({
-    queryKey: ["search-favorite-status", user?.id ?? null, favoriteQueryIds],
+    queryKey: queryKeys.searchFavoriteStatus(user?.id ?? null, favoriteQueryIds),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("user_favorites")
@@ -95,7 +99,7 @@ export function SearchResultsList({
 
   return (
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
-      {error ? <ErrorState error={error} /> : null}
+      {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
 
       {!isLoading && sales.length === 0 && !error ? <NoResultsState /> : null}
 
@@ -153,6 +157,7 @@ export const ListingCard = memo(function ListingCard({
   aiReviewStatus = "ready",
   favoriteScope = null,
   initialFavorite = false,
+  onFavoriteChange,
 }: {
   sale: AuctionSale;
   returnTo: string;
@@ -169,6 +174,8 @@ export const ListingCard = memo(function ListingCard({
   aiReviewStatus?: AiReviewRequestStatus;
   favoriteScope?: string | null;
   initialFavorite?: boolean;
+  /** Appelé après l'ajout ou le retrait réussi d'un favori depuis la carte. */
+  onFavoriteChange?: (saleId: string, isFavorite: boolean) => void;
 }) {
   const displaySurface = getDisplaySurface(sale);
   const { isViewed } = useViewedSales();
@@ -213,7 +220,7 @@ export const ListingCard = memo(function ListingCard({
       onMouseLeave={() => onHover(null)}
       onFocusCapture={() => onHover(sale.id)}
       onBlurCapture={() => onHover(null)}
-      className={`group relative overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)] transition-[border-color,box-shadow] ${active ? "border-[#c98d45] ring-1 ring-[#c98d45]" : "border-[#dce3eb] hover:border-[#c98d45] hover:shadow-[0_8px_24px_rgba(19,34,56,0.09)]"}`}
+      className={`group relative overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)] transition-[border-color,box-shadow] ${active ? "border-gold ring-1 ring-gold" : "border-line-soft hover:border-gold hover:shadow-[0_8px_24px_rgba(19,34,56,0.09)]"}`}
     >
       <Link
         id={`sale-card-${sale.id}`}
@@ -223,9 +230,9 @@ export const ListingCard = memo(function ListingCard({
         prefetch={false}
         onClick={() => onSelect(sale.id)}
         aria-label={`Voir ${title}`}
-        className="absolute inset-0 z-10 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9c642b]"
+        className="absolute inset-0 z-10 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       />
-      <div className="relative aspect-[4/3] overflow-hidden bg-[#edf2f5]">
+      <div className="relative aspect-[4/3] overflow-hidden bg-surface-tint">
         <ListingImage
           sale={sale}
           locked={false}
@@ -235,7 +242,7 @@ export const ListingCard = memo(function ListingCard({
           onSelect={onSelect}
         />
         {viewed && (
-          <span className="absolute left-3 top-3 z-20 rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-[#132238] shadow-sm">
+          <span className="absolute left-3 top-3 z-20 rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
             Vu
           </span>
         )}
@@ -257,7 +264,7 @@ export const ListingCard = memo(function ListingCard({
                   "Localisation à préciser"}
               </AiReviewField>
             </h3>
-            <p className="mt-1 text-sm leading-5 text-[#526170]">
+            <p className="mt-1 text-sm leading-5 text-ink-soft">
               <AiReviewField
                 fieldKey="property.property_type"
                 projections={aiReviewProjections}
@@ -297,9 +304,10 @@ export const ListingCard = memo(function ListingCard({
             locked={locked}
             favoriteScope={favoriteScope}
             initialFavorite={initialFavorite}
+            onChange={onFavoriteChange}
           />
         </div>
-        <p className="mt-3 text-2xl font-bold leading-none text-[#9c642b] sm:text-[1.7rem]">
+        <p className="mt-3 text-2xl font-bold leading-none text-gold-text sm:text-[1.7rem]">
           <AiReviewField
             fieldKey="sale.starting_price_eur"
             projections={aiReviewProjections}
@@ -311,8 +319,8 @@ export const ListingCard = memo(function ListingCard({
             {formatPrice(sale.starting_price_eur)}
           </AiReviewField>
         </p>
-        <p className="text-xs text-[#526170]">Mise à prix</p>
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-[#526170]">
+        <p className="text-xs text-ink-soft">Mise à prix</p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-soft">
           <span className="inline-flex items-center gap-1">
             <CalendarDays className="h-3.5 w-3.5" />
             <AiReviewField
@@ -329,7 +337,7 @@ export const ListingCard = memo(function ListingCard({
           <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
           <SaleProcedureBadge sale={sale} />
           {!premiumLocked && sale.occupancy_status && (
-            <span className="rounded bg-[#f0f5f3] px-2 py-1">
+            <span className="rounded bg-success-tint px-2 py-1">
               <AiReviewField
                 fieldKey="property.occupancy_status"
                 projections={aiReviewProjections}
@@ -343,8 +351,8 @@ export const ListingCard = memo(function ListingCard({
             </span>
           )}
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-[#edf0f2] pt-3">
-          <span className="text-xs text-[#526170]">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-surface-tint pt-3">
+          <span className="text-xs text-ink-soft">
             {locked
               ? "Fiche complète avec un compte gratuit"
               : analysisLocked
@@ -364,7 +372,7 @@ export const ListingCard = memo(function ListingCard({
                   event.stopPropagation();
                   onToggleComparison(sale);
                 }}
-                className="relative z-20 min-h-11 rounded px-2 text-xs font-medium hover:bg-[#eef3f8] focus-visible:outline-2 focus-visible:outline-[#9c642b] disabled:opacity-50"
+                className="relative z-20 min-h-11 rounded px-2 text-xs font-medium hover:bg-surface-tint focus-visible:outline-2 focus-visible:outline-gold-soft disabled:opacity-50"
               >
                 {comparisonSelected ? "Sélectionné ✓" : "Comparer"}
               </button>
@@ -631,10 +639,10 @@ export function ListingBadge({
 }) {
   const toneClass =
     tone === "teal"
-      ? "bg-[#0f766e] text-white"
+      ? "bg-brand-navy text-white"
       : tone === "cream"
-        ? "bg-[#fffaf2] text-[#8a5b24]"
-        : "bg-[#132238] text-white";
+        ? "bg-surface text-gold-text"
+        : "bg-brand-navy text-white";
 
   return (
     <span
@@ -654,8 +662,8 @@ export function Metric({
   label: string;
 }) {
   return (
-    <span className="inline-flex min-w-0 items-center gap-1 rounded-md bg-[#f3f7fa] px-2 py-1">
-      <Icon className="h-3.5 w-3.5 shrink-0 text-[#0f766e]" />
+    <span className="inline-flex min-w-0 items-center gap-1 rounded-md bg-surface-muted px-2 py-1">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-brand-navy" />
       <span className="truncate">{label}</span>
     </span>
   );
@@ -671,8 +679,8 @@ export function ListingSignal({
   tone: string;
 }) {
   return (
-    <span className="min-w-0 border-r border-[#e2e8ee] px-2 py-2 last:border-r-0">
-      <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-[#8b949e]">
+    <span className="min-w-0 border-r border-line-soft px-2 py-2 last:border-r-0">
+      <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-ink-soft">
         {label}
       </span>
       <span className={`mt-0.5 block truncate font-extrabold ${tone}`}>{value}</span>
@@ -706,7 +714,7 @@ export function ShareButton({ sale, title }: { sale: AuctionSale; title: string 
     <button
       type="button"
       onClick={share}
-      className="relative z-20 grid h-8 w-8 cursor-pointer place-items-center rounded-full text-[#132238] transition-colors hover:bg-[#eef2f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e]"
+      className="relative z-20 grid h-8 w-8 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
       aria-label="Partager cette vente"
     >
       <Share2 className="h-5 w-5" />
@@ -719,11 +727,13 @@ export function CompactFavoriteButton({
   locked,
   favoriteScope,
   initialFavorite = false,
+  onChange,
 }: {
   saleId: string;
   locked: boolean;
   favoriteScope?: string | null;
   initialFavorite?: boolean;
+  onChange?: (saleId: string, isFavorite: boolean) => void;
 }) {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -751,7 +761,7 @@ export function CompactFavoriteButton({
     if (locked) return;
 
     setBusy(true);
-    const searchFavoriteQueryKey = ["search-favorite-status", user.id] as const;
+    const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(user.id);
     try {
       await queryClient.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFavorite) {
@@ -762,7 +772,7 @@ export function CompactFavoriteButton({
         setIsFavorite(true);
       }
       queryClient.setQueriesData<string[] | undefined>(
-        { queryKey: ["search-favorite-status", user.id] },
+        { queryKey: queryKeys.searchFavoriteStatusForUser(user.id) },
         (favoriteSaleIds) => {
           const nextFavoriteSaleIds = new Set(favoriteSaleIds ?? []);
           if (isFavorite) nextFavoriteSaleIds.delete(saleId);
@@ -770,11 +780,12 @@ export function CompactFavoriteButton({
           return [...nextFavoriteSaleIds];
         },
       );
-      queryClient.invalidateQueries({ queryKey: ["favorites", user.id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.favorites(user.id) });
+      onChange?.(saleId, !isFavorite);
       await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (error) {
       void queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
-      toast.error(error instanceof Error ? error.message : "Erreur");
+      toast.error(userMessage(error));
     } finally {
       setBusy(false);
     }
@@ -793,12 +804,12 @@ export function CompactFavoriteButton({
             ? "Ne plus suivre cette vente"
             : "Suivre cette vente"
       }
-      className="relative z-20 grid h-8 w-8 cursor-pointer place-items-center rounded-full text-[#132238] transition-colors hover:bg-[#eef2f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
+      className="relative z-20 grid h-8 w-8 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60"
     >
       {locked ? (
-        <LockKeyhole className="h-4 w-4 text-[#8a5b24]" />
+        <LockKeyhole className="h-4 w-4 text-gold-text" />
       ) : (
-        <Heart className={`h-5 w-5 ${isFavorite ? "fill-[#c2410c] text-[#c2410c]" : ""}`} />
+        <Heart className={`h-5 w-5 ${isFavorite ? "fill-danger text-danger" : ""}`} />
       )}
     </button>
   );

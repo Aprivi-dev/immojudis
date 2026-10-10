@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   featureIncluded,
   isPlanPeriodActive,
+  pastDueGraceEnd,
   normalizePlanCode,
   PLAN_FEATURES,
   PLAN_LABELS,
@@ -62,5 +63,23 @@ describe("plan matrix", () => {
     expect(isPlanPeriodActive("active", "2026-07-09T10:00:00.000Z", now)).toBe(false);
     expect(isPlanPeriodActive("expired", "2026-07-11T10:00:00.000Z", now)).toBe(false);
     expect(isPlanPeriodActive("active", null, now)).toBe(true);
+  });
+
+  it("keeps access for seven days after a failed renewal, then stops", () => {
+    const now = new Date("2026-07-10T10:00:00.000Z");
+    // The paid period ended three days ago: still inside the grace period.
+    expect(isPlanPeriodActive("past_due", "2026-07-07T10:00:00.000Z", now)).toBe(true);
+    // Eight days ago: grace over.
+    expect(isPlanPeriodActive("past_due", "2026-07-02T10:00:00.000Z", now)).toBe(false);
+    // Without a known period end there is nothing to anchor the grace on.
+    expect(isPlanPeriodActive("past_due", null, now)).toBe(false);
+    expect(isPlanPeriodActive("cancelled", "2026-07-11T10:00:00.000Z", now)).toBe(false);
+    expect(isPlanPeriodActive("paused", "2026-07-11T10:00:00.000Z", now)).toBe(false);
+  });
+
+  it("computes when the grace period ends", () => {
+    expect(pastDueGraceEnd("2026-07-01T00:00:00.000Z")).toBe("2026-07-08T00:00:00.000Z");
+    expect(pastDueGraceEnd(null)).toBeNull();
+    expect(pastDueGraceEnd("not a date")).toBeNull();
   });
 });

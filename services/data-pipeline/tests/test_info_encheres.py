@@ -215,6 +215,35 @@ def test_parse_info_encheres_detail_html_keeps_thousands_surface() -> None:
     assert sale.surface_m2 == Decimal("2464.70")
 
 
+def test_info_encheres_prefers_explicit_lot_total_over_first_room_surface() -> None:
+    html = """
+    <html>
+      <body>
+        <table>
+          <tr><td>Référence :</td><td>6051</td></tr>
+          <tr><td>Nature du bien :</td><td>Maison ancienne avec grange attenante</td></tr>
+          <tr><td>Adresse :</td><td>64350 CASTILLON DE LEMBEYE</td></tr>
+        </table>
+        <div class="cadre"><div class="titre">Description</div><div class="int2">
+          Une maison comprenant un séjour de 24,10 m², une cuisine de 13,80 m²,
+          3 chambres et une salle de bains, pour une surface totale de 110,80 m².
+          Une grange attenante d'une surface d'environ 70 m².
+        </div></div>
+      </body>
+    </html>
+    """
+
+    raw = parse_info_encheres_detail_html(html, info_encheres.BASE_URL)
+    sale = normalize_sale(raw)
+
+    assert raw["surface_m2"] == "110.80"
+    assert raw["surface_scope"] == "total"
+    assert raw["surface_source"] == "source_text"
+    assert "surface totale de 110,80 m²" in raw["surface_evidence"]
+    assert sale.surface_m2 == Decimal("110.80")
+    assert sale.surface_scope == "total"
+
+
 def test_parse_info_encheres_detail_keeps_sole_cadastral_surface() -> None:
     html = """
     <html>

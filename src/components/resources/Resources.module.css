@@ -1,8 +1,8 @@
 .root {
-  --paper: #faf9f6;
-  --ink: #132238;
-  --copper: #8c602b;
-  --muted-ink: #596575;
+  --paper: #ffffff;
+  --ink: var(--brand-navy);
+  --copper: var(--gold-text);
+  --muted-ink: var(--ink-soft);
   min-height: 100vh;
   background: var(--paper);
   color: var(--ink);
@@ -80,16 +80,16 @@
   display: grid;
   grid-template-columns: 0.95fr 1.2fr;
   overflow: hidden;
-  border: 1px solid #dedbd3;
+  border: 1px solid var(--line-warm);
   border-radius: 6px;
-  background: #fff;
+  background: #ffffff;
 }
 
 .featuredArt {
   position: relative;
   min-height: 440px;
   overflow: hidden;
-  background: radial-gradient(ellipse at 50% 30%, #f6ecdb, #e3d6bc);
+  background: radial-gradient(ellipse at 50% 30%, var(--secondary), var(--sand));
 }
 
 .featuredArt img {
@@ -117,8 +117,8 @@
   bottom: 20px;
   width: fit-content;
   padding: 8px 12px;
-  background: #f8f0e0;
-  border: 1px solid #d6c4a5;
+  background: var(--secondary);
+  border: 1px solid var(--line-warm);
 }
 
 .featuredBody {
@@ -160,14 +160,14 @@
   border: 1px solid var(--ink);
   border-radius: 4px;
   background: var(--ink);
-  color: #fff;
+  color: #ffffff;
   font-size: 13px;
   font-weight: 500;
   transition: background 160ms;
 }
 
 .primaryLink:hover {
-  background: #2c405c;
+  background: var(--brand-navy-soft);
 }
 
 .library {
@@ -207,7 +207,7 @@
 .filters button {
   min-height: 42px;
   padding: 10px 18px;
-  border: 1px solid #dcdcd6;
+  border: 1px solid var(--line-warm);
   border-radius: 4px;
   background: transparent;
   color: var(--muted-ink);
@@ -223,7 +223,7 @@
 .filters button[aria-pressed="true"] {
   border-color: var(--ink);
   background: var(--ink);
-  color: #fff;
+  color: #ffffff;
 }
 
 .grid {
@@ -234,7 +234,7 @@
 
 .card {
   min-width: 0;
-  border-bottom: 1px solid #dcdcd6;
+  border-bottom: 1px solid var(--line-warm);
 }
 
 .cardLink {
@@ -248,7 +248,7 @@
   aspect-ratio: 1.65;
   overflow: hidden;
   border-radius: 4px;
-  background: #e9dfce;
+  background: var(--sand);
 }
 
 .cardImage img {
@@ -266,7 +266,7 @@
   left: 14px;
   padding: 7px 11px;
   border-radius: 2px;
-  background: #fffaf2;
+  background: var(--surface);
   color: var(--ink);
   font-size: 10px;
   font-weight: 600;
@@ -305,8 +305,8 @@
   justify-content: space-between;
   gap: 40px;
   padding: 44px 48px;
-  border-top: 1px solid #d9c7a6;
-  background: #f0e9dd;
+  border-top: 1px solid var(--line-warm);
+  background: var(--secondary);
 }
 
 .nextStep h2 {
@@ -357,7 +357,7 @@
 .sources a,
 .toc a {
   text-decoration: underline;
-  text-decoration-color: #c8c0b1;
+  text-decoration-color: var(--ink-soft);
   text-underline-offset: 4px;
 }
 
@@ -444,7 +444,7 @@
 
 .articleBody {
   min-width: 0;
-  color: #394858;
+  color: var(--ink-strong);
   font-size: 16px;
   line-height: 1.9;
 }
@@ -484,8 +484,8 @@
 .takeaways {
   margin-block: 32px;
   padding: 28px 30px;
-  border-left: 3px solid #b28c56;
-  background: #f0e9dd;
+  border-left: 3px solid var(--gold);
+  background: var(--secondary);
   font-size: 14px;
 }
 
@@ -496,8 +496,8 @@
 .callout {
   margin-top: 24px;
   padding: 22px 26px;
-  border-left: 3px solid #b28c56;
-  background: #f0e9dd;
+  border-left: 3px solid var(--gold);
+  background: var(--secondary);
   font-size: 14px;
 }
 
@@ -512,7 +512,7 @@
 .tableWrapper {
   overflow-x: auto;
   margin-block: 24px;
-  border: 1px solid #dcdcd6;
+  border: 1px solid var(--line-warm);
 }
 
 .tableWrapper table {
@@ -525,19 +525,19 @@
 .tableWrapper th,
 .tableWrapper td {
   padding: 13px 16px;
-  border-bottom: 1px solid #dcdcd6;
+  border-bottom: 1px solid var(--line-warm);
   text-align: left;
   vertical-align: top;
 }
 
 .tableWrapper thead {
-  background: #eee9df;
+  background: var(--secondary);
   color: var(--ink);
 }
 
 .sources {
   padding-top: 28px;
-  border-top: 1px solid #dcdcd6;
+  border-top: 1px solid var(--line-warm);
   font-size: 13px;
   overflow-wrap: anywhere;
 }
@@ -668,7 +668,7 @@
     position: static;
     max-height: none;
     padding: 24px;
-    border: 1px solid #dedbd3;
+    border: 1px solid var(--line-warm);
   }
   .toc ol {
     gap: 10px;

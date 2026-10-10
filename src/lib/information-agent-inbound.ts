@@ -1,8 +1,11 @@
+import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { Parser } from "htmlparser2";
 import { Resend, type AttachmentData, type EmailReceivedEvent } from "resend";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { z } from "zod";
+import { asRecord, trimmedStringValue } from "@/lib/guards";
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_TOTAL_ATTACHMENT_BYTES = 40 * 1024 * 1024;
@@ -135,6 +138,66 @@ type InboundProcessingState = {
   reason?: string;
 };
 
+const optionalText = z.unknown().transform((value) => trimmedStringValue(value));
+
+/**
+ * Provider fields the Resend SDK types do not (reliably) expose. Every field is
+ * read leniently: a missing or malformed value degrades to an empty one exactly
+ * as the previous ad-hoc casts did, and never rejects the whole delivery.
+ */
+const receivedEmailExtrasSchema = z.object({
+  to: z.unknown().transform((value) => stringArray(value)),
+  received_for: z.unknown().transform((value) => stringArray(value)),
+  authentication: z.unknown(),
+  message_id: optionalText,
+});
+
+const providerMessageIdSchema = z.object({ message_id: optionalText });
+
+const inboundAttachmentSchema = z.object({
+  id: optionalText,
+  filename: optionalText,
+  content_type: optionalText,
+  size: z
+    .unknown()
+    .transform((value) =>
+      typeof value === "number" && Number.isSafeInteger(value) ? value : null,
+    ),
+  download_url: optionalText,
+  content_disposition: optionalText,
+  content_id: optionalText,
+});
+
+type ReceivedEmailExtras = z.infer<typeof receivedEmailExtrasSchema>;
+type InboundAttachmentFields = z.infer<typeof inboundAttachmentSchema>;
+
+function parseReceivedEmailExtras(received: unknown): ReceivedEmailExtras {
+  const parsed = receivedEmailExtrasSchema.safeParse(received);
+  return parsed.success
+    ? parsed.data
+    : { to: [], received_for: [], authentication: undefined, message_id: null };
+}
+
+function parseProviderMessageId(data: unknown): string | null {
+  const parsed = providerMessageIdSchema.safeParse(data);
+  return parsed.success ? parsed.data.message_id : null;
+}
+
+function parseInboundAttachment(attachment: unknown): InboundAttachmentFields {
+  const parsed = inboundAttachmentSchema.safeParse(attachment);
+  return parsed.success
+    ? parsed.data
+    : {
+        id: null,
+        filename: null,
+        content_type: null,
+        size: null,
+        download_url: null,
+        content_disposition: null,
+        content_id: null,
+      };
+}
+
 export class InvalidInformationAgentWebhookSignatureError extends Error {
   constructor() {
     super("Signature webhook invalide.");
@@ -255,8 +318,9 @@ async function ingestReceivedEmail({
   if (receiveError || !received) {
     throw new Error(receiveError?.message || "Email entrant Resend introuvable.");
   }
-  const receivedTo = stringArray((received as unknown as { to?: unknown }).to);
-  const receivedFor = stringArray((received as unknown as { received_for?: unknown }).received_for);
+  const receivedExtras = parseReceivedEmailExtras(received);
+  const receivedTo = receivedExtras.to;
+  const receivedFor = receivedExtras.received_for;
   const receivedTokens = collectInboundTokens([...receivedTo, ...receivedFor], inboundDomain);
   if (receivedTokens.length > 1 || (receivedTokens.length === 1 && receivedTokens[0] !== token)) {
     return { accepted: true, ignored: true };
@@ -269,9 +333,7 @@ async function ingestReceivedEmail({
   const senderMatches = Boolean(
     senderEmail && expectedRecipientEmail && senderEmail === expectedRecipientEmail,
   );
-  const senderAuthentication = normalizeInboundSenderAuthentication(
-    (received as unknown as { authentication?: unknown }).authentication,
-  );
+  const senderAuthentication = normalizeInboundSenderAuthentication(receivedExtras.authentication);
   await ensureInboundJobLease(assertJobLease);
   const inboundMessage = await insertOrLoadInboundMessage({
     sharedCase,
@@ -285,9 +347,7 @@ async function ingestReceivedEmail({
     senderMatches,
     senderAuthentication,
     providerMessageIdHeader:
-      stringValue((received as unknown as { message_id?: unknown }).message_id) ??
-      stringValue((event.data as unknown as { message_id?: unknown }).message_id) ??
-      undefined,
+      receivedExtras.message_id ?? parseProviderMessageId(event.data) ?? undefined,
     receivedFor,
   });
   const messageId = inboundMessage.id;
@@ -672,9 +732,13 @@ async function ingestReceivedEmail({
     });
 
     const now = new Date().toISOString();
-    const hasReviewableEvidence = Boolean(
+    const hasEvidence = Boolean(
       bodyEvidence || extractedFacts.length || storedAssets.length || rejected.length,
     );
+    // P4-12: a reply that is neither a recognised opposition nor a recognised agreement/answer
+    // is never closed automatically: a human reads it.
+    const replyIntent = classifyInformationAgentReplyIntent(bodyText, { hasEvidence });
+    const hasReviewableEvidence = hasEvidence || replyIntent === "ambiguous";
     await ensureInboundJobLease(assertJobLease);
     const caseUpdated = await updateInboundReplyCase({
       sharedCase,
@@ -685,6 +749,7 @@ async function ingestReceivedEmail({
         last_inbound_email_id: event.data.email_id,
         last_inbound_sender_matches_recipient: senderMatches,
         last_inbound_sender_authentication_status: senderAuthentication.status,
+        last_inbound_reply_intent: replyIntent,
       }),
       expectedUpdatedAt: sharedCase.updated_at,
       leaseFence,
@@ -735,10 +800,7 @@ async function ingestReceivedEmail({
       if (updateMissionsError) throw updateMissionsError;
     }
 
-    const processingStatus =
-      bodyEvidence || extractedFacts.length || storedAssets.length || rejected.length
-        ? "review"
-        : "completed";
+    const processingStatus = hasReviewableEvidence ? "review" : "completed";
     await ensureInboundJobLease(assertJobLease);
     await updateInboundProcessingState(
       messageId,
@@ -749,7 +811,12 @@ async function ingestReceivedEmail({
         providerEmailId: event.data.email_id,
         queuedAt: existingProcessing?.queuedAt ?? receivedAt,
         completedAt: now,
-        reason: processingStatus === "review" ? "candidate_or_attachment_review" : undefined,
+        reason:
+          processingStatus === "review"
+            ? replyIntent === "ambiguous"
+              ? "ambiguous_reply_review"
+              : "candidate_or_attachment_review"
+            : undefined,
       },
       leaseId,
     );
@@ -1505,10 +1572,7 @@ function addInboundLeaseFence(metadata: Json, leaseFence: InboundLeaseFence): Js
 }
 
 function normalizeInboundSenderAuthentication(value: unknown): InboundSenderAuthentication {
-  const authentication =
-    value && typeof value === "object" && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : {};
+  const authentication = asRecord(value);
   const spf = normalizeInboundAuthenticationResult(authentication.spf);
   const dkim = normalizeInboundAuthenticationResult(authentication.dkim);
   const dmarc = normalizeInboundAuthenticationResult(authentication.dmarc);
@@ -1797,24 +1861,21 @@ async function storeInboundAttachments({
 
   for (const attachment of attachments) {
     await ensureInboundJobLease(assertJobLease);
-    const attachmentId = stringValue((attachment as unknown as { id?: unknown }).id);
-    const rawFilename = stringValue((attachment as unknown as { filename?: unknown }).filename);
+    const fields = parseInboundAttachment(attachment);
+    const attachmentId = fields.id;
+    const rawFilename = fields.filename;
     const filename = safeFilename(rawFilename || `piece-${attachmentId || "jointe"}`);
-    const rawMimeType = normalizeRawMimeType(
-      stringValue((attachment as unknown as { content_type?: unknown }).content_type),
-    );
+    const rawMimeType = normalizeRawMimeType(fields.content_type);
     const mimeType = normalizeAttachmentMimeType(rawMimeType, filename);
-    const declaredSize = (attachment as unknown as { size?: unknown }).size;
-    const downloadUrl = normalizeAttachmentDownloadUrl(
-      stringValue((attachment as unknown as { download_url?: unknown }).download_url),
-    );
+    const declaredSize = fields.size;
+    const downloadUrl = normalizeAttachmentDownloadUrl(fields.download_url);
     if (
       !attachmentId ||
       !ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType) ||
-      !Number.isSafeInteger(declaredSize) ||
-      (declaredSize as number) <= 0 ||
-      (declaredSize as number) > MAX_ATTACHMENT_BYTES ||
-      totalBytes + (declaredSize as number) > MAX_TOTAL_ATTACHMENT_BYTES ||
+      declaredSize === null ||
+      declaredSize <= 0 ||
+      declaredSize > MAX_ATTACHMENT_BYTES ||
+      totalBytes + declaredSize > MAX_TOTAL_ATTACHMENT_BYTES ||
       !downloadUrl
     ) {
       rejected.push({
@@ -1914,24 +1975,12 @@ async function storeInboundAttachments({
         size_bytes: bytes.length,
         sha256,
         metadata: {
-          ...(stringValue(
-            (attachment as unknown as { content_disposition?: unknown }).content_disposition,
-          )
-            ? {
-                content_disposition: stringValue(
-                  (attachment as unknown as { content_disposition?: unknown }).content_disposition,
-                ),
-              }
+          ...(fields.content_disposition
+            ? { content_disposition: fields.content_disposition }
             : {}),
-          ...(stringValue((attachment as unknown as { content_id?: unknown }).content_id)
-            ? {
-                content_id: stringValue(
-                  (attachment as unknown as { content_id?: unknown }).content_id,
-                ),
-              }
-            : {}),
+          ...(fields.content_id ? { content_id: fields.content_id } : {}),
           ...(rawMimeType ? { declared_content_type: rawMimeType } : {}),
-          declared_size: declaredSize as number,
+          declared_size: declaredSize,
           ...(leaseId ? { inbound_lease_id: leaseId, inbound_message_id: messageId } : {}),
         },
       })
@@ -2084,6 +2133,34 @@ export function detectInformationAgentContactOptOut(bodyText: string): boolean {
     /(?:^|\n)\s*(?:stop|unsubscribe|désinscription|desinscription)(?:\s+merci)?\s*[.!…]*\s*$/imu,
     /\b(?:merci\s+de\s+ne\s+plus\s+(?:me|nous)\s+contacter|merci\s+de\s+(?:supprimer|retirer)\s+(?:mon\s+adresse|moi|nous)(?:\s+de\s+vos\s+listes?)?|(?:supprimez|retirez)\s+mon\s+adresse(?:\s+de\s+vos\s+listes?)?|ne\s+(?:me|nous)\s+contact(?:e|ez|er)\s+plus|retirez[-\s]?(?:moi|nous)(?:\s+de\s+vos\s+listes?)?|supprimez[-\s]?(?:moi|nous)(?:\s+de\s+vos\s+listes?)?|désinscrivez[-\s]?(?:moi|nous)|desinscrivez[-\s]?(?:moi|nous)|je\s+ne\s+souhaite\s+plus\s+(?:être\s+contact[ée]|recevoir\s+vos\s+(?:e-?mails?|courriels?))|je\s+ne\s+veux\s+plus\s+(?:être\s+contact[ée]|recevoir\s+vos\s+(?:e-?mails?|courriels?))|je\s+m['’]oppose\s+à\s+(?:tout|ce|votre)\s+contact|please\s+(?:remove|unsubscribe)\s+me|do\s+not\s+contact\s+me\s+again)\b/iu,
   ].some((pattern) => pattern.test(text));
+}
+
+export type InformationAgentReplyIntent = "opposition" | "agreement" | "ambiguous";
+
+// Short, unambiguous confirmations ("oui", "d'accord", "confirmé"…) with no negation.
+const EXPLICIT_AGREEMENT =
+  /\b(?:oui|d['’]accord|bien\s+volontiers|volontiers|avec\s+plaisir|confirm[ée]s?|je\s+confirme|c['’]est\s+exact|ci[-\s]?joint(?:e|es|s)?|veuillez\s+trouver|pi[èe]ces?\s+jointes?)\b/iu;
+const NEGATION =
+  /\b(?:non|pas|jamais|aucun(?:e)?|refus(?:e|ons)?|impossible|n['’](?:est|ai|avons|a)\b|ne\s+\w+\s+pas)\b/iu;
+
+/**
+ * Classifies a reply from an authenticated sender. Only two outcomes are trusted without a
+ * human: an explicit request to stop contact, and an explicit agreement or answer (information
+ * extracted, or a plain confirmation without negation). Anything else is "ambiguous" and goes to
+ * human review instead of being closed automatically.
+ */
+export function classifyInformationAgentReplyIntent(
+  bodyText: string,
+  { hasEvidence }: { hasEvidence: boolean },
+): InformationAgentReplyIntent {
+  if (detectInformationAgentContactOptOut(bodyText)) return "opposition";
+  const text = replyTextForExtraction(bodyText)
+    .replace(/\u00a0/g, " ")
+    .trim();
+  if (!text) return hasEvidence ? "agreement" : "ambiguous";
+  if (NEGATION.test(text)) return hasEvidence ? "agreement" : "ambiguous";
+  if (hasEvidence || EXPLICIT_AGREEMENT.test(text)) return "agreement";
+  return "ambiguous";
 }
 
 function collectInboundTokens(addresses: readonly string[], inboundDomain: string): string[] {
@@ -3005,17 +3082,13 @@ function normalizeAttachmentDownloadUrl(value: string | null): string | null {
   }
 }
 
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
-    const string = stringValue(value);
+    const string = trimmedStringValue(value);
     return string ? [string] : [];
   }
   return value.flatMap((item) => {
-    const string = stringValue(item);
+    const string = trimmedStringValue(item);
     return string ? [string] : [];
   });
 }

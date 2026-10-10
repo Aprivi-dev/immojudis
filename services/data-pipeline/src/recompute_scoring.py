@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from src.asset_normalization import normalize_asset_features
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import ROOT_DIR, load_settings, require_encheres_publiques_access
+from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
+from src.extraction_profiles import attach_source_property_features
 from src.geocode import geocode_sale
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
@@ -578,7 +580,16 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
         geocode_sale(sale)
     fill_tribunal(sale)
     classify_sale_procedure(sale)
+    payload = sale.raw_payload
+    blocks = payload.get("source_blocks")
+    values = [sale.title, sale.description, sale.raw_text, payload.get("source_description")]
+    if isinstance(blocks, dict):
+        values.extend(value for key, value in blocks.items() if key != "listing_completeness")
+    context = "\n".join(dict.fromkeys(str(value).strip() for value in values if value))
+    if context:
+        extract_and_apply_deterministic_surface_reasoning(sale, context)
     normalize_asset_features(sale)
+    attach_source_property_features(sale.raw_payload)
     return sale
 
 
@@ -699,31 +710,48 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
-    args = parse_args()
-    if args.refresh_unknown_procedures:
-        raise SystemExit(refresh_unknown_sale_procedures(source=args.source, limit=args.limit))
-    if args.repair_invalid_procedures:
-        raise SystemExit(repair_invalid_sale_procedures(source=args.source, limit=args.limit))
+def _writes_catalogue(args: argparse.Namespace) -> bool:
     if args.verify_only:
-        raise SystemExit(verify_persisted_sale_procedures(source=args.source, limit=args.limit))
+        return False
+    # Refreshing or repairing procedures always writes; the other modes only
+    # write when they are not a dry run.
+    return args.refresh_unknown_procedures or args.repair_invalid_procedures or not args.dry_run
+
+
+def main() -> int:
+    args = parse_args()
+    if not _writes_catalogue(args):
+        return _run(args)
+    from src.catalogue_lock import catalogue_writer_lock
+
+    with catalogue_writer_lock(label="recompute"):
+        return _run(args)
+
+
+def _run(args: argparse.Namespace) -> int:
+    if args.refresh_unknown_procedures:
+        return refresh_unknown_sale_procedures(source=args.source, limit=args.limit)
+    if args.repair_invalid_procedures:
+        return repair_invalid_sale_procedures(source=args.source, limit=args.limit)
+    if args.verify_only:
+        return verify_persisted_sale_procedures(source=args.source, limit=args.limit)
     if args.readiness_unassessed_only:
-        raise SystemExit(
-            backfill_catalogue_readiness(
-                source=args.source,
-                limit=args.limit,
-                batch_size=args.batch_size,
-                dry_run=args.dry_run,
-            )
-        )
-    raise SystemExit(
-        recompute_scoring(
+        return backfill_catalogue_readiness(
             source=args.source,
             limit=args.limit,
             batch_size=args.batch_size,
             dry_run=args.dry_run,
-            geocode_missing=args.geocode_missing,
-            geocode_workers=args.geocode_workers,
         )
+    return recompute_scoring(
+        source=args.source,
+        limit=args.limit,
+        batch_size=args.batch_size,
+        dry_run=args.dry_run,
+        geocode_missing=args.geocode_missing,
+        geocode_workers=args.geocode_workers,
     )
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
+    raise SystemExit(main())

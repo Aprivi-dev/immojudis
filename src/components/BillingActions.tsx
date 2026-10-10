@@ -26,6 +26,7 @@ import {
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
+import { userMessage } from "@/lib/user-messages";
 
 export function BillingActions({
   className = "",
@@ -38,6 +39,7 @@ export function BillingActions({
   const navigate = useNavigate();
   const [plan, setPlan] = useState<PlanCode | null>(null);
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
+  const [hasStripeCustomer, setHasStripeCustomer] = useState(false);
   const [offerConfigured, setOfferConfigured] = useState(false);
   const [offerLabel, setOfferLabel] = useState(() => resolveAnalysisOfferLabel());
   const [trialAvailable, setTrialAvailable] = useState(true);
@@ -52,6 +54,7 @@ export function BillingActions({
     let active = true;
     setPlan(null);
     setCurrentPeriodEnd(null);
+    setHasStripeCustomer(false);
 
     fetchBillingOffer()
       .then((offer) => {
@@ -71,6 +74,7 @@ export function BillingActions({
           if (active) {
             setPlan(response.plan.plan);
             setCurrentPeriodEnd(response.plan.currentPeriodEnd);
+            setHasStripeCustomer(response.plan.billing?.hasStripeCustomer === true);
           }
         })
         .catch(() => {
@@ -87,7 +91,7 @@ export function BillingActions({
     const redirect =
       typeof window !== "undefined"
         ? `${window.location.pathname}${window.location.search}`
-        : "/accompagnement";
+        : "/offres";
     await navigate({ to: "/login", search: { redirect } });
   }
 
@@ -126,7 +130,7 @@ export function BillingActions({
       });
       window.location.assign(response.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Paiement indisponible");
+      toast.error(userMessage(error, "Paiement indisponible"));
       setBusy(null);
     }
   }
@@ -143,16 +147,21 @@ export function BillingActions({
       const response = await openBillingPortal();
       window.location.assign(response.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Portail de paiement indisponible");
+      toast.error(userMessage(error, "Portail de paiement indisponible"));
       setBusy(null);
     }
   }
 
   const hasAnalysis = plan === "analyse";
-  const primaryLabel = hasAnalysis
+  // A subscriber whose renewal failed has lost the plan but still needs the
+  // portal to update the card: checkout would be refused for them.
+  const managesBilling = hasAnalysis || hasStripeCustomer;
+  const primaryLabel = managesBilling
     ? busy === "portal"
       ? "Ouverture..."
-      : "Gérer mon abonnement Analyse"
+      : hasAnalysis
+        ? "Gérer mon abonnement Analyse"
+        : "Gérer mon abonnement"
     : !checkoutAvailable || !offerConfigured
       ? "Paiement temporairement indisponible"
       : busy === "checkout"
@@ -167,10 +176,12 @@ export function BillingActions({
       <div className={`flex flex-col gap-2 sm:flex-row ${className}`}>
         <button
           type="button"
-          onClick={hasAnalysis ? openPortal : openCheckoutReview}
+          onClick={managesBilling ? openPortal : openCheckoutReview}
           ref={checkoutTriggerRef}
           disabled={
-            loading || Boolean(busy) || (!hasAnalysis && (!checkoutAvailable || !offerConfigured))
+            loading ||
+            Boolean(busy) ||
+            (!managesBilling && (!checkoutAvailable || !offerConfigured))
           }
           className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -196,7 +207,7 @@ export function BillingActions({
         )}
       </div>
 
-      {!checkoutAvailable || !offerConfigured ? (
+      {!managesBilling && (!checkoutAvailable || !offerConfigured) ? (
         <p role="status" className="mt-3 text-sm leading-relaxed text-brand-navy/80">
           Les souscriptions sont temporairement indisponibles. Vous pouvez explorer gratuitement le
           catalogue.{" "}
@@ -225,7 +236,7 @@ export function BillingActions({
           <div className="rounded-lg border border-border bg-muted/35 p-4 text-sm">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <strong className="text-foreground">ImmoJudis Analyse</strong>
+                <strong className="text-foreground">Immojudis Analyse</strong>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {trialAvailable ? ANALYSIS_TRIAL_LABEL : "Abonnement immédiat, sans nouvel essai"}
                 </p>
@@ -255,7 +266,7 @@ export function BillingActions({
               <Link
                 to="/conditions-generales"
                 target="_blank"
-                className="font-semibold text-gold underline"
+                className="font-semibold text-gold-text underline"
               >
                 conditions générales
               </Link>{" "}
@@ -276,7 +287,11 @@ export function BillingActions({
               Je demande l’exécution immédiate avant la fin du délai de rétractation et reconnais
               avoir reçu l’information sur mon droit de 14 jours et sur le montant proportionnel
               éventuellement dû pour le service déjà fourni. La{" "}
-              <Link to="/privacy" target="_blank" className="font-semibold text-gold underline">
+              <Link
+                to="/privacy"
+                target="_blank"
+                className="font-semibold text-gold-text underline"
+              >
                 politique de confidentialité
               </Link>{" "}
               est accessible avant la commande.

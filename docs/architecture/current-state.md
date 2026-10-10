@@ -1,6 +1,6 @@
 # Outcome Graph — état actuel
 
-_Audit du dépôt au 30 juillet 2026. Ce document décrit le socle existant avant la généralisation d’Outcome Graph. Le statut exact de la tranche verticale livrée dans le worktree est suivi dans [`IMPLEMENTATION_STATUS.md`](../../IMPLEMENTATION_STATUS.md)._
+_Audit du dépôt au 30 juillet 2026. Ce document décrit le socle existant avant la généralisation d’Outcome Graph. Le statut exact de la tranche verticale livrée dans le worktree est suivi dans [`IMPLEMENTATION_STATUS.md`](../archive/IMPLEMENTATION_STATUS.md)._
 
 ## Synthèse
 

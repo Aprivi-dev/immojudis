@@ -36,17 +36,17 @@ export function SearchStatisticsPanel({
 }) {
   if (locked) {
     return (
-      <div className="border-b border-[#132238]/10 bg-white px-4 py-4 sm:px-5">
-        <h2 className="text-sm font-bold text-[#132238]">
+      <div className="border-b border-brand-navy/10 bg-white px-4 py-4 sm:px-5">
+        <h2 className="text-sm font-bold text-brand-navy">
           Repérez un bien, puis préparez votre analyse
         </h2>
-        <p className="mt-1 text-sm leading-relaxed text-[#667482]">
+        <p className="mt-1 text-sm leading-relaxed text-ink-soft">
           Le compte gratuit ouvre la fiche et la localisation complète. Analyse ajoute les
-          comparables, les risques et le calcul de votre mise plafond.
+          comparables, les risques et le calcul de votre enchère plafond.
         </p>
         <Link
           to="/annonce-exemple"
-          className="mt-2 inline-flex min-h-10 items-center text-sm font-bold text-[#0f766e] underline underline-offset-4"
+          className="mt-2 inline-flex min-h-10 items-center text-sm font-bold text-brand-navy underline underline-offset-4"
         >
           Essayer une analyse complète sans compte
         </Link>
@@ -79,14 +79,14 @@ export function SearchStatisticsPanel({
   ];
 
   return (
-    <div className="border-b border-[#132238]/10 bg-white px-4 py-3 sm:px-5">
+    <div className="border-b border-brand-navy/10 bg-white px-4 py-3 sm:px-5">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.14em] text-[#132238]">
+        <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.14em] text-brand-navy">
           <BarChart3 className="h-4 w-4" />
           Repères sur votre recherche
         </div>
         {locked ? (
-          <span className="inline-flex items-center gap-1 rounded-md border border-[#ead8c5] bg-[#fffaf2] px-2 py-1 text-[10px] font-bold text-[#8a5b24]">
+          <span className="inline-flex items-center gap-1 rounded-md border border-sand bg-surface px-2 py-1 text-[10px] font-bold text-gold-text">
             <LockKeyhole className="h-3 w-3" />
             Analyse
           </span>
@@ -96,13 +96,13 @@ export function SearchStatisticsPanel({
         {items.map((item) => (
           <div
             key={item.label}
-            className="min-w-0 rounded-md border border-[#dce7ee] bg-[#f8fbfd] px-3 py-2"
+            className="min-w-0 rounded-md border border-line-soft bg-surface-muted px-3 py-2"
           >
-            <dt className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#667482]">
-              <span className="text-[#0f766e]">{item.icon}</span>
+            <dt className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-soft">
+              <span className="text-brand-navy">{item.icon}</span>
               {item.label}
             </dt>
-            <dd className="mt-0.5 text-sm font-extrabold tabular-nums text-[#132238]">
+            <dd className="mt-0.5 text-sm font-extrabold tabular-nums text-brand-navy">
               {loading ? "…" : item.locked ? "Réservé à Analyse" : item.value}
             </dd>
           </div>
@@ -132,7 +132,7 @@ export function SearchStatisticsPanel({
               type="button"
               onClick={onLoadDpeExplorer}
               disabled={dpeExplorerLoading}
-              className="ml-auto inline-flex min-h-7 items-center rounded-md border border-[#cbded8] bg-white px-2.5 text-xs font-extrabold text-[#0f766e] hover:border-[#0f766e] disabled:cursor-not-allowed disabled:opacity-60"
+              className="ml-auto inline-flex min-h-7 items-center rounded-md border border-line bg-white px-2.5 text-xs font-extrabold text-brand-navy hover:border-brand-navy disabled:cursor-not-allowed disabled:opacity-60"
             >
               {dpeExplorerLoading
                 ? "Chargement DPE..."
@@ -142,7 +142,7 @@ export function SearchStatisticsPanel({
             </button>
           </div>
           {dpeExplorer ? (
-            <div className="mt-3 rounded-md border border-[#dce7ee] bg-white p-3">
+            <div className="mt-3 rounded-md border border-line-soft bg-white p-3">
               <div className="grid gap-2 text-xs sm:grid-cols-3">
                 <DpeExplorerMetric label="DPE trouvés" value={dpeExplorer.summary.total} />
                 <DpeExplorerMetric
@@ -152,30 +152,30 @@ export function SearchStatisticsPanel({
                 <DpeExplorerMetric label="Points carte" value={dpeExplorer.summary.mapPointCount} />
               </div>
               {dpeExplorer.items.length ? (
-                <div className="mt-3 divide-y divide-[#132238]/10 border-t border-[#132238]/10">
+                <div className="mt-3 divide-y divide-brand-navy/10 border-t border-brand-navy/10">
                   {dpeExplorer.items.slice(0, 3).map((item) => (
                     <div key={item.id} className="grid gap-1 py-2 text-xs sm:grid-cols-[1fr_auto]">
                       <div className="min-w-0">
                         <Link
-                          className="font-bold text-[#132238] hover:text-[#0f766e]"
+                          className="font-bold text-brand-navy hover:text-brand-navy"
                           to={`/sales/${item.id}`}
                         >
                           {cleanSaleTitle(item.title) ?? "Vente judiciaire"}
                         </Link>
-                        <div className="mt-0.5 text-[#667482]">
+                        <div className="mt-0.5 text-ink-soft">
                           {[item.city, item.department, propertyTypeLabel(item.propertyType)]
                             .filter(Boolean)
                             .join(" · ")}
                         </div>
                       </div>
-                      <span className="font-extrabold text-[#0f766e]">
+                      <span className="font-extrabold text-brand-navy">
                         {item.dpeLabel ?? "DPE repéré"}
                       </span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="mt-3 border-t border-[#132238]/10 pt-3 text-xs text-[#667482]">
+                <p className="mt-3 border-t border-brand-navy/10 pt-3 text-xs text-ink-soft">
                   Aucun DPE repéré avec ces filtres.
                 </p>
               )}
@@ -192,8 +192,8 @@ export function SearchStatisticsPanel({
 export function DpeExplorerMetric({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#667482]">{label}</div>
-      <div className="mt-1 text-sm font-extrabold tabular-nums text-[#132238]">
+      <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-soft">{label}</div>
+      <div className="mt-1 text-sm font-extrabold tabular-nums text-brand-navy">
         {value.toLocaleString("fr-FR")}
       </div>
     </div>

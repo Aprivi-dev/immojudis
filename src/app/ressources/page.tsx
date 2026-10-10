@@ -7,16 +7,28 @@ import { ResourcesNextStep } from "@/components/resources/ResourcesNextStep";
 import { EXISTING_GUIDE, RESOURCE_SUMMARIES } from "@/lib/resource-articles";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import styles from "@/components/resources/Resources.module.css";
+import { jsonLdString } from "@/lib/json-ld";
 
 const title = "Ressources : le blog des enchères immobilières";
 const description =
-  "Les guides ImmoJudis pour comprendre les enchères immobilières, analyser un bien, vérifier son occupation et construire un budget avant d’enchérir.";
+  "Les guides Immojudis pour comprendre les enchères immobilières, analyser un bien, vérifier son occupation et construire un budget avant d’enchérir.";
 
 export const metadata: Metadata = {
   title,
   description,
   alternates: { canonical: "/ressources" },
-  openGraph: { title, description, url: "/ressources", type: "website" },
+  openGraph: {
+    title,
+    description,
+    url: "/ressources",
+    type: "website",
+    siteName: "Immojudis",
+    locale: "fr_FR",
+    // Declared here because a page-level openGraph replaces the layout's: without
+    // an image, shares of this page would have no preview.
+    images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: "Immojudis" }],
+  },
+  twitter: { card: "summary_large_image", title, description, images: ["/opengraph-image"] },
 };
 
 export default function Page() {
@@ -39,16 +51,16 @@ export default function Page() {
   };
 
   return (
-    <main className={styles.root}>
+    <main id="contenu" className={styles.root}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+          __html: jsonLdString(structuredData),
         }}
       />
       <div className={styles.container}>
         <header className={styles.hero}>
-          <p className={styles.eyebrow}>Ressources · Le blog ImmoJudis</p>
+          <p className={styles.eyebrow}>Ressources · Le blog Immojudis</p>
           <h1>
             Comprendre les enchères.
             <br />
@@ -71,7 +83,8 @@ export default function Page() {
               alt=""
               fill
               sizes="(max-width: 700px) 100vw, 42vw"
-              priority
+              loading="eager"
+              fetchPriority="high"
             />
             <span className={styles.artCaption}>Comprendre avant d’enchérir</span>
           </div>
@@ -91,7 +104,7 @@ export default function Page() {
         <ResourceLibrary articles={RESOURCE_SUMMARIES} />
         <ResourcesNextStep />
         <footer className={styles.footer}>
-          <Link href="/">ImmoJudis</Link>
+          <Link href="/">Immojudis</Link>
           <span>Les enchères immobilières en toute clarté.</span>
           <Link href="/contact">Nous contacter</Link>
         </footer>

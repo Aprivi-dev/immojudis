@@ -12,6 +12,7 @@ import {
 } from "@/lib/resource-articles";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import styles from "@/components/resources/Resources.module.css";
+import { jsonLdString } from "@/lib/json-ld";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -36,7 +37,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description: article.description,
       url: article.href,
       publishedTime: article.publishedAt,
-      authors: ["ImmoJudis"],
+      authors: ["Immojudis"],
       images: [{ url: article.image }],
     },
     twitter: {
@@ -62,8 +63,8 @@ export default async function Page({ params }: Props) {
         headline: article.title,
         description: article.description,
         datePublished: article.publishedAt,
-        author: { "@type": "Organization", name: "ImmoJudis", url: origin },
-        publisher: { "@type": "Organization", name: "ImmoJudis", url: origin },
+        author: { "@type": "Organization", name: "Immojudis", url: origin },
+        publisher: { "@type": "Organization", name: "Immojudis", url: origin },
         image: `${origin}${article.image}`,
         mainEntityOfPage: `${origin}${article.href}`,
         inLanguage: "fr-FR",
@@ -87,11 +88,11 @@ export default async function Page({ params }: Props) {
   const related = RESOURCE_SUMMARIES.filter((item) => item.slug !== slug).slice(0, 3);
 
   return (
-    <main className={styles.root}>
+    <main id="contenu" className={styles.root}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
+          __html: jsonLdString(structuredData),
         }}
       />
       <div className={styles.container}>
@@ -104,11 +105,11 @@ export default async function Page({ params }: Props) {
         </nav>
         <article>
           <header className={styles.articleHeader}>
-            <p className={styles.eyebrow}>{article.category} · Le blog ImmoJudis</p>
+            <p className={styles.eyebrow}>{article.category} · Le blog Immojudis</p>
             <h1>{article.title}</h1>
             <p>{article.description}</p>
             <p className={styles.meta}>
-              Par la rédaction ImmoJudis
+              Par la rédaction Immojudis
               {article.publishedAt && (
                 <>
                   {" "}
@@ -127,7 +128,7 @@ export default async function Page({ params }: Props) {
               alt=""
               fill
               sizes="(max-width: 700px) 100vw, 1240px"
-              priority
+              preload
             />
           </div>
           <div className={styles.articleLayout}>

@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import {
   createLawyerReferralRequest,
   listLawyerReferralRequests,
@@ -20,25 +23,27 @@ export async function GET(request: Request) {
     });
     return NextResponse.json(await listLawyerReferralRequests({ auth, query }));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Demandes indisponibles";
-    const status = message.startsWith("Unauthorized") ? 401 : 400;
-    return NextResponse.json({ requests: [], error: message }, { status });
+    return apiRouteError(error, request, "lawyer-referrals", {
+      fallbackMessage: "Demandes indisponibles",
+      extra: { requests: [] },
+    });
   }
 }
 
 export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "lawyer-referrals.create",
+      ...RATE_LIMIT_POLICIES.formSubmit,
+    });
     const input = lawyerReferralRequestInputSchema.parse(await request.json());
     const response = await createLawyerReferralRequest({ auth, input });
     return NextResponse.json(response, { status: response.reusedExisting ? 200 : 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Demande impossible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservée")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "lawyer-referrals", {
+      fallbackMessage: "Demande impossible",
+    });
   }
 }

@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { Json } from "@/integrations/supabase/types";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
 import { type SourceTraceEntry } from "@/lib/source-traceability";
@@ -16,6 +16,7 @@ import {
   SavedPropertyReport,
   SavedReportRow,
 } from "../property-reports";
+import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 export function pdfWatermarkForPlan(plan: PlanEntitlements): string | null {
   return plan.features.pdfExport === "limited" ? "VERSION DECOUVERTE - EXTRAIT LIMITE" : null;
 }
@@ -161,26 +162,20 @@ export function asJson(value: unknown): Json {
   return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }
 
-export function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 export function normalizeSourceTrace(value: unknown): SourceTraceEntry[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((entry) => {
       const record = asRecord(entry);
-      const id = stringValue(record.id, "");
-      const kind = stringValue(record.kind, "judicial_listing");
-      const label = stringValue(record.label, "");
-      const sourceName = stringValue(record.sourceName, "Source");
-      const url = stringValue(record.url, "");
-      const capturedAt = stringValue(record.capturedAt, "");
-      const confidenceLabel = stringValue(record.confidenceLabel, "A confirmer");
-      const detail = stringValue(record.detail, "");
-      const limitation = stringValue(record.limitation, "");
+      const id = stringOrNumberValue(record.id, "");
+      const kind = stringOrNumberValue(record.kind, "judicial_listing");
+      const label = stringOrNumberValue(record.label, "");
+      const sourceName = stringOrNumberValue(record.sourceName, "Source");
+      const url = stringOrNumberValue(record.url, "");
+      const capturedAt = stringOrNumberValue(record.capturedAt, "");
+      const confidenceLabel = stringOrNumberValue(record.confidenceLabel, "A confirmer");
+      const detail = stringOrNumberValue(record.detail, "");
+      const limitation = stringOrNumberValue(record.limitation, "");
 
       if (!label && !sourceName && !url) return null;
 
@@ -212,10 +207,10 @@ export function normalizeCadastralReferences(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const section = stringValue(record.section, "");
-      const number = stringValue(record.number, "");
-      const raw = stringValue(record.raw, "");
-      const prefix = stringValue(record.prefix, "");
+      const section = stringOrNumberValue(record.section, "");
+      const number = stringOrNumberValue(record.number, "");
+      const raw = stringOrNumberValue(record.raw, "");
+      const prefix = stringOrNumberValue(record.prefix, "");
       if (section && number) return `Section ${prefix ? `${prefix} ` : ""}${section} n° ${number}`;
       return raw;
     })
@@ -228,9 +223,9 @@ export function normalizeNearbyCategoryLabels(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const status = stringValue(record.status, "");
+      const status = stringOrNumberValue(record.status, "");
       if (status !== "mentioned") return "";
-      return stringValue(record.label, "");
+      return stringOrNumberValue(record.label, "");
     })
     .filter(Boolean)
     .slice(0, 8);
@@ -241,9 +236,9 @@ export function normalizeOccupancyEvidence(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const excerpt = stringValue(record.excerpt, "");
+      const label = stringOrNumberValue(record.label, "");
+      const source = stringOrNumberValue(record.source, "");
+      const excerpt = stringOrNumberValue(record.excerpt, "");
       return [label, source, excerpt].filter(Boolean).join(" | ");
     })
     .filter(Boolean)
@@ -255,9 +250,9 @@ export function normalizeDpeEvidence(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const excerpt = stringValue(record.excerpt, "");
+      const label = stringOrNumberValue(record.label, "");
+      const source = stringOrNumberValue(record.source, "");
+      const excerpt = stringOrNumberValue(record.excerpt, "");
       return [label, source, excerpt].filter(Boolean).join(" | ");
     })
     .filter(Boolean)
@@ -269,9 +264,9 @@ export function normalizeRenovationEvidence(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const excerpt = stringValue(record.excerpt, "");
+      const label = stringOrNumberValue(record.label, "");
+      const source = stringOrNumberValue(record.source, "");
+      const excerpt = stringOrNumberValue(record.excerpt, "");
       return [label, source, excerpt].filter(Boolean).join(" | ");
     })
     .filter(Boolean)
@@ -283,10 +278,10 @@ export function normalizeNeighborhoodSignals(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const status = stringValue(record.status, "");
-      const source = stringValue(record.source, "");
-      const detail = stringValue(record.detail, "");
+      const label = stringOrNumberValue(record.label, "");
+      const status = stringOrNumberValue(record.status, "");
+      const source = stringOrNumberValue(record.source, "");
+      const detail = stringOrNumberValue(record.detail, "");
       return [label, status ? reportStatusLabel(status) : null, source, detail]
         .filter(Boolean)
         .join(" | ");
@@ -300,11 +295,11 @@ export function normalizeDemographicSignals(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const status = stringValue(record.status, "");
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const detail = stringValue(record.detail, "");
-      const impact = stringValue(record.impact, "");
+      const status = stringOrNumberValue(record.status, "");
+      const label = stringOrNumberValue(record.label, "");
+      const source = stringOrNumberValue(record.source, "");
+      const detail = stringOrNumberValue(record.detail, "");
+      const impact = stringOrNumberValue(record.impact, "");
       return [status ? reportStatusLabel(status) : null, label, source, detail, impact]
         .filter(Boolean)
         .join(" | ");
@@ -318,10 +313,10 @@ export function normalizeLegalAttentionItems(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const priority = stringValue(record.priority, "");
-      const label = stringValue(record.label, "");
-      const reason = stringValue(record.reason, "");
-      const action = stringValue(record.action, "");
+      const priority = stringOrNumberValue(record.priority, "");
+      const label = stringOrNumberValue(record.label, "");
+      const reason = stringOrNumberValue(record.reason, "");
+      const action = stringOrNumberValue(record.action, "");
       return [
         priority ? reportPriorityLabel(priority) : null,
         label,
@@ -340,12 +335,12 @@ export function normalizeUrbanPlanningItems(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const priority = stringValue(record.priority, "");
-      const status = stringValue(record.status, "");
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const detail = stringValue(record.detail, "");
-      const action = stringValue(record.action, "");
+      const priority = stringOrNumberValue(record.priority, "");
+      const status = stringOrNumberValue(record.status, "");
+      const label = stringOrNumberValue(record.label, "");
+      const source = stringOrNumberValue(record.source, "");
+      const detail = stringOrNumberValue(record.detail, "");
+      const action = stringOrNumberValue(record.action, "");
       return [
         priority ? reportPriorityLabel(priority) : null,
         status ? reportStatusLabel(status) : null,
@@ -366,8 +361,8 @@ export function normalizeMarketComparableRows(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const date = stringValue(record.date, "");
-      const type = stringValue(record.type, "Bien");
+      const date = stringOrNumberValue(record.date, "");
+      const type = stringOrNumberValue(record.type, "Bien");
       const totalPrice = numberValue(record.totalPriceEur);
       const pricePerM2 = numberValue(record.pricePerM2);
       const surface = numberValue(record.surfaceM2);
@@ -392,10 +387,10 @@ export function normalizeValuationCheckpoints(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const status = stringValue(record.status, "");
-      const label = stringValue(record.label, "");
-      const detail = stringValue(record.detail, "");
-      const action = stringValue(record.action, "");
+      const status = stringOrNumberValue(record.status, "");
+      const label = stringOrNumberValue(record.label, "");
+      const detail = stringOrNumberValue(record.detail, "");
+      const action = stringOrNumberValue(record.action, "");
       return [
         status ? reportStatusLabel(status) : null,
         label,
@@ -414,13 +409,13 @@ export function normalizeActiveComparableItems(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const title = stringValue(record.title, "Bien actif");
-      const city = stringValue(record.city, "");
-      const saleDate = stringValue(record.saleDate, "");
+      const title = stringOrNumberValue(record.title, "Bien actif");
+      const city = stringOrNumberValue(record.city, "");
+      const saleDate = stringOrNumberValue(record.saleDate, "");
       const startingPrice = numberValue(record.startingPriceEur);
       const pricePerM2 = numberValue(record.pricePerM2);
       const surface = numberValue(record.surfaceM2);
-      const matchLabel = stringValue(record.matchLabel, "");
+      const matchLabel = stringOrNumberValue(record.matchLabel, "");
       const matchScore = numberValue(record.matchScore);
       return [
         matchLabel && matchScore != null ? `${matchLabel} (${matchScore}/100)` : matchLabel,
@@ -449,11 +444,11 @@ export function normalizeAudienceChecklistItems(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const status = stringValue(record.status, "");
-      const priority = stringValue(record.priority, "");
-      const detail = stringValue(record.detail, "");
-      const action = stringValue(record.action, "");
+      const label = stringOrNumberValue(record.label, "");
+      const status = stringOrNumberValue(record.status, "");
+      const priority = stringOrNumberValue(record.priority, "");
+      const detail = stringOrNumberValue(record.detail, "");
+      const action = stringOrNumberValue(record.action, "");
       return [
         status ? (statuses[status] ?? "À vérifier") : null,
         priority ? `Priorité ${priorities[priority] ?? "à confirmer"}` : null,
@@ -466,16 +461,6 @@ export function normalizeAudienceChecklistItems(value: unknown): string[] {
     })
     .filter(Boolean)
     .slice(0, 12);
-}
-
-export function stringValue(value: unknown, fallback: string | null): string {
-  if (typeof value === "string" && value.trim()) return value;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return fallback ?? "";
-}
-
-export function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 export function positiveNumber(value: unknown): number | null {
@@ -528,6 +513,11 @@ export function slugify(value: string): string {
 
 export function createShareToken(): string {
   return randomBytes(24).toString("base64url");
+}
+
+/** Only this digest is stored; the raw token is shown once, when the link is created. */
+export function hashShareToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 export function normalizeShareToken(value: string): string | null {

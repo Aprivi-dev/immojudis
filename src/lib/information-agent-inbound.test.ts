@@ -17,7 +17,7 @@ describe("information agent inbound parsing", () => {
     const token = "11111111-1111-4111-8111-111111111111";
     expect(
       findInboundToken(
-        [`Assistant ImmoJudis <enquete+${token}@reponses.immojudis.com>`],
+        [`Assistant Immojudis <enquete+${token}@reponses.immojudis.com>`],
         "reponses.immojudis.com",
       ),
     ).toBe(token);
@@ -57,7 +57,7 @@ describe("information agent inbound parsing", () => {
   it("does not extract claims from quoted older messages", () => {
     expect(
       replyTextForExtraction(
-        "Bonjour, je vérifie.\n\nLe 20 septembre, ImmoJudis a écrit :\n> Surface 84 m² et 4 pièces",
+        "Bonjour, je vérifie.\n\nLe 20 septembre, Immojudis a écrit :\n> Surface 84 m² et 4 pièces",
       ),
     ).toBe("Bonjour, je vérifie.");
   });
@@ -131,7 +131,7 @@ describe("information agent inbound parsing", () => {
     expect(detectInformationAgentContactOptOut("Ne supprimez pas le document joint.")).toBe(false);
     expect(
       detectInformationAgentContactOptOut(
-        "Bonjour.\nLe 20 septembre, ImmoJudis a écrit :\n> STOP\nMerci.",
+        "Bonjour.\nLe 20 septembre, Immojudis a écrit :\n> STOP\nMerci.",
       ),
     ).toBe(false);
     expect(detectInformationAgentContactOptOut("Je vous réponds après la visite.")).toBe(false);
@@ -144,7 +144,7 @@ describe("information agent inbound parsing", () => {
       "",
       "Envoyé depuis mon iPhone",
       "",
-      "On Mon, Sep 28, 2026 at 09:01, ImmoJudis <enquete@example.test> wrote:",
+      "On Mon, Sep 28, 2026 at 09:01, Immojudis <enquete@example.test> wrote:",
       "> La surface habitable est de 18 m².",
       "> Le bien est loué.",
     ].join("\n");
@@ -173,7 +173,7 @@ describe("information agent inbound parsing", () => {
       "Bonjour, je reviens vers vous.",
       "",
       "-----Original Message-----",
-      "From: ImmoJudis <enquete@example.test>",
+      "From: Immojudis <enquete@example.test>",
       "Subject: Vente A",
       "Surface habitable : 18 m²",
       "4 pièces",
@@ -188,7 +188,7 @@ describe("information agent inbound parsing", () => {
       "Bonjour, je regarde le dossier et je vous réponds rapidement.",
       "",
       "---------- Forwarded message ---------",
-      "From: ImmoJudis <enquete@example.test>",
+      "From: Immojudis <enquete@example.test>",
       "Subject: Vente A",
       "Surface habitable : 18 m²",
       "Le bien est loué.",
@@ -217,7 +217,7 @@ describe("information agent inbound parsing", () => {
       "<div>La surface habitable est de 84&nbsp;m².</div>",
       "<div>Envoyé depuis mon iPhone</div>",
       '<div class="gmail_quote">',
-      "<div>On Mon, Sep 28, 2026 at 09:01, ImmoJudis wrote:</div>",
+      "<div>On Mon, Sep 28, 2026 at 09:01, Immojudis wrote:</div>",
       '<blockquote type="cite">',
       "<div>La surface habitable est de 18 m².</div>",
       "<div>Le bien est loué.</div>",
@@ -239,7 +239,7 @@ describe("information agent inbound parsing", () => {
       "<div>Bonjour,</div>",
       "<div>La surface habitable est de 84&nbsp;m².</div>",
       '<div id="divRplyFwdMsg" dir="ltr">',
-      "<div>From: ImmoJudis &lt;enquete@example.test&gt;</div>",
+      "<div>From: Immojudis &lt;enquete@example.test&gt;</div>",
       "<div><div>Surface habitable : 18 m²</div><div>Le bien est loué.</div></div>",
       "</div>",
       "<div>Merci pour votre aide.</div>",

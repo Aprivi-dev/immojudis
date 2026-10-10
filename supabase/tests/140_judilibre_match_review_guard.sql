@@ -1,5 +1,11 @@
 begin;
 
+-- Helper functions are created in pg_temp and called under other roles: keep the pre-P4-07
+-- implicit EXECUTE-to-PUBLIC default for this rolled-back transaction only.
+alter default privileges grant execute on functions to public;
+
+
+
 select plan(43);
 
 select ok(

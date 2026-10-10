@@ -1,8 +1,10 @@
+import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { LEGAL_DOCUMENTS, publicLegalPublisher } from "@/lib/legal-documents";
+import { withdrawalInformationLines } from "@/lib/withdrawal-form";
 import { resolveEmailAlertDeliveryConfig, sendResendEmail } from "@/lib/email-alerts";
 import {
   ANALYSIS_BILLING_MODEL,
@@ -14,6 +16,7 @@ import {
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
+import { escapeHtml, numberValue, stringValue } from "@/lib/guards";
 
 export const checkoutConsentSchema = z.object({
   termsAccepted: z.literal(true),
@@ -166,7 +169,7 @@ export async function sendCommercialConfirmation({
       ? evidence.offer_label
       : isRecurringOffer
         ? resolveAnalysisOfferLabel()
-        : "ImmoJudis Analyse — 30 jours";
+        : "Immojudis Analyse — 30 jours";
   const subscriptionEvidence = jsonRecord(subscription?.metadata);
   const amountCents =
     acceptance?.amount_cents ?? numberValue(subscriptionEvidence.stripe_price_amount_cents);
@@ -213,10 +216,15 @@ export async function sendCommercialConfirmation({
   const termsUrl = `${config.appUrl}${LEGAL_DOCUMENTS.terms.path}`;
   const privacyUrl = `${config.appUrl}${LEGAL_DOCUMENTS.privacy.path}`;
   const rightsUrl = `${config.appUrl}/mes-droits`;
+  const withdrawalLines = withdrawalInformationLines({
+    publisher: publicLegalPublisher(),
+    rightsUrl,
+    orderedOn: paidAt,
+  });
   const text = [
     isRecurringOffer
-      ? "Confirmation de votre abonnement ImmoJudis Analyse"
-      : "Confirmation de votre commande ImmoJudis Analyse",
+      ? "Confirmation de votre abonnement Immojudis Analyse"
+      : "Confirmation de votre commande Immojudis Analyse",
     "",
     `Offre : ${offerLabel}`,
     offerDescription,
@@ -229,6 +237,10 @@ export async function sendCommercialConfirmation({
     `Conditions générales : ${termsUrl}`,
     `Confidentialité : ${privacyUrl}`,
     `Exercer un droit ou notifier une rétractation : ${rightsUrl}`,
+    "",
+    ...withdrawalLines,
+    "",
+    `Empreinte SHA-256 des conditions acceptées : ${LEGAL_DOCUMENTS.terms.sha256}`,
   ].join("\n");
 
   try {
@@ -240,10 +252,10 @@ export async function sendCommercialConfirmation({
         from: config.from,
         to: recipient,
         subject: isRecurringOffer
-          ? "Confirmation de votre abonnement ImmoJudis Analyse"
-          : "Confirmation de votre commande ImmoJudis Analyse",
+          ? "Confirmation de votre abonnement Immojudis Analyse"
+          : "Confirmation de votre commande Immojudis Analyse",
         text,
-        html: `<h1>${isRecurringOffer ? "Abonnement" : "Commande"} ImmoJudis Analyse confirmé${isRecurringOffer ? "" : "e"}</h1><p><strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription)}</p><p>Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${escapeHtml(checkoutSessionId)}</p><p>Conditions version ${LEGAL_DOCUMENTS.terms.version} · Confidentialité version ${LEGAL_DOCUMENTS.privacy.version}</p><p><a href="${termsUrl}">Conditions générales</a> · <a href="${privacyUrl}">Confidentialité</a> · <a href="${rightsUrl}">Mes droits et rétractation</a></p>`,
+        html: `<h1>${isRecurringOffer ? "Abonnement" : "Commande"} Immojudis Analyse confirmé${isRecurringOffer ? "" : "e"}</h1><p><strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription)}</p><p>Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${escapeHtml(checkoutSessionId)}</p><p>Conditions version ${LEGAL_DOCUMENTS.terms.version} · Confidentialité version ${LEGAL_DOCUMENTS.privacy.version}</p><p><a href="${termsUrl}">Conditions générales</a> · <a href="${privacyUrl}">Confidentialité</a> · <a href="${rightsUrl}">Mes droits et rétractation</a></p><pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(withdrawalLines.join("\n"))}</pre><p>Empreinte SHA-256 des conditions acceptées : ${LEGAL_DOCUMENTS.terms.sha256}</p>`,
       },
     });
     await recordConfirmationDelivery({
@@ -382,14 +394,6 @@ function jsonRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
 function formatMoney(amountCents: number, currency: string): string {
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
@@ -412,13 +416,4 @@ function formatOfferDate(value: string): string {
     timeStyle: "short",
     timeZone: "Europe/Paris",
   }).format(date);
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }

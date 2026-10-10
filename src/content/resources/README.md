@@ -1,4 +1,4 @@
-# Articles du blog ImmoJudis
+# Articles du blog Immojudis
 
 Le blog public est accessible sur `/ressources`. Le guide historique reste sur
 `/ventes-immobilieres-judiciaires`, avec ses ancres existantes.

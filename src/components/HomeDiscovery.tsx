@@ -1,10 +1,11 @@
 "use client";
 
 import Image from "next/image";
+import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
-import { BrandMark } from "@/components/BrandLogo";
+import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import styles from "./HomeDiscovery.module.css";
 
@@ -25,7 +26,7 @@ const methodSteps = [
     number: "03",
     title: "Fixez votre budget",
     description:
-      "Intégrez les frais et les travaux, préparez votre financement et fixez votre enchère maximale.",
+      "Intégrez les frais et les travaux, préparez votre financement et fixez votre enchère plafond.",
   },
   {
     number: "04",
@@ -42,7 +43,7 @@ const discoveryFeatures = [
 ] as const;
 
 const analysisFeatures = [
-  "Mise plafond et travaux",
+  "Enchère plafond et travaux",
   "Estimation et comparables",
   "Pièces et risques, selon la vente",
   "Simulation ajustable",
@@ -50,6 +51,7 @@ const analysisFeatures = [
 
 export function HomeDiscovery() {
   const analysisPrice = resolveAnalysisOfferLabel();
+  const checkoutOpen = useAnalysisCheckoutOpen();
 
   return (
     <div className={styles.root}>
@@ -97,14 +99,20 @@ export function HomeDiscovery() {
                 <dt>Au tribunal</dt>
                 <dd>Un avocat du barreau compétent porte les enchères pour vous.</dd>
               </div>
-              <div>
-                <dt>Chez le notaire</dt>
-                <dd>L’office notarial précise les garanties et les modalités de participation.</dd>
-              </div>
-              <div>
-                <dt>Ventes domaniales</dt>
-                <dd>L’État fixe la procédure : enchères, appel d’offres ou vente amiable.</dd>
-              </div>
+              {notaryAndStatePilotsEnabled() ? (
+                <>
+                  <div>
+                    <dt>Chez le notaire</dt>
+                    <dd>
+                      L’office notarial précise les garanties et les modalités de participation.
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Ventes domaniales</dt>
+                    <dd>L’État fixe la procédure : enchères, appel d’offres ou vente amiable.</dd>
+                  </div>
+                </>
+              ) : null}
             </dl>
           </aside>
           <div className={styles.methodActions}>
@@ -166,13 +174,19 @@ export function HomeDiscovery() {
                     </li>
                   ))}
                 </ul>
-                <Link href="/accompagnement" className={styles.primaryLink}>
+                <Link href="/offres" className={styles.primaryLink}>
                   Découvrir Analyse <ArrowRight aria-hidden="true" size={17} />
                 </Link>
-                <p className={styles.planFinePrint}>
-                  Essai de 7 jours avec carte bancaire, puis abonnement récurrent. Résiliable depuis
-                  votre espace.
-                </p>
+                {checkoutOpen === true ? (
+                  <p className={styles.planFinePrint}>
+                    Essai de 7 jours avec carte bancaire, puis abonnement récurrent. Résiliable
+                    depuis votre compte.
+                  </p>
+                ) : checkoutOpen === false ? (
+                  <p className={styles.planFinePrint}>
+                    Offre bientôt disponible : la souscription n’est pas encore ouverte.
+                  </p>
+                ) : null}
               </article>
             </div>
           </div>
@@ -194,34 +208,6 @@ export function HomeDiscovery() {
           <p>Prenez de meilleures décisions sur les ventes immobilières.</p>
         </div>
       </section>
-
-      <footer className={styles.footer}>
-        <div className={styles.footerTop}>
-          <Link href="/" className={styles.brand} aria-label="ImmoJudis — accueil">
-            <BrandMark variant="transparent" className={styles.brandMark} />
-            <span>
-              Immo<span>Judis</span>
-              <small>Les ventes immobilières en toute clarté.</small>
-            </span>
-          </Link>
-          <nav aria-label="Navigation pied de page">
-            <Link href="/comment-ca-marche">Comment ça marche</Link>
-            <Link href="/sales">Les ventes</Link>
-            <Link href="/ressources">Ressources</Link>
-            <Link href="/accompagnement">Offres</Link>
-            <Link href="/contact">Contact</Link>
-          </nav>
-        </div>
-        <div className={styles.footerBottom}>
-          <span>© 2026 ImmoJudis</span>
-          <nav aria-label="Informations légales">
-            <Link href="/legal">Mentions légales</Link>
-            <Link href="/conditions-generales">Conditions générales</Link>
-            <Link href="/privacy">Confidentialité</Link>
-            <Link href="/mes-droits">Mes droits</Link>
-          </nav>
-        </div>
-      </footer>
     </div>
   );
 }

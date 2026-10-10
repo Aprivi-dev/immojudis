@@ -10,6 +10,7 @@ import {
   ANALYSIS_TRIAL_DAYS,
   buildAnalysisCheckoutSessionParams,
   canReleaseCheckoutReservationAfterFailure,
+  isAnalysisSubscriptionPrice,
   resolveBillingOrigin,
   resolveCheckoutPlanCode,
   resolveStripePlanCode,
@@ -180,5 +181,17 @@ describe("billing helpers", () => {
     expect(canReleaseCheckoutReservationAfterFailure("open", true)).toBe(true);
     expect(canReleaseCheckoutReservationAfterFailure("expired", false)).toBe(true);
     expect(canReleaseCheckoutReservationAfterFailure(undefined, false)).toBe(true);
+  });
+
+  it("recognises only the approved Analyse price once one is configured", () => {
+    expect(
+      isAnalysisSubscriptionPrice("price_other", { STRIPE_ANALYSIS_PRICE_ID: "price_ok" }),
+    ).toBe(false);
+    expect(isAnalysisSubscriptionPrice("price_ok", { STRIPE_ANALYSIS_PRICE_ID: "price_ok" })).toBe(
+      true,
+    );
+    // Before the price is configured nothing can be compared.
+    expect(isAnalysisSubscriptionPrice("price_other", {})).toBe(true);
+    expect(isAnalysisSubscriptionPrice(null, { STRIPE_ANALYSIS_PRICE_ID: "price_ok" })).toBe(true);
   });
 });

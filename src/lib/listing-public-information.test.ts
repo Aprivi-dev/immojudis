@@ -60,7 +60,7 @@ describe("getListingPublicInformation", () => {
     expect(result.items.length).toBeLessThan(130);
     expect(result.items.filter((candidate) => candidate.id === "location")).toHaveLength(1);
     expect(result.items.filter((candidate) => candidate.id === "surface")).toHaveLength(1);
-    expect(item(result, "surface")?.value).toContain("42,6");
+    expect(item(result, "surface")?.value).toContain("68");
     expect(result.priorityItems).toHaveLength(
       result.items.filter((candidate) => candidate.status !== "sourced").length,
     );

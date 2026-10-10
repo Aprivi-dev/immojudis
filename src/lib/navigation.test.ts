@@ -1,26 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { loginPageMode, safeSalesReturnTo, saleDetailPath } from "./navigation";
+import { loginPathWithRedirect, SITE_NAV_LINKS } from "./navigation";
 
-describe("navigation helpers", () => {
-  it("selects only supported login modes", () => {
-    expect(loginPageMode("investor")).toBe("investor");
-    expect(loginPageMode("professional")).toBe("professional");
-    expect(loginPageMode("unknown")).toBe("login");
+describe("loginPathWithRedirect", () => {
+  it("ramène la personne sur sa recherche après la connexion", () => {
+    expect(loginPathWithRedirect("/sales?city=Bordeaux&maxPrice=150000")).toBe(
+      "/login?redirect=%2Fsales%3Fcity%3DBordeaux%26maxPrice%3D150000",
+    );
   });
 
-  it("keeps only internal sales-list return URLs", () => {
-    expect(safeSalesReturnTo("/sales?q=Bordeaux&sort=price_asc")).toBe(
-      "/sales?q=Bordeaux&sort=price_asc",
-    );
-    expect(safeSalesReturnTo("/sales/123")).toBeUndefined();
-    expect(safeSalesReturnTo("//example.com/sales")).toBeUndefined();
-    expect(safeSalesReturnTo("https://example.com/sales")).toBeUndefined();
+  it("refuse les adresses extérieures ou déjà sur la connexion", () => {
+    expect(loginPathWithRedirect("https://exemple.test/sales")).toBe("/login");
+    expect(loginPathWithRedirect("//exemple.test")).toBe("/login");
+    expect(loginPathWithRedirect("/login?redirect=%2Fsales")).toBe("/login");
+    expect(loginPathWithRedirect(null)).toBe("/login");
+    expect(loginPathWithRedirect("")).toBe("/login");
   });
+});
 
-  it("adds a safe return target to sale detail links", () => {
-    expect(saleDetailPath("sale-1", "/sales?q=Bordeaux")).toBe(
-      "/sales/sale-1?from=%2Fsales%3Fq%3DBordeaux",
-    );
-    expect(saleDetailPath("sale-1", "https://example.com/sales")).toBe("/sales/sale-1");
+describe("SITE_NAV_LINKS", () => {
+  it("garde les cinq libellés uniques de l'en-tête", () => {
+    expect(SITE_NAV_LINKS.map((link) => link.label)).toEqual([
+      "Ventes",
+      "Tribunaux",
+      "Avocats",
+      "Ressources",
+      "Offres",
+    ]);
   });
 });

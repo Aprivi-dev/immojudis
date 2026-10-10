@@ -8,7 +8,7 @@ export function PriceHistorySection({ property }: { property: Property }) {
   return (
     <AnimatedSection id="price-history" aria-labelledby="price-history-title">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Historique
         </p>
         <h2 id="price-history-title" className="mt-2 font-display text-3xl text-foreground">

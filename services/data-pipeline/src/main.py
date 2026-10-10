@@ -41,8 +41,10 @@ from src.enrichment.llm_client import LLMClientUnavailable, create_llm_client
 from src.enrichment.operational_display import refresh_operational_display
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.export import export_sales
+from src.extraction_profiles import attach_source_property_features
 from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
 from src.geocode import geocode_sale
+from src.image_validation import filter_raw_image_url, warm_image_validations
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_sale, parse_price
@@ -62,6 +64,7 @@ from src.quality import (
 )
 from src.run_finalizer import register_run
 from src.sale_procedure import classify_sale_procedure
+from src.source_health import SOURCE_WARNING_EXIT_CODE, failed_sources, warning_annotations
 from src.source_process import run_source_in_subprocess
 from src.sources.agrasc import scrape_agrasc_aquitaine_result
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
@@ -219,6 +222,20 @@ KNOWN_ENRICHMENT_PAYLOAD_FIELDS = (
     "llm_due_diligence",
     "geocode",
     "tribunal_assignment",
+    # PDF projection traces and candidate evidence are enrichment metadata.
+    # Preserve them through a cold source pass so the PDF worker can invalidate
+    # only stale projections without treating the markers as fresh source text.
+    "pdf_fact_provenance",
+    "pdf_sale_date_extraction",
+    "pdf_visit_dates_extraction",
+    "pdf_energy_diagnostics",
+    "pdf_energy_diagnostics_candidates",
+    "pdf_surface_candidates",
+    "pdf_land_surface_candidates",
+    "pdf_rooms_candidates",
+    "pdf_bedrooms_candidates",
+    "pdf_occupancy_candidates",
+    "pdf_multi_lot_guard",
 )
 
 KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS = (
@@ -234,6 +251,25 @@ KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS = (
     "surface_source",
     "surface_confidence",
     "surface_evidence",
+)
+
+KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS = (
+    "source_name",
+    "source_url",
+    "raw_text",
+    "starting_price_eur",
+    *KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS,
+    *KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
+    *KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
+    "rooms_count",
+    "bedrooms_count",
+    "occupancy_status",
+    "sale_date",
+    "status",
+    "visit_dates",
+    "property_type",
+    "description",
+    "risk_notes",
 )
 
 KNOWN_SOURCE_REFRESH_METADATA_FIELDS = (
@@ -382,6 +418,10 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
         finish_run_in_supabase(run_id, "failed", {"stage": "known_payload_lookup"}, errors)
         return 1
     collection_failed = any(errors.get(name) for name in scrapers)
+    # Judge sources on what collection returned. Errors recorded later (PDF,
+    # LLM, publication) are attributed to a source name but are not collection
+    # failures.
+    broken_sources = failed_sources(scrapers, raw_by_source, errors)
     coverage_incomplete = any(item.get("coverage_complete") is False for item in scrape_coverage.values())
     scoped_collection_complete = bool(
         options.source == "agrasc"
@@ -471,6 +511,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     for offset in range(0, len(canonical_sales), 25):
         batch = []
         started = time.perf_counter()
+        warm_image_validations(canonical_sales[offset:offset + 25])
         for sale in canonical_sales[offset:offset + 25]:
             LOGGER.info("Preparing listing source=%s index=%s/%s", sale.source_name, offset + len(batch) + 1, len(canonical_sales))
             try:
@@ -596,8 +637,13 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
             sale
             for sale in enrichment_sales
             if _can_use_paid_llm(sale)
-            and _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
-            and not _llm_description_already_current(sale, current_llm_description_hashes)
+            and (
+                needs_fact_extraction(sale)
+                or (
+                    _needs_llm_display_description_refresh(sale, prompt_version=prompt_version)
+                    and not _llm_description_already_current(sale, current_llm_description_hashes)
+                )
+            )
             and sale.source_url not in failed_urls
             and not (
                 options.upsert
@@ -620,7 +666,19 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     )
     if options.use_llm and llm_client is not None and llm_targets:
         with ThreadPoolExecutor(max_workers=llm_workers) as executor:
-            futures = {executor.submit(enrich_sale_with_llm, sale, client=llm_client): sale for sale in llm_targets}
+            futures = {
+                executor.submit(
+                    enrich_sale_with_llm,
+                    sale,
+                    client=llm_client,
+                    extraction_mode=(
+                        "structured_then_display"
+                        if needs_fact_extraction(sale)
+                        else "display_description"
+                    ),
+                ): sale
+                for sale in llm_targets
+            }
             for future in as_completed(futures):
                 sale = futures[future]
                 try:
@@ -649,6 +707,7 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
 
     # ── Phase 3 : finition (géocode réseau léger, tribunal, scoring) ─────────
     started = time.perf_counter()
+    warm_image_validations(app_ready)
     for sale in app_ready:
         try:
             _finalize_sale_for_app(sale, geocode=not bool(os.getenv("PIPELINE_AUTONOMOUS_RUN_ID")))
@@ -849,7 +908,14 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     for key, value in timings.items():
         print(f"- timing_{key}: {value}")
     print(f"- errors: { {source: len(items) for source, items in errors.items()} }")
-    return 1 if publication_failed else 0
+    # An enabled source that raised or returned nothing must be visible in the
+    # GitHub run whatever else happened, as a per-source annotation.
+    for annotation in warning_annotations(broken_sources):
+        print(annotation)
+    if publication_failed:
+        return 1
+    # Publication itself worked: exit 2 is a warning for the workflows.
+    return SOURCE_WARNING_EXIT_CODE if broken_sources else 0
 
 
 def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
@@ -876,6 +942,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
     if not sales:
         summary = {
             "mode": "llm_description_backfill",
+            "limit": limit,
             "selected": 0,
             "processed": 0,
             "updated": 0,
@@ -901,6 +968,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         completed=completed,
         llm_stats=LLMEnrichmentStats(),
         failed_sales=[],
+        limit=limit,
         prompt_version=prompt_version,
         statuses=options.llm_backfill_statuses,
         timings=timings,
@@ -914,7 +982,12 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
     except LLMClientUnavailable as exc:
         errors["llm_backfill"].append(str(exc))
         if options.upsert:
-            finish_run_in_supabase(run_id, "failed", {"mode": "llm_description_backfill"}, errors)
+            finish_run_in_supabase(
+                run_id,
+                "failed",
+                {"mode": "llm_description_backfill", "limit": limit},
+                errors,
+            )
         print(f"LLM description backfill failed: {exc}")
         return 1
 
@@ -945,6 +1018,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
                             completed=completed,
                             llm_stats=llm_stats,
                             failed_sales=failed_sales,
+                            limit=limit,
                             prompt_version=prompt_version,
                             statuses=options.llm_backfill_statuses,
                             timings=timings,
@@ -977,6 +1051,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
                         completed=completed,
                         llm_stats=llm_stats,
                         failed_sales=failed_sales,
+                        limit=limit,
                         prompt_version=prompt_version,
                         statuses=options.llm_backfill_statuses,
                         timings=timings,
@@ -999,6 +1074,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
 
     summary = {
         "mode": "llm_description_backfill",
+        "limit": limit,
         "selected": len(sales),
         "completed": completed,
         "processed": llm_stats.analyzed,
@@ -1081,6 +1157,7 @@ def _llm_backfill_progress_summary(
     completed: int,
     llm_stats: LLMEnrichmentStats,
     failed_sales: list[AuctionSale],
+    limit: int,
     prompt_version: str,
     statuses: tuple[str, ...],
     timings: dict[str, float],
@@ -1088,6 +1165,7 @@ def _llm_backfill_progress_summary(
 ) -> dict[str, object]:
     return {
         "mode": "llm_description_backfill",
+        "limit": limit,
         "phase": phase,
         "selected": selected,
         "completed": completed,
@@ -1232,11 +1310,7 @@ def _preserve_known_enrichment_payloads(
         known_payload = known.get("raw_payload") or {}
         if not sale.get("_known_unchanged") and not sale.get("_detail_fetch_failed"):
             sale["source_factual_snapshot"] = {
-                key: sale.get(key) for key in (
-                    "source_name", "source_url", "raw_text", "starting_price_eur",
-                    *KNOWN_DOCUMENT_BUILT_SURFACE_FIELDS, *KNOWN_DOCUMENT_LAND_SURFACE_FIELDS,
-                    *KNOWN_DOCUMENT_SURFACE_METADATA_FIELDS,
-                )
+                key: sale.get(key) for key in KNOWN_SOURCE_FACT_SNAPSHOT_FIELDS
             }
         elif known_payload.get("source_factual_snapshot"):
             sale["source_factual_snapshot"] = known_payload["source_factual_snapshot"]
@@ -1590,19 +1664,23 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
         sale.raw_payload.pop("source_description", None)
     if geocode:
         geocode_sale(sale)
+    filter_raw_image_url(sale.raw_payload)
     fill_tribunal(sale)
     classify_sale_procedure(sale)
     surface_context = _surface_reasoning_context_for_sale(sale)
     if surface_context:
         extract_and_apply_deterministic_surface_reasoning(sale, surface_context)
     normalize_asset_features(sale)
+    attach_source_property_features(sale.raw_payload)
     apply_catalogue_readiness(sale)
 
 
 def _surface_reasoning_context_for_sale(sale: AuctionSale) -> str:
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     source_blocks = payload.get("source_blocks")
-    block_values = list(source_blocks.values()) if isinstance(source_blocks, dict) else []
+    block_values = [
+        value for key, value in source_blocks.items() if key != "listing_completeness"
+    ] if isinstance(source_blocks, dict) else []
     values: list[object] = [
         sale.title,
         sale.description,
@@ -1964,4 +2042,12 @@ def parse_args(argv: list[str] | None = None) -> PipelineOptions:
 if __name__ == "__main__":
     if os.getenv("PIPELINE_TRACEBACK_SECONDS"):
         faulthandler.dump_traceback_later(max(60, int(os.environ["PIPELINE_TRACEBACK_SECONDS"])), repeat=True)
-    sys.exit(run_from_options(parse_args()))
+    pipeline_options = parse_args()
+    if pipeline_options.upsert:
+        # Writers of the catalogue (this pipeline, the queue worker, the manual
+        # recompute) serialise on a database lock instead of a GitHub group.
+        from src.catalogue_lock import catalogue_writer_lock
+
+        with catalogue_writer_lock(label=f"pipeline ({pipeline_options.source})"):
+            sys.exit(run_from_options(pipeline_options))
+    sys.exit(run_from_options(pipeline_options))

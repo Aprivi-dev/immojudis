@@ -4,16 +4,6 @@ import { TribunalJudicialActivityExplorer } from "@/components/TribunalJudicialA
 import { createFileRoute } from "@/lib/router-compat";
 
 export const Route = createFileRoute("/tribunaux")({
-  head: () => ({
-    meta: [
-      { title: "Statistiques Tribunaux — Immojudis" },
-      {
-        name: "description",
-        content:
-          "Comparez les prix d’adjudication, les mises à prix et les résultats des ventes judiciaires par tribunal et type de bien, avec les effectifs et la méthode de calcul.",
-      },
-    ],
-  }),
   component: TribunalsPage,
 });
 

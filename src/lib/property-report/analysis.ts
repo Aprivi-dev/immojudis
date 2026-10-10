@@ -17,6 +17,7 @@ import { buildNearbyServicesAnalysis } from "@/lib/nearby-services";
 import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
 import { buildOccupancyAnalysis } from "@/lib/occupation-analysis";
 import { buildRenovationAnalysis } from "@/lib/renovation-analysis";
+import { saleCostContext } from "@/lib/sale-cost-context";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import {
@@ -67,12 +68,14 @@ export function buildCeilingSnapshot(sale: AuctionSale, marketEstimate: MarketEs
     surface,
     price: Math.max(0, sale.starting_price_eur ?? 0),
     fpt: DEFAULTS.fpt,
+    ...saleCostContext(sale),
     scenario,
     medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
+    p10PricePerM2: marketEstimate?.actionable ? marketEstimate.p10PricePerM2 : null,
     p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
     p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
   });
-  const ceiling = ceilings.withRefreshWorks;
+  const ceiling = ceilings.withoutWorks;
   const acquisition = computeAcquisitionCosts({
     price: Math.max(0, sale.starting_price_eur ?? 0),
     works: ceilings.refreshWorksBudget,

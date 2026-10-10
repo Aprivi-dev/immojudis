@@ -7,7 +7,7 @@ const PUBLIC_ROUTES = [
   "/contact",
   "/legal",
   "/privacy",
-  "/accompagnement",
+  "/offres",
   "/ventes-immobilieres-judiciaires",
   "/annonce-exemple",
   "/login",
@@ -47,10 +47,10 @@ test("la navigation mobile s’ouvre, reçoit le focus et se referme", async ({ 
 
   const navigation = page.getByRole("dialog");
   await expect(navigation).toBeVisible();
-  await expect(navigation.getByRole("link", { name: "Rechercher un bien" })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Ventes", exact: true })).toBeVisible();
 
   await page
-    .locator("#home-mobile-navigation")
+    .locator("#site-mobile-navigation")
     .getByRole("button", { name: "Fermer le menu" })
     .click();
   await expect(navigation).toBeHidden();

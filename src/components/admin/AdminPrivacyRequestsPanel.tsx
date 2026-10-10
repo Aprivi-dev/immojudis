@@ -5,7 +5,13 @@ import Clock from "lucide-react/dist/esm/icons/clock.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useState } from "react";
 import { toast } from "sonner";
-import { fetchAdminPrivacyRequests, updateAdminPrivacyRequest } from "@/lib/client-api";
+import {
+  executeAdminContractWithdrawal,
+  executeAdminPrivacyErasure,
+  fetchAdminPrivacyRequests,
+  updateAdminPrivacyRequest,
+} from "@/lib/client-api";
+import { privacyDeadlineLabel } from "@/lib/privacy-deadline";
 import type {
   PrivacyRequestAdminSummary,
   PrivacyRequestAdminUpdate,
@@ -40,7 +46,35 @@ export function AdminPrivacyRequestsPanel() {
       );
     },
   });
+  const withdrawal = useMutation({
+    mutationFn: executeAdminContractWithdrawal,
+    onSuccess: async (result) => {
+      toast.success(
+        `Rétractation exécutée : ${(result.refundedCents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" })} remboursés.`,
+      );
+      await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
+    },
+    onError: (mutationError) => {
+      toast.error(
+        mutationError instanceof Error ? mutationError.message : "Rétractation impossible",
+      );
+    },
+  });
+  const erasure = useMutation({
+    mutationFn: (input: { requestId: string; confirmEmail: string }) =>
+      executeAdminPrivacyErasure(input),
+    onSuccess: async () => {
+      toast.success(
+        "Effacement exécuté : compte, données applicatives et client Stripe supprimés.",
+      );
+      await queryClient.invalidateQueries({ queryKey: ["admin-privacy-requests"] });
+    },
+    onError: (mutationError) => {
+      toast.error(mutationError instanceof Error ? mutationError.message : "Effacement impossible");
+    },
+  });
   const requests = data?.requests ?? [];
+  const dueSoonCount = requests.filter((request) => request.deadline?.dueSoon).length;
   const openCount =
     data?.openCount ??
     requests.filter((request) => !["completed", "rejected"].includes(request.status)).length;
@@ -53,10 +87,10 @@ export function AdminPrivacyRequestsPanel() {
   const totalCount = data?.totalCount ?? requests.length;
 
   return (
-    <section className="liquid-panel mt-6 rounded-lg p-5 sm:p-6">
+    <section className="admin-panel mt-6 rounded-lg p-5 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
             <ShieldCheck className="h-4 w-4" />
             Gouvernance des données
           </div>
@@ -65,9 +99,15 @@ export function AdminPrivacyRequestsPanel() {
             {openCount} demande{openCount > 1 ? "s" : ""} ouverte{openCount > 1 ? "s" : ""}
             {overdueCount ? ` · ${overdueCount} en retard` : " · aucune échéance dépassée"}.
           </p>
+          {dueSoonCount ? (
+            <p role="alert" className="mt-2 text-sm font-semibold text-amber-200">
+              {dueSoonCount} demande{dueSoonCount > 1 ? "s" : ""} à traiter avant J-7 : l'échéance
+              d'un mois approche.
+            </p>
+          ) : null}
         </div>
         <span
-          className={`rounded-full border px-3 py-1 text-xs font-semibold ${overdueCount ? "border-red-300/30 bg-red-400/10 text-red-100" : "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"}`}
+          className={`rounded-full border px-3 py-1 text-xs font-semibold ${overdueCount ? "border-red-300/30 bg-red-400/10 text-danger" : "border-emerald-300/25 bg-success-tint text-success"}`}
         >
           Délai cible : 1 mois
         </span>
@@ -75,7 +115,7 @@ export function AdminPrivacyRequestsPanel() {
 
       {isLoading ? <p className="mt-5 text-sm text-muted-foreground">Chargement…</p> : null}
       {error ? (
-        <p className="mt-5 text-sm text-red-200">
+        <p className="mt-5 text-sm text-danger">
           {error instanceof Error ? error.message : "Demandes indisponibles"}
         </p>
       ) : null}
@@ -95,8 +135,10 @@ export function AdminPrivacyRequestsPanel() {
           <PrivacyRequestEditor
             key={request.id}
             request={request}
-            busy={mutation.isPending}
+            busy={mutation.isPending || withdrawal.isPending || erasure.isPending}
             onSave={(input) => mutation.mutate(input)}
+            onWithdraw={(refundMode) => withdrawal.mutate({ requestId: request.id, refundMode })}
+            onErase={(input) => erasure.mutate(input)}
           />
         ))}
       </div>
@@ -140,7 +182,7 @@ function AdminPagination({
       <div className="flex gap-2">
         <button
           type="button"
-          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="admin-panel rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={busy || offset === 0}
           onClick={onPrevious}
         >
@@ -148,7 +190,7 @@ function AdminPagination({
         </button>
         <button
           type="button"
-          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="admin-panel rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={busy || !hasMore}
           onClick={onNext}
         >
@@ -165,11 +207,18 @@ function PrivacyRequestEditor({
   request,
   busy,
   onSave,
+  onWithdraw,
+  onErase,
 }: {
   request: PrivacyRequestAdminSummary;
   busy: boolean;
   onSave: (input: PrivacyRequestAdminUpdate) => void;
+  onWithdraw: (refundMode: "prorata" | "full") => void;
+  onErase: (input: { requestId: string; confirmEmail: string }) => void;
 }) {
+  const [withdrawalMode, setWithdrawalMode] = useState<"prorata" | "full">("prorata");
+  const [withdrawalArmed, setWithdrawalArmed] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState("");
   const [status, setStatus] = useState<PrivacyRequestStatus>(request.status);
   const [identityStatus, setIdentityStatus] = useState<IdentityStatus>(
     request.identityStatus as IdentityStatus,
@@ -180,7 +229,7 @@ function PrivacyRequestEditor({
   const terminal = status === "completed" || status === "rejected";
 
   return (
-    <article className="liquid-panel-soft rounded-lg p-4">
+    <article className="admin-panel rounded-lg p-4">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="font-semibold text-foreground">{request.requestType}</h3>
         <span className="text-xs text-muted-foreground">{request.requesterEmail}</span>
@@ -189,8 +238,21 @@ function PrivacyRequestEditor({
         {request.message || "Aucune précision fournie."}
       </p>
       <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-        <Clock className="h-3.5 w-3.5 text-gold" />
+        <Clock className="h-3.5 w-3.5 text-gold-text" />
         Reçue le {formatDate(request.submittedAt)} · échéance {formatDate(request.dueAt)}
+        {request.deadline ? (
+          <span
+            className={`rounded-full border px-2 py-0.5 font-semibold ${
+              request.deadline.overdue
+                ? "border-red-300/30 bg-red-400/10 text-red-100"
+                : request.deadline.dueSoon
+                  ? "border-amber-300/30 bg-amber-400/10 text-amber-100"
+                  : "border-white/10 text-muted-foreground"
+            }`}
+          >
+            {privacyDeadlineLabel(request.deadline)}
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -200,7 +262,7 @@ function PrivacyRequestEditor({
             value={status}
             disabled={busy}
             onChange={(event) => setStatus(event.target.value as PrivacyRequestStatus)}
-            className="rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
+            className="rounded-lg border border-brand-navy/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
           >
             {statusOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -215,7 +277,7 @@ function PrivacyRequestEditor({
             value={identityStatus}
             disabled={busy}
             onChange={(event) => setIdentityStatus(event.target.value as IdentityStatus)}
-            className="rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
+            className="rounded-lg border border-brand-navy/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
           >
             <option value="authenticated">Compte authentifié</option>
             <option value="additional_verification_required">Complément requis</option>
@@ -230,7 +292,7 @@ function PrivacyRequestEditor({
             disabled={busy}
             onChange={(event) => setResolutionCode(event.target.value)}
             placeholder="Ex. access_copy_delivered"
-            className="rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
+            className="rounded-lg border border-brand-navy/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
           />
         </label>
         <label className="grid gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground md:col-span-2">
@@ -242,10 +304,97 @@ function PrivacyRequestEditor({
             disabled={busy}
             onChange={(event) => setOperatorNotes(event.target.value)}
             placeholder="Vérifications, données remises, motif d’une limitation ou d’un refus…"
-            className="resize-y rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
+            className="resize-y rounded-lg border border-brand-navy/10 bg-background/60 px-3 py-2 text-xs normal-case tracking-normal text-foreground"
           />
         </label>
       </div>
+      {request.requestType === "contract_withdrawal" &&
+      request.status !== "completed" &&
+      request.status !== "rejected" ? (
+        <div className="mt-4 rounded-lg border border-gold/25 bg-gold/5 p-3 text-xs">
+          <p className="font-semibold text-foreground">Exécuter la rétractation</p>
+          <p className="mt-1 text-muted-foreground">
+            Résilie l’abonnement Stripe immédiatement, rembourse selon le mode choisi, coupe l’accès
+            et clôt la demande.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <select
+              aria-label="Mode de remboursement"
+              value={withdrawalMode}
+              disabled={busy}
+              onChange={(event) => {
+                setWithdrawalMode(event.target.value as "prorata" | "full");
+                setWithdrawalArmed(false);
+              }}
+              className="rounded-lg border border-brand-navy/10 bg-background/60 px-3 py-2 text-xs text-foreground"
+            >
+              <option value="prorata">Remboursement au prorata du service fourni</option>
+              <option value="full">Remboursement intégral</option>
+            </select>
+            {withdrawalArmed ? (
+              <>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    setWithdrawalArmed(false);
+                    onWithdraw(withdrawalMode);
+                  }}
+                  className="rounded-lg bg-red-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  Confirmer : résilier et rembourser
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWithdrawalArmed(false)}
+                  className="rounded-lg border border-brand-navy/10 px-3 py-2 text-xs"
+                >
+                  Annuler
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setWithdrawalArmed(true)}
+                className="rounded-lg border border-red-400/40 px-4 py-2 text-xs font-bold text-red-700 disabled:opacity-50"
+              >
+                Résilier et rembourser
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
+      {request.requestType === "erasure" && !terminal && request.userId ? (
+        <div className="mt-4 rounded-lg border border-red-300/25 bg-red-400/5 p-3">
+          <p className="text-xs text-red-100">
+            Exécuter l'effacement supprime définitivement le client Stripe, les données applicatives
+            et le compte. Identité vérifiée requise ; action irréversible.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <input
+              value={confirmEmail}
+              disabled={busy}
+              onChange={(event) => setConfirmEmail(event.target.value)}
+              placeholder="Retapez l'email du demandeur pour confirmer"
+              aria-label="Email du demandeur pour confirmer l'effacement"
+              className="flex-1 rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-xs text-foreground"
+            />
+            <button
+              type="button"
+              disabled={
+                busy ||
+                request.identityStatus !== "verified" ||
+                confirmEmail.trim().toLowerCase() !== request.requesterEmail.toLowerCase()
+              }
+              onClick={() => onErase({ requestId: request.id, confirmEmail })}
+              className="rounded-lg border border-red-300/40 bg-red-500/20 px-4 py-2 text-xs font-bold text-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Exécuter l'effacement
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="mt-4 flex justify-end">
         <button
           type="button"

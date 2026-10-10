@@ -71,9 +71,6 @@ vi.mock("@/components/UrbanismeCadastrePanel", () => ({
   UrbanismeCadastrePanel: () => <div>Urbanisme</div>,
 }));
 
-vi.mock("@/components/SaleTribunalHistory", () => ({
-  SaleTribunalHistory: () => <section id="tribunal-history">Historique du tribunal</section>,
-}));
 vi.mock("@/components/OutcomeForecast", () => ({
   OutcomeForecast: () => <div>Prévision de l’audience</div>,
 }));
@@ -203,12 +200,14 @@ describe("integrated scenario workspace", () => {
   it("reserves the works editor for Premium while keeping a clear trial preview", async () => {
     renderDetail("discovery");
     await openTab("Travaux");
-    expect(screen.getByRole("heading", { name: "Estimez vos travaux avec Premium" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),
+    ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Détailler le budget" })).toBeNull();
     expect(screen.queryByLabelText("Libellé du poste 1")).toBeNull();
     expect(
-      screen.getByRole("link", { name: "Découvrir l’essai Premium" }).getAttribute("href"),
-    ).toBe("/accompagnement");
+      screen.getByRole("link", { name: "Découvrir l’offre Analyse" }).getAttribute("href"),
+    ).toBe("/offres");
   });
 
   it("does not expose the email draft workflow on the Premium listing", () => {
@@ -242,12 +241,13 @@ describe("integrated scenario workspace", () => {
       price: sale.starting_price_eur!,
       works: 2_200,
       fpt: DEFAULTS.fpt,
+      department: sale.department,
     }).totalCost;
 
     await openTab("Financement");
     await waitFor(() => {
       const projectPrice = screen.getByLabelText(/Prix du projet/) as HTMLInputElement;
-      expect(projectPrice.value).toBe(String(expectedProjectCost));
+      expect(Number(projectPrice.value)).toBeCloseTo(expectedProjectCost, 1);
       expect(projectPrice.disabled).toBe(true);
       expect(screen.getByText("Coût complet retenu")).toBeTruthy();
     });

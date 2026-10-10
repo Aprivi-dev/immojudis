@@ -6,7 +6,12 @@ from decimal import Decimal
 from typing import Any
 
 from src.models import AuctionSale
-from src.normalize import SURFACE_VALUE_PATTERN, clean_text, parse_surface
+from src.normalize import (
+    SURFACE_VALUE_PATTERN,
+    _property_feature_bool,
+    clean_text,
+    parse_surface,
+)
 
 
 @dataclass
@@ -89,6 +94,8 @@ SURFACE_PATTERNS = {
     "carrez_surface_m2": (
         rf"{SURFACE_VALUE_PATTERN}\s*m(?:2|²|\*)\s+(?:loi\s+)?carrez",
         rf"(?:surface\s+)?(?:loi\s+)?carrez\s*(?:totale\s*)?:?\s*(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
+        rf"(?:superficie|surface)\s+(?:privative|totale|habitable)?\s*"
+        rf"\([^)]*loi\s+carrez[^)]*\)\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
     ),
     "land_surface_m2": (
         rf"\bcadastr[ée]e?.{{0,140}}?\b(?:total|superficie|contenance)\b.{{0,30}}?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",
@@ -223,14 +230,110 @@ def normalize_asset_features(sale: AuctionSale) -> AuctionSale:
 
     _apply_document_consistency_corrections(sale, text)
     _fill_surfaces(sale, text)
+    _restore_structured_surface_precision(sale)
     _fill_counts(sale, text)
     _fill_booleans(sale, text)
+    _clear_scoped_feature_false_positives(sale, text)
     risks = extract_risks(sale)
     _fill_quality_flags(sale)
     _score_sale(sale, risks)
     _write_asset_payload(sale, risks)
     sale.title = build_display_title(sale)
     return sale
+
+
+def _clear_scoped_feature_false_positives(sale: AuctionSale, text: str) -> None:
+    """Quarantine lot amenities inferred from building/level wording."""
+    for feature_field, feature in (("has_garden", "garden"), ("has_terrace", "terrace")):
+        if getattr(sale, feature_field) is not True:
+            continue
+        if not _feature_is_scope_only(text, feature):
+            continue
+        setattr(sale, feature_field, False)
+        reconciliation = sale.raw_payload.setdefault("feature_scope_reconciliation", {})
+        if isinstance(reconciliation, dict):
+            reconciliation[feature_field] = {
+                "status": "cleared",
+                "reason": "building_or_level_scope_without_lot_amenity",
+            }
+
+    if sale.bedrooms_count is not None and _bedroom_count_is_cold_room_only(text):
+        previous = sale.bedrooms_count
+        sale.bedrooms_count = None
+        sale.raw_payload["bedroom_count_reconciliation"] = {
+            "status": "cleared",
+            "rejected_bedrooms_count": previous,
+            "reason": "cold_rooms_are_not_bedrooms",
+        }
+
+    if sale.land_surface_m2 is not None and _land_surface_is_rez_de_jardin_only(text):
+        previous = sale.land_surface_m2
+        sale.land_surface_m2 = None
+        sale.raw_payload["land_surface_reconciliation"] = {
+            "status": "cleared",
+            "rejected_land_surface_m2": str(previous),
+            "resolved_land_surface_m2": None,
+            "basis": "rez_de_jardin_is_a_level_not_land_evidence",
+        }
+        if "parcel_surface_scope_unverified" not in sale.quality_flags:
+            sale.quality_flags.append("parcel_surface_scope_unverified")
+
+
+def _feature_is_scope_only(text: str, feature: str) -> bool:
+    if feature == "garden":
+        ground_level = re.search(r"\brez[\s-]+de[\s-]+jardin\b", text, re.I)
+        if not ground_level:
+            return False
+        without_level = re.sub(r"\brez[\s-]+de[\s-]+jardin\b", "", text, flags=re.I)
+        return not bool(re.search(r"\bjardin\b", without_level, re.I))
+    if feature == "terrace":
+        matches = list(re.finditer(r"\bterrasse\b", text, re.I))
+        return bool(matches) and _property_feature_bool(None, text, feature) is not True
+    return False
+
+
+def _bedroom_count_is_cold_room_only(text: str) -> bool:
+    if not re.search(r"\bchambres?\s+froides?\b", text, re.I):
+        return False
+    without_cold_rooms = re.sub(
+        r"\b(?:[0-9]+|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)?\s*"
+        r"chambres?\s+froides?\b",
+        "",
+        text,
+        flags=re.I,
+    )
+    return not bool(re.search(r"\bchambres?\b", without_cold_rooms, re.I))
+
+
+def _land_surface_is_rez_de_jardin_only(text: str) -> bool:
+    without_level = re.sub(r"\brez[\s-]+de[\s-]+jardin\b", "", text, flags=re.I)
+    if not re.search(r"\brez[\s-]+de[\s-]+jardin\b", text, re.I):
+        return False
+    return not bool(
+        re.search(
+            r"\b(?:terrain|parcelle|cadastr\w*|contenance|hectare|hectares|ares?|centiares?)\b|"
+            r"\b\d+(?:[,.]\d+)?\s*ha\b",
+            without_level,
+            re.I,
+        )
+    )
+
+
+def _restore_structured_surface_precision(sale: AuctionSale) -> None:
+    """Keep the source's generic surface representation alongside Carrez.
+
+    Surface normalization promotes an equal Carrez value to the application
+    surface. When the detail page also exposes a generic structured surface,
+    preserve that canonical field's precision (for example 10.1 rather than
+    the lexically padded 10.10) while retaining the typed Carrez field.
+    """
+    structured = parse_surface(sale.raw_payload.get("surface_m2"))
+    if sale.surface_m2 is None or sale.carrez_surface_m2 is None:
+        return
+    if structured is not None and structured == sale.surface_m2 == sale.carrez_surface_m2:
+        sale.surface_m2 = structured
+    elif structured is None and sale.surface_m2 == sale.carrez_surface_m2:
+        sale.surface_m2 = sale.surface_m2.normalize()
 
 
 def _assert_normalization_input_size(sale: AuctionSale) -> None:

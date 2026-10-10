@@ -2,6 +2,8 @@ from decimal import Decimal
 
 from src.normalize import (
     normalize_documents,
+    normalize_lawyer_contact,
+    normalize_listing_address,
     normalize_occupancy_status,
     normalize_sale,
     normalize_source_urls,
@@ -277,6 +279,90 @@ def test_normalize_sale_extracts_department_and_property_type() -> None:
     assert sale.city == "Bordeaux"
     assert sale.property_type == "house"
     assert sale.status == "upcoming"
+
+
+def test_normalize_sale_quarantines_contaminated_location_contact_and_visit_text() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "encheres_immobilieres",
+            "source_url": "https://example.test/saint-quentin",
+            "address": "On ne peut enchérir que par avocat|Saint-Quentin|17 rueRoland Garros, 02100 Saint-Quentin|Afficher le plan",
+            "postal_code": "02100",
+            "city": "Saint-Quentin",
+            "department": "59",
+            "lawyer_name": "chèque de banque à l’ordre de la CARPA de5.000€ outre une somme...",
+            "visit_dates": ["vendredi28août2026 à14h et"],
+            "sale_date": "14 octobre 2026",
+        }
+    )
+
+    assert sale.address == "17 rue Roland Garros, 02100 Saint-Quentin"
+    assert sale.postal_code == "02100"
+    assert sale.city == "Saint-Quentin"
+    assert sale.department == "02"
+    assert "postal_department_conflict" in sale.quality_flags
+    assert sale.lawyer_name is None
+    assert sale.visit_dates == ["vendredi 28 août 2026 à 14h"]
+    assert sale.raw_payload["date_precision"] == "day"
+    assert sale.sale_date is not None
+    assert sale.sale_date.isoformat() == "2026-10-14T00:00:00+00:00"
+
+
+def test_normalize_sale_rejects_petites_affiches_price_as_postal_code() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "petites_affiches",
+            "source_url": "https://www.petitesaffiches.fr/vente/saint-quentin.html",
+            "title": "UNE MAISON à Saint-Quentin",
+            "address": "Saint-Quentin",
+            "city": "Saint-Quentin",
+            "department": "50",
+            "postal_code": "50000",
+            "starting_price_eur": "50 000",
+            "raw_text": "Mise à Prix : 50 000 € Adresse : Saint-Quentin",
+        }
+    )
+
+    assert sale.postal_code is None
+    assert sale.department == "50"
+    assert "postal_code_unverified" in sale.quality_flags
+    assert sale.raw_payload["invalid_postal_evidence"] == {
+        "value": "50000",
+        "reason": "starting_price_token_without_location_context",
+    }
+
+
+def test_normalize_sale_prefers_petites_affiches_postal_from_detail_address() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "petites_affiches",
+            "source_url": "https://www.petitesaffiches.fr/vente/livry-gargan.html",
+            "title": "UNE MAISON à Livry-Gargan",
+            "address": "39 bis avenue Paul Bert, 93190 Livry-Gargan",
+            "city": "Livry-Gargan",
+            "department": "02",
+            "postal_code": "02889",
+            "starting_price_eur": "80 000",
+            "raw_text": "Lot / Réf.: 26/02889 Mise à Prix : 80 000 € Adresse : 39 bis avenue Paul Bert, 93190 Livry-Gargan",
+        }
+    )
+
+    assert sale.postal_code == "93190"
+    assert sale.department == "93"
+    assert "postal_address_conflict" in sale.quality_flags
+    assert sale.raw_payload["invalid_postal_evidence"] == {
+        "value": "02889",
+        "reason": "address_postal_code_conflict",
+        "address_value": "93190",
+    }
+
+
+def test_address_notice_is_removed_even_without_a_map_control_suffix() -> None:
+    assert normalize_listing_address("On ne peut enchérir|Saint-Quentin|17 rueRoland Garros") == "17 rue Roland Garros"
+
+
+def test_payment_contact_keeps_only_actionable_phone() -> None:
+    assert normalize_lawyer_contact("CARPA, chèque de banque · 03 23 00 00 00") == "03 23 00 00 00"
 
 
 def test_normalize_sale_preserves_collected_app_ready_metadata() -> None:
@@ -863,3 +949,28 @@ def test_adjudication_phrase_cannot_borrow_amount_from_another_source_block():
                              'mise_a_prix': '445 000 €'}}
     assert extract_adjudication_price(raw) is None
     assert extract_adjudication_price({'source_blocks': {'resultat': 'Prix d’adjudication : 510 000 €'}}) == Decimal('510000')
+
+
+def test_completeness_projection_does_not_reenter_source_normalization():
+    from src.normalize import _source_blocks_text
+
+    raw = {
+        "source_name": "licitor",
+        "source_url": "https://example.test/generated-projection",
+        "title": "Appartement",
+        "source_blocks": {
+            "description": "Description originale sans surface.",
+            "listing_completeness": {
+                "source_property_features": {"habitable_surface_m2": 999},
+                "source_field_observations": {
+                    "surface_habitable_m2": {"value": 999, "state": "inferred", "excerpt": "Surface : 999 m²"},
+                },
+            },
+        },
+    }
+
+    sale = normalize_sale(raw)
+
+    assert _source_blocks_text(raw) == "Description originale sans surface."
+    assert sale.habitable_surface_m2 is None
+    assert sale.surface_m2 is None

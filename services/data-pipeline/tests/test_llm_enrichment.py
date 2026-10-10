@@ -15,6 +15,7 @@ from src.enrichment.extract_structured import (
     needs_fact_extraction,
 )
 from src.enrichment.llm_client import (
+    LLMClientUnavailable,
     LLMProviderOutputRefused,
     ReplicateClient,
     _retry_sleep_seconds,
@@ -360,7 +361,10 @@ def test_fact_extraction_selection_requires_current_documentary_gap(monkeypatch)
 
     sale.app_surface_m2 = Decimal("80")
     sale.occupancy_status = "vacant"
-    assert needs_fact_extraction(sale) is False
+    # Known surface/occupancy do not prove that risks, works, or other
+    # documentary facts were analysed. A fact pass is required until its
+    # manifest becomes current.
+    assert needs_fact_extraction(sale) is True
 
 
 def test_replicate_client_formats_output_list_and_payload() -> None:
@@ -580,6 +584,71 @@ def test_replicate_client_formats_qwen37_payload() -> None:
     }
 
 
+def test_qwen37_vision_payload_is_opt_in_and_uses_documented_image_field() -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="qwen/qwen3-7-plus",
+        max_tokens=768,
+        temperature=0,
+    )
+
+    image = "data:image/png;base64,AA=="
+    payload = client._input_payload("describe", system_prompt="vision", image_inputs=[image])
+
+    assert payload["image"] == [image]
+    assert payload["prompt"] == "describe"
+    assert payload["system_prompt"] == "vision"
+
+
+def test_non_vision_model_rejects_image_payload_before_provider_call() -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="moonshotai/kimi-k2.5",
+        max_tokens=768,
+    )
+
+    with pytest.raises(LLMClientUnavailable, match="image input contract"):
+        client._input_payload("describe", system_prompt="vision", image_inputs=["data:image/png;base64,AA=="])
+
+
+def test_versioned_qwen_model_rejects_image_payload_without_approved_contract() -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="qwen/qwen3-7-plus:version-sha",
+        max_tokens=768,
+    )
+
+    with pytest.raises(LLMClientUnavailable, match="image input contract"):
+        client._input_payload("describe", system_prompt="vision", image_inputs=["data:image/png;base64,AA=="])
+
+
+def test_qwen37_generate_json_with_images_makes_one_bounded_request(monkeypatch) -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="qwen/qwen3-7-plus",
+        max_tokens=768,
+        min_interval_seconds=0,
+    )
+    calls: list[object] = []
+
+    def fake_create_prediction(prompt, system_prompt=None, *, image_inputs=None):
+        calls.append(image_inputs)
+        return {"id": "vision-prediction"}
+
+    monkeypatch.setattr(client, "_create_prediction", fake_create_prediction)
+    monkeypatch.setattr(client, "_wait_for_output", lambda _prediction: '{"description":"Une fenêtre visible"}')
+    monkeypatch.setattr(client, "_record_usage", lambda *args, **kwargs: None)
+
+    result = client.generate_json_with_images(
+        "MODE OBSERVATION PHOTO STRICTE",
+        "Observe seulement.",
+        ["data:image/png;base64,AA=="],
+    )
+
+    assert result == {"description": "Une fenêtre visible"}
+    assert calls == [["data:image/png;base64,AA=="]]
+
+
 def test_qwen37_keeps_system_and_user_prompts_separate() -> None:
     prompt = _user_prompt_for_model(
         "qwen/qwen3-7-plus",
@@ -744,6 +813,33 @@ def test_extract_source_description_prefers_usable_source_blocks() -> None:
     assert extract_source_description(sale) == (
         "Appartement de type trois avec balcon, cave et stationnement privatif."
     )
+
+
+def test_source_payload_sections_skip_generated_completeness_projection() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-source-projection.html",
+            "source_blocks": {
+                "description": "Description réellement publiée par la source.",
+                "listing_completeness": {
+                    "source_property_features": {
+                        "surface_m2": {"value": 9999, "evidence": "projection interne"}
+                    },
+                    "source_field_observations": {
+                        "surface_m2": {"value": 9999, "state": "observed"}
+                    },
+                },
+            },
+        }
+    )
+
+    sections = extraction._source_payload_sections(sale.raw_payload, sale)
+    joined = "\n".join(sections)
+
+    assert "Description réellement publiée par la source." in joined
+    assert "projection interne" not in joined
+    assert "9999" not in joined
 
 
 def test_enrich_sale_with_llm_uses_cached_pdf_text_and_preserves_reliable_fields(tmp_path, monkeypatch) -> None:
@@ -1209,6 +1305,31 @@ def test_build_reduced_pdf_context_keeps_composition_windows() -> None:
     assert "deux chambres" in context
 
 
+def test_build_reduced_pdf_context_does_not_dedupe_distinct_pages_by_header_prefix() -> None:
+    repeated_header = "[En-tête identique] " * 20
+    payload = [
+        {
+            "label": "PV",
+            "document_type": "pv_descriptif",
+            "pages": [
+                {"page": 1, "text": repeated_header + "FAIT_PAGE_1"},
+                {"page": 2, "text": repeated_header + "FAIT_PAGE_2"},
+            ],
+        }
+    ]
+
+    context = build_reduced_pdf_context(
+        payload,
+        max_chars=4000,
+        first_page_chars=1000,
+        window_chars=300,
+    )
+
+    assert context is not None
+    assert "FAIT_PAGE_1" in context
+    assert "FAIT_PAGE_2" in context
+
+
 def test_load_llm_context_falls_back_to_raw_text_when_pdf_cache_missing(tmp_path, monkeypatch) -> None:
     sale = normalize_sale(
         {
@@ -1429,3 +1550,34 @@ def test_fact_context_chunks_cover_every_pdf_page_and_report_truncation(tmp_path
     truncated = load_llm_fact_context_chunks_for_sale(sale, chunk_chars=3000, max_chunks=1)
     assert len(truncated) == 1
     assert sale.raw_payload["llm_fact_context_coverage"]["complete"] is False
+
+
+def test_fact_context_keeps_richer_aggregate_when_page_text_is_only_native_header(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/docling-aggregate",
+            "raw_text": "Annonce source principale.",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps(
+            [
+                {
+                    "label": "Diagnostic",
+                    "document_type": "diagnostics_techniques",
+                    "url": "https://example.test/diagnostic.pdf",
+                    "text": "TABLEAU DPE : classe F. Consommation 394 kWhEP/m2/an.",
+                    "pages": [{"page": 1, "method": "pymupdf_text", "text": "En-tête du document"}],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    chunks = load_llm_fact_context_chunks_for_sale(sale, chunk_chars=3000, max_chunks=0)
+
+    assert "TABLEAU DPE" in "\n".join(chunks)

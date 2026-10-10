@@ -53,10 +53,10 @@ export function AdminSubscriptionsPanel() {
   });
 
   return (
-    <section className="liquid-panel mt-6 rounded-lg p-5">
+    <section className="admin-panel mt-6 rounded-lg p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
             <CreditCard className="h-4 w-4" />
             Accès payants
           </div>
@@ -69,7 +69,7 @@ export function AdminSubscriptionsPanel() {
         <button
           type="button"
           onClick={() => void subscriptionsQuery.refetch()}
-          className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold transition hover:border-gold"
+          className="admin-panel inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
         >
           <RefreshCw
             className={`h-3.5 w-3.5 ${subscriptionsQuery.isFetching ? "animate-spin" : ""}`}
@@ -79,7 +79,7 @@ export function AdminSubscriptionsPanel() {
       </div>
 
       {subscriptionsQuery.error ? (
-        <div className="mt-4 rounded-lg border border-red-300/20 bg-red-500/10 p-3 text-sm text-red-100">
+        <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
           {subscriptionsQuery.error instanceof Error
             ? subscriptionsQuery.error.message
             : "Chargement impossible"}
@@ -94,7 +94,7 @@ export function AdminSubscriptionsPanel() {
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[0.82fr_1.18fr]">
         <form
-          className="rounded-lg border border-white/10 bg-white/[0.03] p-4"
+          className="rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-4"
           onSubmit={(event) => {
             event.preventDefault();
             grantMutation.mutate();
@@ -149,28 +149,28 @@ export function AdminSubscriptionsPanel() {
               value={form.note}
               onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
               rows={3}
-              className="rounded-lg border border-white/10 bg-background/45 px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+              className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
             />
           </label>
 
           <button
             type="submit"
             disabled={grantMutation.isPending}
-            className="liquid-button mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-background disabled:cursor-not-allowed disabled:opacity-60"
+            className="bg-gold-soft text-white shadow-sm hover:bg-gold-text mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save className="h-3.5 w-3.5" />
             {grantMutation.isPending ? "Attribution" : "Attribuer le plan"}
           </button>
         </form>
 
-        <div className="overflow-hidden rounded-lg border border-white/10">
-          <div className="grid grid-cols-[1.1fr_0.75fr_0.7fr_0.8fr] gap-3 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        <div className="overflow-hidden rounded-lg border border-brand-navy/10">
+          <div className="grid grid-cols-[1.1fr_0.75fr_0.7fr_0.8fr] gap-3 bg-brand-navy/[0.03] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             <span>Compte</span>
             <span>Plan</span>
             <span>Statut</span>
             <span>Maj</span>
           </div>
-          <div className="divide-y divide-white/10">
+          <div className="divide-y divide-brand-navy/10">
             {subscriptionsQuery.isLoading ? (
               <div className="p-4 text-sm text-muted-foreground">Chargement</div>
             ) : subscriptions.length ? (
@@ -227,7 +227,7 @@ function AdminPagination({
       <div className="flex gap-2">
         <button
           type="button"
-          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="admin-panel rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={busy || offset === 0}
           onClick={onPrevious}
         >
@@ -235,7 +235,7 @@ function AdminPagination({
         </button>
         <button
           type="button"
-          className="liquid-panel-soft rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="admin-panel rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={busy || !hasMore}
           onClick={onNext}
         >
@@ -287,7 +287,7 @@ function TextField({
         onChange={(event) => onChange(event.target.value)}
         type={type}
         required={required}
-        className="rounded-lg border border-white/10 bg-background/45 px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+        className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
       />
     </label>
   );
@@ -310,7 +310,7 @@ function SelectField({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded-lg border border-white/10 bg-background/45 px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+        className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
       >
         {options.map(([optionValue, label]) => (
           <option key={optionValue} value={optionValue}>
@@ -328,8 +328,8 @@ function StatusPill({ status }: { status: PlanStatus }) {
     <span
       className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-[11px] ${
         active
-          ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
-          : "border-amber-300/20 bg-amber-400/10 text-amber-100"
+          ? "border-emerald-300/20 bg-success-tint text-success"
+          : "border-amber-300/20 bg-warning-tint text-warning"
       }`}
     >
       {status}

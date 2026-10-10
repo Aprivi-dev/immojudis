@@ -253,6 +253,20 @@ export function saleVerificationLabel(status: SaleVerificationStatus): string {
   }[status];
 }
 
+/** Ce que signifie chaque niveau de vérification : une phrase différente par badge. */
+export function saleVerificationExplanation(status: SaleVerificationStatus): string {
+  return {
+    verified:
+      "Vérifié : le type de vente et l’organisateur sont mentionnés explicitement par une source de la vente.",
+    cross_checked:
+      "Recoupé : l’annonce ou la pièce de la vente l’indique, et une seconde référence officielle le confirme.",
+    pending:
+      "En cours de vérification : l’information est partielle, par exemple un tribunal déduit seulement de l’adresse. Les règles à suivre restent à confirmer.",
+    conflict:
+      "Contrôle requis : des indices incompatibles ont été relevés. Vérifiez auprès du tribunal ou de l’organisateur avant toute démarche.",
+  }[status];
+}
+
 export function saleProcedureIsConfirmed(procedure: SaleProcedurePresentation): boolean {
   return (
     procedure.verificationStatus === "verified" || procedure.verificationStatus === "cross_checked"

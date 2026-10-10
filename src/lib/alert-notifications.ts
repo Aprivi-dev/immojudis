@@ -1,3 +1,4 @@
+import "server-only";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -6,6 +7,7 @@ import { emailAlertConsentEnabled } from "@/lib/notification-preferences";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { UserAlert } from "@/lib/types";
+import { asRecord, numberValue, stringValue } from "@/lib/guards";
 
 type NotificationRow = Database["public"]["Tables"]["user_alert_notifications"]["Row"];
 type NotificationInsert = Database["public"]["Tables"]["user_alert_notifications"]["Insert"];
@@ -287,7 +289,6 @@ export function buildAlertNotificationRows({
       const frequency = frequencyByAlert.get(match.alertId) ?? "daily";
       const notificationKind = notificationKindForFrequency(frequency);
       const scheduledFor = scheduledForFrequency(frequency, now);
-      const isInstant = frequency === "instant";
       const snapshot = asJson({
         ...buildNotificationSnapshot({
           match: discovery
@@ -309,9 +310,9 @@ export function buildAlertNotificationRows({
         sale_id: match.saleId,
         notification_kind: notificationKind,
         delivery_channel: "in_app",
-        delivery_status: isInstant ? "sent" : "queued",
+        delivery_status: "queued",
         scheduled_for: scheduledFor,
-        sent_at: isInstant ? now.toISOString() : null,
+        sent_at: null,
         notification_snapshot: snapshot,
       };
 
@@ -396,7 +397,7 @@ export function buildAlertNotificationDispatchPatch(now = new Date()): Notificat
 export function notificationKindForFrequency(
   frequency: UserAlert["alert_frequency"],
 ): AlertNotificationKind {
-  if (frequency === "instant") return "instant_match";
+  // "instant" was never delivered in real time: it is folded into the daily digest.
   if (frequency === "weekly") return "weekly_digest";
   return "daily_digest";
 }
@@ -405,8 +406,6 @@ export function scheduledForFrequency(
   frequency: UserAlert["alert_frequency"],
   now = new Date(),
 ): string {
-  if (frequency === "instant") return now.toISOString();
-
   const scheduled = new Date(now);
   if (frequency === "weekly") {
     const day = scheduled.getUTCDay();
@@ -479,20 +478,6 @@ function notificationRowToSummary(row: NotificationRow): AlertNotificationSummar
 
 function asJson(value: Record<string, unknown>): Json {
   return value as Json;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function arrayOfStrings(value: unknown): string[] {

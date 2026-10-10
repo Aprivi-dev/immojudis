@@ -8,27 +8,17 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { RESOURCES_PATH } from "@/lib/navigation";
 
 export const Route = createFileRoute("/a-propos")({
-  head: () => ({
-    meta: [
-      { title: "À propos — Immojudis" },
-      {
-        name: "description",
-        content:
-          "Immojudis rassemble les ventes au tribunal, notariales et domaniales référencées et explique les règles propres à chaque procédure.",
-      },
-    ],
-  }),
   component: AboutPage,
 });
 
 export function AboutPage() {
   return (
-    <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
+    <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <div className="mx-auto max-w-6xl">
         <section className="glass-shell overflow-hidden rounded-lg p-6 sm:p-8 lg:p-10">
           <div className="grid gap-8 lg:grid-cols-[1fr_26rem] lg:items-center">
             <div>
-              <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold">
+              <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
                 <Landmark className="h-4 w-4" />À propos d'Immojudis
               </div>
               <h1 className="mt-4 max-w-3xl font-display text-4xl leading-tight text-foreground sm:text-5xl">
@@ -43,7 +33,7 @@ export function AboutPage() {
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Link
                   to={RESOURCES_PATH}
-                  className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-background"
+                  className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.16em]"
                 >
                   Lire les ressources <ArrowRight className="h-4 w-4" />
                 </Link>
@@ -53,7 +43,7 @@ export function AboutPage() {
               </div>
             </div>
 
-            <div className="relative min-h-[24rem] overflow-hidden rounded-lg bg-[#eef7ff]">
+            <div className="relative min-h-[24rem] overflow-hidden rounded-lg bg-background">
               <img
                 src="/media/landing/justice-goddess.webp"
                 alt=""
@@ -99,7 +89,7 @@ function AboutCard({
 }) {
   return (
     <article className="liquid-panel-soft rounded-lg p-5">
-      <Icon className="h-5 w-5 text-gold" />
+      <Icon className="h-5 w-5 text-gold-text" />
       <h2 className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
         {title}
       </h2>
