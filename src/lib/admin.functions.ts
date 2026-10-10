@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
+import { serverEnv } from "@/lib/env";
 
 const SCROLL_SOURCES = [
   "all",
@@ -331,40 +332,27 @@ export async function readAiDescriptionStats(
 }
 
 function scrollWebhookUrl(): string | null {
-  return firstFilledEnv(process.env.SCROLL_WEBHOOK_URL, process.env.IMMOJUDIS_SCROLL_WEBHOOK_URL);
+  return serverEnv().pipeline.webhookUrl ?? null;
 }
 
 function scrollWebhookSecret(): string | null {
-  return firstFilledEnv(
-    process.env.SCROLL_WEBHOOK_SECRET,
-    process.env.IMMOJUDIS_SCROLL_WEBHOOK_SECRET,
-  );
+  return serverEnv().pipeline.webhookSecret ?? null;
 }
 
 function githubActionsToken(): string | null {
-  return firstFilledEnv(
-    process.env.GITHUB_SCROLL_TOKEN,
-    process.env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN,
-    process.env.GITHUB_ACTIONS_DISPATCH_TOKEN,
-  );
+  return serverEnv().pipeline.githubToken ?? null;
 }
 
 function githubActionsRepository(): string {
-  return firstFilledEnv(process.env.GITHUB_SCROLL_REPOSITORY) ?? "Aprivi-dev/immojudis";
+  return serverEnv().pipeline.repository;
 }
 
 function githubActionsWorkflow(): string {
-  return firstFilledEnv(process.env.GITHUB_SCROLL_WORKFLOW) ?? "data-pipeline.yml";
+  return serverEnv().pipeline.workflow;
 }
 
 function githubActionsRef(): string {
-  return firstFilledEnv(process.env.GITHUB_SCROLL_REF) ?? "main";
-}
-
-function firstFilledEnv(...values: Array<string | undefined>): string | null {
-  return (
-    values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim() ?? null
-  );
+  return serverEnv().pipeline.ref;
 }
 
 function runnerMode(): RunnerMode {
