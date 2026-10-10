@@ -95,3 +95,70 @@ export async function sendPaymentFailedNotice({
     return "failed";
   }
 }
+
+export function buildTrialEndingMessage({
+  from,
+  to,
+  appUrl,
+  trialEnd,
+}: {
+  from: string;
+  to: string;
+  appUrl: string;
+  /** Unix seconds of the end of the free trial. */
+  trialEnd: number;
+}): ResendEmailMessage {
+  const accountUrl = `${appUrl}/compte`;
+  const endDate = dateFormat.format(new Date(trialEnd * 1000));
+  const lines = [
+    "Bonjour,",
+    "",
+    `Votre essai gratuit d'Immojudis Analyse se termine le ${endDate}.`,
+    "Sans action de votre part, l'abonnement se poursuit et le premier paiement est prélevé ce jour-là.",
+    "",
+    "Pour résilier avant cette date ou consulter votre abonnement :",
+    accountUrl,
+  ];
+  return {
+    from,
+    to,
+    subject: "Votre essai Immojudis se termine dans 3 jours",
+    text: lines.join("\n"),
+    html: `<p>Bonjour,</p><p>Votre essai gratuit d'Immojudis Analyse se termine le ${escapeHtml(endDate)}. Sans action de votre part, l'abonnement se poursuit et le premier paiement est prélevé ce jour-là.</p><p><a href="${escapeHtml(accountUrl)}">Résilier ou consulter mon abonnement</a></p>`,
+  };
+}
+
+/** Warn a subscriber that the trial is about to turn into a paid subscription. */
+export async function sendTrialEndingNotice({
+  userId,
+  subscriptionId,
+  trialEnd,
+}: {
+  userId: string;
+  subscriptionId: string;
+  trialEnd: number;
+}): Promise<"sent" | "skipped" | "failed"> {
+  const config = resolveEmailAlertDeliveryConfig();
+  if (!config.configured || !config.apiKey || !config.from || !config.appUrl) return "skipped";
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (error) throw error;
+    const recipient = data.user?.email?.trim();
+    if (!recipient) return "skipped";
+    await sendResendEmail({
+      apiKey: config.apiKey,
+      idempotencyKey: `immojudis-trial-ending-${subscriptionId}`,
+      fetchImpl: fetch,
+      message: buildTrialEndingMessage({
+        from: config.from,
+        to: recipient,
+        appUrl: config.appUrl,
+        trialEnd,
+      }),
+    });
+    return "sent";
+  } catch (error) {
+    console.error("[billing] trial ending notice failed", error);
+    return "failed";
+  }
+}

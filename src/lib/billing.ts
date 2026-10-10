@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -12,7 +12,7 @@ import {
   sendCommercialConfirmation,
 } from "@/lib/commercial-acceptance";
 import { assertPaidOfferLegalReadiness } from "@/lib/legal-documents";
-import { sendPaymentFailedNotice } from "@/lib/billing-notices";
+import { sendPaymentFailedNotice, sendTrialEndingNotice } from "@/lib/billing-notices";
 import {
   ANALYSIS_BILLING_MODEL,
   ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
@@ -93,6 +93,13 @@ type StripePaymentLifecycleRpcClient = {
     data: Array<{ access_end: string | null; granted: boolean }> | null;
     error: { message?: string } | null;
   }>;
+};
+
+type TrialCardRpcClient = {
+  rpc(
+    name: "claim_trial_card",
+    args: { p_fingerprint_hash: string; p_user_id: string },
+  ): Promise<{ data: boolean | null; error: { message?: string } | null }>;
 };
 
 type StripeSubscriptionRpcClient = {
@@ -404,6 +411,11 @@ export function buildAnalysisCheckoutSessionParams({
       },
     ],
     payment_method_collection: "always",
+    // Professionals need an invoice in their company's name: collect the
+    // billing address and an optional VAT number, and keep them on the customer.
+    billing_address_collection: "required",
+    tax_id_collection: { enabled: true },
+    customer_update: { name: "auto", address: "auto" },
     subscription_data: {
       ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
       metadata: {
@@ -418,8 +430,8 @@ export function buildAnalysisCheckoutSessionParams({
       },
     },
     locale: "fr",
-    success_url: `${appOrigin}/accompagnement?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appOrigin}/accompagnement?checkout=cancelled`,
+    success_url: `${appOrigin}/offres?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${appOrigin}/offres?checkout=cancelled`,
     ...(expiresAt ? { expires_at: expiresAt } : {}),
     metadata: {
       user_id: userId,
@@ -535,6 +547,9 @@ export async function handleStripeWebhook({
           null,
           event.created,
         );
+        break;
+      case "customer.subscription.trial_will_end":
+        handled = await handleTrialWillEnd(event.data.object as Stripe.Subscription);
         break;
       case "invoice.payment_failed":
         handled = await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
@@ -864,6 +879,61 @@ async function handleChargeDispute(dispute: Stripe.Dispute, event: Stripe.Event)
   return recorded;
 }
 
+/** Stripe sends this three days before a trial ends. */
+async function handleTrialWillEnd(subscription: Stripe.Subscription): Promise<boolean> {
+  const userId = await findUserIdForSubscription(subscription);
+  if (!userId || !subscription.trial_end) return false;
+  await sendTrialEndingNotice({
+    userId,
+    subscriptionId: subscription.id,
+    trialEnd: subscription.trial_end,
+  });
+  return true;
+}
+
+/**
+ * One free trial per payment card.  When the card behind a trial already
+ * started a trial for another account, the trial ends now and the first
+ * payment is taken immediately.
+ */
+export async function enforceSingleTrialPerCard(
+  subscription: Stripe.Subscription,
+  userId: string,
+): Promise<"claimed" | "reused" | "unknown"> {
+  if (subscription.status !== "trialing") return "unknown";
+  const stripe = getStripe();
+  let paymentMethodId = stripeObjectId(subscription.default_payment_method);
+  if (!paymentMethodId) {
+    const customerId = stripeObjectId(subscription.customer);
+    if (customerId) {
+      const customer = await stripe.customers.retrieve(customerId);
+      if (!("deleted" in customer && customer.deleted)) {
+        paymentMethodId = stripeObjectId(
+          (customer as Stripe.Customer).invoice_settings?.default_payment_method,
+        );
+      }
+    }
+  }
+  if (!paymentMethodId) return "unknown";
+  const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
+  const fingerprint = paymentMethod.card?.fingerprint;
+  if (!fingerprint) return "unknown";
+
+  const client = supabaseAdmin as unknown as TrialCardRpcClient;
+  const { data, error } = await client.rpc("claim_trial_card", {
+    p_fingerprint_hash: createHash("sha256").update(fingerprint).digest("hex"),
+    p_user_id: userId,
+  });
+  if (error) throw new Error(error.message || "Contrôle de l'essai par carte impossible.");
+  if (data === true) return "claimed";
+
+  await stripe.subscriptions.update(subscription.id, { trial_end: "now" });
+  console.warn("[billing] trial ended early: card already used for another trial", {
+    subscription: subscription.id,
+  });
+  return "reused";
+}
+
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<boolean> {
   const customerId = stripeObjectId(invoice.customer);
   if (!customerId || !invoice.id) return false;
@@ -1040,6 +1110,14 @@ async function syncStripeSubscription(
   });
   if (error) throw new Error(error.message || "Synchronisation de l'abonnement Stripe impossible.");
   const result = data?.[0];
+  if (result?.applied && current.status === "trialing") {
+    try {
+      await enforceSingleTrialPerCard(current, userId);
+    } catch (trialError) {
+      // Never block access synchronisation on the anti-abuse check.
+      console.error("[billing] single-trial check failed", trialError);
+    }
+  }
   if (result && !result.applied) {
     console.info("[billing] stale or reversed subscription event ignored", {
       subscription: current.id,
