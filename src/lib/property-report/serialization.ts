@@ -27,15 +27,15 @@ export function attachPlan(report: SavedReportRow, plan: PlanEntitlements): Save
 
 export function appSaleRowToAuctionSale(row: AppSaleRow): AuctionSale {
   return {
-    ...(row as unknown as AuctionSale),
+    ...(row as AuctionSale),
     id: row.id ?? "",
     documents_rich: Array.isArray(row.documents_rich)
-      ? (row.documents_rich as unknown as SaleDocumentRich[])
+      ? (row.documents_rich as SaleDocumentRich[])
       : null,
-    media: Array.isArray(row.media) ? (row.media as unknown as SaleMedia[]) : null,
+    media: Array.isArray(row.media) ? (row.media as SaleMedia[]) : null,
     risks: Array.isArray(row.risks) ? (row.risks as SaleRisk[]) : null,
     score_factors: Array.isArray(row.score_factors)
-      ? (row.score_factors as unknown as SaleScoreFactor[])
+      ? (row.score_factors as SaleScoreFactor[])
       : null,
     source_blocks:
       row.source_blocks && typeof row.source_blocks === "object"
