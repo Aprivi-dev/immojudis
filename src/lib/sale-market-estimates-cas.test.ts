@@ -12,7 +12,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     from: vi.fn(() => ({ update: mocks.update })),
   },
 }));
-vi.mock("@/lib/market.functions", () => ({ getMarketEstimate: vi.fn() }));
+vi.mock("@/lib/market.server", () => ({ getMarketEstimate: vi.fn() }));
 
 import { publishStoredEstimateForClaim } from "./sale-market-estimates";
 const claim = { attempt_count: 2, last_started_at: "2026-09-10T08:00:00.000Z" };

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { organizationStructuredData } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
-import { HomePage } from "@/routes/index";
+import { CinematicHero } from "@/components/CinematicHome";
+import { HomeDiscovery } from "@/components/HomeDiscovery";
 import { jsonLdString } from "@/lib/json-ld";
 
 export const metadata: Metadata = {
@@ -22,7 +23,10 @@ export default function Page() {
           __html: jsonLdString(structuredData),
         }}
       />
-      <HomePage />
+      <main id="contenu" className="ij-page ij-cinematic-page">
+        <CinematicHero />
+        <HomeDiscovery />
+      </main>
     </>
   );
 }

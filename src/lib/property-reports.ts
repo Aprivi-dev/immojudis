@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { getEnvironmentalContext } from "@/lib/environment.functions";
+import { getEnvironmentalContext } from "@/lib/environmental-context";
 import {
   isPlanPeriodActive,
   normalizePlanCode,

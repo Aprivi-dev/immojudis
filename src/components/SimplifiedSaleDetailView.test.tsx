@@ -2,12 +2,11 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 import { AI_REVIEW_FIELD_KEYS, type AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDetailView";
 
@@ -28,13 +27,6 @@ vi.mock("@/lib/client-api", () => ({
   fetchSaleAiReviewProjections: mocks.fetchAiReviewProjections,
   fetchSaleFactReliabilities: mocks.fetchFactReliabilities,
   fetchSaleUrbanismeCadastre: mocks.fetchUrbanism,
-}));
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({ to, href, children, ...props }: { to?: string; href?: string; children: ReactNode }) => (
-    <a href={href ?? to} {...props}>
-      {children}
-    </a>
-  ),
 }));
 vi.mock("@/components/FavoriteButton", () => ({
   FavoriteButton: () => <button>Suivre cette vente</button>,

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { OffersPage } from "@/routes/offres";
+import { OffersPage } from "./offers-page";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/offres" },

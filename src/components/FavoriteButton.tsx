@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useNavigate } from "@/lib/router-compat";
+import { useRouter } from "next/navigation";
+import { pathWithSearch } from "@/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
 import {
@@ -22,7 +23,7 @@ export function FavoriteButton({
   compact?: boolean;
 }) {
   const { user, loading } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
 
@@ -50,7 +51,7 @@ export function FavoriteButton({
         typeof window !== "undefined"
           ? `${window.location.pathname}${window.location.search}`
           : "/sales";
-      navigate({ to: "/login", search: { redirect } });
+      router.push(pathWithSearch("/login", { redirect }));
       return;
     }
     if (favorite.isPending || favorite.isError) {

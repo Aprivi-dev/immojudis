@@ -15,7 +15,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
     from: mocks.from,
   },
 }));
-import { startAdminScroll } from "@/lib/admin.functions";
+import { startAdminScroll } from "@/lib/admin.server";
 import { collectionSourceResults } from "@/lib/admin-source-collection";
 
 describe("manual collection includes cloud sources in the existing workflow", () => {

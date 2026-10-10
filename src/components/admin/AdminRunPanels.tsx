@@ -22,7 +22,7 @@ import type {
   AdminScrollSource,
   AiDescriptionDashboardStats,
   AuctionRun,
-} from "@/lib/admin.functions";
+} from "@/lib/admin.server";
 
 export const SOURCE_OPTIONS: Array<{ value: AdminScrollSource; label: string }> = [
   { value: "all", label: "Toutes les sources" },

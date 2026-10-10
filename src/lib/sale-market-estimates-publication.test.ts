@@ -8,7 +8,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: mocks.from },
 }));
 
-vi.mock("@/lib/market.functions", () => ({
+vi.mock("@/lib/market.server", () => ({
   getMarketEstimate: vi.fn(),
 }));
 

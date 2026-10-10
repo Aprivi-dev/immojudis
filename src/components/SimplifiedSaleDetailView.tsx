@@ -59,7 +59,7 @@ import {
   fetchSaleUrbanismeCadastre,
 } from "@/lib/client-api";
 import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
 import {
   computeRecommendedCeilings,
@@ -70,7 +70,7 @@ import {
   DEFAULTS,
 } from "@/lib/profitability";
 import { saleCostContext } from "@/lib/sale-cost-context";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 import { listingCoordinates } from "@/lib/sale-listing";
 import { propertyImages } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";

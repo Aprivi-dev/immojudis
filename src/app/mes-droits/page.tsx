@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AuthGate } from "@/components/AuthGate";
-import { RightsPage } from "@/routes/mes-droits";
+import { RightsPage } from "./rights-page";
 
 export const metadata: Metadata = {
   title: "Mes droits",

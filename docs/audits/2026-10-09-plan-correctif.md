@@ -1512,6 +1512,8 @@ Ce qui ralentit chaque évolution. À traiter au fil de l'eau.
 - [ ] `src/routes/` et `router-compat.tsx` n'existent plus.
 - [ ] Le JS de l'accueil passe sous 200 Ko.
 
+**État au 10 octobre 2026** : toutes les pages sont dans `src/app` et n'utilisent plus que `next/link` et `next/navigation` ; les blocs `head()` et `createFileRoute` ont disparu ; `.gitignore` est nettoyé ; `*.functions.ts` sont renommés. Restent `src/routes/{legal,privacy,conditions-generales}.tsx` et un `router-compat.tsx` réduit à `Link` et `createFileRoute` : `compliance-phase-6.test.ts` ancre ces trois fichiers par une empreinte SHA-256 de leur code source (`LEGAL_DOCUMENTS`). Les migrer change leur empreinte même si le texte rendu reste identique ; décision à valider : ré-ancrer les trois empreintes (versions inchangées) puis supprimer `src/routes/` et `router-compat.tsx`.
+
 ### P6-02 · Session en cookies pour le rendu serveur
 
 - **Qui :** Dev · **Durée estimée :** 2–3 j · **Constats :** CODE-03, SEC-01

@@ -28,7 +28,7 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
 }));
 
 import { getExampleSaleRecords } from "@/lib/example-sale";
-import { ExampleSalePage } from "@/routes/annonce-exemple";
+import { ExampleSalePage } from "./example-sale-page";
 
 describe("ExampleSalePage", () => {
   afterEach(cleanup);

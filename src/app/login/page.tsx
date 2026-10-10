@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { LoginPage } from "@/routes/login";
+import { LoginPage } from "./login-page";
 
 export const metadata: Metadata = {
   title: "Connexion",

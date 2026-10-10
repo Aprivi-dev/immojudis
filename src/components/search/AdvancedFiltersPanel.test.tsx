@@ -5,11 +5,6 @@ import { emptySearchDraft } from "./search-page-state";
 import { MobileFilterDrawer } from "./AdvancedFiltersPanel";
 
 vi.mock("./DateRangeFields", () => ({ DateRangeFields: () => null }));
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
-    <a href={to}>{children}</a>
-  ),
-}));
 
 afterEach(cleanup);
 

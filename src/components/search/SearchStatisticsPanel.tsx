@@ -9,7 +9,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { DPE_CLASSES, dpeColor } from "@/lib/dpe";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import { formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { SearchStatistics } from "./search-page-state";
 
@@ -45,7 +45,7 @@ export function SearchStatisticsPanel({
           comparables, les risques et le calcul de votre enchère plafond.
         </p>
         <Link
-          to="/annonce-exemple"
+          href="/annonce-exemple"
           className="mt-2 inline-flex min-h-10 items-center text-sm font-bold text-brand-navy underline underline-offset-4"
         >
           Essayer une analyse complète sans compte
@@ -158,7 +158,7 @@ export function SearchStatisticsPanel({
                       <div className="min-w-0">
                         <Link
                           className="font-bold text-brand-navy hover:text-brand-navy"
-                          to={`/sales/${item.id}`}
+                          href={`/sales/${item.id}`}
                         >
                           {cleanSaleTitle(item.title) ?? "Vente judiciaire"}
                         </Link>

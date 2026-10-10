@@ -18,7 +18,7 @@ import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { fetchLawyerDirectory } from "@/lib/client-api";
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import type { DirectorySearch } from "@/lib/lawyer-directory-search";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -47,7 +47,7 @@ export function LawyerDirectoryPage({ search }: { search: DirectorySearch }) {
       <section className="border-b border-brand-navy/10 bg-white">
         <div className="mx-auto max-w-[1260px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
           <Link
-            to={search.saleId ? `/sales/${search.saleId}` : "/sales"}
+            href={search.saleId ? `/sales/${search.saleId}` : "/sales"}
             className="inline-flex items-center gap-2 text-sm font-semibold text-brand-navy/70 transition-colors hover:text-gold-text"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden />

@@ -1,6 +1,6 @@
 import { BrandMark } from "@/components/BrandLogo";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 
 export function SaleDetailSkeleton() {
   return (
@@ -41,7 +41,7 @@ export function SaleNotFoundComponent() {
           par la source.
         </p>
         <Link
-          to="/sales"
+          href="/sales"
           className="mt-6 inline-flex items-center rounded-md bg-foreground px-4 py-2 text-sm font-medium text-background hover:bg-foreground/90"
         >
           ← Retour aux annonces

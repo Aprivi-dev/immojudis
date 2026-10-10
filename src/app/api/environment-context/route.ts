@@ -7,7 +7,7 @@ import {
 import {
   environmentalContextCacheControl,
   getEnvironmentalContext,
-} from "@/lib/environment.functions";
+} from "@/lib/environmental-context";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
