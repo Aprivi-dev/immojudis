@@ -242,7 +242,7 @@ function subscriptionToSummary(
     userId: subscription.user_id,
     email,
     planCode: normalizePlanCode(subscription.plan_code),
-    status: subscription.status,
+    status: subscription.status as PlanStatus,
     currentPeriodEnd: subscription.current_period_end,
     stripeCustomerId: subscription.stripe_customer_id,
     stripeSubscriptionId: subscription.stripe_subscription_id,

@@ -467,10 +467,10 @@ export function saleChangeEventRowToSummary(row: SaleChangeEventRow): SaleChange
   return {
     id: row.id,
     saleId: row.sale_id,
-    watchKind: row.watch_kind,
+    watchKind: row.watch_kind as SaleWatchKind,
     watchId: row.watch_id,
-    eventKind: row.event_kind,
-    severity: row.severity,
+    eventKind: row.event_kind as SaleChangeEventKind,
+    severity: row.severity as SaleChangeSeverity,
     fingerprint: row.fingerprint,
     summaryLabel: row.summary_label,
     changeSummary: asRecord(row.change_summary),

@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { nullableRpcArg } from "@/lib/rpc-args";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { optimizeInformationAgentPhoto } from "@/lib/information-agent-image";
@@ -249,7 +250,7 @@ export async function reviewAdminInformationAgentFact({
     p_reviewer_id: auth.userId,
     p_fact_id: input.factId,
     p_decision: input.decision,
-    p_notes: input.notes || null,
+    p_notes: nullableRpcArg(input.notes || null),
   });
   if (error) throw error;
   return { ok: true, result: data };
