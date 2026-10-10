@@ -93,7 +93,12 @@ def _run_pipeline(monkeypatch, raw_sales):
     captured: dict[str, object] = {}
     upserted: list[list[str]] = []
     monkeypatch.setattr(main, "load_settings", lambda: _settings())
-    monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
+    # In GitHub Actions GITHUB_ENV is set and the run id must be a UUID; never
+    # write this fake run into the runner's real environment file.
+    monkeypatch.delenv("GITHUB_ENV", raising=False)
+    monkeypatch.setattr(
+        main, "create_run_in_supabase", lambda *args, **kwargs: "00000000-0000-4000-8000-000000000001"
+    )
     monkeypatch.setattr(
         main, "finish_run_in_supabase", lambda run_id, status, summary, errors: captured.update(summary=summary)
     )
