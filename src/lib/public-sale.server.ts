@@ -1,9 +1,5 @@
 import { cache } from "react";
-import {
-  fetchPublicSaleSummary,
-  SALE_ID_PATTERN,
-  type PublicSaleSummaryClient,
-} from "@/lib/public-sale-summary";
+import { fetchPublicSaleSummary, SALE_ID_PATTERN } from "@/lib/public-sale-summary";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import type { AuctionSale } from "@/lib/types";
 
@@ -31,7 +27,7 @@ async function legacyPreview(
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
-  return (data as unknown as AuctionSale | null) ?? null;
+  return (data as AuctionSale | null) ?? null;
 }
 
 /**
@@ -46,7 +42,7 @@ export const lookupPublicSale = cache(async (id: string): Promise<PublicSaleLook
   const client = createPublicSupabaseClient();
   if (!client) return { status: "unavailable" };
 
-  const summary = await fetchPublicSaleSummary(client as unknown as PublicSaleSummaryClient, id);
+  const summary = await fetchPublicSaleSummary(client, id);
   if (summary.kind === "found") return { status: "found", sale: summary.sale };
   if (summary.kind === "missing") return { status: "missing" };
 

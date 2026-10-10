@@ -5,28 +5,6 @@ import { RateLimitError } from "@/lib/api-errors";
 
 type RpcResult = { data: number | null; error: { message?: string } | null };
 
-type RateLimitRpcClient = {
-  rpc(
-    name: "consume_api_rate_limit",
-    args: {
-      p_bucket_key: string;
-      p_limit: number;
-      p_user_id: string;
-      p_window_seconds: number;
-    },
-  ): Promise<RpcResult>;
-  // Added by 20261010000000_api_ip_rate_limit.sql, hence absent from the generated types.
-  rpc(
-    name: "consume_ip_rate_limit",
-    args: {
-      p_bucket_key: string;
-      p_ip_hash: string;
-      p_limit: number;
-      p_window_seconds: number;
-    },
-  ): Promise<RpcResult>;
-};
-
 /** Seconds until the fixed window containing `now` ends (the Retry-After value). */
 export function secondsUntilWindowEnds(windowSeconds: number, now: Date = new Date()): number {
   const elapsed = Math.floor(now.getTime() / 1000) % windowSeconds;
@@ -48,8 +26,7 @@ export async function enforceUserRateLimit({
   limit: number;
   windowSeconds: number;
 }): Promise<number> {
-  const client = supabaseAdmin as unknown as RateLimitRpcClient;
-  const { data, error } = await client.rpc("consume_api_rate_limit", {
+  const { data, error } = await supabaseAdmin.rpc("consume_api_rate_limit", {
     p_bucket_key: bucketKey,
     p_limit: limit,
     p_user_id: userId,
@@ -116,10 +93,9 @@ export async function enforceIpRateLimit({
   limit: number;
   windowSeconds: number;
 }): Promise<void> {
-  const client = supabaseAdmin as unknown as RateLimitRpcClient;
   let result: RpcResult;
   try {
-    result = await client.rpc("consume_ip_rate_limit", {
+    result = await supabaseAdmin.rpc("consume_ip_rate_limit", {
       p_bucket_key: bucketKey,
       p_ip_hash: hashClientIp(clientIpFromRequest(request)),
       p_limit: limit,
