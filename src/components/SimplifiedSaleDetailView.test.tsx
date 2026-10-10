@@ -58,9 +58,6 @@ vi.mock("@/components/DocumentsList", () => ({ DocumentsList: () => <p>Pièces d
 vi.mock("@/components/LawyerReferralButton", () => ({
   LawyerReferralButton: () => <button>Contacter un avocat</button>,
 }));
-vi.mock("@/components/SaleTribunalHistory", () => ({
-  SaleTribunalHistory: () => <section id="tribunal-history">Historique du tribunal</section>,
-}));
 vi.mock("@/hooks/use-outcome-graph-forecast", () => ({
   useOutcomeGraphForecast: (id: string, enabled: boolean) => mocks.forecast(id, enabled) ?? {},
 }));

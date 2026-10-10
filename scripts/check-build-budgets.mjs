@@ -34,11 +34,6 @@ const HOMEPAGE_IMAGE_BUDGETS = {
 const MAX_BUSINESS_MODULE_LINES = 1_500;
 
 const businessModules = [
-  "src/components/SaleDetailView.tsx",
-  "src/components/sale-detail/decision-view.tsx",
-  "src/components/sale-detail/detail-helpers.ts",
-  "src/components/sale-detail/detail-primitives.tsx",
-  "src/components/sale-detail/document-workspace.tsx",
   "src/components/search/SearchPage.tsx",
   "src/components/search/SearchFilters.tsx",
   "src/components/search/SearchHeader.tsx",

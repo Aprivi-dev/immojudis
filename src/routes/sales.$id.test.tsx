@@ -24,10 +24,6 @@ vi.mock("@/hooks/use-auth", () => ({
 vi.mock("@/hooks/use-viewed-sales", () => ({ markSaleViewed: vi.fn() }));
 vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: mocks.entitlements }));
 vi.mock("@/lib/queries", () => ({ getSaleById: mocks.sale, getSalePreviewById: mocks.preview }));
-vi.mock("@/components/SaleDetailView", () => ({
-  SaleDetailSkeleton: () => <div>Chargement</div>,
-  SaleNotFoundComponent: () => <div>Introuvable</div>,
-}));
 vi.mock("@/components/DiscoverySaleDetailView", () => ({
   DiscoverySaleDetailView: () => <div>Offre Découverte</div>,
 }));

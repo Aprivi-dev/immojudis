@@ -55,6 +55,9 @@ jobs:
       - run: npm ci
       - name: Lint
         run: npm run lint
+      - name: Dead code and unused dependencies (knip, informational)
+        continue-on-error: true
+        run: npm run knip
 
   unit:
     name: Web — unit tests and security invariants
