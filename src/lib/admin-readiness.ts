@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
+import { firstFilled, serverEnv } from "@/lib/env";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { legalConfigurationStatus } from "@/lib/legal-documents";
 import { resolveExpectedLatestMigrationVersion } from "@/lib/migration-manifest";
@@ -129,28 +130,21 @@ export async function getAdminOperationalReadiness(
 
 export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>): ReadinessItem[] {
   const appUrl = resolveSiteOrigin(env);
-  const stripeSecret = firstFilledEnv(env.STRIPE_SECRET_KEY);
+  const config = serverEnv(env);
+  const stripeSecret = config.stripe.secretKey;
   const analysisPriceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
   const analysisPriceConfigured = Boolean(
     analysisPriceId && /^price_[A-Za-z0-9]+$/.test(analysisPriceId),
   );
-  const webhookSecret = firstFilledEnv(env.STRIPE_WEBHOOK_SECRET);
-  const cronSecret = firstFilledEnv(env.CRON_SECRET);
+  const webhookSecret = config.stripe.webhookSecret;
+  const cronSecret = config.cronSecret;
   const emailConfig = resolveEmailAlertDeliveryConfig(env);
-  const instantPipelineDispatch = firstFilledEnv(
-    env.GITHUB_SCROLL_TOKEN,
-    env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN,
-    env.GITHUB_ACTIONS_DISPATCH_TOKEN,
-    env.SCROLL_WEBHOOK_URL,
-    env.IMMOJUDIS_SCROLL_WEBHOOK_URL,
+  const instantPipelineDispatch = firstFilled(
+    config.pipeline.githubToken,
+    config.pipeline.webhookUrl,
   );
-  const replicateToken = firstFilledEnv(env.REPLICATE_API_TOKEN);
-  const externalAlertChannel = firstFilledEnv(
-    env.OPERATIONS_ALERT_WEBHOOK_URL,
-    env.GITHUB_SCROLL_TOKEN,
-    env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN,
-    env.GITHUB_ACTIONS_DISPATCH_TOKEN,
-  );
+  const replicateToken = config.replicateApiToken;
+  const externalAlertChannel = firstFilled(config.alerts.webhookUrl, config.pipeline.githubToken);
   const legalStatus = legalConfigurationStatus(env);
 
   return [
@@ -191,7 +185,7 @@ export function buildEnvironmentReadiness(env: Pick<NodeJS.ProcessEnv, string>):
         legalStatus.ready &&
         emailConfig.configured
           ? null
-          : "Configurer STRIPE_SECRET_KEY, STRIPE_ANALYSIS_PRICE_ID (Price récurrent valide), Resend, NEXT_PUBLIC_APP_URL et les variables NEXT_PUBLIC_LEGAL_*.",
+          : "Configurer STRIPE_SECRET_KEY, STRIPE_ANALYSIS_PRICE_ID (Price récurrent valide), Resend, SITE_URL et les variables NEXT_PUBLIC_LEGAL_*.",
     },
     {
       key: "billing.webhook",
@@ -344,7 +338,7 @@ async function readAiDescriptionReadiness(
   env: Pick<NodeJS.ProcessEnv, string>,
 ): Promise<AiDescriptionReadiness> {
   const dbUrl = databaseUrl(env);
-  const promptVersion = firstFilledEnv(env.LLM_PROMPT_VERSION) ?? EXPECTED_LLM_PROMPT_VERSION;
+  const promptVersion = serverEnv(env).llmPromptVersion ?? EXPECTED_LLM_PROMPT_VERSION;
 
   if (!dbUrl) {
     return {
@@ -688,9 +682,7 @@ function aiDescriptionDetail({
 }
 
 function databaseUrl(env: Pick<NodeJS.ProcessEnv, string>): string | null {
-  return (
-    firstFilledEnv(env.SUPABASE_DB_URL, env.POSTGRES_URL_NON_POOLING, env.POSTGRES_URL) ?? null
-  );
+  return serverEnv(env).supabase.databaseUrl ?? null;
 }
 
 function unavailableOperationalHealth(detail: string): OperationalHealthReadiness {
@@ -756,8 +748,4 @@ function overallStatus(items: ReadinessItem[]): ReadinessStatus {
   if (items.some((item) => item.status === "blocked")) return "blocked";
   if (items.some((item) => item.status === "warning")) return "warning";
   return "ready";
-}
-
-function firstFilledEnv(...values: Array<string | undefined>) {
-  return values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim();
 }

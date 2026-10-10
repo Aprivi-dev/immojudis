@@ -30,8 +30,8 @@ Le dépôt réunit deux briques :
 
 ## Prérequis
 
-- **Node ≥ 20.19** (recommandé : 24, voir [`.nvmrc`](.nvmrc) — `nvm use`)
-- **npm 10**
+- **Node 24** (`>=24.15.0 <25`, voir [`.nvmrc`](.nvmrc) — `nvm use`) et **npm 11** (`>=11.18.0 <12`) :
+  `.npmrc` active `engine-strict=true`, donc `npm install` / `npm ci` refusent une autre version de Node.
 - Un projet **Supabase** (URL + clé publishable)
 
 ## Démarrage rapide
@@ -51,25 +51,33 @@ npm run dev:ready -- --warm-path /sales/<uuid>
 
 ## Variables d'environnement
 
-| Variable                          | Requis | Description                                                                                             |
-| --------------------------------- | :----: | ------------------------------------------------------------------------------------------------------- |
-| `VITE_SUPABASE_URL`               |   ✅   | URL du projet Supabase (`https://xxx.supabase.co`)                                                      |
-| `VITE_SUPABASE_PUBLISHABLE_KEY`   |   ✅   | Clé `anon` / publishable (publique, côté client)                                                        |
-| `SUPABASE_SECRET_KEY`             |   ✅   | Clé serveur Supabase pour les API routes, ou `SUPABASE_SERVICE_ROLE_KEY` sur les projets legacy         |
-| `SUPABASE_DB_URL`                 |   ✅   | URL Postgres directe pour les migrations. Replis acceptés : `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL`  |
-| `CRON_SECRET`                     |   ✅   | Secret utilisé par les routes Vercel Cron                                                               |
-| `SITE_URL`                        |   ✅   | Origine canonique publique (`https://immojudis.com`), utilisée par les métadonnées, emails et paiements |
-| `RESEND_API_KEY`                  |   ✅   | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés       |
-| `ALERT_EMAIL_FROM`                |   ✅   | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`                               |
-| `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN` |   ➖   | Token public Mapbox utilisé par Mapbox GL JS et les mini-cartes statiques.                              |
-| `NEXT_PUBLIC_MAPBOX_STYLE`        |   ➖   | Style Mapbox, par exemple `mapbox/streets-v12` ou `mapbox://styles/<user>/<style>`.                     |
-| `GITHUB_SCROLL_TOKEN`             |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                |
-| `OPERATIONS_ALERT_WEBHOOK_URL`    |   ➖   | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                     |
+Toutes les variables sont lues par un seul module, [`src/lib/env.ts`](src/lib/env.ts)
+(validé par zod : valeurs nettoyées, une valeur vide vaut « non définie »).
 
-> Les variables `VITE_*` sont **inlinées au moment du build**. En production
-> (Vercel) elles doivent être présentes dans _Project Settings → Environment
-> Variables_ **et** suivies d'un redéploiement. Voir [`docs/vercel_setup.md`](docs/vercel_setup.md)
-> pour la configuration complète (Auth, secrets CI, runner admin).
+| Variable                               | Requis | Description                                                                                                                                              |
+| -------------------------------------- | :----: | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`             |   ✅   | **Nom canonique.** URL du projet Supabase (`https://xxx.supabase.co`)                                                                                    |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |   ✅   | **Nom canonique.** Clé `anon` / publishable (publique, côté client). Repli historique : `NEXT_PUBLIC_SUPABASE_ANON_KEY`                                  |
+| `VITE_SUPABASE_URL`                    |   ⚠️   | **Dépréciée.** Repli de `NEXT_PUBLIC_SUPABASE_URL`. À supprimer de Vercel une fois les variables canoniques créées et déployées                          |
+| `VITE_SUPABASE_PUBLISHABLE_KEY`        |   ⚠️   | **Dépréciée.** Repli de `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (même consigne)                                                                           |
+| `SUPABASE_SECRET_KEY`                  |   ✅   | Clé serveur Supabase pour les API routes, ou `SUPABASE_SERVICE_ROLE_KEY` sur les projets legacy                                                          |
+| `SUPABASE_DB_URL`                      |   ✅   | URL Postgres directe pour les migrations. Replis acceptés : `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL`                                                   |
+| `CRON_SECRET`                          |   ✅   | Secret utilisé par les routes Vercel Cron                                                                                                                |
+| `SITE_URL`                             |   ✅   | **Nom canonique.** Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`, `VERCEL_URL` |
+| `RESEND_API_KEY`                       |   ✅   | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés                                                        |
+| `ALERT_EMAIL_FROM`                     |   ✅   | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`                                                                                |
+| `NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN`      |   ➖   | Token public Mapbox utilisé par Mapbox GL JS et les mini-cartes statiques.                                                                               |
+| `NEXT_PUBLIC_MAPBOX_STYLE`             |   ➖   | Style Mapbox, par exemple `mapbox/streets-v12` ou `mapbox://styles/<user>/<style>`.                                                                      |
+| `GITHUB_SCROLL_TOKEN`                  |   ➖   | PAT GitHub fine-grained pour déclencher le workflow `data-pipeline.yml` depuis `/admin`.                                                                 |
+| `OPERATIONS_ALERT_WEBHOOK_URL`         |   ➖   | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                                                                      |
+
+> Les variables `NEXT_PUBLIC_*` sont **inlinées au moment du build** (et les `VITE_SUPABASE_*`
+> encore présentes y sont recopiées par `next.config.ts`). En production (Vercel) elles doivent
+> être présentes dans _Project Settings → Environment Variables_ **et** suivies d'un
+> redéploiement. Ne retirez les `VITE_*` qu'après ce redéploiement : tant qu'elles sont la seule
+> source en production, les supprimer coupe la connexion à la base. Voir
+> [`docs/vercel_setup.md`](docs/vercel_setup.md) pour la configuration complète (Auth, secrets CI,
+> runner admin).
 >
 > `npm run env:check:prod` vérifie les groupes de variables nécessaires aux API
 > serveur et aux migrations avant un déploiement complet.

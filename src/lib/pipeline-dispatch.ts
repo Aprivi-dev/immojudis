@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { serverEnv } from "@/lib/env";
 
 type Dispatch = {
   id: string;
@@ -27,12 +28,6 @@ type Rpc = {
 };
 
 const DISPATCH_INTERVAL_MS = 15 * 60 * 1000;
-
-function firstFilledEnv(...values: Array<string | undefined>): string | null {
-  return (
-    values.find((value) => typeof value === "string" && value.trim().length > 0)?.trim() ?? null
-  );
-}
 
 /** Parse both forms allowed by RFC 9110 Retry-After. */
 export function retryAfterAt(value: string | null, now = new Date()): Date | null {
@@ -90,11 +85,7 @@ async function recordDispatchResult(
 
 /** Called by the existing authenticated 15-minute health tick. SQL owns due times. */
 export async function dispatchDuePipeline(): Promise<Record<string, unknown>> {
-  const token = firstFilledEnv(
-    process.env.GITHUB_SCROLL_TOKEN,
-    process.env.IMMOJUDIS_GITHUB_ACTIONS_TOKEN,
-    process.env.GITHUB_ACTIONS_DISPATCH_TOKEN,
-  );
+  const { githubToken: token, repository, workflow, ref } = serverEnv().pipeline;
   // Do this before claiming a row: a missing token must not consume a retry or
   // create a lease that the scheduler cannot deliver.
   if (!token) throw new Error("Pipeline dispatch token missing; scheduled collection unavailable");
@@ -104,9 +95,6 @@ export async function dispatchDuePipeline(): Promise<Record<string, unknown>> {
   if (error) throw new Error(error.message ?? "Unable to claim scheduled pipeline work");
   if (!data) return { dispatched: false, reason: "disabled_busy_or_not_due" };
 
-  const repository = firstFilledEnv(process.env.GITHUB_SCROLL_REPOSITORY) ?? "Aprivi-dev/immojudis";
-  const workflow = firstFilledEnv(process.env.GITHUB_SCROLL_WORKFLOW) ?? "data-pipeline.yml";
-  const ref = firstFilledEnv(process.env.GITHUB_SCROLL_REF) ?? "main";
   let observedResult: {
     outcome: "accepted" | "rejected";
     status: number;
