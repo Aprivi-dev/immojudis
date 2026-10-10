@@ -25,7 +25,7 @@ import unicodedata
 _STREET_TYPES = (
     r"rue|avenue|av\.?|boulevard|bd\.?|chemin|route|rte|impasse|all[ée]es?|place|quai|cours|faubourg|passage|"
     r"square|voie|lotissement|hameau|r[ée]sidence|chauss[ée]e|esplanade|sentier|ruelle|traverse|rond-point|"
-    r"parvis|clos|cit[ée]|villa|domaine|za|zi|zac"
+    r"parvis|clos|cit[ée]|villa|domaine|za|zi|zac|mont[ée]e|venelle|sente"
 )
 _LIEU_DIT = r"lieu[\s-]?dit|lieudit|quartier|hameau|ferme|moulin|mas|ch[âa]teau"
 _PARTICLE = r"(?:de\s+la|de\s+l['’]|du|des|de|d['’]|la|le|les|l['’])"
