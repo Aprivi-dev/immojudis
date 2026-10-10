@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import type { Json } from "@/integrations/supabase/types";
 import { asRecord } from "@/lib/guards";
 
 const METEOSTAT_API_URL = "https://meteostat.p.rapidapi.com/point/monthly";
@@ -118,27 +119,9 @@ type ParsedPayload = {
   months: MeteostatMonth[];
 };
 
-type MeteostatSupabaseClient = {
-  from: (table: string) => {
-    select: (columns: string) => {
-      eq: (
-        column: string,
-        value: string,
-      ) => {
-        maybeSingle: () => Promise<{ data: unknown; error: { message?: string } | null }>;
-      };
-    };
-    upsert: (
-      values: Record<string, unknown>,
-      options: { onConflict: string },
-    ) => Promise<{ error: { message?: string } | null }>;
-  };
-};
-
 const defaultStore: MeteostatCacheStore = {
   async read(cacheKey) {
-    const client = supabaseAdmin as unknown as MeteostatSupabaseClient;
-    const { data, error } = await client
+    const { data, error } = await supabaseAdmin
       .from("meteostat_monthly_cache")
       .select(
         "cache_key,grid_latitude,grid_longitude,period_start,period_end,payload,fetched_at,expires_at,last_error,retry_after",
@@ -146,18 +129,17 @@ const defaultStore: MeteostatCacheStore = {
       .eq("cache_key", cacheKey)
       .maybeSingle();
     if (error) throw error;
-    return (data as MeteostatCacheRow | null) ?? null;
+    return data ?? null;
   },
   async writeSuccess(input) {
-    const client = supabaseAdmin as unknown as MeteostatSupabaseClient;
-    const { error } = await client.from("meteostat_monthly_cache").upsert(
+    const { error } = await supabaseAdmin.from("meteostat_monthly_cache").upsert(
       {
         cache_key: input.cacheKey,
         grid_latitude: input.gridLatitude,
         grid_longitude: input.gridLongitude,
         period_start: input.periodStart,
         period_end: input.periodEnd,
-        payload: input.payload,
+        payload: input.payload as Json,
         fetched_at: input.fetchedAt,
         expires_at: input.expiresAt,
         last_error: null,
@@ -169,15 +151,14 @@ const defaultStore: MeteostatCacheStore = {
     if (error) throw error;
   },
   async writeFailure(input) {
-    const client = supabaseAdmin as unknown as MeteostatSupabaseClient;
-    const { error } = await client.from("meteostat_monthly_cache").upsert(
+    const { error } = await supabaseAdmin.from("meteostat_monthly_cache").upsert(
       {
         cache_key: input.cacheKey,
         grid_latitude: input.gridLatitude,
         grid_longitude: input.gridLongitude,
         period_start: input.periodStart,
         period_end: input.periodEnd,
-        payload: input.stalePayload ?? null,
+        payload: (input.stalePayload ?? null) as Json | null,
         fetched_at: input.staleFetchedAt ?? null,
         expires_at: input.staleExpiresAt ?? null,
         last_error: input.error,
@@ -189,14 +170,7 @@ const defaultStore: MeteostatCacheStore = {
     if (error) throw error;
   },
   async consumeQuota(monthStart) {
-    type QuotaClient = {
-      rpc: (
-        name: "consume_meteostat_monthly_quota",
-        args: { p_month_start: string; p_limit: number },
-      ) => Promise<{ data: boolean | null; error: { message?: string } | null }>;
-    };
-    const client = supabaseAdmin as unknown as QuotaClient;
-    const { data, error } = await client.rpc("consume_meteostat_monthly_quota", {
+    const { data, error } = await supabaseAdmin.rpc("consume_meteostat_monthly_quota", {
       p_month_start: monthStart,
       p_limit: METEOSTAT_MONTHLY_REQUEST_LIMIT,
     });
