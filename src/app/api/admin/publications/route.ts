@@ -7,8 +7,12 @@ import {
   reviewAdminPublicationRequest,
 } from "@/lib/admin-publication-requests";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const url = new URL(request.url);
     const input = adminPublicationQuerySchema.parse({
@@ -31,7 +35,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     const input = adminPublicationReviewInputSchema.parse(await request.json());
     const response = await reviewAdminPublicationRequest({
@@ -47,3 +51,6 @@ export async function PATCH(request: Request) {
     });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const PATCH = withAdminDeadline(handlePATCH);

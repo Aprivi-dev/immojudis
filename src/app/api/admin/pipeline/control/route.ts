@@ -8,6 +8,10 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
+
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
 
 const client = supabaseAdmin as unknown as SupabaseClient;
 
@@ -35,7 +39,7 @@ function failure(error: unknown, request: Request) {
   });
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     await authorize(request);
     const input = pipelineControlSettingsSchema.parse(await request.json());
@@ -56,3 +60,5 @@ export async function PATCH(request: Request) {
     return failure(error, request);
   }
 }
+
+export const PATCH = withAdminDeadline(handlePATCH);

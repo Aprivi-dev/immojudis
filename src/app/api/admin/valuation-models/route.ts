@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getValuationAdminOverview } from "@/lib/valuation-admin";
 import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
+
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   try {
     const overview = await getValuationAdminOverview(bearerTokenFromRequest(request));
     return NextResponse.json(overview, {
@@ -18,3 +22,5 @@ export async function GET(request: Request) {
     });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
