@@ -3,8 +3,6 @@ import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware"
 import { getAdminOperationalReadiness } from "@/lib/admin-readiness";
 import { adminErrorResponse } from "@/lib/api-route-errors";
 
-export const runtime = "nodejs";
-
 export async function GET(request: Request) {
   try {
     const response = await getAdminOperationalReadiness(bearerTokenFromRequest(request));

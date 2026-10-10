@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { summarizeCspReports } from "@/lib/csp-reports";
 
-export const runtime = "nodejs";
-
 const MAX_REPORT_BYTES = 16 * 1024;
 const MAX_LOGGED_PER_WINDOW = 60;
 const WINDOW_MS = 60_000;

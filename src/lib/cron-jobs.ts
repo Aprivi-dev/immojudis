@@ -1,7 +1,7 @@
 import "server-only";
-import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { cronRequestAuthorized } from "@/lib/cron-auth";
 import { deliverOperationalAlertNotifications } from "@/lib/operational-alerts";
 import { resolveRequestId } from "@/lib/request-id";
 
@@ -288,19 +288,6 @@ export async function evaluateOperationalHealth(
 export function positiveNumberFromEnv(name: string): number | undefined {
   const parsed = Number(process.env[name]);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-function cronRequestAuthorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  const authorization = request.headers.get("authorization");
-  if (!secret || !authorization) return false;
-  return safeEqual(authorization, `Bearer ${secret}`);
-}
-
-function safeEqual(left: string, right: string): boolean {
-  const leftBytes = Buffer.from(left);
-  const rightBytes = Buffer.from(right);
-  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
 async function beginRun(

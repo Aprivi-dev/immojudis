@@ -62,7 +62,7 @@ Toutes les variables sont lues par un seul module, [`src/lib/env.ts`](src/lib/en
 | `VITE_SUPABASE_PUBLISHABLE_KEY`        |   ⚠️   | **Dépréciée.** Repli de `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (même consigne)                                                                           |
 | `SUPABASE_SECRET_KEY`                  |   ✅   | Clé serveur Supabase pour les API routes, ou `SUPABASE_SERVICE_ROLE_KEY` sur les projets legacy                                                          |
 | `SUPABASE_DB_URL`                      |   ✅   | URL Postgres directe pour les migrations. Replis acceptés : `POSTGRES_URL_NON_POOLING`, `POSTGRES_URL`                                                   |
-| `CRON_SECRET`                          |   ✅   | Secret utilisé par les routes Vercel Cron                                                                                                                |
+| `CRON_SECRET`                          |   ✅   | Secret des routes Vercel Cron et de `POST /api/pipeline/revalidate-sale` (invalidation du cache d'une fiche par le pipeline)                             |
 | `SITE_URL`                             |   ✅   | **Nom canonique.** Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`, `VERCEL_URL` |
 | `RESEND_API_KEY`                       |   ✅   | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés                                                        |
 | `ALERT_EMAIL_FROM`                     |   ✅   | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`                                                                                |
