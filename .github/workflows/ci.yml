@@ -234,6 +234,21 @@ jobs:
         run: npx --yes supabase@2.110.0 start
       - name: Replay migrations from zero
         run: npx --yes supabase@2.110.0 db reset --local --no-seed --log-level error
+      - name: Check generated database types are up to date
+        # passe en bloquant dès que le fichier a été régénéré par le CLI
+        # (retirer `continue-on-error` après un premier `npm run db:types` local).
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          generated="$(mktemp --suffix=.ts)"
+          trap 'rm -f "$generated"' EXIT
+          npx --yes supabase@2.110.0 gen types typescript --local > "$generated"
+          # Le fichier commité est formaté par Prettier (npm run format) : même formatage ici.
+          npx prettier --config .prettierrc --write "$generated"
+          if ! diff -u src/integrations/supabase/types.ts "$generated"; then
+            echo "::error file=src/integrations/supabase/types.ts::Types périmés : lancer 'npm run db:types' et committer le résultat."
+            exit 1
+          fi
       - name: Detect migration drift
         run: npm run check:schema-drift
       - name: Apply local concurrent index operations

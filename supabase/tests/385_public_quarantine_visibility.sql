@@ -37,7 +37,7 @@ values
     'https://example.test/public-quarantine/visible',
     'PublicQuarantineC385',
     'upcoming',
-    '2026-10-10T10:00:00Z',
+    now() + interval '2 days',
     43.30,
     5.37,
     81000,
@@ -51,7 +51,7 @@ values
     'https://example.test/public-quarantine/blocked',
     'PublicQuarantineC385',
     'upcoming',
-    '2026-10-11T10:00:00Z',
+    now() + interval '3 days',
     43.31,
     5.38,
     82000,
@@ -65,7 +65,7 @@ values
     'https://example.test/public-quarantine/visible-2',
     'PublicQuarantineC385',
     'upcoming',
-    '2026-10-12T10:00:00Z',
+    now() + interval '4 days',
     43.32,
     5.39,
     83000,
@@ -116,8 +116,8 @@ select results_eq(
   $$select id, total_count
       from public.search_auction_sales_preview_v4(
         p_city => 'PublicQuarantineC385',
-        p_min_sale_date => '2026-10-01',
-        p_max_sale_date => '2026-10-31',
+        p_min_sale_date => current_date,
+        p_max_sale_date => current_date + 30,
         p_limit => 1,
         p_offset => 1
       )$$,

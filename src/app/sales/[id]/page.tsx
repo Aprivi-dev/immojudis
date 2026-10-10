@@ -18,7 +18,10 @@ type PageProps = {
 const NOT_INDEXED = { index: false, follow: false } as const;
 
 // The public page of a sale is identical for every visitor: it is generated on
-// first request, served from the cache, and refreshed at most every 5 minutes.
+// first request, served from the cache, and refreshed at most every 5 minutes. The database
+// read itself is cached and tagged `sale-<id>` in `lookupPublicSale`; the pipeline expires
+// the tag and this page through `POST /api/pipeline/revalidate-sale` (P6-06). The value below
+// must equal PUBLIC_SALE_REVALIDATE_SECONDS (a test checks it): Next.js wants a literal.
 // An unknown sale calls notFound(): the response carries the 404 page and
 // `noindex`. Its HTTP status is still 200 while the root `app/loading.tsx` wraps
 // every page in a Suspense boundary (the status is sent with the first streamed

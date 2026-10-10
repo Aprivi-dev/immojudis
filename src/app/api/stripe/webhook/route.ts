@@ -1,8 +1,6 @@
 import { handleStripeWebhook } from "@/lib/billing";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 
-export const runtime = "nodejs";
-
 export async function POST(request: Request) {
   const context = createApiRequestContext(request, "api.stripe.webhook");
   try {

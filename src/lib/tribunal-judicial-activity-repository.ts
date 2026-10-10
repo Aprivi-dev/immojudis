@@ -96,28 +96,6 @@ const storedDirectorySaleSchema = storedSaleSchema.extend({
   tribunal_code: z.string().min(1),
 });
 
-type DatabaseResult = {
-  data: unknown;
-  error: { message: string } | null;
-};
-
-type ActivityQuery = PromiseLike<DatabaseResult> & {
-  select(columns: string): ActivityQuery;
-  eq(column: string, value: unknown): ActivityQuery;
-  not(column: string, operator: string, value: unknown): ActivityQuery;
-  in(column: string, values: unknown[]): ActivityQuery;
-  gte(column: string, value: unknown): ActivityQuery;
-  lt(column: string, value: unknown): ActivityQuery;
-  order(column: string, options?: { ascending?: boolean }): ActivityQuery;
-  limit(count: number): ActivityQuery;
-  range(from: number, to: number): PromiseLike<DatabaseResult>;
-  maybeSingle(): PromiseLike<DatabaseResult>;
-};
-
-const activityAdmin = supabaseAdmin as unknown as {
-  from(table: string): ActivityQuery;
-};
-
 export class TribunalJudicialActivityUnavailableError extends Error {
   constructor(message = "Tribunal judicial activity is temporarily unavailable.") {
     super(message);
@@ -132,7 +110,7 @@ export async function getTribunalJudicialActivity(
   const asOf = options.asOf ?? new Date();
   const courtCode = input.courtCode ?? (await resolveCourtCodeFromSale(input.saleId!));
   const { historyStart, upcomingEnd } = judicialActivityPeriod(asOf, input.historyMonths);
-  const courtResult = await activityAdmin
+  const courtResult = await supabaseAdmin
     .from("outcome_courts")
     .select("code,name,judicial_region")
     .eq("code", courtCode)
@@ -188,7 +166,7 @@ export async function getTribunalJudicialActivityDirectory(
 }
 
 export async function resolveCourtCodeFromSale(saleId: string): Promise<string> {
-  const result = await activityAdmin
+  const result = await supabaseAdmin
     .from("auction_sales")
     .select(
       "tribunal_code,tribunal,sale_venue_type,sale_verification_status,status,publication_quarantine:raw_payload->>publication_quarantine",
@@ -216,7 +194,7 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
 
   if (sale.tribunal_code) return normalizeCourtCode(sale.tribunal_code);
 
-  const assignmentResult = await activityAdmin
+  const assignmentResult = await supabaseAdmin
     .from("auction_sale_competent_court_assignments")
     .select("court_code")
     .eq("auction_sale_id", saleId)
@@ -234,7 +212,7 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
   }
 
   if (sale.tribunal && ["verified", "cross_checked"].includes(sale.sale_verification_status)) {
-    const tribunalResult = await activityAdmin
+    const tribunalResult = await supabaseAdmin
       .from("tribunals")
       .select("code,canonical_name")
       .eq("canonical_name", sale.tribunal)
@@ -250,7 +228,7 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
       return normalizeCourtCode(tribunal.code);
     }
 
-    const referenceResult = await activityAdmin
+    const referenceResult = await supabaseAdmin
       .from("tribunals")
       .select("code,canonical_name")
       .order("code", { ascending: true })
@@ -300,7 +278,7 @@ async function loadEligibleSales(input: {
 }): Promise<TribunalJudicialActivitySale[]> {
   const rows: TribunalJudicialActivitySale[] = [];
   for (let offset = 0; offset < MAX_SALES_PER_COURT; offset += PAGE_SIZE) {
-    const result = await activityAdmin
+    const result = await supabaseAdmin
       .from("auction_sales")
       .select(SALE_COLUMNS)
       .eq("tribunal_code", input.courtCode)
@@ -334,7 +312,7 @@ async function loadEligibleSales(input: {
 }
 
 async function loadActiveCourts() {
-  const result = await activityAdmin
+  const result = await supabaseAdmin
     .from("outcome_courts")
     .select("code,name,judicial_region")
     .eq("active", true)
@@ -364,7 +342,7 @@ async function loadEligibleDirectorySales(input: {
 }): Promise<TribunalJudicialActivityDirectorySale[]> {
   const rows: TribunalJudicialActivityDirectorySale[] = [];
   for (let offset = 0; offset < MAX_DIRECTORY_SALES; offset += PAGE_SIZE) {
-    const result = await activityAdmin
+    const result = await supabaseAdmin
       .from("auction_sales")
       .select(DIRECTORY_SALE_COLUMNS)
       .eq("sale_venue_type", "tribunal")

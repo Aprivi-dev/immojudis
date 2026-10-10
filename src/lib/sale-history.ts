@@ -5,33 +5,15 @@ import { pricePerM2 } from "@/lib/geo";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSaleSurface } from "@/lib/surface";
+import type { SelectedRow } from "@/lib/supabase-select";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 
-const HISTORY_COLUMNS = [
-  "id",
-  "title",
-  "city",
-  "department",
-  "postal_code",
-  "address",
-  "tribunal",
-  "tribunal_code",
-  "tribunal_name",
-  "property_type",
-  "starting_price_eur",
-  "adjudication_price_eur",
-  "sale_date",
-  "status",
-  "app_surface_m2",
-  "habitable_surface_m2",
-  "carrez_surface_m2",
-  "land_surface_m2",
-  "source_name",
-  "source_url",
-  "investment_score",
-].join(",");
+const HISTORY_COLUMNS =
+  "id,title,city,department,postal_code,address,tribunal,tribunal_code,tribunal_name,property_type,starting_price_eur,adjudication_price_eur,sale_date,status,app_surface_m2,habitable_surface_m2,carrez_surface_m2,land_surface_m2,source_name,source_url,investment_score";
+
+type HistorySaleRow = SelectedRow<AppSaleRow, typeof HISTORY_COLUMNS>;
 
 const optionalText = (max = 140) =>
   z.preprocess(
@@ -134,7 +116,7 @@ export async function getSaleHistory({
   const fromDate = monthsAgoIso(now, input.months);
   const toDate = now.toISOString();
   let selectedScope = scopes[0];
-  let rows: AppSaleRow[] = [];
+  let rows: HistorySaleRow[] = [];
 
   for (const scope of scopes) {
     rows = await queryPastSales({
@@ -223,7 +205,7 @@ export function buildSaleHistorySummary(items: SaleHistoryItem[]): SaleHistorySu
 async function getReferenceSale(
   auth: SupabaseAuthContext,
   saleId: string,
-): Promise<AppSaleRow | null> {
+): Promise<HistorySaleRow | null> {
   const { data, error } = await auth.supabase
     .from("v_auction_sales_app")
     .select(HISTORY_COLUMNS)
@@ -231,10 +213,10 @@ async function getReferenceSale(
     .maybeSingle();
 
   if (error) throw error;
-  return (data ?? null) as unknown as AppSaleRow | null;
+  return data ?? null;
 }
 
-function buildHistoryScopes(input: SaleHistoryQuery, referenceSale: AppSaleRow | null) {
+function buildHistoryScopes(input: SaleHistoryQuery, referenceSale: HistorySaleRow | null) {
   const base = {
     city: input.city ?? referenceSale?.city ?? null,
     department: input.department ?? referenceSale?.department ?? null,
@@ -297,7 +279,7 @@ async function queryPastSales({
   toDate: string;
   limit: number;
   excludeSaleId: string | null;
-}): Promise<AppSaleRow[]> {
+}): Promise<HistorySaleRow[]> {
   let query = auth.supabase
     .from("v_auction_sales_app")
     .select(HISTORY_COLUMNS)
@@ -316,10 +298,10 @@ async function queryPastSales({
 
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as unknown as AppSaleRow[];
+  return data ?? [];
 }
 
-function rowToHistoryItem(row: AppSaleRow): SaleHistoryItem {
+function rowToHistoryItem(row: HistorySaleRow): SaleHistoryItem {
   const surface = getSaleSurface(row).value;
   const startingPrice = positiveNumber(row.starting_price_eur);
   const adjudicationPrice = positiveNumber(row.adjudication_price_eur);

@@ -10,8 +10,6 @@ import {
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 
-export const runtime = "nodejs";
-
 /**
  * One-click objection from the footer of an information-agent email. Records a global opposition
  * for the address; the agent never contacts an opposed address again.

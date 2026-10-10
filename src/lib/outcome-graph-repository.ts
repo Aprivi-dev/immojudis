@@ -123,24 +123,11 @@ export type StoredOutcomeGraphRecord = {
   cohortDefinition: z.infer<typeof cohortDefinitionSchema> | null;
 };
 
-type DatabaseError = { code?: string; message: string };
-type DatabaseResult = { data: unknown; error: DatabaseError | null };
-type MaybeSingleQuery = {
-  select(columns: string): MaybeSingleQuery;
-  eq(column: string, value: unknown): MaybeSingleQuery;
-  order(column: string, options?: { ascending?: boolean }): MaybeSingleQuery;
-  limit(count: number): MaybeSingleQuery;
-  maybeSingle(): PromiseLike<DatabaseResult>;
-};
-type OutcomeGraphAdminClient = { from(table: string): MaybeSingleQuery };
-
-const outcomeGraphAdmin = supabaseAdmin as unknown as OutcomeGraphAdminClient;
-
 export async function getOutcomeGraphForecastForSale(
   saleId: string,
 ): Promise<OutcomeGraphForecast> {
   const sale = await selectMaybeOne(
-    outcomeGraphAdmin
+    supabaseAdmin
       .from("auction_sales")
       .select("id,status,raw_payload")
       .eq("id", saleId)
@@ -151,7 +138,7 @@ export async function getOutcomeGraphForecastForSale(
   assertPublicationVisibleSaleRow(sale);
 
   const lot = await selectMaybeOne(
-    outcomeGraphAdmin
+    supabaseAdmin
       .from("auction_lots")
       .select("id, active, initial_starting_price_eur")
       .eq("auction_sale_id", saleId)
@@ -169,7 +156,7 @@ export async function getOutcomeGraphForecastForSale(
   }
 
   const round = await selectMaybeOne(
-    outcomeGraphAdmin
+    supabaseAdmin
       .from("auction_rounds")
       .select(
         "id, lot_id, sequence_number, scheduled_at, current_status, initial_starting_price_eur, effective_starting_price_eur",
@@ -191,7 +178,7 @@ export async function getOutcomeGraphForecastForSale(
   }
 
   const prediction = await selectMaybeOne(
-    outcomeGraphAdmin
+    supabaseAdmin
       .from("auction_predictions")
       .select(
         "id, round_id, snapshot_id, model_version_id, cohort_statistics_id, prediction_status, generated_at, created_at, horizon, probabilities, quantiles, confidence_level, confidence_label, sample_size, explanation_factors, limitations, refusal_reason",
@@ -216,7 +203,7 @@ export async function getOutcomeGraphForecastForSale(
 
   const [snapshot, model, cohortStatistics] = await Promise.all([
     selectMaybeOne(
-      outcomeGraphAdmin
+      supabaseAdmin
         .from("auction_feature_snapshots")
         .select(
           "id, lot_id, round_id, prediction_horizon, feature_cutoff_at, built_at, feature_schema_version, leakage_check_status, retrospective, features",
@@ -227,7 +214,7 @@ export async function getOutcomeGraphForecastForSale(
       "lecture du snapshot Outcome Graph",
     ),
     selectMaybeOne(
-      outcomeGraphAdmin
+      supabaseAdmin
         .from("model_versions")
         .select(
           "id, model_key, version, status, feature_schema_version, training_cutoff_at, approved_at, created_at",
@@ -239,7 +226,7 @@ export async function getOutcomeGraphForecastForSale(
     ),
     prediction.cohort_statistics_id
       ? selectMaybeOne(
-          outcomeGraphAdmin
+          supabaseAdmin
             .from("cohort_statistics")
             .select(
               "id, cohort_definition_id, prediction_horizon, period_start, period_end, sample_size, tribunal_sample_size, training_eligible, has_blocking_conflict, created_at",
@@ -254,7 +241,7 @@ export async function getOutcomeGraphForecastForSale(
 
   const cohortDefinition = cohortStatistics
     ? await selectMaybeOne(
-        outcomeGraphAdmin
+        supabaseAdmin
           .from("cohort_definitions")
           .select("id, cohort_level, label")
           .eq("id", cohortStatistics.cohort_definition_id)
@@ -420,7 +407,7 @@ export function decodeStoredOutcomeGraphForecast(
 }
 
 async function selectMaybeOne<T>(
-  query: PromiseLike<DatabaseResult>,
+  query: PromiseLike<{ data: unknown; error: { message: string } | null }>,
   schema: z.ZodType<T>,
   operation: string,
 ): Promise<T | null> {

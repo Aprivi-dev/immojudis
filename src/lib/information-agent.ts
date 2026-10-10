@@ -9,6 +9,8 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { getPublishedInformationAgentEmailTemplate } from "@/lib/admin-information-agent-email-template";
+import { adminPageQueryShape } from "@/lib/admin-page-query";
+import { ADMIN_PAGE_SIZE, adminPageMeta, type AdminPageMeta } from "@/lib/admin-pagination";
 import { loadAdminInformationAgentSale } from "@/lib/admin-information-agent-sale";
 import { readSaleFactClaims } from "@/lib/auction-fact-claims";
 import { parseDocs } from "@/lib/documents";
@@ -49,6 +51,10 @@ import type { AuctionSale } from "@/lib/types";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
 
 type MissionRow = Database["public"]["Tables"]["information_agent_missions"]["Row"];
+export type InformationAgentRecipientKind =
+  | "source_lawyer"
+  | "source_contact"
+  | "manual_professional";
 type CaseRow = Database["public"]["Tables"]["information_agent_cases"]["Row"];
 type FactRow = Database["public"]["Tables"]["information_agent_fact_candidates"]["Row"];
 
@@ -120,6 +126,7 @@ export const informationAgentCreateSchema = z.object({
 
 export const informationAgentListQuerySchema = z.object({
   saleId: z.string().uuid().optional(),
+  ...adminPageQueryShape,
 });
 
 const editableMessageFields = {
@@ -182,7 +189,7 @@ export type InformationAgentContactCandidate = {
   email: string;
   name: string | null;
   role: InformationAgentContactRole;
-  recipientKind: Extract<MissionRow["recipient_kind"], "source_lawyer" | "source_contact">;
+  recipientKind: Extract<InformationAgentRecipientKind, "source_lawyer" | "source_contact">;
   confidence: "high" | "medium" | "low";
   score: number;
   provenance: InformationAgentContactProvenance[];
@@ -228,7 +235,7 @@ export type InformationAgentMission = {
   caseId: string | null;
   saleId: string | null;
   status: MissionRow["status"];
-  recipientKind: MissionRow["recipient_kind"];
+  recipientKind: InformationAgentRecipientKind;
   recipientName: string | null;
   recipientEmail: string;
   subject: string;
@@ -268,6 +275,9 @@ export type InformationAgentAdminListResponse = {
   missions: InformationAgentMission[];
   facts: InformationAgentFact[];
 };
+
+/** Liste paginée des missions (50 par page) : offset / limit demandés, total toutes pages. */
+export type InformationAgentAdminMissionPage = InformationAgentAdminListResponse & AdminPageMeta;
 
 export function detectInformationGaps(
   sale: AuctionSale,
@@ -518,20 +528,26 @@ export async function createAdminInformationAgentDraft({
 export async function listAdminInformationAgentMissions({
   auth,
   saleId,
+  offset = 0,
+  limit = ADMIN_PAGE_SIZE,
 }: {
   auth: SupabaseAuthContext;
   saleId?: string;
-}): Promise<InformationAgentAdminListResponse> {
+  offset?: number;
+  limit?: number;
+}): Promise<InformationAgentAdminMissionPage> {
   requireInformationAgentAdmin(auth);
   let query = supabaseAdmin
     .from("information_agent_missions")
-    .select("*")
+    .select("*", { count: "exact" })
     .eq("user_id", auth.userId)
+    // L'id départage les missions créées dans la même milliseconde : pages stables.
     .order("created_at", { ascending: false })
-    .limit(100);
+    .order("id", { ascending: false })
+    .range(offset, offset + limit - 1);
   if (saleId) query = query.eq("sale_id", saleId);
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) throw error;
   const rows = data ?? [];
   return {
@@ -540,6 +556,7 @@ export async function listAdminInformationAgentMissions({
     facts: await listFactsForCases(
       rows.flatMap((mission) => (mission.case_id ? [mission.case_id] : [])),
     ),
+    ...adminPageMeta({ offset, limit, total: count ?? offset + rows.length }),
   };
 }
 
@@ -1172,7 +1189,8 @@ function missionFromRow(row: MissionRow): InformationAgentMission {
     caseId: row.case_id,
     saleId: row.sale_id,
     status: row.status,
-    recipientKind: row.recipient_kind,
+    // Colonne text protégée par une contrainte CHECK : le type généré est string.
+    recipientKind: row.recipient_kind as InformationAgentRecipientKind,
     recipientName: row.recipient_name,
     recipientEmail: row.recipient_email,
     subject: row.subject,
