@@ -26,6 +26,21 @@ def _no_network_image_checks(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _information_sufficiency_gate_off_by_default(monkeypatch):
+    """La porte « informations suffisantes » est active en production (voir information_sufficiency).
+
+    Les tests historiques du pipeline publient des ventes minimales (ni adresse, ni surface, ni e-mail) pour
+    vérifier la mécanique de publication, pas la règle de rétention : ils tournent porte ouverte. Les tests de
+    la règle la réactivent explicitement avec ``IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=on``.
+    """
+    from src import information_sufficiency
+
+    monkeypatch.setenv(information_sufficiency.GATE_ENV, "off")
+    monkeypatch.delenv(information_sufficiency.MIN_ADDRESS_ENV, raising=False)
+    information_sufficiency.set_active_blocklist(information_sufficiency.NO_BLOCKLIST)
+
+
+@pytest.fixture(autouse=True)
 def _no_document_politeness_waits(monkeypatch):
     """Document downloads fetch robots.txt and wait 1.5 s per host in production."""
     from src import document_politeness

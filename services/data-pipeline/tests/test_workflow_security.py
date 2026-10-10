@@ -182,6 +182,7 @@ def test_recompute_secrets_reach_only_the_recompute_steps() -> None:
         "Publish catalogue readiness",
         "Refresh unresolved procedure source pages",
         "Repair and verify persisted sale procedures",
+        "Report or delete sales with insufficient information",
     }
     for step in jobs[0].steps:
         if step.name in receiving:

@@ -10,8 +10,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dateutil import parser
 
 from src.admission import is_date_only, sale_date_has_passed
+from src.listing_location import recover_listing_address, reject_monetary_address
 from src.models import AuctionSale
 from src.null_text import is_null_text
+from src.surface_text_recovery import extra_built_surface_from_text
 
 FRENCH_MONTHS = {
     "janvier": "January",
@@ -946,12 +948,8 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     address = normalize_listing_address(
         _field_or_source_block(raw_sale, "address", "adresse", "detail_adresse", "address", "localisation")
     )
-    if address and re.fullmatch(r'[\d\s.,]+\s*(?:€|euros?|EUR)', address, re.I):
-        raw_sale = dict(raw_sale)
-        raw_sale['invalid_address_evidence'] = {'value': address, 'reason': 'monetary_value_is_not_address'}
-        raw_sale['quality_flags'] = [*(raw_sale.get('quality_flags') or []), 'address_unverified']
-        raw_sale['latitude'] = raw_sale['longitude'] = None
-        address = None
+    raw_sale, address = reject_monetary_address(raw_sale, address)
+    address = recover_listing_address(raw_sale, address)
     explicit_postal_code = extract_postal_code(
         _field_or_source_block(raw_sale, "postal_code", "code_postal", "codePostal", "postal_code")
     )
@@ -1072,7 +1070,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     structured_surface_m2 = parse_surface(
         _field_or_source_block(raw_sale, "surface_m2", "surface_m2", "surface", "detail_surface")
     )
-    text_surface_m2 = _extract_built_surface_from_text(source_text)
+    text_surface_m2 = _extract_built_surface_from_text(source_text) or extra_built_surface_from_text(
+        source_text, raw_sale.get("source_name")
+    )
     surface_m2 = (
         text_surface_m2
         if property_type == "mixed"

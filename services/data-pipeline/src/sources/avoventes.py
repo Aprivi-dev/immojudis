@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup, Tag
 
 from src.catalogue_proof import CatalogueEvidence, canonical
 from src.config import TARGET_DEPARTMENTS, load_settings
+from src.listing_location import classify_address
 from src.normalize import clean_text, extract_department, parse_surface, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
@@ -332,8 +333,13 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
         if key == "quality_flags" and details.get(key):
             existing_flags = sale.get(key) if isinstance(sale.get(key), list) else []
             sale[key] = list(dict.fromkeys([*existing_flags, *details[key]]))
-        elif details.get(key) and (key == "description" or not sale.get(key)):
+        elif details.get(key) and (key == "description" or not sale.get(key) or _is_coarser_address(key, sale.get(key))):
             sale[key] = details[key]
+
+
+def _is_coarser_address(key: str, current: object) -> bool:
+    """La carte de la liste ne donne que « CP Commune » : l'adresse précise de la description doit la remplacer."""
+    return key == "address" and classify_address(str(current)) in {None, "commune"}
 
 
 def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
@@ -533,7 +539,7 @@ def _extract_property_location(description: str | None, title: str | None) -> di
     # Prefer a numbered street address, and stop before cadastral/legal
     # clauses. This keeps the lawyer's address and nearby prose out.
     for address_match in re.finditer(
-        rf"\b(?P<address>\d{{1,4}}(?:\s*(?:bis|ter))?(?:\s+et\s+\d{{1,4}})?\s+"
+        rf"\b(?P<address>(?:\d{{1,4}}\s*[-–/]\s*)?\d{{1,4}}(?:\s*(?:bis|ter))?(?:\s+et\s+\d{{1,4}})?,?\s+"
         rf"(?:{_STREET_KIND})\b[^.;()\n]{{0,100}})",
         text,
         re.I,
@@ -625,11 +631,12 @@ def _trim_property_address(value: str) -> str | None:
     address = clean_text(value)
     if not address:
         return None
+    address = re.sub(r"^(\d[\d\s\-–/]*(?:bis|ter)?),\s*", r"\1 ", address, flags=re.I)  # « 119, Route X »
     address = address.split(",", 1)[0]
     address = re.split(
         r"\s+(?=(?:cadastr[ée]|cadastre|lot\b|section\b|lieudit\b|pour\b|"
         r"et\s+figurant\b|dans\s+un\s+ensemble\b|sur\s+la\s+commune\b|"
-        r"commune\s+de\b))",
+        r"commune\s+de\b|(?:de|d['’])\s*\d|(?-i:Sur|Dans|Un|Une|Au|Aux|Avec)\b))",
         address,
         maxsplit=1,
         flags=re.I,

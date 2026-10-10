@@ -47,6 +47,12 @@ LICITOR_ZONE_URLS = (
 )
 AQUITAINE_URL = LICITOR_ZONE_URLS[4]
 LOGGER = logging.getLogger(__name__)
+# La ligne qui suit la commune est le bloc de l'avocat ou du tribunal quand la page n'a pas de bloc « rue » :
+# ce n'est pas l'adresse du bien (cabinet, commissaires de justice, tribunal, prix).
+_NOT_A_PROPERTY_ADDRESS = (
+    r"Afficher|exactitude|Visite|Maître|SELARL|SELAS|\bSCP\b|Avocat|Commissaires?\s+de\s+justice|Huissier|Notaire|"
+    r"\bCabinet\b|[ÉE]tude|Tribunal|Mise\s+à\s+prix"
+)
 
 _LICITOR_DYNAMIC_COUNTER_RE = re.compile(
     r"^\s*🔎(?:\ufe0e|\ufe0f)?\s*\d[\d.,\s]*\s*❤(?:\ufe0e|\ufe0f)?\s*\d[\d.,\s]*\s*$"
@@ -692,7 +698,7 @@ def _extract_address(soup: BeautifulSoup, lines: list[str], city: str | None, po
     for index, line in enumerate(lines):
         if city and line == city and index + 1 < len(lines):
             candidate = lines[index + 1]
-            if not re.search(r"Afficher|exactitude|Visite|Maître", candidate, re.I):
+            if not re.search(_NOT_A_PROPERTY_ADDRESS, candidate, re.I):
                 if postal_code and postal_code not in candidate:
                     return f"{candidate}, {postal_code} {city}"
                 if postal_code is None:

@@ -708,6 +708,21 @@ le libellé retourné, le type de résultat, le code commune et la décision
 coordonnées. L'enrichissement DPE utilise les coordonnées quand elles existent,
 sinon une recherche textuelle d'adresse.
 
+## Règle « informations suffisantes »
+
+Une vente est publiée si (adresse exploitable **et** superficie) **ou** si l'agent IA d'information dispose d'un e-mail
+exploitable. Sinon elle n'est pas écrite dans `auction_sales` : le run compte les rejets
+(`admission_rejected_insufficient_information` : total, motifs, sources) sans journaliser de donnée de la vente.
+Définitions, exemptions et chiffres par source : `docs/audits/2026-10-10-extraction-par-source.md`.
+
+- `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off` coupe la porte (défaut : active).
+- `IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=commune` accepte une commune seule comme adresse (défaut : voie, lieu-dit ou parcelle).
+- Le miroir Python du résolveur de contacts (`src/information_sufficiency.py`) est gardé identique au résolveur
+  TypeScript par `tests/fixtures/information_agent_contact_cases.json`, exécuté par pytest et par vitest.
+- Existant : `python -m src.recompute_scoring --drop-insufficient` produit un rapport d'identifiants sans rien supprimer ;
+  `--execute-drop` supprime (sans tombstone, ventes liées à des utilisateurs protégées, plafond `--max-deletions`).
+  Une requête SQL en lecture seule équivalente est dans `sql/insufficient_information_report.sql`.
+
 ## Rapport Qualité
 
 Chaque run affiche :
