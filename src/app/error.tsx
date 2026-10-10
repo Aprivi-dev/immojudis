@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
 
-export default function Error({ error, reset }: { error: Error; reset: () => void }) {
+export default function Error({ error, retry }: { error: Error; retry: () => void }) {
   useEffect(() => {
     console.error(error);
   }, [error]);
@@ -20,7 +20,7 @@ export default function Error({ error, reset }: { error: Error; reset: () => voi
           revenir à l’accueil.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
-          <button type="button" onClick={reset} className={buttonClasses({ variant: "primary" })}>
+          <button type="button" onClick={retry} className={buttonClasses({ variant: "primary" })}>
             Réessayer
           </button>
           <Link href="/" className={buttonClasses()}>

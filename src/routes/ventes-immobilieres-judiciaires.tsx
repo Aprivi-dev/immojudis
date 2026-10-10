@@ -5,6 +5,7 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import { SaleTypesOverview } from "@/components/SaleTypesOverview";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
+import { jsonLdString } from "@/lib/json-ld";
 
 const FAQ: Array<{ q: string; a: string }> = [
   {
@@ -196,7 +197,7 @@ export function ResourcesPage() {
     <main id="contenu" className="liquid-page min-h-screen bg-background pb-24 text-foreground">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQ_JSON_LD) }}
+        dangerouslySetInnerHTML={{ __html: jsonLdString(FAQ_JSON_LD) }}
       />
 
       <article className="mx-auto max-w-5xl px-4 pt-10 sm:px-6">

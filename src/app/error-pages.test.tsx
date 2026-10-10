@@ -30,19 +30,19 @@ describe("page 404", () => {
 describe("page d'erreur", () => {
   it("annonce l'erreur en français, avec un titre, et permet de réessayer", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const reset = vi.fn();
-    render(<ErrorPage error={new Error("boom")} reset={reset} />);
+    const retry = vi.fn();
+    render(<ErrorPage error={new Error("boom")} retry={retry} />);
     expect(screen.getByRole("heading", { name: "Cette page n’a pas chargé" })).toBeTruthy();
     expect(document.title).toBe("Cette page n’a pas chargé");
     fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
-    expect(reset).toHaveBeenCalledTimes(1);
+    expect(retry).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("link", { name: "Retour à l’accueil" })).toBeTruthy();
   });
 
   it("n'expose jamais le message technique", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     render(
-      <ErrorPage error={new Error("relation auction_sales does not exist")} reset={vi.fn()} />,
+      <ErrorPage error={new Error("relation auction_sales does not exist")} retry={vi.fn()} />,
     );
     expect(screen.queryByText(/auction_sales/)).toBeNull();
   });
@@ -51,7 +51,7 @@ describe("page d'erreur", () => {
 describe("erreur globale", () => {
   it("reprend la charte actuelle (clair, bouton marine sur or)", () => {
     const html = (() => {
-      const { container } = render(<GlobalError error={new Error("x")} reset={vi.fn()} />, {
+      const { container } = render(<GlobalError error={new Error("x")} retry={vi.fn()} />, {
         container: document.createElement("div"),
       });
       return container.innerHTML;
