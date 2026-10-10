@@ -1,12 +1,10 @@
 import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database } from "@/integrations/supabase/types";
 import {
   analyzeMarketCandidates,
   mutationSegmentFromCode,
   resolveMarketPropertySegment,
-  type MarketComparableMode,
   type MarketEngineCandidate,
   type MarketPropertySegment,
 } from "@/lib/market-estimation-engine";
@@ -22,6 +20,28 @@ import {
 } from "@/lib/dvf-market-statistics";
 import { recordValuationEstimate } from "@/lib/valuation-model-registry";
 import { fetchCadastreSurfaceAtPoint } from "@/lib/market-cadastre";
+import type {
+  BuildEstimateInput,
+  CommuneInfo,
+  DvfFeature,
+  DvfProps,
+  DvfYearResult,
+  MarketAddressSale,
+  MarketContext,
+  MarketEstimate,
+  MarketEstimateErrorCode,
+  RadiusAnalysis,
+  ResolvedMarketLocation,
+  Ring,
+  StoredDvfRow,
+} from "@/lib/market-server/types";
+
+export type {
+  MarketAddressSale,
+  MarketEstimate,
+  MarketContext,
+  MarketEstimateErrorCode,
+} from "@/lib/market-server/types";
 
 // ─── DVF (Demandes de Valeurs Foncières) via API Cerema ─────────────────
 // Données ouvertes DGFiP, toutes les transactions immobilières de France.
@@ -57,181 +77,10 @@ const MAX_DVF_PAGES = 20;
 const DVF_PAGE_SIZE = 500;
 const STORED_DVF_LIMIT = 2_500;
 
-type DvfYearResult = {
-  features: DvfFeature[];
-  complete: boolean;
-  expectedCount: number;
-  error: string | null;
-};
-
 const pageCache = new Map<string, { expiresAt: number; result: DvfYearResult }>();
 const communeCache = new Map<string, { expiresAt: number; value: CommuneInfo | null }>();
 const geocodeCache = new Map<string, { expiresAt: number; value: ResolvedMarketLocation | null }>();
 const storedDvfCache = new Map<string, { expiresAt: number; value: RadiusAnalysis | null }>();
-
-type DvfProps = {
-  idmutinvar?: string;
-  datemut?: string;
-  anneemut?: number;
-  libnatmut?: string;
-  valeurfonc?: string;
-  sbati?: string;
-  sterr?: string;
-  nblocmut?: number;
-  nbpar?: number;
-  l_idpar?: string[];
-  codtypbien?: string;
-  libtypbien?: string;
-};
-
-type DvfFeature = {
-  properties: DvfProps;
-  geometry?: { type?: string; coordinates?: unknown } | null;
-};
-
-type CommuneInfo = {
-  code: string;
-  nom: string;
-  departmentCode: string | null;
-  population: number;
-};
-type StoredDvfRow = Pick<
-  Database["public"]["Tables"]["dvf_transactions"]["Row"],
-  | "id"
-  | "source_mutation_id"
-  | "sale_date"
-  | "mutation_nature"
-  | "total_price_eur"
-  | "built_surface_m2"
-  | "land_surface_m2"
-  | "price_per_m2"
-  | "property_type"
-  | "dvf_property_type_code"
-  | "parcel_id"
-  | "latitude"
-  | "longitude"
-> & { distance_m?: number | null };
-
-export type MarketAddressSale = {
-  date: string;
-  totalPrice: number;
-  surface: number | null;
-  pricePerM2: number | null;
-  type: string;
-};
-
-export type MarketEstimate = {
-  source: "DVF normalisé" | "DVF data.gouv" | "DVF Cerema" | "Statistiques DVF data.gouv";
-  sourceUrl?: string | null;
-  sourceUpdatedAt?: string | null;
-  engineVersion?: "v2" | "v3";
-  engineKind?: "comparable_ensemble" | "hybrid_lightgbm";
-  modelVersionId?: string | null;
-  modelVersion?: string | null;
-  segment?: Exclude<MarketPropertySegment, "unsupported"> | "parking";
-  surfaceBasis?: "built" | "land" | "unit";
-  estimationLevel?: "reliable" | "indicative";
-  subjectSurfaceM2?: number | null;
-  subjectSurfaceEstimated?: boolean;
-  subjectSurfaceAssumption?: string | null;
-  subjectSurfaceUncertaintyPct?: number | null;
-  locationSource?: "provided" | "geocoded";
-  locationApproximate?: boolean;
-  estimatedValueEur?: number | null;
-  estimatedValueLowEur?: number | null;
-  estimatedValueHighEur?: number | null;
-  actionable?: boolean;
-  collectionComplete?: boolean;
-  missingYears?: number[];
-  radiusM: number;
-  yearsBack: number;
-  areaKind: "urban" | "rural";
-  commune: string | null;
-  sampleSize: number; // nombre de parcelles comparables retenues
-  effectiveSampleSize?: number;
-  parcelSampleSize: number;
-  totalNearbySampleSize: number;
-  outliersRemoved: number;
-  qualityScore: number;
-  qualityLabel: "forte" | "correcte" | "fragile";
-  qualityWarnings: string[];
-  comparableMode:
-    | MarketComparableMode
-    | "nearby_type_only"
-    | "address_history"
-    | "geographic_aggregate"
-    | "unit_sales";
-  geographyLevel?: "commune" | "epci" | "department" | null;
-  geographyCode?: string | null;
-  surfaceMinM2: number | null;
-  surfaceMaxM2: number | null;
-  landSurfaceMinM2?: number | null;
-  landSurfaceMaxM2?: number | null;
-  medianPricePerM2: number | null;
-  p10PricePerM2?: number | null;
-  p25PricePerM2: number | null;
-  p75PricePerM2: number | null;
-  p90PricePerM2?: number | null;
-  minPricePerM2: number | null;
-  maxPricePerM2: number | null;
-  medianUnitPriceEur?: number | null;
-  p10UnitPriceEur?: number | null;
-  p90UnitPriceEur?: number | null;
-  // Si on a un prix de référence (mise à prix, prix d'adjudication)
-  deviationPct: number | null; // <0 = sous le marché, >0 = au-dessus
-  annualMarketTrendPct?: number;
-  marketCell?: string | null;
-  predictionInterval?: {
-    coverageTarget: number;
-    method: string;
-    p10PricePerM2: number;
-    p50PricePerM2: number;
-    p90PricePerM2: number;
-    conformalExpansionPct: number;
-  };
-  modelDiagnostics?: {
-    modelWeight: number;
-    rawP10PricePerM2: number;
-    rawP50PricePerM2: number;
-    rawP90PricePerM2: number;
-  } | null;
-  // Les 5 dernières ventes de la parcelle du bien (historique exact).
-  addressHistory: MarketAddressSale[];
-  // Dernière vente de chaque parcelle du rayon (base de la fourchette).
-  recentTransactions: Array<{
-    date: string;
-    pricePerM2: number;
-    surface: number;
-    landSurface?: number | null;
-    totalPrice: number;
-    type: string;
-    distanceM: number | null;
-    score?: number;
-    adjustedPricePerM2?: number;
-    timeAdjustmentFactor?: number;
-    marketCell?: string | null;
-    unitCount?: number | null;
-  }>;
-};
-
-export type MarketContext = {
-  ok: boolean;
-  error: string | null;
-  estimate: MarketEstimate | null;
-  status?: "ready" | "refreshing" | "queued" | "insufficient_data" | "failed";
-  code?: MarketEstimateErrorCode | null;
-  retryAfterSeconds?: number | null;
-  computedAt?: string | null;
-};
-
-export type MarketEstimateErrorCode =
-  | "INVALID_INPUT"
-  | "MISSING_LOCATION"
-  | "MISSING_SURFACE"
-  | "UNSUPPORTED_SEGMENT"
-  | "NO_COMPARABLES"
-  | "UPSTREAM_UNAVAILABLE"
-  | "INTERNAL_ERROR";
 
 const inputSchema = z.object({
   saleId: z.string().uuid().nullable().optional(),
@@ -253,17 +102,6 @@ const inputSchema = z.object({
   surfaceAssumption: z.string().max(300).nullable().optional(),
   surfaceUncertaintyPct: z.number().min(0).max(90).nullable().optional(),
 });
-
-type ResolvedMarketLocation = {
-  lat: number;
-  lng: number;
-  source: "provided" | "geocoded";
-  approximate: boolean;
-};
-
-// ─── Géométrie ────────────────────────────────────────────────────────────
-
-type Ring = Array<[number, number]>;
 
 function outerRings(geometry: DvfFeature["geometry"]): Ring[] {
   if (!geometry || !Array.isArray(geometry.coordinates)) return [];
@@ -558,17 +396,6 @@ function parcelKey(props: DvfProps): string | null {
   if (ids.length === 0) return null;
   return [...ids].sort().join("+");
 }
-
-// ─── Analyse à un rayon donné ───────────────────────────────────────────────
-
-type RadiusAnalysis = {
-  source: MarketEstimate["source"];
-  candidates: MarketEngineCandidate[];
-  addressMutations: MarketAddressSale[];
-  totalNearby: number;
-  collectionComplete: boolean;
-  missingYears: number[];
-};
 
 async function analyzeAtRadius(
   lat: number,
@@ -928,27 +755,6 @@ function recentEnough(dateValue: string, maxAgeMonths: number): boolean {
   if (Number.isNaN(date.getTime())) return false;
   return monthDistance(date, new Date()) <= maxAgeMonths;
 }
-
-// ─── Cœur : estimation ──────────────────────────────────────────────────────
-
-type BuildEstimateInput = {
-  lat: number;
-  lng: number;
-  locationSource: "provided" | "geocoded";
-  locationApproximate: boolean;
-  radiusOverride: number | null;
-  postalCode: string | null | undefined;
-  propertyType: string | null | undefined;
-  surfaceKind: string | null | undefined;
-  surfaceScope: string | null | undefined;
-  surfaceM2: number | null | undefined;
-  landSurfaceM2: number | null | undefined;
-  roomsCount: number | null | undefined;
-  surfaceEstimated: boolean;
-  surfaceAssumption: string | null;
-  surfaceUncertaintyPct: number | null;
-  pricePerM2Ref: number | null | undefined;
-};
 
 async function buildEstimate(input: BuildEstimateInput): Promise<MarketEstimate> {
   const { lat, lng } = input;
