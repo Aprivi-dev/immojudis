@@ -23,6 +23,7 @@ import {
   type ComparedSale,
 } from "@/lib/search/sale-comparison";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export function SavedSaleComparisons({
   items,
@@ -75,7 +76,7 @@ function AuthenticatedSavedSaleComparisons({
   const queryClient = useQueryClient();
   const [name, setName] = useState("Ma comparaison");
   const [shareLink, setShareLink] = useState<{ setId: string; url: string } | null>(null);
-  const queryKey = ["sale-analysis-sets", userId] as const;
+  const queryKey = queryKeys.saleAnalysisSets(userId);
   const setsQuery = useQuery({
     queryKey,
     queryFn: () => fetchSaleAnalysisSets(),

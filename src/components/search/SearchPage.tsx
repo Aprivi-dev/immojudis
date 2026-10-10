@@ -70,6 +70,7 @@ import {
   watchedZoneInputFromSearch,
 } from "./search-page-state";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPanel), {
   ssr: false,
@@ -257,7 +258,7 @@ export function SearchPage({
     [search],
   );
   const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
-    queryKey: ["feature-entitlements", user?.id ?? "anonymous", "plan"],
+    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
     queryFn: fetchAccessPlan,
     enabled: Boolean(user) && !authLoading,
     staleTime: 5 * 60_000,
@@ -305,7 +306,7 @@ export function SearchPage({
     isLoading: isMapLoading,
     isFetching: isMapFetching,
   } = useQuery({
-    queryKey: ["sales-search-map", mapSearchKeySignature, comparisonScope],
+    queryKey: queryKeys.salesSearchMap(mapSearchKeySignature, comparisonScope),
     placeholderData: (previous, query) =>
       catalogPlaceholder(previous, query?.queryKey, comparisonScope),
     queryFn: () => fetchSearchMapResults(search, { discovery: isDiscovery }),
@@ -352,7 +353,7 @@ export function SearchPage({
   const selectedMapSaleId =
     selectedSaleId && mapSales.some((sale) => sale.id === selectedSaleId) ? selectedSaleId : null;
   const { data: selectedMapSaleDetail, isFetching: selectedMapSaleDetailLoading } = useQuery({
-    queryKey: ["sales-map-detail", comparisonScope, selectedMapSaleId],
+    queryKey: queryKeys.salesMapDetail(comparisonScope, selectedMapSaleId),
     queryFn: () => getSaleById(selectedMapSaleId!, { discovery: isDiscovery }),
     enabled: Boolean(catalogReady && user && mapVisible && selectedMapSaleId && comparisonScope),
     staleTime: 5 * 60_000,
@@ -366,7 +367,7 @@ export function SearchPage({
     [displayedSales, mapSales],
   );
   const { data: aiReviewData, isError: aiReviewError } = useQuery({
-    queryKey: ["sales-ai-review", user?.id ?? "anonymous", aiReviewSaleIds],
+    queryKey: queryKeys.salesAiReview(user?.id ?? "anonymous", aiReviewSaleIds),
     queryFn: () => fetchSalesAiReviewProjections(aiReviewSaleIds),
     // Discovery rows already use the public redacted view. The AI review
     // endpoint reads Analyse-only projections and must not blank valid public
@@ -416,7 +417,7 @@ export function SearchPage({
   const alertsLocked =
     !user || !entitlementsData || entitlementsData.plan.features.smartAlerts === "locked";
   const { data: salesStatisticsData, isFetching: salesStatisticsLoading } = useQuery({
-    queryKey: ["sales-statistics", searchKeySignature],
+    queryKey: queryKeys.salesStatistics(searchKeySignature),
     queryFn: () => fetchSalesStatistics({ search }),
     enabled: statisticsOpen && !statisticsLocked && !authLoading && Boolean(user),
     retry: false,
@@ -437,7 +438,7 @@ export function SearchPage({
     isFetching: dpeExplorerLoading,
     refetch: refetchDpeExplorer,
   } = useQuery({
-    queryKey: ["dpe-explorer", searchKeySignature],
+    queryKey: queryKeys.dpeExplorer(searchKeySignature),
     queryFn: () =>
       fetchDpeExplorer({
         department: search.department,

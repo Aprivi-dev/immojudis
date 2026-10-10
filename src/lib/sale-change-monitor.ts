@@ -12,6 +12,7 @@ import {
 } from "@/lib/sale-publication-guard";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { asRecord, numberValue, stringValue } from "@/lib/guards";
 
 export const SALE_WATCH_KINDS = ["alert_match", "favorite", "workspace"] as const;
 export const SALE_CHANGE_EVENT_KINDS = [
@@ -853,20 +854,6 @@ function cleanString(value: string | null | undefined): string | null {
 
 function finiteNumber(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 function asJson(value: unknown): Json {

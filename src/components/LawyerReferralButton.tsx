@@ -8,6 +8,7 @@ import { useNavigate } from "@/lib/router-compat";
 import { fetchAccessPlan, fetchLawyerReferrals, requestLawyerReferral } from "@/lib/client-api";
 import type { LawyerReferralSummary } from "@/lib/lawyer-referrals";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export function LawyerReferralButton({
   saleId,
@@ -30,13 +31,13 @@ export function LawyerReferralButton({
   const [confirming, setConfirming] = useState(false);
   const [consent, setConsent] = useState(false);
   const { data: entitlementsData, isLoading: entitlementsLoading } = useQuery({
-    queryKey: ["feature-entitlements", user?.id ?? "anonymous", "plan"],
+    queryKey: queryKeys.featureEntitlementsPlan(user?.id ?? "anonymous"),
     queryFn: fetchAccessPlan,
     enabled: Boolean(user) && !loading,
     staleTime: 5 * 60_000,
   });
   const { data: referralData, isLoading: referralsLoading } = useQuery({
-    queryKey: ["lawyer-referrals", user?.id ?? "anonymous", saleId],
+    queryKey: queryKeys.lawyerReferrals(user?.id ?? "anonymous", saleId),
     queryFn: () => fetchLawyerReferrals({ saleId, limit: 1 }),
     enabled: Boolean(user) && !loading,
     staleTime: 60_000,
@@ -92,7 +93,7 @@ export function LawyerReferralButton({
         );
       }
       await queryClient.invalidateQueries({
-        queryKey: ["lawyer-referrals", user.id, saleId],
+        queryKey: queryKeys.lawyerReferrals(user.id, saleId),
       });
     } catch (error) {
       toast.error(userMessage(error, "Demande impossible"));

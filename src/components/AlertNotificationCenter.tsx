@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import { fetchAlertNotifications } from "@/lib/client-api";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
+import { queryKeys } from "@/lib/query-keys";
 const AlertNotificationPanel = lazy(() => import("./AlertNotificationPanel"));
 
 const EMPTY_NOTIFICATIONS: AlertNotificationSummary[] = [];
@@ -15,7 +16,7 @@ export function AlertNotificationCenter({ mobile = false }: { mobile?: boolean }
 }
 
 function AccountNotificationCenter({ mobile, userId }: { mobile: boolean; userId: string }) {
-  const NOTIFICATION_QUERY_KEY = ["alert-notifications", userId] as const;
+  const NOTIFICATION_QUERY_KEY = queryKeys.alertNotifications(userId);
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);

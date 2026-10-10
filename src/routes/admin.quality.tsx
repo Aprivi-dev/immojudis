@@ -17,6 +17,7 @@ import type {
   DataQualityReport,
   DataQualitySourceCoverage,
 } from "@/lib/data-quality-monitor";
+import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/admin/quality")({
   component: AdminQualityPage,
@@ -24,7 +25,7 @@ export const Route = createFileRoute("/admin/quality")({
 
 export function AdminQualityPage() {
   const qualityQuery = useQuery({
-    queryKey: ["admin-quality-report"],
+    queryKey: queryKeys.adminQualityReport(),
     queryFn: fetchAdminDataQuality,
     staleTime: 60_000,
   });
@@ -36,7 +37,7 @@ export function AdminQualityPage() {
     isFetching: valuationFetching,
     error: valuationError,
   } = useQuery({
-    queryKey: ["admin-valuation-overview"],
+    queryKey: queryKeys.adminValuationOverview(),
     queryFn: fetchValuationAdminOverview,
     staleTime: 60_000,
   });

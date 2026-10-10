@@ -12,6 +12,7 @@ import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { fetchAccessPlan } from "@/lib/client-api";
 import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import type { AuctionSale } from "@/lib/types";
+import { queryKeys } from "@/lib/query-keys";
 
 const DiscoverySaleDetailView = dynamic(
   () =>
@@ -73,7 +74,7 @@ export function SaleDetailPage({
     error: entitlementsError,
     refetch: retryEntitlements,
   } = useQuery({
-    queryKey: ["feature-entitlements", sessionKey, "plan"],
+    queryKey: queryKeys.featureEntitlementsPlan(sessionKey),
     queryFn: fetchAccessPlan,
     enabled: Boolean(session) && !authLoading,
     staleTime: 5 * 60_000,
@@ -83,7 +84,7 @@ export function SaleDetailPage({
   const canUseServerInitialData =
     initialData?.sale?.id === id || (!session && initialData?.preview?.id === id);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["sale-detail", id, sessionKey, discovery ? "discovery" : "analysis"],
+    queryKey: queryKeys.saleDetail(id, sessionKey, discovery ? "discovery" : "analysis"),
     queryFn: () => loadSaleDetailRouteData(id, { discovery, authenticated: Boolean(session) }),
     enabled: !authLoading && accessReady,
     initialData: canUseServerInitialData ? initialData : undefined,

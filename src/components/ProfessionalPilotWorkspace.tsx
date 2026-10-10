@@ -19,6 +19,7 @@ import { saleDisplayTitle } from "@/lib/sale-title";
 import { isUuid } from "@/lib/sale-workspace-shared";
 import type { AuctionSale } from "@/lib/types";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 type AmountField =
   | "priceEur"
@@ -61,7 +62,7 @@ export function ProfessionalPilotWorkspace({
   const hydrated = hydratedKey === storageKey;
   const canSync = !publicDemo && !authLoading && Boolean(user) && isUuid(sale.id);
   const workspaceQuery = useQuery({
-    queryKey: ["professional-pilot-workspace", user?.id ?? null, sale.id],
+    queryKey: queryKeys.professionalPilotWorkspace(user?.id ?? null, sale.id),
     queryFn: () => fetchSaleWorkspace({ saleId: sale.id }),
     enabled: canSync,
     staleTime: 30_000,
@@ -194,9 +195,9 @@ export function ProfessionalPilotWorkspace({
       if (!response.workspace) throw new Error("Réponse du dossier indisponible.");
       setDraft({ ...parsed.data, workspaceRevision: response.workspace.updated_at });
       await queryClient.invalidateQueries({
-        queryKey: ["professional-pilot-workspace", user?.id ?? null, sale.id],
+        queryKey: queryKeys.professionalPilotWorkspace(user?.id ?? null, sale.id),
       });
-      await queryClient.invalidateQueries({ queryKey: ["sale-workspace", sale.id] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.saleWorkspace(sale.id) });
       setConflict(false);
       setSaveMessage("Dossier enregistré sur votre compte.");
     } catch (error) {
@@ -204,7 +205,7 @@ export function ProfessionalPilotWorkspace({
       if (error instanceof Error && error.message.includes("a changé")) {
         setConflict(true);
         void queryClient.invalidateQueries({
-          queryKey: ["professional-pilot-workspace", user?.id ?? null, sale.id],
+          queryKey: queryKeys.professionalPilotWorkspace(user?.id ?? null, sale.id),
         });
       }
       setSaveMessage(

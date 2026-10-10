@@ -11,6 +11,7 @@ import { createFileRoute, Link } from "@/lib/router-compat";
 import { createPrivacyRequestClient, fetchPrivacyRequests } from "@/lib/client-api";
 import type { PrivacyRequestType } from "@/lib/privacy-requests";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/mes-droits")({
   component: RightsPage,
@@ -64,7 +65,7 @@ export function RightsPage() {
   const [requestType, setRequestType] = useState<PrivacyRequestType>("access");
   const [message, setMessage] = useState("");
   const { data, isLoading, error } = useQuery({
-    queryKey: ["privacy-requests"],
+    queryKey: queryKeys.privacyRequests(),
     queryFn: fetchPrivacyRequests,
   });
   const mutation = useMutation({
@@ -72,7 +73,7 @@ export function RightsPage() {
     onSuccess: async () => {
       setMessage("");
       toast.success("Demande enregistrée. Son échéance est visible ci-dessous.");
-      await queryClient.invalidateQueries({ queryKey: ["privacy-requests"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.privacyRequests() });
     },
     onError: (mutationError) => {
       toast.error(userMessage(mutationError, "Demande impossible"));

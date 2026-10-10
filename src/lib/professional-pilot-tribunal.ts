@@ -26,7 +26,8 @@ import type {
  * procedure has a safe source URL. A value that is present in the row but
  * cannot be traced to a usable source stays null and is rendered as a point to
  * confirm by the caller.
- */
+ */ import { textValue } from "@/lib/guards";
+
 export function buildTribunalPilot(sale: AuctionSale): PilotDefinition {
   const procedure = getSaleProcedure(sale);
   if (procedure.venueType !== "tribunal") {
@@ -78,7 +79,7 @@ export function buildTribunalPilot(sale: AuctionSale): PilotDefinition {
     fact(
       "Tribunal compétent",
       verifiedCourt && procedureConfirmed
-        ? (stringValue(courtFact?.value) ?? procedure.venueName)
+        ? (textValue(courtFact?.value) ?? procedure.venueName)
         : (procedure.venueName ?? sale.tribunal_name ?? sale.tribunal),
       courtFactSource ?? structuredSource,
       verifiedCourt
@@ -305,12 +306,6 @@ function firstSafeUrl(...values: unknown[]): string | null {
   return null;
 }
 
-function stringValue(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return null;
-}
-
 function moneyValue(value: number | null | undefined): string | null {
   return value != null && Number.isFinite(value)
     ? `${Math.round(value).toLocaleString("fr-FR")} €`
@@ -362,5 +357,5 @@ function visitValues(value: unknown): string[] {
 }
 
 function hasText(value: unknown): boolean {
-  return stringValue(value) !== null;
+  return textValue(value) !== null;
 }

@@ -9,6 +9,7 @@ import {
   type ResendEmailMessage,
 } from "@/lib/email-alerts";
 import { cleanSaleTitle } from "@/lib/sale-title";
+import { escapeHtml } from "@/lib/guards";
 
 type LawyerReferralRow = Database["public"]["Tables"]["lawyer_referral_requests"]["Row"];
 type LawyerReferralUpdate = Database["public"]["Tables"]["lawyer_referral_requests"]["Update"];
@@ -783,16 +784,6 @@ function jsonObject(value: unknown): Record<string, unknown> {
 
 function asJson(value: unknown): Json {
   return JSON.parse(JSON.stringify(value ?? null)) as Json;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => {
-    if (char === "&") return "&amp;";
-    if (char === "<") return "&lt;";
-    if (char === ">") return "&gt;";
-    if (char === '"') return "&quot;";
-    return "&#39;";
-  });
 }
 
 function escapeAttribute(value: string): string {

@@ -1,3 +1,4 @@
+import { clamp } from "@/lib/guards";
 const DEFAULT_MAPBOX_STYLE = "mapbox/streets-v12";
 const DEFAULT_STATIC_IMAGE_SIZE = { width: 640, height: 360 };
 const MAPBOX_STATIC_STREETS_STYLE = "mapbox/streets-v12";
@@ -164,8 +165,4 @@ export function normalizeMapboxStyle(style: string) {
 
 function formatCoordinate(value: number) {
   return Number(value.toFixed(6));
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
 }

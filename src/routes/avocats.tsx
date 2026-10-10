@@ -20,6 +20,7 @@ import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/li
 import type { DirectorySearch } from "@/lib/lawyer-directory-search";
 import { Link } from "@/lib/router-compat";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
@@ -35,7 +36,7 @@ const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
  */
 export function LawyerDirectoryPage({ search }: { search: DirectorySearch }) {
   const directoryQuery = useQuery({
-    queryKey: ["lawyer-directory", search.saleId, search.bar, search.city, search.department],
+    queryKey: queryKeys.lawyerDirectory(search.saleId, search.bar, search.city, search.department),
     queryFn: () => fetchLawyerDirectory(search),
     staleTime: 5 * 60_000,
   });

@@ -52,6 +52,13 @@ export async function fetchSearchResults({
   );
 }
 
+// The total is deliberately NOT folded into the list request (`count` on the
+// page query). The list reads the invoker-safe search view (ids first, then the
+// card rows) while this exact count reads the detail/discovery view, so a count
+// taken from the list query could differ from today's total. Switching to
+// `count: "estimated"` would also turn an exact figure into an approximation.
+// The preview path already gets its count from the same RPC call as its rows,
+// and client-only filters share one cached scan between list, count and map.
 export async function fetchSearchCount({
   search,
   preview,

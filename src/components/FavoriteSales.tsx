@@ -19,13 +19,14 @@ import { userMessage } from "@/lib/user-messages";
 import { Badge, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { ListingCard } from "@/components/search/SearchResults";
 import { FavoriteButton } from "./FavoriteButton";
+import { queryKeys } from "@/lib/query-keys";
 
 const NOOP = () => undefined;
 
 export function FavoriteSales() {
   const { user, loading } = useAuth();
   const query = useQuery({
-    queryKey: ["favorites", user?.id],
+    queryKey: queryKeys.favorites(user?.id),
     queryFn: fetchFavoriteSales,
     enabled: Boolean(user) && !loading,
   });
@@ -36,7 +37,7 @@ export function FavoriteSales() {
     [data?.favorites],
   );
   const aiReviewQuery = useQuery({
-    queryKey: ["favorites-ai-review", user?.id, favoriteSaleIds],
+    queryKey: queryKeys.favoritesAiReview(user?.id, favoriteSaleIds),
     queryFn: () => fetchSalesAiReviewProjections(favoriteSaleIds),
     // Discovery rows already come from the redacted public view. The AI
     // review endpoint reads the Analyse view and would turn valid public city,

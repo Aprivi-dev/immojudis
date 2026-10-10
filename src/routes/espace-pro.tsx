@@ -29,6 +29,7 @@ import {
   type PublicationRequestSummary,
 } from "@/lib/publication-requests-client";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/espace-pro")({
   component: ProfessionalWorkspacePage,
@@ -41,7 +42,7 @@ export function ProfessionalWorkspacePage() {
   const professional = isProfessionalAccount(user, profile);
   const admin = isAdminAccount(user, profile);
   const requestsQuery = useQuery({
-    queryKey: ["publication-requests", "workspace", user?.id],
+    queryKey: queryKeys.publicationRequestsWorkspace(user?.id),
     queryFn: fetchAllPublicationRequestsClient,
     enabled: Boolean(user),
     staleTime: 15_000,
@@ -52,7 +53,7 @@ export function ProfessionalWorkspacePage() {
   );
   const selectedRequest = requests.find((request) => request.id === selectedId) ?? null;
   const detailQuery = useQuery({
-    queryKey: ["publication-request", selectedId],
+    queryKey: queryKeys.publicationRequest(selectedId),
     queryFn: () => fetchPublicationRequestClient(selectedId as string),
     enabled: Boolean(selectedId && user),
     staleTime: 15_000,

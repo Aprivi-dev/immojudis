@@ -51,6 +51,7 @@ import {
   type AiReviewProjectionReadModel,
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
+import { escapeHtml } from "@/lib/guards";
 
 // Chargé à la demande par l'effet de création de la carte (import dynamique).
 let mapboxRuntime: typeof mapboxgl | null = null;
@@ -1201,15 +1202,6 @@ function MapControlButton({
       <Icon className="h-5 w-5" />
     </button>
   );
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
 }
 
 function escapeAttribute(value: string) {

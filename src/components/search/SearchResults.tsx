@@ -38,6 +38,7 @@ import {
   type AiReviewRequestStatus,
 } from "@/lib/ai-review-guard";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 export function SearchResultsList({
   sales,
   sponsoredPlacement,
@@ -79,7 +80,7 @@ export function SearchResultsList({
   const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
   const favoriteQueryIds = useMemo(() => [...saleIds].sort(), [saleIds]);
   const favoriteQuery = useQuery({
-    queryKey: ["search-favorite-status", user?.id ?? null, favoriteQueryIds],
+    queryKey: queryKeys.searchFavoriteStatus(user?.id ?? null, favoriteQueryIds),
     queryFn: async () => {
       const { data, error } = await supabase
         .from("user_favorites")
@@ -760,7 +761,7 @@ export function CompactFavoriteButton({
     if (locked) return;
 
     setBusy(true);
-    const searchFavoriteQueryKey = ["search-favorite-status", user.id] as const;
+    const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(user.id);
     try {
       await queryClient.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFavorite) {
@@ -771,7 +772,7 @@ export function CompactFavoriteButton({
         setIsFavorite(true);
       }
       queryClient.setQueriesData<string[] | undefined>(
-        { queryKey: ["search-favorite-status", user.id] },
+        { queryKey: queryKeys.searchFavoriteStatusForUser(user.id) },
         (favoriteSaleIds) => {
           const nextFavoriteSaleIds = new Set(favoriteSaleIds ?? []);
           if (isFavorite) nextFavoriteSaleIds.delete(saleId);
@@ -779,7 +780,7 @@ export function CompactFavoriteButton({
           return [...nextFavoriteSaleIds];
         },
       );
-      queryClient.invalidateQueries({ queryKey: ["favorites", user.id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.favorites(user.id) });
       onChange?.(saleId, !isFavorite);
       await queryClient.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (error) {

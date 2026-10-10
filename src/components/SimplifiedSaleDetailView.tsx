@@ -94,6 +94,7 @@ import {
 } from "@/lib/ai-review-guard";
 import type { AuctionSale } from "@/lib/types";
 import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 const ListingStatistics = dynamic(
   () =>
@@ -216,7 +217,7 @@ function SaleDetailWorkspace({
   const [rentalDraft, setRentalDraft] = useState<ListingRentalDraft | null>(null);
   const { user, loading: authLoading } = useAuth();
   const aiReviewQuery = useQuery({
-    queryKey: ["sale-ai-review", sale.id, user?.id ?? "anonymous"],
+    queryKey: queryKeys.saleAiReview(sale.id, user?.id ?? "anonymous"),
     queryFn: () => fetchSaleAiReviewProjections(sale.id),
     enabled: Boolean(
       access === "analysis" && user && !publicDemo && !authLoading && aiReviewProjections == null,
@@ -243,7 +244,7 @@ function SaleDetailWorkspace({
     [aiReviewStatus, resolvedAiReviewProjections, sale],
   );
   const factReliabilityQuery = useQuery({
-    queryKey: ["sale-fact-reliability", sale.id, user?.id ?? "anonymous"],
+    queryKey: queryKeys.saleFactReliability(sale.id, user?.id ?? "anonymous"),
     queryFn: () => fetchSaleFactReliabilities(sale.id),
     enabled: Boolean(access === "analysis" && user && !publicDemo && !authLoading),
     staleTime: 5 * 60_000,
@@ -293,7 +294,7 @@ function SaleDetailWorkspace({
   const marketSurfaces = getMarketValuationSurfaces(displaySale);
   const surface = criticalAnalysisInputsBlocked ? null : marketSurfaces.builtSurfaceM2;
   const marketQuery = useQuery({
-    queryKey: ["precomputed-market-estimate", sale.id],
+    queryKey: queryKeys.precomputedMarketEstimate(sale.id),
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
     enabled:
       access === "analysis" &&
@@ -1154,7 +1155,7 @@ function UrbanismeSection({
   loadStructuredUrbanism?: boolean;
 }) {
   const urbanismQuery = useQuery({
-    queryKey: ["sale-urbanisme-cadastre", sale.id, sale.source_url],
+    queryKey: queryKeys.saleUrbanismeCadastre(sale.id, sale.source_url),
     queryFn: () => fetchSaleUrbanismeCadastre(sale.id),
     enabled: loadStructuredUrbanism && Boolean(sale.source_url) && Boolean(sale.city),
     staleTime: 10 * 60_000,

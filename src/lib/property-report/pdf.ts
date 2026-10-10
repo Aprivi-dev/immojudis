@@ -6,7 +6,6 @@ import { REPORT_RENTAL_EXPENSE_FIELD_LABELS } from "@/lib/report-simulation";
 import { featureUnlocked, sanitizeReportSnapshotForPlan } from "./entitlements";
 import { PlanEntitlements, SavedReportRow } from "../property-reports";
 import {
-  asRecord,
   formatPercent,
   formatRenovationBudgetRange,
   normalizeActiveComparableItems,
@@ -24,9 +23,8 @@ import {
   normalizeStringList,
   normalizeUrbanPlanningItems,
   normalizeValuationCheckpoints,
-  numberValue,
-  stringValue,
 } from "./serialization";
+import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 export const REPORT_PDF_HEADINGS = [
   "Bien",
   "Estimation marché",
@@ -80,7 +78,10 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
   const traceability = asRecord(snapshot.sourceTraceability);
   const sourceTrace = normalizeSourceTrace(traceability.entries);
   const limitations = normalizeStringList(traceability.limitations);
-  const complianceNotice = stringValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE);
+  const complianceNotice = stringOrNumberValue(
+    traceability.complianceNotice,
+    REPORT_COMPLIANCE_NOTICE,
+  );
   const market = asRecord(report.market_snapshot);
   const ceiling = asRecord(report.ceiling_snapshot);
   const sale = asRecord(snapshot.sale);
@@ -190,20 +191,20 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
     `Généré le: ${formatDate(String(snapshot.generatedAt ?? report.updated_at))}`,
     "",
     "Bien",
-    `Titre: ${stringValue(cleanSaleTitle(stringValue(sale.title, null)), report.title)}`,
-    `Localisation: ${stringValue(sale.displayAddress, null) || [sale.address, sale.city, sale.department].filter(Boolean).join(", ") || "à confirmer"}`,
-    `Type: ${stringValue(sale.propertyType, "Bien")}`,
-    `Surface retenue: ${stringValue(sale.surfaceLabel, "à confirmer")}`,
-    `Occupation: ${stringValue(
+    `Titre: ${stringOrNumberValue(cleanSaleTitle(stringOrNumberValue(sale.title, null)), report.title)}`,
+    `Localisation: ${stringOrNumberValue(sale.displayAddress, null) || [sale.address, sale.city, sale.department].filter(Boolean).join(", ") || "à confirmer"}`,
+    `Type: ${stringOrNumberValue(sale.propertyType, "Bien")}`,
+    `Surface retenue: ${stringOrNumberValue(sale.surfaceLabel, "à confirmer")}`,
+    `Occupation: ${stringOrNumberValue(
       occupancyAnalysis.summary,
-      stringValue(sale.occupancy, "à vérifier"),
+      stringOrNumberValue(sale.occupancy, "à vérifier"),
     )}`,
-    `Confiance occupation: ${stringValue(occupancyAnalysis.confidenceLabel, "à confirmer")}`,
-    `Impact occupation: ${stringValue(occupancyAnalysis.decisionImpact, "à vérifier avant enchère")}`,
-    `Tribunal: ${stringValue(sale.tribunal, "à confirmer")}`,
+    `Confiance occupation: ${stringOrNumberValue(occupancyAnalysis.confidenceLabel, "à confirmer")}`,
+    `Impact occupation: ${stringOrNumberValue(occupancyAnalysis.decisionImpact, "à vérifier avant enchère")}`,
+    `Tribunal: ${stringOrNumberValue(sale.tribunal, "à confirmer")}`,
     ...reportSaleSchedule(sale).map(({ label, value }) => `${label}: ${value}`),
-    `Préparation audience: ${stringValue(audienceReadinessAnalysis.summary, "à compléter")}`,
-    `Urgence audience: ${stringValue(audienceReadinessAnalysis.urgencyLabel, "date à confirmer")}`,
+    `Préparation audience: ${stringOrNumberValue(audienceReadinessAnalysis.summary, "à compléter")}`,
+    `Urgence audience: ${stringOrNumberValue(audienceReadinessAnalysis.urgencyLabel, "date à confirmer")}`,
     `Mise à prix: ${formatPrice(numberValue(sale.startingPrice))}`,
     "",
     "Estimation marché",
@@ -215,50 +216,50 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
           numberValue(valueEstimate.p75PricePerM2),
         )}`
       : "Prix des comparables, intervalle P25-P75: à compléter",
-    `Échantillon: ${stringValue(valueEstimate.sampleSize, "0")} vente(s) comparable(s)`,
-    `Qualité: ${stringValue(valueEstimate.qualityLabel, "fragile")}`,
+    `Échantillon: ${stringOrNumberValue(valueEstimate.sampleSize, "0")} vente(s) comparable(s)`,
+    `Qualité: ${stringOrNumberValue(valueEstimate.qualityLabel, "fragile")}`,
     market.radiusM ? `Rayon DVF: ${market.radiusM} m` : "Rayon DVF: à compléter",
-    `Confiance DVF: ${stringValue(marketComparables.confidenceLabel, "à vérifier")}`,
-    `Audit estimation: ${stringValue(valuationAudit.summary, "audit estimation à construire")}`,
-    `Score audit: ${stringValue(valuationAudit.score, "0")}/100`,
-    `Impact audit: ${stringValue(valuationAudit.decisionImpact, "estimation à recouper")}`,
+    `Confiance DVF: ${stringOrNumberValue(marketComparables.confidenceLabel, "à vérifier")}`,
+    `Audit estimation: ${stringOrNumberValue(valuationAudit.summary, "audit estimation à construire")}`,
+    `Score audit: ${stringOrNumberValue(valuationAudit.score, "0")}/100`,
+    `Impact audit: ${stringOrNumberValue(valuationAudit.decisionImpact, "estimation à recouper")}`,
     ...(canShowSoldComparables
       ? [
-          `Backtest estimation: ${stringValue(
+          `Backtest estimation: ${stringOrNumberValue(
             valuationBacktestSummary.interpretation,
             "backtest DVF à construire",
           )}`,
           `Erreur médiane observée: ${formatPercent(
             valuationBacktestSummary.medianAbsoluteErrorPct,
           )}`,
-          `Tests utilisables: ${stringValue(valuationBacktestSummary.usableTests, "0")}`,
+          `Tests utilisables: ${stringOrNumberValue(valuationBacktestSummary.usableTests, "0")}`,
           `Prédictions à moins de 20%: ${formatPercent(valuationBacktestSummary.within20Pct)}`,
         ]
       : []),
-    `Mode comparables: ${stringValue(marketComparables.comparableModeLabel, "à compléter")}`,
-    `Lecture comparables: ${stringValue(marketComparables.summary, "comparables à compléter")}`,
+    `Mode comparables: ${stringOrNumberValue(marketComparables.comparableModeLabel, "à compléter")}`,
+    `Lecture comparables: ${stringOrNumberValue(marketComparables.summary, "comparables à compléter")}`,
     ...(canShowNeighborhood
       ? [
-          `Analyse quartier: ${stringValue(neighborhoodAnalysis.summary, "quartier à qualifier")}`,
-          `Confiance quartier: ${stringValue(neighborhoodAnalysis.confidenceLabel, "à vérifier")}`,
-          `Position marché quartier: ${stringValue(
+          `Analyse quartier: ${stringOrNumberValue(neighborhoodAnalysis.summary, "quartier à qualifier")}`,
+          `Confiance quartier: ${stringOrNumberValue(neighborhoodAnalysis.confidenceLabel, "à vérifier")}`,
+          `Position marché quartier: ${stringOrNumberValue(
             neighborhoodAnalysis.marketPositionLabel,
             "marché local à calculer",
           )}`,
         ]
       : []),
-    `Analyse démographique: ${stringValue(
+    `Analyse démographique: ${stringOrNumberValue(
       demographicAnalysis.summary,
       "données démographiques à enrichir",
     )}`,
-    `Profil démographique: ${stringValue(demographicAnalysis.profileLabel, "profil local à enrichir")}`,
+    `Profil démographique: ${stringOrNumberValue(demographicAnalysis.profileLabel, "profil local à enrichir")}`,
     ...(canShowActiveComparables
       ? [
-          `Biens comparables actifs: ${stringValue(
+          `Biens comparables actifs: ${stringOrNumberValue(
             activeComparablesAnalysis.summary,
             "aucun comparable actif",
           )}`,
-          `Confiance comparables actifs: ${stringValue(
+          `Confiance comparables actifs: ${stringOrNumberValue(
             activeComparablesAnalysis.confidenceLabel,
             "à vérifier",
           )}`,
@@ -302,13 +303,13 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       : []),
     "",
     "Lecture opportunité",
-    `Score du dossier, distinct du scénario personnel: ${opportunity.score != null ? `${opportunity.score}/100 - ${stringValue(opportunity.label, "à qualifier")}` : "à compléter"}`,
+    `Score du dossier, distinct du scénario personnel: ${opportunity.score != null ? `${opportunity.score}/100 - ${stringOrNumberValue(opportunity.label, "à qualifier")}` : "à compléter"}`,
     `Décote apparente: ${formatPercent(opportunity.apparentDiscountPct)}`,
     opportunity.estimatedMarketValue
       ? `Valeur médiane estimée: ${formatPrice(numberValue(opportunity.estimatedMarketValue))}`
       : "Valeur médiane estimée: à compléter",
     opportunity.estimatedMarketLow && opportunity.estimatedMarketHigh
-      ? `${stringValue(opportunity.estimatedMarketRangeLabel, "Fourchette de valeur")}: ${formatPrice(numberValue(opportunity.estimatedMarketLow))} - ${formatPrice(
+      ? `${stringOrNumberValue(opportunity.estimatedMarketRangeLabel, "Fourchette de valeur")}: ${formatPrice(numberValue(opportunity.estimatedMarketLow))} - ${formatPrice(
           numberValue(opportunity.estimatedMarketHigh),
         )}`
       : "Fourchette de valeur: à compléter",
@@ -339,8 +340,8 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
           "Estimation locative indicative",
           "Hypothèses: loyer estimé par défaut et paramètres de vacance, charges, taxe foncière, assurance et financement du modèle.",
           rentabilityScore.score != null
-            ? `Score de rentabilite: ${rentabilityScore.score}/100 - ${stringValue(rentabilityScore.label, "à qualifier")}`
-            : `Score de rentabilite: indisponible (${stringValue(rentabilityScore.reason, "données incomplètes")})`,
+            ? `Score de rentabilite: ${rentabilityScore.score}/100 - ${stringOrNumberValue(rentabilityScore.label, "à qualifier")}`
+            : `Score de rentabilite: indisponible (${stringOrNumberValue(rentabilityScore.reason, "données incomplètes")})`,
           rentabilityScore.netYieldPct != null
             ? `Rendement net estime: ${formatPercent(rentabilityScore.netYieldPct)}`
             : "Rendement net estime: à compléter",
@@ -348,11 +349,11 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
             ? `Cashflow mensuel estime: ${formatPrice(numberValue(rentabilityScore.cashflowMonthly))}`
             : "Cashflow mensuel estime: à compléter",
         ]),
-    `Frais adjudication: ${stringValue(
+    `Frais adjudication: ${stringOrNumberValue(
       auctionCostAnalysis.summary,
       "frais et consignation à confirmer",
     )}`,
-    `Confiance frais: ${stringValue(auctionCostAnalysis.confidenceLabel, "à confirmer")}`,
+    `Confiance frais: ${stringOrNumberValue(auctionCostAnalysis.confidenceLabel, "à confirmer")}`,
     consignation.amountEur
       ? `Consignation source: ${formatPrice(numberValue(consignation.amountEur))}`
       : "Consignation source: à confirmer",
@@ -362,12 +363,12 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
     acquisitionCosts.totalCost
       ? `Coût complet ${ceiling.personalSimulation ? "au prix simulé" : "à la mise à prix"}: ${formatPrice(numberValue(acquisitionCosts.totalCost))}`
       : "Coût complet à la mise à prix: à compléter",
-    `Travaux / état: ${stringValue(renovationAnalysis.summary, "état à qualifier")}`,
-    `Priorité travaux: ${stringValue(renovationAnalysis.priorityLabel, "à qualifier")}`,
+    `Travaux / état: ${stringOrNumberValue(renovationAnalysis.summary, "état à qualifier")}`,
+    `Priorité travaux: ${stringOrNumberValue(renovationAnalysis.priorityLabel, "à qualifier")}`,
     renovationBudgetRange
       ? `Budget travaux indicatif: ${renovationBudgetRange}`
       : "Budget travaux indicatif: à chiffrer",
-    `Impact travaux: ${stringValue(
+    `Impact travaux: ${stringOrNumberValue(
       renovationAnalysis.decisionImpact,
       "état à confirmer avant enchère",
     )}`,
@@ -376,17 +377,17 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
     ...(ceiling.personalSimulation
       ? [
           "Scénario personnel sauvegardé",
-          `Scénario: ${stringValue(ceiling.scenario, "à confirmer")}`,
+          `Scénario: ${stringOrNumberValue(ceiling.scenario, "à confirmer")}`,
           `Travaux saisis: ${formatPrice(numberValue(asRecord(ceiling.personalSimulation).works))}`,
           `Frais préalables saisis: ${formatPrice(numberValue(asRecord(ceiling.personalSimulation).fpt))}`,
           `Prix simulé: ${formatPrice(numberValue(asRecord(ceiling.personalSimulation).price))}`,
           `Marge de sécurité: ${numberValue(ceiling.safetyDiscountPct)} %`,
-          `Base retenue: ${stringValue(ceiling.basisLabel, "à confirmer")}`,
+          `Base retenue: ${stringOrNumberValue(ceiling.basisLabel, "à confirmer")}`,
         ]
       : []),
     ceiling.available
       ? `Mise maximum conseillée: ${formatPrice(numberValue(ceiling.maxBid))}`
-      : `Mise maximum conseillée: indisponible (${stringValue(ceiling.reason, "données incomplètes")})`,
+      : `Mise maximum conseillée: indisponible (${stringOrNumberValue(ceiling.reason, "données incomplètes")})`,
     ...(ceiling.available &&
     numberValue(ceiling.maxBid) != null &&
     numberValue(sale.startingPrice) != null &&
@@ -403,10 +404,10 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       : "Référence marché retenue: à compléter",
     "",
     "Préparation audience",
-    `Synthèse: ${stringValue(audienceReadinessAnalysis.summary, "préparation à compléter")}`,
-    `Statut: ${stringValue(audienceReadinessAnalysis.label, "à vérifier")}`,
-    `Progression: ${stringValue(audienceReadinessAnalysis.progressPct, "0")} %`,
-    `Points prioritaires ouverts: ${stringValue(
+    `Synthèse: ${stringOrNumberValue(audienceReadinessAnalysis.summary, "préparation à compléter")}`,
+    `Statut: ${stringOrNumberValue(audienceReadinessAnalysis.label, "à vérifier")}`,
+    `Progression: ${stringOrNumberValue(audienceReadinessAnalysis.progressPct, "0")} %`,
+    `Points prioritaires ouverts: ${stringOrNumberValue(
       audienceReadinessAnalysis.highPriorityOpenCount,
       "0",
     )}`,
@@ -421,42 +422,44 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       : []),
     "",
     "Analyse de bien",
-    `Cadastre: ${stringValue(
+    `Cadastre: ${stringOrNumberValue(
       cadastral.summary,
       cadastral.available ? "repère disponible" : "à connecter ou confirmer",
     )}`,
-    `Confiance cadastre: ${stringValue(cadastral.confidenceLabel, "à confirmer")}`,
+    `Confiance cadastre: ${stringOrNumberValue(cadastral.confidenceLabel, "à confirmer")}`,
     ...(cadastralReferences.length
       ? [`Référence(s) cadastrale(s): ${cadastralReferences.join(", ")}`]
       : []),
     cadastral.landSurfaceM2
-      ? `Surface terrain: ${stringValue(cadastral.landSurfaceM2, "")} m²`
+      ? `Surface terrain: ${stringOrNumberValue(cadastral.landSurfaceM2, "")} m²`
       : "Surface terrain: à confirmer",
-    `DPE / diagnostics: ${stringValue(
+    `DPE / diagnostics: ${stringOrNumberValue(
       dpe.summary,
-      dpe.available ? stringValue(dpe.class, "diagnostic repéré") : "à rechercher",
+      dpe.available ? stringOrNumberValue(dpe.class, "diagnostic repéré") : "à rechercher",
     )}`,
-    `Confiance DPE: ${stringValue(dpe.confidenceLabel, "à confirmer")}`,
+    `Confiance DPE: ${stringOrNumberValue(dpe.confidenceLabel, "à confirmer")}`,
     dpeDiagnostic.diagnosticNumber
-      ? `Numéro DPE: ${stringValue(dpeDiagnostic.diagnosticNumber, "")}`
+      ? `Numéro DPE: ${stringOrNumberValue(dpeDiagnostic.diagnosticNumber, "")}`
       : "Numéro DPE: à confirmer",
-    dpe.gesClass ? `Classe GES: ${stringValue(dpe.gesClass, "")}` : "Classe GES: à confirmer",
+    dpe.gesClass
+      ? `Classe GES: ${stringOrNumberValue(dpe.gesClass, "")}`
+      : "Classe GES: à confirmer",
     dpeDiagnostic.energyConsumptionKwhM2Year
-      ? `Conso énergie: ${stringValue(dpeDiagnostic.energyConsumptionKwhM2Year, "")} kWhEP/m²/an`
+      ? `Conso énergie: ${stringOrNumberValue(dpeDiagnostic.energyConsumptionKwhM2Year, "")} kWhEP/m²/an`
       : "Conso énergie: à confirmer",
     dpeDiagnostic.emissionsKgCo2M2Year
-      ? `Émissions GES: ${stringValue(dpeDiagnostic.emissionsKgCo2M2Year, "")} kgCO2/m²/an`
+      ? `Émissions GES: ${stringOrNumberValue(dpeDiagnostic.emissionsKgCo2M2Year, "")} kgCO2/m²/an`
       : "Émissions GES: à confirmer",
-    `Impact DPE: ${stringValue(dpe.impactLabel, "impact à qualifier")}`,
-    `Travaux / état: ${stringValue(renovationAnalysis.summary, "à qualifier")}`,
-    `Confiance travaux: ${stringValue(renovationAnalysis.confidenceLabel, "à confirmer")}`,
+    `Impact DPE: ${stringOrNumberValue(dpe.impactLabel, "impact à qualifier")}`,
+    `Travaux / état: ${stringOrNumberValue(renovationAnalysis.summary, "à qualifier")}`,
+    `Confiance travaux: ${stringOrNumberValue(renovationAnalysis.confidenceLabel, "à confirmer")}`,
     ...(canShowUrbanPlanning
       ? [
-          `Urbanisme / permis: ${stringValue(
+          `Urbanisme / permis: ${stringOrNumberValue(
             urbanPlanningAnalysis.summary,
             "urbanisme, permis et servitudes à vérifier",
           )}`,
-          `Confiance urbanisme: ${stringValue(
+          `Confiance urbanisme: ${stringOrNumberValue(
             urbanPlanningAnalysis.confidenceLabel,
             "à vérifier",
           )}`,
@@ -464,37 +467,39 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       : []),
     ...(canShowStreetFacade
       ? [
-          `Façade et rue: ${stringValue(streetFacadeAnalysis.summary, "localisation à vérifier")}`,
-          `Confiance façade/rue: ${stringValue(
+          `Façade et rue: ${stringOrNumberValue(streetFacadeAnalysis.summary, "localisation à vérifier")}`,
+          `Confiance façade/rue: ${stringOrNumberValue(
             streetFacadeAnalysis.confidenceLabel,
             "à confirmer",
           )}`,
           "Cartographie : consulter la localisation sur la fiche annonce. Les vues ne sont pas jointes au rapport.",
         ]
       : []),
-    `Services de proximité: ${stringValue(
+    `Services de proximité: ${stringOrNumberValue(
       nearbyServices.summary,
       nearbyServices.available ? "signaux de proximité reperes" : "à qualifier",
     )}`,
-    `Confiance proximité: ${stringValue(nearbyServices.confidenceLabel, "à confirmer")}`,
+    `Confiance proximité: ${stringOrNumberValue(nearbyServices.confidenceLabel, "à confirmer")}`,
     nearbyCategories.length
       ? `Familles de services: ${nearbyCategories.join(", ")}`
       : "Familles de services: à mesurer",
-    `Démographie: ${stringValue(demographicAnalysis.summary, "données locales à enrichir")}`,
-    `Confiance démographie: ${stringValue(demographicAnalysis.confidenceLabel, "à vérifier")}`,
-    `Demande locale: ${stringValue(demographicAnalysis.demandLabel, "demande à qualifier")}`,
+    `Démographie: ${stringOrNumberValue(demographicAnalysis.summary, "données locales à enrichir")}`,
+    `Confiance démographie: ${stringOrNumberValue(demographicAnalysis.confidenceLabel, "à vérifier")}`,
+    `Demande locale: ${stringOrNumberValue(demographicAnalysis.demandLabel, "demande à qualifier")}`,
     ...(canShowNeighborhood
       ? [
-          `Quartier: ${stringValue(neighborhoodAnalysis.summary, "à qualifier")}`,
+          `Quartier: ${stringOrNumberValue(neighborhoodAnalysis.summary, "à qualifier")}`,
           `Dimensions quartier: ${
             normalizeStringList(neighborhoodAnalysis.dimensions).join(", ") || "à enrichir"
           }`,
         ]
       : []),
     ...(canShowActiveComparables
-      ? [`Comparables actifs: ${stringValue(activeComparablesAnalysis.summary, "à rechercher")}`]
+      ? [
+          `Comparables actifs: ${stringOrNumberValue(activeComparablesAnalysis.summary, "à rechercher")}`,
+        ]
       : []),
-    `Documents: ${stringValue(analysis.documentsCount, "0")} pièce(s)`,
+    `Documents: ${stringOrNumberValue(analysis.documentsCount, "0")} pièce(s)`,
     ...(occupancyEvidence.length
       ? ["Indices occupation", ...occupancyEvidence.slice(0, 4).map((item) => `- ${item}`)]
       : []),
@@ -557,8 +562,8 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       : []),
     "",
     "Revue juridique",
-    `Synthèse: ${stringValue(legalAttentionAnalysis.summary, "points juridiques à relire")}`,
-    `Niveau: ${stringValue(legalAttentionAnalysis.confidenceLabel, "à vérifier")}`,
+    `Synthèse: ${stringOrNumberValue(legalAttentionAnalysis.summary, "points juridiques à relire")}`,
+    `Niveau: ${stringOrNumberValue(legalAttentionAnalysis.confidenceLabel, "à vérifier")}`,
     ...(legalAttentionItems.length
       ? legalAttentionItems.slice(0, 6).map((item) => `- ${item}`)
       : ["- Relire les pièces officielles avant toute enchère."]),
@@ -606,7 +611,7 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       ? [
           "",
           "Points d'attention",
-          ...legalAttentionPoints.map((point) => `- ${stringValue(point, "")}`),
+          ...legalAttentionPoints.map((point) => `- ${stringOrNumberValue(point, "")}`),
         ]
       : []),
     "",

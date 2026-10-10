@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { fetchAccessPlan } from "@/lib/client-api";
 import { fetchAdjudicationPriceStatisticsDirectory } from "@/lib/adjudication-price-statistics-client";
 import { AdjudicationBarometer } from "@/components/AdjudicationBarometer";
+import { queryKeys } from "@/lib/query-keys";
 
 export function PremiumAdjudicationExplorer({
   selectedCourtCode = null,
@@ -15,7 +16,7 @@ export function PremiumAdjudicationExplorer({
 } = {}) {
   const { session, loading: authLoading } = useAuth();
   const planQuery = useQuery({
-    queryKey: ["adjudication-statistics-plan", session?.user.id],
+    queryKey: queryKeys.adjudicationStatisticsPlan(session?.user.id),
     queryFn: fetchAccessPlan,
     enabled: Boolean(session) && !authLoading,
     retry: false,
@@ -23,7 +24,7 @@ export function PremiumAdjudicationExplorer({
   });
   const hasAccess = planQuery.data?.plan.hasAnalysisAccess === true;
   const statisticsQuery = useQuery({
-    queryKey: ["adjudication-price-statistics-directory", session?.user.id],
+    queryKey: queryKeys.adjudicationPriceStatisticsDirectory(session?.user.id),
     queryFn: fetchAdjudicationPriceStatisticsDirectory,
     enabled: Boolean(session) && hasAccess,
     retry: false,

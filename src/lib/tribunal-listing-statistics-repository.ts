@@ -18,6 +18,7 @@ import {
   type TribunalListingStatisticsResponse,
   type TribunalListingStatisticsSale,
 } from "@/lib/tribunal-listing-statistics";
+import { asRecordOrNull } from "@/lib/guards";
 
 const PAGE_SIZE = 1_000;
 const MAX_SALES_PER_COURT = 5_000;
@@ -726,7 +727,7 @@ export function extractTribunalIdentityAddress(
   raw: unknown,
   sourceName: string | null,
 ): string | null {
-  const record = asRecord(raw);
+  const record = asRecordOrNull(raw);
   if (!record) return null;
   const source = sourceFamily(sourceName);
   const blocks = sourceBlocksForIdentity(record, source);
@@ -769,7 +770,7 @@ export function extractTribunalLegalReference(
   raw: unknown,
   sourceName: string | null,
 ): string | null {
-  const record = asRecord(raw);
+  const record = asRecordOrNull(raw);
   if (!record) return null;
   const source = sourceFamily(sourceName);
   if (source !== "petitesaffiches" && source !== "encheresimmobilieres") return null;
@@ -812,24 +813,18 @@ function normalizeLegalReference(value: string | null): string | null {
   return `${year}/${serial}`;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
 function sourceBlocksForIdentity(
   record: Record<string, unknown>,
   source: string,
 ): Array<Record<string, unknown>> {
   const blocks: Array<Record<string, unknown>> = [];
-  const direct = asRecord(record.source_blocks);
+  const direct = asRecordOrNull(record.source_blocks);
   if (direct) blocks.push(direct);
-  const bySource = asRecord(record.source_blocks_by_source);
+  const bySource = asRecordOrNull(record.source_blocks_by_source);
   if (bySource) {
     for (const [key, value] of Object.entries(bySource)) {
       if (sourceFamily(key) !== source) continue;
-      const scoped = asRecord(value);
+      const scoped = asRecordOrNull(value);
       if (scoped) blocks.push(scoped);
     }
   }

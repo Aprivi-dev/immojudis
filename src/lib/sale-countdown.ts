@@ -1,5 +1,6 @@
 import type { AuctionSale } from "./types";
 import { parseSaleWindow } from "./sale-window";
+import { asRecordOrNull } from "@/lib/guards";
 
 export type SaleCountdownTarget = {
   target: Date | null;
@@ -23,8 +24,8 @@ export function resolveSaleCountdownTarget(
   sale: AuctionSale,
   options: { precisionUnknown?: boolean } = {},
 ): SaleCountdownTarget | null {
-  const procedure = asRecord(sale.sale_procedure);
-  const rawPayload = asRecord(sale.raw_payload);
+  const procedure = asRecordOrNull(sale.sale_procedure);
+  const rawPayload = asRecordOrNull(sale.raw_payload);
   const schedules = [
     procedure?.sale_window,
     procedure?.sale_session,
@@ -90,12 +91,6 @@ export function nextParisMidnight(dateOnly: string): Date {
   const firstUtc = localWallClockAsUtc - firstOffset * 60_000;
   const correctedOffset = parisOffsetMinutes(new Date(firstUtc));
   return new Date(localWallClockAsUtc - correctedOffset * 60_000);
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
 }
 
 function isoDateUtc(value: string): number | null {

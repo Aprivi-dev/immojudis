@@ -9,7 +9,8 @@ import type { AuctionSale, SaleDocumentRich, SaleMedia } from "@/lib/types";
  * replace this query with `v_auction_sales_app`: that projection deliberately
  * hides quarantined rows and is therefore the wrong source for an internal
  * request draft.
- */
+ */ import { asRecord, parsedNumberValue, stringValueOr } from "@/lib/guards";
+
 const ADMIN_INFORMATION_AGENT_SALE_SELECT = [
   "id",
   "title",
@@ -200,7 +201,7 @@ function toInformationAgentSale(
   const sourceBlocks = asRecordOrNull(rawPayload.source_blocks);
 
   return {
-    id: stringValue(row.id, ""),
+    id: stringValueOr(row.id, ""),
     title: nullableString(row.title),
     description: nullableString(row.description),
     source_description: nullableString(rawPayload.source_description),
@@ -226,38 +227,38 @@ function toInformationAgentSale(
     ) as AuctionSale["sale_verification_status"],
     sale_procedure: asRecordOrNull(row.sale_procedure),
     property_type: nullableString(row.property_type),
-    starting_price_eur: numberValue(row.starting_price_eur),
+    starting_price_eur: parsedNumberValue(row.starting_price_eur),
     sale_date: nullableString(row.sale_date),
     visit_dates: row.visit_dates ?? null,
     lawyer_name: nullableString(row.lawyer_name),
     lawyer_contact: nullableString(row.lawyer_contact),
-    adjudication_price_eur: numberValue(row.adjudication_price_eur),
-    latitude: numberValue(row.latitude),
-    longitude: numberValue(row.longitude),
+    adjudication_price_eur: parsedNumberValue(row.adjudication_price_eur),
+    latitude: parsedNumberValue(row.latitude),
+    longitude: parsedNumberValue(row.longitude),
     occupancy_status: nullableString(row.occupancy_status),
-    habitable_surface_m2: numberValue(row.habitable_surface_m2),
-    carrez_surface_m2: numberValue(row.carrez_surface_m2),
-    land_surface_m2: numberValue(row.land_surface_m2),
-    app_surface_m2: numberValue(row.app_surface_m2),
+    habitable_surface_m2: parsedNumberValue(row.habitable_surface_m2),
+    carrez_surface_m2: parsedNumberValue(row.carrez_surface_m2),
+    land_surface_m2: parsedNumberValue(row.land_surface_m2),
+    app_surface_m2: parsedNumberValue(row.app_surface_m2),
     app_surface_kind: nullableString(row.app_surface_kind),
     surface_scope: nullableString(row.surface_scope),
     surface_source: nullableString(row.surface_source),
-    surface_confidence: numberValue(row.surface_confidence),
+    surface_confidence: parsedNumberValue(row.surface_confidence),
     surface_evidence: nullableString(row.surface_evidence),
-    rooms_count: numberValue(row.rooms_count),
-    bedrooms_count: numberValue(row.bedrooms_count),
-    bathrooms_count: numberValue(row.bathrooms_count),
-    parking_count: numberValue(row.parking_count),
+    rooms_count: parsedNumberValue(row.rooms_count),
+    bedrooms_count: parsedNumberValue(row.bedrooms_count),
+    bathrooms_count: parsedNumberValue(row.bathrooms_count),
+    parking_count: parsedNumberValue(row.parking_count),
     has_garden: booleanValue(row.has_garden),
     has_terrace: booleanValue(row.has_terrace),
     has_garage: booleanValue(row.has_garage),
     has_pool: booleanValue(row.has_pool),
     has_air_conditioning: booleanValue(row.has_air_conditioning),
     has_double_glazing: booleanValue(row.has_double_glazing),
-    investment_score: numberValue(row.investment_score),
+    investment_score: parsedNumberValue(row.investment_score),
     investment_summary: nullableString(row.investment_summary),
     score_version: nullableString(row.score_version),
-    score_confidence: numberValue(row.score_confidence),
+    score_confidence: parsedNumberValue(row.score_confidence),
     score_factors: null,
     risk_notes: nullableString(row.risk_notes),
     risks: null,
@@ -348,7 +349,7 @@ function toDocument(row: AuctionDocumentRow): SaleDocumentRich | null {
     extraction_status: nullableString(row.extraction_status),
     download_status: nullableString(row.download_status),
     docling_status: nullableString(row.docling_status),
-    text_chars: numberValue(row.text_chars),
+    text_chars: parsedNumberValue(row.text_chars),
   };
 }
 
@@ -418,12 +419,6 @@ function asSaleRow(value: unknown): AdminInformationAgentSaleRow | null {
   return value as AdminInformationAgentSaleRow;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function asRecordOrNull(value: unknown): Record<string, unknown> | null {
   const result = asRecord(value);
   return Object.keys(result).length ? result : null;
@@ -433,21 +428,8 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function stringValue(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value : fallback;
-}
-
 function nullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
-}
-
-function numberValue(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
 }
 
 function booleanValue(value: unknown): boolean | null {
