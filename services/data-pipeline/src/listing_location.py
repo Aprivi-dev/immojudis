@@ -118,6 +118,10 @@ def extract_adresse_du_bien(lines: list[str]) -> str | None:
         if not _looks_like_street_line(street):
             return None
         return f"{street}, {postal.group(1)} {city}"
+    # Gabarit plus ancien : la valeur tient sur la ligne qui suit le libellé.
+    for line in segment:
+        if _looks_like_street_line(line):
+            return _clean(line)
     return None
 
 
@@ -185,3 +189,43 @@ def extract_designation(text: str | None) -> str | None:
     ):
         return "parcel"
     return None
+
+
+def reject_monetary_address(raw_sale: dict, address: str | None) -> tuple[dict, str | None]:
+    """Une valeur monétaire (« 30 000 € ») lue dans le champ adresse n'est pas une adresse."""
+    if address and re.fullmatch(r"[\d\s.,]+\s*(?:€|euros?|EUR)", address, re.I):
+        raw_sale = dict(raw_sale)
+        raw_sale["invalid_address_evidence"] = {"value": address, "reason": "monetary_value_is_not_address"}
+        raw_sale["quality_flags"] = [*(raw_sale.get("quality_flags") or []), "address_unverified"]
+        raw_sale["latitude"] = raw_sale["longitude"] = None
+        return raw_sale, None
+    return raw_sale, address
+
+
+def recover_listing_address(raw_sale: dict, address: str | None) -> str | None:
+    """Adresse lue ailleurs dans la payload quand le champ adresse est absent ou seulement communal.
+
+    Ne touche jamais une adresse déjà précise (voie ou lieu-dit). Source par source :
+    ``encheres_immobilieres`` (bloc « Adresse du bien » de ``page_text``) et
+    ``avoventes`` (adresse numérotée de la description, que la carte de liste
+    — « CP Commune » — masquait). Aucune autre source : sans preuve, la valeur
+    reste vide.
+    """
+    if classify_address(address) in {"street", "lieu_dit"}:
+        return address
+    source = _fold(str(raw_sale.get("source_name") or ""))
+    blocks = raw_sale.get("source_blocks") if isinstance(raw_sale.get("source_blocks"), dict) else {}
+    if source == "encheres_immobilieres":
+        return extract_adresse_du_bien(str(blocks.get("page_text") or "").splitlines()) or address
+    if source == "avoventes":
+        from src.sources.avoventes import _extract_property_location
+
+        description = blocks.get("description") or raw_sale.get("description")
+        found = _extract_property_location(str(description or ""), str(blocks.get("titre_detail") or "")) or {}
+        street = found.get("address")
+        if street and classify_address(street) == "street":
+            postal = found.get("postal_code") or raw_sale.get("postal_code")
+            city = found.get("city") or raw_sale.get("city")
+            commune = " ".join(part for part in (str(postal or ""), str(city or "")) if part)
+            return f"{street}, {commune}" if commune else street
+    return address
