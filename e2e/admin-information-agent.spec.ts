@@ -46,7 +46,7 @@ test.describe("admin information agent", () => {
       "contact@example.test",
     );
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).toContainText(
-      "ImmoJudis est un service indépendant",
+      "Immojudis est un service indépendant",
     );
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).not.toContainText(
       "compte professionnel",
@@ -107,6 +107,10 @@ test.describe("admin information agent", () => {
 
     await reviewPanel.getByRole("button", { name: "Autoriser la diffusion" }).click();
     await expect(reviewPanel.getByText(/Droits de diffusion : autorisés/i)).toBeVisible();
+    // Rights alone are not enough: the redaction check (P4-11) must be confirmed too.
+    await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeDisabled();
+    await reviewPanel.getByLabel(/J’ai contrôlé la pièce/).check();
+    await reviewPanel.getByLabel("Nom de la personne qui a contrôlé").fill("Admin E2E");
     await expect(reviewPanel.getByRole("button", { name: "Accepter", exact: true })).toBeEnabled();
 
     await reviewPanel.getByRole("button", { name: "Prévisualiser la pièce" }).click();
@@ -140,6 +144,8 @@ test.describe("admin information agent", () => {
       factId: FACT_ID,
       decision: "accepted",
       notes: null,
+      redactionConfirmed: true,
+      redactionVerifiedBy: "Admin E2E",
     });
     const rejectedClaimRequest = state.events.find(
       (event) => event.path === "/api/admin/fact-claims/review" && event.method === "POST",
