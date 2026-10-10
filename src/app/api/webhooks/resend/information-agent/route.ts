@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { processInformationAgentInboundWebhook } from "@/lib/information-agent-inbound";
 
-export const runtime = "nodejs";
-
 export async function POST(request: Request) {
   try {
     const result = await processInformationAgentInboundWebhook({

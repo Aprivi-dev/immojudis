@@ -8,8 +8,6 @@ import {
   GeographicBoundaryUpstreamError,
 } from "@/lib/geographic-boundary";
 
-export const dynamic = "force-dynamic";
-
 const PUBLIC_BOUNDARY_HEADERS = {
   "cache-control": "public, max-age=3600, stale-while-revalidate=86400",
   "referrer-policy": "no-referrer",

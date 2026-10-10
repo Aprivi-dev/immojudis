@@ -10,7 +10,7 @@ describe("email alerts", () => {
   it("requires Resend, sender and canonical app URL before dispatching", () => {
     expect(resolveEmailAlertDeliveryConfig({})).toMatchObject({
       configured: false,
-      missing: ["RESEND_API_KEY", "ALERT_EMAIL_FROM", "NEXT_PUBLIC_APP_URL"],
+      missing: ["RESEND_API_KEY", "ALERT_EMAIL_FROM", "SITE_URL"],
     });
 
     expect(
@@ -23,6 +23,21 @@ describe("email alerts", () => {
       configured: true,
       appUrl: "https://immojudis.example",
     });
+  });
+
+  it("prefers SITE_URL and keeps NEXT_PUBLIC_APP_URL as a fallback", () => {
+    const base = { RESEND_API_KEY: "re_test", ALERT_EMAIL_FROM: "ImmoJudis <a@immojudis.fr>" };
+    expect(
+      resolveEmailAlertDeliveryConfig({
+        ...base,
+        SITE_URL: "https://canonical.example",
+        NEXT_PUBLIC_APP_URL: "https://legacy.example",
+      }).appUrl,
+    ).toBe("https://canonical.example");
+    expect(
+      resolveEmailAlertDeliveryConfig({ ...base, NEXT_PUBLIC_APP_URL: "https://legacy.example" })
+        .appUrl,
+    ).toBe("https://legacy.example");
   });
 
   const env = { SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key" };

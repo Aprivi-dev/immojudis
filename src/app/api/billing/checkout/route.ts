@@ -6,8 +6,6 @@ import { createPlanCheckoutSession, resolveCheckoutPlanCode } from "@/lib/billin
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { checkoutConsentSchema } from "@/lib/commercial-acceptance";
 
-export const runtime = "nodejs";
-
 export async function POST(request: Request) {
   const context = createApiRequestContext(request, "api.billing.checkout");
   try {

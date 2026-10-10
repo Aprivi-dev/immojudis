@@ -7,8 +7,6 @@ import { withAdminDeadline } from "@/lib/admin-route-deadline";
 // Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
 export const maxDuration = 30;
 
-export const runtime = "nodejs";
-
 async function handleGET(request: Request) {
   try {
     const response = await getAdminOperationalReadiness(bearerTokenFromRequest(request));
