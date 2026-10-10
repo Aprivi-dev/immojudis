@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
-from src.admission import has_price_or_surface, is_expired
+from src.admission import admit_sales, has_price_or_surface, is_expired, publication_rejection, split_insufficient
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_readiness import apply_catalogue_readiness
@@ -45,6 +45,7 @@ from src.extraction_profiles import attach_source_property_features
 from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
 from src.geocode import geocode_sale
 from src.image_validation import filter_raw_image_url, warm_image_validations
+from src.information_sufficiency import load_contact_blocklist, set_active_blocklist
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_sale, parse_price
@@ -354,6 +355,7 @@ class _PipelineRun:
     heavy_enrich_skipped: int = 0
     # Admission, reports and publication.
     admission_rejected: list[AuctionSale] = field(default_factory=list)
+    insufficient_summary: dict[str, Any] = field(default_factory=dict)
     expired_rejected: int = 0
     enriched: list[AuctionSale] = field(default_factory=list)
     quality_report: Any = None
@@ -422,6 +424,8 @@ def _open_run(options: PipelineOptions) -> _PipelineRun:
         require_encheres_publiques_access(settings)
     run_id = create_run_in_supabase(options.source, options.use_llm, run_id=options.run_id) if options.upsert else None
     register_run(run_id)
+    if options.upsert:  # e-mails refusés par l'agent d'information : jamais comptés comme contact exploitable
+        set_active_blocklist(load_contact_blocklist(settings))
     return _PipelineRun(options=options, settings=settings, run_id=run_id)
 
 
@@ -685,9 +689,7 @@ def _prepare_and_publish_early(run: _PipelineRun) -> None:
         preparation_seconds += time.perf_counter() - started
         run.lifecycle_stats.marked_past += mark_past_sales(batch).marked_past
         run.app_ready.extend(batch)
-        record_sale_decisions(run_id, [sale for sale in batch if is_expired(sale)], decision="expired", reason="retention_deadline_reached_not_evidence_of_sale")
-        record_sale_decisions(run_id, [sale for sale in batch if not is_expired(sale) and not has_price_or_surface(sale)], decision="excluded", reason="missing_price_and_surface")
-        admitted = [sale for sale in batch if has_price_or_surface(sale) and not is_expired(sale)]
+        admitted = admit_sales(batch, lambda group, **kw: record_sale_decisions(run_id, group, **kw))
         record_sale_decisions(run_id, admitted, decision="admitted")
         if options.upsert and admitted:
             started = time.perf_counter()
@@ -946,7 +948,8 @@ def _apply_admission_and_reports(run: _PipelineRun) -> None:
         LOGGER.info("Collection admission rejected source=%s url=%s reason=missing_price_and_surface",
                     sale.source_name, sale.source_url)
     run.expired_rejected = len(run.expired_before_enrichment) + sum(is_expired(sale) for sale in app_ready)
-    run.app_ready = [sale for sale in app_ready if has_price_or_surface(sale) and not is_expired(sale)]
+    run.app_ready, run.insufficient_summary = split_insufficient(
+        [sale for sale in app_ready if has_price_or_surface(sale) and not is_expired(sale)], LOGGER)
     admitted_urls = {sale.source_url for sale in run.app_ready}
     run.cadastre_rows = [row for row in run.cadastre_rows if row.get("source_url") in admitted_urls]
     run.dpe_rows = [row for row in run.dpe_rows if row.get("source_url") in admitted_urls]
@@ -960,6 +963,7 @@ def _apply_admission_and_reports(run: _PipelineRun) -> None:
     run.summary = {
         "admission_rejected_expired": run.expired_rejected,
         "admission_rejected_missing_price_and_surface": len(run.admission_rejected),
+        "admission_rejected_insufficient_information": run.insufficient_summary,
         "collected": len(run.raw_sales),
         "collected_by_source": run.raw_by_source,
         "scrape_coverage": run.scrape_coverage,
@@ -1103,7 +1107,7 @@ def _print_run_summary(run: _PipelineRun) -> None:
     print(f"- reconciled_duplicate_sales: {run.supabase_reconciled_duplicates}")
     print(f"- marked_past_in_supabase: {run.supabase_cleaned_past}")
     print(f"- deleted_expired_sales: {run.supabase_deleted_expired}")
-    print(f"- deleted_vench_without_surface: {run.supabase_deleted_vench_without_surface}")
+    print(f"- insufficient_information (not published): {run.insufficient_summary}")
     print(f"- json: {run.json_path}")
     print(f"- csv: {run.csv_path}")
     for line in format_quality_report(run.quality_report):
@@ -1137,7 +1141,7 @@ def run_llm_description_backfill(options: PipelineOptions | None = None) -> int:
         prompt_version=prompt_version,
         statuses=options.llm_backfill_statuses,
     )
-    sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
+    sales = [sale for sale in sales if publication_rejection(sale) is None]
     sales, skipped_unauthorized = _filter_unauthorized_encheres_publiques_sales(sales, settings)
     timings["fetch_seconds"] = round(time.perf_counter() - started, 2)
     if not sales:
@@ -1335,7 +1339,7 @@ def _filter_unauthorized_encheres_publiques_sales(
 
 def _checkpoint_enrichment(sale: AuctionSale) -> bool:
     """Commit admissible progress without failing deferred enrichment targets."""
-    if not has_price_or_surface(sale) or is_expired(sale):
+    if publication_rejection(sale):
         return False
     _finalize_sale_for_app(sale, geocode=False)
     if upsert_sales_to_supabase([sale], refresh_last_seen=False) != 1:
@@ -1841,11 +1845,7 @@ def publish_factual_batch(run_id: str, raws: list, known: dict, errors: dict) ->
             record_items(run_id, [raw], decision="normalization_failed", reason=str(exc)[:1000])
     sales = merge_duplicate_sales(normalized)
     mark_past_sales(sales)
-    record_sale_decisions(run_id, [sale for sale in sales if is_expired(sale)],
-                          decision="expired", reason="retention_deadline_reached_not_evidence_of_sale")
-    record_sale_decisions(run_id, [sale for sale in sales if not is_expired(sale) and not has_price_or_surface(sale)],
-                          decision="excluded", reason="missing_price_and_surface")
-    admitted = [sale for sale in sales if not is_expired(sale) and has_price_or_surface(sale)]
+    admitted = admit_sales(sales, lambda group, **kw: record_sale_decisions(run_id, group, **kw))
     if not admitted:
         return
     try:
@@ -1909,7 +1909,7 @@ def _needs_heavy_enrichment(
 def _can_use_paid_llm(sale: AuctionSale) -> bool:
     """Do not pay for a description until deterministic enrichment made the row publishable."""
 
-    return has_price_or_surface(sale) and not is_expired(sale)
+    return publication_rejection(sale) is None
 
 
 def _needs_structured_heavy_enrichment(sale: AuctionSale) -> bool:

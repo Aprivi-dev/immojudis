@@ -1,0 +1,137 @@
+{
+  "_comment": "Cas partagés entre le résolveur TypeScript (discoverInformationAgentContacts, src/lib/information-agent.ts) et son miroir Python (src/information_sufficiency.py). Exécutés par vitest (src/lib/information-agent-contact-parity.test.ts) ET par pytest (tests/test_information_sufficiency.py). Toutes les adresses sont fictives (domaine .test). Si le résolveur évolue, mettre à jour ces cas ET le miroir.",
+  "cases": [
+    {
+      "name": "lawyer_contact column",
+      "lawyer_contact": "me.exemple@cabinet-exemple.test",
+      "expected": [
+        "me.exemple@cabinet-exemple.test"
+      ]
+    },
+    {
+      "name": "phone only gives nothing",
+      "lawyer_contact": "04 00 00 00 00",
+      "expected": []
+    },
+    {
+      "name": "case is normalised and duplicates are merged",
+      "lawyer_contact": "Greffe.Exemple@Cabinet-Exemple.TEST",
+      "description": "Contact : greffe.exemple@cabinet-exemple.test",
+      "expected": [
+        "greffe.exemple@cabinet-exemple.test"
+      ]
+    },
+    {
+      "name": "nested source_blocks: strings under object keys, objects inside arrays",
+      "source_blocks": {
+        "avocat": "Maître Exemple",
+        "details": {
+          "contacts": [
+            {
+              "email": "info@etude-exemple.test"
+            }
+          ]
+        },
+        "page_text": "Renseignements : secretariat@etude-exemple.test ou 04 00 00 00 00"
+      },
+      "expected": [
+        "info@etude-exemple.test",
+        "secretariat@etude-exemple.test"
+      ]
+    },
+    {
+      "name": "a string directly inside an array is ignored by the resolver",
+      "source_blocks": {
+        "liste": [
+          "bare@etude-exemple.test"
+        ]
+      },
+      "expected": []
+    },
+    {
+      "name": "non string leaves are ignored",
+      "source_blocks": {
+        "nombre": 12,
+        "drapeau": true,
+        "vide": null
+      },
+      "expected": []
+    },
+    {
+      "name": "observation source_blocks of a merged sale",
+      "source_blocks": {
+        "titre": "Maison"
+      },
+      "observation_source_blocks": [
+        {
+          "contact_avocat": "avocat@cabinet-secondaire.test"
+        },
+        null,
+        "not an object"
+      ],
+      "expected": [
+        "avocat@cabinet-secondaire.test"
+      ]
+    },
+    {
+      "name": "source_description and description",
+      "source_description": "Pour visiter écrire à visites@gestion-exemple.test",
+      "description": "Dossier : dossier@gestion-exemple.test",
+      "expected": [
+        "dossier@gestion-exemple.test",
+        "visites@gestion-exemple.test"
+      ]
+    },
+    {
+      "name": "trailing punctuation does not leak into the address",
+      "description": "Écrire à contact@cabinet-exemple.test.",
+      "expected": [
+        "contact@cabinet-exemple.test"
+      ]
+    },
+    {
+      "name": "zod rejects a leading dot",
+      "lawyer_contact": ".prefixe@cabinet-exemple.test",
+      "expected": []
+    },
+    {
+      "name": "zod rejects a percent sign in the local part",
+      "lawyer_contact": "a%b@cabinet-exemple.test",
+      "expected": []
+    },
+    {
+      "name": "zod rejects consecutive dots",
+      "lawyer_contact": "a..b@cabinet-exemple.test",
+      "expected": []
+    },
+    {
+      "name": "zod rejects a domain label starting with a hyphen",
+      "lawyer_contact": "a@-cabinet-exemple.test",
+      "expected": []
+    },
+    {
+      "name": "several addresses in one text",
+      "description": "ecrire a un@etude-exemple.test, deux@etude-exemple.test ou trois@etude-exemple.test",
+      "expected": [
+        "deux@etude-exemple.test",
+        "trois@etude-exemple.test",
+        "un@etude-exemple.test"
+      ]
+    },
+    {
+      "name": "plus tag and hyphenated domain",
+      "lawyer_contact": "service+ventes@etude-du-nord.exemple.test",
+      "expected": [
+        "service+ventes@etude-du-nord.exemple.test"
+      ]
+    },
+    {
+      "name": "no contact anywhere",
+      "description": "Maison à vendre, visite sur rendez-vous.",
+      "source_blocks": {
+        "titre": "Maison"
+      },
+      "expected": []
+    }
+  ]
+}
