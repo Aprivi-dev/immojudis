@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "@/lib/router-compat";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { pathWithSearch } from "@/lib/navigation";
 import { firstSearchToUrl, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS } from "@/lib/search/search-filters";
 import { formatPrice } from "@/lib/format";
@@ -11,7 +13,7 @@ const inputClass =
   "w-full rounded-lg border border-border bg-background px-4 py-3 text-base text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold";
 
 export function InvestorOnboarding() {
-  const navigate = useNavigate();
+  const router = useRouter();
   const [step, setStep] = useState(0);
   const [search, setSearch] = useState<FirstSearch>({ area: "", maxPrice: "", homeType: "" });
   const heading = useRef<HTMLHeadingElement>(null);
@@ -26,7 +28,7 @@ export function InvestorOnboarding() {
       setStep((current) => current + 1);
       return;
     }
-    void navigate({ to: "/sales", search: firstSearchToUrl(search) });
+    router.push(pathWithSearch("/sales", firstSearchToUrl(search)));
   }
 
   const criteria = firstSearchToUrl(search);
@@ -159,7 +161,7 @@ export function InvestorOnboarding() {
                 bien. Les calculs détaillés et les pièces nécessitent un accès Analyse.
               </p>
               <Link
-                to="/annonce-exemple"
+                href="/annonce-exemple"
                 className="inline-block text-sm font-medium text-gold-text underline underline-offset-4"
               >
                 Comprendre une analyse sur l’annonce exemple gratuite
@@ -187,7 +189,7 @@ export function InvestorOnboarding() {
           </div>
         </form>
         <Link
-          to="/sales"
+          href="/sales"
           className="mt-6 inline-block text-sm text-muted-foreground underline underline-offset-4"
         >
           Passer et explorer le catalogue

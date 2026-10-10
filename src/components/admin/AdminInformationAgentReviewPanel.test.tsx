@@ -19,23 +19,6 @@ vi.mock("@/lib/client-api", () => ({
   updateAdminInformationAgentEvidenceRightsClient: mocks.updateRights,
 }));
 
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({
-    to,
-    params,
-    children,
-    ...props
-  }: {
-    to: string;
-    params: Record<string, string>;
-    children: React.ReactNode;
-  }) => (
-    <a href={to.replace("$id", params.id)} {...props}>
-      {children}
-    </a>
-  ),
-}));
-
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();

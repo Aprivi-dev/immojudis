@@ -70,7 +70,7 @@ import {
   DEFAULTS,
 } from "@/lib/profitability";
 import { saleCostContext } from "@/lib/sale-cost-context";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 import { listingCoordinates } from "@/lib/sale-listing";
 import { propertyImages } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
