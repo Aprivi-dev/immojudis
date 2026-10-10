@@ -48,6 +48,16 @@ on:
         required: false
         default: false
         type: boolean
+      drop_insufficient_only:
+        description: "Report (dry_run) or delete stored sales without address or surface and without an agent e-mail"
+        required: false
+        default: false
+        type: boolean
+      max_deletions:
+        description: "With drop_insufficient_only: refuse to delete anything above this many sales"
+        required: false
+        default: "100"
+        type: string
 
 permissions:
   contents: read
@@ -84,6 +94,8 @@ jobs:
           REPAIR_ONLY: ${{ inputs.repair_only }}
           REFRESH_UNKNOWN_ONLY: ${{ inputs.refresh_unknown_only }}
           READINESS_ONLY: ${{ inputs.readiness_only }}
+          DROP_INSUFFICIENT_ONLY: ${{ inputs.drop_insufficient_only }}
+          MAX_DELETIONS: ${{ inputs.max_deletions }}
         run: |
           set -euo pipefail
           if [ "$CONFIRM_TARGET" != "production" ]; then
@@ -91,13 +103,17 @@ jobs:
             exit 1
           fi
           selected_modes=0
-          for mode in "$REPAIR_ONLY" "$REFRESH_UNKNOWN_ONLY" "$READINESS_ONLY"; do
+          for mode in "$REPAIR_ONLY" "$REFRESH_UNKNOWN_ONLY" "$READINESS_ONLY" "$DROP_INSUFFICIENT_ONLY"; do
             if [ "$mode" = "true" ]; then
               selected_modes=$((selected_modes + 1))
             fi
           done
           if [ "$selected_modes" -gt 1 ]; then
-            echo "repair_only, refresh_unknown_only and readiness_only are mutually exclusive" >&2
+            echo "repair_only, refresh_unknown_only, readiness_only and drop_insufficient_only are mutually exclusive" >&2
+            exit 1
+          fi
+          if [ "$DROP_INSUFFICIENT_ONLY" = "true" ] && ! [[ "$MAX_DELETIONS" =~ ^[0-9]+$ ]]; then
+            echo "max_deletions must be a whole number" >&2
             exit 1
           fi
 
@@ -128,7 +144,7 @@ jobs:
         run: echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Restore verified Justice reference cache
-        if: ${{ !inputs.readiness_only }}
+        if: ${{ !inputs.readiness_only && !inputs.drop_insufficient_only }}
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: services/data-pipeline/data/raw/outcome_sources/justice_courts
@@ -137,11 +153,11 @@ jobs:
             immojudis-justice-reference-${{ runner.os }}-
 
       - name: Refresh and verify official Justice references
-        if: ${{ !inputs.readiness_only }}
+        if: ${{ !inputs.readiness_only && !inputs.drop_insufficient_only }}
         run: python -m src.official_sources.justice_reference_sync
 
       - name: Validate recompute without writing
-        if: ${{ !inputs.repair_only && !inputs.refresh_unknown_only && !inputs.readiness_only }}
+        if: ${{ !inputs.repair_only && !inputs.refresh_unknown_only && !inputs.readiness_only && !inputs.drop_insufficient_only }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -177,7 +193,7 @@ jobs:
           python -m src.recompute_scoring "${args[@]}"
 
       - name: Publish recomputed sales
-        if: ${{ !inputs.dry_run && !inputs.repair_only && !inputs.refresh_unknown_only && !inputs.readiness_only }}
+        if: ${{ !inputs.dry_run && !inputs.repair_only && !inputs.refresh_unknown_only && !inputs.readiness_only && !inputs.drop_insufficient_only }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -237,7 +253,7 @@ jobs:
           python -m src.recompute_scoring "${args[@]}"
 
       - name: Repair and verify persisted sale procedures
-        if: ${{ !inputs.dry_run && !inputs.readiness_only }}
+        if: ${{ !inputs.dry_run && !inputs.readiness_only && !inputs.drop_insufficient_only }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -256,3 +272,37 @@ jobs:
           fi
           python -m src.recompute_scoring --repair-invalid-procedures "${scope_args[@]}"
           python -m src.recompute_scoring --verify-only "${scope_args[@]}"
+
+      - name: Report or delete sales with insufficient information
+        if: ${{ inputs.drop_insufficient_only }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Direct database session for the transactional deletion.
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          REQUESTED_SOURCE: ${{ inputs.source }}
+          REQUESTED_LIMIT: ${{ inputs.limit }}
+          REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
+          MAX_DELETIONS: ${{ inputs.max_deletions }}
+        run: |
+          set -euo pipefail
+          args=(--drop-insufficient --drop-report insufficient-sales-report.json)
+          if [ "$REQUESTED_SOURCE" != "all" ]; then
+            args+=(--source "$REQUESTED_SOURCE")
+          fi
+          if [ -n "$REQUESTED_LIMIT" ]; then
+            args+=(--limit "$REQUESTED_LIMIT")
+          fi
+          if [ "$REQUESTED_DRY_RUN" != "true" ]; then
+            args+=(--execute-drop --max-deletions "$MAX_DELETIONS")
+          fi
+          python -m src.recompute_scoring "${args[@]}"
+
+      - name: Keep the insufficient-information report
+        if: ${{ always() && inputs.drop_insufficient_only }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: insufficient-sales-report
+          path: services/data-pipeline/insufficient-sales-report.json
+          if-no-files-found: ignore
+          retention-days: 30
