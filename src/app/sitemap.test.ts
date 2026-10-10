@@ -43,7 +43,9 @@ describe("sitemap.xml", () => {
       url: `https://immojudis.com/sales/${manySales[1].id}`,
       lastModified: manySales[1].lastModified,
     });
-    expect(entries.every((entry) => entry.url.startsWith("https://immojudis.com"))).toBe(true);
+    expect(entries.every((entry) => new URL(entry.url).origin === "https://immojudis.com")).toBe(
+      true,
+    );
   });
 
   it("includes /tribunaux and gives every static page a real last-modified date", async () => {
