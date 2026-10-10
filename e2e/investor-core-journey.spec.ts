@@ -121,11 +121,11 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
 
   await page.goto("/login");
   await expect(async () => {
-    await page.getByRole("button", { name: "Découverte", exact: true }).click();
+    await page.getByRole("button", { name: "Créer un compte", exact: true }).click();
     await expect(page).toHaveURL(/mode=investor/);
   }).toPass();
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Mot de passe").fill("password-e2e");
+  await page.getByLabel("Mot de passe", { exact: true }).fill("password-e2e");
   await page.getByRole("button", { name: "Créer mon compte gratuit" }).click();
   await expect(page).toHaveURL(/\/bienvenue/);
   await page.getByLabel("Ville, département ou région").fill("Bordeaux");
