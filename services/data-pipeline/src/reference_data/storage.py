@@ -8,7 +8,10 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-DEFAULT_BATCH_SIZE = 5_000
+DEFAULT_BATCH_SIZE = 1_000
+# Through the Supabase transaction pooler a session-level statement_timeout is
+# not kept between transactions, so each write sets its own, local, limit.
+STATEMENT_TIMEOUT = "5min"
 
 
 def _json_default(value: object) -> object:
@@ -115,6 +118,7 @@ def upsert_rows(
     written = 0
     for batch in _batches(rows, batch_size):
         with connection.cursor() as cursor:
+            cursor.execute(f"set local statement_timeout = '{STATEMENT_TIMEOUT}'")
             cursor.execute(statement, (json.dumps(batch, default=_json_default, ensure_ascii=False),))
         connection.commit()
         written += len(batch)
@@ -123,6 +127,7 @@ def upsert_rows(
 
 def delete_climate_months_before(connection: Any, first_month: date) -> int:
     with connection.cursor() as cursor:
+        cursor.execute(f"set local statement_timeout = '{STATEMENT_TIMEOUT}'")
         cursor.execute("delete from public.climate_station_months where month < %s", (first_month,))
         deleted = cursor.rowcount or 0
     connection.commit()
