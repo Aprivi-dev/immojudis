@@ -193,14 +193,16 @@ def test_a_sale_updated_since_the_evaluation_is_skipped():
     assert not any(sql.startswith("delete from public.auction_sales") for sql in connection.statements)
 
 
-def test_an_incomplete_outcome_bridge_aborts_before_any_delete():
+def test_an_incomplete_outcome_bridge_keeps_the_sale_and_reports_it():
     sid = str(uuid.uuid4())
     connection = FakeConnection(
         {sid: (f"https://example.test/vente/{sid}", datetime(2026, 10, 10, 10, tzinfo=UTC))}, bridge_complete=False
     )
-    with pytest.raises(RuntimeError, match="Outcome Graph"):
-        delete_batch(connection, [candidate(sid)])
+    failures: list[dict[str, object]] = []
+    assert delete_batch(connection, [candidate(sid)], failures) == (0, 1)
     assert not any(sql.startswith("delete from") for sql in connection.statements)
+    assert not any("sale_retention_storage_queue" in sql for sql in connection.statements)
+    assert [failure["sale_id"] for failure in failures] == [sid]
 
 
 # ------------------------------------------------------------------ ligne de commande
