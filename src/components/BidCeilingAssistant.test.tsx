@@ -42,7 +42,7 @@ function save(name: string) {
 }
 
 describe("saved ceiling simulations", () => {
-  it("keeps a short high-score sample cautious in both reliability and conditions", () => {
+  it("keeps a short high-score sample cautious in its reliability label", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { container } = render(
       <QueryClientProvider client={client}>
@@ -58,7 +58,6 @@ describe("saved ceiling simulations", () => {
       </QueryClientProvider>,
     );
     expect(container.textContent).toContain("Référence marché indicative");
-    expect(container.textContent).toContain("Échantillon DVF exploitable avec prudence");
     expect(container.textContent).not.toContain("Référence DVF forte");
     expect(container.textContent).not.toContain("Fiabilité forte");
   });
@@ -117,7 +116,7 @@ describe("saved ceiling simulations", () => {
     expect(onSimulationChange.mock.lastCall![0]).toMatchObject({ works: 0 });
   });
 
-  it("publishes the current ceiling and works after edits and reset", () => {
+  it("publishes the current ceiling after edits and reset", () => {
     const onSimulationChange = vi.fn();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -130,18 +129,50 @@ describe("saved ceiling simulations", () => {
       </QueryClientProvider>,
     );
     const initial = onSimulationChange.mock.lastCall![0];
-    fireEvent.change(screen.getByLabelText("Budget travaux personnalisé"), {
-      target: { value: "80000" },
-    });
+    fireEvent.click(screen.getByRole("radio", { name: "Offensif" }));
     const updated = onSimulationChange.mock.lastCall![0];
-    expect(updated.works).toBe(80000);
-    expect(updated.result.maxBid).toBeLessThan(initial.result.maxBid);
+    expect(updated.result.maxBid).toBeGreaterThan(initial.result.maxBid);
     expect(updated.saleId).toBe(EXAMPLE_SALE.id);
     expect(updated.ownerId).toBe("investor-a");
     fireEvent.click(screen.getByRole("button", { name: "Réinitialiser" }));
     expect(onSimulationChange.mock.lastCall![0].result.maxBid).toBe(initial.result.maxBid);
     expect(onSimulationChange.mock.lastCall![0].works).toBe(initial.works);
   });
+
+  it("shows the retained works and sends their edition to the Travaux tab", () => {
+    const onSimulationChange = vi.fn();
+    const onEditWorks = vi.fn();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const first = render(
+      <QueryClientProvider client={client}>
+        <BidCeilingAssistant
+          sale={EXAMPLE_SALE}
+          marketEstimateOverride={EXAMPLE_MARKET_ESTIMATE}
+          onSimulationChange={onSimulationChange}
+        />
+      </QueryClientProvider>,
+    );
+    const previous = onSimulationChange.mock.lastCall![0];
+    first.unmount();
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <BidCeilingAssistant
+          sale={EXAMPLE_SALE}
+          marketEstimateOverride={EXAMPLE_MARKET_ESTIMATE}
+          onSimulationChange={onSimulationChange}
+          initialSimulation={{ ...previous.reportInput, works: 34_000 }}
+          onEditWorks={onEditWorks}
+        />
+      </QueryClientProvider>,
+    );
+    expect(onSimulationChange.mock.lastCall![0].works).toBe(34_000);
+    expect(container.textContent).toContain("Travaux retenus dans ce plafond");
+    expect(container.textContent).toContain("Rafraîchissement locatif");
+    expect(screen.queryByLabelText("Budget travaux personnalisé")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Modifier les travaux" }));
+    expect(onEditWorks).toHaveBeenCalledTimes(1);
+  });
+
   it("restores the page scenario when changing tabs instead of reusing an older draft", () => {
     const onSimulationChange = vi.fn();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

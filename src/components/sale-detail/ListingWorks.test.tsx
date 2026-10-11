@@ -14,8 +14,11 @@ describe("ListingWorks", () => {
     const { container } = render(<ListingWorks sale={EXAMPLE_SALE} estimatedBudget={12_500} />);
 
     expect(screen.getByRole("heading", { name: "Travaux et état du bien" })).toBeTruthy();
-    expect(screen.getByText("Point à retenir")).toBeTruthy();
-    expect(screen.getByText("Budget travaux")).toBeTruthy();
+    expect(screen.getByText("État et énergie")).toBeTruthy();
+    expect(screen.getByText("Budget travaux retenu")).toBeTruthy();
+    expect(screen.getByText("Rafraîchissement à prévoir")).toBeTruthy();
+    expect(screen.getByText("DPE D")).toBeTruthy();
+    expect(screen.getByText(/aucune interdiction de location/)).toBeTruthy();
     expect(container.textContent).toContain(formatPrice(12_500));
 
     const details = container.querySelector("details");
@@ -35,8 +38,9 @@ describe("ListingWorks", () => {
       <ListingWorks sale={EXAMPLE_SALE} estimatedBudget={12_500} onBudgetChange={onBudgetChange} />,
     );
 
-    expect(screen.getByText("Estimation")).toBeTruthy();
+    expect(screen.getByText("Montant personnalisé")).toBeTruthy();
     expect(screen.getByText(/enveloppe de simulation à confirmer par des devis/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Utiliser ce budget" })).toBeNull();
     expect(onBudgetChange).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Détailler le budget" }));
@@ -100,5 +104,46 @@ describe("ListingWorks", () => {
         }),
       ],
     });
+  });
+
+  it("picks a scenario or a quote, suggested by the published condition", () => {
+    const onScenarioSelect = vi.fn();
+    const { rerender } = render(
+      <ListingWorks
+        sale={EXAMPLE_SALE}
+        estimatedBudget={0}
+        surface={68}
+        onScenarioSelect={onScenarioSelect}
+        maxWorks={20_000}
+      />,
+    );
+
+    expect(screen.getAllByText("Aucun travaux").length).toBeGreaterThan(1);
+    expect(screen.getByText(/Aucun budget retenu : choisissez un scénario/)).toBeTruthy();
+    const refresh = screen.getByRole("radio", { name: /Rafraîchissement locatif/ });
+    expect(refresh.textContent).toContain("Suggéré");
+    expect(screen.getByText(/Suggéré par l’état décrit/)).toBeTruthy();
+
+    fireEvent.click(refresh);
+    expect(onScenarioSelect).toHaveBeenLastCalledWith(34_000);
+    fireEvent.change(screen.getByLabelText("Montant d’un devis travaux"), {
+      target: { value: "18000" },
+    });
+    expect(onScenarioSelect).toHaveBeenLastCalledWith(18_000);
+
+    rerender(
+      <ListingWorks
+        sale={EXAMPLE_SALE}
+        estimatedBudget={34_000}
+        surface={68}
+        onScenarioSelect={onScenarioSelect}
+        maxWorks={20_000}
+      />,
+    );
+    expect(
+      screen.getByRole("radio", { name: /Rafraîchissement locatif/ }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getAllByText("Rafraîchissement locatif").length).toBeGreaterThan(1);
+    expect(screen.getByText(/dépasse l’enveloppe travaux maximale/)).toBeTruthy();
   });
 });

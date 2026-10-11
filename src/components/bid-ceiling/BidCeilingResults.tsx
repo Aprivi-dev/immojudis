@@ -17,13 +17,12 @@ import {
   EMOLUMENT_SCALE_REFERENCE,
 } from "@/lib/profitability";
 import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.server";
-import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
 import { collectSaleDocuments } from "@/lib/sale-documents";
 import { documentTypeLabel, formatPrice, occupancyLabel } from "@/lib/format";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import type { BidAssistantState as AssistantState } from "@/lib/bid-simulation-history";
-import { fmt, ppm2, signedMoney } from "@/components/bid-ceiling/assistant-state";
-import { Field, MethodStep, Row } from "@/components/bid-ceiling/BidCeilingShared";
+import { fmt, signedMoney } from "@/components/bid-ceiling/assistant-state";
+import { Field, Row } from "@/components/bid-ceiling/BidCeilingShared";
 
 export function CeilingReferencePair({
   withoutWorks,
@@ -43,7 +42,7 @@ export function CeilingReferencePair({
       detail: `${profileLabel} · ${withoutWorks.safetyDiscountPct} % de marge`,
     },
     {
-      label: "Même plafond avec un rafraîchissement",
+      label: "Avec un rafraîchissement",
       result: withRefreshWorks,
       detail: `${fmt(refreshWorksBudget)} de travaux · ${REFRESH_WORKS_PRICE_PER_M2} €/m²`,
     },
@@ -79,13 +78,16 @@ export function CeilingReferencePair({
             {withoutWorks.occupancy.status === "unknown"
               ? "Occupation non confirmée, traitée comme un bien occupé"
               : "Bien occupé"}
-            {" : "}plafond réduit de {fmt(withoutWorks.occupancy.bidReduction)}
+            {" : "}décote de {withoutWorks.occupancy.discountPct} % de la valeur, soit{" "}
+            {fmt(withoutWorks.occupancy.discountAmount)}
+            {withoutWorks.occupancy.carryingCost > 0
+              ? `, et ${fmt(withoutWorks.occupancy.carryingCost)} de portage`
+              : ""}
+            .
           </strong>{" "}
-          (décote de {withoutWorks.occupancy.discountPct} % sur la valeur
-          {withoutWorks.occupancy.carryingCost > 0
-            ? ` et ${fmt(withoutWorks.occupancy.carryingCost)} de portage`
-            : ""}
-          ). Ajustez ces hypothèses dans le détail des frais.
+          Les frais baissant avec l’enchère, le plafond recule de{" "}
+          {fmt(withoutWorks.occupancy.bidReduction)}. Ajustez cette hypothèse dans les réglages
+          ci-dessous.
         </p>
       ) : null}
     </dl>
@@ -146,7 +148,7 @@ export function RangeBar({
             style={{ left: pos(startingPrice) }}
             aria-hidden
           >
-            ▾ mise à prix
+            ▾ mise à prix {fmt(startingPrice)}
           </span>
         )}
       </div>
@@ -360,57 +362,6 @@ export function SimulationCard({
   );
 }
 
-export function MethodCard({
-  result,
-  estimate,
-}: {
-  result: MarketCeilingResult;
-  estimate: DvfMarketEstimate | null;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-muted/35 p-4">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
-        <ShieldCheck className="h-4 w-4" />
-        Raisonnement retenu
-      </div>
-      <ol className="mt-3 grid gap-2 text-sm leading-relaxed text-muted-foreground sm:grid-cols-3">
-        <MethodStep
-          index="1"
-          title="Marché"
-          text={
-            result.available
-              ? `${result.basisLabel} : ${ppm2(result.marketReferencePricePerM2)}.`
-              : "Prix local à compléter."
-          }
-        />
-        <MethodStep
-          index="2"
-          title="Marge"
-          text={
-            result.available
-              ? `${result.safetyDiscountPct}% retirés pour rester sous le marché.`
-              : "La marge évite d'acheter au prix d'une vente classique."
-          }
-        />
-        <MethodStep
-          index="3"
-          title="Plafond"
-          text={
-            result.available
-              ? `Frais et travaux déduits : ${fmt(result.maxBid)}.`
-              : "Le plafond sort dès que le marché est connu."
-          }
-        />
-      </ol>
-      {estimate?.qualityWarnings?.length ? (
-        <p className="mt-3 rounded-md border border-amber-300/40 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
-          Prudence sur la référence locale : {estimate.qualityWarnings.join(", ")}.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 export function SuccessConditions({
   sale,
   result,
@@ -507,14 +458,9 @@ function buildSuccessConditions(
 ): Array<{ icon: ReactNode; title: string; text: string }> {
   const docs = collectSaleDocuments(sale);
   const risks = [...(sale.risks ?? [])].sort((a, b) => (b.severity ?? 0) - (a.severity ?? 0));
+  // Le verdict et les repères de marché sont déjà affichés plus haut : seules les
+  // vérifications à mener avant l'audience restent ici.
   const conditions: Array<{ icon: ReactNode; title: string; text: string }> = [
-    {
-      icon: <TrendingDown className="h-4 w-4" />,
-      title: "Acheter sous le marché",
-      text: result.available
-        ? `Le scénario sélectionné vise un coût complet de ${ppm2(result.maxAllInPricePerM2)}, soit ${result.safetyDiscountPct}% sous la référence locale.`
-        : "Le plafond deviendra exploitable dès qu'un prix de marché local sera renseigné.",
-    },
     {
       icon: <FileSearch className="h-4 w-4" />,
       title: "Pièces à relire",
@@ -528,27 +474,25 @@ function buildSuccessConditions(
       title: "Occupation",
       text: occupationCondition(sale.occupancy_status),
     },
-    {
-      icon: <MapPin className="h-4 w-4" />,
-      title: "Marché local",
-      text:
-        estimate && !useManualMarket
-          ? `${marketReferenceConfidence(estimate).confidenceLabel} : ${estimate.sampleSize} ${
-              estimate.comparableMode === "address_history"
-                ? "ventes de l'adresse"
-                : estimate.comparableMode === "unit_sales"
-                  ? "ventes unitaires de stationnement"
-                  : "ventes comparables"
-            } retenues dans un rayon de ${estimate.radiusM} m.`
-          : "Référence à compléter manuellement si les ventes DVF ne suffisent pas autour de l'adresse.",
-    },
+    ...(!result.available || useManualMarket || !estimate
+      ? [
+          {
+            icon: <MapPin className="h-4 w-4" />,
+            title: "Marché local",
+            text: "Référence à compléter manuellement si les ventes DVF ne suffisent pas autour de l'adresse.",
+          },
+        ]
+      : []),
   ];
 
-  for (const risk of risks.slice(0, 2)) {
+  // L'occupation a déjà sa ligne : un risque d'occupation la répéterait.
+  for (const risk of risks
+    .filter((item) => !/occup|libér|liber|bail|locat/i.test(`${item.risk_label} ${item.risk_type}`))
+    .slice(0, 2)) {
     conditions.push(riskCondition(risk));
   }
 
-  return conditions.slice(0, 6);
+  return conditions.slice(0, 5);
 }
 
 function occupationCondition(status: string | null | undefined): string {
@@ -556,6 +500,9 @@ function occupationCondition(status: string | null | undefined): string {
   const normalized = (status ?? "").toLowerCase();
   if (!status || normalized === "unknown" || normalized === "inconnu") {
     return "Statut à confirmer : le délai de libération doit être intégré avant de fixer la mise finale.";
+  }
+  if (normalized === "owner_occupied") {
+    return `${label} : pas de bail, mais une libération à obtenir après la vente (délai et coût d'une éventuelle expulsion à prévoir).`;
   }
   if (normalized.includes("occup") || normalized.includes("lou") || normalized.includes("rent")) {
     return `${label} : l'intérêt du dossier dépend du bail, du loyer, du délai et du coût de sortie.`;

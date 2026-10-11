@@ -33,20 +33,14 @@ import {
   type ScenarioResult,
 } from "@/components/bid-ceiling/assistant-state";
 import { reliabilityLabel } from "@/components/bid-ceiling/BidCeilingShared";
-import { WorksEnvelope, WorksScenarioSelector } from "@/components/bid-ceiling/BidCeilingWorks";
-import {
-  ComparableTransactions,
-  MarketInput,
-  MarketLocalCard,
-  marketUnavailableReason,
-} from "@/components/bid-ceiling/BidCeilingMarket";
+import { WorksEnvelope, WorksSummary } from "@/components/bid-ceiling/BidCeilingWorks";
+import { ComparableTransactions, MarketInput } from "@/components/bid-ceiling/BidCeilingMarket";
 import {
   AssistantHeader,
   buildNextAction,
   CeilingReferencePair,
   FeesBreakdown,
   HypothesisEditor,
-  MethodCard,
   RangeBar,
   SimulationCard,
   SuccessConditions,
@@ -59,11 +53,14 @@ export function BidCeilingAssistant({
   marketEstimateOverride = null,
   onSimulationChange,
   initialSimulation,
+  onEditWorks,
 }: {
   sale: AuctionSale;
   marketEstimateOverride?: DvfMarketEstimate | null;
   onSimulationChange?: (snapshot: BidSimulationSnapshot) => void;
   initialSimulation?: ReportSimulation;
+  /** Opens the Travaux tab, where the works budget is chosen. */
+  onEditWorks?: () => void;
 }) {
   const { user, loading } = useAuth();
   if (loading)
@@ -81,6 +78,7 @@ export function BidCeilingAssistant({
       ownerId={ownerId}
       onSimulationChange={onSimulationChange}
       initialSimulation={initialSimulation}
+      onEditWorks={onEditWorks}
     />
   );
 }
@@ -91,18 +89,19 @@ function BidCeilingWorkspace({
   ownerId,
   onSimulationChange,
   initialSimulation,
+  onEditWorks,
 }: {
   sale: AuctionSale;
   marketEstimateOverride: DvfMarketEstimate | null;
   ownerId: string;
   onSimulationChange?: (snapshot: BidSimulationSnapshot) => void;
   initialSimulation?: ReportSimulation;
+  onEditWorks?: () => void;
 }) {
   const draftKey = bidStorageKey("draft", ownerId, sale.id);
   const surfaceInfo = getSaleSurface(sale);
   const marketSurfaces = getMarketValuationSurfaces(sale);
   const surface = marketSurfaces.builtSurfaceM2;
-  const valuationSurface = marketSurfaces.builtSurfaceM2 ?? marketSurfaces.landSurfaceM2;
   const startingPrice = sale.starting_price_eur ?? 0;
   const hasMarketEstimateOverride = marketEstimateOverride != null;
 
@@ -306,9 +305,9 @@ function BidCeilingWorkspace({
               <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
                 {verdictAvailable ? (
                   <>
-                    Au-delà, le coût complet (enchère + frais + travaux) dépasse{" "}
+                    Au-delà, le coût complet (enchère + frais + travaux) ne reste plus{" "}
                     <strong className="text-foreground">
-                      {selected.result.safetyDiscountPct}% sous le marché local
+                      {selected.result.safetyDiscountPct} % sous le marché local
                     </strong>{" "}
                     ({selected.result.basisLabel} :{" "}
                     {ppm2(selected.result.marketReferencePricePerM2)}) : le dossier perd son
@@ -442,23 +441,8 @@ function BidCeilingWorkspace({
           </div>
         </div>
 
-        {/* ── 2. Estimation des travaux ───────────────────────────────── */}
-        <WorksScenarioSelector
-          surface={surface}
-          works={state.works}
-          selectedScenario={state.worksScenario}
-          maxWorks={selected.result.available ? selected.result.maxWorksAtSimulatedPrice : null}
-          onSelect={(worksScenario) =>
-            setState((current) => ({
-              ...current,
-              worksScenario,
-              works: worksScenario ? estimateWorksBudget(surface, worksScenario) : 0,
-            }))
-          }
-          onWorksChange={(works) =>
-            setState((current) => ({ ...current, works, worksScenario: null }))
-          }
-        />
+        {/* ── 2. Travaux : choisis dans l'onglet Travaux ───────────────── */}
+        <WorksSummary surface={surface} works={state.works} onEditWorks={onEditWorks} />
 
         <BidSimulationHistory
           ownerId={ownerId}
@@ -478,26 +462,9 @@ function BidCeilingWorkspace({
           }
         />
 
-        {/* ── 3. Pourquoi ce chiffre ───────────────────────────────────── */}
-        <div className="mt-5">
-          <MethodCard result={selected.result} estimate={effectiveEstimate} />
-        </div>
-
-        {/* ── 3b. Marché local (DVF parcellaire + historique adresse) ──── */}
-        <MarketLocalCard
-          estimate={effectiveEstimate}
-          usingCachedEstimate={usingCachedEstimate}
-          isLoading={isLoading && !effectiveEstimate}
-          valuationSurface={valuationSurface}
-          unavailableReason={marketUnavailableReason({
-            valuationSurface,
-            isLand: marketSurfaces.surfaceKind === "land",
-            hasDvfError,
-            storedError: data?.error ?? null,
-          })}
-        />
-
-        {/* ── 4. Conditions pour rester gagnant ────────────────────────── */}
+        {/* ── 3. Conditions pour rester gagnant ────────────────────────── */}
+        {/* Le calcul détaillé (« Comprendre le calcul du plafond ») et le marché local
+            (« Voir les références de marché ») sont affichés hors de l'assistant. */}
         <SuccessConditions
           sale={sale}
           result={selected.result}
@@ -514,8 +481,8 @@ function BidCeilingWorkspace({
         >
           <FileSearch className="h-4 w-4" />
           {detailsOpen
-            ? "Masquer les réglages et le détail"
-            : "Ajuster mes hypothèses (travaux, frais, marché) et voir le détail"}
+            ? "Masquer les réglages"
+            : "Modifier les frais, l’occupation et le prix de marché"}
         </button>
 
         {detailsOpen && (

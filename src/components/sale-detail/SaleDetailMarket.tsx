@@ -7,6 +7,7 @@ import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
 import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combined.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useOutcomeGraphForecast } from "@/hooks/use-outcome-graph-forecast";
+import { MarketPriceDistribution } from "@/components/bid-ceiling/BidCeilingMarket";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import { formatDate, formatPrice, formatPricePerM2 } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
@@ -105,7 +106,7 @@ export function CeilingExplanation({
       "Frais estimés au plafond",
       result.available ? -Math.round(ceilingCosts.acquisitionFeesTotal) : null,
     ],
-    ["Travaux inclus", -works],
+    ["Travaux inclus", works > 0 ? -works : 0],
   ] as const;
 
   return (
@@ -125,7 +126,11 @@ export function CeilingExplanation({
                 value != null && value < 0 ? "text-gold-text" : "text-brand-navy"
               }`}
             >
-              {value == null ? "À compléter" : signedPrice(value)}
+              {value == null
+                ? "À compléter"
+                : value === 0 && label === "Travaux inclus"
+                  ? "Aucun"
+                  : signedPrice(value)}
             </dd>
           </div>
         ))}
@@ -181,9 +186,7 @@ export function MarketSnapshot({
         </strong>
         <p>
           {estimate?.source ?? "DVF"}
-          {computedAt
-            ? ` · Actualisée le ${formatDate(computedAt)}`
-            : " · Date de calcul non renseignée"}
+          {computedAt ? ` · Actualisée le ${formatDate(computedAt)}` : ""}
         </p>
       </div>
       <div>
@@ -192,10 +195,10 @@ export function MarketSnapshot({
         <p>
           {count}{" "}
           {history
-            ? "vente(s) à cette adresse"
+            ? `vente${count > 1 ? "s" : ""} à cette adresse`
             : aggregate
-              ? "vente(s) de référence"
-              : "vente(s) comparable(s)"}
+              ? `vente${count > 1 ? "s" : ""} de référence`
+              : `vente${count > 1 ? "s" : ""} comparable${count > 1 ? "s" : ""}`}
           {estimate
             ? ` · ${aggregate ? `Échelle ${aggregateScopeLabel(estimate.geographyLevel)}` : history ? "Lots potentiellement différents" : `Rayon ${estimate.radiusM} m`}`
             : ""}
@@ -249,7 +252,7 @@ export function MarketEvidence({
           label="Valeur estimée"
           value={
             marketEstimate?.estimatedValueEur
-              ? formatPrice(marketEstimate.estimatedValueEur)
+              ? formatPrice(Math.round(marketEstimate.estimatedValueEur / 1000) * 1000)
               : marketLoading
                 ? "Calcul…"
                 : "À compléter"
@@ -362,6 +365,7 @@ export function MarketEvidence({
             : "Les ventes comparables seront affichées ici dès qu'un échantillon homogène est disponible."}
         </p>
       )}
+      {marketEstimate ? <MarketPriceDistribution estimate={marketEstimate} /> : null}
     </div>
   );
 }

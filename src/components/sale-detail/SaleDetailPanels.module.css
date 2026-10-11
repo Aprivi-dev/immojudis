@@ -368,7 +368,8 @@
   gap: 8px 18px;
 }
 
-.estimationFoot a {
+.estimationFoot a,
+.estimationFoot button {
   flex: 0 0 auto;
   color: var(--gold-text, var(--gold-text));
   font-weight: 700;
