@@ -34,7 +34,9 @@ from src.storage.supabase_client import _postgrest_request_with_retries, upsert_
 from src.tribunal import fill_tribunal
 
 LOGGER = logging.getLogger(__name__)
-PAGE_SIZE = 200
+# Full rows per request (raw source pages are heavy) and identifiers per request.
+PAGE_SIZE = 25
+ID_PAGE_SIZE = 1_000
 SALE_VENUE_TYPES = {"tribunal", "notary", "state", "online", "unknown"}
 SALE_LEGAL_FRAMEWORKS = {
     "judicial_seizure",
@@ -495,6 +497,14 @@ def _load_env_fallbacks() -> None:
 def _fetch_sales(
     *, source: str | None, limit: int | None, readiness_unassessed_only: bool = False
 ) -> list[dict[str, Any]]:
+    """Stored sales, most recently updated first.
+
+    Two passes keep the database safe: the identifiers are listed first (tiny
+    rows, a stable snapshot of the scope), then the full rows are read in small
+    batches. Full rows carry the raw source pages (about 135 kB each on
+    average); reading 200 of them per request has crashed the production
+    database, and offset pagination skipped or repeated rows changed meanwhile.
+    """
     settings = load_settings()
     supabase_url = str(settings["supabase_url"] or "").rstrip("/")
     api_key = str(settings["supabase_service_role_key"] or "")
@@ -502,34 +512,24 @@ def _fetch_sales(
         raise RuntimeError("Supabase URL/service role key are missing")
 
     endpoint = f"{supabase_url}/rest/v1/auction_sales"
-    rows: list[dict[str, Any]] = []
-    offset = 0
     headers = {
         "apikey": api_key,
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
     }
-    while True:
-        remaining = None if limit is None else max(0, limit - len(rows))
-        if remaining == 0:
-            break
-        page_size = PAGE_SIZE if remaining is None else min(PAGE_SIZE, remaining)
-        params = {
-            "select": "*",
-            "order": "updated_at.desc.nullslast",
-            "limit": str(page_size),
-            "offset": str(offset),
-        }
-        if source:
-            params["source_name"] = f"eq.{source}"
-        if readiness_unassessed_only:
-            params["premium_readiness_status"] = "eq.unassessed"
-            params["status"] = "in.(upcoming,unknown,postponed)"
+    filters: dict[str, str] = {}
+    if source:
+        filters["source_name"] = f"eq.{source}"
+    if readiness_unassessed_only:
+        filters["premium_readiness_status"] = "eq.unassessed"
+        filters["status"] = "in.(upcoming,unknown,postponed)"
+
+    def get(params: dict[str, str]) -> list[dict[str, Any]]:
         response = _postgrest_request_with_retries(
             "GET",
             endpoint,
             table="auction_sales",
-            params=params,
+            params={**filters, **params},
             headers=headers,
             timeout=120,
         )
@@ -540,12 +540,37 @@ def _fetch_sales(
                 response=response,
             )
         page = response.json()
-        if not isinstance(page, list) or not page:
+        return page if isinstance(page, list) else []
+
+    ids: list[str] = []
+    seen: set[str] = set()
+    offset = 0
+    while limit is None or len(ids) < limit:
+        page = get(
+            {
+                "select": "id",
+                "order": "updated_at.desc.nullslast,id.asc",
+                "limit": str(ID_PAGE_SIZE),
+                "offset": str(offset),
+            }
+        )
+        for row in page:
+            sale_id = str(row.get("id") or "")
+            if sale_id and sale_id not in seen:
+                seen.add(sale_id)
+                ids.append(sale_id)
+        if len(page) < ID_PAGE_SIZE:
             break
-        rows.extend(page)
-        if len(page) < page_size:
-            break
-        offset += page_size
+        offset += ID_PAGE_SIZE
+    if limit is not None:
+        ids = ids[:limit]
+
+    rows: list[dict[str, Any]] = []
+    for start in range(0, len(ids), PAGE_SIZE):
+        chunk = ids[start : start + PAGE_SIZE]
+        by_id = {str(row.get("id")): row for row in get({"select": "*", "id": f"in.({','.join(chunk)})"})}
+        # A row deleted between the two passes is simply absent.
+        rows.extend(by_id[sale_id] for sale_id in chunk if sale_id in by_id)
     return rows
 
 
