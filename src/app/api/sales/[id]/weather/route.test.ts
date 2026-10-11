@@ -2,31 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RateLimitError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
-  lookup: vi.fn(),
-  maybeSingle: vi.fn(),
-  select: vi.fn(),
+  location: vi.fn(),
   weather: vi.fn(),
   resolveCommune: vi.fn(),
   enforceIp: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/public-sale.server", () => ({ lookupPublicSale: mocks.lookup }));
+vi.mock("@/lib/sale-location.server", () => ({ loadVisibleSaleLocation: mocks.location }));
 vi.mock("@/lib/rate-limit", () => ({ enforceIpRateLimit: mocks.enforceIp }));
 vi.mock("@/lib/climate-history.server", () => ({ getClimateHistory: mocks.weather }));
 vi.mock("@/lib/commune-risks.server", () => ({
   resolveSaleCommune: mocks.resolveCommune,
   validCoordinates: (latitude: unknown, longitude: unknown) =>
     typeof latitude === "number" && typeof longitude === "number",
-}));
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: () => {
-      const query = { select: mocks.select, eq: () => query, maybeSingle: mocks.maybeSingle };
-      mocks.select.mockReturnValue(query);
-      return query;
-    },
-  },
 }));
 
 import { GET } from "./route";
@@ -51,7 +40,7 @@ function sale(overrides: Record<string, unknown> = {}) {
     latitude: 44.8378,
     longitude: -0.5792,
     city: "Bordeaux",
-    postal_code: "33000",
+    postalCode: "33000",
     department: "33",
     ...overrides,
   };
@@ -60,8 +49,7 @@ function sale(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.enforceIp.mockResolvedValue(undefined);
-  mocks.lookup.mockResolvedValue({ status: "found", sale: { id: saleId } });
-  mocks.maybeSingle.mockResolvedValue({ data: sale(), error: null });
+  mocks.location.mockResolvedValue(sale());
   mocks.weather.mockResolvedValue(readyWeather);
 });
 
@@ -79,10 +67,7 @@ describe("public sale weather route", () => {
   });
 
   it("falls back to the commune centre when the listing has no coordinates", async () => {
-    mocks.maybeSingle.mockResolvedValue({
-      data: sale({ latitude: null, longitude: null, department: null }),
-      error: null,
-    });
+    mocks.location.mockResolvedValue(sale({ latitude: null, longitude: null, department: null }));
     mocks.resolveCommune.mockResolvedValue({
       code: "33063",
       name: "Bordeaux",
@@ -104,10 +89,7 @@ describe("public sale weather route", () => {
   });
 
   it("reports an unlocated sale briefly cached", async () => {
-    mocks.maybeSingle.mockResolvedValue({
-      data: sale({ latitude: null, longitude: null }),
-      error: null,
-    });
+    mocks.location.mockResolvedValue(sale({ latitude: null, longitude: null }));
     mocks.resolveCommune.mockResolvedValue(null);
 
     const response = await GET(request(), context);
@@ -120,13 +102,13 @@ describe("public sale weather route", () => {
     expect(mocks.weather).not.toHaveBeenCalled();
   });
 
-  it("answers 404 for a sale outside the public catalogue", async () => {
-    mocks.lookup.mockResolvedValue({ status: "missing" });
+  it("answers 404 for a missing or quarantined sale", async () => {
+    mocks.location.mockResolvedValue(null);
 
     const response = await GET(request(), context);
 
     expect(response.status).toBe(404);
-    expect(mocks.maybeSingle).not.toHaveBeenCalled();
+    expect(mocks.weather).not.toHaveBeenCalled();
   });
 
   it("rate-limits by IP before touching the database", async () => {
@@ -135,7 +117,7 @@ describe("public sale weather route", () => {
     const response = await GET(request(), context);
 
     expect(response.status).toBe(429);
-    expect(mocks.lookup).not.toHaveBeenCalled();
+    expect(mocks.location).not.toHaveBeenCalled();
   });
 
   it("rejects malformed ids", async () => {
