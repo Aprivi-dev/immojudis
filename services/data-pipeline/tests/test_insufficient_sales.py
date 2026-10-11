@@ -22,6 +22,12 @@ from src.models import AuctionSale
 GOOD_ADDRESS = "3 rue des Lilas, 59000 Exempleville"
 
 
+@pytest.fixture(autouse=True)
+def _street_level_address(monkeypatch):
+    # Reason lists below are written for the stricter street-level mode.
+    monkeypatch.setenv("IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS", "street")
+
+
 def row(sale_id: str, **fields) -> dict:
     base = {
         "id": sale_id,

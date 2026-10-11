@@ -716,7 +716,7 @@ exploitable. Sinon elle n'est pas écrite dans `auction_sales` : le run compte l
 Définitions, exemptions et chiffres par source : `docs/audits/2026-10-10-extraction-par-source.md`.
 
 - `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off` coupe la porte (défaut : active).
-- `IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=commune` accepte une commune seule comme adresse (défaut : voie, lieu-dit ou parcelle).
+- Par défaut (décision du 2026-10-11), la commune ou le code postal suffit comme adresse ; `IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=street` exige en plus une voie, un lieu-dit ou une parcelle.
 - Le miroir Python du résolveur de contacts (`src/information_sufficiency.py`) est gardé identique au résolveur
   TypeScript par `tests/fixtures/information_agent_contact_cases.json`, exécuté par pytest et par vitest.
 - Existant : `python -m src.recompute_scoring --drop-insufficient` produit un rapport d'identifiants sans rien supprimer ;

@@ -30,6 +30,12 @@ PAGE_TEXT = "\n".join([
 ])
 
 
+@pytest.fixture(autouse=True)
+def _street_level_address(monkeypatch):
+    # The SQL report approximates the strict street-level mode (see its header).
+    monkeypatch.setenv("IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS", "street")
+
+
 def sale_row(name: str, **fields) -> dict:
     base = {
         "id": str(uuid.uuid5(uuid.NAMESPACE_URL, name)), "source_name": "licitor", "primary_source": "licitor",
