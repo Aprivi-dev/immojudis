@@ -127,7 +127,19 @@ def contact_emails(sale: AuctionSale) -> set[str]:
     emails: set[str] = set()
     for text in texts:
         emails |= extract_emails(text)
-    return emails
+    return {email for email in emails if not is_court_registry_email(email)}
+
+
+_COURT_REGISTRY_DOMAIN_RE = re.compile(r"(?:^|\.)justice\.(?:fr|gouv\.fr)$")
+
+
+def is_court_registry_email(email: str) -> bool:
+    """Adresse d'une juridiction (greffe, accueil du tribunal), jamais sollicitée par l'agent.
+
+    Miroir de ``isCourtRegistryEmail`` (``src/lib/information-agent/contacts.ts``).
+    """
+    domain = email.rsplit("@", 1)[-1].lower()
+    return bool(_COURT_REGISTRY_DOMAIN_RE.search(domain))
 
 
 @dataclass(frozen=True)

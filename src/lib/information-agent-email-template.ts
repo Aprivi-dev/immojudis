@@ -113,13 +113,34 @@ export type InformationAgentEmailTemplatePreview = {
 };
 
 /**
- * Legacy wording of the "create a professional account" invitation that older published templates
- * still contain. It is prospecting, which a GDPR art. 14 information request must not mix with
- * (plan P4-12): it is removed from every rendered email and is never appended any more.
+ * Ancien bloc « Vous avez d’autres ventes à partager ? » que des modèles publiés ou des brouillons
+ * peuvent encore contenir dans leur texte éditable. Il est toujours retiré du corps : l'invitation
+ * n'est plus rédigée par le modèle mais ajoutée, sous une forme courte et fixe, par le gabarit
+ * (`emails/information-request.tsx`), ce qui évite tout doublon.
  */
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
   "Vous avez d’autres ventes à partager ?";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
+
+/**
+ * Invitation demandée par le propriétaire (11 octobre 2026) : une phrase, un lien, sans traceur.
+ * Prospection B2B liée à l'activité du destinataire, couverte par le lien d'opposition du pied de
+ * message. Désactivable sans déploiement avec `INFORMATION_AGENT_ACCOUNT_INVITATION=false`.
+ */
+export const INFORMATION_AGENT_ACCOUNT_INVITATION_TEXT =
+  "Vous publiez d’autres ventes ? Un compte professionnel Immojudis vous permet de nous les transmettre directement.";
+
+/** Lien de l'invitation, ou `null` si elle est désactivée. */
+export function informationAgentAccountInvitationUrl(
+  appUrl: string,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | null {
+  if (env.INFORMATION_AGENT_ACCOUNT_INVITATION?.trim().toLowerCase() === "false") return null;
+  const url = new URL("/login", appUrl);
+  url.searchParams.set("mode", "professional");
+  url.searchParams.set("redirect", "/publish");
+  return url.toString();
+}
 
 export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 5;
 
@@ -128,7 +149,7 @@ export type InformationAgentEmailRenderOptions = {
   appUrl?: string;
 };
 
-/** True for the legacy prospecting block that must never reach a recipient. */
+/** True for the legacy invitation block written in an editable template. */
 export function containsInformationAgentAccountInvitation(text: string): boolean {
   return (
     text.includes(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING) ||
@@ -307,7 +328,12 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Informations RGPD et opposition",
     description:
-      "Le pied du message est ajouté automatiquement : responsable de traitement, origine de l’adresse (art. 14 RGPD), lien vers la politique de confidentialité et lien d’opposition en un clic. Aucune invitation commerciale n’est insérée.",
+      "Le pied du message est ajouté automatiquement : responsable de traitement, origine de l’adresse avec le lien de l’annonce publique (art. 14 RGPD), lien vers la politique de confidentialité et lien d’opposition en un clic.",
+  },
+  {
+    title: "Invitation à créer un compte",
+    description:
+      "Une phrase courte invite le professionnel à créer un compte pour transmettre ses prochaines annonces. Elle est ajoutée par le gabarit (jamais dupliquée par le modèle) et couverte par le lien d’opposition.",
   },
 ] as const;
 
