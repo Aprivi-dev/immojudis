@@ -1208,11 +1208,11 @@ def _all_pdf_fact_sections(pdf_payload: list[dict[str, Any]]) -> list[str]:
             # native page text. Keep it when it contains text absent from the
             # page records, otherwise fact mode can miss table-only values.
             aggregate = clean_text(item.get("text"))
-            page_text = "\n".join(
-                clean_text(page.get("text"))
-                for page in pages
-                if isinstance(page, dict) and clean_text(page.get("text"))
-            )
+            # Both sides are whitespace-collapsed: the stored aggregate is a
+            # clean_text join, so a newline join would never contain it.
+            page_text = clean_text(
+                " ".join(str(page.get("text") or "") for page in pages if isinstance(page, dict))
+            ) or ""
             if aggregate and aggregate not in page_text:
                 sections.append(
                     f"[DOCUMENT: {label} | TYPE: {document_type} | URL: {document_url} | "

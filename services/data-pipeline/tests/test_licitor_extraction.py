@@ -312,3 +312,19 @@ def test_surface_certificates_and_urbanism_documents_are_classified() -> None:
     assert classify_document_type("Certificat d'urbanisme", url) == "cadastre"
     assert classify_document_type("Urbanisme", url) == "cadastre"
     assert classify_document_type("Articles et mise à prix", url) == "annonce_vente"
+
+
+def test_stable_raw_text_drops_daily_edition_date_and_price_panel() -> None:
+    from src.sources.licitor import _stable_raw_text
+
+    page = (
+        "Annonce n°\nÉdition du\nlundi 12 octobre 2026\nNouveau !\nUne maison\nMise à prix : 380 000 €\n"
+        "Prix constatés des biens immobiliers vendus aux alentours\nPrix min.\n2 493 €/m²\nPrix moyen\n"
+        "3 199 €/m²\nPrix max.\n4 228 €/m²\nVoir le dossier complet avec"
+    )
+    next_day = page.replace("lundi 12 octobre", "mardi 13 octobre").replace("3 199", "3 204")
+
+    assert _stable_raw_text(page) == _stable_raw_text(next_day)
+    assert "Mise à prix : 380 000 €" in _stable_raw_text(page)
+    assert "octobre 2026" not in _stable_raw_text(page)
+    assert "Voir le dossier complet avec" in _stable_raw_text(page)
