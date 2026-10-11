@@ -39,6 +39,8 @@ from src.sources.cessions_etat_procedure import (
 
 FEATURES_SCHEMA_VERSION = "cessions_etat_features_v2"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
+# Surface whose scope (built area or plot) the listing leaves ambiguous.
+UNSCOPED_SURFACE_FIELD = "surface_unscoped_m2"
 _LAND_NATURES = {"terrain_nu", "terrain_agricole", "foret", "terrain_bati_a_demolir", "etendue_eau", "vigne_verger"}
 _VACANT_RE = re.compile(r"\b(?:libre|vacant|inoccup|imm[ée]diat)", re.I)
 _DESCRIPTION_SURFACE_RE = re.compile(
@@ -187,7 +189,7 @@ def _surfaces(page: CessionsPage, natures: list[tuple[str, str, str]]) -> dict[s
             scope = "land"
         else:
             scope = _tile_scope(value, nature_types.get(item.nature or ""), page, described)
-        key = {"land": "land_surface_m2", "built": "built_surface_m2"}.get(scope, "surface_unscoped_m2")
+        key = {"land": "land_surface_m2", "built": "built_surface_m2"}.get(scope, UNSCOPED_SURFACE_FIELD)
         if scope == "built":
             value = _refine(value, described)
         if scope == "land" and key in totals and abs(totals[key] - value) <= 1:
@@ -384,8 +386,8 @@ def extract_cessions_fields(
         fields["surface_m2"] = surfaces["built_surface_m2"]
     elif property_type == "land" and surfaces.get("land_surface_m2"):
         fields["surface_m2"] = surfaces["land_surface_m2"]
-    elif surfaces.get("surface_unscoped_m2"):
-        fields["surface_unscoped_m2"] = surfaces["surface_unscoped_m2"]
+    elif surfaces.get(UNSCOPED_SURFACE_FIELD):
+        fields[UNSCOPED_SURFACE_FIELD] = surfaces[UNSCOPED_SURFACE_FIELD]
     if surfaces.get("land_surface_m2"):
         fields["land_surface_m2"] = surfaces["land_surface_m2"]
     if page.city:
@@ -489,7 +491,7 @@ def apply_cessions_fields(raw_sale: dict[str, Any], extracted: dict[str, Any]) -
             existing = [item for item in raw_sale.get("visit_dates") or [] if isinstance(item, str)]
             raw_sale[key] = list(dict.fromkeys([*value, *existing]))
             continue
-        if key == "surface_unscoped_m2":
+        if key == UNSCOPED_SURFACE_FIELD:
             # Portée ambiguë (bâti ou contenance) : ne remplace jamais une surface déjà lue.
             if not raw_sale.get("surface_m2"):
                 raw_sale["surface_m2"] = value
