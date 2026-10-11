@@ -62,6 +62,7 @@ describe("property characteristics", () => {
     const model = getPropertyCharacteristics(sale())!;
 
     expect(model.origin).toBe("source");
+    expect(model.official).toBe(true);
     expect(model.nature).toEqual(["Terrain nu"]);
     expect(model.groups.map((group) => group.title)).toEqual([
       "Identification",
@@ -155,6 +156,60 @@ describe("property characteristics", () => {
       email: null,
       heading: "Office notarial",
     });
+  });
+
+  it("reads a judicial listing block (Avoventes, Vench, Info-Enchères)", () => {
+    // Bloc fictif au format écrit par la pipeline pour une annonce judiciaire.
+    const model = getPropertyCharacteristics(
+      sale({
+        source_name: "avoventes",
+        sale_venue_type: "tribunal",
+        sale_date: "2026-11-12T13:00:00Z",
+        source_blocks: {
+          caracteristiques_bien: {
+            schema_version: "property_characteristics_v1",
+            source: "avoventes",
+            items: [
+              { key: "bedrooms_count", label: "Chambres", value: "3", group: "identification" },
+              { key: "heating", label: "Chauffage", value: "Gaz", group: "equipements" },
+            ],
+            surfaces: { published_surface_m2: "64.7", land_surface_m2: "650" },
+            energy: { dpe_class: "D" },
+            attachments: [
+              { label: "PVD.pdf", kind: "pv_huissier", kind_label: "Procès-verbal descriptif" },
+            ],
+            procedure: {
+              prices: { preliminary_fees_eur: "9777.6", deposit_eur: "5000" },
+              notes: [
+                { label: "Consignation", value: "5 000,00 € (chèque de banque)" },
+                { label: "Faculté de baisse de prix", value: "Oui" },
+              ],
+              visits: ["Le lundi 5 octobre 2026 de 9h00 à 9h30"],
+            },
+            location: { designation: "Parcelle V 154 à Exempleville", insee_code: "93066" },
+          },
+        },
+      }),
+    )!;
+
+    expect(model.official).toBe(false);
+    expect(model.groups.map((group) => group.title)).toEqual([
+      "Identification",
+      "Équipements",
+      "Diagnostics",
+    ]);
+    expect(model.surfaces.map((item) => item.label)).toEqual(["Superficie publiée", "Terrain"]);
+    expect(model.procedure?.facts.map((fact) => fact.label)).toEqual([
+      "Frais préalables",
+      "Consignation",
+      "Faculté de baisse de prix",
+    ]);
+    expect(model.procedure?.visits).toEqual(["Le lundi 5 octobre 2026 de 9h00 à 9h30"]);
+    expect(model.attachments).toEqual([{ label: "Procès-verbal descriptif", count: 1 }]);
+    expect(model.location[0].value).toBe("Parcelle V 154 à Exempleville");
+    expect(
+      stateListingStatus({ ...sale(), source_name: "avoventes", sale_venue_type: "tribunal" }),
+    ).toBeNull();
   });
 
   it("falls back on observed typed facts of any other source", () => {

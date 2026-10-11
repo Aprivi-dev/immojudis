@@ -123,6 +123,32 @@ describe("ListingCharacteristics", () => {
     expect(within(section).getByText("Office notarial")).toBeTruthy();
   });
 
+  it("labels a judicial listing block as published by the source site", () => {
+    const judicial = {
+      ...sale({
+        caracteristiques_bien: {
+          source: "vench",
+          items: [
+            { key: "occupancy", label: "Occupation", value: "Bien libre", group: "situation" },
+          ],
+          procedure: { notes: [{ label: "Consignation", value: "8 000 € chèque de banque" }] },
+        },
+      }),
+      source_name: "vench",
+      sale_venue_type: "tribunal",
+      sale_date: "2026-11-12T13:00:00Z",
+    } as AuctionSale;
+    render(<ListingCharacteristics sale={judicial} />);
+
+    const section = screen.getByRole("region", { name: "Caractéristiques du bien" });
+    expect(
+      within(section).getByText("Informations publiées sur l’annonce de la source"),
+    ).toBeTruthy();
+    expect(within(section).queryByText("Informations publiées sur la fiche officielle")).toBeNull();
+    expect(within(section).getByText("Bien libre")).toBeTruthy();
+    expect(within(section).getByText("8 000 € chèque de banque")).toBeTruthy();
+  });
+
   it("renders nothing when the source publishes no characteristic", () => {
     const { container } = render(<ListingCharacteristics sale={sale(null)} />);
     expect(container.innerHTML).toBe("");

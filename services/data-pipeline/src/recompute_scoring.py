@@ -21,6 +21,7 @@ from src.geocode import geocode_sale
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
 from src.sources.agrasc_extraction import refresh_agrasc_raw_sale
+from src.sources.avoventes_extraction import refresh_avoventes_raw_sale
 from src.sources.cessions_etat_extraction import refresh_cessions_raw_sale
 from src.sources.common import PoliteHttpClient
 from src.sources.encheres_publiques import (
@@ -595,6 +596,8 @@ def _sale_from_storage_row(row: dict[str, Any]):
     refresh_licitor_raw_sale(raw_sale)
     # AGRASC : même relecture sur les champs opérateur stockés (types des pièces, Points clés).
     refresh_agrasc_raw_sale(raw_sale)
+    # Avoventes : encadré de vente, tuiles et caractéristiques relus sur le même texte.
+    refresh_avoventes_raw_sale(raw_sale)
     sale = normalize_sale(raw_sale)
     sale.id = str(row.get("id")) if row.get("id") else None
     sale.primary_source = row.get("primary_source") or sale.primary_source
@@ -623,7 +626,7 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
     blocks = payload.get("source_blocks")
     values = [sale.title, sale.description, sale.raw_text, payload.get("source_description")]
     if isinstance(blocks, dict):
-        values.extend(value for key, value in blocks.items() if key != "listing_completeness")
+        values.extend(value for key, value in blocks.items() if key not in {"listing_completeness", "caracteristiques_bien"})
     context = "\n".join(dict.fromkeys(str(value).strip() for value in values if value))
     if context:
         extract_and_apply_deterministic_surface_reasoning(sale, context)

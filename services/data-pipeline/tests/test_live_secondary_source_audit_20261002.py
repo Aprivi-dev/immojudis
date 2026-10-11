@@ -266,12 +266,15 @@ def test_info_encheres_qualified_total_survives_full_pipeline() -> None:
     assert snapshot.final.raw_payload["surface_analysis"]["version"] == "surface_reasoning_v1"
 
 
-def test_info_encheres_details_keep_typed_documents_and_no_property_photos() -> None:
+def test_info_encheres_details_keep_typed_documents_and_gallery_photos() -> None:
     for sample_id in ("info-6051", "info-6053"):
         snapshot = replay(sample_id)
         assert snapshot.final.tribunal.startswith("Tribunal Judiciaire de ")
         assert snapshot.final.documents
-        assert not ((snapshot.final.raw_payload or {}).get("source_images") or [])
+        # Les photos ne sont listées que dans le script de la galerie ($.fancybox.open).
+        images = (snapshot.final.raw_payload or {}).get("source_images") or []
+        assert images
+        assert all("/upload/" in image and "/pix/" not in image for image in images)
 
 
 def test_agrasc_auchel_operator_detail_merges_into_catalogue_identity() -> None:

@@ -1699,7 +1699,7 @@ def _enabled_scrapers(
             "info_encheres",
             bool(settings["enable_info_encheres_benchmark"]),
             lambda: scrape_info_encheres_aquitaine_result(
-                max_pages=int(settings["info_encheres_max_pages"]), known=known
+                max_pages=int(settings["info_encheres_max_pages"]), known=known, known_details=known_details
             ),
         ),
         (
@@ -1879,7 +1879,7 @@ def _surface_reasoning_context_for_sale(sale: AuctionSale) -> str:
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     source_blocks = payload.get("source_blocks")
     block_values = [
-        value for key, value in source_blocks.items() if key != "listing_completeness"
+        value for key, value in source_blocks.items() if key not in {"listing_completeness", "caracteristiques_bien"}
     ] if isinstance(source_blocks, dict) else []
     values: list[object] = [
         sale.title,
