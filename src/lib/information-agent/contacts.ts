@@ -36,6 +36,21 @@ export type InformationAgentContactRegistryBlock = Pick<
   "scope_sale_id" | "opposition_status" | "bounce_status"
 >;
 
+/** Vente lue par le résolveur ; `source_block_urls` (chargeur admin) précise l'URL de chaque bloc. */
+export type InformationAgentContactSale = AuctionSale & {
+  source_block_urls?: Record<string, string | null> | null;
+};
+
+/**
+ * Adresse d'une juridiction (greffe, accueil du tribunal) : elle figure dans les annonces mais
+ * n'est jamais l'interlocuteur de l'agent, qui ne sollicite ni tribunal ni greffe. Miroir Python :
+ * `services/data-pipeline/src/information_sufficiency.py` (`is_court_registry_email`).
+ */
+export function isCourtRegistryEmail(email: string): boolean {
+  const domain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
+  return /(?:^|\.)justice\.(?:fr|gouv\.fr)$/.test(domain);
+}
+
 /**
  * Finds contacts already present in the collected listing payload.
  *
@@ -44,7 +59,7 @@ export type InformationAgentContactRegistryBlock = Pick<
  * suggested before approving a request.
  */
 export function discoverInformationAgentContacts(
-  sale: AuctionSale,
+  sale: InformationAgentContactSale,
 ): InformationAgentContactCandidate[] {
   const sourceName = cleanContactValue(sale.source_name ?? sale.primary_source);
   const sourceUrl = firstSourceUrl(sale);
@@ -73,6 +88,7 @@ export function discoverInformationAgentContacts(
     "source_blocks_by_source",
     sourceName,
     sourceUrl,
+    sale.source_block_urls ?? null,
   );
 
   addContactObservation(observations, {
@@ -97,6 +113,7 @@ export function discoverInformationAgentContacts(
   const byEmail = new Map<string, InformationAgentContactCandidate>();
   for (const observation of observations) {
     for (const email of extractEmails(observation.value)) {
+      if (isCourtRegistryEmail(email)) continue;
       const role = inferContactRole(`${observation.field} ${observation.value}`);
       const score = observation.score + (role === "source_contact" ? 0 : 4);
       const provenance: InformationAgentContactProvenance = {
@@ -254,6 +271,33 @@ export async function persistInformationAgentContactObservations({
 }
 
 /**
+ * Enregistre une opposition globale (toutes ventes) pour une adresse : utilisée quand une réponse
+ * consignée par un administrateur ou un dépôt du portail demande de ne plus être contacté. Une
+ * opposition ne s'efface jamais par ce chemin.
+ */
+export async function recordInformationAgentContactOpposition({
+  email,
+  opposedAt = new Date().toISOString(),
+}: {
+  email: string;
+  opposedAt?: string;
+}): Promise<void> {
+  const normalized = normalizedEmail(email);
+  if (!normalized) return;
+  const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(
+    {
+      sale_id: null,
+      scope_sale_id: null,
+      email: normalized,
+      opposition_status: "opposed",
+      opposed_at: opposedAt,
+    },
+    { onConflict: "scope_sale_id,normalized_email" },
+  );
+  if (error) throw error;
+}
+
+/**
  * Guard used both when a draft chooses a recipient and immediately before
  * approval. It covers the race where a contact opts out or permanently
  * bounces after a draft was created.
@@ -289,6 +333,7 @@ function collectSourceBlockContacts(
   rootField: string,
   sourceName: string | null,
   sourceUrl: string | null,
+  blockUrls: Record<string, string | null> | null = null,
 ) {
   if (!value || typeof value !== "object") return;
   if (Array.isArray(value)) {
@@ -305,20 +350,26 @@ function collectSourceBlockContacts(
   }
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
     const field = `${rootField}.${key}`;
-    const childSourceName = rootField === "source_blocks_by_source" ? key : sourceName;
+    const bySource = rootField === "source_blocks_by_source";
+    // Clés « licitor:primary », « notaires:2 » : la source est avant les deux-points et l'URL est
+    // celle de l'observation qui porte ce bloc, pas celle de l'annonce principale.
+    const childSourceName = bySource ? key.split(":")[0] || sourceName : sourceName;
+    const childSourceUrl = bySource
+      ? (safeSourceUrlOrNull(blockUrls?.[key]) ?? sourceUrl)
+      : sourceUrl;
     if (typeof child === "string") {
       addContactObservation(observations, {
         value: child,
         kind: "source_block",
         field,
         sourceName: childSourceName,
-        sourceUrl,
+        sourceUrl: childSourceUrl,
         name: inferNameFromSourceBlock(child, field),
         score: contactScoreForField(field),
       });
       continue;
     }
-    collectSourceBlockContacts(observations, child, field, childSourceName, sourceUrl);
+    collectSourceBlockContacts(observations, child, field, childSourceName, childSourceUrl);
   }
 }
 
@@ -402,13 +453,6 @@ export function contactCandidateSnapshot(candidate: InformationAgentContactCandi
   };
 }
 
-export function informationAgentSourceText(sale: AuctionSale): string {
-  const values = [sale.title, sale.source_description, sale.description];
-  values.push(JSON.stringify(sale.source_blocks ?? {}));
-  values.push(JSON.stringify(sale.source_blocks_by_source ?? {}));
-  return values.filter((value): value is string => typeof value === "string").join("\n");
-}
-
 function firstSourceUrl(sale: AuctionSale): string | null {
   const values: unknown[] = [sale.source_url, sale.source_urls];
   for (const value of values) {
@@ -434,6 +478,10 @@ function firstUrl(value: unknown): string | null {
     }
   }
   return null;
+}
+
+function safeSourceUrlOrNull(value: unknown): string | null {
+  return typeof value === "string" ? safeSourceUrl(value) : null;
 }
 
 function safeSourceUrl(value: string): string | null {

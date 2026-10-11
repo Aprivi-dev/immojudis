@@ -11,12 +11,14 @@ const mocks = vi.hoisted(() => ({
   action: vi.fn(),
   sourceStatus: vi.fn(),
   sourceRefresh: vi.fn(),
+  preview: vi.fn(),
 }));
 
 vi.mock("@/lib/client-api", () => ({
   fetchAdminInformationAgentMissions: mocks.list,
   createAdminInformationAgentMission: mocks.create,
   runAdminInformationAgentMissionAction: mocks.action,
+  previewAdminInformationAgentMission: mocks.preview,
   fetchAdminSourceRefreshStatus: mocks.sourceStatus,
   requestAdminSourceRefresh: mocks.sourceRefresh,
 }));
@@ -33,6 +35,7 @@ describe("AdminInformationAgentMissionsPanel", () => {
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
     mocks.create.mockResolvedValue({ ok: true, mission: draft, gaps: [], facts: [] });
     mocks.action.mockResolvedValue({ ok: true, missions: [mission("sent")], facts: [] });
+    mocks.preview.mockResolvedValue(previewResponse());
     vi.spyOn(window, "confirm").mockReturnValue(true);
 
     renderPanel();
@@ -42,12 +45,16 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(mocks.create.mock.calls[0][0]).toEqual({
       saleId: "11111111-1111-4111-8111-111111111111",
     });
+    // Aucun envoi possible avant l'aperçu.
+    expect(sendButton().disabled).toBe(true);
 
-    fireEvent.click(screen.getByRole("button", { name: "Valider et envoyer" }));
+    await showPreview();
+    fireEvent.click(sendButton());
     await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
     expect(mocks.action.mock.calls[0][0]).toMatchObject({
       action: "approve_and_send",
       approvalConfirmed: true,
+      previewFingerprint: "f".repeat(64),
       recipientEmail: "cabinet@example.test",
     });
     expect(mocks.action.mock.calls[0][0]).not.toHaveProperty("shareRequesterEmail");
@@ -78,7 +85,13 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "Relisez le nom et la formule d’appel dans le message",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Valider et envoyer" }));
+    mocks.preview.mockResolvedValue(previewResponse());
+    await showPreview();
+    expect(mocks.preview.mock.calls[0][0]).toMatchObject({
+      recipientEmail: "new-contact@example.test",
+      recipientName: null,
+    });
+    fireEvent.click(sendButton());
     await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
     expect(mocks.action.mock.calls[0][0]).toMatchObject({
       recipientEmail: "new-contact@example.test",
@@ -213,7 +226,9 @@ describe("AdminInformationAgentMissionsPanel", () => {
       </QueryClientProvider>,
     );
     await screen.findByRole("button", { name: "Valider et envoyer" });
-    fireEvent.click(screen.getByRole("button", { name: "Valider et envoyer" }));
+    mocks.preview.mockResolvedValue(previewResponse());
+    await showPreview();
+    fireEvent.click(sendButton());
     await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: "Fermer" }));
     view.rerender(
@@ -227,6 +242,87 @@ describe("AdminInformationAgentMissionsPanel", () => {
       </QueryClientProvider>,
     );
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+  });
+
+  it("keeps sending blocked while a control fails and after an edit since the preview", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValueOnce(
+      previewResponse({ blockers: ["Le contact est explicitement opposé."], fingerprint: null }),
+    );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    await showPreview();
+    expect(screen.getByRole("alert").textContent).toContain("explicitement opposé");
+    expect(sendButton().disabled).toBe(true);
+
+    mocks.preview.mockResolvedValueOnce(previewResponse());
+    await showPreview("Actualiser l’aperçu");
+    expect(sendButton().disabled).toBe(false);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Message modifié après l’aperçu, à revoir avant tout envoi." },
+    });
+    expect(sendButton().disabled).toBe(true);
+    expect(screen.getByText(/modifié depuis cet aperçu/)).toBeTruthy();
+    fireEvent.click(sendButton());
+    expect(mocks.action).not.toHaveBeenCalled();
+  });
+
+  it("shows the inventory of the fiche with what is missing and what is known", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({
+      ok: true,
+      mission: {
+        ...mission("draft"),
+        inventory: [
+          {
+            key: "pv_descriptif",
+            label: "Procès-verbal descriptif",
+            status: "missing",
+            detail: "Absent des pièces consultables.",
+            origin: null,
+          },
+          {
+            key: "surface",
+            label: "Surface",
+            status: "present",
+            detail: "82,99 m²",
+            origin: "Annonce (avoventes)",
+          },
+        ],
+      },
+      gaps: [],
+      facts: [],
+    });
+
+    renderPanel();
+    const inventory = await screen.findByRole("region", { name: "Inventaire de la fiche" });
+    expect(inventory.textContent).toContain("À obtenir (1)");
+    expect(inventory.textContent).toContain("Procès-verbal descriptif");
+    expect(inventory.textContent).toContain("Déjà disponible (1)");
+    expect(inventory.textContent).toContain("82,99 m² (Annonce (avoventes))");
+  });
+
+  it("attaches a reply received outside the case address to a sent mission", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("sent"), gaps: [], facts: [] });
+    mocks.action.mockResolvedValue({ ok: true, missions: [mission("sent")], facts: [] });
+
+    renderPanel();
+    const reply = await screen.findByRole("textbox", {
+      name: /Consigner une réponse reçue hors de l’adresse du dossier/,
+    });
+    fireEvent.change(reply, { target: { value: "Le bien est libre, surface Carrez 61 m²." } });
+    fireEvent.click(screen.getByRole("button", { name: "Rattacher la réponse au dossier" }));
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    expect(mocks.action.mock.calls[0][0]).toEqual({
+      action: "record_reply",
+      missionId: "22222222-2222-4222-8222-222222222222",
+      bodyText: "Le bien est libre, surface Carrez 61 m².",
+    });
   });
 
   it("lets an admin resume a mission after a transient send failure", async () => {
@@ -596,6 +692,41 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(mocks.create).toHaveBeenCalledTimes(1);
   });
 });
+
+function sendButton() {
+  return screen.getByRole("button", { name: "Valider et envoyer" }) as HTMLButtonElement;
+}
+
+async function showPreview(label = "Afficher l’aperçu") {
+  fireEvent.click(screen.getByRole("button", { name: label }));
+  await screen.findByTitle("Aperçu de l’e-mail envoyé");
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Préparation…" })).toBeNull());
+}
+
+function previewResponse(
+  overrides: Partial<{ blockers: string[]; fingerprint: string | null }> = {},
+) {
+  return {
+    ok: true,
+    preview: {
+      from: "agent@example.test",
+      to: "Maître Dupont <cabinet@example.test>",
+      replyTo: "enquete+jeton-attribue-a-l-envoi@reponses.example.test",
+      subject: "Demande de pièces",
+      html: "<p>Aperçu</p>",
+      text: "Aperçu",
+    },
+    blockers: [],
+    addressOrigin: {
+      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor.",
+      url: "https://www.licitor.com/annonce/1.html",
+      known: true,
+    },
+    accountInvitation: true,
+    fingerprint: "f".repeat(64),
+    ...overrides,
+  };
+}
 
 function renderPanel(
   selection: {

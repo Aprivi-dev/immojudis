@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import {
-  describeInformationAgentAddressOrigin,
+  informationAgentAddressOrigin,
   informationAgentControllerIdentity,
 } from "@/lib/information-agent-compliance";
 import { renderInformationRequestEmail } from "../../emails/information-request";
@@ -14,6 +14,7 @@ import {
   INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION,
   INFORMATION_AGENT_EMAIL_VARIABLES,
   INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS,
+  informationAgentAccountInvitationUrl,
   informationAgentEmailTemplateContentSchema,
   parseInformationAgentEmailTemplateContent,
   renderInformationAgentEmailContent,
@@ -187,6 +188,10 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
   const previewAppUrl =
     resolveSiteOrigin(process.env, "https://immojudis.com") ?? "https://immojudis.com";
   const controller = informationAgentControllerIdentity();
+  const exampleOrigin = informationAgentAddressOrigin({
+    sourceName: "licitor",
+    sourceUrl: "https://www.licitor.com/annonce/exemple.html",
+  });
   const renderedContent = renderInformationAgentEmailContent({
     template,
     appUrl: previewAppUrl,
@@ -205,16 +210,15 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
       controllerName: controller?.name ?? "[Responsable de traitement à configurer]",
       controllerAddress: controller?.address ?? "[Adresse à configurer]",
       contactEmail: controller?.contactEmail ?? null,
-      addressOrigin: describeInformationAgentAddressOrigin({
-        sourceName: "Source publique",
-        sourceUrl: "https://exemple.example/annonce",
-      }),
+      addressOrigin: exampleOrigin.text,
+      addressOriginUrl: exampleOrigin.url,
       privacyUrl: new URL("/privacy", previewAppUrl).toString(),
       optOutUrl: new URL(
         "/api/information-agent/opt-out?e=exemple&t=exemple",
         previewAppUrl,
       ).toString(),
     },
+    accountInvitationUrl: informationAgentAccountInvitationUrl(previewAppUrl),
   });
   return {
     preview: {

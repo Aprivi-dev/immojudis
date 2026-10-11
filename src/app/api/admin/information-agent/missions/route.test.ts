@@ -17,6 +17,7 @@ const sendAction = {
   action: "approve_and_send",
   missionId: "22222222-2222-4222-8222-222222222222",
   approvalConfirmed: true,
+  previewFingerprint: "a".repeat(64),
   recipientEmail: "contact@example.test",
   subject: "Demande de précisions",
   bodyText: "Bonjour, pourriez-vous nous transmettre les pièces du dossier ?",
@@ -107,6 +108,18 @@ describe("admin information request authorization", () => {
     expect(mocks.auth).not.toHaveBeenCalled();
     expect(mocks.from).not.toHaveBeenCalled();
   });
+
+  it.each([undefined, "", "not-a-fingerprint"])(
+    "rejects a send that was not previewed (%s)",
+    async (previewFingerprint) => {
+      mocks.auth.mockResolvedValue({ isAdmin: true });
+      const response = await PATCH(request("PATCH", { ...sendAction, previewFingerprint }));
+      expect(response.status).toBe(400);
+      expect(mocks.from).not.toHaveBeenCalled();
+      expect(mocks.rpc).not.toHaveBeenCalled();
+      expect(mocks.send).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([false, undefined])("rejects send without explicit confirmation (%s)", async (value) => {
     mocks.auth.mockResolvedValue({ isAdmin: true });

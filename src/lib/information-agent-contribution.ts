@@ -7,9 +7,11 @@ import { safeExternalHttpUrl } from "@/lib/external-url";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import {
+  detectInformationAgentContactOptOut,
   extractInformationAgentFacts,
   persistFactCandidates,
 } from "@/lib/information-agent-inbound";
+import { recordInformationAgentContactOpposition } from "@/lib/information-agent/contacts";
 import {
   createInformationAgentContributionToken,
   verifyInformationAgentContributionToken,
@@ -478,6 +480,14 @@ export async function submitInformationAgentContribution({
     facts: extractInformationAgentFacts(input.note),
     assets,
   });
+
+  // Le lien de dépôt n'est remis qu'au destinataire de la demande : une note qui demande de ne
+  // plus être contacté vaut opposition pour cette adresse (s'opposer est sans risque pour elle).
+  if (input.note && detectInformationAgentContactOptOut(input.note)) {
+    await recordInformationAgentContactOpposition({
+      email: informationCase.normalized_recipient_email,
+    });
+  }
 
   const now = new Date().toISOString();
   const { data: updatedCase, error: caseUpdateError } = await supabaseAdmin

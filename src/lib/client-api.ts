@@ -15,6 +15,7 @@ export {
   fetchAdminInformationAgentMissions,
   createAdminInformationAgentMission,
   runAdminInformationAgentMissionAction,
+  previewAdminInformationAgentMission,
   fetchAdminSourceRefreshStatus,
   requestAdminSourceRefresh,
   fetchAdminInformationAgentReview,

@@ -107,6 +107,12 @@ class Query implements PromiseLike<{ data: Row[] | null; error: Row | null }> {
     return this;
   }
 
+  upsert(values: Row) {
+    this.operation = "insert";
+    this.values = values;
+    return this;
+  }
+
   async maybeSingle() {
     const result = this.execute();
     return { data: result.data[0] ?? null, error: result.error };
@@ -184,6 +190,7 @@ function fixture() {
     information_agent_cases: [informationCase],
     information_agent_messages: [],
     information_agent_evidence_assets: [],
+    information_agent_contacts: [],
   };
   const storage = {
     createSignedUploadUrl: vi.fn(async () => ({
@@ -221,6 +228,7 @@ function fixture() {
     messages: tables.information_agent_messages,
     assets: tables.information_agent_evidence_assets,
     cases: tables.information_agent_cases,
+    contacts: tables.information_agent_contacts,
     storage,
   };
 }
@@ -331,6 +339,29 @@ describe("information agent contribution integration", () => {
     expect(persisted.assets).toHaveLength(1);
     expect(state.informationCase.status).toBe("review");
     expect(state.mission.status).toBe("replied");
+  });
+
+  it("records an opposition when the portal note asks to stop contact", async () => {
+    const state = fixture();
+    const file = await preparedFile(state);
+    await submitInformationAgentContribution({
+      missionId: MISSION_ID,
+      input: submission(file, { files: [], note: "Merci de ne plus me contacter." }),
+      env: ENV,
+    });
+
+    expect(state.contacts).toEqual([
+      expect.objectContaining({
+        email: RECIPIENT_A,
+        scope_sale_id: null,
+        opposition_status: "opposed",
+      }),
+    ]);
+    // La note reste rattachée au dossier, avec sa provenance « portail ».
+    expect(state.messages[0]).toMatchObject({
+      case_id: CASE_ID,
+      metadata: expect.objectContaining({ channel: "portal", content_trust: "untrusted" }),
+    });
   });
 
   it("stops a signed upload when the database quota is exhausted", async () => {

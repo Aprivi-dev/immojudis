@@ -20,7 +20,8 @@ const legalFooter: InformationAgentLegalFooter = {
   controllerAddress: "1 rue de la Paix, 33000 Bordeaux",
   contactEmail: "dpo@immojudis.test",
   addressOrigin:
-    "Votre adresse professionnelle figure dans une publication accessible au public (Licitor, licitor.com) relative à cette vente.",
+    "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor.",
+  addressOriginUrl: "https://www.licitor.com/annonce/10/99/72/109972.html",
   privacyUrl: "https://immojudis.com/privacy",
   optOutUrl: "https://immojudis.com/api/information-agent/opt-out?e=YUBiLmZy&t=" + "a".repeat(64),
 };
@@ -54,7 +55,9 @@ describe("renderInformationRequestEmail", () => {
     expect(message.html).not.toContain("?subject=Re");
   });
 
-  it("n'invite jamais à créer un compte professionnel (pas de prospection)", async () => {
+  it("n'invite à créer un compte que par le gabarit, une seule fois et sans traceur", async () => {
+    const accountInvitationUrl =
+      "https://staging.immojudis.com/login?mode=professional&redirect=%2Fpublish";
     const message = await renderInformationRequestEmail({
       subject: "Maison à Bordeaux — précisions sur la vente",
       bodyText,
@@ -62,14 +65,42 @@ describe("renderInformationRequestEmail", () => {
       caseReference: "IJ-8F31A290",
       appUrl: "https://staging.immojudis.com",
       legalFooter,
+      accountInvitationUrl,
     });
 
     for (const output of [message.html, message.text]) {
-      expect(output).not.toContain("Créer un compte professionnel");
-      expect(output).not.toContain("mode=professional");
+      expect(output.match(/Créer un compte professionnel/g)).toHaveLength(1);
+      expect(output).toContain("Un compte professionnel Immojudis vous permet");
       expect(output).not.toContain("Vous avez d’autres ventes à partager");
     }
+    expect(message.html).toContain("mode=professional&amp;redirect=%2Fpublish");
     expect(message.html).not.toContain("utm_");
+
+    const withoutInvitation = await renderInformationRequestEmail({
+      subject: "Maison à Bordeaux",
+      bodyText,
+      replyTo: "enquete+1234@reponses.immojudis.com",
+      caseReference: "IJ-8F31A290",
+      legalFooter,
+    });
+    expect(withoutInvitation.text).not.toContain("Créer un compte professionnel");
+  });
+
+  it("dit d'où vient l'adresse, avec le lien de l'annonce, dès le haut du message", async () => {
+    const message = await renderInformationRequestEmail({
+      subject: "Maison à Bordeaux",
+      bodyText,
+      replyTo: "enquete+1234@reponses.immojudis.com",
+      caseReference: "IJ-8F31A290",
+      legalFooter,
+    });
+    const origin = message.text.indexOf(
+      "figure dans l’annonce publique de cette vente sur Licitor",
+    );
+    expect(origin).toBeGreaterThan(-1);
+    expect(origin).toBeLessThan(message.text.indexOf("Bonjour Maître Dupont"));
+    expect(message.html).toContain('href="https://www.licitor.com/annonce/10/99/72/109972.html"');
+    expect(message.text).toContain("Voir l’annonce");
   });
 
   it("supprime l'ancienne invitation même si elle figure encore dans un brouillon", async () => {
@@ -98,7 +129,7 @@ describe("renderInformationRequestEmail", () => {
     for (const output of [message.html, message.text]) {
       expect(output).toContain("Immojudis SAS");
       expect(output).toContain("1 rue de la Paix, 33000 Bordeaux");
-      expect(output).toContain("figure dans une publication accessible au public (Licitor");
+      expect(output).toContain("figure dans l’annonce publique de cette vente sur Licitor");
       expect(output).toContain("https://immojudis.com/privacy");
       expect(output).toContain("https://immojudis.com/api/information-agent/opt-out?e=YUBiLmZy&");
       expect(output).toContain("30 jours");

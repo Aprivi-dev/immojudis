@@ -29,12 +29,14 @@ function baseQuery(data: unknown, error: unknown = null) {
 function documentsQuery(data: unknown[], error: unknown = null) {
   const query = {
     select: vi.fn(),
-    eq: vi.fn(),
+    in: vi.fn(),
     order: vi.fn(),
+    limit: vi.fn(),
   };
   query.select.mockReturnValue(query);
-  query.eq.mockReturnValue(query);
-  query.order.mockResolvedValue({ data, error });
+  query.in.mockReturnValue(query);
+  query.order.mockReturnValue(query);
+  query.limit.mockResolvedValue({ data, error });
   return query;
 }
 
@@ -106,6 +108,17 @@ const quarantinedInternalSale = {
       lawyer: "Maître Dupont dupont@example.test",
       page_text: "Conditions de vente à confirmer.",
     },
+    pdf_occupancy_candidates: [
+      {
+        value: "occupied",
+        evidence: "Occupé par M. Exemple, locataire",
+        page_number: 14,
+        document_type: "pv_huissier",
+        document_label: "PV descriptif",
+      },
+    ],
+    source_energy_diagnostics: { dpe_class: "E", ges_class: "D" },
+    visit_contact: "04 00 00 00 00",
     raw_image_url: "https://assets.example.test/front.jpg",
     source_images: [
       "https://assets.example.test/front.jpg",
@@ -116,6 +129,7 @@ const quarantinedInternalSale = {
   observations: [
     {
       source_name: "second-source",
+      source_url: "https://second.example.test/annonce/9",
       raw_payload: {
         source_blocks: { contact: "Etude second@example.test" },
         source_images: ["https://assets.example.test/second.jpg"],
@@ -245,7 +259,25 @@ describe("admin information-agent sale loader", () => {
       expect.not.stringContaining("v_auction_sales_app"),
     );
     expect(saleQuery.select).toHaveBeenCalledWith(expect.not.stringContaining("media"));
-    expect(docsQuery.eq).toHaveBeenCalledWith("source_url", quarantinedInternalSale.source_url);
+    // Les pièces de toutes les sources de la fiche sont lues, pas seulement l'annonce principale.
+    expect(docsQuery.in).toHaveBeenCalledWith("source_url", [
+      quarantinedInternalSale.source_url,
+      "https://second.example.test/annonce/9",
+    ]);
+    expect(sale.source_block_urls).toEqual({
+      "primary-source:primary": quarantinedInternalSale.source_url,
+      "second-source:1": "https://second.example.test/annonce/9",
+    });
+    expect(sale.information_agent_signals).toEqual({
+      pdfFacts: {
+        occupancy: { documentLabel: "PV descriptif", documentType: "pv_huissier", page: 14 },
+      },
+      energyClasses: { dpe: "E", ges: "D" },
+      cadastre: null,
+      visitContact: true,
+    });
+    // Les extraits des PDF (données personnelles possibles) ne sont jamais recopiés.
+    expect(JSON.stringify(sale)).not.toContain("locataire");
     expect(docsQuery.select).toHaveBeenCalledWith(
       "document_url,label,document_type,extraction_status,download_status,docling_status,text_chars",
     );

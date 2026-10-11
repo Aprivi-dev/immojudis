@@ -126,6 +126,17 @@
       ]
     },
     {
+      "name": "court registry addresses are never contacts",
+      "description": "Greffe : accueil-exemple@justice.fr — avocat : me.exemple@cabinet-exemple.test",
+      "source_blocks": {
+        "court_email": "tj-exemple@justice.fr",
+        "tribunal": "Greffe civil greffe-exemple@ca-exemple.justice.gouv.fr"
+      },
+      "expected": [
+        "me.exemple@cabinet-exemple.test"
+      ]
+    },
+    {
       "name": "no contact anywhere",
       "description": "Maison à vendre, visite sur rendez-vous.",
       "source_blocks": {

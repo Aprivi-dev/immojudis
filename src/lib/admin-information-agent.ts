@@ -13,17 +13,22 @@ import {
   informationAgentAdminActionSchema,
   informationAgentCreateSchema,
   informationAgentListQuerySchema,
+  informationAgentPreviewSchema,
   listAdminInformationAgentMissions,
+  previewAdminInformationAgentMission,
   runAdminInformationAgentAction,
   type InformationAgentAdminActionPayload,
   type InformationAgentAdminListResponse,
   type InformationAgentAdminMissionPage,
   type InformationAgentAdminResponse,
+  type InformationAgentPreviewInput,
+  type InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
 
 export const adminInformationAgentCreateSchema = informationAgentCreateSchema;
 export const adminInformationAgentActionSchema = informationAgentAdminActionSchema;
 export const adminInformationAgentListQuerySchema = informationAgentListQuerySchema;
+export const adminInformationAgentPreviewSchema = informationAgentPreviewSchema;
 
 export type AdminInformationAgentAction = InformationAgentAdminActionPayload;
 
@@ -62,6 +67,18 @@ export async function runAdminInformationAgentMissionActionForToken({
 }): Promise<InformationAgentAdminListResponse> {
   const auth = await requireAdmin(authToken);
   return runAdminInformationAgentAction({ auth, input });
+}
+
+/** Aperçu exact de l'e-mail : rien n'est enregistré ni envoyé. */
+export async function previewAdminInformationAgentMissionForToken({
+  authToken,
+  input,
+}: {
+  authToken: string;
+  input: InformationAgentPreviewInput;
+}): Promise<InformationAgentPreviewResponse> {
+  const auth = await requireAdmin(authToken);
+  return previewAdminInformationAgentMission({ auth, input });
 }
 
 export const adminInformationAgentReviewSchema = z.object({
@@ -153,6 +170,20 @@ export async function listAdminInformationAgentReview(
     : { data: [], error: null };
   if (assetsError) throw assetsError;
 
+  // Provenance de chaque fait : le message dont il est extrait (réponse e-mail, dépôt du portail
+  // ou import manuel), même s'il n'apparaît pas sur la page de messages affichée.
+  const factMessageIds = [...new Set(facts.map((fact) => fact.message_id).filter(Boolean))];
+  const { data: factMessages, error: factMessagesError } = factMessageIds.length
+    ? await supabaseAdmin
+        .from("information_agent_messages")
+        .select("id,from_email,received_at,metadata")
+        .in("id", factMessageIds)
+    : { data: [], error: null };
+  if (factMessagesError) throw factMessagesError;
+  const factSources = (factMessages ?? []).map((message) =>
+    informationAgentFactSource(message as FactSourceMessage),
+  );
+
   const assetIds = (assets ?? []).map((asset) => asset.id);
   const { data: extractions, error: extractionsError } = assetIds.length
     ? await supabaseAdmin
@@ -171,9 +202,46 @@ export async function listAdminInformationAgentReview(
     assets: assets ?? [],
     extractions: extractions ?? [],
     messages,
+    factSources,
     factsTotal,
     messagesTotal,
     ...adminPageMeta({ offset, limit, total: Math.max(factsTotal, messagesTotal) }),
+  };
+}
+
+type FactSourceMessage = {
+  id: string;
+  from_email: string | null;
+  received_at: string | null;
+  metadata: unknown;
+};
+
+export type InformationAgentFactSource = {
+  messageId: string;
+  channel: "email" | "portal" | "admin_manual_reply";
+  fromEmail: string | null;
+  receivedAt: string | null;
+  /** L'expéditeur correspond au contact sollicité (e-mail) ou l'a déclaré (portail). */
+  senderMatchesRecipient: boolean | null;
+};
+
+export function informationAgentFactSource(message: FactSourceMessage): InformationAgentFactSource {
+  const metadata = recordOrEmpty(message.metadata);
+  const channel =
+    metadata.channel === "portal"
+      ? "portal"
+      : metadata.channel === "admin_manual_reply" || metadata.imported_manually === true
+        ? "admin_manual_reply"
+        : "email";
+  return {
+    messageId: message.id,
+    channel,
+    fromEmail: message.from_email,
+    receivedAt: message.received_at,
+    senderMatchesRecipient:
+      typeof metadata.sender_matches_recipient === "boolean"
+        ? metadata.sender_matches_recipient
+        : null,
   };
 }
 

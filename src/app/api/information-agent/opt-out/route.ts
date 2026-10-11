@@ -11,8 +11,13 @@ import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 
 /**
- * One-click objection from the footer of an information-agent email. Records a global opposition
- * for the address; the agent never contacts an opposed address again.
+ * Opposition depuis le pied d'un e-mail de l'agent d'information.
+ *
+ * - `GET` affiche une page de confirmation et n'écrit rien : les passerelles de messagerie qui
+ *   ouvrent les liens pour les analyser ne doivent pas désinscrire un destinataire à son insu.
+ * - `POST` enregistre l'opposition globale (bouton de la page, ou désinscription en un clic de la
+ *   messagerie selon la RFC 8058, en-tête `List-Unsubscribe-Post`). L'agent ne contacte plus jamais
+ *   une adresse opposée.
  */
 export async function GET(request: Request) {
   try {
@@ -21,17 +26,34 @@ export async function GET(request: Request) {
       bucketKey: "information-agent.opt-out",
       ...RATE_LIMIT_POLICIES.publicIp,
     });
-    const params = new URL(request.url).searchParams;
-    const email = parseOptOutEmail(params.get("e"));
-    const secret = process.env.INFORMATION_AGENT_PORTAL_SECRET?.trim() ?? "";
-    if (!email || !verifyInformationAgentOptOutToken(email, params.get("t") ?? "", secret)) {
-      return page("Lien invalide", "Ce lien d’opposition est incomplet ou n’est plus valide.", 400);
-    }
+    const verified = verifiedOptOut(request);
+    if (!verified) return invalidLink();
+    const action = new URL(request.url);
+    return page(
+      "Ne plus être contacté",
+      `Confirmez que l’adresse ${verified.email} ne doit plus recevoir de message d’Immojudis.`,
+      200,
+      `${action.pathname}${action.search}`,
+    );
+  } catch (error) {
+    return unavailable(error);
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    await enforceIpRateLimit({
+      request,
+      bucketKey: "information-agent.opt-out",
+      ...RATE_LIMIT_POLICIES.publicIp,
+    });
+    const verified = verifiedOptOut(request);
+    if (!verified) return invalidLink();
     const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(
       {
         sale_id: null,
         scope_sale_id: null,
-        email: normalizeOptOutEmail(email),
+        email: verified.email,
         opposition_status: "opposed",
         opposed_at: new Date().toISOString(),
       },
@@ -44,24 +66,45 @@ export async function GET(request: Request) {
       200,
     );
   } catch (error) {
-    console.error(
-      JSON.stringify({ scope: "information-agent.opt-out", error: errorDetailForLog(error) }),
-    );
-    return page(
-      "Service indisponible",
-      "Votre demande n’a pas pu être enregistrée. Répondez simplement à l’email reçu : l’opposition sera traitée par notre équipe.",
-      503,
-    );
+    return unavailable(error);
   }
+}
+
+function verifiedOptOut(request: Request): { email: string } | null {
+  const params = new URL(request.url).searchParams;
+  const email = parseOptOutEmail(params.get("e"));
+  const secret = process.env.INFORMATION_AGENT_PORTAL_SECRET?.trim() ?? "";
+  if (!email || !verifyInformationAgentOptOutToken(email, params.get("t") ?? "", secret)) {
+    return null;
+  }
+  return { email: normalizeOptOutEmail(email) };
+}
+
+function invalidLink() {
+  return page("Lien invalide", "Ce lien d’opposition est incomplet ou n’est plus valide.", 400);
+}
+
+function unavailable(error: unknown) {
+  console.error(
+    JSON.stringify({ scope: "information-agent.opt-out", error: errorDetailForLog(error) }),
+  );
+  return page(
+    "Service indisponible",
+    "Votre demande n’a pas pu être enregistrée. Répondez simplement à l’email reçu : l’opposition sera traitée par notre équipe.",
+    503,
+  );
 }
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
-function page(title: string, message: string, status: number) {
+function page(title: string, message: string, status: number, confirmAction?: string) {
+  const form = confirmAction
+    ? `<form method="post" action="${escapeHtml(confirmAction)}" style="margin:20px 0 0"><button type="submit" style="background:#172036;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:15px;cursor:pointer">Confirmer : ne plus me contacter</button></form>`
+    : "";
   return new NextResponse(
-    `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)} - Immojudis</title></head><body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif"><main style="min-height:100vh;display:grid;place-items:center;padding:24px"><section style="max-width:520px;background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:28px"><h1 style="margin:0 0 10px;font-size:24px">${escapeHtml(title)}</h1><p style="margin:0;color:#4b5563;line-height:1.55">${escapeHtml(message)}</p></section></main></body></html>`,
+    `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)} - Immojudis</title></head><body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif"><main style="min-height:100vh;display:grid;place-items:center;padding:24px"><section style="max-width:520px;background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:28px"><h1 style="margin:0 0 10px;font-size:24px">${escapeHtml(title)}</h1><p style="margin:0;color:#4b5563;line-height:1.55">${escapeHtml(message)}</p>${form}</section></main></body></html>`,
     {
       status,
       headers: {

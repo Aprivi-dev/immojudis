@@ -9,6 +9,7 @@ import {
   informationAgentAdminActionSchema,
   informationAgentAppOrigin,
   informationAgentCreateSchema,
+  informationAgentPreviewFingerprint,
   runAdminInformationAgentAction,
   selectInformationAgentContact,
   selectDefaultInformationAgentQuestionKeys,
@@ -23,6 +24,19 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 }));
 
 const emailMocks = vi.hoisted(() => ({ sendResendEmail: vi.fn() }));
+const ADMIN_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const PORTAL_SECRET = "portal-secret-that-is-at-least-32-characters-long";
+
+/** Contenu d'envoi accompagné de l'empreinte que seul l'aperçu serveur sait produire. */
+function previewed<T extends Parameters<typeof informationAgentPreviewFingerprint>[0]>(
+  content: Omit<T, "adminId">,
+): Omit<T, "adminId"> & { previewFingerprint: string } {
+  const fingerprint = informationAgentPreviewFingerprint({ adminId: ADMIN_ID, ...content } as T, {
+    INFORMATION_AGENT_PORTAL_SECRET: PORTAL_SECRET,
+  });
+  if (!fingerprint) throw new Error("fingerprint unavailable");
+  return { ...content, previewFingerprint: fingerprint };
+}
 
 vi.mock("@/lib/email-alerts", () => ({
   sendResendEmail: emailMocks.sendResendEmail,
@@ -104,19 +118,23 @@ describe("supervised information agent", () => {
       vi.stubEnv("INFORMATION_AGENT_EMAIL_FROM", "");
       vi.stubEnv("ALERT_EMAIL_FROM", "");
       vi.stubEnv("INFORMATION_AGENT_INBOUND_DOMAIN", "");
+      vi.stubEnv("INFORMATION_AGENT_PORTAL_SECRET", PORTAL_SECRET);
       vi.mocked(supabaseAdmin.rpc).mockReset();
       emailMocks.sendResendEmail.mockReset();
       try {
         await expect(
           runAdminInformationAgentAction({
-            auth: { isAdmin: true, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } as never,
+            auth: { isAdmin: true, userId: ADMIN_ID } as never,
             input: {
               action: "approve_and_send",
-              missionId: "22222222-2222-4222-8222-222222222222",
               approvalConfirmed: true,
-              recipientEmail: "contact@example.test",
-              subject: "Informations complémentaires",
-              bodyText: "Bonjour, merci de nous transmettre les informations du dossier.",
+              ...previewed({
+                missionId: "22222222-2222-4222-8222-222222222222",
+                recipientEmail: "contact@example.test",
+                recipientOriginUrl: "https://annuaire.example.test/contact",
+                subject: "Informations complémentaires",
+                bodyText: "Bonjour, merci de nous transmettre les informations du dossier.",
+              }),
             },
             fetchImpl: fetchImpl as typeof fetch,
           }),
@@ -281,12 +299,15 @@ describe("supervised information agent", () => {
           auth: { isAdmin: true, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } as never,
           input: {
             action: "approve_and_send",
-            missionId,
             approvalConfirmed: true,
-            recipientEmail: "new-contact@example.test",
-            recipientName: "Me Dupont",
-            subject: "Demande de pièces",
-            bodyText: "Bonjour, pourriez-vous transmettre les pièces du dossier ?",
+            ...previewed({
+              missionId,
+              recipientEmail: "new-contact@example.test",
+              recipientName: "Me Dupont",
+              recipientOriginUrl: "https://annuaire.example.test/me-dupont",
+              subject: "Demande de pièces",
+              bodyText: "Bonjour, pourriez-vous transmettre les pièces du dossier ?",
+            }),
           },
         });
         if (opposition) {
@@ -309,11 +330,22 @@ describe("supervised information agent", () => {
           expect(sent).toContain("Immojudis SAS");
           expect(sent).toContain("https://immojudis.example/privacy");
           expect(sent).toContain("https://immojudis.example/api/information-agent/opt-out?e=");
-          expect(sent).not.toContain("mode=professional");
-          expect(sent).not.toContain("Créer un compte professionnel");
+          // Origine de l'adresse citée avec son lien, invitation sobre à créer un compte.
+          expect(sent).toContain("relevée sur une page publique (annuaire.example.test)");
+          expect(sent).toContain("https://annuaire.example.test/me-dupont");
+          expect(sent).toContain("Créer un compte professionnel");
+          expect(sent).toContain("mode=professional");
+          expect(emailMocks.sendResendEmail.mock.calls[0][0].message).toMatchObject({
+            unsubscribeUrl: expect.stringContaining("/api/information-agent/opt-out?e="),
+            oneClickUnsubscribe: true,
+          });
+          expect(mission.metadata).toMatchObject({
+            recipient_origin_url: "https://annuaire.example.test/me-dupont",
+          });
         }
-        // Registry reads: three recipient checks (two scopes each) plus the origin lookup for the legal footer.
-        expect(contactReads).toBe(7);
+        // Registry reads: the recipient check before approval (two scopes), the origin lookup, then
+        // the checks after approval and just before sending; an opposition stops at the second one.
+        expect(contactReads).toBe(opposition ? 5 : 7);
         expect(mission.recipient_kind).toBe("manual_professional");
       } finally {
         vi.unstubAllEnvs();
@@ -327,16 +359,14 @@ describe("supervised information agent", () => {
   it("detects the material gaps of an incomplete auction listing", () => {
     const gaps = detectInformationGaps(incompleteSale());
 
+    // La date et la mise à prix sont publiées : elles ne sont pas redemandées.
     expect(gaps.map((gap) => gap.key)).toEqual([
-      "sale_date",
-      "starting_price_eur",
       "documents",
       "photos",
       "visit",
       "occupancy",
       "surface",
-      "diagnostics",
-      "composition",
+      "cadastre",
       "sale_terms",
     ]);
     expect(selectDefaultInformationAgentQuestionKeys(gaps)).toEqual([
@@ -349,11 +379,15 @@ describe("supervised information agent", () => {
       priority: 100,
       blocking: true,
     });
+    expect(gaps.find((gap) => gap.key === "documents")?.reason).toContain(
+      "le cahier des conditions de vente, le procès-verbal descriptif, le dossier de diagnostics techniques",
+    );
   });
 
   it("keeps vague source mentions and unusable attachments on the question list", () => {
     const gaps = detectInformationGaps({
       ...incompleteSale(),
+      title: "Appartement à Bordeaux",
       source_description: "Composition et diagnostics à confirmer. Conditions de vente à vérifier.",
       documents_rich: [
         {
@@ -368,8 +402,9 @@ describe("supervised information agent", () => {
     });
 
     expect(gaps.map((gap) => gap.key)).toEqual(
-      expect.arrayContaining(["documents", "visit", "diagnostics", "composition", "sale_terms"]),
+      expect.arrayContaining(["documents", "visit", "composition", "sale_terms"]),
     );
+    expect(gaps.find((gap) => gap.key === "documents")?.reason).toContain("diagnostics");
   });
 
   it("asks to resolve a price conflict before lower-priority missing details", () => {
@@ -384,39 +419,39 @@ describe("supervised information agent", () => {
     );
   });
 
-  it("still asks for the sale conditions when only a diagnostic is attached", () => {
+  it("only asks for the pieces that are really missing", () => {
     const diagnostic = { url: "https://example.test/dpe.pdf", name: "DPE", type: "diagnostic" };
     const sale = { ...incompleteSale(), documents: [diagnostic] };
-    expect(detectInformationGaps(sale).find((gap) => gap.key === "documents")?.reason).toContain(
-      "cahier des conditions de vente",
-    );
-    expect(detectInformationGaps(sale).some((gap) => gap.key === "diagnostics")).toBe(false);
+    const reason = detectInformationGaps(sale).find((gap) => gap.key === "documents")?.reason;
+    expect(reason).toContain("cahier des conditions de vente");
+    expect(reason).not.toContain("diagnostics");
     expect(
       detectInformationGaps({
         ...sale,
         documents: [
           diagnostic,
           { url: "https://example.test/ccv.pdf", name: "Cahier des conditions de vente" },
+          { url: "https://example.test/pvd.pdf", name: "PVD.pdf" },
         ],
-      }).some((gap) => gap.key === "documents"),
+      }).some((gap) => gap.key === "documents" || gap.key === "sale_terms"),
     ).toBe(false);
   });
 
-  it("does not ask again for an accepted claim matching the displayed value", () => {
+  it("does not ask again for a value already published by the source", () => {
     const sale = incompleteSale();
+    const keys = detectInformationGaps(sale).map((gap) => gap.key);
+    expect(keys).not.toContain("sale_date");
+    expect(keys).not.toContain("starting_price_eur");
+
     const facts = getFactReliabilitiesFromClaims(sale, [
       {
         field_key: "sale_date",
-        fact_status: "accepted",
-        value_jsonb: sale.sale_date,
+        fact_status: "conflicted",
+        value_jsonb: "2026-09-15T09:00:00.000Z",
         captured_at: "2026-09-10T12:00:00Z",
       },
     ]);
-
-    expect(detectInformationGaps(sale, facts).map((gap) => gap.key)).not.toContain("sale_date");
-    expect(detectInformationGaps(sale, facts).map((gap) => gap.key)).toContain(
-      "starting_price_eur",
-    );
+    expect(detectInformationGaps(sale, facts).map((gap) => gap.key)).toContain("sale_date");
   });
 
   it("does not invent default questions when no gap was identified", () => {
@@ -578,6 +613,7 @@ describe("supervised information agent", () => {
       action: "approve_and_send",
       missionId: "22222222-2222-4222-8222-222222222222",
       approvalConfirmed: true,
+      previewFingerprint: "b".repeat(64),
       recipientEmail: "cabinet@example.test",
       recipientName: "Maître Dupont",
       subject: "Demande de pièces",
