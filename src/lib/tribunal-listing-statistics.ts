@@ -192,6 +192,9 @@ export const tribunalListingStatisticsResponseSchema = z
         rawAnnouncements: z.number().int().nonnegative(),
         deduplicatedAnnouncements: z.number().int().nonnegative(),
         unresolvedStrongAddressDuplicates: z.number().int().nonnegative(),
+        // Past hearings of the cohort read from the Outcome Graph archive
+        // because their announcement left the catalogue.
+        archivedAnnouncements: z.number().int().nonnegative().optional(),
         outcomeGateApplied: z.literal(false),
         limitations: z.array(z.string().min(1)).min(1),
       })
@@ -271,6 +274,9 @@ export type TribunalListingStatisticsSale = {
   marketEstimate?: TribunalListingStatisticsMarketEstimate | null;
   marketEstimateEligible?: boolean;
   unresolvedStrongAddressDuplicate?: boolean;
+  /** False when visit dates are not kept for the row (Outcome Graph archive). */
+  visitInformationAvailable?: boolean;
+  historySource?: "catalogue" | "outcome_graph_archive";
 };
 
 type ParsedSale = Omit<
@@ -381,7 +387,10 @@ export function buildTribunalListingStatistics(input: {
   );
   const knownOverbids = overbidResults.filter((value): value is boolean => value !== null);
   const overbidTrueCount = knownOverbids.filter(Boolean).length;
-  const visits = observed.filter((sale) => hasVisitDate(sale.visitDates)).length;
+  // Archived rows do not keep visit dates; they are left out of the
+  // denominator rather than counted as "no visit announced".
+  const visitObservable = observed.filter((sale) => sale.visitInformationAvailable !== false);
+  const visits = visitObservable.filter((sale) => hasVisitDate(sale.visitDates)).length;
   const publicationLeadDays = observed.flatMap((sale) => {
     if (!sale.publicationDateKnown) return [];
     return nonNegativeDays(sale.publicationAt, sale.saleAt);
@@ -410,7 +419,10 @@ export function buildTribunalListingStatistics(input: {
       startingPriceToDvfRatio: sampleMetric(ratioValues, median(ratioValues)),
       propertyTypes: propertyTypeShares(knownPropertySales),
       occupation,
-      visitCoverage: sampleMetric(observed, observed.length ? visits / observed.length : null),
+      visitCoverage: sampleMetric(
+        visitObservable,
+        visitObservable.length ? visits / visitObservable.length : null,
+      ),
       overbidCoverage: sampleMetric(
         knownOverbids,
         knownOverbids.length ? overbidTrueCount / knownOverbids.length : null,
@@ -444,12 +456,16 @@ export function buildTribunalListingStatistics(input: {
       rawAnnouncements: input.rawAnnouncements ?? input.sales.length,
       deduplicatedAnnouncements: input.sales.length,
       unresolvedStrongAddressDuplicates: input.unresolvedStrongAddressDuplicates ?? 0,
+      archivedAnnouncements: observed.filter(
+        (sale) => sale.historySource === "outcome_graph_archive",
+      ).length,
       outcomeGateApplied: false,
       limitations: [
         "La cohorte regroupe les annonces publiées ou découvertes par Immojudis pendant la période demandée; elle ne prétend pas à l’exhaustivité nationale.",
         "Les annonces sans date de publication fiable utilisent first_seen_at et sont comptées séparément.",
         "Les ratios DVF utilisent uniquement les estimations pré-calculées, fraîches, actionnables et issues de DVF.",
         "Les taux de surenchère reposent uniquement sur des occurrences factuelles explicites; l’absence de preuve reste inconnue.",
+        "Les audiences passées dont l’annonce a quitté le catalogue proviennent de l’archive du graphe des résultats : sans statut de vérification ni dates de visite, elles sont exclues du taux de visites.",
       ],
     },
   };

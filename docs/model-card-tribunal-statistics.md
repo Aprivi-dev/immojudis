@@ -1,13 +1,14 @@
 # Statistiques par tribunal — model card
 
-_Version documentaire 0.7 — 20 septembre 2026. Cette fiche décrit des agrégats descriptifs expérimentaux. Elle ne vaut ni validation statistique externe, ni qualification de modèle prédictif fiable, ni autorisation de promesse commerciale._
+_Version documentaire 0.8 — 11 octobre 2026. Cette fiche décrit des agrégats descriptifs expérimentaux. Elle ne vaut ni validation statistique externe, ni qualification de modèle prédictif fiable, ni autorisation de promesse commerciale._
 
 ## Trois familles d’indicateurs séparées
 
 Immojudis sépare strictement :
 
-1. l’**activité des annonces de ventes judiciaires**, disponible sur chaque annonce via
-   `tribunal_judicial_activity_v2` ;
+1. l’**activité des annonces de ventes judiciaires**, disponible sur chaque annonce et sur
+   `/tribunaux` via `tribunal_judicial_activity_v3` (et `tribunal_listing_statistics_v1` pour le bloc
+   d’annonce) ;
 2. les **résultats historiques canoniques des audiences**, construits par
    `tribunal_statistics_builder_v1` uniquement après preuves et revues A/B ;
 3. un **repère complémentaire de prix publiés par Licitor**, source tierce de grade C,
@@ -22,6 +23,53 @@ concernée, par type de bien. Ils ne doivent jamais être interprétés comme un
 une mesure exhaustive du greffe. Seules les annonces explicitement judiciaires, confirmées ou
 recoupées, et rattachées exactement à un tribunal actif du référentiel Justice sont retenues. Les
 médianes sont masquées sous cinq observations.
+
+### Origine de l’historique observé (depuis la v0.8)
+
+La rétention du catalogue supprime de `auction_sales` les ventes dont l’audience est passée. Avant
+la v0.8, l’historique observé n’était lu que dans `auction_sales` : il était donc vide pour tous les
+tribunaux. Chaque vente étant « pontée » dans le graphe des résultats avant sa suppression
+(`bridge_auction_sales_to_outcome_graph_batch`), l’historique est désormais lu ainsi :
+
+- **pipeline à venir** : `auction_sales` uniquement (annonces judiciaires vérifiées ou recoupées,
+  hors quarantaine), inchangé ;
+- **audiences passées** : les ventes passées encore présentes dans `auction_sales`, plus l’archive du
+  graphe via la RPC en lecture seule `public.tribunal_outcome_graph_past_hearings` (service_role
+  uniquement). Une ligne d’archive dont la vente est encore au catalogue est ignorée : la ligne du
+  catalogue, avec ses filtres de vérification et de quarantaine, fait foi.
+
+La RPC exclut : le tribunal `legacy:unmapped` et tout tribunal qui n’est pas un `tribunal_judiciaire`
+actif ; les statuts d’annonce autres que `upcoming`, `past` et `adjudicated` au moment du pont
+(`quarantined`, `cancelled`, `withdrawn`, `postponed`, `unknown`) ; les audiences `cancelled`, `draft`
+et `not_requested` ; les sources non judiciaires `notaires`, `cessions_etat` et `agrasc`.
+
+L’archive ne conserve ni le statut de vérification de l’annonce ni ses dates de visite : les audiences
+archivées sont exclues du dénominateur des taux de visites (jamais comptées comme « sans visite »).
+La première détection est celle de l’audience dans le graphe (`publication_first_seen_at`).
+
+**Rattachement au tribunal.** Priorité 1 : compétence communale vérifiée (INSEE exact, référentiel
+Justice). Priorité 2 (nouvelle) : libellé explicite de l’annonce (« TJ Marseille », « Tribunal
+judiciaire de Nanterre ») résolu vers un seul tribunal du référentiel national
+(`app_private.resolve_tribunal_code_from_label`, méthode `tribunal_label_exact` dans le graphe,
+`source_tribunal_label_key` dans `auction_sale_court_label_assignments`). Un nom de commune seul ne
+résout jamais un tribunal ; une clé partagée par deux tribunaux reste non résolue ; aucun tribunal
+départemental par défaut n’est déduit. Le pipeline Python applique la même règle
+(`tribunal_label_court_key`) et conserve le drapeau `tribunal_competence_unverified`.
+
+**Dédoublonnage.** Une même vente est souvent publiée par plusieurs sources (Licitor, Vench, Petites
+Affiches sous deux schémas d’URL). Mesure du 11 octobre 2026 : 1 280 lignes à venir pour 572 lots,
+1 500 audiences archivées pour 655 lots sur 36 mois. Deux annonces sont un même lot quand elles ont le
+même tribunal, le même jour d’audience en heure de Paris, la même mise à prix strictement positive et
+la même commune normalisée ; sans mise à prix ou sans commune, aucune fusion. Le lot fusionné garde la
+première détection la plus ancienne. Les compteurs `archivedPastSales` et
+`mergedDuplicateAnnouncements` sont publiés dans la provenance.
+
+**Couverture mesurée (validation en transaction annulée sur la production, 11 octobre 2026).**
+Audiences passées rattachées à un vrai tribunal : 405 → 1 598 ; ventes judiciaires du catalogue sans
+code tribunal : 380 → 89 ; tribunaux avec au moins cinq lots passés sur 36 mois : 0 → 39, dont 38 avec
+mise à prix et délai publiables. Environ 900 ponts restent sur `legacy:unmapped`, dont environ 780
+sans libellé conservé (la réconciliation antérieure à la v0.8 écrasait le libellé avant la purge) ;
+ils ne sont pas récupérables sans autre source.
 
 La fourchette dite « centrale » va du 25e au 75e percentile et contient donc la moitié des annonces
 retenues. Elle décrit la distribution des mises **initiales**, pas les prix d’adjudication. La comparaison
