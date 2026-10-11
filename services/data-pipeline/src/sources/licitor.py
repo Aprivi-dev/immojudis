@@ -28,6 +28,7 @@ from src.sources.common import (
     parse_html,
 )
 from src.sources.image_candidates import html_image_candidates
+from src.sources.licitor_extraction import apply_licitor_fields, dedupe_licitor_images, extract_licitor_fields
 from src.sources.source_features import cadastral_to_m2 as _cadastral_to_m2
 from src.sources.source_features import extract_parking_count as _extract_parking_count
 from src.sources.source_features import extract_qualified_surface as _extract_qualified_surface_impl
@@ -289,7 +290,7 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     sale_date = _extract_sale_date(lines)
     visit_dates = _extract_visit_dates(lines)
     occupancy_status = _extract_occupancy_status(detail_text)
-    documents = _extract_documents(soup, source_url)
+    documents, virtual_tours = _extract_attachments(soup, source_url)
     status = "unknown"
     for line in lines:
         if re.fullmatch(r"Vente\s+non\s+requise\.?", line, re.I):
@@ -302,7 +303,7 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
             status = "cancelled"
             break
 
-    return {
+    sale = {
         "source_name": "licitor",
         "source_url": source_url,
         "external_id": _extract_external_id(source_url, raw_text),
@@ -332,6 +333,7 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "documents": documents,
         "source_images": images,
         "raw_image_url": images[0] if images else None,
+        "source_virtual_tours": virtual_tours,
         "raw_text": raw_text,
         "source_blocks": {
             key: value
@@ -361,6 +363,12 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
             if value
         },
     }
+    # Lecture structurée du texte de la fiche (lots, procédure, conditions, avocats,
+    # visites, régie) : même code que le recalcul sur les pages déjà stockées.
+    extracted = extract_licitor_fields(raw_text, sale)
+    if extracted is not None:
+        apply_licitor_fields(sale, extracted)
+    return sale
 
 
 def _collect_detail_urls(client: LicitorClient, max_pages: int, errors: list[str]) -> list[str]:
@@ -752,7 +760,12 @@ def _extract_description(soup: BeautifulSoup, title: str | None) -> str | None:
     if not lot:
         return None
     parts = []
-    for node in lot.select(".SousLot p, .AdditionalText"):
+    # Le titre du premier sous-lot est le titre de l'annonce ; ceux des sous-lots
+    # suivants (« Une cave », « Un parking extérieur ») font partie de la désignation.
+    first_sub_lot = lot.select_one(".SousLot")
+    for node in lot.select(".SousLot h2, .SousLot p, .AdditionalText"):
+        if node.name == "h2" and node.parent is first_sub_lot:
+            continue
         text = clean_text(node.get_text(" ", strip=True))
         if text:
             parts.append(text)
@@ -812,6 +825,38 @@ def _is_lawyer_contact_boundary(line: str) -> bool:
     )
 
 
+_VIDEO_RE = re.compile(r"\.(?:mp4|m4v|mov|webm)(?:$|[?#])", re.I)
+
+
+def _extract_attachments(soup: BeautifulSoup, source_url: str) -> tuple[list[dict[str, str]], list[str]]:
+    """Pièces jointes et visites virtuelles de la fiche.
+
+    Le bloc ``.Related`` (pied d'annonce) liste les pièces publiées par l'avocat :
+    cahier des conditions de vente, PV descriptif, diagnostics, attestation de
+    superficie… et parfois une vidéo (« Visite virtuelle »), rangée à part.
+    """
+    related = soup.select(".LegalAd .Related a[href]")
+    if not related:
+        documents = _extract_documents(soup, source_url)
+        tours = [document["url"] for document in documents if _VIDEO_RE.search(document["url"])]
+        return [document for document in documents if document["url"] not in tours], tours
+    documents: list[dict[str, str]] = []
+    tours = []
+    for link in related:
+        href = str(link.get("href"))
+        if href.startswith(("javascript:", "#")):
+            continue
+        url = urljoin(source_url, href)
+        label = clean_text(link.get_text(" ", strip=True))
+        if _VIDEO_RE.search(url) or re.search(r"visite\s+virtuelle|vid[ée]o", label or "", re.I):
+            tours.append(url)
+            continue
+        if any(document["url"] == url for document in documents):
+            continue
+        documents.append({"label": label or href.rstrip("/").rsplit("/", 1)[-1] or "document", "url": url, "type": "pdf"})
+    return documents, _unique(tours)
+
+
 def _extract_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, str]]:
     documents: list[dict[str, str]] = []
     for link in soup.find_all("a", href=True):
@@ -848,6 +893,9 @@ def _looks_like_document_link(href: str, label: str | None) -> bool:
 
 def _extract_images(soup: BeautifulSoup, source_url: str) -> list[str]:
     images: list[str] = []
+    # Galerie : le lien porte la photo en grand, la balise <img> sa vignette (.small.jpg).
+    for link in soup.select(".LegalAd .Pictures a[href]"):
+        _append_image(images, link.get("href"), source_url)
     for selector in ("meta[property='og:image']", "meta[name='twitter:image']", ".LegalAd img"):
         for node in soup.select(selector):
             if node.name == "meta":
@@ -855,7 +903,7 @@ def _extract_images(soup: BeautifulSoup, source_url: str) -> list[str]:
             else:
                 for candidate in html_image_candidates(node):
                     _append_image(images, candidate, source_url)
-    return _unique(images)
+    return dedupe_licitor_images(_unique(images))
 
 
 def _append_image(images: list[str], value: object | None, source_url: str) -> None:
