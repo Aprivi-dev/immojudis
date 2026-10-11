@@ -2,29 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RateLimitError } from "@/lib/api-errors";
 
 const mocks = vi.hoisted(() => ({
-  lookup: vi.fn(),
-  maybeSingle: vi.fn(),
-  select: vi.fn(),
+  location: vi.fn(),
   resolve: vi.fn(),
   profile: vi.fn(),
   enforceIp: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/public-sale.server", () => ({ lookupPublicSale: mocks.lookup }));
+vi.mock("@/lib/sale-location.server", () => ({ loadVisibleSaleLocation: mocks.location }));
 vi.mock("@/lib/rate-limit", () => ({ enforceIpRateLimit: mocks.enforceIp }));
 vi.mock("@/lib/commune-risks.server", () => ({
   resolveSaleCommune: mocks.resolve,
   getCommuneRiskProfile: mocks.profile,
-}));
-vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: {
-    from: () => {
-      const query = { select: mocks.select, eq: () => query, maybeSingle: mocks.maybeSingle };
-      mocks.select.mockReturnValue(query);
-      return query;
-    },
-  },
 }));
 
 import { GET } from "./route";
@@ -36,7 +25,7 @@ const location = {
   latitude: 44.84,
   longitude: -0.58,
   city: "Bordeaux",
-  postal_code: "33000",
+  postalCode: "33000",
   department: "33",
 };
 const profile = { status: "ready", commune: { code: "33063", name: "Bordeaux" } };
@@ -44,8 +33,7 @@ const profile = { status: "ready", commune: { code: "33063", name: "Bordeaux" } 
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.enforceIp.mockResolvedValue(undefined);
-  mocks.lookup.mockResolvedValue({ status: "found", sale: { id: saleId } });
-  mocks.maybeSingle.mockResolvedValue({ data: location, error: null });
+  mocks.location.mockResolvedValue(location);
   mocks.resolve.mockResolvedValue({ code: "33063", name: "Bordeaux", latitude: 0, longitude: 0 });
   mocks.profile.mockResolvedValue(profile);
 });
@@ -68,13 +56,13 @@ describe("public sale risks route", () => {
     expect(response.headers.get("cache-control")).toContain("s-maxage=86400");
   });
 
-  it("answers 404 for a sale outside the public catalogue", async () => {
-    mocks.lookup.mockResolvedValue({ status: "missing" });
+  it("answers 404 for a missing or quarantined sale", async () => {
+    mocks.location.mockResolvedValue(null);
 
     const response = await GET(request(), context);
 
     expect(response.status).toBe(404);
-    expect(mocks.maybeSingle).not.toHaveBeenCalled();
+    expect(mocks.profile).not.toHaveBeenCalled();
   });
 
   it("reports an unresolved commune briefly cached", async () => {
@@ -96,7 +84,7 @@ describe("public sale risks route", () => {
     const response = await GET(request(), context);
 
     expect(response.status).toBe(429);
-    expect(mocks.lookup).not.toHaveBeenCalled();
+    expect(mocks.location).not.toHaveBeenCalled();
   });
 
   it("rejects malformed ids", async () => {

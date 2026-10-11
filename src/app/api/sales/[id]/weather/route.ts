@@ -1,15 +1,14 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { RateLimitError } from "@/lib/api-errors";
 import { apiRouteError, rateLimitResponse } from "@/lib/api-observability";
 import { getClimateHistory } from "@/lib/climate-history.server";
 import { resolveSaleCommune, validCoordinates } from "@/lib/commune-risks.server";
 import type { ClimateResult } from "@/lib/environment-reference";
-import { lookupPublicSale } from "@/lib/public-sale.server";
 import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import { loadVisibleSaleLocation } from "@/lib/sale-location.server";
 
 const saleIdSchema = z.string().uuid();
 
@@ -47,17 +46,8 @@ export async function GET(
   }
 
   try {
-    // Same gate as the public listing page: quarantined or retired sales are 404.
-    const lookup = await lookupPublicSale(parsedId.data);
-    if (lookup.status !== "found") {
-      return NextResponse.json({ error: "Vente introuvable." }, { status: 404 });
-    }
-    const { data: sale, error } = await supabaseAdmin
-      .from("auction_sales")
-      .select("latitude,longitude,city,postal_code,department")
-      .eq("id", parsedId.data)
-      .maybeSingle();
-    if (error) throw error;
+    // Same rule as the listing page: only missing or quarantined sales are refused.
+    const sale = await loadVisibleSaleLocation(parsedId.data);
     if (!sale) return NextResponse.json({ error: "Vente introuvable." }, { status: 404 });
 
     let weather: ClimateResult;
@@ -72,7 +62,7 @@ export async function GET(
         latitude: null,
         longitude: null,
         city: sale.city,
-        postalCode: sale.postal_code,
+        postalCode: sale.postalCode,
         department: sale.department,
       });
       weather = commune
