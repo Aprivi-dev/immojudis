@@ -31,7 +31,13 @@ from src.sources.common import (
     unique_dicts,
 )
 from src.sources.image_candidates import html_image_candidates
+from src.sources.info_encheres_extraction import (
+    apply_info_encheres_features,
+    extract_info_encheres_detail,
+    gallery_images,
+)
 from src.sources.linked_pages import LinkedPages
+from src.sources.listing_characteristics import known_detail_lacks_characteristics, restore_known_detail_blocks
 from src.sources.source_features import merge_documents as _merge_documents
 from src.sources.source_features import merge_text_values as _merge_text_values
 from src.sources.source_features import normalize_document_text as _normalize_document_text
@@ -78,7 +84,9 @@ def scrape_info_encheres_aquitaine(max_pages: int | None = None) -> list[dict[st
 
 
 def scrape_info_encheres_aquitaine_result(
-    max_pages: int | None = None, known: dict[str, str] | None = None
+    max_pages: int | None = None,
+    known: dict[str, str] | None = None,
+    known_details: dict[str, dict[str, Any]] | None = None,
 ) -> ScrapeResult:
     """Collect Info Encheres judicial real-estate listings for the target departments."""
     settings = load_settings()
@@ -114,8 +122,11 @@ def scrape_info_encheres_aquitaine_result(
                 if source_url:
                     exclusions[canonical(str(source_url))] = "department_filter"
                 continue
-            if should_fetch_detail(sale, known):
+            if should_fetch_detail(sale, known) or known_detail_lacks_characteristics(sale, known_details):
+                sale.pop("_known_unchanged", None)
                 _enrich_sale_from_detail(client, sale, errors)
+            elif restore_known_detail_blocks(sale, known_details):
+                _attach_source_property_features(sale)
             raw_sales.append(sale)
     pagination_metrics = pagination.metrics()
     validated_sales = validate_raw_sales("info_encheres", unique_dicts(raw_sales, "source_url"), errors)
@@ -201,7 +212,8 @@ def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any
     latitude, longitude = _extract_coordinates(html)
     title = _extract_meta(soup, "title") or (_text(soup.title.get_text(" ", strip=True)) if soup.title else None)
     documents = _extract_documents(soup, source_url)
-    source_images = _extract_images(soup, source_url)
+    # Les photos de la galerie ne sont listées que dans le script ``$.fancybox.open``.
+    source_images = _merge_text_values(gallery_images(html), _extract_images(soup, source_url))
     source_blocks = _extract_source_blocks(details, description, lawyer_name, lawyer_contact, documents, page_text)
     raw_text = _build_detail_raw_text(source_blocks)
     property_type = _detail_property_type(details.get("nature du bien"))
@@ -227,6 +239,20 @@ def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any
         surface_evidence = None
     rooms_count = _extract_rooms_count(description)
     parking_count = _extract_parking_count(description)
+    structured = extract_info_encheres_detail(
+        details,
+        description=description,
+        tribunal_cell=_tribunal_cell_text(soup),
+        city=city,
+        documents=documents,
+        photos=len(source_images),
+        surfaces={
+            "published_surface_m2": extract_surface(details.get("superficie"), exclude=_is_cadastral_surface_match),
+            "habitable_surface_m2": habitable_surface_m2,
+            "land_surface_m2": land_surface_m2,
+        },
+    )
+    source_blocks.update(structured["source_blocks"])
 
     return _attach_source_property_features({
         "source_name": "info_encheres",
@@ -261,7 +287,16 @@ def parse_info_encheres_detail_html(html: str, source_url: str) -> dict[str, Any
         "source_blocks": source_blocks,
         "raw_image_url": source_images[0] if source_images else None,
         "source_images": source_images,
+        "source_property_features": structured["source_property_features"],
     })
+
+
+def _tribunal_cell_text(soup: BeautifulSoup) -> str | None:
+    for row in soup.select("tr"):
+        cells = row.find_all("td")
+        if len(cells) >= 2 and _normalize_label(cells[0].get_text(" ", strip=True)) == "au tribunal judiciaire de":
+            return cells[1].get_text("\n", strip=True)
+    return None
 
 
 def _sale_date_with_audience_time(date_text: str | None, text: str) -> str | None:
@@ -292,7 +327,13 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
     for key, value in details.items():
         if value in (None, "", []):
             continue
-        if key == "documents":
+        if key == "source_blocks":
+            # La vignette porte déjà un bloc (``listing_completeness``) : fusion, la fiche prime.
+            existing_blocks = sale.get("source_blocks") if isinstance(sale.get("source_blocks"), dict) else {}
+            sale[key] = {**existing_blocks, **value}
+        elif key == "source_property_features":
+            apply_info_encheres_features(sale, value)
+        elif key == "documents":
             sale[key] = _merge_documents(sale.get(key), value)
         elif key == "source_images":
             sale[key] = _merge_text_values(sale.get(key), value)
@@ -695,9 +736,16 @@ def _extract_occupancy_status(raw_text: str) -> str | None:
     return None
 
 
+# Point publié par le site quand son géocodage échoue (Alpes-de-Haute-Provence), quel
+# que soit le département du bien : 10 des 43 ventes en base le portaient le 2026-10-11.
+_SITE_FALLBACK_COORDINATES = {("44.40655", "6.061187")}
+
+
 def _extract_coordinates(html: str) -> tuple[str | None, str | None]:
     lat = _extract_after(html, r"var\s+lat\s*=\s*([0-9.,-]+)")
     lon = _extract_after(html, r"var\s+lon\s*=\s*([0-9.,-]+)")
+    if (lat, lon) in _SITE_FALLBACK_COORDINATES:
+        return None, None
     return lat, lon
 
 
@@ -728,7 +776,7 @@ def _document_type(label: str, href: str) -> str:
     searchable = _normalize_document_text(f"{label} {href}")
     if "proces" in searchable or "procès" in searchable or "pv" in searchable:
         return "pv_descriptif"
-    if "diagnostic" in searchable:
+    if "diagnostic" in searchable or re.search(r"\b(?:diags?|ddt|dpe)\b", searchable):
         return "diagnostics"
     if "cahier" in searchable:
         return "cahier_conditions"
