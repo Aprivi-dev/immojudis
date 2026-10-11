@@ -235,7 +235,8 @@ def extract_encheres_publiques_characteristics(raw_sale: dict[str, Any]) -> dict
         "barreau_admis": conditions.get("eligible_bar"),
         "prolongation_minutes": conditions.get("extension_minutes"),
         "consultation_cahier_conditions": consultation,
-        "occupation_descriptif": occupancy_description,
+        # Clé sans « descriptif » : elle ne doit pas concourir comme description de la vente.
+        "occupation_selon_texte": occupancy_description,
         "designation_cadastrale": cadastre.get("designation") if cadastre else None,
         "caracteristiques_bien": display,
     }

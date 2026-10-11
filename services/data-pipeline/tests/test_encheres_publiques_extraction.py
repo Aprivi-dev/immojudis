@@ -61,7 +61,7 @@ def test_judicial_sale_rules_fees_and_occupancy_are_read_from_stored_blocks() ->
     assert blocks["barreau_admis"] == "Rouen"
     assert blocks["consultation_cahier_conditions"].startswith("au Greffe du juge de l’exécution")
     # Le critère publié et le descriptif divergent : les deux sont gardés.
-    assert blocks["occupation_descriptif"] == "Les lieux sont occupés par leur propriétaire"
+    assert blocks["occupation_selon_texte"] == "Les lieux sont occupés par leur propriétaire"
     assert blocks["designation_cadastrale"] == "Parcelle IT 415 à Exempleville"
     display = blocks["caracteristiques_bien"]
     items = {item["key"]: item["value"] for item in display["items"]}
