@@ -311,9 +311,9 @@ def test_parse_avoventes_detail_html_extracts_source_images() -> None:
 
     details = parse_avoventes_detail_html(html, "https://avoventes.fr/enchere/test")
 
-    assert details["raw_image_url"] == "https://avoventes.fr/public/uploads/cabinet/114/images/cropped_photo.jpg"
+    # La vignette de partage (cropped_) recadre la photo de la galerie (resized_) : une seule entrée.
+    assert details["raw_image_url"] == "https://avoventes.fr/public/uploads/cabinet/114/images/resized_photo.jpg"
     assert details["source_images"] == [
-        "https://avoventes.fr/public/uploads/cabinet/114/images/cropped_photo.jpg",
         "https://avoventes.fr/public/uploads/cabinet/114/images/resized_photo.jpg",
     ]
 

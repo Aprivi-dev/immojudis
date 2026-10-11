@@ -5,7 +5,7 @@ import logging
 import re
 from datetime import date, datetime, timedelta
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -29,6 +29,7 @@ from src.sources.common import (
     should_fetch_detail,
     unique_dicts,
 )
+from src.sources.encheres_immobilieres_payload import extract_vente_payload, vente_fields
 from src.sources.image_candidates import html_image_candidates
 
 BASE_URL = "https://encheresimmobilieres.fr"
@@ -54,6 +55,16 @@ DETAIL_OVERRIDE_FIELDS = {
     "source_images",
     "raw_text",
     "source_blocks",
+    "latitude",
+    "longitude",
+    "adjudication_price_eur",
+    "status",
+    "source_property_features",
+}
+# Champs de la fiche qui remplacent ceux de la carte quand la fiche les publie.
+DETAIL_AUTHORITATIVE_FIELDS = {
+    "description", "visit_dates", "lawyer_contact", "tribunal", "occupancy_status",
+    "lawyer_name", "sale_date", "adjudication_price_eur", "status",
 }
 SHORT_MONTHS = {
     "JANV": "janvier",
@@ -214,8 +225,20 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
     price = _extract_price(compact_text)
     sale_date = _extract_sale_date(compact_text)
     external_id = _extract_after(compact_text, r"(?:Annonce\s*n°|Réf\.\s*annonce\s*:)\s*(\d+)")
-    documents = _detail_documents(soup, source_url)
-    source_images = _detail_images(soup, source_url)
+    vente = extract_vente_payload(html, external_id or _external_id_from_url(source_url))
+    structured = vente_fields(vente) if vente else None
+    read = structured["fields"] if structured else {}
+    documents = _merge_documents(_detail_documents(soup, source_url), read.get("documents"))
+    # La galerie de l'objet ``vente`` fait foi : le HTML mêle les vignettes des ventes
+    # voisines, le visuel du département et le logo du journal de parution.
+    source_images = read.get("source_images") or _detail_images(soup, source_url, external_id)
+    visit_dates = read.get("visit_dates") or visit_dates
+    lawyer_name = read.get("lawyer_name") or lawyer_name
+    lawyer_contact = read.get("lawyer_contact") or lawyer_contact
+    tribunal = read.get("tribunal") or tribunal
+    sale_date = read.get("sale_date") or sale_date
+    address = address or read.get("address")
+    postal_code = postal_code or read.get("postal_code")
     raw_text = "\n".join(
         part
         for part in (
@@ -235,8 +258,8 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
     return {
         "source_name": "encheres_immobilieres",
         "source_url": source_url,
-        "external_id": external_id or _external_id_from_url(source_url),
-        "department": department,
+        "external_id": external_id or read.get("external_id") or _external_id_from_url(source_url),
+        "department": department or read.get("department"),
         "city": city,
         "address": address,
         "postal_code": postal_code,
@@ -256,7 +279,14 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
         "raw_image_url": source_images[0] if source_images else None,
         "source_images": source_images,
         "raw_text": raw_text or page_text,
+        "latitude": read.get("latitude"),
+        "longitude": read.get("longitude"),
+        "adjudication_price_eur": read.get("adjudication_price_eur"),
+        **({"status": "adjudicated"} if read.get("adjudication_price_eur") else {}),
+        "source_property_features": structured["source_property_features"] if structured else {},
         "source_blocks": {
+            **(structured["source_blocks"] if structured else {}),
+            **{
             key: value
             for key, value in {
                 "titre": title,
@@ -279,6 +309,7 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
                 "page_text": page_text,
             }.items()
             if value not in (None, "", [], {})
+            },
         },
     }
 
@@ -345,9 +376,13 @@ def _enrich_sale_from_detail(
             if not sale.get(key):
                 sale[key] = value
             continue
+        if key == "source_property_features" and isinstance(value, dict):
+            existing = sale.get(key) if isinstance(sale.get(key), dict) else {}
+            sale[key] = {**existing, **value}
+            continue
         if key == "raw_text" and sale.get("raw_text"):
             sale[key] = f"{sale['raw_text']}\n{value}"
-        elif not sale.get(key) or key in {"description", "visit_dates", "lawyer_contact", "tribunal", "occupancy_status"}:
+        elif not sale.get(key) or key in DETAIL_AUTHORITATIVE_FIELDS:
             sale[key] = value
 
 
@@ -438,9 +473,12 @@ def _detail_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, st
     documents: list[dict[str, str]] = []
     for link in soup.find_all("a", href=True):
         href = str(link.get("href") or "")
-        label = clean_text(link.get_text(" ", strip=True)) or href.rstrip("/").rsplit("/", 1)[-1] or "document"
-        if not _looks_like_document_link(href, label):
+        text = clean_text(link.get_text(" ", strip=True))
+        # Le libellé de repli (« document ») ne doit pas faire passer le lien d'accueil
+        # ou une icône sans texte pour une pièce jointe.
+        if not _looks_like_document_link(href, text):
             continue
+        label = text or href.rstrip("/").rsplit("/", 1)[-1] or "document"
         documents.append(
             {
                 "label": label,
@@ -451,7 +489,7 @@ def _detail_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, st
     return _merge_documents([], documents)
 
 
-def _detail_images(soup: BeautifulSoup, source_url: str) -> list[str]:
+def _detail_images(soup: BeautifulSoup, source_url: str, external_id: str | None = None) -> list[str]:
     images: list[str] = []
     for selector in ("meta[property='og:image']", "meta[name='twitter:image']"):
         for node in soup.select(selector):
@@ -459,7 +497,43 @@ def _detail_images(soup: BeautifulSoup, source_url: str) -> list[str]:
     for image in soup.find_all("img"):
         for candidate in html_image_candidates(image):
             _append_image(images, candidate, source_url)
-    return _merge_text_values([], images)
+    sale_id = external_id or _external_id_from_url(source_url)
+    return [url for url in _merge_text_values([], images) if _photo_of_sale(url, sale_id)]
+
+
+def _photo_of_sale(url: str, sale_id: str | None) -> bool:
+    """Écarte les vignettes des autres ventes affichées sur la fiche (« /photos/AAAA/MM/<id>-n »)."""
+    match = re.search(r"/images/photos/\d{4}/\d{2}/(\d+)-\d+", url)
+    return not match or not sale_id or match.group(1) == str(sale_id)
+
+
+def clean_encheres_immobilieres_images(urls: object, sale_id: str | None) -> list[str]:
+    """Images stockées sans visuel de département, logo de journal ni photo d'une autre vente."""
+    kept: list[str] = []
+    for value in urls if isinstance(urls, list) else []:
+        candidate: list[str] = []
+        _append_image(candidate, value)
+        if candidate and _photo_of_sale(candidate[0], sale_id):
+            kept.append(candidate[0])
+    return _merge_text_values([], kept)
+
+
+def refresh_encheres_immobilieres_raw_sale(raw_sale: dict[str, Any]) -> bool:
+    """Relecture sans réseau : retire les images génériques gardées par l'ancienne lecture.
+
+    Le texte stocké d'une fiche ne contient pas l'objet ``vente`` (pièces jointes,
+    galerie) : ces données arrivent à la prochaine collecte de la fiche.
+    """
+    if str(raw_sale.get("source_name") or "") != "encheres_immobilieres":
+        return False
+    sale_id = clean_text(raw_sale.get("external_id")) or _external_id_from_url(str(raw_sale.get("source_url") or ""))
+    images = clean_encheres_immobilieres_images(raw_sale.get("source_images"), sale_id)
+    current = clean_text(raw_sale.get("raw_image_url"))
+    kept_current = clean_encheres_immobilieres_images([current], sale_id) if current else []
+    changed = images != raw_sale.get("source_images") or (current and kept_current != [current])
+    raw_sale["source_images"] = images
+    raw_sale["raw_image_url"] = (kept_current or images or [None])[0]
+    return bool(changed)
 
 
 def _looks_like_document_link(href: str, label: str | None) -> bool:
@@ -513,12 +587,22 @@ def _append_image(images: list[str], value: object | None, base_url: str = BASE_
     if not image_url or image_url.startswith(("data:", "#")):
         return
     absolute = urljoin(base_url, image_url)
+    parsed = urlparse(absolute)
+    if parsed.path == "/_next/image":
+        # Variante redimensionnée par Next.js : l'image d'origine est dans ``url``.
+        original = parse_qs(parsed.query).get("url", [None])[0]
+        if not original:
+            return
+        absolute = urljoin(base_url, original)
     lowered = absolute.lower()
     if re.search(r"\.(?:pdf|svg|ico)(?:$|[?#&])", lowered):
         return
     if not re.search(r"\.(?:avif|jpe?g|png|webp)(?:$|[?#&])", lowered):
         return
-    if any(marker in lowered for marker in ("logo", "favicon", "icon-", "/_next/static/", "/assets/")):
+    # Visuel générique du département, logos des journaux de parution, icônes du site.
+    if any(marker in lowered for marker in (
+        "logo", "favicon", "icon-", "/_next/static/", "/assets/", "/images/departements/", "journaux_vae", "/img/",
+    )):
         return
     images.append(absolute)
 

@@ -7,6 +7,17 @@ from html import unescape
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
+from src.normalize import clean_text
+from src.sources.agrasc_extraction import (
+    AGORASTORE_LABEL,
+    apply_points_cles_facts,
+    build_operator_display,
+    flat_operator_blocks,
+    points_cles_facts,
+    points_cles_text,
+    sale_state_terms,
+    type_operator_documents,
+)
 from src.sources.agrasc_urls import (
     AGORA_IMMO_ORIGINS,
     AGORA_MARKETPLACE_ORIGIN,
@@ -184,11 +195,13 @@ def parse_agora_operator_detail(html: str, source_url: str) -> dict[str, Any]:
         detail: dict[str, Any] = {
             "external_id": marker.group(1),
             "description": description, "raw_text": description,
-            "documents": [{"label": item.get("fileName") or "Document opérateur", "url": item["url"]}
-                          for item in model.get("documents", [])
-                          if isinstance(item.get("url"), str)
-                          and is_allowed_origin_url(item["url"], ("https://cdn.agorastore.fr",))
-                          and urlsplit(item["url"]).path.lower().endswith(".pdf")],
+            "documents": type_operator_documents(
+                [{"label": item.get("fileName") or "Document opérateur", "url": item["url"]}
+                 for item in model.get("documents", [])
+                 if isinstance(item.get("url"), str)
+                 and is_allowed_origin_url(item["url"], ("https://cdn.agorastore.fr",))
+                 and urlsplit(item["url"]).path.lower().endswith(".pdf")]
+            ),
             "source_images": [item["url"] for item in model.get("images", [])
                               if isinstance(item.get("url"), str)
                               and is_allowed_origin_url(item["url"], ("https://cdn.agorastore.fr",))],
@@ -254,8 +267,48 @@ def parse_agora_operator_detail(html: str, source_url: str) -> dict[str, Any]:
             detail["source_blocks"]["operator_visit_coverage"] = "last_visit_only"
         if re.search(r"libre de toute occupation", description, re.I):
             detail["occupancy_status"] = "vacant"
+        _attach_agora_structure(detail, page, model, product, fields, marker.group(1))
         return detail
     return {}
+
+
+def _attach_agora_structure(
+    detail: dict[str, Any], page: dict, model: dict, product: dict, fields: list[tuple[str, str]], product_id: str,
+) -> None:
+    """Conditions d'enchère, faits des « Points clés » et bloc d'affichage de la fiche."""
+    state = page.get("saleState") if isinstance(page.get("saleState"), dict) else {}
+    terms = sale_state_terms(state) if str(state.get("productId")) == product_id else {}
+    facts = points_cles_facts(points_cles_text(fields))
+    display = build_operator_display(
+        fields,
+        documents=detail.get("documents") or [],
+        photos=len(detail.get("source_images") or []),
+        terms=terms,
+        operator_label=AGORASTORE_LABEL,
+        visit_dates=detail.get("visit_dates") or [],
+        facts=facts,
+    )
+    if display:
+        detail["source_blocks"]["caracteristiques_bien"] = display
+    detail["source_blocks"].update(flat_operator_blocks(facts, terms))
+    apply_points_cles_facts(detail, facts)
+    features = dict(detail.get("source_property_features") or {})
+    if terms:
+        features["operator_sale_terms"] = terms
+    real_estate = product.get("realEstateInformation") if isinstance(product.get("realEstateInformation"), dict) else {}
+    for key, target in (("dpeRatingValue", "dpe_class"), ("gesRatingValue", "ges_class")):
+        value = str(real_estate.get(key) or "").strip().upper()
+        if re.fullmatch(r"[A-G]", value):
+            detail["source_blocks"][f"{target.split('_')[0]}_classe"] = value
+    geolocation = page.get("productGeolocation") if isinstance(page.get("productGeolocation"), dict) else {}
+    latitude, longitude = geolocation.get("latitude"), geolocation.get("longitude")
+    if isinstance(latitude, (int, float)) and isinstance(longitude, (int, float)) and -90 <= latitude <= 90 \
+            and -180 <= longitude <= 180 and (latitude or longitude):
+        # Coordonnées publiées par l'opérateur pour l'adresse de la fiche (indice de localisation).
+        features["operator_geolocation"] = {"latitude": latitude, "longitude": longitude,
+                                            "address": clean_text(geolocation.get("formattedAddress"))}
+    if features:
+        detail["source_property_features"] = features
 
 
 def parse_trocadero_operator_detail(html: str, source_url: str) -> dict[str, Any]:
@@ -329,7 +382,7 @@ def parse_trocadero_operator_detail(html: str, source_url: str) -> dict[str, Any
         if is_allowed_origin_url(href, (TROCADERO_ORIGIN,)):
             documents.append({"label": label or "Document opérateur", "url": href})
     if documents:
-        detail["documents"] = documents
+        detail["documents"] = type_operator_documents(documents)
     return detail
 
 
