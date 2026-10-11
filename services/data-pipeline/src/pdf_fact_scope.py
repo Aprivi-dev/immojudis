@@ -568,16 +568,23 @@ def _pdf_lot_scope_labels(text: str) -> set[str]:
         labels.add(f"unit:{match.group(1).lower()}")
     # Apartment/logement letters and explicitly numbered units are safe labels;
     # avoid reading ``appartement de 3 pièces`` as unit 3.
-    for match in re.finditer(
-        r"\b(?:appartement|logement)\s+(?:n[°ºo.]?\s*)?([a-z]|\d{1,3})\b",
-        normalized,
-        re.I,
-    ):
+    for match in _PDF_UNIT_LETTER_OR_NUMBER.finditer(_pdf_unit_scan_text(text)):
         before = normalized[max(0, match.start() - 12) : match.start()]
         if re.search(r"\bde\s*$", before) and match.group(1).isdigit():
             continue
         labels.add(f"unit:{match.group(1).lower()}")
     return labels
+
+
+# « Appartement B » / « logement 3 », never « l'appartement a été… » or « n'est ».
+# Letter labels are capitals in the source; the « à » of « appartement à » is masked.
+_PDF_UNIT_LETTER_OR_NUMBER = re.compile(
+    r"\b(?i:appartement|logement)\s+(?:(?i:n)[°ºo.]?\s*)?([A-Z](?![a-z'’])|\d{1,3})\b"
+)
+
+
+def _pdf_unit_scan_text(text: str) -> str:
+    return strip_accents(re.sub(r"(?i)(?<!\w)à(?!\w)", "@", text or ""))
 
 
 def _pdf_lot_scope_spans(text: str) -> list[tuple[str, int, int]]:
@@ -588,11 +595,7 @@ def _pdf_lot_scope_spans(text: str) -> list[tuple[str, int, int]]:
         spans.append((f"lot:{match.group(1).lower()}", match.start(), match.end()))
     for match in re.finditer(rf"\b(?:unit[eé]|b[aâ]timent)\s*(?:n[°ºo.]?\s*)?{token}\b", normalized, re.I):
         spans.append((f"unit:{match.group(1).lower()}", match.start(), match.end()))
-    for match in re.finditer(
-        r"\b(?:appartement|logement)\s+(?:n[°ºo.]?\s*)?([a-z]|\d{1,3})\b",
-        normalized,
-        re.I,
-    ):
+    for match in _PDF_UNIT_LETTER_OR_NUMBER.finditer(_pdf_unit_scan_text(text)):
         before = normalized[max(0, match.start() - 12) : match.start()]
         after = normalized[match.end() : match.end() + 12]
         if (re.search(r"\bde\s*$", before) and match.group(1).isdigit()) or re.search(
@@ -626,6 +629,8 @@ def _pdf_has_multiple_units(text: str, *, candidate_count: int = 0) -> bool:
     if len(labels) >= 2:
         return True
     normalized = strip_accents(text or "").lower()
+    # Standard conditions-of-sale clause, present whatever the number of lots.
+    normalized = re.sub(r"\b(?:si\s+la\s+meme\s+vente\s+comprend|en\s+cas\s+de\s+vente\s+en)\s+plusieurs\s+lots\b", "", normalized)
     if re.search(
         r"\b(?:deux|2|plusieurs|diff[eé]rents?)\s+(?:lots?|unit[eé]s?|appartements?|logements?)\b",
         normalized,

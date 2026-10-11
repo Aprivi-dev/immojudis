@@ -37,3 +37,13 @@ def test_past_check_handles_naive_dates_and_grace():
     assert pdf_sale_date_is_past(datetime(2026, 10, 9, 12, 0), now)
     assert not pdf_sale_date_is_past(datetime(2026, 10, 10, 18, 0), now)
     assert not pdf_sale_date_is_past(datetime(2026, 10, 11, 9, 0, tzinfo=UTC), now)
+
+
+def test_far_future_pdf_date_is_never_applied():
+    sale = _sale()
+    misread = datetime.now(UTC) + timedelta(days=4000)
+
+    _assign_pdf_sale_date(sale, {"value": misread, "document": "cahier.pdf"})
+
+    assert sale.sale_date is None
+    assert sale.raw_payload["pdf_sale_date_rejected"]["reason"] == "too_far_ahead"

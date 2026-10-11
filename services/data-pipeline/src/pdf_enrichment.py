@@ -104,7 +104,7 @@ MAX_DOCUMENT_REDIRECTS = 5
 
 # Deterministic PDF facts include page/document candidates and multi-lot
 # decisions; bump this marker when projection semantics change.
-DOCUMENT_FACTS_VERSION = "document_facts_v3_pdf_scope_diagnostics"
+DOCUMENT_FACTS_VERSION = "document_facts_v4_occupancy_dates_prices"
 
 # Keep a fixed margin for queue finalization after a bounded PDF pass.
 PDF_FINALIZATION_MARGIN_SECONDS = 60.0

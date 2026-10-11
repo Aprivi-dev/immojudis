@@ -73,8 +73,10 @@ from src.pdf_fact_scope import (
 from src.pdf_fact_scope import (
     _pdf_surface_candidates_with_provenance as _scope_pdf_surface_candidates_with_provenance,
 )
+from src.pdf_occupancy import best_occupancy_statement, occupancy_statement_is_relevant, occupancy_statements_agree
 from src.pdf_offer_deadline import OFFER_PROCEDURE_SOURCES, offer_deadline_sale_date, record_offer_deadline
 from src.pdf_sale_date_guard import reject_past_pdf_sale_date
+from src.pdf_starting_price import _extract_starting_price_with_evidence  # noqa: F401  (re-exported)
 
 
 def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, object]] | list[str]) -> AuctionSale:
@@ -112,7 +114,11 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     land_surface_candidates = _pdf_surface_candidates_with_provenance(pdf_texts, land=True)
     rooms_candidates = _pdf_scalar_candidates_from_documents(pdf_texts, _extract_rooms_count_candidates)
     bedrooms_candidates = _pdf_scalar_candidates_from_documents(pdf_texts, _extract_bedrooms_count_candidates)
-    occupancy_candidates = _pdf_scalar_candidates_from_documents(pdf_texts, _extract_occupancy_candidates)
+    occupancy_candidates = [
+        item
+        for item in _pdf_scalar_candidates_from_documents(pdf_texts, _extract_occupancy_candidates)
+        if occupancy_statement_is_relevant(item)
+    ]
     energy_candidates = _energy_diagnostic_candidates_from_documents(pdf_texts)
 
     candidate_sets = {
@@ -131,7 +137,11 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
     land_surface_ambiguous = _pdf_scalar_scope_is_ambiguous(scope_text, land_surface_candidates, field="land")
     rooms_ambiguous = _pdf_scalar_scope_is_ambiguous(scope_text, rooms_candidates, field="rooms")
     bedrooms_ambiguous = _pdf_scalar_scope_is_ambiguous(scope_text, bedrooms_candidates, field="bedrooms")
-    occupancy_ambiguous = _pdf_scalar_scope_is_ambiguous(scope_text, occupancy_candidates, field="occupancy")
+    # Co-ownership lot numbers (flat + cellar) are not separate units: statements
+    # that all agree describe the whole sale unless the listing itself is multi-lot.
+    occupancy_ambiguous = _pdf_scalar_scope_is_ambiguous(scope_text, occupancy_candidates, field="occupancy") and (
+        "multi_lot_sale" in sale.quality_flags or not occupancy_statements_agree(occupancy_candidates)
+    )
     energy_ambiguous = _energy_diagnostics_are_ambiguous(pdf_texts, energy_candidates, scope_text=scope_text)
     guarded_fields = [
         field
@@ -197,11 +207,10 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             )
             if sale.bedrooms_count is not None:
                 _pdf_record_candidate_projection(sale, "bedrooms_count", selected_bedrooms, fallback_evidence=combined[:300])
-    if not sale.occupancy_status:
-        if not occupancy_ambiguous:
-            sale.occupancy_status = _extract_occupancy_status(combined)
-            if sale.occupancy_status:
-                _pdf_record_fact_projection(sale, ["occupancy_status"], evidence=combined[:300])
+    best_occupancy = None if occupancy_ambiguous else best_occupancy_statement(occupancy_candidates)
+    if not sale.occupancy_status and best_occupancy:
+        sale.occupancy_status = str(best_occupancy["value"])
+        _pdf_record_candidate_projection(sale, "occupancy_status", best_occupancy)
     timezone = source_sale_timezone(sale.raw_payload)
     offer_deadline = record_offer_deadline(sale, pdf_texts, complete_texts=complete_texts, local_timezone=timezone)
     if sale.sale_date is None and offer_deadline and sale.source_name in OFFER_PROCEDURE_SOURCES:
@@ -874,37 +883,6 @@ def _write_pdf_text_cache(sale: AuctionSale, pdf_texts: list[dict[str, object]])
             temporary_path.unlink(missing_ok=True)
     return path
 
-def _extract_starting_price_with_evidence(text: str) -> dict[str, object] | None:
-    if not clean_text(text):
-        return None
-    value_pattern = r"(?P<price>[0-9][0-9\s.\u00a0]*(?:,[0-9]{1,2})?)"
-    patterns = (
-        rf"\bmise\s+[àa]\s+prix\s*[:\-]\s*{value_pattern}\s*(?:€|euros?)(?=\s|[).,;:]|$)",
-        rf"\bmise\s+[àa]\s+prix\b.{{0,260}}?"
-        rf"(?:ci[\s-]*apr[eè]s\s+indiqu[eé]e?s?|adjudication\s+aura\s+lieu|en\s+un\s+seul\s+lot)"
-        rf".{{0,140}}?{value_pattern}\s*(?:€|euros?)(?=\s|[).,;:]|$)",
-        rf"\badjudication\b.{{0,180}}?\bsur\s+la\s+mise\s+[àa]\s+prix\b"
-        rf".{{0,180}}?{value_pattern}\s*(?:€|euros?)(?=\s|[).,;:]|$)",
-    )
-    for pattern in patterns:
-        for match in re.finditer(pattern, text, re.I | re.S):
-            context = clean_text(text[max(0, match.start() - 180) : min(len(text), match.end() + 220)]) or ""
-            normalized_context = strip_accents(context).lower()
-            if re.search(
-                r"\b(?:caution|cheque\s+de\s+banque|minimum\s+de)\b|"
-                r"\b10\s*%\s+du\s+montant\s+de\s+la\s+mise\s+a\s+prix\b",
-                normalized_context,
-            ) and not re.search(
-                r"\b(?:adjudication\s+aura\s+lieu|en\s+un\s+seul\s+lot|ci[\s-]*apres\s+indique)\b",
-                normalized_context,
-            ):
-                continue
-            value = parse_price(match.group("price"))
-            if value is None or value <= 0:
-                continue
-            return {"value": value, "evidence": context}
-    return None
-
 def _extract_surface(text: str) -> Decimal | None:
     result = _extract_surface_with_evidence(text)
     return result["value"] if result else None
@@ -1403,6 +1381,7 @@ def _extract_occupancy_status(text: str) -> str | None:
         return "squatted"
     if re.search(
         r"\b(?:actuellement\s+)?occupe(?:e?s?|s)?\b|"
+        r"\b(?:vivre|vit|vivent|habite(?:nt)?|occupent?)\s+(?:dans\s+)?les\s+lieux\b|"
         r"\bsuivant\s+un\s+bail\b|"
         r"\bbail\s+(?:meuble|d['’]habitation|en\s+cours)\b|"
         r"\blocataire\b|"

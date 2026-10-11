@@ -527,7 +527,7 @@ def parse_french_datetime(value: object | None, *, local_timezone: str = "Europe
     lowered = text.lower()
     for weekday in FRENCH_WEEKDAYS:
         lowered = re.sub(rf"\b{weekday}\b", "", lowered)
-    lowered = lowered.replace(" à ", " ")
+    lowered = re.sub(r"\s+(?:à|a)\s+(?=\d)", " ", lowered)  # « 10 SEPTEMBRE 2026 A 14H00 »
     lowered = re.sub(
         r"\b([0-2]?\d)\s*(?:heures?|h)\s*([0-5]\d)?\b",
         lambda m: f"{m.group(1)}:{m.group(2) or '00'}", lowered,
@@ -541,10 +541,10 @@ def parse_french_datetime(value: object | None, *, local_timezone: str = "Europe
         r"(?:\s*,?\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:Z|UTC|GMT|[+-]\d{2}:?\d{2})?)?",
         lowered, re.I,
     ))
-    if len(dated) == 1:
+    if len(dated) == 1:  # dateutil would read stray numbers (« Grasse, 37, ») as the year
         candidate = dated[0].group(0).strip()
-        if not re.search(r"\d{1,2}:\d{2}", lowered) or re.search(r"\d{1,2}:\d{2}", candidate):
-            lowered = candidate
+        clock = re.search(r"\b\d{1,2}:\d{2}\b", f"{lowered[dated[0].end():]} {lowered[: dated[0].start()]}")
+        lowered = f"{candidate} {clock.group(0)}" if clock and ":" not in candidate else candidate
     # dateutil recognizes these timezone names only in their canonical case.
     # Lowercasing the French text above must not turn an explicit UTC/GMT
     # instant into a naive Paris civil time.
