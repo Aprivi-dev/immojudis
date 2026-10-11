@@ -29,11 +29,29 @@ describe("first-search onboarding", () => {
       maxPrice: "150000",
       homeType: "house",
     });
-    expect(record).toEqual({ query: "Bordeaux", maxPrice: 150000, homeTypes: "house" });
+    expect(record).toEqual({
+      query: "Bordeaux",
+      department: undefined,
+      maxPrice: 150000,
+      homeTypes: "house",
+    });
     expect(validateSalesSearch(record)).toMatchObject({
       query: "Bordeaux",
       maxPrice: 150000,
       homeTypes: ["house"],
+    });
+  });
+  it.each([
+    ["33", "33"],
+    ["2a", "2A"],
+    ["974", "974"],
+    ["75011", "75"],
+    ["20090", "2A"],
+    ["97400", "974"],
+  ])("turns the area %s into the département %s, which a free alert accepts", (area, expected) => {
+    expect(firstSearchToUrl({ area, maxPrice: "", homeType: "" })).toMatchObject({
+      query: undefined,
+      department: expected,
     });
   });
   it.each(["", "-1", "Infinity", "NaN", "1e20"])(

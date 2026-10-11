@@ -55,7 +55,7 @@ const BENEFITS = [
   {
     icon: <Bell className="size-6" aria-hidden />,
     title: "Des alertes sur les nouvelles ventes",
-    text: "Fixez vos critères une fois : un seul email récapitulatif par jour vous signale les ventes qui correspondent.",
+    text: "Fixez vos critères une fois : un email récapitulatif quotidien vous signale les ventes qui correspondent (hebdomadaire avec le compte gratuit).",
   },
   {
     icon: <Building2 className="size-6" aria-hidden />,
@@ -65,18 +65,18 @@ const BENEFITS = [
 ] as const;
 
 const DISCOVERY_FEATURES = [
-  "Catalogue, filtres, photos, mise à prix et date de vente",
-  "Sources publiques de la procédure et risques naturels de la commune",
-  "Jusqu’à trois favoris et une alerte",
-  "Annuaire des avocats par barreau",
+  "Fiches complètes : adresse, photos, description, occupation, visites et contact",
+  "Fourchette de valeur estimée et écart avec la mise à prix",
+  "Une alerte avec un email récapitulatif par semaine, trois favoris",
+  "Simulateur de financement, risques de la commune et annuaire des avocats",
 ] as const;
 
 const ANALYSIS_FEATURES = [
-  "Enchère plafond simulée, frais et travaux ajustables",
-  "Estimation du bien et ventes comparables",
-  "Jusqu’à 25 alertes et zones surveillées",
-  "Statistiques des ventes et des tribunaux",
-  "Rapport PDF du scénario et export des résultats",
+  "Enchère plafond chiffrée : travaux, libération, portage et tous les frais",
+  "Pièces du dossier : cahier des conditions de vente, procès-verbal, diagnostics",
+  "Estimation détaillée et ventes comparables",
+  "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
+  "Statistiques des tribunaux, rapport PDF et export des résultats",
 ] as const;
 
 const FAQ: { question: string; answer: (state: OfferState) => ReactNode }[] = [

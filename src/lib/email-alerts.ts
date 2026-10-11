@@ -418,8 +418,12 @@ async function deliverEmailAlertDigest({
   }
 
   const activeAlertIds = await readActiveAlertIds(userId);
+  // A free account only receives the discovery digest; matches queued while it
+  // still had Analyse are not sent once the plan has ended.
   const sendable = notifications.filter(
-    (notification) => !notification.alert_id || activeAlertIds.has(notification.alert_id),
+    (notification) =>
+      (!notification.alert_id || activeAlertIds.has(notification.alert_id)) &&
+      (eligibility.audience === "analyse" || notificationAudience(notification) === "discovery"),
   );
   const stale = notifications.filter((notification) => !sendable.includes(notification));
   for (const notification of stale) {
@@ -496,7 +500,9 @@ async function deliverEmailAlertDigest({
 
 async function readEmailEligibility(
   userId: string,
-): Promise<{ eligible: true } | { eligible: false; reason: string }> {
+): Promise<
+  { eligible: true; audience: "analyse" | "discovery" } | { eligible: false; reason: string }
+> {
   const { data, error } = await supabaseAdmin
     .from("user_notification_preferences")
     .select("alert_email_enabled,alert_email_consented_at")
@@ -512,8 +518,14 @@ async function readEmailEligibility(
     return { eligible: false, reason: "consent_revoked" };
   }
   const plan = await resolvePlanEntitlements(await systemAuthForUser(userId));
-  if (!plan.hasAnalysisAccess) return { eligible: false, reason: "plan_ended" };
-  return { eligible: true };
+  return { eligible: true, audience: plan.hasAnalysisAccess ? "analyse" : "discovery" };
+}
+
+function notificationAudience(notification: { notification_snapshot?: unknown }): string | null {
+  const snapshot = notification.notification_snapshot;
+  return snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+    ? String((snapshot as Record<string, unknown>).audience ?? "") || null
+    : null;
 }
 
 async function readActiveAlertIds(userId: string): Promise<Set<string>> {

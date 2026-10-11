@@ -789,6 +789,7 @@ function SaleDetailWorkspace({
                 sale={displaySale}
                 open={Boolean(expandedDetails.documents)}
                 onOpenChange={(open) => setDetailOpen("documents", open)}
+                locked={access !== "analysis"}
               />
               <LawyerSection sale={displaySale} />
               <details

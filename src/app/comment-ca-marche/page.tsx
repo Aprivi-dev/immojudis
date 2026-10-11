@@ -18,19 +18,19 @@ const STEPS = [
   {
     icon: Search,
     title: "Trouver une vente",
-    text: "Cherchez par ville, département ou région, puis filtrez par type de vente (tribunal, notaire, domaine), budget et surface. Créez une alerte : un email récapitulatif vous signale les nouvelles ventes qui vous correspondent.",
+    text: "Cherchez par ville, département ou région, puis filtrez par type de vente (tribunal, notaire, domaine), budget et surface. Créez une alerte : un email récapitulatif (hebdomadaire avec le compte gratuit, quotidien avec Analyse) vous signale les nouvelles ventes qui vous correspondent.",
     links: [{ href: "/sales", label: "Ouvrir le catalogue" }],
   },
   {
     icon: FileSearch,
     title: "Comprendre le bien",
-    text: "La fiche réunit les photos, la procédure, les pièces du dossier, l’occupation, les risques de la commune et des ventes comparables. Comparez jusqu’à trois biens côte à côte pour repérer le bon dossier.",
+    text: "Avec un compte gratuit, la fiche réunit l’adresse, les photos, la description, l’occupation, les visites, les risques de la commune et une fourchette de valeur. L’offre Analyse ajoute les pièces du dossier et les ventes comparables. Comparez jusqu’à trois biens côte à côte pour repérer le bon dossier.",
     links: [{ href: "/annonce-exemple", label: "Voir une fiche exemple" }],
   },
   {
     icon: BadgeEuro,
     title: "Fixer son enchère plafond",
-    text: "Le simulateur chiffre votre enchère plafond : valeur estimée, frais, travaux et marge de sécurité, que vous ajustez selon votre projet. Fixez la limite avant l’audience, puis tenez-vous-y.",
+    text: "Avec l’offre Analyse, le simulateur chiffre votre enchère plafond : valeur estimée, marge, travaux, libération du bien, portage et tous les frais de la vente, que vous ajustez selon votre projet. Fixez la limite avant l’audience, puis tenez-vous-y.",
     links: [
       { href: "/annonce-exemple", label: "Essayer le simulateur" },
       { href: "/offres", label: "Voir les offres" },

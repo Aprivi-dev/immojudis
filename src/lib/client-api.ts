@@ -131,6 +131,7 @@ export {
   fetchSaleAiReviewProjections,
   fetchSaleFactReliabilities,
   fetchPrecomputedMarketEstimate,
+  fetchValuePreview,
   fetchOutcomeGraphForecast,
   fetchSaleUrbanismeCadastre,
   fetchValuationAdminOverview,

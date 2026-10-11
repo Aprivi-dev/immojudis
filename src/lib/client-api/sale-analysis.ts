@@ -6,6 +6,7 @@ import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import type { MarketAnalyticsResponse } from "@/lib/market-analytics";
 import type { MarketContext } from "@/lib/market.server";
+import type { ValuePreview } from "@/lib/value-preview";
 import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
 import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
@@ -61,6 +62,14 @@ export async function fetchSaleFactReliabilities(
     signal: AbortSignal.timeout(10_000),
   });
   return readJson<SaleFactReliabilitiesResponse>(response);
+}
+
+export async function fetchValuePreview(saleId: string): Promise<ValuePreview> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/value-preview`, {
+    headers: await authHeaders(),
+    signal: AbortSignal.timeout(10_000),
+  });
+  return readJson<ValuePreview>(response);
 }
 
 export async function fetchPrecomputedMarketEstimate(args: {

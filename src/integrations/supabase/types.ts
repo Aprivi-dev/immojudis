@@ -12050,6 +12050,7 @@ export type Database = {
           dedupe_confidence: string | null;
           department: string | null;
           description: string | null;
+          document_count: number | null;
           documents: Json | null;
           documents_rich: Json | null;
           habitable_surface_m2: number | null;
@@ -13104,6 +13105,23 @@ export type Database = {
         Returns: boolean;
       };
       geomfromewkt: { Args: { "": string }; Returns: unknown };
+      get_public_sale_details: {
+        Args: { p_sale_id: string };
+        Returns: {
+          document_count: number;
+          has_air_conditioning: boolean;
+          has_double_glazing: boolean;
+          has_garage: boolean;
+          has_garden: boolean;
+          has_pool: boolean;
+          has_terrace: boolean;
+          has_visit_dates: boolean;
+          id: string;
+          land_surface_m2: number;
+          parking_count: number;
+          photo_count: number;
+        }[];
+      };
       get_public_sale_summary: {
         Args: { p_sale_id: string };
         Returns: {
@@ -13124,6 +13142,21 @@ export type Database = {
           tribunal_city: string;
           tribunal_name: string;
           updated_at: string;
+        }[];
+      };
+      get_public_tribunal_activity: {
+        Args: never;
+        Returns: {
+          apartment_count: number;
+          department: string;
+          house_count: number;
+          median_starting_price_eur: number;
+          next_sale_date: string;
+          other_count: number;
+          tribunal_city: string;
+          tribunal_code: string;
+          tribunal_name: string;
+          upcoming_count: number;
         }[];
       };
       gettransactionid: { Args: never; Returns: unknown };
