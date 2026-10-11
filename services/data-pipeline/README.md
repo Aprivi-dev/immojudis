@@ -478,7 +478,41 @@ PDF_DOCLING_CHUNK_PAGES=10
 PDF_DOCLING_OCR_CHUNK_PAGES=2
 PDF_OCR_ENABLED=true
 PDF_OCR_LANGUAGE=fra+eng
+# Délai minimal entre deux requêtes de pièces jointes vers un même hôte
+# (plancher 1 s ; un Crawl-delay de robots.txt l'augmente).
+PDF_HOST_MIN_DELAY_SECONDS=2
 ```
+
+Les cahiers des charges et règlements de consultation alimentent aussi la
+date limite de remise des offres (`pdf_offer_deadline_extraction`) ; pour les
+appels d'offres (Cessions de l'État, AGRASC, notaires) sans échéance connue,
+elle devient `sale_date` si elle est unique et à venir.
+
+### Vider le stock de pièces jointes
+
+Le mode manuel « documents_backlog » du workflow *Immojudis Data Pipeline*
+(`workflow_dispatch`) ne fait que la lecture des pièces jointes :
+
+```bash
+python -m src.document_backlog --max-sales 200 --budget-minutes 120 --max-passes 4
+```
+
+- ventes actionnables (à venir, inconnues, reportées) dont des pièces ne sont
+  pas lues, la plus proche échéance d'abord, puis celles qui ont des pièces
+  utiles (cahier des conditions, PV descriptif, diagnostics, cadastre,
+  urbanisme) ;
+- la génération PDF courante de chaque vente est remise en file (y compris un
+  job terminé, annulé ou à court d'essais), réservée seule et traitée par le
+  code normal de la file (robots.txt, délai par hôte, OCR, points de reprise) ;
+- six documents par passage (et 120 s d’OCR par document), passages enchaînés
+  jusqu’à `--max-passes` (4 par défaut) par vente ;
+- les erreurs restent sur le job et le manifeste documentaire de la vente ;
+- une vente dont les documents sont déjà à jour voit seulement sa projection
+  `auction_documents` réécrite.
+
+`auction_documents` reprend désormais document par document le texte déjà
+persisté dans `auction_extractions` (statut `verified`) quand le cache local
+du runner est absent, au lieu de repasser ces pièces en `unknown`.
 
 ## Enrichissement LLM Replicate
 
