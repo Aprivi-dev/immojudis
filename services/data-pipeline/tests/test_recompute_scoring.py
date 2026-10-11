@@ -8,14 +8,11 @@ from src.models import AuctionSale
 from src.recompute_scoring import _sale_from_storage_row, _validate_persisted_sale_procedure
 
 
-def test_fetch_sales_uses_retrying_postgrest_transport(monkeypatch) -> None:
+def _fake_postgrest(monkeypatch, sales):
     monkeypatch.setattr(
         recompute_module,
         "load_settings",
-        lambda: {
-            "supabase_url": "https://supabase.test",
-            "supabase_service_role_key": "secret",
-        },
+        lambda: {"supabase_url": "https://supabase.test", "supabase_service_role_key": "secret"},
     )
     calls: list[dict[str, object]] = []
 
@@ -30,20 +27,48 @@ def test_fetch_sales_uses_retrying_postgrest_transport(monkeypatch) -> None:
         def json(self):
             return self._rows
 
-    pages = iter([[{"source_url": "https://example.test/sale"}]])
-
-    def fake_request(method, endpoint, *, table, **kwargs):
-        calls.append({"method": method, "endpoint": endpoint, "table": table, **kwargs})
-        return Response(next(pages))
+    def fake_request(method, endpoint, *, table, params, **kwargs):
+        calls.append({"method": method, "endpoint": endpoint, "table": table, "params": params})
+        if params["select"] == "id":
+            offset, size = int(params["offset"]), int(params["limit"])
+            return Response([{"id": sale["id"]} for sale in sales[offset : offset + size]])
+        wanted = params["id"].removeprefix("in.(").removesuffix(")").split(",")
+        # PostgREST does not keep the order of an in() filter.
+        return Response([sale for sale in reversed(sales) if sale["id"] in wanted])
 
     monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", fake_request)
+    return calls
+
+
+def test_fetch_sales_lists_ids_then_reads_full_rows_in_small_batches(monkeypatch) -> None:
+    sales = [{"id": f"id-{index:03d}", "source_url": f"https://example.test/{index}"} for index in range(60)]
+    calls = _fake_postgrest(monkeypatch, sales)
 
     rows = recompute_module._fetch_sales(source=None, limit=None)
 
-    assert rows == [{"source_url": "https://example.test/sale"}]
-    assert len(calls) == 1
-    assert all(call["method"] == "GET" for call in calls)
-    assert all(call["table"] == "auction_sales" for call in calls)
+    assert [row["id"] for row in rows] == [sale["id"] for sale in sales]
+    assert all(call["method"] == "GET" and call["table"] == "auction_sales" for call in calls)
+    full_reads = [call for call in calls if call["params"]["select"] == "*"]
+    assert len(full_reads) == 3  # 25 + 25 + 10
+    assert calls[0]["params"]["order"] == "updated_at.desc.nullslast,id.asc"
+
+
+def test_fetch_sales_limit_keeps_the_most_recent_and_skips_rows_deleted_meanwhile(monkeypatch) -> None:
+    sales = [{"id": f"id-{index}"} for index in range(5)]
+    calls = _fake_postgrest(monkeypatch, sales)
+    original = recompute_module._postgrest_request_with_retries
+
+    def deleting_request(method, endpoint, *, table, params, **kwargs):
+        if params["select"] == "*":
+            sales.pop(1)  # deleted between the two passes
+        return original(method, endpoint, table=table, params=params, **kwargs)
+
+    monkeypatch.setattr(recompute_module, "_postgrest_request_with_retries", deleting_request)
+
+    rows = recompute_module._fetch_sales(source=None, limit=3)
+
+    assert [row["id"] for row in rows] == ["id-0", "id-2"]
+    assert len(calls) == 2
 
 
 def test_fetch_sales_can_target_only_active_unassessed_readiness(monkeypatch) -> None:
