@@ -194,7 +194,7 @@ export const MARKET_CEILING_SCENARIOS = [
     key: "prudent",
     label: "Prudent",
     basis: "p10",
-    basisLabel: "borne basse calibrée (P10)",
+    basisLabel: "prix bas du secteur",
     safetyDiscountPct: 8,
     description:
       "Profil par défaut : référence = les 10 % des ventes comparables les moins chères, puis marge de sécurité de 8 %.",
@@ -440,8 +440,8 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
     basisLabel: {
       manual: "prix marché saisi",
       median: "médiane locale",
-      p10: "borne basse (P10)",
-      p25: "premier quartile (P25)",
+      p10: "prix bas du secteur",
+      p25: "quart le moins cher du secteur",
     }[basis],
     marketReferencePricePerM2: Math.round(marketReference),
     safetyDiscountPct,

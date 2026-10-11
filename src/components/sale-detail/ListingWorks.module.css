@@ -166,7 +166,7 @@
 
 .envelopeWarning {
   margin: 12px 0 0;
-  border-left: 3px solid var(--gold-soft, #f2c487);
+  border-left: 3px solid var(--gold-light);
   padding-left: 10px;
   color: #ffffff;
   font-size: 13px;
@@ -207,12 +207,12 @@
 }
 
 .dpeNote[data-tone="watch"] {
-  background: var(--warning-tint, #fff7e8);
+  background: var(--warning-tint);
 }
 
 .dpeNote[data-tone="risk"] {
-  background: #fdecea;
-  color: #8a1c12;
+  background: var(--danger-tint);
+  color: var(--danger);
 }
 
 .resultTopline {

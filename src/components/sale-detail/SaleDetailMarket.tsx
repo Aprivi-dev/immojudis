@@ -252,7 +252,7 @@ export function MarketEvidence({
           label="Valeur estimée"
           value={
             marketEstimate?.estimatedValueEur
-              ? formatPrice(marketEstimate.estimatedValueEur)
+              ? formatPrice(Math.round(marketEstimate.estimatedValueEur / 1000) * 1000)
               : marketLoading
                 ? "Calcul…"
                 : "À compléter"

@@ -3,6 +3,7 @@ export function occupancyLabel(status: string | null | undefined): string {
   const s = status.toLowerCase();
   if (s === "unknown" || s === "inconnu") return "À confirmer";
   if (s.includes("libre") || s === "vacant" || s === "free") return "Libre";
+  if (s === "owner_occupied") return "Occupé par le propriétaire";
   if (s.includes("occup")) return "Occupé";
   if (s.includes("loué") || s.includes("loue") || s.includes("rented")) return "Loué";
   return status;

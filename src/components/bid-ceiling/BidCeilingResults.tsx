@@ -501,6 +501,9 @@ function occupationCondition(status: string | null | undefined): string {
   if (!status || normalized === "unknown" || normalized === "inconnu") {
     return "Statut à confirmer : le délai de libération doit être intégré avant de fixer la mise finale.";
   }
+  if (normalized === "owner_occupied") {
+    return `${label} : pas de bail, mais une libération à obtenir après la vente (délai et coût d'une éventuelle expulsion à prévoir).`;
+  }
   if (normalized.includes("occup") || normalized.includes("lou") || normalized.includes("rent")) {
     return `${label} : l'intérêt du dossier dépend du bail, du loyer, du délai et du coût de sortie.`;
   }

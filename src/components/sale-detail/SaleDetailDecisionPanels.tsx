@@ -31,7 +31,7 @@ export function AnalysisDecisionPanel({
 }) {
   const ceiling = ceilingAvailable ? recommendedCeiling : null;
   const marketValue =
-    marketEstimate?.actionable === true ? (marketEstimate.estimatedValueEur ?? null) : null;
+    marketEstimate?.actionable === true ? roundedValue(marketEstimate.estimatedValueEur) : null;
   const markers = comparisonMarkerPositions({
     start: sale.starting_price_eur,
     ceiling,
@@ -107,7 +107,7 @@ export function NonJudicialDecisionPanel({
 }) {
   const venue = getSaleProcedure(sale).venueType;
   const value =
-    marketEstimate?.actionable === true ? (marketEstimate.estimatedValueEur ?? null) : null;
+    marketEstimate?.actionable === true ? roundedValue(marketEstimate.estimatedValueEur) : null;
   return (
     <aside className={panelStyles.estimationCard} aria-label="Repères de prix">
       <dl className={panelStyles.priceGrid}>
@@ -154,6 +154,11 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
       />
     </aside>
   );
+}
+
+/** A model estimate is not precise to the euro: show it to the nearest thousand. */
+function roundedValue(value: number | null | undefined): number | null {
+  return value == null ? null : Math.round(value / 1000) * 1000;
 }
 
 function comparisonMarkerPositions({

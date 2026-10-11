@@ -333,7 +333,9 @@ export function ListingWorks({
             <div className={styles.resultTopline}>
               <p className={styles.resultLabel}>État et énergie</p>
               <span className={styles.evidenceCount}>
-                {risks.length} constat{risks.length > 1 ? "s" : ""}
+                {risks.length === 0
+                  ? "Aucun constat"
+                  : `${risks.length} constat${risks.length > 1 ? "s" : ""}`}
               </span>
             </div>
             <dl className={styles.facts}>
@@ -471,57 +473,59 @@ export function ListingWorks({
           </section>
         ) : null}
 
-        <details className={styles.evidenceDisclosure}>
-          <summary>
-            <span>Voir les constats et les sources</span>
-            <span className={styles.evidenceSummaryCount}>
-              {risks.length} point{risks.length > 1 ? "s" : ""}
-            </span>
-            <ChevronDown className={styles.chevron} aria-hidden />
-          </summary>
+        {risks.length > 0 ? (
+          <details className={styles.evidenceDisclosure}>
+            <summary>
+              <span>Voir les constats et les sources</span>
+              <span className={styles.evidenceSummaryCount}>
+                {risks.length} point{risks.length > 1 ? "s" : ""}
+              </span>
+              <ChevronDown className={styles.chevron} aria-hidden />
+            </summary>
 
-          <div className={styles.evidenceBody}>
-            {risks.length > 0 ? (
-              <ul className={styles.evidenceList} aria-label="Points travaux du dossier">
-                {risks.map((risk, index) => {
-                  const evidence = riskEvidence(risk);
-                  const proof = evidence.proofs[0];
-                  return (
-                    <li key={`${risk.risk_type}-${risk.risk_label}-${index}`}>
-                      <p className={styles.evidenceTitle}>{risk.risk_label}</p>
-                      <div className={styles.evidenceText}>
-                        {proof.excerpt ? <p>{proof.excerpt}</p> : null}
-                        <p>
-                          {proof.url ? (
-                            <a href={proof.url} target="_blank" rel="noopener noreferrer">
-                              {proof.label} (nouvel onglet)
-                            </a>
-                          ) : (
-                            proof.label
-                          )}
-                          {proof.page != null ? ` · page ${proof.page}` : ""}
-                        </p>
-                        <p>{evidence.action}</p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className={styles.emptyEvidence}>
-                Aucun constat de travaux documenté n’est disponible dans cette fiche. Faites
-                vérifier l’état du bien et les pièces avant de retenir un budget.
-              </p>
-            )}
+            <div className={styles.evidenceBody}>
+              {risks.length > 0 ? (
+                <ul className={styles.evidenceList} aria-label="Points travaux du dossier">
+                  {risks.map((risk, index) => {
+                    const evidence = riskEvidence(risk);
+                    const proof = evidence.proofs[0];
+                    return (
+                      <li key={`${risk.risk_type}-${risk.risk_label}-${index}`}>
+                        <p className={styles.evidenceTitle}>{risk.risk_label}</p>
+                        <div className={styles.evidenceText}>
+                          {proof.excerpt ? <p>{proof.excerpt}</p> : null}
+                          <p>
+                            {proof.url ? (
+                              <a href={proof.url} target="_blank" rel="noopener noreferrer">
+                                {proof.label} (nouvel onglet)
+                              </a>
+                            ) : (
+                              proof.label
+                            )}
+                            {proof.page != null ? ` · page ${proof.page}` : ""}
+                          </p>
+                          <p>{evidence.action}</p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className={styles.emptyEvidence}>
+                  Aucun constat de travaux documenté n’est disponible dans cette fiche. Faites
+                  vérifier l’état du bien et les pièces avant de retenir un budget.
+                </p>
+              )}
 
-            {normalizedEstimatedBudget != null ? (
-              <p className={styles.evidenceNote}>
-                Cette enveloppe est une hypothèse ajustable dans le calcul d’enchère plafond ; elle
-                ne remplace pas un devis établi après visite.
-              </p>
-            ) : null}
-          </div>
-        </details>
+              {normalizedEstimatedBudget != null ? (
+                <p className={styles.evidenceNote}>
+                  Cette enveloppe est une hypothèse ajustable dans le calcul d’enchère plafond ;
+                  elle ne remplace pas un devis établi après visite.
+                </p>
+              ) : null}
+            </div>
+          </details>
+        ) : null}
       </div>
     </section>
   );
