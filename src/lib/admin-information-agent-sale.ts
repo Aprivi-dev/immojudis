@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { AuctionSale, SaleDocumentRich, SaleMedia } from "@/lib/types";
+import type { InformationAgentInventorySignals } from "@/lib/information-agent-inventory";
 
 /**
  * The admin information workflow is allowed to inspect a sale that is kept out
@@ -82,7 +83,7 @@ export const ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES = [
 type AdminInformationAgentAvailableStatus =
   (typeof ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES)[number];
 
-type AdminInformationAgentSaleRow = Record<string, unknown> & {
+export type AdminInformationAgentSaleRow = Record<string, unknown> & {
   id?: unknown;
   source_url?: unknown;
   source_name?: unknown;
@@ -95,6 +96,18 @@ type AuctionDocumentRow = Record<string, unknown>;
 export type AdminInformationAgentSaleAuth = Pick<SupabaseAuthContext, "isAdmin">;
 
 /**
+ * Instantané interne de la vente pour l'agent : la forme `AuctionSale`, plus les signaux tirés de
+ * `raw_payload` pour l'inventaire et l'URL source de chaque bloc (provenance exacte des contacts).
+ */
+export type AdminInformationAgentSale = AuctionSale & {
+  information_agent_signals: InformationAgentInventorySignals;
+  source_block_urls: Record<string, string | null>;
+};
+
+/** Nombre maximal d'URL sources dont on lit les pièces (vente + observations). */
+const MAX_DOCUMENT_SOURCE_URLS = 12;
+
+/**
  * Loads the private sale snapshot consumed by the admin information-agent
  * draft builder.  The return value is an internal `AuctionSale` shape; callers
  * must only return derived draft/gap/contact data to the browser.
@@ -105,7 +118,7 @@ export async function loadAdminInformationAgentSale({
 }: {
   auth: AdminInformationAgentSaleAuth;
   saleId: string;
-}): Promise<AuctionSale> {
+}): Promise<AdminInformationAgentSale> {
   requireAdminInformationAgentSaleAccess(auth);
 
   const { data, error } = await supabaseAdmin
@@ -124,7 +137,7 @@ export async function loadAdminInformationAgentSale({
   }
 
   const [documents, sourcePresence] = await Promise.all([
-    loadAdminInformationAgentDocuments(row.source_url),
+    loadAdminInformationAgentDocuments(saleSourceUrls(row)),
     loadAdminInformationAgentSourcePresence(saleId, row.raw_payload),
   ]);
   return toInformationAgentSale(row, documents, sourcePresence);
@@ -140,21 +153,44 @@ function isAvailableInformationAgentStatus(
   return (ADMIN_INFORMATION_AGENT_AVAILABLE_STATUSES as readonly string[]).includes(status ?? "");
 }
 
-async function loadAdminInformationAgentDocuments(sourceUrl: unknown): Promise<SaleDocumentRich[]> {
-  if (typeof sourceUrl !== "string" || !sourceUrl.trim()) return [];
+/**
+ * Toutes les URL sources de la fiche : l'annonce principale, `source_urls` et chaque observation
+ * d'une autre source. Les pièces d'un doublon fusionné comptent aussi pour l'inventaire.
+ */
+export function saleSourceUrls(row: AdminInformationAgentSaleRow): string[] {
+  const urls = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === "string" && /^https?:\/\//i.test(value.trim())) urls.add(value.trim());
+  };
+  add(row.source_url);
+  for (const value of asArray(row.source_urls)) add(value);
+  for (const observation of asArray(row.observations)) add(asRecord(observation).source_url);
+  return [...urls].slice(0, MAX_DOCUMENT_SOURCE_URLS);
+}
+
+async function loadAdminInformationAgentDocuments(
+  sourceUrls: readonly string[],
+): Promise<SaleDocumentRich[]> {
+  if (!sourceUrls.length) return [];
 
   const { data, error } = await supabaseAdmin
     .from("auction_documents")
     .select(
       "document_url,label,document_type,extraction_status,download_status,docling_status,text_chars",
     )
-    .eq("source_url", sourceUrl)
-    .order("created_at", { ascending: true });
+    .in("source_url", [...sourceUrls])
+    .order("created_at", { ascending: true })
+    .limit(200);
   if (error) throw error;
 
+  const seen = new Set<string>();
   return (data ?? [])
     .map((value) => toDocument(value))
-    .filter((document): document is SaleDocumentRich => document !== null);
+    .filter((document): document is SaleDocumentRich => {
+      if (!document || seen.has(document.url)) return false;
+      seen.add(document.url);
+      return true;
+    });
 }
 
 async function loadAdminInformationAgentSourcePresence(
@@ -185,7 +221,7 @@ function toInformationAgentSale(
   row: AdminInformationAgentSaleRow,
   documents: SaleDocumentRich[],
   sourcePresence: AuctionSale["source_presence"],
-): AuctionSale {
+): AdminInformationAgentSale {
   const rawPayload = asRecord(row.raw_payload);
   const observations = asArray(row.observations);
   const sourceBlocks = asRecordOrNull(rawPayload.source_blocks);
@@ -266,6 +302,8 @@ function toInformationAgentSale(
     updated_at: nullableString(row.updated_at),
     source_blocks: sourceBlocks,
     source_blocks_by_source: collectSourceBlocksBySource(row, sourceBlocks, observations),
+    source_block_urls: collectSourceBlockUrls(row, sourceBlocks, observations),
+    information_agent_signals: inventorySignals(rawPayload),
     // Do not copy raw_payload into this internal snapshot.  The draft builder
     // only needs the explicitly mapped source blocks and descriptions, which
     // also keeps accidental browser serialization from exposing raw evidence.
@@ -289,6 +327,71 @@ function collectSourceBlocksBySource(
     result[`${observationSource}:${index + 1}`] = blocks;
   });
   return result;
+}
+
+/** URL source de chaque entrée de `source_blocks_by_source` (mêmes clés). */
+function collectSourceBlockUrls(
+  row: AdminInformationAgentSaleRow,
+  primaryBlocks: Record<string, unknown> | null,
+  observations: unknown[],
+): Record<string, string | null> {
+  const result: Record<string, string | null> = {};
+  const sourceName = nullableString(row.source_name) || "source";
+  if (primaryBlocks) result[`${sourceName}:primary`] = nullableString(row.source_url);
+  observations.forEach((value, index) => {
+    const observation = asRecord(value);
+    if (!asRecordOrNull(asRecord(observation.raw_payload).source_blocks)) return;
+    const observationSource = nullableString(observation.source_name) || "source";
+    result[`${observationSource}:${index + 1}`] = nullableString(observation.source_url);
+  });
+  return result;
+}
+
+const PDF_FACT_KEYS = {
+  occupancy: "pdf_occupancy_candidates",
+  rooms: "pdf_rooms_candidates",
+  surface: "pdf_surface_candidates",
+  land_surface: "pdf_land_surface_candidates",
+  energy: "pdf_energy_diagnostics_candidates",
+} as const;
+
+/**
+ * Signaux de l'inventaire tirés de `raw_payload` : seulement l'existence d'un fait extrait d'une
+ * pièce, avec le libellé de la pièce et la page. Les extraits (qui peuvent contenir des données
+ * personnelles) ne sont jamais recopiés.
+ */
+export function inventorySignals(
+  rawPayload: Record<string, unknown>,
+): InformationAgentInventorySignals {
+  const pdfFacts: NonNullable<InformationAgentInventorySignals["pdfFacts"]> = {};
+  for (const [key, payloadKey] of Object.entries(PDF_FACT_KEYS) as Array<
+    [keyof typeof PDF_FACT_KEYS, string]
+  >) {
+    const first = asArray(rawPayload[payloadKey])
+      .map(asRecord)
+      .find((candidate) => candidate.value !== null && candidate.value !== undefined);
+    if (!first) continue;
+    pdfFacts[key] = {
+      documentLabel: nullableString(first.document_label)?.slice(0, 120) ?? null,
+      documentType: nullableString(first.document_type),
+      page: parsedNumberValue(first.page_number),
+    };
+  }
+  const energy = asRecordOrNull(rawPayload.source_energy_diagnostics);
+  const cadastre = rawPayload.cadastre_location;
+  return {
+    pdfFacts,
+    energyClasses: energy
+      ? { dpe: nullableString(energy.dpe_class), ges: nullableString(energy.ges_class) }
+      : null,
+    cadastre:
+      typeof cadastre === "string"
+        ? nullableString(cadastre)
+        : asRecordOrNull(cadastre)
+          ? "cadastre_location"
+          : null,
+    visitContact: Boolean(nullableString(rawPayload.visit_contact)),
+  };
 }
 
 function collectSaleMedia(row: AdminInformationAgentSaleRow): SaleMedia[] {

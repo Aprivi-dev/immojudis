@@ -33,6 +33,7 @@ import {
 } from "./information-agent";
 import {
   describeInformationAgentAddressOrigin,
+  informationAgentAddressOrigin,
   informationAgentControllerIdentity,
   informationAgentLegalFooterLines,
 } from "./information-agent-compliance";
@@ -43,7 +44,10 @@ import {
   parseOptOutEmail,
   verifyInformationAgentOptOutToken,
 } from "./information-agent-opt-out";
-import { GET as optOut } from "@/app/api/information-agent/opt-out/route";
+import {
+  GET as optOutPage,
+  POST as optOutConfirm,
+} from "@/app/api/information-agent/opt-out/route";
 
 const SECRET = "portal-secret-that-is-at-least-32-characters-long";
 
@@ -122,25 +126,38 @@ describe("art. 14 GDPR prerequisites (P4-12)", () => {
     });
   });
 
-  it("states where the address comes from and renders the full plain-text footer", () => {
+  it("states where the address comes from, with the public listing link", () => {
     expect(
-      describeInformationAgentAddressOrigin({
-        sourceName: "Licitor",
+      informationAgentAddressOrigin({
+        sourceName: "licitor",
         sourceUrl: "https://www.licitor.com/annonce/1",
       }),
-    ).toContain("(Licitor, licitor.com)");
-    expect(describeInformationAgentAddressOrigin({})).toContain("avis de vente judiciaire publié");
+    ).toEqual({
+      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor.",
+      url: "https://www.licitor.com/annonce/1",
+    });
+    expect(
+      informationAgentAddressOrigin({
+        sourceUrl: "https://annuaire.example.test/me-x",
+        manual: true,
+      }).text,
+    ).toBe(
+      "Votre adresse professionnelle a été relevée sur une page publique (annuaire.example.test).",
+    );
+    expect(informationAgentAddressOrigin({ sourceUrl: "javascript:alert(1)" }).url).toBeNull();
+    expect(describeInformationAgentAddressOrigin({})).toContain("avis de vente publié");
 
     const lines = informationAgentLegalFooterLines({
       controllerName: "Immojudis SAS",
       controllerAddress: "1 rue de la Paix",
       contactEmail: null,
       addressOrigin: "Origine X.",
+      addressOriginUrl: "https://www.licitor.com/annonce/1",
       privacyUrl: "https://immojudis.com/privacy",
       optOutUrl: "https://immojudis.com/api/information-agent/opt-out?e=a&t=b",
     }).join("\n");
     expect(lines).toContain("Responsable de traitement : Immojudis SAS, 1 rue de la Paix");
-    expect(lines).toContain("Origine X.");
+    expect(lines).toContain("Origine X. Annonce : https://www.licitor.com/annonce/1");
     expect(lines).toContain("https://immojudis.com/privacy");
     expect(lines).toContain("opt-out?e=a&t=b");
   });
@@ -165,13 +182,36 @@ describe("one-click objection link (P4-12)", () => {
     expect(verifyInformationAgentOptOutToken("cabinet@example.test", "zz", SECRET)).toBe(false);
   });
 
-  it("records a global opposition on a valid click", async () => {
+  it("asks for confirmation on GET without writing (link scanners must not unsubscribe)", async () => {
     const url = buildInformationAgentOptOutUrl({
       appUrl: "https://immojudis.com",
       email: "Cabinet@Example.test",
       secret: SECRET,
     });
-    const response = await optOut(new Request(url));
+    const response = await optOutPage(new Request(url));
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain('method="post"');
+    expect(html).toContain("cabinet@example.test");
+    expect(mocks.upsert).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the confirmation button", undefined],
+    ["a one-click mail client (RFC 8058)", "List-Unsubscribe=One-Click"],
+  ])("records a global opposition from %s", async (_label, body) => {
+    const url = buildInformationAgentOptOutUrl({
+      appUrl: "https://immojudis.com",
+      email: "Cabinet@Example.test",
+      secret: SECRET,
+    });
+    const response = await optOutConfirm(
+      new Request(url, {
+        method: "POST",
+        ...(body ? { body, headers: { "content-type": "application/x-www-form-urlencoded" } } : {}),
+      }),
+    );
 
     expect(response.status).toBe(200);
     expect(mocks.upsert).toHaveBeenCalledWith(
@@ -195,9 +235,14 @@ describe("one-click objection link (P4-12)", () => {
     );
     forged.searchParams.set("e", Buffer.from("victim@example.test").toString("base64url"));
 
-    expect((await optOut(new Request(forged))).status).toBe(400);
+    expect((await optOutConfirm(new Request(forged, { method: "POST" }))).status).toBe(400);
+    expect((await optOutPage(new Request(forged))).status).toBe(400);
     expect(
-      (await optOut(new Request("https://immojudis.com/api/information-agent/opt-out"))).status,
+      (
+        await optOutConfirm(
+          new Request("https://immojudis.com/api/information-agent/opt-out", { method: "POST" }),
+        )
+      ).status,
     ).toBe(400);
     expect(mocks.upsert).not.toHaveBeenCalled();
     expect(parseOptOutEmail("not base64!")).toBeNull();
