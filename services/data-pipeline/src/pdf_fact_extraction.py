@@ -537,6 +537,8 @@ def _extract_visit_dates_from_documents(pdf_texts: list[dict[str, object]] | lis
             label=label,
             url=clean_text(item.get("url")) or "",
         )
+        if document_type == "diagnostics_techniques":  # inspection reports, never sale visit dates
+            continue
         pages = item.get("pages")
         if isinstance(pages, list):
             for page in pages:
@@ -1283,7 +1285,7 @@ def _visit_candidate_chunks(text: str) -> list[str]:
 
 def _normalize_visit_candidate(text: str) -> str | None:
     value = clean_text(text)
-    if not value:
+    if not value or len(value) > 240:  # a visit slot is a short phrase, not a report paragraph
         return None
     normalized = _normalize_document_classifier_text(value)
     if "visite virtuelle" in normalized or "aucune visite virtuelle" in normalized:
