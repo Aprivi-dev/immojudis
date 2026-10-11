@@ -54,6 +54,27 @@ describe("ListingCharacteristics", () => {
     expect(mail.getAttribute("href")).toBe("mailto:pole@dgfip.finances.gouv.fr");
   });
 
+  it("presents restricted notarial documents without a link to downloadable pieces", () => {
+    render(
+      <ListingCharacteristics
+        sale={sale({
+          caracteristiques_bien: {
+            ...BLOCK,
+            attachments: [{ kind_label: "Diagnostic amiante" }],
+            attachments_access: { restricted: true, note: "Accès après agrément de l’office." },
+            manager: { service: "Office fictif", heading: "Office notarial" },
+          },
+        })}
+      />,
+    );
+
+    const section = screen.getByRole("region", { name: "Caractéristiques du bien" });
+    expect(within(section).getByText("Pièces du dossier (accès réservé)")).toBeTruthy();
+    expect(within(section).getByText("Accès après agrément de l’office.")).toBeTruthy();
+    expect(within(section).queryByRole("link", { name: "Consulter les pièces" })).toBeNull();
+    expect(within(section).getByText("Office notarial")).toBeTruthy();
+  });
+
   it("renders nothing when the source publishes no characteristic", () => {
     const { container } = render(<ListingCharacteristics sale={sale(null)} />);
     expect(container.innerHTML).toBe("");

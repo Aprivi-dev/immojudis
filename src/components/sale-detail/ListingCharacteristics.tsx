@@ -121,7 +121,11 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
           ) : null}
           {model.attachments.length ? (
             <>
-              <h3 className={styles.subheading}>Pièces jointes publiées</h3>
+              <h3 className={styles.subheading}>
+                {model.attachmentsAccess
+                  ? "Pièces du dossier (accès réservé)"
+                  : "Pièces jointes publiées"}
+              </h3>
               <ul className={styles.list}>
                 {model.attachments.map((attachment) => (
                   <li key={attachment.label}>
@@ -130,14 +134,22 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
                   </li>
                 ))}
               </ul>
-              <a href="#documents" className={styles.link}>
-                Consulter les pièces
-              </a>
+              {model.attachmentsAccess ? (
+                model.attachmentsAccess.note ? (
+                  <p className={styles.note}>{model.attachmentsAccess.note}</p>
+                ) : null
+              ) : (
+                <a href="#documents" className={styles.link}>
+                  Consulter les pièces
+                </a>
+              )}
             </>
           ) : null}
           {model.manager ? (
             <>
-              <h3 className={styles.subheading}>Service gestionnaire</h3>
+              <h3 className={styles.subheading}>
+                {model.manager.heading ?? "Service gestionnaire"}
+              </h3>
               <p className={styles.note}>
                 {model.manager.service ? <span>{model.manager.service}</span> : null}
                 {model.manager.service && model.manager.email ? " · " : null}
