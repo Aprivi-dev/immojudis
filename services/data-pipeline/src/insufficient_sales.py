@@ -182,7 +182,11 @@ on conflict (bucket, object_path) do nothing
 """
 
 
-def delete_batch(connection: Any, batch: Sequence[Candidate]) -> tuple[int, int]:
+def delete_batch(
+    connection: Any,
+    batch: Sequence[Candidate],
+    bridge_failures: list[dict[str, object]] | None = None,
+) -> tuple[int, int]:
     """Supprime un lot dans UNE transaction ; renvoie (supprimées, ignorées car modifiées entre-temps).
 
     Ordre identique à ``purge_expired_auction_sales`` mais SANS tombstone. Le verrou consultatif est celui de la
@@ -211,7 +215,19 @@ def delete_batch(connection: Any, batch: Sequence[Candidate]) -> tuple[int, int]
             (previous[0] if previous else None,),
         ).fetchone()
         if not bridge or not bridge[0] or str(bridge[1]) != sale_id:
-            raise RuntimeError("Incomplete Outcome Graph bridge before deletion; nothing was deleted for this batch")
+            # Never delete a sale whose Outcome Graph lineage is not complete. The
+            # sale is left untouched and reported, the rest of the batch goes on.
+            skipped += 1
+            failure = {
+                "sale_id": sale_id,
+                "previous_id": str(previous[0]) if previous else None,
+                "complete": bool(bridge[0]) if bridge else None,
+                "next_cursor": str(bridge[1]) if bridge and bridge[1] is not None else None,
+            }
+            LOGGER.warning("Incomplete Outcome Graph bridge, sale kept: %s", failure)
+            if bridge_failures is not None:
+                bridge_failures.append(failure)
+            continue
         connection.execute(_STORAGE_QUEUE_SQL, {"id": sale_id, "url": source_url, "prefix": f"{sale_id}/%"})
         connection.execute("delete from public.valuation_estimates where auction_sale_id = %s::uuid", (sale_id,))
         connection.execute("delete from public.information_agent_missions where sale_id = %s::uuid", (sale_id,))
@@ -275,13 +291,19 @@ def drop_insufficient_sales(
     protected = set(report["protected_user_linked"])
     todo = [c for c in candidates if include_user_linked or c.sale_id not in protected]
     deleted = skipped = 0
+    bridge_failures: list[dict[str, object]] = []
     for start in range(0, len(todo), DELETE_BATCH_SIZE):
         with connect(db_url) as connection:
-            batch_deleted, batch_skipped = delete_batch(connection, todo[start : start + DELETE_BATCH_SIZE])
+            batch_deleted, batch_skipped = delete_batch(
+                connection, todo[start : start + DELETE_BATCH_SIZE], bridge_failures
+            )
         deleted += batch_deleted
         skipped += batch_skipped
         LOGGER.info("Insufficient-information deletion: %s deleted, %s skipped so far", deleted, skipped)
-    print(f"- deleted: {deleted}; skipped (changed since evaluation): {skipped}")
+    print(f"- deleted: {deleted}; skipped (changed since evaluation or incomplete bridge): {skipped}")
+    print(f"- incomplete Outcome Graph bridges (kept): {len(bridge_failures)}")
+    for failure in bridge_failures[:50]:
+        print(f"  - {failure}")
     return 0
 
 
