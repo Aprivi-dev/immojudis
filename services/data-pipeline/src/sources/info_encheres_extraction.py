@@ -85,7 +85,7 @@ def extract_info_encheres_detail(
     method = re.search(r"(Vente aux ench[èe]res publiques(?:\s+sur\s+[^:.\n]{3,60})?)\s*:", text, re.I)
     framework = re.search(r"\bsur\s+(licitation|saisie immobili[èe]re|liquidation judiciaire|conversion)", text, re.I)
     rg = re.search(r"\bRG\s*(?:n[°o]\s*)?:?\s*(\d{2}/\d{3,6})", text)
-    bar = re.search(r"Seuls les Avocats au Barreau d[eu']\s*([A-ZÀ-Ÿ' -]{3,40}?)\s+peuvent", text, re.I)
+    bar = re.search(r"Seuls les Avocats au Barreau d[eu']\s*([A-ZÀ-ÖØ-ÞŒŸ' -]{3,40}?)\s+peuvent", text, re.I)
     hearing = re.search(r"(Les audiences? de vente d[ée]bute(?:nt)?\s+[àa][^.]{2,60})", text, re.I)
     fees = re.search(r"(Frais de poursuites?.{3,160}?)(?:\.\s+(?=[A-ZÀ-Ý])|\.?$)", text, re.I)
     cadastre = _cadastre(text, city)
