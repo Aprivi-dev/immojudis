@@ -426,10 +426,33 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
     })
 
 
+_NEWS_HEADER_RE = re.compile(r"^News\s+\d{1,2}/\d{1,2}\b", re.I)
+
+
+def _without_site_news(lines: list[str]) -> list[str]:
+    """Drop the site's « News 09/10 » headlines: they describe other properties (« local de 1 273 m² »)."""
+    kept: list[str] = []
+    skip_next = False
+    for line in lines:
+        if _NEWS_HEADER_RE.match(line):
+            # « News 09/10 » alone announces the headline on the next line.
+            skip_next = _NEWS_HEADER_RE.fullmatch(line.strip()) is not None
+            continue
+        if skip_next:
+            skip_next = False
+            continue
+        kept.append(line)
+    return kept
+
+
 def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, Any]:
     soup = parse_html(html, "html.parser")
+    for node in soup.select("[class*='news' i], [id*='news' i], [class*='actualite' i]"):
+        node.decompose()
     page_text = "\n".join(
-        line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line
+        _without_site_news(
+            [line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line]
+        )
     )
     detail_text = _scoped_text(soup.select_one(".row.detail")) or page_text
     contact_text = _scoped_text(soup.select_one(".contact-container")) or page_text
