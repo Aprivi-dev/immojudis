@@ -1737,7 +1737,7 @@ def _enabled_scrapers(
         (
             "notaires",
             bool(settings["enable_notaires_benchmark"]),
-            lambda: scrape_notaires_aquitaine_result(max_pages=int(settings["notaires_max_pages"])),
+            lambda: scrape_notaires_aquitaine_result(max_pages=int(settings["notaires_max_pages"]), known=known),
         ),
     ]
     enabled: dict[str, Callable[[], ScrapeResult]] = {}

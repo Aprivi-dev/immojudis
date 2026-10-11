@@ -27,12 +27,12 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
 from src.cadastre_references import ParcelRef, designation, ref_label, references_signature
-from src.normalize import clean_text, parse_surface
+from src.normalize import clean_text, parse_french_datetime, parse_surface
 
 FEATURES_SCHEMA_VERSION = "notaires_features_v2"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
@@ -1108,3 +1108,30 @@ def legacy_source_evidence(
     if description_features.get("evidence"):
         evidence["description_features"] = description_features["evidence"]
     return evidence
+
+
+# Une vente terminée est écartée par la rétention 24 h après sa fin ; la marge
+# couvre les fuseaux et les fins de séance sans heure.
+PAST_CARD_DETAIL_MARGIN = timedelta(days=3)
+
+
+def card_sale_long_past(sale: dict[str, Any], now: datetime | None = None) -> bool:
+    """Carte de liste d'une vente terminée depuis plus de trois jours.
+
+    L'API garde en ligne des centaines de ventes interactives closes. Leur fiche
+    détail (10 s chacune, Crawl-delay du site) ne change rien : la vente est
+    déclarée expirée et n'est pas publiée. Un intervalle incomplet ou une date
+    illisible ne prouve rien : la fiche est alors lue.
+    """
+    schedule = sale.get("source_sale_schedule")
+    if isinstance(schedule, dict):
+        try:
+            end = datetime.fromisoformat(str(schedule.get("closes_at")))
+        except ValueError:
+            return False
+    else:
+        end = parse_french_datetime(sale.get("sale_date"))
+    if end is None:
+        return False
+    end = end if end.tzinfo else end.replace(tzinfo=UTC)
+    return end < (now or datetime.now(UTC)) - PAST_CARD_DETAIL_MARGIN
