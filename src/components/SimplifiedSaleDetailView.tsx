@@ -433,6 +433,15 @@ function SaleDetailWorkspace({
       reportInput: { ...inputs, expectedMaxBid: result.maxBid },
     });
   };
+  // Scenario or quote picked in the Travaux tab. Without a ceiling (non-judicial
+  // sale), the amount only feeds the displayed budget.
+  const selectWorksBudget = (amount: number) => {
+    if (isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked) {
+      applyWorksBudget(amount);
+    } else {
+      setPersonalWorksBudget(Math.max(0, amount));
+    }
+  };
   const heroCeiling =
     access === "analysis" &&
     isTribunalSale &&
@@ -692,14 +701,11 @@ function SaleDetailWorkspace({
                     sale={displaySale}
                     marketEstimate={marketEstimate}
                     marketLoading={marketQuery.isLoading && marketEstimate == null}
-                    worksBudget={
-                      activeSimulation?.worksKnown === false || !retainedWorks
-                        ? null
-                        : retainedWorks
-                    }
+                    worksBudget={activeSimulation?.worksKnown === false ? null : retainedWorks}
                     recommendedCeiling={heroCeilingResult.maxBid}
                     ceilingAvailable={heroCeilingResult.available}
                     onAdjust={() => setCalculationOpen(true)}
+                    onEditWorks={() => changeTab("travaux")}
                   />
                 ) : access === "analysis" ? (
                   <NonJudicialDecisionPanel
@@ -747,6 +753,7 @@ function SaleDetailWorkspace({
                         marketEstimateOverride={marketEstimate}
                         onSimulationChange={setSimulation}
                         initialSimulation={activeSimulation?.reportInput}
+                        onEditWorks={() => changeTab("travaux")}
                       />
                     ) : null}
                   </details>
@@ -849,6 +856,13 @@ function SaleDetailWorkspace({
                   }
                   initialDraft={worksDraft}
                   onDraftChange={setWorksDraft}
+                  surface={surface}
+                  onScenarioSelect={retainedWorks != null ? selectWorksBudget : undefined}
+                  maxWorks={
+                    heroCeiling != null && heroCeilingResult.available
+                      ? heroCeilingResult.maxWorksAtSimulatedPrice
+                      : null
+                  }
                 />
               </>
             ) : (

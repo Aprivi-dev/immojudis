@@ -194,7 +194,7 @@ export const MARKET_CEILING_SCENARIOS = [
     key: "prudent",
     label: "Prudent",
     basis: "p10",
-    basisLabel: "borne basse calibrée (P10)",
+    basisLabel: "prix bas du secteur",
     safetyDiscountPct: 8,
     description:
       "Profil par défaut : référence = les 10 % des ventes comparables les moins chères, puis marge de sécurité de 8 %.",
@@ -431,7 +431,7 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
   return {
     available: true,
     warning: prudentWithoutLowBound
-      ? "Données insuffisantes : ce scénario n’est pas prudent. Faute de borne basse, la référence est la médiane locale."
+      ? "Borne basse indisponible sur cet échantillon : le profil prudent s’appuie sur la médiane locale, seule la marge de sécurité protège ce plafond."
       : undefined,
     occupancy: { ...occupancy, bidReduction: Math.max(0, maxBidFree - maxBid) },
     surface,
@@ -439,10 +439,9 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
     basis,
     basisLabel: {
       manual: "prix marché saisi",
-      median:
-        scenarioConfig.basis === "p10" ? "médiane locale (P10 indisponible)" : "médiane locale",
-      p10: "borne basse (P10)",
-      p25: "premier quartile (P25)",
+      median: "médiane locale",
+      p10: "prix bas du secteur",
+      p25: "quart le moins cher du secteur",
     }[basis],
     marketReferencePricePerM2: Math.round(marketReference),
     safetyDiscountPct,

@@ -16,18 +16,22 @@ export function AnalysisDecisionPanel({
   recommendedCeiling,
   ceilingAvailable,
   onAdjust,
+  onEditWorks,
 }: {
   sale: AuctionSale;
   marketEstimate: MarketEstimate | null;
   marketLoading: boolean;
+  /** `null`: not computable yet; `0`: no works retained. */
   worksBudget: number | null;
   recommendedCeiling: number;
   ceilingAvailable: boolean;
   onAdjust: () => void;
+  /** Opens the Travaux tab, where the works budget is chosen. */
+  onEditWorks?: () => void;
 }) {
   const ceiling = ceilingAvailable ? recommendedCeiling : null;
   const marketValue =
-    marketEstimate?.actionable === true ? (marketEstimate.estimatedValueEur ?? null) : null;
+    marketEstimate?.actionable === true ? roundedValue(marketEstimate.estimatedValueEur) : null;
   const markers = comparisonMarkerPositions({
     start: sale.starting_price_eur,
     ceiling,
@@ -53,11 +57,23 @@ export function AnalysisDecisionPanel({
       <div className={panelStyles.estimationFoot}>
         <p>
           <strong>
-            Travaux inclus : {worksBudget == null ? "À chiffrer" : formatPrice(worksBudget)}
+            Travaux inclus :{" "}
+            {worksBudget == null
+              ? "à chiffrer"
+              : worksBudget > 0
+                ? formatPrice(worksBudget)
+                : "aucun (bien repris en l’état)"}
           </strong>
           <span>Plafond indicatif selon vos hypothèses de marché, de frais et de travaux.</span>
         </p>
         <div>
+          {onEditWorks ? (
+            <button type="button" onClick={onEditWorks}>
+              {worksBudget != null && worksBudget > 0
+                ? "Modifier les travaux"
+                : "Chiffrer les travaux"}
+            </button>
+          ) : null}
           <a href="#calculation" onClick={onAdjust}>
             Ajuster mes hypothèses
           </a>
@@ -91,7 +107,7 @@ export function NonJudicialDecisionPanel({
 }) {
   const venue = getSaleProcedure(sale).venueType;
   const value =
-    marketEstimate?.actionable === true ? (marketEstimate.estimatedValueEur ?? null) : null;
+    marketEstimate?.actionable === true ? roundedValue(marketEstimate.estimatedValueEur) : null;
   return (
     <aside className={panelStyles.estimationCard} aria-label="Repères de prix">
       <dl className={panelStyles.priceGrid}>
@@ -138,6 +154,11 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
       />
     </aside>
   );
+}
+
+/** A model estimate is not precise to the euro: show it to the nearest thousand. */
+function roundedValue(value: number | null | undefined): number | null {
+  return value == null ? null : Math.round(value / 1000) * 1000;
 }
 
 function comparisonMarkerPositions({

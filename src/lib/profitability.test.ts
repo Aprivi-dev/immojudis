@@ -23,7 +23,7 @@ describe("estimateWorksBudget", () => {
     };
     const fallback = computeMarketCeiling(input);
     expect(fallback.basis).toBe("median");
-    expect(fallback.basisLabel).toBe("médiane locale (P10 indisponible)");
+    expect(fallback.basisLabel).toBe("médiane locale");
     const p10 = computeMarketCeiling({ ...input, p10PricePerM2: 2400 });
     expect(p10.basis).toBe("p10");
     expect(p10.marketReferencePricePerM2).toBe(2400);
@@ -173,7 +173,7 @@ describe("scénario prudent", () => {
       scenario: "prudent",
       medianPricePerM2: 3_000,
     });
-    expect(result.warning).toMatch(/pas prudent/);
+    expect(result.warning).toMatch(/Borne basse indisponible/);
     const withLowBound = computeMarketCeiling({
       surface: 50,
       price: 90_000,
