@@ -68,8 +68,11 @@ permissions:
   actions: read
 
 concurrency:
-  # Catalogue preservation and cleanup are deliberately single-writer.
-  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || 'immojudis-data-pipeline') }}
+  # Catalogue preservation and cleanup are deliberately single-writer. The
+  # document backlog has its own group so that scheduled collections are not
+  # queued (and superseded) behind a long drain; both serialise their writes on
+  # the catalogue writer lock, which the drain takes and releases per sale.
+  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || (inputs.documents_backlog && 'immojudis-document-backlog' || 'immojudis-data-pipeline')) }}
   cancel-in-progress: false
 
 jobs:

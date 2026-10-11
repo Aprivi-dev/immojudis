@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from decimal import Decimal
 
 import pytest
@@ -47,7 +48,9 @@ def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
 class _Fake:
     """In-memory stand-in for the database helpers of one drain."""
 
-    def __init__(self, monkeypatch, sales: dict[str, list[AuctionSale | None]], states: dict[str, list[tuple[str, str]]]):
+    def __init__(
+        self, monkeypatch, sales: dict[str, list[AuctionSale | None]], states: dict[str, list[tuple[str, str]]]
+    ):
         self.sales = sales
         self.states = states
         self.processed: list[str] = []
@@ -108,7 +111,9 @@ def test_partial_manifest_is_continued_then_completed(monkeypatch) -> None:
 
 def test_failed_pass_without_progress_is_recorded_and_republished(monkeypatch) -> None:
     url = "https://example.test/b"
-    fake = _Fake(monkeypatch, {url: [_sale(url)]}, {url: [("failed", "Document extraction incomplete; retry required")]})
+    fake = _Fake(
+        monkeypatch, {url: [_sale(url)]}, {url: [("failed", "Document extraction incomplete; retry required")]}
+    )
     monkeypatch.setattr(backlog, "_settled_documents", lambda sale: 0)
 
     outcome = backlog.drain_sale("db", {"source_url": url, "source_name": "vench"}, backlog.BacklogLimits(), 1e18)
@@ -132,7 +137,9 @@ def test_current_documents_only_rewrite_the_projection(monkeypatch) -> None:
 
 def test_one_failing_sale_never_stops_the_run(monkeypatch) -> None:
     good, bad = "https://example.test/good", "https://example.test/bad"
-    fake = _Fake(monkeypatch, {good: [_sale(good)], bad: [_sale(bad)]}, {good: [("completed", "")], bad: [("completed", "")]})
+    fake = _Fake(
+        monkeypatch, {good: [_sale(good)], bad: [_sale(bad)]}, {good: [("completed", "")], bad: [("completed", "")]}
+    )
     original_ensure = fake.ensure
 
     def ensure(db, url, input_hash):
@@ -151,6 +158,7 @@ def test_one_failing_sale_never_stops_the_run(monkeypatch) -> None:
         ][:limit],
     )
 
+    monkeypatch.setattr(backlog, "_catalogue_lock", _free_lock())
     report = backlog.run_document_backlog(backlog.BacklogLimits(max_sales=5))
     summary = report.as_dict()
 
@@ -217,7 +225,9 @@ def test_queue_batch_accepts_pre_claimed_jobs_without_claiming(monkeypatch) -> N
     monkeypatch.setattr(queued_runner, "run_source_detail_jobs", lambda *args, **kwargs: 0)
     monkeypatch.setattr(queued_runner, "fetch_sale_for_data_refresh", lambda _url: None)
     finished: list[tuple[str, dict]] = []
-    monkeypatch.setattr(queued_runner, "_finish_job", lambda job, **kwargs: finished.append((job["id"], kwargs)) or True)
+    monkeypatch.setattr(
+        queued_runner, "_finish_job", lambda job, **kwargs: finished.append((job["id"], kwargs)) or True
+    )
 
     handled = queued_runner.run_enrichment_queue_batch(
         limit=1,
@@ -227,3 +237,74 @@ def test_queue_batch_accepts_pre_claimed_jobs_without_claiming(monkeypatch) -> N
 
     assert handled == 1
     assert finished == [("j1", {"succeeded": False, "error_message": "sale not found"})]
+
+
+def _free_lock(taken: list | None = None):
+    @contextmanager
+    def lock(db_url, wait_seconds):
+        if taken is not None:
+            taken.append(wait_seconds)
+        yield
+
+    return lock
+
+
+def _two_candidates(monkeypatch) -> None:
+    monkeypatch.setattr(backlog, "load_settings", lambda: {"supabase_db_url": "postgres://test"})
+    monkeypatch.setattr(
+        backlog,
+        "select_backlog_candidates",
+        lambda _db, limit: [
+            {"source_url": "https://a", "source_name": "vench"},
+            {"source_url": "https://b", "source_name": "vench"},
+        ],
+    )
+    monkeypatch.setattr(
+        backlog,
+        "drain_sale",
+        lambda db, candidate, limits, deadline: backlog.SaleOutcome(
+            source_url=candidate["source_url"], source_name="vench", action="processed"
+        ),
+    )
+
+
+def test_the_catalogue_lock_is_taken_per_sale_with_the_remaining_budget(monkeypatch) -> None:
+    _two_candidates(monkeypatch)
+    taken: list[float] = []
+    monkeypatch.setattr(backlog, "_catalogue_lock", _free_lock(taken))
+
+    report = backlog.run_document_backlog(backlog.BacklogLimits(budget_seconds=600), sleep=lambda _s: None)
+
+    assert len(report.outcomes) == 2
+    assert len(taken) == 2
+    assert all(60 <= wait <= 600 for wait in taken)
+
+
+def test_the_drain_pauses_so_a_waiting_collection_takes_the_lock(monkeypatch) -> None:
+    _two_candidates(monkeypatch)
+    monkeypatch.setattr(backlog, "_catalogue_lock", _free_lock())
+    monkeypatch.setattr(backlog, "LOCK_YIELD_EVERY_SECONDS", 0.0)
+    pauses: list[float] = []
+
+    backlog.run_document_backlog(backlog.BacklogLimits(budget_seconds=600), sleep=pauses.append)
+
+    assert pauses == [backlog.LOCK_YIELD_PAUSE_SECONDS] * 2
+    assert backlog.LOCK_YIELD_PAUSE_SECONDS > 15  # longer than the lock poll
+
+
+def test_a_lock_that_never_frees_stops_the_drain_cleanly(monkeypatch) -> None:
+    from src.catalogue_lock import CatalogueLockTimeout
+
+    _two_candidates(monkeypatch)
+
+    @contextmanager
+    def busy(db_url, wait_seconds):
+        raise CatalogueLockTimeout("busy")
+        yield
+
+    monkeypatch.setattr(backlog, "_catalogue_lock", busy)
+
+    report = backlog.run_document_backlog(backlog.BacklogLimits(budget_seconds=600), sleep=lambda _s: None)
+
+    assert report.outcomes == []
+    assert report.stop_reason == "catalogue_lock"

@@ -33,6 +33,8 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -51,6 +53,12 @@ DEFAULT_BUDGET_MINUTES = 120
 MAX_BUDGET_MINUTES = 150
 DEFAULT_MAX_PASSES = 4
 MAX_PASSES_LIMIT = 8
+# The catalogue writer lock is held per sale, never for the whole run: a
+# scheduled collection waits at most 300 s for it (autonomous runner). After
+# two minutes of work the run pauses longer than the 15 s lock poll so that a
+# waiting collection takes the lock; the drain then waits for it to finish.
+LOCK_YIELD_EVERY_SECONDS = 120.0
+LOCK_YIELD_PAUSE_SECONDS = 20.0
 # Priority used for (re)queued PDF generations; the ordinary enqueue uses 30.
 BACKLOG_PDF_PRIORITY = 40
 ACTIONABLE_STATUSES = ("active", "unknown", "upcoming", "postponed")
@@ -496,7 +504,17 @@ def drain_sale(db_url: str, candidate: dict[str, Any], limits: BacklogLimits, de
     return outcome
 
 
-def run_document_backlog(limits: BacklogLimits, *, db_url: str | None = None) -> BacklogReport:
+@contextmanager
+def _catalogue_lock(db_url: str, wait_seconds: float) -> Iterator[None]:
+    from src.catalogue_lock import catalogue_writer_lock
+
+    with catalogue_writer_lock(db_url, label="document backlog", wait_seconds=wait_seconds):
+        yield
+
+
+def run_document_backlog(
+    limits: BacklogLimits, *, db_url: str | None = None, sleep=time.sleep
+) -> BacklogReport:
     settings = load_settings()
     db_url = db_url or str(settings.get("supabase_db_url") or "")
     if not db_url:
@@ -512,11 +530,24 @@ def run_document_backlog(limits: BacklogLimits, *, db_url: str | None = None) ->
         int(limits.budget_seconds),
         limits.max_passes,
     )
+    from src.catalogue_lock import CatalogueLockTimeout
+
+    last_yield = time.monotonic()
     for index, candidate in enumerate(candidates, start=1):
         if time.monotonic() >= deadline:
             report.stop_reason = "budget"
             break
-        outcome = drain_sale(db_url, candidate, limits, deadline)
+        if time.monotonic() - last_yield >= LOCK_YIELD_EVERY_SECONDS:
+            sleep(LOCK_YIELD_PAUSE_SECONDS)
+            last_yield = time.monotonic()
+        try:
+            # A collection may hold the lock for its whole 35-minute budget.
+            with _catalogue_lock(db_url, max(60.0, deadline - time.monotonic())):
+                outcome = drain_sale(db_url, candidate, limits, deadline)
+        except CatalogueLockTimeout as exc:
+            LOGGER.warning("Document backlog stopped: %s", exc)
+            report.stop_reason = "catalogue_lock"
+            break
         report.outcomes.append(outcome)
         LOGGER.info(
             "Document backlog %s/%s %s %s: action=%s passes=%s extracted %s->%s/%s facts=%s%s (%.1fs)",
@@ -580,8 +611,6 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
-    from src.catalogue_lock import catalogue_writer_lock
-
-    # Document passes publish sales like the queue worker; share its lock.
-    with catalogue_writer_lock(label="document backlog"):
-        sys.exit(main())
+    # Document passes publish sales like the queue worker: each sale takes the
+    # catalogue writer lock (see LOCK_YIELD_EVERY_SECONDS).
+    sys.exit(main())
