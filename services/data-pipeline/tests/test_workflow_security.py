@@ -213,3 +213,21 @@ def test_dvf_and_training_secrets_reach_only_their_python_step() -> None:
     ):
         steps = parse_jobs((WORKFLOWS / name).read_text(encoding="utf-8"))[0].steps
         assert [step.name for step in steps if SECRET.search(step.env)] == [step_name], name
+
+
+def test_document_backlog_is_a_manual_mode_of_the_data_pipeline() -> None:
+    text = (WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8")
+    on_block = text.split("\npermissions:", 1)[0]
+    inputs = re.findall(r"^      ([a-z_]+):\n        description:", on_block, re.M)
+
+    # GitHub caps workflow_dispatch inputs; keep within the historic limit of 10.
+    assert len(inputs) <= 10
+    assert "documents_backlog" in inputs and "documents_budget_minutes" in inputs
+    assert re.search(r"^on:\n  workflow_dispatch:\n", text, re.M)
+    job = parse_jobs(text)[0]
+    steps = {step.name: step for step in job.steps}
+    pipeline = steps["Run manually requested pipeline"]
+    assert "python -m src.document_backlog" in pipeline.run
+    assert 'if [ "$REQUESTED_DOCUMENTS_BACKLOG" = "true" ]' in pipeline.run
+    assert "REQUESTED_DOCUMENTS_BACKLOG: ${{ github.event.inputs.documents_backlog }}" in pipeline.env
+    assert "PDF_HOST_MIN_DELAY_SECONDS: 2" in job.env

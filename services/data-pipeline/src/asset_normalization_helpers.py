@@ -1305,10 +1305,6 @@ def _float_or_none(value: Decimal | None) -> float | None:
 
 
 def _fill_quality_flags(sale: AuctionSale) -> None:
-    if sale.source_name == "licitor" and any(
-        (doc.get("url") or "").startswith("https://www.licitor.com/data/pub/") for doc in sale.documents
-    ):
-        _add_quality_flag(sale, "source_not_allowed")
     if sale.latitude is None or sale.longitude is None:
         _add_quality_flag(sale, "missing_gps")
     if not sale.documents:
