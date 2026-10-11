@@ -1688,7 +1688,7 @@ def _walk_source_blocks(value: object, prefix: str = "") -> list[tuple[str, obje
     if isinstance(value, dict):
         for key, nested in value.items():
             key_text = str(key)
-            if key_text == "listing_completeness":
+            if key_text in {"listing_completeness", "caracteristiques_bien"}:  # projections, pas du texte source
                 continue
             nested_key = f"{prefix}_{key_text}" if prefix else key_text
             rows.append((nested_key, nested))

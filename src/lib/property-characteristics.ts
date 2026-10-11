@@ -6,8 +6,10 @@ import { asRecordOrNull, stringValue } from "./guards";
  * Modèle d'affichage du bloc « Caractéristiques du bien ».
  *
  * Source riche : `source_blocks.caracteristiques_bien`, écrit par la pipeline
- * (aujourd'hui pour les cessions de l'État : tuiles libellé/valeur, nature du
- * bien, surfaces par portée, galerie, pièces jointes, procédure, gestionnaire).
+ * pour les cessions de l'État et les annonces notariales (tuiles libellé/valeur,
+ * nature du bien, surfaces par portée, galerie, pièces jointes, procédure,
+ * gestionnaire) et pour les annonces judiciaires Vench, Avoventes et
+ * Info-Enchères (caractéristiques, consignation, frais, visites, pièces, parcelles).
  * Source générique : les faits typés de `source_blocks.listing_completeness
  * .source_property_features` qu'une autre source aurait observés.
  * Fonction pure, sans accès réseau ; une valeur absente n'est jamais inventée.
@@ -22,6 +24,8 @@ type CharacteristicsProcedure = {
   facts: CharacteristicItem[];
   visits: string[];
 };
+/** Pièces annoncées mais non publiques (dossier notarial réservé aux candidats agréés). */
+type CharacteristicsAttachmentsAccess = { restricted: boolean; note: string | null };
 export type PropertyCharacteristics = {
   origin: "source" | "generic";
   /** Fiche officielle (cessions de l'État) ou annonce d'un site d'annonces (Licitor…). */
@@ -32,10 +36,11 @@ export type PropertyCharacteristics = {
   surfaces: CharacteristicItem[];
   media: CharacteristicItem[];
   attachments: CharacteristicAttachment[];
+  attachmentsAccess: CharacteristicsAttachmentsAccess | null;
   procedure: CharacteristicsProcedure | null;
   dates: CharacteristicItem[];
   location: CharacteristicItem[];
-  manager: { service: string | null; email: string | null } | null;
+  manager: { service: string | null; email: string | null; heading: string | null } | null;
 };
 
 const DEFAULT_GROUPS: Record<string, string> = {
@@ -50,6 +55,9 @@ const DEFAULT_GROUPS: Record<string, string> = {
 };
 
 const SURFACE_LABELS: Record<string, string> = {
+  published_surface_m2: "Superficie publiée",
+  habitable_surface_m2: "Surface habitable",
+  carrez_surface_m2: "Surface loi Carrez",
   built_surface_m2: "Surface bâtie",
   land_surface_m2: "Terrain",
   outbuildings_surface_m2: "Dépendances",
@@ -66,6 +74,10 @@ const MEDIA_LABELS: Record<string, string> = {
 
 const PRICE_LABELS: Record<string, string> = {
   starting_price_eur: "Mise à prix",
+  first_offer_eur: "Première offre possible",
+  last_offer_eur: "Dernière offre possible",
+  adjudication_price_eur: "Prix d’adjudication",
+  preliminary_fees_eur: "Frais préalables",
   asking_price_eur: "Prix demandé",
   minimum_price_eur: "Prix minimum attendu",
   reserve_price_eur: "Prix de réserve",
@@ -130,7 +142,10 @@ function humanize(key: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
-function sourceCharacteristics(block: Record<string, unknown>): PropertyCharacteristics | null {
+function sourceCharacteristics(
+  block: Record<string, unknown>,
+  saleSource: string | null | undefined,
+): PropertyCharacteristics | null {
   const groupTitles = {
     ...DEFAULT_GROUPS,
     ...(asRecordOrNull(block.groups) as Record<string, string> | null),
@@ -190,6 +205,11 @@ function sourceCharacteristics(block: Record<string, unknown>): PropertyCharacte
     if (label) attachmentCounts.set(label, (attachmentCounts.get(label) ?? 0) + 1);
   }
   const attachments = [...attachmentCounts].map(([label, count]) => ({ label, count }));
+  const accessRecord = asRecordOrNull(block.attachments_access);
+  const attachmentsAccess =
+    attachments.length && accessRecord?.restricted === true
+      ? { restricted: true, note: text(accessRecord.note) }
+      : null;
 
   const procedureRecord = asRecordOrNull(block.procedure);
   let procedure: CharacteristicsProcedure | null = null;
@@ -221,6 +241,14 @@ function sourceCharacteristics(block: Record<string, unknown>): PropertyCharacte
     }
     const soldOn = dateText(procedureRecord.sold_on);
     if (soldOn) facts.push({ label: "Vendu le", value: soldOn });
+    // Mentions publiées en clair (consignation par chèque, faculté de baisse, audience…).
+    for (const entry of Array.isArray(procedureRecord.notes) ? procedureRecord.notes : []) {
+      const note = asRecordOrNull(entry);
+      const label = text(note?.label);
+      const value = text(note?.value);
+      if (label && value && !facts.some((fact) => fact.label === label))
+        facts.push({ label, value });
+    }
     const visits = (Array.isArray(procedureRecord.visits) ? procedureRecord.visits : [])
       .map(text)
       .filter((value): value is string => Boolean(value))
@@ -255,7 +283,11 @@ function sourceCharacteristics(block: Record<string, unknown>): PropertyCharacte
 
   const managerRecord = asRecordOrNull(block.manager);
   const manager = managerRecord
-    ? { service: text(managerRecord.service), email: text(managerRecord.email) }
+    ? {
+        service: text(managerRecord.service),
+        email: text(managerRecord.email),
+        heading: text(managerRecord.heading),
+      }
     : null;
 
   const nature = (Array.isArray(block.nature) ? block.nature : [])
@@ -264,13 +296,14 @@ function sourceCharacteristics(block: Record<string, unknown>): PropertyCharacte
 
   const model: PropertyCharacteristics = {
     origin: "source",
-    official: STATE_SOURCES.has(text(block.source) ?? ""),
+    official: STATE_SOURCES.has(text(block.source) ?? saleSource ?? ""),
     nature,
     category: text(block.category),
     groups,
     surfaces,
     media,
     attachments,
+    attachmentsAccess,
     procedure,
     dates,
     location,
@@ -305,6 +338,7 @@ function genericCharacteristics(sale: AuctionSale): PropertyCharacteristics | nu
     surfaces: [],
     media: [],
     attachments: [],
+    attachmentsAccess: null,
     procedure: null,
     dates: [],
     location: [],
@@ -327,7 +361,7 @@ export function getPropertyCharacteristics(sale: AuctionSale): PropertyCharacter
   const blocks = asRecordOrNull(sale.source_blocks);
   const block = asRecordOrNull(blocks?.caracteristiques_bien);
   if (block) {
-    const model = sourceCharacteristics(block);
+    const model = sourceCharacteristics(block, sale.source_name);
     if (model) return model;
   }
   return genericCharacteristics(sale);

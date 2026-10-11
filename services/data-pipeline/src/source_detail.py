@@ -33,7 +33,9 @@ def fetch_public_detail(source: str, source_url: str, settings: dict, clients: d
             data = json.loads(body)
             if isinstance(data, dict) and data.get('id') is not None and str(data['id']) != expected_id:
                 raise ValueError('Notarial detail identity does not match requested URL')
-            return module.parse_notaires_detail_json(body, fallback={'source_url': listing_url})
+            # Même lecture que la collecte : la page Immo-Interactif complète l'API (pièces annoncées).
+            page = module.fetch_immo_interactif_page(clients, settings, listing_url, expected_id)
+            return module.parse_notaires_detail_json(body, fallback={'source_url': listing_url}, operator_page=page)
     elif source == 'agrasc':
         from src.sources.agrasc_operators import (
             AGORA_ORIGIN,

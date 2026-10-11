@@ -108,11 +108,12 @@ def test_parse_petites_affiches_public_detail() -> None:
     assert detail["lawyer_name"] == "Maître MERLIN-LABRE"
     assert detail["lawyer_contact"] == "0422140871"
     assert detail["tribunal"] == "TJ DE BORDEAUX"
-    assert detail["visit_dates"] == ["Visite finie Jeudi 25 Juin 2026 à 11:00"]
+    # L'état relatif (« Visite finie ») change chaque jour : seule la date publiée est gardée.
+    assert detail["visit_dates"] == ["Jeudi 25 Juin 2026 à 11:00"]
     assert detail["source_blocks"]["adresse"] == "33000 Bordeaux"
     assert detail["source_blocks"]["mise_a_prix"] == "15 300"
     assert detail["source_blocks"]["contact_avocat"] == "0422140871"
-    assert detail["source_blocks"]["visites"] == "Visite finie Jeudi 25 Juin 2026 à 11:00"
+    assert detail["source_blocks"]["visites"] == "Jeudi 25 Juin 2026 à 11:00"
 
 
 def test_parse_petites_affiches_detail_extracts_status_and_parking_from_scoped_badges() -> None:

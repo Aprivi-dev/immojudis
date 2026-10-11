@@ -32,6 +32,7 @@ from src.sources.common import (
 )
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
+from src.sources.listing_characteristics import known_detail_lacks_characteristics, restore_known_detail_blocks
 from src.sources.source_features import cadastral_to_m2 as _cadastral_to_m2
 from src.sources.source_features import extract_parking_count as _extract_parking_count
 from src.sources.source_features import extract_qualified_surface as _extract_qualified_surface_impl
@@ -40,6 +41,7 @@ from src.sources.source_features import is_mixed_property as _is_mixed_property
 from src.sources.source_features import merge_documents as _merge_documents
 from src.sources.source_features import merge_text_values as _merge_text_values
 from src.sources.source_features import normalize_document_text as _normalize_document_text
+from src.sources.vench_extraction import apply_vench_features, extract_vench_detail, is_paywalled
 
 BASE_URL = "https://www.vench.fr"
 LIST_URL = f"{BASE_URL}/prochaines-ventes-aux-encheres.html"
@@ -115,8 +117,11 @@ def scrape_vench_aquitaine_result(
                 if url in seen_sales:
                     continue
                 seen_sales.add(url)
-                if should_fetch_detail(sale, known):
+                if should_fetch_detail(sale, known) or known_detail_lacks_characteristics(sale, known_details):
+                    sale.pop("_known_unchanged", None)
                     _enrich_sale_from_detail(client, sale, errors)
+                elif restore_known_detail_blocks(sale, known_details):
+                    _attach_source_property_features(sale)
                 raw_sales.append(sale)
         partitions.append({"department": department, **pages.metrics()})
 
@@ -269,6 +274,7 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         sale_date = _extract_after(page_text, r"Date de la vente\s*:?\s*([0-9/]{8,10})")
     description = _extract_description(soup)
     source_blocks = _extract_source_blocks(soup, page_text, title, description, documents)
+    amenities = _extract_amenities(soup)
     curated_raw_text = _build_detail_raw_text(source_blocks)
     source_images = _extract_images(soup, source_url)
     # Restrict enriched fields to the listing title/description. Page-wide
@@ -281,6 +287,25 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
     parking_count = _extract_parking_count(detail_text)
     property_type = _extract_property_type(title, detail_text)
     occupancy_status = _extract_occupancy_status(detail_text)
+    structured = extract_vench_detail(
+        soup,
+        html,
+        source_url=source_url,
+        external_id=_extract_external_id(source_url),
+        documents=documents,
+        photos=len(source_images),
+        amenities=amenities,
+        surfaces={
+            "published_surface_m2": _heading_surface(title),
+            "habitable_surface_m2": habitable_surface,
+            "carrez_surface_m2": carrez_surface,
+            "land_surface_m2": land_surface,
+        },
+    )
+    structured_fields = structured["fields"]
+    # La rubrique « Occupation » de la fiche prime sur une occupation déduite du descriptif.
+    occupancy_status = structured_fields.get("occupancy_status") or occupancy_status
+    source_blocks.update(structured["source_blocks"])
     for key, value in {
         "surface_habitable": habitable_surface,
         "surface_carrez": carrez_surface,
@@ -291,14 +316,17 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         if value is not None:
             source_blocks[key] = str(value)
 
+    tribunal = _extract_after(page_text, r"(Tribunal judiciaire de\s+[A-ZÀ-Ÿ' -]+)")
+    if structured_fields.get("notarial_venue"):
+        tribunal = None  # « Tribunal judiciaire de En l'étude du Notaire » : vente chez le notaire
     return _attach_source_property_features({
         "source_name": "vench",
         "source_url": source_url,
         "external_id": _extract_external_id(source_url),
-        "tribunal": _extract_after(page_text, r"(Tribunal judiciaire de\s+[A-ZÀ-Ÿ' -]+)"),
+        "tribunal": tribunal,
         "department": extract_department(postal_code),
         "city": city,
-        "address": address or _join_address(postal_code, city),
+        "address": structured_fields.get("street_address") or address or _join_address(postal_code, city),
         "postal_code": postal_code,
         "property_type": property_type,
         "title": title,
@@ -311,7 +339,11 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "parking_count": parking_count,
         "starting_price_eur": _extract_after(page_text, r"Mise à prix\s*:?\s*([0-9][0-9\s.,]+)\s*€"),
         "sale_date": sale_date,
-        "visit_dates": _extract_visit_dates(page_text),
+        "visit_dates": structured_fields.get("visit_dates") or _extract_visit_dates(page_text),
+        "lawyer_name": structured_fields.get("lawyer_name"),
+        "lawyer_contact": structured_fields.get("lawyer_contact"),
+        "latitude": structured_fields.get("latitude"),
+        "longitude": structured_fields.get("longitude"),
         "has_garden": _has_feature(page_text, "Jardin"),
         "has_terrace": _has_feature(page_text, "Terrasse"),
         "has_garage": _has_feature(page_text, "Garage"),
@@ -321,7 +353,14 @@ def parse_vench_detail_html(html: str, source_url: str) -> dict[str, Any]:
         "source_blocks": source_blocks,
         "raw_image_url": source_images[0] if source_images else None,
         "source_images": source_images,
+        "source_property_features": structured["source_property_features"],
     })
+
+
+def _heading_surface(title: str | None) -> str | None:
+    """Surface du titre de la fiche (« UN APPARTEMENT • 60,57m² • Argenteuil »)."""
+    match = re.search(rf"\b({SURFACE_VALUE_PATTERN})\s*m(?:2|²)", title or "", re.I)
+    return normalize_surface_number(match.group(1)) if match else None
 
 
 def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> dict[str, Any] | None:
@@ -333,6 +372,9 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
     title, city = _split_title_city(_text(card.select_one("h3").get_text(" ", strip=True)) if card.select_one("h3") else None)
     image = card.find("img")
     image_url = urljoin(page_url, str(image.get("data-src") or image.get("src"))) if image else None
+    if image_url and not _looks_like_property_image(image_url):
+        image_url = None  # vignette de remplacement du site (/Design/Img/replace/…)
+    excerpt = _card_excerpt(card)
     return _attach_source_property_features({
         "source_name": "vench",
         "source_url": source_url,
@@ -341,7 +383,10 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
         "city": city,
         "property_type": _extract_property_type(title),
         "title": title,
-        "description": title,
+        # Pas de description sur la vignette : l'extrait est tronqué, et une valeur ici
+        # empêcherait de reprendre la description complète déjà lue sur la fiche.
+        "description": None,
+        "source_blocks": {"extrait_liste": excerpt} if excerpt else {},
         "starting_price_eur": _extract_after(raw_text, r"Mise à prix\s*:?\s*([0-9][0-9\s.,]+)\s*€"),
         "sale_date": _extract_after(raw_text, r"Date de la vente\s*:?\s*([0-9/]{8,10})"),
         "visit_dates": _extract_visit_dates(raw_text),
@@ -351,6 +396,20 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
         "raw_image_url": image_url,
         "source_images": [image_url] if image_url else [],
     })
+
+
+def _card_excerpt(card: Tag) -> str | None:
+    """Début du descriptif affiché sur la vignette d'une vente en accès libre."""
+    content = card.select_one(".down-content")
+    if content is None:
+        return None
+    for node in content.find_all(["p", "div"], recursive=True):
+        if node.find(["p", "div", "ul", "h3"]) is not None or "alerteAboVente" in (node.get("class") or []):
+            continue
+        text = _text(node.get_text(" ", strip=True))
+        if text and len(text) > 20 and not re.search(r"abonn|Mise à prix|Date de la vente", text, re.I):
+            return text
+    return None
 
 
 def _find_sale_link(card: Tag) -> Tag | None:
@@ -367,16 +426,17 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
     html = fetch_detail_html(client, sale, errors, label="Vench")
     if html is None:
         return
-    access_text = parse_html(html, "html.parser").get_text(" ", strip=True)
-    restricted = re.search(
-        r"(?:r[ée]serv[ée]e?\s+aux\s+abonn[ée]s|vous\s+devez\s+[êe]tre\s+abonn[ée])", access_text, re.I,
-    )
-    sale["source_detail_status"] = "restricted" if restricted else "complete"
+    # « Réservé aux abonnés » ne vaut que pour la description et l'avocat : la
+    # mention de la carte parcellaire et du PLU figure sur toutes les fiches.
+    sale["source_detail_status"] = "restricted" if is_paywalled(parse_html(html, "html.parser")) else "complete"
     details = parse_vench_detail_html(html, source_url)
     for key, value in details.items():
         if value in (None, "", []):
             continue
-        if key == "documents":
+        if key == "source_blocks":
+            existing_blocks = sale.get("source_blocks") if isinstance(sale.get("source_blocks"), dict) else {}
+            sale[key] = {**existing_blocks, **value}
+        elif key == "documents":
             sale[key] = _merge_documents(sale.get(key), value)
         elif key == "source_images":
             sale[key] = _merge_text_values(sale.get(key), value)
@@ -390,6 +450,8 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
         elif key in {"has_garden", "has_terrace", "has_garage"}:
             if sale.get(key) is None:
                 sale[key] = value
+        elif key == "source_property_features":
+            apply_vench_features(sale, value)
         elif key in DETAIL_OVERRIDE_FIELDS:
             sale[key] = value
         elif not sale.get(key):
@@ -427,7 +489,7 @@ def _document_type(label: str, href: str) -> str:
     searchable = _normalize_document_text(f"{label} {href}")
     if "cahier" in searchable:
         return "cahier_conditions"
-    if "diagnostic" in searchable:
+    if "diagnostic" in searchable or re.search(r"\b(?:diag|ddt|dpe)\b|diag_", searchable):
         return "diagnostics"
     if "proces" in searchable or "procès" in searchable or "pv" in searchable:
         return "pv_descriptif"

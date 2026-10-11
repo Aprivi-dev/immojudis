@@ -102,6 +102,53 @@ describe("ListingCharacteristics", () => {
     expect(within(section).getByText("Une cave — mise à prix 1 000 €")).toBeTruthy();
   });
 
+  it("presents restricted notarial documents without a link to downloadable pieces", () => {
+    render(
+      <ListingCharacteristics
+        sale={sale({
+          caracteristiques_bien: {
+            ...BLOCK,
+            attachments: [{ kind_label: "Diagnostic amiante" }],
+            attachments_access: { restricted: true, note: "Accès après agrément de l’office." },
+            manager: { service: "Office fictif", heading: "Office notarial" },
+          },
+        })}
+      />,
+    );
+
+    const section = screen.getByRole("region", { name: "Caractéristiques du bien" });
+    expect(within(section).getByText("Pièces du dossier (accès réservé)")).toBeTruthy();
+    expect(within(section).getByText("Accès après agrément de l’office.")).toBeTruthy();
+    expect(within(section).queryByRole("link", { name: "Consulter les pièces" })).toBeNull();
+    expect(within(section).getByText("Office notarial")).toBeTruthy();
+  });
+
+  it("labels a judicial listing block as published by the source site", () => {
+    const judicial = {
+      ...sale({
+        caracteristiques_bien: {
+          source: "vench",
+          items: [
+            { key: "occupancy", label: "Occupation", value: "Bien libre", group: "situation" },
+          ],
+          procedure: { notes: [{ label: "Consignation", value: "8 000 € chèque de banque" }] },
+        },
+      }),
+      source_name: "vench",
+      sale_venue_type: "tribunal",
+      sale_date: "2026-11-12T13:00:00Z",
+    } as AuctionSale;
+    render(<ListingCharacteristics sale={judicial} />);
+
+    const section = screen.getByRole("region", { name: "Caractéristiques du bien" });
+    expect(
+      within(section).getByText("Informations publiées sur l’annonce de la source"),
+    ).toBeTruthy();
+    expect(within(section).queryByText("Informations publiées sur la fiche officielle")).toBeNull();
+    expect(within(section).getByText("Bien libre")).toBeTruthy();
+    expect(within(section).getByText("8 000 € chèque de banque")).toBeTruthy();
+  });
+
   it("renders nothing when the source publishes no characteristic", () => {
     const { container } = render(<ListingCharacteristics sale={sale(null)} />);
     expect(container.innerHTML).toBe("");

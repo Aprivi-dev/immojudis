@@ -55,3 +55,5 @@ f56aaf84b76fb6fe44a52aeeba8e683295b538c0:docs/audits/sources-2026-10-02/dynamic/
 /repo/docs/audits/sources-2026-10-02/dynamic/clean/notaires-public-2083008-arcachon-dom.html:generic-api-key:517
 # False positive: a comparison with the unscoped surface field name, not a credential.
 74561252b1ccc8ee92a2026b885b01a2aba4484b:services/data-pipeline/src/sources/cessions_etat_extraction.py:generic-api-key:492
+# False positive: a comparison with the published surface field name, not a credential.
+8c01363209c334cba3592b36dd5b2871bde2fcf5:services/data-pipeline/src/sources/avoventes_extraction.py:generic-api-key:429

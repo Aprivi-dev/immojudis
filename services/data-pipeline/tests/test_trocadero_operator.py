@@ -42,6 +42,7 @@ def test_trocadero_offer_extracts_location_contact_and_document_without_price_gu
     assert detail["documents"] == [{
         "label": "REGLEMENT DE CONSULTATION",
         "url": "https://lesnotairesdutrocadero.fr/documents/reglement-consultation.pdf",
+        "document_type": "cahier_conditions_vente",
     }]
     assert "The French State" not in detail["description"]
     assert "Visiting period" not in detail["description"]

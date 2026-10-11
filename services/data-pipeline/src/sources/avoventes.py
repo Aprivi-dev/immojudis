@@ -13,6 +13,11 @@ from src.listing_location import classify_address
 from src.normalize import clean_text, extract_department, parse_surface, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
+from src.sources.avoventes_extraction import (
+    apply_avoventes_fields,
+    extract_avoventes_html_extras,
+    extract_avoventes_text_fields,
+)
 from src.sources.common import (
     PoliteHttpClient,
     ScrapeResult,
@@ -292,6 +297,7 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
         return
 
     sale["source_detail_status"] = "complete"
+    structured = details.pop("structured", None)
     if details.get("source_blocks"):
         existing_blocks = sale.get("source_blocks") if isinstance(sale.get("source_blocks"), dict) else {}
         sale["source_blocks"] = {**existing_blocks, **details["source_blocks"]}
@@ -335,6 +341,9 @@ def _enrich_sale_from_detail(client: AvoventesClient, sale: dict[str, Any], erro
             sale[key] = list(dict.fromkeys([*existing_flags, *details[key]]))
         elif details.get(key) and (key == "description" or not sale.get(key) or _is_coarser_address(key, sale.get(key))):
             sale[key] = details[key]
+    if structured:
+        # Encadré de vente, tuiles, caractéristiques, cabinet et parcelles de la fiche.
+        apply_avoventes_fields(sale, structured)
 
 
 def _is_coarser_address(key: str, current: object) -> bool:
@@ -379,7 +388,16 @@ def parse_avoventes_detail_html(html: str, page_url: str) -> dict[str, Any]:
         raw_text,
         r"(?:Surface(?:\s+(?:habitable|totale))?|Superficie(?:\s+(?:des\s+)?Lots?\b[^:\n]{0,80})?)\s*:?\s*([0-9\s,.]+)\s*m",
     )
+    structured = extract_avoventes_text_fields(
+        raw_text,
+        property_type=property_type,
+        title=title,
+        documents=documents,
+        photos=len(images),
+        html_extras=extract_avoventes_html_extras(html),
+    )
     return {
+        "structured": structured,
         **location,
         "documents": documents,
         "source_images": images,
@@ -648,13 +666,19 @@ def _trim_property_address(value: str) -> str | None:
 
 def _extract_images(soup: BeautifulSoup, page_url: str) -> list[str]:
     images: list[str] = []
-    for selector in ("meta[property='og:image']", "meta[name='twitter:image']"):
-        for node in soup.select(selector):
-            _append_image(images, node.get("content"), page_url)
     for node in soup.select("#lightSliderDetails img, #lightSliderDetails [data-src]"):
         for candidate in html_image_candidates(node):
             _append_image(images, candidate, page_url)
-    return _unique_text_values(images)
+    for selector in ("meta[property='og:image']", "meta[name='twitter:image']"):
+        for node in soup.select(selector):
+            _append_image(images, node.get("content"), page_url)
+    # La vignette de partage (``cropped_…``) recadre une photo de la galerie (``resized_…``) :
+    # une seule entrée par photo, la version de la galerie en premier.
+    by_photo: dict[str, str] = {}
+    for image in _unique_text_values(images):
+        key = re.sub(r"/(?:cropped|resized)_(?=[^/]+$)", "/", image)
+        by_photo.setdefault(key, image)
+    return list(by_photo.values())
 
 
 def _append_image(images: list[str], value: object | None, page_url: str) -> None:
