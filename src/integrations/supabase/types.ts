@@ -14382,23 +14382,27 @@ export type Database = {
         }[];
       };
       tribunal_outcome_graph_past_hearings: {
-        Args: { p_as_of: string; p_court_code?: string | null; p_history_start: string };
+        Args: {
+          p_as_of: string;
+          p_court_code?: string;
+          p_history_start: string;
+        };
         Returns: {
-          auction_sale_id: string | null;
-          city: string | null;
+          auction_sale_id: string;
+          city: string;
           court_code: string;
-          external_id: string | null;
-          initial_starting_price_eur: number | null;
-          lawyer_label: string | null;
-          legacy_status: string | null;
-          lot_label: string | null;
-          occupation_status: string | null;
-          property_type: string | null;
-          publication_first_seen_at: string | null;
+          external_id: string;
+          initial_starting_price_eur: number;
+          lawyer_label: string;
+          legacy_status: string;
+          lot_label: string;
+          occupation_status: string;
+          property_type: string;
+          publication_first_seen_at: string;
           round_id: string;
           scheduled_at: string;
           source_name: string;
-          source_url: string | null;
+          source_url: string;
         }[];
       };
       unlockrows: { Args: { "": string }; Returns: number };

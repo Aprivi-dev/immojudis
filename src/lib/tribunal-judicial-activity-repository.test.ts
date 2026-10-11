@@ -457,7 +457,6 @@ describe("tribunal judicial activity repository", () => {
     expect(serverRpc).toHaveBeenCalledWith("tribunal_outcome_graph_past_hearings", {
       p_history_start: "2023-08-01T00:00:00.000Z",
       p_as_of: AS_OF.toISOString(),
-      p_court_code: null,
     });
   });
 

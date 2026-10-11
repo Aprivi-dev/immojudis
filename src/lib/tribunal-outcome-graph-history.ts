@@ -84,7 +84,7 @@ export async function loadArchivedPastHearings(input: {
       .rpc("tribunal_outcome_graph_past_hearings", {
         p_history_start: input.historyStart.toISOString(),
         p_as_of: input.asOf.toISOString(),
-        p_court_code: input.courtCode ?? null,
+        ...(input.courtCode ? { p_court_code: input.courtCode } : {}),
       })
       .order("scheduled_at", { ascending: true })
       .order("round_id", { ascending: true })
