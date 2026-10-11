@@ -141,6 +141,11 @@ def _document_extraction_status(extracted: dict[str, object]) -> str:
         return "incomplete"
     if declared_status == "empty":
         return "empty"
+    if extracted.get("_persisted_document_proof") is True:
+        # Metadata-only evidence (pdf_document_evidence): the text itself stays
+        # in auction_extractions, its length and byte hash were validated.
+        complete = extracted.get("complete") is True and str(extracted.get("sha256") or "").strip()
+        return "extracted" if declared_status == "extracted" and complete else "pending"
     if (
         str(extracted.get("text") or "").strip()
         and extracted.get("complete") is True

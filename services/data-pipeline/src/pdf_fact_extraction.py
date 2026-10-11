@@ -73,6 +73,8 @@ from src.pdf_fact_scope import (
 from src.pdf_fact_scope import (
     _pdf_surface_candidates_with_provenance as _scope_pdf_surface_candidates_with_provenance,
 )
+from src.pdf_offer_deadline import OFFER_PROCEDURE_SOURCES, offer_deadline_sale_date, record_offer_deadline
+from src.pdf_sale_date_guard import reject_past_pdf_sale_date
 
 
 def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, object]] | list[str]) -> AuctionSale:
@@ -200,13 +202,19 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             sale.occupancy_status = _extract_occupancy_status(combined)
             if sale.occupancy_status:
                 _pdf_record_fact_projection(sale, ["occupancy_status"], evidence=combined[:300])
+    timezone = source_sale_timezone(sale.raw_payload)
+    offer_deadline = record_offer_deadline(sale, pdf_texts, complete_texts=complete_texts, local_timezone=timezone)
+    if sale.sale_date is None and offer_deadline and sale.source_name in OFFER_PROCEDURE_SOURCES:
+        # A call for offers has no hearing: its offer deadline is the echeance.
+        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline))
     if sale.sale_date is None:
-        timezone = source_sale_timezone(sale.raw_payload)
         sale_date = _extract_sale_date_from_documents(pdf_texts, local_timezone=timezone) or _extract_sale_date_with_evidence(
             combined, local_timezone=timezone,
         )
         if sale_date:
             _assign_pdf_sale_date(sale, sale_date)
+    if sale.sale_date is None and offer_deadline:
+        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline))
     starting_price = _extract_starting_price_from_documents(pdf_texts)
     if starting_price:
         _reconcile_pdf_starting_price(sale, starting_price)
@@ -530,6 +538,8 @@ def _extract_visit_dates_from_documents(pdf_texts: list[dict[str, object]] | lis
             label=label,
             url=clean_text(item.get("url")) or "",
         )
+        if document_type == "diagnostics_techniques":  # inspection reports, never sale visit dates
+            continue
         pages = item.get("pages")
         if isinstance(pages, list):
             for page in pages:
@@ -785,7 +795,7 @@ def _should_replace_starting_price_with_document(current: Decimal, documented: D
 
 def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> None:
     parsed = sale_date.get("value")
-    if not isinstance(parsed, datetime):
+    if not isinstance(parsed, datetime) or reject_past_pdf_sale_date(sale, parsed, sale_date):
         return
     sale.sale_date = parsed
     sale.raw_payload["pdf_sale_date_extraction"] = {key: value for key, value in sale_date.items() if key != "value"}
@@ -1276,7 +1286,7 @@ def _visit_candidate_chunks(text: str) -> list[str]:
 
 def _normalize_visit_candidate(text: str) -> str | None:
     value = clean_text(text)
-    if not value:
+    if not value or len(value) > 240:  # a visit slot is a short phrase, not a report paragraph
         return None
     normalized = _normalize_document_classifier_text(value)
     if "visite virtuelle" in normalized or "aucune visite virtuelle" in normalized:
