@@ -22,6 +22,8 @@ import type {
   InformationAgentAdminMissionPage,
   InformationAgentAdminResponse,
   InformationAgentCreateInput,
+  InformationAgentPreviewInput,
+  InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
 import type {
   InformationAgentEmailTemplateContent,
@@ -134,6 +136,18 @@ export async function runAdminInformationAgentMissionAction(
     body: JSON.stringify(data),
   });
   return readJson<InformationAgentAdminListResponse>(response);
+}
+
+/** Aperçu exact de l'e-mail d'une mission ; n'enregistre ni n'envoie rien. */
+export async function previewAdminInformationAgentMission(
+  data: InformationAgentPreviewInput,
+): Promise<InformationAgentPreviewResponse> {
+  const response = await fetch("/api/admin/information-agent/missions/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(data),
+  });
+  return readJson<InformationAgentPreviewResponse>(response);
 }
 
 export async function fetchAdminSourceRefreshStatus(

@@ -18,6 +18,7 @@ import {
   updateAdminInformationAgentEvidenceRightsClient,
   type AdminInformationAgentEvidenceRightsStatus,
 } from "@/lib/client-api";
+import type { InformationAgentFactSource } from "@/lib/admin-information-agent";
 
 const QUERY_KEY = ["admin-information-agent-review"] as const;
 const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"]);
@@ -124,6 +125,9 @@ export function AdminInformationAgentReviewPanel() {
     (page?.extractions ?? []).map((extraction) => [extraction.asset_id, extraction]),
   );
   const casesById = new Map((page?.cases ?? []).map((item) => [item.id, item]));
+  const factSourcesByMessageId = new Map(
+    (page?.factSources ?? []).map((source) => [source.messageId, source]),
+  );
   return (
     <section className="overflow-hidden rounded-xl border bg-white">
       <div className="border-b px-5 py-4">
@@ -299,6 +303,7 @@ export function AdminInformationAgentReviewPanel() {
                         Objet : {informationCase.subject}
                       </p>
                     ) : null}
+                    <FactProvenance source={factSourcesByMessageId.get(fact.message_id)} />
                     {fact.evidence_excerpt ? (
                       <p className="mt-2 text-sm italic text-brand-navy/60">
                         « {fact.evidence_excerpt} »
@@ -605,4 +610,29 @@ function previewKindForAsset(asset: {
   }
   if (filename.endsWith(".txt")) return "text";
   return null;
+}
+
+function FactProvenance({ source }: { source: InformationAgentFactSource | undefined }) {
+  if (!source) return null;
+  const channel =
+    source.channel === "portal"
+      ? "Dépôt du portail privé"
+      : source.channel === "admin_manual_reply"
+        ? "Réponse consignée par un administrateur (expéditeur non vérifié)"
+        : "Réponse par e-mail";
+  const received = source.receivedAt
+    ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(
+        new Date(source.receivedAt),
+      )
+    : null;
+  return (
+    <p className="mt-1 text-xs text-brand-navy/60">
+      Provenance : {channel}
+      {source.fromEmail ? ` · ${source.fromEmail}` : ""}
+      {received ? ` · reçue le ${received}` : ""}
+      {source.senderMatchesRecipient === false
+        ? " · expéditeur différent du contact sollicité"
+        : ""}
+    </p>
+  );
 }

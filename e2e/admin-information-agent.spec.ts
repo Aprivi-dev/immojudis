@@ -34,7 +34,7 @@ type AgentMockState = {
 };
 
 test.describe("admin information agent", () => {
-  test("opens a complete draft in one click and sends only after admin approval", async ({
+  test("opens a complete draft in one click and sends only after preview and admin approval", async ({
     page,
   }) => {
     const state = await prepareAdminInformationAgentPage(page);
@@ -70,6 +70,16 @@ test.describe("admin information agent", () => {
 
     const email = page.getByRole("textbox", { name: "Email", exact: true }).last();
     await email.fill("reviewed-contact@example.test");
+    // Aucun envoi n'est possible tant que l'aperçu exact n'a pas été affiché.
+    await expect(page.getByRole("button", { name: "Valider et envoyer" })).toBeDisabled();
+    await page
+      .getByRole("textbox", { name: /Page publique où figure l’adresse/ })
+      .fill("https://annuaire.example.test/reviewed-contact");
+    await page.getByRole("button", { name: "Afficher l’aperçu" }).click();
+    await expect(
+      page.frameLocator('iframe[title="Aperçu de l’e-mail envoyé"]').getByText("Aperçu exact"),
+    ).toBeVisible();
+    expect(state.events.some((event) => event.method === "PATCH")).toBe(false);
     page.on("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Valider et envoyer" }).click();
     await expect(page.getByText("Envoyée", { exact: true })).toBeVisible();
@@ -91,7 +101,9 @@ test.describe("admin information agent", () => {
       action: "approve_and_send",
       missionId: MISSION_ID,
       approvalConfirmed: true,
+      previewFingerprint: "e".repeat(64),
       recipientEmail: "reviewed-contact@example.test",
+      recipientOriginUrl: "https://annuaire.example.test/reviewed-contact",
     });
     expect(state.unexpectedRequests).toEqual([]);
   });
@@ -399,6 +411,32 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       await route.fulfill({
         status: 200,
         json: { ok: true, mission: state.mission, gaps: [], facts: [], contactCandidates: [] },
+      });
+      return;
+    }
+    if (path === "/api/admin/information-agent/missions/preview" && method === "POST") {
+      const input = payload as { recipientEmail: string; subject: string };
+      await route.fulfill({
+        status: 200,
+        json: {
+          ok: true,
+          preview: {
+            from: "agent@example.test",
+            to: input.recipientEmail,
+            replyTo: "enquete+jeton-attribue-a-l-envoi@reponses.example.test",
+            subject: input.subject,
+            html: "<p>Aperçu exact</p>",
+            text: "Aperçu exact",
+          },
+          blockers: [],
+          addressOrigin: {
+            text: "Votre adresse professionnelle a été relevée sur une page publique (annuaire.example.test).",
+            url: "https://annuaire.example.test/reviewed-contact",
+            known: true,
+          },
+          accountInvitation: true,
+          fingerprint: "e".repeat(64),
+        },
       });
       return;
     }
