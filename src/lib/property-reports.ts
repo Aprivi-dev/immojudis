@@ -327,13 +327,7 @@ export async function savePropertyReport({
   const ceilingSnapshot = buildCeilingSnapshot(sale, marketEstimate);
   if (input.simulation) {
     const personal = computeReportSimulation(sale, marketEstimate, input.simulation);
-    Object.assign(ceilingSnapshot, personal, {
-      personalSimulation: input.simulation,
-      acquisition: personal.simulated,
-      refreshWorksBudget: input.simulation.works,
-      maxBidWithoutWorks: null,
-      maxBidWithRefreshWorks: null,
-    });
+    Object.assign(ceilingSnapshot, personal, { personalSimulation: input.simulation });
   }
   const reportSnapshot = {
     ...buildReportSnapshot({

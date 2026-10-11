@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EXAMPLE_SALE, EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
-import { computeMarketCeiling } from "@/lib/profitability";
-import { saleCostContext } from "@/lib/sale-cost-context";
-import { getMarketValuationSurfaces } from "@/lib/surface";
+import { buildCeilingSnapshot } from "@/lib/property-report/ceiling-snapshot";
 import {
   buildReportRentalScenario,
   computeReportSimulation,
@@ -18,12 +16,13 @@ describe("report simulation", () => {
     app_surface_kind: "habitable" as const,
   };
   const input = {
-    price: 100000,
-    works: 20000,
-    fpt: 5000,
-    scenario: "custom" as const,
-    customSafetyDiscountPct: 20,
-    manualMarketPricePerM2: 4000,
+    version: 2 as const,
+    choices: {
+      works: { key: "devis" as const, amount: 20000 },
+      fpt: 5000,
+      customMarginPct: 20,
+      manualPricePerM2: 4000,
+    },
     expectedMaxBid: 0,
   };
 
@@ -32,8 +31,13 @@ describe("report simulation", () => {
   });
 
   it("validates finite nonnegative financial inputs", () => {
-    expect(reportSimulationSchema.safeParse({ ...input, works: -1 }).success).toBe(false);
-    expect(reportSimulationSchema.safeParse({ ...input, price: Infinity }).success).toBe(false);
+    expect(
+      reportSimulationSchema.safeParse({ ...input, choices: { ...input.choices, fpt: -1 } })
+        .success,
+    ).toBe(false);
+    expect(reportSimulationSchema.safeParse({ ...input, expectedMaxBid: Infinity }).success).toBe(
+      false,
+    );
   });
 
   it("rejects a contradictory property classification on the server", () => {
@@ -86,29 +90,14 @@ describe("report rental scenario payload", () => {
       monthlyDebtService: 430,
       missingExpenseFields: [],
     };
-    const baseInput = {
-      price: 92_000,
-      works: 20_000,
-      fpt: 5_000,
-      scenario: "prudent" as const,
-      customSafetyDiscountPct: undefined,
-      manualMarketPricePerM2: null,
-    };
-    const marketInputs = {
-      ...baseInput,
-      surface: getMarketValuationSurfaces(sale).builtSurfaceM2,
-      medianPricePerM2: marketEstimate.medianPricePerM2,
-      ...saleCostContext(sale),
-      p10PricePerM2: marketEstimate.p10PricePerM2,
-      p25PricePerM2: marketEstimate.p25PricePerM2,
-      p75PricePerM2: marketEstimate.p75PricePerM2,
-    };
-    const expectedCeiling = computeMarketCeiling(marketInputs);
+    const choices = { works: { key: "devis" as const, amount: 20_000 }, fpt: 5_000 };
+    const expectedCeiling = buildCeilingSnapshot(sale, marketEstimate, choices);
     expect(expectedCeiling.available).toBe(true);
 
     const computed = computeReportSimulation(sale, marketEstimate, {
-      ...baseInput,
-      expectedMaxBid: expectedCeiling.maxBid,
+      version: 2,
+      choices,
+      expectedMaxBid: expectedCeiling.maxBid!,
       rentalScenario,
     });
 
