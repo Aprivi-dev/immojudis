@@ -24,6 +24,8 @@ type CharacteristicsProcedure = {
 };
 export type PropertyCharacteristics = {
   origin: "source" | "generic";
+  /** Fiche officielle (cessions de l'État) ou annonce d'un site d'annonces (Licitor…). */
+  official: boolean;
   nature: string[];
   category: string | null;
   groups: CharacteristicGroup[];
@@ -262,6 +264,7 @@ function sourceCharacteristics(block: Record<string, unknown>): PropertyCharacte
 
   const model: PropertyCharacteristics = {
     origin: "source",
+    official: STATE_SOURCES.has(text(block.source) ?? ""),
     nature,
     category: text(block.category),
     groups,
@@ -295,6 +298,7 @@ function genericCharacteristics(sale: AuctionSale): PropertyCharacteristics | nu
   if (items.length === 0) return null;
   return {
     origin: "generic",
+    official: false,
     nature: [],
     category: null,
     groups: [{ key: "source", title: "Caractéristiques publiées par la source", items }],

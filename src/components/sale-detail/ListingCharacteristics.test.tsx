@@ -54,6 +54,54 @@ describe("ListingCharacteristics", () => {
     expect(mail.getAttribute("href")).toBe("mailto:pole@dgfip.finances.gouv.fr");
   });
 
+  it("presents a Licitor listing as a source listing, not an official record", () => {
+    // Bloc fictif au format écrit par la pipeline pour Licitor.
+    const licitor = {
+      source: "licitor",
+      nature: [{ label: "Un appartement", display: "Un appartement" }],
+      groups: { identification: "Annonce et procédure", lots: "Lots mis en vente" },
+      items: [
+        {
+          key: "sale_type",
+          label: "Type de vente",
+          value: "Vente aux enchères publiques sur saisie immobilière",
+          group: "identification",
+        },
+        { key: "lot_2", label: "2ème lot", value: "Une cave — mise à prix 1 000 €", group: "lots" },
+      ],
+      surfaces: { built_surface_m2: "42.5" },
+      attachments: [{ label: "PV descriptif", kind_label: "Procès-verbal descriptif" }],
+      procedure: {
+        method_label: "Saisie immobilière",
+        prices: { starting_price_eur: 50000, deposit_eur: 5000 },
+        visits: ["Visite sur place lundi 2 novembre 2026 de 10h à 11h"],
+      },
+      dates: { published_on: "2026-09-04" },
+    };
+    render(
+      <ListingCharacteristics
+        sale={{
+          ...sale({ caracteristiques_bien: licitor }),
+          source_name: "licitor",
+          sale_venue_type: "tribunal",
+        }}
+      />,
+    );
+
+    const section = screen.getByRole("region", { name: "Caractéristiques du bien" });
+    expect(
+      within(section).getByText("Informations publiées sur l’annonce de la source"),
+    ).toBeTruthy();
+    expect(within(section).queryByText("Informations publiées sur la fiche officielle")).toBeNull();
+    expect(within(section).getByText("Annonce de la source")).toBeTruthy();
+    expect(within(section).getByText("Saisie immobilière")).toBeTruthy();
+    expect(
+      within(section).getByText("Visite sur place lundi 2 novembre 2026 de 10h à 11h"),
+    ).toBeTruthy();
+    expect(within(section).getByText("Procès-verbal descriptif")).toBeTruthy();
+    expect(within(section).getByText("Une cave — mise à prix 1 000 €")).toBeTruthy();
+  });
+
   it("renders nothing when the source publishes no characteristic", () => {
     const { container } = render(<ListingCharacteristics sale={sale(null)} />);
     expect(container.innerHTML).toBe("");
