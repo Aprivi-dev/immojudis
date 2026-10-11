@@ -12,10 +12,16 @@ import { resolveCourtCodeFromSale } from "@/lib/tribunal-judicial-activity-repos
 import { TribunalCourtUnresolvedError } from "@/lib/tribunal-judicial-activity";
 import {
   buildTribunalListingStatistics,
+  tribunalListingStatisticsPeriod,
   type TribunalListingStatisticsMarketEstimate,
   type TribunalListingStatisticsQuery,
   type TribunalListingStatisticsResponse,
 } from "@/lib/tribunal-listing-statistics";
+import {
+  loadArchivedPastHearings,
+  TribunalOutcomeGraphHistoryUnavailableError,
+} from "@/lib/tribunal-outcome-graph-history";
+import { archivedListingSales } from "@/lib/tribunal-listing-statistics/archived";
 import { asRecordOrNull } from "@/lib/guards";
 import {
   normalizeLabel,
@@ -209,7 +215,11 @@ export async function getTribunalListingStatistics(
   const courtCode = input.courtCode ?? (await resolveListingSaleCourtCode(input.saleId!));
   const court = await fetchCourt(courtCode);
   const aliases = await fetchCourtAliases(court);
-  const loaded = await loadEligibleSales(court.code, aliases);
+  const { historyStart } = tribunalListingStatisticsPeriod(asOf, input.historyMonths);
+  const [loaded, archivedHearings] = await Promise.all([
+    loadEligibleSales(court.code, aliases),
+    loadArchivedHearings({ historyStart, asOf, courtCode: court.code }),
+  ]);
   // Resolve estimates before cross-source merging. A source row that loses the
   // deterministic winner can still carry the only fresh actionable DVF result.
   const marketEstimates = await loadMarketEstimates(loaded.rows);
@@ -219,7 +229,13 @@ export async function getTribunalListingStatistics(
     marketEstimateEligible: marketEstimates.has(sale.id),
   }));
   const deduplicated = deduplicateListingSales(rowsWithEstimates);
-  const sales = deduplicated.sales;
+  // History of purged announcements: never a second copy of a live row.
+  const archived = archivedListingSales({
+    hearings: archivedHearings,
+    liveSales: loaded.rows,
+    courtCode: court.code,
+  });
+  const sales = [...deduplicated.sales, ...archived.sales];
 
   return buildTribunalListingStatistics({
     court: {
@@ -231,9 +247,20 @@ export async function getTribunalListingStatistics(
     asOf,
     historyMonths: input.historyMonths,
     generatedAt: options.generatedAt,
-    rawAnnouncements: loaded.rawAnnouncements,
+    rawAnnouncements: loaded.rawAnnouncements + archivedHearings.length,
     unresolvedStrongAddressDuplicates: deduplicated.unresolvedStrongAddressDuplicates,
   });
+}
+
+async function loadArchivedHearings(input: { historyStart: Date; asOf: Date; courtCode: string }) {
+  try {
+    return (await loadArchivedPastHearings(input)).hearings;
+  } catch (error) {
+    if (error instanceof TribunalOutcomeGraphHistoryUnavailableError) {
+      throw new TribunalListingStatisticsUnavailableError(error.message);
+    }
+    throw error;
+  }
 }
 
 async function resolveListingSaleCourtCode(saleId: string): Promise<string> {

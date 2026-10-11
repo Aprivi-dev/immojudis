@@ -9720,6 +9720,7 @@ export type Database = {
           code: string;
           created_at: string | null;
           department: string;
+          label_keys: string[] | null;
           updated_at: string | null;
         };
         Insert: {
@@ -9729,6 +9730,7 @@ export type Database = {
           code: string;
           created_at?: string | null;
           department: string;
+          label_keys?: never;
           updated_at?: string | null;
         };
         Update: {
@@ -9738,6 +9740,7 @@ export type Database = {
           code?: string;
           created_at?: string | null;
           department?: string;
+          label_keys?: never;
           updated_at?: string | null;
         };
         Relationships: [];
@@ -13317,6 +13320,16 @@ export type Database = {
         Args: { p_checkout_token: string; p_user_id: string };
         Returns: boolean;
       };
+      remap_archived_catalogue_courts_by_label_batch: {
+        Args: { p_after_id?: string; p_limit?: number };
+        Returns: {
+          has_more: boolean;
+          next_cursor: string;
+          remapped_count: number;
+          scanned_count: number;
+          skipped_count: number;
+        }[];
+      };
       reserve_analyse_checkout: {
         Args: { p_checkout_token: string; p_user_id: string };
         Returns: boolean;
@@ -14366,6 +14379,30 @@ export type Database = {
           case_status: string;
           inbound_token: string;
           mission_status: string;
+        }[];
+      };
+      tribunal_outcome_graph_past_hearings: {
+        Args: {
+          p_as_of: string;
+          p_court_code?: string;
+          p_history_start: string;
+        };
+        Returns: {
+          auction_sale_id: string;
+          city: string;
+          court_code: string;
+          external_id: string;
+          initial_starting_price_eur: number;
+          lawyer_label: string;
+          legacy_status: string;
+          lot_label: string;
+          occupation_status: string;
+          property_type: string;
+          publication_first_seen_at: string;
+          round_id: string;
+          scheduled_at: string;
+          source_name: string;
+          source_url: string;
         }[];
       };
       unlockrows: { Args: { "": string }; Returns: number };

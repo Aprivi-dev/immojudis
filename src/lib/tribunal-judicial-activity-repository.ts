@@ -17,6 +17,11 @@ import {
   type TribunalJudicialActivityDirectorySale,
 } from "@/lib/tribunal-judicial-activity-directory";
 import { isPublicationQuarantinedMarker } from "@/lib/sale-publication-guard";
+import {
+  loadArchivedPastHearings,
+  TribunalOutcomeGraphHistoryUnavailableError,
+  type ArchivedHearing,
+} from "@/lib/tribunal-outcome-graph-history";
 
 const PAGE_SIZE = 1_000;
 const MAX_SALES_PER_COURT = 5_000;
@@ -130,18 +135,21 @@ export async function getTribunalJudicialActivity(
   }
 
   const court = storedCourtSchema.parse(courtResult.data);
-  const saleRows = await loadEligibleSales({
-    courtCode,
-    historyStart,
-    upcomingEnd,
-  });
+  const [saleRows, archived] = await Promise.all([
+    loadEligibleSales({
+      courtCode,
+      historyStart,
+      upcomingEnd,
+    }),
+    loadArchivedHistory({ historyStart, asOf, courtCode: court.code }),
+  ]);
   return buildTribunalJudicialActivity({
     court: {
       code: court.code,
       name: court.name,
       judicialRegion: court.judicial_region,
     },
-    sales: saleRows,
+    sales: [...saleRows, ...archived.map(archivedHearingSale)],
     asOf,
     historyMonths: input.historyMonths,
   });
@@ -153,16 +161,58 @@ export async function getTribunalJudicialActivityDirectory(
 ): Promise<TribunalJudicialActivityDirectoryResponse> {
   const asOf = options.asOf ?? new Date();
   const { historyStart, upcomingEnd } = judicialActivityPeriod(asOf, input.historyMonths);
-  const [courts, sales] = await Promise.all([
+  const [courts, sales, archived] = await Promise.all([
     loadActiveCourts(),
     loadEligibleDirectorySales({ historyStart, upcomingEnd }),
+    loadArchivedHistory({ historyStart, asOf }),
   ]);
   return buildTribunalJudicialActivityDirectory({
     courts,
-    sales,
+    sales: [
+      ...sales,
+      ...archived.map((hearing) => ({
+        tribunalCode: hearing.courtCode,
+        ...archivedHearingSale(hearing),
+      })),
+    ],
     asOf,
     historyMonths: input.historyMonths,
   });
+}
+
+async function loadArchivedHistory(input: {
+  historyStart: Date;
+  asOf: Date;
+  courtCode?: string;
+}): Promise<ArchivedHearing[]> {
+  try {
+    const result = await loadArchivedPastHearings(input);
+    return result.hearings;
+  } catch (error) {
+    if (error instanceof TribunalOutcomeGraphHistoryUnavailableError) {
+      // Never publish a partial history as if it were complete.
+      throw new TribunalJudicialActivityUnavailableError(error.message);
+    }
+    throw error;
+  }
+}
+
+/** An archived hearing as a past sale: no visit information, earliest detection kept. */
+function archivedHearingSale(hearing: ArchivedHearing): TribunalJudicialActivitySale {
+  return {
+    id: hearing.roundId,
+    saleDate: hearing.scheduledAt,
+    status: "past",
+    startingPriceEur: hearing.startingPriceEur,
+    propertyType: hearing.propertyType,
+    visitDates: [],
+    visitDatesKnown: false,
+    firstSeenAt: hearing.firstSeenAt,
+    occupationStatus: hearing.occupancyStatus,
+    city: hearing.city,
+    courtCode: hearing.courtCode,
+    historySource: "outcome_graph_archive",
+  };
 }
 
 export async function resolveCourtCodeFromSale(saleId: string): Promise<string> {
@@ -378,6 +428,7 @@ async function loadEligibleDirectorySales(input: {
 
 function mapStoredSale(row: z.infer<typeof storedSaleSchema>): TribunalJudicialActivitySale {
   return {
+    historySource: "catalogue",
     id: row.id,
     saleDate: row.sale_date,
     status: row.status,
