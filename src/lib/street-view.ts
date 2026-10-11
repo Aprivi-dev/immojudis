@@ -10,6 +10,18 @@ export type StreetViewTarget = {
   address?: string | null;
 };
 
+/** Answer of /api/street-view: the Google car panorama to open, if any. */
+export type StreetViewPanorama =
+  | {
+      status: "ready";
+      pano: string;
+      /** Camera heading from the panorama towards the listing, in degrees. */
+      heading: number | null;
+      distanceM: number;
+      date: string | null;
+    }
+  | { status: "unavailable"; reason: "not_configured" | "no_google_imagery" };
+
 export type StreetViewEmbedOptions = {
   heading?: number;
   pitch?: number;
@@ -97,4 +109,9 @@ function formatLocation(lat: number, lng: number) {
 
 function formatCoordinate(value: number) {
   return value.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/** Google Maps link for a point, used when no embeddable imagery exists. */
+export function googleMapsPlaceUrl(lat: number, lng: number) {
+  return `https://www.google.com/maps/search/?api=1&query=${formatLocation(lat, lng)}`;
 }

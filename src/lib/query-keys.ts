@@ -55,6 +55,8 @@ export const queryKeys = {
     ["sale-urbanisme-cadastre", saleId, sourceUrl] as const,
   saleWeather: (saleId: string) => ["sale-weather", saleId] as const,
   saleRisks: (saleId: string) => ["sale-risks", saleId] as const,
+  streetViewPanorama: (lat: number, lng: number) =>
+    ["street-view-panorama", lat.toFixed(6), lng.toFixed(6)] as const,
   saleWorkspace: (saleId: string) => ["sale-workspace", saleId] as const,
   precomputedMarketEstimate: (saleId: string) => ["precomputed-market-estimate", saleId] as const,
   outcomeGraph: (saleId: string) => ["outcome-graph", saleId] as const,
