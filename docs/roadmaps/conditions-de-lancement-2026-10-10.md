@@ -46,8 +46,10 @@ permet de les masquer (les annonces restent dans le catalogue). Les cessions de 
 
 ## Fréquence de collecte
 
-Le pipeline est relancé toutes les 30 minutes (`auction_pipeline_control`, une expédition à `:15` et `:45`).
-Avec quelques utilisateurs, une collecte horaire suffirait et soulagerait la base et les coûts. **Décision à
-prendre** : le changement passe par la fonction SQL de répartition ; il n'est pas fait ici pour ne pas
-retarder la collecte pendant la phase de stabilisation. À réexaminer une semaine après le déploiement,
-quand les temps d'attente de la file seront connus.
+Décision du 11 octobre 2026 : chaque source est collectée **au plus toutes les 12 heures** (6 heures auparavant).
+La planification (`claim_autonomous_pipeline_run`, appelée toutes les 15 minutes par la tâche
+`operational-health`) lance une collecte quand une source est due, et le traitement de la file
+d'enrichissement (descriptions, fiches détail, PDF) au plus toutes les 30 minutes ; cette cadence-là est inchangée.
+La cadence des sources est fixée à deux endroits : `INVENTORY_CADENCE` (`services/data-pipeline/src/autonomous_runner.py`,
+échéance posée à la fin de la collecte) et la fonction SQL (attente pendant que la collecte lancée est en cours),
+migration `20261016100000_source_inventory_cadence_12h.sql`.

@@ -21,7 +21,8 @@ from src.storage.supabase_client import connect
 # Alias de compatibilité : des tests patchent ce nom de module.
 _postgres_connect = connect
 
-INVENTORY_CADENCE = timedelta(hours=6)
+# Décision du propriétaire (11/10/2026) : chaque source au plus toutes les 12 h.
+INVENTORY_CADENCE = timedelta(hours=12)
 INVENTORY_DISPATCH_MARGIN = timedelta(minutes=45)
 NEAR_SALE_HORIZON = timedelta(days=7)
 ACTIVE_LISTING_STATUSES = frozenset({'active', 'upcoming', 'postponed', 'unknown'})
@@ -164,8 +165,8 @@ def next_inventory_deadline(*, now: datetime, started_at: object | None, source:
         elif run_started is not None and run_started <= current:
             anchors.append(run_started)
     if not anchors:
-        # No close listing was evidenced by this run. Keep the ordinary six
-        # hour cadence instead of inheriting an old alias/checkpoint forever.
+        # No close listing was evidenced by this run. Keep the ordinary
+        # cadence instead of inheriting an old alias/checkpoint forever.
         return current + INVENTORY_CADENCE
     return max(current, min(anchors) + INVENTORY_CADENCE - INVENTORY_DISPATCH_MARGIN)
 
