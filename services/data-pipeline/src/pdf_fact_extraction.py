@@ -73,6 +73,7 @@ from src.pdf_fact_scope import (
 from src.pdf_fact_scope import (
     _pdf_surface_candidates_with_provenance as _scope_pdf_surface_candidates_with_provenance,
 )
+from src.pdf_offer_deadline import OFFER_PROCEDURE_SOURCES, offer_deadline_sale_date, record_offer_deadline
 
 
 def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, object]] | list[str]) -> AuctionSale:
@@ -200,13 +201,19 @@ def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, objec
             sale.occupancy_status = _extract_occupancy_status(combined)
             if sale.occupancy_status:
                 _pdf_record_fact_projection(sale, ["occupancy_status"], evidence=combined[:300])
+    timezone = source_sale_timezone(sale.raw_payload)
+    offer_deadline = record_offer_deadline(sale, pdf_texts, complete_texts=complete_texts, local_timezone=timezone)
+    if sale.sale_date is None and offer_deadline and sale.source_name in OFFER_PROCEDURE_SOURCES:
+        # A call for offers has no hearing: its offer deadline is the echeance.
+        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline))
     if sale.sale_date is None:
-        timezone = source_sale_timezone(sale.raw_payload)
         sale_date = _extract_sale_date_from_documents(pdf_texts, local_timezone=timezone) or _extract_sale_date_with_evidence(
             combined, local_timezone=timezone,
         )
         if sale_date:
             _assign_pdf_sale_date(sale, sale_date)
+    if sale.sale_date is None and offer_deadline:
+        _assign_pdf_sale_date(sale, offer_deadline_sale_date(offer_deadline))
     starting_price = _extract_starting_price_from_documents(pdf_texts)
     if starting_price:
         _reconcile_pdf_starting_price(sale, starting_price)
