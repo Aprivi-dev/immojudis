@@ -9,6 +9,8 @@ host's ``Crawl-delay`` when it publishes one).
 
 from __future__ import annotations
 
+import math
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -18,7 +20,22 @@ import httpx
 
 from src.sources.common import RobotsRules, _looks_like_html_challenge
 
-MIN_HOST_DELAY_SECONDS = 1.5
+MIN_HOST_DELAY_SECONDS = 2.0
+# Never go below one request per second and per host, whatever the setting.
+MIN_HOST_DELAY_FLOOR_SECONDS = 1.0
+HOST_DELAY_ENV = "PDF_HOST_MIN_DELAY_SECONDS"
+
+
+def configured_host_delay_seconds() -> float:
+    """Per-host delay between document requests, from ``PDF_HOST_MIN_DELAY_SECONDS``."""
+    raw = (os.getenv(HOST_DELAY_ENV) or "").strip()
+    try:
+        value = float(raw) if raw else MIN_HOST_DELAY_SECONDS
+    except ValueError:
+        value = MIN_HOST_DELAY_SECONDS
+    if not math.isfinite(value):
+        value = MIN_HOST_DELAY_SECONDS
+    return max(MIN_HOST_DELAY_FLOOR_SECONDS, value)
 
 # The test suite switches this off so unit tests never wait or fetch robots.txt.
 POLITENESS_ENABLED = True
@@ -47,13 +64,13 @@ class DocumentPoliteness:
         fetch_robots: Callable[[str], httpx.Response],
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
-        min_delay_seconds: float = MIN_HOST_DELAY_SECONDS,
+        min_delay_seconds: float | None = None,
     ) -> None:
         self._user_agent = user_agent
         self._fetch_robots = fetch_robots
         self._sleep = sleep
         self._clock = clock
-        self._min_delay = min_delay_seconds
+        self._min_delay = configured_host_delay_seconds() if min_delay_seconds is None else min_delay_seconds
         self._rules: dict[str, RobotsRules | DocumentRobotsUnavailable] = {}
         self._next_slot: dict[str, float] = {}
         self._lock = threading.Lock()

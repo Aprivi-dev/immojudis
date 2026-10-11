@@ -658,12 +658,25 @@ def _normalize_document_url(url: str, *, form: str) -> str:
     )
 
 
+# Mirror of licitor.com/robots.txt (checked 2026-10-11): ``Disallow: /data/pub/``
+# with explicit ``Allow`` lines for the published sale attachments. The live
+# robots.txt is still enforced on every request by ``DocumentPoliteness``; this
+# static pre-check only avoids a request for paths known to be forbidden.
+LICITOR_ROBOTS_ALLOWED_PREFIXES = (
+    "/data/pub/media/annonce/",
+    "/data/pub/pic/",
+    "/data/pub/jde.pdf",
+)
+
+
 def _is_robots_disallowed_licitor_document(url: str) -> bool:
     parsed = urlparse(url)
     if parsed.netloc.lower() not in {"www.licitor.com", "licitor.com"}:
         return False
     path = parsed.path
-    return path.startswith("/data/pub/doc/") or path.startswith("/data/pub/media/")
+    if not path.startswith("/data/pub/"):
+        return False
+    return not path.startswith(LICITOR_ROBOTS_ALLOWED_PREFIXES)
 
 
 def _download_document_response(
