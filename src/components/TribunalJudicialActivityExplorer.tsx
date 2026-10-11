@@ -79,9 +79,10 @@ export function TribunalJudicialActivityExplorer() {
             Statistiques Tribunaux
           </h1>
           <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
-            À quel prix les biens sont-ils adjugés ? Comparez les résultats des ventes passées, les
-            mises à prix et les types de biens, en France et tribunal par tribunal. Un baromètre
-            réservé aux membres Analyse, fondé sur les résultats publiés et contrôlés.
+            À quel prix les biens sont-ils adjugés ? Comparez les prix d’adjudication publiés par
+            Licitor, les mises à prix et les types de biens, en France et tribunal par tribunal. Un
+            baromètre réservé aux membres Analyse, complété par l’historique des audiences suivies
+            par Immojudis.
           </p>
         </div>
       </header>
@@ -218,9 +219,12 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
             Repères du périmètre suivi
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/65">
-            Les annonces retenues sont judiciaires, vérifiées ou recoupées et rattachées à un
-            tribunal actif du référentiel Justice. Ce périmètre ne prétend pas couvrir toute la
-            France.
+            Pipeline à venir : annonces judiciaires du catalogue, vérifiées ou recoupées. Historique
+            : audiences passées du catalogue et de l’archive du graphe des résultats, qui conserve
+            les annonces retirées du catalogue après l’audience. Toutes sont rattachées à un
+            tribunal actif du référentiel Justice (compétence communale vérifiée ou libellé
+            explicite de l’annonce) et une vente publiée par plusieurs sources n’est comptée qu’une
+            fois. Ce périmètre ne prétend pas couvrir toute la France.
           </p>
         </div>
         <p className="text-xs font-semibold text-brand-navy/65">
@@ -238,7 +242,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
               Historique observé
             </p>
             <h3 id="national-observed-title" className="mt-1 font-display text-2xl font-semibold">
-              Annonces passées suivies
+              Audiences passées suivies
             </h3>
           </div>
           <div className="grid md:grid-cols-2">
@@ -250,14 +254,15 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
             />
             <ProfileMetric
               icon={Clock3}
-              label="Détection → vente · historique"
+              label="Détection → audience · historique"
               value={formatDaysMedian(national.discoveryLeadRangeDays)}
               detail={formatDaysRange(national.discoveryLeadRangeDays)}
             />
           </div>
           <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/65">
-            {formatNumber(national.observedPastSales)} ventes passées observées depuis le{" "}
-            {formatDate(data.period.historyStart)}.
+            {formatNumber(national.observedPastSales)} audiences passées observées depuis le{" "}
+            {formatDate(data.period.historyStart)}. Une audience passée ne prouve pas que le bien a
+            été vendu.
           </p>
         </section>
 
@@ -464,7 +469,7 @@ function TribunalProfile({
         <div>
           <p className="text-sm font-semibold">Affiner l’historique observé par type de bien</p>
           <p className="mt-1 text-xs text-brand-navy/65">
-            Les petits groupes restent masqués sous cinq annonces passées.
+            Les petits groupes restent masqués sous cinq audiences passées.
           </p>
         </div>
         <label className="sm:w-72">
@@ -490,7 +495,7 @@ function TribunalProfile({
             Historique observé
           </p>
           <h3 id="court-observed-title" className="mt-1 font-display text-2xl font-semibold">
-            Annonces passées · {tribunal.period.historyMonths} mois
+            Audiences passées · {tribunal.period.historyMonths} mois
           </h3>
         </div>
         <div className="grid overflow-hidden rounded-lg border border-brand-navy/12 bg-white md:grid-cols-3">
@@ -502,15 +507,17 @@ function TribunalProfile({
           />
           <ProfileMetric
             icon={Clock3}
-            label={`Détection → vente · ${scopeLabel}`}
+            label={`Détection → audience · ${scopeLabel}`}
             value={formatDaysMedian(leadRange)}
             detail={formatDaysRange(leadRange)}
           />
           <ProfileMetric
             icon={CalendarDays}
-            label="Ventes passées observées"
+            label="Audiences passées observées"
             value={formatNumber(tribunal.activity.observedPastSales)}
-            detail={`Depuis le ${formatDate(tribunal.period.historyStart)}`}
+            detail={`Depuis le ${formatDate(tribunal.period.historyStart)} · dont ${formatNumber(
+              tribunal.provenance.archivedPastSales,
+            )} issues de l’archive`}
           />
         </div>
       </section>
@@ -558,14 +565,18 @@ function TribunalProfile({
             Comment lire ces chiffres ?
           </h3>
           <p className="mt-3 text-sm leading-relaxed text-brand-navy/66">
-            Les fourchettes historiques vont du 25e au 75e percentile : la moitié des annonces
+            Les fourchettes historiques vont du 25e au 75e percentile : la moitié des audiences
             passées retenues se situe à l’intérieur. Une mise à prix basse ne signifie pas que le
             bien sera adjugé à ce montant. Les frais, l’état du bien et la concurrence restent
             déterminants.
           </p>
           <p className="mt-3 text-xs leading-relaxed text-brand-navy/65">
-            Échantillons : {priceRange.sampleSize} mises à prix et {leadRange.sampleSize} délais ·
-            annonces judiciaires vérifiées ou recoupées uniquement.
+            Échantillons : {priceRange.sampleSize} mises à prix et {leadRange.sampleSize} délais. Le
+            pipeline ne retient que des annonces vérifiées ou recoupées ; l’archive du graphe des
+            résultats ne conserve ni ce statut ni les dates de visite.
+            {tribunal.provenance.mergedDuplicateAnnouncements > 0
+              ? ` ${formatNumber(tribunal.provenance.mergedDuplicateAnnouncements)} doublons entre sources ont été regroupés.`
+              : ""}
           </p>
         </section>
 
