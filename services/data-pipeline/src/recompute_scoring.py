@@ -20,6 +20,7 @@ from src.extraction_profiles import attach_source_property_features
 from src.geocode import geocode_sale
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
+from src.sources.agrasc_extraction import refresh_agrasc_raw_sale
 from src.sources.cessions_etat_extraction import refresh_cessions_raw_sale
 from src.sources.common import PoliteHttpClient
 from src.sources.encheres_publiques import (
@@ -589,6 +590,8 @@ def _sale_from_storage_row(row: dict[str, Any]):
     # Cessions de l'État : rejoue la lecture structurée sur le texte de fiche
     # stocké (aucune requête au site) ; ses valeurs priment sur les colonnes.
     refresh_cessions_raw_sale(raw_sale)
+    # AGRASC : même relecture sur les champs opérateur stockés (types des pièces, Points clés).
+    refresh_agrasc_raw_sale(raw_sale)
     sale = normalize_sale(raw_sale)
     sale.id = str(row.get("id")) if row.get("id") else None
     sale.primary_source = row.get("primary_source") or sale.primary_source
