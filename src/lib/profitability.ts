@@ -431,7 +431,7 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
   return {
     available: true,
     warning: prudentWithoutLowBound
-      ? "Données insuffisantes : ce scénario n’est pas prudent. Faute de borne basse, la référence est la médiane locale."
+      ? "Borne basse indisponible sur cet échantillon : le profil prudent s’appuie sur la médiane locale, seule la marge de sécurité protège ce plafond."
       : undefined,
     occupancy: { ...occupancy, bidReduction: Math.max(0, maxBidFree - maxBid) },
     surface,
@@ -439,8 +439,7 @@ export function computeMarketCeiling(inputs: MarketCeilingInputs): MarketCeiling
     basis,
     basisLabel: {
       manual: "prix marché saisi",
-      median:
-        scenarioConfig.basis === "p10" ? "médiane locale (P10 indisponible)" : "médiane locale",
+      median: "médiane locale",
       p10: "borne basse (P10)",
       p25: "premier quartile (P25)",
     }[basis],

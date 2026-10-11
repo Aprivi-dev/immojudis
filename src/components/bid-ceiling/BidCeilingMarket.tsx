@@ -2,7 +2,6 @@ import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.server";
 import { formatDate, formatPrice, formatSurface } from "@/lib/format";
 import { fmt, ppm2 } from "@/components/bid-ceiling/assistant-state";
-import { aggregateScopeLabel } from "@/components/bid-ceiling/BidCeilingShared";
 
 export function MarketInput({
   estimate,
@@ -68,150 +67,18 @@ export function MarketInput({
   );
 }
 
-export function marketUnavailableReason(input: {
-  valuationSurface: number | null;
-  isLand: boolean;
-  hasDvfError: boolean;
-  storedError: string | null;
-}): string {
-  if (input.storedError) return input.storedError;
-  if (!input.valuationSurface) {
-    return input.isLand
-      ? "La surface du terrain manque pour calculer une valeur foncière."
-      : "La surface ou le nombre de pièces manque pour estimer ce bien.";
-  }
-  if (input.hasDvfError) {
-    return "L'estimation pré-calculée est temporairement indisponible.";
-  }
-  return "Aucune vente du même segment n'a été trouvée, même après élargissement de la zone.";
-}
-
-export function MarketLocalCard({
-  estimate,
-  usingCachedEstimate,
-  isLoading,
-  valuationSurface,
-  unavailableReason,
-}: {
-  estimate: DvfMarketEstimate | null;
-  usingCachedEstimate: boolean;
-  isLoading: boolean;
-  valuationSurface: number | null;
-  unavailableReason: string;
-}) {
-  const areaLabel = estimate?.areaKind === "urban" ? "ville" : "campagne";
-  const hasRange = Boolean(estimate?.medianPricePerM2 || estimate?.medianUnitPriceEur);
-  const usesAddressHistory = estimate?.comparableMode === "address_history";
-  const usesAggregateStatistics = estimate?.comparableMode === "geographic_aggregate";
-  const usesUnitSales = estimate?.comparableMode === "unit_sales";
-  const isLandEstimate = estimate?.surfaceBasis === "land";
-  const estimatedValue =
-    estimate?.estimatedValueEur ??
-    (estimate?.medianPricePerM2 && valuationSurface
-      ? Math.round(estimate.medianPricePerM2 * valuationSurface)
-      : null);
-  const sampleLabel = estimate
-    ? usesAddressHistory
-      ? `vente${estimate.sampleSize > 1 ? "s" : ""} de l'adresse`
-      : usesUnitSales
-        ? `vente${estimate.sampleSize > 1 ? "s" : ""} de stationnement`
-        : `vente${estimate.sampleSize > 1 ? "s" : ""} ${
-            isLandEstimate
-              ? "foncière"
-              : estimate.segment === "house"
-                ? "de maison"
-                : estimate.segment === "building"
-                  ? "d'immeuble"
-                  : estimate.segment === "commercial"
-                    ? "de local d'activité"
-                    : "d'appartement"
-          }${estimate.sampleSize > 1 ? "s" : ""}`
-    : "";
-
+/**
+ * Price-per-m² spread of the comparables and the address history, shown with
+ * the market references (they were previously only inside the bid assistant).
+ */
+export function MarketPriceDistribution({ estimate }: { estimate: DvfMarketEstimate }) {
+  const hasRange = Boolean(estimate.medianPricePerM2 || estimate.medianUnitPriceEur);
   return (
-    <div className="mt-5 rounded-lg border border-border bg-muted/35 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
-          <MapPin className="h-4 w-4" />
-          Marché local
-        </div>
-        {estimate && (
-          <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-            {estimate.commune ? `${estimate.commune} · ` : ""}
-            {usesUnitSales
-              ? `stationnements · rayon ${estimate.radiusM} m`
-              : usesAggregateStatistics
-                ? `référence ${aggregateScopeLabel(estimate.geographyLevel)}`
-                : `rayon ${estimate.radiusM} m (${areaLabel})`}
-          </span>
-        )}
-      </div>
-
-      {isLoading && !estimate ? (
-        <p className="mt-3 text-sm text-muted-foreground">
-          Chargement de l'estimation pré-calculée...
-        </p>
-      ) : !hasRange ? (
-        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          {unavailableReason} Saisissez un prix de marché au m² dans les réglages pour obtenir un
-          plafond provisoire.
-        </p>
-      ) : (
-        <>
-          {estimatedValue && (
-            <div className="mt-3 rounded-md border border-gold/20 bg-gold/5 px-3 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                {isLandEstimate ? "Valeur foncière estimée" : "Valeur estimée du bien"}
-              </p>
-              <p className="mt-1 font-display text-2xl text-foreground">
-                {formatPrice(estimatedValue)}
-              </p>
-              {estimate?.estimatedValueLowEur && estimate.estimatedValueHighEur && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Fourchette indicative : {formatPrice(estimate.estimatedValueLowEur)} à{" "}
-                  {formatPrice(estimate.estimatedValueHighEur)}
-                </p>
-              )}
-            </div>
-          )}
-          <PriceRange estimate={estimate!} />
-          {estimate!.actionable === false && (
-            <p className="mt-3 rounded-md border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
-              Référence indicative uniquement : elle n'est pas utilisée automatiquement pour
-              l’enchère plafond. Confirmez un prix manuel ou renforcez les comparables.
-            </p>
-          )}
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            {usesUnitSales ? (
-              <>
-                Fourchette indicative établie sur{" "}
-                <strong className="text-foreground">{estimate!.sampleSize}</strong> ventes DVF
-                composées uniquement de dépendances, dans un rayon de {estimate!.radiusM} m.
-              </>
-            ) : usesAggregateStatistics ? (
-              <>
-                Fourchette indicative établie sur la médiane de{" "}
-                <strong className="text-foreground">{estimate!.sampleSize}</strong> ventes de
-                référence à l’échelle {aggregateScopeLabel(estimate!.geographyLevel)}.
-              </>
-            ) : (
-              <>
-                Fourchette établie sur{" "}
-                <strong className="text-foreground">{estimate!.sampleSize}</strong> {sampleLabel},
-                sur {estimate!.totalNearbySampleSize} ventes recensées dans le rayon.
-              </>
-            )}
-            {usingCachedEstimate ? " Estimation conservée en cache." : ""}
-          </p>
-          {estimate!.qualityWarnings.length > 0 && (
-            <p className="mt-2 rounded-md border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs leading-relaxed text-amber-100">
-              {estimate!.qualityWarnings.join(" · ")}.
-            </p>
-          )}
-        </>
-      )}
-
-      <AddressHistory estimate={estimate} />
+    <div className="mt-7 rounded-lg border border-slate-200 bg-white p-5 sm:p-6">
+      {hasRange ? <PriceRange estimate={estimate} /> : null}
+      {estimate.comparableMode !== "address_history" ? (
+        <AddressHistory estimate={estimate} />
+      ) : null}
     </div>
   );
 }
@@ -250,7 +117,7 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
           médiane <strong className="text-foreground">{ppm2(median)}</strong>
         </span>
       </div>
-      <div className="relative mt-5 h-2 rounded-full bg-white/8">
+      <div className="relative mt-5 h-2 rounded-full bg-muted">
         {/* Zone interquartile p25–p75 */}
         <div
           className="absolute inset-y-0 rounded-full bg-gradient-to-r from-[var(--signal-opportunity)] to-[var(--signal-watch)]"
@@ -268,7 +135,7 @@ function PriceRange({ estimate }: { estimate: DvfMarketEstimate }) {
       <div className="mt-2 flex justify-between text-[11px] tabular-nums text-muted-foreground">
         <span>min {ppm2(min)}</span>
         <span>
-          p25 {ppm2(p25)} · p75 {ppm2(p75)}
+          la moitié des ventes entre {ppm2(p25)} et {ppm2(p75)}
         </span>
         <span>max {ppm2(max)}</span>
       </div>

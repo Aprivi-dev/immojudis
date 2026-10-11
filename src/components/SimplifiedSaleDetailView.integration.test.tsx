@@ -238,8 +238,9 @@ describe("integrated scenario workspace", () => {
     await openTab("Estimation");
     fireEvent.click(screen.getByRole("link", { name: "Ajuster mes hypothèses" }));
     await waitFor(() => {
-      const worksInput = screen.getByLabelText("Budget travaux personnalisé") as HTMLInputElement;
-      expect(worksInput.value).toBe("2200");
+      const summary = screen.getByText("Travaux retenus dans ce plafond").parentElement!;
+      expect(summary.textContent?.replace(/\s/g, "")).toContain("2200€");
+      expect(summary.textContent).toContain("montant personnalisé");
     });
   });
 

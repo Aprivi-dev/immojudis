@@ -1,12 +1,6 @@
 import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.server";
 import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
 
-export function aggregateScopeLabel(level: DvfMarketEstimate["geographyLevel"]): string {
-  if (level === "commune") return "de la commune";
-  if (level === "epci") return "de l’intercommunalité";
-  return "du département";
-}
-
 export function Field({
   label,
   value,
@@ -36,20 +30,6 @@ export function Field({
       </div>
       {hint && <span className="mt-1 block text-[11px] text-muted-foreground">{hint}</span>}
     </label>
-  );
-}
-
-export function MethodStep({ index, title, text }: { index: string; title: string; text: string }) {
-  return (
-    <li className="rounded-md border border-border bg-white p-3">
-      <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
-        <span className="grid h-5 w-5 place-items-center rounded-full bg-gold text-[11px] text-brand-navy">
-          {index}
-        </span>
-        {title}
-      </div>
-      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{text}</p>
-    </li>
   );
 }
 
