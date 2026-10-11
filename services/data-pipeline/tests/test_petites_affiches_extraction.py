@@ -332,3 +332,23 @@ def test_land_surface_reads_spelled_and_cadastral_forms() -> None:
     assert land_surface_from_contenance("Le tout sur un terrain de 00 hectare 04 ares 36 centiares.") == "436"
     assert land_surface_from_contenance("Section AB n° 1 pour une contenance de 1ha 56a 80ca") == "15680"
     assert land_surface_from_contenance("Appartement de 3 pièces") is None
+
+
+NEWS_BLOCK = (
+    "<div><p>News 09/10</p><p>À Nice, un nouveau bar à jeux a ouvert ses portes rue Pairolière</p>"
+    "<p>News 09/10</p><p>Appel à intérêt : un local commercial de 1 273 m² à Cap d'Ail proposé à la location</p></div>"
+)
+
+
+def test_site_news_headlines_never_become_the_property_surface() -> None:
+    # A members-only page publishes no surface: the « 1 273 m² » of a news
+    # headline about another property must not take its place.
+    html = _fixture("petites_affiches_fiche_abonnes.html")
+
+    for block in (NEWS_BLOCK, NEWS_BLOCK.replace("<div>", '<div class="bloc-news">')):
+        detail = parse_petites_affiches_detail_html(html.replace("<body>", f"<body>{block}", 1), RESTRICTED_URL)
+        sale = normalize_sale(detail)
+
+        assert sale.surface_m2 is None
+        assert "Cap d'Ail" not in detail["raw_text"]
+        assert "Cap d'Ail" not in (detail["description"] or "")
