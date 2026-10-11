@@ -26,6 +26,7 @@ import {
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
 import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import { stateListingStatus } from "@/lib/property-characteristics";
 import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
 import { ErrorState, NoResultsState } from "./SearchFilters";
@@ -208,6 +209,8 @@ export const ListingCard = memo(function ListingCard({
     : propertyTypeReview.blocked || cityReview.blocked
       ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
       : saleDisplayTitle(sale);
+  // Cession de l'État en ligne sans échéance publiée : « Procédure à venir » plutôt que « Date à confirmer ».
+  const stateListing = stateListingStatus(sale);
   const roomSummary = roomsReview.blocked
     ? null
     : sale.rooms_count != null
@@ -331,7 +334,7 @@ export const ListingCard = memo(function ListingCard({
               sourceUrl={sale.source_url}
               showSourceLink={false}
             >
-              {formatDate(sale.sale_date)}
+              {stateListing ? stateListing.label : formatDate(sale.sale_date)}
             </AiReviewField>
           </span>
           <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />

@@ -44,6 +44,7 @@ import {
   stateSaleMethodLabel,
 } from "@/lib/sale-procedure";
 import { saleDisplayTitle } from "@/lib/sale-title";
+import { stateListingStatus } from "@/lib/property-characteristics";
 import { saleSession, saleWindow } from "@/lib/sale-window";
 import type { AuctionSale } from "@/lib/types";
 import styles from "./SaleListing.module.css";
@@ -154,6 +155,7 @@ export function ListingOverview({
   const sourceLink = saleSourceLinks(sale)[0];
   const notary = procedure.venueType === "notary";
   const state = procedure.venueType === "state";
+  const stateListing = state ? stateListingStatus(sale) : null;
   const eventDate = state
     ? (schedule?.closes_at ?? sale.sale_date)
     : (schedule?.opens_at ?? sale.sale_date);
@@ -356,7 +358,7 @@ export function ListingOverview({
               ? participationModeLabel(procedure.participationMode)
               : hasVisibleEvent
                 ? "Conditions à vérifier dans l’annonce officielle"
-                : "Échéance à confirmer dans l’annonce officielle"}
+                : (stateListing?.label ?? "Échéance à confirmer dans l’annonce officielle")}
           </span>
         </div>
       ) : null}
