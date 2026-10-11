@@ -96,9 +96,22 @@ def fetch_cadastre_parcels_for_sale(
     timeout_seconds: float = 10,
     user_agent: str = DEFAULT_USER_AGENT,
 ) -> list[CadastreParcel]:
+    endpoint = api_url.strip() or "https://apicarto.ign.fr/api/cadastre/parcelle"
+    # Parcels named by the source itself (cessions de l'État) beat the parcel
+    # found under a point, which may be a commune centroid.
+    from src.cadastre_references import source_reference_features
+
+    referenced = source_reference_features(sale) if sale.source_url else []
+    if referenced:
+        return cadastre_rows_from_feature_collection(
+            sale,
+            {"features": referenced},
+            source_api_url=endpoint,
+            request_params={"_limit": MAX_CADASTRE_FEATURES},
+            match_kind="reference_lookup",
+        )
     if not sale.source_url or sale.latitude is None or sale.longitude is None:
         return []
-    endpoint = api_url.strip() or "https://apicarto.ign.fr/api/cadastre/parcelle"
     lat = float(sale.latitude)
     lng = float(sale.longitude)
     point = {"type": "Point", "coordinates": [lng, lat]}

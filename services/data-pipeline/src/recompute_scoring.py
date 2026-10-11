@@ -12,6 +12,7 @@ import httpx
 from dotenv import load_dotenv
 
 from src.asset_normalization import normalize_asset_features
+from src.cadastre_references import resolve_sale_cadastre
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import ROOT_DIR, load_settings, require_encheres_publiques_access
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
@@ -19,6 +20,7 @@ from src.extraction_profiles import attach_source_property_features
 from src.geocode import geocode_sale
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
+from src.sources.cessions_etat_extraction import refresh_cessions_raw_sale
 from src.sources.common import PoliteHttpClient
 from src.sources.encheres_publiques import (
     BASE_URL as ENCHERES_PUBLIQUES_BASE_URL,
@@ -584,6 +586,9 @@ def _sale_from_storage_row(row: dict[str, Any]):
     for field in ("title", "description", "raw_text", "source_blocks"):
         if original_payload.get(field):
             raw_sale[field] = original_payload[field]
+    # Cessions de l'État : rejoue la lecture structurée sur le texte de fiche
+    # stocké (aucune requête au site) ; ses valeurs priment sur les colonnes.
+    refresh_cessions_raw_sale(raw_sale)
     sale = normalize_sale(raw_sale)
     sale.id = str(row.get("id")) if row.get("id") else None
     sale.primary_source = row.get("primary_source") or sale.primary_source
@@ -603,6 +608,9 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
     sale = _sale_from_storage_row(row)
     if geocode:
         geocode_sale(sale)
+    else:
+        # Reprend la localisation cadastrale déjà résolue, sans requête.
+        resolve_sale_cadastre(sale, network=False)
     fill_tribunal(sale)
     classify_sale_procedure(sale)
     payload = sale.raw_payload

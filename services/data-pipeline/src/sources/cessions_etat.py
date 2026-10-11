@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import ssl
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
@@ -16,6 +17,8 @@ from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_sett
 from src.normalize import clean_text, normalize_property_type
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
+from src.sources.cessions_etat_extraction import REPLACED_FIELDS, apply_cessions_fields, extract_cessions_fields
+from src.sources.cessions_etat_page import parse_map_popup
 from src.sources.common import (
     PaginationCoverage,
     PoliteHttpClient,
@@ -33,6 +36,19 @@ BASE_URL = "https://cessions.immobilier-etat.gouv.fr"
 LIST_URL = f"{BASE_URL}/"
 LOGGER = logging.getLogger(__name__)
 DETAIL_FIELDS = {
+    "address",
+    "latitude",
+    "longitude",
+    "status",
+    "date_precision",
+    "state_listing",
+    "source_page_observed_at",
+    "rooms_count",
+    "bedrooms_count",
+    "bathrooms_count",
+    "occupancy_status",
+    "department",
+    "cadastre_location",
     "property_type",
     "description",
     "starting_price_eur",
@@ -204,7 +220,7 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
     visit_dates = _visit_dates(raw_text)
     documents = _documents(soup, source_url)
     source_images = _extract_images(soup, source_url)
-    return {
+    detail = {
         "source_name": "cessions_etat",
         "source_url": source_url,
         **({"title": title} if title else {}),
@@ -288,6 +304,45 @@ def parse_cessions_etat_detail_html(html: str, source_url: str) -> dict[str, Any
             procedure=_procedure_value(soup),
         ),
     }
+    # Fiche au gabarit actuel : la lecture structurée du texte (caractéristiques,
+    # procédure, surfaces par portée, pièces jointes…) remplace les heuristiques
+    # ci-dessus, qui restent le repli des pages minimales.
+    map_widget = _map_widget(soup)
+    extracted = extract_cessions_fields(
+        raw_text, observed_at=datetime.now(UTC), insee_fallback=map_widget.get("insee_code")
+    )
+    if extracted is not None:
+        for key in ("surface_m2", "land_surface_m2"):
+            detail.pop(key, None)
+        apply_cessions_fields(detail, extracted)
+    # Carte de la fiche : désignation du bien au fichier immobilier de l'État
+    # (voie ou lieu-dit, commune, code INSEE) et point affiché par le site.
+    if map_widget.get("address"):
+        detail["address"] = map_widget["address"]
+    for key in ("latitude", "longitude"):
+        if map_widget.get(key):
+            detail[key] = map_widget[key]
+    blocks = detail.setdefault("source_blocks", {})
+    for block_key, key in (("adresse_carte", "popup"), ("code_insee_carte", "insee_code")):
+        if map_widget.get(key):
+            blocks[block_key] = map_widget[key]
+    return detail
+
+
+def _map_widget(soup: BeautifulSoup) -> dict[str, str]:
+    node = soup.select_one("#bien-tab-map[data-popup-text], #bien-tab-map[data-lat]")
+    if node is None:
+        return {}
+    popup = clean_text(node.get("data-popup-text"))
+    found: dict[str, str] = {"popup": popup} if popup else {}
+    found.update(parse_map_popup(popup) or {})
+    try:
+        latitude, longitude = float(str(node.get("data-lat"))), float(str(node.get("data-lon")))
+    except (TypeError, ValueError):
+        return found
+    if -90 <= latitude <= 90 and -180 <= longitude <= 180 and (latitude, longitude) != (0.0, 0.0):
+        found["latitude"], found["longitude"] = str(latitude), str(longitude)
+    return found
 
 
 def _detail_title(soup: BeautifulSoup) -> str | None:
@@ -646,6 +701,14 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
             "visit_dates",
         } or not sale.get(key):
             sale[key] = value
+    if isinstance(detail.get("source_blocks"), dict) and detail["source_blocks"].get("caracteristiques_bien"):
+        # La fiche structurée fait foi pour l'échéance, le statut et les surfaces :
+        # une valeur absente de la fiche efface celle, moins précise, de la carte.
+        for key in (*REPLACED_FIELDS, "surface_m2", "land_surface_m2", "cadastre_location"):
+            if detail.get(key) in (None, "", [], {}):
+                sale.pop(key, None)
+            else:
+                sale[key] = detail[key]
 
 
 def _location(text: str | None) -> tuple[str | None, str | None]:
