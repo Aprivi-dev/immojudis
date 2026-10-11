@@ -31,6 +31,10 @@ def classify_document_type(label: str | None, url: str | None = None) -> str:
         return "diagnostics_techniques"
     if re.search(r"\bdiag(?:nostics?)?\b", text):
         return "diagnostics_techniques"
+    # Attestation / certificat de superficie (mesurage Carrez ou surface habitable) :
+    # un diagnostic technique, même quand l'URL contient « /annonce/ » (Licitor).
+    if re.search(r"\b(?:attestation|certificat|metrage|mesurage)\s+(?:de\s+)?(?:la\s+)?(?:superficie|surface)", text):
+        return "diagnostics_techniques"
     if any(
         pattern in text
         for pattern in (
@@ -79,6 +83,8 @@ def classify_document_type(label: str | None, url: str | None = None) -> str:
         return "pv_huissier"
     if re.search(r"\bpv\b", text):
         return "pv_huissier"
+    if re.search(r"\b(?:certificat|note|renseignements?)\s+d['’]urbanisme\b|^\s*urbanisme\b", text):
+        return "cadastre"
     if re.search(r"\bproces[-\s]+verbal\b", text):
         return "proces_verbal"
     if any(

@@ -32,6 +32,7 @@ from src.sources.encheres_publiques import (
     parse_encheres_publiques_detail_html,
 )
 from src.sources.licitor import LicitorClient, parse_licitor_detail_html
+from src.sources.licitor_extraction import refresh_licitor_raw_sale
 from src.storage.supabase_client import _postgrest_request_with_retries, upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
 
@@ -589,6 +590,8 @@ def _sale_from_storage_row(row: dict[str, Any]):
     # Cessions de l'État : rejoue la lecture structurée sur le texte de fiche
     # stocké (aucune requête au site) ; ses valeurs priment sur les colonnes.
     refresh_cessions_raw_sale(raw_sale)
+    # Licitor : même principe (lots, procédure, conditions, avocats, visites).
+    refresh_licitor_raw_sale(raw_sale)
     sale = normalize_sale(raw_sale)
     sale.id = str(row.get("id")) if row.get("id") else None
     sale.primary_source = row.get("primary_source") or sale.primary_source
