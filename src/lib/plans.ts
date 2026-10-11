@@ -101,7 +101,7 @@ export const PLAN_FEATURES: Record<PlanCode, PlanFeatureMatrix> = {
     "property.reportEditing": "locked",
     "property.urbanPlanning": "locked",
     "property.streetFacade": "locked",
-    "property.weatherHistory": "locked",
+    "property.weatherHistory": "included",
     "property.saleHistory": "locked",
     "property.soldComparables": "locked",
     "property.activeComparables": "locked",

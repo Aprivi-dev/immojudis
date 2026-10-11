@@ -5,10 +5,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ClimateHistory, ClimateMonth } from "@/lib/environment-reference";
 import { ClimateHistoryView, ListingWeatherHistory } from "./ListingWeatherHistory";
 
-vi.mock("@/lib/client-api-core", () => ({
-  authHeaders: async () => ({ Authorization: "Bearer test" }),
-  readJson: async (response: Response) => response.json(),
-}));
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -75,30 +71,25 @@ function renderWithClient(node: React.ReactNode, client = new QueryClient()) {
 }
 
 describe("Météo-France climate history", () => {
-  it("keeps the locked preview free of calls and observations", () => {
+  it("renders nothing and calls nothing when disabled", () => {
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);
-    const client = new QueryClient();
-    client.setQueryData(["sale-weather", "test-sale"], { weather });
-    renderWithClient(<ListingWeatherHistory saleId="test-sale" enabled locked />, client);
-
-    expect(screen.getByRole("link", { name: /avec l’offre Analyse/ }).getAttribute("href")).toBe(
-      "/offres",
+    const { container } = renderWithClient(
+      <ListingWeatherHistory saleId="test-sale" enabled={false} />,
     );
-    expect(screen.queryByRole("table")).toBeNull();
+
+    expect(container.textContent).toBe("");
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("loads the history as soon as the block is shown to an Analyse member", async () => {
+  it("loads the history for every visitor, without authentication", async () => {
     const fetcher = vi.fn(async () => new Response(JSON.stringify({ weather })));
     vi.stubGlobal("fetch", fetcher);
     renderWithClient(<ListingWeatherHistory saleId="test-sale" enabled />);
 
     await waitFor(() => expect(screen.getByRole("table")).toBeTruthy());
-    expect(fetcher).toHaveBeenCalledWith(
-      "/api/sales/test-sale/weather",
-      expect.objectContaining({ headers: { Authorization: "Bearer test" } }),
-    );
+    expect(fetcher).toHaveBeenCalledWith("/api/sales/test-sale/weather", expect.any(Object));
+    expect(JSON.stringify(fetcher.mock.calls[0])).not.toContain("Authorization");
   });
 
   it("explains why no history is shown instead of failing silently", async () => {
