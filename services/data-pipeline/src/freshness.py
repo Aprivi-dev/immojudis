@@ -46,6 +46,14 @@ def timestamp_is_fresh(value: object, *, hours: float = 24, now: datetime | None
         return False
 
 
+# Sources whose robots.txt Crawl-delay makes a daily re-read of every detail
+# impossible within the scheduled budget. Notaires asks for 10 s between
+# requests: about 810 details take 2 h 20, while it gets four 35-minute runs a
+# day. An unchanged list card (date, price, interrupted status) keeps the
+# stored detail this long; any change on the card still triggers a re-read.
+SOURCE_DETAIL_FRESHNESS_HOURS = {"notaires": 72}
+
+
 def detail_is_fresh(row: dict[str, Any], source_url: str) -> bool:
     payload = row.get("raw_payload") or {}
     if payload.get("source_identity_mismatch") or str(row.get("status") or "").casefold() == "quarantined":
@@ -54,7 +62,8 @@ def detail_is_fresh(row: dict[str, Any], source_url: str) -> bool:
     check = checks.get(source_url) or {}
     if check.get("extractor_version") != SOURCE_EXTRACTION_VERSION:
         return False
-    hours = 24
+    source_name = str(check.get("source_name") or row.get("source_name") or "")
+    hours = SOURCE_DETAIL_FRESHNESS_HOURS.get(source_name, 24)
     try:
         sale_date = datetime.fromisoformat(str(row.get("sale_date")).replace("Z", "+00:00"))
         if sale_date.tzinfo and timedelta(0) <= sale_date - datetime.now(UTC) <= timedelta(days=7):

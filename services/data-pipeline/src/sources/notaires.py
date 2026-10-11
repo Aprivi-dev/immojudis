@@ -14,11 +14,12 @@ from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.normalize import LATIN_LETTERS_PATTERN, SURFACE_VALUE_PATTERN, clean_text, parse_french_datetime, parse_surface
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PaginationCoverage, PoliteHttpClient, ScrapeResult, unique_dicts
+from src.sources.common import PaginationCoverage, PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
 from src.sources.notaires_extraction import (
     build_display,
     build_features,
     cadastre_location,
+    card_sale_long_past,
     energy_class,
     flat_blocks,
     merge_operator_page,
@@ -72,7 +73,7 @@ def scrape_notaires_aquitaine(max_pages: int | None = None) -> list[dict[str, An
     return scrape_notaires_aquitaine_result(max_pages=max_pages).sales
 
 
-def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
+def scrape_notaires_aquitaine_result(max_pages: int | None = None, known: dict[str, str] | None = None) -> ScrapeResult:
     settings = load_settings()
     client = PoliteHttpClient(
         base_url=BASE_URL,
@@ -213,8 +214,11 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
                     # rewrite the department; that must not turn an API row
                     # into a successful exclusion after the inventory proof.
                     listing_department = sale.get("department")
-                    from src.source_checkpoint import restore_detail
-                    if restore_detail(sale):
+                    # Closed sale (expired anyway), interrupted-run checkpoint,
+                    # or stored detail whose list card is unchanged.
+                    if card_sale_long_past(sale):
+                        sale["source_detail_status"] = "skipped_closed_sale"
+                    elif not should_fetch_detail(sale, known):
                         pass
                     elif not _enrich_sale_from_detail(client, sale, errors):
                         sale["_detail_fetch_failed"] = True
