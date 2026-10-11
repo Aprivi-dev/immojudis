@@ -49,6 +49,8 @@ docs/design/annonce-detail/rendered-*.png
 *.sln
 *.sw?
 
-# Claude Code local config (agents, preview launch config, settings)
-.claude/
+# Claude Code local config (agents, preview launch config, local settings).
+# The shared .claude/settings.json (tool permissions) is versioned.
+.claude/*
+!.claude/settings.json
 .env*.local
