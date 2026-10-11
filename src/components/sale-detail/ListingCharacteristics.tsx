@@ -30,7 +30,11 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
   const listing = stateListingStatus(sale);
   const [primaryGroup, ...otherGroups] = model.groups;
   const sourceLabel =
-    model.origin === "source" ? "Informations publiées sur la fiche officielle" : null;
+    model.origin !== "source"
+      ? null
+      : model.official
+        ? "Informations publiées sur la fiche officielle"
+        : "Informations publiées sur l’annonce de la source";
 
   return (
     <section
