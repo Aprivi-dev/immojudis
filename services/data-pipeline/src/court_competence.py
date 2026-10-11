@@ -22,7 +22,15 @@ from src.official_sources.justice_open_data import (
 LOGGER = logging.getLogger(__name__)
 COURT_ASSIGNMENT_SCHEMA_VERSION = "justice_competent_court_assignment_v1"
 COURT_ASSIGNMENT_METHOD = "justice_competence_insee_exact"
+COURT_LABEL_ASSIGNMENT_SCHEMA_VERSION = "justice_court_label_assignment_v1"
+COURT_LABEL_ASSIGNMENT_METHOD = "tribunal_label_exact"
 _INSEE_CODE_RE = re.compile(r"^(?:\d{5}|2[AB]\d{3})$")
+# Mirrors app_private.tribunal_label_court_key() in
+# supabase/migrations/20261014100000_tribunal_history_outcome_graph.sql: the
+# label must name a judicial court explicitly; a bare city never resolves.
+_COURT_LABEL_PREFIX_RE = re.compile(
+    r"^(?:tribunal judiciaire|tribunal de grande instance|tgi|tj)(?: (?:de|du|des|d))? (.+)$"
+)
 
 _DEFAULT_COMPETENCES_PATH = (
     RAW_DIR / "outcome_sources" / "justice_courts" / "resource-e2a1941b-observed-competences.csv"
@@ -95,6 +103,85 @@ class CompetentCourtAssignment:
             "aliases": [self.official_court_name, self.court_name],
         }
 
+    def official_court(self) -> OfficialCourt:
+        return OfficialCourt(
+            court_code=self.court_code,
+            court_name=self.court_name,
+            official_court_name=self.official_court_name,
+            court_origin_code=self.court_origin_code,
+            court_srj_code=self.court_srj_code,
+            court_department=self.court_department,
+            court_city=self.court_city,
+        )
+
+
+@dataclass(frozen=True)
+class OfficialCourt:
+    """A tribunal judiciaire of the national Justice registry, without any commune."""
+
+    court_code: str
+    court_name: str
+    official_court_name: str
+    court_origin_code: str
+    court_srj_code: str
+    court_department: str
+    court_city: str
+
+    def label_evidence(self, source_label: str) -> dict[str, object]:
+        """Evidence that an explicit source label, not a location, named this court."""
+        return {
+            "schema_version": COURT_LABEL_ASSIGNMENT_SCHEMA_VERSION,
+            "status": "label_exact",
+            "mapping_method": COURT_LABEL_ASSIGNMENT_METHOD,
+            "source_label": source_label,
+            "label_key": tribunal_label_court_key(source_label),
+            "court_code": self.court_code,
+            "court_name": self.court_name,
+            "official_court_name": self.official_court_name,
+            "court_origin_code": self.court_origin_code,
+            "court_srj_code": self.court_srj_code,
+            "court_department": self.court_department,
+            "court_city": self.court_city,
+            "source_name": "justice_open_data",
+            "source_url": JUSTICE_COMPETENCES_DATASET_URL,
+        }
+
+
+class OfficialCourtLabelIndex:
+    """Exact, unique label → court lookup over the whole national registry."""
+
+    def __init__(self, courts: list[OfficialCourt]) -> None:
+        codes_by_key: dict[str, set[str]] = {}
+        self._courts: dict[str, OfficialCourt] = {}
+        for court in courts:
+            self._courts.setdefault(court.court_code, court)
+            for label in (court.court_name, court.official_court_name):
+                key = tribunal_label_court_key(label)
+                if key:
+                    codes_by_key.setdefault(key, set()).add(court.court_code)
+        # An ambiguous key (two courts) is dropped instead of picking one.
+        self._code_by_key = {key: next(iter(codes)) for key, codes in codes_by_key.items() if len(codes) == 1}
+
+    def resolve(self, label: object) -> OfficialCourt | None:
+        key = tribunal_label_court_key(label)
+        if key is None:
+            return None
+        code = self._code_by_key.get(key)
+        return self._courts.get(code) if code else None
+
+
+def tribunal_label_court_key(label: object) -> str | None:
+    """Return the court part of an explicit TJ/TGI label, or ``None``.
+
+    ``"Tribunal judiciaire d'Évry-Courcouronnes"`` and ``"TJ Evry Courcouronnes"``
+    share the key ``"evry courcouronnes"``; ``"Marseille"`` (no court prefix)
+    returns ``None`` so a commune can never be mistaken for a court.
+    """
+
+    fingerprint = _fingerprint(label)
+    match = _COURT_LABEL_PREFIX_RE.fullmatch(fingerprint)
+    return match.group(1) if match else None
+
 
 class CourtCompetenceReference:
     def __init__(
@@ -144,6 +231,9 @@ class CourtCompetenceReference:
                 court_email=str(structure["email"]) if structure.get("email") else None,
             )
         self._assignments = assignments
+        self._label_index = OfficialCourtLabelIndex(
+            [assignment.official_court() for assignment in assignments.values()]
+        )
 
     def resolve(self, insee_code: str) -> CompetentCourtAssignment | None:
         cleaned = insee_code.strip().upper()
@@ -151,20 +241,48 @@ class CourtCompetenceReference:
             return None
         return self._assignments.get(cleaned)
 
+    def resolve_label(self, label: object) -> OfficialCourt | None:
+        return self._label_index.resolve(label)
+
 
 def resolve_competent_court(sale: AuctionSale) -> CompetentCourtAssignment | None:
     insee_code = verified_sale_insee_code(sale)
     if insee_code is None:
         return None
-    try:
-        reference = _load_reference(
-            str(os.getenv("JUSTICE_COMPETENCES_PATH") or _DEFAULT_COMPETENCES_PATH),
-            str(os.getenv("JUSTICE_STRUCTURES_PATH") or _DEFAULT_STRUCTURES_PATH),
-        )
-    except (OSError, JusticeOpenDataSchemaError) as exc:
-        LOGGER.error("Official competent-court reference is unavailable: %s", exc)
+    reference = _configured_reference()
+    return reference.resolve(insee_code) if reference is not None else None
+
+
+def resolve_court_by_label(label: object) -> OfficialCourt | None:
+    """Resolve an explicit source label (``"TJ Marseille"``) to a national court.
+
+    Only an exact, unique match against the Justice registry is accepted. The
+    caller keeps the verified INSEE competence as the higher-priority signal.
+    """
+
+    if tribunal_label_court_key(label) is None:
         return None
-    return reference.resolve(insee_code)
+    reference = _configured_reference()
+    return reference.resolve_label(label) if reference is not None else None
+
+
+_REPORTED_REFERENCE_FAILURES: set[tuple[str, str]] = set()
+
+
+def _configured_reference() -> CourtCompetenceReference | None:
+    paths = (
+        str(os.getenv("JUSTICE_COMPETENCES_PATH") or _DEFAULT_COMPETENCES_PATH),
+        str(os.getenv("JUSTICE_STRUCTURES_PATH") or _DEFAULT_STRUCTURES_PATH),
+    )
+    try:
+        return _load_reference(*paths)
+    except (OSError, JusticeOpenDataSchemaError) as exc:
+        # Loading is retried on every call (the cache may appear later), but
+        # the error is reported once per path pair instead of once per sale.
+        if paths not in _REPORTED_REFERENCE_FAILURES:
+            _REPORTED_REFERENCE_FAILURES.add(paths)
+            LOGGER.error("Official competent-court reference is unavailable: %s", exc)
+        return None
 
 
 def verified_sale_insee_code(sale: AuctionSale) -> str | None:
@@ -181,9 +299,14 @@ def verified_sale_insee_code(sale: AuctionSale) -> str | None:
 def tribunal_reference_rows(sales: list[AuctionSale]) -> list[dict[str, object]]:
     rows: dict[str, dict[str, object]] = {}
     for sale in sales:
-        assignment = sale.raw_payload.get("tribunal_assignment") if isinstance(sale.raw_payload, dict) else None
+        raw_payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+        assignment = raw_payload.get("tribunal_assignment")
         if not _valid_assignment_evidence(assignment):
-            continue
+            # An explicit label resolved against the national registry also
+            # needs its FK target, but only while it still backs the sale code.
+            assignment = raw_payload.get("tribunal_label_assignment")
+            if not _valid_label_assignment_evidence(assignment) or assignment["court_code"] != sale.tribunal_code:
+                continue
         code = str(assignment["court_code"])
         rows[code] = {
             "code": code,
@@ -196,6 +319,33 @@ def tribunal_reference_rows(sales: list[AuctionSale]) -> list[dict[str, object]]
             ],
         }
     return [rows[code] for code in sorted(rows)]
+
+
+def _valid_label_assignment_evidence(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    required_text = (
+        "source_label",
+        "label_key",
+        "court_code",
+        "court_name",
+        "official_court_name",
+        "court_origin_code",
+        "court_srj_code",
+        "court_department",
+        "court_city",
+    )
+    return (
+        value.get("schema_version") == COURT_LABEL_ASSIGNMENT_SCHEMA_VERSION
+        and value.get("status") == "label_exact"
+        and value.get("mapping_method") == COURT_LABEL_ASSIGNMENT_METHOD
+        and value.get("source_name") == "justice_open_data"
+        and value.get("source_url") == JUSTICE_COMPETENCES_DATASET_URL
+        and all(isinstance(value.get(key), str) and value[key].strip() for key in required_text)
+        and value["label_key"] == tribunal_label_court_key(value["source_label"])
+        and bool(re.fullmatch(r"\d+", str(value["court_origin_code"])))
+        and bool(re.fullmatch(r"\d+", str(value["court_srj_code"])))
+    )
 
 
 def _valid_assignment_evidence(value: Any) -> bool:
