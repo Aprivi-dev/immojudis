@@ -119,7 +119,10 @@ values
     'c1000000-0000-4000-8000-000000000002',
     'competence-test',
     'https://example.test/competence/unverified',
-    'TJ Incorrect',
+    -- No verified competence and no label naming a court: since
+    -- 20261014100000 an explicit label ("TJ Incorrect") would map the bridge
+    -- by label (see 447), so this row keeps an unresolvable source label.
+    'Tribunal à confirmer',
     'court_wrong',
     '99',
     'Commune inconnue',
