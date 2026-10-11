@@ -73,7 +73,8 @@ const DISCOVERY_FEATURES = [
 
 const ANALYSIS_FEATURES = [
   "Enchère plafond chiffrée : travaux, libération, portage et tous les frais",
-  "Pièces du dossier : cahier des conditions de vente, procès-verbal, diagnostics",
+  "Pièces du dossier et leur lecture : points clés cités avec la page",
+  "Historique de la vente : passages précédents, baisses de mise à prix, reports",
   "Estimation détaillée et ventes comparables",
   "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
   "Statistiques des tribunaux, rapport PDF et export des résultats",

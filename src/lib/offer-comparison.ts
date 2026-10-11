@@ -75,6 +75,16 @@ const SPECS: RowSpec[] = [
     features: ["property.valueEstimate"],
   },
   {
+    id: "document-reading",
+    label: "Lecture des pièces : points clés cités avec la page",
+    features: ["property.documentReading"],
+  },
+  {
+    id: "passages",
+    label: "Historique de la vente : passages précédents, baisses de mise à prix, reports",
+    features: ["property.saleHistory"],
+  },
+  {
     id: "estimate",
     label: "Estimation détaillée et ventes comparables",
     features: ["property.valueEstimate", "property.soldComparables"],

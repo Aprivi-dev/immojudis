@@ -131,6 +131,7 @@ export {
   fetchSaleAiReviewProjections,
   fetchSaleFactReliabilities,
   fetchPrecomputedMarketEstimate,
+  fetchDocumentReading,
   fetchSalePassages,
   fetchValuePreview,
   fetchOutcomeGraphForecast,

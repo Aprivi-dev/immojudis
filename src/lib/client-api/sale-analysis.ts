@@ -12,6 +12,7 @@ import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import type { SaleHistoryResponse } from "@/lib/sale-history";
 import type { SalePassagesResponse } from "@/lib/sale-passages";
+import type { DocumentReadingResponse } from "@/lib/document-reading";
 import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
 import type { ValuationBacktestResponse } from "@/lib/valuation-backtest";
 import type { ValuationAdminResponse } from "@/lib/valuation-admin";
@@ -71,6 +72,14 @@ export async function fetchValuePreview(saleId: string): Promise<ValuePreview> {
     signal: AbortSignal.timeout(10_000),
   });
   return readJson<ValuePreview>(response);
+}
+
+export async function fetchDocumentReading(saleId: string): Promise<DocumentReadingResponse> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/document-reading`, {
+    headers: await authHeaders(),
+    signal: AbortSignal.timeout(10_000),
+  });
+  return readJson<DocumentReadingResponse>(response);
 }
 
 export async function fetchSalePassages(saleId: string): Promise<SalePassagesResponse> {

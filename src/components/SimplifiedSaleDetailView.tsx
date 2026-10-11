@@ -8,6 +8,7 @@ import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import { listingValuationConflict } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
+import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
 import { ListingWeatherHistory } from "@/components/sale-detail/ListingWeatherHistory";
@@ -505,6 +506,10 @@ function SaleDetailWorkspace({
                 />
               </div>
               <ListingCharacteristics sale={displaySale} />
+              <DocumentReadingSection
+                saleId={sale.id}
+                enabled={!publicDemo && !authLoading && Boolean(user)}
+              />
               <SalePassagesSection
                 saleId={sale.id}
                 startingPrice={displaySale.starting_price_eur ?? null}

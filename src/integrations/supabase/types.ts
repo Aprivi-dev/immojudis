@@ -797,6 +797,101 @@ export type Database = {
           },
         ];
       };
+      auction_document_readings: {
+        Row: {
+          documents: Json;
+          error_code: string | null;
+          generated_at: string;
+          input_fingerprint: string;
+          input_truncated: boolean;
+          model: string | null;
+          points: Json;
+          prompt_version: string;
+          sale_id: string;
+          source_url: string;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          documents?: Json;
+          error_code?: string | null;
+          generated_at?: string;
+          input_fingerprint: string;
+          input_truncated?: boolean;
+          model?: string | null;
+          points?: Json;
+          prompt_version: string;
+          sale_id: string;
+          source_url: string;
+          status: string;
+          updated_at?: string;
+        };
+        Update: {
+          documents?: Json;
+          error_code?: string | null;
+          generated_at?: string;
+          input_fingerprint?: string;
+          input_truncated?: boolean;
+          model?: string | null;
+          points?: Json;
+          prompt_version?: string;
+          sale_id?: string;
+          source_url?: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       auction_documents: {
         Row: {
           created_at: string | null;
