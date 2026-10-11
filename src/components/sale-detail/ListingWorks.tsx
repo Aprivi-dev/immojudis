@@ -11,20 +11,11 @@ import {
 } from "@/components/bid-ceiling/BidCeilingWorks";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
 import { formatPrice } from "@/lib/format";
-import { getListingPublicInformation } from "@/lib/listing-public-information";
 import { estimateWorksBudget, WORKS_SCENARIOS } from "@/lib/profitability";
 import { riskEvidence } from "@/lib/risk-evidence";
-import { dpeRentalNote, suggestWorksScenario } from "@/lib/works-guidance";
+import { dpeRentalNote, saleCondition, suggestWorksScenario } from "@/lib/works-guidance";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 import styles from "./ListingWorks.module.css";
-
-/** Published condition (« État du bien »): sourced fact first, then the raw source block. */
-function saleCondition(sale: AuctionSale): string | null {
-  const fact = getListingPublicInformation(sale).items.find((item) => item.id === "condition");
-  if (fact?.value) return fact.value;
-  const block = (sale.source_blocks as Record<string, unknown> | null | undefined)?.etat;
-  return typeof block === "string" && block.trim() ? block.trim() : null;
-}
 
 function workRisks(sale: AuctionSale): SaleRisk[] {
   return (sale.risks ?? []).filter((risk) =>

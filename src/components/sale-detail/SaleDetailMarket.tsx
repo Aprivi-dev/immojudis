@@ -12,11 +12,6 @@ import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import { formatDate, formatPrice, formatPricePerM2 } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
 import { marketReferenceConfidence } from "@/lib/market-comparables-analysis";
-import {
-  computeRecommendedCeilings,
-  computeAcquisitionCosts,
-  type MarketCeilingResult,
-} from "@/lib/profitability";
 import type { AuctionSale } from "@/lib/types";
 
 const OutcomeForecast = dynamic(() =>
@@ -56,104 +51,6 @@ export function TribunalEstimationEvidence({
       </p>
     </details>
   );
-}
-
-type Recommendations = ReturnType<typeof computeRecommendedCeilings>;
-
-export function CeilingExplanation({
-  recommendations,
-  surface,
-  resultOverride,
-  worksOverride,
-}: {
-  recommendations: Recommendations;
-  surface: number | null;
-  resultOverride?: MarketCeilingResult;
-  worksOverride?: number;
-}) {
-  const result = resultOverride ?? recommendations.withoutWorks;
-  const works = worksOverride ?? 0;
-  const ceilingCosts = computeAcquisitionCosts({
-    price: result.maxBid,
-    works,
-    fpt: result.simulated.fpt,
-    lawyerFees: result.simulated.lawyerFees,
-    registrationRate: result.simulated.registrationRate,
-    taxRegime: result.simulated.taxRegime,
-  });
-  const marketBase = result.available
-    ? Math.round(result.marketReferencePricePerM2 * Math.max(0, surface ?? 0))
-    : null;
-  const safetyMargin =
-    marketBase != null ? Math.round(marketBase * (result.safetyDiscountPct / 100)) : null;
-  const rows = [
-    ["Référence de marché du scénario", marketBase],
-    ["Marge de sécurité", safetyMargin == null ? null : -safetyMargin],
-    ...(result.available && result.occupancy?.applied
-      ? ([
-          [
-            result.occupancy.status === "unknown"
-              ? "Décote d’occupation (occupation non confirmée)"
-              : "Décote d’occupation",
-            -result.occupancy.discountAmount,
-          ],
-          ...(result.occupancy.carryingCost > 0
-            ? ([["Portage avant libération", -result.occupancy.carryingCost]] as const)
-            : []),
-        ] as const)
-      : []),
-    [
-      "Frais estimés au plafond",
-      result.available ? -Math.round(ceilingCosts.acquisitionFeesTotal) : null,
-    ],
-    ["Travaux inclus", works > 0 ? -works : 0],
-  ] as const;
-
-  return (
-    <div id="why-this-ceiling" className="min-w-0 scroll-mt-36 lg:pr-10">
-      <h2 className="font-display text-4xl font-medium text-brand-navy sm:text-5xl">
-        Pourquoi {result.available ? formatPrice(result.maxBid) : "ce plafond"} ?
-      </h2>
-      <dl className="mt-7 border-y border-brand-navy/18">
-        {rows.map(([label, value]) => (
-          <div
-            key={label}
-            className="flex items-baseline justify-between gap-4 border-b border-brand-navy/12 py-3.5 last:border-b-0"
-          >
-            <dt className="text-sm font-medium text-brand-navy sm:text-base">{label}</dt>
-            <dd
-              className={`font-display text-xl font-semibold sm:text-2xl ${
-                value != null && value < 0 ? "text-gold-text" : "text-brand-navy"
-              }`}
-            >
-              {value == null
-                ? "À compléter"
-                : value === 0 && label === "Travaux inclus"
-                  ? "Aucun"
-                  : signedPrice(value)}
-            </dd>
-          </div>
-        ))}
-        <div className="flex items-baseline justify-between gap-4 border-t border-brand-navy/50 py-5">
-          <dt className="font-display text-2xl font-semibold text-brand-navy">
-            Enchère plafond selon vos hypothèses
-          </dt>
-          <dd className="font-display text-3xl font-semibold text-brand-navy sm:text-4xl">
-            {result.available ? formatPrice(result.maxBid) : "À compléter"}
-          </dd>
-        </div>
-      </dl>
-      <p className="mt-6 max-w-2xl text-sm leading-relaxed text-brand-navy/70 sm:text-base">
-        Calcul selon les hypothèses du simulateur. Les frais sont estimés à l’enchère plafond ; les
-        arrondis peuvent produire un léger écart avec le total affiché.
-      </p>
-    </div>
-  );
-}
-
-function signedPrice(value: number) {
-  if (value < 0) return `− ${formatPrice(Math.abs(value))}`;
-  return formatPrice(value);
 }
 
 export function MarketSnapshot({

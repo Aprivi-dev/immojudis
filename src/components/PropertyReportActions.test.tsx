@@ -66,11 +66,8 @@ function renderActions(props: Partial<React.ComponentProps<typeof PropertyReport
 describe("report export from the listing", () => {
   it("shares the current simulation from the compact listing and revokes the link", async () => {
     const simulation = {
-      price: 100000,
-      works: 31000,
-      fpt: 5000,
-      scenario: "prudent" as const,
-      manualMarketPricePerM2: null,
+      version: 2 as const,
+      choices: { works: { key: "devis" as const, amount: 31000 }, fpt: 5000 },
       expectedMaxBid: 90000,
     };
     mocks.share.mockResolvedValue({
@@ -112,11 +109,8 @@ describe("report export from the listing", () => {
   });
   it("saves the current simulation before exporting even when a report already exists", async () => {
     const simulation = {
-      price: 100000,
-      works: 20000,
-      fpt: 5000,
-      scenario: "prudent" as const,
-      manualMarketPricePerM2: null,
+      version: 2 as const,
+      choices: { works: { key: "devis" as const, amount: 20000 }, fpt: 5000 },
       expectedMaxBid: 90000,
     };
     mocks.fetchReports.mockResolvedValue({ reports: [{ id: "report-existing" }], plan: null });

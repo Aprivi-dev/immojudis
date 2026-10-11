@@ -8,7 +8,9 @@ import {
   getExampleSaleRecords,
 } from "./example-sale";
 import { getListingPublicInformation } from "./listing-public-information";
-import { computeMarketCeiling, DEFAULTS, estimateWorksBudget } from "./profitability";
+import { buildCeilingHypotheses } from "./bid-ceiling-defaults";
+import { computeCeilingPlan } from "./bid-ceiling-engine";
+import { estimateWorksBudget } from "./profitability";
 
 describe("example hearing date", () => {
   it("is always 21 days after the day the page is generated", () => {
@@ -103,15 +105,15 @@ describe("home page figures", () => {
     expect(figures.startingPrice).toBe(sale.starting_price_eur);
     expect(figures.marketValue).toBe(marketEstimate.estimatedValueEur);
 
-    // The example page opens with the default scenario: refresh works, standard fees.
-    const ceiling = computeMarketCeiling({
-      surface: sale.app_surface_m2,
-      price: sale.starting_price_eur!,
-      works: estimateWorksBudget(sale.app_surface_m2, "rafraichissement"),
-      fpt: DEFAULTS.fpt,
-      scenario: "prudent",
-      medianPricePerM2: marketEstimate.medianPricePerM2,
-    });
+    // Same engine and defaults as the example page, with the refresh works scenario.
+    const ceiling = computeCeilingPlan(
+      buildCeilingHypotheses(sale, marketEstimate, {
+        works: {
+          key: "rafraichissement",
+          amount: estimateWorksBudget(sale.app_surface_m2, "rafraichissement"),
+        },
+      }),
+    );
     expect(Math.abs(figures.ceiling - ceiling.maxBid)).toBeLessThanOrEqual(50);
   });
 
