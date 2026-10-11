@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { serverFrom } = vi.hoisted(() => ({ serverFrom: vi.fn() }));
+const { serverFrom, serverRpc } = vi.hoisted(() => ({ serverFrom: vi.fn(), serverRpc: vi.fn() }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { from: serverFrom },
+  supabaseAdmin: { from: serverFrom, rpc: serverRpc },
 }));
 
 import {
@@ -14,7 +14,10 @@ import {
 const AS_OF = new Date("2026-08-20T12:00:00.000Z");
 
 describe("tribunal judicial activity repository", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    serverRpc.mockImplementation(() => fakeRpc({ data: [], error: null }).query);
+  });
 
   it("exige un tribunal officiel actif et ne lit que les ventes judiciaires contrôlées", async () => {
     const courtQuery = fakeQuery({
@@ -92,7 +95,8 @@ describe("tribunal judicial activity repository", () => {
       id: `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`,
       sale_date: "2026-09-10T09:00:00.000Z",
       status: "upcoming",
-      starting_price_eur: 50_000,
+      // Distinct prices: identical rows would be one lot published twice.
+      starting_price_eur: 50_000 + index,
       property_type: "apartment",
       visit_dates: [],
       occupancy_status: null,
@@ -450,8 +454,140 @@ describe("tribunal judicial activity repository", () => {
     expect(salesQuery.state.filters).toContainEqual(["not", "tribunal_code", "is", null]);
     expect(courtsQuery.state.ranges).toEqual([[0, 250]]);
     expect(salesQuery.state.ranges).toEqual([[0, 999]]);
+    expect(serverRpc).toHaveBeenCalledWith("tribunal_outcome_graph_past_hearings", {
+      p_history_start: "2023-08-01T00:00:00.000Z",
+      p_as_of: AS_OF.toISOString(),
+      p_court_code: null,
+    });
+  });
+
+  it("reconstruit l’historique depuis l’archive du graphe et compte une seule fois un lot multi-sources", async () => {
+    const courtQuery = fakeQuery({
+      data: { code: "justice_tj_1_59", name: "TJ Marseille", judicial_region: null },
+      error: null,
+    });
+    const liveSalesQuery = fakeQuery({
+      data: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          sale_date: "2026-06-10T12:00:00.000Z",
+          status: "past",
+          starting_price_eur: 80_000,
+          property_type: "apartment",
+          visit_dates: ["2026-06-01T09:00:00.000Z"],
+          occupancy_status: null,
+          city: "Marseille",
+          first_seen_at: "2026-05-01T09:00:00.000Z",
+        },
+      ],
+      error: null,
+    });
+    const archive = fakeRpc({
+      data: [
+        // Same lot as the live row (other source, midnight UTC hearing time).
+        archivedRow(1, {
+          scheduled_at: "2026-06-10T00:00:00.000Z",
+          initial_starting_price_eur: "80000.00",
+          city: "MARSEILLE",
+          publication_first_seen_at: "2026-04-20T09:00:00.000Z",
+        }),
+        // Still in the catalogue: the catalogue row is authoritative.
+        archivedRow(2, { auction_sale_id: "22222222-2222-4222-8222-222222222222" }),
+        ...[3, 4, 5, 6, 7].map((index) =>
+          archivedRow(index, { initial_starting_price_eur: 40_000 + index * 1_000 }),
+        ),
+        // Copy of index 7 from a second source.
+        archivedRow(8, { initial_starting_price_eur: 47_000, source_name: "vench" }),
+      ],
+      error: null,
+    });
+    serverFrom.mockReturnValueOnce(courtQuery.query).mockReturnValueOnce(liveSalesQuery.query);
+    serverRpc.mockReturnValueOnce(archive.query);
+
+    const result = await getTribunalJudicialActivity(
+      { courtCode: "justice_tj_1_59", historyMonths: 36 },
+      { asOf: AS_OF },
+    );
+
+    expect(serverRpc).toHaveBeenCalledWith("tribunal_outcome_graph_past_hearings", {
+      p_history_start: "2023-08-01T00:00:00.000Z",
+      p_as_of: AS_OF.toISOString(),
+      p_court_code: "justice_tj_1_59",
+    });
+    expect(archive.state.orders).toEqual(["scheduled_at", "round_id"]);
+    expect(archive.state.ranges).toEqual([[0, 999]]);
+    // live lot (merged with its archived copy) + five archived lots
+    expect(result.activity.observedPastSales).toBe(6);
+    expect(result.provenance.archivedPastSales).toBe(5);
+    expect(result.provenance.mergedDuplicateAnnouncements).toBe(2);
+    expect(result.activity.medianStartingPriceEur).toEqual({
+      status: "published",
+      value: 45_500,
+      sampleSize: 6,
+    });
+    // Archived rows keep no visit dates: only the live row is a visit observation.
+    expect(result.activity.observedVisitCoverage).toEqual({
+      status: "insufficient_data",
+      value: null,
+      sampleSize: 1,
+    });
+    // The live lot inherits the occupation published by its archived copy.
+    expect(result.activity.occupation?.knownSales).toBe(6);
+  });
+
+  it("ne publie pas un historique partiel si l’archive est illisible", async () => {
+    const courtQuery = fakeQuery({
+      data: { code: "justice_tj_1_59", name: "TJ Marseille", judicial_region: null },
+      error: null,
+    });
+    serverFrom
+      .mockReturnValueOnce(courtQuery.query)
+      .mockReturnValueOnce(fakeQuery({ data: [], error: null }).query);
+    serverRpc.mockReturnValueOnce(fakeRpc({ data: null, error: { message: "boom" } }).query);
+
+    await expect(
+      getTribunalJudicialActivity(
+        { courtCode: "justice_tj_1_59", historyMonths: 36 },
+        { asOf: AS_OF },
+      ),
+    ).rejects.toThrow("Archived hearing lookup failed");
   });
 });
+
+function archivedRow(index: number, overrides: Record<string, unknown> = {}) {
+  return {
+    round_id: `33333333-3333-4333-8333-${String(index).padStart(12, "0")}`,
+    court_code: "justice_tj_1_59",
+    scheduled_at: "2026-05-12T09:00:00.000Z",
+    initial_starting_price_eur: 50_000,
+    property_type: "apartment",
+    city: "Aubagne",
+    publication_first_seen_at: "2026-04-01T09:00:00.000Z",
+    occupation_status: "tenant_occupied",
+    source_name: "petites_affiches",
+    auction_sale_id: null,
+    external_id: String(index),
+    source_url: `https://example.test/archive/${index}`,
+    lot_label: "Appartement",
+    lawyer_label: null,
+    legacy_status: "upcoming",
+    ...overrides,
+  };
+}
+
+function fakeRpc(result: { data: unknown; error: { message: string } | null }) {
+  const state: { orders: string[]; ranges: Array<[number, number]> } = { orders: [], ranges: [] };
+  const query: Record<string, unknown> = {};
+  query.order = vi.fn((column: string) => {
+    state.orders.push(column);
+    return query;
+  });
+  query.range = vi.fn(async (from: number, to: number) => {
+    state.ranges.push([from, to]);
+    return result;
+  });
+  return { query, state };
+}
 
 function fakeQuery(result: { data: unknown; error: { message: string } | null }) {
   const state: {

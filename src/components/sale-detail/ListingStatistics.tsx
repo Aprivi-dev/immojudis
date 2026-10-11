@@ -554,6 +554,9 @@ export function ListingStatistics({
                     {formatNumber(countValue(activity.publicationDatesKnown))} dates de publication
                     connues · {formatNumber(countValue(activity.discoveryDatesUsed))} premiers
                     repérages utilisés
+                    {activityResponse.meta.archivedAnnouncements
+                      ? ` · dont ${formatNumber(activityResponse.meta.archivedAnnouncements)} audiences passées archivées`
+                      : null}
                   </span>
                 ) : null}
                 <span>
@@ -1045,14 +1048,20 @@ export function ListingStatistics({
               <div className={styles.methodBody}>
                 <p>
                   Les chiffres d’activité proviennent des ventes vérifiées ou recoupées par
-                  Immojudis, rattachées au tribunal confirmé pour cette annonce. La période récente
-                  regroupe les annonces passées et les audiences à venir, en conservant leurs
-                  statuts respectifs.
+                  Immojudis, rattachées au tribunal confirmé pour cette annonce. Les audiences
+                  passées dont l’annonce a quitté le catalogue sont relues dans l’archive du graphe
+                  des résultats : cette archive ne conserve ni le statut de vérification ni les
+                  dates de visite, si bien que ces audiences sont exclues du taux de visites. La
+                  période récente regroupe les annonces passées et les audiences à venir, en
+                  conservant leurs statuts respectifs.
                 </p>
                 <p>
                   Les avis sont regroupés lorsqu’un identifiant commun, un lien entre sources ou une
-                  adresse précise établit qu’ils portent sur le même lot. Les avis dont l’identité
-                  reste incertaine demeurent séparés.
+                  adresse précise établit qu’ils portent sur le même lot. Une audience archivée
+                  n’est retenue que si aucune annonce du catalogue ne porte le même tribunal, le
+                  même jour d’audience, la même mise à prix et la même commune ; ses copies entre
+                  sources sont regroupées selon ce même critère. Les avis dont l’identité reste
+                  incertaine demeurent séparés.
                 </p>
                 <p>
                   Période sélectionnée : <strong>{periodLabel}</strong>, du{" "}

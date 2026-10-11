@@ -111,3 +111,49 @@ function activitySale(
     firstSeenAt: new Date(saleDate.getTime() - 30 * 24 * 60 * 60 * 1_000).toISOString(),
   };
 }
+
+describe("tribunal judicial activity directory: agrégats et tri", () => {
+  it("ne fusionne jamais deux tribunaux et classe à pipeline égal par historique observé", () => {
+    const pastSale = (
+      tribunalCode: string,
+      id: string,
+      startingPriceEur: number,
+    ): TribunalJudicialActivityDirectorySale => ({
+      ...activitySale(tribunalCode, id, -40, startingPriceEur),
+      status: "past",
+      city: "Saint-Denis",
+    });
+    const result = buildTribunalJudicialActivityDirectory({
+      courts: [
+        { code: "bobigny", name: "TJ Bobigny", judicialRegion: "Paris" },
+        { code: "aaa-reunion", name: "TJ Aaa", judicialRegion: "Saint-Denis" },
+      ],
+      sales: [
+        // Same day, price and commune name, but two courts: two lots.
+        pastSale("bobigny", "b1", 50_000),
+        pastSale("aaa-reunion", "r1", 50_000),
+        pastSale("bobigny", "b2", 60_000),
+        // Copy of b2 published by another source.
+        pastSale("bobigny", "b2-copy", 60_000),
+      ],
+      asOf: AS_OF,
+      historyMonths: 36,
+    });
+
+    expect(
+      result.tribunals.map((tribunal) => [
+        tribunal.court.code,
+        tribunal.activity.observedPastSales,
+      ]),
+    ).toEqual([
+      ["bobigny", 2],
+      ["aaa-reunion", 1],
+    ]);
+    expect(result.totals.observedPastSales).toBe(3);
+    expect(result.national.observedPastSales).toBe(3);
+    expect(result.regions.map((region) => [region.name, region.observedPastSales])).toEqual([
+      ["Paris", 2],
+      ["Saint-Denis", 1],
+    ]);
+  });
+});
