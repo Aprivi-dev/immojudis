@@ -22,6 +22,15 @@ FIXTURES = Path(__file__).parent / "fixtures" / "information_agent_contact_cases
 PARITY_CASES = json.loads(FIXTURES.read_text(encoding="utf-8"))["cases"]
 
 
+@pytest.fixture(autouse=True)
+def _street_level_address(monkeypatch):
+    """Most cases below check the stricter « voie / lieu-dit / parcelle » mode.
+
+    The default (commune is enough, owner decision of 2026-10-11) has its own tests.
+    """
+    monkeypatch.setenv("IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS", "street")
+
+
 def make_sale(**fields) -> AuctionSale:
     base = {"source_name": "licitor", "source_url": "https://example.test/vente/1", "city": "Exempleville"}
     base.update(fields)
@@ -67,12 +76,20 @@ def test_missing_address_and_surface_without_email_lists_both_reasons():
     assert verdict.reasons == ("missing_address", "missing_surface")
 
 
-def test_commune_only_address_is_not_an_exploitable_address(monkeypatch):
-    monkeypatch.delenv("IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS", raising=False)
+def test_commune_only_address_is_refused_in_street_mode():
     sale = make_sale(address="60000 Exempleville", postal_code="60000", surface_m2=Decimal("40"))
     verdict = sufficient_information(sale)
     assert not verdict.sufficient and verdict.reasons == ("missing_address",)
     assert verdict.address_level == "commune"
+
+
+def test_commune_is_enough_by_default(monkeypatch):
+    monkeypatch.delenv("IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS", raising=False)
+    sale = make_sale(address="60000 Exempleville", postal_code="60000", surface_m2=Decimal("40"))
+    assert sufficient_information(sale).sufficient
+    # The commune never replaces the surface.
+    verdict = sufficient_information(make_sale(postal_code="60000"))
+    assert not verdict.sufficient and verdict.reasons == ("missing_surface",)
 
 
 def test_commune_level_can_be_accepted_explicitly(monkeypatch):
