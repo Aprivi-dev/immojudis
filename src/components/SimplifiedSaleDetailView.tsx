@@ -7,7 +7,6 @@ import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import { listingValuationConflict } from "@/lib/listing-evidence";
-import type { BidSimulationSnapshot } from "@/components/BidCeilingAssistant";
 import { useAuth } from "@/hooks/use-auth";
 import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
 import { ListingWeatherHistory } from "@/components/sale-detail/ListingWeatherHistory";
@@ -39,14 +38,12 @@ import {
   fetchSaleFactReliabilities,
 } from "@/lib/client-api";
 import type { MarketEstimate } from "@/lib/market.server";
-import {
-  computeRecommendedCeilings,
-  computeMarketCeiling,
-  computeAcquisitionCosts,
-  DEFAULT_MARKET_CEILING_SCENARIO,
-  DEFAULTS,
-} from "@/lib/profitability";
-import { saleCostContext } from "@/lib/sale-cost-context";
+import { computeAcquisitionCosts } from "@/lib/profitability";
+import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
+import { computeCeilingPlan, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
+import { buildDpeAnalysis } from "@/lib/dpe-analysis";
+import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
+import { useCeilingChoices, worksChoiceForAmount } from "@/components/ceiling/use-ceiling-choices";
 import Link from "next/link";
 import { listingCoordinates } from "@/lib/sale-listing";
 import {
@@ -81,7 +78,6 @@ import {
   NonJudicialDecisionPanel,
 } from "@/components/sale-detail/SaleDetailDecisionPanels";
 import {
-  CeilingExplanation,
   MarketEvidence,
   MarketSnapshot,
   TribunalEstimationEvidence,
@@ -111,10 +107,6 @@ const PropertyReportActions = dynamic(
       <p className="mt-3 text-sm text-muted-foreground">Chargement des actions du rapport…</p>
     ),
   },
-);
-const BidCeilingAssistant = dynamic(
-  () => import("@/components/BidCeilingAssistant").then((module) => module.BidCeilingAssistant),
-  { loading: () => <div className="h-80 animate-pulse rounded-lg bg-muted" /> },
 );
 const ListingWorks = dynamic(
   () => import("@/components/sale-detail/ListingWorks").then((module) => module.ListingWorks),
@@ -200,14 +192,13 @@ function SaleDetailWorkspace({
   aiReviewProjections = null,
   access,
 }: SaleDetailProps & { access: "discovery" | "analysis" }) {
-  const [calculationOpen, setCalculationOpen] = useState(false);
-  const [simulation, setSimulation] = useState<BidSimulationSnapshot | null>(null);
   const [personalWorksBudget, setPersonalWorksBudget] = useState<number | null>(null);
   const [worksDraft, setWorksDraft] = useState<ListingWorksDraft | null>(null);
   const [financingDraft, setFinancingDraft] = useState<FinancingDraft | null>(null);
   const [financingResult, setFinancingResult] = useState<FinancingResult | null>(null);
   const [rentalDraft, setRentalDraft] = useState<ListingRentalDraft | null>(null);
   const { user, loading: authLoading } = useAuth();
+  const ceilingChoices = useCeilingChoices(user?.id ?? "guest-demo", sale.id);
   const aiReviewQuery = useQuery({
     queryKey: queryKeys.saleAiReview(sale.id, user?.id ?? "anonymous"),
     queryFn: () => fetchSaleAiReviewProjections(sale.id),
@@ -266,14 +257,6 @@ function SaleDetailWorkspace({
   );
   const criticalAnalysisInputsBlocked =
     priceReview.blocked || surfaceBlocked || propertyTypeReview.blocked || roomsReview.blocked;
-  const activeSimulation =
-    !valuationConflict &&
-    !criticalAnalysisInputsBlocked &&
-    !authLoading &&
-    simulation?.saleId === sale.id &&
-    simulation.ownerId === (user?.id ?? "guest-demo")
-      ? simulation
-      : null;
   const isTribunalSale = saleIsTribunalVenue(sale);
   const budgetTarget =
     access === "analysis"
@@ -301,72 +284,36 @@ function SaleDetailWorkspace({
     access !== "analysis" || valuationConflict || criticalAnalysisInputsBlocked
       ? null
       : (marketEstimateOverride ?? marketQuery.data?.estimate ?? null);
-  const recommendations = useMemo(
-    () =>
-      computeRecommendedCeilings({
-        surface,
-        price: Math.max(0, displaySale.starting_price_eur ?? 0),
-        fpt: DEFAULTS.fpt,
-        ...saleCostContext(displaySale),
-        scenario: DEFAULT_MARKET_CEILING_SCENARIO,
-        medianPricePerM2:
-          isTribunalSale && marketEstimate?.actionable === true
-            ? marketEstimate.medianPricePerM2
-            : null,
-        p10PricePerM2:
-          isTribunalSale && marketEstimate?.actionable === true
-            ? marketEstimate.p10PricePerM2
-            : null,
-        p25PricePerM2:
-          isTribunalSale && marketEstimate?.actionable === true
-            ? marketEstimate.p25PricePerM2
-            : null,
-        p75PricePerM2:
-          isTribunalSale && marketEstimate?.actionable === true
-            ? marketEstimate.p75PricePerM2
-            : null,
-      }),
-    [displaySale, isTribunalSale, marketEstimate, surface],
-  );
+  const ceilingEnabled =
+    access === "analysis" && isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked;
+  const ceilingHypotheses = useMemo(() => {
+    const built = buildCeilingHypotheses(displaySale, ceilingEnabled ? marketEstimate : null, {
+      ...ceilingChoices.choices,
+      works:
+        ceilingChoices.choices.works ?? worksChoiceForAmount(surface, personalWorksBudget ?? 0),
+    });
+    return { ...built, surface: ceilingEnabled ? surface : null };
+  }, [
+    ceilingChoices.choices,
+    ceilingEnabled,
+    displaySale,
+    marketEstimate,
+    personalWorksBudget,
+    surface,
+  ]);
+  const ceilingPlan = useMemo(() => computeCeilingPlan(ceilingHypotheses), [ceilingHypotheses]);
+  const dpeClass = useMemo(() => buildDpeAnalysis(displaySale).class, [displaySale]);
   // Aucun travaux n'est supposé tant que l'utilisateur n'en a pas chiffré.
   const retainedWorks =
-    access !== "analysis" ||
-    valuationConflict ||
-    criticalAnalysisInputsBlocked ||
-    activeSimulation?.worksKnown === false
+    access !== "analysis" || valuationConflict || criticalAnalysisInputsBlocked
       ? null
-      : (activeSimulation?.works ?? personalWorksBudget ?? 0);
-  const heroCeilingResult =
-    activeSimulation?.result ??
-    (personalWorksBudget == null
-      ? recommendations.withoutWorks
-      : computeMarketCeiling({
-          surface,
-          price: displaySale.starting_price_eur ?? 0,
-          works: personalWorksBudget,
-          fpt: DEFAULTS.fpt,
-          ...saleCostContext(displaySale),
-          scenario: DEFAULT_MARKET_CEILING_SCENARIO,
-          medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
-          p10PricePerM2: marketEstimate?.actionable ? marketEstimate.p10PricePerM2 : null,
-          p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
-          p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
-        }));
+      : ceilingHypotheses.works.amount;
   const projectCosts =
-    access === "analysis" &&
-    isTribunalSale &&
-    !valuationConflict &&
-    !criticalAnalysisInputsBlocked &&
-    retainedWorks != null &&
-    (displaySale.starting_price_eur ?? 0) > 0
+    ceilingEnabled && retainedWorks != null && (displaySale.starting_price_eur ?? 0) > 0
       ? computeAcquisitionCosts({
-          price: activeSimulation?.reportInput?.price ?? displaySale.starting_price_eur!,
+          price: displaySale.starting_price_eur!,
           works: retainedWorks,
-          fpt: activeSimulation?.reportInput?.fpt ?? DEFAULTS.fpt,
-          lawyerFees: activeSimulation?.reportInput?.lawyerFees,
-          registrationRate: activeSimulation?.reportInput?.registrationRate,
-          taxRegime: activeSimulation?.reportInput?.taxRegime,
-          department: displaySale.department,
+          ...ceilingHypotheses.fees,
         })
       : null;
   const activeFinancingResult =
@@ -375,84 +322,43 @@ function SaleDetailWorkspace({
       ? financingResult
       : null;
   const reportSimulation = useMemo(() => {
-    const currentSimulation =
-      activeSimulation?.result.available && activeSimulation.reportInput
-        ? activeSimulation.reportInput
-        : null;
-    if (!currentSimulation) return undefined;
-
+    if (!ceilingEnabled || !ceilingPlan.available || !ceilingPlan.reachable) return undefined;
     const rentalScenario = buildReportRentalScenario({
       draft: rentalDraft,
       acquisitionCost: activeFinancingResult?.totalProjectCost ?? projectCosts?.totalCost ?? null,
       monthlyDebtService: activeFinancingResult?.monthlyPayment ?? null,
     });
-
-    return rentalScenario ? { ...currentSimulation, rentalScenario } : currentSimulation;
-  }, [activeFinancingResult, activeSimulation, projectCosts, rentalDraft]);
-  const applyWorksBudget = (amount: number) => {
-    if (
-      access !== "analysis" ||
-      !isTribunalSale ||
-      valuationConflict ||
-      criticalAnalysisInputsBlocked ||
-      !Number.isFinite(amount) ||
-      amount < 0
-    )
-      return;
-    setPersonalWorksBudget(amount);
-    const inputs = {
-      price:
-        activeSimulation?.reportInput?.price ?? Math.max(0, displaySale.starting_price_eur ?? 0),
-      works: amount,
-      fpt: activeSimulation?.reportInput?.fpt ?? DEFAULTS.fpt,
-      lawyerFees: activeSimulation?.reportInput?.lawyerFees,
-      registrationRate: activeSimulation?.reportInput?.registrationRate,
-      taxRegime: activeSimulation?.reportInput?.taxRegime,
-      occupancyDiscountPct: activeSimulation?.reportInput?.occupancyDiscountPct,
-      carryMonths: activeSimulation?.reportInput?.carryMonths,
-      monthlyCarryCharges: activeSimulation?.reportInput?.monthlyCarryCharges,
-      scenario: activeSimulation?.reportInput?.scenario ?? DEFAULT_MARKET_CEILING_SCENARIO,
-      customSafetyDiscountPct: activeSimulation?.reportInput?.customSafetyDiscountPct,
-      manualMarketPricePerM2: activeSimulation?.reportInput?.manualMarketPricePerM2 ?? null,
+    return {
+      version: 2 as const,
+      choices: { ...ceilingChoices.choices, works: ceilingHypotheses.works },
+      expectedMaxBid: ceilingPlan.maxBid,
+      ...(rentalScenario ? { rentalScenario } : {}),
     };
-    const result = computeMarketCeiling({
-      ...inputs,
-      surface,
-      ...saleCostContext(displaySale),
-      medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
-      p10PricePerM2: marketEstimate?.actionable ? marketEstimate.p10PricePerM2 : null,
-      p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
-      p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
-    });
-    setSimulation({
-      saleId: sale.id,
-      ownerId: user?.id ?? "guest-demo",
-      works: amount,
-      worksKnown: true,
-      result,
-      reportInput: { ...inputs, expectedMaxBid: result.maxBid },
-    });
-  };
+  }, [
+    activeFinancingResult,
+    ceilingChoices.choices,
+    ceilingEnabled,
+    ceilingHypotheses.works,
+    ceilingPlan,
+    projectCosts,
+    rentalDraft,
+  ]);
   // Scenario or quote picked in the Travaux tab. Without a ceiling (non-judicial
   // sale), the amount only feeds the displayed budget.
   const selectWorksBudget = (amount: number) => {
-    if (isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked) {
-      applyWorksBudget(amount);
-    } else {
-      setPersonalWorksBudget(Math.max(0, amount));
+    if (access !== "analysis" || !Number.isFinite(amount) || amount < 0) return;
+    setPersonalWorksBudget(Math.max(0, amount));
+    if (ceilingEnabled) {
+      ceilingChoices.update((choices) => ({
+        ...choices,
+        works: worksChoiceForAmount(surface, amount),
+      }));
     }
   };
   const heroCeiling =
-    access === "analysis" &&
-    isTribunalSale &&
-    !valuationConflict &&
-    !criticalAnalysisInputsBlocked &&
-    heroCeilingResult.available
-      ? heroCeilingResult.maxBid
-      : null;
+    ceilingEnabled && ceilingPlan.available && ceilingPlan.reachable ? ceilingPlan.maxBid : null;
 
   const [activeTab, setActiveTab] = useState<SaleDetailTab>("apercu");
-  const [ceilingExplanationOpen, setCeilingExplanationOpen] = useState(false);
   const [anchorVisit, setAnchorVisit] = useState(0);
   const [expandedDetails, setExpandedDetails] = useState<Partial<Record<LegacyDetail, boolean>>>(
     {},
@@ -467,13 +373,6 @@ function SaleDetailWorkspace({
     const syncTabWithHash = () => {
       const anchor = window.location.hash.slice(1);
       setActiveTab(tabForAnchor(anchor, isTribunalSale));
-      if (
-        ["calculation", "budget", "budget-analysis"].includes(anchor) &&
-        budgetTarget === "calculation"
-      ) {
-        setCalculationOpen(true);
-      }
-      if (anchor === "why-this-ceiling") setCeilingExplanationOpen(true);
       const detail = legacyDetailForAnchor(anchor, budgetTarget);
       if (detail) setDetailOpen(detail, true);
       setAnchorVisit((current) => current + 1);
@@ -503,13 +402,6 @@ function SaleDetailWorkspace({
     if (!anchor) return;
     const tab = knownTabForAnchor(anchor, isTribunalSale);
     if (!tab) return;
-    if (
-      ["calculation", "budget", "budget-analysis"].includes(anchor) &&
-      budgetTarget === "calculation"
-    ) {
-      setCalculationOpen(true);
-    }
-    if (anchor === "why-this-ceiling") setCeilingExplanationOpen(true);
     const detail = legacyDetailForAnchor(anchor, budgetTarget);
     if (detail) setDetailOpen(detail, true);
     const target = document.getElementById(anchor);
@@ -558,7 +450,8 @@ function SaleDetailWorkspace({
                       marketValue: marketEstimate?.actionable
                         ? (marketEstimate.estimatedValueEur ?? null)
                         : null,
-                      personalized: activeSimulation != null || personalWorksBudget != null,
+                      personalized:
+                        ceilingChoices.choices.works != null || personalWorksBudget != null,
                     }
                   : null
               }
@@ -701,10 +594,10 @@ function SaleDetailWorkspace({
                     sale={displaySale}
                     marketEstimate={marketEstimate}
                     marketLoading={marketQuery.isLoading && marketEstimate == null}
-                    worksBudget={activeSimulation?.worksKnown === false ? null : retainedWorks}
-                    recommendedCeiling={heroCeilingResult.maxBid}
-                    ceilingAvailable={heroCeilingResult.available}
-                    onAdjust={() => setCalculationOpen(true)}
+                    worksBudget={retainedWorks}
+                    recommendedCeiling={ceilingPlan.maxBid}
+                    ceilingAvailable={ceilingPlan.available && ceilingPlan.reachable}
+                    onAdjust={() => undefined}
                     onEditWorks={() => changeTab("travaux")}
                   />
                 ) : access === "analysis" ? (
@@ -725,39 +618,18 @@ function SaleDetailWorkspace({
                 />
               ) : null}
               {access === "analysis" && isTribunalSale && !valuationConflict ? (
-                <>
-                  <details
-                    id="why-this-ceiling-details"
-                    className={panelStyles.disclosure}
-                    open={ceilingExplanationOpen}
-                    onToggle={(event) => setCeilingExplanationOpen(event.currentTarget.open)}
-                  >
-                    <summary>Comprendre le calcul du plafond</summary>
-                    <CeilingExplanation
-                      recommendations={recommendations}
-                      surface={surface}
-                      resultOverride={activeSimulation?.result}
-                      worksOverride={activeSimulation?.works}
-                    />
-                  </details>
-                  <details
-                    id="calculation"
-                    className={panelStyles.disclosure}
-                    open={calculationOpen}
-                    onToggle={(event) => setCalculationOpen(event.currentTarget.open)}
-                  >
-                    <summary>Ajuster les hypothèses</summary>
-                    {calculationOpen ? (
-                      <BidCeilingAssistant
-                        sale={displaySale}
-                        marketEstimateOverride={marketEstimate}
-                        onSimulationChange={setSimulation}
-                        initialSimulation={activeSimulation?.reportInput}
-                        onEditWorks={() => changeTab("travaux")}
-                      />
-                    ) : null}
-                  </details>
-                </>
+                <div id="calculation" className="scroll-mt-36">
+                  <CeilingPlanner
+                    hypotheses={ceilingHypotheses}
+                    plan={ceilingPlan}
+                    choices={ceilingChoices.choices}
+                    onChoicesChange={ceilingChoices.update}
+                    onReset={ceilingChoices.reset}
+                    onEditWorks={() => changeTab("travaux")}
+                    marketLoading={marketQuery.isLoading && marketEstimate == null}
+                    dpeClass={dpeClass}
+                  />
+                </div>
               ) : access === "analysis" ? (
                 <details className={panelStyles.disclosure} open={Boolean(expandedDetails.budget)}>
                   <summary
@@ -839,28 +711,15 @@ function SaleDetailWorkspace({
                 ) : null}
                 <ListingWorks
                   sale={displaySale}
-                  estimatedBudget={
-                    access === "analysis" &&
-                    isTribunalSale &&
-                    activeSimulation?.worksKnown === false
-                      ? null
-                      : retainedWorks
-                  }
-                  onBudgetChange={
-                    access === "analysis" &&
-                    isTribunalSale &&
-                    !valuationConflict &&
-                    !criticalAnalysisInputsBlocked
-                      ? applyWorksBudget
-                      : undefined
-                  }
+                  estimatedBudget={retainedWorks}
+                  onBudgetChange={ceilingEnabled ? selectWorksBudget : undefined}
                   initialDraft={worksDraft}
                   onDraftChange={setWorksDraft}
                   surface={surface}
                   onScenarioSelect={retainedWorks != null ? selectWorksBudget : undefined}
                   maxWorks={
-                    heroCeiling != null && heroCeilingResult.available
-                      ? heroCeilingResult.maxWorksAtSimulatedPrice
+                    heroCeiling != null
+                      ? maxWorksAtBid(ceilingHypotheses, displaySale.starting_price_eur ?? 0)
                       : null
                   }
                 />

@@ -273,20 +273,6 @@ describe("integrated listing", () => {
       summary: "Perspective d’adjudication",
       publicDemo: false,
     },
-    {
-      anchor: "calculation",
-      tab: "estimation",
-      target: "calculation",
-      summary: "Ajuster les hypothèses",
-      publicDemo: false,
-    },
-    {
-      anchor: "why-this-ceiling",
-      tab: "estimation",
-      target: "why-this-ceiling",
-      summary: "Comprendre le calcul du plafond",
-      publicDemo: false,
-    },
   ] as const)(
     "routes #%s to the expected panel and opens its detail when the target exists",
     (expectation) => {
@@ -325,17 +311,21 @@ describe("integrated listing", () => {
     },
   );
 
-  it("uses a client-side initial hash to open the requested estimation detail", () => {
-    window.history.replaceState(null, "", "#calculation");
-    const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+  it.each(["calculation", "why-this-ceiling"])(
+    "lands #%s on the always visible bid ceiling planner",
+    (anchor) => {
+      window.history.replaceState(null, "", `#${anchor}`);
+      const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
 
-    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    const calculation = container.querySelector("#calculation") as HTMLDetailsElement | null;
-    expect(calculation).not.toBeNull();
-    expect(calculation?.open).toBe(true);
-  });
+      expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+      const target = container.querySelector(`#${anchor}`);
+      expect(target).not.toBeNull();
+      expect(target?.closest("details")).toBeNull();
+      expect(screen.getByRole("heading", { name: "Votre enchère plafond" })).toBeTruthy();
+    },
+  );
 
   it("opens the documents disclosure when #documents targets Démarches", () => {
     window.history.replaceState(null, "", "#documents");
@@ -624,15 +614,17 @@ describe("integrated listing", () => {
     expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
   });
 
-  it("opens the advanced simulator from the Estimation action", () => {
-    const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+  it("points the Estimation actions to the planner and its calculation", () => {
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
     selectTab("Estimation");
 
-    const calculation = container.querySelector("#calculation") as HTMLDetailsElement;
-    expect(calculation.open).toBe(false);
-    fireEvent.click(screen.getByRole("link", { name: "Ajuster mes hypothèses" }));
-    expect(calculation.open).toBe(true);
-    expect(screen.getByText("Simulateur d’enchère plafond chargé")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ajuster mes hypothèses" }).getAttribute("href")).toBe(
+      "#calculation",
+    );
+    expect(screen.getByRole("link", { name: "Voir le calcul" }).getAttribute("href")).toBe(
+      "#why-this-ceiling",
+    );
+    expect(screen.getByRole("heading", { name: "Le calcul, étape par étape" })).toBeTruthy();
   });
 
   it("keeps the photo gallery action functional in the Aperçu panel", () => {

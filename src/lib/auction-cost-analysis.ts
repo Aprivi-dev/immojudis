@@ -180,7 +180,7 @@ function limitations(status: AuctionCostAnalysis["status"]): string[] {
   return items;
 }
 
-function findConsignation(sale: AuctionSale): AuctionCostSourceAmount | null {
+export function findConsignation(sale: AuctionSale): AuctionCostSourceAmount | null {
   const amounts = new Map<number, AuctionCostSourceAmount>();
   const add = (amount: number | null, source: string) => {
     if (amount != null) amounts.set(amount, { amountEur: amount, label: "Consignation", source });

@@ -4,7 +4,7 @@ import { getSharedPropertyReport } from "@/lib/property-reports";
 import { ReportSourceChangedError } from "@/lib/property-report/source-integrity";
 import { formatDate, formatPrice, formatPricePerM2 } from "@/lib/format";
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
-import { reportSimulationSchema } from "@/lib/report-simulation";
+import { describeReportSimulation, isCurrentReportSimulation } from "@/lib/report-simulation";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 
 type PageParams = {
@@ -113,7 +113,7 @@ export default async function SharedReportPage({ params }: PageParams) {
   );
   const audienceReadinessActions = normalizeStringList(audienceReadinessAnalysis.nextActions);
   const ceiling = asRecord(report.ceiling);
-  const personalSimulation = reportSimulationSchema.safeParse(ceiling.personalSimulation);
+  const personalSimulation = describeReportSimulation(ceiling.personalSimulation);
 
   return (
     <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
@@ -209,32 +209,15 @@ export default async function SharedReportPage({ params }: PageParams) {
           />
         </section>
 
-        {personalSimulation.success ? (
+        {personalSimulation ? (
           <section className="border-b border-border py-5" aria-labelledby="shared-simulation">
             <h2 id="shared-simulation" className="text-lg font-semibold text-foreground">
               Scénario personnel sauvegardé
             </h2>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              <SharedMetric
-                label="Prix simulé"
-                value={formatPrice(personalSimulation.data.price)}
-              />
-              <SharedMetric
-                label="Travaux saisis"
-                value={formatPrice(personalSimulation.data.works)}
-              />
-              <SharedMetric
-                label="Frais préalables saisis"
-                value={formatPrice(personalSimulation.data.fpt)}
-              />
-              <SharedMetric
-                label="Scénario"
-                value={
-                  { prudent: "Prudent", offensif: "Offensif", custom: "Personnalisé" }[
-                    personalSimulation.data.scenario
-                  ]
-                }
-              />
+              {personalSimulation.map(([label, value]) => (
+                <SharedMetric key={label} label={label} value={value} />
+              ))}
               <SharedMetric
                 label="Marge de sécurité"
                 value={formatPercent(numberValue(ceiling.safetyDiscountPct))}
@@ -244,19 +227,17 @@ export default async function SharedReportPage({ params }: PageParams) {
                 value={stringOrNumberValue(ceiling.basisLabel, "À confirmer")}
               />
               <SharedMetric
-                label="Coût complet au prix simulé"
+                label={
+                  isCurrentReportSimulation(ceiling.personalSimulation)
+                    ? "Coût complet à la mise à prix"
+                    : "Coût complet au prix simulé"
+                }
                 value={
                   typeof acquisitionCosts.totalCost === "number"
                     ? formatPrice(acquisitionCosts.totalCost)
                     : "À confirmer"
                 }
               />
-              {personalSimulation.data.manualMarketPricePerM2 != null ? (
-                <SharedMetric
-                  label="Référence de marché saisie"
-                  value={formatPricePerM2(personalSimulation.data.manualMarketPricePerM2)}
-                />
-              ) : null}
             </div>
           </section>
         ) : null}

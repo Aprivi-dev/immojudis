@@ -1,7 +1,5 @@
 import { z } from "zod";
-import { computeMarketCeiling } from "./profitability";
-import { saleCostContext } from "./sale-cost-context";
-import { getMarketValuationSurfaces } from "./surface";
+import { buildCeilingSnapshot } from "./property-report/ceiling-snapshot";
 import { listingValuationConflict } from "./listing-evidence";
 import type { AuctionSale } from "./types";
 import type { MarketEstimate } from "./market.server";
@@ -171,23 +169,53 @@ export function computeReportRentalScenario(
   return { inputs, result };
 }
 
-export const reportSimulationSchema = z.object({
-  price: amount,
-  works: amount,
-  fpt: amount,
-  lawyerFees: amount.optional(),
-  registrationRate: z.number().finite().min(0).max(0.2).nullable().optional(),
+const pct = (max: number) => z.number().finite().min(0).max(max);
+const optional = <T extends z.ZodTypeAny>(schema: T) => schema.nullable().optional();
+
+export const ceilingChoicesSchema = z.object({
+  project: z.enum(["habiter", "louer", "revendre"]).optional(),
+  profile: z.enum(["prudent", "equilibre", "offensif"]).optional(),
+  customMarginPct: optional(pct(50)),
+  manualPricePerM2: optional(amount),
+  works: optional(
+    z.object({
+      key: z.enum(["aucun", "rafraichissement", "confort", "premium", "devis"]),
+      amount,
+      months: optional(pct(60)),
+    }),
+  ),
+  occupation: optional(z.enum(["libre", "occupe", "loue", "squat", "inconnu"])),
+  releaseMonths: optional(pct(60)),
+  releaseCost: optional(amount),
+  rentedDiscountPct: optional(pct(50)),
+  fpt: optional(amount),
+  lawyerFees: optional(amount),
+  registrationRatePct: optional(pct(20)),
   taxRegime: z.enum(["registration", "vat"]).optional(),
-  occupancyDiscountPct: z.number().finite().min(0).max(60).optional(),
-  carryMonths: z.number().finite().min(0).max(120).optional(),
-  monthlyCarryCharges: amount.optional(),
-  scenario: z.enum(["prudent", "offensif", "custom"]),
-  customSafetyDiscountPct: z.number().finite().min(0).max(100).optional(),
-  manualMarketPricePerM2: amount.nullable(),
+  monthlyCharges: optional(amount),
+  annualPropertyTax: optional(amount),
+  financingRatePct: optional(pct(20)),
+  monthlyRent: optional(amount),
+  targetNetYieldPct: optional(pct(30)),
+  sellingCostsPct: optional(pct(15)),
+});
+
+export const reportSimulationSchema = z.object({
+  version: z.literal(2),
+  choices: ceilingChoicesSchema,
   expectedMaxBid: amount,
   rentalScenario: reportRentalScenarioSchema.optional(),
 });
 export type ReportSimulation = z.infer<typeof reportSimulationSchema>;
+
+/** Scenario saved by reports made before the « compte à rebours » engine. */
+const legacyReportSimulationSchema = z.object({
+  price: amount,
+  works: amount,
+  fpt: amount,
+  scenario: z.enum(["prudent", "offensif", "custom"]),
+  manualMarketPricePerM2: amount.nullable(),
+});
 
 /** Recompute user hypotheses against the server's current property and market data. */
 export function computeReportSimulation(
@@ -197,24 +225,85 @@ export function computeReportSimulation(
 ) {
   const conflict = listingValuationConflict(sale);
   if (conflict) throw new Error(conflict);
-  const result = computeMarketCeiling({
-    ...input,
-    surface: getMarketValuationSurfaces(sale).builtSurfaceM2,
-    ...saleCostContext(sale),
-    medianPricePerM2: market?.actionable ? market.medianPricePerM2 : null,
-    p10PricePerM2: market?.actionable ? market.p10PricePerM2 : null,
-    p25PricePerM2: market?.actionable ? market.p25PricePerM2 : null,
-    p75PricePerM2: market?.actionable ? market.p75PricePerM2 : null,
-  });
-  if (!result.available || Math.abs(result.maxBid - input.expectedMaxBid) > 0.01) {
+  const snapshot = buildCeilingSnapshot(sale, market?.actionable ? market : null, input.choices);
+  if (!snapshot.available || snapshot.maxBid !== input.expectedMaxBid) {
     throw new Error(
       "Les données du scénario ont changé. Actualisez la fiche avant de sauvegarder le rapport.",
     );
   }
   return {
-    ...result,
+    ...snapshot,
     personalRentalScenario: input.rentalScenario
       ? computeReportRentalScenario(input.rentalScenario)
       : null,
   };
+}
+
+const PROJECT_LABELS = { habiter: "Habiter", louer: "Louer", revendre: "Revendre" } as const;
+const PROFILE_LABELS = {
+  prudent: "Prudent",
+  equilibre: "Équilibré",
+  offensif: "Offensif",
+} as const;
+const OCCUPATION_LABELS = {
+  libre: "Libre",
+  occupe: "Occupé",
+  loue: "Loué",
+  squat: "Occupé sans droit ni titre",
+  inconnu: "Non confirmée",
+} as const;
+
+/** True for a scenario saved by the « compte à rebours » engine (costs at the starting price). */
+export function isCurrentReportSimulation(value: unknown): boolean {
+  return reportSimulationSchema.safeParse(value).success;
+}
+
+/** Lines describing a saved personal scenario, whatever version saved it. */
+export function describeReportSimulation(value: unknown): Array<[string, string]> | null {
+  const current = reportSimulationSchema.safeParse(value);
+  const euros = (amount: number) =>
+    new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: "EUR",
+      maximumFractionDigits: 0,
+    }).format(amount);
+  if (current.success) {
+    const choices = current.data.choices;
+    const rows: Array<[string, string]> = [
+      ["Projet", PROJECT_LABELS[choices.project ?? "habiter"]],
+      [
+        "Profil",
+        choices.customMarginPct != null
+          ? `Marge personnalisée ${choices.customMarginPct} %`
+          : PROFILE_LABELS[choices.profile ?? "equilibre"],
+      ],
+      ["Travaux retenus", choices.works?.amount ? euros(choices.works.amount) : "Aucun"],
+      ["Frais préalables", choices.fpt != null ? euros(choices.fpt) : "Hypothèse Immojudis"],
+    ];
+    if (choices.occupation)
+      rows.push(["Occupation retenue", OCCUPATION_LABELS[choices.occupation]]);
+    if (choices.manualPricePerM2 != null)
+      rows.push([
+        "Prix au m² saisi",
+        `${Math.round(choices.manualPricePerM2).toLocaleString("fr-FR")} €/m²`,
+      ]);
+    return rows;
+  }
+  const legacy = legacyReportSimulationSchema.safeParse(value);
+  if (!legacy.success) return null;
+  const rows: Array<[string, string]> = [
+    ["Prix simulé", euros(legacy.data.price)],
+    ["Travaux saisis", euros(legacy.data.works)],
+    ["Frais préalables saisis", euros(legacy.data.fpt)],
+    [
+      "Scénario",
+      { prudent: "Prudent", offensif: "Offensif", custom: "Personnalisé" }[legacy.data.scenario],
+    ],
+  ];
+  if (legacy.data.manualMarketPricePerM2 != null)
+    rows.push([
+      "Référence de marché saisie",
+      `${Math.round(legacy.data.manualMarketPricePerM2).toLocaleString("fr-FR")} €/m²`,
+    ]);
+  return rows;
 }

@@ -1,4 +1,6 @@
+import { getListingPublicInformation } from "@/lib/listing-public-information";
 import type { WorksScenarioKey } from "@/lib/profitability";
+import type { AuctionSale } from "@/lib/types";
 
 export type WorksSuggestion = {
   /** `null`: the description points to a property taken as is. */
@@ -78,4 +80,12 @@ export function dpeRentalNote(dpeClass: string | null | undefined): DpeRentalNot
     tone: "neutral",
     text: `Classe ${dpe} : aucune interdiction de location prévue par la loi Climat et résilience.`,
   };
+}
+
+/** Published condition (« État du bien »): sourced fact first, then the raw source block. */
+export function saleCondition(sale: AuctionSale): string | null {
+  const fact = getListingPublicInformation(sale).items.find((item) => item.id === "condition");
+  if (fact?.value) return fact.value;
+  const block = (sale.source_blocks as Record<string, unknown> | null | undefined)?.etat;
+  return typeof block === "string" && block.trim() ? block.trim() : null;
 }

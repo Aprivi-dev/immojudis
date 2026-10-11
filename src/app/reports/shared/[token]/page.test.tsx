@@ -4,7 +4,7 @@ import SharedReportPage from "./page";
 const mocks = vi.hoisted(() => ({ report: vi.fn() }));
 vi.mock("@/lib/property-reports", () => ({ getSharedPropertyReport: mocks.report }));
 
-async function markup(personal: boolean) {
+async function markup(personal: boolean | "v2") {
   mocks.report.mockResolvedValue({
     title: "Rapport de recette",
     updatedAt: "2026-09-09",
@@ -18,18 +18,31 @@ async function markup(personal: boolean) {
       maxBid: 244100,
       safetyDiscountPct: 8,
       basisLabel: "Médiane locale",
-      ...(personal
+      ...(personal === "v2"
         ? {
             personalSimulation: {
-              price: 100000,
-              works: 31000,
-              fpt: 5000,
-              scenario: "prudent",
-              manualMarketPricePerM2: null,
+              version: 2,
+              choices: {
+                project: "louer",
+                profile: "prudent",
+                works: { key: "devis", amount: 31000 },
+                fpt: 5000,
+              },
               expectedMaxBid: 244100,
             },
           }
-        : {}),
+        : personal
+          ? {
+              personalSimulation: {
+                price: 100000,
+                works: 31000,
+                fpt: 5000,
+                scenario: "prudent",
+                manualMarketPricePerM2: null,
+                expectedMaxBid: 244100,
+              },
+            }
+          : {}),
     },
   });
   return renderToStaticMarkup(
@@ -45,6 +58,12 @@ describe("shared personal simulation", () => {
       expect(html).toContain(value);
     expect(html).toContain("Coûtcompletauprixsimulé");
     expect(html).toContain("Médianelocale");
+  });
+  it("describes a scenario saved by the current engine", async () => {
+    const html = await markup("v2");
+    expect(html).toContain("Scénariopersonnelsauvegardé");
+    for (const value of ["Louer", "Prudent", "31000", "5000"]) expect(html).toContain(value);
+    expect(html).toContain("Coûtcompletàlamiseàprix");
   });
   it("does not invent personal inputs for a report without a saved simulation", async () => {
     expect(await markup(false)).not.toContain("Scénariopersonnelsauvegardé");

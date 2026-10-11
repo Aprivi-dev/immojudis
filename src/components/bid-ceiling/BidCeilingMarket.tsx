@@ -1,76 +1,9 @@
-import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import type { MarketEstimate as DvfMarketEstimate } from "@/lib/market.server";
-import { formatDate, formatPrice, formatSurface } from "@/lib/format";
-import { fmt, ppm2 } from "@/components/bid-ceiling/assistant-state";
+import { formatDate, formatPrice, formatPricePerM2, formatSurface } from "@/lib/format";
 
-export function MarketInput({
-  estimate,
-  value,
-  marketEdited,
-  usingCachedEstimate,
-  isLoading,
-  hasError,
-  onChange,
-}: {
-  estimate: DvfMarketEstimate | null;
-  value: number;
-  marketEdited: boolean;
-  usingCachedEstimate: boolean;
-  isLoading: boolean;
-  hasError: boolean;
-  onChange: (value: number) => void;
-}) {
-  const automaticPrice = estimate?.medianPricePerM2 ?? null;
-  const needsManual = hasError || !automaticPrice;
-  const helper = needsManual
-    ? "Le marché local manque de comparables solides. Saisissez un prix au m² réaliste pour obtenir un plafond provisoire."
-    : marketEdited
-      ? `Prix saisi utilisé à la place de la médiane DVF (${ppm2(automaticPrice)}). Effacez le champ pour revenir au calcul automatique.`
-      : usingCachedEstimate
-        ? `Dernière estimation DVF conservée : médiane ${ppm2(automaticPrice)}.`
-        : `Calcul automatique actif : médiane DVF ${ppm2(automaticPrice)}.`;
+const fmt = (value: number) => formatPrice(Math.round(value || 0));
+const ppm2 = (value: number | null | undefined) => formatPricePerM2(value);
 
-  return (
-    <div
-      className={`rounded-lg border p-4 ${
-        needsManual ? "border-amber-300/40 bg-amber-50" : "border-border bg-muted/35"
-      }`}
-    >
-      <div className="grid gap-3 sm:grid-cols-[1fr_180px] sm:items-end">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
-            <MapPin className="h-4 w-4" />
-            Prix de marché local
-          </div>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {isLoading ? "Chargement de l'estimation pré-calculée..." : helper}
-          </p>
-        </div>
-        <label className="block">
-          <span className="text-xs font-medium text-muted-foreground">Saisie manuelle</span>
-          <div className="mt-1 flex items-center rounded-md border border-border bg-white focus-within:ring-1 focus-within:ring-ring">
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step={50}
-              value={value > 0 ? value : ""}
-              placeholder={automaticPrice ? String(Math.round(automaticPrice)) : "ex. 3 200"}
-              onChange={(event) => onChange(parseFloat(event.target.value) || 0)}
-              className="w-full bg-transparent px-3 py-2 text-sm tabular-nums outline-none placeholder:text-muted-foreground"
-            />
-            <span className="pr-3 text-xs text-muted-foreground">€/m²</span>
-          </div>
-        </label>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Price-per-m² spread of the comparables and the address history, shown with
- * the market references (they were previously only inside the bid assistant).
- */
 export function MarketPriceDistribution({ estimate }: { estimate: DvfMarketEstimate }) {
   const hasRange = Boolean(estimate.medianPricePerM2 || estimate.medianUnitPriceEur);
   return (
@@ -175,44 +108,6 @@ function AddressHistory({ estimate }: { estimate: DvfMarketEstimate | null }) {
           ))}
         </ul>
       )}
-    </div>
-  );
-}
-
-export function ComparableTransactions({ estimate }: { estimate: DvfMarketEstimate | null }) {
-  if (!estimate || estimate.recentTransactions.length === 0) {
-    return (
-      <div className="rounded-lg border border-border bg-muted/35 p-4 text-sm text-muted-foreground">
-        Aucune transaction comparable détaillée à afficher pour le moment.
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border border-border bg-muted/35 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Transactions DVF utilisées
-        </div>
-        <div className="text-xs text-muted-foreground">
-          {estimate.sampleSize} ventes, rayon {estimate.radiusM} m
-        </div>
-      </div>
-      <ul className="mt-3 divide-y divide-border text-xs">
-        {estimate.recentTransactions.map((transaction, index) => (
-          <li
-            key={`${transaction.date}-${transaction.totalPrice}-${index}`}
-            className="grid grid-cols-4 gap-2 py-2"
-          >
-            <span className="text-muted-foreground">{formatDate(transaction.date)}</span>
-            <span>{formatSurface(transaction.surface)}</span>
-            <span className="font-medium tabular-nums">{fmt(transaction.totalPrice)}</span>
-            <span className="text-right font-semibold tabular-nums">
-              {ppm2(transaction.pricePerM2)}
-            </span>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
