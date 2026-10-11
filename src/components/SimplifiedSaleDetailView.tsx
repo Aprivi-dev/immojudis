@@ -630,14 +630,7 @@ function SaleDetailWorkspace({
                   )
                 }
               />
-              {!publicDemo ? (
-                <ListingWeatherHistory
-                  key={`${user?.id ?? "guest"}:${sale.id}`}
-                  saleId={sale.id}
-                  locked={access !== "analysis"}
-                  enabled={!authLoading && Boolean(user) && access === "analysis"}
-                />
-              ) : null}
+              {!publicDemo ? <ListingWeatherHistory saleId={sale.id} /> : null}
             </>
           ) : null}
 

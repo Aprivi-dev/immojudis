@@ -1,50 +1,29 @@
 "use client";
 
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { authHeaders, readJson } from "@/lib/client-api-core";
 import type { ClimateHistory, ClimateResult, ClimateStationRef } from "@/lib/environment-reference";
 import styles from "./ListingEnvironment.module.css";
 import { queryKeys } from "@/lib/query-keys";
 
 export function ListingWeatherHistory({
   saleId,
-  enabled,
-  locked = false,
+  enabled = true,
 }: {
   saleId: string;
-  enabled: boolean;
-  locked?: boolean;
+  enabled?: boolean;
 }) {
   const query = useQuery({
     queryKey: queryKeys.saleWeather(saleId),
-    queryFn: async ({ signal }) =>
-      readJson<{ weather: ClimateResult }>(
-        await fetch(`/api/sales/${encodeURIComponent(saleId)}/weather`, {
-          headers: await authHeaders(),
-          signal,
-        }),
-      ),
-    enabled: enabled && !locked,
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/weather`, { signal });
+      if (!response.ok) throw new Error(`Erreur HTTP ${response.status}`);
+      return (await response.json()) as { weather: ClimateResult };
+    },
+    enabled,
     staleTime: 24 * 60 * 60_000,
     retry: 1,
     refetchOnWindowFocus: false,
   });
-  if (locked) {
-    return (
-      <section className={styles.section} aria-labelledby="weather-history-title">
-        <h2 id="weather-history-title" className={styles.heading}>
-          Historique météo
-        </h2>
-        <p className={styles.note}>
-          Températures, précipitations et ensoleillement mesurés mois par mois par la station
-          Météo-France la plus proche, comparés à la moyenne des dernières années. Inclus dans
-          l’offre Analyse.
-        </p>
-        <Link href="/offres">Découvrir l’historique météo avec l’offre Analyse</Link>
-      </section>
-    );
-  }
   if (!enabled) return null;
   const weather = query.data?.weather;
   return (
