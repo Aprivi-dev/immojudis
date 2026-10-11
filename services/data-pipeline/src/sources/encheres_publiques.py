@@ -28,6 +28,7 @@ from src.sources.common import (
     should_fetch_detail,
     unique_dicts,
 )
+from src.sources.encheres_publiques_extraction import refresh_encheres_publiques_raw_sale
 
 BASE_URL = "https://www.encheres-publiques.com"
 CANONICAL_BASE_URL = "https://encheres-publiques.com"
@@ -203,7 +204,7 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
     title = _plain_text(lot.get("nom"))
     adjudication_price = lot.get("prix_adjuge")
 
-    return {
+    detail = {
         "source_name": "encheres_publiques",
         "source_url": source_url,
         "external_id": str(lot.get("id") or lot_id or ""),
@@ -243,6 +244,9 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
         "source_blocks": source_blocks,
         "source_images": _extract_source_images(state, lot),
     }
+    # Caractéristiques pour l'investisseur (honoraires, pas d'enchère, barreau, plancher…).
+    refresh_encheres_publiques_raw_sale(detail)
+    return detail
 
 
 def _extract_apollo_state(soup: BeautifulSoup) -> dict[str, Any]:
@@ -491,6 +495,15 @@ def _extract_source_blocks(
         "organisateur": organizer.get("nom"),
         "organisateur_categorie": organizer.get("categorie"),
     }
+    # Autres critères publiés pour le lot (étage, chauffage, charges, taxe foncière…),
+    # gardés sous leur nom d'origine pour la lecture des caractéristiques.
+    handled = {
+        "critere_diagnostic_date", "critere_consommation_energetique", "critere_emissions_de_gaz",
+        "critere_occupation_du_bien",
+    }
+    for key, raw in lot.items():
+        if key.startswith("critere_") and key not in handled and not isinstance(raw, (dict, list)):
+            mapping[key] = raw
     return {key: value for key, raw in mapping.items() if (value := _plain_text(raw))}
 
 

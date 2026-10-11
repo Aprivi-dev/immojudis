@@ -24,6 +24,7 @@ from src.sources.agrasc_extraction import refresh_agrasc_raw_sale
 from src.sources.avoventes_extraction import refresh_avoventes_raw_sale
 from src.sources.cessions_etat_extraction import refresh_cessions_raw_sale
 from src.sources.common import PoliteHttpClient
+from src.sources.encheres_immobilieres import refresh_encheres_immobilieres_raw_sale
 from src.sources.encheres_publiques import (
     BASE_URL as ENCHERES_PUBLIQUES_BASE_URL,
 )
@@ -33,8 +34,10 @@ from src.sources.encheres_publiques import (
 from src.sources.encheres_publiques import (
     parse_encheres_publiques_detail_html,
 )
+from src.sources.encheres_publiques_extraction import refresh_encheres_publiques_raw_sale
 from src.sources.licitor import LicitorClient, parse_licitor_detail_html
 from src.sources.licitor_extraction import refresh_licitor_raw_sale
+from src.sources.petites_affiches import refresh_petites_affiches_raw_sale
 from src.storage.supabase_client import _postgrest_request_with_retries, upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
 
@@ -598,6 +601,11 @@ def _sale_from_storage_row(row: dict[str, Any]):
     refresh_agrasc_raw_sale(raw_sale)
     # Avoventes : encadré de vente, tuiles et caractéristiques relus sur le même texte.
     refresh_avoventes_raw_sale(raw_sale)
+    # Petites Affiches, Enchères Immobilières, Enchères Publiques : même relecture
+    # locale (texte de fiche, images et blocs stockés), sans requête.
+    refresh_petites_affiches_raw_sale(raw_sale)
+    refresh_encheres_immobilieres_raw_sale(raw_sale)
+    refresh_encheres_publiques_raw_sale(raw_sale)
     sale = normalize_sale(raw_sale)
     sale.id = str(row.get("id")) if row.get("id") else None
     sale.primary_source = row.get("primary_source") or sale.primary_source
