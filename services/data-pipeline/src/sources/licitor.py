@@ -60,9 +60,33 @@ _LICITOR_DYNAMIC_COUNTER_RE = re.compile(
 )
 
 
+_LICITOR_EDITION_DATE_RE = re.compile(r"^(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+\d{1,2}\s+\w+\s+\d{4}$", re.I)
+_LICITOR_PRICE_PANEL_LINE_RE = re.compile(r"^(?:Prix\s+(?:min|moyen|max)\.?|\d[\d\s.]*\s*€\s*/\s*m²)$", re.I)
+
+
 def _stable_text_lines(lines: list[str]) -> list[str]:
-    """Drop Licitor's changing view/like counter from source evidence text."""
-    return [line for line in lines if not _LICITOR_DYNAMIC_COUNTER_RE.fullmatch(line)]
+    """Drop what changes on every Licitor page without the sale changing.
+
+    The view/like counter, the « Édition du <today> » header and the nearby
+    price panel would otherwise change the source fingerprint daily and
+    discard the analysis of an unchanged listing.
+    """
+    stable: list[str] = []
+    skip_edition_date = in_price_panel = False
+    for line in lines:
+        if skip_edition_date and _LICITOR_EDITION_DATE_RE.match(line):
+            skip_edition_date = False
+            continue
+        skip_edition_date = line == "Édition du"
+        if line.startswith("Prix constatés des biens immobiliers vendus aux alentours"):
+            in_price_panel = True
+            continue
+        if in_price_panel and _LICITOR_PRICE_PANEL_LINE_RE.match(line):
+            continue
+        in_price_panel = False
+        if not skip_edition_date and not _LICITOR_DYNAMIC_COUNTER_RE.fullmatch(line):
+            stable.append(line)
+    return stable
 
 
 def _stable_raw_text(raw_text: str) -> str:
