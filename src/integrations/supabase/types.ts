@@ -3552,6 +3552,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      auction_sale_timeline: {
+        Row: {
+          event_kind: string;
+          id: number;
+          new_value: Json | null;
+          observed_at: string;
+          origin: string;
+          previous_value: Json | null;
+          sale_id: string;
+          source_url: string | null;
+        };
+        Insert: {
+          event_kind: string;
+          id?: never;
+          new_value?: Json | null;
+          observed_at?: string;
+          origin?: string;
+          previous_value?: Json | null;
+          sale_id: string;
+          source_url?: string | null;
+        };
+        Update: {
+          event_kind?: string;
+          id?: never;
+          new_value?: Json | null;
+          observed_at?: string;
+          origin?: string;
+          previous_value?: Json | null;
+          sale_id?: string;
+          source_url?: string | null;
+        };
+        Relationships: [];
+      };
       auction_sales: {
         Row: {
           address: string | null;
@@ -13159,6 +13192,7 @@ export type Database = {
           upcoming_count: number;
         }[];
       };
+      get_sale_passages: { Args: { p_sale_id: string }; Returns: Json };
       gettransactionid: { Args: never; Returns: unknown };
       grant_analysis_access_from_checkout: {
         Args: {
