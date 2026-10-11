@@ -72,6 +72,9 @@ _LABELLED = {
 }
 
 
+# Tuile « m² superficie » : surface publiée sans portée, affichée telle quelle.
+PUBLISHED_SURFACE_FIELD = "published_surface_m2"
+
 def _lines(page_text: str | None) -> list[str]:
     return [line for line in (clean_text(part) for part in str(page_text or "").splitlines()) if line]
 
@@ -426,7 +429,7 @@ def extract_avoventes_html_extras(html: str) -> dict[str, Any]:
 def apply_avoventes_fields(sale: dict[str, Any], extracted: dict[str, Any]) -> dict[str, Any]:
     """Applique une extraction à une vente brute sans écraser une valeur déjà lue par le parseur."""
     for key, value in extracted["fields"].items():
-        if key == "published_surface_m2":
+        if key == PUBLISHED_SURFACE_FIELD:
             # Tuile « m² superficie » : affichée telle quelle, sans portée ; la surface
             # canonique reste celle que la normalisation qualifie (Carrez, habitable…).
             continue
