@@ -8,7 +8,7 @@ from test_main import _fake_geocode, _raw_sale, _settings
 
 from src import main
 from src.admission import admit_sales, publication_rejection, split_insufficient
-from src.information_sufficiency import GATE_ENV, ContactBlocklist, set_active_blocklist
+from src.information_sufficiency import GATE_ENV, MIN_ADDRESS_ENV, ContactBlocklist, set_active_blocklist
 from src.models import AuctionSale
 from src.sources.common import ScrapeResult
 
@@ -16,6 +16,13 @@ from src.sources.common import ScrapeResult
 @pytest.fixture(autouse=True)
 def gate_on(monkeypatch):
     monkeypatch.setenv(GATE_ENV, "on")
+    # These cases exercise the stricter street-level mode; the default accepts the commune.
+    monkeypatch.setenv(MIN_ADDRESS_ENV, "street")
+
+
+def test_a_commune_and_a_surface_are_published_by_default(monkeypatch):
+    monkeypatch.delenv(MIN_ADDRESS_ENV, raising=False)
+    assert publication_rejection(sale(postal_code="60000", surface_m2=Decimal("40"))) is None
 
 
 def sale(**fields) -> AuctionSale:

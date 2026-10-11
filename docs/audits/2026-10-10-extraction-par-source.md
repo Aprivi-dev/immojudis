@@ -143,7 +143,9 @@ finale, la publication progressive, le point de reprise d'enrichissement et le g
 n'est pas écrite dans `auction_sales`, est journalisée avec un **code** de motif (`insufficient_information:missing_address`,
 `…missing_surface`, `…missing_address+missing_surface`) sans aucune donnée de la vente, et apparaît dans le résumé du run :
 `admission_rejected_insufficient_information = {total, by_reason, by_source}`.
-Interrupteurs : `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off`, `IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=commune`.
+Interrupteurs : `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off`, `IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=street`.
+
+> **Mise à jour du 2026-10-11** : le propriétaire a assoupli la règle — la commune (ou le code postal) suffit désormais comme adresse par défaut. Le mode strict reste disponible avec `IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=street`.
 Le registre de refus est lu une fois par run (échec **ouvert** : une panne du registre ne fait pas perdre de vente).
 
 Conséquence à connaître : une vente déjà publiée qui devient insuffisante n'est plus rafraîchie par le run (elle reste
