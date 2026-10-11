@@ -580,8 +580,11 @@ def run_enrichment_queue_batch(
     limit: int,
     family: str | None = None,
     provider_clients: dict[str, object] | None = None,
+    claimed_jobs: list[dict[str, object]] | None = None,
 ) -> int:
-    jobs = _claim_enrichment_queue_jobs(limit=limit, family=family)
+    jobs = _claim_enrichment_queue_jobs(limit=limit, family=family) if claimed_jobs is None else list(claimed_jobs)
+    if claimed_jobs is not None:
+        _record_worker_claimed_job_ids(jobs)
     if not jobs:
         return 0
     settings = load_settings()
@@ -636,10 +639,7 @@ def run_enrichment_queue_batch(
             continue
         if sale is None:
             for job in sale_jobs:
-                _finish_job(job,
-                    succeeded=False,
-                    error_message="sale not found",
-                )
+                _finish_job(job, succeeded=False, error_message="sale not found")
             mark_enrichment_jobs_terminal(sale_jobs)
             continue
         try:
@@ -1071,9 +1071,7 @@ def run_enrichment_queue_batch(
             mark_enrichment_jobs_terminal(sale_jobs)
             continue
         for job in sale_jobs:
-            _finish_job(job,
-                succeeded=True,
-            )
+            _finish_job(job, succeeded=True)
         mark_enrichment_jobs_terminal(sale_jobs)
     return handled_detail_jobs + len(enrichment_jobs)
 
@@ -1085,6 +1083,7 @@ def _run_enrichment_queue_batch_with_deadline(
     provider_clients: dict[str, object],
     worker_deadline: float,
     finalization_margin_seconds: float,
+    claimed_jobs: list[dict[str, object]] | None = None,
 ) -> int:
     """Run one claim with task cutoffs that leave worker finalization time."""
 
@@ -1102,6 +1101,7 @@ def _run_enrichment_queue_batch_with_deadline(
             limit=limit,
             family=family,
             provider_clients=provider_clients,
+            **({"claimed_jobs": claimed_jobs} if claimed_jobs is not None else {}),
         )
 
 

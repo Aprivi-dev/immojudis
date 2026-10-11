@@ -42,7 +42,7 @@ def _information_sufficiency_gate_off_by_default(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _no_document_politeness_waits(monkeypatch):
-    """Document downloads fetch robots.txt and wait 1.5 s per host in production."""
+    """Document downloads fetch robots.txt and wait 2 s per host in production."""
     from src import document_politeness
 
     monkeypatch.setattr(document_politeness, "POLITENESS_ENABLED", False)

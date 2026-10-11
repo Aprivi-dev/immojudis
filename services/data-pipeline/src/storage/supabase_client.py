@@ -102,6 +102,7 @@ from src.storage.pdf_checkpoint_rules import (
     _valid_pdf_checkpoint_pages,
     _validate_pdf_document_checkpoint_payload,
 )
+from src.storage.pdf_document_evidence import with_document_evidence
 from src.storage.pdf_persistence_rows import (
     _PERSISTED_PDF_ROW_COLUMNS,
     PDF_EXTRACTION_MODEL,
@@ -2521,6 +2522,8 @@ def upsert_documents_to_supabase(
         return 0
     if persisted_pdf_texts is None:
         persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales, str(url), str(key))
+    # Per-document persisted evidence for the projection only (never the local text cache).
+    persisted_pdf_texts = with_document_evidence(_PUBLICATION_CONNECTION.get(), sales, persisted_pdf_texts, _load_pdf_texts)
     rows = [
         row
         for sale in sales
@@ -2531,13 +2534,7 @@ def upsert_documents_to_supabase(
     ]
     if rows:
         rows = _unique_rows_by_keys(rows, ("source_url", "document_url"))
-        _postgrest_upsert(
-            str(url),
-            str(key),
-            "auction_documents",
-            rows,
-            on_conflict="source_url,document_url",
-        )
+        _postgrest_upsert(str(url), str(key), "auction_documents", rows, on_conflict="source_url,document_url")
     if prune_stale:
         _prune_stale_document_rows(str(url), str(key), sales)
     return len(rows)
@@ -4296,7 +4293,7 @@ def _document_rows_for_sale(
             continue
         extracted = text_by_url.get(url, {})
         pages = extracted.get("pages") if isinstance(extracted, dict) else None
-        page_count = len(pages) if isinstance(pages, list) else None
+        page_count = len(pages) if isinstance(pages, list) else extracted.get("page_count")
         extracted_text = clean_text(extracted.get("text")) if isinstance(extracted, dict) else None
         try:
             text_chars = int(extracted.get("text_chars") or len(extracted_text or "")) if extracted else 0
@@ -4333,7 +4330,7 @@ def _document_rows_for_sale(
                     else None
                 ),
                 "text_chars": text_chars,
-                "text_present": bool(extracted_text),
+                "text_present": bool(extracted_text) or bool(extracted.get("_persisted_document_proof") and text_chars),
                 "complete": extracted.get("complete") is True,
                 "failed_pages": extracted.get("failed_pages") or [],
                 "extraction_status": extracted.get("extraction_status"),
