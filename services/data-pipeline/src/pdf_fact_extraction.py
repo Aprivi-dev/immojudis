@@ -74,6 +74,7 @@ from src.pdf_fact_scope import (
     _pdf_surface_candidates_with_provenance as _scope_pdf_surface_candidates_with_provenance,
 )
 from src.pdf_offer_deadline import OFFER_PROCEDURE_SOURCES, offer_deadline_sale_date, record_offer_deadline
+from src.pdf_sale_date_guard import reject_past_pdf_sale_date
 
 
 def enrich_sale_from_pdf_text(sale: AuctionSale, pdf_texts: list[dict[str, object]] | list[str]) -> AuctionSale:
@@ -794,7 +795,7 @@ def _should_replace_starting_price_with_document(current: Decimal, documented: D
 
 def _assign_pdf_sale_date(sale: AuctionSale, sale_date: dict[str, object]) -> None:
     parsed = sale_date.get("value")
-    if not isinstance(parsed, datetime):
+    if not isinstance(parsed, datetime) or reject_past_pdf_sale_date(sale, parsed, sale_date):
         return
     sale.sale_date = parsed
     sale.raw_payload["pdf_sale_date_extraction"] = {key: value for key, value in sale_date.items() if key != "value"}
