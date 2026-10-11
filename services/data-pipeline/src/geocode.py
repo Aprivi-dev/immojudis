@@ -8,6 +8,8 @@ from decimal import Decimal
 
 import httpx
 
+from src.cadastre_references import PROVIDER as CADASTRE_PROVIDER
+from src.cadastre_references import resolve_sale_cadastre
 from src.config import load_settings
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_department, strip_accents
@@ -48,7 +50,12 @@ class GeocodeResult:
 
 
 def geocode_sale(sale: AuctionSale) -> AuctionSale:
-    """Fill latitude/longitude using the BAN geocoding service."""
+    """Fill latitude/longitude: cadastral parcels first, then the BAN geocoding service."""
+    settings = load_settings()
+    # A parcel named by the source (cessions de l'État) is more precise than any
+    # commune centroid; a stored resolution is reused without a request.
+    if resolve_sale_cadastre(sale, settings=settings, network=bool(settings["geocode_enabled"])):
+        return sale
     if coordinates_are_verified(sale) and _coordinates_match_department(sale):
         return sale
     if sale.latitude is not None and sale.longitude is not None:
@@ -63,7 +70,6 @@ def geocode_sale(sale: AuctionSale) -> AuctionSale:
             if "unverified_source_coordinates" not in sale.quality_flags:
                 sale.quality_flags.append("unverified_source_coordinates")
 
-    settings = load_settings()
     if not settings["geocode_enabled"]:
         return sale
 
@@ -112,6 +118,15 @@ def geocode_sale(sale: AuctionSale) -> AuctionSale:
     else:
         sale.raw_payload.pop("geo_precision", None)
     _store_geocode_evidence(sale, query=query, result=result, accepted=True)
+    # The commune code found by BAN completes cadastral references published without one.
+    resolve_sale_cadastre(sale, settings=settings)
+    return sale
+
+
+def locate_sale_by_cadastre(sale: AuctionSale) -> AuctionSale:
+    """Parcel location only (runs without BAN geocoding, e.g. in autonomous runs)."""
+    settings = load_settings()
+    resolve_sale_cadastre(sale, settings=settings, network=bool(settings["geocode_enabled"]))
     return sale
 
 
@@ -134,7 +149,7 @@ def coordinates_are_verified(sale: AuctionSale) -> bool:
     evidence = sale.raw_payload.get("geocode")
     if not isinstance(evidence, dict):
         return False
-    if evidence.get("provider") != "ban_geoplateforme" or evidence.get("accepted") is not True:
+    if evidence.get("provider") not in {"ban_geoplateforme", CADASTRE_PROVIDER} or evidence.get("accepted") is not True:
         return False
     try:
         evidence_latitude = float(evidence["latitude"])

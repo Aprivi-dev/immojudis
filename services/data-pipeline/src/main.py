@@ -43,7 +43,7 @@ from src.enrichment.surface_reasoning import extract_and_apply_deterministic_sur
 from src.export import export_sales
 from src.extraction_profiles import attach_source_property_features
 from src.freshness import detail_is_fresh, document_fingerprint, documents_are_current, record_source_checks
-from src.geocode import geocode_sale
+from src.geocode import geocode_sale, locate_sale_by_cadastre
 from src.image_validation import filter_raw_image_url, warm_image_validations
 from src.information_sufficiency import load_contact_blocklist, set_active_blocklist
 from src.lifecycle import SaleLifecycleStats, mark_past_sales
@@ -1863,8 +1863,7 @@ def _finalize_sale_for_app(sale: AuctionSale, *, geocode: bool = True) -> None:
         sale.raw_payload["source_description"] = source_description
     else:
         sale.raw_payload.pop("source_description", None)
-    if geocode:
-        geocode_sale(sale)
+    (geocode_sale if geocode else locate_sale_by_cadastre)(sale)
     filter_raw_image_url(sale.raw_payload)
     fill_tribunal(sale)
     classify_sale_procedure(sale)

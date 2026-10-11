@@ -70,7 +70,9 @@ export function knownTabForAnchor(anchor: string, allowStatistics = true): SaleD
   ) {
     return "demarches";
   }
-  if (["description-ia", "localisation", "urbanism", "risks"].includes(anchor)) {
+  if (
+    ["description-ia", "localisation", "caracteristiques", "urbanism", "risks"].includes(anchor)
+  ) {
     return "apercu";
   }
   return null;

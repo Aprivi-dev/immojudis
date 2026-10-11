@@ -25,6 +25,7 @@ import {
   ListingLocation,
 } from "@/components/sale-detail/SaleListing";
 import { ListingBudget } from "@/components/sale-detail/ListingBudget";
+import { ListingCharacteristics } from "@/components/sale-detail/ListingCharacteristics";
 import { ListingPreparation } from "@/components/sale-detail/ListingPreparation";
 import type { ListingWorksDraft } from "@/components/sale-detail/ListingWorks";
 import type { FinancingDraft, FinancingResult } from "@/components/sale-detail/FinancingSimulator";
@@ -600,6 +601,7 @@ function SaleDetailWorkspace({
                   aiReviewStatus={aiReviewStatus}
                 />
               </div>
+              <ListingCharacteristics sale={displaySale} />
               {access === "analysis" ? (
                 <RisksAndDocuments sale={displaySale} />
               ) : (
