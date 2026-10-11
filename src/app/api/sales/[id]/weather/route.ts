@@ -1,33 +1,30 @@
+import "server-only";
 import { NextResponse } from "next/server";
-import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
-import {
-  bearerTokenFromRequest,
-  requireSupabaseAuthContext,
-} from "@/integrations/supabase/auth-middleware";
-import { DETAIL_VIEW } from "@/lib/sale-views";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { RateLimitError } from "@/lib/api-errors";
+import { apiRouteError, rateLimitResponse } from "@/lib/api-observability";
 import { getClimateHistory } from "@/lib/climate-history.server";
 import { resolveSaleCommune, validCoordinates } from "@/lib/commune-risks.server";
 import type { ClimateResult } from "@/lib/environment-reference";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
-import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { lookupPublicSale } from "@/lib/public-sale.server";
+import { enforceIpRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { assertSalePublicationVisible } from "@/lib/sale-publication-guard";
 
 const saleIdSchema = z.string().uuid();
-const WEATHER_COLUMNS = "id,latitude,longitude,city,postal_code,department";
 
 type SaleWeatherResponse = {
   saleId: string;
   weather: ClimateResult;
 };
 
-const PRIVATE_WEATHER_HEADERS = {
-  "cache-control": "private, no-store",
-  "referrer-policy": "no-referrer",
-  vary: "authorization",
-};
-
+/**
+ * Public Météo-France climate history around a listing.
+ *
+ * The data comes from local tables imported from official open data, so the
+ * route costs no third-party call. Only station-level figures leave the server:
+ * the listing coordinates are read with the service role and never returned.
+ */
 export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -36,49 +33,47 @@ export async function GET(
   if (!parsedId.success) {
     return NextResponse.json({ error: "Identifiant de vente invalide." }, { status: 400 });
   }
+  try {
+    await enforceIpRateLimit({
+      request,
+      bucketKey: "sales.weather",
+      ...RATE_LIMIT_POLICIES.publicIp,
+    });
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      return rateLimitResponse(error) as NextResponse<{ error: string }>;
+    }
+    throw error;
+  }
 
   try {
-    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    await assertFeatureEntitlement(
-      auth,
-      "property.weatherHistory",
-      "Historique météo réservé au plan Analyse.",
-    );
-    await enforceUserRateLimit({
-      userId: auth.userId,
-      bucketKey: "sales.weather",
-      ...RATE_LIMIT_POLICIES.compute,
-    });
-    const { data: sale, error: saleError } = await auth.supabase
-      .from(DETAIL_VIEW)
-      .select(WEATHER_COLUMNS)
-      .eq("id", parsedId.data)
-      .maybeSingle();
-
-    if (saleError) throw saleError;
-    if (!sale) {
+    // Same gate as the public listing page: quarantined or retired sales are 404.
+    const lookup = await lookupPublicSale(parsedId.data);
+    if (lookup.status !== "found") {
       return NextResponse.json({ error: "Vente introuvable." }, { status: 404 });
     }
+    const { data: sale, error } = await supabaseAdmin
+      .from("auction_sales")
+      .select("latitude,longitude,city,postal_code,department")
+      .eq("id", parsedId.data)
+      .maybeSingle();
+    if (error) throw error;
+    if (!sale) return NextResponse.json({ error: "Vente introuvable." }, { status: 404 });
 
-    // The authenticated view check above protects the lookup. This explicit
-    // guard keeps the endpoint safe if a service-role-backed view changes its
-    // publication policy later.
-    await assertSalePublicationVisible(parsedId.data);
-
-    const latitude = typeof sale.latitude === "number" ? sale.latitude : null;
-    const longitude = typeof sale.longitude === "number" ? sale.longitude : null;
     let weather: ClimateResult;
-    if (validCoordinates(latitude, longitude)) {
-      weather = await getClimateHistory(latitude, longitude, { locationSource: "listing" });
+    if (validCoordinates(sale.latitude, sale.longitude)) {
+      weather = await getClimateHistory(sale.latitude, sale.longitude, {
+        locationSource: "listing",
+      });
     } else {
       // Without coordinates, the centre of the listing's commune is close enough
       // to pick the nearest Météo-France station.
       const commune = await resolveSaleCommune({
         latitude: null,
         longitude: null,
-        city: typeof sale.city === "string" ? sale.city : null,
-        postalCode: typeof sale.postal_code === "string" ? sale.postal_code : null,
-        department: typeof sale.department === "string" ? sale.department : null,
+        city: sale.city,
+        postalCode: sale.postal_code,
+        department: sale.department,
       });
       weather = commune
         ? await getClimateHistory(commune.latitude, commune.longitude, {
@@ -90,8 +85,12 @@ export async function GET(
     return NextResponse.json(
       { saleId: parsedId.data, weather },
       {
-        // Do not let a shared CDN serve one user's authorization result to another user.
-        headers: PRIVATE_WEATHER_HEADERS,
+        headers: {
+          "cache-control":
+            weather.status === "ready"
+              ? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
+              : "public, max-age=300, s-maxage=300",
+        },
       },
     );
   } catch (error) {
