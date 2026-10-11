@@ -105,6 +105,23 @@ class DocumentPoliteness:
             return DocumentRobotsUnavailable(f"robots.txt for {origin} returned an HTML challenge")
         return RobotsRules.parse(response.text, self._user_agent())
 
+    def is_disallowed(self, url: str) -> bool | None:
+        """Live robots.txt verdict for ``url`` without waiting; None when unknown.
+
+        None means politeness is off, the URL has no HTTP origin, or robots.txt
+        could not be verified (the download path then retries later).
+        """
+        if not POLITENESS_ENABLED:
+            return None
+        origin = _origin(url)
+        if origin is None:
+            return None
+        try:
+            rules = self._rules_for(origin)
+        except DocumentRobotsUnavailable:
+            return None
+        return not rules.can_fetch(url)
+
     def wait_turn(self, url: str) -> None:
         """Raise if robots.txt forbids ``url``; otherwise wait for this host's next slot."""
         if not POLITENESS_ENABLED:

@@ -398,3 +398,39 @@ def test_robots_fetch_uses_the_same_pinned_transport_and_identity(monkeypatch) -
     assert seen["url"] == "https://docs.example.test/robots.txt"
     assert seen["headers"]["User-Agent"] == BOT
     assert seen["timeout"] == 7.0
+
+
+LICITOR_ROBOTS = "User-agent: *\nDisallow: /data/pub/\nAllow: /data/pub/media/annonce/\nAllow: /data/pub/pic/\n"
+
+
+def test_live_robots_verdict_follows_the_published_allow_lines(politeness_on) -> None:
+    clock, fetched = FakeClock(), []
+    politeness = _politeness({"https://www.licitor.com/robots.txt": _text(200, LICITOR_ROBOTS)}, clock, fetched)
+
+    assert politeness.is_disallowed("https://www.licitor.com/data/pub/media/annonce/10/97/38/1.pdf") is False
+    assert politeness.is_disallowed("https://www.licitor.com/data/pub/doc/1.pdf") is True
+    assert fetched == ["https://www.licitor.com/robots.txt"]  # cached per origin
+    assert clock.slept == []  # a verdict never waits
+
+
+def test_live_robots_verdict_is_unknown_when_unverifiable_or_disabled(politeness_on, monkeypatch) -> None:
+    clock, fetched = FakeClock(), []
+    politeness = _politeness({"https://docs.example.test/robots.txt": _text(503, "down")}, clock, fetched)
+    assert politeness.is_disallowed("https://docs.example.test/a.pdf") is None
+
+    monkeypatch.setattr(document_politeness, "POLITENESS_ENABLED", False)
+    assert politeness.is_disallowed("https://docs.example.test/a.pdf") is None
+
+
+def test_licitor_pre_check_prefers_the_live_robots_file(politeness_on, monkeypatch) -> None:
+    clock, fetched = FakeClock(), []
+    live = _politeness(
+        {"https://www.licitor.com/robots.txt": _text(200, "User-agent: *\nDisallow: /data/pub/media/annonce/\n")},
+        clock,
+        fetched,
+    )
+    monkeypatch.setattr(pdf_enrichment, "_DOCUMENT_POLITENESS", live)
+
+    # The live file wins over the offline mirror, in both directions.
+    assert pdf_enrichment._is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/media/annonce/1.pdf")
+    assert not pdf_enrichment._is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/doc/1.pdf")
