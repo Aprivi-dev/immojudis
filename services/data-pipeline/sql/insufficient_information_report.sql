@@ -5,6 +5,10 @@
 -- Exemptions : statut past/adjudicated/cancelled/withdrawn/quarantined ; parking (superficie non requise) ;
 -- pour un terrain, la surface du terrain compte.
 --
+-- ATTENTION — ce rapport applique le mode STRICT (voie, lieu-dit ou parcelle exigés,
+-- IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=street). Depuis le 2026-10-11, le défaut Python accepte la
+-- commune seule : la référence reste `python -m src.recompute_scoring --drop-insufficient`.
+--
 -- ATTENTION — approximation SQL de src/information_sufficiency.py :
 --   * le SQL lit les colonnes déjà stockées + quelques motifs de repli (bloc « Adresse du bien », référence
 --     cadastrale, voie nommée dans la description des sources sûres). Il ne rejoue PAS les extracteurs Python :

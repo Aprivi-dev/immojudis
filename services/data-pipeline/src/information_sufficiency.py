@@ -10,10 +10,9 @@ interlocuteur par e-mail. Donc :
 
 Définitions (voir ``docs/audits/2026-10-10-extraction-par-source.md``) :
 
-* **adresse exploitable** = une commune ou un code postal ET une désignation du
-  bien : voie, lieu-dit ou parcelle cadastrale. Une commune seule n'est pas
-  exploitable (réglage ``IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=commune`` pour
-  l'accepter) ;
+* **adresse exploitable** = la commune (ou le code postal) suffit, décision du
+  propriétaire du 2026-10-11 ; ``IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=street`` exige
+  en plus une désignation du bien (voie, lieu-dit ou parcelle cadastrale) ;
 * **superficie** = surface bâtie/habitable/Carrez connue ; pour un terrain la
   surface du terrain compte ; un parking/garage n'a pas besoin de superficie ;
 * **e-mail exploitable** = une adresse que le résolveur de l'agent
@@ -221,10 +220,11 @@ def address_level(sale: AuctionSale) -> tuple[str | None, str | None]:
 
 
 def _min_address_levels() -> frozenset[str]:
-    configured = (os.getenv(MIN_ADDRESS_ENV) or "street").strip().lower()
-    if configured == "commune":
-        return EXPLOITABLE_ADDRESS_LEVELS | {"commune"}
-    return EXPLOITABLE_ADDRESS_LEVELS
+    # The commune alone is enough by default (owner decision, 2026-10-11).
+    configured = (os.getenv(MIN_ADDRESS_ENV) or "commune").strip().lower()
+    if configured == "street":
+        return EXPLOITABLE_ADDRESS_LEVELS
+    return EXPLOITABLE_ADDRESS_LEVELS | {"commune"}
 
 
 # --------------------------------------------------------------------------
