@@ -18,6 +18,7 @@ paths = [
 '''(?:^|/)src/lib/fact-reliability\.test\.ts''',
 '''(?:^|/)src/lib/information-agent-inbound\.test\.ts''',
 '''(?:^|/)src/lib/information-agent-inbound\.ts''',
+'''(?:^|/)src/lib/information-agent-inbound/[^/]+\.ts''',
 '''(?:^|/)src/lib/source-traceability\.test\.ts''',
 '''(?:^|/)supabase/migrations/20260825131944_analyze_information_agent_evidence\.sql''',
 '''(?:^|/)supabase/migrations/20260920144219_deterministic_information_agent_llm_request_guards\.sql''',

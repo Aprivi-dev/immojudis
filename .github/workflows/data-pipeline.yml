@@ -30,7 +30,7 @@ on:
           - encheres_immobilieres
           - notaires
       limit:
-        description: "Optional raw listing limit"
+        description: "Optional raw listing limit (document backlog: maximum sales, default 200)"
         required: false
         type: string
       publication_check:
@@ -43,6 +43,15 @@ on:
         required: false
         default: false
         type: boolean
+      documents_backlog:
+        description: "Read pending attachments (PDF) only: upcoming sales first, bounded by limit and budget"
+        required: false
+        default: false
+        type: boolean
+      documents_budget_minutes:
+        description: "Document backlog time budget in minutes (default 120, maximum 150)"
+        required: false
+        type: string
       llm_backfill:
         description: "Backfill missing AI display descriptions from existing Supabase rows"
         required: false
@@ -59,8 +68,11 @@ permissions:
   actions: read
 
 concurrency:
-  # Catalogue preservation and cleanup are deliberately single-writer.
-  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || 'immojudis-data-pipeline') }}
+  # Catalogue preservation and cleanup are deliberately single-writer. The
+  # document backlog has its own group so that scheduled collections are not
+  # queued (and superseded) behind a long drain; both serialise their writes on
+  # the catalogue writer lock, which the drain takes and releases per sale.
+  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || (inputs.documents_backlog && 'immojudis-document-backlog' || 'immojudis-data-pipeline')) }}
   cancel-in-progress: false
 
 jobs:
@@ -132,6 +144,9 @@ jobs:
       # Vench publishes a 416-page, 9.6 MB descriptive report. OCR remains
       # limited per pass and document downloads stay capped at 50 MB.
       PDF_MAX_TOTAL_PAGES: 500
+      # At most one attachment request every two seconds per host (robots.txt
+      # Crawl-delay raises it).
+      PDF_HOST_MIN_DELAY_SECONDS: 2
       ENABLE_LICITOR_BENCHMARK: true
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
@@ -192,6 +207,16 @@ jobs:
           restore-keys: |
             immojudis-data-pipeline-${{ runner.os }}-
 
+      # Parcels already resolved through API Carto (cessions de l'État): a separate
+      # entry so the extraction cache above keeps its own path set.
+      - name: Restore cadastral reference cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: services/data-pipeline/data/processed/cadastre_references
+          key: immojudis-cadastre-references-${{ runner.os }}-${{ steps.date.outputs.day }}
+          restore-keys: |
+            immojudis-cadastre-references-${{ runner.os }}-
+
       - name: Restore verified Justice reference cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -226,6 +251,8 @@ jobs:
           REQUESTED_AUTOMATIC: ${{ inputs.automatic }}
           REQUESTED_PUBLICATION_CHECK: ${{ github.event.inputs.publication_check }}
           REQUESTED_ENRICHMENT_ONLY: ${{ github.event.inputs.enrichment_only }}
+          REQUESTED_DOCUMENTS_BACKLOG: ${{ github.event.inputs.documents_backlog }}
+          REQUESTED_DOCUMENTS_BUDGET_MINUTES: ${{ github.event.inputs.documents_budget_minutes }}
           REQUESTED_RUN_ID: ${{ github.event.inputs.run_id }}
           REQUESTED_SOURCE: ${{ github.event.inputs.source }}
           REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
@@ -243,6 +270,13 @@ jobs:
 
           if [ "$REQUESTED_PUBLICATION_CHECK" = "true" ]; then
             python -m src.verify_publication
+            exit 0
+          fi
+          if [ "$REQUESTED_DOCUMENTS_BACKLOG" = "true" ]; then
+            # Values are validated and clamped by the Python entry point.
+            python -m src.document_backlog \
+              --max-sales "${REQUESTED_LIMIT:-200}" \
+              --budget-minutes "${REQUESTED_DOCUMENTS_BUDGET_MINUTES:-120}"
             exit 0
           fi
           if [ "$REQUESTED_ENRICHMENT_ONLY" = "true" ]; then

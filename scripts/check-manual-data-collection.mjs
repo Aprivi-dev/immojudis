@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const collectionWorkflows = [
   ".github/workflows/data-pipeline.yml",
+  ".github/workflows/dvf-court-adjudications.yml",
   ".github/workflows/dvf-import.yml",
   ".github/workflows/outcome-dvf-adjudications.yml",
   ".github/workflows/outcome-judilibre.yml",
   ".github/workflows/recompute-existing-sales.yml",
+  ".github/workflows/reference-data-import.yml",
   ".github/workflows/valuation-model-training.yml",
 ];
 const allowedWorkflowTriggers = new Set(["workflow_dispatch"]);

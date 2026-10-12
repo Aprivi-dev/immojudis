@@ -9,7 +9,8 @@ import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { toast } from "sonner";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
+import { saleDetailPath } from "@/lib/navigation";
 import {
   fetchAdminInformationAgentEvidenceUrlClient,
   fetchAdminInformationAgentReview,
@@ -17,6 +18,7 @@ import {
   updateAdminInformationAgentEvidenceRightsClient,
   type AdminInformationAgentEvidenceRightsStatus,
 } from "@/lib/client-api";
+import type { InformationAgentFactSource } from "@/lib/admin-information-agent";
 
 const QUERY_KEY = ["admin-information-agent-review"] as const;
 const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"]);
@@ -123,6 +125,9 @@ export function AdminInformationAgentReviewPanel() {
     (page?.extractions ?? []).map((extraction) => [extraction.asset_id, extraction]),
   );
   const casesById = new Map((page?.cases ?? []).map((item) => [item.id, item]));
+  const factSourcesByMessageId = new Map(
+    (page?.factSources ?? []).map((source) => [source.messageId, source]),
+  );
   return (
     <section className="overflow-hidden rounded-xl border bg-white">
       <div className="border-b px-5 py-4">
@@ -194,8 +199,7 @@ export function AdminInformationAgentReviewPanel() {
                 </p>
                 {informationCase?.sale_id ? (
                   <Link
-                    to="/sales/$id"
-                    params={{ id: informationCase.sale_id }}
+                    href={saleDetailPath(informationCase.sale_id)}
                     className="mt-1 inline-block font-medium text-gold-text underline"
                   >
                     Voir l’annonce {shortId(informationCase.sale_id)}
@@ -282,8 +286,7 @@ export function AdminInformationAgentReviewPanel() {
                     ) : null}
                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-navy/60">
                       <Link
-                        to="/sales/$id"
-                        params={{ id: fact.sale_id }}
+                        href={saleDetailPath(fact.sale_id)}
                         className="inline-flex items-center gap-1 font-medium text-gold-text underline"
                       >
                         Voir l’annonce {shortId(fact.sale_id)}
@@ -300,6 +303,7 @@ export function AdminInformationAgentReviewPanel() {
                         Objet : {informationCase.subject}
                       </p>
                     ) : null}
+                    <FactProvenance source={factSourcesByMessageId.get(fact.message_id)} />
                     {fact.evidence_excerpt ? (
                       <p className="mt-2 text-sm italic text-brand-navy/60">
                         « {fact.evidence_excerpt} »
@@ -606,4 +610,29 @@ function previewKindForAsset(asset: {
   }
   if (filename.endsWith(".txt")) return "text";
   return null;
+}
+
+function FactProvenance({ source }: { source: InformationAgentFactSource | undefined }) {
+  if (!source) return null;
+  const channel =
+    source.channel === "portal"
+      ? "Dépôt du portail privé"
+      : source.channel === "admin_manual_reply"
+        ? "Réponse consignée par un administrateur (expéditeur non vérifié)"
+        : "Réponse par e-mail";
+  const received = source.receivedAt
+    ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" }).format(
+        new Date(source.receivedAt),
+      )
+    : null;
+  return (
+    <p className="mt-1 text-xs text-brand-navy/60">
+      Provenance : {channel}
+      {source.fromEmail ? ` · ${source.fromEmail}` : ""}
+      {received ? ` · reçue le ${received}` : ""}
+      {source.senderMatchesRecipient === false
+        ? " · expéditeur différent du contact sollicité"
+        : ""}
+    </p>
+  );
 }

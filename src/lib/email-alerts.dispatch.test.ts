@@ -136,6 +136,23 @@ describe("dispatch des emails d'alerte", () => {
     expect(summary.skippedCount).toBe(1);
   });
 
+  it("envoie au compte Découverte son récapitulatif public, jamais une analyse en attente", async () => {
+    db.plan = { hasAnalysisAccess: false };
+    const fetchMock = vi.fn(async () => Response.json({ id: "email_1" }));
+    const discovery = notification(1) as unknown as { notification_snapshot: Row };
+    discovery.notification_snapshot = { ...discovery.notification_snapshot, audience: "discovery" };
+
+    const summary = await dispatchQueuedEmailAlertNotifications({
+      notifications: [discovery as never, notification(2)],
+      env,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(summary.sentCount).toBe(1);
+    expect(summary.skippedCount).toBe(1);
+  });
+
   it("ne notifie pas pour une alerte supprimée ou en pause", async () => {
     db.activeAlerts = [];
     const fetchMock = vi.fn(async () => Response.json({ id: "email_1" }));

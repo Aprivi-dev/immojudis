@@ -12,6 +12,7 @@ import httpx
 from dotenv import load_dotenv
 
 from src.asset_normalization import normalize_asset_features
+from src.cadastre_references import resolve_sale_cadastre
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import ROOT_DIR, load_settings, require_encheres_publiques_access
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
@@ -19,7 +20,11 @@ from src.extraction_profiles import attach_source_property_features
 from src.geocode import geocode_sale
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
+from src.sources.agrasc_extraction import refresh_agrasc_raw_sale
+from src.sources.avoventes_extraction import refresh_avoventes_raw_sale
+from src.sources.cessions_etat_extraction import refresh_cessions_raw_sale
 from src.sources.common import PoliteHttpClient
+from src.sources.encheres_immobilieres import refresh_encheres_immobilieres_raw_sale
 from src.sources.encheres_publiques import (
     BASE_URL as ENCHERES_PUBLIQUES_BASE_URL,
 )
@@ -29,12 +34,17 @@ from src.sources.encheres_publiques import (
 from src.sources.encheres_publiques import (
     parse_encheres_publiques_detail_html,
 )
+from src.sources.encheres_publiques_extraction import refresh_encheres_publiques_raw_sale
 from src.sources.licitor import LicitorClient, parse_licitor_detail_html
+from src.sources.licitor_extraction import refresh_licitor_raw_sale
+from src.sources.petites_affiches import refresh_petites_affiches_raw_sale
 from src.storage.supabase_client import _postgrest_request_with_retries, upsert_sales_to_supabase
 from src.tribunal import fill_tribunal
 
 LOGGER = logging.getLogger(__name__)
-PAGE_SIZE = 200
+# Full rows per request (raw source pages are heavy) and identifiers per request.
+PAGE_SIZE = 25
+ID_PAGE_SIZE = 1_000
 SALE_VENUE_TYPES = {"tribunal", "notary", "state", "online", "unknown"}
 SALE_LEGAL_FRAMEWORKS = {
     "judicial_seizure",
@@ -495,6 +505,14 @@ def _load_env_fallbacks() -> None:
 def _fetch_sales(
     *, source: str | None, limit: int | None, readiness_unassessed_only: bool = False
 ) -> list[dict[str, Any]]:
+    """Stored sales, most recently updated first.
+
+    Two passes keep the database safe: the identifiers are listed first (tiny
+    rows, a stable snapshot of the scope), then the full rows are read in small
+    batches. Full rows carry the raw source pages (about 135 kB each on
+    average); reading 200 of them per request has crashed the production
+    database, and offset pagination skipped or repeated rows changed meanwhile.
+    """
     settings = load_settings()
     supabase_url = str(settings["supabase_url"] or "").rstrip("/")
     api_key = str(settings["supabase_service_role_key"] or "")
@@ -502,34 +520,24 @@ def _fetch_sales(
         raise RuntimeError("Supabase URL/service role key are missing")
 
     endpoint = f"{supabase_url}/rest/v1/auction_sales"
-    rows: list[dict[str, Any]] = []
-    offset = 0
     headers = {
         "apikey": api_key,
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
     }
-    while True:
-        remaining = None if limit is None else max(0, limit - len(rows))
-        if remaining == 0:
-            break
-        page_size = PAGE_SIZE if remaining is None else min(PAGE_SIZE, remaining)
-        params = {
-            "select": "*",
-            "order": "updated_at.desc.nullslast",
-            "limit": str(page_size),
-            "offset": str(offset),
-        }
-        if source:
-            params["source_name"] = f"eq.{source}"
-        if readiness_unassessed_only:
-            params["premium_readiness_status"] = "eq.unassessed"
-            params["status"] = "in.(upcoming,unknown,postponed)"
+    filters: dict[str, str] = {}
+    if source:
+        filters["source_name"] = f"eq.{source}"
+    if readiness_unassessed_only:
+        filters["premium_readiness_status"] = "eq.unassessed"
+        filters["status"] = "in.(upcoming,unknown,postponed)"
+
+    def get(params: dict[str, str]) -> list[dict[str, Any]]:
         response = _postgrest_request_with_retries(
             "GET",
             endpoint,
             table="auction_sales",
-            params=params,
+            params={**filters, **params},
             headers=headers,
             timeout=120,
         )
@@ -540,12 +548,37 @@ def _fetch_sales(
                 response=response,
             )
         page = response.json()
-        if not isinstance(page, list) or not page:
+        return page if isinstance(page, list) else []
+
+    ids: list[str] = []
+    seen: set[str] = set()
+    offset = 0
+    while limit is None or len(ids) < limit:
+        page = get(
+            {
+                "select": "id",
+                "order": "updated_at.desc.nullslast,id.asc",
+                "limit": str(ID_PAGE_SIZE),
+                "offset": str(offset),
+            }
+        )
+        for row in page:
+            sale_id = str(row.get("id") or "")
+            if sale_id and sale_id not in seen:
+                seen.add(sale_id)
+                ids.append(sale_id)
+        if len(page) < ID_PAGE_SIZE:
             break
-        rows.extend(page)
-        if len(page) < page_size:
-            break
-        offset += page_size
+        offset += ID_PAGE_SIZE
+    if limit is not None:
+        ids = ids[:limit]
+
+    rows: list[dict[str, Any]] = []
+    for start in range(0, len(ids), PAGE_SIZE):
+        chunk = ids[start : start + PAGE_SIZE]
+        by_id = {str(row.get("id")): row for row in get({"select": "*", "id": f"in.({','.join(chunk)})"})}
+        # A row deleted between the two passes is simply absent.
+        rows.extend(by_id[sale_id] for sale_id in chunk if sale_id in by_id)
     return rows
 
 
@@ -559,6 +592,20 @@ def _sale_from_storage_row(row: dict[str, Any]):
     for field in ("title", "description", "raw_text", "source_blocks"):
         if original_payload.get(field):
             raw_sale[field] = original_payload[field]
+    # Cessions de l'État : rejoue la lecture structurée sur le texte de fiche
+    # stocké (aucune requête au site) ; ses valeurs priment sur les colonnes.
+    refresh_cessions_raw_sale(raw_sale)
+    # Licitor : même principe (lots, procédure, conditions, avocats, visites).
+    refresh_licitor_raw_sale(raw_sale)
+    # AGRASC : même relecture sur les champs opérateur stockés (types des pièces, Points clés).
+    refresh_agrasc_raw_sale(raw_sale)
+    # Avoventes : encadré de vente, tuiles et caractéristiques relus sur le même texte.
+    refresh_avoventes_raw_sale(raw_sale)
+    # Petites Affiches, Enchères Immobilières, Enchères Publiques : même relecture
+    # locale (texte de fiche, images et blocs stockés), sans requête.
+    refresh_petites_affiches_raw_sale(raw_sale)
+    refresh_encheres_immobilieres_raw_sale(raw_sale)
+    refresh_encheres_publiques_raw_sale(raw_sale)
     sale = normalize_sale(raw_sale)
     sale.id = str(row.get("id")) if row.get("id") else None
     sale.primary_source = row.get("primary_source") or sale.primary_source
@@ -578,13 +625,16 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
     sale = _sale_from_storage_row(row)
     if geocode:
         geocode_sale(sale)
+    else:
+        # Reprend la localisation cadastrale déjà résolue, sans requête.
+        resolve_sale_cadastre(sale, network=False)
     fill_tribunal(sale)
     classify_sale_procedure(sale)
     payload = sale.raw_payload
     blocks = payload.get("source_blocks")
     values = [sale.title, sale.description, sale.raw_text, payload.get("source_description")]
     if isinstance(blocks, dict):
-        values.extend(value for key, value in blocks.items() if key != "listing_completeness")
+        values.extend(value for key, value in blocks.items() if key not in {"listing_completeness", "caracteristiques_bien"})
     context = "\n".join(dict.fromkeys(str(value).strip() for value in values if value))
     if context:
         extract_and_apply_deterministic_surface_reasoning(sale, context)
@@ -707,10 +757,28 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Backfill borné des seules annonces actives encore non évaluées pour le catalogue Premium.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--drop-insufficient",
+        action="store_true",
+        help="Rapport (dry-run) des ventes aux informations insuffisantes ; ne supprime rien sans --execute-drop.",
+    )
+    parser.add_argument("--execute-drop", action="store_true", help="Avec --drop-insufficient : supprime réellement.")
+    parser.add_argument("--max-deletions", type=int, default=100, help="Plafond de suppressions d'une exécution.")
+    parser.add_argument(
+        "--include-user-linked",
+        action="store_true",
+        help="Supprime aussi les ventes liées à des favoris, rapports ou dossiers (protégées par défaut).",
+    )
+    parser.add_argument("--drop-report", default="insufficient-sales-report.json", help="Fichier JSON des identifiants.")
+    args = parser.parse_args()
+    if (args.execute_drop or args.include_user_linked) and not args.drop_insufficient:
+        parser.error("--execute-drop et --include-user-linked n'ont de sens qu'avec --drop-insufficient")
+    return args
 
 
 def _writes_catalogue(args: argparse.Namespace) -> bool:
+    if args.drop_insufficient:
+        return args.execute_drop
     if args.verify_only:
         return False
     # Refreshing or repairing procedures always writes; the other modes only
@@ -729,6 +797,17 @@ def main() -> int:
 
 
 def _run(args: argparse.Namespace) -> int:
+    if args.drop_insufficient:
+        from src.insufficient_sales import drop_insufficient_sales
+
+        return drop_insufficient_sales(
+            source=args.source,
+            limit=args.limit,
+            execute=args.execute_drop,
+            max_deletions=args.max_deletions,
+            include_user_linked=args.include_user_linked,
+            report_path=args.drop_report,
+        )
     if args.refresh_unknown_procedures:
         return refresh_unknown_sale_procedures(source=args.source, limit=args.limit)
     if args.repair_invalid_procedures:

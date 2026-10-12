@@ -1,10 +1,7 @@
-import type { MarketEstimate } from "@/lib/market.functions";
-import {
-  computeMarketCeiling,
-  DEFAULT_MARKET_CEILING_SCENARIO,
-  DEFAULTS,
-  estimateWorksBudget,
-} from "@/lib/profitability";
+import type { MarketEstimate } from "@/lib/market.server";
+import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
+import { computeCeilingPlan } from "@/lib/bid-ceiling-engine";
+import { estimateWorksBudget } from "@/lib/profitability";
 import type { AuctionSale } from "@/lib/types";
 
 export const EXAMPLE_SALE_KEYS = ["bordeaux", "nantes", "toulouse"] as const;
@@ -995,21 +992,17 @@ export function exampleHeadlineFigures() {
   const { sale, marketEstimate } = EXAMPLE_SALE_RECORDS.bordeaux;
   const surface = sale.app_surface_m2 ?? 0;
   const startingPrice = sale.starting_price_eur ?? 0;
-  const result = computeMarketCeiling({
-    surface,
-    price: startingPrice,
-    works: estimateWorksBudget(surface, "rafraichissement"),
-    fpt: DEFAULTS.fpt,
-    scenario: DEFAULT_MARKET_CEILING_SCENARIO,
-    medianPricePerM2: marketEstimate.medianPricePerM2,
-    p10PricePerM2: marketEstimate.p10PricePerM2,
-    p25PricePerM2: marketEstimate.p25PricePerM2,
-    p75PricePerM2: marketEstimate.p75PricePerM2,
-    p90PricePerM2: marketEstimate.p90PricePerM2,
-  });
+  const result = computeCeilingPlan(
+    buildCeilingHypotheses(sale, marketEstimate, {
+      works: {
+        key: "rafraichissement",
+        amount: estimateWorksBudget(surface, "rafraichissement"),
+      },
+    }),
+  );
   const hundred = (value: number) => Math.round(value / 100) * 100;
   const marketValue = hundred(marketEstimate.estimatedValueEur ?? 0);
-  const feesAndWorks = hundred(result.targetTotalCost - result.maxBid);
+  const feesAndWorks = hundred(result.budget - result.maxBid);
   const ceiling = hundred(result.maxBid);
   return {
     city: sale.city ?? "",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 import { buildReportTraceability } from "@/lib/source-traceability";
 
 const MARKET_ESTIMATE: MarketEstimate = {

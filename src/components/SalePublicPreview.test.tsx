@@ -1,33 +1,10 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { axe } from "vitest-axe";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
-
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({
-    to,
-    search,
-    children,
-    ...props
-  }: {
-    to: string;
-    search?: Record<string, unknown>;
-    children: ReactNode;
-  }) => {
-    const query = new URLSearchParams(
-      Object.entries(search ?? {}).map(([key, value]) => [key, String(value)]),
-    ).toString();
-    return (
-      <a href={`${to}${query ? `?${query}` : ""}`} {...props}>
-        {children}
-      </a>
-    );
-  },
-}));
 
 afterEach(cleanup);
 
@@ -190,20 +167,47 @@ describe("SalePublicPreview", () => {
     expect(screen.queryByRole("img")).toBeNull();
   });
 
-  it("lists what the full file adds instead of a vague protection notice", () => {
-    renderPreview({ sale_venue_type: "tribunal", sale_verification_status: "verified" });
+  it("lists what the free account adds instead of a vague protection notice", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      sale_verification_status: "verified",
+      photo_count: 5,
+      has_visit_dates: true,
+      document_count: 3,
+    });
     expect(screen.queryByText(/protège les informations/)).toBeNull();
-    const list = screen.getByText("Le dossier complet ajoute").parentElement!;
-    expect(list.textContent).toContain("enchère plafond simulée");
-    expect(list.textContent).toContain("ventes comparables");
-    expect(list.textContent).toContain("documents du dossier");
+    const list = screen.getByText("Avec le compte gratuit, vous voyez aussi").parentElement!;
+    expect(list.textContent).toContain("5 photos du bien");
+    expect(list.textContent).toContain("dates et le lieu des visites");
+    expect(list.textContent).toContain("3 pièces au dossier");
+  });
+
+  it("describes the property from its facts and teases the analysis without figures", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      property_type: "house",
+      app_surface_m2: 92,
+      land_surface_m2: 640,
+      city: "Pau",
+      department: "64",
+      has_garden: true,
+    });
+    const description = screen.getByRole("region", { name: "Le bien en bref" });
+    expect(description.textContent).toContain(
+      "Maison de 92 m², sur un terrain de 640 m², à Pau (64).",
+    );
+    expect(description.textContent).toContain("Jardin");
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.textContent).toContain("Enchère plafond conseillée");
+    expect(teaser.textContent).toContain("000 000 €");
+    expect(teaser.textContent).not.toMatch(/[1-9]\d* ?\d* €/);
   });
 
   it("does not promise a bid ceiling for a notarial sale", () => {
     renderPreview({ sale_venue_type: "notary" });
-    const list = screen.getByText("Le dossier complet ajoute").parentElement!;
-    expect(list.textContent).not.toContain("mise plafond");
-    expect(list.textContent).toContain("ventes comparables");
+    const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
+    expect(teaser.textContent).not.toContain("plafond");
+    expect(teaser.textContent).toContain("Ventes comparables");
   });
 
   it("has no structural accessibility violations", async () => {

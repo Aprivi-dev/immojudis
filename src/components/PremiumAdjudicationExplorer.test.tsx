@@ -8,6 +8,7 @@ import type { AdjudicationPriceStatisticsDirectoryResponse } from "@/lib/adjudic
 const mocks = vi.hoisted(() => ({ useAuth: vi.fn(), fetchPlan: vi.fn(), fetchDirectory: vi.fn() }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: mocks.useAuth }));
 vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: mocks.fetchPlan }));
+vi.mock("@/components/CourtAuctionSummaryTable", () => ({ CourtAuctionSummaryTable: () => null }));
 vi.mock("@/lib/adjudication-price-statistics-client", () => ({
   fetchAdjudicationPriceStatisticsDirectory: mocks.fetchDirectory,
 }));

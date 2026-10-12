@@ -417,7 +417,7 @@ def release_source_detail_job_without_attempt(
         where += " and locked_at=%s"
         params.append(job["locked_at"])
     try:
-        with storage._postgres_connect(db_url) as db:
+        with storage.connect(db_url) as db:
             db.execute(
                 f"""update public.auction_enrichment_jobs
                        set status='queued',{next_attempt_sql}
@@ -458,7 +458,7 @@ def report_source_detail_refusal(
     retry_not_before = _aware_timestamp(coverage.get("retry_not_before"))
     observed_http_refusals = _nonnegative_int(coverage.get("access_denials"))
     try:
-        with storage._postgres_connect(db_url) as db:
+        with storage.connect(db_url) as db:
             row = db.execute(
                 """select coverage,suspended_until,next_inventory_at
                      from public.auction_source_state

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
-import { startAdminScroll } from "@/lib/admin.functions";
+import { startAdminScroll } from "@/lib/admin.server";
 import { isPublicErrorMessage } from "@/lib/api-errors";
 import { adminErrorResponse } from "@/lib/api-route-errors";
 import { withAdminDeadline } from "@/lib/admin-route-deadline";

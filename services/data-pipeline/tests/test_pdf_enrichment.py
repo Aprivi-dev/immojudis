@@ -2187,8 +2187,20 @@ def test_extract_pdf_document_then_enriches_document_only_surface(tmp_path, monk
     assert sale.raw_payload["surface_extraction"]["document_label"] == "PV descriptif"
 
 
+def test_licitor_static_robots_rule_allows_published_sale_attachments() -> None:
+    from src.pdf_enrichment import _is_robots_disallowed_licitor_document
+
+    # licitor.com/robots.txt: "Disallow: /data/pub/" + "Allow: /data/pub/media/annonce/".
+    assert not _is_robots_disallowed_licitor_document(
+        "https://www.licitor.com/data/pub/media/annonce/10/94/58/109458.000.001.84b69126bd6a.pdf"
+    )
+    assert _is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/doc/109458.pdf")
+    assert _is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/media/other/x.pdf")
+    assert not _is_robots_disallowed_licitor_document("https://www.vench.fr/data/pub/doc/x.pdf")
+
+
 def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, monkeypatch) -> None:
-    blocked_url = "https://www.licitor.com/data/pub/media/annonce/10/87/62/108762.000.001.pdf"
+    blocked_url = "https://www.licitor.com/data/pub/doc/10/87/62/108762.000.001.pdf"
     sale = normalize_sale(
         {
             "source_name": "licitor",

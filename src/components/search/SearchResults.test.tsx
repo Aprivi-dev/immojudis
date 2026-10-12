@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
@@ -41,22 +41,8 @@ vi.mock("@/lib/client-api", () => ({
   addFavoriteSale: testState.addFavoriteSale,
   removeFavoriteSale: testState.removeFavoriteSale,
 }));
-vi.mock("@/lib/router-compat", () => ({
-  useNavigate: () => vi.fn(),
-  Link: ({
-    to,
-    params,
-    children,
-    ...props
-  }: {
-    to: string;
-    params?: { id: string };
-    children: ReactNode;
-  }) => (
-    <a href={params ? to.replace("$id", params.id) : to} {...props}>
-      {children}
-    </a>
-  ),
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
 vi.mock("@/components/SaleVisual", () => ({
   SaleVisual: ({ locked, title }: { locked: boolean; title: string }) => (

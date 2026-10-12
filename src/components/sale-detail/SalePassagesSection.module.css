@@ -1,0 +1,86 @@
+.card {
+  margin-top: 24px;
+  padding: 24px 27px;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--ink-strong);
+}
+
+.card h2 {
+  color: var(--brand-navy);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 25px;
+  font-weight: 600;
+}
+
+.lead {
+  margin-top: 7px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.highlight {
+  margin-top: 14px;
+  border-radius: 12px;
+  background: var(--warning-tint);
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.list {
+  margin-top: 16px;
+  border-left: 2px solid var(--line-soft);
+  padding-left: 18px;
+}
+
+.item {
+  position: relative;
+  padding: 0 0 14px;
+}
+
+.item::before {
+  position: absolute;
+  top: 6px;
+  left: -24px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--gold-light);
+  content: "";
+}
+
+.itemPassage::before {
+  background: var(--brand-navy);
+}
+
+.itemTitle {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.itemDetail,
+.itemDate {
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.note {
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cta {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--gold-text);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}

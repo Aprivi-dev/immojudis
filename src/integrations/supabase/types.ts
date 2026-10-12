@@ -797,6 +797,101 @@ export type Database = {
           },
         ];
       };
+      auction_document_readings: {
+        Row: {
+          documents: Json;
+          error_code: string | null;
+          generated_at: string;
+          input_fingerprint: string;
+          input_truncated: boolean;
+          model: string | null;
+          points: Json;
+          prompt_version: string;
+          sale_id: string;
+          source_url: string;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          documents?: Json;
+          error_code?: string | null;
+          generated_at?: string;
+          input_fingerprint: string;
+          input_truncated?: boolean;
+          model?: string | null;
+          points?: Json;
+          prompt_version: string;
+          sale_id: string;
+          source_url: string;
+          status: string;
+          updated_at?: string;
+        };
+        Update: {
+          documents?: Json;
+          error_code?: string | null;
+          generated_at?: string;
+          input_fingerprint?: string;
+          input_truncated?: boolean;
+          model?: string | null;
+          points?: Json;
+          prompt_version?: string;
+          sale_id?: string;
+          source_url?: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       auction_documents: {
         Row: {
           created_at: string | null;
@@ -3552,6 +3647,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      auction_sale_timeline: {
+        Row: {
+          event_kind: string;
+          id: number;
+          new_value: Json | null;
+          observed_at: string;
+          origin: string;
+          previous_value: Json | null;
+          sale_id: string;
+          source_url: string | null;
+        };
+        Insert: {
+          event_kind: string;
+          id?: never;
+          new_value?: Json | null;
+          observed_at?: string;
+          origin?: string;
+          previous_value?: Json | null;
+          sale_id: string;
+          source_url?: string | null;
+        };
+        Update: {
+          event_kind?: string;
+          id?: never;
+          new_value?: Json | null;
+          observed_at?: string;
+          origin?: string;
+          previous_value?: Json | null;
+          sale_id?: string;
+          source_url?: string | null;
+        };
+        Relationships: [];
+      };
       auction_sales: {
         Row: {
           address: string | null;
@@ -4565,6 +4693,101 @@ export type Database = {
         };
         Relationships: [];
       };
+      climate_station_months: {
+        Row: {
+          frost_days: number | null;
+          hot_days: number | null;
+          mean_max_temperature_c: number | null;
+          mean_min_temperature_c: number | null;
+          mean_temperature_c: number | null;
+          month: string;
+          precipitation_mm: number | null;
+          rain_days: number | null;
+          station_id: string;
+          sunshine_minutes: number | null;
+        };
+        Insert: {
+          frost_days?: number | null;
+          hot_days?: number | null;
+          mean_max_temperature_c?: number | null;
+          mean_min_temperature_c?: number | null;
+          mean_temperature_c?: number | null;
+          month: string;
+          precipitation_mm?: number | null;
+          rain_days?: number | null;
+          station_id: string;
+          sunshine_minutes?: number | null;
+        };
+        Update: {
+          frost_days?: number | null;
+          hot_days?: number | null;
+          mean_max_temperature_c?: number | null;
+          mean_min_temperature_c?: number | null;
+          mean_temperature_c?: number | null;
+          month?: string;
+          precipitation_mm?: number | null;
+          rain_days?: number | null;
+          station_id?: string;
+          sunshine_minutes?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "climate_station_months_station_id_fkey";
+            columns: ["station_id"];
+            isOneToOne: false;
+            referencedRelation: "climate_stations";
+            referencedColumns: ["station_id"];
+          },
+        ];
+      };
+      climate_stations: {
+        Row: {
+          altitude_m: number | null;
+          department_code: string;
+          first_month: string;
+          has_precipitation: boolean;
+          has_sunshine: boolean;
+          has_temperature: boolean;
+          imported_at: string;
+          last_month: string;
+          latitude: number;
+          longitude: number;
+          name: string;
+          source_url: string;
+          station_id: string;
+        };
+        Insert: {
+          altitude_m?: number | null;
+          department_code: string;
+          first_month: string;
+          has_precipitation?: boolean;
+          has_sunshine?: boolean;
+          has_temperature?: boolean;
+          imported_at?: string;
+          last_month: string;
+          latitude: number;
+          longitude: number;
+          name: string;
+          source_url: string;
+          station_id: string;
+        };
+        Update: {
+          altitude_m?: number | null;
+          department_code?: string;
+          first_month?: string;
+          has_precipitation?: boolean;
+          has_sunshine?: boolean;
+          has_temperature?: boolean;
+          imported_at?: string;
+          last_month?: string;
+          latitude?: number;
+          longitude?: number;
+          name?: string;
+          source_url?: string;
+          station_id?: string;
+        };
+        Relationships: [];
+      };
       cnb_lawyer_directory: {
         Row: {
           address_line_1: string | null;
@@ -4901,6 +5124,54 @@ export type Database = {
           },
         ];
       };
+      commune_risk_profiles: {
+        Row: {
+          catnat_by_type: Json;
+          catnat_recent: Json;
+          catnat_total: number;
+          code_insee: string;
+          commune_name: string;
+          gaspar_snapshot: string | null;
+          imported_at: string;
+          prevention_plans: Json;
+          radon_class: number | null;
+          risks: Json;
+          seismic_zone: number | null;
+          source_url: string;
+          zoning_checked_at: string | null;
+        };
+        Insert: {
+          catnat_by_type?: Json;
+          catnat_recent?: Json;
+          catnat_total?: number;
+          code_insee: string;
+          commune_name: string;
+          gaspar_snapshot?: string | null;
+          imported_at?: string;
+          prevention_plans?: Json;
+          radon_class?: number | null;
+          risks?: Json;
+          seismic_zone?: number | null;
+          source_url: string;
+          zoning_checked_at?: string | null;
+        };
+        Update: {
+          catnat_by_type?: Json;
+          catnat_recent?: Json;
+          catnat_total?: number;
+          code_insee?: string;
+          commune_name?: string;
+          gaspar_snapshot?: string | null;
+          imported_at?: string;
+          prevention_plans?: Json;
+          radon_class?: number | null;
+          risks?: Json;
+          seismic_zone?: number | null;
+          source_url?: string;
+          zoning_checked_at?: string | null;
+        };
+        Relationships: [];
+      };
       data_refresh_requests: {
         Row: {
           completed_at: string | null;
@@ -5149,6 +5420,51 @@ export type Database = {
           submitted_at?: string;
           updated_at?: string;
           user_id?: string | null;
+        };
+        Relationships: [];
+      };
+      dvf_court_adjudications: {
+        Row: {
+          built_surface_m2: number | null;
+          court_code: string | null;
+          department: string;
+          imported_at: string;
+          insee_code: string;
+          land_surface_m2: number | null;
+          local_count: number;
+          mutation_date: string;
+          mutation_id: string;
+          price_eur: number;
+          property_type: string;
+          source_year: number;
+        };
+        Insert: {
+          built_surface_m2?: number | null;
+          court_code?: string | null;
+          department: string;
+          imported_at?: string;
+          insee_code: string;
+          land_surface_m2?: number | null;
+          local_count?: number;
+          mutation_date: string;
+          mutation_id: string;
+          price_eur: number;
+          property_type: string;
+          source_year: number;
+        };
+        Update: {
+          built_surface_m2?: number | null;
+          court_code?: string | null;
+          department?: string;
+          imported_at?: string;
+          insee_code?: string;
+          land_surface_m2?: number | null;
+          local_count?: number;
+          mutation_date?: string;
+          mutation_id?: string;
+          price_eur?: number;
+          property_type?: string;
+          source_year?: number;
         };
         Relationships: [];
       };
@@ -8227,6 +8543,42 @@ export type Database = {
           },
         ];
       };
+      reference_communes: {
+        Row: {
+          code_insee: string;
+          department_code: string;
+          imported_at: string;
+          latitude: number | null;
+          longitude: number | null;
+          name: string;
+          name_normalized: string;
+          postal_codes: string[];
+          source_url: string;
+        };
+        Insert: {
+          code_insee: string;
+          department_code: string;
+          imported_at?: string;
+          latitude?: number | null;
+          longitude?: number | null;
+          name: string;
+          name_normalized: string;
+          postal_codes?: string[];
+          source_url: string;
+        };
+        Update: {
+          code_insee?: string;
+          department_code?: string;
+          imported_at?: string;
+          latitude?: number | null;
+          longitude?: number | null;
+          name?: string;
+          name_normalized?: string;
+          postal_codes?: string[];
+          source_url?: string;
+        };
+        Relationships: [];
+      };
       referenced_lawyer_coverage: {
         Row: {
           city: string | null;
@@ -9541,6 +9893,7 @@ export type Database = {
           code: string;
           created_at: string | null;
           department: string;
+          label_keys: string[] | null;
           updated_at: string | null;
         };
         Insert: {
@@ -9550,6 +9903,7 @@ export type Database = {
           code: string;
           created_at?: string | null;
           department: string;
+          label_keys?: never;
           updated_at?: string | null;
         };
         Update: {
@@ -9559,6 +9913,7 @@ export type Database = {
           code?: string;
           created_at?: string | null;
           department?: string;
+          label_keys?: never;
           updated_at?: string | null;
         };
         Relationships: [];
@@ -11868,6 +12223,7 @@ export type Database = {
           dedupe_confidence: string | null;
           department: string | null;
           description: string | null;
+          document_count: number | null;
           documents: Json | null;
           documents_rich: Json | null;
           habitable_surface_m2: number | null;
@@ -12922,6 +13278,28 @@ export type Database = {
         Returns: boolean;
       };
       geomfromewkt: { Args: { "": string }; Returns: unknown };
+      get_court_auction_scenarios: {
+        Args: { p_court_code: string; p_starting_price: number };
+        Returns: Json;
+      };
+      get_court_auction_summaries: { Args: never; Returns: Json };
+      get_public_sale_details: {
+        Args: { p_sale_id: string };
+        Returns: {
+          document_count: number;
+          has_air_conditioning: boolean;
+          has_double_glazing: boolean;
+          has_garage: boolean;
+          has_garden: boolean;
+          has_pool: boolean;
+          has_terrace: boolean;
+          has_visit_dates: boolean;
+          id: string;
+          land_surface_m2: number;
+          parking_count: number;
+          photo_count: number;
+        }[];
+      };
       get_public_sale_summary: {
         Args: { p_sale_id: string };
         Returns: {
@@ -12944,6 +13322,22 @@ export type Database = {
           updated_at: string;
         }[];
       };
+      get_public_tribunal_activity: {
+        Args: never;
+        Returns: {
+          apartment_count: number;
+          department: string;
+          house_count: number;
+          median_starting_price_eur: number;
+          next_sale_date: string;
+          other_count: number;
+          tribunal_city: string;
+          tribunal_code: string;
+          tribunal_name: string;
+          upcoming_count: number;
+        }[];
+      };
+      get_sale_passages: { Args: { p_sale_id: string }; Returns: Json };
       gettransactionid: { Args: never; Returns: unknown };
       grant_analysis_access_from_checkout: {
         Args: {
@@ -13137,6 +13531,16 @@ export type Database = {
       release_analyse_checkout: {
         Args: { p_checkout_token: string; p_user_id: string };
         Returns: boolean;
+      };
+      remap_archived_catalogue_courts_by_label_batch: {
+        Args: { p_after_id?: string; p_limit?: number };
+        Returns: {
+          has_more: boolean;
+          next_cursor: string;
+          remapped_count: number;
+          scanned_count: number;
+          skipped_count: number;
+        }[];
       };
       reserve_analyse_checkout: {
         Args: { p_checkout_token: string; p_user_id: string };
@@ -14187,6 +14591,30 @@ export type Database = {
           case_status: string;
           inbound_token: string;
           mission_status: string;
+        }[];
+      };
+      tribunal_outcome_graph_past_hearings: {
+        Args: {
+          p_as_of: string;
+          p_court_code?: string;
+          p_history_start: string;
+        };
+        Returns: {
+          auction_sale_id: string;
+          city: string;
+          court_code: string;
+          external_id: string;
+          initial_starting_price_eur: number;
+          lawyer_label: string;
+          legacy_status: string;
+          lot_label: string;
+          occupation_status: string;
+          property_type: string;
+          publication_first_seen_at: string;
+          round_id: string;
+          scheduled_at: string;
+          source_name: string;
+          source_url: string;
         }[];
       };
       unlockrows: { Args: { "": string }; Returns: number };

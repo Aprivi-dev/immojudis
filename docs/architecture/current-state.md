@@ -14,7 +14,7 @@ Le modèle historique reste toutefois centré sur une ligne mutable par annonce 
 
 - Le dépôt racine est un projet **npm**, pas encore un workspace `pnpm`. `package.json` déclare `npm@11.18.0`, Node `>=24.15.0 <25` et un `package-lock.json` commis.
 - Le runtime web est **Next.js 16 App Router**, React 19 et TypeScript en mode `strict`.
-- Les pages dans `src/app` délèguent encore souvent leur rendu à des composants historiques dans `src/routes`. Les API serveur résident dans `src/app/api` et la logique métier dans `src/lib`.
+- Les pages vivent dans `src/app` (composants serveur par défaut, petits composants `"use client"` co-localisés pour l’interactif). Seuls les trois documents juridiques (`legal`, `privacy`, `conditions-generales`) restent dans `src/routes`, avec un `src/lib/router-compat.tsx` réduit à deux fonctions, tant que leur empreinte SHA-256 n’est pas ré-ancrée (P6-01). Les API serveur résident dans `src/app/api` et la logique métier dans `src/lib`.
 - Tailwind CSS 4, TanStack Query et les composants Radix constituent le socle UI.
 - La production web est préparée pour Vercel. Les en-têtes de sécurité et l’observabilité Vercel sont configurés dans l’application.
 

@@ -10,8 +10,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dateutil import parser
 
 from src.admission import is_date_only, sale_date_has_passed
+from src.listing_location import recover_listing_address, reject_monetary_address
 from src.models import AuctionSale
 from src.null_text import is_null_text
+from src.surface_text_recovery import extra_built_surface_from_text
 
 FRENCH_MONTHS = {
     "janvier": "January",
@@ -525,7 +527,7 @@ def parse_french_datetime(value: object | None, *, local_timezone: str = "Europe
     lowered = text.lower()
     for weekday in FRENCH_WEEKDAYS:
         lowered = re.sub(rf"\b{weekday}\b", "", lowered)
-    lowered = lowered.replace(" à ", " ")
+    lowered = re.sub(r"\s+(?:à|a)\s+(?=\d)", " ", lowered)  # « 10 SEPTEMBRE 2026 A 14H00 »
     lowered = re.sub(
         r"\b([0-2]?\d)\s*(?:heures?|h)\s*([0-5]\d)?\b",
         lambda m: f"{m.group(1)}:{m.group(2) or '00'}", lowered,
@@ -539,10 +541,10 @@ def parse_french_datetime(value: object | None, *, local_timezone: str = "Europe
         r"(?:\s*,?\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:Z|UTC|GMT|[+-]\d{2}:?\d{2})?)?",
         lowered, re.I,
     ))
-    if len(dated) == 1:
+    if len(dated) == 1:  # dateutil would read stray numbers (« Grasse, 37, ») as the year
         candidate = dated[0].group(0).strip()
-        if not re.search(r"\d{1,2}:\d{2}", lowered) or re.search(r"\d{1,2}:\d{2}", candidate):
-            lowered = candidate
+        clock = re.search(r"\b\d{1,2}:\d{2}\b", f"{lowered[dated[0].end():]} {lowered[: dated[0].start()]}")
+        lowered = f"{candidate} {clock.group(0)}" if clock and ":" not in candidate else candidate
     # dateutil recognizes these timezone names only in their canonical case.
     # Lowercasing the French text above must not turn an explicit UTC/GMT
     # instant into a naive Paris civil time.
@@ -946,12 +948,8 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     address = normalize_listing_address(
         _field_or_source_block(raw_sale, "address", "adresse", "detail_adresse", "address", "localisation")
     )
-    if address and re.fullmatch(r'[\d\s.,]+\s*(?:€|euros?|EUR)', address, re.I):
-        raw_sale = dict(raw_sale)
-        raw_sale['invalid_address_evidence'] = {'value': address, 'reason': 'monetary_value_is_not_address'}
-        raw_sale['quality_flags'] = [*(raw_sale.get('quality_flags') or []), 'address_unverified']
-        raw_sale['latitude'] = raw_sale['longitude'] = None
-        address = None
+    raw_sale, address = reject_monetary_address(raw_sale, address)
+    address = recover_listing_address(raw_sale, address)
     explicit_postal_code = extract_postal_code(
         _field_or_source_block(raw_sale, "postal_code", "code_postal", "codePostal", "postal_code")
     )
@@ -1072,7 +1070,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     structured_surface_m2 = parse_surface(
         _field_or_source_block(raw_sale, "surface_m2", "surface_m2", "surface", "detail_surface")
     )
-    text_surface_m2 = _extract_built_surface_from_text(source_text)
+    text_surface_m2 = _extract_built_surface_from_text(source_text) or extra_built_surface_from_text(
+        source_text, raw_sale.get("source_name")
+    )
     surface_m2 = (
         text_surface_m2
         if property_type == "mixed"
@@ -1688,7 +1688,7 @@ def _walk_source_blocks(value: object, prefix: str = "") -> list[tuple[str, obje
     if isinstance(value, dict):
         for key, nested in value.items():
             key_text = str(key)
-            if key_text == "listing_completeness":
+            if key_text in {"listing_completeness", "caracteristiques_bien"}:  # projections, pas du texte source
                 continue
             nested_key = f"{prefix}_{key_text}" if prefix else key_text
             rows.append((nested_key, nested))

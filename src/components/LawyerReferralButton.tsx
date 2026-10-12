@@ -4,7 +4,8 @@ import Handshake from "lucide-react/dist/esm/icons/handshake.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
-import { useNavigate } from "@/lib/router-compat";
+import { useRouter } from "next/navigation";
+import { pathWithSearch } from "@/lib/navigation";
 import { fetchAccessPlan, fetchLawyerReferrals, requestLawyerReferral } from "@/lib/client-api";
 import type { LawyerReferralSummary } from "@/lib/lawyer-referrals";
 import { userMessage } from "@/lib/user-messages";
@@ -24,7 +25,7 @@ export function LawyerReferralButton({
   onIntent?: () => void;
 }) {
   const { user, loading } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   // P4-13: the user sees what is shared with the lawyer and confirms before anything is sent.
@@ -59,13 +60,13 @@ export function LawyerReferralButton({
         typeof window !== "undefined"
           ? `${window.location.pathname}${window.location.search}#lawyer`
           : `/sales/${saleId}`;
-      navigate({ to: "/login", search: { redirect } });
+      router.push(pathWithSearch("/login", { redirect }));
       return;
     }
 
     if (referralLocked) {
       toast.message("Mise en relation avocat réservée à l’offre Analyse.");
-      navigate({ to: "/offres" });
+      router.push("/offres");
       return;
     }
 

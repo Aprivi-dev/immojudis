@@ -9,13 +9,14 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { DPE_CLASSES, dpeColor } from "@/lib/dpe";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import { formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { SearchStatistics } from "./search-page-state";
 
 export function SearchStatisticsPanel({
   statistics,
   locked,
+  signedIn = false,
   dpeLocked,
   loading,
   dpeExplorer,
@@ -26,6 +27,8 @@ export function SearchStatisticsPanel({
 }: {
   statistics: SearchStatistics;
   locked: boolean;
+  /** Signed-in free account: the upsell points to Analyse, not to account creation. */
+  signedIn?: boolean;
   dpeLocked: boolean;
   loading: boolean;
   dpeExplorer?: DpeExplorerResponse;
@@ -41,14 +44,15 @@ export function SearchStatisticsPanel({
           Repérez un bien, puis préparez votre analyse
         </h2>
         <p className="mt-1 text-sm leading-relaxed text-ink-soft">
-          Le compte gratuit ouvre la fiche et la localisation complète. Analyse ajoute les
-          comparables, les risques et le calcul de votre enchère plafond.
+          {signedIn
+            ? "Votre compte ouvre les fiches complètes et la fourchette de valeur. Analyse ajoute les pièces du dossier, les comparables, les statistiques et le calcul de votre enchère plafond."
+            : "Le compte gratuit ouvre les fiches complètes et la fourchette de valeur. Analyse ajoute les pièces du dossier, les comparables et le calcul de votre enchère plafond."}
         </p>
         <Link
-          to="/annonce-exemple"
+          href={signedIn ? "/offres" : "/annonce-exemple"}
           className="mt-2 inline-flex min-h-10 items-center text-sm font-bold text-brand-navy underline underline-offset-4"
         >
-          Essayer une analyse complète sans compte
+          {signedIn ? "Découvrir l’offre Analyse" : "Essayer une analyse complète sans compte"}
         </Link>
       </div>
     );
@@ -158,7 +162,7 @@ export function SearchStatisticsPanel({
                       <div className="min-w-0">
                         <Link
                           className="font-bold text-brand-navy hover:text-brand-navy"
-                          to={`/sales/${item.id}`}
+                          href={`/sales/${item.id}`}
                         >
                           {cleanSaleTitle(item.title) ?? "Vente judiciaire"}
                         </Link>

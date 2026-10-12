@@ -21,6 +21,7 @@ vi.mock("@/components/MapboxPreviewButton", () => ({
   MapboxPreviewButton: ({ label }: { label: string }) => <button>{label}</button>,
 }));
 vi.mock("@/components/MapThumbnail", () => ({ MapThumbnail: () => <div>Carte</div> }));
+vi.mock("@/components/StreetViewDialog", () => ({ StreetViewDialog: () => null }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 afterEach(() => {

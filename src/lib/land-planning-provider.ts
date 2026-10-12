@@ -13,6 +13,22 @@ import type {
   LandZone,
 } from "./land-report-types";
 import { asRecord, decimalCommaNumberValue } from "@/lib/guards";
+import {
+  boundedInteger,
+  codeInseeValue,
+  featureIdentity,
+  finiteCoordinate,
+  geocodeCandidateCoordinates,
+  type GeoJsonFeature,
+  geometryOf,
+  isRecordArray,
+  type JsonRecord,
+  normaliseComparable,
+  normaliseReference,
+  propertiesOf,
+  safeOfficialUrl,
+  text,
+} from "@/lib/land-planning/helpers";
 
 const API_CARTO_BASE_URL = "https://apicarto.ign.fr/api";
 const CADASTRE_URL = `${API_CARTO_BASE_URL}/cadastre/parcelle`;
@@ -26,16 +42,8 @@ const DEFAULT_MAX_PAGES = 3;
 const MAX_LINKS_PER_DOCUMENT = 64;
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
-const MAX_GEOMETRY_POSITIONS = 100_000;
 const MAX_TIMEOUT_MS = 30_000;
 const MIN_GEOCODE_SCORE = 0.65;
-
-const ALLOWED_LINK_HOSTS = new Set([
-  "apicarto.ign.fr",
-  "data.geopf.fr",
-  "geoportail-urbanisme.gouv.fr",
-  "www.geoportail-urbanisme.gouv.fr",
-]);
 
 const GPU_LAYER_DEFINITIONS = [
   { key: "document", endpoint: "document", label: "Documents d’urbanisme" },
@@ -68,14 +76,6 @@ type ProviderOptions = LandProviderOptions & {
   maxParcels?: number;
   maxPages?: number;
   maxResponseBytes?: number;
-};
-
-type JsonRecord = Record<string, unknown>;
-type GeoJsonFeature = {
-  type?: unknown;
-  id?: unknown;
-  geometry?: unknown;
-  properties?: unknown;
 };
 
 type FetchIssue = {
@@ -134,164 +134,6 @@ type LocationResolution = {
   warnings: string[];
 };
 
-function text(value: unknown): string | null {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return null;
-}
-
-function boundedInteger(
-  value: number | undefined,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-): number {
-  const candidate =
-    typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : fallback;
-  return Math.min(maximum, Math.max(minimum, candidate));
-}
-
-function codeInseeValue(value: unknown): string | null {
-  const code = text(value);
-  return code && /^(?:\d{5}|2[AB]\d{3})$/.test(code) ? code : null;
-}
-
-function finiteCoordinate(value: unknown, min: number, max: number): number | null {
-  const parsed = decimalCommaNumberValue(value);
-  return parsed != null && parsed >= min && parsed <= max ? parsed : null;
-}
-
-function propertiesOf(feature: GeoJsonFeature): JsonRecord {
-  return asRecord(feature.properties);
-}
-
-function isRecordArray(value: unknown): value is unknown[] {
-  return Array.isArray(value);
-}
-
-function isLandGeometry(value: unknown): value is LandGeometry {
-  if (!value || typeof value !== "object") return false;
-  const geometry = value as { type?: unknown; coordinates?: unknown };
-  let positions = 0;
-  const isPosition = (candidate: unknown): candidate is number[] => {
-    if (!Array.isArray(candidate) || candidate.length < 2) return false;
-    const longitude = candidate[0];
-    const latitude = candidate[1];
-    if (
-      typeof longitude !== "number" ||
-      !Number.isFinite(longitude) ||
-      longitude < -180 ||
-      longitude > 180 ||
-      typeof latitude !== "number" ||
-      !Number.isFinite(latitude) ||
-      latitude < -90 ||
-      latitude > 90
-    ) {
-      return false;
-    }
-    for (const coordinate of candidate) {
-      if (typeof coordinate !== "number" || !Number.isFinite(coordinate)) return false;
-    }
-    positions += 1;
-    return positions <= MAX_GEOMETRY_POSITIONS;
-  };
-  const isRing = (candidate: unknown): candidate is number[][] => {
-    if (!Array.isArray(candidate) || candidate.length < 4) return false;
-    for (const position of candidate) {
-      if (!isPosition(position)) return false;
-    }
-    const first = candidate[0];
-    const last = candidate[candidate.length - 1];
-    return (
-      Array.isArray(first) && Array.isArray(last) && first[0] === last[0] && first[1] === last[1]
-    );
-  };
-  const isPolygonCoordinates = (candidate: unknown): candidate is number[][][] => {
-    if (!Array.isArray(candidate) || candidate.length === 0) return false;
-    for (const ring of candidate) {
-      if (!isRing(ring)) return false;
-    }
-    return true;
-  };
-  if (geometry.type === "Polygon") {
-    return isPolygonCoordinates(geometry.coordinates);
-  }
-  if (geometry.type === "MultiPolygon") {
-    if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) return false;
-    for (const polygon of geometry.coordinates) {
-      if (!isPolygonCoordinates(polygon)) return false;
-    }
-    return true;
-  }
-  return false;
-}
-
-function geometryOf(feature: GeoJsonFeature): LandGeometry | null {
-  const direct = feature.geometry;
-  if (isLandGeometry(direct)) return direct;
-  const properties = propertiesOf(feature);
-  return isLandGeometry(properties.truegeometry) ? properties.truegeometry : null;
-}
-
-function safeOfficialUrl(value: unknown): string | null {
-  const raw = text(value);
-  if (!raw) return null;
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "https:") return null;
-    const host = url.hostname.toLowerCase();
-    const allowed = ALLOWED_LINK_HOSTS.has(host);
-    return allowed ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
-function featureIdentity(feature: GeoJsonFeature): string {
-  const properties = propertiesOf(feature);
-  const direct = text(feature.id);
-  if (direct) return direct;
-  for (const key of ["gid", "id", "gpu_doc_id", "idu", "idzone", "idass", "idgen"]) {
-    const value = text(properties[key]);
-    if (value) return value;
-  }
-  return JSON.stringify({ geometry: feature.geometry, properties });
-}
-
-function normaliseReference(
-  reference: LandParcelReference,
-  input: LandLocationInput,
-  allowInputCodeInsee: boolean,
-) {
-  const codeInsee =
-    codeInseeValue(reference.codeInsee) ??
-    (allowInputCodeInsee ? codeInseeValue(input.codeInsee) : null);
-  const section = text(reference.section)?.toUpperCase() ?? "";
-  const rawNumber = text(reference.number) ?? "";
-  const number = /^\d+$/.test(rawNumber) ? rawNumber.padStart(4, "0") : rawNumber;
-  if (!codeInsee || !section || !number) return null;
-  return { ...reference, codeInsee, section, number };
-}
-
-function normaliseComparable(value: unknown): string {
-  return (text(value) ?? "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function geocodeCandidateCoordinates(feature: GeoJsonFeature): LandCoordinates | null {
-  const geometry = asRecord(feature.geometry);
-  const coordinates = geometry.coordinates;
-  if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
-  const longitude = finiteCoordinate(coordinates[0], -180, 180);
-  const latitude = finiteCoordinate(coordinates[1], -90, 90);
-  if (longitude == null || latitude == null) return null;
-  return { longitude, latitude };
-}
-
 type GeocodeCandidate = {
   coordinates: LandCoordinates;
   score: number | null;
@@ -299,6 +141,8 @@ type GeocodeCandidate = {
   city: string | null;
   postalCode: string | null;
   label: string | null;
+  /** BAN result type: « municipality » is the commune centre, not the property. */
+  kind: string | null;
 };
 
 function geocodeCandidates(data: unknown): GeocodeCandidate[] | null {
@@ -321,6 +165,7 @@ function geocodeCandidates(data: unknown): GeocodeCandidate[] | null {
         city: text(properties.city ?? properties.municipality),
         postalCode: text(properties.postcode ?? properties.postalcode),
         label: text(properties.label),
+        kind: text(properties.type),
       },
     ];
   });
@@ -365,7 +210,95 @@ function geocodeCheck(
   };
 }
 
+/** The address often already carries its postcode and city: do not repeat them. */
+export function geocodeQuery(input: LandLocationInput): string {
+  const address = (text(input.address) ?? "").replace(/,?\s*france\s*$/iu, "").trim();
+  const comparable = normaliseComparable(address);
+  const extra = [text(input.postalCode), text(input.city)].filter(
+    (part): part is string => Boolean(part) && !comparable.includes(normaliseComparable(part)),
+  );
+  return [address, ...extra].filter(Boolean).join(", ");
+}
+
+/** Nothing but a postcode, a city or « France »: the point is the commune centre. */
+export function isCommuneOnlyAddress(input: LandLocationInput): boolean {
+  let rest = ` ${normaliseComparable(input.address)} `;
+  for (const part of [input.postalCode, input.city, "france"]) {
+    const comparable = normaliseComparable(part);
+    if (comparable) rest = rest.split(` ${comparable} `).join(" ");
+  }
+  return !rest.replace(/\b\d{5}\b/g, "").trim();
+}
+
+/**
+ * The commune of an explicit cadastral reference (« section ZA n° 92 ») can be
+ * proven by the postcode and city alone, without validating a street address.
+ */
+async function resolveCommuneInsee(
+  input: LandLocationInput,
+  options: ProviderOptions,
+): Promise<string | null> {
+  const city = text(input.city);
+  const postalCode = text(input.postalCode)?.replace(/\s+/g, "");
+  if (!city || !postalCode || !/^\d{5}$/.test(postalCode)) return null;
+  const url = queryUrl(GEOCODING_URL, {
+    q: city,
+    postcode: postalCode,
+    type: "municipality",
+    limit: 5,
+  });
+  const response = await fetchJson(url, options);
+  if (!response.ok) return null;
+  const expected = normaliseComparable(city);
+  const candidates = (geocodeCandidates(response.data) ?? []).filter(
+    (candidate) =>
+      candidate.kind === "municipality" &&
+      candidate.codeInsee &&
+      candidate.postalCode === postalCode &&
+      normaliseComparable(candidate.city).startsWith(expected),
+  );
+  const exact = candidates.filter((candidate) => normaliseComparable(candidate.city) === expected);
+  const pool = exact.length ? exact : candidates;
+  return pool.length === 1 ? pool[0]!.codeInsee : null;
+}
+
 async function resolveLocation(
+  input: LandLocationInput,
+  options: ProviderOptions,
+  now: () => Date,
+): Promise<LocationResolution> {
+  const located = await geocodeLocation(input, options, now);
+  const warnings = [...located.warnings];
+  let coordinates = located.coordinates;
+  if (
+    coordinates &&
+    text(input.address) &&
+    located.geocodeCheck.status !== "available" &&
+    isCommuneOnlyAddress(input)
+  ) {
+    // The stored point of a commune-only address is the commune centre: a parcel
+    // or a zone read there belongs to the village, not to the property.
+    coordinates = null;
+    warnings.push(
+      "L’adresse ne désigne que la commune : son centre n’est pas utilisé pour déduire une parcelle ou une zone.",
+    );
+  }
+  let codeInsee = located.codeInsee;
+  const referencesNeedCommune = (input.references ?? []).some(
+    (reference) => !codeInseeValue(reference.codeInsee),
+  );
+  if (!codeInsee && referencesNeedCommune) {
+    codeInsee = await resolveCommuneInsee(input, options);
+    if (codeInsee) {
+      warnings.push(
+        `Commune ${codeInsee} établie par le code postal et la ville pour rechercher les références cadastrales de l’annonce.`,
+      );
+    }
+  }
+  return { ...located, coordinates, codeInsee, warnings };
+}
+
+async function geocodeLocation(
   input: LandLocationInput,
   options: ProviderOptions,
   now: () => Date,
@@ -395,8 +328,7 @@ async function resolveLocation(
     };
   }
 
-  const query = [address, text(input.postalCode), text(input.city)].filter(Boolean).join(", ");
-  const url = queryUrl(GEOCODING_URL, { q: query, limit: 5 });
+  const url = queryUrl(GEOCODING_URL, { q: geocodeQuery(input), limit: 5 });
   const response = await fetchJson(url, options);
   if (!response.ok) {
     return {
@@ -444,6 +376,23 @@ async function resolveLocation(
     };
   }
 
+  if (candidate.kind === "municipality") {
+    return {
+      coordinates: null,
+      codeInsee: candidate.codeInsee,
+      geocodeCheck: geocodeCheck(
+        now,
+        "partial",
+        url,
+        `Seule la commune${candidate.codeInsee ? ` ${candidate.codeInsee}` : ""} est reconnue : son centre n’est pas un point cadastral.`,
+        response.httpStatus,
+      ),
+      warnings: [
+        "L’adresse ne désigne que la commune : son centre n’est pas utilisé pour déduire une parcelle ou une zone.",
+      ],
+    };
+  }
+
   const warnings: string[] = [];
   const inputCodeInsee = text(input.codeInsee);
   if (inputCodeInsee && candidate.codeInsee && inputCodeInsee !== candidate.codeInsee) {
@@ -468,6 +417,21 @@ async function resolveLocation(
     ),
     warnings,
   };
+}
+
+/**
+ * Paris, Lyon and Marseille: the cadastre files a parcel under the city code and
+ * its arrondissement (75118 → code_insee 75056, code_arr 118).
+ */
+export function cadastreCommune(codeInsee: string): { code_insee: string; code_arr?: string } {
+  const city = /^751(?:0[1-9]|1\d|20)$/.test(codeInsee)
+    ? "75056"
+    : /^6938[1-9]$/.test(codeInsee)
+      ? "69123"
+      : /^132(?:0[1-9]|1[0-6])$/.test(codeInsee)
+        ? "13055"
+        : null;
+  return city ? { code_insee: city, code_arr: codeInsee.slice(2) } : { code_insee: codeInsee };
 }
 
 function referenceKey(codeInsee: string, section: string, number: string): string {
@@ -825,8 +789,9 @@ async function resolveParcels(
     const results = await Promise.all(
       references.map(async (reference) => {
         const prefix = text(reference.prefix);
+        const commune = cadastreCommune(reference.codeInsee);
         const url = queryUrl(CADASTRE_URL, {
-          code_insee: reference.codeInsee,
+          ...commune,
           section: reference.section,
           numero: reference.number,
           prefixe: prefix ?? undefined,
@@ -837,7 +802,7 @@ async function resolveParcels(
         const response = await fetchCollection(
           CADASTRE_URL,
           {
-            code_insee: reference.codeInsee,
+            ...commune,
             section: reference.section,
             numero: reference.number,
             ...(prefix ? { prefixe: prefix } : {}),
@@ -875,7 +840,8 @@ async function resolveParcels(
       (reference) =>
         !unique.some(
           (parcel) =>
-            parcel.codeInsee === reference.codeInsee &&
+            (parcel.codeInsee === reference.codeInsee ||
+              parcel.id.startsWith(reference.codeInsee)) &&
             parcel.section === reference.section &&
             parcel.number === reference.number,
         ),

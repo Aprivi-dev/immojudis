@@ -3,6 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Bot from "lucide-react/dist/esm/icons/bot.js";
 import Copy from "lucide-react/dist/esm/icons/copy.js";
+import Eye from "lucide-react/dist/esm/icons/eye.js";
 import MailCheck from "lucide-react/dist/esm/icons/mail-check.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import X from "lucide-react/dist/esm/icons/x.js";
@@ -15,11 +16,16 @@ import {
   createAdminInformationAgentMission,
   fetchAdminInformationAgentMissions,
   fetchAdminSourceRefreshStatus,
+  previewAdminInformationAgentMission,
   requestAdminSourceRefresh,
   runAdminInformationAgentMissionAction,
 } from "@/lib/client-api";
 import type { AdminSourceRefreshResponse } from "@/lib/admin-source-refresh";
-import type { InformationAgentMission } from "@/lib/information-agent";
+import type {
+  InformationAgentMission,
+  InformationAgentPreviewResponse,
+} from "@/lib/information-agent";
+import type { InformationAgentInventoryItem } from "@/lib/information-agent-inventory";
 
 const QUERY_KEY = ["admin-information-agent-missions"] as const;
 const SOURCE_REFRESH_QUERY_KEY = ["admin-information-agent-source-refresh"] as const;
@@ -27,10 +33,13 @@ const SOURCE_REFRESH_QUERY_KEY = ["admin-information-agent-source-refresh"] as c
 type EditedMissionDraft = {
   recipientName: string;
   recipientEmail: string;
+  recipientOriginUrl: string;
   subject: string;
   bodyText: string;
   recipientReviewNotice: boolean;
 };
+
+type ShownPreview = { key: string; response: InformationAgentPreviewResponse };
 
 export function AdminInformationAgentMissionsPanel({
   selection,
@@ -63,6 +72,9 @@ export function AdminInformationAgentMissionsPanel({
   const [activeMission, setActiveMission] = useState<InformationAgentMission | null>(null);
   const [subject, setSubject] = useState("");
   const [bodyText, setBodyText] = useState("");
+  const [recipientOriginUrl, setRecipientOriginUrl] = useState("");
+  const [shownPreview, setShownPreview] = useState<ShownPreview | null>(null);
+  const [manualReply, setManualReply] = useState("");
   const [sourceRefreshCycleId, setSourceRefreshCycleId] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [recipientReviewNotice, setRecipientReviewNotice] = useState(false);
@@ -109,7 +121,9 @@ export function AdminInformationAgentMissionsPanel({
     setRecipientEmail(edited?.recipientEmail ?? mission.recipientEmail);
     setSubject(edited?.subject ?? mission.subject);
     setBodyText(edited?.bodyText ?? mission.bodyText);
+    setRecipientOriginUrl(edited?.recipientOriginUrl ?? "");
     setRecipientReviewNotice(edited?.recipientReviewNotice ?? false);
+    setManualReply("");
   }, []);
 
   const rememberEdits = useCallback((patch: Partial<EditedMissionDraft>) => {
@@ -118,6 +132,7 @@ export function AdminInformationAgentMissionsPanel({
     const previous = editedDraftsRef.current.get(mission.id) ?? {
       recipientName: mission.recipientName ?? "",
       recipientEmail: mission.recipientEmail,
+      recipientOriginUrl: "",
       subject: mission.subject,
       bodyText: mission.bodyText,
       recipientReviewNotice: false,
@@ -262,6 +277,8 @@ export function AdminInformationAgentMissionsPanel({
     activeMissionRef.current = null;
     setSubject("");
     setBodyText("");
+    setRecipientOriginUrl("");
+    setShownPreview(null);
     setDraftError(null);
     setRecipientReviewNotice(false);
     setSourceRefreshCycleId(null);
@@ -313,10 +330,42 @@ export function AdminInformationAgentMissionsPanel({
         setActiveMission(updated);
       }
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
-      toast.success(updated?.status === "sent" ? "Demande envoyée." : "Mission mise à jour.");
+      if (input.action === "record_reply") setManualReply("");
+      toast.success(
+        updated?.status === "sent" && input.action === "approve_and_send"
+          ? "Demande envoyée."
+          : input.action === "record_reply"
+            ? "Réponse rattachée au dossier : elle passe par la revue avant toute publication."
+            : "Mission mise à jour.",
+      );
     },
     onError: showError,
   });
+  const previewKey = activeMission
+    ? JSON.stringify([
+        activeMission.id,
+        normalizeEmail(recipientEmail),
+        recipientName.trim(),
+        subject.trim(),
+        bodyText.trim(),
+        recipientOriginUrl.trim(),
+      ])
+    : null;
+  const previewMutation = useMutation({
+    mutationFn: ({
+      key: _key,
+      ...input
+    }: Parameters<typeof previewAdminInformationAgentMission>[0] & {
+      key: string;
+    }) => previewAdminInformationAgentMission(input),
+    onSuccess: (response, input) => setShownPreview({ key: input.key, response }),
+    onError: showError,
+  });
+  const previewIsCurrent = Boolean(shownPreview && previewKey && shownPreview.key === previewKey);
+  const previewAllowsSend =
+    previewIsCurrent &&
+    Boolean(shownPreview?.response.fingerprint) &&
+    !shownPreview?.response.blockers.length;
 
   const resumeMission = (mission: InformationAgentMission) => {
     // A pending automatic preparation for the queue must never overwrite a
@@ -334,6 +383,8 @@ export function AdminInformationAgentMissionsPanel({
     setPreparingSelectionKey(null);
     setSubject("");
     setBodyText("");
+    setRecipientOriginUrl("");
+    setShownPreview(null);
     onClose();
   };
   const copyMessage = async () => {
@@ -392,6 +443,22 @@ export function AdminInformationAgentMissionsPanel({
     setBodyText(value);
     rememberEdits({ bodyText: value });
   };
+  const handleOriginChange = (value: string) => {
+    setRecipientOriginUrl(value);
+    rememberEdits({ recipientOriginUrl: value });
+  };
+  const showPreview = () => {
+    if (!activeMission || !previewKey) return;
+    previewMutation.mutate({
+      key: previewKey,
+      missionId: activeMission.id,
+      recipientEmail: recipientEmail.trim(),
+      recipientName: recipientName.trim() || null,
+      subject: subject.trim(),
+      bodyText: bodyText.trim(),
+      recipientOriginUrl: recipientOriginUrl.trim() || null,
+    });
+  };
 
   const sourceRefreshCycle = sourceRefreshCycleId
     ? (sourceRefreshQuery.data?.history.find((item) => item.id === sourceRefreshCycleId) ??
@@ -420,8 +487,8 @@ export function AdminInformationAgentMissionsPanel({
             Demandes d’informations
           </h2>
           <p className="mt-1 text-sm text-brand-navy/60">
-            Le brouillon est préparé automatiquement, puis modifié et envoyé uniquement sur
-            validation admin.
+            Le brouillon est préparé automatiquement. Chaque envoi est déclenché à la main, fiche
+            par fiche, après l’aperçu du message ; aucune relance n’est automatique.
           </p>
         </div>
         {selection || activeMission ? (
@@ -543,10 +610,33 @@ export function AdminInformationAgentMissionsPanel({
                 message avant l’envoi ; le contenu saisi n’est pas réécrit automatiquement.
               </p>
             ) : null}
+            {isMissionEditable(activeMission.status) ? (
+              <Field
+                label="Page publique où figure l’adresse (si elle ne vient pas de l’annonce)"
+                value={recipientOriginUrl}
+                onChange={handleOriginChange}
+                type="url"
+              />
+            ) : null}
             <p className="text-xs text-brand-navy/65">
-              Le mail envoyé ajoutera une adresse de réponse propre au dossier et un lien privé
-              permettant de déposer une réponse, des liens ou des pièces sans compte.
+              Le mail envoyé ajoutera une adresse de réponse propre au dossier, un lien privé de
+              dépôt sans compte, l’origine de l’adresse avec le lien de l’annonce, une invitation à
+              créer un compte professionnel et un lien de désinscription.
             </p>
+            <InventoryPanel items={activeMission.inventory ?? []} />
+            {isMissionEditable(activeMission.status) ? (
+              <PreviewPanel
+                preview={shownPreview?.response ?? null}
+                current={previewIsCurrent}
+                loading={previewMutation.isPending}
+                onShow={showPreview}
+                disabled={
+                  !looksLikeEmail(recipientEmail) ||
+                  subject.trim().length < 3 ||
+                  bodyText.trim().length < 20
+                }
+              />
+            ) : null}
             {selection ? (
               <div className="rounded-lg border border-sky-200 bg-sky-50/70 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -608,16 +698,24 @@ export function AdminInformationAgentMissionsPanel({
               <button
                 type="button"
                 className="admin-button-primary inline-flex items-center gap-2"
+                title={
+                  previewAllowsSend
+                    ? undefined
+                    : "Affichez l’aperçu de la version finale ; l’envoi reste bloqué tant qu’un contrôle échoue."
+                }
                 disabled={
                   runAction.isPending ||
+                  !previewAllowsSend ||
                   !looksLikeEmail(recipientEmail) ||
                   subject.trim().length < 3 ||
                   bodyText.trim().length < 20
                 }
                 onClick={() => {
+                  const fingerprint = shownPreview?.response.fingerprint;
+                  if (!previewAllowsSend || !fingerprint) return;
                   if (
                     !window.confirm(
-                      "Confirmer l’envoi de cet email au professionnel, avec une adresse de réponse et un lien privé de dépôt ?",
+                      `Envoyer maintenant cet email à ${recipientEmail.trim()}, tel qu’affiché dans l’aperçu ? Aucun autre envoi n’aura lieu sans nouvelle validation.`,
                     )
                   )
                     return;
@@ -625,8 +723,10 @@ export function AdminInformationAgentMissionsPanel({
                     action: "approve_and_send",
                     missionId: activeMission.id,
                     approvalConfirmed: true,
+                    previewFingerprint: fingerprint,
                     recipientEmail: recipientEmail.trim(),
                     recipientName: recipientName.trim() || null,
+                    recipientOriginUrl: recipientOriginUrl.trim() || null,
                     subject: subject.trim(),
                     bodyText: bodyText.trim(),
                   });
@@ -651,6 +751,39 @@ export function AdminInformationAgentMissionsPanel({
                 onClick={() => runAction.mutate({ action: "cancel", missionId: activeMission.id })}
               >
                 Annuler la mission
+              </button>
+            </div>
+          ) : null}
+          {activeMission.status === "sent" || activeMission.status === "replied" ? (
+            <div className="mt-4 rounded-lg border bg-white p-3">
+              <label className="block text-xs font-medium">
+                Consigner une réponse reçue hors de l’adresse du dossier (téléphone, courrier, autre
+                messagerie)
+                <textarea
+                  value={manualReply}
+                  onChange={(event) => setManualReply(event.target.value)}
+                  rows={4}
+                  className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm leading-6"
+                />
+              </label>
+              <p className="mt-1 text-xs text-brand-navy/60">
+                La réponse est rattachée à ce dossier comme import manuel (expéditeur non vérifié).
+                Les informations extraites passent par la revue avant toute publication ; une
+                demande de ne plus être contacté est enregistrée comme opposition.
+              </p>
+              <button
+                type="button"
+                className="admin-button-secondary mt-2"
+                disabled={runAction.isPending || !manualReply.trim()}
+                onClick={() =>
+                  runAction.mutate({
+                    action: "record_reply",
+                    missionId: activeMission.id,
+                    bodyText: manualReply.trim(),
+                  })
+                }
+              >
+                Rattacher la réponse au dossier
               </button>
             </div>
           ) : null}
@@ -721,7 +854,7 @@ function Field({
   label: string;
   value: string;
   onChange: (value: string) => void;
-  type?: "text" | "email";
+  type?: "text" | "email" | "url";
   required?: boolean;
   readOnly?: boolean;
 }) {
@@ -737,6 +870,148 @@ function Field({
         className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm"
       />
     </label>
+  );
+}
+
+const INVENTORY_STATUS_LABELS: Record<InformationAgentInventoryItem["status"], string> = {
+  present: "Disponible",
+  to_confirm: "À confirmer",
+  missing: "Manquant",
+  not_applicable: "Sans objet",
+};
+
+function InventoryPanel({ items }: { items: InformationAgentInventoryItem[] }) {
+  if (!items.length) return null;
+  const open = items.filter((item) => item.status === "missing" || item.status === "to_confirm");
+  const known = items.filter((item) => item.status === "present");
+  return (
+    <section aria-label="Inventaire de la fiche" className="rounded-lg border bg-white p-3">
+      <h4 className="text-sm font-semibold">Inventaire de la fiche</h4>
+      <p className="mt-1 text-xs text-brand-navy/60">
+        Établi au moment du brouillon à partir des données des sources, des pièces et des faits
+        extraits des PDF. Seuls les éléments manquants ou à confirmer sont demandés.
+      </p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <InventoryList title={`À obtenir (${open.length})`} items={open} />
+        <InventoryList title={`Déjà disponible (${known.length})`} items={known} />
+      </div>
+    </section>
+  );
+}
+
+function InventoryList({
+  title,
+  items,
+}: {
+  title: string;
+  items: InformationAgentInventoryItem[];
+}) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-brand-navy/60">{title}</p>
+      {items.length ? (
+        <ul className="mt-1 space-y-1 text-xs">
+          {items.map((item) => (
+            <li key={item.key}>
+              <span className="font-medium">{item.label}</span>
+              {" · "}
+              <span>{INVENTORY_STATUS_LABELS[item.status]}</span>
+              <span className="block text-brand-navy/60">
+                {item.detail}
+                {item.origin ? ` (${item.origin})` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-xs text-brand-navy/55">Aucun élément.</p>
+      )}
+    </div>
+  );
+}
+
+function PreviewPanel({
+  preview,
+  current,
+  loading,
+  disabled,
+  onShow,
+}: {
+  preview: InformationAgentPreviewResponse | null;
+  current: boolean;
+  loading: boolean;
+  disabled: boolean;
+  onShow: () => void;
+}) {
+  return (
+    <section aria-label="Aperçu de l’e-mail" className="rounded-lg border bg-white p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold">Aperçu de l’e-mail</h4>
+        <button
+          type="button"
+          className="admin-button-secondary inline-flex items-center gap-2"
+          disabled={disabled || loading}
+          onClick={onShow}
+        >
+          <Eye className="size-4" aria-hidden="true" />
+          {loading ? "Préparation…" : current ? "Actualiser l’aperçu" : "Afficher l’aperçu"}
+        </button>
+      </div>
+      {!preview ? (
+        <p className="mt-2 text-xs text-brand-navy/60">
+          L’envoi n’est possible qu’après l’affichage de l’aperçu exact du message.
+        </p>
+      ) : (
+        <>
+          {!current ? (
+            <p role="status" className="mt-2 text-xs text-amber-900">
+              Le message a été modifié depuis cet aperçu : affichez-le de nouveau avant l’envoi.
+            </p>
+          ) : null}
+          {preview.blockers.length ? (
+            <ul
+              role="alert"
+              className="mt-2 list-inside list-disc rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800"
+            >
+              {preview.blockers.map((blocker) => (
+                <li key={blocker}>{blocker}</li>
+              ))}
+            </ul>
+          ) : null}
+          <dl className="mt-2 grid gap-1 text-xs text-brand-navy/75">
+            <div>
+              <dt className="inline font-medium">De : </dt>
+              <dd className="inline">{preview.preview.from ?? "expéditeur à configurer"}</dd>
+            </div>
+            <div>
+              <dt className="inline font-medium">À : </dt>
+              <dd className="inline">{preview.preview.to}</dd>
+            </div>
+            <div>
+              <dt className="inline font-medium">Objet : </dt>
+              <dd className="inline">{preview.preview.subject}</dd>
+            </div>
+            <div>
+              <dt className="inline font-medium">Origine de l’adresse : </dt>
+              <dd className="inline">
+                {preview.addressOrigin.text}
+                {preview.addressOrigin.url ? ` (${preview.addressOrigin.url})` : ""}
+              </dd>
+            </div>
+          </dl>
+          <iframe
+            title="Aperçu de l’e-mail envoyé"
+            srcDoc={preview.preview.html}
+            sandbox=""
+            className="mt-3 h-[640px] w-full rounded-lg border"
+          />
+          <p className="mt-2 text-xs text-brand-navy/55">
+            Le jeton de l’adresse de réponse et le lien privé de dépôt sont attribués au moment de
+            l’envoi ; tout le reste est identique au message qui partira.
+          </p>
+        </>
+      )}
+    </section>
   );
 }
 

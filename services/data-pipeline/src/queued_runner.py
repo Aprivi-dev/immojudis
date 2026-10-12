@@ -54,9 +54,9 @@ from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
 from src.source_task_deadline import source_task_deadline_scope
 from src.storage.supabase_client import (
-    _postgres_connect,
     claim_auction_enrichment_jobs_family_from_supabase,
     claim_auction_enrichment_jobs_from_supabase,
+    connect,
     fail_stale_running_runs_in_supabase,
     fetch_next_data_refresh_request_from_supabase,
     fetch_next_queued_run_from_supabase,
@@ -78,6 +78,9 @@ from src.storage.supabase_client import (
     upsert_sales_to_supabase,
 )
 from src.tribunal import fill_tribunal
+
+# Alias de compatibilité : des tests patchent ce nom de module.
+_postgres_connect = connect
 
 LOGGER = logging.getLogger(__name__)
 VALID_SOURCES = {"all", *SOURCE_NAMES}
@@ -577,8 +580,11 @@ def run_enrichment_queue_batch(
     limit: int,
     family: str | None = None,
     provider_clients: dict[str, object] | None = None,
+    claimed_jobs: list[dict[str, object]] | None = None,
 ) -> int:
-    jobs = _claim_enrichment_queue_jobs(limit=limit, family=family)
+    jobs = _claim_enrichment_queue_jobs(limit=limit, family=family) if claimed_jobs is None else list(claimed_jobs)
+    if claimed_jobs is not None:
+        _record_worker_claimed_job_ids(jobs)
     if not jobs:
         return 0
     settings = load_settings()
@@ -633,10 +639,7 @@ def run_enrichment_queue_batch(
             continue
         if sale is None:
             for job in sale_jobs:
-                _finish_job(job,
-                    succeeded=False,
-                    error_message="sale not found",
-                )
+                _finish_job(job, succeeded=False, error_message="sale not found")
             mark_enrichment_jobs_terminal(sale_jobs)
             continue
         try:
@@ -1068,9 +1071,7 @@ def run_enrichment_queue_batch(
             mark_enrichment_jobs_terminal(sale_jobs)
             continue
         for job in sale_jobs:
-            _finish_job(job,
-                succeeded=True,
-            )
+            _finish_job(job, succeeded=True)
         mark_enrichment_jobs_terminal(sale_jobs)
     return handled_detail_jobs + len(enrichment_jobs)
 
@@ -1082,6 +1083,7 @@ def _run_enrichment_queue_batch_with_deadline(
     provider_clients: dict[str, object],
     worker_deadline: float,
     finalization_margin_seconds: float,
+    claimed_jobs: list[dict[str, object]] | None = None,
 ) -> int:
     """Run one claim with task cutoffs that leave worker finalization time."""
 
@@ -1099,6 +1101,7 @@ def _run_enrichment_queue_batch_with_deadline(
             limit=limit,
             family=family,
             provider_clients=provider_clients,
+            **({"claimed_jobs": claimed_jobs} if claimed_jobs is not None else {}),
         )
 
 

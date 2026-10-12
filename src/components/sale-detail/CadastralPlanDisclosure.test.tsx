@@ -16,14 +16,17 @@ vi.mock("./CadastralNeighborhoodMap", () => ({
     lng,
     pointKind,
     address,
+    outlines,
   }: {
     lat: number;
     lng: number;
     pointKind: string;
     address: string;
+    outlines?: { outlines: unknown[] } | null;
   }) => (
     <div
       data-testid="cadastral-neighborhood-map"
+      data-outlines={String(outlines?.outlines.length ?? 0)}
       data-lat={String(lat)}
       data-lng={String(lng)}
       data-point-kind={pointKind}
@@ -123,5 +126,45 @@ describe("CadastralPlanDisclosure", () => {
 
     await waitFor(() => expect(screen.getByTestId("cadastral-neighborhood-map")).toBeTruthy());
     expect(geocodeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("cadre le plan sur la parcelle citée par l’annonce plutôt que sur le centre du village", () => {
+    renderDisclosure({
+      point: point({ lat: 47.281127, lng: 4.676462, kind: "address" }),
+      parcels: {
+        outlines: [
+          {
+            id: "21238000ZA0092",
+            label: "Section ZA n° 92",
+            confirmed: true,
+            geometry: {
+              type: "Polygon",
+              coordinates: [
+                [
+                  [4.66, 47.27],
+                  [4.662, 47.27],
+                  [4.662, 47.272],
+                  [4.66, 47.27],
+                ],
+              ],
+            },
+          },
+        ],
+        bounds: [
+          [4.66, 47.27],
+          [4.662, 47.272],
+        ],
+        center: { lat: 47.271, lng: 4.661 },
+        confirmed: true,
+      },
+    });
+
+    const map = screen.getByTestId("cadastral-neighborhood-map");
+    expect(map.getAttribute("data-lat")).toBe("47.271");
+    expect(map.getAttribute("data-point-kind")).toBe("parcel-centroid");
+    expect(map.getAttribute("data-outlines")).toBe("1");
+    expect(screen.getByText(/Contour plein : parcelle citée dans l’annonce/)).toBeTruthy();
+    expect(screen.queryByText(/Le point situe le quartier/)).toBeNull();
+    expect(geocodeMock).not.toHaveBeenCalled();
   });
 });

@@ -233,7 +233,8 @@ def test_robots_disallow_blocks_the_document(politeness_on) -> None:
     assert fetched == ["https://docs.example.test/robots.txt"]
 
 
-def test_same_host_requests_are_spaced_by_at_least_one_and_a_half_seconds(politeness_on) -> None:
+def test_same_host_requests_are_spaced_by_at_least_two_seconds(politeness_on, monkeypatch) -> None:
+    monkeypatch.delenv("PDF_HOST_MIN_DELAY_SECONDS", raising=False)
     clock, fetched = FakeClock(), []
     politeness = _politeness({"https://docs.example.test/robots.txt": _text(404)}, clock, fetched)
 
@@ -241,10 +242,11 @@ def test_same_host_requests_are_spaced_by_at_least_one_and_a_half_seconds(polite
         politeness.wait_turn(f"https://docs.example.test/{name}.pdf")
 
     # The robots request itself counts, so even the first document waits.
-    assert clock.slept == [1.5, 1.5, 1.5]
+    assert clock.slept == [2.0, 2.0, 2.0]
 
 
-def test_other_hosts_do_not_wait_for_each_other(politeness_on) -> None:
+def test_other_hosts_do_not_wait_for_each_other(politeness_on, monkeypatch) -> None:
+    monkeypatch.delenv("PDF_HOST_MIN_DELAY_SECONDS", raising=False)
     clock, fetched = FakeClock(), []
     politeness = _politeness(
         {
@@ -259,7 +261,22 @@ def test_other_hosts_do_not_wait_for_each_other(politeness_on) -> None:
     clock.slept.clear()
     politeness.wait_turn("https://two.example.test/a.pdf")
 
-    assert clock.slept == [1.5]  # only the host's own robots fetch delays its first document
+    assert clock.slept == [2.0]  # only the host's own robots fetch delays its first document
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("", 2.0), ("3.5", 3.5), ("0.2", 1.0), ("nan", 2.0), ("abc", 2.0)],
+)
+def test_host_delay_is_configurable_with_a_one_second_floor(politeness_on, monkeypatch, raw, expected) -> None:
+    from src.document_politeness import configured_host_delay_seconds
+
+    monkeypatch.setenv("PDF_HOST_MIN_DELAY_SECONDS", raw)
+    assert configured_host_delay_seconds() == expected
+    clock, fetched = FakeClock(), []
+    politeness = _politeness({"https://docs.example.test/robots.txt": _text(404)}, clock, fetched)
+    politeness.wait_turn("https://docs.example.test/a.pdf")
+    assert clock.slept == [expected]
 
 
 def test_crawl_delay_raises_the_document_delay(politeness_on) -> None:
@@ -274,7 +291,8 @@ def test_crawl_delay_raises_the_document_delay(politeness_on) -> None:
     assert clock.slept == [8.0, 8.0]
 
 
-def test_elapsed_time_counts_toward_the_delay(politeness_on) -> None:
+def test_elapsed_time_counts_toward_the_delay(politeness_on, monkeypatch) -> None:
+    monkeypatch.delenv("PDF_HOST_MIN_DELAY_SECONDS", raising=False)
     clock, fetched = FakeClock(), []
     politeness = _politeness({"https://docs.example.test/robots.txt": _text(404)}, clock, fetched)
     politeness.wait_turn("https://docs.example.test/a.pdf")
@@ -283,7 +301,7 @@ def test_elapsed_time_counts_toward_the_delay(politeness_on) -> None:
     clock.now += 1.0  # a slow download already took 1 s
     politeness.wait_turn("https://docs.example.test/b.pdf")
 
-    assert clock.slept == [0.5]
+    assert clock.slept == [1.0]
 
 
 @pytest.mark.parametrize(
@@ -380,3 +398,39 @@ def test_robots_fetch_uses_the_same_pinned_transport_and_identity(monkeypatch) -
     assert seen["url"] == "https://docs.example.test/robots.txt"
     assert seen["headers"]["User-Agent"] == BOT
     assert seen["timeout"] == 7.0
+
+
+LICITOR_ROBOTS = "User-agent: *\nDisallow: /data/pub/\nAllow: /data/pub/media/annonce/\nAllow: /data/pub/pic/\n"
+
+
+def test_live_robots_verdict_follows_the_published_allow_lines(politeness_on) -> None:
+    clock, fetched = FakeClock(), []
+    politeness = _politeness({"https://www.licitor.com/robots.txt": _text(200, LICITOR_ROBOTS)}, clock, fetched)
+
+    assert politeness.is_disallowed("https://www.licitor.com/data/pub/media/annonce/10/97/38/1.pdf") is False
+    assert politeness.is_disallowed("https://www.licitor.com/data/pub/doc/1.pdf") is True
+    assert fetched == ["https://www.licitor.com/robots.txt"]  # cached per origin
+    assert clock.slept == []  # a verdict never waits
+
+
+def test_live_robots_verdict_is_unknown_when_unverifiable_or_disabled(politeness_on, monkeypatch) -> None:
+    clock, fetched = FakeClock(), []
+    politeness = _politeness({"https://docs.example.test/robots.txt": _text(503, "down")}, clock, fetched)
+    assert politeness.is_disallowed("https://docs.example.test/a.pdf") is None
+
+    monkeypatch.setattr(document_politeness, "POLITENESS_ENABLED", False)
+    assert politeness.is_disallowed("https://docs.example.test/a.pdf") is None
+
+
+def test_licitor_pre_check_prefers_the_live_robots_file(politeness_on, monkeypatch) -> None:
+    clock, fetched = FakeClock(), []
+    live = _politeness(
+        {"https://www.licitor.com/robots.txt": _text(200, "User-agent: *\nDisallow: /data/pub/media/annonce/\n")},
+        clock,
+        fetched,
+    )
+    monkeypatch.setattr(pdf_enrichment, "_DOCUMENT_POLITENESS", live)
+
+    # The live file wins over the offline mirror, in both directions.
+    assert pdf_enrichment._is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/media/annonce/1.pdf")
+    assert not pdf_enrichment._is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/doc/1.pdf")

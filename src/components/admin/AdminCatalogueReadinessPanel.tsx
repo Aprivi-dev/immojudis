@@ -11,7 +11,8 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { ADMIN_PAGE_SIZE as PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
+import { saleDetailPath } from "@/lib/navigation";
 import {
   fetchAdminCatalogueReadiness,
   runAdminCatalogueReadinessActionClient,
@@ -253,8 +254,7 @@ function QueueLine({
             </button>
           ) : null}
           <Link
-            to="/sales/$id"
-            params={{ id: item.id }}
+            href={saleDetailPath(item.id)}
             className="admin-button-secondary inline-flex items-center gap-2"
           >
             Voir la fiche <ExternalLink className="size-3.5" />

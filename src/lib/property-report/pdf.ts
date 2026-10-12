@@ -2,7 +2,10 @@ import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { formatDate, formatPrice, formatPricePerM2 } from "@/lib/format";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { REPORT_COMPLIANCE_NOTICE } from "@/lib/source-traceability";
-import { REPORT_RENTAL_EXPENSE_FIELD_LABELS } from "@/lib/report-simulation";
+import {
+  describeReportSimulation,
+  REPORT_RENTAL_EXPENSE_FIELD_LABELS,
+} from "@/lib/report-simulation";
 import { featureUnlocked, sanitizeReportSnapshotForPlan } from "./entitlements";
 import { PlanEntitlements, SavedReportRow } from "../property-reports";
 import {
@@ -101,6 +104,7 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
   const opportunity = asRecord(analysis.opportunity);
   const rentabilityScore = asRecord(opportunity.rentabilityScore);
   const personalRentalScenario = asRecord(ceiling.personalRentalScenario);
+  const personalSimulation = describeReportSimulation(ceiling.personalSimulation);
   const personalRentalInputs = asRecord(personalRentalScenario.inputs);
   const personalRentalResult = asRecord(personalRentalScenario.result);
   const hasPersonalRentalScenario =
@@ -361,7 +365,7 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       ? `Frais estimés hors travaux: ${formatPrice(numberValue(acquisitionCosts.acquisitionFeesTotal))}`
       : "Frais estimés hors travaux: à compléter",
     acquisitionCosts.totalCost
-      ? `Coût complet ${ceiling.personalSimulation ? "au prix simulé" : "à la mise à prix"}: ${formatPrice(numberValue(acquisitionCosts.totalCost))}`
+      ? `Coût complet à la mise à prix: ${formatPrice(numberValue(acquisitionCosts.totalCost))}`
       : "Coût complet à la mise à prix: à compléter",
     `Travaux / état: ${stringOrNumberValue(renovationAnalysis.summary, "état à qualifier")}`,
     `Priorité travaux: ${stringOrNumberValue(renovationAnalysis.priorityLabel, "à qualifier")}`,
@@ -374,15 +378,23 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
     )}`,
     "",
     "Enchère plafond",
-    ...(ceiling.personalSimulation
+    ...(personalSimulation
       ? [
           "Scénario personnel sauvegardé",
-          `Scénario: ${stringOrNumberValue(ceiling.scenario, "à confirmer")}`,
-          `Travaux saisis: ${formatPrice(numberValue(asRecord(ceiling.personalSimulation).works))}`,
-          `Frais préalables saisis: ${formatPrice(numberValue(asRecord(ceiling.personalSimulation).fpt))}`,
-          `Prix simulé: ${formatPrice(numberValue(asRecord(ceiling.personalSimulation).price))}`,
+          ...personalSimulation.map(([label, value]) => `${label}: ${value}`),
           `Marge de sécurité: ${numberValue(ceiling.safetyDiscountPct)} %`,
           `Base retenue: ${stringOrNumberValue(ceiling.basisLabel, "à confirmer")}`,
+        ]
+      : []),
+    ...(Array.isArray(ceiling.steps) && ceiling.available
+      ? [
+          "Calcul du plafond :",
+          ...ceiling.steps.map((step) => {
+            const item = asRecord(step);
+            const amount = numberValue(item.amount) ?? 0;
+            const sign = item.kind === "minus" ? "- " : item.kind === "add" ? "+ " : "";
+            return `  ${stringOrNumberValue(item.label, "")} : ${sign}${formatPrice(Math.abs(amount))}`;
+          }),
         ]
       : []),
     ceiling.available

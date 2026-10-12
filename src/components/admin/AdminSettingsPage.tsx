@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { AdminPanel, AdminShell } from "@/components/admin/AdminShell";
 import { useAuth } from "@/hooks/use-auth";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 import { fetchPipelineStatus, updatePipelineControl } from "@/lib/client-api";
 import type { PipelineControlSettings, PipelineStatus } from "@/lib/pipeline-status";
 
@@ -187,7 +187,7 @@ export function AdminSettingsPage() {
               <AdminPanel key={item.href} className="flex flex-col p-5">
                 <h3 className="font-semibold">{item.title}</h3>
                 <p className="mb-5 mt-2 flex-1 text-sm leading-6 text-slate-600">{item.text}</p>
-                <Link to={item.href} className="admin-button-secondary justify-center">
+                <Link href={item.href} className="admin-button-secondary justify-center">
                   {item.action}
                 </Link>
               </AdminPanel>

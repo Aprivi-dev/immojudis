@@ -29,6 +29,7 @@ from src.sources.common import (
 )
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
+from src.sources.petites_affiches_extraction import extract_petites_affiches_fields
 
 BASE_URL = "https://www.petitesaffiches.fr"
 LIST_URL = f"{BASE_URL}/encheres-immobilieres/"
@@ -58,7 +59,15 @@ DETAIL_FIELDS = {
     "source_property_features_meta",
     "source_procedure_profile",
     "source_field_observations",
+    "bedrooms_count",
+    "rooms_count",
+    "land_surface_m2",
+    "cadastre_location",
 }
+# La fiche fait foi sur la carte pour ces champs (descriptif complet, visites
+# datées, avocat poursuivant de l'encadré, date et heure de l'audience).
+DETAIL_AUTHORITATIVE_FIELDS = {"city", "visit_dates", "sale_date", "lawyer_name", "lawyer_contact", "occupancy_status"}
+SALE_TYPES_BY_URL_SEGMENT = {"j": "Judiciaire", "judiciaire": "Judiciaire", "n": "Notariale", "licitation": "Licitation"}
 SOURCE_BUDGET_ENV = "PETITES_AFFICHES_SOURCE_BUDGET_SECONDS"
 CURSOR_SCHEMA = "petites_affiches_cursor_v1"
 
@@ -382,6 +391,8 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
     property_type = _property_type_from_title(title) or property_type
     image = card.select_one(".imgList img")
     image_url = urljoin(page_url, str(image.get("data-src") or image.get("src"))) if image else None
+    if image_url and "default-pic" in image_url.lower():
+        image_url = None  # image générique d'un lot sans photo
     tribunal = _node_text(card.select_one(".lieuVente strong"))
     city = _node_text(card.select_one(".lot-adresse"))
 
@@ -415,17 +426,40 @@ def _parse_card(card: Tag, page_url: str, fallback_department: str | None) -> di
     })
 
 
+_NEWS_HEADER_RE = re.compile(r"^News\s+\d{1,2}/\d{1,2}\b", re.I)
+
+
+def _without_site_news(lines: list[str]) -> list[str]:
+    """Drop the site's « News 09/10 » headlines: they describe other properties (« local de 1 273 m² »)."""
+    kept: list[str] = []
+    skip_next = False
+    for line in lines:
+        if _NEWS_HEADER_RE.match(line):
+            # « News 09/10 » alone announces the headline on the next line.
+            skip_next = _NEWS_HEADER_RE.fullmatch(line.strip()) is not None
+            continue
+        if skip_next:
+            skip_next = False
+            continue
+        kept.append(line)
+    return kept
+
+
 def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, Any]:
     soup = parse_html(html, "html.parser")
+    for node in soup.select("[class*='news' i], [id*='news' i], [class*='actualite' i]"):
+        node.decompose()
     page_text = "\n".join(
-        line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line
+        _without_site_news(
+            [line for line in (clean_text(part) for part in soup.get_text("\n", strip=True).splitlines()) if line]
+        )
     )
     detail_text = _scoped_text(soup.select_one(".row.detail")) or page_text
     contact_text = _scoped_text(soup.select_one(".contact-container")) or page_text
     address = _detail_address(soup)
-    description = _meta_description(soup)
+    meta_description = _meta_description(soup)
     title = _detail_title(soup)
-    city = _detail_city(address, title=title, description=description)
+    city = _detail_city(address, title=title, description=meta_description)
     price = _extract_price(detail_text)
     tribunal = _detail_tribunal(soup)
     lawyer_name = _extract_lawyer(contact_text)
@@ -433,9 +467,33 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
     visit_dates = _detail_visits(page_text)
     documents = _detail_documents(soup, source_url)
     source_images = _detail_images(soup, source_url)
-    sale_date = _detail_sale_date(description)
-    property_type = _property_type_from_title(description) or _property_type_from_title(title)
+    sale_date = _detail_sale_date(meta_description)
+    property_type = _property_type_from_title(meta_description) or _property_type_from_title(title)
     occupancy_status = _detail_occupancy_status(soup)
+    extracted = extract_petites_affiches_fields(
+        page_text,
+        title=title,
+        city=city,
+        property_type=property_type,
+        sale_type=_sale_type_from_url(source_url),
+        photo_count=len(source_images),
+    )
+    read = extracted["fields"] if extracted else {}
+    # Le descriptif publié (annonce complète) prime sur la méta-description générique.
+    description = read.get("description") or meta_description
+    address = address or read.get("address")
+    city = city or _city_from_address(read.get("address"))
+    price = price or read.get("starting_price_eur")
+    sale_date = read.get("sale_date") or sale_date
+    tribunal = tribunal or read.get("tribunal")
+    lawyer_name = read.get("lawyer_name") or lawyer_name
+    lawyer_contact = read.get("lawyer_contact") or lawyer_contact
+    occupancy_status = occupancy_status or read.get("occupancy_status")
+    if extracted:
+        # Visites datées de la fiche, sans l'état relatif (« Visite finie », « Dans 9 jours »)
+        # ni les gabarits vides (« Aucune visite… [c_tel_block] »).
+        visit_dates = read.get("visit_dates") or []
+    surface_text = read.get("description") or detail_text
     parking_count = _detail_parking_count("\n".join(filter(None, (description, detail_text))))
     blocks = [
         description,
@@ -459,12 +517,15 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
         "address": address,
         "city": city,
         "postal_code": _extract_postal(address or ""),
-        "surface_m2": extract_surface(detail_text),
+        "surface_m2": extract_surface(surface_text),
+        "land_surface_m2": read.get("land_surface_m2"),
         "starting_price_eur": price,
         "sale_date": sale_date,
         "property_type": property_type,
         "occupancy_status": occupancy_status,
         "parking_count": parking_count,
+        "bedrooms_count": read.get("bedrooms_count"),
+        "rooms_count": read.get("rooms_count"),
         "lawyer_name": lawyer_name,
         "lawyer_contact": lawyer_contact,
         "tribunal": tribunal,
@@ -473,10 +534,14 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
         "raw_text": "\n".join(part for part in blocks if part),
         "raw_image_url": source_images[0] if source_images else None,
         "source_images": source_images,
+        "source_property_features": extracted["source_property_features"] if extracted else {},
+        "cadastre_location": extracted["cadastre_location"] if extracted else None,
         "source_blocks": {
+            **(extracted["source_blocks"] if extracted else {}),
+            **{
             key: value
             for key, value in {
-                "description": description,
+                "description": meta_description,
                 "titre_detail": title,
                 "adresse": address,
                 "ville": city,
@@ -494,8 +559,64 @@ def parse_petites_affiches_detail_html(html: str, source_url: str) -> dict[str, 
                 "page_text": page_text,
             }.items()
             if value
+            },
         },
     })
+
+
+def _clean_legacy_visits(values: list[Any]) -> list[str]:
+    """Libellés de visite d'une lecture antérieure, sans état relatif ni gabarit vide."""
+    cleaned: list[str] = []
+    for value in values:
+        text = clean_text(value)
+        if not text or re.search(r"aucune\s+visite|\[c_", text, re.I):
+            continue
+        text = re.sub(r"^(?:visite\s+finie|dans\s+\d+\s+jours?|aujourd'hui|demain)\s+", "", text, flags=re.I)
+        text = clean_text(re.sub(r"\s+[àa]\s*:\s*$", "", text))
+        if text and text not in cleaned:
+            cleaned.append(text)
+    return cleaned
+
+
+def _sale_type_from_url(source_url: str) -> str | None:
+    match = re.search(r"/encheres-immobilieres/vente/immobiliere/([^/]+)/", urlparse(source_url).path)
+    return SALE_TYPES_BY_URL_SEGMENT.get(match.group(1).lower()) if match else None
+
+
+def _merge_detail_into_sale(sale: dict[str, Any], detail: dict[str, Any]) -> None:
+    """Fusionne une fiche (collecte ou relecture du texte stocké) dans la vente de la carte."""
+    for key in DETAIL_FIELDS:
+        value = detail.get(key)
+        if value in (None, "", [], {}):
+            continue
+        if key == "source_blocks":
+            existing_blocks = sale.get("source_blocks") if isinstance(sale.get("source_blocks"), dict) else {}
+            sale["source_blocks"] = {**existing_blocks, **value}
+            continue
+        if key == "source_property_features":
+            existing = sale.get(key) if isinstance(sale.get(key), dict) else {}
+            sale[key] = {**existing, **value}
+            continue
+        if key == "documents":
+            sale[key] = _merge_documents(sale.get(key), value)
+            continue
+        if key == "source_images":
+            sale[key] = _merge_text_values(sale.get(key), value)
+            if not sale.get("raw_image_url") and sale[key]:
+                sale["raw_image_url"] = sale[key][0]
+            continue
+        if key == "raw_image_url" and not sale.get("raw_image_url"):
+            sale[key] = value
+            continue
+        if key == "description":
+            # La carte ne porte que le titre : le descriptif de la fiche le remplace s'il est plus riche.
+            if len(str(value)) > len(str(sale.get(key) or "")):
+                sale[key] = value
+            continue
+        if key == "raw_text" and sale.get("raw_text"):
+            sale[key] = f"{sale['raw_text']}\n{value}"
+        elif key in DETAIL_AUTHORITATIVE_FIELDS or not sale.get(key):
+            sale[key] = value
 
 
 def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> None:
@@ -509,8 +630,12 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
     restricted = re.search(
         r"(?:r[ée]serv[ée]e?\s+aux\s+abonn[ée]s|vous\s+devez\s+[êe]tre\s+abonn[ée])", access_text, re.I,
     )
-    sale["source_detail_status"] = "restricted" if restricted else "complete"
     detail = parse_petites_affiches_detail_html(html, source_url)
+    access = (detail.get("source_blocks") or {}).get("acces_detail")
+    if access in {"abonnes", "public"}:
+        # Lecture structurée : une mention « abonnés » sur un seul encadré ne rend pas la fiche restreinte.
+        restricted = access == "abonnes"
+    sale["source_detail_status"] = "restricted" if restricted else "complete"
     mismatch = _detail_identity_mismatch(source_url, detail)
     if mismatch:
         sale["_detail_fetch_failed"] = True
@@ -527,30 +652,71 @@ def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], err
             mismatch["detail_city"],
         )
         return
-    for key in DETAIL_FIELDS:
-        value = detail.get(key)
-        if value in (None, "", []):
-            continue
-        if key == "source_blocks":
-            existing_blocks = sale.get("source_blocks") if isinstance(sale.get("source_blocks"), dict) else {}
-            sale["source_blocks"] = {**existing_blocks, **value}
-            continue
-        if key == "documents":
-            sale[key] = _merge_documents(sale.get(key), value)
-            continue
-        if key == "source_images":
-            sale[key] = _merge_text_values(sale.get(key), value)
-            if not sale.get("raw_image_url") and sale[key]:
-                sale["raw_image_url"] = sale[key][0]
-            continue
-        if key == "raw_image_url" and not sale.get("raw_image_url"):
-            sale[key] = value
-            continue
-        if key == "raw_text" and sale.get("raw_text"):
-            sale[key] = f"{sale['raw_text']}\n{value}"
-        elif key == "city" or not sale.get(key):
-            sale[key] = value
+    _merge_detail_into_sale(sale, detail)
     _attach_source_property_features(sale)
+
+
+def refresh_petites_affiches_raw_sale(raw_sale: dict[str, Any]) -> bool:
+    """Rejoue la lecture structurée sur le texte de fiche stocké (aucune requête au site).
+
+    Le texte ``source_blocks.page_text`` est celui de la page téléchargée à la
+    collecte ; la relecture n'applique rien si la fiche ne correspond pas à l'URL
+    (même garde d'identité qu'à la collecte).
+    """
+    if str(raw_sale.get("source_name") or "") != "petites_affiches":
+        return False
+    if isinstance(raw_sale.get("visit_dates"), list):
+        raw_sale["visit_dates"] = _clean_legacy_visits(raw_sale["visit_dates"])
+    # L'image générique d'un lot sans photo n'est ni une photo ni une vignette.
+    images = [url for url in _as_text_list(raw_sale.get("source_images")) if "default-pic" not in url.lower()]
+    if "source_images" in raw_sale:
+        raw_sale["source_images"] = images
+    if "default-pic" in str(raw_sale.get("raw_image_url") or "").lower():
+        raw_sale["raw_image_url"] = images[0] if images else None
+    blocks = raw_sale.get("source_blocks") if isinstance(raw_sale.get("source_blocks"), dict) else {}
+    page_text = blocks.get("page_text")
+    if not isinstance(page_text, str) or not page_text.strip():
+        return False
+    source_url = str(raw_sale.get("source_url") or "")
+    title = clean_text(blocks.get("titre_detail")) or clean_text(raw_sale.get("title"))
+    extracted = extract_petites_affiches_fields(
+        page_text,
+        title=title,
+        city=clean_text(raw_sale.get("city")),
+        property_type=clean_text(blocks.get("type_bien")) or _property_type_from_title(title),
+        sale_type=clean_text(blocks.get("type_vente")) or _sale_type_from_url(source_url),
+        photo_count=len(images),
+    )
+    if extracted is None:
+        return False
+    fields = extracted["fields"]
+    identity = {
+        "city": _city_from_address(fields.get("address")),
+        "title": title,
+        "address": fields.get("address"),
+        "description": fields.get("description"),
+    }
+    if _detail_identity_mismatch(source_url, identity):
+        return False
+    detail = {
+        **{key: value for key, value in fields.items() if key not in {"address", "tribunal"}},
+        "source_blocks": extracted["source_blocks"],
+        "source_property_features": extracted["source_property_features"],
+        "cadastre_location": extracted["cadastre_location"],
+    }
+    for key in ("address", "tribunal"):
+        if fields.get(key) and not raw_sale.get(key):
+            detail[key] = fields[key]
+    # Les libellés hérités de la lecture précédente (« Visite finie … à : »,
+    # « Aucune visite… [c_tel_block] ») sont remplacés, y compris par une liste vide.
+    raw_sale["visit_dates"] = fields.get("visit_dates") or []
+    stale_blocks = raw_sale.get("source_blocks") if isinstance(raw_sale.get("source_blocks"), dict) else {}
+    stale_blocks.pop("visites", None)
+    _merge_detail_into_sale(raw_sale, detail)
+    access = extracted["source_blocks"].get("acces_detail")
+    if raw_sale.get("source_detail_status") in {"complete", "restricted"} and access:
+        raw_sale["source_detail_status"] = "restricted" if access == "abonnes" else "complete"
+    return True
 
 
 def _title_reference_type(text: str) -> tuple[str | None, str | None, str | None]:
@@ -570,7 +736,7 @@ def _property_type_from_title(title: str | None) -> str | None:
         return None
     if re.search(r"\bappartement\b", text):
         return "Appartement"
-    if re.search(r"\bmaison\b", text):
+    if re.search(r"\b(?:maison|pavillon|villa)\b", text):
         return "Maison"
     if re.search(r"\b(?:terrain|parcelle)\b", text):
         return "Terrain"
@@ -791,7 +957,8 @@ def _append_image_url(urls: list[str], value: object, source_url: str) -> None:
 
 def _looks_like_property_image(url: str) -> bool:
     text = _normalized_text(url)
-    if any(marker in text for marker in ("captcha", "/squelettes/", "kiosque")):
+    # ``default-pic.png`` est l'image générique d'un lot sans photo.
+    if any(marker in text for marker in ("captcha", "/squelettes/", "kiosque", "default-pic")):
         return False
     if not re.search(r"\.(?:jpe?g|png|webp)(?:\?|$)", text):
         return False

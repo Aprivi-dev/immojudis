@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/routes/avocats", () => ({ LawyerDirectoryPage: () => null }));
+vi.mock("./lawyer-directory-page", () => ({ LawyerDirectoryPage: () => null }));
 
 import Page, { metadata } from "./page";
 

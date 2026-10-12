@@ -71,4 +71,54 @@ describe("public sale summary", () => {
       .mockResolvedValue({ data: null, error: { code: "57014", message: "timeout" } });
     await expect(fetchPublicSaleSummary({ rpc }, ID)).rejects.toMatchObject({ code: "57014" });
   });
+
+  it("adds the public details of the listing without the visit text", async () => {
+    const details = {
+      land_surface_m2: 781,
+      parking_count: 2,
+      has_garden: true,
+      has_terrace: false,
+      has_garage: null,
+      has_pool: false,
+      has_air_conditioning: null,
+      has_double_glazing: true,
+      has_visit_dates: true,
+      photo_count: 6,
+      document_count: 4,
+    };
+    const rpc = vi.fn((fn: string) =>
+      Promise.resolve({ data: [fn === "get_public_sale_details" ? details : row], error: null }),
+    );
+    const result = await fetchPublicSaleSummary({ rpc }, ID);
+    expect(rpc).toHaveBeenCalledWith("get_public_sale_details", { p_sale_id: ID });
+    if (result.kind !== "found") throw new Error("expected a sale");
+    expect(result.sale).toMatchObject({
+      city: "Tancarville",
+      land_surface_m2: 781,
+      has_garden: true,
+      has_visit_dates: true,
+      photo_count: 6,
+      document_count: 4,
+    });
+    expect(result.sale).not.toHaveProperty("visit_dates");
+  });
+
+  it("keeps the summary alone while the details function is not deployed", async () => {
+    const rpc = vi.fn((fn: string) =>
+      Promise.resolve(
+        fn === "get_public_sale_details"
+          ? {
+              data: null,
+              error: {
+                code: "PGRST202",
+                message: "Could not find the function public.get_public_sale_details",
+              },
+            }
+          : { data: [row], error: null },
+      ),
+    );
+    const result = await fetchPublicSaleSummary({ rpc }, ID);
+    expect(result.kind).toBe("found");
+    if (result.kind === "found") expect(result.sale).not.toHaveProperty("photo_count");
+  });
 });

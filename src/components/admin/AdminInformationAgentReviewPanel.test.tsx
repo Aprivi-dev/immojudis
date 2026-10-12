@@ -19,23 +19,6 @@ vi.mock("@/lib/client-api", () => ({
   updateAdminInformationAgentEvidenceRightsClient: mocks.updateRights,
 }));
 
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({
-    to,
-    params,
-    children,
-    ...props
-  }: {
-    to: string;
-    params: Record<string, string>;
-    children: React.ReactNode;
-  }) => (
-    <a href={to.replace("$id", params.id)} {...props}>
-      {children}
-    </a>
-  ),
-}));
-
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
@@ -83,6 +66,55 @@ describe("AdminInformationAgentReviewPanel", () => {
     expect(screen.getByRole("link", { name: /Voir l’annonce 11111111/ }).getAttribute("href")).toBe(
       "/sales/11111111-1111-4111-8111-111111111111",
     );
+  });
+
+  it("shows where each fact comes from (email, portal or manual import)", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          message_id: "55555555-5555-4555-8555-555555555555",
+          fact_key: "occupancy_status",
+          display_value: "Libre",
+          confidence: 0.9,
+          evidence_asset_id: null,
+          evidence_excerpt: "Le bien est libre.",
+        },
+      ],
+      cases: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          recipient_name: "Maître Dupont",
+          recipient_email: "cabinet@example.test",
+          status: "review",
+        },
+      ],
+      factSources: [
+        {
+          messageId: "55555555-5555-4555-8555-555555555555",
+          channel: "portal",
+          fromEmail: "secretariat@example.test",
+          receivedAt: "2026-10-05T09:30:00.000Z",
+          senderMatchesRecipient: false,
+        },
+      ],
+      assets: [],
+      extractions: [],
+      messages: [],
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    const provenance = await screen.findByText(/Provenance : Dépôt du portail privé/);
+    expect(provenance.textContent).toContain("secretariat@example.test");
+    expect(provenance.textContent).toContain("expéditeur différent du contact sollicité");
   });
 
   it("shows an unexpected sender without offering a fact to accept", async () => {

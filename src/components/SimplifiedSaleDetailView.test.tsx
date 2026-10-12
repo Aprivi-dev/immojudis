@@ -2,12 +2,11 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 import { AI_REVIEW_FIELD_KEYS, type AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDetailView";
 
@@ -16,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   fetchAiReviewProjections: vi.fn(),
   fetchFactReliabilities: vi.fn(),
   fetchUrbanism: vi.fn(),
+  fetchValuePreview: vi.fn(),
   forecast: vi.fn(),
   authUser: null as { id: string } | null,
 }));
@@ -28,13 +28,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchSaleAiReviewProjections: mocks.fetchAiReviewProjections,
   fetchSaleFactReliabilities: mocks.fetchFactReliabilities,
   fetchSaleUrbanismeCadastre: mocks.fetchUrbanism,
-}));
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({ to, href, children, ...props }: { to?: string; href?: string; children: ReactNode }) => (
-    <a href={href ?? to} {...props}>
-      {children}
-    </a>
-  ),
+  fetchValuePreview: mocks.fetchValuePreview,
 }));
 vi.mock("@/components/FavoriteButton", () => ({
   FavoriteButton: () => <button>Suivre cette vente</button>,
@@ -281,20 +275,6 @@ describe("integrated listing", () => {
       summary: "Perspective d’adjudication",
       publicDemo: false,
     },
-    {
-      anchor: "calculation",
-      tab: "estimation",
-      target: "calculation",
-      summary: "Ajuster les hypothèses",
-      publicDemo: false,
-    },
-    {
-      anchor: "why-this-ceiling",
-      tab: "estimation",
-      target: "why-this-ceiling",
-      summary: "Comprendre le calcul du plafond",
-      publicDemo: false,
-    },
   ] as const)(
     "routes #%s to the expected panel and opens its detail when the target exists",
     (expectation) => {
@@ -333,17 +313,21 @@ describe("integrated listing", () => {
     },
   );
 
-  it("uses a client-side initial hash to open the requested estimation detail", () => {
-    window.history.replaceState(null, "", "#calculation");
-    const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+  it.each(["calculation", "why-this-ceiling"])(
+    "lands #%s on the always visible bid ceiling planner",
+    (anchor) => {
+      window.history.replaceState(null, "", `#${anchor}`);
+      const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
 
-    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    const calculation = container.querySelector("#calculation") as HTMLDetailsElement | null;
-    expect(calculation).not.toBeNull();
-    expect(calculation?.open).toBe(true);
-  });
+      expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+      const target = container.querySelector(`#${anchor}`);
+      expect(target).not.toBeNull();
+      expect(target?.closest("details")).toBeNull();
+      expect(screen.getByRole("heading", { name: "Votre enchère plafond" })).toBeTruthy();
+    },
+  );
 
   it("opens the documents disclosure when #documents targets Démarches", () => {
     window.history.replaceState(null, "", "#documents");
@@ -632,15 +616,17 @@ describe("integrated listing", () => {
     expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
   });
 
-  it("opens the advanced simulator from the Estimation action", () => {
-    const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+  it("points the Estimation actions to the planner and its calculation", () => {
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
     selectTab("Estimation");
 
-    const calculation = container.querySelector("#calculation") as HTMLDetailsElement;
-    expect(calculation.open).toBe(false);
-    fireEvent.click(screen.getByRole("link", { name: "Ajuster mes hypothèses" }));
-    expect(calculation.open).toBe(true);
-    expect(screen.getByText("Simulateur d’enchère plafond chargé")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ajuster mes hypothèses" }).getAttribute("href")).toBe(
+      "#calculation",
+    );
+    expect(screen.getByRole("link", { name: "Voir le calcul" }).getAttribute("href")).toBe(
+      "#why-this-ceiling",
+    );
+    expect(screen.getByRole("heading", { name: "Le calcul, étape par étape" })).toBeTruthy();
   });
 
   it("keeps the photo gallery action functional in the Aperçu panel", () => {
@@ -665,15 +651,25 @@ describe("integrated listing", () => {
     expect(screen.getByText("Voir les références de marché")).toBeTruthy();
   });
 
-  it("shows Premium previews without loading analyses or mounting the works and statistics tools", () => {
+  it("shows Premium previews without loading analyses or mounting the works and statistics tools", async () => {
     mocks.authUser = { id: "free-account" };
+    mocks.fetchValuePreview.mockResolvedValue({
+      available: true,
+      lowEur: 180_000,
+      highEur: 220_000,
+      discountPct: 32,
+      reliability: "medium",
+    });
     renderDetail("discovery");
     selectTab("Estimation");
     expect(
       screen.getByRole("heading", {
-        name: "La valeur du bien et votre enchère plafond avec l’offre Analyse",
+        name: "Votre enchère plafond, les comparables et les travaux avec l’offre Analyse",
       }),
     ).toBeTruthy();
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "environ 32 % sous la valeur estimée",
+    );
     selectTab("Travaux");
     expect(
       screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),

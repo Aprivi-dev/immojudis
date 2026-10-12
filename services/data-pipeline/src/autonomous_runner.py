@@ -16,9 +16,13 @@ from psycopg.types.json import Jsonb
 from src.config import load_settings
 from src.run_finalizer import register_run
 from src.source_health import SOURCE_WARNING_EXIT_CODE
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect
 
-INVENTORY_CADENCE = timedelta(hours=6)
+# Alias de compatibilité : des tests patchent ce nom de module.
+_postgres_connect = connect
+
+# Décision du propriétaire (11/10/2026) : chaque source au plus toutes les 12 h.
+INVENTORY_CADENCE = timedelta(hours=12)
 INVENTORY_DISPATCH_MARGIN = timedelta(minutes=45)
 NEAR_SALE_HORIZON = timedelta(days=7)
 ACTIVE_LISTING_STATUSES = frozenset({'active', 'upcoming', 'postponed', 'unknown'})
@@ -161,8 +165,8 @@ def next_inventory_deadline(*, now: datetime, started_at: object | None, source:
         elif run_started is not None and run_started <= current:
             anchors.append(run_started)
     if not anchors:
-        # No close listing was evidenced by this run. Keep the ordinary six
-        # hour cadence instead of inheriting an old alias/checkpoint forever.
+        # No close listing was evidenced by this run. Keep the ordinary
+        # cadence instead of inheriting an old alias/checkpoint forever.
         return current + INVENTORY_CADENCE
     return max(current, min(anchors) + INVENTORY_CADENCE - INVENTORY_DISPATCH_MARGIN)
 
@@ -337,6 +341,40 @@ def record_source_presence(db, run_id: str, source: str, availability: str, comp
         (source,source,availability,run_id,complete,run_id,source,source,source,run_id))
 
 
+DOCUMENT_READING_BUDGET_SECONDS = 5 * 60
+
+
+def _run_document_reading(env: dict[str, str]) -> int:
+    """Short « lecture des pièces » pass after the enrichment queue.
+
+    Bounded and optional: its exit code is reported in the run summary and never
+    changes the run status.
+    """
+    command = [sys.executable, '-m', 'src.document_reading', '--max-sales', '15', '--budget-minutes', '4']
+    try:
+        result = subprocess.run(command, env=env, timeout=DOCUMENT_READING_BUDGET_SECONDS, check=False)
+        return int(result.returncode)
+    except Exception:
+        return 1
+
+
+LICITOR_HISTORY_BUDGET_SECONDS = 330
+
+
+def _run_licitor_history_refresh(env: dict[str, str]) -> int:
+    """One tick of the Licitor adjudication history collector (owner decision, 12/10/2026).
+
+    Bounded like the document reading: at most 100 polite requests, its exit code
+    is reported in the run summary and never changes the run status.
+    """
+    command = [sys.executable, '-m', 'src.sources.licitor_history_refresh']
+    try:
+        result = subprocess.run(command, env=env, timeout=LICITOR_HISTORY_BUDGET_SECONDS, check=False)
+        return int(result.returncode)
+    except Exception:
+        return 1
+
+
 def execute(run_id: str) -> int:
     run_id = str(UUID(run_id))
     settings = load_settings()
@@ -382,6 +420,8 @@ def execute(run_id: str) -> int:
     except Exception as exc:
         code, failure = 1, str(exc)[:1000]
     worker_code = code
+    reading_code = _run_document_reading(env) if source == 'enrichment-queue' and worker_code == 0 else None
+    licitor_history_code = _run_licitor_history_refresh(env) if source == 'enrichment-queue' else None
     # Exit 2 from src.main means "published, but an enabled source was empty or
     # failed": the run itself succeeded, so keep it succeeded and hand the
     # warning to the workflow instead of recording a worker failure.
@@ -394,6 +434,10 @@ def execute(run_id: str) -> int:
                    "worker_exit_code": SOURCE_WARNING_EXIT_CODE if source_warning else worker_code}
         if source_warning:
             summary["source_warning"] = True
+        if reading_code is not None:
+            summary["document_reading_exit_code"] = reading_code
+        if licitor_history_code is not None:
+            summary["licitor_history_exit_code"] = licitor_history_code
         run_errors: dict[str, list[str]] = {}
         counts: dict[object, object] = {}
         exhausted = 0

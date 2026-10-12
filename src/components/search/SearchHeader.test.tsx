@@ -29,24 +29,27 @@ describe("SaveSearchButton", () => {
 });
 
 describe("SaveSearchButton avec compte", () => {
-  it("propose la fréquence quotidienne par défaut et réserve l'hebdomadaire à l'offre Analyse", () => {
+  it("propose l'email hebdomadaire au compte gratuit et réserve le quotidien à l'offre Analyse", () => {
     const onClick = vi.fn();
     render(<SaveSearchButton signedIn saving={false} onClick={onClick} />);
     fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
     expect(screen.getByText(/un seul email récapitulatif/)).toBeTruthy();
-    const weekly = screen.getByRole("radio", { name: /Hebdomadaire/ }) as HTMLInputElement;
-    expect(weekly.disabled).toBe(true);
-    expect((screen.getByRole("radio", { name: "Quotidienne" }) as HTMLInputElement).checked).toBe(
+    const daily = screen.getByRole("radio", { name: /Quotidienne/ }) as HTMLInputElement;
+    expect(daily.disabled).toBe(true);
+    expect((screen.getByRole("radio", { name: "Hebdomadaire" }) as HTMLInputElement).checked).toBe(
       true,
     );
     fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
-    expect(onClick).toHaveBeenCalledWith({ frequency: "daily" });
+    expect(onClick).toHaveBeenCalledWith({ frequency: "weekly" });
   });
 
-  it("permet l'hebdomadaire avec l'offre Analyse", () => {
+  it("propose le quotidien par défaut avec l'offre Analyse", () => {
     const onClick = vi.fn();
-    render(<SaveSearchButton signedIn weeklyAllowed saving={false} onClick={onClick} />);
+    render(<SaveSearchButton signedIn dailyAllowed saving={false} onClick={onClick} />);
     fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
+    expect((screen.getByRole("radio", { name: /Quotidienne/ }) as HTMLInputElement).checked).toBe(
+      true,
+    );
     fireEvent.click(screen.getByRole("radio", { name: /Hebdomadaire/ }));
     fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
     expect(onClick).toHaveBeenCalledWith({ frequency: "weekly" });

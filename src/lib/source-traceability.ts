@@ -1,6 +1,6 @@
 import { collectSaleDocuments } from "@/lib/sale-documents";
-import type { EnvironmentalContext } from "@/lib/environment.functions";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { EnvironmentalContext } from "@/lib/environmental-context";
+import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
 import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import type { StructuredDpeDiagnostic } from "@/lib/dpe";

@@ -28,6 +28,8 @@ describe("plan matrix", () => {
             "sales.favorites",
             "sales.multiPropertyAnalysis",
             "lawyers.directory",
+            // Public open data (Météo-France), read from local tables at no cost.
+            "property.weatherHistory",
           ].includes(feature[0]),
       )
       .filter(([, access]) => access !== "locked");
@@ -37,7 +39,7 @@ describe("plan matrix", () => {
     expect(PLAN_FEATURES.decouverte["sales.multiPropertyAnalysis"]).toBe("limited");
     expect(featureIncluded("decouverte", "lawyers.referrals")).toBe(false);
     expect(featureIncluded("decouverte", "property.outcomeGraph")).toBe(false);
-    expect(featureIncluded("decouverte", "property.weatherHistory")).toBe(false);
+    expect(featureIncluded("decouverte", "property.weatherHistory")).toBe(true);
     expect(PLAN_LIMITS.decouverte.propertyReportsPerMonth).toBe(0);
     expect(PLAN_LIMITS.decouverte.pdfExportsPerMonth).toBe(0);
     expect(PLAN_LIMITS.decouverte.favoriteSales).toBe(3);

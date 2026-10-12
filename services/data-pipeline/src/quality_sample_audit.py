@@ -16,7 +16,10 @@ from psycopg.rows import dict_row
 from src.config import load_settings, require_encheres_publiques_access
 from src.normalize import normalize_sale
 from src.source_detail import fetch_public_detail
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect
+
+# Alias de compatibilité : des tests patchent ce nom de module.
+_postgres_connect = connect
 
 FIELDS = ('address', 'city', 'postal_code', 'sale_date', 'starting_price_eur',
           'habitable_surface_m2', 'carrez_surface_m2', 'land_surface_m2', 'occupancy_status')

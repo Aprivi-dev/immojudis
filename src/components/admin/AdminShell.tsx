@@ -16,7 +16,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 
 export type AdminSection =
   | "settings"
@@ -190,7 +190,7 @@ function AdminSidebarContent({
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <Link
-        to="/"
+        href="/"
         onClick={onNavigate}
         className="shrink-0 px-6 pb-8 pt-7 font-display text-[2rem] font-semibold leading-none text-gold-text"
         aria-label="Immojudis — accueil"
@@ -208,7 +208,7 @@ function AdminSidebarContent({
           return (
             <Link
               key={item.section}
-              to={item.href}
+              href={item.href}
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
               className={`admin-sidebar-link ${active ? "admin-sidebar-link-active" : ""}`}

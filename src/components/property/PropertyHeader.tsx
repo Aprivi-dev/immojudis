@@ -1,4 +1,4 @@
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
 import type { Property } from "@/lib/property-types";
 import { SearchBar } from "./SearchBar";
@@ -13,13 +13,13 @@ export function PropertyHeader({ property }: { property: Property }) {
             className="flex items-center gap-1 text-xs text-muted-foreground"
           >
             <Link
-              to="/"
+              href="/"
               className="font-semibold text-foreground transition-colors hover:text-gold-text"
             >
               Immojudis
             </Link>
             <ChevronRight className="h-3.5 w-3.5" />
-            <Link to="/sales" className="transition-colors hover:text-gold-text">
+            <Link href="/sales" className="transition-colors hover:text-gold-text">
               Biens
             </Link>
             <ChevronRight className="h-3.5 w-3.5" />

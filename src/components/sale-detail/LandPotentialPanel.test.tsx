@@ -216,10 +216,22 @@ describe("LandPotentialPanel", () => {
     expect(screen.getByText(/ne vaut ni droit disponible ni autorisation/)).toBeTruthy();
   });
 
+  it("confronte la zone citée et la surface annoncée au rapport officiel", () => {
+    renderPanel({ listingZone: "UCa2*L12", landSurfaceM2: 4_000 });
+    expect(
+      screen.getByText(/Zone citée dans l’annonce : UCa2\*L12 · concorde avec le zonage officiel/),
+    ).toBeTruthy();
+    expect(screen.getByText(/couvre 698 m² alors que l’annonce indique 4 000 m²/)).toBeTruthy();
+    cleanup();
+    renderPanel({ listingZone: "UB", landSurfaceM2: 700 });
+    expect(screen.getByText(/diffère du zonage officiel/)).toBeTruthy();
+    expect(screen.queryByText(/alors que l’annonce indique/)).toBeNull();
+  });
+
   it("rend la couverture partielle et les limites des sources dans le panneau", () => {
     renderPanel();
 
-    fireEvent.click(screen.getByText("Couverture, dates et limites des sources"));
+    fireEvent.click(screen.getByText("Sources, dates et limites"));
 
     expect(screen.getByText(/Vérification partielle/)).toBeTruthy();
     expect(screen.getByText(/Extraction partielle/)).toBeTruthy();
@@ -236,7 +248,7 @@ describe("LandPotentialPanel", () => {
     });
     const { unmount } = renderPanel({ initialReport: unavailable });
     expect(screen.getByText(/1 source indisponible/)).toBeTruthy();
-    fireEvent.click(screen.getByText("Couverture, dates et limites des sources"));
+    fireEvent.click(screen.getByText("Sources, dates et limites"));
     expect(screen.getByText(/Source indisponible/)).toBeTruthy();
     expect(screen.getByText("Le règlement n'a pas pu être consulté.")).toBeTruthy();
     unmount();
@@ -251,19 +263,58 @@ describe("LandPotentialPanel", () => {
     });
     renderPanel({ initialReport: empty });
     expect(screen.queryByText(/source indisponible/iu)).toBeNull();
-    fireEvent.click(screen.getByText("Couverture, dates et limites des sources"));
+    fireEvent.click(screen.getByText("Sources, dates et limites"));
     expect(screen.getByText(/Aucun enregistrement dans cette couche/)).toBeTruthy();
-    expect(screen.getByText(/articles n.{0,2}ont pas pu être lus automatiquement/iu)).toBeTruthy();
+    expect(screen.getByText(/Aucun article de la zone n’a pu être extrait/)).toBeTruthy();
+    expect(screen.queryByLabelText("Votre projet")).toBeNull();
   });
 
-  it("change les règles affichées avec le sélecteur de projet", () => {
+  it("ne propose que les projets éclairés par un article lu", () => {
     renderPanel();
 
-    expect(screen.getByText(/Extension : informations insuffisantes/)).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Votre projet"), { target: { value: "construction" } });
+    const select = screen.getByLabelText("Votre projet") as HTMLSelectElement;
+    const offered = [...select.options].map((option) => option.value);
+    expect(offered.length).toBeGreaterThan(0);
+    expect(screen.queryByText(/informations insuffisantes/)).toBeNull();
+    fireEvent.change(select, { target: { value: offered.at(-1) } });
+    expect(select.value).toBe(offered.at(-1));
+    fireEvent.click(screen.getByText("Points à vérifier avant ce projet"));
+    expect(screen.getAllByRole("listitem").length).toBeGreaterThan(0);
+  });
 
-    expect(screen.getByText(/Nouvelle construction : informations insuffisantes/)).toBeTruthy();
-    expect(screen.getByText(/Destination ou sous-destination projetée/)).toBeTruthy();
+  it("dit d’abord d’où vient la parcelle", () => {
+    renderPanel();
+    expect(
+      screen.getByText("Parcelle identifiée par une référence cadastrale du dossier."),
+    ).toBeTruthy();
+  });
+
+  it("lit le rapport sans attendre de clic et propose de réessayer en cas d’échec", async () => {
+    mocks.fetchReport.mockRejectedValueOnce(new Error("Service PLU temporairement indisponible"));
+    render(<LandPotentialPanel saleId={SALE_ID} enabled />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Service PLU temporairement indisponible",
+    );
+    expect(mocks.fetchReport).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchReport).toHaveBeenCalledWith(SALE_ID, false);
+    expect(screen.queryByText(/Aucun enregistrement dans cette couche/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+    expect(
+      await screen.findByText("Parcelle identifiée par une référence cadastrale du dossier."),
+    ).toBeTruthy();
+    expect(mocks.fetchReport).toHaveBeenCalledTimes(2);
+  });
+
+  it("partage le rapport avec le plan cadastral", async () => {
+    const onReport = vi.fn();
+    render(<LandPotentialPanel saleId={SALE_ID} enabled onReport={onReport} />);
+    await waitFor(() =>
+      expect(onReport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ planning: expect.anything() }),
+      ),
+    );
   });
 
   it("déclenche l'export du dossier pour un membre premium", async () => {
@@ -282,17 +333,5 @@ describe("LandPotentialPanel", () => {
     ).toBe("/offres");
     expect(screen.queryByRole("button", { name: /Consulter le PLU/ })).toBeNull();
     expect(mocks.fetchReport).not.toHaveBeenCalled();
-  });
-
-  it("expose l'erreur de consultation sans la confondre avec un résultat vide", async () => {
-    mocks.fetchReport.mockRejectedValue(new Error("Service PLU temporairement indisponible"));
-    render(<LandPotentialPanel saleId={SALE_ID} enabled />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Consulter le PLU et les risques" }));
-
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Service PLU temporairement indisponible",
-    );
-    expect(screen.queryByText(/Aucun enregistrement dans cette couche/)).toBeNull();
   });
 });

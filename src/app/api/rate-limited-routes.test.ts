@@ -49,7 +49,7 @@ vi.mock("@/lib/dvf-comparables", () => ({
   dvfComparablesQuerySchema: { parse: (value: unknown) => value },
   getDvfComparables: mocks.dvf,
 }));
-vi.mock("@/lib/environment.functions", () => ({
+vi.mock("@/lib/environmental-context", () => ({
   environmentalContextCacheControl: () => "private, no-store",
   getEnvironmentalContext: mocks.environment,
 }));

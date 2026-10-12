@@ -127,7 +127,7 @@ Mapbox configurés pour l'application.
 immojudis/
 ├─ src/                       # Application web (Next.js App Router)
 │  ├─ app/                    # Routes Next.js (/, /sales, /sales/[id], /publish, /admin…)
-│  ├─ routes/                 # Anciennes routes client conservées via compatibilité
+│  ├─ routes/                 # Reste : les 3 documents juridiques (empreinte SHA-256 à ré-ancrer, voir P6-01)
 │  ├─ components/             # Composants UI + localisation (SaleLocationHero, MapThumbnail…)
 │  ├─ lib/                    # Métier : queries Supabase, format, géo, surface, tiles
 │  ├─ hooks/                  # Hooks React

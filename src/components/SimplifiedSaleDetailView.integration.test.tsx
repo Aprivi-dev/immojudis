@@ -5,7 +5,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
-import { computeAcquisitionCosts, DEFAULTS } from "@/lib/profitability";
+import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
+import { computeAcquisitionCosts } from "@/lib/profitability";
 import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDetailView";
 import type { AuctionSale } from "@/lib/types";
 
@@ -23,23 +24,6 @@ vi.mock("@/lib/client-api", () => ({
   fetchSaleAiReviewProjections: vi.fn(),
   fetchSaleFactReliabilities: vi.fn(),
   fetchSaleUrbanismeCadastre: vi.fn(),
-}));
-
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({
-    href,
-    to,
-    children,
-    ...props
-  }: {
-    href?: string;
-    to?: string;
-    children: React.ReactNode;
-  }) => (
-    <a href={href ?? to} {...props}>
-      {children}
-    </a>
-  ),
 }));
 
 vi.mock("@/components/FavoriteButton", () => ({
@@ -218,7 +202,7 @@ describe("integrated scenario workspace", () => {
     expect(screen.queryByRole("button", { name: /Copier le message/i })).toBeNull();
   });
 
-  it("propagates an explicitly applied works total to the hero, financing and the real bid assistant", async () => {
+  it("propagates an explicitly applied works total to the hero, financing and the bid ceiling", async () => {
     renderDetail();
     await openWorksEditor();
 
@@ -240,8 +224,7 @@ describe("integrated scenario workspace", () => {
     const expectedProjectCost = computeAcquisitionCosts({
       price: sale.starting_price_eur!,
       works: 2_200,
-      fpt: DEFAULTS.fpt,
-      department: sale.department,
+      ...buildCeilingHypotheses(sale, null).fees,
     }).totalCost;
 
     await openTab("Financement");
@@ -253,10 +236,11 @@ describe("integrated scenario workspace", () => {
     });
 
     await openTab("Estimation");
-    fireEvent.click(screen.getByRole("link", { name: "Ajuster mes hypothèses" }));
     await waitFor(() => {
-      const worksInput = screen.getByLabelText("Budget travaux personnalisé") as HTMLInputElement;
-      expect(worksInput.value).toBe("2200");
+      const row = screen.getByText("Votre montant").closest("tr")!;
+      expect(row.getAttribute("aria-current")).toBe("true");
+      expect(row.textContent?.replace(/\s/g, "")).toContain("2200€");
+      expect(screen.getByText("Travaux (votre montant)")).toBeTruthy();
     });
   });
 

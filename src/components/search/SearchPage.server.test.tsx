@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
-import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 
@@ -14,22 +13,10 @@ vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: auth.user, loading: auth.loading, session: null, authError: null }),
 }));
 vi.mock("next/dynamic", () => ({ default: () => () => null }));
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({
-    to,
-    params,
-    children,
-    ...props
-  }: Record<string, unknown> & { children?: ReactNode }) => (
-    <a
-      href={String(to).replace("$id", String((params as { id?: string } | undefined)?.id ?? ""))}
-      {...(props as object)}
-    >
-      {children}
-    </a>
-  ),
-  useNavigate: () => () => undefined,
-  useLocation: () => ({ pathname: "/sales", search: "", href: "/sales" }),
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/sales",
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 import { SearchPage } from "./SearchPage";
@@ -67,7 +54,7 @@ describe("SearchPage rendered on the server", () => {
         <SearchPage search={{}} serverSeeded />
       </QueryClientProvider>,
     );
-    const links = new Set(html.match(/href="\/sales\/[0-9a-f-]{36}"/g));
+    const links = new Set(html.match(/href="\/sales\/[0-9a-f-]{36}(?:\?[^"]*)?"/g));
     expect(links.size).toBe(24);
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain("Ventes immobilières aux enchères");
@@ -92,7 +79,7 @@ describe("SearchPage rendered on the server", () => {
         <SearchPage search={{}} />
       </QueryClientProvider>,
     );
-    expect(html).not.toMatch(/href="\/sales\/[0-9a-f-]{36}"/);
+    expect(html).not.toMatch(/href="\/sales\/[0-9a-f-]{36}(?:\?[^"]*)?"/);
   });
 
   it("hydrates the server HTML without a mismatch", async () => {
@@ -126,7 +113,9 @@ describe("SearchPage rendered on the server", () => {
     );
     expect(hydrationErrors).toEqual([]);
     // Same listings before and after: hydration reuses the server rows, no skeleton in between.
-    expect(new Set(container.innerHTML.match(/href="\/sales\/[0-9a-f-]{36}"/g)).size).toBe(24);
+    expect(
+      new Set(container.innerHTML.match(/href="\/sales\/[0-9a-f-]{36}(?:\?[^"]*)?"/g)).size,
+    ).toBe(24);
     expect(before).toContain("Ventes immobilières aux enchères");
     await act(async () => root.unmount());
     errors.mockRestore();

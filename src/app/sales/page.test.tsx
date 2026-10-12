@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ load: vi.fn() }));
 
 vi.mock("@/lib/public-catalogue.server", () => ({ loadInitialCatalogue: mocks.load }));
-vi.mock("@/routes/sales.index", () => ({
+vi.mock("./sales-page", () => ({
   SalesPage: ({ serverSeeded }: { serverSeeded: boolean }) => (
     <main data-seeded={String(serverSeeded)}>
       <h1>Ventes immobilières aux enchères</h1>

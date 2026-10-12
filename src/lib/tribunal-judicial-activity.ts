@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { publishedDay } from "@/lib/listing-evidence";
+import { labelFingerprint, parisDayKey } from "@/lib/tribunal-hearing-identity";
+import { mergeDuplicateJudicialAnnouncements } from "@/lib/tribunal-judicial-activity-dedup";
 
 export class TribunalCourtUnresolvedError extends Error {
   constructor(message = "Le rattachement exact au tribunal reste à confirmer.") {
@@ -8,7 +10,7 @@ export class TribunalCourtUnresolvedError extends Error {
   }
 }
 
-export const TRIBUNAL_JUDICIAL_ACTIVITY_BUILDER_VERSION = "tribunal_judicial_activity_v2" as const;
+export const TRIBUNAL_JUDICIAL_ACTIVITY_BUILDER_VERSION = "tribunal_judicial_activity_v3" as const;
 export const TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE = 5;
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
@@ -258,6 +260,12 @@ export const tribunalJudicialActivityResponseSchema = z
         courtReferenceSource: z.literal("justice_open_data"),
         includedVerificationStatuses: z.tuple([z.literal("verified"), z.literal("cross_checked")]),
         excludedPendingOrConflictingSales: z.literal(true),
+        // Past hearings come from live catalogue rows and from the Outcome
+        // Graph archive of purged announcements (verification status and
+        // visit dates are not kept in the archive).
+        historySources: z.tuple([z.literal("catalogue"), z.literal("outcome_graph_archive")]),
+        archivedPastSales: z.number().int().nonnegative(),
+        mergedDuplicateAnnouncements: z.number().int().nonnegative(),
       })
       .strict(),
   })
@@ -302,6 +310,11 @@ export type TribunalJudicialActivitySale = {
   firstSeenAt: string | null;
   occupationStatus?: string | null;
   city?: string | null;
+  /** Court of the row; defaults to the profile court. Used to merge duplicates. */
+  courtCode?: string | null;
+  /** False when the row cannot tell whether a visit was announced (archive). */
+  visitDatesKnown?: boolean;
+  historySource?: "catalogue" | "outcome_graph_archive";
 };
 
 type ParsedTribunalJudicialActivitySale = TribunalJudicialActivitySale & {
@@ -332,6 +345,7 @@ export function buildTribunalJudicialActivity(input: {
   const { historyStart, upcomingEnd } = judicialActivityPeriod(asOf, historyMonths);
   const upcoming90End = new Date(asOf.getTime() + 90 * 24 * 60 * 60 * 1_000);
   const seenIds = new Set<string>();
+  const inWindow: ParsedTribunalJudicialActivitySale[] = [];
   const past: ParsedTribunalJudicialActivitySale[] = [];
   const upcoming: ParsedTribunalJudicialActivitySale[] = [];
 
@@ -340,17 +354,19 @@ export function buildTribunalJudicialActivity(input: {
     seenIds.add(sale.id);
     const parsedSaleDate = new Date(sale.saleDate);
     if (!Number.isFinite(parsedSaleDate.getTime())) continue;
-    if (
+    const isPast =
       parsedSaleDate >= historyStart &&
       parsedSaleDate < asOf &&
-      (sale.status === "past" || sale.status === "adjudicated")
-    ) {
-      past.push({ ...sale, parsedSaleDate });
-      continue;
-    }
-    if (parsedSaleDate >= asOf && parsedSaleDate < upcomingEnd && sale.status === "upcoming") {
-      upcoming.push({ ...sale, parsedSaleDate });
-    }
+      (sale.status === "past" || sale.status === "adjudicated");
+    const isUpcoming =
+      parsedSaleDate >= asOf && parsedSaleDate < upcomingEnd && sale.status === "upcoming";
+    if (isPast || isUpcoming) inWindow.push({ ...sale, parsedSaleDate });
+  }
+  // The same lot published by several sources is one hearing, not several.
+  const merged = mergeDuplicateJudicialAnnouncements(inWindow, court.code);
+  for (const sale of merged.sales) {
+    if (sale.status === "upcoming") upcoming.push(sale);
+    else past.push(sale);
   }
 
   upcoming.sort(
@@ -363,10 +379,15 @@ export function buildTribunalJudicialActivity(input: {
   const observedLeadDays = discoveryLeadDays(past);
   const upcomingLeadDays = discoveryLeadDays(upcoming);
   const visits = upcoming.filter((sale) => hasVisitDate(sale.visitDates)).length;
-  const observedVisits = past.filter((sale) => hasVisitDate(sale.visitDates)).length;
+  // Archived hearings do not keep visit dates: they are left out of the
+  // denominator instead of being counted as "no visit announced".
+  const pastWithVisitInformation = past.filter((sale) => sale.visitDatesKnown !== false);
+  const observedVisits = pastWithVisitInformation.filter((sale) =>
+    hasVisitDate(sale.visitDates),
+  ).length;
   const hearingDayCounts = new Map<string, number>();
   for (const sale of upcoming) {
-    const day = parisDateKey(sale.parsedSaleDate);
+    const day = parisDayKey(sale.parsedSaleDate);
     hearingDayCounts.set(day, (hearingDayCounts.get(day) ?? 0) + 1);
   }
   const hearingDays = [...hearingDayCounts.keys()].sort();
@@ -402,8 +423,10 @@ export function buildTribunalJudicialActivity(input: {
       upcomingStartingPriceRangeEur: rangeMetric(upcomingPrices),
       visitCoverage: sampleMetric(upcoming, upcoming.length > 0 ? visits / upcoming.length : null),
       observedVisitCoverage: sampleMetric(
-        past,
-        past.length > 0 ? observedVisits / past.length : null,
+        pastWithVisitInformation,
+        pastWithVisitInformation.length > 0
+          ? observedVisits / pastWithVisitInformation.length
+          : null,
       ),
       occupation: occupationStats(past),
       hearingCalendar,
@@ -434,7 +457,9 @@ export function buildTribunalJudicialActivity(input: {
       limitations: [
         "Comptage des annonces judiciaires suivies par Immojudis, sans garantie d’exhaustivité nationale.",
         "Les annonces en attente, conflictuelles, sans date plausible ou sans tribunal exactement rattaché sont exclues.",
-        "Les indicateurs historiques utilisent uniquement les ventes passées observées; le pipeline à venir est présenté séparément.",
+        "L’historique réunit les audiences passées encore au catalogue et celles archivées dans le graphe des résultats après le retrait de l’annonce ; l’archive ne conserve ni le statut de vérification ni les dates de visite.",
+        "Une même vente publiée par plusieurs sources (même tribunal, même jour d’audience, même mise à prix, même commune) n’est comptée qu’une fois.",
+        "Les indicateurs historiques utilisent uniquement les audiences passées; le pipeline à venir est présenté séparément. Une audience passée ne prouve pas que le bien a été vendu.",
         "Les taux d’adjudication, de surenchère et les prix finaux restent masqués sans résultats contrôlés suffisants.",
       ],
     },
@@ -444,6 +469,10 @@ export function buildTribunalJudicialActivity(input: {
       courtReferenceSource: "justice_open_data",
       includedVerificationStatuses: ["verified", "cross_checked"],
       excludedPendingOrConflictingSales: true,
+      historySources: ["catalogue", "outcome_graph_archive"],
+      archivedPastSales: past.filter((sale) => sale.historySource === "outcome_graph_archive")
+        .length,
+      mergedDuplicateAnnouncements: merged.mergedDuplicates,
     },
   };
   return tribunalJudicialActivityResponseSchema.parse(response);
@@ -477,7 +506,14 @@ function normalizeOccupationStatus(
 ): "vacant" | "occupied" | "rented" | null {
   const normalized = value?.trim().toLocaleLowerCase("fr-FR");
   if (normalized === "vacant" || normalized === "rented") return normalized;
-  if (normalized === "occupied" || normalized === "owner_occupied" || normalized === "squatted") {
+  // Outcome Graph vocabulary: tenant_occupied / occupied_other.
+  if (normalized === "tenant_occupied") return "rented";
+  if (
+    normalized === "occupied" ||
+    normalized === "owner_occupied" ||
+    normalized === "occupied_other" ||
+    normalized === "squatted"
+  ) {
     return "occupied";
   }
   return null;
@@ -514,7 +550,7 @@ function buildHearingCalendar(sales: ParsedTribunalJudicialActivitySale[], upcom
   const counts = new Map<string, number>();
   for (const sale of sales) {
     if (sale.parsedSaleDate >= upcoming90End) continue;
-    const date = parisDateKey(sale.parsedSaleDate);
+    const date = parisDayKey(sale.parsedSaleDate);
     counts.set(date, (counts.get(date) ?? 0) + 1);
   }
   return [...counts.entries()]
@@ -523,15 +559,22 @@ function buildHearingCalendar(sales: ParsedTribunalJudicialActivitySale[], upcom
 }
 
 function observedCommunes(sales: ParsedTribunalJudicialActivitySale[]) {
-  const counts = new Map<string, number>();
+  // "Marseille", "MARSEILLE" and "Marseille " are one commune: group by a
+  // fingerprint and keep the first spelling seen.
+  const counts = new Map<string, { city: string; count: number }>();
   for (const sale of sales) {
     const city = sale.city?.trim();
     if (!city) continue;
-    counts.set(city, (counts.get(city) ?? 0) + 1);
+    const key = labelFingerprint(city);
+    if (!key) continue;
+    const current = counts.get(key);
+    if (current) current.count += 1;
+    else counts.set(key, { city, count: 1 });
   }
-  const knownSales = [...counts.values()].reduce((total, count) => total + count, 0);
+  const knownSales = [...counts.values()].reduce((total, entry) => total + entry.count, 0);
   if (knownSales === 0) return [];
-  return [...counts.entries()]
+  return [...counts.values()]
+    .map((entry) => [entry.city, entry.count] as const)
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "fr"))
     .slice(0, 20)
     .map(([city, count]) => ({
@@ -564,7 +607,9 @@ function propertyTypeSales(
 ): Map<string, ParsedTribunalJudicialActivitySale[]> {
   const grouped = new Map<string, ParsedTribunalJudicialActivitySale[]>();
   for (const sale of sales) {
-    const propertyType = sale.propertyType?.trim() || "other";
+    // An unknown type is not "other": it is left out of type breakdowns.
+    const propertyType = sale.propertyType?.trim().toLocaleLowerCase("fr-FR");
+    if (!propertyType || propertyType === "unknown") continue;
     const existing = grouped.get(propertyType);
     if (existing) existing.push(sale);
     else grouped.set(propertyType, [sale]);
@@ -573,14 +618,17 @@ function propertyTypeSales(
 }
 
 function topPropertyTypes(sales: ParsedTribunalJudicialActivitySale[]) {
-  if (sales.length < TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE) return [];
-  return [...propertyTypeSales(sales).entries()]
+  const grouped = propertyTypeSales(sales);
+  // Shares use the sales whose type is known as denominator.
+  const knownSales = [...grouped.values()].reduce((total, group) => total + group.length, 0);
+  if (knownSales < TRIBUNAL_JUDICIAL_ACTIVITY_MIN_SAMPLE) return [];
+  return [...grouped.entries()]
     .sort((left, right) => right[1].length - left[1].length || left[0].localeCompare(right[0]))
     .slice(0, 3)
     .map(([propertyType, groupedSales]) => ({
       propertyType,
       count: groupedSales.length,
-      share: round(groupedSales.length / sales.length, 6),
+      share: round(groupedSales.length / knownSales, 6),
     }));
 }
 
@@ -693,13 +741,4 @@ function addUtcCalendarMonths(value: Date, months: number): Date {
   ).getUTCDate();
   targetMonthStart.setUTCDate(Math.min(value.getUTCDate(), lastTargetDay));
   return targetMonthStart;
-}
-
-function parisDateKey(value: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(value);
 }

@@ -64,3 +64,34 @@ export function saleDetailPath(saleId: string, returnTo?: string): string {
   const search = new URLSearchParams({ from: safeReturnTo });
   return `${path}?${search.toString()}`;
 }
+
+export type SearchValue = string | number | boolean | null | undefined;
+
+/**
+ * Adds a query string to a path. Empty values (`undefined`, `null`, `""`) are left out, so a
+ * filter that is not set never shows up in the URL.
+ */
+export function pathWithSearch(path: string, search?: Record<string, SearchValue>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(search ?? {})) {
+    if (value === undefined || value === null || value === "") continue;
+    query.set(key, String(value));
+  }
+  const serialized = query.toString();
+  return serialized ? `${path}?${serialized}` : path;
+}
+
+/**
+ * Reads a query string into a plain record. When a key is repeated the last value wins, the
+ * same rule the server pages apply to `searchParams`. Values stay strings: validators own the
+ * numeric conversion, so postal codes and department numbers keep their leading zero.
+ */
+export function searchParamsToRecord(searchParams: {
+  forEach(callback: (value: string, key: string) => void): void;
+}): Record<string, string> {
+  const record: Record<string, string> = {};
+  searchParams.forEach((value, key) => {
+    record[key] = value;
+  });
+  return record;
+}

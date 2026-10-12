@@ -194,3 +194,61 @@ def quarantine_reason(sale: AuctionSale) -> str | None:
         if flag in sale.quality_flags:
             return flag
     return None
+
+
+def publication_rejection(sale: AuctionSale, now=None) -> str | None:
+    """Motif pour lequel une vente n'est pas publiée, ou ``None`` si elle l'est.
+
+    Codes : ``expired``, ``missing_price_and_surface`` et
+    ``insufficient_information:<motifs>`` (règle de rétention, voir
+    ``information_sufficiency``). Ce sont des codes, jamais des données de la vente.
+    """
+    from src.information_sufficiency import publication_gate
+
+    if is_expired(sale, now):
+        return "expired"
+    if not has_price_or_surface(sale):
+        return "missing_price_and_surface"
+    verdict = publication_gate(sale)
+    return None if verdict.sufficient else verdict.reason_code
+
+
+def split_insufficient(sales: list[AuctionSale], logger) -> tuple[list[AuctionSale], dict]:
+    """Retire les ventes aux informations insuffisantes ; renvoie (conservées, compteurs du run).
+
+    Le journal ne contient que la source, l'URL publique de l'annonce et le motif.
+    """
+    from src.information_sufficiency import publication_gate, summarize_verdicts
+
+    kept: list[AuctionSale] = []
+    rejected: list[tuple[str, object]] = []
+    for sale in sales:
+        verdict = publication_gate(sale)
+        if verdict.sufficient:
+            kept.append(sale)
+            continue
+        rejected.append((str(sale.primary_source or sale.source_name), verdict))
+        logger.info("Collection admission rejected source=%s url=%s reason=%s",
+                    sale.source_name, sale.source_url, verdict.reason_code)
+    return kept, summarize_verdicts(rejected)
+
+
+def admit_sales(sales: list[AuctionSale], record) -> list[AuctionSale]:
+    """Sépare les ventes publiables des autres et journalise chaque rejet par motif.
+
+    ``record(sales, decision=..., reason=...)`` écrit la décision (aucune donnée personnelle).
+    """
+    admitted: list[AuctionSale] = []
+    rejected: dict[str, list[AuctionSale]] = {}
+    for sale in sales:
+        reason = publication_rejection(sale)
+        if reason is None:
+            admitted.append(sale)
+        else:
+            rejected.setdefault(reason, []).append(sale)
+    for reason, group in rejected.items():
+        if reason == "expired":
+            record(group, decision="expired", reason="retention_deadline_reached_not_evidence_of_sale")
+        else:
+            record(group, decision="excluded", reason=reason)
+    return admitted

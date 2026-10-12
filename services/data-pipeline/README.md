@@ -478,7 +478,41 @@ PDF_DOCLING_CHUNK_PAGES=10
 PDF_DOCLING_OCR_CHUNK_PAGES=2
 PDF_OCR_ENABLED=true
 PDF_OCR_LANGUAGE=fra+eng
+# Délai minimal entre deux requêtes de pièces jointes vers un même hôte
+# (plancher 1 s ; un Crawl-delay de robots.txt l'augmente).
+PDF_HOST_MIN_DELAY_SECONDS=2
 ```
+
+Les cahiers des charges et règlements de consultation alimentent aussi la
+date limite de remise des offres (`pdf_offer_deadline_extraction`) ; pour les
+appels d'offres (Cessions de l'État, AGRASC, notaires) sans échéance connue,
+elle devient `sale_date` si elle est unique et à venir.
+
+### Vider le stock de pièces jointes
+
+Le mode manuel « documents_backlog » du workflow *Immojudis Data Pipeline*
+(`workflow_dispatch`) ne fait que la lecture des pièces jointes :
+
+```bash
+python -m src.document_backlog --max-sales 200 --budget-minutes 120 --max-passes 4
+```
+
+- ventes actionnables (à venir, inconnues, reportées) dont des pièces ne sont
+  pas lues, la plus proche échéance d'abord, puis celles qui ont des pièces
+  utiles (cahier des conditions, PV descriptif, diagnostics, cadastre,
+  urbanisme) ;
+- la génération PDF courante de chaque vente est remise en file (y compris un
+  job terminé, annulé ou à court d'essais), réservée seule et traitée par le
+  code normal de la file (robots.txt, délai par hôte, OCR, points de reprise) ;
+- six documents par passage (et 120 s d’OCR par document), passages enchaînés
+  jusqu’à `--max-passes` (4 par défaut) par vente ;
+- les erreurs restent sur le job et le manifeste documentaire de la vente ;
+- une vente dont les documents sont déjà à jour voit seulement sa projection
+  `auction_documents` réécrite.
+
+`auction_documents` reprend désormais document par document le texte déjà
+persisté dans `auction_extractions` (statut `verified`) quand le cache local
+du runner est absent, au lieu de repasser ces pièces en `unknown`.
 
 ## Enrichissement LLM Replicate
 
@@ -707,6 +741,21 @@ le libellé retourné, le type de résultat, le code commune et la décision
 `accepted`. L'enrichissement cadastre est ensuite sauté si la vente n'a pas de
 coordonnées. L'enrichissement DPE utilise les coordonnées quand elles existent,
 sinon une recherche textuelle d'adresse.
+
+## Règle « informations suffisantes »
+
+Une vente est publiée si (adresse exploitable **et** superficie) **ou** si l'agent IA d'information dispose d'un e-mail
+exploitable. Sinon elle n'est pas écrite dans `auction_sales` : le run compte les rejets
+(`admission_rejected_insufficient_information` : total, motifs, sources) sans journaliser de donnée de la vente.
+Définitions, exemptions et chiffres par source : `docs/audits/2026-10-10-extraction-par-source.md`.
+
+- `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off` coupe la porte (défaut : active).
+- Par défaut (décision du 2026-10-11), la commune ou le code postal suffit comme adresse ; `IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=street` exige en plus une voie, un lieu-dit ou une parcelle.
+- Le miroir Python du résolveur de contacts (`src/information_sufficiency.py`) est gardé identique au résolveur
+  TypeScript par `tests/fixtures/information_agent_contact_cases.json`, exécuté par pytest et par vitest.
+- Existant : `python -m src.recompute_scoring --drop-insufficient` produit un rapport d'identifiants sans rien supprimer ;
+  `--execute-drop` supprime (sans tombstone, ventes liées à des utilisateurs protégées, plafond `--max-deletions`).
+  Une requête SQL en lecture seule équivalente est dans `sql/insufficient_information_report.sql`.
 
 ## Rapport Qualité
 

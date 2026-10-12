@@ -18,12 +18,15 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { supabase } from "@/integrations/supabase/client";
-import { Link, useNavigate } from "@/lib/router-compat";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
 import {
   addFavoriteSale as addFavoriteSaleRequest,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
 import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import { stateListingStatus } from "@/lib/property-characteristics";
 import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
 import { ErrorState, NoResultsState } from "./SearchFilters";
@@ -206,6 +209,8 @@ export const ListingCard = memo(function ListingCard({
     : propertyTypeReview.blocked || cityReview.blocked
       ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
       : saleDisplayTitle(sale);
+  // Cession de l'État en ligne sans échéance publiée : « Procédure à venir » plutôt que « Date à confirmer ».
+  const stateListing = stateListingStatus(sale);
   const roomSummary = roomsReview.blocked
     ? null
     : sale.rooms_count != null
@@ -224,9 +229,7 @@ export const ListingCard = memo(function ListingCard({
     >
       <Link
         id={`sale-card-${sale.id}`}
-        to="/sales/$id"
-        params={{ id: sale.id }}
-        search={{ from: returnTo }}
+        href={pathWithSearch(saleDetailPath(sale.id), { from: returnTo })}
         prefetch={false}
         onClick={() => onSelect(sale.id)}
         aria-label={`Voir ${title}`}
@@ -331,7 +334,7 @@ export const ListingCard = memo(function ListingCard({
               sourceUrl={sale.source_url}
               showSourceLink={false}
             >
-              {formatDate(sale.sale_date)}
+              {stateListing ? stateListing.label : formatDate(sale.sale_date)}
             </AiReviewField>
           </span>
           <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
@@ -548,9 +551,7 @@ export function ListingMediaCarousel({
       }}
     >
       <Link
-        to="/sales/$id"
-        params={{ id: sale.id }}
-        search={returnTo ? { from: returnTo } : undefined}
+        href={pathWithSearch(saleDetailPath(sale.id), { from: returnTo })}
         prefetch={false}
         aria-label={`Voir ${title}`}
         onClick={(event) => {
@@ -736,7 +737,7 @@ export function CompactFavoriteButton({
   onChange?: (saleId: string, isFavorite: boolean) => void;
 }) {
   const { user, loading } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [isFavorite, setIsFavorite] = useState(initialFavorite);
   const [busy, setBusy] = useState(false);
@@ -755,7 +756,7 @@ export function CompactFavoriteButton({
         typeof window !== "undefined"
           ? `${window.location.pathname}${window.location.search}`
           : "/sales";
-      navigate({ to: "/login", search: { redirect } });
+      router.push(pathWithSearch("/login", { redirect }));
       return;
     }
     if (locked) return;

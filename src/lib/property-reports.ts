@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { getEnvironmentalContext } from "@/lib/environment.functions";
+import { getEnvironmentalContext } from "@/lib/environmental-context";
 import {
   isPlanPeriodActive,
   normalizePlanCode,
@@ -327,13 +327,7 @@ export async function savePropertyReport({
   const ceilingSnapshot = buildCeilingSnapshot(sale, marketEstimate);
   if (input.simulation) {
     const personal = computeReportSimulation(sale, marketEstimate, input.simulation);
-    Object.assign(ceilingSnapshot, personal, {
-      personalSimulation: input.simulation,
-      acquisition: personal.simulated,
-      refreshWorksBudget: input.simulation.works,
-      maxBidWithoutWorks: null,
-      maxBidWithRefreshWorks: null,
-    });
+    Object.assign(ceilingSnapshot, personal, { personalSimulation: input.simulation });
   }
   const reportSnapshot = {
     ...buildReportSnapshot({

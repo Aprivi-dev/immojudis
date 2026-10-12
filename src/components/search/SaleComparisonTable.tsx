@@ -2,7 +2,8 @@
 
 import { useRef } from "react";
 import { formatDate, formatPrice } from "@/lib/format";
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
+import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
 import {
   comparedSaleTitle,
   comparisonSurfaceKind,
@@ -80,9 +81,7 @@ export function SaleComparisonTable({
                 <p className="mt-1 break-words font-extrabold">{comparedSaleTitle(sale)}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3">
                   <Link
-                    to="/sales/$id"
-                    params={{ id: sale.id }}
-                    search={{ from: returnTo }}
+                    href={pathWithSearch(saleDetailPath(sale.id), { from: returnTo })}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex min-h-11 items-center text-xs font-bold text-brand-navy underline underline-offset-2"

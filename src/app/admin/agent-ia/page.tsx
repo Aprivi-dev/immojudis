@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AdminAgentPage } from "@/routes/admin.agent-ia";
+import { AdminAgentPage } from "./admin-agent-page";
 
 export const metadata: Metadata = {
   title: "Agent IA admin",

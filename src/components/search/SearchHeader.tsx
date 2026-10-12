@@ -43,7 +43,7 @@ export function SearchHeader({
   exportingCsv,
   csvExportLocked,
   signedIn = false,
-  weeklyAlertsAllowed = false,
+  dailyAlertsAllowed = false,
   wideMap,
   isDesktop = false,
   onFiltersOpenChange,
@@ -62,7 +62,7 @@ export function SearchHeader({
   exportingCsv: boolean;
   csvExportLocked: boolean;
   signedIn?: boolean;
-  weeklyAlertsAllowed?: boolean;
+  dailyAlertsAllowed?: boolean;
   wideMap: boolean;
   isDesktop?: boolean;
   onFiltersOpenChange: (open: boolean) => void;
@@ -104,7 +104,7 @@ export function SearchHeader({
                 compact
                 saving={savingAlert}
                 signedIn={signedIn}
-                weeklyAllowed={weeklyAlertsAllowed}
+                dailyAllowed={dailyAlertsAllowed}
                 onClick={onSaveSearch}
               />
             ) : null}
@@ -145,7 +145,7 @@ export function SearchHeader({
               <SaveSearchButton
                 saving={savingAlert}
                 signedIn={signedIn}
-                weeklyAllowed={weeklyAlertsAllowed}
+                dailyAllowed={dailyAlertsAllowed}
                 onClick={onSaveSearch}
               />
               <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
@@ -446,18 +446,21 @@ export function SaveSearchButton({
   saving,
   compact = false,
   signedIn = false,
-  weeklyAllowed = false,
+  dailyAllowed = false,
   onClick,
 }: {
   saving: boolean;
   compact?: boolean;
   /** Connecté : on propose le choix de la fréquence ; sinon on envoie vers la connexion. */
   signedIn?: boolean;
-  weeklyAllowed?: boolean;
+  dailyAllowed?: boolean;
   onClick: (options?: { frequency: AlertFrequencyChoice }) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [frequency, setFrequency] = useState<AlertFrequencyChoice>("daily");
+  // The free alert sends one weekly email; the daily digest belongs to Analyse.
+  const [frequency, setFrequency] = useState<AlertFrequencyChoice>(
+    dailyAllowed ? "daily" : "weekly",
+  );
   const button = (
     <button
       type="button"
@@ -490,27 +493,27 @@ export function SaveSearchButton({
           </p>
           <fieldset className="mt-3">
             <legend className="mb-1 font-semibold">Fréquence</legend>
-            <label className="flex min-h-11 cursor-pointer items-center gap-2">
-              <input
-                type="radio"
-                name="alert-frequency"
-                checked={frequency === "daily"}
-                onChange={() => setFrequency("daily")}
-              />
-              Quotidienne
-            </label>
             <label
-              className={`flex min-h-11 items-center gap-2 ${weeklyAllowed ? "cursor-pointer" : "text-ink-soft"}`}
+              className={`flex min-h-11 items-center gap-2 ${dailyAllowed ? "cursor-pointer" : "text-ink-soft"}`}
             >
               <input
                 type="radio"
                 name="alert-frequency"
-                disabled={!weeklyAllowed}
+                disabled={!dailyAllowed}
+                checked={frequency === "daily"}
+                onChange={() => setFrequency("daily")}
+              />
+              Quotidienne
+              {dailyAllowed ? null : <span className="text-xs">(offre Analyse)</span>}
+            </label>
+            <label className="flex min-h-11 cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                name="alert-frequency"
                 checked={frequency === "weekly"}
                 onChange={() => setFrequency("weekly")}
               />
               Hebdomadaire
-              {weeklyAllowed ? null : <span className="text-xs">(offre Analyse)</span>}
             </label>
           </fieldset>
           <button

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { serverFrom } = vi.hoisted(() => ({ serverFrom: vi.fn() }));
+const { serverFrom, serverRpc } = vi.hoisted(() => ({ serverFrom: vi.fn(), serverRpc: vi.fn() }));
 
 vi.mock("@/integrations/supabase/client.server", () => ({
-  supabaseAdmin: { from: serverFrom },
+  supabaseAdmin: { from: serverFrom, rpc: serverRpc },
 }));
 
 import {
@@ -19,7 +19,88 @@ type DeduplicationSale = Parameters<typeof deduplicateTribunalListingSales>[0][n
 const AS_OF = new Date("2026-08-20T12:00:00.000Z");
 
 describe("tribunal listing statistics repository", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    serverRpc.mockImplementation(() => fakeQuery({ data: [], error: null }).query);
+  });
+
+  it("ajoute les audiences archivées du graphe sans doubler une annonce encore au catalogue", async () => {
+    const courtQuery = fakeQuery({
+      data: { code: "justice_tj_1_112", name: "TJ Saint-Etienne", judicial_region: "Lyon" },
+      error: null,
+    });
+    const aliasesQuery = fakeQuery({ data: null, error: null });
+    const officialAliasesQuery = fakeQuery({ data: null, error: null });
+    const liveSale = saleRow("11111111-1111-4111-8111-111111111111", "licitor");
+    liveSale.visit_dates = ["2026-06-02T09:00:00.000Z"] as never;
+    const directQuery = fakeQuery({ data: [liveSale], error: null });
+    const nullScanQuery = fakeQuery({ data: [], error: null });
+    const estimatesQuery = fakeQuery({ data: [], error: null });
+    serverFrom
+      .mockReturnValueOnce(courtQuery.query)
+      .mockReturnValueOnce(aliasesQuery.query)
+      .mockReturnValueOnce(officialAliasesQuery.query)
+      .mockReturnValueOnce(directQuery.query)
+      .mockReturnValueOnce(nullScanQuery.query)
+      .mockReturnValueOnce(estimatesQuery.query);
+    const archiveRow = (index: number, overrides: Record<string, unknown> = {}) => ({
+      round_id: `44444444-4444-4444-8444-${String(index).padStart(12, "0")}`,
+      court_code: "justice_tj_1_112",
+      scheduled_at: "2026-07-01T08:00:00.000Z",
+      initial_starting_price_eur: 30_000 + index,
+      property_type: "house",
+      city: "Firminy",
+      publication_first_seen_at: "2026-06-05T09:00:00.000Z",
+      occupation_status: "vacant",
+      source_name: "petites_affiches",
+      auction_sale_id: null,
+      external_id: String(index),
+      source_url: `https://example.test/pa/${index}`,
+      lot_label: "Maison",
+      lawyer_label: "SCP Exemple",
+      legacy_status: "upcoming",
+      ...overrides,
+    });
+    const archive = fakeQuery({
+      data: [
+        // The live Licitor lot, archived from Petites Affiches.
+        archiveRow(1, {
+          scheduled_at: "2026-06-10T00:00:00.000Z",
+          initial_starting_price_eur: "50000.00",
+          city: "SAINT-ETIENNE",
+        }),
+        archiveRow(2),
+        archiveRow(3),
+        archiveRow(4, { initial_starting_price_eur: 30_003, source_name: "vench" }),
+      ],
+      error: null,
+    });
+    serverRpc.mockReset();
+    serverRpc.mockReturnValueOnce(archive.query);
+
+    const result = await getTribunalListingStatistics(
+      { courtCode: "justice_tj_1_112", historyMonths: 3 },
+      { asOf: AS_OF },
+    );
+
+    expect(serverRpc).toHaveBeenCalledWith("tribunal_outcome_graph_past_hearings", {
+      p_history_start: "2026-05-20T12:00:00.000Z",
+      p_as_of: AS_OF.toISOString(),
+      p_court_code: "justice_tj_1_112",
+    });
+    // live lot + two archived lots (index 4 duplicates index 3, index 1 the live row)
+    expect(result.activity.observedAnnouncements).toBe(3);
+    expect(result.meta.archivedAnnouncements).toBe(2);
+    expect(result.meta.rawAnnouncements).toBe(5);
+    expect(result.activity.discoveryDatesUsed).toBe(3);
+    // Only the live row can tell whether a visit was announced.
+    expect(result.activity.visitCoverage.sampleSize).toBe(1);
+    expect(result.meta.sources).toEqual(["licitor", "petites_affiches", "vench"]);
+    expect(result.activity.lawyers.map((lawyer) => lawyer.name)).toEqual([
+      "SCP Exemple",
+      "Cabinet Test",
+    ]);
+  });
 
   it("inclut les lignes sans code via un alias officiel, puis déduplique avec l’adresse forte", async () => {
     const courtQuery = fakeQuery({

@@ -16,7 +16,7 @@ import {
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
 import { saleRow } from "@/lib/sale-rows";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
 import { saleCostContext } from "@/lib/sale-cost-context";
 import { cleanSaleTitle } from "@/lib/sale-title";

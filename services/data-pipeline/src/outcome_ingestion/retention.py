@@ -15,7 +15,7 @@ from src.outcome_ingestion.artifact_store import (
     RawArtifactStorageError,
     SupabaseRawArtifactStore,
 )
-from src.storage.supabase_client import _postgres_connect
+from src.storage.supabase_client import connect as connect_postgres
 
 PURGE_WORKER_VERSION = "outcome-retention/1"
 
@@ -60,7 +60,7 @@ class RetentionRunSummary:
 
 
 class OutcomeRetentionRepository:
-    def __init__(self, db_url: str, *, connect: Any = _postgres_connect) -> None:
+    def __init__(self, db_url: str, *, connect: Any = connect_postgres) -> None:
         if not db_url.strip():
             raise OutcomeRetentionError("SUPABASE_DB_URL is required for Outcome retention")
         self._db_url = db_url

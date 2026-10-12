@@ -65,18 +65,18 @@ describe("arborescence /admin", () => {
 
   it("ne charge dans chaque page que sa propre vue (plus de module admin unique)", () => {
     const own: Record<string, string> = {
-      "page.tsx": "@/routes/admin",
-      "operations/page.tsx": "@/routes/admin.operations",
-      "agent-ia/page.tsx": "@/routes/admin.agent-ia",
-      "publications/page.tsx": "@/routes/admin.publications",
-      "clients/page.tsx": "@/routes/admin.clients",
-      "lawyers/page.tsx": "@/routes/admin.lawyers",
-      "compliance/page.tsx": "@/routes/admin.compliance",
-      "quality/page.tsx": "@/routes/admin.quality",
+      "page.tsx": "./admin-home-page",
+      "operations/page.tsx": "./admin-operations-page",
+      "agent-ia/page.tsx": "./admin-agent-page",
+      "publications/page.tsx": "./admin-publications-page",
+      "clients/page.tsx": "./admin-clients-page",
+      "lawyers/page.tsx": "./admin-lawyers-page",
+      "compliance/page.tsx": "./admin-compliance-page",
+      "quality/page.tsx": "./admin-quality-page",
     };
     for (const [file, module] of Object.entries(own)) {
       const source = readFileSync(join(ADMIN_DIR, file), "utf8");
-      const imports = [...source.matchAll(/from "(@\/routes\/[^"]+)"/g)].map((match) => match[1]);
+      const imports = [...source.matchAll(/from "(\.\/[^"]+)"/g)].map((match) => match[1]);
       expect(imports, file).toEqual([module]);
     }
   });

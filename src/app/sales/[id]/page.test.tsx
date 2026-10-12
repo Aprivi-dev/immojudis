@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({
     });
   },
 }));
-vi.mock("@/routes/sales.$id", () => ({
+vi.mock("./sale-detail-page", () => ({
   SaleDetailPage: ({ id }: { id: string }) => <div data-testid="detail">{id}</div>,
 }));
 

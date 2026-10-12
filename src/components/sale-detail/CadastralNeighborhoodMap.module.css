@@ -323,3 +323,17 @@
     max-width: calc(100% - 72px);
   }
 }
+
+.legendOutline {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  border: 2px solid #1f6f4a;
+  border-radius: 2px;
+  background: rgb(31 111 74 / 16%);
+}
+
+.legendOutline[data-confirmed="false"] {
+  border-style: dashed;
+}

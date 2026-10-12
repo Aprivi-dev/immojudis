@@ -1,14 +1,21 @@
 import type { Metadata } from "next";
-import { TribunalsPage } from "@/routes/tribunaux";
+import { PublicTribunalActivitySection } from "@/components/PublicTribunalActivity";
+import { TribunalJudicialActivityExplorer } from "@/components/TribunalJudicialActivityExplorer";
+import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
 
 export const metadata: Metadata = {
   title: "Statistiques Tribunaux",
   description:
-    "Comparez les prix d’adjudication, les mises à prix et les résultats des ventes judiciaires par tribunal et type de bien, avec les effectifs et la méthode de calcul.",
+    "Ventes judiciaires à venir, prochaines audiences et mises à prix tribunal par tribunal ; prix d’adjudication et résultats avec l’offre Analyse.",
   alternates: { canonical: "/tribunaux" },
   robots: { index: true, follow: true },
 };
 
-export default function Page() {
-  return <TribunalsPage />;
+export default async function Page() {
+  const publicActivity = await loadPublicTribunalActivity();
+  return (
+    <TribunalJudicialActivityExplorer
+      publicActivity={<PublicTribunalActivitySection items={publicActivity} />}
+    />
+  );
 }
