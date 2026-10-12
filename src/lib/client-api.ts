@@ -133,6 +133,8 @@ export {
   fetchPrecomputedMarketEstimate,
   fetchDocumentReading,
   fetchSalePassages,
+  fetchAuctionScenarios,
+  fetchCourtAuctionSummaries,
   fetchValuePreview,
   fetchOutcomeGraphForecast,
   fetchSaleUrbanismeCadastre,

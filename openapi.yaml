@@ -420,6 +420,36 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/StatisticsUnavailable"
+  /tribunals/auction-summaries:
+    get:
+      operationId: getTribunalAuctionSummaries
+      summary: Lire les moyennes d'adjudication par tribunal sur trois ans
+      description: >-
+        Réservé au plan Analyse. Pour chaque tribunal d'au moins 10 ventes : mise à prix et prix final moyens des ventes adjugées publiées par Licitor, rapport médian prix final / mise à prix, part adjugée au moins au double, et nombre d'adjudications DVF dans le ressort du tribunal.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Réponse JSON
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Toujours `private, no-store`.
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/AuthRequired"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/StatisticsUnavailable"
 components:
   securitySchemes:
     bearerAuth:
