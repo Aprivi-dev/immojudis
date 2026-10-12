@@ -7,7 +7,8 @@ l'attestation des nouveaux lots par la porte structurelle des statistiques.
 
 La campagne mensuelle (fenêtre de 36 mois, résultats des 90 derniers jours
 relus) est créée une fois par mois ; les ticks suivants la reprennent jusqu'à la
-fin. La partie réseau tourne sous le rôle restreint ``licitor_collector``.
+fin. La partie réseau tourne sous le rôle restreint ``licitor_collector``, posé
+transaction par transaction (``set local role``) à cause du pooler.
 """
 
 from __future__ import annotations
@@ -15,7 +16,8 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import psycopg
@@ -38,6 +40,49 @@ def _connect(db_url: str) -> psycopg.Connection:
     )
 
 
+class CollectorRoleConnection:
+    """Run every statement under ``licitor_collector`` with ``set local role``.
+
+    The pipeline reaches the database through Supabase's transaction pooler: a
+    session-level ``set role`` stays on the pooled server connection and is
+    handed to the next client (12/10/2026 incident: other collections got
+    "permission denied"). A role set with ``set local`` ends with its
+    transaction, so each statement outside an explicit transaction gets its own.
+    """
+
+    def __init__(self, connection: Any) -> None:
+        self._connection = connection
+        self._depth = 0
+
+    @property
+    def row_factory(self) -> Any:
+        return self._connection.row_factory
+
+    @row_factory.setter
+    def row_factory(self, value: Any) -> None:
+        self._connection.row_factory = value
+
+    def execute(self, query: Any, params: Any = None) -> Any:
+        if self._depth:
+            return self._connection.execute(query, params)
+        with self.transaction():
+            return self._connection.execute(query, params)
+
+    @contextmanager
+    def transaction(self) -> Iterator[Any]:
+        with self._connection.transaction() as block:
+            if not self._depth:
+                self._connection.execute(f"set local role {COLLECTOR_ROLE}")
+            self._depth += 1
+            try:
+                yield block
+            finally:
+                self._depth -= 1
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._connection, name)
+
+
 def refresh(
     db_url: str,
     *,
@@ -48,17 +93,15 @@ def refresh(
     """One bounded refresh: make sure the month's campaign exists, run one tick, attest."""
     report: dict[str, object] = {}
     with connect(db_url) as connection:
+        collector = CollectorRoleConnection(connection)
         try:
-            connection.execute(f"set role {COLLECTOR_ROLE}")
+            with collector.transaction():
+                pass
         except psycopg.Error as exc:
             return {"status": "collector_role_unavailable", "error": type(exc).__name__}
-        try:
-            store = CloudStore(connection)
-            report["campaign"] = start(store).get("status")
-            report["tick"] = tick(store)
-        finally:
-            # The session pooler hands the connection to someone else afterwards.
-            connection.execute("reset role")
+        store = CloudStore(collector)
+        report["campaign"] = start(store).get("status")
+        report["tick"] = tick(store)
         # The attestation needs the main role: the collector cannot vouch for its own lots.
         attested = connection.execute(ATTEST_SQL).fetchone()
         report["attested"] = int(next(iter(attested.values())) if isinstance(attested, dict) else attested[0])
