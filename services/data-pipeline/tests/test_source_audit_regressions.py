@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from src.enrichment.extract_structured import _format_surface_value
+from src.enrichment.display_fallback import _format_surface_value
 from src.normalize import normalize_sale
 from src.sources import avoventes, cessions_etat, info_encheres, petites_affiches, vench
 

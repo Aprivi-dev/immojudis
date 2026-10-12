@@ -196,6 +196,33 @@ def quarantine_reason(sale: AuctionSale) -> str | None:
     return None
 
 
+_DISPLAY_JOB_STATUSES = frozenset({"active", "unknown", "upcoming", "postponed"})
+_QUARANTINE_PAYLOAD_KEYS = ("publication_quarantine", "publication_identity_conflict", "source_identity_mismatch")
+
+
+def display_job_block_reason(sale: AuctionSale, now: datetime | None = None) -> str | None:
+    """Why no AI synthesis job may be queued for this sale, or ``None``.
+
+    The claim RPC cancels such jobs as "Listing removed, expired or explicitly
+    cancelled" without running them; not creating them keeps them out of the
+    queue. A postponed sale keeps its old date until the new one is published,
+    so only its status is checked.
+    """
+    now = now or datetime.now(UTC)
+    if sale.status not in _DISPLAY_JOB_STATUSES:
+        return f"status_{sale.status}"
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    if quarantine_reason(sale) or any(payload.get(key) for key in _QUARANTINE_PAYLOAD_KEYS):
+        return "quarantined"
+    if sale.status != "postponed" and sale.sale_date is not None and sale_date_has_passed(
+        sale.sale_date, date_only=True, now=now
+    ):
+        return "past_sale_date"
+    if is_expired(sale, now) or is_catalogue_expired(sale, now):
+        return "expired"
+    return None
+
+
 def publication_rejection(sale: AuctionSale, now=None) -> str | None:
     """Motif pour lequel une vente n'est pas publiée, ou ``None`` si elle l'est.
 

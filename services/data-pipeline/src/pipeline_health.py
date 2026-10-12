@@ -8,6 +8,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from src.config import load_settings
+from src.enrichment.display_fallback import ABSENCE_SENTENCE_PATTERN
 from src.storage.supabase_client import connect
 
 
@@ -94,10 +95,18 @@ def main(*, report_only: bool = False) -> int:
                 count(*) filter (where sale_date >= now()),
                 count(*) filter (where sale_date >= now() and nullif(btrim(raw_payload->>'llm_display_description'), '') is null),
                 count(*) filter (where sale_date >= now() and last_seen_at < now() - interval '7 days'),
-                max(last_seen_at)
+                max(last_seen_at),
+                count(*) filter (where sale_date >= now() and raw_payload->>'llm_display_status' = 'fallback'
+                                 and nullif(btrim(raw_payload->>'llm_display_description'), '') is not null),
+                count(*) filter (where sale_date >= now() and raw_payload->>'llm_display_description' ~* %s)
             from public.auction_sales group by source_name order by source_name
-        """).fetchall()
-        report["sources"] = [dict(zip(("source", "total", "future", "missing_synthesis", "stale", "last_seen"), row, strict=True)) for row in sources]
+        """, (ABSENCE_SENTENCE_PATTERN,)).fetchall()
+        source_fields = (
+            "source", "total", "future", "missing_synthesis", "stale", "last_seen",
+            "fallback_synthesis", "absence_synthesis",
+        )
+        report["sources"] = [dict(zip(source_fields, row, strict=True)) for row in sources]
+        report["synthesis_quality"] = summarize_synthesis_quality(report["sources"])
     failed = health_failed(report)
     report["global_health_status"] = "degraded" if failed else "healthy"
     output = json.dumps(report, ensure_ascii=False, indent=2, default=str)
@@ -108,6 +117,33 @@ def main(*, report_only: bool = False) -> int:
     if failed and report_only:
         print("::warning::Global pipeline health is degraded; see the backlog report and operational incidents. Collection status is reported separately.")
     return int(failed and not report_only)
+
+
+def summarize_synthesis_quality(sources: Iterable[Mapping[str, object]]) -> dict:
+    """Share of upcoming syntheses that are the template, or state an absence.
+
+    Rates are over upcoming sales that have a synthesis. ``None`` means there
+    is nothing to measure, never a perfect score.
+    """
+    rows = list(sources)
+
+    def rates(row: Mapping[str, object]) -> dict[str, object]:
+        with_synthesis = _count(row.get("future")) - _count(row.get("missing_synthesis"))
+        fallback = _count(row.get("fallback_synthesis"))
+        absence = _count(row.get("absence_synthesis"))
+        return {
+            "with_synthesis": with_synthesis,
+            "fallback_template": fallback,
+            "absence_sentences": absence,
+            "fallback_rate": round(fallback / with_synthesis, 4) if with_synthesis > 0 else None,
+            "absence_sentence_rate": round(absence / with_synthesis, 4) if with_synthesis > 0 else None,
+        }
+
+    totals = {
+        field: sum(_count(row.get(field)) for row in rows)
+        for field in ("future", "missing_synthesis", "fallback_synthesis", "absence_synthesis")
+    }
+    return {**rates(totals), "by_source": {str(row.get("source")): rates(row) for row in rows}}
 
 
 def compact_queue_claimability(metrics: object) -> dict[str, int] | None:
