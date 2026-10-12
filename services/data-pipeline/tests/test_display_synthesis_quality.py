@@ -372,3 +372,18 @@ def test_false_absence_in_a_cached_synthesis_falls_back_instead_of_being_publish
     codes = {issue["code"] for issue in sale.raw_payload["llm_display_evidence_check"]["issues"]}
     assert "absence_claim_contradicted" in codes
     assert "pas précisées" not in str(sale.raw_payload.get("llm_display_description"))
+
+
+def test_a_filler_sentence_is_dropped_and_the_factual_ones_are_kept() -> None:
+    from src.enrichment.display_semantics import strip_filler_sentences
+
+    text = (
+        "Appartement de 46 m² à Mantes-la-Jolie, vendu aux enchères le 20/11/2026. "
+        "Les enchères doivent être portées par un avocat inscrit au barreau. "
+        "Le lot 1 est loué."
+    )
+
+    assert strip_filler_sentences(text) == (
+        "Appartement de 46 m² à Mantes-la-Jolie, vendu aux enchères le 20/11/2026. Le lot 1 est loué."
+    )
+    assert strip_filler_sentences(None) is None

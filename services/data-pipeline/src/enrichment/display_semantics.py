@@ -197,6 +197,23 @@ def filler_issues(prose: str) -> list[dict[str, str]]:
     ]
 
 
+def strip_filler_sentences(text: str | None) -> str | None:
+    """Drop the generic sentences (procedure, reliability, advice, contacts) the model still writes.
+
+    One filler sentence must not cost the whole synthesis: the factual
+    sentences are kept and checked as usual.
+    """
+    if not text:
+        return text
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    kept = [
+        sentence
+        for sentence in sentences
+        if not any(pattern.search(_model_prose(sentence)) for pattern in FILLER.values())
+    ]
+    return " ".join(kept)
+
+
 def semantic_display_issues(text: str, evidence: str, fields: dict[str, Any]) -> list[dict[str, str]]:
     prose = _model_prose(text)
     return [

@@ -23,6 +23,7 @@ from src.encheres_publiques_guard import (
 from src.enrichment.display_evidence import verify_display_claims
 from src.enrichment.display_facts import canonical_facts_block
 from src.enrichment.display_quality import DISPLAY_MIN_CHARS, DISPLAY_QUALITY_VERSION, preserve_source_constraints
+from src.enrichment.display_semantics import strip_filler_sentences
 from src.enrichment.llm_client import (
     LLMProviderOutputRefused,
     ReplicateClient,
@@ -2501,7 +2502,7 @@ def _apply_extraction_to_sale(
         if confidence.get("property_type", 0) >= 0.7:
             sale.property_type = extraction.property_type
 
-    display_description = _normalize_display_description(extraction.display_description)
+    display_description = strip_filler_sentences(_normalize_display_description(extraction.display_description))
     display_check = verify_display_claims(
         display_description or "", "\n".join(filter(None, (extract_source_description(sale), context))),
         reference_sale.model_dump(),
