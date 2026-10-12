@@ -38,7 +38,9 @@ L'historique des adjudications Licitor est collecté automatiquement depuis le 1
 du propriétaire), sans cron supplémentaire : après chaque passage de la file d'enrichissement, le
 lanceur planifié (`autonomous_runner`) exécute un « tick » borné du collecteur
 (`src.sources.licitor_history_refresh` : au plus 100 requêtes, 2 s entre deux, robots.txt respecté,
-rôle `licitor_collector`), puis atteste les nouveaux lots par la porte structurelle des statistiques
+rôle `licitor_collector` posé par `set local role` dans chaque transaction, jamais au niveau de la
+session : le pooler en mode transaction transmettrait le rôle à d'autres clients, incident du
+12/10/2026), puis atteste les nouveaux lots par la porte structurelle des statistiques
 (`app_private.attest_licitor_reported_candidates`). La campagne mensuelle (36 mois, 90 derniers jours
 relus) est créée au premier tick du mois. Son code de sortie est noté dans `auction_runs.summary`
 (`licitor_history_exit_code`).
