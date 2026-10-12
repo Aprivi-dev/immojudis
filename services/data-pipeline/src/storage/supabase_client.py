@@ -416,6 +416,7 @@ def _coalesce_queued_display_revisions(
 
 
 def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> None:
+    from src.admission import display_job_block_reason  # past, removed or quarantined: no AI synthesis job
     from src.enrichment.extract_structured import needs_fact_extraction
 
     settings = load_settings()
@@ -434,7 +435,8 @@ def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> Non
         if sale.documents and not documents_current:
             # A failed document keeps the same retry budget across daily scans.
             kinds.append(("pdf", pdf_enrichment_input_hash_for_sale(sale, settings), 30))
-        if not _has_current_llm_description(sale.raw_payload, prompt_version) or sale.raw_payload.get("source_content_changed"):
+        if (not _has_current_llm_description(sale.raw_payload, prompt_version) or sale.raw_payload.get(
+                "source_content_changed")) and not display_job_block_reason(sale):
             kinds.append(("display_description", revision, 20))
         if needs_fact_extraction(sale):
             kinds.append(("fact_extraction", revision, 25))

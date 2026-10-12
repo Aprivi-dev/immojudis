@@ -8,6 +8,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from src.config import load_settings
+from src.enrichment.display_fallback import ABSENCE_SENTENCE_PATTERN
 from src.storage.supabase_client import connect
 
 
@@ -94,10 +95,30 @@ def main(*, report_only: bool = False) -> int:
                 count(*) filter (where sale_date >= now()),
                 count(*) filter (where sale_date >= now() and nullif(btrim(raw_payload->>'llm_display_description'), '') is null),
                 count(*) filter (where sale_date >= now() and last_seen_at < now() - interval '7 days'),
-                max(last_seen_at)
+                max(last_seen_at),
+                count(*) filter (where sale_date >= now() and raw_payload->>'llm_display_status' = 'stale'),
+                count(*) filter (where sale_date >= now() and raw_payload->>'llm_display_status' = 'fallback'
+                                 and nullif(btrim(raw_payload->>'llm_display_description'), '') is not null),
+                count(*) filter (where sale_date >= now() and raw_payload->>'llm_display_description' ~* %s)
             from public.auction_sales group by source_name order by source_name
+        """, (ABSENCE_SENTENCE_PATTERN,)).fetchall()
+        source_fields = (
+            "source", "total", "future", "missing_synthesis", "stale", "last_seen",
+            "stale_synthesis", "fallback_synthesis", "absence_synthesis",
+        )
+        report["sources"] = [dict(zip(source_fields, row, strict=True)) for row in sources]
+        report["synthesis_quality"] = summarize_synthesis_quality(report["sources"])
+        # Daily counters written by record_source_checks on each source check.
+        invalidations = connection.execute("""
+            select coalesce(sum(case when jsonb_typeof(c.value->'display_invalidations'->'count') = 'number'
+                                     then (c.value->'display_invalidations'->>'count')::numeric end), 0)
+            from public.auction_sales s
+            cross join lateral jsonb_each(case when jsonb_typeof(s.raw_payload->'source_checks') = 'object'
+                                               then s.raw_payload->'source_checks' else '{}'::jsonb end) c
+            where c.value->'display_invalidations'->>'day' = to_char(timezone('utc', now()), 'YYYY-MM-DD')
+            group by s.id
         """).fetchall()
-        report["sources"] = [dict(zip(("source", "total", "future", "missing_synthesis", "stale", "last_seen"), row, strict=True)) for row in sources]
+        report["display_invalidations_today"] = summarize_display_invalidations(row[0] for row in invalidations)
     failed = health_failed(report)
     report["global_health_status"] = "degraded" if failed else "healthy"
     output = json.dumps(report, ensure_ascii=False, indent=2, default=str)
@@ -108,6 +129,49 @@ def main(*, report_only: bool = False) -> int:
     if failed and report_only:
         print("::warning::Global pipeline health is degraded; see the backlog report and operational incidents. Collection status is reported separately.")
     return int(failed and not report_only)
+
+
+def summarize_display_invalidations(per_sale_counts: Iterable[object]) -> dict[str, object]:
+    """Source invalidations of the AI synthesis per sale, for the current UTC day.
+
+    A sale invalidated several times a day is the regenerate-then-erase loop.
+    """
+    counts = [_count(value) for value in per_sale_counts if _count(value) > 0]
+    total = sum(counts)
+    return {
+        "sales": len(counts),
+        "invalidations": total,
+        "per_sale_avg": round(total / len(counts), 2) if counts else 0,
+        "per_sale_max": max(counts, default=0),
+        "sales_with_3_or_more": sum(count >= 3 for count in counts),
+    }
+
+
+def summarize_synthesis_quality(sources: Iterable[Mapping[str, object]]) -> dict:
+    """Share of upcoming syntheses that are the template, or state an absence.
+
+    Rates are over upcoming sales that have a synthesis. ``None`` means there
+    is nothing to measure, never a perfect score.
+    """
+    rows = list(sources)
+
+    def rates(row: Mapping[str, object]) -> dict[str, object]:
+        with_synthesis = _count(row.get("future")) - _count(row.get("missing_synthesis"))
+        fallback = _count(row.get("fallback_synthesis"))
+        absence = _count(row.get("absence_synthesis"))
+        return {
+            "with_synthesis": with_synthesis,
+            "fallback_template": fallback,
+            "absence_sentences": absence,
+            "fallback_rate": round(fallback / with_synthesis, 4) if with_synthesis > 0 else None,
+            "absence_sentence_rate": round(absence / with_synthesis, 4) if with_synthesis > 0 else None,
+        }
+
+    totals = {
+        field: sum(_count(row.get(field)) for row in rows)
+        for field in ("future", "missing_synthesis", "fallback_synthesis", "absence_synthesis")
+    }
+    return {**rates(totals), "by_source": {str(row.get("source")): rates(row) for row in rows}}
 
 
 def compact_queue_claimability(metrics: object) -> dict[str, int] | None:

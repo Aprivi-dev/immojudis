@@ -324,7 +324,7 @@ export function buildAiDescriptionDashboardStats(
       displayDescription &&
       displayDescription.length >= 80 &&
       promptVersion === expectedPromptVersion &&
-      row.llm_display_quality_version === "display_quality_20260911_v3" &&
+      row.llm_display_quality_version === "display_quality_20261012_v4" &&
       ["accepted", "fallback"].includes(String(row.llm_display_status))
     ) {
       ready += 1;

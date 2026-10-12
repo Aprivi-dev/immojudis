@@ -312,7 +312,7 @@ def test_writer_marker_generation_is_idempotent_and_claims_only_new_revision(mon
                 "documents_extracted": 0,
             },
             "llm_display_description": "Description de test suffisamment longue pour satisfaire le contrôle de qualité affiché.",
-            "llm_display_quality_version": "display_quality_20260911_v3",
+            "llm_display_quality_version": "display_quality_20261012_v4",
             "llm_display_status": "accepted",
             "llm_prompt_version": settings["llm_prompt_version"],
             "llm_display_prompt_version": settings["llm_display_prompt_version"],

@@ -130,7 +130,7 @@ def prepare_source_revision(existing, raw: dict):
         raise ValueError('Source detail was not verified')
     known = {fetched_url: existing.to_storage_dict()}
     _preserve_known_enrichment_payloads([raw], known)
-    record_source_checks([raw], known)
+    record_source_checks([raw], known, capture='source_detail')
     incoming = normalize_sale(raw)
     incoming.last_run_id = existing.last_run_id
     _finalize_sale_for_app(incoming, geocode=False)

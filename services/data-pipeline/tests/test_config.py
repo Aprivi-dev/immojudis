@@ -79,7 +79,7 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["pipeline_enrichment_queue_batch_size"] == 10
     assert settings["llm_prompt_version"] == "auction_llm_v10_structured_display"
     assert settings["llm_fact_prompt_version"] == "auction_facts_v1"
-    assert settings["llm_display_prompt_version"] == "auction_display_v9_public_summary"
+    assert settings["llm_display_prompt_version"] == "auction_display_v10_canonical_facts"
     assert settings["llm_extraction_mode"] == "structured_then_display"
     assert settings["llm_pdf_max_chars"] == 12000
     assert settings["llm_fact_chunk_chars"] == 12000

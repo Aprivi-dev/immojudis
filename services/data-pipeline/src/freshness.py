@@ -6,6 +6,16 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from src.display_invalidation import (
+    CONTENT_CHANGE_KEEP_DISPLAY,
+    OPERATIONAL_CHANGE,
+    capture_fingerprints,
+    capture_kind,
+    classify_source_change,
+    count_display_invalidation,
+    keep_display_as_stale,
+    merge_capture_fingerprints,
+)
 from src.enrichment.display_quality import has_current_display
 from src.normalize import clean_text
 
@@ -89,7 +99,13 @@ def document_fingerprint(documents: list) -> str:
     return hashlib.sha256(json.dumps(identities).encode()).hexdigest()
 
 
-def record_source_checks(raw_sales: list, known: dict) -> None:
+def record_source_checks(raw_sales: list, known: dict, *, capture: str = "collection") -> None:
+    """Record each capture's proof and invalidate the analysis on a real change.
+
+    ``capture`` is ``source_detail`` for the recurring detail job, which parses
+    the detail page alone; a collection merges the list card with it. Only
+    captures of the same kind are compared (see ``display_invalidation``).
+    """
     for sale in raw_sales:
         url = str(sale.get("source_url") or "")
         previous = (known.get(url, {}).get("raw_payload") or {}).get("source_checks") or {}
@@ -102,22 +118,33 @@ def record_source_checks(raw_sales: list, known: dict) -> None:
         fingerprint = hashlib.sha256(json.dumps(content, sort_keys=True, default=str).encode()).hexdigest()
         evidence_fingerprint = source_evidence_fingerprint(content)
         old = previous.get(url) or {}
+        kind = capture_kind(sale, capture)
+        fingerprints = capture_fingerprints(sale, snapshot, SOURCE_OPERATIONAL_FIELDS)
         check = {
             "checked_at": sale.get("_checkpoint_checked_at") or datetime.now(UTC).isoformat(),
             "source_name": sale.get("source_name"),
             "fingerprint": fingerprint,
             "evidence_fingerprint": evidence_fingerprint,
             "extractor_version": SOURCE_EXTRACTION_VERSION,
+            "capture_kind": kind,
+            "capture_fingerprints": merge_capture_fingerprints(old, kind, fingerprints),
         }
         # A detail-status marker is proof that the dedicated detail fetch was
         # validated. Listing captures must replace the previous check without
         # inheriting that proof from the stored row.
         if sale.get("source_detail_status") in {"complete", "restricted"}:
             check["detail_status"] = sale["source_detail_status"]
-        payload["source_checks"][url] = check
+        change = None
         if old.get("fingerprint") != fingerprint:
-            operational_only = old.get("evidence_fingerprint") == evidence_fingerprint
-            invalidate_analysis(payload, "source_operational_changed" if operational_only else "source_content_changed", preserve_facts=operational_only)
+            change = classify_source_change(old, kind, fingerprints, evidence_fingerprint)
+        invalidations = count_display_invalidation(old, invalidated=change is not None)
+        if invalidations:
+            check["display_invalidations"] = invalidations
+        payload["source_checks"][url] = check
+        if change == OPERATIONAL_CHANGE:
+            invalidate_analysis(payload, "source_operational_changed", preserve_facts=True)
+        elif change is not None:
+            invalidate_analysis(payload, "source_content_changed", keep_display=change == CONTENT_CHANGE_KEEP_DISPLAY)
 
 
 def documents_are_current(sale: Any) -> bool:
@@ -347,8 +374,22 @@ def _local_pdf_cache_is_complete(
     return True
 
 
-def invalidate_analysis(payload: dict, reason: str, *, preserve_facts: bool = False) -> None:
-    """Retain dated evidence, never publish the superseded synthesis as current."""
+_FACT_KEYS = (
+    "document_facts_version", "llm_fact_prompt_version", "llm_fact_extraction",
+    "llm_fact_coverage", "llm_fact_input_key", "llm_fact_context_manifest", "llm_fact_context_coverage",
+)
+
+
+def invalidate_analysis(
+    payload: dict, reason: str, *, preserve_facts: bool = False, keep_display: bool = False,
+) -> None:
+    """Retain dated evidence, never publish the superseded synthesis as current.
+
+    ``keep_display`` (a documentary change that is not major) keeps the text
+    visible with the ``stale`` status while its regeneration is queued; the
+    LLM facts are still discarded. A major change or a price/date change
+    removes the text as before.
+    """
     previous_content_changed = bool(payload.get("source_content_changed"))
     # A reason without its queue flag is a stale marker from a caller that
     # already consumed the previous invalidation. Do not let it make the next
@@ -366,6 +407,10 @@ def invalidate_analysis(payload: dict, reason: str, *, preserve_facts: bool = Fa
     else:
         payload.pop("source_operational_changed", None)
         payload["source_content_change_reason"] = reason
+    if keep_display and not preserve_facts and keep_display_as_stale(payload):
+        for key in ("llm_extraction", "llm_due_diligence", "investment_analysis", *_FACT_KEYS):
+            payload.pop(key, None)
+        return
     if payload.get("llm_display_description"):
         fact_manifest = payload.get("llm_fact_context_manifest")
         previous_model = payload.get("llm_display_model")
@@ -407,8 +452,7 @@ def invalidate_analysis(payload: dict, reason: str, *, preserve_facts: bool = Fa
         "llm_display_evidence_check",
     ]
     if not preserve_facts:
-        keys.extend(["document_facts_version", "llm_fact_prompt_version", "llm_fact_extraction",
-                     "llm_fact_coverage", "llm_fact_input_key", "llm_fact_context_manifest", "llm_fact_context_coverage"])
+        keys.extend(_FACT_KEYS)
     elif isinstance(payload.get("llm_fact_extraction"), dict):
         # Retain validated facts, never an old generated paragraph or financial
         # narrative bundled with an earlier extraction.

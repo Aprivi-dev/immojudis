@@ -945,7 +945,7 @@ def test_enrich_sale_with_llm_can_use_display_description_mode(tmp_path, monkeyp
     assert "investment_facts" not in client.user_prompt
     assert "display_description" in client.user_prompt
     assert sale.raw_payload["llm_display_description"].startswith("Maison à Bordeaux")
-    assert sale.raw_payload["llm_display_prompt_version"] == "auction_display_v9_public_summary"
+    assert sale.raw_payload["llm_display_prompt_version"] == "auction_display_v10_canonical_facts"
     assert sale.raw_payload["llm_prompt_version"] == "auction_llm_v6_display_test"
 
 
@@ -963,7 +963,7 @@ def test_provider_output_refusal_propagates_without_cache_or_new_display(tmp_pat
         {
             "llm_display_description": previous_display,
             "llm_display_status": "accepted",
-            "llm_display_prompt_version": "auction_display_v9_public_summary",
+            "llm_display_prompt_version": "auction_display_v10_canonical_facts",
         }
     )
     pdf_dir = tmp_path / "pdf_texts"
@@ -1008,7 +1008,7 @@ def test_structured_facts_are_checkpointed_before_display_refusal(tmp_path, monk
         {
             "llm_display_description": previous_display,
             "llm_display_status": "accepted",
-            "llm_display_prompt_version": "auction_display_v9_public_summary",
+            "llm_display_prompt_version": "auction_display_v10_canonical_facts",
             "llm_fact_extraction": {"surface_m2": 88.0},
         }
     )
@@ -1343,7 +1343,8 @@ def test_load_llm_context_falls_back_to_raw_text_when_pdf_cache_missing(tmp_path
     context = load_llm_context_for_sale(sale, max_chars=200)
 
     assert context is not None
-    assert context.startswith("[ANNONCE SOURCE]")
+    assert context.startswith("[FAITS CANONIQUES]")
+    assert "[ANNONCE SOURCE]" in context
     assert "occupation" in context
 
 
@@ -1415,7 +1416,9 @@ def test_source_data_boundary_neutralizes_a_matching_end_marker() -> None:
     assert "Surface habitable : 91,4 m²." in wrapped
 
 
-def test_load_llm_context_includes_structured_extracted_fields(tmp_path, monkeypatch) -> None:
+def test_load_llm_context_includes_canonical_fields_even_when_a_previous_extraction_matches(
+    tmp_path, monkeypatch
+) -> None:
     sale = normalize_sale(
         {
             "source_name": "avoventes",
@@ -1428,16 +1431,21 @@ def test_load_llm_context_includes_structured_extracted_fields(tmp_path, monkeyp
     sale.rooms_count = 4
     sale.bedrooms_count = 3
     sale.occupancy_status = "rented"
+    sale.surface_source = "llm"
+    # Equal to the canonical values: they used to be omitted, so the model
+    # wrote « surface non précisée ».
+    sale.raw_payload["llm_extraction"] = {"rooms_count": 4, "bedrooms_count": 3, "occupancy_status": "rented"}
     monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", tmp_path)
 
     context = load_llm_context_for_sale(sale, max_chars=2500)
 
     assert context is not None
-    assert "[DONNEES STRUCTUREES EXTRAITES]" in context
-    assert "Surface principale: 91.4 m2" in context
-    assert "Pièces: 4" in context
-    assert "Chambres: 3" in context
-    assert "Occupation extraite: rented" in context
+    assert context.startswith("[FAITS CANONIQUES]")
+    assert "Surface retenue : 91,4 m² (principale)." in context
+    assert "Pièces : 4." in context
+    assert "Chambres : 3." in context
+    assert "Occupation : loué." in context
+    assert "NATURE_VENTE :" in context
 
 
 def test_load_llm_context_includes_merged_source_pages(tmp_path, monkeypatch) -> None:

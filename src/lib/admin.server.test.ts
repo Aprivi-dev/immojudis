@@ -13,7 +13,7 @@ describe("admin dashboard AI description stats", () => {
         status: "upcoming",
         llm_display_description: "Synthèse prête. ".repeat(8),
         llm_prompt_version: "auction_llm_v10_structured_display",
-        llm_display_quality_version: "display_quality_20260911_v3",
+        llm_display_quality_version: "display_quality_20261012_v4",
         llm_display_status: "accepted",
       },
       {
@@ -55,7 +55,7 @@ describe("admin dashboard AI description stats", () => {
         status: "upcoming",
         llm_display_description: "Maison située à Paris.",
         llm_prompt_version: "auction_llm_v10_structured_display",
-        llm_display_quality_version: "display_quality_20260911_v3",
+        llm_display_quality_version: "display_quality_20261012_v4",
         llm_display_status: "fallback",
       },
     ]);
@@ -74,7 +74,7 @@ describe("admin dashboard AI description stats", () => {
         status: "active",
         llm_display_description: "Synthèse active. ".repeat(8),
         llm_prompt_version: "auction_llm_v10_structured_display",
-        llm_display_quality_version: "display_quality_20260911_v3",
+        llm_display_quality_version: "display_quality_20261012_v4",
         llm_display_status: "accepted",
       },
     ];
