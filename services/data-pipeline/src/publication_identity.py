@@ -302,6 +302,7 @@ def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
                     result.raw_payload,
                     'source_operational_changed' if incoming_is_operational else 'source_revision_changed',
                     preserve_facts=incoming_is_operational,
+                    keep_display=incoming.raw_payload.get('llm_display_status') == 'stale',
                 )
     ensure_room_bedroom_consistency(result, existing, incoming)
     reason = quarantine_reason(incoming)

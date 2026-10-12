@@ -94,10 +94,22 @@ def main(*, report_only: bool = False) -> int:
                 count(*) filter (where sale_date >= now()),
                 count(*) filter (where sale_date >= now() and nullif(btrim(raw_payload->>'llm_display_description'), '') is null),
                 count(*) filter (where sale_date >= now() and last_seen_at < now() - interval '7 days'),
-                max(last_seen_at)
+                max(last_seen_at),
+                count(*) filter (where sale_date >= now() and raw_payload->>'llm_display_status' = 'stale')
             from public.auction_sales group by source_name order by source_name
         """).fetchall()
-        report["sources"] = [dict(zip(("source", "total", "future", "missing_synthesis", "stale", "last_seen"), row, strict=True)) for row in sources]
+        report["sources"] = [dict(zip(("source", "total", "future", "missing_synthesis", "stale", "last_seen", "stale_synthesis"), row, strict=True)) for row in sources]
+        # Daily counters written by record_source_checks on each source check.
+        invalidations = connection.execute("""
+            select coalesce(sum(case when jsonb_typeof(c.value->'display_invalidations'->'count') = 'number'
+                                     then (c.value->'display_invalidations'->>'count')::numeric end), 0)
+            from public.auction_sales s
+            cross join lateral jsonb_each(case when jsonb_typeof(s.raw_payload->'source_checks') = 'object'
+                                               then s.raw_payload->'source_checks' else '{}'::jsonb end) c
+            where c.value->'display_invalidations'->>'day' = to_char(timezone('utc', now()), 'YYYY-MM-DD')
+            group by s.id
+        """).fetchall()
+        report["display_invalidations_today"] = summarize_display_invalidations(row[0] for row in invalidations)
     failed = health_failed(report)
     report["global_health_status"] = "degraded" if failed else "healthy"
     output = json.dumps(report, ensure_ascii=False, indent=2, default=str)
@@ -108,6 +120,22 @@ def main(*, report_only: bool = False) -> int:
     if failed and report_only:
         print("::warning::Global pipeline health is degraded; see the backlog report and operational incidents. Collection status is reported separately.")
     return int(failed and not report_only)
+
+
+def summarize_display_invalidations(per_sale_counts: Iterable[object]) -> dict[str, object]:
+    """Source invalidations of the AI synthesis per sale, for the current UTC day.
+
+    A sale invalidated several times a day is the regenerate-then-erase loop.
+    """
+    counts = [_count(value) for value in per_sale_counts if _count(value) > 0]
+    total = sum(counts)
+    return {
+        "sales": len(counts),
+        "invalidations": total,
+        "per_sale_avg": round(total / len(counts), 2) if counts else 0,
+        "per_sale_max": max(counts, default=0),
+        "sales_with_3_or_more": sum(count >= 3 for count in counts),
+    }
 
 
 def compact_queue_claimability(metrics: object) -> dict[str, int] | None:

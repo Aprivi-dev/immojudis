@@ -60,7 +60,9 @@ def test_identical_rescan_keeps_display_and_fact_coverage():
 
 def test_legacy_revision_is_not_assumed_operational_only():
     raw, known = _revision()
-    known[raw["source_url"]]["raw_payload"]["source_checks"][raw["source_url"]].pop("evidence_fingerprint")
+    legacy_check = known[raw["source_url"]]["raw_payload"]["source_checks"][raw["source_url"]]
+    legacy_check.pop("evidence_fingerprint")
+    legacy_check.pop("capture_fingerprints")
     raw["starting_price_eur"] = 80000
     record_source_checks([raw], known)
     assert "llm_fact_coverage" not in raw
