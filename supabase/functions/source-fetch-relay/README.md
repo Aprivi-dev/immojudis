@@ -1,6 +1,6 @@
 # Source fetch relay
 
-Fetch-only transport for public Petites Affiches and Cessions Etat pages. The existing Python collectors retain robots handling, request pacing, redirect origin validation, pagination, parsing, quality validation and database publication.
+Fetch-only transport for public Petites Affiches and Cessions Etat pages, and for the attached Cessions Etat documents. The existing Python collectors retain robots handling, request pacing, redirect origin validation, pagination, parsing, quality validation and database publication.
 
 ## Authentication and activation
 
@@ -14,7 +14,7 @@ Rotate the token by generating a new random value, replacing its SHA-256 digest,
 
 ## Limits
 
-- 25-second upstream deadline; source body capped at 2 MiB.
+- 25-second upstream deadline; source body capped at 2 MiB, 25 MiB for attached Cessions Etat documents (`/sites/default/files/`, read by the PDF pipeline since 12/10/2026 because the publisher refuses the runner's network).
 - No automatic server-side redirects; no generic proxy and no database writes.
 - Source 403/429 responses remain errors, never an empty successful catalogue.
 - No cookie/session persistence. Encheres Publiques is not supported by this relay.

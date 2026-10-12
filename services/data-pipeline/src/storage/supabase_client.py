@@ -41,14 +41,12 @@ from src.config import LLM_EXTRACTIONS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DI
 from src.court_competence import tribunal_reference_rows
 from src.dedupe import merge_duplicate_sales
 from src.enrichment.display_quality import has_current_display
-from src.fact_claims import (
-    build_fact_claim_candidates,
-    materialize_fact_claim_rows,
-)
+from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.freshness import document_fingerprint, documents_are_current, timestamp_is_fresh
 from src.models import AuctionSale
 from src.normalize import clean_text, make_sale_signature
 from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, classify_document_type, sale_storage_id
+from src.pdf_partial_tolerance import tolerated_partial_url_set
 from src.pdf_progress import (
     PDF_PROGRESS_SCHEMA_VERSION,
     document_url,
@@ -4281,6 +4279,7 @@ def _document_rows_for_sale(
             } - excluded_urls
             if not expected_profile_urls.issubset(profile_urls):
                 invalid_analysis = True
+    tolerated_partial_urls = tolerated_partial_url_set(analysis) if fresh_analysis else set()
     rows = []
     if isinstance(analysis, dict) and "profiles" in analysis and not (
         isinstance(analysis.get("profiles"), list)
@@ -4353,10 +4352,12 @@ def _document_rows_for_sale(
             if manifest_profile.get("complete") is False or manifest_profile.get("failed_pages"):
                 manifest_status = "incomplete"
             if manifest_status in {"incomplete", "failed"}:
-                # A current manifest can carry a failed-page result from the
-                # latest extraction while an older local cache still has text.
-                # Do not let that stale cache advertise a complete document.
+                # A current manifest can carry a failed-page result from the latest extraction while an
+                # older local cache still has text: never advertise a complete document. A few pages
+                # unreadable after a retry make it "partial" (settled, see pdf_partial_tolerance).
                 extraction_status = manifest_status
+                if manifest_status == "incomplete" and clean_text(url) in tolerated_partial_urls:
+                    extraction_status = "partial"
                 if isinstance(raw_payload.get("extraction"), dict):
                     raw_payload["extraction"]["manifest_status"] = manifest_status
                     raw_payload["extraction"]["complete"] = False

@@ -20,6 +20,12 @@ describe("documentExtractionSummary", () => {
     ).toContain("Extraction partielle");
   });
 
+  it("says which part of a partially read document is missing", () => {
+    expect(
+      documentExtractionSummary({ ...document, extraction_status: "partial", text_chars: 208_721 }),
+    ).toBe("Texte récupéré, sauf quelques pages illisibles · consulter la pièce originale.");
+  });
+
   it("does not certify facts or completeness from recovered text", () => {
     expect(
       documentExtractionSummary({ ...document, extraction_status: "extracted", text_chars: 1800 }),

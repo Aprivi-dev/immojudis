@@ -3,6 +3,7 @@ import {
   handler,
   normalizeRedirectLocation,
   redirectDiagnostic,
+  responseByteLimit,
 } from "./handler.ts";
 import { TOKEN_SHA256 } from "./auth.ts";
 
@@ -395,5 +396,20 @@ Deno.test("relay refuses unsafe Locations without forwarding their URL", async (
   } finally {
     globalThis.fetch = originalFetch;
     (crypto.subtle as unknown as { digest: typeof originalDigest }).digest = originalDigest;
+  }
+});
+
+Deno.test("only attached Cessions Etat documents get the larger byte limit", () => {
+  const document =
+    "https://cessions.immobilier-etat.gouv.fr/sites/default/files/2_Condition_de_vente_-_Cahier_des_charges_260020007.pdf?download=1";
+  if (!allowedTarget(document, "GET", "")) throw new Error("Cessions document must be allowed");
+  if (responseByteLimit(document) !== 25 * 1024 * 1024) throw new Error("document limit");
+  for (const page of [
+    "https://cessions.immobilier-etat.gouv.fr/biens/cession-dun-terrain-constructible-agde",
+    "https://cessions.immobilier-etat.gouv.fr/robots.txt",
+    "https://www.petitesaffiches.fr/sites/default/files/a.pdf",
+    "not a url",
+  ]) {
+    if (responseByteLimit(page) !== 2 * 1024 * 1024) throw new Error(page);
   }
 });

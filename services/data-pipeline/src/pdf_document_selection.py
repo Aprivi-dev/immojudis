@@ -26,6 +26,7 @@ from src.pdf_enrichment import (
     _profile_pdf_for_docling,
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, summarize_pdf_failure
+from src.pdf_partial_tolerance import tolerated_partial_documents
 from src.pdf_progress import (
     PDF_PROGRESS_SCHEMA_VERSION,
     complete_or_terminal_urls,
@@ -549,6 +550,18 @@ def _store_document_analysis_status(
         and payload.get("complete") is True
         and not payload.get("failed_pages")
     ))
+    # Read except for a few pages that a retry did not recover: settled like an
+    # empty document, never promoted to a complete extraction.
+    tolerated_partials = [
+        item
+        for item in tolerated_partial_documents(
+            [payload for payload in evidence_texts if isinstance(payload, dict)], previous_analysis
+        )
+        if item["url"] in {document_url(document) for document in profile_documents}
+        and item["url"] not in blocked_url_set
+        and item["url"] not in permanent_url_set
+    ]
+    tolerated_partial_urls = [item["url"] for item in tolerated_partials]
     previous_terminal = previous_analysis.get("terminal_document_urls", []) if isinstance(previous_analysis, dict) else []
     terminal_document_urls = list(dict.fromkeys(
         [
@@ -560,6 +573,7 @@ def _store_document_analysis_status(
             ),
             *empty_document_urls,
             *(item["url"] for item in permanent_failures),
+            *tolerated_partial_urls,
         ]
     ))
 
@@ -582,7 +596,7 @@ def _store_document_analysis_status(
             "Certaines pièces PDF sont vides après une extraction complète ; elles restent indisponibles "
             "pour l'analyse et ne seront pas certifiées comme des faits documentaires."
         )
-    elif not text_profiles:
+    elif not text_profiles and not tolerated_partials:
         coverage_status = "documents_not_extracted"
         warning = "Des documents sont listés, mais aucun texte PDF n'a encore été extrait."
         if candidate_rejections:
@@ -606,6 +620,13 @@ def _store_document_analysis_status(
         warning += (
             " Certaines pages presque vides ont été écartées après échec OCR ; "
             "leurs originaux restent disponibles pour vérification."
+        )
+    if tolerated_partials:
+        if coverage_status == "rich":
+            coverage_status = "partial"
+        warning += (
+            " Quelques pages de certaines pièces sont restées illisibles après une nouvelle tentative ; "
+            "le reste de ces pièces est lu et leurs originaux restent disponibles pour vérification."
         )
 
     current_profiles = [_extracted_document_profile(payload) for payload in pdf_texts]
@@ -631,6 +652,7 @@ def _store_document_analysis_status(
         and str(document["url"]) not in blocked_url_set
         and str(document["url"]) not in permanent_url_set
         and str(document["url"]) not in set(empty_document_urls)
+        and str(document["url"]) not in set(tolerated_partial_urls)
         and (
             str(document["url"]) in current_failed_urls
             or str(document["url"]) in diagnostics_urls
@@ -779,6 +801,7 @@ def _store_document_analysis_status(
         "failed_document_urls": failed_document_urls,
         "failed_document_diagnostics": safe_failure_diagnostics,
         "empty_document_urls": empty_document_urls,
+        "tolerated_partial_documents": tolerated_partials,
         "terminal_document_urls": terminal_document_urls,
         "blocked_documents": len(blocked_urls),
         "blocked_document_urls": blocked_urls,

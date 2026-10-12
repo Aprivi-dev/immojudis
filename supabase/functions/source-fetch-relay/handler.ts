@@ -2,6 +2,10 @@ import { TOKEN_SHA256 } from "./auth.ts";
 import { SECTIGO_INTERMEDIATE } from "./certificate.ts";
 
 const MAX_BYTES = 2 * 1024 * 1024;
+// Attached Cessions Etat documents (conditions of sale, diagnostics, plans):
+// same cap as the pipeline's own document download (PDF_MAX_DOWNLOAD_MB).
+const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+const CESSIONS_DOCUMENT_PATH = "/sites/default/files/";
 const MAX_REDIRECT_LOG_PATH = 512;
 const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
 const PETITES_AFFICHES_HOST = "www.petitesaffiches.fr";
@@ -196,6 +200,17 @@ export function normalizeRedirectLocation(
   }
 }
 
+export function responseByteLimit(value: string): number {
+  try {
+    const u = new URL(value);
+    return u.hostname === CESSIONS_HOST && u.pathname.startsWith(CESSIONS_DOCUMENT_PATH)
+      ? MAX_DOCUMENT_BYTES
+      : MAX_BYTES;
+  } catch {
+    return MAX_BYTES;
+  }
+}
+
 export function allowedTarget(value: string, method: string, body: string): boolean {
   try {
     const u = new URL(value);
@@ -306,12 +321,13 @@ export async function handler(req: Request): Promise<Response> {
       const reader = response.body?.getReader();
       const chunks: Uint8Array[] = [];
       let size = 0;
+      const maxBytes = responseByteLimit(url);
       if (reader) {
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
           size += value.length;
-          if (size > MAX_BYTES) {
+          if (size > maxBytes) {
             await reader.cancel();
             return new Response("Source response too large", { status: 502 });
           }
