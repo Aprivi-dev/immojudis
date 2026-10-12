@@ -59,11 +59,11 @@ def test_evaluate_rows_keeps_exempt_and_complete_sales_and_lists_the_rest():
         row("5"),
     ]
     candidates, stats = evaluate_rows(rows, to_sale, ContactBlocklist())
+    # An address alone keeps sale 2 (owner rule of 12/10/2026).
     assert [(c.sale_id, c.reasons) for c in candidates] == [
-        ("2", ("missing_surface",)),
-        ("5", ("missing_address", "missing_surface")),
+        ("5", ("missing_address", "missing_surface", "missing_contact")),
     ]
-    assert stats["evaluated"] == 5 and stats["kept"] == 3 and stats["exempt"] == 1 and stats["insufficient"] == 2
+    assert stats["evaluated"] == 5 and stats["kept"] == 4 and stats["exempt"] == 1 and stats["insufficient"] == 1
 
 
 def test_stored_status_wins_over_a_status_recomputed_by_normalisation():

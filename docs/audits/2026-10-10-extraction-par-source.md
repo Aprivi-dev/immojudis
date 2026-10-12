@@ -107,8 +107,14 @@ direct à la base, réseau fermé) ; statuts terminés exclus. Le gain *Python* 
 
 ## 4. Règle de rétention (Phase 3)
 
-Une vente est **conservée** si (adresse exploitable **et** superficie) **ou** un e-mail exploitable existe.
-Elle est **non conservée** si (adresse exploitable manquante **ou** superficie manquante) **et** aucun e-mail exploitable.
+> **Règle en vigueur depuis le 2026-10-12** (décision du propriétaire, toutes sources) : une vente est **conservée**
+> si elle a une adresse exploitable **ou** une superficie **ou** un contact (e-mail exploitable **ou** numéro de
+> téléphone). Elle n'est **non conservée** que si les trois manquent : sans surface, sans adresse et sans contact, la
+> fiche ne pourra jamais être enrichie. Le motif journalisé est alors
+> `insufficient_information:missing_address+missing_surface+missing_contact`. Un **téléphone** est un numéro français
+> (`0X XX XX XX XX` ou `+33 …`) trouvé aux mêmes endroits que l'e-mail (`information_sufficiency.contact_phones`).
+
+Règle initiale (10/10, remplacée) : conservée si (adresse exploitable **et** superficie) **ou** un e-mail exploitable.
 
 * **Adresse exploitable** : une commune ou un code postal **et** une désignation du bien : voie (avec ou sans numéro),
   lieu-dit / lieu nommé, ou parcelle cadastrale. La commune seule n'est pas exploitable. Réglage
@@ -141,7 +147,8 @@ Elle est **non conservée** si (adresse exploitable manquante **ou** superficie 
 `admission.publication_rejection / admit_sales / split_insufficient` sont appelées par la publication précoce, l'admission
 finale, la publication progressive, le point de reprise d'enrichissement et le garde des LLM payants. Une vente rejetée :
 n'est pas écrite dans `auction_sales`, est journalisée avec un **code** de motif (`insufficient_information:missing_address`,
-`…missing_surface`, `…missing_address+missing_surface`) sans aucune donnée de la vente, et apparaît dans le résumé du run :
+`…missing_surface`, `…missing_address+missing_surface` ; depuis le 12/10 un seul motif,
+`…missing_address+missing_surface+missing_contact`) sans aucune donnée de la vente, et apparaît dans le résumé du run :
 `admission_rejected_insufficient_information = {total, by_reason, by_source}`.
 Interrupteurs : `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off`, `IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=street`.
 

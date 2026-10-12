@@ -1,12 +1,14 @@
 """Règle de rétention « informations suffisantes » (fonction pure ``sufficient_information``).
 
-Règle du propriétaire : une vente dont on ne sait obtenir ni l'adresse ni la
-superficie n'a d'intérêt que si l'agent IA d'information peut interroger un
-interlocuteur par e-mail. Donc :
+Règle du propriétaire (12/10/2026, toutes sources) : une vente sans superficie,
+sans adresse ET sans aucune information de contact ne pourra jamais être
+enrichie ; elle n'entre pas en base. Donc :
 
-* CONSERVÉE si (adresse exploitable ET superficie) OU un e-mail exploitable existe ;
-* NON CONSERVÉE si (adresse exploitable manquante OU superficie manquante) ET
-  aucun e-mail exploitable.
+* CONSERVÉE si une adresse exploitable OU une superficie OU un contact (e-mail
+  exploitable ou numéro de téléphone) existe ;
+* NON CONSERVÉE seulement si les trois manquent.
+
+(Avant le 12/10/2026 : conservée si adresse ET superficie, ou un e-mail.)
 
 Définitions (voir ``docs/audits/2026-10-10-extraction-par-source.md``) :
 
@@ -62,6 +64,10 @@ EXPLOITABLE_ADDRESS_LEVELS = frozenset({"street", "lieu_dit", "parcel"})
 
 REASON_MISSING_ADDRESS = "missing_address"
 REASON_MISSING_SURFACE = "missing_surface"
+REASON_MISSING_CONTACT = "missing_contact"
+
+#: Numéro de téléphone français (fixe ou mobile, +33 ou 0), séparateurs espace, point ou tiret.
+_PHONE_RE = re.compile(r"(?<![\d+])(?:\+33\s?(?:\(0\)\s?)?|0)[1-9](?:[\s.\-]?\d{2}){4}(?!\d)")
 
 # --------------------------------------------------------------------------
 # Miroir du résolveur de contacts de l'agent (src/lib/information-agent.ts)
@@ -114,6 +120,13 @@ def contact_emails(sale: AuctionSale) -> set[str]:
     ``source_blocks`` de la vente et de chaque observation, la description
     source (``raw_payload.source_description``) et la description.
     """
+    emails: set[str] = set()
+    for text in _contact_texts(sale):
+        emails |= extract_emails(text)
+    return {email for email in emails if not is_court_registry_email(email)}
+
+
+def _contact_texts(sale: AuctionSale) -> list[object]:
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     texts: list[object] = [sale.lawyer_contact, payload.get("source_description"), sale.description]
     primary_blocks = payload.get("source_blocks")
@@ -124,10 +137,18 @@ def contact_emails(sale: AuctionSale) -> set[str]:
         blocks = observation_payload.get("source_blocks") if isinstance(observation_payload, dict) else None
         if isinstance(blocks, dict):
             texts.extend(_string_leaves(blocks))
-    emails: set[str] = set()
-    for text in texts:
-        emails |= extract_emails(text)
-    return {email for email in emails if not is_court_registry_email(email)}
+    return texts
+
+
+def contact_phones(sale: AuctionSale) -> set[str]:
+    """Numéros de téléphone trouvés dans les mêmes textes que les e-mails (chiffres seuls)."""
+    phones: set[str] = set()
+    for text in _contact_texts(sale):
+        if isinstance(text, str):
+            for match in _PHONE_RE.findall(text):
+                digits = re.sub(r"\D", "", match)
+                phones.add("0" + digits[-9:])
+    return phones
 
 
 _COURT_REGISTRY_DOMAIN_RE = re.compile(r"(?:^|\.)justice\.(?:fr|gouv\.fr)$")
@@ -251,6 +272,7 @@ class SufficiencyVerdict:
     has_surface: bool = False
     contact_count: int = 0
     exemption: str | None = None
+    phone_count: int = 0
 
     @property
     def reason_code(self) -> str:
@@ -269,18 +291,17 @@ def sufficient_information(
     level, basis = address_level(sale)
     surface = has_surface(sale)
     emails = usable_contact_emails(sale, blocklist)
+    phones = contact_phones(sale)
     if status in EXEMPT_STATUSES:
-        return SufficiencyVerdict(True, (), level, basis, surface, len(emails), exemption=f"status:{status}")
+        return SufficiencyVerdict(
+            True, (), level, basis, surface, len(emails), exemption=f"status:{status}", phone_count=len(phones)
+        )
     accepted = accepted_address_levels or _min_address_levels()
     address_ok = level in accepted
     surface_ok = surface or not _surface_required(sale)
-    if (address_ok and surface_ok) or emails:
-        return SufficiencyVerdict(True, (), level, basis, surface, len(emails))
-    reasons = tuple(
-        reason
-        for reason, missing in ((REASON_MISSING_ADDRESS, not address_ok), (REASON_MISSING_SURFACE, not surface_ok))
-        if missing
-    )
+    if address_ok or surface_ok or emails or phones:
+        return SufficiencyVerdict(True, (), level, basis, surface, len(emails), phone_count=len(phones))
+    reasons = (REASON_MISSING_ADDRESS, REASON_MISSING_SURFACE, REASON_MISSING_CONTACT)
     return SufficiencyVerdict(False, reasons, level, basis, surface, 0)
 
 
