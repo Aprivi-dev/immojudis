@@ -1,7 +1,7 @@
 -- Rapport EN LECTURE SEULE des ventes aux « informations insuffisantes » (règle de rétention).
 --
--- Règle : une vente est conservée si (adresse exploitable ET superficie) OU un e-mail exploitable existe.
--- Elle est non conservée si (adresse exploitable manquante OU superficie manquante) ET aucun e-mail exploitable.
+-- Règle (propriétaire, 12/10/2026) : une vente est conservée si une adresse exploitable OU une superficie OU un
+-- contact (e-mail exploitable ou numéro de téléphone) existe, et n'est non conservée que si les trois manquent.
 -- Exemptions : statut past/adjudicated/cancelled/withdrawn/quarantined ; parking (superficie non requise) ;
 -- pour un terrain, la surface du terrain compte.
 --
@@ -95,16 +95,16 @@ verdict as (
                 or b.prop_text ~* 'mesurage[^.]{0,160}?superficie\s+de\s+[0-9][0-9 .,]*\s*m\s?(2|²)'
                 or b.prop_text ~* 'surface\s+(globale|totale)\s+(d.environ\s+|de\s+)?[0-9][0-9 .,]*\s*m\s?(2|²)'))
     ) as surface_ok,
-    exists (select 1 from emails e where e.id = b.id) as has_email
+    exists (select 1 from emails e where e.id = b.id) as has_email,
+    -- numéro de téléphone français (fixe ou mobile, +33 ou 0) dans les mêmes textes que les e-mails
+    b.contact_text ~ '(^|[^0-9+])(\+33\s?(\(0\)\s?)?|0)[1-9]([\s.-]?[0-9]{2}){4}([^0-9]|$)' as has_phone
   from base b cross join voie v
 ),
 classified as (
   select *,
     case when exempt then 'exempt'
-         when (address_ok and surface_ok) or has_email then 'kept'
-         else 'insufficient' end as outcome,
-    concat_ws('+', case when not address_ok then 'missing_address' end,
-                   case when not surface_ok then 'missing_surface' end) as reasons
+         when address_ok or surface_ok or has_email or has_phone then 'kept'
+         else 'insufficient' end as outcome
   from verdict
 )
 select
@@ -113,10 +113,8 @@ select
   count(*) filter (where outcome = 'kept') as kept,
   count(*) filter (where outcome = 'exempt') as exempt,
   count(*) filter (where outcome = 'insufficient') as insufficient,
-  count(*) filter (where outcome = 'insufficient' and reasons = 'missing_address') as only_missing_address,
-  count(*) filter (where outcome = 'insufficient' and reasons = 'missing_surface') as only_missing_surface,
-  count(*) filter (where outcome = 'insufficient' and reasons = 'missing_address+missing_surface') as missing_both,
   count(*) filter (where has_email) as with_usable_email,
+  count(*) filter (where has_phone) as with_phone,
   -- identifiants seulement, aucune donnée personnelle :
   array_agg(id order by id) filter (where outcome = 'insufficient') as insufficient_ids
 from classified

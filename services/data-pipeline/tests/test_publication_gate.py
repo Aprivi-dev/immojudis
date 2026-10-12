@@ -34,7 +34,7 @@ def sale(**fields) -> AuctionSale:
 
 def test_publication_rejection_codes_are_ordered_expired_then_price_then_information():
     assert publication_rejection(sale(address="3 rue des Lilas, 59000 Exempleville", surface_m2=Decimal("40"))) is None
-    assert publication_rejection(sale()) == "insufficient_information:missing_address+missing_surface"
+    assert publication_rejection(sale()) == "insufficient_information:missing_address+missing_surface+missing_contact"
     assert publication_rejection(AuctionSale(source_name="x", source_url="https://example.test/y")) == (
         "missing_price_and_surface"
     )
@@ -49,7 +49,7 @@ def test_admit_sales_records_every_rejection_by_code_only():
     good = sale(address="3 rue des Lilas, 59000 Exempleville", surface_m2=Decimal("40"))
     bad = sale(source_url="https://example.test/bad")
     assert admit_sales([good, bad], record) == [good]
-    assert recorded == [(1, "excluded", "insufficient_information:missing_address+missing_surface")]
+    assert recorded == [(1, "excluded", "insufficient_information:missing_address+missing_surface+missing_contact")]
 
 
 def test_a_blocked_contact_does_not_keep_the_sale():
@@ -58,7 +58,7 @@ def test_a_blocked_contact_does_not_keep_the_sale():
     assert publication_rejection(with_contact) is None
     set_active_blocklist(ContactBlocklist(global_emails=frozenset({contact})))
     try:
-        assert publication_rejection(with_contact) == "insufficient_information:missing_address+missing_surface"
+        assert publication_rejection(with_contact) == "insufficient_information:missing_address+missing_surface+missing_contact"
     finally:
         set_active_blocklist(ContactBlocklist())
 
@@ -72,14 +72,12 @@ def test_split_insufficient_counts_by_reason_and_source_and_logs_no_personal_dat
     ]
     with caplog.at_level(logging.INFO):
         kept, summary = split_insufficient(sales, logging.getLogger("test"))
-    assert [item.source_url for item in kept] == ["https://example.test/a"]
+    # An address alone keeps a sale (owner rule of 12/10/2026).
+    assert [item.source_url for item in kept] == ["https://example.test/a", "https://example.test/b"]
     assert summary == {
-        "total": 2,
-        "by_reason": {
-            "insufficient_information:missing_surface": 1,
-            "insufficient_information:missing_address+missing_surface": 1,
-        },
-        "by_source": {"licitor": 1, "vench": 1},
+        "total": 1,
+        "by_reason": {"insufficient_information:missing_address+missing_surface+missing_contact": 1},
+        "by_source": {"vench": 1},
     }
     assert contact not in caplog.text and "Lilas" not in caplog.text
 
@@ -130,18 +128,20 @@ def _run_pipeline(monkeypatch, raw_sales):
 
 
 def test_run_pipeline_does_not_publish_an_insufficient_sale_and_reports_why(monkeypatch):
-    insufficient = _raw_sale()  # prix et adresse précise, mais ni superficie ni contact e-mail
+    insufficient = _raw_sale()  # prix et commune, mais ni adresse précise, ni superficie, ni contact
+    insufficient["address"] = None
     summary, upserted = _run_pipeline(monkeypatch, [insufficient])
     assert upserted == []
     assert summary["admission_rejected_insufficient_information"] == {
         "total": 1,
-        "by_reason": {"insufficient_information:missing_surface": 1},
+        "by_reason": {"insufficient_information:missing_address+missing_surface+missing_contact": 1},
         "by_source": {"avoventes": 1},
     }
 
 
 def test_run_pipeline_publishes_the_same_sale_when_a_usable_contact_exists(monkeypatch):
     with_contact = _raw_sale()
+    with_contact["address"] = None
     with_contact["lawyer_contact"] = "me.exemple@cabinet-exemple.test"
     summary, upserted = _run_pipeline(monkeypatch, [with_contact])
     assert upserted and all(urls == ["https://example.test/vente"] for urls in upserted)
