@@ -21,6 +21,7 @@ from src.encheres_publiques_guard import (
     require_encheres_publiques_sale_access,
 )
 from src.enrichment.display_evidence import verify_display_claims
+from src.enrichment.display_facts import canonical_facts_block
 from src.enrichment.display_quality import DISPLAY_MIN_CHARS, DISPLAY_QUALITY_VERSION, preserve_source_constraints
 from src.enrichment.llm_client import (
     LLMProviderOutputRefused,
@@ -1277,7 +1278,8 @@ def _unique_fact_sections(sections: list[str]) -> list[str]:
 
 
 def build_source_page_context(sale: AuctionSale, max_chars: int = 5000) -> str | None:
-    sections: list[str] = []
+    # Canonical facts come first so that truncation never drops them.
+    sections: list[str] = [canonical_facts_block(sale)]
     payloads = _source_payloads_for_sale(sale)
     primary_raw_text = _source_raw_text_without_pdf(
         payloads[0].get("raw_text") if payloads else None
@@ -1288,10 +1290,6 @@ def build_source_page_context(sale: AuctionSale, max_chars: int = 5000) -> str |
     metadata = _source_metadata_section(sale)
     if metadata:
         sections.append(metadata)
-
-    structured_metadata = _structured_sale_context(sale)
-    if structured_metadata:
-        sections.append(structured_metadata)
 
     for index, payload in enumerate(payloads):
         sections.extend(_source_payload_sections(payload, sale, include_raw_text=not (index == 0 and primary_raw_text)))
@@ -1450,62 +1448,9 @@ def _source_metadata_section(sale: AuctionSale) -> str | None:
     return f"[ANNONCE SOURCE]\n{text}" if text else None
 
 
-def _structured_sale_context(sale: AuctionSale) -> str | None:
-    llm_payload = sale.raw_payload.get("llm_extraction") if isinstance(sale.raw_payload, dict) else None
-    previous_llm = llm_payload if isinstance(llm_payload, dict) else {}
-    surface_m2 = None if sale.surface_source == "llm" else sale.surface_m2
-    rooms_count = None if _same_int(previous_llm.get("rooms_count"), sale.rooms_count) else sale.rooms_count
-    bedrooms_count = None if _same_int(previous_llm.get("bedrooms_count"), sale.bedrooms_count) else sale.bedrooms_count
-    occupancy_status = (
-        None
-        if clean_text(previous_llm.get("occupancy_status")) == clean_text(sale.occupancy_status)
-        else sale.occupancy_status
-    )
-    parts = [
-        _metadata_line("Type normalisé", sale.property_type),
-        _metadata_line("Surface principale", _decimal_text(surface_m2, "m2")),
-        _metadata_line("Surface habitable", _decimal_text(sale.habitable_surface_m2, "m2")),
-        _metadata_line("Surface Carrez", _decimal_text(sale.carrez_surface_m2, "m2")),
-        _metadata_line("Surface terrain", _decimal_text(sale.land_surface_m2, "m2")),
-        _metadata_line("Surface applicative", _decimal_text(sale.app_surface_m2, "m2")),
-        _metadata_line("Pièces", rooms_count),
-        _metadata_line("Chambres", bedrooms_count),
-        _metadata_line("Salles de bain", sale.bathrooms_count),
-        _metadata_line("Stationnements", sale.parking_count),
-        _metadata_line("Jardin", _bool_text(sale.has_garden)),
-        _metadata_line("Terrasse", _bool_text(sale.has_terrace)),
-        _metadata_line("Garage", _bool_text(sale.has_garage)),
-        _metadata_line("Piscine", _bool_text(sale.has_pool)),
-        _metadata_line("Occupation extraite", occupancy_status),
-    ]
-    text = "\n".join(part for part in parts if part)
-    return f"[DONNEES STRUCTUREES EXTRAITES]\n{text}" if text else None
-
-
 def _metadata_line(label: str, value: Any) -> str | None:
     text = clean_text(value)
     return f"{label}: {text}" if text else None
-
-
-def _decimal_text(value: Decimal | None, suffix: str) -> str | None:
-    if value is None:
-        return None
-    return f"{value} {suffix}"
-
-
-def _bool_text(value: bool | None) -> str | None:
-    if value is None:
-        return None
-    return "oui" if value else "non"
-
-
-def _same_int(left: Any, right: int | None) -> bool:
-    if right is None:
-        return False
-    try:
-        return int(left) == right
-    except (OverflowError, TypeError, ValueError):
-        return False
 
 
 def _source_payloads_for_sale(sale: AuctionSale) -> list[dict[str, Any]]:
@@ -2438,10 +2383,11 @@ def _build_validated_display_context(
     *,
     fallback_context: str | None,
 ) -> str:
+    # Canonical sale values prevail over the extraction (see FAITS CANONIQUES).
     facts = {
-        "property_type": extraction.property_type or sale.property_type,
-        "rooms_count": extraction.rooms_count or sale.rooms_count,
-        "bedrooms_count": extraction.bedrooms_count or sale.bedrooms_count,
+        "property_type": sale.property_type or extraction.property_type,
+        "rooms_count": sale.rooms_count or extraction.rooms_count,
+        "bedrooms_count": sale.bedrooms_count or extraction.bedrooms_count,
         "starting_price_eur": (
             str(sale.starting_price_eur) if sale.starting_price_eur is not None else None
         ),
@@ -2449,7 +2395,9 @@ def _build_validated_display_context(
         "adjudication_price_eur": (
             str(sale.adjudication_price_eur) if sale.adjudication_price_eur is not None else None
         ),
-        "occupancy_status": extraction.occupancy_status or sale.occupancy_status,
+        "occupancy_status": (
+            sale.occupancy_status if sale.occupancy_status not in (None, "unknown") else extraction.occupancy_status
+        ),
         "occupancy_details": extraction.occupancy_details,
         "assets": [asset.model_dump(mode="json") for asset in extraction.assets],
         "legal_risks": extraction.legal_risks,
@@ -2458,10 +2406,12 @@ def _build_validated_display_context(
         "works_needed": extraction.works_needed,
         "contradictions": extraction.contradictions,
     }
-    sections = ["[FAITS STRUCTURES A VALIDER POUR AFFICHAGE]\n" + json.dumps(facts, ensure_ascii=False)]
+    canonical = canonical_facts_block(sale)
+    sections = [canonical, "[FAITS STRUCTURES A VALIDER POUR AFFICHAGE]\n" + json.dumps(facts, ensure_ascii=False)]
     if fallback_context:
-        sections.append(fallback_context)
-    return "\n\n".join(sections)
+        # The source context already starts with the same (flattened) block.
+        sections.append(fallback_context.replace(re.sub(r"\s+", " ", canonical), "").strip())
+    return "\n\n".join(section for section in sections if section)
 
 
 def _apply_extraction_to_sale(
