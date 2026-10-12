@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const collectionWorkflows = [
   ".github/workflows/data-pipeline.yml",
+  ".github/workflows/dvf-court-adjudications.yml",
   ".github/workflows/dvf-import.yml",
   ".github/workflows/outcome-dvf-adjudications.yml",
   ".github/workflows/outcome-judilibre.yml",

@@ -1,0 +1,62 @@
+name: Immojudis DVF adjudications par tribunal
+
+# DVF (DGFiP) publie ses fichiers deux fois par an : un import manuel après
+# chaque publication suffit (collecte manuelle, voir
+# scripts/check-manual-data-collection.mjs). Chaque mutation « Adjudication » est
+# rattachée au tribunal compétent pour sa commune (référentiel Justice), pour
+# les scénarios d'enchères de l'offre Analyse.
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "Années à importer, séparées par des virgules (vide : les quatre dernières publiées)."
+        required: false
+        type: string
+      departments:
+        description: "Départements à importer, séparés par des virgules (vide : tous)."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-dvf-court-adjudications
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: Import DVF adjudications
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.lock
+
+      - name: Install Python dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Refresh and verify official Justice references
+        run: python -m src.official_sources.justice_reference_sync
+
+      - name: Import DVF adjudications
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          REQUESTED_YEARS: ${{ github.event.inputs.years }}
+          REQUESTED_DEPARTMENTS: ${{ github.event.inputs.departments }}
+        run: |
+          set -euo pipefail
+          python -m src.dvf_court_adjudications \
+            --years "${REQUESTED_YEARS:-}" \
+            --departments "${REQUESTED_DEPARTMENTS:-}"
