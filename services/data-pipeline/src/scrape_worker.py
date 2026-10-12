@@ -58,7 +58,9 @@ def collect_source(source: str, payload: dict[str, Any]):
     if source == "agrasc":
         return scrape_agrasc_aquitaine_result()
     if source == "encheres_immobilieres":
-        return scrape_encheres_immobilieres_aquitaine_result(max_pages=max_pages, known=known)
+        return scrape_encheres_immobilieres_aquitaine_result(
+            max_pages=max_pages, known=known, known_details=known_details
+        )
     if source == "notaires":
         return scrape_notaires_aquitaine_result(max_pages=max_pages)
     raise ValueError(f"unsupported isolated source: {source}")

@@ -1,7 +1,9 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
+import { fetchValuePreview } from "@/lib/client-api";
 import { formatPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
 import { getSaleProcedure } from "@/lib/sale-procedure";
@@ -137,6 +139,13 @@ export function NonJudicialDecisionPanel({
 }
 
 export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
+  const preview = useQuery({
+    queryKey: ["value-preview", sale.id],
+    queryFn: () => fetchValuePreview(sale.id),
+    staleTime: 60 * 60_000,
+    retry: false,
+  });
+  const value = preview.data?.available ? preview.data : null;
   return (
     <aside className={panelStyles.estimationCard} aria-label="Aperçu des repères de prix">
       <dl className={panelStyles.priceGrid}>
@@ -146,11 +155,36 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
             {sale.starting_price_eur == null ? "À confirmer" : formatPrice(sale.starting_price_eur)}
           </dd>
         </div>
+        <div>
+          <dt>Valeur estimée</dt>
+          <dd className={value ? undefined : panelStyles.textValue}>
+            {value
+              ? `${formatPrice(value.lowEur)} – ${formatPrice(value.highEur)}`
+              : preview.isLoading
+                ? "Calcul…"
+                : "Pas encore d’estimation"}
+          </dd>
+        </div>
+        <div>
+          <dt>Enchère plafond</dt>
+          <dd className={panelStyles.textValue}>Avec l’offre Analyse</dd>
+        </div>
       </dl>
+      {value?.discountPct != null ? (
+        <p className={panelStyles.surfaceCaution} role="status">
+          {value.discountPct > 0
+            ? `La mise à prix est environ ${value.discountPct} % sous la valeur estimée du bien.`
+            : value.discountPct < 0
+              ? `La mise à prix est environ ${-value.discountPct} % au-dessus de la valeur estimée du bien.`
+              : "La mise à prix est proche de la valeur estimée du bien."}{" "}
+          Reste à savoir jusqu’où enchérir une fois les frais, les travaux et la libération du bien
+          comptés : c’est le calcul de l’enchère plafond.
+        </p>
+      ) : null}
       <PremiumFeaturePreview
-        title="La valeur du bien et votre enchère plafond avec l’offre Analyse"
-        description="Comparez le prix de départ aux références de marché et préparez une enchère plafond avec vos propres hypothèses."
-        labels={["Valeur de marché", "Enchère plafond", "Références comparables"]}
+        title="Votre enchère plafond, les comparables et les travaux avec l’offre Analyse"
+        description="Le calcul complet de la mise à ne pas dépasser : valeur du bien, marge, travaux, libération, portage et tous les frais de la vente, avec les ventes comparables du secteur."
+        labels={["Enchère plafond", "Ventes comparables", "Travaux et frais"]}
       />
     </aside>
   );

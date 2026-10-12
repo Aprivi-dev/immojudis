@@ -21,8 +21,8 @@ describe("offerComparisonRows", () => {
   it("chiffre les quotas à partir des limites du plan", () => {
     expect(row("favorites").decouverte.text).toBe("3 favoris");
     expect(row("favorites").analyse.text).toBe("Illimités");
-    expect(row("alerts").decouverte.text).toBe("1 alerte, 1 zone");
-    expect(row("alerts").analyse.text).toBe("Jusqu’à 25");
+    expect(row("alerts").decouverte.text).toBe("1 alerte, email hebdomadaire");
+    expect(row("alerts").analyse.text).toBe("Jusqu’à 25, email quotidien");
   });
 
   it("n'expose aucun fournisseur ni « Premium »", () => {

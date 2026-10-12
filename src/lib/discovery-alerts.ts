@@ -9,7 +9,7 @@ export function isDiscoveryAlertCompatible(alert: UserAlert): boolean {
     alert.occupancy_status == null &&
     !alert.dpe_classes?.length &&
     !alert.require_house_with_land &&
-    alert.alert_frequency === "daily" &&
+    alert.alert_frequency === "weekly" &&
     !alert.advanced_criteria?.query
   );
 }

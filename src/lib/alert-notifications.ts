@@ -131,7 +131,8 @@ export async function createAlertNotificationsForMatches({
   now?: Date;
   discovery?: boolean;
 }): Promise<AlertNotificationCreateResult> {
-  const includeEmail = !discovery && (await emailAlertConsentEnabled(auth));
+  // Free accounts get their single alert by email too, as a weekly digest.
+  const includeEmail = await emailAlertConsentEnabled(auth);
   const rows = buildAlertNotificationRows({
     userId: auth.userId,
     matches,
@@ -316,7 +317,7 @@ export function buildAlertNotificationRows({
         notification_snapshot: snapshot,
       };
 
-      if (!includeEmail || discovery) return [inAppRow];
+      if (!includeEmail) return [inAppRow];
 
       return [
         inAppRow,

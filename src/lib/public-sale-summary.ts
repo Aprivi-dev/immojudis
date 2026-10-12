@@ -12,7 +12,7 @@ type ErrorLike = { code?: string; message?: string } | null;
 
 export type PublicSaleSummaryClient = {
   rpc: (
-    fn: "get_public_sale_summary",
+    fn: "get_public_sale_summary" | "get_public_sale_details",
     args: { p_sale_id: string },
   ) => PromiseLike<{ data: unknown; error: unknown }>;
 };
@@ -45,13 +45,60 @@ type SummaryRow = {
   updated_at: string | null;
 };
 
-function isMissingFunction(error: ErrorLike): boolean {
+/**
+ * Extra facts of the signed-out page (land, amenities, whether visits are
+ * organised, how many photos and documents the full listing holds). The visit
+ * text, the address and the documents themselves stay reserved to accounts.
+ */
+type DetailsRow = {
+  land_surface_m2: number | null;
+  parking_count: number | null;
+  has_garden: boolean | null;
+  has_terrace: boolean | null;
+  has_garage: boolean | null;
+  has_pool: boolean | null;
+  has_air_conditioning: boolean | null;
+  has_double_glazing: boolean | null;
+  has_visit_dates: boolean | null;
+  photo_count: number | null;
+  document_count: number | null;
+};
+
+function isMissingFunction(error: ErrorLike, fn = "get_public_sale_summary"): boolean {
   if (!error) return false;
   return (
-    error.code === "PGRST202" ||
-    error.code === "42883" ||
-    /get_public_sale_summary/.test(error.message ?? "")
+    error.code === "PGRST202" || error.code === "42883" || new RegExp(fn).test(error.message ?? "")
   );
+}
+
+export function mapPublicSaleDetails(row: DetailsRow): Partial<AuctionSale> {
+  return {
+    land_surface_m2: row.land_surface_m2,
+    parking_count: row.parking_count,
+    has_garden: row.has_garden,
+    has_terrace: row.has_terrace,
+    has_garage: row.has_garage,
+    has_pool: row.has_pool,
+    has_air_conditioning: row.has_air_conditioning,
+    has_double_glazing: row.has_double_glazing,
+    has_visit_dates: row.has_visit_dates,
+    photo_count: row.photo_count,
+    document_count: row.document_count,
+  } as Partial<AuctionSale>;
+}
+
+/** The details are an enrichment: a database without the function keeps the summary alone. */
+async function fetchPublicSaleDetails(
+  client: PublicSaleSummaryClient,
+  id: string,
+): Promise<Partial<AuctionSale>> {
+  const { data, error } = await client.rpc("get_public_sale_details", { p_sale_id: id });
+  if (error) {
+    if (isMissingFunction(error as ErrorLike, "get_public_sale_details")) return {};
+    throw error;
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as DetailsRow | null | undefined;
+  return row ? mapPublicSaleDetails(row) : {};
 }
 
 export function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
@@ -83,11 +130,16 @@ export async function fetchPublicSaleSummary(
   id: string,
 ): Promise<PublicSaleSummaryResult> {
   if (!SALE_ID_PATTERN.test(id)) return { kind: "missing" };
-  const { data, error } = await client.rpc("get_public_sale_summary", { p_sale_id: id });
+  const [{ data, error }, details] = await Promise.all([
+    client.rpc("get_public_sale_summary", { p_sale_id: id }),
+    fetchPublicSaleDetails(client, id),
+  ]);
   if (error) {
     if (isMissingFunction(error as ErrorLike)) return { kind: "unsupported" };
     throw error;
   }
   const row = (Array.isArray(data) ? data[0] : data) as SummaryRow | null | undefined;
-  return row ? { kind: "found", sale: mapPublicSaleSummary(row) } : { kind: "missing" };
+  return row
+    ? { kind: "found", sale: { ...mapPublicSaleSummary(row), ...details } }
+    : { kind: "missing" };
 }

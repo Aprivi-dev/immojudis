@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   fetchAiReviewProjections: vi.fn(),
   fetchFactReliabilities: vi.fn(),
   fetchUrbanism: vi.fn(),
+  fetchValuePreview: vi.fn(),
   forecast: vi.fn(),
   authUser: null as { id: string } | null,
 }));
@@ -27,6 +28,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchSaleAiReviewProjections: mocks.fetchAiReviewProjections,
   fetchSaleFactReliabilities: mocks.fetchFactReliabilities,
   fetchSaleUrbanismeCadastre: mocks.fetchUrbanism,
+  fetchValuePreview: mocks.fetchValuePreview,
 }));
 vi.mock("@/components/FavoriteButton", () => ({
   FavoriteButton: () => <button>Suivre cette vente</button>,
@@ -649,15 +651,25 @@ describe("integrated listing", () => {
     expect(screen.getByText("Voir les références de marché")).toBeTruthy();
   });
 
-  it("shows Premium previews without loading analyses or mounting the works and statistics tools", () => {
+  it("shows Premium previews without loading analyses or mounting the works and statistics tools", async () => {
     mocks.authUser = { id: "free-account" };
+    mocks.fetchValuePreview.mockResolvedValue({
+      available: true,
+      lowEur: 180_000,
+      highEur: 220_000,
+      discountPct: 32,
+      reliability: "medium",
+    });
     renderDetail("discovery");
     selectTab("Estimation");
     expect(
       screen.getByRole("heading", {
-        name: "La valeur du bien et votre enchère plafond avec l’offre Analyse",
+        name: "Votre enchère plafond, les comparables et les travaux avec l’offre Analyse",
       }),
     ).toBeTruthy();
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "environ 32 % sous la valeur estimée",
+    );
     selectTab("Travaux");
     expect(
       screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),

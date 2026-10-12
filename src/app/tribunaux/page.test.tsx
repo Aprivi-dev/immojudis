@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => ({
   fetchDirectory: vi.fn(),
   fetchPlan: vi.fn(),
   useAuth: vi.fn(),
+  loadPublicActivity: vi.fn(),
+}));
+
+vi.mock("@/lib/public-tribunal-activity.server", () => ({
+  loadPublicTribunalActivity: mocks.loadPublicActivity,
 }));
 
 vi.mock("@/lib/tribunal-judicial-activity-directory-client", () => ({
@@ -44,12 +49,13 @@ describe("/tribunaux", () => {
     });
     mocks.fetchPlan.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
     mocks.fetchDirectory.mockResolvedValue(DIRECTORY);
+    mocks.loadPublicActivity.mockResolvedValue([]);
   });
 
   afterEach(cleanup);
 
   it("affiche les fourchettes de mise et de délai au membre Analyse", async () => {
-    renderPage();
+    await renderPage();
 
     expect(await screen.findByRole("heading", { name: "TJ Marseille" })).toBeTruthy();
     expect(screen.getByText(/Fourchette centrale 21 250 € – 23 750 €/i)).toBeTruthy();
@@ -60,7 +66,7 @@ describe("/tribunaux", () => {
   });
 
   it("permet au membre Analyse de rechercher un autre tribunal", async () => {
-    renderPage();
+    await renderPage();
     await screen.findByRole("heading", { name: "TJ Marseille" });
 
     fireEvent.change(screen.getByPlaceholderText("Marseille, Paris, Lyon…"), {
@@ -74,7 +80,7 @@ describe("/tribunaux", () => {
   it("affiche un aperçu sans charger l’annuaire pour un visiteur ou la Découverte", async () => {
     mocks.useAuth.mockReturnValue({ session: null, loading: false });
 
-    renderPage();
+    await renderPage();
 
     expect(
       await screen.findByRole("region", {
@@ -90,7 +96,7 @@ describe("/tribunaux", () => {
     });
     mocks.fetchPlan.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
 
-    renderPage();
+    await renderPage();
 
     expect(
       await screen.findByRole("region", {
@@ -100,12 +106,44 @@ describe("/tribunaux", () => {
     expect(mocks.fetchDirectory).not.toHaveBeenCalled();
   });
 
+  it("montre l’activité publique des tribunaux sans compte, sans résultat d’adjudication", async () => {
+    mocks.useAuth.mockReturnValue({ session: null, loading: false });
+    mocks.loadPublicActivity.mockResolvedValue([
+      {
+        code: "bobigny",
+        name: "Bobigny",
+        searchName: "TJ Bobigny",
+        city: "Bobigny",
+        department: "93",
+        upcomingCount: 107,
+        nextSaleDate: "2026-10-13T00:00:00Z",
+        medianStartingPriceEur: 40_500,
+        houseCount: 20,
+        apartmentCount: 80,
+        otherCount: 7,
+      },
+    ]);
+
+    await renderPage();
+
+    const section = screen.getByRole("region", {
+      name: "107 ventes judiciaires à venir dans 1 tribunal",
+    });
+    expect(screen.getByRole("link", { name: "Bobigny" }).getAttribute("href")).toBe(
+      "/sales?tribunal=TJ+Bobigny",
+    );
+    expect(section.textContent).toMatch(/40\s500\s€/);
+    expect(section.textContent).toContain("13 oct.");
+    expect(section.textContent).toContain("réservés à l’offre Analyse");
+    expect(mocks.fetchDirectory).not.toHaveBeenCalled();
+  });
+
   it("remplace une erreur interne par un message stable pour le membre Analyse", async () => {
     mocks.fetchDirectory.mockRejectedValue(
       new Error("relation billing_secrets does not exist for tenant 8842"),
     );
 
-    renderPage();
+    await renderPage();
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Statistiques temporairement indisponibles");
@@ -113,7 +151,7 @@ describe("/tribunaux", () => {
   });
 
   it("recalcule la période lorsque le membre Analyse choisit 12 mois", async () => {
-    renderPage();
+    await renderPage();
     await screen.findByRole("heading", { name: "TJ Marseille" });
 
     fireEvent.click(screen.getByRole("button", { name: "12 mois" }));
@@ -122,15 +160,12 @@ describe("/tribunaux", () => {
   });
 });
 
-function renderPage() {
+async function renderPage() {
+  const page = await Page();
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <Page />
-    </QueryClientProvider>,
-  );
+  return render(<QueryClientProvider client={queryClient}>{page}</QueryClientProvider>);
 }
 
 function courtSales(

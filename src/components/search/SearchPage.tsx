@@ -616,7 +616,8 @@ export function SearchPage({
         min_market_discount_pct: search.minMarketDiscount ?? null,
         dpe_classes: search.dpeClasses ?? [],
         require_house_with_land: Boolean(search.houseWithLand),
-        alert_frequency: options?.frequency ?? "daily",
+        alert_frequency:
+          options?.frequency ?? (entitlementsData?.plan.hasAnalysisAccess ? "daily" : "weekly"),
         watched_zone_id: watchedZoneResponse?.zone.id ?? null,
         advanced_criteria: {
           source: "sales_search",
@@ -689,7 +690,7 @@ export function SearchPage({
         exportingCsv={exportingCsv}
         csvExportLocked={csvExportLocked}
         signedIn={Boolean(user)}
-        weeklyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
+        dailyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
         wideMap={wideMap}
         isDesktop={isDesktop}
         onFiltersOpenChange={setFiltersOpen}
@@ -808,6 +809,7 @@ export function SearchPage({
               <LazySearchStatisticsPanel
                 statistics={searchStatistics}
                 locked={statisticsLocked}
+                signedIn={Boolean(user)}
                 dpeLocked={dpeLocked}
                 loading={entitlementsLoading || statisticsLoading}
                 dpeExplorer={dpeExplorerData}

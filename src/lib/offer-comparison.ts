@@ -44,11 +44,11 @@ const SPECS: RowSpec[] = [
   {
     id: "alerts",
     label: "Alertes email et zones surveillées",
-    hint: "Un seul email récapitulatif par jour ; critères avancés avec Analyse",
+    hint: "Un email récapitulatif ; critères avancés avec Analyse",
     features: ["alerts.advanced", "alerts.watchedZones"],
     custom: {
-      decouverte: `${PLAN_LIMITS.decouverte.watchedZones} alerte, ${PLAN_LIMITS.decouverte.watchedZones} zone`,
-      analyse: `Jusqu’à ${PLAN_LIMITS.analyse.watchedZones}`,
+      decouverte: `${PLAN_LIMITS.decouverte.watchedZones} alerte, email hebdomadaire`,
+      analyse: `Jusqu’à ${PLAN_LIMITS.analyse.watchedZones}, email quotidien`,
     },
   },
   { id: "directory", label: "Annuaire des avocats par barreau", features: ["lawyers.directory"] },
@@ -58,8 +58,35 @@ const SPECS: RowSpec[] = [
     features: ["lawyers.referrals"],
   },
   {
+    id: "listing-facts",
+    label: "Adresse, photos, description, occupation et visites",
+    features: ["sales.filters"],
+  },
+  {
+    id: "value-range",
+    label: "Fourchette de valeur et écart avec la mise à prix",
+    features: ["sales.filters"],
+  },
+  {
+    // The free catalogue view publishes only the number of documents; the
+    // documents themselves come with the detailed analysis.
+    id: "documents",
+    label: "Pièces du dossier (cahier des conditions, procès-verbal, diagnostics)",
+    features: ["property.valueEstimate"],
+  },
+  {
+    id: "document-reading",
+    label: "Lecture des pièces : points clés cités avec la page",
+    features: ["property.documentReading"],
+  },
+  {
+    id: "passages",
+    label: "Historique de la vente : passages précédents, baisses de mise à prix, reports",
+    features: ["property.saleHistory"],
+  },
+  {
     id: "estimate",
-    label: "Estimation du bien et ventes comparables",
+    label: "Estimation détaillée et ventes comparables",
     features: ["property.valueEstimate", "property.soldComparables"],
   },
   { id: "ceiling", label: "Enchère plafond chiffrée", features: ["property.bidCeiling"] },

@@ -47,6 +47,11 @@ import {
 const ID = "005a914d-563c-427b-88a4-740cbf851afb";
 const OTHER_ID = "11111111-2222-4333-8444-555555555555";
 
+/** Reads of the sale itself (the public details are fetched alongside, in the same lookup). */
+function summaryReads(supabase: { rpc: ReturnType<typeof vi.fn> }) {
+  return supabase.rpc.mock.calls.filter(([fn]) => fn === "get_public_sale_summary").length;
+}
+
 function client({ rpc, view }: { rpc: unknown; view?: unknown }) {
   return {
     rpc: vi.fn().mockResolvedValue(rpc),
@@ -127,7 +132,7 @@ describe("public sale lookup", () => {
 
       expect(first.status).toBe("found");
       expect(second).toEqual(first);
-      expect(supabase.rpc).toHaveBeenCalledTimes(1);
+      expect(summaryReads(supabase)).toBe(1);
     });
 
     it("caches a missing sale as well, per sale", async () => {
@@ -135,9 +140,9 @@ describe("public sale lookup", () => {
       mocks.client.mockReturnValue(supabase);
       await lookupPublicSale(ID);
       await lookupPublicSale(ID);
-      expect(supabase.rpc).toHaveBeenCalledTimes(1);
+      expect(summaryReads(supabase)).toBe(1);
       await lookupPublicSale(OTHER_ID);
-      expect(supabase.rpc).toHaveBeenCalledTimes(2);
+      expect(summaryReads(supabase)).toBe(2);
     });
 
     it("shares one entry between the lower- and upper-case spellings of an identifier", async () => {
@@ -145,7 +150,7 @@ describe("public sale lookup", () => {
       mocks.client.mockReturnValue(supabase);
       await lookupPublicSale(ID);
       await lookupPublicSale(ID.toUpperCase());
-      expect(supabase.rpc).toHaveBeenCalledTimes(1);
+      expect(summaryReads(supabase)).toBe(1);
     });
 
     it("reads again after the sale tag is invalidated", async () => {
@@ -154,7 +159,7 @@ describe("public sale lookup", () => {
       await lookupPublicSale(ID);
       revalidateTag(publicSaleCacheTag(ID));
       await lookupPublicSale(ID);
-      expect(supabase.rpc).toHaveBeenCalledTimes(2);
+      expect(summaryReads(supabase)).toBe(2);
     });
 
     it("keeps the other sales cached when one tag is invalidated", async () => {
@@ -164,7 +169,7 @@ describe("public sale lookup", () => {
       await lookupPublicSale(OTHER_ID);
       revalidateTag(publicSaleCacheTag(ID));
       await lookupPublicSale(OTHER_ID);
-      expect(supabase.rpc).toHaveBeenCalledTimes(2);
+      expect(summaryReads(supabase)).toBe(2);
     });
 
     it("tags entries sale-<id> and revalidates them after five minutes", async () => {

@@ -31,7 +31,12 @@ const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
 // admin page loads LESS: initial JavaScript fell from 566,921 bytes (all views
 // in every page) to 470,093-537,561 bytes. The ceiling is raised once, to
 // 5,200,000, and each admin view gets its own initial-load budget below.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_300_000;
+//
+// The Analyse « Lecture des pièces » and « Historique de la vente » sections add two
+// panels to the shared sale detail chunk (measured 5,305,601 bytes in total, no
+// duplication across routes). The ceiling is raised once, to 5,350,000; the route-level
+// initial-load budgets below are unchanged.
+const MAX_TOTAL_CLIENT_JS_BYTES = 5_350_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;

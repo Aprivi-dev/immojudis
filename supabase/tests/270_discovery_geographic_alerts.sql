@@ -1,5 +1,5 @@
 begin;
-select plan(18);
+select plan(19);
 insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at,raw_app_meta_data,raw_user_meta_data)
 select ('c2700000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'00000000-0000-0000-0000-000000000000','authenticated','authenticated','alert-'||i||'@example.test','',now(),now(),now(),'{}','{}' from generate_series(1,2)i;
 set local role authenticated;
@@ -7,10 +7,11 @@ set local "request.jwt.claim.sub" = 'c2700000-0000-4000-8000-000000000001';
 set local "request.jwt.claim.role" = 'authenticated';
 select lives_ok($$insert into public.user_watched_zones(id,user_id,name,zone_kind,center_lat,center_lng,radius_km) values ('c2700000-1000-4000-8000-000000000001','c2700000-0000-4000-8000-000000000001','Bordeaux','radius',44.84,-0.58,10)$$,'Free radius zone');
 select throws_ok($$insert into public.user_watched_zones(user_id,name,zone_kind,department) values ('c2700000-0000-4000-8000-000000000001','Deuxième','department','33')$$,'P0001','Quota de 1 alerte(s) ou zone(s) active(s) atteint.','Zone quota');
-select lives_ok($$insert into public.user_alerts(id,user_id,name,watched_zone_id,alert_frequency) values ('c2700000-2000-4000-8000-000000000001','c2700000-0000-4000-8000-000000000001','Bordeaux','c2700000-1000-4000-8000-000000000001','daily')$$,'Free daily alert');
-select throws_ok($$insert into public.user_alerts(user_id,name,alert_frequency) values ('c2700000-0000-4000-8000-000000000001','Deuxième','daily')$$,'P0001','Quota de 1 alerte(s) ou zone(s) active(s) atteint.','Alert quota');
-select throws_ok($$update public.user_alerts set min_investment_score=80 where id='c2700000-2000-4000-8000-000000000001'$$,'42501','Discovery alerts support public criteria and daily notifications only.','Premium score rejected');
-select throws_ok($$update public.user_alerts set alert_frequency='instant' where id='c2700000-2000-4000-8000-000000000001'$$,'42501','Discovery alerts support public criteria and daily notifications only.','Instant rejected');
+select lives_ok($$insert into public.user_alerts(id,user_id,name,watched_zone_id,alert_frequency) values ('c2700000-2000-4000-8000-000000000001','c2700000-0000-4000-8000-000000000001','Bordeaux','c2700000-1000-4000-8000-000000000001','weekly')$$,'Free weekly alert');
+select throws_ok($$insert into public.user_alerts(user_id,name,alert_frequency) values ('c2700000-0000-4000-8000-000000000001','Deuxième','weekly')$$,'P0001','Quota de 1 alerte(s) ou zone(s) active(s) atteint.','Alert quota');
+select throws_ok($$update public.user_alerts set min_investment_score=80 where id='c2700000-2000-4000-8000-000000000001'$$,'42501','Discovery alerts support public criteria and weekly notifications only.','Premium score rejected');
+select throws_ok($$update public.user_alerts set alert_frequency='daily' where id='c2700000-2000-4000-8000-000000000001'$$,'42501','Discovery alerts support public criteria and weekly notifications only.','Daily digest stays with Analyse');
+select throws_ok($$update public.user_alerts set alert_frequency='instant' where id='c2700000-2000-4000-8000-000000000001'$$,'42501','Discovery alerts support public criteria and weekly notifications only.','Instant rejected');
 select is((select count(*) from public.auction_sales),0::bigint,'Premium catalogue stays locked');
 select throws_ok($$update public.user_alerts set user_id='c2700000-0000-4000-8000-000000000002' where id='c2700000-2000-4000-8000-000000000001'$$,'42501','Alert owner mismatch.','Cannot transfer owner');
 set local "request.jwt.claim.sub" = 'c2700000-0000-4000-8000-000000000002';
@@ -18,7 +19,7 @@ select is((select count(*) from public.user_alerts),0::bigint,'Other account can
 select is((select count(*) from public.user_watched_zones),0::bigint,'Other account cannot read zone');
 set local "request.jwt.claim.sub" = 'c2700000-0000-4000-8000-000000000001';
 select lives_ok($$update public.user_alerts set is_active=false where id='c2700000-2000-4000-8000-000000000001'$$,'Can pause at quota');
-select lives_ok($$insert into public.user_alerts(user_id,name,alert_frequency) values ('c2700000-0000-4000-8000-000000000001','Remplacement','daily')$$,'Pause frees quota');
+select lives_ok($$insert into public.user_alerts(user_id,name,alert_frequency) values ('c2700000-0000-4000-8000-000000000001','Remplacement','weekly')$$,'Pause frees quota');
 
 reset role;
 insert into public.auction_sales (id, source_name, source_url, title, status)

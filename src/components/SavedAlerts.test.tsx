@@ -102,16 +102,29 @@ describe("saved alert management", () => {
     expect(screen.getByText("Surface minimale : 40 m²")).toBeTruthy();
     expect(screen.queryByText(/Immédiate/i)).toBeNull();
     expect(screen.getAllByText("Quotidienne").length).toBeGreaterThan(0);
-    expect(screen.getByText(/un seul email récapitulatif par jour/)).toBeTruthy();
+    expect(screen.getByText(/un email récapitulatif par semaine/)).toBeTruthy();
   });
 
-  it("change la fréquence et réserve l'hebdomadaire à l'offre Analyse", async () => {
+  it("change la fréquence et réserve le quotidien à l'offre Analyse", async () => {
+    const weeklyAlert = async (id: string) => [
+      {
+        id: `alert-${id}`,
+        name: `Alerte ${id}`,
+        is_active: true,
+        alert_frequency: "weekly",
+        city: "Bordeaux",
+        department: "33",
+        dpe_classes: [],
+        advanced_criteria: {},
+      },
+    ];
+    state.list.mockImplementation(weeklyAlert);
     setup();
     const select = (await screen.findByLabelText(
       /Fréquence de l’alerte Alerte first/,
     )) as HTMLSelectElement;
-    const weekly = Array.from(select.options).find((option) => option.value === "weekly")!;
-    expect(weekly.disabled).toBe(true);
+    const daily = Array.from(select.options).find((option) => option.value === "daily")!;
+    expect(daily.disabled).toBe(true);
     cleanup();
 
     state.plan = { hasAnalysisAccess: true };
@@ -120,12 +133,12 @@ describe("saved alert management", () => {
       /Fréquence de l’alerte Alerte first/,
     )) as HTMLSelectElement;
     await waitFor(() =>
-      expect(Array.from(enabled.options).find((o) => o.value === "weekly")!.disabled).toBe(false),
+      expect(Array.from(enabled.options).find((o) => o.value === "daily")!.disabled).toBe(false),
     );
-    fireEvent.change(enabled, { target: { value: "weekly" } });
+    fireEvent.change(enabled, { target: { value: "daily" } });
     await waitFor(() =>
       expect(state.update).toHaveBeenCalledWith("first", "alert-first", {
-        alert_frequency: "weekly",
+        alert_frequency: "daily",
       }),
     );
   });

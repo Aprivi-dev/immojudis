@@ -140,6 +140,82 @@
   margin-top: 4px;
 }
 
+.description {
+  margin-top: 26px;
+}
+
+.description p {
+  margin-top: 8px;
+  color: var(--ink-strong);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.amenities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.amenities li {
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 4px 12px;
+  color: var(--ink-strong);
+  font-size: 13px;
+}
+
+.teaser {
+  margin-top: 16px;
+  border: 1px dashed var(--gold-light);
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+
+.teaser dl {
+  margin-top: 6px;
+}
+
+.teaserRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  border-top: 1px solid var(--line-soft);
+  padding: 10px 0 2px;
+  font-size: 14px;
+}
+
+.teaserRow:first-child {
+  border-top: 0;
+}
+
+.teaserRow dt {
+  color: var(--ink-strong);
+}
+
+.teaserRow dd {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.blurred {
+  filter: blur(6px);
+  color: var(--brand-navy);
+  font-weight: 750;
+  user-select: none;
+}
+
+.teaserTier {
+  color: var(--gold-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .priceLabel {
   margin-top: 30px;
   color: var(--ink-soft);

@@ -75,6 +75,7 @@ from src.sources.encheres_immobilieres import scrape_encheres_immobilieres_aquit
 from src.sources.encheres_publiques import scrape_encheres_publiques_aquitaine_result
 from src.sources.info_encheres import scrape_info_encheres_aquitaine_result
 from src.sources.licitor import scrape_licitor_aquitaine_result
+from src.sources.listing_characteristics import restore_known_detail_blocks
 from src.sources.notaires import scrape_notaires_aquitaine_result
 from src.sources.petites_affiches import scrape_petites_affiches_aquitaine_result
 from src.sources.vench import scrape_vench_aquitaine_result
@@ -1492,10 +1493,10 @@ def _hydrate_known_unchanged_sales(
             continue
         skipped += int(bool(sale.get("_known_unchanged")))
         source_url = str(sale.get("source_url") or "")
-        known = known_details.get(source_url)
-        if not known:
+        if not (known := known_details.get(source_url)):
             continue
         _backfill_raw_sale_from_known_detail(sale, known)
+        restore_known_detail_blocks(sale, known_details)  # every source keeps the blocks of its stored detail
         if sale.get("_detail_fetch_failed") and len(str(known.get("description") or "")) > len(str(sale.get("description") or "")):
             sale["description"] = known["description"]
     return skipped
@@ -1731,7 +1732,7 @@ def _enabled_scrapers(
             bool(settings["enable_encheres_immobilieres_benchmark"]),
             lambda: scrape_encheres_immobilieres_aquitaine_result(
                 max_pages=int(settings["encheres_immobilieres_max_pages"]),
-                known=known,
+                known=known, known_details=known_details,
             ),
         ),
         (

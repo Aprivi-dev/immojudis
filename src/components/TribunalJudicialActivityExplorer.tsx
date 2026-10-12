@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
@@ -25,7 +25,12 @@ import { queryKeys } from "@/lib/query-keys";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 
-export function TribunalJudicialActivityExplorer() {
+export function TribunalJudicialActivityExplorer({
+  publicActivity = null,
+}: {
+  /** Free, server-rendered figures of the courts, shown to every visitor. */
+  publicActivity?: ReactNode;
+}) {
   const { session, loading: authLoading } = useAuth();
   const [historyMonths, setHistoryMonths] = useState<TribunalJudicialActivityHistoryMonths>(36);
   const [search, setSearch] = useState("");
@@ -88,6 +93,7 @@ export function TribunalJudicialActivityExplorer() {
       </header>
 
       <div className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        {publicActivity}
         <PremiumAdjudicationExplorer />
 
         {authLoading || (session && planQuery.isLoading) ? (
