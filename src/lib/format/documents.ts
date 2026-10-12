@@ -16,6 +16,8 @@ export function documentTypeLabel(type: string | null | undefined): string {
     bail: "Bail / occupation",
     procedure_saisie: "Procédure de saisie",
     cadastre: "Cadastre / plan",
+    copropriete: "Copropriété",
+    titre_propriete: "Titre de propriété",
     pdf: "Document PDF",
   };
   return labels[s] ?? type.replaceAll("_", " ");
@@ -52,6 +54,10 @@ export function documentTypeHelp(type: string | null | undefined): string {
       "Procédure de saisie : document de contexte juridique, pas toujours directement lié à l'état du bien.",
     cadastre:
       "Cadastre ou plan : utile pour la parcelle, les accès et le périmètre, mais ne suffit pas pour qualifier un risque.",
+    copropriete:
+      "Pièce de copropriété (règlement, procès-verbal d'assemblée, état daté) : utile pour les charges, les travaux votés et les règles de l'immeuble.",
+    titre_propriete:
+      "Titre de propriété : décrit le bien tel qu'il a été acquis par le propriétaire actuel, à recouper avec l'état réel.",
     pdf: "Document PDF : source documentaire importée, à qualifier selon son contenu exact.",
   };
   return (

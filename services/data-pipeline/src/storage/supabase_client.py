@@ -45,6 +45,7 @@ from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_
 from src.freshness import document_fingerprint, documents_are_current, timestamp_is_fresh
 from src.models import AuctionSale
 from src.normalize import clean_text, make_sale_signature
+from src.pdf_document_types import document_type_with_content, with_content_document_types
 from src.pdf_enrichment import PDF_TEXT_CACHE_VERSION, classify_document_type, sale_storage_id
 from src.pdf_partial_tolerance import tolerated_partial_url_set
 from src.pdf_progress import (
@@ -4455,10 +4456,7 @@ def _document_rows_for_sale(
                 "source_url": sale.source_url,
                 "document_url": url,
                 "label": document.get("label"),
-                "document_type": classify_document_type(
-                    str(document.get("label") or extracted.get("label") or ""),
-                    str(url),
-                ),
+                "document_type": document_type_with_content(document.get("label") or extracted.get("label"), url, extracted),
                 "file_path": None if persisted_pdf_proof else row_file_path,
                 "sha256": row_sha256,
                 "download_status": (
@@ -4519,6 +4517,6 @@ def _load_pdf_texts(sale: AuctionSale) -> list[dict[str, object]]:
     payload = _read_json_file(path)
     if not isinstance(payload, list) or any(not isinstance(item, dict) for item in payload):
         return []
-    return payload
+    return with_content_document_types(payload)
 
 

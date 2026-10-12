@@ -61,6 +61,8 @@ from src.pdf_document_types import (
     _canonical_document_type,  # noqa: F401
     _normalize_document_classifier_text,  # noqa: F401
     classify_document_type,  # noqa: F401
+    refined_document_type,
+    with_content_document_types,
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
 from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
@@ -271,6 +273,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
                 "file_path": str(file_path),
             }
         )
+        payload["document_type"] = refined_document_type(payload)  # a generic label is refined from page 1
         if (
             payload.get("complete") is False
             or str(payload.get("extraction_status") or "").lower() in {"incomplete", "failed"}
@@ -292,7 +295,7 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
             started_at=document_started_at,
             pages=int(payload.get("page_count") or 0),
         )
-    merged_pdf_texts = merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures)
+    merged_pdf_texts = with_content_document_types(merge_pdf_cache(PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json", pdf_texts, analysis=sale.raw_payload.get("document_analysis"), documents=sale.documents, downloaded_documents=downloaded_documents, blocked_document_urls=stats.blocked_document_urls, permanent_document_failures=stats.permanent_document_failures))
     if merged_pdf_texts or stats.blocked_document_urls or stats.permanent_document_failures:
         _write_pdf_text_cache(sale, merged_pdf_texts)
         terminal_urls = set(stats.blocked_document_urls) | {

@@ -132,6 +132,8 @@ def _select_documents_for_extraction(
         "conditions_vente": 5,
         "annonce_vente": 6,
         "bail": 7,
+        "titre_propriete": 8,
+        "copropriete": 8,
         "pdf": 8,
         "other": 9,
     }
