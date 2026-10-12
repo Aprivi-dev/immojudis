@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchLandPlanning } from "./land-planning-provider";
+import {
+  cadastreCommune,
+  fetchLandPlanning,
+  geocodeQuery,
+  isCommuneOnlyAddress,
+} from "./land-planning-provider";
 
 const NOW = () => new Date("2026-10-02T10:00:00.000Z");
 
@@ -515,5 +520,124 @@ describe("official land planning provider", () => {
         .every((url) => !url.includes("99999")),
     ).toBe(true);
     expect(result.completeCoverage).toBe(false);
+  });
+
+  it("finds the listing's parcel through the commune of a commune-only address", async () => {
+    const { fetcher, calls } = fetcherFor((url) => {
+      if (url.hostname === "data.geopf.fr" && url.pathname === "/geocodage/search") {
+        const municipality = {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [4.676462, 47.281127] },
+          properties: {
+            label: "Échannay",
+            score: 0.93,
+            type: "municipality",
+            city: "Échannay",
+            postcode: "21540",
+            citycode: "21238",
+          },
+        };
+        return response(collection([municipality]));
+      }
+      if (url.hostname === "apicarto.ign.fr" && url.pathname === "/api/cadastre/parcelle") {
+        expect(url.searchParams.get("geom")).toBeNull();
+        return response(
+          collection([
+            {
+              ...parcel("21238000ZA0092", "0092"),
+              properties: {
+                idu: "21238000ZA0092",
+                code_insee: "21238",
+                section: "ZA",
+                numero: "0092",
+                nom_com: "Échannay",
+                contenance: 19574,
+              },
+            },
+          ]),
+        );
+      }
+      return response(collection([]));
+    });
+
+    const result = await fetchLandPlanning(
+      {
+        address: "21540 Échannay, France",
+        postalCode: "21540",
+        city: "Échannay",
+        coordinates: { latitude: 47.281127, longitude: 4.676462 },
+        references: [{ codeInsee: null, section: "ZA", number: "92", source: "listing" }],
+      },
+      { fetcher, now: NOW },
+    );
+
+    expect(result.codeInsee).toBe("21238");
+    expect(result.coordinates).toBeNull();
+    expect(result.parcels.map((item) => [item.id, item.surfaceM2, item.match])).toEqual([
+      ["21238000ZA0092", 19574, "listing_reference"],
+    ]);
+    expect(result.warnings.join(" ")).toContain("ne désigne que la commune");
+    expect(calls.some((url) => url.includes("geom=%7B%22type%22%3A%22Point"))).toBe(false);
+  });
+
+  it("does not read a parcel or a zone at the centre of a commune-only address", async () => {
+    const { fetcher, calls } = fetcherFor((url) => {
+      if (url.hostname === "data.geopf.fr") return response(collection([]));
+      throw new Error(`Unexpected network request: ${url.toString()}`);
+    });
+
+    const result = await fetchLandPlanning(
+      {
+        address: "21540 Échannay, France",
+        postalCode: "21540",
+        city: "Échannay",
+        coordinates: { latitude: 47.281127, longitude: 4.676462 },
+      },
+      { fetcher, now: NOW },
+    );
+
+    expect(result.locationStatus).toBe("unresolved");
+    expect(result.zones).toEqual([]);
+    expect(calls.every((url) => url.includes("data.geopf.fr"))).toBe(true);
+  });
+});
+
+describe("land planning query helpers", () => {
+  it("does not repeat the postcode and the city already in the address", () => {
+    expect(
+      geocodeQuery({
+        address: "La Grenière, 33570 Lussac, France",
+        postalCode: "33570",
+        city: "Lussac",
+      }),
+    ).toBe("La Grenière, 33570 Lussac");
+    expect(
+      geocodeQuery({ address: "10 rue Exemple", postalCode: "02100", city: "Saint-Quentin" }),
+    ).toBe("10 rue Exemple, 02100, Saint-Quentin");
+  });
+
+  it("recognises an address reduced to its commune", () => {
+    expect(
+      isCommuneOnlyAddress({
+        address: "21540 Échannay, France",
+        postalCode: "21540",
+        city: "Échannay",
+      }),
+    ).toBe(true);
+    expect(isCommuneOnlyAddress({ address: "Saint-Quentin", city: "Saint-Quentin" })).toBe(true);
+    expect(
+      isCommuneOnlyAddress({
+        address: "La Grenière, 33570 Lussac",
+        postalCode: "33570",
+        city: "Lussac",
+      }),
+    ).toBe(false);
+  });
+
+  it("files Paris, Lyon and Marseille parcels under the city and its arrondissement", () => {
+    expect(cadastreCommune("75118")).toEqual({ code_insee: "75056", code_arr: "118" });
+    expect(cadastreCommune("69383")).toEqual({ code_insee: "69123", code_arr: "383" });
+    expect(cadastreCommune("13208")).toEqual({ code_insee: "13055", code_arr: "208" });
+    expect(cadastreCommune("21238")).toEqual({ code_insee: "21238" });
   });
 });
