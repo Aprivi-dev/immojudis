@@ -3237,3 +3237,60 @@ def test_store_document_analysis_status_marks_partial_document_coverage() -> Non
     assert "diagnostics" in analysis["missing_core_documents"]
     assert analysis["official_documents_found"] is True
     assert analysis["profiles"][0]["family"] == "constat_et_description"
+
+
+def test_a_successful_ocr_that_finds_no_text_settles_the_page(monkeypatch) -> None:
+    from src.pdf_enrichment import _extract_page_text_with_ocr_result
+    from src.pdf_ocr import OCR_NO_TEXT_METHOD
+
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    page = SimpleNamespace(
+        get_textpage_ocr=lambda **kwargs: (_ for _ in ()).throw(RuntimeError("OCR backend unavailable")),
+        get_pixmap=lambda **kwargs: SimpleNamespace(save=lambda path: None),
+    )
+    monkeypatch.setattr(
+        "src.pdf_enrichment.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="  \n", stderr=""),
+    )
+
+    result = _extract_page_text_with_ocr_result(page, fallback="")
+
+    assert result["method"] == OCR_NO_TEXT_METHOD
+    assert result["retryable"] is False
+
+
+def test_a_page_of_photographs_does_not_keep_the_document_incomplete(tmp_path, monkeypatch) -> None:
+    """Production case of 12/10/2026: a PV descriptif ends with pages of photos of the
+    property. Tesseract reads them and finds no text; the document stayed "incomplete"
+    and came back at every drain."""
+    import time
+
+    import fitz
+
+    from src.pdf_enrichment import pdf_deadline_scope
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    path = tmp_path / "pv-photos.pdf"
+    photo = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 400, 300), False)
+    photo.set_rect(photo.irect, (90, 140, 200))
+    with fitz.open() as document:
+        text_page = document.new_page()
+        text_page.insert_text((72, 72), "Proces-verbal descriptif. Le bien comprend une entree, un sejour et deux chambres.")
+        photo_page = document.new_page()
+        photo_page.insert_image(fitz.Rect(36, 36, 559, 806), pixmap=photo)
+        document.save(path)
+    monkeypatch.setattr(
+        "src.pdf_enrichment.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+
+    with pdf_deadline_scope(time.monotonic() + 120):
+        payload = extract_pdf_document(path, document={"label": "PV descriptif", "url": "https://example.test/pv.pdf"})
+
+    photo_record = payload["pages"][1]
+    assert photo_record["status"] == "visual_blank_excluded"
+    assert photo_record["failure_reason"] == "image_without_text_after_ocr"
+    assert payload["complete"] is True
+    assert payload["failed_pages"] == []
