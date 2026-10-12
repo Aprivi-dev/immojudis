@@ -204,7 +204,7 @@ function makeNotificationRow(overrides: Partial<NotificationRow>): NotificationR
 }
 
 describe("Discovery notifications", () => {
-  it("never exposes premium content or queues email even when requested", () => {
+  it("queues the weekly email of a free alert without premium content", () => {
     const rows = buildAlertNotificationRows({
       userId: "user-1",
       matches: [
@@ -214,17 +214,18 @@ describe("Discovery notifications", () => {
           reasons: ["Private analysis"],
         }),
       ],
-      alerts: [{ id: "alert-1", alert_frequency: "daily" }],
+      alerts: [{ id: "alert-1", alert_frequency: "weekly" }],
       includeEmail: true,
       discovery: true,
     });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].delivery_channel).toBe("in_app");
-    expect(rows[0].notification_snapshot).toMatchObject({
-      audience: "discovery",
-      sale: { title: "Vente immobilière" },
-      match: { marketDiscountPct: null, reasons: ["Critères publics correspondants"] },
-    });
+    expect(rows.map((row) => row.delivery_channel)).toEqual(["in_app", "email"]);
+    for (const row of rows) {
+      expect(row.notification_snapshot).toMatchObject({
+        audience: "discovery",
+        sale: { title: "Vente immobilière" },
+        match: { marketDiscountPct: null, reasons: ["Critères publics correspondants"] },
+      });
+    }
     expect(JSON.stringify(rows)).not.toContain("Private");
   });
 });

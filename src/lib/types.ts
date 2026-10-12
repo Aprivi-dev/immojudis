@@ -1,4 +1,10 @@
 export type AuctionSale = {
+  /** Number of case documents; published to free accounts, which do not receive the documents. */
+  document_count?: number | null;
+  /** Signed-out page only: number of photos of the full listing. */
+  photo_count?: number | null;
+  /** Signed-out page only: visits are announced (their text may name the address). */
+  has_visit_dates?: boolean | null;
   source_checks?: Record<string, { checked_at?: string }> | null;
   source_conflicts?: Array<{
     field?: string;

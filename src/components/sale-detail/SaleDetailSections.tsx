@@ -99,12 +99,16 @@ export function SaleDocumentsSection({
   sale,
   open,
   onOpenChange,
+  locked = false,
 }: {
   sale: AuctionSale;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Free account: the documents exist but belong to the Analyse offer. */
+  locked?: boolean;
 }) {
   const documents = collectSaleDocuments(sale);
+  const lockedCount = locked ? Math.max(0, sale.document_count ?? 0) : 0;
   return (
     <section
       id="documents"
@@ -132,7 +136,9 @@ export function SaleDocumentsSection({
             <span className="mt-1 block text-sm text-brand-navy/65">
               {documents.length > 0
                 ? "Consultez les pièces jointes ; vérifiez leur nature et leur date."
-                : "Aucune pièce attachée à cette annonce pour le moment."}
+                : lockedCount > 0
+                  ? `${lockedCount} pièce${lockedCount > 1 ? "s" : ""} au dossier, accessible${lockedCount > 1 ? "s" : ""} avec l’offre Analyse.`
+                  : "Aucune pièce attachée à cette annonce pour le moment."}
             </span>
           </span>
           <ChevronDown className="ml-auto h-5 w-5 transition-transform group-open:rotate-180" />
@@ -140,6 +146,18 @@ export function SaleDocumentsSection({
         <div className="border-t border-brand-navy/10 px-5 py-3 sm:px-7">
           {documents.length > 0 ? (
             <DocumentsList documents={documents} />
+          ) : lockedCount > 0 ? (
+            <p className="text-sm leading-relaxed text-brand-navy/75">
+              Cahier des conditions de vente, procès-verbal descriptif, diagnostics : l’offre
+              Analyse donne accès aux pièces et à ce qu’elles révèlent (occupation, travaux,
+              risques).{" "}
+              <a
+                href="/offres"
+                className="font-semibold text-gold-text underline underline-offset-4"
+              >
+                Découvrir l’offre Analyse
+              </a>
+            </p>
           ) : (
             <p role="status" className="text-sm text-brand-navy/70">
               Les pièces vérifiées apparaîtront ici lorsqu’elles seront disponibles.

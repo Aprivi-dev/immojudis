@@ -797,6 +797,101 @@ export type Database = {
           },
         ];
       };
+      auction_document_readings: {
+        Row: {
+          documents: Json;
+          error_code: string | null;
+          generated_at: string;
+          input_fingerprint: string;
+          input_truncated: boolean;
+          model: string | null;
+          points: Json;
+          prompt_version: string;
+          sale_id: string;
+          source_url: string;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          documents?: Json;
+          error_code?: string | null;
+          generated_at?: string;
+          input_fingerprint: string;
+          input_truncated?: boolean;
+          model?: string | null;
+          points?: Json;
+          prompt_version: string;
+          sale_id: string;
+          source_url: string;
+          status: string;
+          updated_at?: string;
+        };
+        Update: {
+          documents?: Json;
+          error_code?: string | null;
+          generated_at?: string;
+          input_fingerprint?: string;
+          input_truncated?: boolean;
+          model?: string | null;
+          points?: Json;
+          prompt_version?: string;
+          sale_id?: string;
+          source_url?: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       auction_documents: {
         Row: {
           created_at: string | null;
@@ -3549,6 +3644,39 @@ export type Database = {
           reason?: string;
           sale_date?: string | null;
           source_url?: string;
+        };
+        Relationships: [];
+      };
+      auction_sale_timeline: {
+        Row: {
+          event_kind: string;
+          id: number;
+          new_value: Json | null;
+          observed_at: string;
+          origin: string;
+          previous_value: Json | null;
+          sale_id: string;
+          source_url: string | null;
+        };
+        Insert: {
+          event_kind: string;
+          id?: never;
+          new_value?: Json | null;
+          observed_at?: string;
+          origin?: string;
+          previous_value?: Json | null;
+          sale_id: string;
+          source_url?: string | null;
+        };
+        Update: {
+          event_kind?: string;
+          id?: never;
+          new_value?: Json | null;
+          observed_at?: string;
+          origin?: string;
+          previous_value?: Json | null;
+          sale_id?: string;
+          source_url?: string | null;
         };
         Relationships: [];
       };
@@ -12050,6 +12178,7 @@ export type Database = {
           dedupe_confidence: string | null;
           department: string | null;
           description: string | null;
+          document_count: number | null;
           documents: Json | null;
           documents_rich: Json | null;
           habitable_surface_m2: number | null;
@@ -13104,6 +13233,23 @@ export type Database = {
         Returns: boolean;
       };
       geomfromewkt: { Args: { "": string }; Returns: unknown };
+      get_public_sale_details: {
+        Args: { p_sale_id: string };
+        Returns: {
+          document_count: number;
+          has_air_conditioning: boolean;
+          has_double_glazing: boolean;
+          has_garage: boolean;
+          has_garden: boolean;
+          has_pool: boolean;
+          has_terrace: boolean;
+          has_visit_dates: boolean;
+          id: string;
+          land_surface_m2: number;
+          parking_count: number;
+          photo_count: number;
+        }[];
+      };
       get_public_sale_summary: {
         Args: { p_sale_id: string };
         Returns: {
@@ -13126,6 +13272,22 @@ export type Database = {
           updated_at: string;
         }[];
       };
+      get_public_tribunal_activity: {
+        Args: never;
+        Returns: {
+          apartment_count: number;
+          department: string;
+          house_count: number;
+          median_starting_price_eur: number;
+          next_sale_date: string;
+          other_count: number;
+          tribunal_city: string;
+          tribunal_code: string;
+          tribunal_name: string;
+          upcoming_count: number;
+        }[];
+      };
+      get_sale_passages: { Args: { p_sale_id: string }; Returns: Json };
       gettransactionid: { Args: never; Returns: unknown };
       grant_analysis_access_from_checkout: {
         Args: {

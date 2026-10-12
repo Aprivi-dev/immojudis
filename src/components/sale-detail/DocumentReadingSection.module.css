@@ -1,0 +1,114 @@
+.card {
+  margin-top: 24px;
+  padding: 24px 27px;
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--ink-strong);
+}
+
+.card h2 {
+  color: var(--brand-navy);
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 25px;
+  font-weight: 600;
+}
+
+.lead {
+  margin-top: 7px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.theme {
+  margin-top: 22px;
+}
+
+.theme h3 {
+  color: var(--brand-navy);
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.point {
+  margin-top: 12px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 12px;
+}
+
+.pointHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+}
+
+.pointTitle {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.badge {
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.alerte {
+  background: var(--danger-tint);
+  color: var(--danger);
+}
+
+.attention {
+  background: var(--warning-tint);
+  color: var(--ink-strong);
+}
+
+.info {
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+}
+
+.explanation {
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.quote {
+  margin-top: 8px;
+  border-left: 3px solid var(--gold-light);
+  padding: 2px 0 2px 12px;
+  color: var(--ink-strong);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.55;
+}
+
+.source {
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.source a,
+.cta {
+  color: var(--gold-text);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cta {
+  display: inline-block;
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.note {
+  margin-top: 16px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}

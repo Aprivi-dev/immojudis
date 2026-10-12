@@ -6,10 +6,13 @@ import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import type { MarketAnalyticsResponse } from "@/lib/market-analytics";
 import type { MarketContext } from "@/lib/market.server";
+import type { ValuePreview } from "@/lib/value-preview";
 import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
 import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import type { SaleHistoryResponse } from "@/lib/sale-history";
+import type { SalePassagesResponse } from "@/lib/sale-passages";
+import type { DocumentReadingResponse } from "@/lib/document-reading";
 import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
 import type { ValuationBacktestResponse } from "@/lib/valuation-backtest";
 import type { ValuationAdminResponse } from "@/lib/valuation-admin";
@@ -61,6 +64,30 @@ export async function fetchSaleFactReliabilities(
     signal: AbortSignal.timeout(10_000),
   });
   return readJson<SaleFactReliabilitiesResponse>(response);
+}
+
+export async function fetchValuePreview(saleId: string): Promise<ValuePreview> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/value-preview`, {
+    headers: await authHeaders(),
+    signal: AbortSignal.timeout(10_000),
+  });
+  return readJson<ValuePreview>(response);
+}
+
+export async function fetchDocumentReading(saleId: string): Promise<DocumentReadingResponse> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/document-reading`, {
+    headers: await authHeaders(),
+    signal: AbortSignal.timeout(10_000),
+  });
+  return readJson<DocumentReadingResponse>(response);
+}
+
+export async function fetchSalePassages(saleId: string): Promise<SalePassagesResponse> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/passages`, {
+    headers: await authHeaders(),
+    signal: AbortSignal.timeout(10_000),
+  });
+  return readJson<SalePassagesResponse>(response);
 }
 
 export async function fetchPrecomputedMarketEstimate(args: {

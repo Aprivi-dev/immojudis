@@ -80,8 +80,8 @@ function AccountAlerts({ userId }: { userId: string }) {
     staleTime: 5 * 60_000,
     retry: false,
   });
-  // Les alertes hebdomadaires demandent l'offre Analyse (règle appliquée par la base).
-  const weeklyAllowed = plan.data?.plan.hasAnalysisAccess === true;
+  // Les alertes quotidiennes demandent l'offre Analyse (règle appliquée par la base).
+  const dailyAllowed = plan.data?.plan.hasAnalysisAccess === true;
 
   const refresh = () =>
     Promise.all([
@@ -195,9 +195,9 @@ function AccountAlerts({ userId }: { userId: string }) {
       title="Mes alertes"
       description={
         <>
-          Une alerte vous prévient quand une nouvelle vente correspond à vos critères. Vos alertes
-          arrivent dans un seul email récapitulatif par jour. L’offre Découverte permet une alerte
-          et une zone actives ; l’offre Analyse jusqu’à 25, avec des critères avancés.
+          Une alerte vous prévient quand une nouvelle vente correspond à vos critères. L’offre
+          Découverte permet une alerte et une zone actives, avec un email récapitulatif par semaine
+          ; l’offre Analyse jusqu’à 25, avec un email quotidien et des critères avancés.
         </>
       }
       actions={
@@ -246,7 +246,7 @@ function AccountAlerts({ userId }: { userId: string }) {
                 <AlertCard
                   alert={alert}
                   busy={mutation.isPending}
-                  weeklyAllowed={weeklyAllowed}
+                  dailyAllowed={dailyAllowed}
                   editing={editingId === alert.id}
                   onEdit={() => setEditingId(alert.id)}
                   onCancelEdit={() => setEditingId(null)}
@@ -309,7 +309,7 @@ function AccountAlerts({ userId }: { userId: string }) {
 function AlertCard({
   alert,
   busy,
-  weeklyAllowed,
+  dailyAllowed,
   editing,
   onEdit,
   onCancelEdit,
@@ -317,7 +317,7 @@ function AlertCard({
 }: {
   alert: UserAlert;
   busy: boolean;
-  weeklyAllowed: boolean;
+  dailyAllowed: boolean;
   editing: boolean;
   onEdit: () => void;
   onCancelEdit: () => void;
@@ -352,11 +352,11 @@ function AlertCard({
               })
             }
           >
-            <option value="daily">{ALERT_FREQUENCY_LABELS.daily}</option>
-            <option value="weekly" disabled={!weeklyAllowed && frequency !== "weekly"}>
-              {ALERT_FREQUENCY_LABELS.weekly}
-              {weeklyAllowed || frequency === "weekly" ? "" : " (offre Analyse)"}
+            <option value="daily" disabled={!dailyAllowed && frequency !== "daily"}>
+              {ALERT_FREQUENCY_LABELS.daily}
+              {dailyAllowed || frequency === "daily" ? "" : " (offre Analyse)"}
             </option>
+            <option value="weekly">{ALERT_FREQUENCY_LABELS.weekly}</option>
           </select>
         </label>
       </div>
@@ -388,7 +388,7 @@ function AlertCard({
         <AlertEditForm
           alert={alert}
           busy={busy}
-          weeklyAllowed={weeklyAllowed}
+          dailyAllowed={dailyAllowed}
           onCancel={onCancelEdit}
           onSubmit={(patch) => onAction({ kind: "edit", id: alert.id, patch })}
         />
@@ -419,13 +419,13 @@ function AlertCard({
 function AlertEditForm({
   alert,
   busy,
-  weeklyAllowed,
+  dailyAllowed,
   onCancel,
   onSubmit,
 }: {
   alert: UserAlert;
   busy: boolean;
-  weeklyAllowed: boolean;
+  dailyAllowed: boolean;
   onCancel: () => void;
   onSubmit: (
     patch: Pick<UserAlert, "name" | "alert_frequency" | "max_price_eur" | "min_surface_m2">,
@@ -492,10 +492,10 @@ function AlertEditForm({
             value={frequency}
             onChange={(event) => setFrequency(event.target.value as AlertFrequency)}
           >
-            <option value="daily">{ALERT_FREQUENCY_LABELS.daily}</option>
-            <option value="weekly" disabled={!weeklyAllowed && frequency !== "weekly"}>
-              {ALERT_FREQUENCY_LABELS.weekly}
+            <option value="daily" disabled={!dailyAllowed && frequency !== "daily"}>
+              {ALERT_FREQUENCY_LABELS.daily}
             </option>
+            <option value="weekly">{ALERT_FREQUENCY_LABELS.weekly}</option>
           </select>
         </label>
       </div>

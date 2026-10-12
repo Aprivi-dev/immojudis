@@ -595,6 +595,27 @@ def _write_step_summary(summary: dict[str, Any]) -> None:
         LOGGER.warning("Could not write the GitHub step summary: %s", exc)
 
 
+def _run_document_reading() -> dict[str, int] | str:
+    """Read the dossiers whose texts this pass (or an earlier one) persisted.
+
+    Optional and bounded: a provider or budget failure never fails the drain.
+    """
+    from src.document_reading import reading_enabled, run_document_readings
+
+    if not reading_enabled():
+        return "disabled"
+    db_url = str(load_settings().get("supabase_db_url") or "")
+    try:
+        return run_document_readings(
+            db_url,
+            max_sales=_bounded_int(os.getenv("DOCUMENT_READING_MAX_SALES"), 40, 1, 500),
+            budget_seconds=60.0 * _bounded_int(os.getenv("DOCUMENT_READING_BUDGET_MINUTES"), 20, 1, 120),
+        )
+    except Exception as exc:  # noqa: BLE001 - reported in the summary, never fatal
+        LOGGER.warning("Document reading stopped: %s", exc)
+        return f"error: {type(exc).__name__}"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--max-sales", default=os.getenv("DOCUMENT_BACKLOG_MAX_SALES"))
@@ -604,6 +625,7 @@ def main(argv: list[str] | None = None) -> int:
     limits = limits_from_inputs(args.max_sales, args.budget_minutes, args.max_passes)
     report = run_document_backlog(limits)
     summary = report.as_dict()
+    summary["document_reading"] = _run_document_reading()
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     _write_step_summary(summary)
     return 0
