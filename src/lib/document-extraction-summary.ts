@@ -13,7 +13,11 @@ export function documentExtractionSummary(
   if (["blocked", "failed", "unavailable", "not_found"].includes(download ?? "")) {
     return "Récupération automatique indisponible · consulter la pièce originale.";
   }
-  if (["incomplete", "partial", "ocr_failed"].includes(status ?? "")) {
+  if (status === "partial") {
+    // Read except for a few pages still unreadable after a new attempt.
+    return "Texte récupéré, sauf quelques pages illisibles · consulter la pièce originale.";
+  }
+  if (["incomplete", "ocr_failed"].includes(status ?? "")) {
     return "Extraction partielle · certaines pages restent à lire.";
   }
   if (

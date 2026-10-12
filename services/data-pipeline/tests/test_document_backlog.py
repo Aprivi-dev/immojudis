@@ -36,9 +36,12 @@ def test_limits_are_validated_and_clamped() -> None:
 
 def test_queries_select_upcoming_sales_and_only_pdf_jobs() -> None:
     sql = " ".join(backlog.CANDIDATES_SQL.split())
-    assert "order by (s.sale_date is null), s.sale_date" in sql
+    # Sales with documents never tried first, then the soonest sale.
+    assert "order by (coalesce(p.untried_documents, jsonb_array_length(s.documents)) = 0)," in sql
+    assert "(s.sale_date is null), s.sale_date" in sql
     assert "(s.sale_date is null or s.sale_date >= now())" in sql
-    assert "not in ('extracted', 'empty')" in sql
+    # A document read except for a few pages ("partial") is settled.
+    assert "not in ('extracted', 'empty', 'partial')" in sql
     claim = " ".join(backlog.CLAIM_JOB_SQL.split())
     assert "j.job_type = 'pdf'" in claim and "for update of j, s skip locked" in claim
     ensure = " ".join(backlog.ENSURE_JOB_SQL.split())
