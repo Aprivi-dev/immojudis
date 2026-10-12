@@ -10,6 +10,7 @@ from src.asset_normalization import (
 )
 from src.asset_normalization_helpers import (
     _add_quality_flag,
+    _decimal_value,
     _evidence,
     _extract_built_surface,
     _extract_count,
@@ -34,8 +35,16 @@ from src.normalize import (
     parse_surface,
 )
 
+_SURFACE_FIELDS = ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "land_surface_m2")
+
 
 def _fill_surfaces(sale: AuctionSale, text: str) -> None:
+    # Values reloaded from a stored payload can come back as text ("45.5"):
+    # every comparison below needs numbers (drain of 12/10/2026).
+    for field in _SURFACE_FIELDS:
+        value = getattr(sale, field, None)
+        if value is not None and not isinstance(value, Decimal):
+            setattr(sale, field, _decimal_value(value))
     ambiguous_mixed_lot_surface = _is_ambiguous_mixed_lot_surface(sale.property_type or "", text)
     if ambiguous_mixed_lot_surface:
         # A generic structured value can be the first lot's area. Keep the

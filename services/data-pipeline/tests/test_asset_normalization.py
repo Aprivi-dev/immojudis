@@ -29,6 +29,22 @@ def test_asset_normalization_rejects_unbounded_regex_input() -> None:
         normalize_asset_features(sale)
 
 
+def test_a_surface_reloaded_as_text_is_still_compared_as_a_number() -> None:
+    # Drain of 12/10/2026: a habitable surface stored as "45.5" crashed the
+    # enrichment queue ('>=' between str and Decimal).
+    sale = AuctionSale(
+        source_name="unit",
+        source_url="https://example.test/surface-as-text",
+        property_type="house",
+        raw_text="Maison à vendre.",
+    )
+    sale.habitable_surface_m2 = "45.5"
+
+    normalize_asset_features(sale)
+
+    assert sale.surface_m2 == Decimal("45.5")
+
+
 def test_build_auction_score_factor_rows_deduplicates_factor_keys() -> None:
     sale = AuctionSale(
         source_name="notaires",
