@@ -98,14 +98,16 @@ with pending as (
            count(*) filter (
                where d.document_type = any(%s)
                   or coalesce(d.label, '') ilike '%%urbanisme%%'
-           ) as useful_pending
+           ) as useful_pending,
+           count(*) filter (where coalesce(d.extraction_status, 'pending') = 'pending') as untried_documents
       from public.auction_documents d
-     where coalesce(d.extraction_status, 'pending') not in ('extracted', 'empty')
+     where coalesce(d.extraction_status, 'pending') not in ('extracted', 'empty', 'partial')
      group by d.source_url
 )
 select s.source_url, s.source_name, s.sale_date,
        coalesce(p.pending_documents, jsonb_array_length(s.documents)) as pending_documents,
-       coalesce(p.useful_pending, 0) as useful_pending
+       coalesce(p.useful_pending, 0) as useful_pending,
+       coalesce(p.untried_documents, jsonb_array_length(s.documents)) as untried_documents
   from public.auction_sales s
   left join pending p on p.source_url = s.source_url
  where s.status = any(%s)
@@ -124,7 +126,10 @@ select s.source_url, s.source_name, s.sale_date,
             and a.status = 'running'
             and coalesce(a.locked_at, a.updated_at) >= now() - interval '30 minutes'
        )
- order by (s.sale_date is null), s.sale_date, coalesce(p.useful_pending, 0) desc, s.source_url
+ -- Documents never tried come first: a sale whose only unread documents
+ -- already failed (and will likely fail again) must not starve them.
+ order by (coalesce(p.untried_documents, jsonb_array_length(s.documents)) = 0),
+          (s.sale_date is null), s.sale_date, coalesce(p.useful_pending, 0) desc, s.source_url
  limit %s
 """
 

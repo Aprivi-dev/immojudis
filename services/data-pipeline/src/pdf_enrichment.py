@@ -63,6 +63,7 @@ from src.pdf_document_types import (
     classify_document_type,  # noqa: F401
 )
 from src.pdf_failure_diagnostics import format_pdf_failure_diagnostics, pdf_extraction_exception_marker
+from src.pdf_partial_tolerance import is_tolerated_partial, previous_reads_by_url
 from src.pdf_ocr import (
     PdfDeadlineExceeded,
     PdfDocumentOcrBudgetExceeded,
@@ -93,6 +94,7 @@ from src.pdf_page_analysis import (
     is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
 )
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
+from src.sources.cloud_transport import configured_transport
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
 from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections
 
@@ -269,13 +271,17 @@ def enrich_sale_from_pdfs(sale: AuctionSale) -> PdfEnrichmentStats:
                 "file_path": str(file_path),
             }
         )
-        if payload.get("complete") is False or str(payload.get("extraction_status") or "").lower() in {
-            "incomplete",
-            "failed",
-        }:
+        if (
+            payload.get("complete") is False
+            or str(payload.get("extraction_status") or "").lower() in {"incomplete", "failed"}
+        ) and not is_tolerated_partial(
+            payload,
+            previous_reads_by_url(sale.raw_payload.get("document_analysis")).get(str(payload.get("url") or "")),
+        ):
             # Keep the partial payload and its successful-page provenance for
             # the next pass, while making the run visibly incomplete to queue
-            # and quality callers.
+            # and quality callers. A document read except for a few pages that
+            # this retry did not recover is settled instead (pdf_partial_tolerance).
             stats.errors += 1
         _write_document_text_cache(document, file_path, payload)
         stats.documents_processed += 1
@@ -731,7 +737,10 @@ def _send_pinned_document_request(
         requested_timeout,
         operation="connecting to document host",
     )
-    transport = _PinnedHTTPTransport(target)
+    # Hosts that refuse the runner's network (Cessions Etat answers 403, even
+    # to robots.txt) go through the same allowlisted relay as their collector.
+    relay = configured_transport(url)
+    transport = relay if relay is not None else _PinnedHTTPTransport(target)
     try:
         with httpx.Client(
             transport=transport,
@@ -739,7 +748,7 @@ def _send_pinned_document_request(
             timeout=timeout_seconds,
             trust_env=False,
         ) as client:
-            with client.stream("GET", target.url, headers=headers) as response:
+            with client.stream("GET", url if relay is not None else target.url, headers=headers) as response:
                 content = _read_document_stream(response, int(load_settings()["pdf_max_download_mb"]) * 1024 * 1024)
                 _ensure_pdf_deadline(operation="reading document response")
                 response_headers = dict(response.headers)
