@@ -2,7 +2,9 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 
-const MAX_CLIENT_CHUNK_BYTES = 1_850_000;
+// Relevé de 1 850 000 le 12/10/2026 (accord du propriétaire) : la mise à jour des
+// dépendances #196 (next 16.4, mapbox-gl 3.32) a grossi le plus gros chunk de 11 ko.
+const MAX_CLIENT_CHUNK_BYTES = 1_875_000;
 // The protected admin editor adds an isolated client route; keep a small global
 // allowance for it while enforcing a dedicated initial-load budget below.
 // Separate favorites and alerts routes add independently loaded client chunks.
