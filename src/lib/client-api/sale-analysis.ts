@@ -12,6 +12,7 @@ import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import type { SaleHistoryResponse } from "@/lib/sale-history";
 import type { SalePassagesResponse } from "@/lib/sale-passages";
+import type { AuctionScenariosResponse, CourtAuctionSummary } from "@/lib/auction-scenarios";
 import type { DocumentReadingResponse } from "@/lib/document-reading";
 import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
 import type { ValuationBacktestResponse } from "@/lib/valuation-backtest";
@@ -88,6 +89,22 @@ export async function fetchSalePassages(saleId: string): Promise<SalePassagesRes
     signal: AbortSignal.timeout(10_000),
   });
   return readJson<SalePassagesResponse>(response);
+}
+
+export async function fetchAuctionScenarios(saleId: string): Promise<AuctionScenariosResponse> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/auction-scenarios`, {
+    headers: await authHeaders(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  return readJson<AuctionScenariosResponse>(response);
+}
+
+export async function fetchCourtAuctionSummaries(): Promise<{ courts: CourtAuctionSummary[] }> {
+  const response = await fetch("/api/v1/tribunals/auction-summaries", {
+    headers: await authHeaders(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  return readJson<{ courts: CourtAuctionSummary[] }>(response);
 }
 
 export async function fetchPrecomputedMarketEstimate(args: {

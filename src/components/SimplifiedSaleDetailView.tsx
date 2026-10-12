@@ -10,6 +10,7 @@ import { listingValuationConflict } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
+import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenariosSection";
 import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
 import { ListingWeatherHistory } from "@/components/sale-detail/ListingWeatherHistory";
 import { EXAMPLE_COMMUNE_RISKS } from "@/lib/example-commune-risks";
@@ -694,17 +695,20 @@ function SaleDetailWorkspace({
 
           {activeTab === "statistiques" && isTribunalSale ? (
             access === "analysis" ? (
-              <ListingStatistics
-                sale={sale}
-                premium={access === "analysis" && adjudicationStatisticsEnabled}
-                publicDemo={publicDemo}
-                propertyTypeVerified={!valuationConflict && !propertyTypeReview.blocked}
-              />
+              <>
+                <AuctionScenariosSection saleId={sale.id} enabled={!publicDemo} />
+                <ListingStatistics
+                  sale={sale}
+                  premium={access === "analysis" && adjudicationStatisticsEnabled}
+                  publicDemo={publicDemo}
+                  propertyTypeVerified={!valuationConflict && !propertyTypeReview.blocked}
+                />
+              </>
             ) : (
               <PremiumFeaturePreview
                 title="Les statistiques du tribunal avec l’offre Analyse"
                 description="Consultez les tendances, les adjudications et les indicateurs disponibles pour préparer votre enchère."
-                labels={["Activité du tribunal", "Prix d’adjudication", "Tendances"]}
+                labels={["Scénarios d’enchères", "Prix d’adjudication", "Activité du tribunal"]}
               />
             )
           ) : null}

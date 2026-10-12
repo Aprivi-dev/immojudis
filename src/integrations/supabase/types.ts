@@ -5423,6 +5423,51 @@ export type Database = {
         };
         Relationships: [];
       };
+      dvf_court_adjudications: {
+        Row: {
+          built_surface_m2: number | null;
+          court_code: string | null;
+          department: string;
+          imported_at: string;
+          insee_code: string;
+          land_surface_m2: number | null;
+          local_count: number;
+          mutation_date: string;
+          mutation_id: string;
+          price_eur: number;
+          property_type: string;
+          source_year: number;
+        };
+        Insert: {
+          built_surface_m2?: number | null;
+          court_code?: string | null;
+          department: string;
+          imported_at?: string;
+          insee_code: string;
+          land_surface_m2?: number | null;
+          local_count?: number;
+          mutation_date: string;
+          mutation_id: string;
+          price_eur: number;
+          property_type: string;
+          source_year: number;
+        };
+        Update: {
+          built_surface_m2?: number | null;
+          court_code?: string | null;
+          department?: string;
+          imported_at?: string;
+          insee_code?: string;
+          land_surface_m2?: number | null;
+          local_count?: number;
+          mutation_date?: string;
+          mutation_id?: string;
+          price_eur?: number;
+          property_type?: string;
+          source_year?: number;
+        };
+        Relationships: [];
+      };
       dvf_import_batches: {
         Row: {
           completed_at: string | null;
@@ -13233,6 +13278,11 @@ export type Database = {
         Returns: boolean;
       };
       geomfromewkt: { Args: { "": string }; Returns: unknown };
+      get_court_auction_scenarios: {
+        Args: { p_court_code: string; p_starting_price: number };
+        Returns: Json;
+      };
+      get_court_auction_summaries: { Args: never; Returns: Json };
       get_public_sale_details: {
         Args: { p_sale_id: string };
         Returns: {
