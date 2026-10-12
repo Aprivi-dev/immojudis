@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
@@ -28,6 +28,8 @@ import {
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { CadastralPlanDisclosure } from "./CadastralPlanDisclosure";
 import { listingPluZone } from "@/lib/land-report-coherence";
+import { parcelOutlines } from "@/lib/land-parcel-outline";
+import type { LandReport } from "@/lib/land-report-types";
 import { LandPotentialPanel } from "./LandPotentialPanel";
 import styles from "./UrbanismeCadastrePanel.module.css";
 
@@ -96,6 +98,12 @@ export function UrbanismeCadastrePanel({
     [cadastral.structuredParcels, mapLocation],
   );
 
+  const [landReport, setLandReport] = useState<LandReport | null>(null);
+  const outlines = useMemo(
+    () => (landReport ? parcelOutlines(landReport.planning.parcels) : null),
+    [landReport],
+  );
+
   const rootClassName = [styles.panel, className].filter(Boolean).join(" ");
   const addressSummary = locationSummary(sale);
   const primaryAction = firstNextAction(cadastral, urbanPlanning);
@@ -127,10 +135,12 @@ export function UrbanismeCadastrePanel({
             <p className={styles.compactSummaryText}>{primaryAction}</p>
           </div>
         </div>
-        <p className={styles.compactSummaryCaveat}>
-          L’adresse est un point de départ. Elle ne suffit pas à confirmer une parcelle ni les
-          règles d’urbanisme.
-        </p>
+        {officialLandEnabled ? null : (
+          <p className={styles.compactSummaryCaveat}>
+            L’adresse est un point de départ. Elle ne suffit pas à confirmer une parcelle ni les
+            règles d’urbanisme.
+          </p>
+        )}
       </div>
 
       <LandPotentialPanel
@@ -139,6 +149,7 @@ export function UrbanismeCadastrePanel({
         enabled={officialLandEnabled}
         listingZone={listingPluZone(sale.source_description, sale.description)}
         landSurfaceM2={sale.land_surface_m2}
+        onReport={setLandReport}
       />
 
       <CadastralPlanDisclosure
@@ -147,6 +158,7 @@ export function UrbanismeCadastrePanel({
         displayAddress={locationSummary(mapLocation)}
         postalCode={displayText(mapLocation.postal_code)}
         city={displayText(mapLocation.city)}
+        parcels={outlines}
       />
 
       <details className={styles.details}>

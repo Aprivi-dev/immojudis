@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import Download from "lucide-react/dist/esm/icons/download.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
@@ -16,7 +16,12 @@ import type {
   LandRiskCategory,
   LandRuleEvidence,
 } from "@/lib/land-report-types";
-import { compareListingZone, parcelSurfaceGap } from "@/lib/land-report-coherence";
+import {
+  compareListingZone,
+  landReportReliability,
+  parcelSurfaceGap,
+  rulesUnavailableReason,
+} from "@/lib/land-report-coherence";
 import { LandParcelDiagram } from "./LandParcelDiagram";
 import styles from "./LandPotentialPanel.module.css";
 import { userMessage } from "@/lib/user-messages";
@@ -29,6 +34,8 @@ type Props = {
   listingZone?: string | null;
   /** Land surface announced, compared with the parcels found. */
   landSurfaceM2?: number | null;
+  /** Shares the report with the cadastral plan, which outlines the parcels found. */
+  onReport?: (report: LandReport | null) => void;
 };
 const PROJECT_LABELS: Record<LandProjectKind, string> = {
   extension: "Agrandir",
@@ -44,24 +51,60 @@ export function LandPotentialPanel({
   initialReport,
   listingZone = null,
   landSurfaceM2 = null,
+  onReport,
 }: Props) {
+  const rootRef = useRef<HTMLElement | null>(null);
+  const autoLoadStarted = useRef(false);
   const [report, setReport] = useState(initialReport ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [projectKind, setProjectKind] = useState<LandProjectKind>("extension");
+  const [projectKind, setProjectKind] = useState<LandProjectKind | null>(null);
 
-  async function load(refresh = false) {
-    setLoading(true);
-    setError(null);
-    try {
-      setReport(await fetchSaleLandReport(saleId, refresh));
-    } catch (cause) {
-      setError(userMessage(cause, "Les sources n’ont pas pu être consultées."));
-    } finally {
-      setLoading(false);
+  const load = useCallback(
+    async (refresh = false) => {
+      setLoading(true);
+      setError(null);
+      try {
+        setReport(await fetchSaleLandReport(saleId, refresh));
+      } catch (cause) {
+        setError(userMessage(cause, "Les sources n’ont pas pu être consultées."));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [saleId],
+  );
+
+  // The report is read as soon as the panel comes near the screen: no button to find.
+  useEffect(() => {
+    if (!enabled || initialReport || autoLoadStarted.current) return;
+    const start = () => {
+      if (autoLoadStarted.current) return;
+      autoLoadStarted.current = true;
+      void load(false);
+    };
+    const node = rootRef.current;
+    if (!node || typeof IntersectionObserver === "undefined") {
+      start();
+      return;
     }
-  }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          observer.disconnect();
+          start();
+        }
+      },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [enabled, initialReport, load]);
+
+  useEffect(() => {
+    onReport?.(report);
+  }, [onReport, report]);
 
   async function exportReport() {
     setExporting(true);
@@ -75,7 +118,11 @@ export function LandPotentialPanel({
     }
   }
 
-  const selectedProject = report?.projects.find((project) => project.kind === projectKind);
+  // A project is offered only when at least one article of the zone speaks to it.
+  const usefulProjects = report?.projects.filter((project) => project.rules.length > 0) ?? [];
+  const selectedProject =
+    usefulProjects.find((project) => project.kind === projectKind) ?? usefulProjects[0];
+  const reliability = report ? landReportReliability(report.planning) : null;
   const checks = report
     ? [...report.planning.checks, ...report.risks.checks, ...report.rules.checks]
     : [];
@@ -93,7 +140,11 @@ export function LandPotentialPanel({
     : [];
 
   return (
-    <section className={styles.root} aria-label="Potentiel de construction et risques du bien">
+    <section
+      ref={rootRef}
+      className={styles.root}
+      aria-label="Potentiel de construction et risques du bien"
+    >
       <div className={styles.header}>
         <div>
           <p className={styles.eyebrow}>PLU et risques · sources officielles</p>
@@ -116,19 +167,21 @@ export function LandPotentialPanel({
       ) : (
         <>
           <div className={styles.actions}>
-            <button
-              className={styles.primaryButton}
-              type="button"
-              disabled={loading}
-              onClick={() => void load(Boolean(report))}
-            >
-              {report ? <RefreshCw size={16} aria-hidden="true" /> : null}
-              {loading
-                ? "Consultation des sources…"
-                : report
-                  ? "Actualiser les sources"
-                  : "Consulter le PLU et les risques"}
-            </button>
+            {report || error ? (
+              <button
+                className={report ? styles.secondaryButton : styles.primaryButton}
+                type="button"
+                disabled={loading}
+                onClick={() => void load(Boolean(report))}
+              >
+                <RefreshCw size={16} aria-hidden="true" />
+                {loading
+                  ? "Consultation des sources…"
+                  : report
+                    ? "Actualiser les sources"
+                    : "Réessayer"}
+              </button>
+            ) : null}
             {report ? (
               <button
                 className={styles.secondaryButton}
@@ -141,10 +194,10 @@ export function LandPotentialPanel({
               </button>
             ) : null}
           </div>
-          {loading ? (
+          {loading || (!report && !error) ? (
             <p className={styles.loading} role="status">
-              Recherche cadastrale, consultation des cartes et lecture du règlement. Cette
-              vérification peut prendre un peu de temps.
+              Recherche de la parcelle, du zonage et des risques, puis lecture du règlement :
+              environ 15 secondes.
             </p>
           ) : null}
           {error ? (
@@ -154,24 +207,20 @@ export function LandPotentialPanel({
           ) : null}
           {report ? (
             <div className={styles.report}>
-              <p className={styles.timestamp}>
-                Vérifié le {formatDate(report.generatedAt)}
-                {unavailableCount > 0
-                  ? ` · ${unavailableCount} source${unavailableCount > 1 ? "s" : ""} indisponible${unavailableCount > 1 ? "s" : ""}`
-                  : ""}
-              </p>
+              {reliability ? (
+                <p className={styles.reliability} data-tone={reliability.tone}>
+                  <strong>{reliability.text}</strong>
+                  <span>
+                    Vérifié le {formatDate(report.generatedAt)}
+                    {unavailableCount > 0
+                      ? ` · ${unavailableCount} source${unavailableCount > 1 ? "s" : ""} indisponible${unavailableCount > 1 ? "s" : ""}`
+                      : ""}
+                  </span>
+                </p>
+              ) : null}
               <section className={styles.section} aria-label="Parcelles et zonage officiel">
                 <h4>Parcelles et zonage</h4>
-                <p className={styles.caption}>
-                  {report.planning.locationStatus === "references_matched"
-                    ? "Références retrouvées au cadastre. Le périmètre de la vente reste à recouper avec le cahier des conditions."
-                    : report.planning.locationStatus === "point_candidate"
-                      ? "Parcelle candidate autour du point d’adresse. Le rattachement au bien reste à confirmer."
-                      : report.planning.locationStatus === "ambiguous"
-                        ? "Plusieurs rattachements ou zones sont à examiner. Les règles ne sont pas généralisées à tout le terrain."
-                        : "La parcelle n’a pas pu être rattachée avec les informations disponibles."}
-                </p>
-                {surfaceGap ? <p className={styles.notice}>{surfaceGap}</p> : null}
+                {surfaceGap ? <p className={styles.attention}>{surfaceGap}</p> : null}
                 {report.planning.parcels.length ? (
                   <>
                     <LandParcelDiagram
@@ -192,8 +241,10 @@ export function LandPotentialPanel({
                           </span>
                           <small>
                             {parcel.match === "address_point"
-                              ? "Point d’adresse · à confirmer"
-                              : "Référence cadastrale · à recouper"}
+                              ? "Trouvée d’après l’adresse"
+                              : parcel.match === "listing_reference"
+                                ? "Citée dans l’annonce"
+                                : "Citée dans le dossier"}
                           </small>
                         </li>
                       ))}
@@ -215,12 +266,11 @@ export function LandPotentialPanel({
                   </ul>
                 ) : (
                   <p className={styles.notice}>
-                    Aucun zonage n’a été identifié dans les couches consultées. Vérifiez le document
-                    applicable et la couverture des sources ci-dessous.
+                    Aucun zonage n’a été identifié pour cette parcelle.
                   </p>
                 )}
                 {zoneCheck ? (
-                  <p className={zoneCheck.matches === false ? styles.notice : styles.caption}>
+                  <p className={zoneCheck.matches === false ? styles.attention : styles.caption}>
                     Zone citée dans l’annonce : {zoneCheck.zone}
                     {zoneCheck.matches === true
                       ? " · concorde avec le zonage officiel."
@@ -257,62 +307,43 @@ export function LandPotentialPanel({
 
               <section className={styles.section} aria-label="Projet et règles du PLU">
                 <h4>Les règles utiles à votre projet</h4>
-                {!report.rules.completeCoverage ? (
-                  <p className={styles.attention}>
-                    Lecture partielle du règlement. Les extraits ci-dessous ne couvrent pas toutes
-                    les dispositions, annexes et exceptions applicables.
-                  </p>
-                ) : null}
-                <label className={styles.projectLabel} htmlFor={`land-project-${saleId}`}>
-                  Votre projet
-                </label>
-                <select
-                  id={`land-project-${saleId}`}
-                  className={styles.select}
-                  value={projectKind}
-                  onChange={(event) => setProjectKind(event.target.value as LandProjectKind)}
-                >
-                  {Object.entries(PROJECT_LABELS).map(([kind, label]) => (
-                    <option value={kind} key={kind}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
                 {selectedProject ? (
                   <>
-                    <p className={styles.projectSummary}>{selectedProject.summary}</p>
-                    {selectedProject.rules.length ? (
-                      <RuleGroups key={projectKind} rules={selectedProject.rules} />
-                    ) : (
-                      <p className={styles.notice}>
-                        Les articles n’ont pas pu être lus automatiquement pour ce projet. Les
-                        documents officiels restent accessibles ci-dessus.
-                      </p>
-                    )}
-                    <div className={styles.checkGrid}>
-                      <div>
-                        <h5>Conditions à examiner</h5>
-                        <ul>
-                          {selectedProject.checks.map((item) => (
+                    <label className={styles.projectLabel} htmlFor={`land-project-${saleId}`}>
+                      Votre projet
+                    </label>
+                    <select
+                      id={`land-project-${saleId}`}
+                      className={styles.select}
+                      value={selectedProject.kind}
+                      onChange={(event) => setProjectKind(event.target.value as LandProjectKind)}
+                    >
+                      {usefulProjects.map((project) => (
+                        <option value={project.kind} key={project.kind}>
+                          {PROJECT_LABELS[project.kind]}
+                        </option>
+                      ))}
+                    </select>
+                    <RuleGroups key={selectedProject.kind} rules={selectedProject.rules} />
+                    <details className={styles.coverage}>
+                      <summary>Points à vérifier avant ce projet</summary>
+                      <ul>
+                        {[...selectedProject.checks, ...selectedProject.missingInformation].map(
+                          (item) => (
                             <li key={item}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <h5>Informations à obtenir</h5>
-                        <ul>
-                          {selectedProject.missingInformation.map((item) => (
-                            <li key={item}>{item}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
+                          ),
+                        )}
+                      </ul>
+                    </details>
                   </>
-                ) : null}
-                <p className={styles.caption}>
-                  Une règle repérée doit être lue avec ses exceptions, les dispositions générales,
-                  les OAP et les servitudes. Le projet nécessite l’autorisation applicable.
-                </p>
+                ) : (
+                  <p className={styles.notice}>
+                    {report.rules.rules.length
+                      ? "Les articles lus ne portent sur aucun des projets proposés."
+                      : rulesUnavailableReason(report.rules.checks)}{" "}
+                    Les articles applicables se lisent dans le règlement de la zone ci-dessus.
+                  </p>
+                )}
                 <SourceLink
                   url="https://www.service-public.gouv.fr/particuliers/vosdroits/F1633"
                   label="Préparer un certificat d’urbanisme opérationnel"
@@ -351,19 +382,12 @@ export function LandPotentialPanel({
                     ))}
                   </ul>
                 ) : (
-                  <p className={styles.caption}>
-                    Aucun enregistrement dans les couches consultées. La couverture et les sources
-                    indisponibles sont détaillées ci-dessous.
-                  </p>
+                  <p className={styles.caption}>Aucune servitude ni prescription repérée.</p>
                 )}
               </section>
 
               <section className={styles.section} aria-label="Risques liés à l’emplacement">
                 <h4>Risques liés à l’emplacement</h4>
-                <p className={styles.caption}>
-                  La portée géographique et les limites de chaque donnée sont conservées. Un
-                  historique communal ne prouve pas un sinistre de ce bâtiment.
-                </p>
                 {report.risks.findings.length ? (
                   <div className={styles.riskGroups}>
                     {groupRisks(report.risks.findings).map(([category, findings]) => (
@@ -400,7 +424,14 @@ export function LandPotentialPanel({
               </section>
 
               <details className={styles.coverage}>
-                <summary>Couverture, dates et limites des sources</summary>
+                <summary>Sources, dates et limites</summary>
+                {!report.rules.completeCoverage ? (
+                  <p className={styles.attention}>
+                    Lecture partielle du règlement : les extraits ne couvrent pas toutes les
+                    dispositions, annexes et exceptions applicables. Une règle repérée se lit avec
+                    les dispositions générales, les OAP et les servitudes.
+                  </p>
+                ) : null}
                 <ul className={styles.sourceChecks}>
                   {checks.map((check, index) => (
                     <SourceCheck key={`${check.key}-${index}`} check={check} />

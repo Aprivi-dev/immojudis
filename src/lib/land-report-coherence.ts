@@ -3,7 +3,12 @@
  * the PLU zone quoted by the seller's lawyer and the land surface announced.
  * Neither proves anything on its own; a disagreement is a point to verify.
  */
-import type { LandParcel, LandZone } from "./land-report-types";
+import type {
+  LandParcel,
+  LandPlanningResult,
+  LandSourceCheck,
+  LandZone,
+} from "./land-report-types";
 
 const ZONE_CODE = String.raw`([A-Z]{1,4}[A-Za-z0-9*]{0,12})`;
 const KEYWORD = String.raw`(?:[Zz]one|ZONE|[Zz]onage|[Ss]ecteur)`;
@@ -69,4 +74,53 @@ export function parcelSurfaceGap(
   return total < landSurfaceM2
     ? `Le cadastre retrouvé couvre ${found} alors que l’annonce indique ${announced} de terrain : d’autres parcelles font sans doute partie de la vente.`
     : `La parcelle retrouvée (${found}) est plus grande que le terrain annoncé (${announced}) : elle peut englober d’autres lots ou ne pas être la bonne.`;
+}
+
+export type LandReportReliability = {
+  tone: "good" | "watch" | "weak";
+  text: string;
+};
+
+/** One line saying how far the parcel, hence the zone and the rules, belong to the property. */
+export function landReportReliability(
+  planning: Pick<LandPlanningResult, "parcels" | "locationStatus">,
+): LandReportReliability {
+  const matches = new Set(planning.parcels.map((parcel) => parcel.match));
+  if (matches.has("listing_reference")) {
+    return { tone: "good", text: "Parcelle identifiée par la référence cadastrale de l’annonce." };
+  }
+  if (matches.has("document_reference") || matches.has("stored_reference")) {
+    return { tone: "good", text: "Parcelle identifiée par une référence cadastrale du dossier." };
+  }
+  if (planning.parcels.length === 1) {
+    return {
+      tone: "watch",
+      text: "Parcelle probable d’après l’adresse : à confirmer dans le cahier des conditions de vente.",
+    };
+  }
+  if (planning.parcels.length > 1) {
+    return {
+      tone: "watch",
+      text: "Plusieurs parcelles possibles autour de l’adresse : à confirmer dans le cahier des conditions de vente.",
+    };
+  }
+  return {
+    tone: "weak",
+    text: "Parcelle non identifiée : le zonage et les règles ne peuvent pas être rattachés au bien.",
+  };
+}
+
+/** Why no article could be read, in words a buyer understands. */
+export function rulesUnavailableReason(checks: Pick<LandSourceCheck, "message">[]): string {
+  const messages = checks.map((check) => check.message ?? "").join(" ");
+  if (/taille supérieure|trop volumineu/i.test(messages)) {
+    return "Le règlement est trop volumineux pour être lu automatiquement.";
+  }
+  if (/pas de texte lisible|illisible/i.test(messages)) {
+    return "Le règlement publié est un document numérisé, sans texte lisible.";
+  }
+  if (/délai dépassé|indisponible|HTTP/i.test(messages)) {
+    return "Le règlement n’a pas pu être téléchargé pour le moment.";
+  }
+  return "Aucun article de la zone n’a pu être extrait automatiquement.";
 }
