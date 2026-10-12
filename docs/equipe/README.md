@@ -18,13 +18,21 @@ modifié dans le code tant que la validation n'est pas donnée, par exemple :
 
 ## L'équipe
 
-| Agent              | Rôle                                                       |
-| ------------------ | ---------------------------------------------------------- |
-| `code-reviewer`    | Qualité, bugs, sécurité du code (lecture seule)            |
-| `ux-designer`      | Parcours, ergonomie, mobile, accessibilité (lecture seule) |
-| `seo-expert`       | Référencement (lecture seule)                              |
-| `product-explorer` | Nouvelles fonctionnalités (lecture seule)                  |
-| `developpeur`      | Applique les points validés, le seul qui modifie le code   |
+| Agent               | Rôle                                                               |
+| ------------------- | ------------------------------------------------------------------ |
+| `code-reviewer`     | Qualité, bugs, sécurité du code web (lecture seule)                |
+| `data-pipeline`     | Revue du pipeline Python de collecte (lecture seule)               |
+| `qualite-donnees`   | Exactitude des données affichées, SQL en lecture seule             |
+| `ux-designer`       | Parcours, ergonomie, mobile, accessibilité (lecture seule)         |
+| `seo-expert`        | Référencement (lecture seule)                                      |
+| `juridique-rgpd`    | Mentions légales, CGU, RGPD, formulations à risque (lecture seule) |
+| `testeur-qa`        | Tests des parcours, bugs reproductibles (ne modifie rien)          |
+| `product-explorer`  | Nouvelles fonctionnalités (lecture seule)                          |
+| `redacteur-contenu` | Propose des contenus ; les rédige seulement après validation       |
+| `developpeur`       | Applique les points de code validés ; seul à modifier le code      |
+
+Le garde-fou `.claude/hooks/supabase-lecture-seule.mjs` bloque toute requête SQL autre
+qu'une lecture lancée par `qualite-donnees`.
 
 Un spécialiste peut aussi être sollicité directement dans une session :
 « Demande au seo-expert de vérifier la page /tribunaux. »
