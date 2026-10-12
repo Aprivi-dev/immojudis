@@ -358,6 +358,23 @@ def _run_document_reading(env: dict[str, str]) -> int:
         return 1
 
 
+LICITOR_HISTORY_BUDGET_SECONDS = 330
+
+
+def _run_licitor_history_refresh(env: dict[str, str]) -> int:
+    """One tick of the Licitor adjudication history collector (owner decision, 12/10/2026).
+
+    Bounded like the document reading: at most 100 polite requests, its exit code
+    is reported in the run summary and never changes the run status.
+    """
+    command = [sys.executable, '-m', 'src.sources.licitor_history_refresh']
+    try:
+        result = subprocess.run(command, env=env, timeout=LICITOR_HISTORY_BUDGET_SECONDS, check=False)
+        return int(result.returncode)
+    except Exception:
+        return 1
+
+
 def execute(run_id: str) -> int:
     run_id = str(UUID(run_id))
     settings = load_settings()
@@ -404,6 +421,7 @@ def execute(run_id: str) -> int:
         code, failure = 1, str(exc)[:1000]
     worker_code = code
     reading_code = _run_document_reading(env) if source == 'enrichment-queue' and worker_code == 0 else None
+    licitor_history_code = _run_licitor_history_refresh(env) if source == 'enrichment-queue' else None
     # Exit 2 from src.main means "published, but an enabled source was empty or
     # failed": the run itself succeeded, so keep it succeeded and hand the
     # warning to the workflow instead of recording a worker failure.
@@ -418,6 +436,8 @@ def execute(run_id: str) -> int:
             summary["source_warning"] = True
         if reading_code is not None:
             summary["document_reading_exit_code"] = reading_code
+        if licitor_history_code is not None:
+            summary["licitor_history_exit_code"] = licitor_history_code
         run_errors: dict[str, list[str]] = {}
         counts: dict[object, object] = {}
         exhausted = 0

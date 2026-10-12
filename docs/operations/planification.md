@@ -32,7 +32,16 @@ Chaque passage réessaie 3 fois (5 s, 20 s, 60 s) sur une erreur réseau ou 5xx.
 | Tâche                                     | Horaire (UTC)        | Rôle                                                                    |
 | ----------------------------------------- | -------------------- | ----------------------------------------------------------------------- |
 | `immojudis-operational-history-retention` | tous les jours 03:35 | Purge de `cron.job_run_details` et de `operational_job_runs` (30 jours) |
-| `immojudis-licitor-resume`                | désactivée           | Reprise de l'ingestion Licitor, volontairement arrêtée                  |
+| `immojudis-licitor-resume`                | désactivée           | Ancienne reprise de l'ingestion Licitor, remplacée (voir ci-dessous)    |
+
+L'historique des adjudications Licitor est collecté automatiquement depuis le 12/10/2026 (décision
+du propriétaire), sans cron supplémentaire : après chaque passage de la file d'enrichissement, le
+lanceur planifié (`autonomous_runner`) exécute un « tick » borné du collecteur
+(`src.sources.licitor_history_refresh` : au plus 100 requêtes, 2 s entre deux, robots.txt respecté,
+rôle `licitor_collector`), puis atteste les nouveaux lots par la porte structurelle des statistiques
+(`app_private.attest_licitor_reported_candidates`). La campagne mensuelle (36 mois, 90 derniers jours
+relus) est créée au premier tick du mois. Son code de sortie est noté dans `auction_runs.summary`
+(`licitor_history_exit_code`).
 
 ## Workflows GitHub Actions
 

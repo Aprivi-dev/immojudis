@@ -90,6 +90,13 @@ def test_exhausted_enrichment_job_keeps_run_partial_when_worker_completed_jobs(
     assert updates[0][2].obj["completion_status"] == "partial_success"
     assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_BUDGET_SECONDS"] == "1200"
     assert subprocess_calls[0][1]["env"]["PIPELINE_ENRICHMENT_MAX_JOBS"] == "180"
+    # After the queue: the document reading, then one tick of the Licitor history collector.
+    assert [call[0][2] for call in subprocess_calls[1:]] == [
+        "src.document_reading",
+        "src.sources.licitor_history_refresh",
+    ]
+    assert subprocess_calls[2][1]["timeout"] == autonomous_runner.LICITOR_HISTORY_BUDGET_SECONDS
+    assert updates[0][2].obj["licitor_history_exit_code"] == 0
     if exhausted:
         assert updates[0][1].obj["enrichment_jobs"] == [
             "1 enrichment job(s) exhausted their retry budget"
