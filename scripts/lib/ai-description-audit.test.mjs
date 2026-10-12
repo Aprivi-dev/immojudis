@@ -15,6 +15,11 @@ test("a long rejected or stale text is not a validated summary", () => {
     "stale_display_quality",
   ]);
 });
+test("a stale text kept during regeneration is reported apart from an unvalidated one", () => {
+  assert.deepEqual(displayAuditIssues({ ...valid, llm_display_status: "stale" }), [
+    "stale_display_awaiting_regeneration",
+  ]);
+});
 test("recorded source constraints must actually appear", () => {
   assert.deepEqual(
     displayAuditIssues({

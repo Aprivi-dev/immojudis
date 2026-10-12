@@ -6,6 +6,9 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from src.enrichment.display_facts import known_offer_amounts
+from src.enrichment.display_semantics import semantic_display_issues
+
 NUMBER = r"(?<![\w.,+])\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?"
 QUANTITIES = {
     'area': re.compile(rf"(?P<value>{NUMBER})\s*(?:m[²2]|mètres? carrés?)\b", re.I),
@@ -13,6 +16,14 @@ QUANTITIES = {
     'rooms': re.compile(r"(?P<value>\d+|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pièces?\b", re.I),
     'bedrooms': re.compile(r"(?P<value>\d+|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*chambres?\b", re.I),
 }
+# « 1ère offre possible : 230.000 » or « Prix : 260 000 » prove an amount even
+# without a currency sign or with dotted thousands.
+LABELLED_AMOUNT = re.compile(
+    r"(?:\bprix\b|\b1(?:[èe]re|er)\s+offre\b|\bpremi[èe]re\s+offre\b|\boffre\s+possible\b)"
+    r"[^\d\n.;]{0,40}(?P<value>\d{1,3}(?:[ .\u00a0\u202f]\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)",
+    re.I,
+)
+SINGLE_ROOM_PREFIX = re.compile(r"\bd(?:e\s+|['’]\s*)$", re.I)
 PROMOTIONAL = re.compile(r"\b(?:exceptionnell?e?s?|id[ée]al(?:e)? pour investir|rentabilit[ée] garantie|sans aucun risque)\b", re.I)
 PROMPT_INJECTION = re.compile(
     r"(?:"
@@ -105,6 +116,21 @@ def _number(text: Any) -> Decimal | None:
         return None
 
 
+def _labelled_amounts(evidence: str) -> set[Decimal]:
+    amounts = set()
+    for match in LABELLED_AMOUNT.finditer(evidence):
+        value = _number(re.sub(r"[ .\u00a0\u202f](?=\d{3}\b)", "", match['value']))
+        if value is not None:
+            amounts.add(value)
+    return amounts
+
+
+def _is_room_count_claim(text: str, claim: re.Match[str]) -> bool:
+    """« une pièce » is a room, not a count, unless written « de N pièce(s) »."""
+    value = _number(claim['value'])
+    return bool(value is not None and value > 1 or SINGLE_ROOM_PREFIX.search(text[max(0, claim.start() - 4):claim.start()]))
+
+
 def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> dict[str, Any]:
     """Match numbers with their units, and reject clear occupancy conflicts.
 
@@ -116,14 +142,18 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
     claims: list[dict[str, Any]] = []
     canonical = {
         'area': [fields.get(k) for k in ('surface_m2', 'app_surface_m2', 'habitable_surface_m2', 'carrez_surface_m2')],
-        'money': [fields.get('starting_price_eur')],
+        'money': [fields.get('starting_price_eur'), *known_offer_amounts(fields)],
         'rooms': [fields.get('rooms_count')], 'bedrooms': [fields.get('bedrooms_count')],
     }
     for kind, pattern in QUANTITIES.items():
         known = {_number(v) for v in canonical[kind] if v is not None}
+        if kind == 'money':
+            known |= _labelled_amounts(evidence)
         matches = list(pattern.finditer(evidence))
         land_units = list(re.finditer(r"(?:(\d+)\s*ha\s*)?(\d+)\s*a\s*(?:et\s*)?(?:(\d+)\s*ca)?\b", evidence, re.I)) if kind == 'area' else []
         for claim in pattern.finditer(text):
+            if kind == 'rooms' and not _is_room_count_claim(text, claim):
+                continue
             value = _number(claim['value'])
             supporting = next((m for m in matches if _number(m['value']) == value), None)
             converted = next((m for m in land_units if Decimal(int(m[1] or 0)*10000 + int(m[2])*100 + int(m[3] or 0)) == value), None)
@@ -160,6 +190,7 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
         r"(?:gros|importants?|n[ée]cessite|pr[ée]voir).{0,45}travaux|travaux.{0,30}[àa] pr[ée]voir", evidence, re.I
     ):
         issues.append({'code': 'works_conflict', 'claim': text})
+    issues.extend(semantic_display_issues(text, evidence, fields))
     for match in PROMOTIONAL.finditer(text):
         issues.append({'code': 'promotional_claim', 'claim': match.group()})
     for match in PROMPT_INJECTION.finditer(text):
@@ -177,5 +208,6 @@ def verify_display_claims(text: str, evidence: str, fields: dict[str, Any]) -> d
     for match in PUBLIC_SECRET.finditer(text):
         issues.append({'code': 'public_secret_reference', 'claim': match.group()})
     return {'status': 'issues_detected' if issues else 'checks_passed',
-            'scope': 'typed_numbers_dates_occupancy_works_promotional_language_prompt_injection_and_public_content',
+            'scope': 'typed_numbers_dates_occupancy_works_absences_procedure_filler_promotional_language_'
+                     'prompt_injection_and_public_content',
             'semantic_completeness_certified': False, 'claims': claims, 'issues': issues}

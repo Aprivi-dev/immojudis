@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 DISPLAY_MIN_CHARS = 80
-DISPLAY_QUALITY_VERSION = "display_quality_20260911_v3"
+DISPLAY_QUALITY_VERSION = "display_quality_20261012_v4"
 # Keep the entire sentence, including negation and uncertainty. Never infer a risk
 # from a keyword or from unrelated PDF boilerplate.
 SOURCE_CONSTRAINT_RE = re.compile(

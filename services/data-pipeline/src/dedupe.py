@@ -202,9 +202,14 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
             previous_content_changed = bool(current.get("source_content_changed"))
             if incoming.get("source_content_changed"):
                 current["source_content_changed"] = True
-                current["llm_display_status"] = "pending"
-                current.pop("llm_display_description", None)
-                current.pop("llm_prompt_version", None)
+                # A non-major source change marks the text stale instead of
+                # erasing it (see display_invalidation); serve it until rebuilt.
+                if incoming.get("llm_display_status") == "stale" and current.get("llm_display_description"):
+                    current["llm_display_status"] = "stale"
+                else:
+                    current["llm_display_status"] = "pending"
+                    current.pop("llm_display_description", None)
+                    current.pop("llm_prompt_version", None)
                 current.pop("document_facts_version", None)
             # Invalidation metadata is part of the revision contract.  A
             # second collector can carry an operational refresh on top of a

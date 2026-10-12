@@ -7,7 +7,9 @@ export function displayAuditIssues(payload, expectedDisplayPromptVersion = null)
   const issues = [];
   if (!text) return ["missing_llm_display_description"];
   if (text.length < 80) issues.push("short_llm_display_description");
-  if (!["accepted", "fallback"].includes(payload.llm_display_status))
+  // "stale": a validated text kept visible while the pipeline regenerates it.
+  if (payload.llm_display_status === "stale") issues.push("stale_display_awaiting_regeneration");
+  else if (!["accepted", "fallback"].includes(payload.llm_display_status))
     issues.push("unvalidated_display_status");
   if (payload.llm_display_quality_version !== DISPLAY_QUALITY_VERSION)
     issues.push("stale_display_quality");
