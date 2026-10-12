@@ -11,6 +11,7 @@ from src.information_sufficiency import (
     ContactBlocklist,
     build_blocklist,
     contact_emails,
+    contact_phones,
     publication_gate,
     sufficient_information,
     summarize_verdicts,
@@ -64,32 +65,34 @@ def test_address_and_surface_are_enough_without_any_email():
     assert verdict.sufficient and verdict.address_level == "street" and verdict.has_surface
 
 
-def test_missing_surface_without_email_is_insufficient():
+def test_an_address_alone_keeps_the_sale():
+    # Owner rule of 12/10/2026: only a sale missing surface, address AND contact is left out.
     verdict = sufficient_information(make_sale(address="12 rue des Lilas, 59000 Exempleville"))
-    assert not verdict.sufficient
-    assert verdict.reasons == ("missing_surface",)
-    assert verdict.reason_code == "insufficient_information:missing_surface"
+    assert verdict.sufficient and not verdict.has_surface
 
 
-def test_missing_address_and_surface_without_email_lists_both_reasons():
+def test_a_surface_alone_keeps_the_sale():
+    assert sufficient_information(make_sale(surface_m2=Decimal("40"))).sufficient
+
+
+def test_missing_address_surface_and_contact_lists_the_three_reasons():
     verdict = sufficient_information(make_sale())
-    assert verdict.reasons == ("missing_address", "missing_surface")
+    assert not verdict.sufficient
+    assert verdict.reasons == ("missing_address", "missing_surface", "missing_contact")
+    assert verdict.reason_code == "insufficient_information:missing_address+missing_surface+missing_contact"
 
 
-def test_commune_only_address_is_refused_in_street_mode():
-    sale = make_sale(address="60000 Exempleville", postal_code="60000", surface_m2=Decimal("40"))
+def test_commune_only_address_is_not_an_address_in_street_mode():
+    sale = make_sale(address="60000 Exempleville", postal_code="60000")
     verdict = sufficient_information(sale)
-    assert not verdict.sufficient and verdict.reasons == ("missing_address",)
-    assert verdict.address_level == "commune"
+    assert not verdict.sufficient and verdict.address_level == "commune"
 
 
 def test_commune_is_enough_by_default(monkeypatch):
     monkeypatch.delenv("IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS", raising=False)
-    sale = make_sale(address="60000 Exempleville", postal_code="60000", surface_m2=Decimal("40"))
-    assert sufficient_information(sale).sufficient
-    # The commune never replaces the surface.
-    verdict = sufficient_information(make_sale(postal_code="60000"))
-    assert not verdict.sufficient and verdict.reasons == ("missing_surface",)
+    assert sufficient_information(make_sale(address="60000 Exempleville", postal_code="60000")).sufficient
+    verdict = sufficient_information(make_sale(city=None))
+    assert not verdict.sufficient and verdict.reasons[0] == "missing_address"
 
 
 def test_commune_level_can_be_accepted_explicitly(monkeypatch):
@@ -104,8 +107,18 @@ def test_an_exploitable_email_keeps_the_sale_even_without_address_or_surface():
     assert verdict.sufficient and verdict.contact_count == 1
 
 
-def test_a_phone_number_is_not_a_contact_for_the_agent():
-    assert not sufficient_information(make_sale(lawyer_contact="04 00 00 00 00")).sufficient
+def test_a_phone_number_is_a_contact():
+    verdict = sufficient_information(make_sale(lawyer_contact="Maître Exemple, tél. 04 00 00 00 00"))
+    assert verdict.sufficient and verdict.phone_count == 1 and verdict.contact_count == 0
+
+
+def test_phone_numbers_are_read_in_the_usual_french_forms():
+    sale = make_sale(
+        lawyer_contact="Tél : +33 6 12 34 56 78 / 01.23.45.67.89",
+        description="Mise à prix : 30 000 €. RCS Exemple 542 061 015. Visite le 12/10/2026.",
+        raw_payload={"source_blocks": {"contact": "05-56-00-00-00"}},
+    )
+    assert contact_phones(sale) == {"0612345678", "0123456789", "0556000000"}
 
 
 def test_blocked_email_is_not_exploitable_globally_or_for_one_sale():
@@ -144,7 +157,7 @@ def test_land_surface_counts_as_surface_for_land_but_not_for_a_house():
     land = make_sale(property_type="land", land_surface_m2=Decimal("1200"), address="Chemin des Vignes, 59000 X")
     assert sufficient_information(land).sufficient
     house = make_sale(property_type="house", land_surface_m2=Decimal("1200"), address="3 rue des Lilas, 59000 X")
-    assert sufficient_information(house).reasons == ("missing_surface",)
+    assert sufficient_information(house).has_surface is False
 
 
 @pytest.mark.parametrize("status", ["past", "adjudicated", "cancelled", "withdrawn", "quarantined"])
@@ -175,10 +188,11 @@ def test_cessions_etat_street_in_title_is_an_exploitable_designation():
     assert verdict.sufficient and verdict.address_basis == "description"
 
 
-def test_cessions_etat_commune_and_surface_only_is_insufficient_without_email():
+def test_cessions_etat_commune_only_is_not_an_exploitable_designation():
     sale = make_sale(source_name="cessions_etat", primary_source="cessions_etat", surface_m2=Decimal("80"),
                      description="Maison forestière sur un terrain arboré entièrement clos.")
-    assert sufficient_information(sale).reasons == ("missing_address",)
+    verdict = sufficient_information(sale)
+    assert verdict.address_level == "commune" and verdict.sufficient
 
 
 def test_cessions_etat_manager_email_in_source_blocks_keeps_the_sale():
@@ -200,7 +214,7 @@ def test_court_address_in_free_text_of_a_source_with_mixed_blocks_is_not_a_prope
         description="Avocat Poursuivant Maître Exemple Lieu de Vente TJ D EXEMPLE 9 Rue du Palais, 91012 EXEMPLE",
     )
     verdict = sufficient_information(sale)
-    assert not verdict.sufficient and verdict.address_level == "commune"
+    assert verdict.address_level == "commune"
 
 
 def test_lawyer_street_in_description_of_encheres_immobilieres_is_not_a_property_address():
@@ -210,7 +224,7 @@ def test_lawyer_street_in_description_of_encheres_immobilieres_is_not_a_property
         surface_m2=Decimal("50"),
         description="Réf. annonce : 1 Me Exemple Avocat 49 Bis boulevard Gambetta 13150 TARASCON",
     )
-    assert not sufficient_information(sale).sufficient
+    assert sufficient_information(sale).address_level == "commune"
 
 
 def test_email_found_in_a_secondary_observation_counts():
@@ -234,7 +248,7 @@ def test_summary_counts_reasons_and_sources_without_personal_data():
     )
     assert summary == {
         "total": 2,
-        "by_reason": {"insufficient_information:missing_address+missing_surface": 2},
+        "by_reason": {"insufficient_information:missing_address+missing_surface+missing_contact": 2},
         "by_source": {"licitor": 1, "vench": 1},
     }
     assert NO_BLOCKLIST.blocks("x@y.test", None) is False

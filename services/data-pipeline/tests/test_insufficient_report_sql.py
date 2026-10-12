@@ -50,8 +50,10 @@ def sale_row(name: str, **fields) -> dict:
 
 CASES = {
     "kept_street_and_surface": (sale_row("a", address="12 rue des Lilas, 59000 Exempleville", surface_m2=60), "kept"),
-    "missing_surface": (sale_row("b", address="12 rue des Lilas, 59000 Exempleville"), "insufficient"),
-    "missing_address": (sale_row("c", surface_m2=60), "insufficient"),
+    "address_without_surface": (sale_row("b", address="12 rue des Lilas, 59000 Exempleville"), "kept"),
+    "surface_without_address": (sale_row("c", surface_m2=60), "kept"),
+    "nothing_at_all": (sale_row("o"), "insufficient"),
+    "phone_only": (sale_row("p", lawyer_contact="Maître Exemple, tél. 04 00 00 00 00"), "kept"),
     "email_only": (sale_row("d", lawyer_contact="me.exemple@cabinet-exemple.test"), "kept"),
     "blocked_email": (sale_row("e", lawyer_contact=BLOCKED), "insufficient"),
     "past_is_exempt": (sale_row("f", status="past"), "exempt"),
@@ -63,11 +65,11 @@ CASES = {
     "block_address_recovered": (sale_row("j", source_name="encheres_immobilieres", primary_source="encheres_immobilieres",
                                          surface_m2=50, raw_payload={"source_blocks": {"page_text": PAGE_TEXT,
                                                                                          "adresse": "30 000 €"}}), "kept"),
-    "commune_only": (sale_row("k", source_name="vench", primary_source="vench", address="59000 Exempleville",
-                              surface_m2=40), "insufficient"),
+    "commune_only": (sale_row("k", source_name="vench", primary_source="vench", address="59000 Exempleville"),
+                     "insufficient"),
     "named_place": (sale_row("m", city="Autreville", address="Le Bourg Exemple, 59000 Autreville", surface_m2=60), "kept"),
-    "law_firm_as_address": (sale_row("n", address="SELARL Exemple et Associés, Commissaires de Justice, 12 rue du Cabinet",
-                                     surface_m2=60), "insufficient"),
+    "law_firm_as_address": (sale_row("n", address="SELARL Exemple et Associés, Commissaires de Justice, 12 rue du Cabinet"),
+                            "insufficient"),
     "email_in_observation": (sale_row("l", observations=[{"raw_payload": {"source_blocks": {
         "contact_avocat": "avocat@cabinet-secondaire.test"}}}]), "kept"),
 }
