@@ -1409,6 +1409,32 @@ def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
     assert raw["source_blocks"] == {"visites": "Sur rendez-vous"}
 
 
+def test_unchanged_card_keeps_the_stored_detail_blocks_for_every_source() -> None:
+    # A list card always carries ``listing_completeness``: without an explicit
+    # restore, every pass without a re-read dropped the blocks of the stored
+    # detail (Enchères Immobilières lost its characteristics this way).
+    url = "https://www.encheres-immobilieres.com/vente/123"
+    raw = {
+        "_known_unchanged": True,
+        "source_url": url,
+        "source_name": "encheres_immobilieres",
+        "source_blocks": {"listing_completeness": {"fresh": True}, "titre": "Maison"},
+    }
+    known = {url: {"raw_payload": {"source_blocks": {
+        "caracteristiques_bien": {"source": "encheres_immobilieres"},
+        "avocat": "Me Exemple",
+        "listing_completeness": {"stale": True},
+    }}}}
+
+    main._hydrate_known_unchanged_sales([raw], known)
+
+    assert raw["source_blocks"] == {
+        "caracteristiques_bien": {"source": "encheres_immobilieres"},
+        "avocat": "Me Exemple",
+        "titre": "Maison",
+    }
+
+
 def test_sparse_known_hydration_preserves_unchanged_coordinates_and_investment() -> None:
     source_url = "https://example.test/sparse-known"
     raw = {

@@ -31,6 +31,7 @@ from src.sources.common import (
 )
 from src.sources.encheres_immobilieres_payload import extract_vente_payload, vente_fields
 from src.sources.image_candidates import html_image_candidates
+from src.sources.listing_characteristics import known_detail_lacks_characteristics
 
 BASE_URL = "https://encheresimmobilieres.fr"
 LIST_URL = f"{BASE_URL}/biens-en-vente"
@@ -104,7 +105,9 @@ def scrape_encheres_immobilieres_aquitaine(max_pages: int | None = None) -> list
 
 
 def scrape_encheres_immobilieres_aquitaine_result(
-    max_pages: int | None = None, known: dict[str, str] | None = None
+    max_pages: int | None = None,
+    known: dict[str, str] | None = None,
+    known_details: dict[str, dict[str, Any]] | None = None,
 ) -> ScrapeResult:
     settings = load_settings()
     client = PoliteHttpClient(
@@ -166,7 +169,10 @@ def scrape_encheres_immobilieres_aquitaine_result(
             break
         for sale in page_sales:
             if sale.get("department") in TARGET_DEPARTMENTS:
-                if should_fetch_detail(sale, known):
+                # A stored detail read before the structured extraction is read
+                # again once, otherwise it would never carry its characteristics.
+                if should_fetch_detail(sale, known) or known_detail_lacks_characteristics(sale, known_details):
+                    sale.pop("_known_unchanged", None)
                     _enrich_sale_from_detail(client, sale, errors, detail_failures)
                 raw_sales.append(sale)
         if pagination.exhausted:
