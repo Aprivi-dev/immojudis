@@ -49,8 +49,13 @@ docs/design/annonce-detail/rendered-*.png
 *.sln
 *.sw?
 
-# Claude Code local config (agents, preview launch config, local settings).
-# The shared .claude/settings.json (tool permissions) is versioned.
+# Claude Code local config (preview launch config, local settings).
+# Versioned and shared with cloud sessions: .claude/settings.json (tool permissions),
+# .claude/agents/ (agent team), .claude/skills/ (/equipe command) and .claude/hooks/
+# (agent guard scripts).
 .claude/*
 !.claude/settings.json
+!.claude/agents/
+!.claude/skills/
+!.claude/hooks/
 .env*.local
