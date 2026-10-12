@@ -3,6 +3,7 @@
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useEffect, useId, useRef, useState } from "react";
 import type * as MapboxGL from "mapbox-gl";
+import type { ParcelOutlines } from "@/lib/land-parcel-outline";
 import { disableMapboxTelemetry, getMapboxAccessToken } from "@/lib/mapbox";
 import styles from "./CadastralNeighborhoodMap.module.css";
 
@@ -18,15 +19,24 @@ export type CadastralNeighborhoodMapProps = {
   lng: number;
   address: string;
   pointKind: "listing" | "address" | "street" | "parcel-centroid";
+  /** Parcels of the land report: drawn, and the map is framed on them. */
+  outlines?: ParcelOutlines | null;
 };
+
+const OUTLINE_SOURCE = "sale-parcels";
 
 export function CadastralNeighborhoodMap({
   lat,
   lng,
   address,
   pointKind,
+  outlines = null,
 }: CadastralNeighborhoodMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<MapboxGL.Map | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+  // An outline replaces the indicative point: the marker would sit at the parcel's centre.
+  const showMarker = !outlines;
   const headingId = useId();
   const hasValidCoordinates = isValidCoordinates(lat, lng);
   const [status, setStatus] = useState<MapStatus>(hasValidCoordinates ? "loading" : "error");
@@ -86,6 +96,7 @@ export function CadastralNeighborhoodMap({
 
           const mapInstance = new mapboxgl.Map(mapOptions);
           map = mapInstance;
+          mapRef.current = mapInstance;
           mapInstance.addControl(
             new mapboxgl.NavigationControl({ visualizePitch: false }),
             "top-right",
@@ -110,19 +121,22 @@ export function CadastralNeighborhoodMap({
           markerDot.setAttribute("aria-hidden", "true");
           markerElement.append(markerPulse, markerDot);
 
-          marker = new mapboxgl.Marker({ element: markerElement, anchor: "center" })
-            .setLngLat([lng, lat])
-            .setPopup(
-              new mapboxgl.Popup({ closeButton: true, offset: 18 }).setText(
-                `${pointLabel} · ${addressLabel}`,
-              ),
-            )
-            .addTo(mapInstance);
+          if (showMarker) {
+            marker = new mapboxgl.Marker({ element: markerElement, anchor: "center" })
+              .setLngLat([lng, lat])
+              .setPopup(
+                new mapboxgl.Popup({ closeButton: true, offset: 18 }).setText(
+                  `${pointLabel} · ${addressLabel}`,
+                ),
+              )
+              .addTo(mapInstance);
+          }
 
           mapInstance.on("load", () => {
             if (cancelled) return;
             mapLoaded = true;
             setStatus("ready");
+            setMapReady(true);
             // Les tuiles viennent du flux WMS de l'IGN, qui répond toujours (tuile vide hors
             // couverture) : on ne signale une panne que si les deux couches restent muettes.
             checkTimer = window.setTimeout(() => {
@@ -163,8 +177,50 @@ export function CadastralNeighborhoodMap({
       if (checkTimer != null) window.clearTimeout(checkTimer);
       marker?.remove();
       map?.remove();
+      mapRef.current = null;
+      setMapReady(false);
     };
-  }, [addressLabel, hasValidCoordinates, lat, lng, pointLabel]);
+  }, [addressLabel, hasValidCoordinates, lat, lng, pointLabel, showMarker]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !outlines) return;
+    const data = {
+      type: "FeatureCollection",
+      features: outlines.outlines.map((outline) => ({
+        type: "Feature",
+        properties: { label: outline.label, confirmed: outline.confirmed },
+        geometry: outline.geometry,
+      })),
+    } as Parameters<MapboxGL.GeoJSONSource["setData"]>[0];
+    const existing = map.getSource(OUTLINE_SOURCE) as MapboxGL.GeoJSONSource | undefined;
+    if (existing) {
+      existing.setData(data);
+    } else {
+      map.addSource(OUTLINE_SOURCE, { type: "geojson", data });
+      map.addLayer({
+        id: `${OUTLINE_SOURCE}-fill`,
+        type: "fill",
+        source: OUTLINE_SOURCE,
+        paint: { "fill-color": "#1f6f4a", "fill-opacity": 0.16 },
+      });
+      map.addLayer({
+        id: `${OUTLINE_SOURCE}-confirmed`,
+        type: "line",
+        source: OUTLINE_SOURCE,
+        filter: ["==", ["get", "confirmed"], true],
+        paint: { "line-color": "#1f6f4a", "line-width": 3 },
+      });
+      map.addLayer({
+        id: `${OUTLINE_SOURCE}-probable`,
+        type: "line",
+        source: OUTLINE_SOURCE,
+        filter: ["==", ["get", "confirmed"], false],
+        paint: { "line-color": "#1f6f4a", "line-width": 2.5, "line-dasharray": [2, 1.5] },
+      });
+    }
+    map.fitBounds(outlines.bounds, { padding: 56, maxZoom: 18.5, duration: 0 });
+  }, [mapReady, outlines]);
 
   return (
     <section className={styles.root} aria-labelledby={headingId}>
@@ -213,9 +269,21 @@ export function CadastralNeighborhoodMap({
       </div>
 
       <div className={styles.legend} aria-label="Légende du plan">
-        <span>
-          <i className={styles.legendPoint} aria-hidden="true" /> {pointLabel}
-        </span>
+        {showMarker ? (
+          <span>
+            <i className={styles.legendPoint} aria-hidden="true" /> {pointLabel}
+          </span>
+        ) : null}
+        {outlines ? (
+          <span>
+            <i
+              className={styles.legendOutline}
+              data-confirmed={outlines.confirmed ? "true" : "false"}
+              aria-hidden="true"
+            />{" "}
+            {outlines.confirmed ? "Parcelle citée dans l’annonce" : "Parcelle probable"}
+          </span>
+        ) : null}
         <span>
           <i className={styles.legendParcel} aria-hidden="true" /> Limites cadastrales
         </span>

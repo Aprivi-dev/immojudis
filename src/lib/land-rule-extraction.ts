@@ -147,6 +147,30 @@ const TOPICS: RuleTopicDefinition[] = [
 ];
 
 /**
+ * The rubrique an article heading announces (« ARTICLE U 6 – IMPLANTATION… »,
+ * « U 10 HAUTEUR MAXIMUM »). A snippet that opens on another rubrique's heading
+ * only mentions the topic word in passing and is not evidence for it.
+ */
+const HEADING_TOPICS: Array<[LandRuleEvidence["topic"], RegExp]> = [
+  ["footprint", /\bEMPRISE\s+AU\s+SOL\b/u],
+  ["height", /\bHAUTEUR/u],
+  ["setbacks", /\bIMPLANTATION\b/u],
+  ["parking", /\bSTATIONNEMENT\b/u],
+  ["green_space", /\b(?:ESPACES?\s+LIBRES|PLANTATIONS?|ESPACES?\s+VERTS|VÉGÉTALIS)/u],
+  ["access_networks", /\b(?:ACCÈS|ACCES|DESSERTE|RÉSEAUX|RESEAUX|VOIRIE)\b/u],
+  ["appearance", /\b(?:ASPECT|TOITURES?|FAÇADES?|FACADES?|CLÔTURES?|CLOTURES?)\b/u],
+  ["destination", /\b(?:OCCUPATIONS?|UTILISATIONS?|DESTINATIONS?|INTERDITES?|ADMISES?)\b/u],
+];
+
+/** General provisions describe every zone of the plan; they are not a zone's rule. */
+const GENERAL_PROVISIONS =
+  /\b(?:division\s+du\s+territoire\s+en\s+zones|champ\s+d['’]application\s+territorial|portée\s+respective\s+du\s+règlement)\b/iu;
+
+/** The regulation's list of its own pieces (« Annexe III – … », « C - Plan de … »). */
+const DOCUMENT_INVENTORY =
+  /^(?:-\s*)?(?:[A-Z]{1,4}\s*[–-]\s*)?(?:Annexes?|Plans?|Atlas|Tomes?|Pièces?)\b/u;
+
+/**
  * Extracts only verbatim, zone-validated snippets from already extracted PDF pages.
  * It deliberately does not calculate buildable area, infer missing values, or turn a
  * document rule into a permission.
@@ -233,6 +257,15 @@ export function extractLandRulesFromPages(input: LandRuleExtractionInput): LandR
     }
   }
 
+  if (pagesWithText === 0) {
+    return emptyRulesResult({
+      input,
+      checkedAt,
+      status: "unavailable",
+      warning:
+        "Le règlement publié ne contient pas de texte lisible sur les pages de la zone (document numérisé ou pages manquantes) : consulter le PDF.",
+    });
+  }
   if (pagesWithText < pages.length) {
     warnings.push(
       "Au moins une page ciblée est sans texte exploitable ; son contenu ne peut pas être présenté comme vérifié.",
@@ -280,7 +313,7 @@ export function extractLandRulesFromPages(input: LandRuleExtractionInput): LandR
   };
 
   return {
-    rules: dedupeRules(rules),
+    rules: dedupeRules(collapseOverlappingRules(rules)),
     checks: [check],
     warnings: dedupeStrings(warnings),
     completeCoverage,
@@ -624,7 +657,13 @@ function snippetsForTopic(
     if (!definition.patterns.some((pattern) => pattern.test(lines[index] ?? ""))) continue;
     const rawSnippet = collectTopicContext(lines, index);
     const scopedSnippet = keepTargetZoneClauses(rawSnippet, targetZones);
-    if (isHeadingOnlySnippet(scopedSnippet) || isIncidentalTopic(definition.topic, scopedSnippet)) {
+    if (
+      isHeadingOnlySnippet(scopedSnippet) ||
+      isIncidentalTopic(definition.topic, scopedSnippet) ||
+      GENERAL_PROVISIONS.test(scopedSnippet) ||
+      DOCUMENT_INVENTORY.test(scopedSnippet) ||
+      headingTopicMismatch(definition.topic, scopedSnippet)
+    ) {
       continue;
     }
     const snippet = markTruncatedSnippet(scopedSnippet);
@@ -651,10 +690,48 @@ function isSnippetHeader(line: string): boolean {
  * rule. Remove them before a topic can use the line as its proof context.
  */
 function normalizePdfLine(line: string): string | null {
-  const value = line.replace(/\s+/gu, " ").trim();
+  const value = line
+    .replace(/^[\uf0a7\uf0b7\uf0d8]\s*/u, "- ")
+    .replace(/\s+/gu, " ")
+    .trim();
   if (!value) return null;
   if (/^(?:communauté\b|plui\b|UC$)/iu.test(value)) return null;
+  // Table of contents: a title followed by dot leaders and a page number.
+  if (/(?:\.\s?){5,}\s*\d{1,4}\s*$|…{2,}\s*\d{1,4}\s*$/u.test(value)) return null;
   return value;
+}
+
+function headingTopicMismatch(topic: LandRuleEvidence["topic"], snippet: string): boolean {
+  const heading =
+    /^(?:[Aa][Rr][Tt][Ii][Cc][Ll][Ee]\s+)?(?:[A-Z]{1,4}[a-z]?\s*)?\d{1,2}(?:\s*[-.]\s*\d{1,2})*\s*[-–:.]?\s*([A-ZÀ-ÖØ-Þ0-9'’,/ -]{6,160})/u.exec(
+      snippet,
+    )?.[1];
+  if (!heading) return false;
+  const announced = HEADING_TOPICS.find(([, pattern]) => pattern.test(heading))?.[0];
+  return announced != null && announced !== topic;
+}
+
+/**
+ * Successive topic words of one article produce growing windows of the same text.
+ * Keep the longest excerpt of a page that starts the same way, whatever its topic.
+ */
+function collapseOverlappingRules(rules: LandRuleEvidence[]): LandRuleEvidence[] {
+  const comparable = (rule: LandRuleEvidence) =>
+    normalizeEvidenceText(rule.text.replace(TRUNCATED_SNIPPET_MARKER, ""))
+      .replace(/\s*…\s*$/u, "")
+      .toLowerCase();
+  return rules.filter((rule) => {
+    const own = comparable(rule);
+    const head = own.slice(0, 160);
+    return !rules.some(
+      (other) =>
+        other !== rule &&
+        other.documentId === rule.documentId &&
+        other.page === rule.page &&
+        other.text.length > rule.text.length &&
+        (comparable(other).startsWith(head) || comparable(other).includes(own)),
+    );
+  });
 }
 
 function collectTopicContext(lines: string[], topicLineIndex: number): string {
@@ -888,6 +965,16 @@ function findZoneLabels(text: string, targets: string[]): string[] {
     const normalized = target.trim();
     if (!normalized) return false;
     const escaped = escapeRegExp(normalized).replace(/\\ /gu, "\\s+");
+    if (normalized.length === 1) {
+      // « A » or « N » is also a French word: only an uppercase letter named as a
+      // zone (« zone A », « secteur N ») or numbered as its article (« A 2 », « N-10 »).
+      const keyword =
+        "(?:[Zz][Oo][Nn][Ee][Ss]?|[Ss][Ee][Cc][Tt][Ee][Uu][Rr][Ss]?|[Aa][Rr][Tt][Ii][Cc][Ll][Ee])";
+      return new RegExp(
+        `(?:${keyword}\\s+${escaped}(?![\\p{L}0-9])|(?<![\\p{L}0-9])${escaped}\\s?[-.]?\\s?\\d{1,2}\\b)`,
+        "u",
+      ).test(text);
+    }
     return new RegExp(`(?<![A-Z0-9])${escaped}(?![A-Z0-9])`, "iu").test(text);
   });
 }
@@ -984,8 +1071,10 @@ function dedupeStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+/** A zone label (« A », « N », « UA ») or a zone type other than the generic « U ». */
 function isSpecificZoneLabel(value: string | null | undefined): value is string {
-  return typeof value === "string" && value.trim().length > 1;
+  const label = typeof value === "string" ? value.trim() : "";
+  return label.length > 0 && label !== "U";
 }
 
 function cleanPageText(value: string): string {

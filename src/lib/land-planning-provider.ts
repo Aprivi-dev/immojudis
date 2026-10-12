@@ -141,6 +141,8 @@ type GeocodeCandidate = {
   city: string | null;
   postalCode: string | null;
   label: string | null;
+  /** BAN result type: « municipality » is the commune centre, not the property. */
+  kind: string | null;
 };
 
 function geocodeCandidates(data: unknown): GeocodeCandidate[] | null {
@@ -163,6 +165,7 @@ function geocodeCandidates(data: unknown): GeocodeCandidate[] | null {
         city: text(properties.city ?? properties.municipality),
         postalCode: text(properties.postcode ?? properties.postalcode),
         label: text(properties.label),
+        kind: text(properties.type),
       },
     ];
   });
@@ -207,7 +210,95 @@ function geocodeCheck(
   };
 }
 
+/** The address often already carries its postcode and city: do not repeat them. */
+export function geocodeQuery(input: LandLocationInput): string {
+  const address = (text(input.address) ?? "").replace(/,?\s*france\s*$/iu, "").trim();
+  const comparable = normaliseComparable(address);
+  const extra = [text(input.postalCode), text(input.city)].filter(
+    (part): part is string => Boolean(part) && !comparable.includes(normaliseComparable(part)),
+  );
+  return [address, ...extra].filter(Boolean).join(", ");
+}
+
+/** Nothing but a postcode, a city or « France »: the point is the commune centre. */
+export function isCommuneOnlyAddress(input: LandLocationInput): boolean {
+  let rest = ` ${normaliseComparable(input.address)} `;
+  for (const part of [input.postalCode, input.city, "france"]) {
+    const comparable = normaliseComparable(part);
+    if (comparable) rest = rest.split(` ${comparable} `).join(" ");
+  }
+  return !rest.replace(/\b\d{5}\b/g, "").trim();
+}
+
+/**
+ * The commune of an explicit cadastral reference (« section ZA n° 92 ») can be
+ * proven by the postcode and city alone, without validating a street address.
+ */
+async function resolveCommuneInsee(
+  input: LandLocationInput,
+  options: ProviderOptions,
+): Promise<string | null> {
+  const city = text(input.city);
+  const postalCode = text(input.postalCode)?.replace(/\s+/g, "");
+  if (!city || !postalCode || !/^\d{5}$/.test(postalCode)) return null;
+  const url = queryUrl(GEOCODING_URL, {
+    q: city,
+    postcode: postalCode,
+    type: "municipality",
+    limit: 5,
+  });
+  const response = await fetchJson(url, options);
+  if (!response.ok) return null;
+  const expected = normaliseComparable(city);
+  const candidates = (geocodeCandidates(response.data) ?? []).filter(
+    (candidate) =>
+      candidate.kind === "municipality" &&
+      candidate.codeInsee &&
+      candidate.postalCode === postalCode &&
+      normaliseComparable(candidate.city).startsWith(expected),
+  );
+  const exact = candidates.filter((candidate) => normaliseComparable(candidate.city) === expected);
+  const pool = exact.length ? exact : candidates;
+  return pool.length === 1 ? pool[0]!.codeInsee : null;
+}
+
 async function resolveLocation(
+  input: LandLocationInput,
+  options: ProviderOptions,
+  now: () => Date,
+): Promise<LocationResolution> {
+  const located = await geocodeLocation(input, options, now);
+  const warnings = [...located.warnings];
+  let coordinates = located.coordinates;
+  if (
+    coordinates &&
+    text(input.address) &&
+    located.geocodeCheck.status !== "available" &&
+    isCommuneOnlyAddress(input)
+  ) {
+    // The stored point of a commune-only address is the commune centre: a parcel
+    // or a zone read there belongs to the village, not to the property.
+    coordinates = null;
+    warnings.push(
+      "L’adresse ne désigne que la commune : son centre n’est pas utilisé pour déduire une parcelle ou une zone.",
+    );
+  }
+  let codeInsee = located.codeInsee;
+  const referencesNeedCommune = (input.references ?? []).some(
+    (reference) => !codeInseeValue(reference.codeInsee),
+  );
+  if (!codeInsee && referencesNeedCommune) {
+    codeInsee = await resolveCommuneInsee(input, options);
+    if (codeInsee) {
+      warnings.push(
+        `Commune ${codeInsee} établie par le code postal et la ville pour rechercher les références cadastrales de l’annonce.`,
+      );
+    }
+  }
+  return { ...located, coordinates, codeInsee, warnings };
+}
+
+async function geocodeLocation(
   input: LandLocationInput,
   options: ProviderOptions,
   now: () => Date,
@@ -237,8 +328,7 @@ async function resolveLocation(
     };
   }
 
-  const query = [address, text(input.postalCode), text(input.city)].filter(Boolean).join(", ");
-  const url = queryUrl(GEOCODING_URL, { q: query, limit: 5 });
+  const url = queryUrl(GEOCODING_URL, { q: geocodeQuery(input), limit: 5 });
   const response = await fetchJson(url, options);
   if (!response.ok) {
     return {
@@ -286,6 +376,23 @@ async function resolveLocation(
     };
   }
 
+  if (candidate.kind === "municipality") {
+    return {
+      coordinates: null,
+      codeInsee: candidate.codeInsee,
+      geocodeCheck: geocodeCheck(
+        now,
+        "partial",
+        url,
+        `Seule la commune${candidate.codeInsee ? ` ${candidate.codeInsee}` : ""} est reconnue : son centre n’est pas un point cadastral.`,
+        response.httpStatus,
+      ),
+      warnings: [
+        "L’adresse ne désigne que la commune : son centre n’est pas utilisé pour déduire une parcelle ou une zone.",
+      ],
+    };
+  }
+
   const warnings: string[] = [];
   const inputCodeInsee = text(input.codeInsee);
   if (inputCodeInsee && candidate.codeInsee && inputCodeInsee !== candidate.codeInsee) {
@@ -310,6 +417,21 @@ async function resolveLocation(
     ),
     warnings,
   };
+}
+
+/**
+ * Paris, Lyon and Marseille: the cadastre files a parcel under the city code and
+ * its arrondissement (75118 → code_insee 75056, code_arr 118).
+ */
+export function cadastreCommune(codeInsee: string): { code_insee: string; code_arr?: string } {
+  const city = /^751(?:0[1-9]|1\d|20)$/.test(codeInsee)
+    ? "75056"
+    : /^6938[1-9]$/.test(codeInsee)
+      ? "69123"
+      : /^132(?:0[1-9]|1[0-6])$/.test(codeInsee)
+        ? "13055"
+        : null;
+  return city ? { code_insee: city, code_arr: codeInsee.slice(2) } : { code_insee: codeInsee };
 }
 
 function referenceKey(codeInsee: string, section: string, number: string): string {
@@ -667,8 +789,9 @@ async function resolveParcels(
     const results = await Promise.all(
       references.map(async (reference) => {
         const prefix = text(reference.prefix);
+        const commune = cadastreCommune(reference.codeInsee);
         const url = queryUrl(CADASTRE_URL, {
-          code_insee: reference.codeInsee,
+          ...commune,
           section: reference.section,
           numero: reference.number,
           prefixe: prefix ?? undefined,
@@ -679,7 +802,7 @@ async function resolveParcels(
         const response = await fetchCollection(
           CADASTRE_URL,
           {
-            code_insee: reference.codeInsee,
+            ...commune,
             section: reference.section,
             numero: reference.number,
             ...(prefix ? { prefixe: prefix } : {}),
@@ -717,7 +840,8 @@ async function resolveParcels(
       (reference) =>
         !unique.some(
           (parcel) =>
-            parcel.codeInsee === reference.codeInsee &&
+            (parcel.codeInsee === reference.codeInsee ||
+              parcel.id.startsWith(reference.codeInsee)) &&
             parcel.section === reference.section &&
             parcel.number === reference.number,
         ),

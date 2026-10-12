@@ -372,3 +372,26 @@
   font-size: 0.9rem;
   color: var(--success);
 }
+.reliability {
+  display: grid;
+  gap: 3px;
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border-left: 4px solid var(--success);
+  background: var(--success-tint);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.reliability[data-tone="watch"] {
+  border-left-color: var(--gold-text);
+  background: var(--warning-tint);
+}
+.reliability[data-tone="weak"] {
+  border-left-color: var(--line);
+  background: var(--cream);
+}
+.reliability span {
+  font-size: 0.75rem;
+  color: var(--success);
+}

@@ -8,6 +8,7 @@ import {
   geocodeCadastralNeighborhood,
   type CadastralNeighborhoodPoint,
 } from "@/lib/cadastre-neighborhood";
+import type { ParcelOutlines } from "@/lib/land-parcel-outline";
 import { CadastralNeighborhoodMap } from "./CadastralNeighborhoodMap";
 import styles from "./CadastralPlanDisclosure.module.css";
 
@@ -17,6 +18,8 @@ type Props = {
   displayAddress: string | null;
   postalCode: string | null;
   city: string | null;
+  /** Parcels found by the official land report, outlined on the plan. */
+  parcels?: ParcelOutlines | null;
 };
 
 type Lookup = {
@@ -30,14 +33,23 @@ export function CadastralPlanDisclosure({
   displayAddress,
   postalCode,
   city,
+  parcels = null,
 }: Props) {
   const [lookup, setLookup] = useState<Lookup | null>(null);
   const lookupKey = [streetAddress, postalCode, city].join("|");
   const lookupDone = lookup?.key === lookupKey;
-  const mapPoint = point ?? (lookupDone ? lookup.point : null);
+  const addressPoint = point ?? (lookupDone ? lookup.point : null);
+  // A parcel cited by the listing locates the property better than any address point
+  // (a commune-only address is geocoded to the village centre).
+  const mapPoint: CadastralNeighborhoodPoint | null = parcels?.confirmed
+    ? { ...parcels.center, kind: "parcel-centroid", source: "Parcelle citée dans l’annonce" }
+    : (addressPoint ??
+      (parcels
+        ? { ...parcels.center, kind: "parcel-centroid", source: "Parcelle probable" }
+        : null));
 
   useEffect(() => {
-    if (point || !streetAddress || lookupDone) return;
+    if (point || parcels?.confirmed || !streetAddress || lookupDone) return;
 
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 8_000);
@@ -54,7 +66,7 @@ export function CadastralPlanDisclosure({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [point, streetAddress, postalCode, city, lookupDone, lookupKey]);
+  }, [point, parcels?.confirmed, streetAddress, postalCode, city, lookupDone, lookupKey]);
 
   return (
     <section className={styles.root} aria-label="Plan cadastral du quartier">
@@ -75,13 +87,15 @@ export function CadastralPlanDisclosure({
               lng={mapPoint.lng}
               pointKind={mapPoint.kind}
               address={displayAddress ?? "Adresse de l’annonce"}
+              outlines={parcels}
             />
             <p className={styles.location}>
               <MapPin size={15} aria-hidden="true" />
-              {mapPoint.kind === "parcel-centroid"
-                ? "Centre de parcelle indicatif"
-                : "Point d’adresse indicatif"}{" "}
-              · {mapPoint.source}
+              {parcels?.confirmed
+                ? "Contour plein : parcelle citée dans l’annonce, retrouvée au cadastre"
+                : parcels
+                  ? "Contour pointillé : parcelle probable d’après l’adresse, à confirmer"
+                  : `${mapPoint.kind === "parcel-centroid" ? "Centre de parcelle indicatif" : "Point d’adresse indicatif"} · ${mapPoint.source}`}
             </p>
           </>
         ) : streetAddress && !lookupDone ? (
@@ -98,10 +112,11 @@ export function CadastralPlanDisclosure({
             ) : null}
           </div>
         )}
-        <p className={styles.caveat}>
-          Le point situe le quartier. Il ne confirme ni la parcelle du bien ni ses limites
-          juridiques.
-        </p>
+        {parcels?.confirmed ? null : (
+          <p className={styles.caveat}>
+            Le point situe le quartier. Il ne délimite pas la parcelle du bien.
+          </p>
+        )}
         <a
           className={styles.source}
           href="https://cartes.gouv.fr/explorer-les-cartes/"
