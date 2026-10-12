@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 
 import httpx
 
-from src.config import RAW_DIR, load_settings
+from src.config import DEFAULT_USER_AGENT, RAW_DIR, load_settings
 from src.sources.common import RobotsRules, is_allowed_origin_url
 from src.sources.licitor import ALLOWED_ORIGINS
 from src.sources.licitor_history import (
@@ -43,7 +43,7 @@ from src.sources.licitor_history import (
     parse_licitor_history_list_html,
 )
 
-USER_AGENT = "ImmojudisStatistics/1.0 (+https://immojudis.com)"
+USER_AGENT = DEFAULT_USER_AGENT
 ROBOTS_URL = "https://www.licitor.com/robots.txt"
 MAX_RESPONSE_BYTES = 3_000_000
 ALIAS_FACT_FIELDS = (

@@ -26,8 +26,8 @@ describe("market comparables analysis", () => {
       comparableModeLabel: "Surfaces comparables",
       sampleSize: 12,
       radiusM: 100,
-      surfaceWindowLabel: "32 à 58 m²",
-      priceRangeLabel: "3 780 €/m² à 4 450 €/m²",
+      surfaceWindowLabel: "49 à 88 m²",
+      priceRangeLabel: "3 050 €/m² à 3 700 €/m²",
     });
     expect(analysis.retainedComparables).toHaveLength(4);
     expect(analysis.summary).toContain("12 vente(s) retenue(s)");

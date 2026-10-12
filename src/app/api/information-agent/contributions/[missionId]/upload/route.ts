@@ -8,8 +8,6 @@ import {
   readContributionJson,
 } from "@/lib/information-agent-contribution-route-error";
 
-export const runtime = "nodejs";
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ missionId: string }> },

@@ -5,11 +5,14 @@ import re
 import unicodedata
 from collections.abc import Iterable
 from copy import deepcopy
+from datetime import UTC, date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from src.models import AuctionSale
 from src.normalize import clean_text, normalize_documents
 
+PARIS = ZoneInfo("Europe/Paris")
 _STREET_NUMBER_RE = re.compile(r"\d")
 _POSTAL_CODE_RE = re.compile(r"\b(\d{5})\b")
 
@@ -89,9 +92,16 @@ def merge_duplicate_sales(sales: Iterable[AuctionSale]) -> list[AuctionSale]:
         if not sale.content_hash:
             sale.content_hash = compute_content_hash(sale)
         existing = by_source_url.get(sale.source_url)
-        if existing is None or _is_richer(sale, existing):
+        if existing is None:
             by_source_url[sale.source_url] = sale
-        elif existing is not sale:
+        elif existing is sale:
+            continue
+        elif _is_richer(sale, existing):
+            # Keep the richer observation but fold the older one in: its documents,
+            # observations and fields must not disappear with it.
+            by_source_url[sale.source_url] = sale
+            _merge_into(sale, existing, confidence="source_url")
+        else:
             _merge_into(existing, sale, confidence="source_url")
 
     by_hash: dict[str, AuctionSale] = {}
@@ -349,16 +359,35 @@ def _same_property(first: AuctionSale, second: AuctionSale) -> bool:
     second_surface = second.app_surface_m2 or second.habitable_surface_m2 or second.carrez_surface_m2
     if first_surface and second_surface and abs(first_surface - second_surface) / max(first_surface, second_surface) > 0.2:
         return False
-    # Deux annonces à la même adresse précise = même bien, SAUF si elles sont
-    # clairement deux lots/ventes distincts : date ET prix renseignés des deux
-    # côtés et tous deux différents (ex. deux lots d'un même immeuble). Sinon
-    # (date ou prix concordant, ou champ manquant) on fusionne.
-    if first.sale_date and second.sale_date and first.starting_price_eur and second.starting_price_eur:
-        dates_differ = first.sale_date != second.sale_date
-        prices_differ = not _prices_close(first.starting_price_eur, second.starting_price_eur)
-        if dates_differ and prices_differ:
-            return False
-    return True
+    # Même adresse précise ne suffit pas : un immeuble contient plusieurs lots et un
+    # bien peut être remis en vente (surenchère, folle enchère). Deux dates d'audience
+    # (jour civil de Paris) ou deux prix connus et différents ne fusionnent jamais ;
+    # il faut ensuite date ET prix identiques, ou une même surface.
+    first_day, second_day = _civil_day(first.sale_date), _civil_day(second.sale_date)
+    if first_day and second_day and first_day != second_day:
+        return False
+    first_price, second_price = _whole_euros(first.starting_price_eur), _whole_euros(second.starting_price_eur)
+    if first_price is not None and second_price is not None and first_price != second_price:
+        return False
+    if first_day and second_day and first_price is not None and second_price is not None:
+        return True
+    return bool(first_surface and second_surface and round(first_surface, 1) == round(second_surface, 1))
+
+
+def _civil_day(value: datetime | None) -> date | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(PARIS).date()
+
+
+def _whole_euros(value: Any) -> int | None:
+    try:
+        euros = round(float(value))
+    except (TypeError, ValueError):
+        return None
+    return euros if euros > 0 else None
 
 
 def _merge_by_address(sales: list[AuctionSale]) -> list[AuctionSale]:

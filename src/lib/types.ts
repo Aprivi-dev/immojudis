@@ -1,4 +1,10 @@
 export type AuctionSale = {
+  /** Number of case documents; published to free accounts, which do not receive the documents. */
+  document_count?: number | null;
+  /** Signed-out page only: number of photos of the full listing. */
+  photo_count?: number | null;
+  /** Signed-out page only: visits are announced (their text may name the address). */
+  has_visit_dates?: boolean | null;
   source_checks?: Record<string, { checked_at?: string }> | null;
   source_conflicts?: Array<{
     field?: string;
@@ -10,7 +16,14 @@ export type AuctionSale = {
   analysis_status?: string | null;
   source_presence?: Record<
     string,
-    { state?: string; availability?: string; checked_at?: string }
+    {
+      state?: string;
+      availability?: string;
+      checked_at?: string;
+      attempted_at?: string;
+      run_id?: string;
+      [key: string]: unknown;
+    }
   > | null;
   id: string;
   title: string | null;
@@ -77,7 +90,9 @@ export type AuctionSale = {
   primary_source: string | null;
   source_urls: unknown;
   /**
-   * Optional payload projection retained for detail-view completeness evidence.
+   * Source evidence retained for detail views. The completeness calculator
+   * only trusts typed facts under `source_property_features` or
+   * `source_field_observations` when their evidence contract is valid.
    */
   raw_payload?: unknown | null;
   source_blocks: Record<string, unknown> | null;
@@ -139,6 +154,8 @@ export type SaleFilters = {
   around_address?: string;
   around_radius_km?: number;
   only_new?: boolean;
+  /** Sales created or modified at or after this instant (ISO timestamp). */
+  updated_since?: string;
 };
 
 export const SORT_KEYS = [

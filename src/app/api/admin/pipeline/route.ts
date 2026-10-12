@@ -1,43 +1,33 @@
+import "server-only";
 import { NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-const client = supabaseAdmin as unknown as SupabaseClient;
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+const client = supabaseAdmin;
 async function authorize(request: Request) {
   const context = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
   if (!context.isAdmin) throw new Error("Forbidden: accès administrateur requis");
 }
-function failure(error: unknown) {
-  const message = error instanceof Error ? error.message : "Supervision indisponible";
-  return NextResponse.json(
-    { error: message },
-    {
-      status: message.startsWith("Unauthorized")
-        ? 401
-        : message.startsWith("Forbidden")
-          ? 403
-          : error instanceof z.ZodError
-            ? 400
-            : 500,
-    },
-  );
+function failure(error: unknown, request: Request) {
+  return apiRouteError(error, request, "admin.pipeline", {
+    fallbackMessage: "Supervision indisponible",
+  });
 }
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   try {
     await authorize(request);
-    const results = await Promise.all([
+    const [sourcesResult, controlResult, alertsResult, usageResult] = await Promise.all([
       client.from("auction_source_state").select("*").order("source_name"),
       client.from("auction_pipeline_control").select("*").single(),
-      client
-        .from("auction_pipeline_observations")
-        .select("source_name,observed_at,metrics")
-        .order("observed_at", { ascending: false })
-        .limit(11),
       client
         .from("operational_alerts")
         .select("alert_key,status,details,notification_status,notification_event,last_seen_at")
@@ -45,22 +35,49 @@ export async function GET(request: Request) {
         .order("last_seen_at", { ascending: false }),
       client.rpc("pipeline_usage_summary"),
     ]);
-    for (const result of results) if (result.error) throw new Error(result.error.message);
+
+    for (const result of [sourcesResult, controlResult, alertsResult, usageResult]) {
+      if (result.error) throw result.error;
+    }
+
+    // The health observer appends one row per source on every tick. A global
+    // limit therefore returns several rows for the busiest source and can
+    // silently omit the others. Query the indexed latest row per configured
+    // source so the admin panel always displays the current metric for each
+    // source, plus the enrichment queue observation.
+    const sourceNames = [
+      ...(sourcesResult.data ?? []).map((source) => source.source_name),
+      "enrichment-queue",
+    ].filter((sourceName, index, names) => names.indexOf(sourceName) === index);
+    const observationResults = await Promise.all(
+      sourceNames.map((sourceName) =>
+        client
+          .from("auction_pipeline_observations")
+          .select("source_name,observed_at,metrics")
+          .eq("source_name", sourceName)
+          .order("observed_at", { ascending: false })
+          .limit(1),
+      ),
+    );
+    for (const result of observationResults) {
+      if (result.error) throw result.error;
+    }
+
     return NextResponse.json(
       {
-        sources: results[0].data,
-        control: results[1].data,
-        observations: results[2].data,
-        alerts: results[3].data,
-        usage: results[4].data,
+        sources: sourcesResult.data,
+        control: controlResult.data,
+        observations: observationResults.flatMap((result) => result.data ?? []),
+        alerts: alertsResult.data,
+        usage: usageResult.data,
       },
       { headers: { "cache-control": "no-store" } },
     );
   } catch (error) {
-    return failure(error);
+    return failure(error, request);
   }
 }
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     await authorize(request);
     const input = z
@@ -77,10 +94,13 @@ export async function PATCH(request: Request) {
       .eq("source_name", input.source)
       .select("source_name,enabled")
       .maybeSingle();
-    if (error) throw new Error(error.message);
+    if (error) throw error;
     if (!data) return NextResponse.json({ error: "Source inconnue" }, { status: 404 });
     return NextResponse.json(data, { headers: { "cache-control": "no-store" } });
   } catch (error) {
-    return failure(error);
+    return failure(error, request);
   }
 }
+
+export const GET = withAdminDeadline(handleGET);
+export const PATCH = withAdminDeadline(handlePATCH);

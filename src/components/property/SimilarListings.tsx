@@ -1,4 +1,4 @@
-import { Link } from "@/lib/router-compat";
+import Link from "next/link";
 import Bath from "lucide-react/dist/esm/icons/bath.js";
 import BedDouble from "lucide-react/dist/esm/icons/bed-double.js";
 import Ruler from "lucide-react/dist/esm/icons/ruler.js";
@@ -13,7 +13,7 @@ export function SimilarListings({ property }: { property: Property }) {
   return (
     <AnimatedSection id="similar" aria-labelledby="similar-title">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Comparables
         </p>
         <h2 id="similar-title" className="mt-2 font-display text-3xl text-foreground">
@@ -25,8 +25,7 @@ export function SimilarListings({ property }: { property: Property }) {
           listings.map((listing) => (
             <Link
               key={listing.id}
-              to="/properties/$id"
-              params={{ id: listing.slug }}
+              href={`/properties/${encodeURIComponent(listing.slug)}`}
               className="group overflow-hidden rounded-md border border-border bg-white shadow-sm transition-colors hover:border-gold/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
             >
               <div className="aspect-[4/3] overflow-hidden bg-muted">

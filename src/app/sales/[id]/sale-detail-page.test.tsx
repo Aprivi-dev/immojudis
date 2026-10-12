@@ -1,0 +1,246 @@
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { SaleDetailPage } from "./sale-detail-page";
+import { EXAMPLE_SALE } from "@/lib/example-sale";
+
+const mocks = vi.hoisted(() => ({
+  scroll: vi.fn(),
+  entitlements: vi.fn(),
+  sale: vi.fn(),
+  preview: vi.fn(),
+  authenticated: true,
+  authLoading: false,
+  authError: null as string | null,
+}));
+vi.mock("@/hooks/use-auth", () => ({
+  useAuth: () => ({
+    session: mocks.authenticated ? { user: { id: "test" } } : null,
+    loading: mocks.authLoading,
+    authError: mocks.authError,
+  }),
+}));
+vi.mock("@/hooks/use-viewed-sales", () => ({ markSaleViewed: vi.fn() }));
+vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: mocks.entitlements }));
+vi.mock("@/lib/queries", () => ({ getSaleById: mocks.sale, getSalePreviewById: mocks.preview }));
+vi.mock("@/components/DiscoverySaleDetailView", () => ({
+  DiscoverySaleDetailView: () => <div>Offre Découverte</div>,
+}));
+vi.mock("@/components/SimplifiedSaleDetailView", () => ({
+  AnalysisSaleDetailView: () => (
+    <div
+      id="proofs"
+      ref={(node) => {
+        if (node) node.scrollIntoView = mocks.scroll;
+      }}
+    >
+      Analyse premium
+    </div>
+  ),
+}));
+vi.mock("@/components/SalePublicPreview", () => ({
+  SalePublicPreview: ({ returnTo }: { returnTo: string }) => (
+    <div>
+      Aperçu public <span data-testid="return-to">{returnTo}</span>
+    </div>
+  ),
+}));
+afterEach(() => {
+  cleanup();
+  window.history.replaceState(null, "", "/");
+  vi.resetAllMocks();
+  mocks.authenticated = true;
+  mocks.authLoading = false;
+  mocks.authError = null;
+});
+describe("listing access resolution", () => {
+  it("restores a deep-link anchor after asynchronous access and listing resolution", async () => {
+    window.history.replaceState(null, "", "/sales/sale#proofs");
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(mocks.scroll).toHaveBeenCalledWith({ behavior: "instant", block: "start" }),
+    );
+    expect(screen.getByText("Analyse premium")).toBeTruthy();
+  });
+
+  it("reuses the server preview for visitors, then fetches authorized data after login", async () => {
+    mocks.authenticated = false;
+    const initialData = { sale: null, preview: { ...EXAMPLE_SALE, id: "sale" } };
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const content = () => (
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" initialData={initialData} />
+      </QueryClientProvider>
+    );
+    const view = render(content());
+    await screen.findByText("Aperçu public");
+    expect(mocks.preview).not.toHaveBeenCalled();
+    expect(mocks.sale).not.toHaveBeenCalled();
+    mocks.authenticated = true;
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+    view.rerender(content());
+    await screen.findByText("Analyse premium");
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false });
+  });
+
+  it("does not reuse a preview belonging to another listing", async () => {
+    mocks.authenticated = false;
+    mocks.preview.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "other" } }}
+        />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Aperçu public");
+    expect(mocks.preview).toHaveBeenCalledWith("sale");
+  });
+
+  it("offers reconnection to the current listing after session rejection", async () => {
+    window.history.replaceState(null, "", "/sales/sale#proofs");
+    mocks.authenticated = false;
+    mocks.authError = "Session non vérifiée";
+    mocks.preview.mockResolvedValue(null);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("heading", { name: "Connexion à renouveler" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Se reconnecter" }).getAttribute("href")).toBe(
+      "/login?redirect=%2Fsales%2Fsale%23proofs",
+    );
+    expect(mocks.sale).not.toHaveBeenCalled();
+  });
+
+  it("only requests the public preview without a verified session", async () => {
+    mocks.authenticated = false;
+    mocks.preview.mockResolvedValue({ id: "sale", starting_price_eur: 30000 });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Aperçu public");
+    expect(mocks.sale).not.toHaveBeenCalled();
+    expect(mocks.entitlements).not.toHaveBeenCalled();
+  });
+
+  it("leaves the tab title to the server metadata", async () => {
+    document.title = "Appartement à Bayonne - Immojudis";
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
+    mocks.sale.mockResolvedValue({
+      id: "sale",
+      property_type: "apartment",
+      city: "Bayonne",
+      starting_price_eur: 30000,
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Analyse premium");
+    expect(document.title).toBe("Appartement à Bayonne - Immojudis");
+  });
+
+  it("shows the public page rendered by the server while the session is restored", () => {
+    mocks.authenticated = false;
+    mocks.authLoading = true;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "sale" } }}
+        />
+      </QueryClientProvider>,
+    );
+    // Synchronously available: this is what the server-rendered HTML contains.
+    expect(screen.getByText(/Aperçu public/)).toBeTruthy();
+    expect(screen.queryByText("Chargement")).toBeNull();
+    expect(mocks.preview).not.toHaveBeenCalled();
+    expect(mocks.sale).not.toHaveBeenCalled();
+  });
+
+  it("still waits for the session when the server rendered nothing for this sale", () => {
+    mocks.authenticated = false;
+    mocks.authLoading = true;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "other" } }}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText(/Aperçu public/)).toBeNull();
+  });
+
+  it("reads the return link from the browser address, not during rendering", async () => {
+    window.history.replaceState(null, "", "/sales/sale?from=%2Fsales%3Fcity%3DPau");
+    mocks.authenticated = false;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "sale" } }}
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("return-to").textContent).toBe("/sales?city=Pau"),
+    );
+  });
+
+  it("does not silently downgrade premium on an entitlement failure and retries", async () => {
+    mocks.entitlements
+      .mockRejectedValueOnce(new Error("service indisponible"))
+      .mockResolvedValue({ plan: { hasAnalysisAccess: true } });
+    mocks.sale.mockResolvedValue({ id: "sale" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain("droits d’accès");
+    expect(screen.queryByText("Offre Découverte")).toBeNull();
+    expect(mocks.sale).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+    await waitFor(() => expect(screen.getByText("Analyse premium")).toBeTruthy());
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false });
+  });
+});
+
+it("offers access to the selected listing when its public preview is absent", async () => {
+  mocks.authenticated = false;
+  mocks.preview.mockResolvedValue(null);
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <SaleDetailPage id="sale" />
+    </QueryClientProvider>,
+  );
+  const link = await screen.findByRole("link", { name: "Se connecter ou créer un compte" });
+  expect(link.getAttribute("href")).toBe("/login?redirect=%2Fsales%2Fsale");
+  expect(screen.queryByText("Introuvable")).toBeNull();
+});

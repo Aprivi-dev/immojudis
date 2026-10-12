@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import { getSharedPropertyReport } from "@/lib/property-reports";
 
 type RouteParams = {
   params: Promise<{ token: string }>;
 };
 
-export async function GET(_request: Request, { params }: RouteParams) {
+export async function GET(request: Request, { params }: RouteParams) {
   try {
     const { token } = await params;
     const report = await getSharedPropertyReport({ token });
@@ -19,7 +20,9 @@ export async function GET(_request: Request, { params }: RouteParams) {
       },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Rapport partagé introuvable";
-    return NextResponse.json({ ok: false, error: message }, { status: 404 });
+    return apiRouteError(error, request, "property-reports.share.token", {
+      fallbackMessage: "Rapport partagé introuvable",
+      fallbackStatus: 404,
+    });
   }
 }

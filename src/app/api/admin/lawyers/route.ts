@@ -5,8 +5,13 @@ import {
   listAdminReferencedLawyers,
   saveAdminReferencedLawyer,
 } from "@/lib/admin-lawyers";
+import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const response = await listAdminReferencedLawyers(bearerTokenFromRequest(request));
     return NextResponse.json(response, {
@@ -17,7 +22,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const input = adminReferencedLawyerInputSchema.parse(await request.json());
     const response = await saveAdminReferencedLawyer({
@@ -30,12 +35,5 @@ export async function POST(request: Request) {
   }
 }
 
-function adminErrorResponse(error: unknown) {
-  const message = error instanceof Error ? error.message : "Erreur admin";
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden")
-      ? 403
-      : 400;
-  return NextResponse.json({ error: message }, { status });
-}
+export const GET = withAdminDeadline(handleGET);
+export const POST = withAdminDeadline(handlePOST);

@@ -2,12 +2,11 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 import { AI_REVIEW_FIELD_KEYS, type AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDetailView";
 
@@ -16,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   fetchAiReviewProjections: vi.fn(),
   fetchFactReliabilities: vi.fn(),
   fetchUrbanism: vi.fn(),
+  fetchValuePreview: vi.fn(),
   forecast: vi.fn(),
   authUser: null as { id: string } | null,
 }));
@@ -28,13 +28,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchSaleAiReviewProjections: mocks.fetchAiReviewProjections,
   fetchSaleFactReliabilities: mocks.fetchFactReliabilities,
   fetchSaleUrbanismeCadastre: mocks.fetchUrbanism,
-}));
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({ to, href, children, ...props }: { to?: string; href?: string; children: ReactNode }) => (
-    <a href={href ?? to} {...props}>
-      {children}
-    </a>
-  ),
+  fetchValuePreview: mocks.fetchValuePreview,
 }));
 vi.mock("@/components/FavoriteButton", () => ({
   FavoriteButton: () => <button>Suivre cette vente</button>,
@@ -43,6 +37,13 @@ vi.mock("@/components/MapboxPreviewButton", () => ({
   MapboxPreviewButton: ({ label }: { label: string }) => <button>{label}</button>,
 }));
 vi.mock("@/components/MapThumbnail", () => ({ MapThumbnail: () => <div>Carte</div> }));
+vi.mock("./sale-detail/CadastralNeighborhoodMap", () => ({
+  CadastralNeighborhoodMap: ({ lat, lng }: { lat: number; lng: number }) => (
+    <div data-testid="cadastral-map" data-lat={lat} data-lng={lng}>
+      Plan cadastral
+    </div>
+  ),
+}));
 vi.mock("@/components/SaleVisual", () => ({ SaleVisual: () => <div>Visuel indisponible</div> }));
 vi.mock("@/components/BillingActions", () => ({
   BillingActions: () => <button>Découvrir l’offre Analyse</button>,
@@ -50,9 +51,6 @@ vi.mock("@/components/BillingActions", () => ({
 vi.mock("@/components/DocumentsList", () => ({ DocumentsList: () => <p>Pièces du dossier</p> }));
 vi.mock("@/components/LawyerReferralButton", () => ({
   LawyerReferralButton: () => <button>Contacter un avocat</button>,
-}));
-vi.mock("@/components/SaleTribunalHistory", () => ({
-  SaleTribunalHistory: () => <section id="tribunal-history">Historique du tribunal</section>,
 }));
 vi.mock("@/hooks/use-outcome-graph-forecast", () => ({
   useOutcomeGraphForecast: (id: string, enabled: boolean) => mocks.forecast(id, enabled) ?? {},
@@ -82,11 +80,13 @@ vi.mock("next/dynamic", () => ({
       if (sale && marketEstimateOverride === undefined) {
         return (
           <section
-            id="tribunal-history"
+            id="stats-overview"
+            data-sale-id={sale.id}
+            data-court-code={sale.tribunal_code}
             data-premium={premium ? "true" : "false"}
             data-property-type-verified={propertyTypeVerified ? "true" : "false"}
           >
-            Historique du tribunal
+            Statistiques du tribunal
           </section>
         );
       }
@@ -96,7 +96,7 @@ vi.mock("next/dynamic", () => ({
           <button onClick={onClose}>Fermer les photos</button>
         </div>
       ) : (
-        <div>Simulateur de mise plafond chargé</div>
+        <div>Simulateur d’enchère plafond chargé</div>
       );
     },
 }));
@@ -150,7 +150,7 @@ describe("integrated listing", () => {
   it("mounts one panel at a time and supports keyboard tab navigation", () => {
     const { container } = renderDetail("analysis");
 
-    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(screen.getAllByRole("tab")).toHaveLength(6);
     expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
     expectActivePanel(container, "apercu");
 
@@ -161,6 +161,12 @@ describe("integrated listing", () => {
     expectActivePanel(container, "estimation");
 
     fireEvent.keyDown(screen.getByRole("tab", { name: "Estimation" }), { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "Statistiques" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expectActivePanel(container, "statistiques");
+
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Statistiques" }), { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "Travaux" }).getAttribute("aria-selected")).toBe("true");
     expectActivePanel(container, "travaux");
 
@@ -184,6 +190,49 @@ describe("integrated listing", () => {
       "true",
     );
     expectActivePanel(container, "estimation");
+  });
+
+  it("defers tribunal forecast loading until its disclosure opens", () => {
+    const sale = EXAMPLE_SALE_RECORDS.bordeaux.sale;
+    renderDetail("analysis", sale, false);
+    selectTab("Estimation");
+
+    expect(mocks.forecast).toHaveBeenLastCalledWith(sale.id, false);
+    const summary = screen.getByText("Perspective d’adjudication");
+    const details = summary.closest("details");
+    expect(details?.open).toBe(false);
+
+    fireEvent.click(summary);
+    expect(details?.open).toBe(true);
+    expect(mocks.forecast).toHaveBeenLastCalledWith(sale.id, true);
+
+    fireEvent.click(summary);
+    fireEvent.click(summary);
+    expect(details?.open).toBe(true);
+    expect(mocks.forecast).toHaveBeenLastCalledWith(sale.id, true);
+  });
+
+  it.each([
+    { anchor: "works", tab: "Travaux", panel: "travaux" },
+    { anchor: "financing", tab: "Financement", panel: "financement" },
+  ])("selects and scrolls to the lazy $anchor section", ({ anchor, tab, panel }) => {
+    window.history.replaceState(null, "", `#${anchor}`);
+    const scrollIntoView = vi.fn();
+    const prototype = HTMLElement.prototype as HTMLElement & {
+      scrollIntoView: typeof scrollIntoView;
+    };
+    const previousScrollIntoView = prototype.scrollIntoView;
+    prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      const { container } = renderDetail("analysis");
+
+      expect(screen.getByRole("tab", { name: tab }).getAttribute("aria-selected")).toBe("true");
+      expectActivePanel(container, panel);
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+    } finally {
+      prototype.scrollIntoView = previousScrollIntoView;
+    }
   });
 
   it.each([
@@ -220,24 +269,10 @@ describe("integrated listing", () => {
       publicDemo: false,
     },
     {
-      anchor: "tribunal-history",
+      anchor: "tribunal-perspective",
       tab: "estimation",
-      target: "tribunal-history",
-      summary: "Historique et perspective d’adjudication",
-      publicDemo: false,
-    },
-    {
-      anchor: "calculation",
-      tab: "estimation",
-      target: "calculation",
-      summary: "Ajuster les hypothèses",
-      publicDemo: false,
-    },
-    {
-      anchor: "why-this-ceiling",
-      tab: "estimation",
-      target: "why-this-ceiling",
-      summary: "Comprendre le calcul du plafond",
+      target: "tribunal-perspective",
+      summary: "Perspective d’adjudication",
       publicDemo: false,
     },
   ] as const)(
@@ -278,17 +313,21 @@ describe("integrated listing", () => {
     },
   );
 
-  it("uses a client-side initial hash to open the requested estimation detail", () => {
-    window.history.replaceState(null, "", "#calculation");
-    const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+  it.each(["calculation", "why-this-ceiling"])(
+    "lands #%s on the always visible bid ceiling planner",
+    (anchor) => {
+      window.history.replaceState(null, "", `#${anchor}`);
+      const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
 
-    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
-    const calculation = container.querySelector("#calculation") as HTMLDetailsElement | null;
-    expect(calculation).not.toBeNull();
-    expect(calculation?.open).toBe(true);
-  });
+      expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+      const target = container.querySelector(`#${anchor}`);
+      expect(target).not.toBeNull();
+      expect(target?.closest("details")).toBeNull();
+      expect(screen.getByRole("heading", { name: "Votre enchère plafond" })).toBeTruthy();
+    },
+  );
 
   it("opens the documents disclosure when #documents targets Démarches", () => {
     window.history.replaceState(null, "", "#documents");
@@ -329,7 +368,7 @@ describe("integrated listing", () => {
     expect(details).not.toBeNull();
     expect(details?.open).toBe(true);
     expect(screen.queryByText("Ajuster les hypothèses")).toBeNull();
-    expect(screen.queryByText("Simulateur de mise plafond chargé")).toBeNull();
+    expect(screen.queryByText("Simulateur d’enchère plafond chargé")).toBeNull();
   });
 
   it("resets to Aperçu when navigating to another same-type sale without a hash", () => {
@@ -422,6 +461,7 @@ describe("integrated listing", () => {
   });
 
   it("does not reuse a blocked city in the property title or photo alt text", () => {
+    mocks.authUser = { id: "user-1" };
     const projections: AiReviewProjectionReadModel[] = AI_REVIEW_FIELD_KEYS.map((fieldKey) => ({
       auction_sale_id: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
       field_key: fieldKey,
@@ -447,6 +487,11 @@ describe("integrated listing", () => {
       "Localisation à confirmer",
     );
     expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("Bordeaux");
+    const map = screen.getByTestId("cadastral-map");
+    expect(map.getAttribute("data-lat")).toBe(String(EXAMPLE_SALE_RECORDS.bordeaux.sale.latitude));
+    expect(map.getAttribute("data-lng")).toBe(String(EXAMPLE_SALE_RECORDS.bordeaux.sale.longitude));
+    expect(map.closest("details")).toBeNull();
+    expect(mocks.fetchUrbanism).not.toHaveBeenCalled();
     expect(
       [...container.querySelectorAll<HTMLImageElement>("img")].every(
         (image) => !image.alt.includes("Bordeaux"),
@@ -488,7 +533,7 @@ describe("integrated listing", () => {
     selectTab("Démarches");
 
     expect(screen.queryByText(/2 octobre 2026/)).toBeNull();
-    expect(screen.getByText("Dates à confirmer auprès de l’organisateur")).toBeTruthy();
+    expect(screen.getByText("Dates de visite non renseignées")).toBeTruthy();
   });
 
   it("keeps address-history caveats inside the Estimation detail", () => {
@@ -571,15 +616,17 @@ describe("integrated listing", () => {
     expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
   });
 
-  it("opens the advanced simulator from the Estimation action", () => {
-    const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
+  it("points the Estimation actions to the planner and its calculation", () => {
+    renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
     selectTab("Estimation");
 
-    const calculation = container.querySelector("#calculation") as HTMLDetailsElement;
-    expect(calculation.open).toBe(false);
-    fireEvent.click(screen.getByRole("link", { name: "Ajuster mes hypothèses" }));
-    expect(calculation.open).toBe(true);
-    expect(screen.getByText("Simulateur de mise plafond chargé")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Ajuster mes hypothèses" }).getAttribute("href")).toBe(
+      "#calculation",
+    );
+    expect(screen.getByRole("link", { name: "Voir le calcul" }).getAttribute("href")).toBe(
+      "#why-this-ceiling",
+    );
+    expect(screen.getByRole("heading", { name: "Le calcul, étape par étape" })).toBeTruthy();
   });
 
   it("keeps the photo gallery action functional in the Aperçu panel", () => {
@@ -604,6 +651,40 @@ describe("integrated listing", () => {
     expect(screen.getByText("Voir les références de marché")).toBeTruthy();
   });
 
+  it("shows Premium previews without loading analyses or mounting the works and statistics tools", async () => {
+    mocks.authUser = { id: "free-account" };
+    mocks.fetchValuePreview.mockResolvedValue({
+      available: true,
+      lowEur: 180_000,
+      highEur: 220_000,
+      discountPct: 32,
+      reliability: "medium",
+    });
+    renderDetail("discovery");
+    selectTab("Estimation");
+    expect(
+      screen.getByRole("heading", {
+        name: "Votre enchère plafond, les comparables et les travaux avec l’offre Analyse",
+      }),
+    ).toBeTruthy();
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "environ 32 % sous la valeur estimée",
+    );
+    selectTab("Travaux");
+    expect(
+      screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Simulateur d’enchère plafond chargé")).toBeNull();
+    selectTab("Statistiques");
+    expect(
+      screen.getByRole("heading", { name: "Les statistiques du tribunal avec l’offre Analyse" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
+    expect(mocks.fetchMarket).not.toHaveBeenCalled();
+    expect(mocks.fetchAiReviewProjections).not.toHaveBeenCalled();
+    expect(mocks.fetchFactReliabilities).not.toHaveBeenCalled();
+  });
+
   it.each(["notary", "state", "unknown"] as const)(
     "keeps court-specific calculations out of %s sales",
     (venue) => {
@@ -614,6 +695,7 @@ describe("integrated listing", () => {
         source_blocks: null,
       } as AuctionSale;
       const { container } = renderDetail("analysis", sale, false);
+      expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
       selectTab("Estimation");
 
       expect(screen.getByRole("heading", { name: "Prix et marché" })).toBeTruthy();
@@ -621,6 +703,52 @@ describe("integrated listing", () => {
       expect(container.querySelector("#calculation")).toBeNull();
     },
   );
+
+  it.each([
+    "statistiques",
+    "tribunal-history",
+    "stats-calendrier",
+    "stats-adjudications",
+    "stats-ventes",
+    "stats-avocats",
+  ])("opens the tribunal statistics panel from #%s without loading it in Aperçu", (anchor) => {
+    const initial = renderDetail("analysis");
+    expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
+    initial.unmount();
+    window.history.replaceState(null, "", `#${anchor}`);
+    const { container } = renderDetail("analysis");
+    expectActivePanel(container, "statistiques");
+    expect(screen.getByRole("tab", { name: "Statistiques" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText("Statistiques du tribunal")).toBeTruthy();
+  });
+
+  it.each(["notary", "state", "online", "unknown"] as const)(
+    "falls back to Aperçu for a statistics deep link on a %s sale",
+    (venue) => {
+      window.history.replaceState(null, "", "#statistiques");
+      const { container } = renderDetail("analysis", {
+        ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+        sale_venue_type: venue,
+        sale_procedure: null,
+        source_blocks: null,
+      } as AuctionSale);
+      expectActivePanel(container, "apercu");
+      expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
+      expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
+    },
+  );
+
+  it("keeps the announcement’s tribunal on a relocated sale and preserves price access", () => {
+    const sale = { ...EXAMPLE_SALE_RECORDS.bordeaux.sale, city: "Paris" };
+    const { container } = renderDetail("analysis", sale, false, true);
+    selectTab("Statistiques");
+    const statistics = container.querySelector("#stats-overview");
+    expect(statistics?.getAttribute("data-sale-id")).toBe(sale.id);
+    expect(statistics?.getAttribute("data-court-code")).toBe("tj-bordeaux");
+    expect(statistics?.getAttribute("data-premium")).toBe("true");
+  });
 
   it("preserves the no-photo and no-location states", () => {
     const { container } = renderDetail("discovery", {

@@ -4,14 +4,15 @@ import { getSharedPropertyReport } from "@/lib/property-reports";
 import { ReportSourceChangedError } from "@/lib/property-report/source-integrity";
 import { formatDate, formatPrice, formatPricePerM2 } from "@/lib/format";
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
-import { reportSimulationSchema } from "@/lib/report-simulation";
+import { describeReportSimulation, isCurrentReportSimulation } from "@/lib/report-simulation";
+import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
 
 type PageParams = {
   params: Promise<{ token: string }>;
 };
 
 export const metadata: Metadata = {
-  title: "Rapport partagé — ImmoJudis",
+  title: "Rapport partagé",
   robots: {
     index: false,
     follow: false,
@@ -26,7 +27,7 @@ export default async function SharedReportPage({ params }: PageParams) {
   if (!report) notFound();
   if (report instanceof ReportSourceChangedError) {
     return (
-      <main className="mx-auto max-w-2xl px-6 py-16">
+      <main id="contenu" className="mx-auto max-w-2xl px-6 py-16">
         <h1 className="text-3xl font-semibold">Rapport à actualiser</h1>
         <p className="mt-4 text-slate-700">
           Les données de cette analyse ne peuvent plus être confirmées. Demandez à la personne qui
@@ -70,7 +71,7 @@ export default async function SharedReportPage({ params }: PageParams) {
   const demographicMissingData = normalizeStringList(demographicAnalysis.missingData);
   const demographicLimitations = normalizeStringList(demographicAnalysis.limitations);
   const occupancyAnalysis = asRecord(analysis.occupancyAnalysis);
-  const occupancyEvidence = normalizeOccupancyEvidence(occupancyAnalysis.evidence);
+  const occupancyEvidence = normalizeEvidence(occupancyAnalysis.evidence);
   const occupancyActions = normalizeStringList(occupancyAnalysis.nextActions);
   const auctionCostAnalysis = asRecord(analysis.auctionCostAnalysis);
   const auctionCostSignals = normalizeStringList(auctionCostAnalysis.sourceFeeSignals);
@@ -85,10 +86,10 @@ export default async function SharedReportPage({ params }: PageParams) {
   const urbanPlanningMissingChecks = normalizeStringList(urbanPlanningAnalysis.missingChecks);
   const urbanPlanningLimitations = normalizeStringList(urbanPlanningAnalysis.limitations);
   const dpe = asRecord(analysis.dpe);
-  const dpeEvidence = normalizeDpeEvidence(dpe.evidence);
+  const dpeEvidence = normalizeEvidence(dpe.evidence);
   const dpeActions = normalizeStringList(dpe.nextActions);
   const renovationAnalysis = asRecord(analysis.renovationAnalysis);
-  const renovationEvidence = normalizeRenovationEvidence(renovationAnalysis.evidence);
+  const renovationEvidence = normalizeEvidence(renovationAnalysis.evidence);
   const renovationActions = normalizeStringList(renovationAnalysis.nextActions);
   const renovationBudgetRange = formatRenovationBudgetRange(
     asRecord(renovationAnalysis.budgetRange),
@@ -112,14 +113,14 @@ export default async function SharedReportPage({ params }: PageParams) {
   );
   const audienceReadinessActions = normalizeStringList(audienceReadinessAnalysis.nextActions);
   const ceiling = asRecord(report.ceiling);
-  const personalSimulation = reportSimulationSchema.safeParse(ceiling.personalSimulation);
+  const personalSimulation = describeReportSimulation(ceiling.personalSimulation);
 
   return (
-    <main className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
+    <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <article className="mx-auto max-w-4xl rounded-lg border border-border bg-white/94 p-6 shadow-sm sm:p-8">
         <header className="border-b border-border pb-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gold-soft">
-            Rapport partagé ImmoJudis
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gold-text">
+            Rapport partagé Immojudis
           </p>
           <h1 className="mt-3 font-display text-3xl leading-tight text-foreground sm:text-4xl">
             {report.title}
@@ -135,24 +136,30 @@ export default async function SharedReportPage({ params }: PageParams) {
             label="Localisation"
             value={joinValues(sale.address, sale.city, sale.department)}
           />
-          <SharedMetric label="Tribunal" value={stringValue(sale.tribunal, "À confirmer")} />
+          <SharedMetric
+            label="Tribunal"
+            value={stringOrNumberValue(sale.tribunal, "À confirmer")}
+          />
           {reportSaleSchedule(sale).map(({ label, value }) => (
             <SharedMetric key={label} label={label} value={value} />
           ))}
           <SharedMetric
             label="Préparation audience"
-            value={stringValue(audienceReadinessAnalysis.summary, "À compléter")}
+            value={stringOrNumberValue(audienceReadinessAnalysis.summary, "À compléter")}
           />
           <SharedMetric label="Mise à prix" value={formatPrice(numberValue(sale.startingPrice))} />
           <SharedMetric
             label="Occupation"
-            value={stringValue(
+            value={stringOrNumberValue(
               occupancyAnalysis.summary,
-              stringValue(sale.occupancy, "À vérifier"),
+              stringOrNumberValue(sale.occupancy, "À vérifier"),
             )}
           />
-          <SharedMetric label="Type" value={stringValue(sale.propertyType, "Bien")} />
-          <SharedMetric label="Surface" value={stringValue(sale.surfaceLabel, "À confirmer")} />
+          <SharedMetric label="Type" value={stringOrNumberValue(sale.propertyType, "Bien")} />
+          <SharedMetric
+            label="Surface"
+            value={stringOrNumberValue(sale.surfaceLabel, "À confirmer")}
+          />
         </section>
 
         <section className="grid gap-4 border-b border-border py-5 sm:grid-cols-2">
@@ -166,7 +173,7 @@ export default async function SharedReportPage({ params }: PageParams) {
           />
           <SharedMetric
             label="Échantillon DVF"
-            value={`${stringValue(valueEstimate.sampleSize, "0")} vente(s) comparable(s)`}
+            value={`${stringOrNumberValue(valueEstimate.sampleSize, "0")} vente(s) comparable(s)`}
           />
           <SharedMetric
             label="Mise maximum conseillée"
@@ -176,77 +183,61 @@ export default async function SharedReportPage({ params }: PageParams) {
           />
           <SharedMetric
             label="Qualité estimation"
-            value={stringValue(
+            value={stringOrNumberValue(
               marketComparables.confidenceLabel,
-              stringValue(valueEstimate.qualityLabel, "Fragile"),
+              stringOrNumberValue(valueEstimate.qualityLabel, "Fragile"),
             )}
           />
           <SharedMetric
             label="Audit estimation"
-            value={stringValue(valuationAudit.summary, "Audit estimation à construire")}
+            value={stringOrNumberValue(valuationAudit.summary, "Audit estimation à construire")}
           />
           <SharedMetric
             label="Analyse quartier"
-            value={stringValue(neighborhoodAnalysis.summary, "Quartier à qualifier")}
+            value={stringOrNumberValue(neighborhoodAnalysis.summary, "Quartier à qualifier")}
           />
           <SharedMetric
             label="Analyse démographique"
-            value={stringValue(demographicAnalysis.summary, "Données démographiques à enrichir")}
+            value={stringOrNumberValue(
+              demographicAnalysis.summary,
+              "Données démographiques à enrichir",
+            )}
           />
           <SharedMetric
             label="Comparables en vente"
-            value={stringValue(activeComparablesAnalysis.summary, "À rechercher")}
+            value={stringOrNumberValue(activeComparablesAnalysis.summary, "À rechercher")}
           />
         </section>
 
-        {personalSimulation.success ? (
+        {personalSimulation ? (
           <section className="border-b border-border py-5" aria-labelledby="shared-simulation">
             <h2 id="shared-simulation" className="text-lg font-semibold text-foreground">
               Scénario personnel sauvegardé
             </h2>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
-              <SharedMetric
-                label="Prix simulé"
-                value={formatPrice(personalSimulation.data.price)}
-              />
-              <SharedMetric
-                label="Travaux saisis"
-                value={formatPrice(personalSimulation.data.works)}
-              />
-              <SharedMetric
-                label="Frais préalables saisis"
-                value={formatPrice(personalSimulation.data.fpt)}
-              />
-              <SharedMetric
-                label="Scénario"
-                value={
-                  { prudent: "Prudent", offensif: "Offensif", custom: "Personnalisé" }[
-                    personalSimulation.data.scenario
-                  ]
-                }
-              />
+              {personalSimulation.map(([label, value]) => (
+                <SharedMetric key={label} label={label} value={value} />
+              ))}
               <SharedMetric
                 label="Marge de sécurité"
                 value={formatPercent(numberValue(ceiling.safetyDiscountPct))}
               />
               <SharedMetric
                 label="Base retenue"
-                value={stringValue(ceiling.basisLabel, "À confirmer")}
+                value={stringOrNumberValue(ceiling.basisLabel, "À confirmer")}
               />
               <SharedMetric
-                label="Coût complet au prix simulé"
+                label={
+                  isCurrentReportSimulation(ceiling.personalSimulation)
+                    ? "Coût complet à la mise à prix"
+                    : "Coût complet au prix simulé"
+                }
                 value={
                   typeof acquisitionCosts.totalCost === "number"
                     ? formatPrice(acquisitionCosts.totalCost)
                     : "À confirmer"
                 }
               />
-              {personalSimulation.data.manualMarketPricePerM2 != null ? (
-                <SharedMetric
-                  label="Référence de marché saisie"
-                  value={formatPricePerM2(personalSimulation.data.manualMarketPricePerM2)}
-                />
-              ) : null}
             </div>
           </section>
         ) : null}
@@ -259,28 +250,22 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
-                value={stringValue(marketComparables.summary, "Comparables à compléter")}
+                value={stringOrNumberValue(marketComparables.summary, "Comparables à compléter")}
               />
               <SharedMetric
                 label="Mode"
-                value={stringValue(marketComparables.comparableModeLabel, "À confirmer")}
+                value={stringOrNumberValue(marketComparables.comparableModeLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Fenêtre surface"
-                value={stringValue(marketComparables.surfaceWindowLabel, "À confirmer")}
+                value={stringOrNumberValue(marketComparables.surfaceWindowLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Fourchette"
-                value={stringValue(marketComparables.priceRangeLabel, "À confirmer")}
+                value={stringOrNumberValue(marketComparables.priceRangeLabel, "À confirmer")}
               />
             </div>
-            {retainedComparables.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {retainedComparables.slice(0, 5).map((row) => (
-                  <li key={row}>{row}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={retainedComparables} limit={5} />
             {addressHistory.length ? (
               <div className="mt-4">
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
@@ -293,13 +278,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 </ul>
               </div>
             ) : null}
-            {marketComparablesActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {marketComparablesActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={marketComparablesActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -311,40 +290,31 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
-                value={stringValue(valuationAudit.summary, "Audit estimation à construire")}
+                value={stringOrNumberValue(valuationAudit.summary, "Audit estimation à construire")}
               />
               <SharedMetric
                 label="Niveau"
-                value={stringValue(valuationAudit.confidenceLabel, "À vérifier")}
+                value={stringOrNumberValue(valuationAudit.confidenceLabel, "À vérifier")}
               />
-              <SharedMetric label="Score" value={`${stringValue(valuationAudit.score, "0")}/100`} />
+              <SharedMetric
+                label="Score"
+                value={`${stringOrNumberValue(valuationAudit.score, "0")}/100`}
+              />
               <SharedMetric
                 label="Impact décision"
-                value={stringValue(
+                value={stringOrNumberValue(
                   valuationAudit.decisionImpact,
                   "Estimation à recouper avant plafond",
                 )}
               />
             </div>
-            {valuationCheckpoints.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {valuationCheckpoints.slice(0, 8).map((checkpoint) => (
-                  <li key={checkpoint}>{checkpoint}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={valuationCheckpoints} limit={8} />
             {valuationRiskFlags.length ? (
               <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                 Points à risque : {valuationRiskFlags.slice(0, 5).join(" · ")}
               </p>
             ) : null}
-            {valuationActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {valuationActions.slice(0, 4).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={valuationActions} limit={4} muted />
             {valuationLimitations.length ? (
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 {valuationLimitations.slice(0, 2).join(" · ")}
@@ -361,38 +331,29 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
-                value={stringValue(activeComparablesAnalysis.summary, "Comparables à rechercher")}
+                value={stringOrNumberValue(
+                  activeComparablesAnalysis.summary,
+                  "Comparables à rechercher",
+                )}
               />
               <SharedMetric
                 label="Périmètre"
-                value={stringValue(activeComparablesAnalysis.scopeLabel, "À confirmer")}
+                value={stringOrNumberValue(activeComparablesAnalysis.scopeLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(activeComparablesAnalysis.confidenceLabel, "À vérifier")}
+                value={stringOrNumberValue(activeComparablesAnalysis.confidenceLabel, "À vérifier")}
               />
               <SharedMetric
                 label="Impact décision"
-                value={stringValue(
+                value={stringOrNumberValue(
                   activeComparablesAnalysis.decisionImpact,
                   "À croiser avec le plafond",
                 )}
               />
             </div>
-            {activeComparableItems.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {activeComparableItems.slice(0, 5).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {activeComparableActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {activeComparableActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={activeComparableItems} limit={5} />
+            <SharedList items={activeComparableActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -404,23 +365,29 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
-                value={stringValue(audienceReadinessAnalysis.summary, "Préparation à compléter")}
+                value={stringOrNumberValue(
+                  audienceReadinessAnalysis.summary,
+                  "Préparation à compléter",
+                )}
               />
               <SharedMetric
                 label="Urgence"
-                value={stringValue(audienceReadinessAnalysis.urgencyLabel, "Date à confirmer")}
+                value={stringOrNumberValue(
+                  audienceReadinessAnalysis.urgencyLabel,
+                  "Date à confirmer",
+                )}
               />
               <SharedMetric
                 label="Progression"
-                value={`${stringValue(audienceReadinessAnalysis.progressPct, "0")} %`}
+                value={`${stringOrNumberValue(audienceReadinessAnalysis.progressPct, "0")} %`}
               />
               <SharedMetric
                 label="Points prioritaires"
-                value={stringValue(audienceReadinessAnalysis.highPriorityOpenCount, "0")}
+                value={stringOrNumberValue(audienceReadinessAnalysis.highPriorityOpenCount, "0")}
               />
               <SharedMetric
                 label="Impact décision"
-                value={stringValue(
+                value={stringOrNumberValue(
                   audienceReadinessAnalysis.decisionImpact,
                   "À arbitrer avant enchère",
                 )}
@@ -430,20 +397,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 value={`${normalizeStringList(audienceReadinessAnalysis.visitDates).length} mention(s)`}
               />
             </div>
-            {audienceChecklistItems.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {audienceChecklistItems.slice(0, 8).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {audienceReadinessActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {audienceReadinessActions.slice(0, 4).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={audienceChecklistItems} limit={8} />
+            <SharedList items={audienceReadinessActions} limit={4} muted />
           </section>
         ) : null}
 
@@ -452,7 +407,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             label="Score d'opportunité"
             value={
               opportunity.score != null
-                ? `${stringValue(opportunity.score, "")}/100 · ${stringValue(opportunity.label, "À qualifier")}`
+                ? `${stringOrNumberValue(opportunity.score, "")}/100 · ${stringOrNumberValue(opportunity.label, "À qualifier")}`
                 : "À compléter"
             }
           />
@@ -472,7 +427,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             label="Score rentabilité"
             value={
               rentabilityScore.score != null
-                ? `${stringValue(rentabilityScore.score, "")}/100 · ${stringValue(rentabilityScore.label, "À qualifier")}`
+                ? `${stringOrNumberValue(rentabilityScore.score, "")}/100 · ${stringOrNumberValue(rentabilityScore.label, "À qualifier")}`
                 : "À compléter"
             }
           />
@@ -486,14 +441,14 @@ export default async function SharedReportPage({ params }: PageParams) {
           />
           <SharedMetric
             label="Frais estimés"
-            value={stringValue(
+            value={stringOrNumberValue(
               auctionCostAnalysis.summary,
               formatPrice(numberValue(acquisitionCosts.acquisitionFeesTotal)),
             )}
           />
           <SharedMetric
             label="Travaux / état"
-            value={stringValue(renovationAnalysis.summary, "À qualifier")}
+            value={stringOrNumberValue(renovationAnalysis.summary, "À qualifier")}
           />
           <SharedMetric
             label="Coût complet"
@@ -504,51 +459,51 @@ export default async function SharedReportPage({ params }: PageParams) {
         <section className="grid gap-4 py-5 sm:grid-cols-2">
           <SharedMetric
             label="Cadastre"
-            value={stringValue(
+            value={stringOrNumberValue(
               cadastral.summary,
-              cadastral.available ? "Repère disponible" : "À connecter ou confirmer",
+              cadastral.available ? "Repère disponible" : "Référence cadastrale à confirmer",
             )}
           />
           <SharedMetric
             label="DPE / diagnostics"
-            value={stringValue(
+            value={stringOrNumberValue(
               dpe.summary,
-              dpe.available ? stringValue(dpe.class, "Diagnostic repéré") : "À rechercher",
+              dpe.available ? stringOrNumberValue(dpe.class, "Diagnostic repéré") : "À rechercher",
             )}
           />
           <SharedMetric
             label="Urbanisme / permis"
-            value={stringValue(
+            value={stringOrNumberValue(
               urbanPlanningAnalysis.summary,
               "Urbanisme, permis et servitudes à vérifier",
             )}
           />
           <SharedMetric
             label="Travaux / état"
-            value={stringValue(renovationAnalysis.summary, "À qualifier")}
+            value={stringOrNumberValue(renovationAnalysis.summary, "À qualifier")}
           />
           <SharedMetric
             label="Façade et rue"
-            value={stringValue(streetFacadeAnalysis.summary, "Localisation à confirmer")}
+            value={stringOrNumberValue(streetFacadeAnalysis.summary, "Localisation à confirmer")}
           />
           <SharedMetric
             label="Services de proximité"
-            value={stringValue(
+            value={stringOrNumberValue(
               nearbyServices.summary,
               nearbyServices.available ? "Signaux repérés" : "À qualifier",
             )}
           />
           <SharedMetric
             label="Analyse du quartier"
-            value={stringValue(neighborhoodAnalysis.summary, "À qualifier")}
+            value={stringOrNumberValue(neighborhoodAnalysis.summary, "À qualifier")}
           />
           <SharedMetric
             label="Démographie locale"
-            value={stringValue(demographicAnalysis.summary, "Données locales à enrichir")}
+            value={stringOrNumberValue(demographicAnalysis.summary, "Données locales à enrichir")}
           />
           <SharedMetric
             label="Documents"
-            value={`${stringValue(analysis.documentsCount, "0")} pièce(s)`}
+            value={`${stringOrNumberValue(analysis.documentsCount, "0")} pièce(s)`}
           />
           <SharedMetric label="Vues du lien" value={String(report.viewCount)} />
         </section>
@@ -561,32 +516,20 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(cadastral.confidenceLabel, "À confirmer")}
+                value={stringOrNumberValue(cadastral.confidenceLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Surface terrain"
                 value={formatSurfaceM2(numberValue(cadastral.landSurfaceM2))}
               />
             </div>
-            {cadastralReferences.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {cadastralReferences.map((reference) => (
-                  <li key={reference}>{reference}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={cadastralReferences} />
             {cadastralSources.length ? (
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 Sources : {cadastralSources.slice(0, 4).join(" · ")}
               </p>
             ) : null}
-            {cadastralActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {cadastralActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={cadastralActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -598,32 +541,23 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(dpe.confidenceLabel, "À confirmer")}
+                value={stringOrNumberValue(dpe.confidenceLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Impact"
-                value={stringValue(dpe.impactLabel, "Impact à qualifier")}
+                value={stringOrNumberValue(dpe.impactLabel, "Impact à qualifier")}
               />
               <SharedMetric
                 label="Priorité travaux"
-                value={renovationPriorityLabel(stringValue(dpe.renovationPriority, ""))}
+                value={renovationPriorityLabel(stringOrNumberValue(dpe.renovationPriority, ""))}
               />
-              <SharedMetric label="Source" value={dpeSourceLabel(stringValue(dpe.source, ""))} />
+              <SharedMetric
+                label="Source"
+                value={dpeSourceLabel(stringOrNumberValue(dpe.source, ""))}
+              />
             </div>
-            {dpeEvidence.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {dpeEvidence.slice(0, 4).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {dpeActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {dpeActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={dpeEvidence} limit={4} />
+            <SharedList items={dpeActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -635,7 +569,9 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Priorité"
-                value={renovationPriorityLabel(stringValue(renovationAnalysis.priority, ""))}
+                value={renovationPriorityLabel(
+                  stringOrNumberValue(renovationAnalysis.priority, ""),
+                )}
               />
               <SharedMetric
                 label="Budget indicatif"
@@ -643,30 +579,18 @@ export default async function SharedReportPage({ params }: PageParams) {
               />
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(renovationAnalysis.confidenceLabel, "À confirmer")}
+                value={stringOrNumberValue(renovationAnalysis.confidenceLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Impact décision"
-                value={stringValue(
+                value={stringOrNumberValue(
                   renovationAnalysis.decisionImpact,
                   "État à confirmer avant enchère",
                 )}
               />
             </div>
-            {renovationEvidence.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {renovationEvidence.slice(0, 4).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {renovationActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {renovationActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={renovationEvidence} limit={4} />
+            <SharedList items={renovationActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -678,14 +602,14 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
-                value={stringValue(
+                value={stringOrNumberValue(
                   urbanPlanningAnalysis.summary,
                   "Urbanisme, permis et servitudes à vérifier",
                 )}
               />
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(urbanPlanningAnalysis.confidenceLabel, "À vérifier")}
+                value={stringOrNumberValue(urbanPlanningAnalysis.confidenceLabel, "À vérifier")}
               />
               <SharedMetric
                 label="Contrôles manquants"
@@ -693,33 +617,15 @@ export default async function SharedReportPage({ params }: PageParams) {
               />
               <SharedMetric
                 label="Impact décision"
-                value={stringValue(
+                value={stringOrNumberValue(
                   urbanPlanningAnalysis.decisionImpact,
-                  "À intégrer avant le plafond d'enchère",
+                  "À intégrer avant l’enchère plafond",
                 )}
               />
             </div>
-            {urbanPlanningItems.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {urbanPlanningItems.slice(0, 6).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {urbanPlanningMissingChecks.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {urbanPlanningMissingChecks.slice(0, 4).map((check) => (
-                  <li key={check}>{check}</li>
-                ))}
-              </ul>
-            ) : null}
-            {urbanPlanningActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {urbanPlanningActions.slice(0, 4).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={urbanPlanningItems} limit={6} />
+            <SharedList items={urbanPlanningMissingChecks} limit={4} muted />
+            <SharedList items={urbanPlanningActions} limit={4} muted />
             {urbanPlanningLimitations.length ? (
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 {urbanPlanningLimitations.slice(0, 2).join(" · ")}
@@ -736,19 +642,22 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
-                value={stringValue(streetFacadeAnalysis.summary, "Localisation à confirmer")}
+                value={stringOrNumberValue(
+                  streetFacadeAnalysis.summary,
+                  "Localisation à confirmer",
+                )}
               />
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(streetFacadeAnalysis.confidenceLabel, "À confirmer")}
+                value={stringOrNumberValue(streetFacadeAnalysis.confidenceLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Adresse"
-                value={stringValue(streetFacadeAnalysis.addressLabel, "À confirmer")}
+                value={stringOrNumberValue(streetFacadeAnalysis.addressLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Impact décision"
-                value={stringValue(
+                value={stringOrNumberValue(
                   streetFacadeAnalysis.decisionImpact,
                   "Vérifier l'environnement visible avant enchère",
                 )}
@@ -763,13 +672,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                 {mapUrl ? <SharedExternalLink href={mapUrl} label="Carte" /> : null}
               </div>
             ) : null}
-            {streetFacadeActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {streetFacadeActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={streetFacadeActions} limit={3} muted />
             {streetFacadeLimitations.length ? (
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 {streetFacadeLimitations.slice(0, 2).join(" · ")}
@@ -786,27 +689,30 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
-                value={stringValue(neighborhoodAnalysis.summary, "Quartier à qualifier")}
+                value={stringOrNumberValue(neighborhoodAnalysis.summary, "Quartier à qualifier")}
               />
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(neighborhoodAnalysis.confidenceLabel, "À confirmer")}
+                value={stringOrNumberValue(neighborhoodAnalysis.confidenceLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Marché local"
-                value={stringValue(neighborhoodAnalysis.marketPositionLabel, "À calculer")}
+                value={stringOrNumberValue(neighborhoodAnalysis.marketPositionLabel, "À calculer")}
               />
               <SharedMetric
                 label="Services"
-                value={stringValue(neighborhoodAnalysis.serviceCoverageLabel, "À qualifier")}
+                value={stringOrNumberValue(
+                  neighborhoodAnalysis.serviceCoverageLabel,
+                  "À qualifier",
+                )}
               />
               <SharedMetric
                 label="Localisation"
-                value={stringValue(neighborhoodAnalysis.locationQualityLabel, "À géocoder")}
+                value={stringOrNumberValue(neighborhoodAnalysis.locationQualityLabel, "À géocoder")}
               />
               <SharedMetric
                 label="Impact décision"
-                value={stringValue(
+                value={stringOrNumberValue(
                   neighborhoodAnalysis.decisionImpact,
                   "À intégrer avant décision",
                 )}
@@ -817,20 +723,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 Dimensions : {neighborhoodDimensions.join(" · ")}
               </p>
             ) : null}
-            {neighborhoodSignals.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {neighborhoodSignals.slice(0, 5).map((signal) => (
-                  <li key={signal}>{signal}</li>
-                ))}
-              </ul>
-            ) : null}
-            {neighborhoodActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {neighborhoodActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={neighborhoodSignals} limit={5} />
+            <SharedList items={neighborhoodActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -842,22 +736,22 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
-                value={stringValue(
+                value={stringOrNumberValue(
                   demographicAnalysis.summary,
                   "Données démographiques à enrichir",
                 )}
               />
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(demographicAnalysis.confidenceLabel, "À vérifier")}
+                value={stringOrNumberValue(demographicAnalysis.confidenceLabel, "À vérifier")}
               />
               <SharedMetric
                 label="Profil local"
-                value={stringValue(demographicAnalysis.profileLabel, "Profil à enrichir")}
+                value={stringOrNumberValue(demographicAnalysis.profileLabel, "Profil à enrichir")}
               />
               <SharedMetric
                 label="Demande"
-                value={stringValue(demographicAnalysis.demandLabel, "Demande à qualifier")}
+                value={stringOrNumberValue(demographicAnalysis.demandLabel, "Demande à qualifier")}
               />
               <SharedMetric
                 label="Données manquantes"
@@ -865,33 +759,15 @@ export default async function SharedReportPage({ params }: PageParams) {
               />
               <SharedMetric
                 label="Impact décision"
-                value={stringValue(
+                value={stringOrNumberValue(
                   demographicAnalysis.decisionImpact,
                   "À intégrer avant de figer le scénario",
                 )}
               />
             </div>
-            {demographicSignals.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {demographicSignals.slice(0, 6).map((signal) => (
-                  <li key={signal}>{signal}</li>
-                ))}
-              </ul>
-            ) : null}
-            {demographicMissingData.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {demographicMissingData.slice(0, 4).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {demographicActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {demographicActions.slice(0, 4).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={demographicSignals} limit={6} />
+            <SharedList items={demographicMissingData} limit={4} muted />
+            <SharedList items={demographicActions} limit={4} muted />
             {demographicLimitations.length ? (
               <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                 {demographicLimitations.slice(0, 2).join(" · ")}
@@ -908,27 +784,17 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(nearbyServices.confidenceLabel, "À confirmer")}
+                value={stringOrNumberValue(nearbyServices.confidenceLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Localisation"
-                value={locationQualityLabel(stringValue(nearbyServices.locationQuality, ""))}
+                value={locationQualityLabel(
+                  stringOrNumberValue(nearbyServices.locationQuality, ""),
+                )}
               />
             </div>
-            {nearbyCategories.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {nearbyCategories.map((category) => (
-                  <li key={category}>{category}</li>
-                ))}
-              </ul>
-            ) : null}
-            {nearbyActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {nearbyActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={nearbyCategories} />
+            <SharedList items={nearbyActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -940,27 +806,18 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(occupancyAnalysis.confidenceLabel, "À confirmer")}
+                value={stringOrNumberValue(occupancyAnalysis.confidenceLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Impact décision"
-                value={stringValue(occupancyAnalysis.decisionImpact, "À vérifier avant enchère")}
+                value={stringOrNumberValue(
+                  occupancyAnalysis.decisionImpact,
+                  "À vérifier avant enchère",
+                )}
               />
             </div>
-            {occupancyEvidence.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {occupancyEvidence.slice(0, 4).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {occupancyActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {occupancyActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={occupancyEvidence} limit={4} />
+            <SharedList items={occupancyActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -972,7 +829,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Niveau de confiance"
-                value={stringValue(auctionCostAnalysis.confidenceLabel, "À confirmer")}
+                value={stringOrNumberValue(auctionCostAnalysis.confidenceLabel, "À confirmer")}
               />
               <SharedMetric
                 label="Consignation"
@@ -987,20 +844,8 @@ export default async function SharedReportPage({ params }: PageParams) {
                 value={formatKnownPrice(numberValue(auctionCostAnalysis.registrationDutiesEur))}
               />
             </div>
-            {auctionCostSignals.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {auctionCostSignals.slice(0, 4).map((signal) => (
-                  <li key={signal}>{signal}</li>
-                ))}
-              </ul>
-            ) : null}
-            {auctionCostActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {auctionCostActions.slice(0, 3).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={auctionCostSignals} limit={4} />
+            <SharedList items={auctionCostActions} limit={3} muted />
           </section>
         ) : null}
 
@@ -1012,29 +857,17 @@ export default async function SharedReportPage({ params }: PageParams) {
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
-                value={stringValue(legalAttentionAnalysis.summary, "Points à relire")}
+                value={stringOrNumberValue(legalAttentionAnalysis.summary, "Points à relire")}
               />
               <SharedMetric
                 label="Niveau de revue"
-                value={stringValue(legalAttentionAnalysis.confidenceLabel, "À vérifier")}
+                value={stringOrNumberValue(legalAttentionAnalysis.confidenceLabel, "À vérifier")}
               />
             </div>
-            {legalAttentionItems.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-foreground">
-                {legalAttentionItems.slice(0, 6).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : null}
-            {legalAttentionActions.length ? (
-              <ul className="mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground">
-                {legalAttentionActions.slice(0, 4).map((action) => (
-                  <li key={action}>{action}</li>
-                ))}
-              </ul>
-            ) : null}
+            <SharedList items={legalAttentionItems} limit={6} />
+            <SharedList items={legalAttentionActions} limit={4} muted />
             <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-              {stringValue(
+              {stringOrNumberValue(
                 legalAttentionAnalysis.disclaimer,
                 "Revue opérationnelle, sans avis juridique.",
               )}
@@ -1049,7 +882,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             </p>
             <ul className="mt-3 space-y-2 text-sm leading-relaxed text-foreground">
               {legalAttentionPoints.map((point, index) => (
-                <li key={`${index}-${String(point)}`}>{stringValue(point, "")}</li>
+                <li key={`${index}-${String(point)}`}>{stringOrNumberValue(point, "")}</li>
               ))}
             </ul>
           </section>
@@ -1076,7 +909,7 @@ export default async function SharedReportPage({ params }: PageParams) {
                   </p>
                   {entry.url ? (
                     <a
-                      className="mt-2 inline-flex text-xs font-semibold text-gold-soft underline-offset-4 hover:underline"
+                      className="mt-2 inline-flex text-xs font-semibold text-gold-text underline-offset-4 hover:underline"
                       href={entry.url}
                       rel="noreferrer"
                       target={entry.url.startsWith("http") ? "_blank" : undefined}
@@ -1103,7 +936,7 @@ export default async function SharedReportPage({ params }: PageParams) {
           </section>
         ) : null}
 
-        <footer className="mt-4 rounded-lg border border-[#1e40af]/15 bg-[#1e40af]/8 p-4 text-sm leading-relaxed text-[#1e3a8a]">
+        <footer className="mt-4 rounded-lg border border-info/15 bg-info/8 p-4 text-sm leading-relaxed text-info">
           {report.disclaimer}
         </footer>
       </article>
@@ -1122,6 +955,31 @@ function SharedMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SharedList({
+  items,
+  limit,
+  muted = false,
+}: {
+  items: string[];
+  limit?: number;
+  muted?: boolean;
+}) {
+  if (!items.length) return null;
+  return (
+    <ul
+      className={
+        muted
+          ? "mt-4 space-y-2 text-sm leading-relaxed text-muted-foreground"
+          : "mt-4 space-y-2 text-sm leading-relaxed text-foreground"
+      }
+    >
+      {(limit == null ? items : items.slice(0, limit)).map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
 function SharedExternalLink({ href, label }: { href: string; label: string }) {
   return (
     <a
@@ -1135,22 +993,6 @@ function SharedExternalLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function stringValue(value: unknown, fallback: string | null): string {
-  if (typeof value === "string" && value.trim()) return value;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return fallback ?? "";
-}
-
-function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
 function normalizeStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()));
@@ -1161,10 +1003,10 @@ function normalizeCadastralReferences(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const section = stringValue(record.section, "");
-      const number = stringValue(record.number, "");
-      const raw = stringValue(record.raw, "");
-      const prefix = stringValue(record.prefix, "");
+      const section = stringOrNumberValue(record.section, "");
+      const number = stringOrNumberValue(record.number, "");
+      const raw = stringOrNumberValue(record.raw, "");
+      const prefix = stringOrNumberValue(record.prefix, "");
       if (section && number) return `Section ${prefix ? `${prefix} ` : ""}${section} n° ${number}`;
       return raw;
     })
@@ -1176,47 +1018,21 @@ function normalizeNearbyCategoryLabels(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const status = stringValue(record.status, "");
+      const status = stringOrNumberValue(record.status, "");
       if (status !== "mentioned") return "";
-      return stringValue(record.label, "");
+      return stringOrNumberValue(record.label, "");
     })
     .filter(Boolean);
 }
 
-function normalizeOccupancyEvidence(value: unknown): string[] {
+function normalizeEvidence(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => {
       const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const excerpt = stringValue(record.excerpt, "");
-      return [label, source, excerpt].filter(Boolean).join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeDpeEvidence(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const excerpt = stringValue(record.excerpt, "");
-      return [label, source, excerpt].filter(Boolean).join(" · ");
-    })
-    .filter(Boolean);
-}
-
-function normalizeRenovationEvidence(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => {
-      const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const excerpt = stringValue(record.excerpt, "");
+      const label = stringOrNumberValue(record.label, "");
+      const source = stringOrNumberValue(record.source, "");
+      const excerpt = stringOrNumberValue(record.excerpt, "");
       return [label, source, excerpt].filter(Boolean).join(" · ");
     })
     .filter(Boolean);
@@ -1227,10 +1043,10 @@ function normalizeNeighborhoodSignals(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const status = neighborhoodSignalStatusLabel(stringValue(record.status, ""));
-      const source = stringValue(record.source, "");
-      const detail = stringValue(record.detail, "");
+      const label = stringOrNumberValue(record.label, "");
+      const status = neighborhoodSignalStatusLabel(stringOrNumberValue(record.status, ""));
+      const source = stringOrNumberValue(record.source, "");
+      const detail = stringOrNumberValue(record.detail, "");
       return [status, label, source, detail].filter(Boolean).join(" · ");
     })
     .filter(Boolean);
@@ -1241,11 +1057,11 @@ function normalizeDemographicSignals(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const status = demographicSignalStatusLabel(stringValue(record.status, ""));
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const detail = stringValue(record.detail, "");
-      const impact = stringValue(record.impact, "");
+      const status = demographicSignalStatusLabel(stringOrNumberValue(record.status, ""));
+      const label = stringOrNumberValue(record.label, "");
+      const source = stringOrNumberValue(record.source, "");
+      const detail = stringOrNumberValue(record.detail, "");
+      const impact = stringOrNumberValue(record.impact, "");
       return [status, label, source, detail, impact].filter(Boolean).join(" · ");
     })
     .filter(Boolean);
@@ -1256,10 +1072,10 @@ function normalizeLegalAttentionItems(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const priority = stringValue(record.priority, "");
-      const label = stringValue(record.label, "");
-      const reason = stringValue(record.reason, "");
-      const action = stringValue(record.action, "");
+      const priority = stringOrNumberValue(record.priority, "");
+      const label = stringOrNumberValue(record.label, "");
+      const reason = stringOrNumberValue(record.reason, "");
+      const action = stringOrNumberValue(record.action, "");
       return [
         priority ? priorityLabel(priority) : null,
         label,
@@ -1277,12 +1093,12 @@ function normalizeUrbanPlanningItems(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const priority = priorityLabel(stringValue(record.priority, ""));
-      const status = urbanPlanningStatusLabel(stringValue(record.status, ""));
-      const label = stringValue(record.label, "");
-      const source = stringValue(record.source, "");
-      const detail = stringValue(record.detail, "");
-      const action = stringValue(record.action, "");
+      const priority = priorityLabel(stringOrNumberValue(record.priority, ""));
+      const status = urbanPlanningStatusLabel(stringOrNumberValue(record.status, ""));
+      const label = stringOrNumberValue(record.label, "");
+      const source = stringOrNumberValue(record.source, "");
+      const detail = stringOrNumberValue(record.detail, "");
+      const action = stringOrNumberValue(record.action, "");
       return [priority, status, label, source, detail, action ? `Action : ${action}` : null]
         .filter(Boolean)
         .join(" · ");
@@ -1295,8 +1111,8 @@ function normalizeMarketComparableRows(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const date = stringValue(record.date, "");
-      const type = stringValue(record.type, "Bien");
+      const date = stringOrNumberValue(record.date, "");
+      const type = stringOrNumberValue(record.type, "Bien");
       const totalPrice = numberValue(record.totalPriceEur);
       const pricePerM2 = numberValue(record.pricePerM2);
       const surface = numberValue(record.surfaceM2);
@@ -1320,10 +1136,10 @@ function normalizeValuationCheckpoints(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const status = valuationStatusLabel(stringValue(record.status, ""));
-      const label = stringValue(record.label, "");
-      const detail = stringValue(record.detail, "");
-      const action = stringValue(record.action, "");
+      const status = valuationStatusLabel(stringOrNumberValue(record.status, ""));
+      const label = stringOrNumberValue(record.label, "");
+      const detail = stringOrNumberValue(record.detail, "");
+      const action = stringOrNumberValue(record.action, "");
       return [status, label, detail, action ? `Action : ${action}` : null]
         .filter(Boolean)
         .join(" · ");
@@ -1336,13 +1152,13 @@ function normalizeActiveComparableItems(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const title = stringValue(record.title, "Bien actif");
-      const city = stringValue(record.city, "");
-      const saleDate = stringValue(record.saleDate, "");
+      const title = stringOrNumberValue(record.title, "Bien actif");
+      const city = stringOrNumberValue(record.city, "");
+      const saleDate = stringOrNumberValue(record.saleDate, "");
       const startingPrice = numberValue(record.startingPriceEur);
       const pricePerM2 = numberValue(record.pricePerM2);
       const surface = numberValue(record.surfaceM2);
-      const matchLabel = stringValue(record.matchLabel, "");
+      const matchLabel = stringOrNumberValue(record.matchLabel, "");
       const matchScore = numberValue(record.matchScore);
       return [
         matchLabel && matchScore != null ? `${matchLabel} (${matchScore}/100)` : matchLabel,
@@ -1364,11 +1180,11 @@ function normalizeAudienceChecklistItems(value: unknown): string[] {
   return value
     .map((item) => {
       const record = asRecord(item);
-      const label = stringValue(record.label, "");
-      const status = audienceChecklistStatusLabel(stringValue(record.status, ""));
-      const priority = priorityLabel(stringValue(record.priority, ""));
-      const detail = stringValue(record.detail, "");
-      const action = stringValue(record.action, "");
+      const label = stringOrNumberValue(record.label, "");
+      const status = audienceChecklistStatusLabel(stringOrNumberValue(record.status, ""));
+      const priority = priorityLabel(stringOrNumberValue(record.priority, ""));
+      const detail = stringOrNumberValue(record.detail, "");
+      const action = stringOrNumberValue(record.action, "");
       return [status, priority, label, detail, action ? `Action : ${action}` : null]
         .filter(Boolean)
         .join(" · ");

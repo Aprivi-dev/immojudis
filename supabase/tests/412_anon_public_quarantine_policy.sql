@@ -10,6 +10,7 @@ insert into public.auction_sales (
   source_name,
   source_url,
   status,
+  sale_date,
   starting_price_eur,
   latitude,
   longitude,
@@ -21,6 +22,7 @@ values
     'anon-policy-pgtap',
     'https://example.test/anon-policy-marker',
     'upcoming',
+    '2099-01-01 12:00:00Z',
     81000,
     48.8566,
     2.3522,
@@ -31,6 +33,7 @@ values
     'anon-policy-pgtap',
     'https://example.test/anon-policy-status',
     'quarantined',
+    '2099-01-01 12:00:00Z',
     82000,
     48.8566,
     2.3522,
@@ -41,6 +44,7 @@ values
     'anon-policy-pgtap',
     'https://example.test/anon-policy-visible',
     'upcoming',
+    '2099-01-01 12:00:00Z',
     83000,
     48.8566,
     2.3522,
@@ -51,6 +55,7 @@ values
     'anon-policy-pgtap',
     'https://example.test/anon-policy-no-coordinates',
     'upcoming',
+    '2099-01-01 12:00:00Z',
     84000,
     null,
     null,
@@ -61,6 +66,7 @@ values
     'anon-policy-pgtap',
     'https://example.test/anon-policy-null-payload',
     'upcoming',
+    '2099-01-01 12:00:00Z',
     85000,
     48.8566,
     2.3522,
@@ -71,6 +77,7 @@ values
     'anon-policy-pgtap',
     'https://example.test/anon-policy-json-null-marker',
     'upcoming',
+    '2099-01-01 12:00:00Z',
     86000,
     48.8566,
     2.3522,
@@ -125,8 +132,8 @@ select is(
     from public.auction_sales
     where id = 'c4120000-0000-4000-8000-000000000004'::uuid
   ),
-  0::bigint,
-  'anon cannot see a sale without coordinates'
+  1::bigint,
+  'anon can see a future sale without coordinates in the coordinate-less catalogue'
 );
 
 select is(
@@ -207,12 +214,26 @@ select ok(
     from pg_policy
     where polrelid = 'public.auction_sales'::regclass
       and polname = 'auction_sales_public_preview_read'
-      and pg_get_expr(polqual, polrelid) like '%upcoming%'
-      and pg_get_expr(polqual, polrelid) like '%latitude%'
-      and pg_get_expr(polqual, polrelid) like '%longitude%'
-      and pg_get_expr(polqual, polrelid) like '%publication_quarantine%'
-  ),
-  'anon policy retains the allow-list and coordinate guards and adds the marker guard'
+      and position(
+        'auction_sale_is_publicly_visible' in lower(pg_get_expr(polqual, polrelid))
+      ) > 0
+  )
+  and position(
+    'status' in lower(pg_get_functiondef(
+      'app_private.auction_sale_is_publicly_visible(uuid)'::regprocedure
+    ))
+  ) > 0
+  and position(
+    'catalogue_expiry' in lower(pg_get_functiondef(
+      'app_private.auction_sale_is_publicly_visible(uuid)'::regprocedure
+    ))
+  ) > 0
+  and position(
+    'publication_quarantine' in lower(pg_get_functiondef(
+      'app_private.auction_sale_is_publicly_visible(uuid)'::regprocedure
+    ))
+  ) > 0,
+  'anon policy delegates status, catalogue-date and marker guards to the security-definer helper'
 );
 
 select ok(

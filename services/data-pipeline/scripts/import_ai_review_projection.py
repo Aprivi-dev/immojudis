@@ -32,7 +32,7 @@ from src.ai_review_import import (  # noqa: E402
 )
 from src.config import load_settings  # noqa: E402
 from src.real_extraction_review import write_private_json  # noqa: E402
-from src.storage.supabase_client import _postgres_connect  # noqa: E402
+from src.storage.supabase_client import connect  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         db_url = settings.get("supabase_db_url")
         if not db_url:
             raise RuntimeError("SUPABASE_DB_URL is required when --sales-snapshot is not supplied")
-        with _postgres_connect(str(db_url)) as connection:
+        with connect(str(db_url)) as connection:
             with connection.transaction():
                 with connection.cursor() as cursor:
                     cursor.execute("set transaction read write" if args.apply else "set transaction read only")

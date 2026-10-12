@@ -1,0 +1,143 @@
+.section {
+  margin-top: 1.5rem;
+  padding: clamp(1.1rem, 3vw, 1.8rem);
+  border: 1px solid var(--line-soft);
+  border-radius: 1rem;
+  background: #ffffff;
+  color: var(--brand-navy);
+}
+.heading {
+  margin: 0 0 0.65rem;
+  font-size: 1.25rem;
+  font-weight: 650;
+}
+.note {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+.disclosure {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line-soft);
+}
+.disclosure summary {
+  padding: 1rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-weight: 600;
+  list-style: revert;
+}
+.disclosure summary span {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+.content {
+  display: grid;
+  gap: 0.8rem;
+  padding-bottom: 0.5rem;
+}
+.content a,
+.section > a {
+  width: fit-content;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 0.875rem;
+}
+
+.subheading {
+  margin: 0.4rem 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+.facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+  gap: 0.6rem;
+}
+.facts > div {
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.7rem;
+  background: var(--surface-tint);
+}
+.facts dt {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+.facts dd {
+  margin: 0.2rem 0 0;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.facts dd span,
+.normal {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.chips li {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.chips li span {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+.list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.tableWrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+.table th,
+.table td {
+  padding: 0.65rem 0.6rem;
+  border-bottom: 1px solid var(--surface-tint);
+  text-align: right;
+  white-space: nowrap;
+}
+.table th:first-child,
+.table td:first-child {
+  text-align: left;
+}
+.table thead {
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+.button {
+  width: fit-content;
+  min-height: 44px;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}

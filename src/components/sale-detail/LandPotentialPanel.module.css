@@ -1,0 +1,397 @@
+.root {
+  border: 1px solid var(--line-warm);
+  border-radius: 16px;
+  padding: 22px;
+  margin: 20px 0;
+  background: var(--surface-muted);
+  color: var(--success);
+}
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.header h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 4px 0 8px;
+  line-height: 1.35;
+}
+.eyebrow {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--success);
+  margin: 0;
+}
+.intro {
+  margin: 0;
+  max-width: 700px;
+  font-size: 0.88rem;
+  color: var(--success);
+  line-height: 1.6;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.primaryButton,
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 8px;
+  min-height: 42px;
+  padding: 10px 15px;
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.primaryButton {
+  background: var(--success);
+  color: white;
+  border: 1px solid var(--success);
+}
+.secondaryButton {
+  background: white;
+  color: var(--success);
+  border: 1px solid var(--line);
+}
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.primaryButton:focus-visible,
+.secondaryButton:focus-visible,
+.select:focus-visible,
+.sourceLink:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 3px;
+}
+.notice,
+.loading,
+.error {
+  padding: 13px;
+  margin: 14px 0 0;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  background: var(--success-tint);
+}
+.notice a {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 650;
+  margin-top: 6px;
+  text-decoration: underline;
+}
+.error {
+  background: var(--cream);
+  color: var(--danger);
+  border: 1px solid var(--line);
+}
+.timestamp {
+  margin: 18px 0 0;
+  font-size: 0.75rem;
+  color: var(--success);
+}
+.section {
+  border-top: 1px solid var(--line);
+  margin-top: 22px;
+  padding-top: 22px;
+}
+.section h4 {
+  font-size: 0.99rem;
+  font-weight: 700;
+  margin: 0 0 9px;
+}
+.caption {
+  font-size: 0.8rem;
+  color: var(--success);
+  line-height: 1.65;
+  margin: 0 0 12px;
+}
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  min-width: 0;
+  font-size: 0.83rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.card strong {
+  font-weight: 650;
+}
+.card small {
+  color: var(--success);
+  font-size: 0.72rem;
+}
+.sourceLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--success);
+  font-size: 0.77rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.sourceLink svg {
+  flex-shrink: 0;
+}
+.document {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 12px 14px;
+  margin-top: 10px;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+.document summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.document p {
+  margin-top: 8px;
+}
+.document ul {
+  padding-left: 18px;
+}
+.projectLabel {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 650;
+  margin: 15px 0 6px;
+}
+.select {
+  min-height: 42px;
+  min-width: 235px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  color: var(--success);
+}
+.projectSummary {
+  margin: 13px 0;
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+.ruleList,
+.riskList {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.rule,
+.risk {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  font-size: 0.82rem;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.cardTop {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.cardTop strong {
+  font-weight: 650;
+}
+.cardTop span {
+  font-size: 0.72rem;
+  color: var(--success);
+  flex-shrink: 0;
+}
+.ruleMeta {
+  font-size: 0.72rem;
+  color: var(--success);
+  margin: 5px 0;
+}
+.rule blockquote {
+  border-left: 3px solid var(--line);
+  padding-left: 12px;
+  margin: 10px 0;
+  white-space: pre-line;
+}
+.rule ul,
+.checkGrid ul,
+.consequences ul,
+.warnings {
+  list-style: disc;
+  padding-left: 18px;
+}
+.rule li,
+.checkGrid li,
+.consequences li {
+  margin-top: 5px;
+}
+.checkGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+  font-size: 0.79rem;
+  line-height: 1.65;
+}
+.checkGrid h5,
+.consequences h5 {
+  font-size: 0.77rem;
+  font-weight: 700;
+  margin: 0 0 5px;
+}
+.attention {
+  background: var(--warning-tint);
+  color: var(--gold-text);
+  border-radius: 5px;
+  padding: 8px;
+  margin: 5px 0;
+  font-size: 0.77rem;
+}
+.scope {
+  background: var(--success-tint);
+  border-radius: 20px;
+  padding: 3px 8px;
+}
+.level {
+  margin-top: 7px;
+  font-weight: 650;
+}
+.consequences {
+  background: var(--surface-muted);
+  border-radius: 7px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+.coverage {
+  margin-top: 22px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+  font-size: 0.8rem;
+}
+.coverage summary {
+  font-weight: 650;
+  cursor: pointer;
+}
+.sourceChecks {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0;
+  margin: 16px 0;
+}
+.sourceChecks li {
+  padding: 12px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  overflow-wrap: anywhere;
+}
+.sourceChecks span,
+.sourceChecks small {
+  color: var(--success);
+  font-size: 0.72rem;
+}
+.sourceChecks p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+.warnings {
+  font-size: 0.77rem;
+  color: var(--success);
+  line-height: 1.65;
+}
+@media (max-width: 640px) {
+  .root {
+    padding: 16px;
+    margin: 16px 0;
+  }
+  .cardGrid,
+  .checkGrid,
+  .sourceChecks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .actions {
+    flex-direction: column;
+  }
+  .actions button {
+    width: 100%;
+  }
+  .cardTop {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .select {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+.riskGroups {
+  display: grid;
+  gap: 22px;
+}
+.riskGroups h5 {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+  color: var(--success);
+}
+.reliability {
+  display: grid;
+  gap: 3px;
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border-left: 4px solid var(--success);
+  background: var(--success-tint);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.reliability[data-tone="watch"] {
+  border-left-color: var(--gold-text);
+  background: var(--warning-tint);
+}
+.reliability[data-tone="weak"] {
+  border-left-color: var(--line);
+  background: var(--cream);
+}
+.reliability span {
+  font-size: 0.75rem;
+  color: var(--success);
+}

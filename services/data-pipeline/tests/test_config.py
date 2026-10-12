@@ -51,6 +51,7 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
         "LLM_FACT_MAX_CHUNKS",
         "LLM_DISPLAY_CONTEXT_CHARS",
         "PDF_OCR_ENABLED",
+        "PDF_OCR_DOCUMENT_BUDGET_SECONDS",
         "PDF_DOCLING_ENABLED",
         "PDF_MAX_DOCUMENTS_PER_SALE",
     ):
@@ -85,8 +86,25 @@ def test_load_settings_uses_bounded_runtime_defaults(monkeypatch) -> None:
     assert settings["llm_fact_max_chunks"] == 0
     assert settings["llm_display_context_chars"] == 12000
     assert settings["pdf_ocr_enabled"] is False
+    assert settings["pdf_ocr_document_budget_seconds"] == 120
     assert settings["pdf_docling_enabled"] is False
     assert settings["pdf_max_documents_per_sale"] == 6
+
+
+def test_source_isolation_defaults_cover_petites_affiches_inside_existing_budgets(monkeypatch) -> None:
+    monkeypatch.delenv("SOURCE_PROCESS_ISOLATION", raising=False)
+    monkeypatch.delenv("SOURCE_PROCESS_ISOLATION_SOURCES", raising=False)
+    monkeypatch.delenv("SOURCE_SCRAPE_TIMEOUT_SECONDS", raising=False)
+
+    settings = load_settings()
+
+    assert settings["source_process_isolation"] is True
+    assert settings["source_process_isolation_sources"] == (
+        "vench",
+        "avoventes",
+        "petites_affiches",
+    )
+    assert settings["source_scrape_timeout_seconds"] == 1800.0
 
 
 def test_replicate_wait_seconds_stays_within_provider_header_limit(monkeypatch) -> None:

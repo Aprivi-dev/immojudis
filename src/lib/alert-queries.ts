@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database, Json } from "@/integrations/supabase/types";
 import type { UserAlert } from "./types";
 import { assertCloudConfigured } from "./query-configuration";
 
@@ -31,7 +31,8 @@ export async function createAlert(userId: string, payload: CreateAlertPayload) {
     is_active: payload.is_active ?? true,
     dpe_classes: payload.dpe_classes ?? [],
     require_house_with_land: payload.require_house_with_land ?? false,
-    alert_frequency: payload.alert_frequency ?? "daily",
+    // "instant" was never delivered in real time: only daily and weekly exist.
+    alert_frequency: payload.alert_frequency === "weekly" ? "weekly" : "daily",
     advanced_criteria: payload.advanced_criteria ?? {},
   };
   const { error } = await supabase.from("user_alerts").insert(insertPayload);
@@ -40,9 +41,14 @@ export async function createAlert(userId: string, payload: CreateAlertPayload) {
 
 export async function updateAlert(userId: string, alertId: string, patch: Partial<UserAlert>) {
   assertCloudConfigured();
+  const { advanced_criteria: advancedCriteria, ...rest } = patch;
   const { error } = await supabase
     .from("user_alerts")
-    .update({ ...patch, updated_at: new Date().toISOString() })
+    .update({
+      ...rest,
+      ...(advancedCriteria === undefined ? {} : { advanced_criteria: advancedCriteria as Json }),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", alertId)
     .eq("user_id", userId);
   if (error) throw error;

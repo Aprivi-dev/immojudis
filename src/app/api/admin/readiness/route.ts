@@ -1,22 +1,21 @@
 import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getAdminOperationalReadiness } from "@/lib/admin-readiness";
+import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export const runtime = "nodejs";
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   try {
     const response = await getAdminOperationalReadiness(bearerTokenFromRequest(request));
     return NextResponse.json(response, {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Diagnostic indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.startsWith("Forbidden")
-        ? 403
-        : 400;
-    return NextResponse.json({ error: message }, { status });
+    return adminErrorResponse(error, { fallbackMessage: "Diagnostic indisponible" });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);

@@ -3,7 +3,12 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from src.court_competence import resolve_competent_court, verified_sale_insee_code
+from src.court_competence import (
+    OfficialCourt,
+    resolve_competent_court,
+    resolve_court_by_label,
+    verified_sale_insee_code,
+)
 from src.models import AuctionSale
 from src.normalize import clean_text
 
@@ -35,6 +40,8 @@ CITY_TO_TRIBUNAL = {
     "bergerac": "TJ Bergerac",
     "libourne": "TJ Libourne",
 }
+
+LABEL_ASSIGNMENT_KEY = "tribunal_label_assignment"
 
 TRIBUNAL_CODES = {
     "TJ Bordeaux": "bordeaux",
@@ -113,6 +120,7 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
     if _is_non_judicial_sale_context(sale) and not _extract_explicit_tribunal(sale.raw_text):
         sale.tribunal = None
         sale.tribunal_code = None
+        sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
         _add_quality_flag(sale, "non_judicial_sale_context")
         return sale
 
@@ -122,6 +130,7 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
         sale.tribunal = competent_court.court_name
         sale.tribunal_code = competent_court.court_code
         sale.raw_payload["tribunal_assignment"] = competent_court.evidence()
+        sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
         _remove_quality_flag(sale, "tribunal_inconsistent")
         _remove_quality_flag(sale, "tribunal_competence_unresolved")
         _remove_quality_flag(sale, "tribunal_competence_unverified")
@@ -132,10 +141,22 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
         sale.tribunal = None
         sale.tribunal_code = None
         sale.raw_payload.pop("tribunal_assignment", None)
+        sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
         _add_quality_flag(sale, "tribunal_competence_unresolved")
         return sale
 
+    sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
     canonical = canonicalize_tribunal(sale.tribunal)
+    # An explicit source label ("TJ Marseille", "Tribunal judiciaire de
+    # Nanterre") is resolved against the whole national Justice registry. It
+    # stays flagged as unverified: only the INSEE competence above is verified.
+    national = _resolve_label_court(sale.tribunal) or _resolve_label_court(canonical)
+    if national is not None:
+        _apply_label_court(sale, national, str(clean_text(sale.tribunal) or canonical))
+        _remove_quality_flag(sale, "tribunal_inconsistent")
+        validate_tribunal(sale)
+        _add_quality_flag(sale, "tribunal_competence_unverified")
+        return sale
     if canonical:
         sale.tribunal = canonical
         sale.tribunal_code = TRIBUNAL_CODES.get(canonical)
@@ -149,6 +170,13 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
         had_invalid_source_tribunal = False
     sale.tribunal = infer_tribunal(sale)
     sale.tribunal_code = TRIBUNAL_CODES.get(sale.tribunal or "")
+    if sale.tribunal and sale.tribunal_code is None:
+        # Only an explicit "Tribunal judiciaire de X"/"TJ X" read from the
+        # source text reaches this point (the city list is Aquitaine-only and
+        # already coded), so the national label lookup applies.
+        explicit_court = _resolve_label_court(sale.tribunal)
+        if explicit_court is not None:
+            _apply_label_court(sale, explicit_court, sale.tribunal)
     validate_tribunal(sale)
     if sale.tribunal:
         _add_quality_flag(sale, "tribunal_competence_unverified")
@@ -157,16 +185,39 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
     return sale
 
 
+def _resolve_label_court(label: str | None) -> OfficialCourt | None:
+    return resolve_court_by_label(label) if clean_text(label) else None
+
+
+def _apply_label_court(sale: AuctionSale, court: OfficialCourt, source_label: str) -> None:
+    sale.tribunal = court.court_name
+    sale.tribunal_code = court.court_code
+    sale.raw_payload[LABEL_ASSIGNMENT_KEY] = court.label_evidence(source_label)
+
+
+def _label_court_code(sale: AuctionSale) -> str | None:
+    """Return the national code backed by label evidence for the current tribunal."""
+
+    evidence = sale.raw_payload.get(LABEL_ASSIGNMENT_KEY) if isinstance(sale.raw_payload, dict) else None
+    if not isinstance(evidence, dict) or evidence.get("court_name") != sale.tribunal:
+        return None
+    code = evidence.get("court_code")
+    return code if isinstance(code, str) and code else None
+
+
 def validate_tribunal(sale: AuctionSale) -> AuctionSale:
     if _is_non_judicial_sale_context(sale) and not _extract_explicit_tribunal(sale.raw_text):
         sale.tribunal = None
         sale.tribunal_code = None
+        sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
         _add_quality_flag(sale, "non_judicial_sale_context")
         return sale
     if sale.department not in DEPARTMENT_TRIBUNALS or not sale.tribunal:
         return sale
-    sale.tribunal = canonicalize_tribunal(sale.tribunal) or sale.tribunal
-    sale.tribunal_code = TRIBUNAL_CODES.get(sale.tribunal or "")
+    label_code = _label_court_code(sale)
+    if label_code is None:
+        sale.tribunal = canonicalize_tribunal(sale.tribunal) or sale.tribunal
+    sale.tribunal_code = TRIBUNAL_CODES.get(sale.tribunal or "") or label_code
     if sale.tribunal not in AQUITAINE_TRIBUNALS:
         _add_quality_flag(sale, "tribunal_inconsistent")
         return sale

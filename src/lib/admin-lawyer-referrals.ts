@@ -1,3 +1,4 @@
+import "server-only";
 import { z } from "zod";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -8,13 +9,24 @@ import {
   type ResendEmailMessage,
 } from "@/lib/email-alerts";
 import { cleanSaleTitle } from "@/lib/sale-title";
+import { escapeHtml } from "@/lib/guards";
 
+type LawyerReferralMatchingStatus = "unmatched" | "matched" | "manual_review";
 type LawyerReferralRow = Database["public"]["Tables"]["lawyer_referral_requests"]["Row"];
 type LawyerReferralUpdate = Database["public"]["Tables"]["lawyer_referral_requests"]["Update"];
 type ReferencedLawyerRow = Database["public"]["Tables"]["referenced_lawyers"]["Row"];
 type ReferencedLawyerEmailTarget = Pick<
   ReferencedLawyerRow,
   "id" | "display_name" | "firm_name" | "email" | "bar_association" | "city" | "department"
+>;
+type AssignableReferencedLawyer = Pick<
+  ReferencedLawyerRow,
+  | "id"
+  | "status"
+  | "paid_placement_status"
+  | "accepts_judicial_auctions"
+  | "paid_placement_starts_at"
+  | "paid_placement_ends_at"
 >;
 
 export type AdminLawyerReferralEmailDelivery = {
@@ -25,6 +37,11 @@ export type AdminLawyerReferralEmailDelivery = {
   detail: string | null;
   attemptedAt: string;
 };
+
+type LawyerReferralEmailDeliveryState = Pick<
+  LawyerReferralRow,
+  "sent_at" | "requested_lawyer_id" | "metadata"
+>;
 
 const referralStatusSchema = z.enum([
   "new",
@@ -72,8 +89,8 @@ export type AdminLawyerReferralLawyerOption = {
 
 export type AdminLawyerReferralSummary = {
   id: string;
-  status: LawyerReferralRow["status"];
-  matchingStatus: LawyerReferralRow["matching_status"];
+  status: z.infer<typeof referralStatusSchema>;
+  matchingStatus: LawyerReferralMatchingStatus;
   requestedLawyerId: string | null;
   requestedLawyer: AdminLawyerReferralLawyerOption | null;
   requesterEmail: string | null;
@@ -89,7 +106,7 @@ export type AdminLawyerReferralSummary = {
     saleDate: string | null;
     startingPriceEur: number | null;
   };
-  preferredContactMethod: LawyerReferralRow["preferred_contact_method"];
+  preferredContactMethod: "email" | "phone" | "either";
   phone: string | null;
   message: string | null;
   financingReady: boolean | null;
@@ -106,6 +123,12 @@ export type AdminLawyerReferralSummary = {
 export type AdminLawyerReferralListResponse = {
   requests: AdminLawyerReferralSummary[];
   lawyers: AdminLawyerReferralLawyerOption[];
+  totalCount: number;
+  openCount: number;
+  truncated: boolean;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
 };
 
 export type AdminLawyerReferralUpdateResponse = {
@@ -114,19 +137,31 @@ export type AdminLawyerReferralUpdateResponse = {
 
 export async function listAdminLawyerReferralRequests(
   authToken: string,
+  { offset = 0, limit = 50 }: { offset?: number; limit?: number } = {},
 ): Promise<AdminLawyerReferralListResponse> {
   await assertAdminAuth(authToken);
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
 
-  const [{ data: requestRows, error: requestError }, lawyerOptions] = await Promise.all([
+  const [
+    { data: requestRows, error: requestError, count: totalCount },
+    { count: openCount, error: openCountError },
+    lawyerOptions,
+  ] = await Promise.all([
     supabaseAdmin
       .from("lawyer_referral_requests")
-      .select("*")
+      .select("*", { count: "exact" })
       .order("created_at", { ascending: false })
-      .limit(50),
+      .range(safeOffset, safeOffset + safeLimit - 1),
+    supabaseAdmin
+      .from("lawyer_referral_requests")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["new", "manual_review", "sent_to_lawyer"]),
     listAssignableReferencedLawyers(),
   ]);
 
   if (requestError) throw requestError;
+  if (openCountError) throw openCountError;
 
   const requestedLawyerIds = (requestRows ?? [])
     .map((request) => request.requested_lawyer_id)
@@ -141,6 +176,12 @@ export async function listAdminLawyerReferralRequests(
       referralRequestToSummary(request, lawyerById.get(request.requested_lawyer_id ?? "") ?? null),
     ),
     lawyers: lawyerOptions,
+    totalCount: totalCount ?? requestRows?.length ?? 0,
+    openCount: openCount ?? 0,
+    truncated: (totalCount ?? requestRows?.length ?? 0) > (requestRows?.length ?? 0),
+    offset: safeOffset,
+    limit: safeLimit,
+    hasMore: safeOffset + (requestRows?.length ?? 0) < (totalCount ?? 0),
   };
 }
 
@@ -153,6 +194,23 @@ export async function updateAdminLawyerReferralRequest({
 }): Promise<AdminLawyerReferralUpdateResponse> {
   const auth = await assertAdminAuth(authToken);
   const existing = await getReferralRequest(input.id);
+  const requestedLawyerId =
+    input.requestedLawyerId === undefined ? existing.requested_lawyer_id : input.requestedLawyerId;
+  const assignmentChanged = requestedLawyerId !== existing.requested_lawyer_id;
+  const shouldDispatch = shouldDispatchReferencedLawyerEmail({
+    existing,
+    request: {
+      status: input.status,
+      requested_lawyer_id: requestedLawyerId,
+      metadata: existing.metadata,
+    },
+  });
+  if (
+    input.status === "sent_to_lawyer" &&
+    (!existing.sent_at || assignmentChanged || shouldDispatch)
+  ) {
+    await assertAssignableReferencedLawyer(requestedLawyerId);
+  }
   const payload = adminLawyerReferralUpdatePayload({
     existing,
     input,
@@ -210,6 +268,7 @@ export function adminLawyerReferralUpdatePayload({
   const assignedLawyerId =
     input.requestedLawyerId === undefined ? existing.requested_lawyer_id : input.requestedLawyerId;
   const timestamp = now.toISOString();
+  const assignmentChanged = assignedLawyerId !== existing.requested_lawyer_id;
 
   return {
     status: input.status,
@@ -221,7 +280,10 @@ export function adminLawyerReferralUpdatePayload({
         : existing.matching_status,
     admin_notes: input.adminNotes,
     assigned_at: assignedLawyerId && !existing.assigned_at ? timestamp : existing.assigned_at,
-    sent_at: input.status === "sent_to_lawyer" && !existing.sent_at ? timestamp : existing.sent_at,
+    sent_at:
+      input.status === "sent_to_lawyer" && (!existing.sent_at || assignmentChanged)
+        ? timestamp
+        : existing.sent_at,
     responded_at:
       input.status === "responded" && !existing.responded_at ? timestamp : existing.responded_at,
     metadata: asJson({
@@ -257,18 +319,86 @@ async function getReferralRequest(id: string): Promise<LawyerReferralRow> {
 }
 
 async function listAssignableReferencedLawyers(): Promise<AdminLawyerReferralLawyerOption[]> {
+  const now = new Date().toISOString();
   const { data, error } = await supabaseAdmin
     .from("referenced_lawyers")
     .select("id,display_name,firm_name,bar_association,city,department,priority_weight")
     .eq("status", "active")
     .in("paid_placement_status", ["trial", "active"])
     .eq("accepts_judicial_auctions", true)
+    .or("paid_placement_starts_at.is.null,paid_placement_starts_at.lte." + now)
+    .or("paid_placement_ends_at.is.null,paid_placement_ends_at.gte." + now)
     .order("priority_weight", { ascending: false })
     .order("display_name", { ascending: true })
     .limit(100);
 
   if (error) throw error;
   return (data ?? []).map(referencedLawyerToOption);
+}
+
+export function isReferencedLawyerPlacementActive(
+  lawyer: Pick<
+    AssignableReferencedLawyer,
+    | "status"
+    | "paid_placement_status"
+    | "accepts_judicial_auctions"
+    | "paid_placement_starts_at"
+    | "paid_placement_ends_at"
+  >,
+  now = new Date(),
+): boolean {
+  if (
+    lawyer.status !== "active" ||
+    !["trial", "active"].includes(lawyer.paid_placement_status) ||
+    !lawyer.accepts_judicial_auctions
+  ) {
+    return false;
+  }
+  return isPlacementWindowActive(
+    lawyer.paid_placement_starts_at,
+    lawyer.paid_placement_ends_at,
+    now,
+  );
+}
+
+async function assertAssignableReferencedLawyer(lawyerId: string | null): Promise<void> {
+  if (!lawyerId) {
+    throw new Error("Un avocat référencé éligible doit être assigné avant l'envoi.");
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("referenced_lawyers")
+    .select(
+      "id,status,paid_placement_status,accepts_judicial_auctions,paid_placement_starts_at,paid_placement_ends_at",
+    )
+    .eq("id", lawyerId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || !isReferencedLawyerPlacementActive(data)) {
+    throw new Error(
+      "Cet avocat n'est pas éligible : fiche active, adjudications acceptées et placement payant en cours requis.",
+    );
+  }
+}
+
+function isPlacementWindowActive(
+  startsAt: string | null,
+  endsAt: string | null,
+  now: Date,
+): boolean {
+  const nowTime = now.getTime();
+  if (!Number.isFinite(nowTime)) return false;
+  const startsTime = parsePlacementDate(startsAt);
+  const endsTime = parsePlacementDate(endsAt);
+  if (startsAt && startsTime == null) return false;
+  if (endsAt && endsTime == null) return false;
+  return (startsTime == null || startsTime <= nowTime) && (endsTime == null || endsTime >= nowTime);
+}
+
+function parsePlacementDate(value: string | null): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 async function getReferencedLawyersById(
@@ -286,6 +416,24 @@ async function getReferencedLawyersById(
   return new Map((data ?? []).map((lawyer) => [lawyer.id, referencedLawyerToOption(lawyer)]));
 }
 
+export function shouldDispatchReferencedLawyerEmail({
+  existing,
+  request,
+}: {
+  existing: LawyerReferralEmailDeliveryState;
+  request: Pick<LawyerReferralRow, "status" | "requested_lawyer_id" | "metadata">;
+}): boolean {
+  if (request.status !== "sent_to_lawyer") return false;
+
+  const reassigned = request.requested_lawyer_id !== existing.requested_lawyer_id;
+  if (reassigned || !existing.sent_at) return true;
+
+  const previousDelivery = normalizeEmailDelivery(
+    jsonObject(existing.metadata).lawyer_email_delivery,
+  );
+  return previousDelivery?.status === "failed" || previousDelivery?.status === "skipped";
+}
+
 async function dispatchReferencedLawyerEmailIfNeeded({
   existing,
   request,
@@ -293,13 +441,13 @@ async function dispatchReferencedLawyerEmailIfNeeded({
   env = process.env,
   fetchImpl = fetch,
 }: {
-  existing: Pick<LawyerReferralRow, "sent_at">;
+  existing: LawyerReferralEmailDeliveryState;
   request: LawyerReferralRow;
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
   fetchImpl?: typeof fetch;
 }): Promise<AdminLawyerReferralEmailDelivery | null> {
-  if (request.status !== "sent_to_lawyer" || existing.sent_at) return null;
+  if (!shouldDispatchReferencedLawyerEmail({ existing, request })) return null;
 
   const attemptedAt = now.toISOString();
   if (!request.requested_lawyer_id) {
@@ -350,7 +498,7 @@ async function dispatchReferencedLawyerEmailIfNeeded({
     const sendResult = await sendResendEmail({
       apiKey: config.apiKey,
       message,
-      idempotencyKey: `immojudis-lawyer-referral-${request.id}`,
+      idempotencyKey: `immojudis-lawyer-referral-${request.id}-${request.requested_lawyer_id}`,
       fetchImpl,
     });
     return {
@@ -437,25 +585,25 @@ export function buildLawyerReferralEmailMessage({
   const location = [city, department].filter(Boolean).join(" · ");
   const saleId = stringOrNull(sale.id);
   const saleUrl = saleId ? `${appUrl}/sales/${encodeURIComponent(saleId)}` : appUrl;
-  const subject = `Demande ImmoJudis - ${title}${city ? ` à ${city}` : ""}`;
+  const subject = `Demande Immojudis - ${title}${city ? ` à ${city}` : ""}`;
   const textLines = [
     `Bonjour ${lawyer.display_name},`,
     "",
-    "Une demande de mise en relation ImmoJudis vous a été assignée.",
+    "Une demande de mise en relation Immojudis vous a été assignée.",
     "",
     `${title}${location ? ` - ${location}` : ""}`,
     `Annonce: ${saleUrl}`,
     request.requester_email ? `Demandeur: ${request.requester_email}` : null,
     request.phone ? `Téléphone: ${request.phone}` : null,
     `Contact préféré: ${contactMethodLabel(request.preferred_contact_method)}`,
-    request.max_bid_eur ? `Mise maximale indiquée: ${formatPrice(request.max_bid_eur)}` : null,
+    request.max_bid_eur ? `Enchère plafond indiquée: ${formatPrice(request.max_bid_eur)}` : null,
     request.financing_ready == null
       ? null
       : `Financement prêt: ${request.financing_ready ? "oui" : "non"}`,
     request.message ? `Message: ${request.message}` : null,
-    request.admin_notes ? `Note ImmoJudis: ${request.admin_notes}` : null,
+    request.admin_notes ? `Note Immojudis: ${request.admin_notes}` : null,
     "",
-    "Les coordonnées et éléments transmis proviennent de la demande utilisateur ImmoJudis. Merci de vérifier votre disponibilité et les règles applicables avant toute prise en charge.",
+    "Les coordonnées et éléments transmis proviennent de la demande utilisateur Immojudis. Merci de vérifier votre disponibilité et les règles applicables avant toute prise en charge.",
   ].filter((line): line is string => typeof line === "string");
 
   return {
@@ -486,8 +634,9 @@ function referralRequestToSummary(
   const sale = jsonObject(request.sale_snapshot);
   return {
     id: request.id,
-    status: request.status,
-    matchingStatus: request.matching_status,
+    // Colonnes text protégées par des contraintes CHECK : les types générés les exposent en string.
+    status: request.status as AdminLawyerReferralSummary["status"],
+    matchingStatus: request.matching_status as LawyerReferralMatchingStatus,
     requestedLawyerId: request.requested_lawyer_id,
     requestedLawyer,
     requesterEmail: request.requester_email,
@@ -503,7 +652,8 @@ function referralRequestToSummary(
       saleDate: stringOrNull(sale.sale_date),
       startingPriceEur: numberOrNull(sale.starting_price_eur),
     },
-    preferredContactMethod: request.preferred_contact_method,
+    preferredContactMethod:
+      request.preferred_contact_method as AdminLawyerReferralSummary["preferredContactMethod"],
     phone: request.phone,
     message: request.message,
     financingReady: request.financing_ready,
@@ -547,7 +697,7 @@ function buildLawyerReferralEmailHtml({
     ["Demandeur", requesterEmail],
     ["Téléphone", phone],
     ["Contact préféré", preferredContactMethod],
-    ["Mise maximale", maxBid],
+    ["Enchère plafond", maxBid],
     ["Financement prêt", financingReady == null ? null : financingReady ? "Oui" : "Non"],
   ]
     .filter(([, value]) => value)
@@ -562,13 +712,13 @@ function buildLawyerReferralEmailHtml({
   <body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif;">
     <div style="max-width:640px;margin:0 auto;padding:28px 18px;">
       <div style="background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:24px;">
-        <p style="margin:0 0 10px;color:#9b7a2f;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Mise en relation ImmoJudis</p>
+        <p style="margin:0 0 10px;color:#9b7a2f;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Mise en relation Immojudis</p>
         <h1 style="margin:0 0 8px;font-size:22px;line-height:1.25;color:#182033;">${escapeHtml(title)}</h1>
         ${location ? `<p style="margin:0 0 18px;color:#6c7280;">${escapeHtml(location)}</p>` : ""}
-        <p style="margin:0 0 18px;color:#4b5563;line-height:1.55;">Bonjour ${escapeHtml(lawyerName)}, une demande de mise en relation vous a été assignée depuis ImmoJudis.</p>
+        <p style="margin:0 0 18px;color:#4b5563;line-height:1.55;">Bonjour ${escapeHtml(lawyerName)}, une demande de mise en relation vous a été assignée depuis Immojudis.</p>
         ${rows ? `<table style="width:100%;border-collapse:collapse;margin:0 0 18px;">${rows}</table>` : ""}
         ${message ? `<p style="margin:0 0 14px;color:#4b5563;line-height:1.55;"><strong>Message utilisateur</strong><br>${escapeHtml(message)}</p>` : ""}
-        ${adminNotes ? `<p style="margin:0 0 14px;color:#4b5563;line-height:1.55;"><strong>Note ImmoJudis</strong><br>${escapeHtml(adminNotes)}</p>` : ""}
+        ${adminNotes ? `<p style="margin:0 0 14px;color:#4b5563;line-height:1.55;"><strong>Note Immojudis</strong><br>${escapeHtml(adminNotes)}</p>` : ""}
         <a href="${escapeAttribute(saleUrl)}" style="display:inline-block;background:#182033;color:#fff;text-decoration:none;border-radius:8px;padding:12px 16px;font-weight:700;">Voir l'annonce</a>
         <p style="margin:22px 0 0;color:#6c7280;font-size:12px;line-height:1.5;">
           Les éléments transmis sont indicatifs et doivent être vérifiés par le cabinet avant toute prise en charge.
@@ -637,16 +787,6 @@ function jsonObject(value: unknown): Record<string, unknown> {
 
 function asJson(value: unknown): Json {
   return JSON.parse(JSON.stringify(value ?? null)) as Json;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => {
-    if (char === "&") return "&amp;";
-    if (char === "<") return "&lt;";
-    if (char === ">") return "&gt;";
-    if (char === '"') return "&quot;";
-    return "&#39;";
-  });
 }
 
 function escapeAttribute(value: string): string {

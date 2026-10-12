@@ -63,7 +63,7 @@ export type InformationAgentEmailVariable =
 
 export const INFORMATION_AGENT_EMAIL_BLOCK_DEFINITIONS = [
   { id: "greeting", kind: "dynamic", label: "Formule d’appel" },
-  { id: "identity", kind: "fixed", label: "Présentation ImmoJudis" },
+  { id: "identity", kind: "fixed", label: "Présentation Immojudis" },
   { id: "sale_details", kind: "dynamic", label: "Informations de la vente" },
   { id: "request_intro", kind: "fixed", label: "Introduction de la demande" },
   { id: "questions", kind: "dynamic", label: "Questions adaptées à l’annonce" },
@@ -111,6 +111,60 @@ export type InformationAgentEmailTemplatePreview = {
   html: string;
   text: string;
 };
+
+/**
+ * Ancien bloc « Vous avez d’autres ventes à partager ? » que des modèles publiés ou des brouillons
+ * peuvent encore contenir dans leur texte éditable. Il est toujours retiré du corps : l'invitation
+ * n'est plus rédigée par le modèle mais ajoutée, sous une forme courte et fixe, par le gabarit
+ * (`emails/information-request.tsx`), ce qui évite tout doublon.
+ */
+export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
+  "Vous avez d’autres ventes à partager ?";
+export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
+
+/**
+ * Invitation demandée par le propriétaire (11 octobre 2026) : une phrase, un lien, sans traceur.
+ * Prospection B2B liée à l'activité du destinataire, couverte par le lien d'opposition du pied de
+ * message. Désactivable sans déploiement avec `INFORMATION_AGENT_ACCOUNT_INVITATION=false`.
+ */
+export const INFORMATION_AGENT_ACCOUNT_INVITATION_TEXT =
+  "Vous publiez d’autres ventes ? Un compte professionnel Immojudis vous permet de nous les transmettre directement.";
+
+/** Lien de l'invitation, ou `null` si elle est désactivée. */
+export function informationAgentAccountInvitationUrl(
+  appUrl: string,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | null {
+  if (env.INFORMATION_AGENT_ACCOUNT_INVITATION?.trim().toLowerCase() === "false") return null;
+  const url = new URL("/login", appUrl);
+  url.searchParams.set("mode", "professional");
+  url.searchParams.set("redirect", "/publish");
+  return url.toString();
+}
+
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 5;
+
+export type InformationAgentEmailRenderOptions = {
+  /** Environment origin of the site (kept for callers that build absolute links). */
+  appUrl?: string;
+};
+
+/** True for the legacy invitation block written in an editable template. */
+export function containsInformationAgentAccountInvitation(text: string): boolean {
+  return (
+    text.includes(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING) ||
+    text.includes(`${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} :`)
+  );
+}
+
+/** Drops every paragraph of `text` that belongs to the legacy account invitation. */
+export function stripInformationAgentAccountInvitation(text: string): string {
+  return text
+    .split(/\n\s*\n/)
+    .filter((paragraph) => !containsInformationAgentAccountInvitation(paragraph))
+    .join("\n\n")
+    .trim();
+}
 
 const variableKeySchema = z.enum(
   INFORMATION_AGENT_EMAIL_VARIABLES.map((variable) => variable.key) as [
@@ -203,8 +257,8 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 3",
-  subjectTemplate: "{{sale_subject_title}} — précisions sur la vente",
+  name: "Demande de précisions sur une vente — version 4",
+  subjectTemplate: "{{sale_subject_title}} — précisions pour Immojudis",
   blocks: [
     {
       id: "greeting",
@@ -215,9 +269,9 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
     {
       id: "identity",
       kind: "fixed",
-      label: "Présentation ImmoJudis",
+      label: "Présentation Immojudis",
       content:
-        "Je vous contacte pour ImmoJudis, service indépendant d’information sur les ventes immobilières judiciaires. Nous vérifions la fiche de cette vente :",
+        "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous complétons la fiche ci-dessous et votre connaissance du dossier nous serait précieuse.",
     },
     {
       id: "sale_details",
@@ -230,7 +284,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Introduction de la demande",
       content:
-        "Pourriez-vous nous confirmer les points suivants ou nous transmettre les pièces disponibles ?\n\nPourriez-vous aussi nous envoyer des photos récentes du bien et de ses annexes, même si l’annonce contient déjà des photos ? Privilégiez les fichiers JPG ou PNG de moins de 10 Mo chacun. Pour un lot important, répondez en plusieurs emails de 20 Mo maximum chacun. Si vous disposez d’une vidéo, signalez-le sans la joindre ; nous vous indiquerons comment la transmettre.",
+        "Pourriez-vous nous préciser les points suivants ou nous transmettre les pièces utiles ? Une réponse même partielle nous aide à présenter un dossier plus clair et à limiter les demandes répétées.",
     },
     {
       id: "questions",
@@ -243,13 +297,14 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Consignes de réponse",
       content:
-        "Une réponse partielle nous aidera déjà. Vous pouvez simplement répondre à cet email et joindre les pièces que vous êtes autorisé à transmettre. Si vous n’êtes pas le bon interlocuteur, pourriez-vous nous orienter ?",
+        "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire. Si ce dossier relève d’un autre interlocuteur, son contact nous serait utile.",
     },
     {
       id: "closing",
       kind: "fixed",
       label: "Conclusion et signature",
-      content: "Merci pour votre aide.\n\nBien cordialement,\nL’équipe ImmoJudis",
+      content:
+        "Merci pour votre aide : votre réponse contribuera à rendre cette fiche plus utile aux personnes qui étudient la vente.\n\nBien cordialement,\nL’équipe Immojudis",
     },
   ],
 };
@@ -258,7 +313,7 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Identité et indépendance",
     description:
-      "Le bandeau ImmoJudis et la mention précisant que le service n’agit pas au nom d’un tribunal restent toujours affichés.",
+      "Le bandeau Immojudis et la mention précisant que le service n’agit pas au nom d’un tribunal restent toujours affichés.",
   },
   {
     title: "Transparence sur l’IA",
@@ -269,6 +324,16 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
     title: "Confidentialité et droits",
     description:
       "Le message rappelle que seules les pièces autorisées peuvent être transmises et que la réponse doit suivre l’adresse liée au dossier.",
+  },
+  {
+    title: "Informations RGPD et opposition",
+    description:
+      "Le pied du message est ajouté automatiquement : responsable de traitement, origine de l’adresse avec le lien de l’annonce publique (art. 14 RGPD), lien vers la politique de confidentialité et lien d’opposition en un clic.",
+  },
+  {
+    title: "Invitation à créer un compte",
+    description:
+      "Une phrase courte invite le professionnel à créer un compte pour transmettre ses prochaines annonces. Elle est ajoutée par le gabarit (jamais dupliquée par le modèle) et couverte par le lien d’opposition.",
   },
 ] as const;
 
@@ -286,10 +351,15 @@ export function renderInformationAgentEmailContent({
 }: {
   template: InformationAgentEmailTemplateContent;
   values: Record<InformationAgentEmailVariable, string>;
-}): { subject: string; bodyText: string } {
+} & InformationAgentEmailRenderOptions): { subject: string; bodyText: string } {
   const parsed = informationAgentEmailTemplateContentSchema.parse(template);
-  const bodyText = parsed.blocks
-    .map((block) => renderTemplateText(block.content, values).trim())
+  const renderedBlocks = parsed.blocks.map((block) => ({
+    id: block.id,
+    content: stripInformationAgentAccountInvitation(renderTemplateText(block.content, values)),
+  }));
+
+  const bodyText = renderedBlocks
+    .map((block) => block.content)
     .filter(Boolean)
     .join("\n\n");
   if (bodyText.length > 8000) {

@@ -30,16 +30,20 @@ const STATUS_OPTIONS: Array<[ReferralStatus, string]> = [
 
 export function AdminLawyerReferralRequestsPanel() {
   const queryClient = useQueryClient();
+  const [offset, setOffset] = useState(0);
   const requestsQuery = useQuery({
-    queryKey: QUERY_KEY,
-    queryFn: fetchAdminLawyerReferralRequests,
+    queryKey: [...QUERY_KEY, offset],
+    queryFn: () => fetchAdminLawyerReferralRequests({ offset }),
     staleTime: 30_000,
   });
   const requests = requestsQuery.data?.requests ?? [];
   const lawyers = requestsQuery.data?.lawyers ?? [];
-  const openCount = requests.filter((request) =>
-    ["new", "manual_review", "sent_to_lawyer"].includes(request.status),
-  ).length;
+  const openCount =
+    requestsQuery.data?.openCount ??
+    requests.filter((request) =>
+      ["new", "manual_review", "sent_to_lawyer"].includes(request.status),
+    ).length;
+  const totalCount = requestsQuery.data?.totalCount ?? requests.length;
 
   const updateMutation = useMutation({
     mutationFn: (data: AdminLawyerReferralUpdateInput) =>
@@ -54,27 +58,27 @@ export function AdminLawyerReferralRequestsPanel() {
   });
 
   return (
-    <section className="liquid-panel mt-6 rounded-lg p-5">
+    <section className="admin-panel mt-6 rounded-lg p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-gold-text">
             <Send className="h-4 w-4" />
             Demandes avocat
           </div>
           <h2 className="mt-3 font-display text-2xl">Suivi des mises en relation</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             File de traitement des demandes issues des annonces. Les assignations utilisent
-            uniquement les avocats référencés ImmoJudis, pas les contacts source collectés.
+            uniquement les avocats référencés Immojudis, pas les contacts source collectés.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-muted-foreground">
+          <span className="rounded-full border border-brand-navy/10 bg-brand-navy/[0.03] px-3 py-1 text-xs text-muted-foreground">
             {openCount} ouverte{openCount > 1 ? "s" : ""}
           </span>
           <button
             type="button"
             onClick={() => void requestsQuery.refetch()}
-            className="liquid-panel-soft inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold transition hover:border-gold"
+            className="admin-panel inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text transition hover:border-gold"
           >
             <RefreshCw
               className={`h-3.5 w-3.5 ${requestsQuery.isFetching ? "animate-spin" : ""}`}
@@ -85,16 +89,23 @@ export function AdminLawyerReferralRequestsPanel() {
       </div>
 
       {requestsQuery.error ? (
-        <div className="mt-4 rounded-lg border border-red-300/20 bg-red-500/10 p-3 text-sm text-red-100">
+        <div className="mt-4 rounded-lg border border-red-300/20 bg-danger-tint p-3 text-sm text-danger">
           {requestsQuery.error instanceof Error
             ? requestsQuery.error.message
             : "Chargement impossible"}
         </div>
       ) : null}
+      {requestsQuery.data ? (
+        <p className="mt-4 text-xs text-muted-foreground">
+          {requests.length} demande{requests.length > 1 ? "s" : ""} récente
+          {requests.length > 1 ? "s" : ""} affichée{requests.length > 1 ? "s" : ""} sur {totalCount}
+          . Le compteur des demandes ouvertes couvre toute la file.
+        </p>
+      ) : null}
 
       <div className="mt-5 grid gap-3">
         {requestsQuery.isLoading ? (
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-4 text-sm text-muted-foreground">
             Chargement des demandes avocat
           </div>
         ) : requests.length ? (
@@ -108,12 +119,69 @@ export function AdminLawyerReferralRequestsPanel() {
             />
           ))
         ) : (
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-muted-foreground">
+          <div className="rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-4 text-sm text-muted-foreground">
             Aucune demande de mise en relation pour le moment
           </div>
         )}
       </div>
+      {requestsQuery.data && totalCount > 0 ? (
+        <AdminPagination
+          offset={offset}
+          count={requests.length}
+          totalCount={totalCount}
+          hasMore={requestsQuery.data.hasMore}
+          busy={requestsQuery.isFetching}
+          onPrevious={() =>
+            setOffset((current) => Math.max(0, current - requestsQuery.data!.limit))
+          }
+          onNext={() => setOffset((current) => current + requestsQuery.data!.limit)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function AdminPagination({
+  offset,
+  count,
+  totalCount,
+  hasMore,
+  busy,
+  onPrevious,
+  onNext,
+}: {
+  offset: number;
+  count: number;
+  totalCount: number;
+  hasMore: boolean;
+  busy: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+      <span>
+        {offset + 1}–{offset + count} sur {totalCount}
+      </span>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="admin-panel rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy || offset === 0}
+          onClick={onPrevious}
+        >
+          Précédent
+        </button>
+        <button
+          type="button"
+          className="admin-panel rounded-lg px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy || !hasMore}
+          onClick={onNext}
+        >
+          Suivant
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -133,7 +201,7 @@ function LawyerReferralRequestCard({
   const [adminNotes, setAdminNotes] = useState(request.adminNotes ?? "");
 
   return (
-    <article className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+    <article className="rounded-lg border border-brand-navy/10 bg-brand-navy/[0.03] p-4">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -141,7 +209,7 @@ function LawyerReferralRequestCard({
             <span className="text-xs text-muted-foreground">
               {formatDateTime(request.createdAt)}
             </span>
-            <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs text-muted-foreground">
+            <span className="rounded-full border border-brand-navy/10 px-2.5 py-1 text-xs text-muted-foreground">
               {request.matchingStatus}
             </span>
           </div>
@@ -174,7 +242,7 @@ function LawyerReferralRequestCard({
             />
           </div>
           {request.message ? (
-            <p className="mt-3 rounded-lg border border-white/10 bg-background/25 p-3 text-sm leading-relaxed text-muted-foreground">
+            <p className="mt-3 rounded-lg border border-brand-navy/10 bg-white p-3 text-sm leading-relaxed text-muted-foreground">
               {request.message}
             </p>
           ) : null}
@@ -193,7 +261,7 @@ function LawyerReferralRequestCard({
         </div>
 
         <form
-          className="grid gap-3 rounded-lg border border-white/10 bg-background/20 p-3"
+          className="grid gap-3 rounded-lg border border-brand-navy/10 bg-white p-3"
           onSubmit={(event) => {
             event.preventDefault();
             onSave({
@@ -209,7 +277,7 @@ function LawyerReferralRequestCard({
             <select
               value={status}
               onChange={(event) => setStatus(event.target.value as ReferralStatus)}
-              className="rounded-lg border border-white/10 bg-background/45 px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+              className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
             >
               {STATUS_OPTIONS.map(([optionValue, label]) => (
                 <option key={optionValue} value={optionValue}>
@@ -224,7 +292,7 @@ function LawyerReferralRequestCard({
             <select
               value={requestedLawyerId}
               onChange={(event) => setRequestedLawyerId(event.target.value)}
-              className="rounded-lg border border-white/10 bg-background/45 px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+              className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
             >
               <option value="">Aucun avocat assigné</option>
               {request.requestedLawyer &&
@@ -247,14 +315,14 @@ function LawyerReferralRequestCard({
               value={adminNotes}
               onChange={(event) => setAdminNotes(event.target.value)}
               rows={4}
-              className="rounded-lg border border-white/10 bg-background/45 px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+              className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
             />
           </label>
 
           <button
             type="submit"
             disabled={disabled}
-            className="liquid-button inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-background disabled:cursor-not-allowed disabled:opacity-60"
+            className="bg-gold-soft text-white shadow-sm hover:bg-gold-text inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save className="h-3.5 w-3.5" />
             Sauvegarder
@@ -269,10 +337,10 @@ function ReferralStatusPill({ status }: { status: ReferralStatus }) {
   const done = status === "responded" || status === "closed";
   const blocked = status === "cancelled";
   const tone = done
-    ? "border-emerald-300/20 bg-emerald-400/10 text-emerald-100"
+    ? "border-emerald-300/20 bg-success-tint text-success"
     : blocked
-      ? "border-red-300/20 bg-red-500/10 text-red-100"
-      : "border-amber-300/20 bg-amber-400/10 text-amber-100";
+      ? "border-red-300/20 bg-danger-tint text-danger"
+      : "border-amber-300/20 bg-warning-tint text-warning";
 
   return (
     <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs ${tone}`}>

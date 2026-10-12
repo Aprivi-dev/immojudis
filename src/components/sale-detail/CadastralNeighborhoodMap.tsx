@@ -3,14 +3,13 @@
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useEffect, useId, useRef, useState } from "react";
 import type * as MapboxGL from "mapbox-gl";
-import { getMapboxAccessToken } from "@/lib/mapbox";
+import type { ParcelOutlines } from "@/lib/land-parcel-outline";
+import { disableMapboxTelemetry, getMapboxAccessToken } from "@/lib/mapbox";
 import styles from "./CadastralNeighborhoodMap.module.css";
 
 const IGN_ATTRIBUTION =
   '<a href="https://www.ign.fr/" target="_blank" rel="noopener noreferrer">© IGN</a> / <a href="https://cartes.gouv.fr/" target="_blank" rel="noopener noreferrer">Géoplateforme</a>';
-const WMTS_ENDPOINT = "https://data.geopf.fr/wmts?";
 const WMS_ENDPOINT = "https://data.geopf.fr/wms-r/wms?";
-const WMTS_MATRIX_SET = "PM_0_19";
 const DEFAULT_ZOOM = 17;
 
 type MapStatus = "loading" | "ready" | "error";
@@ -20,29 +19,37 @@ export type CadastralNeighborhoodMapProps = {
   lng: number;
   address: string;
   pointKind: "listing" | "address" | "street" | "parcel-centroid";
+  /** Parcels of the land report: drawn, and the map is framed on them. */
+  outlines?: ParcelOutlines | null;
 };
+
+const OUTLINE_SOURCE = "sale-parcels";
 
 export function CadastralNeighborhoodMap({
   lat,
   lng,
   address,
   pointKind,
+  outlines = null,
 }: CadastralNeighborhoodMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<MapboxGL.Map | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+  // An outline replaces the indicative point: the marker would sit at the parcel's centre.
+  const showMarker = !outlines;
   const headingId = useId();
   const hasValidCoordinates = isValidCoordinates(lat, lng);
   const [status, setStatus] = useState<MapStatus>(hasValidCoordinates ? "loading" : "error");
   const [errorMessage, setErrorMessage] = useState<string | null>(
     hasValidCoordinates ? null : "Aucun point de carte exploitable n’est disponible.",
   );
-  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const addressLabel = address.trim() || "Adresse fournie";
   const pointLabel =
     pointKind === "parcel-centroid"
       ? "Centre de parcelle indicatif"
       : pointKind === "street"
         ? "Repère de rue indicatif"
-        : "Point indicatif";
+        : "Point d’adresse indicatif";
 
   useEffect(() => {
     const container = mapContainerRef.current;
@@ -51,12 +58,8 @@ export function CadastralNeighborhoodMap({
     let cancelled = false;
     let map: MapboxGL.Map | null = null;
     let marker: MapboxGL.Marker | null = null;
-    let fallbackTimer: number | null = null;
-    let fallbackActive = false;
-    let fallbackRequested = false;
+    let checkTimer: number | null = null;
     let mapLoaded = false;
-
-    setFallbackNotice(null);
 
     if (!hasValidCoordinates) {
       setStatus("error");
@@ -67,41 +70,12 @@ export function CadastralNeighborhoodMap({
     setStatus("loading");
     setErrorMessage(null);
 
-    const activateWmsFallback = () => {
-      if (cancelled || !map || fallbackActive) return;
-
-      fallbackActive = true;
-      try {
-        map.setLayoutProperty("ign-base-wmts", "visibility", "none");
-        map.setLayoutProperty("ign-cadastre-wmts", "visibility", "none");
-        map.setLayoutProperty("ign-base-wms", "visibility", "visible");
-        map.setLayoutProperty("ign-cadastre-wms", "visibility", "visible");
-        setStatus("ready");
-        setFallbackNotice(
-          "Le flux tuilé IGN est indisponible. Affichage via le flux WMS de secours.",
-        );
-
-        fallbackTimer = window.setTimeout(() => {
-          if (cancelled || !map || !fallbackActive) return;
-
-          const baseLoaded = map.isSourceLoaded("ign-base-wms");
-          const cadastreLoaded = map.isSourceLoaded("ign-cadastre-wms");
-          if (!baseLoaded || !cadastreLoaded) {
-            setStatus("error");
-            setErrorMessage("Les services cartographiques IGN sont momentanément indisponibles.");
-          }
-        }, 6000);
-      } catch {
-        setStatus("error");
-        setErrorMessage("Le plan cadastral n’a pas pu être chargé pour le moment.");
-      }
-    };
-
     void import("mapbox-gl")
       .then((module) => {
         if (cancelled || !container.isConnected) return;
 
         const mapboxgl = module.default;
+        disableMapboxTelemetry(mapboxgl);
         const accessToken = getMapboxAccessToken();
         if (accessToken) mapboxgl.accessToken = accessToken;
 
@@ -122,6 +96,7 @@ export function CadastralNeighborhoodMap({
 
           const mapInstance = new mapboxgl.Map(mapOptions);
           map = mapInstance;
+          mapRef.current = mapInstance;
           mapInstance.addControl(
             new mapboxgl.NavigationControl({ visualizePitch: false }),
             "top-right",
@@ -146,55 +121,45 @@ export function CadastralNeighborhoodMap({
           markerDot.setAttribute("aria-hidden", "true");
           markerElement.append(markerPulse, markerDot);
 
-          marker = new mapboxgl.Marker({ element: markerElement, anchor: "center" })
-            .setLngLat([lng, lat])
-            .setPopup(
-              new mapboxgl.Popup({ closeButton: true, offset: 18 }).setText(
-                `${pointLabel} · ${addressLabel}`,
-              ),
-            )
-            .addTo(mapInstance);
+          if (showMarker) {
+            marker = new mapboxgl.Marker({ element: markerElement, anchor: "center" })
+              .setLngLat([lng, lat])
+              .setPopup(
+                new mapboxgl.Popup({ closeButton: true, offset: 18 }).setText(
+                  `${pointLabel} · ${addressLabel}`,
+                ),
+              )
+              .addTo(mapInstance);
+          }
 
           mapInstance.on("load", () => {
             if (cancelled) return;
             mapLoaded = true;
-            if (fallbackRequested) {
-              activateWmsFallback();
-            } else {
-              setStatus("ready");
-            }
-          });
-
-          mapInstance.on("styledata", () => {
-            if (cancelled || !fallbackRequested || fallbackActive) return;
-            if (mapInstance.isStyleLoaded()) activateWmsFallback();
-          });
-
-          mapInstance.on("error", (event) => {
-            if (cancelled) return;
-
-            if (fallbackActive) {
-              const message = event.error?.message ?? "";
+            setStatus("ready");
+            setMapReady(true);
+            // Les tuiles viennent du flux WMS de l'IGN, qui répond toujours (tuile vide hors
+            // couverture) : on ne signale une panne que si les deux couches restent muettes.
+            checkTimer = window.setTimeout(() => {
+              if (cancelled) return;
               if (
-                message.includes("/wms-r/wms") ||
-                message.includes("ign-base-wms") ||
-                message.includes("ign-cadastre-wms")
+                !mapInstance.isSourceLoaded("ign-base") ||
+                !mapInstance.isSourceLoaded("ign-cadastre")
               ) {
                 setStatus("error");
                 setErrorMessage(
                   "Les services cartographiques IGN sont momentanément indisponibles.",
                 );
               }
-              return;
-            }
-            if (mapLoaded || mapInstance.isStyleLoaded()) {
-              activateWmsFallback();
-              return;
-            }
+            }, 6000);
+          });
 
-            fallbackRequested = true;
-            setStatus("loading");
-            setErrorMessage(null);
+          mapInstance.on("error", (event) => {
+            if (cancelled || mapLoaded) return;
+            const message = event.error?.message ?? "";
+            if (message.includes("/wms-r/wms") || message.includes("ign-")) {
+              setStatus("error");
+              setErrorMessage("Les services cartographiques IGN sont momentanément indisponibles.");
+            }
           });
         } catch {
           setStatus("error");
@@ -209,11 +174,53 @@ export function CadastralNeighborhoodMap({
 
     return () => {
       cancelled = true;
-      if (fallbackTimer != null) window.clearTimeout(fallbackTimer);
+      if (checkTimer != null) window.clearTimeout(checkTimer);
       marker?.remove();
       map?.remove();
+      mapRef.current = null;
+      setMapReady(false);
     };
-  }, [addressLabel, hasValidCoordinates, lat, lng, pointLabel]);
+  }, [addressLabel, hasValidCoordinates, lat, lng, pointLabel, showMarker]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !outlines) return;
+    const data = {
+      type: "FeatureCollection",
+      features: outlines.outlines.map((outline) => ({
+        type: "Feature",
+        properties: { label: outline.label, confirmed: outline.confirmed },
+        geometry: outline.geometry,
+      })),
+    } as Parameters<MapboxGL.GeoJSONSource["setData"]>[0];
+    const existing = map.getSource(OUTLINE_SOURCE) as MapboxGL.GeoJSONSource | undefined;
+    if (existing) {
+      existing.setData(data);
+    } else {
+      map.addSource(OUTLINE_SOURCE, { type: "geojson", data });
+      map.addLayer({
+        id: `${OUTLINE_SOURCE}-fill`,
+        type: "fill",
+        source: OUTLINE_SOURCE,
+        paint: { "fill-color": "#1f6f4a", "fill-opacity": 0.16 },
+      });
+      map.addLayer({
+        id: `${OUTLINE_SOURCE}-confirmed`,
+        type: "line",
+        source: OUTLINE_SOURCE,
+        filter: ["==", ["get", "confirmed"], true],
+        paint: { "line-color": "#1f6f4a", "line-width": 3 },
+      });
+      map.addLayer({
+        id: `${OUTLINE_SOURCE}-probable`,
+        type: "line",
+        source: OUTLINE_SOURCE,
+        filter: ["==", ["get", "confirmed"], false],
+        paint: { "line-color": "#1f6f4a", "line-width": 2.5, "line-dasharray": [2, 1.5] },
+      });
+    }
+    map.fitBounds(outlines.bounds, { padding: 56, maxZoom: 18.5, duration: 0 });
+  }, [mapReady, outlines]);
 
   return (
     <section className={styles.root} aria-labelledby={headingId}>
@@ -259,18 +266,24 @@ export function CadastralNeighborhoodMap({
             )}
           </div>
         )}
-
-        {status === "ready" && fallbackNotice && (
-          <p className={styles.mapNotice} role="status">
-            {fallbackNotice}
-          </p>
-        )}
       </div>
 
       <div className={styles.legend} aria-label="Légende du plan">
-        <span>
-          <i className={styles.legendPoint} aria-hidden="true" /> {pointLabel}
-        </span>
+        {showMarker ? (
+          <span>
+            <i className={styles.legendPoint} aria-hidden="true" /> {pointLabel}
+          </span>
+        ) : null}
+        {outlines ? (
+          <span>
+            <i
+              className={styles.legendOutline}
+              data-confirmed={outlines.confirmed ? "true" : "false"}
+              aria-hidden="true"
+            />{" "}
+            {outlines.confirmed ? "Parcelle citée dans l’annonce" : "Parcelle probable"}
+          </span>
+        ) : null}
         <span>
           <i className={styles.legendParcel} aria-hidden="true" /> Limites cadastrales
         </span>
@@ -283,25 +296,13 @@ function buildIgnStyle(): MapboxGL.StyleSpecification {
   return {
     version: 8,
     sources: {
-      "ign-base-wmts": {
-        type: "raster",
-        tiles: [buildIgnWmtsTileUrl("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2")],
-        tileSize: 256,
-        attribution: IGN_ATTRIBUTION,
-      },
-      "ign-cadastre-wmts": {
-        type: "raster",
-        tiles: [buildIgnWmtsTileUrl("CADASTRALPARCELS.PARCELLAIRE_EXPRESS")],
-        tileSize: 256,
-        attribution: IGN_ATTRIBUTION,
-      },
-      "ign-base-wms": {
+      "ign-base": {
         type: "raster",
         tiles: [buildIgnWmsTileUrl("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2")],
         tileSize: 256,
         attribution: IGN_ATTRIBUTION,
       },
-      "ign-cadastre-wms": {
+      "ign-cadastre": {
         type: "raster",
         tiles: [buildIgnWmsTileUrl("CADASTRALPARCELS.PARCELLAIRE_EXPRESS")],
         tileSize: 256,
@@ -309,46 +310,17 @@ function buildIgnStyle(): MapboxGL.StyleSpecification {
       },
     },
     layers: [
+      { id: "ign-base", type: "raster", source: "ign-base", minzoom: 0, maxzoom: 19 },
       {
-        id: "ign-base-wmts",
+        id: "ign-cadastre",
         type: "raster",
-        source: "ign-base-wmts",
-        minzoom: 0,
-        maxzoom: 19,
-      },
-      {
-        id: "ign-cadastre-wmts",
-        type: "raster",
-        source: "ign-cadastre-wmts",
-        minzoom: 0,
-        maxzoom: 19,
-        paint: { "raster-opacity": 0.78 },
-      },
-      {
-        id: "ign-base-wms",
-        type: "raster",
-        source: "ign-base-wms",
-        layout: { visibility: "none" },
-        minzoom: 0,
-        maxzoom: 19,
-      },
-      {
-        id: "ign-cadastre-wms",
-        type: "raster",
-        source: "ign-cadastre-wms",
-        layout: { visibility: "none" },
+        source: "ign-cadastre",
         minzoom: 0,
         maxzoom: 19,
         paint: { "raster-opacity": 0.78 },
       },
     ],
   };
-}
-
-function buildIgnWmtsTileUrl(layer: string) {
-  return `${WMTS_ENDPOINT}SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=${encodeURIComponent(
-    layer,
-  )}&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=${WMTS_MATRIX_SET}&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}`;
 }
 
 function buildIgnWmsTileUrl(layer: string) {

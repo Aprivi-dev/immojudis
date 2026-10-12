@@ -1,3 +1,4 @@
+import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -11,21 +12,6 @@ type AuctionSaleRow = Database["public"]["Tables"]["auction_sales"]["Row"];
 type DataRefreshRequestRow = Database["public"]["Tables"]["data_refresh_requests"]["Row"];
 type RefreshSaleRow = Pick<AuctionSaleRow, "id" | "title" | "city" | "department"> & {
   source_url: string;
-};
-
-type DataRefreshAdmissionRpcClient = {
-  rpc(
-    name: "enqueue_data_refresh_bounded",
-    args: {
-      p_force: boolean;
-      p_request_kind: DataRefreshKind;
-      p_sale_id: string;
-      p_user_id: string;
-    },
-  ): Promise<{
-    data: Array<{ request_id: string; reused: boolean }> | null;
-    error: { message?: string } | null;
-  }>;
 };
 
 export const DATA_REFRESH_KINDS = ["cadastre", "dpe", "full"] as const;
@@ -217,8 +203,7 @@ async function admitRefreshRequest({
   kind: DataRefreshKind;
   force: boolean;
 }): Promise<{ requestId: string; reused: boolean }> {
-  const client = supabaseAdmin as unknown as DataRefreshAdmissionRpcClient;
-  const { data, error } = await client.rpc("enqueue_data_refresh_bounded", {
+  const { data, error } = await supabaseAdmin.rpc("enqueue_data_refresh_bounded", {
     p_force: force,
     p_request_kind: kind,
     p_sale_id: saleId,
@@ -270,7 +255,7 @@ function rowToRefreshItem(row: DataRefreshRequestRow, reused: boolean): DataRefr
     id: row.id,
     saleId: row.sale_id,
     sourceUrl: row.source_url,
-    kind: row.request_kind,
+    kind: row.request_kind as DataRefreshKind,
     status: row.status,
     priority: row.priority,
     reused,

@@ -1,3 +1,4 @@
+import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
@@ -12,6 +13,7 @@ import {
   readSaleComparisonSnapshot,
   type ComparedSale,
 } from "@/lib/search/sale-comparison";
+import { asRecord } from "@/lib/guards";
 
 type AnalysisSetRow = Database["public"]["Tables"]["user_sale_analysis_sets"]["Row"];
 type AnalysisSetInsert = Database["public"]["Tables"]["user_sale_analysis_sets"]["Insert"];
@@ -756,7 +758,7 @@ async function buildCanonicalComparisonSnapshot(
       "id,city,department,property_type,sale_venue_type,sale_date,starting_price_eur,app_surface_m2,app_surface_kind,rooms_count,bedrooms_count,bathrooms_count,status,raw_payload",
     )
     .in("id", saleIds)
-    .in("status", ["upcoming", "unknown"]);
+    .in("status", ["upcoming", "postponed", "unknown"]);
   if (error) throw error;
 
   const byId = new Map(publicationVisibleRows(data ?? []).map((sale) => [sale.id, sale]));
@@ -798,10 +800,4 @@ function normalizeShareToken(value: string): string | null {
 
 function hashShareToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }

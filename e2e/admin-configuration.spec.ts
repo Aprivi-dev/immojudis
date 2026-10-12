@@ -12,6 +12,10 @@ type MockOptions = {
   controlFailure?: boolean;
   dashboardPending?: boolean;
   collectionErrors?: boolean;
+  runSource?: string;
+  runStatus?: string;
+  /** Réponse 504 du délai de 30 s sur la section `runs` du tableau de bord. */
+  dashboardTimeout?: boolean;
 };
 
 type MockState = {
@@ -27,9 +31,98 @@ type MockState = {
   controlPayloads: Array<Record<string, unknown>>;
   controlFailure: boolean;
   releaseDashboard: () => void;
+  sourceEnabled: boolean;
+  sourcePayloads: Array<Record<string, unknown>>;
+  scrollPayloads: Array<Record<string, unknown>>;
+  runStatus: string;
+  dashboardCalls: number;
+  /** Sections demandées à /api/admin/dashboard, dans l'ordre. */
+  dashboardSections: string[];
+  /** Tous les appels GET à /api/admin/* (chemin seul), dans l'ordre. */
+  adminRequests: string[];
 };
 
 test.describe("admin configuration", () => {
+  test("persists scheduler and source-detail switches after a reload", async ({ page }) => {
+    const state = await prepareAdminPage(page);
+    await page.goto("/admin/settings");
+    const scheduler = page.getByLabel("Activer la planification automatique");
+    const details = page.getByLabel("Actualiser les fiches détaillées des sources");
+    await scheduler.uncheck();
+    await details.check();
+    await page.getByRole("button", { name: "Enregistrer les réglages" }).click();
+    await expect(page.getByText("Réglages enregistrés", { exact: true })).toBeVisible();
+    expect(state.controlPayloads[0]).toEqual({ enabled: false, source_details_enabled: true });
+    await page.reload();
+    await expect(scheduler).not.toBeChecked();
+    await expect(details).toBeChecked();
+    await scheduler.check();
+    await details.uncheck();
+    await page.getByRole("button", { name: "Enregistrer les réglages" }).click();
+    await expect(page.getByText("Réglages enregistrés", { exact: true })).toBeVisible();
+    expect(state.controlPayloads[1]).toEqual({ enabled: true, source_details_enabled: false });
+  });
+
+  test("updates an active run without a manual refresh", async ({ page }) => {
+    await page.clock.install();
+    const state = await prepareAdminPage(page, { runSource: "avoventes", runStatus: "running" });
+    await page.goto("/admin/operations");
+    await expect(page.getByText("running", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeDisabled();
+    state.runStatus = "succeeded";
+    await page.clock.fastForward(10_100);
+    await expect(page.getByText("succeeded", { exact: true }).first()).toBeVisible();
+    expect(state.dashboardCalls).toBeGreaterThan(1);
+    await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeEnabled();
+  });
+
+  test("pauses and resumes a source independently of the global scheduler", async ({ page }) => {
+    const state = await prepareAdminPage(page);
+    await page.goto("/admin/settings");
+    await page.getByRole("tab", { name: "Sources de données" }).click();
+    const source = page.getByRole("row", { name: /test-source/ });
+    await source.getByRole("button", { name: /Suspendre/ }).click();
+    await expect(source.getByRole("button", { name: /Activer/ })).toBeVisible();
+    expect(state.sourcePayloads).toEqual([{ source: "test-source", enabled: false }]);
+    await source.getByRole("button", { name: /Activer/ }).click();
+    await expect(source.getByRole("button", { name: /Suspendre/ })).toBeVisible();
+    expect(state.sourceEnabled).toBe(true);
+    expect(state.controlPayloads).toEqual([]);
+  });
+
+  test("launches a selected source and an integer AI batch, and preserves restart mode", async ({
+    page,
+  }, testInfo) => {
+    const state = await prepareAdminPage(page, { runSource: "llm-description-backfill" });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto("/admin/operations");
+    await expect(page).toHaveTitle(/Opérations admin/);
+    await page.getByRole("combobox", { name: "Source", exact: true }).selectOption("avoventes");
+    await page.getByRole("button", { name: "Lancer", exact: true }).click();
+    await expect.poll(() => state.scrollPayloads.length).toBe(1);
+    expect(state.scrollPayloads[0]).toEqual({ source: "avoventes", mode: "collect" });
+    await expect(page.getByText("Traitement demandé", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Relancer", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Relancer", exact: true }).click();
+    await expect.poll(() => state.scrollPayloads.length).toBe(2);
+    expect(state.scrollPayloads[1]).toEqual({ source: "all", mode: "llm_backfill", limit: 7 });
+    await page.getByRole("button", { name: "Enrichissement IA", exact: true }).click();
+    const batch = page.getByRole("spinbutton", { name: "Taille du lot" });
+    await batch.fill("2.5");
+    await expect(page.getByRole("button", { name: "Lancer le backfill" })).toBeDisabled();
+    await batch.fill("4");
+    await page.getByRole("button", { name: "Lancer le backfill" }).click();
+    await expect.poll(() => state.scrollPayloads.length).toBe(3);
+    expect(state.scrollPayloads[2]).toEqual({ source: "all", mode: "llm_backfill", limit: 4 });
+    expect(errors).toEqual([]);
+    expect(await page.locator("[data-nextjs-dialog], .vite-error-overlay").count()).toBe(0);
+    await page.screenshot({
+      path: `/tmp/immojudis-admin-operations-${testInfo.project.name}.png`,
+      fullPage: true,
+    });
+  });
+
   test("distinguishes publication errors, resumed collection and scoped inventory", async ({
     page,
   }, testInfo) => {
@@ -176,6 +269,64 @@ test.describe("admin configuration", () => {
     await expect(page.getByText("Aucun échec récent détecté", { exact: true })).toBeVisible();
   });
 
+  test("keeps the overview light: one fast request and a link to every view", async ({ page }) => {
+    test.skip(test.info().project.name.includes("mobile"), "Desktop-only overview check");
+    const state = await prepareAdminPage(page, { runSource: "avoventes", runStatus: "succeeded" });
+    await page.goto("/admin");
+
+    await expect(page.getByRole("heading", { name: "Aucun échec récent détecté" })).toBeVisible();
+    const views = page.getByRole("navigation", { name: "Vues de l’administration" });
+    for (const [label, href] of [
+      ["Opérations", "/admin/operations"],
+      ["Agent IA", "/admin/agent-ia"],
+      ["Qualité des données", "/admin/quality"],
+      ["Publications", "/admin/publications"],
+      ["Clients & abonnements", "/admin/clients"],
+      ["Avocats", "/admin/lawyers"],
+      ["Conformité", "/admin/compliance"],
+      ["Configuration", "/admin/settings"],
+    ]) {
+      await expect(views.getByRole("link", { name: label })).toHaveAttribute("href", href);
+    }
+    await page.waitForLoadState("networkidle");
+    expect(state.dashboardSections).toEqual(["runs"]);
+    expect([...new Set(state.adminRequests)]).toEqual(["/api/admin/dashboard"]);
+  });
+
+  test("loads the AI coverage after the runs and the table counts only on the Documents tab", async ({
+    page,
+  }) => {
+    const state = await prepareAdminPage(page, { runSource: "avoventes", runStatus: "succeeded" });
+    await page.goto("/admin/operations");
+
+    await expect(page.getByText("5 annonces à traiter")).toBeVisible();
+    expect(state.dashboardSections).toContain("runs");
+    expect(state.dashboardSections).toContain("ai");
+    expect(state.dashboardSections).not.toContain("counts");
+
+    await page.getByRole("button", { name: "Documents", exact: true }).click();
+    await expect(page.getByText("Documents indexés")).toBeVisible();
+    await expect.poll(() => state.dashboardSections.includes("counts")).toBe(true);
+    await expect(page.getByText("4", { exact: true })).toBeVisible();
+    expect(state.adminRequests).not.toContain("/api/admin/publications");
+    expect(state.adminRequests).not.toContain("/api/admin/subscriptions");
+    expect(state.adminRequests).not.toContain("/api/admin/readiness");
+  });
+
+  test("tells the administrator when a request exceeded the 30 s limit", async ({ page }) => {
+    test.skip(test.info().project.name.includes("mobile"), "Desktop-only overview check");
+    await prepareAdminPage(page, { dashboardTimeout: true });
+    await page.goto("/admin");
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "dépassé le délai de 30 secondes" }),
+    ).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("heading", { name: "État de santé indisponible" })).toBeVisible();
+    await expect(page.getByText("Aucun échec récent détecté", { exact: true })).toHaveCount(0);
+  });
+
   test("denies the settings route to a signed-in non-admin", async ({ page }) => {
     await prepareAdminPage(page, { admin: false });
     await page.goto("/admin/settings");
@@ -223,6 +374,13 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
     controlPayloads: [],
     controlFailure: options.controlFailure ?? false,
     releaseDashboard: () => undefined,
+    sourceEnabled: true,
+    sourcePayloads: [],
+    scrollPayloads: [],
+    runStatus: options.runStatus ?? "failed",
+    dashboardCalls: 0,
+    dashboardSections: [],
+    adminRequests: [],
   };
   let pipelineFailures = options.pipelineFailures ?? 0;
 
@@ -272,6 +430,28 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
     const url = new URL(route.request().url());
     const path = url.pathname;
     const method = route.request().method();
+    if (method === "GET") state.adminRequests.push(path);
+
+    if (path === "/api/admin/pipeline" && method === "PATCH") {
+      const payload = route.request().postDataJSON();
+      state.sourcePayloads.push(payload);
+      state.sourceEnabled = payload.enabled;
+      await route.fulfill({ status: 200, json: { ok: true } });
+      return;
+    }
+    if (path === "/api/admin/scroll" && method === "POST") {
+      state.scrollPayloads.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 200,
+        json: {
+          ok: true,
+          message: "Traitement demandé",
+          dispatched: true,
+          dispatchMode: "webhook",
+        },
+      });
+      return;
+    }
 
     if (path === "/api/admin/pipeline" && method === "GET") {
       state.pipelineGetCalls += 1;
@@ -301,12 +481,45 @@ async function prepareAdminPage(page: Page, options: MockOptions = {}): Promise<
     }
 
     if (path === "/api/admin/dashboard") {
+      const section = url.searchParams.get("section") ?? "all";
+      state.dashboardSections.push(section);
+      if (section === "ai") {
+        await route.fulfill({ status: 200, json: dashboardAiPayload(options.runSource) });
+        return;
+      }
+      if (section === "counts") {
+        await route.fulfill({ status: 200, json: dashboardCountsPayload() });
+        return;
+      }
+      state.dashboardCalls += 1;
+      if (options.dashboardTimeout) {
+        await route.fulfill({
+          status: 504,
+          json: {
+            error:
+              "Cette requête admin a dépassé le délai de 30 secondes et a été interrompue. Réessayez dans un instant.",
+            code: "ADMIN_TIMEOUT",
+            requestId: "req-e2e-timeout",
+          },
+        });
+        return;
+      }
       if (options.dashboardPending) {
         await new Promise<void>((resolve) => {
           state.releaseDashboard = () => resolve();
         });
       }
-      await route.fulfill({ status: 200, json: dashboardPayload() });
+      await route.fulfill({
+        status: 200,
+        json: dashboardRunsPayload(options.runSource, state.runStatus),
+      });
+      return;
+    }
+    if (path === "/api/admin/publications") {
+      await route.fulfill({
+        status: 200,
+        json: { requests: [], totalCount: 0, pendingCount: 0, hasMore: false },
+      });
       return;
     }
 
@@ -339,7 +552,7 @@ function pipelinePayload(state: MockState, collectionErrors = false) {
     sources: [
       {
         source_name: "test-source",
-        enabled: true,
+        enabled: state.sourceEnabled,
         availability: "available",
         last_inventory_complete_at: null,
         last_publication_complete_at: null,
@@ -385,32 +598,64 @@ function pipelinePayload(state: MockState, collectionErrors = false) {
   };
 }
 
-function dashboardPayload() {
+function dashboardRunsPayload(runSource?: string, runStatus = "failed") {
   return {
     checkedAt: "2026-09-19T10:00:00.000Z",
     adminEmail,
     runner: { instantDispatchConfigured: true, mode: "webhook" },
     stats: {
+      queuedRuns: 0,
+      runningRuns: runSource && runStatus === "running" ? 1 : 0,
+      failedRuns: 0,
+    },
+    runs: runSource
+      ? [
+          {
+            id: "76000000-0000-4000-8000-000000000001",
+            source: runSource,
+            status: runStatus,
+            useLlm: true,
+            startedAt: "2026-09-19T10:00:00Z",
+            finishedAt: "2026-09-19T10:02:00Z",
+            createdAt: "2026-09-19T10:00:00Z",
+            updatedAt: "2026-09-19T10:02:00Z",
+            summary: {
+              mode: runSource === "llm-description-backfill" ? "llm_backfill" : "collect",
+              limit: 7,
+            },
+            errors: {},
+          },
+        ]
+      : [],
+  };
+}
+
+function dashboardAiPayload(runSource?: string) {
+  return {
+    checkedAt: "2026-09-19T10:00:00.000Z",
+    aiDescriptions: {
+      expectedPromptVersion: "auction_llm_v10_structured_display",
+      total: 12,
+      activeOrUpcoming: 12,
+      ready: runSource ? 7 : 12,
+      missing: runSource ? 5 : 0,
+      promptVersionMismatch: 0,
+      backfillRemaining: runSource ? 5 : 0,
+    },
+  };
+}
+
+function dashboardCountsPayload() {
+  return {
+    checkedAt: "2026-09-19T10:00:00.000Z",
+    counts: {
       sales: 12,
       documents: 4,
       extractions: 8,
       riskOccurrences: 2,
       scoreFactors: 10,
       runs: 1,
-      queuedRuns: 0,
-      runningRuns: 0,
-      failedRuns: 0,
-      aiDescriptions: {
-        expectedPromptVersion: "auction_llm_v10_structured_display",
-        total: 12,
-        activeOrUpcoming: 12,
-        ready: 12,
-        missing: 0,
-        promptVersionMismatch: 0,
-        backfillRemaining: 0,
-      },
     },
-    runs: [],
   };
 }
 

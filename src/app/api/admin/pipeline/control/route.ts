@@ -1,13 +1,18 @@
+import "server-only";
 import { NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-const client = supabaseAdmin as unknown as SupabaseClient;
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+const client = supabaseAdmin;
 
 const pipelineControlSettingsSchema = z
   .object({
@@ -27,23 +32,13 @@ async function authorize(request: Request) {
   if (!context.isAdmin) throw new Error("Forbidden: accès administrateur requis");
 }
 
-function failure(error: unknown) {
-  const message = error instanceof Error ? error.message : "Contrôle du pipeline indisponible";
-  return NextResponse.json(
-    { error: message },
-    {
-      status: message.startsWith("Unauthorized")
-        ? 401
-        : message.startsWith("Forbidden")
-          ? 403
-          : error instanceof z.ZodError || error instanceof SyntaxError
-            ? 400
-            : 500,
-    },
-  );
+function failure(error: unknown, request: Request) {
+  return apiRouteError(error, request, "admin.pipeline.control", {
+    fallbackMessage: "Contrôle du pipeline indisponible",
+  });
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     await authorize(request);
     const input = pipelineControlSettingsSchema.parse(await request.json());
@@ -54,13 +49,15 @@ export async function PATCH(request: Request) {
       .select("*")
       .maybeSingle();
 
-    if (error) throw new Error(error.message);
+    if (error) throw error;
     if (!data) {
       return NextResponse.json({ error: "Contrôle du pipeline introuvable" }, { status: 404 });
     }
 
     return NextResponse.json(data, { headers: { "cache-control": "no-store" } });
   } catch (error) {
-    return failure(error);
+    return failure(error, request);
   }
 }
+
+export const PATCH = withAdminDeadline(handlePATCH);

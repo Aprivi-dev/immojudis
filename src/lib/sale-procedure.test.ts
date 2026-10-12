@@ -339,6 +339,27 @@ describe("sale procedure presentation", () => {
       ),
     ).toBe(false);
   });
+
+  it("hides payment instructions and page chrome from the procedure contact card", () => {
+    const result = getSaleProcedure(
+      sale({
+        lawyer_name: "chèque de banque à l’ordre de la CARPA de5.000€ outre une somme...",
+        lawyer_contact: "chèque de banque à l’ordre de la CARPA de5.000€",
+        sale_procedure: procedure({
+          venue_type: "tribunal",
+          legal_framework: "judicial_seizure",
+          venue_address:
+            "On ne peut enchérir que par avocat|Saint-Quentin|17 rueRoland Garros|Afficher le plan|(exactitude non garantie)",
+          organizer_name: "chèque de banque à l’ordre de la CARPA de5.000€ outre une somme...",
+          organizer_contact: "chèque de banque à l’ordre de la CARPA de5.000€",
+        }),
+      }),
+    );
+
+    expect(result.venueAddress).toBe("17 rue Roland Garros");
+    expect(result.organizerName).toBeNull();
+    expect(result.organizerContact).toBeNull();
+  });
 });
 
 function procedure(overrides: Record<string, unknown> = {}) {

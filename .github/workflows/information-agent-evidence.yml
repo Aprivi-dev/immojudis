@@ -18,13 +18,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # Secrets are given only to the steps that call Supabase or Replicate,
+      # never to the apt and pip steps.
       INFORMATION_AGENT_EVIDENCE_BATCH_SIZE: 5
-      PDF_OCR_ENABLED: "true"
+      INFORMATION_AGENT_EVIDENCE_OCR_ENABLED: "true"
+      INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED: "true"
+      INFORMATION_AGENT_EVIDENCE_VISION_ENABLED: "true"
+      LLM_ENABLED: "true"
+      LLM_PROVIDER: replicate
+      REPLICATE_MODEL: qwen/qwen3-7-plus
+      REPLICATE_MIN_INTERVAL_SECONDS: 11
+      REPLICATE_MAX_RETRIES: 0
+      REPLICATE_MAX_CALLS_PER_HOUR: 60
     steps:
       - name: Check for queued evidence
         id: preflight
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
           response="$(curl -fsS --get "${SUPABASE_URL%/}/rest/v1/information_agent_evidence_extractions" \
@@ -44,14 +55,21 @@ jobs:
       - name: Check out repository
         if: steps.preflight.outputs.should_run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Production code only: never a revision chosen through a repository variable.
+          ref: main
+
+      - name: Record evidence worker revision
+        if: steps.preflight.outputs.should_run == 'true'
+        run: git rev-parse HEAD
 
       - name: Set up Python
         if: steps.preflight.outputs.should_run == 'true'
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/data-pipeline/requirements.txt
+          cache-dependency-path: services/data-pipeline/requirements.lock
 
       - name: Install OCR packages
         if: steps.preflight.outputs.should_run == 'true'
@@ -62,9 +80,13 @@ jobs:
       - name: Install Python dependencies
         if: steps.preflight.outputs.should_run == 'true'
         working-directory: services/data-pipeline
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install --require-hashes -r requirements.lock
 
       - name: Analyze queued attachments
         if: steps.preflight.outputs.should_run == 'true'
         working-directory: services/data-pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
         run: python -m src.information_agent_evidence

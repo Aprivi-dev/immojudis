@@ -12,6 +12,15 @@ import {
   Text,
   render,
 } from "react-email";
+import {
+  containsInformationAgentAccountInvitation,
+  INFORMATION_AGENT_ACCOUNT_INVITATION_CTA,
+  INFORMATION_AGENT_ACCOUNT_INVITATION_TEXT,
+} from "../src/lib/information-agent-email-template";
+import {
+  INFORMATION_AGENT_PURPOSE_STATEMENT,
+  type InformationAgentLegalFooter,
+} from "../src/lib/information-agent-compliance";
 
 export type InformationRequestEmailProps = {
   subject: string;
@@ -20,9 +29,16 @@ export type InformationRequestEmailProps = {
   caseReference: string;
   appUrl?: string;
   contributionUrl?: string;
+  /** GDPR art. 14 information and one-click objection link, mandatory for real sends. */
+  legalFooter?: InformationAgentLegalFooter;
+  /**
+   * Invitation sobre à créer un compte professionnel pour déposer d'autres annonces (choix du
+   * propriétaire, 11 octobre 2026). Rendue par le gabarit, jamais par le texte éditable.
+   */
+  accountInvitationUrl?: string | null;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v3";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v6";
 
 type BodyBlock =
   | { kind: "paragraph"; lines: string[] }
@@ -46,14 +62,15 @@ export function InformationRequestEmail({
   caseReference,
   appUrl = "https://immojudis.com",
   contributionUrl,
+  legalFooter,
+  accountInvitationUrl,
 }: InformationRequestEmailProps) {
   const blocks = parseBodyBlocks(bodyText);
   const replyHref = `mailto:${replyTo}`;
-
   return (
     <Html lang="fr">
       <Head />
-      <Preview>{`Informations sur une vente judiciaire — ${subject}`}</Preview>
+      <Preview>{`Informations sur une vente immobilière — ${subject}`}</Preview>
       <Body style={styles.body}>
         <Container style={styles.container}>
           <Section style={styles.topBar} />
@@ -65,9 +82,20 @@ export function InformationRequestEmail({
           <Section style={styles.content}>
             <Text style={styles.eyebrow}>VÉRIFICATION D’UNE ANNONCE</Text>
             <Heading as="h1" style={styles.heading}>
-              Informations sur une vente judiciaire
+              Informations sur une vente immobilière
             </Heading>
             <Text style={styles.reference}>Référence de suivi : {caseReference}</Text>
+            {legalFooter ? (
+              <Text style={styles.origin}>
+                {legalFooter.addressOrigin}
+                {legalFooter.addressOriginUrl ? (
+                  <>
+                    {" "}
+                    <Link href={legalFooter.addressOriginUrl}>Voir l’annonce</Link>
+                  </>
+                ) : null}
+              </Text>
+            ) : null}
 
             <Hr style={styles.hr} />
 
@@ -88,10 +116,16 @@ export function InformationRequestEmail({
                 </Text>
               </Section>
             ) : null}
+            {accountInvitationUrl ? (
+              <Text style={styles.invitation}>
+                {INFORMATION_AGENT_ACCOUNT_INVITATION_TEXT}{" "}
+                <Link href={accountInvitationUrl}>{INFORMATION_AGENT_ACCOUNT_INVITATION_CTA}</Link>
+              </Text>
+            ) : null}
           </Section>
 
           <Section style={styles.footer}>
-            <Text style={styles.footerBrand}>ImmoJudis</Text>
+            <Text style={styles.footerBrand}>Immojudis</Text>
             <Text style={styles.footerText}>
               Service indépendant d’aide à l’analyse des ventes immobilières judiciaires
             </Text>
@@ -104,9 +138,14 @@ export function InformationRequestEmail({
             <Text style={styles.footerText}>
               Adresse de réponse : <Link href={replyHref}>{replyTo}</Link>
             </Text>
+            {legalFooter ? <LegalFooter footer={legalFooter} /> : null}
             <Text style={styles.footerLegal}>
-              ImmoJudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses
+              Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses
               ; notre équipe vérifie les informations avant toute mise à jour de la fiche.
+              <br />
+              Merci de ne transmettre que des pièces que vous êtes autorisé à partager.
+              <br />
+              Vous pouvez aussi vous opposer à tout contact en répondant simplement à ce message.
             </Text>
           </Section>
         </Container>
@@ -125,9 +164,7 @@ export async function renderInformationRequestEmail(
   ]);
   return {
     html,
-    text: props.contributionUrl
-      ? `${renderedText}\n\nDéposer des pièces sans compte : ${props.contributionUrl}\n`
-      : renderedText,
+    text: renderedText,
   };
 }
 
@@ -137,8 +174,7 @@ function BodyBlockView({ block }: { block: BodyBlock }) {
       <Section style={styles.questionsPanel}>
         {block.lines.map((line, index) => (
           <Text key={`${line}-${index}`} style={styles.questionItem}>
-            <span style={styles.questionNumber}>{String(index + 1).padStart(2, "0")}</span>
-            {line.replace(/^[-•]\s*/, "")}
+            {`• ${line.replace(/^[-•]\s*/, "")}`}
           </Text>
         ))}
       </Section>
@@ -177,29 +213,72 @@ function BodyBlockView({ block }: { block: BodyBlock }) {
 }
 
 function parseBodyBlocks(bodyText: string): BodyBlock[] {
-  return bodyText
-    .replace(/\r\n?/g, "\n")
-    .split(/\n\s*\n/)
-    .map((block) =>
-      block
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean),
-    )
-    .filter((lines) => lines.length > 0)
-    .map((lines) => {
-      if (lines.every((line) => /^[-•]\s+/.test(line))) {
-        return { kind: "questions" as const, lines };
-      }
-      if (
-        lines.every((line) =>
-          /^(Référence|Audience annoncée|Date annoncée|Mise à prix annoncée)\s*:/i.test(line),
-        )
-      ) {
-        return { kind: "sale" as const, lines };
-      }
-      return { kind: "paragraph" as const, lines };
-    });
+  return (
+    bodyText
+      .replace(/\r\n?/g, "\n")
+      .split(/\n\s*\n/)
+      .map((block) =>
+        block
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean),
+      )
+      .filter((lines) => lines.length > 0)
+      // Defence in depth: a legacy prospecting block is dropped even if it reached the body.
+      .filter((lines) => !containsInformationAgentAccountInvitation(lines.join("\n")))
+      .map((lines) => {
+        if (lines.every((line) => /^[-•]\s+/.test(line))) {
+          return { kind: "questions" as const, lines };
+        }
+        if (
+          lines.every((line) =>
+            /^(Référence|Audience annoncée|Date annoncée|Date de vente annoncée|Mise à prix annoncée)\s*:/i.test(
+              line,
+            ),
+          )
+        ) {
+          return { kind: "sale" as const, lines };
+        }
+        return { kind: "paragraph" as const, lines };
+      })
+  );
+}
+
+function LegalFooter({ footer }: { footer: InformationAgentLegalFooter }) {
+  return (
+    <>
+      <Text style={styles.footerLegal}>
+        <strong>Responsable de traitement :</strong> {footer.controllerName},{" "}
+        {footer.controllerAddress}
+        {footer.contactEmail ? (
+          <>
+            {" — "}
+            <Link href={`mailto:${footer.contactEmail}`}>{footer.contactEmail}</Link>
+          </>
+        ) : null}
+        .
+        <br />
+        {footer.addressOrigin}
+        {footer.addressOriginUrl ? (
+          <>
+            {" "}
+            <Link href={footer.addressOriginUrl}>{footer.addressOriginUrl}</Link>
+          </>
+        ) : null}
+        <br />
+        {INFORMATION_AGENT_PURPOSE_STATEMENT}
+      </Text>
+      <Text style={styles.footerLegal}>
+        <Link href={footer.privacyUrl} style={styles.footerLink}>
+          Politique de confidentialité et vos droits
+        </Link>
+        {" · "}
+        <Link href={footer.optOutUrl} style={styles.footerLink}>
+          Ne plus être contacté (un clic)
+        </Link>
+      </Text>
+    </>
+  );
 }
 
 const styles: Record<string, React.CSSProperties> = {
@@ -220,64 +299,72 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   topBar: { height: "6px", backgroundColor: BRAND.gold },
-  header: { padding: "24px 34px 20px", borderBottom: `1px solid ${BRAND.line}` },
+  header: { padding: "18px 28px 14px", borderBottom: `1px solid ${BRAND.line}` },
   wordmark: {
     margin: 0,
     color: BRAND.ink,
     fontFamily: "Georgia, 'Times New Roman', serif",
-    fontSize: "25px",
+    fontSize: "23px",
     fontWeight: 700,
     letterSpacing: "0.08em",
   },
-  tagline: { margin: "4px 0 14px", color: BRAND.muted, fontSize: "12px", lineHeight: "18px" },
-  content: { padding: "30px 34px 34px" },
+  tagline: { margin: "3px 0 8px", color: BRAND.muted, fontSize: "12px", lineHeight: "17px" },
+  content: { padding: "22px 28px 24px" },
   eyebrow: {
-    margin: "0 0 9px",
+    margin: "0 0 6px",
     color: BRAND.gold,
     fontSize: "11px",
     fontWeight: 700,
     letterSpacing: "0.1em",
   },
   heading: {
-    margin: "0 0 12px",
+    margin: "0 0 8px",
     color: BRAND.ink,
     fontFamily: "Georgia, 'Times New Roman', serif",
-    fontSize: "28px",
-    lineHeight: "35px",
+    fontSize: "25px",
+    lineHeight: "31px",
     fontWeight: 600,
   },
   reference: {
     display: "inline-block",
     margin: 0,
-    padding: "7px 10px",
+    padding: "5px 8px",
     color: BRAND.ink,
     backgroundColor: BRAND.goldSoft,
     borderRadius: "6px",
     fontSize: "12px",
     fontWeight: 700,
   },
-  hr: { margin: "26px 0", borderColor: BRAND.line },
-  paragraph: { margin: "0 0 18px", color: "#303A50", fontSize: "15px", lineHeight: "24px" },
+  hr: { margin: "18px 0", borderColor: BRAND.line },
+  origin: { margin: "10px 0 0", color: BRAND.muted, fontSize: "12px", lineHeight: "18px" },
+  invitation: {
+    margin: "4px 0 0",
+    paddingTop: "12px",
+    borderTop: `1px solid ${BRAND.line}`,
+    color: BRAND.muted,
+    fontSize: "13px",
+    lineHeight: "19px",
+  },
+  paragraph: { margin: "0 0 14px", color: "#303A50", fontSize: "15px", lineHeight: "21px" },
   salePanel: {
-    margin: "4px 0 22px",
-    padding: "16px 18px 2px",
+    margin: "2px 0 16px",
+    padding: "12px 14px 1px",
     backgroundColor: "#F9F8F5",
     border: `1px solid ${BRAND.line}`,
     borderRadius: "10px",
   },
-  saleRow: { margin: "0 0 14px", color: BRAND.ink, fontSize: "14px", lineHeight: "20px" },
+  saleRow: { margin: "0 0 11px", color: BRAND.ink, fontSize: "14px", lineHeight: "20px" },
   saleLabel: { color: BRAND.muted, fontSize: "11px", fontWeight: 700, textTransform: "uppercase" },
   saleValue: { color: BRAND.ink, fontSize: "14px", fontWeight: 700 },
   questionsPanel: {
-    margin: "0 0 22px",
-    padding: "6px 18px",
+    margin: "0 0 16px",
+    padding: "4px 14px",
     borderLeft: `3px solid ${BRAND.gold}`,
     backgroundColor: "#FCFBF8",
   },
-  questionItem: { margin: "10px 0", color: "#303A50", fontSize: "14px", lineHeight: "22px" },
-  questionNumber: { marginRight: "10px", color: BRAND.gold, fontSize: "11px", fontWeight: 700 },
+  questionItem: { margin: "7px 0", color: "#303A50", fontSize: "14px", lineHeight: "20px" },
   footer: {
-    padding: "24px 34px 28px",
+    padding: "18px 28px 22px",
     backgroundColor: "#F9F8F5",
     borderTop: `1px solid ${BRAND.line}`,
     textAlign: "center",

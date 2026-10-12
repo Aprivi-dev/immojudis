@@ -42,8 +42,10 @@ describe("alert match snapshots", () => {
       min_market_discount_pct: null,
       dpe_classes: [],
       require_house_with_land: false,
+      alert_frequency: "weekly",
     });
     expect(isDiscoveryAlertCompatible(publicAlert)).toBe(true);
+    expect(isDiscoveryAlertCompatible({ ...publicAlert, alert_frequency: "daily" })).toBe(false);
     expect(isDiscoveryAlertCompatible({ ...publicAlert, alert_frequency: "instant" })).toBe(false);
     expect(
       isDiscoveryAlertCompatible({ ...publicAlert, advanced_criteria: { query: "secret" } }),

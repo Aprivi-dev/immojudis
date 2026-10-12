@@ -27,10 +27,17 @@ La source prioritaire est Avoventes. Licitor est disponible comme source optionn
 
 ```bash
 cd services/data-pipeline
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
 ```
+
+Les workflows GitHub installent des versions figées et vérifiées par hash
+(`pip install --require-hashes -r requirements.lock`, `requirements-dev.lock`,
+`requirements-valuation.lock`, générés pour CPython 3.12 sous Linux). Après avoir
+modifié un `requirements*.txt`, régénérer les lockfiles avec `pip install uv` puis
+`bash scripts/compile_locks.sh` ; `tests/test_requirements_locks.py` échoue si un
+lockfile n'est plus aligné sur son fichier source.
 
 Pour les audits documentaires ponctuels les plus lourds, installer aussi Docling :
 
@@ -241,6 +248,15 @@ python -m src.dvf_import data/raw/dvf/dvf.csv.gz \
   --source-url "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees"
 ```
 
+Remplacement complet (`replace_existing=true` dans le workflow) : chaque fichier
+est chargé dans `dvf_transactions_staging` (`--stage`, avec `--reset-staging` pour
+le premier), puis un seul `python -m src.dvf_import --swap-staging` construit les
+index sur la table de staging et l'échange avec `dvf_transactions` dans une seule
+transaction. Un import interrompu laisse `dvf_transactions` intact ; `--replace-existing`
+reste disponible pour un fichier unique (chargement et échange dans le même appel).
+Les téléchargements ont un délai de 120 s et n'acceptent que `data.gouv.fr`,
+`www.data.gouv.fr`, `files.data.gouv.fr` et `static.data.gouv.fr` (redirections comprises).
+
 Le calcul backend tente d’abord les ventes détaillées normalisées en base, puis
 les fichiers officiels DVF par commune publiés sur data.gouv.fr. Quand cet
 échantillon local reste insuffisant, il utilise les médianes officielles par
@@ -269,6 +285,21 @@ MAPIE pour conformaliser l'intervalle sur un jeu de calibration chronologique.
 La séparation train/calibration/test respecte l'ordre des dates afin d'éviter
 de faire fuiter des ventes futures dans les métriques.
 
+Le modèle est d'abord validé sur ce découpage (70 % / 15 % / 15 %), puis le
+modèle publié est réentraîné sur train + calibration et ses intervalles sont
+recalibrés sur la fenêtre la plus récente (les métriques publiées décrivent le
+modèle de validation). Les variables de marché local (`local_median_log`,
+`local_spread_log`, `local_sample_size_log`) d'une vente ne s'appuient que sur
+les ventes qui la précèdent, par cellule H3 (`resolve_local_market`). Les
+statistiques de cellules sont exportées dans l'artefact (`localMarket`) pour que
+la production recalcule exactement ces variables ; l'implémentation de référence
+est `lookup_exported_local_market`.
+
+Chaque entraînement écrit `<segment>-<version>.report.json`, qui compare le
+nouveau modèle, le modèle actif et deux références naïves (moyenne géométrique
+locale passée et médiane des ventes d'entraînement de la cellule) sur les ventes
+les plus récentes ; le même tableau est ajouté au résumé du run GitHub.
+
 Installer les dépendances optionnelles :
 
 ```bash
@@ -288,10 +319,14 @@ python -m src.valuation_training --segment apartment --publish
 python -m src.valuation_training --segment apartment --activate
 ```
 
-L'activation est refusée si le jeu de test contient moins de 50 ventes, si
+Le modèle est refusé si le jeu de test contient moins de 50 ventes, si
 l'erreur absolue médiane dépasse 30 %, si la MAPE dépasse 40 %, si la couverture
 P10-P90 est inférieure à 72 % ou si la largeur moyenne de l'intervalle dépasse
-110 %. `--force` existe pour les essais contrôlés, pas pour les runs planifiés.
+110 %. `--force` contourne ces seuils absolus pour les essais contrôlés, pas
+pour les runs planifiés. L'activation exige en plus une erreur absolue médiane
+strictement meilleure que celle du modèle actif (évalué sur les mêmes ventes) et
+que celle de la référence naïve la plus forte ; `--force` ne contourne jamais ce
+test, et un modèle qui ne le passe pas est publié en brouillon.
 L'API mélange le modèle actif avec les comparables locaux et revient
 automatiquement au moteur comparable si l'artefact est absent ou invalide.
 La valeur de marché ainsi produite reste distincte du calcul de mise plafond,
@@ -300,8 +335,9 @@ qui retire ensuite travaux, frais et marge de sécurité.
 Le workflow GitHub Actions `Immojudis Valuation Model Training` est uniquement
 déclenché manuellement. Il entraîne chaque segment séparément sur au plus
 750 000 ventes récentes, applique les mêmes seuils de promotion et conserve le
-bundle JSON pendant 30 jours pour audit. Une activation exige la confirmation
-explicite de la cible `production`.
+bundle JSON et le rapport de comparaison pendant 30 jours pour audit. Il publie
+des brouillons par défaut (`activate: false`) ; une activation exige la
+confirmation explicite de la cible `production`.
 
 ## Enrichissement cadastre
 
@@ -442,7 +478,41 @@ PDF_DOCLING_CHUNK_PAGES=10
 PDF_DOCLING_OCR_CHUNK_PAGES=2
 PDF_OCR_ENABLED=true
 PDF_OCR_LANGUAGE=fra+eng
+# Délai minimal entre deux requêtes de pièces jointes vers un même hôte
+# (plancher 1 s ; un Crawl-delay de robots.txt l'augmente).
+PDF_HOST_MIN_DELAY_SECONDS=2
 ```
+
+Les cahiers des charges et règlements de consultation alimentent aussi la
+date limite de remise des offres (`pdf_offer_deadline_extraction`) ; pour les
+appels d'offres (Cessions de l'État, AGRASC, notaires) sans échéance connue,
+elle devient `sale_date` si elle est unique et à venir.
+
+### Vider le stock de pièces jointes
+
+Le mode manuel « documents_backlog » du workflow *Immojudis Data Pipeline*
+(`workflow_dispatch`) ne fait que la lecture des pièces jointes :
+
+```bash
+python -m src.document_backlog --max-sales 200 --budget-minutes 120 --max-passes 4
+```
+
+- ventes actionnables (à venir, inconnues, reportées) dont des pièces ne sont
+  pas lues, la plus proche échéance d'abord, puis celles qui ont des pièces
+  utiles (cahier des conditions, PV descriptif, diagnostics, cadastre,
+  urbanisme) ;
+- la génération PDF courante de chaque vente est remise en file (y compris un
+  job terminé, annulé ou à court d'essais), réservée seule et traitée par le
+  code normal de la file (robots.txt, délai par hôte, OCR, points de reprise) ;
+- six documents par passage (et 120 s d’OCR par document), passages enchaînés
+  jusqu’à `--max-passes` (4 par défaut) par vente ;
+- les erreurs restent sur le job et le manifeste documentaire de la vente ;
+- une vente dont les documents sont déjà à jour voit seulement sa projection
+  `auction_documents` réécrite.
+
+`auction_documents` reprend désormais document par document le texte déjà
+persisté dans `auction_extractions` (statut `verified`) quand le cache local
+du runner est absent, au lieu de repasser ces pièces en `unknown`.
 
 ## Enrichissement LLM Replicate
 
@@ -650,8 +720,7 @@ Le scraper :
 Variables optionnelles :
 
 ```bash
-AUCTION_USER_AGENT=immojudis-data-pipeline/1.0 (+https://immojudis-dezt.vercel.app/contact)
-AUCTION_BROWSER_USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+AUCTION_USER_AGENT=ImmojudisBot/1.0 (+https://immojudis.com/contact)
 REQUEST_DELAY_SECONDS=1.5
 REQUEST_TIMEOUT_SECONDS=20
 GEOCODE_ENABLED=true
@@ -672,6 +741,21 @@ le libellé retourné, le type de résultat, le code commune et la décision
 `accepted`. L'enrichissement cadastre est ensuite sauté si la vente n'a pas de
 coordonnées. L'enrichissement DPE utilise les coordonnées quand elles existent,
 sinon une recherche textuelle d'adresse.
+
+## Règle « informations suffisantes »
+
+Une vente est publiée si (adresse exploitable **et** superficie) **ou** si l'agent IA d'information dispose d'un e-mail
+exploitable. Sinon elle n'est pas écrite dans `auction_sales` : le run compte les rejets
+(`admission_rejected_insufficient_information` : total, motifs, sources) sans journaliser de donnée de la vente.
+Définitions, exemptions et chiffres par source : `docs/audits/2026-10-10-extraction-par-source.md`.
+
+- `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE=off` coupe la porte (défaut : active).
+- Par défaut (décision du 2026-10-11), la commune ou le code postal suffit comme adresse ; `IMMOJUDIS_SUFFICIENCY_MIN_ADDRESS=street` exige en plus une voie, un lieu-dit ou une parcelle.
+- Le miroir Python du résolveur de contacts (`src/information_sufficiency.py`) est gardé identique au résolveur
+  TypeScript par `tests/fixtures/information_agent_contact_cases.json`, exécuté par pytest et par vitest.
+- Existant : `python -m src.recompute_scoring --drop-insufficient` produit un rapport d'identifiants sans rien supprimer ;
+  `--execute-drop` supprime (sans tombstone, ventes liées à des utilisateurs protégées, plafond `--max-deletions`).
+  Une requête SQL en lecture seule équivalente est dans `sql/insufficient_information_report.sql`.
 
 ## Rapport Qualité
 

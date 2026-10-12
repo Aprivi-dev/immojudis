@@ -126,12 +126,17 @@ export function buildTribunalJudicialActivityDirectory(input: {
     input.courts.map((court) => [court.code.toLocaleLowerCase("fr-FR"), court]),
   );
   const salesByCourt = new Map<string, TribunalJudicialActivitySale[]>();
+  const courtSales: TribunalJudicialActivityDirectorySale[] = [];
   for (const sale of input.sales) {
     const courtCode = sale.tribunalCode.toLocaleLowerCase("fr-FR");
     if (!courtByCode.has(courtCode)) continue;
+    // The court travels with the row so national and regional aggregates
+    // never merge announcements of two different courts.
+    const courtSale = { ...sale, courtCode };
+    courtSales.push(courtSale);
     const existing = salesByCourt.get(courtCode);
-    if (existing) existing.push(sale);
-    else salesByCourt.set(courtCode, [sale]);
+    if (existing) existing.push(courtSale);
+    else salesByCourt.set(courtCode, [courtSale]);
   }
 
   const tribunals: TribunalJudicialActivityResponse[] = [];
@@ -148,16 +153,19 @@ export function buildTribunalJudicialActivityDirectory(input: {
       tribunals.push(activity);
     }
   }
+  // Upcoming pipeline first, then observed history, then name: a court with
+  // a rich history but no scheduled hearing is no longer ranked by name only.
   tribunals.sort(
     (left, right) =>
       right.activity.upcomingSales - left.activity.upcomingSales ||
+      right.activity.observedPastSales - left.activity.observedPastSales ||
       left.court.name.localeCompare(right.court.name, "fr"),
   );
 
   const trackedCourtCodes = new Set(
     tribunals.map((tribunal) => tribunal.court.code.toLocaleLowerCase("fr-FR")),
   );
-  const includedSales = input.sales.filter((sale) =>
+  const includedSales = courtSales.filter((sale) =>
     trackedCourtCodes.has(sale.tribunalCode.toLocaleLowerCase("fr-FR")),
   );
   const national = buildScopeOverview({
@@ -195,7 +203,9 @@ export function buildTribunalJudicialActivityDirectory(input: {
     })
     .sort(
       (left, right) =>
-        right.upcomingSales - left.upcomingSales || left.name.localeCompare(right.name, "fr"),
+        right.upcomingSales - left.upcomingSales ||
+        right.observedPastSales - left.observedPastSales ||
+        left.name.localeCompare(right.name, "fr"),
     );
 
   const { historyStart, upcomingEnd } = judicialActivityPeriod(input.asOf, input.historyMonths);

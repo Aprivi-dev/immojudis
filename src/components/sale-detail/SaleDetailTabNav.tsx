@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import { useState } from "react";
 import Check from "lucide-react/dist/esm/icons/check.js";
@@ -8,7 +8,13 @@ import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up.js";
 import styles from "./SaleDetailTabNav.module.css";
 
-export type SaleDetailTab = "apercu" | "estimation" | "travaux" | "financement" | "demarches";
+export type SaleDetailTab =
+  | "apercu"
+  | "estimation"
+  | "statistiques"
+  | "travaux"
+  | "financement"
+  | "demarches";
 
 export const SALE_DETAIL_TABS: ReadonlyArray<{
   id: SaleDetailTab;
@@ -16,6 +22,7 @@ export const SALE_DETAIL_TABS: ReadonlyArray<{
 }> = [
   { id: "apercu", label: "Aperçu" },
   { id: "estimation", label: "Estimation" },
+  { id: "statistiques", label: "Statistiques" },
   { id: "travaux", label: "Travaux" },
   { id: "financement", label: "Financement" },
   { id: "demarches", label: "Démarches" },
@@ -31,23 +38,31 @@ export function saleDetailTabPanelId(tab: SaleDetailTab): string {
 export type SaleDetailTabNavProps = {
   activeTab: SaleDetailTab;
   onTabChange: (tab: SaleDetailTab) => void;
+  showStatistics?: boolean;
 };
 
-export function SaleDetailTabNav({ activeTab, onTabChange }: SaleDetailTabNavProps) {
+export function SaleDetailTabNav({
+  activeTab,
+  onTabChange,
+  showStatistics = false,
+}: SaleDetailTabNavProps) {
+  const tabs = useMemo(
+    () => SALE_DETAIL_TABS.filter((tab) => showStatistics || tab.id !== "statistiques"),
+    [showStatistics],
+  );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
   const mobileTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const tabListRef = useRef<HTMLDivElement>(null);
-  const activeTabLabel =
-    SALE_DETAIL_TABS.find((tab) => tab.id === activeTab)?.label ?? SALE_DETAIL_TABS[0].label;
+  const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label ?? tabs[0].label;
   const mobileMenuId = "sale-detail-mobile-menu";
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
 
-    const activeIndex = SALE_DETAIL_TABS.findIndex((tab) => tab.id === activeTab);
+    const activeIndex = tabs.findIndex((tab) => tab.id === activeTab);
     mobileOptionRefs.current[activeIndex >= 0 ? activeIndex : 0]?.focus();
 
     function onPointerDown(event: PointerEvent) {
@@ -72,46 +87,46 @@ export function SaleDetailTabNav({ activeTab, onTabChange }: SaleDetailTabNavPro
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [activeTab, mobileMenuOpen]);
+  }, [activeTab, mobileMenuOpen, tabs]);
 
   useEffect(() => {
     const list = tabListRef.current;
-    const tab = tabRefs.current[SALE_DETAIL_TABS.findIndex((item) => item.id === activeTab)];
+    const tab = tabRefs.current[tabs.findIndex((item) => item.id === activeTab)];
     if (!list || !tab || list.scrollWidth <= list.clientWidth) return;
     list.scrollLeft = tab.offsetLeft - list.offsetLeft - (list.clientWidth - tab.clientWidth) / 2;
-  }, [activeTab]);
+  }, [activeTab, tabs]);
 
   const focusTab = (tab: SaleDetailTab) => {
-    const index = SALE_DETAIL_TABS.findIndex((item) => item.id === tab);
+    const index = tabs.findIndex((item) => item.id === tab);
     if (index < 0) return;
     tabRefs.current[index]?.focus();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, currentTab: SaleDetailTab) => {
-    const currentIndex = SALE_DETAIL_TABS.findIndex((item) => item.id === currentTab);
+    const currentIndex = tabs.findIndex((item) => item.id === currentTab);
     if (currentIndex < 0) return;
 
     let nextIndex: number | null = null;
     if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-      nextIndex = (currentIndex + 1) % SALE_DETAIL_TABS.length;
+      nextIndex = (currentIndex + 1) % tabs.length;
     } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-      nextIndex = (currentIndex - 1 + SALE_DETAIL_TABS.length) % SALE_DETAIL_TABS.length;
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
     } else if (event.key === "Home") {
       nextIndex = 0;
     } else if (event.key === "End") {
-      nextIndex = SALE_DETAIL_TABS.length - 1;
+      nextIndex = tabs.length - 1;
     }
 
     if (nextIndex == null) return;
 
     event.preventDefault();
-    const nextTab = SALE_DETAIL_TABS[nextIndex].id;
+    const nextTab = tabs[nextIndex].id;
     onTabChange(nextTab);
     focusTab(nextTab);
   };
 
   const focusMobileOption = (index: number) => {
-    const nextIndex = (index + SALE_DETAIL_TABS.length) % SALE_DETAIL_TABS.length;
+    const nextIndex = (index + tabs.length) % tabs.length;
     mobileOptionRefs.current[nextIndex]?.focus();
   };
 
@@ -119,7 +134,7 @@ export function SaleDetailTabNav({ activeTab, onTabChange }: SaleDetailTabNavPro
     event: KeyboardEvent<HTMLButtonElement>,
     currentTab: SaleDetailTab,
   ) => {
-    const currentIndex = SALE_DETAIL_TABS.findIndex((tab) => tab.id === currentTab);
+    const currentIndex = tabs.findIndex((tab) => tab.id === currentTab);
     if (currentIndex < 0) return;
 
     let nextIndex: number | null = null;
@@ -130,7 +145,7 @@ export function SaleDetailTabNav({ activeTab, onTabChange }: SaleDetailTabNavPro
     } else if (event.key === "Home") {
       nextIndex = 0;
     } else if (event.key === "End") {
-      nextIndex = SALE_DETAIL_TABS.length - 1;
+      nextIndex = tabs.length - 1;
     } else if (event.key === "Escape") {
       event.preventDefault();
       setMobileMenuOpen(false);
@@ -153,14 +168,13 @@ export function SaleDetailTabNav({ activeTab, onTabChange }: SaleDetailTabNavPro
   return (
     <nav ref={navRef} className={styles.nav} aria-label="Navigation de l'annonce">
       <div className={styles.inner}>
-        <span className={styles.eyebrow}>Explorer l'annonce</span>
         <div
           ref={tabListRef}
           className={styles.tabList}
           role="tablist"
           aria-label="Sections de l'annonce"
         >
-          {SALE_DETAIL_TABS.map((tab, index) => {
+          {tabs.map((tab, index) => {
             const isActive = activeTab === tab.id;
             return (
               <button
@@ -194,7 +208,7 @@ export function SaleDetailTabNav({ activeTab, onTabChange }: SaleDetailTabNavPro
             aria-label="Sections de l'annonce"
             aria-orientation="vertical"
           >
-            {SALE_DETAIL_TABS.map((tab, index) => {
+            {tabs.map((tab, index) => {
               const isActive = activeTab === tab.id;
               return (
                 <button

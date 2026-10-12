@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import { z } from "zod";
 import {
   bearerTokenFromRequest,
@@ -26,13 +27,10 @@ export async function GET(request: Request) {
     const response = await getSaleWorkspace({ auth, saleId });
     return NextResponse.json(response);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Dossier de suivi indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réserv")
-        ? 403
-        : 400;
-    return NextResponse.json({ workspace: null, error: message }, { status });
+    return apiRouteError(error, request, "sale-workspace", {
+      fallbackMessage: "Dossier de suivi indisponible",
+      extra: { workspace: null },
+    });
   }
 }
 
@@ -48,12 +46,9 @@ export async function PUT(request: Request) {
     const response = await upsertSaleWorkspace({ auth, input });
     return NextResponse.json(response);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Dossier de suivi impossible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réserv")
-        ? 403
-        : 400;
-    return NextResponse.json({ workspace: null, error: message }, { status });
+    return apiRouteError(error, request, "sale-workspace", {
+      fallbackMessage: "Dossier de suivi impossible",
+      extra: { workspace: null },
+    });
   }
 }

@@ -5,7 +5,7 @@ import {
   type BidCeilingPlanAccess,
 } from "@/lib/bid-ceiling";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 
 const ANALYSE_PLAN: BidCeilingPlanAccess = {
   code: "analyse",
@@ -131,9 +131,9 @@ describe("bid ceiling analysis", () => {
     expect(analysis.scenarios[0].key).toBe("prudent");
     expect(analysis.scenarios[0].result.safetyDiscountPct).toBe(8);
     expect(analysis.assumptions).toMatchObject({
-      worksEur: 40_000,
-      worksSource: "default_refresh",
-      worksScenario: "rafraichissement",
+      worksEur: 0,
+      worksSource: "none",
+      worksScenario: null,
     });
   });
 });

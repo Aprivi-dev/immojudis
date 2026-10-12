@@ -1,3 +1,4 @@
+import { clamp } from "@/lib/guards";
 const DEFAULT_MAPBOX_STYLE = "mapbox/streets-v12";
 const DEFAULT_STATIC_IMAGE_SIZE = { width: 640, height: 360 };
 const MAPBOX_STATIC_STREETS_STYLE = "mapbox/streets-v12";
@@ -5,6 +6,24 @@ const MAPBOX_STATIC_SATELLITE_STYLE = "mapbox/satellite-v9";
 
 export const MAPBOX_ATTRIBUTION = "© Mapbox © OpenStreetMap";
 export const MAPBOX_COPYRIGHT_URL = "https://www.mapbox.com/about/maps/";
+
+/**
+ * Désactive la télémétrie de Mapbox GL (envois vers events.mapbox.com) : sans consentement, la
+ * carte ne doit rien transmettre d'autre que les tuiles. EVENTS_URL est un accesseur en lecture
+ * seule dans la bibliothèque ; on le remplace par une valeur nulle, ce qui coupe l'envoi.
+ */
+export function disableMapboxTelemetry(runtime: { config?: object } | null | undefined) {
+  if (!runtime?.config) return;
+  try {
+    Object.defineProperty(runtime.config, "EVENTS_URL", {
+      value: null,
+      configurable: true,
+      writable: true,
+    });
+  } catch {
+    // Configuration verrouillée : la carte fonctionne, la télémétrie reste celle de la bibliothèque.
+  }
+}
 
 export function getMapboxAccessToken() {
   return (process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN ?? "").trim();
@@ -146,8 +165,4 @@ export function normalizeMapboxStyle(style: string) {
 
 function formatCoordinate(value: number) {
   return Number(value.toFixed(6));
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
 }

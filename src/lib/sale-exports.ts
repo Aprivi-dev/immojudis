@@ -1,3 +1,4 @@
+import "server-only";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
@@ -446,7 +447,7 @@ function saleToApiFeedItem(sale: AuctionSale, origin?: string | null): SalesApiF
     },
     compliance: {
       limitations: [
-        "Données issues de sources judiciaires collectées et normalisées par ImmoJudis.",
+        "Données issues de sources judiciaires collectées et normalisées par Immojudis.",
         "Les estimations, scores et rendements sont indicatifs et ne constituent pas une promesse de gain.",
         "Les pièces officielles, l'avocat et le cahier des conditions priment avant toute enchère.",
       ],

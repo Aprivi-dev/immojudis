@@ -1,3 +1,4 @@
+import "server-only";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
@@ -16,6 +17,11 @@ import {
   type TribunalJudicialActivityDirectorySale,
 } from "@/lib/tribunal-judicial-activity-directory";
 import { isPublicationQuarantinedMarker } from "@/lib/sale-publication-guard";
+import {
+  loadArchivedPastHearings,
+  TribunalOutcomeGraphHistoryUnavailableError,
+  type ArchivedHearing,
+} from "@/lib/tribunal-outcome-graph-history";
 
 const PAGE_SIZE = 1_000;
 const MAX_SALES_PER_COURT = 5_000;
@@ -29,6 +35,8 @@ const SALE_COLUMNS = [
   "starting_price_eur",
   "property_type",
   "visit_dates",
+  "occupancy_status",
+  "city",
   "first_seen_at",
   "publication_quarantine:raw_payload->>publication_quarantine",
 ].join(",");
@@ -82,6 +90,8 @@ const storedSaleSchema = z
       .nullable(),
     property_type: z.string().nullable(),
     visit_dates: z.unknown(),
+    occupancy_status: z.string().nullable().optional(),
+    city: z.string().nullable().optional(),
     first_seen_at: z.string().datetime({ offset: true }).nullable(),
     publication_quarantine: z.string().nullable().optional(),
   })
@@ -90,28 +100,6 @@ const storedSaleSchema = z
 const storedDirectorySaleSchema = storedSaleSchema.extend({
   tribunal_code: z.string().min(1),
 });
-
-type DatabaseResult = {
-  data: unknown;
-  error: { message: string } | null;
-};
-
-type ActivityQuery = PromiseLike<DatabaseResult> & {
-  select(columns: string): ActivityQuery;
-  eq(column: string, value: unknown): ActivityQuery;
-  not(column: string, operator: string, value: unknown): ActivityQuery;
-  in(column: string, values: unknown[]): ActivityQuery;
-  gte(column: string, value: unknown): ActivityQuery;
-  lt(column: string, value: unknown): ActivityQuery;
-  order(column: string, options?: { ascending?: boolean }): ActivityQuery;
-  limit(count: number): ActivityQuery;
-  range(from: number, to: number): PromiseLike<DatabaseResult>;
-  maybeSingle(): PromiseLike<DatabaseResult>;
-};
-
-const activityAdmin = supabaseAdmin as unknown as {
-  from(table: string): ActivityQuery;
-};
 
 export class TribunalJudicialActivityUnavailableError extends Error {
   constructor(message = "Tribunal judicial activity is temporarily unavailable.") {
@@ -127,7 +115,7 @@ export async function getTribunalJudicialActivity(
   const asOf = options.asOf ?? new Date();
   const courtCode = input.courtCode ?? (await resolveCourtCodeFromSale(input.saleId!));
   const { historyStart, upcomingEnd } = judicialActivityPeriod(asOf, input.historyMonths);
-  const courtResult = await activityAdmin
+  const courtResult = await supabaseAdmin
     .from("outcome_courts")
     .select("code,name,judicial_region")
     .eq("code", courtCode)
@@ -147,18 +135,21 @@ export async function getTribunalJudicialActivity(
   }
 
   const court = storedCourtSchema.parse(courtResult.data);
-  const saleRows = await loadEligibleSales({
-    courtCode,
-    historyStart,
-    upcomingEnd,
-  });
+  const [saleRows, archived] = await Promise.all([
+    loadEligibleSales({
+      courtCode,
+      historyStart,
+      upcomingEnd,
+    }),
+    loadArchivedHistory({ historyStart, asOf, courtCode: court.code }),
+  ]);
   return buildTribunalJudicialActivity({
     court: {
       code: court.code,
       name: court.name,
       judicialRegion: court.judicial_region,
     },
-    sales: saleRows,
+    sales: [...saleRows, ...archived.map(archivedHearingSale)],
     asOf,
     historyMonths: input.historyMonths,
   });
@@ -170,20 +161,62 @@ export async function getTribunalJudicialActivityDirectory(
 ): Promise<TribunalJudicialActivityDirectoryResponse> {
   const asOf = options.asOf ?? new Date();
   const { historyStart, upcomingEnd } = judicialActivityPeriod(asOf, input.historyMonths);
-  const [courts, sales] = await Promise.all([
+  const [courts, sales, archived] = await Promise.all([
     loadActiveCourts(),
     loadEligibleDirectorySales({ historyStart, upcomingEnd }),
+    loadArchivedHistory({ historyStart, asOf }),
   ]);
   return buildTribunalJudicialActivityDirectory({
     courts,
-    sales,
+    sales: [
+      ...sales,
+      ...archived.map((hearing) => ({
+        tribunalCode: hearing.courtCode,
+        ...archivedHearingSale(hearing),
+      })),
+    ],
     asOf,
     historyMonths: input.historyMonths,
   });
 }
 
+async function loadArchivedHistory(input: {
+  historyStart: Date;
+  asOf: Date;
+  courtCode?: string;
+}): Promise<ArchivedHearing[]> {
+  try {
+    const result = await loadArchivedPastHearings(input);
+    return result.hearings;
+  } catch (error) {
+    if (error instanceof TribunalOutcomeGraphHistoryUnavailableError) {
+      // Never publish a partial history as if it were complete.
+      throw new TribunalJudicialActivityUnavailableError(error.message);
+    }
+    throw error;
+  }
+}
+
+/** An archived hearing as a past sale: no visit information, earliest detection kept. */
+function archivedHearingSale(hearing: ArchivedHearing): TribunalJudicialActivitySale {
+  return {
+    id: hearing.roundId,
+    saleDate: hearing.scheduledAt,
+    status: "past",
+    startingPriceEur: hearing.startingPriceEur,
+    propertyType: hearing.propertyType,
+    visitDates: [],
+    visitDatesKnown: false,
+    firstSeenAt: hearing.firstSeenAt,
+    occupationStatus: hearing.occupancyStatus,
+    city: hearing.city,
+    courtCode: hearing.courtCode,
+    historySource: "outcome_graph_archive",
+  };
+}
+
 export async function resolveCourtCodeFromSale(saleId: string): Promise<string> {
-  const result = await activityAdmin
+  const result = await supabaseAdmin
     .from("auction_sales")
     .select(
       "tribunal_code,tribunal,sale_venue_type,sale_verification_status,status,publication_quarantine:raw_payload->>publication_quarantine",
@@ -211,7 +244,7 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
 
   if (sale.tribunal_code) return normalizeCourtCode(sale.tribunal_code);
 
-  const assignmentResult = await activityAdmin
+  const assignmentResult = await supabaseAdmin
     .from("auction_sale_competent_court_assignments")
     .select("court_code")
     .eq("auction_sale_id", saleId)
@@ -229,7 +262,7 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
   }
 
   if (sale.tribunal && ["verified", "cross_checked"].includes(sale.sale_verification_status)) {
-    const tribunalResult = await activityAdmin
+    const tribunalResult = await supabaseAdmin
       .from("tribunals")
       .select("code,canonical_name")
       .eq("canonical_name", sale.tribunal)
@@ -245,7 +278,7 @@ export async function resolveCourtCodeFromSale(saleId: string): Promise<string> 
       return normalizeCourtCode(tribunal.code);
     }
 
-    const referenceResult = await activityAdmin
+    const referenceResult = await supabaseAdmin
       .from("tribunals")
       .select("code,canonical_name")
       .order("code", { ascending: true })
@@ -295,7 +328,7 @@ async function loadEligibleSales(input: {
 }): Promise<TribunalJudicialActivitySale[]> {
   const rows: TribunalJudicialActivitySale[] = [];
   for (let offset = 0; offset < MAX_SALES_PER_COURT; offset += PAGE_SIZE) {
-    const result = await activityAdmin
+    const result = await supabaseAdmin
       .from("auction_sales")
       .select(SALE_COLUMNS)
       .eq("tribunal_code", input.courtCode)
@@ -318,15 +351,7 @@ async function loadEligibleSales(input: {
       (candidate) =>
         !isPublicationQuarantinedMarker(candidate.publication_quarantine, candidate.status),
     )) {
-      rows.push({
-        id: row.id,
-        saleDate: row.sale_date,
-        status: row.status,
-        startingPriceEur: row.starting_price_eur,
-        propertyType: row.property_type,
-        visitDates: row.visit_dates,
-        firstSeenAt: row.first_seen_at,
-      });
+      rows.push(mapStoredSale(row));
     }
     if (page.length < PAGE_SIZE) return rows;
   }
@@ -337,7 +362,7 @@ async function loadEligibleSales(input: {
 }
 
 async function loadActiveCourts() {
-  const result = await activityAdmin
+  const result = await supabaseAdmin
     .from("outcome_courts")
     .select("code,name,judicial_region")
     .eq("active", true)
@@ -367,7 +392,7 @@ async function loadEligibleDirectorySales(input: {
 }): Promise<TribunalJudicialActivityDirectorySale[]> {
   const rows: TribunalJudicialActivityDirectorySale[] = [];
   for (let offset = 0; offset < MAX_DIRECTORY_SALES; offset += PAGE_SIZE) {
-    const result = await activityAdmin
+    const result = await supabaseAdmin
       .from("auction_sales")
       .select(DIRECTORY_SALE_COLUMNS)
       .eq("sale_venue_type", "tribunal")
@@ -403,6 +428,7 @@ async function loadEligibleDirectorySales(input: {
 
 function mapStoredSale(row: z.infer<typeof storedSaleSchema>): TribunalJudicialActivitySale {
   return {
+    historySource: "catalogue",
     id: row.id,
     saleDate: row.sale_date,
     status: row.status,
@@ -410,6 +436,8 @@ function mapStoredSale(row: z.infer<typeof storedSaleSchema>): TribunalJudicialA
     propertyType: row.property_type,
     visitDates: row.visit_dates,
     firstSeenAt: row.first_seen_at,
+    occupationStatus: row.occupancy_status ?? null,
+    city: row.city ?? null,
   };
 }
 

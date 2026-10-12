@@ -15,6 +15,8 @@ PDF_TEXTS_DIR = RAW_DIR / "pdf_texts"
 PDF_DOCUMENT_TEXTS_DIR = PDF_TEXTS_DIR / "documents"
 DOCLING_TEXTS_DIR = RAW_DIR / "docling_texts"
 LLM_EXTRACTIONS_DIR = PROCESSED_DIR / "llm_extractions"
+# Identifies the crawler honestly; never impersonate a browser.
+DEFAULT_USER_AGENT = "ImmojudisBot/1.0 (+https://immojudis.com/contact)"
 DEFAULT_REPLICATE_MODEL = "qwen/qwen3-7-plus"
 DEFAULT_LLM_PROMPT_VERSION = "auction_llm_v10_structured_display"
 DEFAULT_LLM_FACT_PROMPT_VERSION = "auction_facts_v1"
@@ -136,15 +138,7 @@ def load_settings() -> dict[str, str | float | None]:
             float(os.getenv("JUDILIBRE_RETRY_MAX_SLEEP_SECONDS", "30")),
         ),
         "dvf_import_batch_size": int(os.getenv("DVF_IMPORT_BATCH_SIZE", "1000")),
-        "user_agent": os.getenv("AUCTION_USER_AGENT", "immojudis-data-pipeline/1.0 (+https://example.com/contact)"),
-        "browser_user_agent": os.getenv(
-            "AUCTION_BROWSER_USER_AGENT",
-            (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/126.0.0.0 Safari/537.36"
-            ),
-        ),
+        "user_agent": (os.getenv("AUCTION_USER_AGENT") or "").strip() or DEFAULT_USER_AGENT,
         "request_delay_seconds": float(os.getenv("REQUEST_DELAY_SECONDS", "1.5")),
         "request_timeout_seconds": float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
         # A source collector is isolated from the parent pipeline so a parser
@@ -152,12 +146,16 @@ def load_settings() -> dict[str, str | float | None]:
         # longer than a normal Licitor/Vench inventory pass; HTTP requests keep
         # their own shorter timeout inside the child.  The default stays below
         # the 35-minute autonomous source budget so its parent can finish
-        # publication and terminate the child cleanly.
+        # publication and terminate the child cleanly.  Petites Affiches
+        # keeps its own 30-minute collection checkpoint budget inside that
+        # 35-minute scheduler window.
         "source_process_isolation": os.getenv("SOURCE_PROCESS_ISOLATION", "true").lower()
         in {"1", "true", "yes", "on"},
         "source_process_isolation_sources": tuple(
             source.strip().lower()
-            for source in os.getenv("SOURCE_PROCESS_ISOLATION_SOURCES", "vench,avoventes").split(",")
+            for source in os.getenv(
+                "SOURCE_PROCESS_ISOLATION_SOURCES", "vench,avoventes,petites_affiches"
+            ).split(",")
             if source.strip()
         ),
         "source_scrape_timeout_seconds": max(
@@ -274,6 +272,10 @@ def load_settings() -> dict[str, str | float | None]:
         "pdf_ocr_enabled": os.getenv("PDF_OCR_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
         "pdf_ocr_language": os.getenv("PDF_OCR_LANGUAGE", "fra+eng"),
         "pdf_ocr_tessdata": os.getenv("TESSDATA_PREFIX") or os.getenv("PDF_OCR_TESSDATA"),
+        "pdf_ocr_document_budget_seconds": max(
+            0.0,
+            float(os.getenv("PDF_OCR_DOCUMENT_BUDGET_SECONDS", "120")),
+        ),
         "pdf_extractor": os.getenv("PDF_EXTRACTOR", "auto").lower(),
         "pdf_docling_enabled": os.getenv("PDF_DOCLING_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
         "pdf_docling_threshold_chars": int(os.getenv("PDF_DOCLING_THRESHOLD_CHARS", "1200")),

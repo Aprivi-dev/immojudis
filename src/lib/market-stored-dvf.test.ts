@@ -74,7 +74,7 @@ describe("market estimate normalized DVF corpus", () => {
       }),
     );
 
-    const { getMarketEstimate } = await import("@/lib/market.functions");
+    const { getMarketEstimate } = await import("@/lib/market.server");
     const response = await getMarketEstimate({
       lat: 44.8378,
       lng: -0.5792,
@@ -133,7 +133,7 @@ describe("market estimate normalized DVF corpus", () => {
       }),
     );
 
-    const { getMarketEstimate } = await import("@/lib/market.functions");
+    const { getMarketEstimate } = await import("@/lib/market.server");
     const response = await getMarketEstimate({
       lat: 48.8566,
       lng: 2.3522,

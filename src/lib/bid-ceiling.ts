@@ -7,7 +7,6 @@ import {
   computeRentabilityScore,
   DEFAULT_MARKET_CEILING_SCENARIO,
   DEFAULTS,
-  estimateWorksBudget,
   MARKET_CEILING_SCENARIOS,
   marketCeilingVerdict,
   type MarketCeilingResult,
@@ -16,8 +15,10 @@ import {
 } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
-import type { MarketEstimate } from "@/lib/market.functions";
+import { saleRow } from "@/lib/sale-rows";
+import type { MarketEstimate } from "@/lib/market.server";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
+import { saleCostContext } from "@/lib/sale-cost-context";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getSaleSurface } from "@/lib/surface";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -104,8 +105,8 @@ export type BidCeilingBudgetAnalysis = {
 export type BidCeilingAssumptions = {
   simulatedBidEur: number;
   worksEur: number;
-  worksSource: "user" | "default_refresh";
-  worksScenario: "rafraichissement" | null;
+  worksSource: "user" | "none";
+  worksScenario: null;
   fptEur: number;
   scenario: BidCeilingRequestPayload["scenario"];
   customSafetyDiscountPct: number | null;
@@ -177,8 +178,8 @@ export function buildBidCeilingAnalysis({
 }): BidCeilingAnalysisResponse {
   const surface = getSaleSurface(sale);
   const simulatedBidEur = Math.max(0, input.simulatedBidEur ?? sale.starting_price_eur ?? 0);
-  const defaultWorksEur = estimateWorksBudget(surface.value, "rafraichissement");
-  const worksEur = Math.max(0, input.worksEur ?? defaultWorksEur);
+  // Aucun travaux tant que l'utilisateur n'en a pas chiffré.
+  const worksEur = Math.max(0, input.worksEur ?? 0);
   const fptEur = Math.max(0, input.fptEur ?? DEFAULTS.fpt);
   const scenarioKeys = scenarioKeysForPlan(plan, input.scenario);
   const marketReference = buildMarketReference(input, marketEstimate);
@@ -190,6 +191,7 @@ export function buildBidCeilingAnalysis({
       price: simulatedBidEur,
       works: worksEur,
       fpt: fptEur,
+      ...saleCostContext(sale),
       scenario,
       customSafetyDiscountPct: input.customSafetyDiscountPct ?? undefined,
       manualMarketPricePerM2: input.manualMarketPricePerM2,
@@ -215,6 +217,7 @@ export function buildBidCeilingAnalysis({
     userBudgetEur: input.userBudgetEur ?? null,
     worksEur,
     fptEur,
+    department: sale.department,
   });
   const rentabilityAtSelectedMaxBid = computeRentabilityScore({
     surface: surface.value,
@@ -246,8 +249,8 @@ export function buildBidCeilingAnalysis({
     assumptions: {
       simulatedBidEur,
       worksEur,
-      worksSource: input.worksEur == null ? "default_refresh" : "user",
-      worksScenario: input.worksEur == null ? "rafraichissement" : null,
+      worksSource: input.worksEur == null ? "none" : "user",
+      worksScenario: null,
       fptEur,
       scenario: input.scenario,
       customSafetyDiscountPct: input.customSafetyDiscountPct ?? null,
@@ -264,7 +267,7 @@ export function buildBidCeilingAnalysis({
     plan,
     compliance: {
       limitations: [
-        "Le plafond d'enchère est une aide à la décision et ne constitue pas une recommandation d'achat.",
+        "L’enchère plafond est une aide à la décision et ne constitue pas une recommandation d'achat.",
         "Les frais, travaux, conditions d'occupation et pièces officielles doivent être confirmés avant l'audience.",
         "Aucun rendement, gain ou prix d'adjudication n'est garanti.",
       ],
@@ -275,7 +278,7 @@ export function buildBidCeilingAnalysis({
 async function assertBidCeilingAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "property.bidCeiling")) {
-    throw new Error("Calcul de mise maximale réservé au plan Analyse.");
+    throw new Error("Calcul d’enchère plafond réservé au plan Analyse.");
   }
   return plan;
 }
@@ -315,7 +318,7 @@ async function loadSaleForBidCeiling(
     .single();
 
   if (error) throw error;
-  return data as unknown as AuctionSale;
+  return saleRow(data);
 }
 
 async function resolveMarketEstimate(
@@ -374,18 +377,25 @@ function buildBudgetAnalysis({
   userBudgetEur,
   worksEur,
   fptEur,
+  department,
 }: {
   selectedResult: MarketCeilingResult;
   simulatedBidEur: number;
   userBudgetEur: number | null;
   worksEur: number;
   fptEur: number;
+  department: string | null;
 }): BidCeilingBudgetAnalysis {
   const allInCostAtBudget =
     userBudgetEur == null
       ? null
       : Math.round(
-          computeAcquisitionCosts({ price: userBudgetEur, works: worksEur, fpt: fptEur }).totalCost,
+          computeAcquisitionCosts({
+            price: userBudgetEur,
+            works: worksEur,
+            fpt: fptEur,
+            department,
+          }).totalCost,
         );
   const selectedMaxBidEur = selectedResult.available ? selectedResult.maxBid : null;
 
@@ -394,7 +404,12 @@ function buildBudgetAnalysis({
     simulatedBidEur,
     allInCostAtBudget,
     allInCostAtSimulatedBid: Math.round(
-      computeAcquisitionCosts({ price: simulatedBidEur, works: worksEur, fpt: fptEur }).totalCost,
+      computeAcquisitionCosts({
+        price: simulatedBidEur,
+        works: worksEur,
+        fpt: fptEur,
+        department,
+      }).totalCost,
     ),
     selectedMaxBidEur,
     budgetDeltaToSelectedMaxBidEur:

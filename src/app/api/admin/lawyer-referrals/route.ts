@@ -5,10 +5,30 @@ import {
   listAdminLawyerReferralRequests,
   updateAdminLawyerReferralRequest,
 } from "@/lib/admin-lawyer-referrals";
+import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
-    const response = await listAdminLawyerReferralRequests(bearerTokenFromRequest(request));
+    const url = new URL(request.url);
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const limit = Number(url.searchParams.get("limit") ?? 50);
+    if (
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 100
+    ) {
+      throw new Error("Pagination des mises en relation invalide.");
+    }
+    const response = await listAdminLawyerReferralRequests(bearerTokenFromRequest(request), {
+      offset,
+      limit,
+    });
     return NextResponse.json(response, {
       headers: { "cache-control": "private, no-store" },
     });
@@ -17,7 +37,7 @@ export async function GET(request: Request) {
   }
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     const input = adminLawyerReferralUpdateInputSchema.parse(await request.json());
     const response = await updateAdminLawyerReferralRequest({
@@ -30,12 +50,5 @@ export async function PATCH(request: Request) {
   }
 }
 
-function adminErrorResponse(error: unknown) {
-  const message = error instanceof Error ? error.message : "Erreur admin";
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden")
-      ? 403
-      : 400;
-  return NextResponse.json({ error: message }, { status });
-}
+export const GET = withAdminDeadline(handleGET);
+export const PATCH = withAdminDeadline(handlePATCH);

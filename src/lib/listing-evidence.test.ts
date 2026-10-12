@@ -114,7 +114,9 @@ describe("listing evidence and chronology", () => {
       ),
     ).toBe("Inoccupé au constat");
     expect(listingOccupation(sale({ occupancy_status: "vacant" }))).toBe("Libre selon l’annonce");
-    expect(listingOccupation(sale({ occupancy_status: "unknown" }))).toBe("À confirmer");
+    expect(listingOccupation(sale({ occupancy_status: "unknown" }))).toBe("Non renseignée");
+    expect(listingOccupation(sale({ occupancy_status: null }))).toBe("Non renseignée");
+    expect(listingOccupation(sale({ occupancy_status: "À confirmer" }))).toBe("À confirmer");
   });
   it("does not infer an adjudication from an elapsed date, and respects cancellation", () => {
     expect(listingSaleStatus(sale({ sale_date: "2026-09-01", status: "upcoming" }), now)).toBe(

@@ -1,17 +1,12 @@
 import type { Metadata } from "next";
-import { AuthGate } from "@/components/AuthGate";
-import { AdminDashboardPage } from "@/routes/admin";
+import { AdminOperationsPage } from "./admin-operations-page";
 
 export const metadata: Metadata = {
   title: "Opérations admin",
-  description: "Collecte, enrichissement et suivi des traitements ImmoJudis.",
+  description: "Collecte, enrichissement et suivi des traitements Immojudis.",
   robots: { index: false, follow: false },
 };
 
 export default function Page() {
-  return (
-    <AuthGate>
-      <AdminDashboardPage initialView="operations" />
-    </AuthGate>
-  );
+  return <AdminOperationsPage />;
 }

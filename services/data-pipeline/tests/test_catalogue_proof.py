@@ -223,5 +223,6 @@ def test_encheres_immobilieres_stops_on_unavailable_inventory(monkeypatch):
 
     monkeypatch.setattr(source, 'PoliteHttpClient', Client)
     result = source.scrape_encheres_immobilieres_aquitaine_result(max_pages=100)
-    assert len(calls) == 1
+    assert calls == [source.LIST_URL, f'{source.LIST_URL}?page=2']
     assert result.errors and result.coverage['coverage_complete'] is False
+    assert len(result.coverage['list_fetch_failures']) == 2

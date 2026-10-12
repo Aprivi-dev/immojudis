@@ -2,7 +2,7 @@
 
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import { useState } from "react";
-import { ProfessionalPilotWorkspace } from "@/components/ProfessionalPilotWorkspace";
+import dynamic from "next/dynamic";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,20 @@ const pilotAction = {
   },
 } as const;
 
+const ProfessionalPilotWorkspace = dynamic(
+  () =>
+    import("@/components/ProfessionalPilotWorkspace").then(
+      (module) => module.ProfessionalPilotWorkspace,
+    ),
+  {
+    loading: () => (
+      <p className="p-6 text-sm text-muted-foreground" role="status">
+        Chargement du dossier…
+      </p>
+    ),
+  },
+);
+
 export function ProfessionalPilotLauncher({
   sale,
   definition,
@@ -49,7 +63,7 @@ export function ProfessionalPilotLauncher({
     >
       <div className="flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-brand-navy/55">
+          <p className="text-xs font-semibold uppercase tracking-wide text-brand-navy/65">
             Outil de travail
           </p>
           <h2 className="mt-1 font-display text-xl font-semibold text-brand-navy">

@@ -1,3 +1,4 @@
+import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
 
 export type RenovationConditionStatus =
@@ -284,7 +285,7 @@ function decisionImpact({
   budgetRange: RenovationBudgetRange | null;
 }): string {
   if (status === "heavy_works") {
-    return "Ne pas fixer la mise maximale sans devis ou visite technique : le coût complet peut absorber toute la décote.";
+    return "Ne pas fixer l’enchère plafond sans devis ou visite technique : le coût complet peut absorber toute la décote.";
   }
   if (status === "works_to_budget") {
     return "Transformer les travaux repérés en enveloppe basse, médiane et haute avant stratégie d'enchère.";
@@ -297,7 +298,7 @@ function decisionImpact({
   }
   return budgetRange
     ? "Budget indicatif à confronter aux pièces avant audience."
-    : "État insuffisamment qualifié : prévoir une marge de sécurité dans la mise maximale.";
+    : "État insuffisamment qualifié : prévoir une marge de sécurité dans l’enchère plafond.";
 }
 
 function nextActions({
@@ -315,7 +316,7 @@ function nextActions({
       "Demander un avis technique ou un chiffrage artisan avant toute enchère offensive.",
     );
   } else if (status === "works_to_budget" || status === "light_refresh") {
-    actions.push("Reporter l'enveloppe travaux dans le calcul de mise maximale.");
+    actions.push("Reporter l'enveloppe travaux dans le calcul d’enchère plafond.");
   } else if (status === "good") {
     actions.push(
       "Conserver une marge de sécurité pour les défauts non visibles ou non documentés.",
@@ -415,40 +416,6 @@ function dedupeEvidence(evidence: RenovationEvidence[]): RenovationEvidence[] {
     if (!byKey.has(key)) byKey.set(key, item);
   }
   return [...byKey.values()];
-}
-
-function flattenKeyValues(value: unknown, path = ""): Array<{ path: string; value: unknown }> {
-  if (!value || typeof value !== "object") return [];
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) => flattenPrimitiveOrObject(item, `${path}[${index}]`));
-  }
-
-  return Object.entries(value as Record<string, unknown>).flatMap(([key, item]) =>
-    flattenPrimitiveOrObject(item, path ? `${path}.${key}` : key),
-  );
-}
-
-function flattenPrimitiveOrObject(
-  value: unknown,
-  path: string,
-): Array<{ path: string; value: unknown }> {
-  if (value && typeof value === "object") return flattenKeyValues(value, path);
-  return [{ path, value }];
-}
-
-function normalizeText(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[’']/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function excerpt(value: string): string {
-  const text = value.replace(/\s+/g, " ").trim();
-  return text.length > 180 ? `${text.slice(0, 177).trim()}...` : text;
 }
 
 function cleanText(value: unknown): string | null {

@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { AuthGate } from "@/components/AuthGate";
-import { PublishPage } from "@/routes/publish";
+import { PublishPage } from "./publish-page";
 
 export const metadata: Metadata = {
   title: "Publier une vente",
   description:
-    "Preparer une demande de publication de vente aux encheres immobiliere avec documents et validation admin.",
+    "Préparez une demande de publication de vente aux enchères immobilière avec documents et validation par l’équipe Immojudis.",
 };
 
 export default function Page() {

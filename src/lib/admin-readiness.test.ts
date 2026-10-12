@@ -14,6 +14,8 @@ describe("admin readiness", () => {
 
     expect(items.find((item) => item.key === "billing.checkout.analyse")).toMatchObject({
       status: "blocked",
+      detail: expect.stringContaining("Price récurrent"),
+      action: expect.stringContaining("STRIPE_ANALYSIS_PRICE_ID"),
     });
     expect(items.find((item) => item.key === "billing.webhook")).toMatchObject({
       status: "blocked",
@@ -28,7 +30,8 @@ describe("admin readiness", () => {
       status: "ready",
     });
     expect(items.find((item) => item.key === "pipeline.dispatch")).toMatchObject({
-      status: "warning",
+      status: "blocked",
+      detail: expect.not.stringContaining("en file"),
     });
     expect(items.find((item) => item.key === "pipeline.llm_backfill")).toMatchObject({
       status: "warning",
@@ -38,21 +41,41 @@ describe("admin readiness", () => {
     });
   });
 
+  it("does not treat whitespace-only secrets as configured", () => {
+    const items = buildEnvironmentReadiness({
+      NEXT_PUBLIC_APP_URL: "https://immojudis.example",
+      STRIPE_SECRET_KEY: "   ",
+      STRIPE_WEBHOOK_SECRET: "\t",
+      CRON_SECRET: "\n",
+    });
+
+    expect(items.find((item) => item.key === "billing.checkout.analyse")).toMatchObject({
+      status: "blocked",
+    });
+    expect(items.find((item) => item.key === "billing.webhook")).toMatchObject({
+      status: "blocked",
+    });
+    expect(items.find((item) => item.key === "cron.smart_alerts")).toMatchObject({
+      status: "blocked",
+    });
+  });
+
   it("marks launch readiness ready when commercial and pipeline envs are configured", () => {
     const items = buildEnvironmentReadiness({
       NEXT_PUBLIC_APP_URL: "https://immojudis.example",
       STRIPE_SECRET_KEY: "stripe-secret-test",
+      STRIPE_ANALYSIS_PRICE_ID: "price_1AnalysisTest",
       STRIPE_WEBHOOK_SECRET: "whsec_test",
       RESEND_API_KEY: "re_test",
-      ALERT_EMAIL_FROM: "ImmoJudis <alertes@immojudis.fr>",
+      ALERT_EMAIL_FROM: "Immojudis <alertes@immojudis.fr>",
       CRON_SECRET: "cron-secret",
       GITHUB_SCROLL_TOKEN: "ghp_test",
       REPLICATE_API_TOKEN: "replicate-token-test",
-      NEXT_PUBLIC_LEGAL_ENTITY_NAME: "ImmoJudis SAS",
+      NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS",
       NEXT_PUBLIC_LEGAL_ENTITY_FORM: "SAS",
       NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS: "1 rue de Paris, 75001 Paris",
       NEXT_PUBLIC_LEGAL_REGISTRATION: "RCS Paris 000 000 000",
-      NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR: "Direction ImmoJudis",
+      NEXT_PUBLIC_LEGAL_PUBLICATION_DIRECTOR: "Direction Immojudis",
       NEXT_PUBLIC_LEGAL_CONTACT_EMAIL: "contact@immojudis.fr",
       NEXT_PUBLIC_LEGAL_CONTACT_PHONE: "+33 1 00 00 00 00",
       NEXT_PUBLIC_LEGAL_MEDIATOR_NAME: "Médiateur de la consommation",

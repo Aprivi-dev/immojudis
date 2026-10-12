@@ -71,6 +71,20 @@ describe("sale AI display description", () => {
     expect(getSaleDisplayDescription(item)).not.toContain("Synthèse IA en cours");
   });
 
+  it("does not append an absent occupation fallback to the generated description", () => {
+    const text = buildStructuredDescription(
+      sale({
+        property_type: "apartment",
+        rooms_count: 2,
+        occupancy_status: "unknown",
+      }),
+    );
+
+    expect(text).toContain("2 pièces");
+    expect(text).not.toContain("Non renseignée");
+    expect(text).not.toContain("À confirmer");
+  });
+
   it("does not invent a judicial hearing for notarial or unknown sales", () => {
     const result = getSaleDisplayDescription(
       sale({ sale_venue_type: "notary", sale_date: null, starting_price_eur: null }),
@@ -112,6 +126,20 @@ describe("structured sale status", () => {
       new Date("2026-09-10T10:00:00Z"),
     );
     expect(text).toContain("La vente est prévue le 15 octobre 2026");
+  });
+  it("names the tribunal with its article, never 'auprès de Tribunal judiciaire'", () => {
+    const text = buildStructuredDescription(
+      sale({
+        sale_venue_type: "tribunal",
+        tribunal_name: "Tribunal judiciaire de Bordeaux",
+        sale_date: "2026-10-15T09:30:00+02:00",
+      }),
+      new Date("2026-09-10T10:00:00Z"),
+    );
+    expect(text).toContain(
+      "La vente est prévue le 15 octobre 2026 au tribunal judiciaire de Bordeaux.",
+    );
+    expect(text).not.toMatch(/auprès de Tribunal/i);
   });
 });
 

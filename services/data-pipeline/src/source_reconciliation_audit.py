@@ -9,6 +9,7 @@ from pathlib import Path
 
 import httpx
 
+from src.config import DEFAULT_USER_AGENT
 from src.sources.cessions_etat import cessions_tls_context
 from src.sources.common import PoliteHttpClient, is_allowed_origin_url, parse_html
 
@@ -22,7 +23,7 @@ def audit(source: str, output: Path) -> None:
     if source not in ORIGINS or not rows:
         raise ValueError('Source outside the frozen reconciliation scope')
     base = ORIGINS[source]
-    client = PoliteHttpClient(base_url=base,user_agent='Immojudis source qualification',delay_seconds=1,timeout_seconds=20,
+    client = PoliteHttpClient(base_url=base,user_agent=DEFAULT_USER_AGENT,delay_seconds=1,timeout_seconds=20,
         tls_context=cessions_tls_context() if source == 'cessions_etat' else None)
     output.parent.mkdir(parents=True,exist_ok=True)
 

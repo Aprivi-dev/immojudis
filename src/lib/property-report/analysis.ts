@@ -1,28 +1,17 @@
 import { collectSaleDocuments } from "@/lib/sale-documents";
-import { randomBytes } from "node:crypto";
 import { saleSession, saleWindow } from "@/lib/sale-window";
-import { z } from "zod";
-import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import type { Database, Json } from "@/integrations/supabase/types";
 import { buildActiveComparablesAnalysis } from "@/lib/active-comparables-analysis";
 import { buildAudienceReadinessAnalysis } from "@/lib/audience-readiness-analysis";
 import { buildAuctionCostAnalysis } from "@/lib/auction-cost-analysis";
 import { buildCadastralAnalysis, type StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import { buildDemographicAnalysis } from "@/lib/demographic-analysis";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
-import { normalizeDpeClass, type StructuredDpeDiagnostic } from "@/lib/dpe";
-import {
-  formatDate,
-  formatPrice,
-  formatPricePerM2,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
-import { getEnvironmentalContext, type EnvironmentalContext } from "@/lib/environment.functions";
+import { type StructuredDpeDiagnostic } from "@/lib/dpe";
+import { propertyTypeLabel } from "@/lib/format";
+import { type EnvironmentalContext } from "@/lib/environmental-context";
 import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
 import { buildLegalAttentionAnalysis } from "@/lib/legal-attention-analysis";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { MarketEstimate } from "@/lib/market.server";
 import { buildMarketComparablesAnalysis } from "@/lib/market-comparables-analysis";
 import { buildNearbyServicesAnalysis } from "@/lib/nearby-services";
 import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
@@ -30,49 +19,18 @@ import { buildOccupancyAnalysis } from "@/lib/occupation-analysis";
 import { buildRenovationAnalysis } from "@/lib/renovation-analysis";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
-import {
-  featureAccess,
-  featureIncluded,
-  isPlanPeriodActive,
-  normalizePlanCode,
-  PLAN_LABELS,
-  PLAN_LIMITS,
-  type FeatureAccess,
-  type FeatureKey,
-  type PlanCode,
-} from "@/lib/plans";
-import {
-  computeAcquisitionCosts,
-  computeRecommendedCeilings,
-  computeRentabilityScore,
-  DEFAULT_MARKET_CEILING_SCENARIO,
-  DEFAULTS,
-} from "@/lib/profitability";
-import { createTextPdf } from "@/lib/simple-pdf";
-import {
-  buildReportTraceability,
-  REPORT_COMPLIANCE_NOTICE,
-  type SourceTraceEntry,
-} from "@/lib/source-traceability";
+import { computeRentabilityScore } from "@/lib/profitability";
+import { buildCeilingSnapshot } from "./ceiling-snapshot";
+import { buildReportTraceability } from "@/lib/source-traceability";
 import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
-import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
+import { getSaleSurface } from "@/lib/surface";
 import {
   buildUrbanPlanningAnalysis,
   type StructuredUrbanPlanningSignal,
 } from "@/lib/urban-planning-analysis";
-import { assertUsageLimitAvailable, recordFeatureUsageEvent } from "@/lib/usage";
 import { buildValuationAudit } from "@/lib/valuation-audit";
-import {
-  buildValuationBacktestForSale,
-  type ValuationBacktestResult,
-} from "@/lib/valuation-backtest";
-import type {
-  AuctionSale,
-  SaleDocumentRich,
-  SaleMedia,
-  SaleRisk,
-  SaleScoreFactor,
-} from "@/lib/types";
+import { type ValuationBacktestResult } from "@/lib/valuation-backtest";
+import type { AuctionSale } from "@/lib/types";
 import {
   featureUnlocked,
   gateMarketComparablesAnalysis,
@@ -97,43 +55,7 @@ export async function buildMarketSnapshot(sale: AuctionSale): Promise<MarketEsti
   return getPrecomputedMarketEstimate(sale.id);
 }
 
-export function buildCeilingSnapshot(sale: AuctionSale, marketEstimate: MarketEstimate | null) {
-  const surface = getMarketValuationSurfaces(sale).builtSurfaceM2;
-  const scenario = DEFAULT_MARKET_CEILING_SCENARIO;
-  const ceilings = computeRecommendedCeilings({
-    surface,
-    price: Math.max(0, sale.starting_price_eur ?? 0),
-    fpt: DEFAULTS.fpt,
-    scenario,
-    medianPricePerM2: marketEstimate?.actionable ? marketEstimate.medianPricePerM2 : null,
-    p25PricePerM2: marketEstimate?.actionable ? marketEstimate.p25PricePerM2 : null,
-    p75PricePerM2: marketEstimate?.actionable ? marketEstimate.p75PricePerM2 : null,
-  });
-  const ceiling = ceilings.withRefreshWorks;
-  const acquisition = computeAcquisitionCosts({
-    price: Math.max(0, sale.starting_price_eur ?? 0),
-    works: ceilings.refreshWorksBudget,
-    fpt: DEFAULTS.fpt,
-  });
-
-  return {
-    scenario,
-    available: ceiling.available,
-    reason: ceiling.reason ?? null,
-    maxBid: ceiling.available ? ceiling.maxBid : null,
-    maxBidWithoutWorks: ceilings.withoutWorks.available ? ceilings.withoutWorks.maxBid : null,
-    maxBidWithRefreshWorks: ceilings.withRefreshWorks.available
-      ? ceilings.withRefreshWorks.maxBid
-      : null,
-    refreshWorksBudget: ceilings.refreshWorksBudget,
-    targetTotalCost: ceiling.available ? ceiling.targetTotalCost : null,
-    marketReferencePricePerM2: ceiling.available ? ceiling.marketReferencePricePerM2 : null,
-    safetyDiscountPct: ceiling.available ? ceiling.safetyDiscountPct : null,
-    marginTotal: ceiling.available ? ceiling.marginTotal : null,
-    marginPerM2: ceiling.available ? ceiling.marginPerM2 : null,
-    acquisition,
-  };
-}
+export { buildCeilingSnapshot };
 
 export function buildOpportunityAnalysis({
   sale,

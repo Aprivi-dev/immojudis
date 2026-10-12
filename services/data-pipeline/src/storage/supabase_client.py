@@ -4,15 +4,17 @@ import hashlib
 import json
 import logging
 import math
+import os
+import threading
 import time
 import uuid
+from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid5
+from uuid import UUID
 
 import httpx
 from supabase import Client, create_client
@@ -26,7 +28,7 @@ except ModuleNotFoundError:  # pragma: no cover - GitHub Actions installs psycop
     sql = None
     Jsonb = None
 
-from src.admission import has_price_or_surface, is_expired, quarantine_reason
+from src.admission import has_price_or_surface, is_catalogue_expired, is_expired, quarantine_reason
 from src.asset_normalization import (
     build_auction_features_row,
     build_auction_risk_rows_from_occurrences,
@@ -40,8 +42,6 @@ from src.court_competence import tribunal_reference_rows
 from src.dedupe import merge_duplicate_sales
 from src.enrichment.display_quality import has_current_display
 from src.fact_claims import (
-    FACT_CLAIMS_NAMESPACE,
-    FACT_CLAIMS_VERSION,
     build_fact_claim_candidates,
     materialize_fact_claim_rows,
 )
@@ -61,23 +61,108 @@ from src.reviewed_aliases import (
     load_reviewed_aliases,
     registry_from_rows,
 )
+from src.storage.column_sets import (
+    DEDUPLICATION_SALE_SELECT,
+    JUDICIAL_SALE_COLUMNS,  # noqa: F401  (re-exported)
+    LLM_BACKFILL_SALE_SELECT,
+    POSTGRES_JSON_COLUMNS,
+    PROPERTY_COLUMNS,  # noqa: F401  (re-exported)
+    UPSERT_COLUMNS,
+)
+from src.storage.fact_claim_rows import (
+    FACT_CLAIMS_COLUMNS,  # noqa: F401
+    FACT_CLAIMS_RETRY_JOB_TYPE,
+    FACT_CLAIMS_RETRY_VERSION,  # noqa: F401
+    _fact_claim_retry_input_hash,
+    _FactClaimRetryQueueUnavailable,
+    _insert_fact_claim_rows,
+    _materialize_fact_claim_snapshot,
+    _sale_ids_for_connection,
+)
+from src.storage.known_sale_projection import (
+    DATA_REFRESH_SALE_SELECT,
+    KNOWN_SALE_DETAIL_SELECT,
+    KNOWN_SALE_POSTGRES_SELECT,  # noqa: F401
+    KNOWN_SALE_RAW_PAYLOAD_INDEX_KEYS,  # noqa: F401
+    KNOWN_SALE_RAW_PAYLOAD_INDEX_PROJECTION,  # noqa: F401
+    KNOWN_SALE_RAW_PAYLOAD_KEYS,  # noqa: F401
+    KNOWN_SALE_RAW_PAYLOAD_PROJECTION,  # noqa: F401
+    KNOWN_SALE_RAW_PAYLOAD_PROJECTION_CHUNK_SIZE,  # noqa: F401
+    _build_known_sale_raw_payload_projection,  # noqa: F401
+    _known_sale_postgres_select,
+)
+from src.storage.pdf_checkpoint_rules import (
+    _checkpoint_manifest_text_hash,
+    _checkpoint_page_coverage_matches,
+    _checkpoint_pages_match_payload,
+    _checkpoint_payload_text_hash,
+    _is_sha256,
+    _manifest_urls,
+    _reusable_pdf_checkpoint_pages,
+    _valid_pdf_checkpoint_pages,
+    _validate_pdf_document_checkpoint_payload,
+)
+from src.storage.pdf_document_evidence import with_document_evidence
+from src.storage.pdf_persistence_rows import (
+    _PERSISTED_PDF_ROW_COLUMNS,
+    PDF_EXTRACTION_MODEL,
+    PDF_EXTRACTION_PROVIDER,
+    PDF_EXTRACTION_SCHEMA_VERSION,
+    _enrichment_revision_for_sale,
+    _fresh_complete_pdf_fingerprint,  # noqa: F401
+    _normalize_persisted_pdf_row,
+    _read_persisted_pdf_rows_postgres,
+    _rekey_pdf_job_after_checkpoint_with_connection,
+)
+from src.storage.postgrest_helpers import (
+    _has_current_document_analysis,
+    _is_uuid,
+    _known_source_urls,
+    _postgrest_batch_size,
+    _postgrest_batches,
+    _postgrest_in_filter,
+    _rest_headers,
+    _timestamped,
+)
+from src.storage.postgrest_payload import (
+    POSTGREST_MAX_PAYLOAD_DEPTH,  # noqa: F401
+    _sanitize_postgrest_payload,
+)
+from src.storage.sale_row_builders import (
+    _document_extraction_status,
+    _judicial_sale_rows_for_sales,
+    _normalized_source_urls,  # noqa: F401
+    _pdf_extraction_confidence,
+    _property_rows_for_sales,
+    _public_occurrence_row,
+    _read_json_file,
+    _secondary_source_urls,
+    _surface_derivation_rows_for_sale,
+    _surface_measurement_rows_for_sale,
+    _surface_row_key,  # noqa: F401
+    _unique_rows_by_key,  # noqa: F401
+    _unique_rows_by_keys,
+    _unique_source_urls,
+)
 from src.urban_planning import build_urban_planning_signal_rows
 
 LOGGER = logging.getLogger(__name__)
 POSTGREST_TIMEOUT = httpx.Timeout(120.0, connect=30.0)
 POSTGREST_UPSERT_RETRIES = 5
 POSTGREST_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
-POSTGREST_MAX_PAYLOAD_DEPTH = 64
 CLAIM_RPC_ATTEMPTS = 4
 CLAIM_RPC_RETRY_DELAYS = (1.0, 3.0, 5.0)
 CLAIM_RPC_MAX_WAIT_SECONDS = 60.0
 POSTGREST_SOURCE_URL_DELETE_BATCH_SIZE = 50
 POSTGRES_CONNECT_TIMEOUT = 15
 POSTGRES_CONNECT_RETRY_DELAYS = (1.0, 3.0, 8.0)
+# A blocked statement must fail after two minutes instead of holding the job
+# until the role or workflow limit. Long jobs (model training, bulk imports)
+# pass their own larger value, or 0 to disable the limit explicitly.
+POSTGRES_STATEMENT_TIMEOUT_MS = 120_000
+POSTGRES_TRAINING_STATEMENT_TIMEOUT_MS = 900_000
+POSTGRES_SHARED_CONNECTION_PING_AFTER_SECONDS = 20.0
 POSTGRES_OBSERVATION_BATCH_SIZE = 25
-PDF_EXTRACTION_PROVIDER = "pdf_text"
-PDF_EXTRACTION_MODEL = "docling+pymupdf+tesseract"
-PDF_EXTRACTION_SCHEMA_VERSION = "pdf_text_v2_page_level"
 # Persisted PDF payloads contain the complete page text and can be large. Keep
 # the recovery lookup bounded while still batching it separately from the
 # document materialization write (one lookup per small URL batch, never one
@@ -115,175 +200,6 @@ EXPIRED_SALE_DELETE_TABLES = (
 # extractor's explicit markers; old rows without them must pass normal
 # extraction again. Keep this deterministic so later scans remain idempotent.
 PDF_RETRY_GENERATION = f"{PDF_TEXT_CACHE_VERSION}:decorative_edge_v1:writer_markers_v1"
-POSTGRES_JSON_COLUMNS = {
-    "source_urls",
-    "visit_dates",
-    "documents",
-    "score_factors",
-    "premium_readiness_factors",
-    "premium_readiness_blockers",
-    "premium_readiness_missing_fields",
-    "quality_flags",
-    "raw_payload",
-    "observations",
-    "sale_procedure",
-}
-UPSERT_COLUMNS = (
-    "source_name",
-    "source_url",
-    "primary_source",
-    "source_urls",
-    "dedupe_confidence",
-    "external_id",
-    "tribunal",
-    "tribunal_code",
-    "sale_venue_type",
-    "sale_legal_framework",
-    "sale_verification_status",
-    "sale_procedure",
-    "department",
-    "city",
-    "address",
-    "postal_code",
-    "property_type",
-    "title",
-    "description",
-    "surface_m2",
-    "habitable_surface_m2",
-    "land_surface_m2",
-    "carrez_surface_m2",
-    "app_surface_m2",
-    "app_surface_kind",
-    "surface_scope",
-    "surface_source",
-    "surface_confidence",
-    "surface_evidence",
-    "rooms_count",
-    "bedrooms_count",
-    "bathrooms_count",
-    "parking_count",
-    "has_garden",
-    "has_terrace",
-    "has_garage",
-    "has_pool",
-    "has_air_conditioning",
-    "has_double_glazing",
-    "starting_price_eur",
-    "sale_date",
-    "visit_dates",
-    "lawyer_name",
-    "lawyer_contact",
-    "status",
-    "adjudication_price_eur",
-    "documents",
-    "latitude",
-    "longitude",
-    "occupancy_status",
-    "risk_notes",
-    "investment_score",
-    "investment_summary",
-    "score_version",
-    "score_confidence",
-    "score_factors",
-    "premium_readiness_score",
-    "premium_readiness_status",
-    "premium_readiness_policy_version",
-    "premium_readiness_factors",
-    "premium_readiness_blockers",
-    "premium_readiness_missing_fields",
-    "premium_readiness_evaluated_at",
-    "quality_flags",
-    "raw_text",
-    "raw_payload",
-    "observations",
-    "content_hash",
-    "last_run_id",
-)
-PROPERTY_COLUMNS = (
-    "source_url",
-    "source_name",
-    "primary_source",
-    "source_urls",
-    "external_id",
-    "department",
-    "city",
-    "postal_code",
-    "address",
-    "property_type",
-    "title",
-    "description",
-    "surface_m2",
-    "habitable_surface_m2",
-    "land_surface_m2",
-    "carrez_surface_m2",
-    "app_surface_m2",
-    "app_surface_kind",
-    "surface_scope",
-    "surface_source",
-    "surface_confidence",
-    "surface_evidence",
-    "rooms_count",
-    "bedrooms_count",
-    "bathrooms_count",
-    "parking_count",
-    "has_garden",
-    "has_terrace",
-    "has_garage",
-    "has_pool",
-    "has_air_conditioning",
-    "has_double_glazing",
-    "occupancy_status",
-    "latitude",
-    "longitude",
-    "raw_payload",
-)
-JUDICIAL_SALE_COLUMNS = (
-    "source_url",
-    "property_source_url",
-    "source_name",
-    "primary_source",
-    "source_urls",
-    "external_id",
-    "tribunal",
-    "tribunal_code",
-    "starting_price_eur",
-    "sale_date",
-    "visit_dates",
-    "status",
-    "adjudication_price_eur",
-    "source_lawyer_name",
-    "source_lawyer_contact",
-    "documents_count",
-    "investment_score",
-    "investment_summary",
-    "score_version",
-    "score_confidence",
-    "score_factors",
-    "quality_flags",
-    "content_hash",
-    "last_run_id",
-    "raw_payload",
-)
-LLM_BACKFILL_SALE_SELECT = ",".join(
-    (
-        "id",
-        *UPSERT_COLUMNS,
-        "first_seen_at",
-        "last_seen_at",
-        "created_at",
-        "updated_at",
-    )
-)
-DEDUPLICATION_SALE_SELECT = ",".join(
-    (
-        "id",
-        *UPSERT_COLUMNS,
-        "first_seen_at",
-        "last_seen_at",
-        "created_at",
-        "updated_at",
-    )
-)
 
 
 def get_supabase_client() -> Client | None:
@@ -355,145 +271,6 @@ def _transaction_write(table: str, payload: list[dict[str, object]], on_conflict
     connection.execute(statement, (Jsonb(_sanitize_postgrest_payload(payload)),))
 
 
-def _fresh_complete_pdf_fingerprint(sale: AuctionSale, *, documents_current: bool) -> str | None:
-    """Hash only stable proof fields after a fresh complete PDF result."""
-
-    if not documents_current or not sale.documents:
-        return None
-    analysis = sale.raw_payload.get("document_analysis") or {}
-    if not isinstance(analysis, dict):
-        return None
-    try:
-        extracted_documents = int(analysis.get("documents_extracted") or 0)
-    except (OverflowError, TypeError, ValueError):
-        return None
-    if extracted_documents <= 0:
-        # A robots/terminal-only result can be current without proving a PDF
-        # extraction; it must not rotate dependent LLM work.
-        return None
-    document_urls = {
-        clean_text(document.get("url"))
-        for document in sale.documents
-        if isinstance(document, dict) and clean_text(document.get("url"))
-    }
-    if not document_urls:
-        return None
-    excluded_urls: set[str] = set()
-    for key in ("blocked_document_urls", "skipped_document_urls", "terminal_document_urls"):
-        values = analysis.get(key)
-        if values is None:
-            continue
-        if not isinstance(values, (list, tuple, set)):
-            return None
-        normalized_values = {clean_text(value) for value in values if clean_text(value)}
-        if not normalized_values.issubset(document_urls):
-            return None
-        excluded_urls.update(normalized_values)
-    expected_urls = document_urls - excluded_urls
-    # ``documents_are_current`` can legitimately be true when every listed
-    # document is terminal. That state still provides no PDF evidence for a
-    # dependent fact/display revision.
-    if not expected_urls:
-        return None
-    proof = analysis.get("cache_proof")
-    proof_documents = proof.get("documents") if isinstance(proof, dict) else None
-    if (
-        not isinstance(proof, dict)
-        or proof.get("version") != 1
-        or proof.get("input_fingerprint") != document_fingerprint(sale.documents)
-        or not isinstance(proof_documents, list)
-        or not proof_documents
-    ):
-        return None
-    proof_by_url: dict[str, dict[str, object]] = {}
-    for item in proof_documents:
-        if not isinstance(item, dict):
-            return None
-        item_url = clean_text(item.get("url"))
-        if not item_url or item_url in proof_by_url:
-            return None
-        if item_url not in document_urls or item_url not in expected_urls:
-            if item_url not in excluded_urls:
-                return None
-            continue
-        proof_by_url[item_url] = item
-    if set(proof_by_url) != expected_urls:
-        return None
-    stable_documents: list[dict[str, object]] = []
-    for item_url in sorted(expected_urls):
-        item = proof_by_url[item_url]
-        if not (
-            item.get("extraction_status") == "extracted"
-            and item.get("complete") is True
-            and not item.get("failed_pages")
-            and clean_text(item.get("sha256"))
-            and clean_text(item.get("text_sha256"))
-            and _is_sha256(item.get("sha256"))
-            and _is_sha256(item.get("text_sha256"))
-            and item.get("text_present") is True
-        ):
-            return None
-        stable_documents.append(
-            {
-                "url": item_url,
-                "sha256": clean_text(item.get("sha256")),
-                "text_sha256": clean_text(item.get("text_sha256")),
-                "text_chars": item.get("text_chars"),
-                "text_present": item.get("text_present") is True,
-                "extraction_status": clean_text(item.get("extraction_status")),
-                "complete": item.get("complete") is True,
-                "failed_pages": item.get("failed_pages") or [],
-            }
-        )
-    try:
-        serialized = json.dumps(
-            sorted(stable_documents, key=lambda item: str(item["url"])),
-            sort_keys=True,
-        ).encode()
-    except (TypeError, ValueError):
-        return None
-    return hashlib.sha256(serialized).hexdigest()
-
-
-def _enrichment_revision_for_sale(
-    sale: AuctionSale,
-    settings: dict[str, object],
-    *,
-    documents_current: bool,
-) -> str:
-    """Build the revision shared by enqueueing and prerequisite checks."""
-
-    complete_pdf_fingerprint = _fresh_complete_pdf_fingerprint(
-        sale,
-        documents_current=documents_current,
-    )
-    checks = sale.raw_payload.get("source_checks") or {}
-    analysis = sale.raw_payload.get("document_analysis") or {}
-    revision_parts: list[object] = [
-        document_fingerprint(sale.documents),
-        sorted(
-            (str(profile.get("url") or ""), str(profile.get("sha256") or ""))
-            for profile in analysis.get("profiles", [])
-            if isinstance(profile, dict)
-        ),
-        str(settings.get("llm_prompt_version") or ""),
-        str(settings.get("replicate_model") or ""),
-        settings.get("llm_fact_prompt_version"),
-        settings.get("llm_display_prompt_version"),
-        sorted(
-            (url, check.get("fingerprint"))
-            for url, check in checks.items()
-            if isinstance(check, dict)
-        ),
-    ]
-    if complete_pdf_fingerprint is not None:
-        # ``checked_at`` and proof timestamps are operational metadata.
-        # Stable proof content rotates dependants once without creating a
-        # new revision on every ordinary scan.
-        revision_parts.append(["complete_pdf_fingerprint", complete_pdf_fingerprint])
-    return hashlib.sha256(json.dumps(revision_parts, sort_keys=True).encode()).hexdigest()
-
-
 def pdf_enrichment_input_hash_for_sale(
     sale: AuctionSale,
     settings: dict[str, object] | None = None,
@@ -539,6 +316,106 @@ def pdf_enrichment_input_hash_for_sale(
     return "pipeline_v2:" + revision
 
 
+def _coalesce_queued_display_revisions(
+    connection: Any,
+    jobs: list[dict[str, object]],
+) -> set[tuple[str, str, str]]:
+    """Re-key one queued display job instead of creating a superseded row.
+
+    A source refresh can arrive while an older display revision is still
+    queued.  The claim RPC intentionally preserves that older row as an audit
+    cancellation, but doing so for every refresh creates avoidable churn and
+    lets the queue spend its capacity cancelling work.  Re-key only queued
+    display jobs, never running/failed jobs, and lock the selected row in the
+    caller's publication transaction so a concurrent claim cannot race the
+    rewrite.  The unique revision constraint still remains the final guard.
+    """
+    candidates: dict[tuple[str, str], dict[str, object]] = {}
+    for job in jobs:
+        if job.get("job_type") != "display_description":
+            continue
+        source_url = str(job.get("source_url") or "")
+        input_hash = str(job.get("input_hash") or "")
+        if not source_url or not input_hash:
+            continue
+        candidates[(source_url, "display_description")] = job
+    if not candidates:
+        return set()
+
+    values = ",".join("(%s,%s,%s,%s)" for _ in candidates)
+    params: list[object] = []
+    for (source_url, job_type), job in candidates.items():
+        params.extend((source_url, job_type, str(job["input_hash"]), int(job.get("priority") or 0)))
+    # A claim RPC can lock the same queued row between the candidate scan and
+    # the update.  Keep the rewrite in a savepoint so a concurrent unique
+    # revision insert cannot abort the publication transaction; the normal
+    # insert path below remains the final idempotency guard.
+    savepoint = "coalesce_display_revision"
+    connection.execute(f"savepoint {savepoint}")
+    try:
+        rows = connection.execute(
+            f"""with incoming(source_url, job_type, input_hash, priority) as (
+                  values {values}
+                ), candidates as (
+                  select queued.id, incoming.input_hash, incoming.priority
+                    from incoming
+                    cross join lateral (
+                      select queued_row.id
+                        from public.auction_enrichment_jobs queued_row
+                       where queued_row.source_url=incoming.source_url
+                         and queued_row.job_type=incoming.job_type
+                         and queued_row.status='queued'
+                         and queued_row.input_hash <> incoming.input_hash
+                       order by queued_row.created_at desc, queued_row.id desc
+                       for update skip locked
+                       limit 1
+                    ) queued
+                   where not exists (
+                     select 1 from public.auction_enrichment_jobs exact
+                      where exact.source_url=incoming.source_url
+                        and exact.job_type=incoming.job_type
+                        and exact.input_hash=incoming.input_hash
+                   )
+                ), updated as (
+                  update public.auction_enrichment_jobs queued
+                     set input_hash=candidates.input_hash,
+                         priority=candidates.priority,
+                         status='queued',
+                         attempt_count=0,
+                         locked_at=null,
+                         completed_at=null,
+                         next_attempt_at=statement_timestamp(),
+                         updated_at=statement_timestamp(),
+                         last_error=null
+                    from candidates
+                   where queued.id=candidates.id
+                     and queued.status='queued'
+                     and queued.input_hash <> candidates.input_hash
+                     and not exists (
+                       select 1 from public.auction_enrichment_jobs exact
+                        where exact.source_url=queued.source_url
+                          and exact.job_type=queued.job_type
+                          and exact.input_hash=candidates.input_hash
+                     )
+                  returning queued.source_url, queued.job_type, queued.input_hash
+                )
+                select source_url, job_type, input_hash from updated""",
+            tuple(params),
+        ).fetchall()
+    except Exception as exc:
+        connection.execute(f"rollback to savepoint {savepoint}")
+        if psycopg is None or not isinstance(exc, psycopg.errors.UniqueViolation):
+            raise
+        LOGGER.warning("Queued display revision coalescing lost a concurrent row race; enqueueing a new row")
+        rows = []
+    finally:
+        connection.execute(f"release savepoint {savepoint}")
+    return {
+        (str(source_url), str(job_type), str(input_hash))
+        for source_url, job_type, input_hash in rows
+    }
+
+
 def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> None:
     from src.enrichment.extract_structured import needs_fact_extraction
 
@@ -569,7 +446,26 @@ def _enqueue_due_enrichment(sales: list[AuctionSale], url: str, key: str) -> Non
                          "priority": priority})
     if jobs:
         if _PUBLICATION_CONNECTION.get() is not None:
-            _transaction_write("auction_enrichment_jobs", jobs, "source_url,job_type,input_hash", ignore_conflicts=True)
+            connection = _PUBLICATION_CONNECTION.get()
+            coalesced = _coalesce_queued_display_revisions(connection, jobs)
+            coalesced_keys = {
+                (source_url, job_type)
+                for source_url, job_type, _ in coalesced
+            }
+            pending = [
+                job for job in jobs
+                if (
+                    str(job.get("source_url") or ""),
+                    str(job.get("job_type") or ""),
+                ) not in coalesced_keys
+            ]
+            if pending:
+                _transaction_write(
+                    "auction_enrichment_jobs",
+                    pending,
+                    "source_url,job_type,input_hash",
+                    ignore_conflicts=True,
+                )
         else:
             _postgrest_upsert(url, key, "auction_enrichment_jobs", jobs, "source_url,job_type,input_hash")
 
@@ -579,7 +475,13 @@ def upsert_sales_to_supabase(
     *,
     refresh_last_seen: bool = True,
 ) -> int:
-    sales = [sale for sale in sales if has_price_or_surface(sale) and not is_expired(sale)]
+    sales = [
+        sale
+        for sale in sales
+        if has_price_or_surface(sale)
+        and not is_expired(sale)
+        and not is_catalogue_expired(sale)
+    ]
     for sale in sales:
         apply_catalogue_readiness(sale)
     if not sales:
@@ -713,27 +615,6 @@ def _write_sale_revisions(
                 record_sale_decisions(str(run_id), [sale], decision="quarantined",
                                       reason=quarantine_reason(sale), connection=_PUBLICATION_CONNECTION.get())
     return sum(not quarantine_reason(sale) for sale in sales)
-
-
-FACT_CLAIMS_COLUMNS = (
-    "id",
-    "auction_sale_id",
-    "field_key",
-    "value_jsonb",
-    "claim_status",
-    "evidence_kind",
-    "source_url",
-    "evidence_locator",
-    "confidence_score",
-    "extractor_name",
-    "extractor_version",
-)
-FACT_CLAIMS_RETRY_JOB_TYPE = "fact_claims"
-FACT_CLAIMS_RETRY_VERSION = "fact_claims_rest_v2"
-
-
-class _FactClaimRetryQueueUnavailable(RuntimeError):
-    """The one allowed queue insertion did not create durable retry work."""
 
 
 def _write_fact_claims_postgres(sales: list[AuctionSale], connection: Any) -> int:
@@ -907,69 +788,6 @@ def _write_fact_claim_rows_rest(
     return len(rows)
 
 
-def _materialize_fact_claim_snapshot(
-    snapshot: object,
-    canonical_sale_id: str,
-) -> list[dict[str, object]]:
-    """Re-key a queued candidate snapshot for the current canonical sale id."""
-    try:
-        normalized_sale_id = str(UUID(str(canonical_sale_id)))
-    except (TypeError, ValueError, AttributeError):
-        raise RuntimeError("Fact claims replay received an invalid canonical sale id") from None
-    if not isinstance(snapshot, list):
-        raise RuntimeError("Fact claims replay snapshot must be a JSON array")
-
-    rows: list[dict[str, object]] = []
-    for candidate in snapshot:
-        if not isinstance(candidate, dict):
-            raise RuntimeError("Fact claims replay snapshot contains a non-object candidate")
-        required = (
-            "field_key",
-            "value_jsonb",
-            "evidence_kind",
-            "source_url",
-            "evidence_locator",
-            "confidence_score",
-            "extractor_name",
-            "extractor_version",
-        )
-        missing = [key for key in required if key not in candidate]
-        if missing:
-            raise RuntimeError(
-                "Fact claims replay snapshot candidate is missing " + ", ".join(missing)
-            )
-        identity = json.dumps(
-            {
-                "version": FACT_CLAIMS_VERSION,
-                "auction_sale_id": normalized_sale_id,
-                "field_key": candidate["field_key"],
-                "value_jsonb": candidate["value_jsonb"],
-                "source_url": candidate["source_url"],
-                "evidence_locator": candidate["evidence_locator"],
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            default=str,
-        )
-        rows.append(
-            {
-                "id": str(uuid5(FACT_CLAIMS_NAMESPACE, identity)),
-                "auction_sale_id": normalized_sale_id,
-                "field_key": candidate["field_key"],
-                "value_jsonb": candidate["value_jsonb"],
-                "claim_status": "candidate",
-                "evidence_kind": candidate["evidence_kind"],
-                "source_url": candidate["source_url"],
-                "evidence_locator": candidate["evidence_locator"],
-                "confidence_score": candidate["confidence_score"],
-                "extractor_name": candidate["extractor_name"],
-                "extractor_version": candidate["extractor_version"],
-            }
-        )
-    return rows
-
-
 def _queue_fact_claim_retry_rest(
     supabase_url: str,
     api_key: str,
@@ -1045,61 +863,6 @@ def _queue_fact_claim_retry_rest(
     return True
 
 
-def _fact_claim_retry_input_hash(rows: list[dict[str, object]]) -> str:
-    identity = [
-        {
-            key: row.get(key)
-            for key in (
-                "id",
-                "auction_sale_id",
-                "field_key",
-                "value_jsonb",
-                "source_url",
-                "evidence_locator",
-            )
-        }
-        for row in rows
-    ]
-    identity.sort(
-        key=lambda item: json.dumps(
-            item,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            default=str,
-        )
-    )
-    serialized = json.dumps(
-        identity,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
-    digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-    return f"{FACT_CLAIMS_RETRY_VERSION}:{digest}"
-
-
-def _sale_ids_for_connection(connection: Any, sales: list[AuctionSale]) -> dict[str, str]:
-    # ``auction_sales`` upserts intentionally omit ``id`` so an incoming
-    # stale identifier can never overwrite the database identity. Resolve by
-    # the immutable publication key after the parent write instead of trusting
-    # the in-memory model's optional id.
-    resolved: dict[str, str] = {}
-    lookup_urls = [sale.source_url for sale in sales if sale.source_url]
-    if not lookup_urls:
-        return resolved
-    result = connection.execute(
-        "select id::text, source_url from public.auction_sales where source_url = any(%s)",
-        (sorted(set(lookup_urls)),),
-    )
-    rows = result.fetchall() if result is not None and hasattr(result, "fetchall") else []
-    for row in rows:
-        if len(row) >= 2 and _is_uuid(row[0]) and row[1]:
-            resolved[str(row[1])] = str(UUID(str(row[0])))
-    return resolved
-
-
 def _sale_ids_for_rest(supabase_url: str, api_key: str, sales: list[AuctionSale]) -> dict[str, str]:
     resolved: dict[str, str] = {}
     # The REST upsert also omits ``id``. Always read the committed parent row
@@ -1126,29 +889,6 @@ def _sale_ids_for_rest(supabase_url: str, api_key: str, sales: list[AuctionSale]
         if isinstance(row, dict) and _is_uuid(row.get("id")) and row.get("source_url"):
             resolved[str(row["source_url"])] = str(UUID(str(row["id"])))
     return resolved
-
-
-def _insert_fact_claim_rows(connection: Any, rows: list[dict[str, object]]) -> None:
-    columns = list(FACT_CLAIMS_COLUMNS)
-    names = sql.SQL(", ").join(sql.Identifier(column) for column in columns)
-    statement = sql.SQL(
-        "insert into {} ({}) select {} from jsonb_populate_recordset(null::{}, %s) "
-        "on conflict (id) do nothing"
-    ).format(
-        sql.Identifier("public", "auction_fact_claims"),
-        names,
-        names,
-        sql.Identifier("public", "auction_fact_claims"),
-    )
-    connection.execute(statement, (Jsonb(_sanitize_postgrest_payload(rows)),))
-
-
-def _is_uuid(value: object) -> bool:
-    try:
-        UUID(str(value))
-    except (TypeError, ValueError, AttributeError):
-        return False
-    return True
 
 
 def _guard_enrichment_revision(connection, sales: list[AuctionSale]) -> list[AuctionSale]:
@@ -2006,11 +1746,6 @@ def update_run_progress_in_supabase(
         LOGGER.warning("Supabase run progress update failed: %s", response.text)
 
 
-def _is_sha256(value: object) -> bool:
-    text = clean_text(value) or ""
-    return len(text) == 64 and all(character in "0123456789abcdefABCDEF" for character in text)
-
-
 def _historical_timestamp_is_valid(value: object) -> bool:
     """Accept a persisted verification timestamp without applying the 24h TTL.
 
@@ -2023,20 +1758,6 @@ def _historical_timestamp_is_valid(value: object) -> bool:
     except (TypeError, ValueError):
         return False
     return parsed.tzinfo is not None and parsed <= datetime.now(UTC)
-
-
-def _manifest_urls(value: object) -> set[str] | None:
-    if value is None:
-        return set()
-    if not isinstance(value, (list, tuple, set)):
-        return None
-    urls: set[str] = set()
-    for item in value:
-        url = clean_text(item)
-        if not url:
-            return None
-        urls.add(url)
-    return urls
 
 
 def _validated_persisted_pdf_manifest(sale: AuctionSale) -> dict[str, object] | None:
@@ -2280,57 +2001,6 @@ def _validated_persisted_pdf_texts(
     return validated
 
 
-_PERSISTED_PDF_ROW_COLUMNS = (
-    "source_url",
-    "provider",
-    "model",
-    "input_hash",
-    "schema_version",
-    "result",
-    "updated_at",
-)
-
-
-def _normalize_persisted_pdf_row(row: object) -> dict[str, object] | None:
-    if isinstance(row, dict):
-        return {str(key): value for key, value in row.items()}
-    if isinstance(row, (list, tuple)):
-        if len(row) == 1 and isinstance(row[0], dict):
-            return {str(key): value for key, value in row[0].items()}
-        if len(row) == len(_PERSISTED_PDF_ROW_COLUMNS):
-            return dict(zip(_PERSISTED_PDF_ROW_COLUMNS, row, strict=True))
-    try:
-        return {column: row[column] for column in _PERSISTED_PDF_ROW_COLUMNS}  # type: ignore[index]
-    except (KeyError, IndexError, TypeError):
-        return None
-
-
-def _read_persisted_pdf_rows_postgres(connection: Any, source_urls: list[str]) -> list[dict[str, object]]:
-    cursor = connection.execute(
-        """
-        select extracted.source_url, extracted.provider, extracted.model,
-               extracted.input_hash, extracted.schema_version, extracted.result,
-               extracted.updated_at
-        from unnest(%s::text[]) as requested(source_url)
-        cross join lateral (
-            select candidate.source_url, candidate.provider, candidate.model,
-                   candidate.input_hash, candidate.schema_version, candidate.result,
-                   candidate.updated_at
-            from public.auction_extractions as candidate
-            where candidate.source_url = requested.source_url
-              and candidate.provider = %s
-              and candidate.model = %s
-              and candidate.schema_version = %s
-            order by candidate.updated_at desc
-            limit 5
-        ) as extracted
-        order by extracted.updated_at desc
-        """,
-        (source_urls, PDF_EXTRACTION_PROVIDER, PDF_EXTRACTION_MODEL, PDF_EXTRACTION_SCHEMA_VERSION),
-    )
-    return [normalized for row in cursor.fetchall() if (normalized := _normalize_persisted_pdf_row(row)) is not None]
-
-
 def _read_persisted_pdf_rows_rest(
     supabase_url: str,
     api_key: str,
@@ -2360,218 +2030,6 @@ def _read_persisted_pdf_rows_rest(
     if not isinstance(payload, list):
         raise RuntimeError("Persisted PDF extraction lookup returned a malformed payload")
     return [normalized for row in payload if (normalized := _normalize_persisted_pdf_row(row)) is not None]
-
-
-def _valid_pdf_checkpoint_pages(
-    value: object,
-    *,
-    page_count: object,
-    require_chars: bool = False,
-) -> bool:
-    """Accept only successful page records from the modern extractor cache."""
-
-    if type(page_count) is not int or page_count < 1 or not isinstance(value, list) or not value:
-        return False
-    seen_pages: set[int] = set()
-    for page in value:
-        if not isinstance(page, dict):
-            return False
-        page_number = page.get("page")
-        page_text = clean_text(page.get("text")) or ""
-        if (
-            type(page_number) is not int
-            or page_number < 1
-            or page_number > page_count
-            or page_number in seen_pages
-            or not isinstance(page.get("text"), str)
-            or (
-                require_chars
-                and (type(page.get("chars")) is not int or page.get("chars") != len(page_text))
-            )
-            or (
-                page.get("chars") is not None
-                and (type(page.get("chars")) is not int or page.get("chars") != len(page_text))
-            )
-            or clean_text(page.get("status"))
-            not in {
-                "extracted",
-                "blank_page",
-                "blank_excluded",
-                "blank_page_excluded",
-                "visual_blank_excluded",
-                "failed",
-            }
-            or (
-                clean_text(page.get("status")) == "failed"
-                and page.get("retryable") is not True
-            )
-            or (
-                clean_text(page.get("status")) != "failed"
-                and page.get("retryable") is True
-            )
-        ):
-            return False
-        seen_pages.add(page_number)
-    return True
-
-
-def _reusable_pdf_checkpoint_pages(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, list):
-        return []
-    return [
-        page
-        for page in value
-        if isinstance(page, dict)
-        and clean_text(page.get("status")) != "failed"
-        and page.get("retryable") is not True
-    ]
-
-
-def _checkpoint_payload_text_hash(payload: dict[str, object]) -> str | None:
-    """Return the canonical hash for a validated modern payload.
-
-    A genuinely textless modern checkpoint uses an explicit empty hash.
-    ``clean_text`` turns that marker into ``None`` during comparisons, so
-    normalize it only after the payload's modern/page validation has
-    succeeded. Non-empty text must carry its explicit hash; this helper never
-    derives a replacement hash from the text.
-    """
-
-    text = clean_text(payload.get("text")) or ""
-    if not text and payload.get("text_chars") == 0:
-        return "" if payload.get("text_sha256") == "" and "text_sha256" in payload else None
-    return clean_text(payload.get("text_sha256")) if "text_sha256" in payload else None
-
-
-def _checkpoint_manifest_text_hash(entry: dict[str, object]) -> str | None:
-    """Return a manifest hash while preserving the modern empty-text marker."""
-
-    if entry.get("text_present") is False and entry.get("text_chars") == 0:
-        return "" if entry.get("text_sha256") == "" and "text_sha256" in entry else None
-    return clean_text(entry.get("text_sha256")) if "text_sha256" in entry else None
-
-
-def _checkpoint_pages_match_payload(
-    payload: dict[str, object],
-    *,
-    require_chars: bool = False,
-) -> bool:
-    """Tie page text and the aggregate text hash for page based checkpoints."""
-
-    pages = payload.get("pages")
-    if not _checkpoint_page_coverage_matches(payload, require_chars=require_chars):
-        return False
-    assert isinstance(pages, list)
-    page_text = clean_text("\n".join(str(page["text"]) for page in sorted(pages, key=lambda item: item["page"]))) or ""
-    payload_text = clean_text(payload.get("text")) or ""
-    if page_text != payload_text:
-        return False
-    page_text_hash = hashlib.sha256(page_text.encode("utf-8")).hexdigest() if page_text else ""
-    payload_text_hash = _checkpoint_payload_text_hash(payload)
-    if payload_text_hash != page_text_hash:
-        return False
-    return payload_text_hash == page_text_hash
-
-
-def _checkpoint_page_coverage_matches(
-    payload: dict[str, object],
-    *,
-    require_chars: bool = False,
-) -> bool:
-    pages = payload.get("pages")
-    if not _valid_pdf_checkpoint_pages(
-        pages,
-        page_count=payload.get("page_count"),
-        require_chars=require_chars,
-    ):
-        return False
-    assert isinstance(pages, list)
-    failed_pages = payload.get("failed_pages")
-    if not isinstance(failed_pages, list):
-        return False
-    page_numbers = {int(page["page"]) for page in _reusable_pdf_checkpoint_pages(pages)}
-    page_count = int(payload["page_count"])
-    if any(type(page) is not int or page < 1 or page > page_count for page in failed_pages):
-        return False
-    if len(set(failed_pages)) != len(failed_pages):
-        return False
-    missing_pages = sorted(set(range(1, page_count + 1)) - page_numbers)
-    status = clean_text(payload.get("extraction_status")) or ""
-    if payload.get("complete") is True or status in {"extracted", "empty"}:
-        return not missing_pages and not failed_pages
-    return sorted(failed_pages) == missing_pages
-
-
-def _validate_pdf_document_checkpoint_payload(
-    sale: AuctionSale,
-    analysis: object,
-    payload: object,
-) -> tuple[dict[str, object], list[dict[str, object]]] | None:
-    """Validate a modern aggregate, including the durable page evidence."""
-
-    source_url = clean_text(sale.source_url)
-    if not source_url or not isinstance(analysis, dict) or sale.updated_at is None:
-        return None
-    if (
-        analysis.get("progress_schema_version") != PDF_PROGRESS_SCHEMA_VERSION
-        or analysis.get("input_fingerprint") != document_fingerprint(sale.documents)
-        or not isinstance(analysis.get("manifest_complete"), bool)
-    ):
-        return None
-    progress = modern_progress_entries(analysis, sale.documents)
-    if not progress:
-        return None
-    if not isinstance(payload, list) or not payload:
-        return None
-    document_urls = {document_url(document) for document in sale.documents if document_url(document)}
-    result: list[dict[str, object]] = []
-    seen_urls: set[str] = set()
-    for item in payload:
-        url = document_url(item)
-        if (
-            not isinstance(item, dict)
-            or not url
-            or url in seen_urls
-            or url not in document_urls
-            or not is_modern_payload(item, expected_url=url)
-        ):
-            return None
-        page_based_extraction = clean_text(item.get("extraction_method")) == "pymupdf_pages"
-        if not _checkpoint_page_coverage_matches(item, require_chars=True):
-            return None
-        # PyMuPDF page extraction defines the aggregate text as the ordered
-        # page text. Docling may provide a richer aggregate while retaining
-        # the page diagnostics, so only the page based path can enforce this
-        # exact text/hash relationship.
-        if page_based_extraction and not _checkpoint_pages_match_payload(item, require_chars=True):
-            return None
-        manifest_item = progress.get(url)
-        if not isinstance(manifest_item, dict):
-            return None
-        item_text_hash = _checkpoint_payload_text_hash(item)
-        manifest_text_hash = _checkpoint_manifest_text_hash(manifest_item)
-        if (
-            clean_text(item.get("sha256")) != clean_text(manifest_item.get("sha256"))
-            or clean_text(item.get("extraction_status"))
-            != clean_text(manifest_item.get("extraction_status"))
-            or item.get("complete") is not manifest_item.get("complete")
-            or list(item.get("failed_pages") or []) != list(manifest_item.get("failed_pages") or [])
-            or item_text_hash is None
-            or manifest_text_hash is None
-            or item_text_hash != manifest_text_hash
-        ):
-            return None
-        if analysis.get("manifest_complete") is True and item.get("complete") is not True:
-            return None
-        sanitized = dict(item)
-        # A worker-local path is not a durable source of evidence and cannot
-        # be reopened by the next worker. Keep the modern text and hashes only.
-        sanitized["file_path"] = None
-        result.append(sanitized)
-        seen_urls.add(url)
-    if not result:
-        return None
-    return dict(analysis), result
 
 
 def _prepare_pdf_document_checkpoint(
@@ -2670,115 +2128,6 @@ def _persist_pdf_document_checkpoint_with_connection(
             input_hash=pdf_enrichment_input_hash_for_sale(sale),
         )
     return True
-
-
-def _rekey_pdf_job_after_checkpoint_with_connection(
-    connection: Any,
-    sale: AuctionSale,
-    pdf_job: dict[str, object],
-    *,
-    input_hash: str,
-) -> None:
-    """Move one claimed PDF retry to the hash made durable by its checkpoint.
-
-    A partial pass can update document profiles and file SHA values before the
-    claimed queue row is released.  Rekey that same row only after the
-    checkpoint and extraction proof have been written, so the retry budget
-    continues to describe the generation that actually processed the sale.
-    """
-
-    if str(pdf_job.get("job_type") or "") != "pdf":
-        return
-    job_id = clean_text(pdf_job.get("id"))
-    old_hash = clean_text(pdf_job.get("input_hash"))
-    source_url = clean_text(sale.source_url)
-    if not job_id or not old_hash or not source_url or old_hash == input_hash:
-        return
-    try:
-        attempt_count = int(pdf_job.get("attempt_count") or 0)
-    except (OverflowError, TypeError, ValueError):
-        return
-    locked_at = pdf_job.get("locked_at")
-    lease_clause = ""
-    lease_parameters: tuple[object, ...] = ()
-    if locked_at is not None:
-        lease_clause = " and locked_at=%s"
-        lease_parameters = (locked_at,)
-
-    cancel_sql = """
-        update public.auction_enrichment_jobs
-           set status='cancelled', locked_at=null,
-               last_error='superseded after durable PDF checkpoint', updated_at=now()
-         where id=%s
-           and source_url=%s
-           and job_type='pdf'
-           and status='running'
-           and input_hash=%s
-           and attempt_count=%s
-        """ + lease_clause
-    cancel_parameters = (job_id, source_url, old_hash, attempt_count, *lease_parameters)
-
-    def find_existing_generation() -> Any:
-        return connection.execute(
-            """
-            select id
-              from public.auction_enrichment_jobs
-             where source_url=%s
-               and job_type='pdf'
-               and input_hash=%s
-               and id<>%s
-             order by created_at desc, id desc
-             limit 1
-             for update
-            """,
-            (source_url, input_hash, job_id),
-        ).fetchone()
-
-    # A source refresh may already have materialized this post-checkpoint
-    # generation. Inspect it before changing the predecessor's unique key;
-    # otherwise the update can fail on the queue uniqueness constraint.
-    existing = find_existing_generation()
-    if existing is not None:
-        connection.execute(cancel_sql, cancel_parameters)
-        return
-
-    # No current row exists, so move the unique key without creating a second
-    # PDF generation. The sale row is already locked by the durable
-    # checkpoint transaction, which serializes the normal enqueue path.
-    update_sql = """
-        update public.auction_enrichment_jobs
-           set input_hash=%s, updated_at=now()
-         where id=%s
-           and source_url=%s
-           and job_type='pdf'
-           and status='running'
-           and input_hash=%s
-           and attempt_count=%s
-        """ + lease_clause + " returning id"
-    update_parameters = (input_hash, job_id, source_url, old_hash, attempt_count, *lease_parameters)
-    try:
-        transaction = getattr(connection, "transaction", None)
-        if callable(transaction):
-            # A concurrent source refresh can insert the new unique key after
-            # the pre-check. Keep that 23505 inside a savepoint so the durable
-            # documentary checkpoint can still commit and retire our claim.
-            with transaction():
-                updated = connection.execute(update_sql, update_parameters).fetchone()
-        else:
-            updated = connection.execute(update_sql, update_parameters).fetchone()
-    except Exception as exc:
-        if getattr(exc, "sqlstate", None) != "23505" or not callable(transaction):
-            raise
-        if find_existing_generation() is None:
-            raise
-        connection.execute(cancel_sql, cancel_parameters)
-        return
-    if updated is None:
-        # A lost lease is never rekeyed. The conditional cancellation still
-        # preserves the same lease and attempt guards if a new generation is
-        # already present.
-        if find_existing_generation() is not None:
-            connection.execute(cancel_sql, cancel_parameters)
 
 
 def _persist_pdf_document_checkpoint_payload_to_supabase(
@@ -3173,6 +2522,8 @@ def upsert_documents_to_supabase(
         return 0
     if persisted_pdf_texts is None:
         persisted_pdf_texts = _fetch_persisted_pdf_texts_for_sales(sales, str(url), str(key))
+    # Per-document persisted evidence for the projection only (never the local text cache).
+    persisted_pdf_texts = with_document_evidence(_PUBLICATION_CONNECTION.get(), sales, persisted_pdf_texts, _load_pdf_texts)
     rows = [
         row
         for sale in sales
@@ -3183,13 +2534,7 @@ def upsert_documents_to_supabase(
     ]
     if rows:
         rows = _unique_rows_by_keys(rows, ("source_url", "document_url"))
-        _postgrest_upsert(
-            str(url),
-            str(key),
-            "auction_documents",
-            rows,
-            on_conflict="source_url,document_url",
-        )
+        _postgrest_upsert(str(url), str(key), "auction_documents", rows, on_conflict="source_url,document_url")
     if prune_stale:
         _prune_stale_document_rows(str(url), str(key), sales)
     return len(rows)
@@ -3380,12 +2725,69 @@ def fetch_enriched_content_hashes(
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
+    db_url = settings.get("supabase_db_url")
     unique = [h for h in {h for h in content_hashes if h}]
-    if not url or not key or not unique:
+    if not unique or (not db_url and (not url or not key)):
         return set()
 
-    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
+    endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales" if url else ""
     found: set[str] = set()
+    if db_url:
+        try:
+            with _postgres_connect(str(db_url)) as db:
+                for index in range(0, len(unique), 150):
+                    batch = unique[index : index + 150]
+                    rows = db.execute(
+                        """
+                        select content_hash,
+                               raw_payload->'document_analysis' as document_analysis,
+                               raw_payload->>'llm_display_description' as llm_display_description,
+                               raw_payload->>'llm_display_quality_version' as llm_display_quality_version,
+                               raw_payload->>'llm_display_status' as llm_display_status,
+                               raw_payload->>'llm_prompt_version' as llm_prompt_version,
+                               raw_payload->>'llm_display_prompt_version' as llm_display_prompt_version,
+                               raw_payload->>'llm_display_model' as llm_display_model
+                        from public.auction_sales
+                        where content_hash = any(%s::text[])
+                          and score_version is not null
+                        """,
+                        (batch,),
+                    ).fetchall()
+                    for row in rows:
+                        if not isinstance(row, (list, tuple)) or len(row) != 8:
+                            raise RuntimeError("Malformed compact enriched-hash PostgreSQL row")
+                        value = row[0]
+                        compact_payload = {
+                            key: payload
+                            for key, payload in zip(
+                                (
+                                    "document_analysis",
+                                    "llm_display_description",
+                                    "llm_display_quality_version",
+                                    "llm_display_status",
+                                    "llm_prompt_version",
+                                    "llm_display_prompt_version",
+                                    "llm_display_model",
+                                ),
+                                row[1:],
+                                strict=True,
+                            )
+                            if payload is not None
+                        }
+                        if value and (
+                            (not require_llm_description or _has_current_llm_description(compact_payload, prompt_version))
+                            and (not require_document_analysis or _has_current_document_analysis(compact_payload))
+                        ):
+                            found.add(str(value))
+            return found
+        except Exception as exc:
+            # PostgreSQL is the preferred low-egress path, but this lookup is
+            # advisory. Preserve the existing Data API fallback if a worker
+            # has a stale/misconfigured direct connection.
+            LOGGER.warning("Compact enriched-hash PostgreSQL lookup failed; falling back to PostgREST: %s", exc)
+            if not url or not key:
+                return set()
+
     for index in range(0, len(unique), 150):
         batch = unique[index : index + 150]
         try:
@@ -3414,55 +2816,6 @@ def fetch_enriched_content_hashes(
         except httpx.HTTPError as exc:
             LOGGER.warning("Enriched-hash lookup failed: %s", exc)
     return found
-
-
-def _has_current_document_analysis(raw_payload: object) -> bool:
-    if not isinstance(raw_payload, dict):
-        return False
-    analysis = raw_payload.get("document_analysis")
-    if not isinstance(analysis, dict):
-        return False
-    try:
-        listed = int(analysis.get("documents_listed") or 0)
-        extracted = int(analysis.get("documents_extracted") or 0)
-        blocked = int(analysis.get("blocked_documents") or 0)
-        failed = int(analysis.get("failed_documents") or 0)
-    except (OverflowError, TypeError, ValueError):
-        return False
-    if listed > 0:
-        if extracted > 0:
-            return True
-        # A robots-policy-only result is intentionally partial, but it is a
-        # completed bounded check. Keep it out of the next incremental heavy
-        # pass while its persisted evidence is fresh. The downstream
-        # heavy-current check still compares that fingerprint with the current
-        # sale documents before skipping enrichment. Missing the explicit
-        # fields keeps legacy/ambiguous zero-extraction rows eligible.
-        if (
-            blocked > 0
-            and failed == 0
-            and analysis.get("coverage_status") == "partial"
-            and bool(analysis.get("input_fingerprint"))
-            and bool(analysis.get("blocked_document_urls"))
-            and bool(analysis.get("blocked_document_reasons"))
-            and timestamp_is_fresh(analysis.get("checked_at"))
-        ):
-            return True
-        terminal_urls = analysis.get("terminal_document_urls")
-        skipped_urls = analysis.get("skipped_document_urls")
-        blocked_urls = analysis.get("blocked_document_urls")
-        if (
-            failed == 0
-            and analysis.get("coverage_status") == "partial"
-            and bool(analysis.get("input_fingerprint"))
-            and timestamp_is_fresh(analysis.get("checked_at"))
-            and isinstance(terminal_urls, list)
-            and isinstance(skipped_urls, list)
-            and isinstance(blocked_urls, list)
-            and len({str(url) for url in [*terminal_urls, *skipped_urls, *blocked_urls] if url}) >= listed
-        ):
-            return True
-    return analysis.get("coverage_status") == "source_only"
 
 
 def fetch_sales_needing_llm_descriptions(
@@ -3737,63 +3090,6 @@ def _has_recent_llm_description_failure(
     return datetime.now(UTC) - parsed.astimezone(UTC) < timedelta(hours=cooldown_hours)
 
 
-KNOWN_SALE_DETAIL_SELECT = ",".join(
-    (
-        "id",
-        "source_url",
-        "source_urls",
-        "sale_date",
-        "starting_price_eur",
-        "visit_dates",
-        "lawyer_name",
-        "lawyer_contact",
-        "status",
-        "adjudication_price_eur",
-        "score_version",
-        "score_confidence",
-        "score_factors",
-        "quality_flags",
-        "tribunal",
-        "tribunal_code",
-        "department",
-        "city",
-        "address",
-        "postal_code",
-        "property_type",
-        "title",
-        "description",
-        "surface_m2",
-        "habitable_surface_m2",
-        "land_surface_m2",
-        "carrez_surface_m2",
-        "app_surface_m2",
-        "app_surface_kind",
-        "surface_scope",
-        "surface_source",
-        "surface_confidence",
-        "surface_evidence",
-        "rooms_count",
-        "bedrooms_count",
-        "bathrooms_count",
-        "parking_count",
-        "has_garden",
-        "has_terrace",
-        "has_garage",
-        "has_pool",
-        "has_air_conditioning",
-        "has_double_glazing",
-        "occupancy_status",
-        "documents",
-        "raw_text",
-        "raw_payload",
-    )
-)
-# Enrichment writes the full record back: a partial SELECT would erase price,
-# procedure, dates and other facts that the worker did not actually re-extract.
-DATA_REFRESH_SALE_SELECT = ",".join(dict.fromkeys((
-    "id", "created_at", "updated_at", "first_seen_at", "last_seen_at", *UPSERT_COLUMNS,
-)))
-
 KNOWN_SALE_DETAIL_PAGE_SIZE = 100
 
 
@@ -3830,27 +3126,111 @@ def fetch_sale_for_data_refresh(source_url: str) -> AuctionSale | None:
     return AuctionSale(**row)
 
 
-def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
-    """Map every known source URL to DB fields available for fallback."""
+def fetch_known_sale_details(
+    *,
+    source_urls: list[str] | None = None,
+    include_enrichment_payload: bool = False,
+) -> dict[str, dict[str, Any]]:
+    """Map known source URLs to fallback fields, hydrating payloads on demand.
+
+    The default collection index keeps scalar source facts and freshness proof
+    but omits the wide enrichment JSONB.  Pass ``source_urls`` and
+    ``include_enrichment_payload=True`` after source discovery to hydrate only
+    rows that will be reconciled in this run.  The REST fallback intentionally
+    keeps its historical full projection because PostgREST cannot express the
+    same reviewed-alias/source_urls predicate safely.
+    """
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
     db_url = settings.get("supabase_db_url")
+    requested_urls = _unique_source_urls(source_urls) if source_urls is not None else []
+    if source_urls is not None and not requested_urls:
+        return {}
     if db_url:
         # The publication runner already requires PostgreSQL. Read its
         # preflight snapshot there too, so a Data API outage cannot stop a
         # collection before the first source is scraped.
         with _postgres_connect(str(db_url)) as db:
+            # Keep aliases and every keyset page on one MVCC snapshot.  The
+            # previous one-shot SELECT had this property implicitly; setting
+            # REPEATABLE READ before the first read preserves it after the
+            # egress-bounded pagination change.
+            db.execute("set transaction isolation level repeatable read")
+            compact_presence = db.execute(
+                "select to_regclass(%s), to_regprocedure(%s)",
+                (
+                    "app_private.auction_sale_source_presence",
+                    "app_private.auction_sale_source_presence_json(uuid)",
+                ),
+            ).fetchone()
+            use_compact_presence = bool(
+                compact_presence
+                and compact_presence[0]
+                and compact_presence[1]
+            )
+            postgres_select = _known_sale_postgres_select(
+                compact_presence=use_compact_presence,
+                include_enrichment_payload=include_enrichment_payload,
+            )
             reviewed_aliases = load_reviewed_aliases(db)
-            rows = db.execute(
-                f"select to_jsonb(sale) from (select {KNOWN_SALE_DETAIL_SELECT} "
-                "from public.auction_sales) sale"
-            ).fetchall()
-        all_rows = [row[0] for row in rows]
+            relevant_aliases = (
+                reviewed_aliases.aliases_for_urls(requested_urls)
+                if source_urls is not None
+                else tuple(reviewed_aliases.by_alias_url.values())
+            )
+            canonical_ids = sorted({alias.canonical_sale_id for alias in relevant_aliases})
+            filter_params: list[object] = []
+            where = "id is not null"
+            if source_urls is not None:
+                source_filters = ["source_url = any(%s::text[])", "source_urls ?| %s"]
+                filter_params.extend((requested_urls, requested_urls))
+                if canonical_ids:
+                    source_filters.append("id = any(%s::uuid[])")
+                    filter_params.append(canonical_ids)
+                where += " and (" + " or ".join(source_filters) + ")"
+            all_rows = []
+            last_id: str | None = None
+            while True:
+                if last_id is None:
+                    query = (
+                        f"select to_jsonb(sale) from (select {postgres_select} "
+                        f"from public.auction_sales where {where} "
+                        "order by id limit %s) sale"
+                    )
+                    params = (*filter_params, KNOWN_SALE_DETAIL_PAGE_SIZE)
+                else:
+                    query = (
+                        f"select to_jsonb(sale) from (select {postgres_select} "
+                        f"from public.auction_sales where {where} and id > %s::uuid "
+                        "order by id limit %s) sale"
+                    )
+                    params = (*filter_params, last_id, KNOWN_SALE_DETAIL_PAGE_SIZE)
+                rows = db.execute(query, params).fetchall()
+                if not rows:
+                    break
+                all_rows.extend(row[0] for row in rows)
+                if len(rows) < KNOWN_SALE_DETAIL_PAGE_SIZE:
+                    break
+                page_ids = [
+                    str(row[0].get("id"))
+                    for row in rows
+                    if isinstance(row[0], dict) and row[0].get("id")
+                ]
+                if not page_ids or page_ids[-1] == last_id:
+                    raise ReviewedAliasRegistryError(
+                        "Known sale detail snapshot could not advance its id cursor"
+                    )
+                last_id = page_ids[-1]
     else:
         if not url or not key:
             return {}
         reviewed_aliases = _fetch_reviewed_alias_registry(str(url), str(key))
+        relevant_aliases = (
+            reviewed_aliases.aliases_for_urls(requested_urls)
+            if source_urls is not None
+            else tuple(reviewed_aliases.by_alias_url.values())
+        )
         endpoint = f"{str(url).rstrip('/')}/rest/v1/auction_sales"
         all_rows = []
         offset = 0
@@ -3885,7 +3265,7 @@ def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
     for row in all_rows:
         if not isinstance(row, dict):
             raise ReviewedAliasRegistryError("Malformed auction_sales detail row")
-        row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"))
+        row["_signature"] = make_sale_signature(row.get("sale_date"), row.get("starting_price_eur"), row.get("status"))
 
     details: dict[str, dict[str, Any]] = {}
     rows_by_id = {
@@ -3896,7 +3276,7 @@ def fetch_known_sale_details() -> dict[str, dict[str, Any]]:
     for row in all_rows:
         for source_url in _known_source_urls(row):
             details.setdefault(source_url, row)
-    for alias in reviewed_aliases.by_alias_url.values():
+    for alias in relevant_aliases:
         canonical = rows_by_id.get(alias.canonical_sale_id)
         if canonical is None or canonical.get("source_url") != alias.canonical_source_url:
             raise ReviewedAliasRegistryError(
@@ -3913,15 +3293,6 @@ def fetch_known_sale_signatures() -> dict[str, str]:
         for source_url, row in fetch_known_sale_details().items()
         if row.get("_signature") and row.get("score_version")
     }
-
-
-def _known_source_urls(row: dict[str, Any]) -> list[str]:
-    urls = [row.get("source_url")]
-    if isinstance(row.get("source_urls"), list):
-        urls.extend(row["source_urls"])
-    elif isinstance(row.get("source_urls"), dict):
-        urls.extend(row["source_urls"].values())
-    return [str(url) for url in urls if url]
 
 
 def touch_last_seen_for_source_urls(source_urls: list[str]) -> int:
@@ -4034,7 +3405,6 @@ def _delete_sale_rows_by_source_urls(supabase_url: str, api_key: str, source_url
     for table in EXPIRED_SALE_DELETE_TABLES:
         _postgrest_delete_by_source_urls(supabase_url, api_key, table, unique)
     return len(unique)
-
 
 
 def _upsert_with_rest(supabase_url: str, api_key: str, payload: list[dict[str, object]]) -> None:
@@ -4325,26 +3695,55 @@ def _postgres_upsert(
     return None
 
 
+def _statement_timeout_options(db_url: str, statement_timeout_ms: int | None) -> str | None:
+    """Server option applying the default statement timeout to the whole session.
+
+    A URL that already carries its own ``options`` keeps full control.
+    """
+    if statement_timeout_ms is None or "options=" in db_url.lower():
+        return None
+    return f"-c statement_timeout={max(0, int(statement_timeout_ms))}"
+
+
 def _postgres_connect(
     db_url: str,
     *,
     connect_timeout: int = POSTGRES_CONNECT_TIMEOUT,
     retry_delays: tuple[float, ...] | None = None,
+    statement_timeout_ms: int | None = POSTGRES_STATEMENT_TIMEOUT_MS,
 ) -> Any:
     if psycopg is None:
         raise RuntimeError("psycopg is required for direct Postgres writes")
     delays = POSTGRES_CONNECT_RETRY_DELAYS if retry_delays is None else retry_delays
+    options = _statement_timeout_options(db_url, statement_timeout_ms)
     for attempt, delay in enumerate((0.0, *delays), start=1):
         if delay:
             time.sleep(delay)
         try:
-            return psycopg.connect(
-                db_url,
-                connect_timeout=connect_timeout,
-                prepare_threshold=None,
-            )
+            connect_kwargs: dict[str, Any] = {
+                "connect_timeout": connect_timeout,
+                "prepare_threshold": None,
+            }
+            if options:
+                connect_kwargs["options"] = options
+            return psycopg.connect(db_url, **connect_kwargs)
         except Exception as exc:
             message = str(exc).lower()
+            if options and "unsupported startup parameter" in message:
+                # Transaction poolers reject startup options. Fall back to a
+                # session-level SET once connected (statements that need a
+                # guaranteed limit still use SET LOCAL).
+                LOGGER.warning("PostgreSQL pooler rejected startup options; using SET statement_timeout")
+                connection = psycopg.connect(
+                    db_url, connect_timeout=connect_timeout, prepare_threshold=None
+                )
+                try:
+                    connection.execute(f"set statement_timeout = {max(0, int(statement_timeout_ms or 0))}")
+                    connection.commit()
+                except Exception:
+                    connection.close()
+                    raise
+                return connection
             transient = any(
                 marker in message
                 for marker in (
@@ -4367,6 +3766,75 @@ def _postgres_connect(
     raise AssertionError("unreachable")
 
 
+def connect(db_url: str, **options: Any) -> Any:
+    """Public entry point for opening a direct PostgreSQL connection.
+
+    Every module outside ``src.storage`` goes through here instead of importing
+    the private ``_postgres_connect``. The keyword ``options`` are forwarded
+    untouched (``connect_timeout``, ``retry_delays``, ``statement_timeout_ms``),
+    so the timeouts, startup options, SSL handling and retry behaviour are
+    exactly those of ``_postgres_connect``.
+
+    The call is resolved through the module attribute ``_postgres_connect`` at
+    call time, so tests that patch ``supabase_client._postgres_connect`` keep
+    intercepting every caller, including those that imported ``connect`` by name.
+    """
+    return _postgres_connect(db_url, **options)
+
+
+_SHARED_CONNECTIONS: dict[tuple[int, str], tuple[Any, float]] = {}
+_SHARED_CONNECTION_LOCK = threading.RLock()
+
+
+@contextmanager
+def _shared_postgres_connection(db_url: str):
+    """Yield one autocommit connection per process, instead of one per call.
+
+    Meant for the short single-statement calls made once per LLM prediction or
+    per source-detail request. Callers are serialised by a lock, a connection
+    that sat idle is pinged before use, and a connection that failed is
+    discarded so the next call reconnects.
+    """
+    key = (os.getpid(), db_url)
+    with _SHARED_CONNECTION_LOCK:
+        entry = _SHARED_CONNECTIONS.get(key)
+        connection = entry[0] if entry else None
+        if connection is not None:
+            usable = not getattr(connection, "closed", False)
+            if usable and time.monotonic() - entry[1] > POSTGRES_SHARED_CONNECTION_PING_AFTER_SECONDS:
+                try:
+                    connection.execute("select 1")
+                except Exception:
+                    usable = False
+            if not usable:
+                _discard_shared_connection(key)
+                connection = None
+        if connection is None:
+            connection = _postgres_connect(db_url)
+            connection.autocommit = True
+            _SHARED_CONNECTIONS[key] = (connection, time.monotonic())
+        try:
+            yield connection
+        except BaseException as exc:
+            # An SQL error in autocommit mode leaves the session usable; a
+            # transport failure, cancellation or interrupt does not.
+            broken_types = (psycopg.OperationalError, psycopg.InterfaceError) if psycopg else ()
+            if not isinstance(exc, Exception) or isinstance(exc, broken_types) or getattr(connection, "closed", False):
+                _discard_shared_connection(key)
+            raise
+        else:
+            _SHARED_CONNECTIONS[key] = (connection, time.monotonic())
+
+
+def _discard_shared_connection(key: tuple[int, str]) -> None:
+    entry = _SHARED_CONNECTIONS.pop(key, None)
+    if entry is not None:
+        try:
+            entry[0].close()
+        except Exception:
+            pass
+
+
 def _postgres_value(column: str, value: object) -> object:
     value = _sanitize_postgrest_payload(value)
     if value is None:
@@ -4374,19 +3842,6 @@ def _postgres_value(column: str, value: object) -> object:
     if column in POSTGRES_JSON_COLUMNS:
         return Jsonb(value) if Jsonb is not None else value
     return value
-
-
-def _secondary_source_urls(sales: list[AuctionSale]) -> list[str]:
-    primary_urls = {sale.source_url for sale in sales if sale.source_url}
-    urls: list[str] = []
-    seen: set[str] = set()
-    for sale in sales:
-        for source_url in sale.source_urls:
-            if source_url in primary_urls or source_url in seen:
-                continue
-            seen.add(source_url)
-            urls.append(source_url)
-    return urls
 
 
 def _sync_normalized_sale_tables_with_rest(
@@ -4409,77 +3864,6 @@ def _sync_normalized_sale_tables_with_rest(
         _postgrest_upsert(supabase_url, api_key, "properties", properties, on_conflict="source_url")
     if judicial_sales:
         _postgrest_upsert(supabase_url, api_key, "judicial_sales", judicial_sales, on_conflict="source_url")
-
-
-def _property_rows_for_sales(
-    sales: list[AuctionSale],
-    now: str,
-    *,
-    refresh_last_seen: bool = True,
-) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    for sale in sales:
-        reason = quarantine_reason(sale)
-        if reason:
-            sale.raw_payload["publication_quarantine"] = reason
-            sale.status = "quarantined"
-        else:
-            sale.raw_payload.pop("publication_quarantine", None)
-        data = sale.to_storage_dict(exclude_none=False)
-        row = {column: data.get(column) for column in PROPERTY_COLUMNS}
-        row["primary_source"] = row.get("primary_source") or row.get("source_name")
-        row["source_urls"] = _normalized_source_urls(sale, data)
-        row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
-        row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
-        rows.append(row)
-    return rows
-
-
-def _judicial_sale_rows_for_sales(
-    sales: list[AuctionSale],
-    now: str,
-    *,
-    refresh_last_seen: bool = True,
-) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    for sale in sales:
-        reason = quarantine_reason(sale)
-        if reason:
-            sale.raw_payload["publication_quarantine"] = reason
-            sale.status = "quarantined"
-        else:
-            sale.raw_payload.pop("publication_quarantine", None)
-        data = sale.to_storage_dict(exclude_none=False)
-        row = {column: data.get(column) for column in JUDICIAL_SALE_COLUMNS}
-        row["property_source_url"] = data.get("source_url")
-        row["primary_source"] = row.get("primary_source") or row.get("source_name")
-        row["source_urls"] = _normalized_source_urls(sale, data)
-        row["visit_dates"] = data.get("visit_dates") if isinstance(data.get("visit_dates"), list) else []
-        row["status"] = data.get("status") or "upcoming"
-        row["source_lawyer_name"] = data.get("lawyer_name")
-        row["source_lawyer_contact"] = data.get("lawyer_contact")
-        documents = data.get("documents")
-        row["documents_count"] = len(documents) if isinstance(documents, list) else 0
-        row["score_factors"] = data.get("score_factors") if isinstance(data.get("score_factors"), list) else []
-        row["quality_flags"] = data.get("quality_flags") if isinstance(data.get("quality_flags"), list) else []
-        row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
-        row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
-        rows.append(row)
-    return rows
-
-
-def _normalized_source_urls(sale: AuctionSale, data: dict[str, Any]) -> list[str]:
-    values = data.get("source_urls")
-    source_urls = values if isinstance(values, list) else []
-    urls = [data.get("source_url"), *source_urls, *sale.source_urls]
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for url in urls:
-        if not isinstance(url, str) or not url or url in seen:
-            continue
-        normalized.append(url)
-        seen.add(url)
-    return normalized
 
 
 def _upsert_asset_tables_with_rest(supabase_url: str, api_key: str, sales: list[AuctionSale], now: str) -> None:
@@ -4710,9 +4094,8 @@ def _prune_stale_document_rows(
     joins every child row by ``source_url``.  Delete only rows owned by a
     source revision explicitly marked ``complete``; restricted/partial,
     failed, malformed, and unmarked manifests remain upsert-only.
-    The rollout keeps the legacy global ``document_url`` constraint only until
-    the composite migration is active; the source-url predicate also prevents
-    a stale revision from deleting a row belonging to another sale.
+    The source-url predicate also prevents a stale revision from deleting a
+    row belonging to another sale.
     """
     expected_by_source: dict[str, set[str]] = {}
     invalid_sources: set[str] = set()
@@ -4765,17 +4148,6 @@ def _prune_stale_document_rows(
         _postgrest_delete(supabase_url, api_key, "auction_documents", params)
 
 
-def _unique_source_urls(source_urls: list[str]) -> list[str]:
-    unique: list[str] = []
-    seen: set[str] = set()
-    for source_url in source_urls:
-        if not source_url or source_url in seen:
-            continue
-        seen.add(source_url)
-        unique.append(source_url)
-    return unique
-
-
 def _postgrest_request_with_retries(method: str, endpoint: str, table: str, **kwargs: Any) -> httpx.Response:
     last_timeout: httpx.TimeoutException | None = None
     request_method = getattr(httpx, method.lower())
@@ -4808,93 +4180,6 @@ def _postgrest_request_with_retries(method: str, endpoint: str, table: str, **kw
     if last_timeout is not None:
         raise last_timeout
     raise RuntimeError(f"Supabase {table} {method} failed before request")
-
-
-def _postgrest_in_filter(values: list[str]) -> str:
-    quoted = []
-    for value in values:
-        escaped = value.replace('"', '\\"')
-        quoted.append(f'"{escaped}"')
-    return f"in.({','.join(quoted)})"
-
-
-def _postgrest_batch_size(table: str) -> int:
-    if table in {"auction_sales", "auction_extractions"}:
-        return 5
-    if table == "auction_observations":
-        return 10
-    if table in {"auction_documents", "auction_score_factors", "auction_risk_occurrences"}:
-        return 25
-    return 100
-
-
-def _postgrest_batches(payload: list[dict[str, object]], batch_size: int) -> list[list[dict[str, object]]]:
-    return [payload[index : index + batch_size] for index in range(0, len(payload), batch_size)]
-
-
-def _rest_headers(api_key: str, prefer: str) -> dict[str, str]:
-    return {
-        "apikey": api_key,
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "Prefer": prefer,
-    }
-
-
-def _timestamped(row: dict[str, object], now: str) -> dict[str, object]:
-    row["updated_at"] = now
-    return row
-
-
-def _sanitize_postgrest_payload(
-    value: Any,
-    *,
-    _path: str = "root",
-    _active_paths: dict[int, str] | None = None,
-    _depth: int = 0,
-) -> Any:
-    if isinstance(value, str):
-        return value.replace("\x00", "")
-    if isinstance(value, Decimal):
-        return int(value) if value == value.to_integral_value() else float(value)
-    if not isinstance(value, (list, dict)):
-        return value
-
-    if _depth > POSTGREST_MAX_PAYLOAD_DEPTH:
-        raise ValueError(
-            f"PostgREST payload exceeds maximum nesting depth {POSTGREST_MAX_PAYLOAD_DEPTH} at {_path}"
-        )
-
-    active_paths = _active_paths if _active_paths is not None else {}
-    value_id = id(value)
-    first_path = active_paths.get(value_id)
-    if first_path is not None:
-        raise ValueError(
-            f"PostgREST payload cycle detected at {_path}; container first seen at {first_path}"
-        )
-    active_paths[value_id] = _path
-    try:
-        if isinstance(value, list):
-            return [
-                _sanitize_postgrest_payload(
-                    item,
-                    _path=f"{_path}[{index}]",
-                    _active_paths=active_paths,
-                    _depth=_depth + 1,
-                )
-                for index, item in enumerate(value)
-            ]
-        return {
-            key: _sanitize_postgrest_payload(
-                item,
-                _path=f"{_path}[{key!r}]",
-                _active_paths=active_paths,
-                _depth=_depth + 1,
-            )
-            for key, item in value.items()
-        }
-    finally:
-        del active_paths[value_id]
 
 
 def _risk_occurrence_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
@@ -4946,26 +4231,6 @@ def _risk_occurrence_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]
             source_kind="sale_text",
         )
     ][:50]
-
-
-def _public_occurrence_row(occurrence: dict[str, object]) -> dict[str, object]:
-    return {
-        "source_url": occurrence["source_url"],
-        "risk_type": occurrence["risk_type"],
-        "risk_label": occurrence["risk_label"],
-        "severity": occurrence["severity"],
-        "document_url": occurrence.get("document_url"),
-        "document_label": occurrence.get("document_label"),
-        "document_type": occurrence.get("document_type"),
-        "page_number": occurrence.get("page_number"),
-        "excerpt": occurrence["excerpt"],
-        "confidence": occurrence.get("confidence"),
-        "detector": occurrence.get("detector"),
-        "detector_version": occurrence.get("detector_version"),
-        "matched_terms": occurrence.get("matched_terms") or [],
-        "is_negated": occurrence.get("is_negated") or False,
-        "score_impact": occurrence.get("score_impact"),
-    }
 
 
 def _document_rows_for_sale(
@@ -5028,7 +4293,7 @@ def _document_rows_for_sale(
             continue
         extracted = text_by_url.get(url, {})
         pages = extracted.get("pages") if isinstance(extracted, dict) else None
-        page_count = len(pages) if isinstance(pages, list) else None
+        page_count = len(pages) if isinstance(pages, list) else extracted.get("page_count")
         extracted_text = clean_text(extracted.get("text")) if isinstance(extracted, dict) else None
         try:
             text_chars = int(extracted.get("text_chars") or len(extracted_text or "")) if extracted else 0
@@ -5065,7 +4330,7 @@ def _document_rows_for_sale(
                     else None
                 ),
                 "text_chars": text_chars,
-                "text_present": bool(extracted_text),
+                "text_present": bool(extracted_text) or bool(extracted.get("_persisted_document_proof") and text_chars),
                 "complete": extracted.get("complete") is True,
                 "failed_pages": extracted.get("failed_pages") or [],
                 "extraction_status": extracted.get("extraction_status"),
@@ -5210,46 +4475,6 @@ def _document_rows_for_sale(
     return rows
 
 
-def _document_extraction_status(extracted: dict[str, object]) -> str:
-    """Map a PDF cache payload to the materialized document status.
-
-    A partial cache can contain useful text while still having failed pages.
-    Keep that payload visible for diagnostics, but never advertise it as a
-    complete extraction in ``auction_documents``.
-    """
-    declared_status = str(extracted.get("extraction_status") or "").strip().lower()
-    if declared_status in {"failed", "incomplete"}:
-        return declared_status
-    if extracted.get("complete") is False or extracted.get("failed_pages"):
-        return "incomplete"
-    if declared_status == "empty":
-        return "empty"
-    if (
-        str(extracted.get("text") or "").strip()
-        and extracted.get("complete") is True
-        and str(extracted.get("sha256") or "").strip()
-    ):
-        return "extracted"
-    return "pending"
-
-
-def _unique_rows_by_keys(
-    rows: list[dict[str, object]],
-    keys: tuple[str, ...],
-) -> list[dict[str, object]]:
-    unique: dict[tuple[object, ...], dict[str, object]] = {}
-    for row in rows:
-        values = tuple(row.get(key) for key in keys)
-        if any(value is None for value in values):
-            continue
-        unique[values] = row
-    return list(unique.values())
-
-
-def _unique_rows_by_key(rows: list[dict[str, object]], key: str) -> list[dict[str, object]]:
-    return _unique_rows_by_keys(rows, (key,))
-
-
 def _extraction_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
     rows = []
     sale_id = sale_storage_id(sale)
@@ -5288,137 +4513,6 @@ def _extraction_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
     return rows
 
 
-def _surface_measurement_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
-    analysis = sale.raw_payload.get("surface_analysis") if isinstance(sale.raw_payload, dict) else None
-    if not isinstance(analysis, dict):
-        return []
-    version = str(analysis.get("version") or "surface_reasoning_v1")
-    measurements = analysis.get("measurements")
-    if not isinstance(measurements, list):
-        return []
-    rows: list[dict[str, object]] = []
-    for index, measurement in enumerate(measurements):
-        if not isinstance(measurement, dict):
-            continue
-        evidence = measurement.get("evidence") if isinstance(measurement.get("evidence"), dict) else {}
-        quote = str(evidence.get("quote") or "").strip()
-        value = measurement.get("value_m2")
-        if not quote or value is None:
-            continue
-        local_key = str(measurement.get("measurement_id") or index)
-        rows.append(
-            {
-                "measurement_key": _surface_row_key(sale.source_url, local_key),
-                "source_url": sale.source_url,
-                "asset_id": str(measurement.get("asset_id") or "asset-main"),
-                "lot_label": measurement.get("lot_label"),
-                "level_label": measurement.get("level"),
-                "space_label": str(measurement.get("space_label") or "pièce"),
-                "category": str(measurement.get("category") or "unknown"),
-                "value_m2": value,
-                "included_in_habitable_sum": measurement.get("included_in_habitable_sum"),
-                "confidence": measurement.get("confidence") or 0,
-                "evidence_quote": quote,
-                "document_url": evidence.get("document_url"),
-                "document_label": evidence.get("document_label"),
-                "page_number": evidence.get("page_number"),
-                "extraction_method": str(measurement.get("extraction_method") or "unknown"),
-                "reasoning_version": version,
-            }
-        )
-    return rows
-
-
-def _surface_derivation_rows_for_sale(sale: AuctionSale) -> list[dict[str, object]]:
-    analysis = sale.raw_payload.get("surface_analysis") if isinstance(sale.raw_payload, dict) else None
-    if not isinstance(analysis, dict):
-        return []
-    version = str(analysis.get("version") or "surface_reasoning_v1")
-    selected_id = str(analysis.get("selected_derivation_id") or "")
-    derivations = analysis.get("derivations")
-    candidates = analysis.get("candidates") if isinstance(analysis.get("candidates"), list) else []
-    candidates_by_id = {
-        str(item.get("candidate_id")): item
-        for item in candidates
-        if isinstance(item, dict) and item.get("candidate_id")
-    }
-    if not isinstance(derivations, list):
-        return []
-    rows: list[dict[str, object]] = []
-    for index, derivation in enumerate(derivations):
-        if not isinstance(derivation, dict):
-            continue
-        local_key = str(derivation.get("derivation_id") or index)
-        operands = derivation.get("operand_measurement_ids")
-        operand_keys = [
-            _surface_row_key(sale.source_url, str(value))
-            for value in operands
-            if value
-        ] if isinstance(operands, list) else []
-        explicit_id = str(derivation.get("explicit_candidate_id") or "")
-        rows.append(
-            {
-                "derivation_key": _surface_row_key(sale.source_url, local_key),
-                "source_url": sale.source_url,
-                "asset_id": str(derivation.get("asset_id") or "asset-main"),
-                "kind": str(derivation.get("kind") or "unknown"),
-                "value_m2": derivation.get("value_m2"),
-                "operand_measurement_keys": operand_keys,
-                "formula": str(derivation.get("formula") or "surface explicitement indiquée"),
-                "validation_status": str(derivation.get("validation_status") or "rejected"),
-                "confidence": derivation.get("confidence") or 0,
-                "explicit_candidate": candidates_by_id.get(explicit_id),
-                "warnings": derivation.get("warnings") or [],
-                "is_selected": local_key == selected_id,
-                "reasoning_version": version,
-            }
-        )
-    return rows
-
-
-def _surface_row_key(source_url: str, local_key: str) -> str:
-    return hashlib.sha256(f"{source_url}\0{local_key}".encode()).hexdigest()
-
-
-def _pdf_extraction_confidence(payload: Any) -> dict[str, object]:
-    if not isinstance(payload, list):
-        return {}
-    document_confidences = []
-    page_confidences = []
-    ocr_pages = 0
-    empty_pages = 0
-    page_count = 0
-    for item in payload:
-        if not isinstance(item, dict):
-            continue
-        confidence = item.get("confidence")
-        if isinstance(confidence, (int, float)):
-            document_confidences.append(float(confidence))
-        pages = item.get("pages")
-        if isinstance(pages, list):
-            page_count += len(pages)
-            for page in pages:
-                if not isinstance(page, dict):
-                    continue
-                method = str(page.get("method") or "")
-                if method.startswith("ocr_"):
-                    ocr_pages += 1
-                if not page.get("text"):
-                    empty_pages += 1
-                page_confidence = page.get("confidence")
-                if isinstance(page_confidence, (int, float)):
-                    page_confidences.append(float(page_confidence))
-    confidence = document_confidences or page_confidences
-    average = round(sum(confidence) / len(confidence), 3) if confidence else None
-    return {
-        "document_count": len(payload),
-        "page_count": page_count,
-        "ocr_pages": ocr_pages,
-        "empty_pages": empty_pages,
-        "average_confidence": average,
-    }
-
-
 def _load_pdf_texts(sale: AuctionSale) -> list[dict[str, object]]:
     path = PDF_TEXTS_DIR / f"{sale_storage_id(sale)}.json"
     payload = _read_json_file(path)
@@ -5427,8 +4521,3 @@ def _load_pdf_texts(sale: AuctionSale) -> list[dict[str, object]]:
     return payload
 
 
-def _read_json_file(path: Path) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return None

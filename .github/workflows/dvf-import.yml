@@ -17,7 +17,7 @@ on:
         default: false
         type: boolean
       replace_existing:
-        description: "Replace the DVF table through COPY. Full imports only; never combine with a row limit."
+        description: "Replace the DVF table atomically: every file is loaded into dvf_transactions_staging, then swapped in once. Full imports only; never combine with a row limit."
         required: false
         default: false
         type: boolean
@@ -37,7 +37,7 @@ jobs:
       run:
         working-directory: services/data-pipeline
     env:
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      # SUPABASE_DB_URL is given only to the import step, not to pip.
       DVF_DATASET_API_URL: https://www.data.gouv.fr/api/1/datasets/demandes-de-valeurs-foncieres-geolocalisees/
       DVF_STATISTICS_DATASET_API_URL: https://www.data.gouv.fr/api/1/datasets/statistiques-dvf/
       REQUESTED_RESOURCE_URL: ${{ github.event.inputs.resource_url }}
@@ -51,27 +51,33 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
-          cache-dependency-path: services/data-pipeline/requirements.txt
+          cache-dependency-path: services/data-pipeline/requirements.lock
 
       - name: Install Python dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install --require-hashes -r requirements.lock
 
       - name: Download and import DVF resources
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set -euo pipefail
           python - <<'PY'
           from __future__ import annotations
 
           import hashlib
-          import json
           import os
           import subprocess
           import sys
-          import urllib.request
           from pathlib import Path
           from urllib.parse import urlparse
+
+          from src.dvf_download import (
+            download_dvf_resource,
+            fetch_json,
+            validate_dvf_resource_url,
+          )
 
           dataset_api_url = os.environ["DVF_DATASET_API_URL"]
           statistics_dataset_api_url = os.environ["DVF_STATISTICS_DATASET_API_URL"]
@@ -88,9 +94,7 @@ jobs:
           if not dry_run and not os.environ.get("SUPABASE_DB_URL"):
             raise RuntimeError("SUPABASE_DB_URL is required unless dry_run=true.")
 
-          def read_json(url: str) -> dict:
-            with urllib.request.urlopen(url, timeout=60) as response:
-              return json.loads(response.read().decode("utf-8"))
+          read_json = fetch_json
 
           def resource_checksum(resource: dict) -> str | None:
             checksum = resource.get("checksum")
@@ -99,6 +103,7 @@ jobs:
             return None
 
           if requested_url:
+            validate_dvf_resource_url(requested_url)
             resources = [
               {
                 "title": Path(urlparse(requested_url).path).name or "DVF manual resource",
@@ -128,11 +133,16 @@ jobs:
           print(f"Resolved {len(resources)} DVF resource(s).")
 
           for resource in resources:
+            validate_dvf_resource_url(resource["url"])
+
+          # A replacement loads every file into dvf_transactions_staging and swaps it
+          # in once at the end, so an interrupted run leaves dvf_transactions intact.
+          for index, resource in enumerate(resources):
             url = resource["url"]
             filename = Path(urlparse(url).path).name or "dvf-resource"
             target = raw_dir / filename
             print(f"Downloading {resource['title']} -> {target}")
-            urllib.request.urlretrieve(url, target)
+            download_dvf_resource(url, target, timeout=120)
 
             expected_sha1 = resource.get("checksum")
             if expected_sha1:
@@ -147,12 +157,19 @@ jobs:
             if dry_run:
               command.append("--dry-run")
             if replace_existing:
-              command.append("--replace-existing")
+              command.append("--stage")
+              if index == 0:
+                command.append("--reset-staging")
             if requested_limit:
               command.extend(["--limit", requested_limit])
 
             print("+", " ".join(command))
             subprocess.run(command, check=True)
+
+          if replace_existing and not dry_run:
+            swap_command = ["python", "-m", "src.dvf_import", "--swap-staging"]
+            print("+", " ".join(swap_command))
+            subprocess.run(swap_command, check=True)
 
           statistics_dataset = read_json(statistics_dataset_api_url)
           statistics_resources = [
@@ -168,7 +185,7 @@ jobs:
           statistics_resource = statistics_resources[0]
           statistics_target = raw_dir / "stats_whole_period.csv"
           print(f"Downloading DVF market statistics -> {statistics_target}")
-          urllib.request.urlretrieve(statistics_resource["url"], statistics_target)
+          download_dvf_resource(statistics_resource["url"], statistics_target, timeout=120)
           source_updated_at = str(
             statistics_resource.get("last_modified")
             or statistics_dataset.get("last_modified")

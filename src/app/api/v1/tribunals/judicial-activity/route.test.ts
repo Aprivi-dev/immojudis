@@ -5,7 +5,17 @@ import {
 } from "@/lib/tribunal-judicial-activity";
 
 const mocks = vi.hoisted(() => ({
+  requireAuth: vi.fn(),
+  assertEntitlement: vi.fn(),
   getActivity: vi.fn(),
+}));
+
+vi.mock("@/integrations/supabase/auth-middleware", () => ({
+  bearerTokenFromRequest: () => "token",
+  requireSupabaseAuthContext: mocks.requireAuth,
+}));
+vi.mock("@/lib/property-reports", () => ({
+  assertFeatureEntitlement: mocks.assertEntitlement,
 }));
 
 vi.mock("@/lib/tribunal-judicial-activity-repository", async (importOriginal) => {
@@ -37,20 +47,49 @@ describe("GET /api/v1/tribunals/judicial-activity", () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.requireAuth.mockResolvedValue({ userId: "premium-user" });
+    mocks.assertEntitlement.mockResolvedValue(undefined);
     mocks.getActivity.mockResolvedValue(activity);
   });
 
-  it("sert l’agrégat public sans exiger de session", async () => {
+  it("sert l’agrégat en privé au membre Analyse", async () => {
     const response = await request("?courtCode=%20Justice_TJ_1_59%20&historyMonths=36");
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe(
-      "public, s-maxage=300, stale-while-revalidate=600",
-    );
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("vary")).toBe("authorization");
     await expect(response.json()).resolves.toEqual(activity);
     expect(mocks.getActivity).toHaveBeenCalledWith({
       courtCode: "justice_tj_1_59",
       historyMonths: 36,
+    });
+  });
+
+  it("refuse les visiteurs avant de lire l’activité", async () => {
+    mocks.requireAuth.mockRejectedValue(new Error("Unauthorized: missing bearer token"));
+    const response = await request();
+
+    expect(response.status).toBe(401);
+    expect(mocks.getActivity).not.toHaveBeenCalled();
+  });
+
+  it("refuse le plan Découverte avant de lire l’activité", async () => {
+    mocks.assertEntitlement.mockRejectedValue(
+      new Error("Activité judiciaire réservée au plan Analyse."),
+    );
+    const response = await request();
+
+    expect(response.status).toBe(403);
+    expect(mocks.getActivity).not.toHaveBeenCalled();
+  });
+
+  it("transmet la fenêtre glissante de trois mois au dépôt", async () => {
+    const response = await request("?courtCode=justice_tj_1_59&historyMonths=3");
+
+    expect(response.status).toBe(200);
+    expect(mocks.getActivity).toHaveBeenCalledWith({
+      courtCode: "justice_tj_1_59",
+      historyMonths: 3,
     });
   });
 
@@ -84,7 +123,7 @@ describe("GET /api/v1/tribunals/judicial-activity", () => {
     const response = await request();
 
     expect(response.status).toBe(503);
-    expect(response.headers.get("cache-control")).toBe("public, max-age=0, no-cache");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it("distingue un rattachement non résolu d’une panne du service", async () => {

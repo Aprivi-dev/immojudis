@@ -19,6 +19,7 @@ from src.pdf_enrichment import (
     DOCUMENT_FACTS_VERSION,
     PDF_TEXT_CACHE_VERSION,
     PdfDeadlineExceeded,
+    PdfDocumentOcrBudgetExceeded,
     PdfEnrichmentStats,
     PublicDocumentTarget,
     _adaptive_docling_timeout,
@@ -41,6 +42,7 @@ from src.pdf_enrichment import (
     extract_pdf_document,
     extract_pdf_pages,
     pdf_deadline_scope,
+    pdf_document_ocr_budget_scope,
 )
 from src.pdf_fact_extraction import (
     _extract_energy_diagnostics_from_documents,
@@ -148,6 +150,69 @@ def test_deadline_ocr_recomputes_timeout_after_render(monkeypatch) -> None:
 
     assert captured["timeout"] is not None
     assert 0 < captured["timeout"] <= 0.2
+
+
+@pytest.mark.parametrize(
+    "worker_budget,document_budget,expected_error",
+    [
+        (None, 3.0, PdfDocumentOcrBudgetExceeded),
+        (10.0, 3.0, PdfDocumentOcrBudgetExceeded),
+        (3.0, 10.0, PdfDeadlineExceeded),
+    ],
+)
+def test_ocr_subprocess_timeout_uses_shortest_active_budget(
+    monkeypatch,
+    worker_budget,
+    document_budget,
+    expected_error,
+) -> None:
+    clock = [100.0]
+    captured = {"timeout": None}
+    monkeypatch.setattr("src.pdf_enrichment.time.monotonic", lambda: clock[0])
+
+    class Pixmap:
+        def save(self, path: str) -> None:
+            from pathlib import Path
+
+            Path(path).write_bytes(b"image")
+
+    class Page:
+        def get_textpage_ocr(self, **_kwargs):
+            raise AssertionError("native OCR must not run under a bounded deadline")
+
+        def get_pixmap(self, **_kwargs):
+            clock[0] += 1.0
+            return Pixmap()
+
+    monkeypatch.setattr(
+        "src.pdf_enrichment.load_settings",
+        lambda: {"pdf_ocr_tessdata": None, "pdf_ocr_language": "fra"},
+    )
+
+    def timeout_run(*args, **kwargs):
+        captured["timeout"] = kwargs["timeout"]
+        clock[0] += float(kwargs["timeout"]) + 0.1
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    monkeypatch.setattr("src.pdf_enrichment.subprocess.run", timeout_run)
+
+    with pytest.raises(expected_error) as error:
+        worker_deadline = None if worker_budget is None else clock[0] + worker_budget
+        with pdf_deadline_scope(worker_deadline):
+            with pdf_document_ocr_budget_scope(document_budget):
+                from src.pdf_enrichment import _extract_page_text_with_ocr_result
+
+                _extract_page_text_with_ocr_result(
+                    Page(),
+                    fallback="",
+                    checkpointed_pages=2,
+                    total_pages=3,
+                    new_progress_pages=1,
+                )
+
+    assert captured["timeout"] == pytest.approx(2.0)
+    assert error.value.checkpointed_pages == 2
+    assert error.value.progress_made is True
 
 
 def test_deadline_checks_between_continuous_document_stream_chunks() -> None:
@@ -321,7 +386,7 @@ def test_enrich_sale_from_ccv_replaces_implausible_source_starting_price() -> No
             "source_name": "info_encheres",
             "source_url": "https://www.info-encheres.com/vente-6008.html",
             "property_type": "Maison",
-            "starting_price_eur": "11 €",
+            "starting_price_eur": "500 €",
         }
     )
     pdf_text = {
@@ -363,7 +428,7 @@ def test_enrich_sale_from_ccv_replaces_implausible_source_starting_price() -> No
         "source": "pdf",
         "status": "resolved",
         "value_eur": 10500.0,
-        "rejected_source_price_eur": 11.0,
+        "rejected_source_price_eur": 500.0,
         "selected_value_eur": 10500.0,
         "document_label": "Cahier des conditions de la vente",
         "document_url": "https://www.info-encheres.com/upload/cahier-6008.pdf",
@@ -384,7 +449,7 @@ def test_enrich_sale_from_ccv_ignores_bid_guarantee_minimum() -> None:
             "source_name": "info_encheres",
             "source_url": "https://www.info-encheres.com/vente-guarantee.html",
             "property_type": "Maison",
-            "starting_price_eur": "11 €",
+            "starting_price_eur": "500 €",
         }
     )
     pdf_text = {
@@ -398,7 +463,7 @@ def test_enrich_sale_from_ccv_ignores_bid_guarantee_minimum() -> None:
 
     enrich_sale_from_pdf_text(sale, [pdf_text])
 
-    assert sale.starting_price_eur == Decimal("11")
+    assert sale.starting_price_eur == Decimal("500")
     assert "starting_price_extraction" not in sale.raw_payload
     assert sale.raw_payload["document_facts_version"] == DOCUMENT_FACTS_VERSION
 
@@ -2122,8 +2187,20 @@ def test_extract_pdf_document_then_enriches_document_only_surface(tmp_path, monk
     assert sale.raw_payload["surface_extraction"]["document_label"] == "PV descriptif"
 
 
+def test_licitor_static_robots_rule_allows_published_sale_attachments() -> None:
+    from src.pdf_enrichment import _is_robots_disallowed_licitor_document
+
+    # licitor.com/robots.txt: "Disallow: /data/pub/" + "Allow: /data/pub/media/annonce/".
+    assert not _is_robots_disallowed_licitor_document(
+        "https://www.licitor.com/data/pub/media/annonce/10/94/58/109458.000.001.84b69126bd6a.pdf"
+    )
+    assert _is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/doc/109458.pdf")
+    assert _is_robots_disallowed_licitor_document("https://www.licitor.com/data/pub/media/other/x.pdf")
+    assert not _is_robots_disallowed_licitor_document("https://www.vench.fr/data/pub/doc/x.pdf")
+
+
 def test_download_documents_skips_robots_disallowed_licitor_documents(tmp_path, monkeypatch) -> None:
-    blocked_url = "https://www.licitor.com/data/pub/media/annonce/10/87/62/108762.000.001.pdf"
+    blocked_url = "https://www.licitor.com/data/pub/doc/10/87/62/108762.000.001.pdf"
     sale = normalize_sale(
         {
             "source_name": "licitor",
@@ -2808,11 +2885,11 @@ def test_extract_attached_legacy_word_document_feeds_surface_rules(tmp_path, mon
     )
 
     monkeypatch.setattr(
-        "src.pdf_enrichment.shutil.which",
+        "src.pdf_word_documents.shutil.which",
         lambda command: f"/usr/bin/{command}" if command == "antiword" else None,
     )
     monkeypatch.setattr(
-        "src.pdf_enrichment.subprocess.run",
+        "src.pdf_word_documents.subprocess.run",
         lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout=extracted_text, stderr=""),
     )
 

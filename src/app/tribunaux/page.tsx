@@ -1,13 +1,21 @@
 import type { Metadata } from "next";
-import { TribunalsPage } from "@/routes/tribunaux";
+import { PublicTribunalActivitySection } from "@/components/PublicTribunalActivity";
+import { TribunalJudicialActivityExplorer } from "@/components/TribunalJudicialActivityExplorer";
+import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
 
 export const metadata: Metadata = {
-  title: "Statistiques des ventes judiciaires par tribunal",
+  title: "Statistiques Tribunaux",
   description:
-    "Fourchettes de mises à prix, délais observés et calendrier des ventes judiciaires suivies par tribunal.",
+    "Ventes judiciaires à venir, prochaines audiences et mises à prix tribunal par tribunal ; prix d’adjudication et résultats avec l’offre Analyse.",
+  alternates: { canonical: "/tribunaux" },
   robots: { index: true, follow: true },
 };
 
-export default function Page() {
-  return <TribunalsPage />;
+export default async function Page() {
+  const publicActivity = await loadPublicTribunalActivity();
+  return (
+    <TribunalJudicialActivityExplorer
+      publicActivity={<PublicTribunalActivitySection items={publicActivity} />}
+    />
+  );
 }

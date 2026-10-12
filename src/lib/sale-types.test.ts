@@ -23,3 +23,22 @@ describe("sale family vocabulary", () => {
     expect(saleEventLabel("state")).toBe("Vente");
   });
 });
+
+describe("notarial and State sales", () => {
+  it("affiche par défaut le notarial et le domanial, et ne les masque que sur demande explicite", async () => {
+    const { visibleSaleTypeOptions, visibleSaleFamilies } = await import("./sale-types");
+    expect(visibleSaleTypeOptions({}).map((option) => option.value)).toEqual([
+      "tribunal",
+      "notary",
+      "state",
+      "unknown",
+    ]);
+    expect(visibleSaleFamilies({})).toHaveLength(3);
+    const hidden = { NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED: "false" };
+    expect(visibleSaleTypeOptions(hidden).map((option) => option.value)).toEqual([
+      "tribunal",
+      "unknown",
+    ]);
+    expect(visibleSaleFamilies(hidden).map((family) => family.type)).toEqual(["tribunal"]);
+  });
+});

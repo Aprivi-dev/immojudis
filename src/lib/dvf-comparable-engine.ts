@@ -238,7 +238,7 @@ export function buildDvfComparableAnalysis({
     limitations: [
       "DVF ne décrit pas l'état intérieur, les travaux, l'occupation ni les qualités fines du bien.",
       "Les ventes très récentes peuvent manquer selon le délai de publication DVF.",
-      "La fourchette doit être relue avec les pièces judiciaires avant de fixer une mise maximale.",
+      "La fourchette doit être relue avec les pièces judiciaires avant de fixer une enchère plafond.",
     ],
   };
 }
@@ -610,7 +610,7 @@ function nextActions({
       "Compléter avec des références notaires/agences ou élargir le périmètre de contrôle.",
     );
   }
-  actions.push("Utiliser la valeur basse pour les scénarios prudents de mise maximale.");
+  actions.push("Utiliser la valeur basse pour les scénarios prudents d’enchère plafond.");
   return actions.slice(0, 4);
 }
 
@@ -653,7 +653,7 @@ function missingAnalysis({
     summary: "Aucun comparable DVF exploitable n'a été retenu.",
     nextActions: [
       "Vérifier le géocodage du bien et relancer avec un rayon plus large.",
-      "Renseigner une hypothèse de marché documentée avant de calculer la mise maximale.",
+      "Renseigner une hypothèse de marché documentée avant de calculer l’enchère plafond.",
     ],
     limitations: [
       "Sans comparable DVF, l'estimation automatique doit être considérée comme indisponible.",

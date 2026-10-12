@@ -22,7 +22,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: mocks.user, loading: mocks.loading }),
 }));
-vi.mock("@/lib/router-compat", () => ({ useNavigate: () => mocks.navigate }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: mocks.navigate, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+}));
 vi.mock("sonner", () => ({ toast: { success: mocks.success, error: mocks.error } }));
 vi.mock("@/lib/client-api", () => ({
   fetchPropertyReports: mocks.fetchReports,
@@ -64,11 +66,8 @@ function renderActions(props: Partial<React.ComponentProps<typeof PropertyReport
 describe("report export from the listing", () => {
   it("shares the current simulation from the compact listing and revokes the link", async () => {
     const simulation = {
-      price: 100000,
-      works: 31000,
-      fpt: 5000,
-      scenario: "prudent" as const,
-      manualMarketPricePerM2: null,
+      version: 2 as const,
+      choices: { works: { key: "devis" as const, amount: 31000 }, fpt: 5000 },
       expectedMaxBid: 90000,
     };
     mocks.share.mockResolvedValue({
@@ -110,11 +109,8 @@ describe("report export from the listing", () => {
   });
   it("saves the current simulation before exporting even when a report already exists", async () => {
     const simulation = {
-      price: 100000,
-      works: 20000,
-      fpt: 5000,
-      scenario: "prudent" as const,
-      manualMarketPricePerM2: null,
+      version: 2 as const,
+      choices: { works: { key: "devis" as const, amount: 20000 }, fpt: 5000 },
       expectedMaxBid: 90000,
     };
     mocks.fetchReports.mockResolvedValue({ reports: [{ id: "report-existing" }], plan: null });
@@ -168,11 +164,11 @@ describe("report export from the listing", () => {
     expect(mocks.save).not.toHaveBeenCalled();
   });
   it("does not download or announce success after a denied export", async () => {
-    mocks.exportPdf.mockRejectedValue(new Error("Export PDF réservé au plan Analyse."));
+    mocks.exportPdf.mockRejectedValue(new Error("Export PDF réservé à l’offre Analyse."));
     renderActions();
     fireEvent.click(screen.getByRole("button", { name: "Export PDF" }));
     await waitFor(() =>
-      expect(mocks.error).toHaveBeenCalledWith("Export PDF réservé au plan Analyse."),
+      expect(mocks.error).toHaveBeenCalledWith("Export PDF réservé à l’offre Analyse."),
     );
     expect(mocks.createUrl).not.toHaveBeenCalled();
     expect(mocks.success).not.toHaveBeenCalledWith("PDF exporté.");
@@ -181,7 +177,7 @@ describe("report export from the listing", () => {
     mocks.user = null;
     renderActions();
     fireEvent.click(screen.getByRole("button", { name: "Export PDF" }));
-    expect(mocks.navigate).toHaveBeenCalledWith(expect.objectContaining({ to: "/login" }));
+    expect(mocks.navigate).toHaveBeenCalledWith("/login?redirect=%2F");
     expect(mocks.fetchReports).not.toHaveBeenCalled();
     expect(mocks.save).not.toHaveBeenCalled();
     expect(mocks.exportPdf).not.toHaveBeenCalled();

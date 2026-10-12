@@ -1,3 +1,4 @@
+import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 import type { AuctionSale } from "@/lib/types";
 
 export type NearbyServiceCategoryKey =
@@ -155,7 +156,7 @@ function buildCategory(
   for (const candidate of candidates) {
     const normalizedText = normalizeText(candidate.text);
     if (!definition.patterns.some((pattern) => pattern.test(normalizedText))) continue;
-    evidence.push(excerpt(candidate.text));
+    evidence.push(excerpt(candidate.text, 160));
     sources.add(candidate.source);
     if (evidence.length >= 3) break;
   }
@@ -237,7 +238,7 @@ function nearbySource(status: NearbyServicesAnalysis["status"]): string {
   if (status === "source_signals") return "sources collectées et descriptions";
   if (status === "geocoded_to_measure") return "coordonnées du bien";
   if (status === "location_only") return "adresse ou commune";
-  return "à connecter à BAN/POI";
+  return "Localisation nécessaire pour vérifier les services";
 }
 
 function nearbyNextActions({
@@ -328,40 +329,6 @@ function addCandidate(candidates: TextCandidate[], value: unknown, source: strin
       candidates.push({ text: sentence.trim(), source });
     }
   }
-}
-
-function flattenKeyValues(value: unknown, path = ""): Array<{ path: string; value: unknown }> {
-  if (!value || typeof value !== "object") return [];
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) => flattenPrimitiveOrObject(item, `${path}[${index}]`));
-  }
-
-  return Object.entries(value as Record<string, unknown>).flatMap(([key, item]) =>
-    flattenPrimitiveOrObject(item, path ? `${path}.${key}` : key),
-  );
-}
-
-function flattenPrimitiveOrObject(
-  value: unknown,
-  path: string,
-): Array<{ path: string; value: unknown }> {
-  if (value && typeof value === "object") return flattenKeyValues(value, path);
-  return [{ path, value }];
-}
-
-function normalizeText(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[’']/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function excerpt(value: string): string {
-  const text = value.replace(/\s+/g, " ").trim();
-  return text.length > 160 ? `${text.slice(0, 157).trim()}...` : text;
 }
 
 function cleanText(value: unknown): string | null {

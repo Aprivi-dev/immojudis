@@ -3,6 +3,7 @@ import {
   buildTribunalJudicialActivity,
   judicialActivityPeriod,
   tribunalJudicialActivityQuerySchema,
+  tribunalJudicialActivityResponseSchema,
   type TribunalJudicialActivitySale,
 } from "@/lib/tribunal-judicial-activity";
 
@@ -62,6 +63,23 @@ describe("tribunal judicial activity", () => {
         sampleSize: 5,
       },
       visitCoverage: { status: "published", value: 0.8, sampleSize: 5 },
+      observedVisitCoverage: {
+        status: "insufficient_data",
+        value: null,
+        sampleSize: 1,
+      },
+      occupation: {
+        knownSales: 0,
+        unknownSales: 1,
+        distribution: [],
+      },
+      hearingCalendar: [
+        { date: "2026-08-30", sales: 1 },
+        { date: "2026-09-09", sales: 1 },
+        { date: "2026-09-19", sales: 1 },
+        { date: "2026-09-29", sales: 1 },
+      ],
+      communes: [],
       medianDiscoveryLeadDays: { status: "insufficient_data", value: null, sampleSize: 1 },
       discoveryLeadRangeDays: {
         status: "insufficient_data",
@@ -121,6 +139,21 @@ describe("tribunal judicial activity", () => {
       value: null,
       sampleSize: 2,
     });
+    expect(result.activity.observedVisitCoverage).toEqual({
+      status: "insufficient_data",
+      value: null,
+      sampleSize: 0,
+    });
+    expect(result.activity.occupation).toEqual({
+      knownSales: 0,
+      unknownSales: 0,
+      distribution: [],
+    });
+    expect(result.activity.hearingCalendar).toEqual([
+      { date: "2026-09-01", sales: 1 },
+      { date: "2026-09-08", sales: 1 },
+    ]);
+    expect(result.activity.communes).toEqual([]);
     expect(result.activity.topPropertyTypes).toEqual([]);
     expect(result.activity.startingPriceRangeEur).toEqual({
       status: "insufficient_data",
@@ -215,6 +248,241 @@ describe("tribunal judicial activity", () => {
     expect(period.historyStart.toISOString()).toBe("2025-03-01T00:00:00.000Z");
     expect(period.upcomingEnd.toISOString()).toBe("2027-03-31T23:00:00.000Z");
   });
+
+  it("ajoute les visites, l’occupation et les communes historiques sans mélanger le calendrier à venir", () => {
+    const pastSales = [
+      {
+        ...sale("past-one", "2026-01-10T09:00:00.000Z", 20_000, "house", true, 10),
+        status: "past",
+        occupationStatus: "vacant",
+        city: "Saint-Étienne",
+      },
+      {
+        ...sale("past-two", "2026-02-10T09:00:00.000Z", 30_000, "house", true, 10),
+        status: "past",
+        occupationStatus: "owner_occupied",
+        city: "Lyon",
+      },
+      {
+        ...sale("past-three", "2026-03-10T09:00:00.000Z", 40_000, "apartment", false, 10),
+        status: "past",
+        occupationStatus: "squatted",
+        city: "Lyon",
+      },
+      {
+        ...sale("past-four", "2026-04-10T09:00:00.000Z", 50_000, "apartment", true, 10),
+        status: "past",
+        occupationStatus: "rented",
+        city: "Saint-Étienne",
+      },
+      {
+        ...sale("past-five", "2026-05-10T09:00:00.000Z", 60_000, "apartment", false, 10),
+        status: "past",
+        occupationStatus: "unknown",
+        city: null,
+      },
+    ];
+
+    const result = buildTribunalJudicialActivity({
+      court: COURT,
+      sales: pastSales,
+      asOf: AS_OF,
+      historyMonths: 12,
+    });
+
+    expect(result.activity.observedVisitCoverage).toEqual({
+      status: "published",
+      value: 0.6,
+      sampleSize: 5,
+    });
+    expect(result.activity.occupation).toEqual({
+      knownSales: 4,
+      unknownSales: 1,
+      distribution: [
+        { status: "vacant", count: 1, share: 0.25 },
+        { status: "occupied", count: 2, share: 0.5 },
+        { status: "rented", count: 1, share: 0.25 },
+      ],
+    });
+    expect(result.activity.communes).toEqual([
+      { city: "Lyon", count: 2, share: 0.5 },
+      { city: "Saint-Étienne", count: 2, share: 0.5 },
+    ]);
+    expect(result.activity.hearingCalendar).toEqual([]);
+  });
+
+  it("accepte les parts d’occupation arrondies qui totalisent 0,999999", () => {
+    const result = buildTribunalJudicialActivity({
+      court: COURT,
+      sales: [
+        {
+          ...sale("vacant", "2026-02-10T09:00:00.000Z", 20_000, "house", false, 10, {
+            occupationStatus: "vacant",
+          }),
+          status: "past",
+        },
+        {
+          ...sale("occupied", "2026-03-10T09:00:00.000Z", 30_000, "house", false, 10, {
+            occupationStatus: "occupied",
+          }),
+          status: "past",
+        },
+        {
+          ...sale("rented", "2026-04-10T09:00:00.000Z", 40_000, "house", false, 10, {
+            occupationStatus: "rented",
+          }),
+          status: "past",
+        },
+      ],
+      asOf: AS_OF,
+      historyMonths: 12,
+    });
+
+    expect(result.activity.occupation).toEqual({
+      knownSales: 3,
+      unknownSales: 0,
+      distribution: [
+        { status: "vacant", count: 1, share: 0.333333 },
+        { status: "occupied", count: 1, share: 0.333333 },
+        { status: "rented", count: 1, share: 0.333333 },
+      ],
+    });
+  });
+
+  it("ne compte que les visites dont le tableau contient une date valide", () => {
+    const result = buildTribunalJudicialActivity({
+      court: COURT,
+      sales: [
+        {
+          ...sale("empty-visits", "2026-01-10T09:00:00.000Z", 20_000, "house", false, 10),
+          status: "past",
+          visitDates: [],
+        },
+        {
+          ...sale("invalid-visits", "2026-02-10T09:00:00.000Z", 30_000, "house", false, 10),
+          status: "past",
+          visitDates: [null, {}, "texte sans date", "31/02/2026"],
+        },
+        {
+          ...sale("scalar-visit", "2026-03-10T09:00:00.000Z", 40_000, "apartment", false, 10),
+          status: "past",
+          visitDates: "2026-08-01T09:00:00.000Z",
+        },
+        {
+          ...sale("iso-visit", "2026-04-10T09:00:00.000Z", 50_000, "apartment", false, 10),
+          status: "past",
+          visitDates: ["2026-08-01T09:00:00.000Z"],
+        },
+        {
+          ...sale("french-visit", "2026-05-10T09:00:00.000Z", 60_000, "apartment", false, 10),
+          status: "past",
+          visitDates: ["2 septembre 2026"],
+        },
+        {
+          ...sale("day-month-visit", "2026-06-10T09:00:00.000Z", 70_000, "house", false, 10),
+          status: "past",
+          visitDates: ["02/09/2026"],
+        },
+      ],
+      asOf: AS_OF,
+      historyMonths: 12,
+    });
+
+    expect(result.activity.observedVisitCoverage).toEqual({
+      status: "published",
+      value: 0.5,
+      sampleSize: 6,
+    });
+  });
+
+  it("rejette une occupation incohérente ou dupliquée", () => {
+    const base = buildTribunalJudicialActivity({
+      court: COURT,
+      sales: [
+        {
+          ...sale("past", "2026-01-10T09:00:00.000Z", 20_000, "house", false, 10),
+          status: "past",
+        },
+      ],
+      asOf: AS_OF,
+      historyMonths: 12,
+    });
+
+    const invalidActivities = [
+      {
+        ...base.activity,
+        observedPastSales: 2,
+        occupation: {
+          knownSales: 2,
+          unknownSales: 0,
+          distribution: [
+            { status: "occupied" as const, count: 1, share: 0.5 },
+            { status: "occupied" as const, count: 1, share: 0.5 },
+          ],
+        },
+      },
+      {
+        ...base.activity,
+        observedPastSales: 2,
+        occupation: {
+          knownSales: 2,
+          unknownSales: 0,
+          distribution: [{ status: "occupied" as const, count: 1, share: 1 }],
+        },
+      },
+      {
+        ...base.activity,
+        observedPastSales: 2,
+        occupation: {
+          knownSales: 2,
+          unknownSales: 0,
+          distribution: [{ status: "occupied" as const, count: 2, share: 0.5 }],
+        },
+      },
+      {
+        ...base.activity,
+        observedPastSales: 2,
+        occupation: {
+          knownSales: 1,
+          unknownSales: 0,
+          distribution: [{ status: "occupied" as const, count: 1, share: 1 }],
+        },
+      },
+    ];
+
+    for (const activity of invalidActivities) {
+      expect(() => tribunalJudicialActivityResponseSchema.parse({ ...base, activity })).toThrow();
+    }
+  });
+
+  it("accepte la fenêtre d’activité de trois mois en conservant le début du mois", () => {
+    expect(
+      tribunalJudicialActivityQuerySchema.parse({
+        courtCode: "justice_tj_1_59",
+        historyMonths: "3",
+      }),
+    ).toEqual({ courtCode: "justice_tj_1_59", historyMonths: 3 });
+    expect(judicialActivityPeriod(AS_OF, 3).historyStart.toISOString()).toBe(
+      "2026-05-20T12:00:00.000Z",
+    );
+
+    const boundaryResult = buildTribunalJudicialActivity({
+      court: COURT,
+      sales: [
+        {
+          ...sale("included-boundary", "2026-05-20T12:00:00.000Z", 20_000, "house", false, 10),
+          status: "past",
+        },
+        {
+          ...sale("excluded-boundary", "2026-05-20T11:59:59.999Z", 30_000, "house", false, 10),
+          status: "past",
+        },
+      ],
+      asOf: AS_OF,
+      historyMonths: 3,
+    });
+    expect(boundaryResult.activity.observedPastSales).toBe(1);
+  });
 });
 
 function sale(
@@ -224,6 +492,7 @@ function sale(
   propertyType: string,
   hasVisit: boolean,
   leadDays: number,
+  overrides: Partial<Pick<TribunalJudicialActivitySale, "occupationStatus" | "city">> = {},
 ): TribunalJudicialActivitySale {
   const date = new Date(saleDate);
   return {
@@ -234,5 +503,149 @@ function sale(
     propertyType,
     visitDates: hasVisit ? ["2026-08-25T09:00:00.000Z"] : [],
     firstSeenAt: new Date(date.getTime() - leadDays * 24 * 60 * 60 * 1_000).toISOString(),
+    ...overrides,
   };
 }
+
+describe("tribunal judicial activity: corrections de calcul", () => {
+  const past = (
+    id: string,
+    saleDate: string,
+    startingPriceEur: number,
+    overrides: Partial<TribunalJudicialActivitySale> = {},
+  ): TribunalJudicialActivitySale => ({
+    ...sale(id, saleDate, startingPriceEur, "apartment", false, 30),
+    status: "past",
+    city: "Marseille",
+    ...overrides,
+  });
+
+  it("compte une seule fois un lot publié par plusieurs sources, jour d’audience en heure de Paris", () => {
+    const result = buildTribunalJudicialActivity({
+      court: COURT,
+      sales: [
+        // 22:30 UTC on 9 June is 10 June in Paris: same hearing day as the copies.
+        past("licitor", "2026-06-09T22:30:00.000Z", 80_000, {
+          firstSeenAt: "2026-05-20T09:00:00.000Z",
+        }),
+        past("pa-judiciaire", "2026-06-10T07:00:00.000Z", 80_000, {
+          city: "MARSEILLE",
+          firstSeenAt: "2026-05-10T09:00:00.000Z",
+        }),
+        past("pa-j", "2026-06-10T00:00:00.000Z", 80_000, { city: "marseille " }),
+        // Same day and commune but another price: another lot.
+        past("other-lot", "2026-06-10T07:00:00.000Z", 81_000),
+        // No commune: never merged.
+        past("no-city-a", "2026-06-10T07:00:00.000Z", 80_000, { city: null }),
+        past("no-city-b", "2026-06-10T07:00:00.000Z", 80_000, { city: null }),
+      ],
+      asOf: AS_OF,
+      historyMonths: 36,
+    });
+
+    expect(result.activity.observedPastSales).toBe(4);
+    expect(result.provenance.mergedDuplicateAnnouncements).toBe(2);
+    // "MARSEILLE" (earliest detected copy) and "Marseille" are one commune.
+    expect(result.activity.communes).toEqual([{ city: "MARSEILLE", count: 2, share: 1 }]);
+  });
+
+  it("garde la première détection la plus ancienne d’un lot multi-sources", () => {
+    const copies = [1, 2, 3, 4, 5].flatMap((index) => [
+      past(`licitor-${index}`, `2026-06-0${index}T12:00:00.000Z`, 10_000 * index, {
+        firstSeenAt: `2026-05-2${index}T09:00:00.000Z`,
+      }),
+      past(`vench-${index}`, `2026-06-0${index}T12:00:00.000Z`, 10_000 * index, {
+        firstSeenAt: `2026-05-0${index}T12:00:00.000Z`,
+      }),
+    ]);
+
+    const result = buildTribunalJudicialActivity({
+      court: COURT,
+      sales: copies,
+      asOf: AS_OF,
+      historyMonths: 36,
+    });
+
+    expect(result.activity.observedPastSales).toBe(5);
+    // Earliest detection (Vench) is exactly 31 days before each hearing.
+    expect(result.activity.discoveryLeadRangeDays).toEqual({
+      status: "published",
+      p25: 31,
+      p50: 31,
+      p75: 31,
+      sampleSize: 5,
+    });
+  });
+
+  it("ne range pas un type de bien inconnu dans « Autre » et regroupe les communes par empreinte", () => {
+    const sales = [
+      past("a", "2026-06-01T09:00:00.000Z", 10_000, { propertyType: "apartment", city: "Aubagne" }),
+      past("b", "2026-06-02T09:00:00.000Z", 20_000, { propertyType: "apartment", city: "AUBAGNE" }),
+      past("c", "2026-06-03T09:00:00.000Z", 30_000, { propertyType: "house", city: "Aubagne " }),
+      past("d", "2026-06-04T09:00:00.000Z", 40_000, { propertyType: "house", city: "La Ciotat" }),
+      past("e", "2026-06-05T09:00:00.000Z", 50_000, { propertyType: "house", city: "la-ciotat" }),
+      past("f", "2026-06-06T09:00:00.000Z", 60_000, { propertyType: null }),
+      past("g", "2026-06-07T09:00:00.000Z", 70_000, { propertyType: "unknown" }),
+    ];
+
+    const result = buildTribunalJudicialActivity({
+      court: COURT,
+      sales,
+      asOf: AS_OF,
+      historyMonths: 36,
+    });
+
+    expect(result.activity.observedPastSales).toBe(7);
+    expect(result.activity.propertyTypeBenchmarks.map((item) => item.propertyType)).toEqual([
+      "house",
+      "apartment",
+    ]);
+    expect(result.activity.topPropertyTypes).toEqual([
+      { propertyType: "house", count: 3, share: 0.6 },
+      { propertyType: "apartment", count: 2, share: 0.4 },
+    ]);
+    expect(result.activity.communes).toEqual([
+      { city: "Aubagne", count: 3, share: 0.428571 },
+      { city: "La Ciotat", count: 2, share: 0.285714 },
+      { city: "Marseille", count: 2, share: 0.285714 },
+    ]);
+  });
+
+  it("exclut du taux de visites les audiences archivées sans information de visite", () => {
+    const archived = [1, 2, 3, 4, 5, 6].map((index) =>
+      past(`archive-${index}`, `2026-06-0${index}T09:00:00.000Z`, 10_000 * index, {
+        visitDatesKnown: false,
+        historySource: "outcome_graph_archive",
+        occupationStatus: index % 2 ? "tenant_occupied" : "occupied_other",
+      }),
+    );
+    const live = [1, 2, 3, 4, 5].map((index) =>
+      past(`live-${index}`, `2026-07-0${index}T09:00:00.000Z`, 1_000 * index, {
+        visitDates: index <= 2 ? ["2026-06-20T09:00:00.000Z"] : [],
+      }),
+    );
+
+    const result = buildTribunalJudicialActivity({
+      court: COURT,
+      sales: [...archived, ...live],
+      asOf: AS_OF,
+      historyMonths: 36,
+    });
+
+    expect(result.activity.observedPastSales).toBe(11);
+    expect(result.provenance.archivedPastSales).toBe(6);
+    expect(result.activity.observedVisitCoverage).toEqual({
+      status: "published",
+      value: 0.4,
+      sampleSize: 5,
+    });
+    expect(result.activity.occupation).toEqual({
+      knownSales: 6,
+      unknownSales: 5,
+      distribution: [
+        { status: "occupied", count: 3, share: 0.5 },
+        { status: "rented", count: 3, share: 0.5 },
+      ],
+    });
+  });
+});

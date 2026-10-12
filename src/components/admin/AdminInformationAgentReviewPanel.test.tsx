@@ -19,23 +19,6 @@ vi.mock("@/lib/client-api", () => ({
   updateAdminInformationAgentEvidenceRightsClient: mocks.updateRights,
 }));
 
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({
-    to,
-    params,
-    children,
-    ...props
-  }: {
-    to: string;
-    params: Record<string, string>;
-    children: React.ReactNode;
-  }) => (
-    <a href={to.replace("$id", params.id)} {...props}>
-      {children}
-    </a>
-  ),
-}));
-
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
@@ -83,6 +66,55 @@ describe("AdminInformationAgentReviewPanel", () => {
     expect(screen.getByRole("link", { name: /Voir l’annonce 11111111/ }).getAttribute("href")).toBe(
       "/sales/11111111-1111-4111-8111-111111111111",
     );
+  });
+
+  it("shows where each fact comes from (email, portal or manual import)", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          message_id: "55555555-5555-4555-8555-555555555555",
+          fact_key: "occupancy_status",
+          display_value: "Libre",
+          confidence: 0.9,
+          evidence_asset_id: null,
+          evidence_excerpt: "Le bien est libre.",
+        },
+      ],
+      cases: [
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          recipient_name: "Maître Dupont",
+          recipient_email: "cabinet@example.test",
+          status: "review",
+        },
+      ],
+      factSources: [
+        {
+          messageId: "55555555-5555-4555-8555-555555555555",
+          channel: "portal",
+          fromEmail: "secretariat@example.test",
+          receivedAt: "2026-10-05T09:30:00.000Z",
+          senderMatchesRecipient: false,
+        },
+      ],
+      assets: [],
+      extractions: [],
+      messages: [],
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    const provenance = await screen.findByText(/Provenance : Dépôt du portail privé/);
+    expect(provenance.textContent).toContain("secretariat@example.test");
+    expect(provenance.textContent).toContain("expéditeur différent du contact sollicité");
   });
 
   it("shows an unexpected sender without offering a fact to accept", async () => {
@@ -202,6 +234,102 @@ describe("AdminInformationAgentReviewPanel", () => {
       true,
     );
   });
+
+  it("shows a vision summary as review-only text and surfaces extraction details", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [
+        {
+          id: "fact-vision",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          fact_key: "photo",
+          display_value: "Photo reçue",
+          confidence: 0.82,
+          evidence_asset_id: "asset-vision",
+          evidence_excerpt: null,
+          source_page: 2,
+        },
+      ],
+      cases: [{ id: "33333333-3333-4333-8333-333333333333", status: "review" }],
+      assets: [
+        {
+          id: "asset-vision",
+          mime_type: "image/jpeg",
+          rights_status: "authorized",
+          original_filename: "facade.jpg",
+        },
+      ],
+      extractions: [
+        {
+          asset_id: "asset-vision",
+          status: "completed",
+          summary: "Observation visuelle : <b>façade</b>",
+          error_message: null,
+        },
+      ],
+      messages: [],
+    });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText(/Résumé de l’analyse — à vérifier/)).toBeTruthy();
+    expect(screen.getByText("Observation visuelle : <b>façade</b>")).toBeTruthy();
+    expect(screen.getByText("Page source : 2")).toBeTruthy();
+    expect(container.querySelector("b")).toBeNull();
+  });
+
+  it.each(["unsupported", "failed"] as const)(
+    "shows a readable extraction error for %s evidence",
+    async (status) => {
+      mocks.fetchReview.mockResolvedValue({
+        facts: [
+          {
+            id: "fact-" + status,
+            case_id: "33333333-3333-4333-8333-333333333333",
+            sale_id: "11111111-1111-4111-8111-111111111111",
+            fact_key: "document",
+            display_value: "Document reçu",
+            confidence: 0.4,
+            evidence_asset_id: "asset-" + status,
+            evidence_excerpt: null,
+          },
+        ],
+        cases: [{ id: "33333333-3333-4333-8333-333333333333", status: "review" }],
+        assets: [
+          {
+            id: "asset-" + status,
+            mime_type: "application/octet-stream",
+            rights_status: "authorized",
+            original_filename: "piece.bin",
+          },
+        ],
+        extractions: [
+          {
+            asset_id: "asset-" + status,
+            status,
+            summary: null,
+            error_message: "Format de pièce non pris en charge.",
+          },
+        ],
+        messages: [],
+      });
+
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={client}>
+          <AdminInformationAgentReviewPanel />
+        </QueryClientProvider>,
+      );
+
+      const error = await screen.findByRole("alert");
+      expect(error.textContent).toContain("Erreur d’analyse : Format de pièce non pris en charge.");
+    },
+  );
 
   it("opens a private attachment and records the administrator rights decision", async () => {
     mocks.fetchReview.mockResolvedValue({
@@ -343,8 +471,23 @@ describe("AdminInformationAgentReviewPanel", () => {
     );
 
     expect(await screen.findByText(/Droits de diffusion : autorisés/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Accepter" }) as HTMLButtonElement).disabled).toBe(
-      false,
+    const accept = () => screen.getByRole("button", { name: "Accepter" }) as HTMLButtonElement;
+    // Rights and analysis are fine, but the "Caviardage vérifié" step is still pending.
+    expect(accept().disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText(/J’ai contrôlé la pièce/));
+    expect(accept().disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Nom de la personne qui a contrôlé/), {
+      target: { value: "Claire Martin" },
+    });
+    expect(accept().disabled).toBe(false);
+    fireEvent.click(accept());
+    await waitFor(() =>
+      expect(mocks.reviewFact.mock.calls[0]?.[0]).toMatchObject({
+        factId: "fact-ready",
+        decision: "accepted",
+        redactionConfirmed: true,
+        redactionVerifiedBy: "Claire Martin",
+      }),
     );
   });
 
@@ -453,30 +596,28 @@ describe("AdminInformationAgentReviewPanel", () => {
   });
 
   it("lets an admin reach an older response beyond the first page", async () => {
-    const messageCursor = JSON.stringify({
-      createdAt: "2026-09-23T13:15:00.000Z",
-      id: "22222222-2222-4222-8222-222222222222",
-    });
-    mocks.fetchReview.mockImplementation(
-      async ({ messageCursor: requestedCursor }: { messageCursor?: string }) => ({
-        facts: [],
-        assets: [],
-        extractions: [],
-        cases: [],
-        messages: [
-          {
-            id: requestedCursor ? "message-old" : "message-new",
-            case_id: null,
-            from_email: "contact@example.test",
-            subject: requestedCursor ? "Ancienne réponse" : "Réponse récente",
-            body_text: requestedCursor ? "Ancien contenu à contrôler" : "Contenu récent",
-            metadata: {},
-          },
-        ],
-        hasMoreMessages: !requestedCursor,
-        nextMessagesCursor: messageCursor,
-      }),
-    );
+    mocks.fetchReview.mockImplementation(async ({ offset }: { offset: number }) => ({
+      facts: [],
+      assets: [],
+      extractions: [],
+      cases: [],
+      messages: [
+        {
+          id: offset ? "message-old" : "message-new",
+          case_id: null,
+          from_email: "contact@example.test",
+          subject: offset ? "Ancienne réponse" : "Réponse récente",
+          body_text: offset ? "Ancien contenu à contrôler" : "Contenu récent",
+          metadata: {},
+        },
+      ],
+      factsTotal: 0,
+      messagesTotal: 70,
+      offset,
+      limit: 50,
+      total: 70,
+      hasMore: offset + 50 < 70,
+    }));
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -485,45 +626,43 @@ describe("AdminInformationAgentReviewPanel", () => {
       </QueryClientProvider>,
     );
 
+    expect(await screen.findByText("Contenu récent")).toBeTruthy();
+    expect(mocks.fetchReview).toHaveBeenLastCalledWith({ offset: 0, limit: 50 });
     fireEvent.click(
-      await screen.findByRole("button", { name: "Charger les réponses précédentes" }),
+      await screen.findByRole("button", {
+        name: "Suivant — réponses et informations à contrôler",
+      }),
     );
     expect(await screen.findByText("Ancien contenu à contrôler")).toBeTruthy();
-    expect(mocks.fetchReview).toHaveBeenCalledWith({
-      factCursor: "__done__",
-      messageCursor,
-    });
+    expect(screen.queryByText("Contenu récent")).toBeNull();
+    expect(mocks.fetchReview).toHaveBeenLastCalledWith({ offset: 50, limit: 50 });
   });
 
-  it("lets an admin reach facts beyond the first page", async () => {
-    const factCursor = JSON.stringify({
-      createdAt: "2026-09-23T13:15:00.000Z",
-      id: "33333333-3333-4333-8333-333333333333",
-    });
-    mocks.fetchReview.mockImplementation(
-      async ({ factCursor: requestedCursor }: { factCursor?: string }) => ({
-        facts: [
-          {
-            id: requestedCursor ? "fact-old" : "fact-new",
-            case_id: "33333333-3333-4333-8333-333333333333",
-            sale_id: "11111111-1111-4111-8111-111111111111",
-            fact_key: "surface_m2",
-            display_value: requestedCursor ? "60 m²" : "70 m²",
-            confidence: 0.9,
-            evidence_asset_id: null,
-            evidence_excerpt: null,
-          },
-        ],
-        assets: [],
-        extractions: [],
-        cases: [],
-        messages: [],
-        hasMoreFacts: !requestedCursor,
-        nextFactsCursor: factCursor,
-        hasMoreMessages: false,
-        nextMessagesCursor: null,
-      }),
-    );
+  it("lets an admin reach facts beyond the first page and come back", async () => {
+    mocks.fetchReview.mockImplementation(async ({ offset }: { offset: number }) => ({
+      facts: [
+        {
+          id: offset ? "fact-old" : "fact-new",
+          case_id: "33333333-3333-4333-8333-333333333333",
+          sale_id: "11111111-1111-4111-8111-111111111111",
+          fact_key: "surface_m2",
+          display_value: offset ? "60 m²" : "70 m²",
+          confidence: 0.9,
+          evidence_asset_id: null,
+          evidence_excerpt: null,
+        },
+      ],
+      assets: [],
+      extractions: [],
+      cases: [],
+      messages: [],
+      factsTotal: 51,
+      messagesTotal: 0,
+      offset,
+      limit: 50,
+      total: 51,
+      hasMore: offset + 50 < 51,
+    }));
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -532,11 +671,73 @@ describe("AdminInformationAgentReviewPanel", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Charger plus d’informations" }));
+    expect(await screen.findByText(/1–1 sur 51 · page 1 sur 2/)).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Suivant — réponses et informations à contrôler",
+      }),
+    );
     expect(await screen.findByText("60 m²")).toBeTruthy();
-    expect(mocks.fetchReview).toHaveBeenCalledWith({
-      factCursor,
-      messageCursor: "__done__",
+    expect(mocks.fetchReview).toHaveBeenLastCalledWith({ offset: 50, limit: 50 });
+    const next = screen.getByRole("button", {
+      name: "Suivant — réponses et informations à contrôler",
+    });
+    expect((next as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Précédent — réponses et informations à contrôler" }),
+    );
+    expect(await screen.findByText("70 m²")).toBeTruthy();
+  });
+
+  it("returns to the last non-empty page once the final rows of a page are reviewed", async () => {
+    // Page 1 annonce 51 faits ; quand on ouvre la page 2, le 51e vient d'être traité ailleurs.
+    let totalNow = 51;
+    mocks.fetchReview.mockImplementation(async ({ offset }: { offset: number }) => ({
+      facts:
+        offset === 0
+          ? [
+              {
+                id: "fact-first-page",
+                case_id: "33333333-3333-4333-8333-333333333333",
+                sale_id: "11111111-1111-4111-8111-111111111111",
+                fact_key: "surface_m2",
+                display_value: "80 m²",
+                confidence: 0.9,
+                evidence_asset_id: null,
+                evidence_excerpt: null,
+              },
+            ]
+          : [],
+      assets: [],
+      extractions: [],
+      cases: [],
+      messages: [],
+      factsTotal: totalNow,
+      messagesTotal: 0,
+      offset,
+      limit: 50,
+      total: totalNow,
+      hasMore: offset + 50 < totalNow,
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("80 m²")).toBeTruthy();
+    totalNow = 50;
+    fireEvent.click(
+      screen.getByRole("button", { name: "Suivant — réponses et informations à contrôler" }),
+    );
+    await waitFor(() =>
+      expect(mocks.fetchReview.mock.calls.map(([input]) => input.offset)).toEqual([0, 50]),
+    );
+    await waitFor(() => {
+      expect(screen.getByText("80 m²")).toBeTruthy();
+      expect(screen.queryByText("Aucune information en attente de contrôle.")).toBeNull();
     });
   });
 });

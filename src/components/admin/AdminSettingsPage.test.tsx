@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import type { AnchorHTMLAttributes } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -10,13 +9,6 @@ vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { email: "admin@exa
 vi.mock("@/lib/client-api", () => ({
   fetchPipelineStatus: mocks.read,
   updatePipelineControl: mocks.save,
-}));
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({ to, children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string }) => (
-    <a href={to} {...props}>
-      {children}
-    </a>
-  ),
 }));
 vi.mock("next/dynamic", () => ({ default: () => () => <div>Section chargée</div> }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));

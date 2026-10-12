@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { trimmedStringValue } from "@/lib/guards";
 
 export const CNB_DATASET_API_URL =
   "https://www.data.gouv.fr/api/1/datasets/annuaire-des-avocats-de-france/";
@@ -241,11 +242,11 @@ export function normalizeBarKey(value: string | null | undefined): string | null
 }
 
 function toDatasetResource(resource: DataGouvResource): CnbDatasetResource | null {
-  const id = stringValue(resource.id);
-  const title = stringValue(resource.title);
-  const url = stringValue(resource.url);
-  const publishedAt = stringValue(resource.last_modified);
-  const format = stringValue(resource.format)?.toLowerCase();
+  const id = trimmedStringValue(resource.id);
+  const title = trimmedStringValue(resource.title);
+  const url = trimmedStringValue(resource.url);
+  const publishedAt = trimmedStringValue(resource.last_modified);
+  const format = trimmedStringValue(resource.format)?.toLowerCase();
   if (!id || !title || !url || !publishedAt || format !== "csv") return null;
   if (!/^annuaire-avocats-\d{8}\.csv$/i.test(title)) return null;
   try {
@@ -357,8 +358,4 @@ function normalizeHeader(value: string) {
 function clean(value: string | null | undefined) {
   const cleaned = value?.trim();
   return cleaned || null;
-}
-
-function stringValue(value: unknown) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
 }

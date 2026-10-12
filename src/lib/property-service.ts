@@ -88,7 +88,7 @@ export function propertySeoDescription(property: Property): string {
     property.beds ? `${property.beds} chambre${property.beds > 1 ? "s" : ""}` : null,
     property.sqft ? `${property.sqft} ft2` : null,
   ].filter(Boolean);
-  return `${property.title}. ${parts.join(" · ")}. Fiche immobiliere premium Immojudis avec photos, carte, historique et contact.`;
+  return `${property.title}. ${parts.join(" · ")}. Fiche immobilière Immojudis avec photos, carte, historique et contact.`;
 }
 
 function normalizeIdentifier(value: string): string {

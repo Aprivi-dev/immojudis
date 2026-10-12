@@ -6,6 +6,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from src.models import AuctionSale
+from src.null_text import is_null_text
 
 DETECTOR = "urban_planning_regex"
 DETECTOR_VERSION = "urban_planning_v2"
@@ -419,7 +420,7 @@ def _clean_text(value: object) -> str | None:
         return None
     if isinstance(value, (str, int, float)):
         text = re.sub(r"\s+", " ", str(value)).strip()
-        return text[:5000] if text else None
+        return text[:5000] if text and not is_null_text(text) else None
     if isinstance(value, (dict, list)):
         return _flatten_to_text(value)
     return None

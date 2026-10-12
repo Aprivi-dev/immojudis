@@ -10,7 +10,8 @@ import signal
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
+import unicodedata
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,15 @@ import fitz
 import httpx
 
 from src.config import load_settings
+from src.information_agent_semantic import (
+    MAX_VISION_IMAGE_BYTES,
+    UNCERTAIN_EVIDENCE_RE,
+    PhotoSemanticAnalysis,
+    SemanticAnalysis,
+    SemanticFact,
+    run_configured_photo_analysis,
+    run_configured_semantic_analysis,
+)
 from src.normalize import clean_text
 from src.pdf_enrichment import classify_document_type
 
@@ -39,8 +49,21 @@ PDF_OCR_MAX_DIMENSION = 5_000
 PDF_OCR_PAGE_TIMEOUT_SECONDS = 10
 PDF_OCR_TOTAL_TIMEOUT_SECONDS = 30
 PDF_OCR_LANGUAGE = "fra+eng"
+IMAGE_OCR_TIMEOUT_SECONDS = 20
+HEIF_CONVERT_TIMEOUT_SECONDS = 20
 PROCESSOR_VERSION = "evidence_v1"
+_SEMANTIC_PAGE_RE = re.compile(
+    r"^--- page (?P<page>\d+) ---\n(?P<text>.*?)(?=\n\n--- page \d+ ---\n|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
 FACT_CANDIDATE_CASE_STATUSES = frozenset({"sending", "sent", "replied", "review"})
+MIN_FACT_CANDIDATE_CONFIDENCE = 0.5
+_UNCERTAIN_FACT_VALUE_RE = re.compile(
+    r"\b(?:non\s+(?:communiqu(?:e|ée)|pr[eé]cis(?:e|ée)|renseign(?:e|ée)|disponible)|"
+    r"(?:a|à)\s+confirmer|inconnu(?:e)?|ind[eé]termin(?:e|ée)|"
+    r"sans\s+information|n/?a|nc)\b",
+    re.IGNORECASE,
+)
 SUPPORTED_MIME_TYPES = {
     "application/pdf",
     "image/jpeg",
@@ -61,6 +84,7 @@ class EvidenceFact:
     confidence: float
     source_page: int
     unit: str | None = None
+    extraction_method: str = "document_ocr_v1"
 
     def as_json(self) -> dict[str, object]:
         proposed_value: dict[str, object] = {"value": self.value}
@@ -73,6 +97,7 @@ class EvidenceFact:
             "evidence_excerpt": self.evidence_excerpt,
             "confidence": self.confidence,
             "source_page": self.source_page,
+            "extraction_method": self.extraction_method,
         }
 
 
@@ -155,17 +180,33 @@ def detect_mime_type(content: bytes) -> str | None:
         brand = content[8:12]
         if brand in {b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"}:
             return "image/heic"
-    if b"\x00" not in content[:4096]:
-        try:
-            content[:8192].decode("utf-8")
-            return "text/plain"
-        except UnicodeDecodeError:
-            try:
-                content[:8192].decode("latin-1")
-                return "text/plain"
-            except UnicodeDecodeError:
-                return None
+    if b"\x00" not in content[:4096] and _looks_like_text(content[:8192]):
+        return "text/plain"
     return None
+
+
+def _looks_like_text(sample: bytes) -> bool:
+    """Accept UTF-8 text while rejecting arbitrary binary bytes.
+
+    The previous latin-1 fallback classified every byte sequence without a
+    NUL byte as ``text/plain`` because latin-1 can decode all byte values. A
+    corrupt or executable attachment could therefore reach the text parser
+    and be stored as if it were a professional reply. Email text is UTF-8 in
+    the inbound contract, so require valid UTF-8 and reject control characters
+    other than normal whitespace.
+    """
+    if not sample:
+        return False
+    try:
+        text = sample.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    if not text:
+        return False
+    return not any(
+        unicodedata.category(character) == "Cc" and character not in "\t\n\r\f"
+        for character in text
+    )
 
 
 def extract_evidence_facts(pages: list[dict[str, object]]) -> list[EvidenceFact]:
@@ -176,6 +217,9 @@ def extract_evidence_facts(pages: list[dict[str, object]]) -> list[EvidenceFact]
         if not text:
             continue
         facts.extend(_surface_facts(text, page_number))
+        facts.extend(_sale_date_facts(text, page_number))
+        facts.extend(_property_type_facts(text, page_number))
+        facts.extend(_address_facts(text, page_number))
         facts.extend(_rooms_facts(text, page_number))
         facts.extend(_occupancy_facts(text, page_number))
         facts.extend(_starting_price_facts(text, page_number))
@@ -271,19 +315,39 @@ def _analyze_image(
     detected_mime_type: str,
     ocr_enabled: bool,
 ) -> EvidenceAnalysis:
+    processing_content = content
+    processing_mime_type = detected_mime_type
+    if detected_mime_type in {"image/heic", "image/heif"}:
+        prepared = _prepare_heif_for_processing(content, detected_mime_type)
+        if prepared is None:
+            return _unsupported(
+                "IMAGE_FORMAT_UNSUPPORTED",
+                "Le format HEIC/HEIF est accepté à la réception mais aucun décodeur local sécurisé n’est disponible.",
+                detected_mime_type,
+            )
+        processing_content, processing_mime_type = prepared
     text = ""
     method = "image_metadata"
     confidence = 0.0
     metadata: dict[str, object] = {}
     try:
-        with fitz.open(stream=content, filetype=detected_mime_type.split("/")[-1]) as image_document:
-            if image_document.page_count:
-                rectangle = image_document[0].rect
-                metadata = {"width": round(rectangle.width), "height": round(rectangle.height)}
+        with fitz.open(stream=processing_content, filetype=processing_mime_type.split("/")[-1]) as image_document:
+            if image_document.page_count != 1:
+                return _unsupported(
+                    "INVALID_IMAGE",
+                    "L’image ne contient pas exactement une page décodable.",
+                    detected_mime_type,
+                )
+            rectangle = image_document[0].rect
+            metadata = {"width": round(rectangle.width), "height": round(rectangle.height)}
     except Exception:
-        metadata = {}
+        return _unsupported(
+            "INVALID_IMAGE",
+            "La signature est reconnue mais l’image ne peut pas être décodée.",
+            detected_mime_type,
+        )
     if ocr_enabled:
-        text = _ocr_image_bytes(content, detected_mime_type)
+        text = _ocr_image_bytes(processing_content, processing_mime_type)
         if text:
             method = "ocr_tesseract"
             confidence = 0.7
@@ -295,6 +359,7 @@ def _analyze_image(
             "chars": len(cleaned),
             "method": method,
             "confidence": confidence,
+            "processing_mime_type": processing_mime_type,
             **metadata,
         }
     ]
@@ -312,6 +377,105 @@ def _analyze_image(
             }
         )
     return analysis
+
+
+def _prepare_heif_for_processing(
+    content: bytes,
+    mime_type: str,
+) -> tuple[bytes, str] | None:
+    """Return HEIF bytes in a decoder-supported format, or fail visibly.
+
+    PyMuPDF builds used by the worker do not consistently include an HEIF
+    decoder. If one is present, retain the original bytes; otherwise use the
+    optional ``heif-convert`` executable already provided by some runtimes to
+    produce a bounded PNG. A missing converter is reported by the caller as
+    ``IMAGE_FORMAT_UNSUPPORTED`` rather than silently claiming OCR succeeded.
+    """
+    try:
+        with fitz.open(stream=content, filetype=mime_type.split("/")[-1]) as document:
+            if document.page_count:
+                return content, mime_type
+    except Exception:
+        pass
+
+    executable = shutil.which("heif-convert")
+    if not executable:
+        return None
+    suffix = ".heif" if mime_type == "image/heif" else ".heic"
+    process: subprocess.Popen | None = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="immojudis-evidence-heif-") as temp_dir:
+            source_path = Path(temp_dir) / f"evidence{suffix}"
+            output_path = Path(temp_dir) / "evidence.png"
+            source_path.write_bytes(content)
+            popen_kwargs: dict[str, object] = {
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+            }
+            if os.name == "posix":
+                popen_kwargs["start_new_session"] = True
+            process = subprocess.Popen(
+                [executable, str(source_path), str(output_path)],
+                **popen_kwargs,
+            )
+            try:
+                process.communicate(timeout=HEIF_CONVERT_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                _terminate_process_group(process)
+                return None
+            if process.returncode != 0 or not output_path.is_file():
+                return None
+            converted = output_path.read_bytes()
+            dimensions = _read_image_dimensions(converted, "image/png")
+            if len(converted) > MAX_ATTACHMENT_BYTES or _image_limit_error(dimensions, len(converted)) is not None:
+                return None
+            return converted, "image/png"
+    except Exception:
+        if process is not None:
+            _terminate_process_group(process)
+        return None
+
+
+def _prepare_image_for_vision(
+    content: bytes,
+    mime_type: str,
+) -> tuple[bytes, str] | None:
+    """Normalize one photo to a small EXIF-free JPEG for the vision API."""
+    processing_content = content
+    processing_mime_type = mime_type
+    if mime_type in {"image/heic", "image/heif"}:
+        prepared = _prepare_heif_for_processing(content, mime_type)
+        if prepared is None:
+            return None
+        processing_content, processing_mime_type = prepared
+    if processing_mime_type not in {"image/jpeg", "image/png", "image/webp"}:
+        return None
+    try:
+        with fitz.open(
+            stream=processing_content,
+            filetype=processing_mime_type.split("/")[-1],
+        ) as image_document:
+            if image_document.page_count != 1:
+                return None
+            page = image_document[0]
+            width = float(page.rect.width)
+            height = float(page.rect.height)
+            largest_dimension = max(width, height)
+            if not math.isfinite(largest_dimension) or largest_dimension <= 0:
+                return None
+            scale = min(1.0, 1_600 / largest_dimension)
+            pixmap = page.get_pixmap(
+                matrix=fitz.Matrix(scale, scale),
+                colorspace=fitz.csRGB,
+                alpha=False,
+            )
+            for quality in (82, 70, 55, 40):
+                normalized = pixmap.tobytes("jpeg", jpg_quality=quality)
+                if len(normalized) <= MAX_VISION_IMAGE_BYTES:
+                    return normalized, "image/jpeg"
+    except Exception:
+        return None
+    return None
 
 
 def _read_image_dimensions(content: bytes, mime_type: str) -> tuple[int, int] | None:
@@ -508,6 +672,74 @@ def _completed_analysis(
     )
 
 
+def _semantic_pages_from_analysis(analysis: EvidenceAnalysis) -> list[dict[str, object]]:
+    """Recover bounded page text without persisting raw text in ``pages``.
+
+    The extraction row stores page metadata separately from the combined text.
+    Keeping this adapter local means the optional semantic pass receives the
+    same text that was extracted and can cite the page delimiters exactly,
+    while the semantic module still applies its own page and character caps.
+    """
+    if analysis.status != "completed" or not analysis.extracted_text:
+        return []
+    pages: list[dict[str, object]] = []
+    for match in _SEMANTIC_PAGE_RE.finditer(analysis.extracted_text):
+        text = match.group("text")
+        if not text:
+            continue
+        pages.append({"page": int(match.group("page")), "text": text})
+    return pages
+
+
+def _merge_semantic_facts(
+    analysis: EvidenceAnalysis,
+    semantic_facts: list[SemanticFact],
+) -> EvidenceAnalysis:
+    if not semantic_facts:
+        return analysis
+    facts = [
+        EvidenceFact(
+            fact_key=fact.fact_key,
+            value=fact.value,
+            display_value=fact.display_value,
+            evidence_excerpt=fact.evidence_excerpt,
+            confidence=fact.confidence,
+            source_page=fact.source_page,
+            extraction_method=fact.extraction_method,
+        )
+        for fact in semantic_facts
+    ]
+    return replace(analysis, facts=_deduplicate_facts([*analysis.facts, *facts]))
+
+
+def _append_photo_summary(
+    analysis: EvidenceAnalysis,
+    photo_analysis: PhotoSemanticAnalysis,
+) -> EvidenceAnalysis:
+    """Expose a bounded visual description while keeping it review-only."""
+    if photo_analysis.status in {"unavailable", "invalid_output"}:
+        base = analysis.summary or "Photographie reçue."
+        suffix = " Analyse visuelle indisponible : vérification manuelle nécessaire."
+        return replace(analysis, summary=(base + suffix)[:4_000])
+    if photo_analysis.status != "completed" or not photo_analysis.description:
+        return analysis
+    base = analysis.summary or "Photographie reçue."
+    suffix = f" Observation visuelle à revoir : {photo_analysis.description[:800]}"
+    return replace(analysis, summary=(base + suffix)[:4_000])
+
+
+def _append_semantic_failure_summary(
+    analysis: EvidenceAnalysis,
+    semantic_analysis: SemanticAnalysis,
+) -> EvidenceAnalysis:
+    """Make an optional provider failure visible without exposing its error."""
+    if semantic_analysis.status not in {"unavailable", "invalid_output"}:
+        return analysis
+    base = analysis.summary or "Pièce jointe reçue."
+    suffix = " Analyse sémantique indisponible : vérification manuelle nécessaire."
+    return replace(analysis, summary=(base + suffix)[:4_000])
+
+
 def _apply_pdf_ocr_candidates(
     content: bytes,
     pages: list[dict[str, object]],
@@ -649,20 +881,65 @@ def _ocr_image_bytes(content: bytes, mime_type: str) -> str:
         "image/heic": ".heic",
         "image/heif": ".heif",
     }.get(mime_type, ".img")
+    process: subprocess.Popen | None = None
     try:
         with tempfile.TemporaryDirectory(prefix="immojudis-evidence-") as temp_dir:
             path = Path(temp_dir) / f"evidence{suffix}"
             path.write_bytes(content)
-            result = subprocess.run(
+            popen_kwargs: dict[str, object] = {
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.DEVNULL,
+                "text": True,
+            }
+            if os.name == "posix":
+                popen_kwargs["start_new_session"] = True
+            process = subprocess.Popen(
                 [executable, str(path), "stdout", "-l", "fra+eng"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=False,
+                **popen_kwargs,
             )
-            return result.stdout if result.returncode == 0 else ""
+            try:
+                stdout, _stderr = process.communicate(timeout=IMAGE_OCR_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                _terminate_process_group(process)
+                return ""
+            return stdout if process.returncode == 0 else ""
     except Exception:
+        if process is not None:
+            _terminate_process_group(process)
         return ""
+
+
+def _evidence_ocr_enabled(settings: dict[str, Any]) -> bool:
+    """Use an attachment-specific OCR switch, enabled by default.
+
+    ``PDF_OCR_ENABLED`` controls the large catalogue enrichment pipeline and
+    is intentionally off in some production runs to preserve budget. Replies
+    from professionals are a separate product workflow: silently skipping OCR
+    there would mark a scanned document or a photographed diagnostic as
+    completed without reading it. Operators can still disable this worker with
+    ``INFORMATION_AGENT_EVIDENCE_OCR_ENABLED=false``.
+    """
+    configured = settings.get("information_agent_evidence_ocr_enabled")
+    if configured is not None:
+        if isinstance(configured, str):
+            return configured.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(configured)
+    raw = os.getenv("INFORMATION_AGENT_EVIDENCE_OCR_ENABLED")
+    if raw is not None:
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return True
+
+
+def _evidence_vision_enabled(settings: dict[str, Any]) -> bool:
+    configured = settings.get("information_agent_evidence_vision_enabled")
+    if configured is not None:
+        if isinstance(configured, str):
+            return configured.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(configured)
+    raw = os.getenv("INFORMATION_AGENT_EVIDENCE_VISION_ENABLED")
+    if raw is not None:
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return False
 
 
 def _surface_facts(text: str, page: int) -> list[EvidenceFact]:
@@ -672,34 +949,95 @@ def _surface_facts(text: str, page: int) -> list[EvidenceFact]:
         ("surface_m2", r"(?:surface(?:\s+(?:habitable|carrez|privative|utile))?)[^\d]{0,45}(\d{1,6}(?:[.,]\d{1,2})?)\s*m(?:²|2)\b", 0.9),
     )
     for fact_key, pattern, confidence in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if not match:
-            continue
-        value = float(match.group(1).replace(",", "."))
-        if value <= 0:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            value = float(match.group(1).replace(",", "."))
+            if value <= 0:
+                continue
+            facts.append(
+                EvidenceFact(
+                    fact_key=fact_key,
+                    value=value,
+                    display_value=f"{value:g} m²",
+                    evidence_excerpt=_excerpt(text, match.start()),
+                    confidence=confidence,
+                    source_page=page,
+                    unit="m2",
+                )
+            )
+    return facts
+
+
+def _sale_date_facts(text: str, page: int) -> list[EvidenceFact]:
+    pattern = (
+        r"(?:date\s+(?:de\s+)?(?:la\s+)?vente|audience\s+d['’]adjudication|date\s+d['’]adjudication)"
+        r"[^\d]{0,35}(\d{1,2})[./-](\d{1,2})[./-](\d{4})\b"
+    )
+    facts: list[EvidenceFact] = []
+    for match in re.finditer(pattern, text, re.IGNORECASE):
+        day, month, year = (int(value) for value in match.groups())
+        try:
+            sale_date = datetime(year, month, day).date().isoformat()
+        except ValueError:
             continue
         facts.append(
             EvidenceFact(
-                fact_key=fact_key,
-                value=value,
-                display_value=f"{value:g} m²",
-                evidence_excerpt=_excerpt(text, match.start()),
-                confidence=confidence,
-                source_page=page,
-                unit="m2",
+                "sale_date",
+                sale_date,
+                sale_date,
+                _excerpt(text, match.start()),
+                0.9,
+                page,
             )
         )
     return facts
 
 
+def _property_type_facts(text: str, page: int) -> list[EvidenceFact]:
+    patterns = (
+        ("commercial", r"\b(?:local|fonds? de commerce|commerce|boutique)\b"),
+        ("apartment", r"\b(?:appartement|studio|duplex|triplex|T[1-5])\b"),
+        ("house", r"\b(?:maison|villa|pavillon)\b"),
+        ("building", r"\b(?:immeuble|bâtiment|batiment)\b"),
+        ("land", r"\b(?:terrain|parcelle)\b"),
+        ("parking", r"\b(?:parking|stationnement|garage)\b"),
+    )
+    facts: list[EvidenceFact] = []
+    for value, pattern in patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            facts.append(
+                EvidenceFact(
+                    "property_type",
+                    value,
+                    value,
+                    _excerpt(text, match.start()),
+                    0.78,
+                    page,
+                )
+            )
+    return facts
+
+
+def _address_facts(text: str, page: int) -> list[EvidenceFact]:
+    pattern = (
+        r"(?:adresse|situé(?:e)?|sis(?:e)?)\s*[:\-]?\s*"
+        r"(\d{1,5}(?:\s*(?:bis|ter|quater))?\s+(?:rue|avenue|av\.?|boulevard|bd\.?|chemin|route|impasse|allée|allee|place|quai|cours|faubourg|passage|square|voie)\b[^\n;|]{2,160}?)"
+        r"(?=\.\s+(?:date|surface|mise|diagnostic|dpe|visite)\b|$)"
+    )
+    facts: list[EvidenceFact] = []
+    for match in re.finditer(pattern, text, re.IGNORECASE):
+        value = clean_text(match.group(1))
+        if value:
+            facts.append(EvidenceFact("address", value, value, _excerpt(text, match.start()), 0.72, page))
+    return facts
+
+
 def _rooms_facts(text: str, page: int) -> list[EvidenceFact]:
-    match = re.search(r"(?<!\d)(\d{1,2})(?!\d)\s+pi[eè]ces?\b", text, re.IGNORECASE)
-    if not match:
-        return []
-    value = int(match.group(1))
-    if value < 1 or value > 100:
-        return []
-    return [EvidenceFact("rooms_count", value, f"{value} pièce(s)", _excerpt(text, match.start()), 0.86, page)]
+    facts: list[EvidenceFact] = []
+    for match in re.finditer(r"(?<!\d)(\d{1,2})(?!\d)\s+pi[eè]ces?\b", text, re.IGNORECASE):
+        value = int(match.group(1))
+        if 1 <= value <= 100:
+            facts.append(EvidenceFact("rooms_count", value, f"{value} pièce(s)", _excerpt(text, match.start()), 0.86, page))
+    return facts
 
 
 def _occupancy_facts(text: str, page: int) -> list[EvidenceFact]:
@@ -710,59 +1048,77 @@ def _occupancy_facts(text: str, page: int) -> list[EvidenceFact]:
         ("squatted", r"\b(?:squat|occupant sans droit ni titre)\b"),
         ("occupied", r"\boccup[eé]\b"),
     )
+    labels = {
+        "vacant": "Libre / vacant",
+        "rented": "Loué",
+        "owner_occupied": "Occupé par le propriétaire",
+        "squatted": "Occupé sans droit ni titre",
+        "occupied": "Occupé",
+    }
+    owner_spans = [
+        match.span()
+        for value, pattern in patterns
+        if value == "owner_occupied"
+        for match in re.finditer(pattern, text, re.IGNORECASE)
+    ]
+    facts: list[EvidenceFact] = []
     for value, pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            labels = {
-                "vacant": "Libre / vacant",
-                "rented": "Loué",
-                "owner_occupied": "Occupé par le propriétaire",
-                "squatted": "Occupé sans droit ni titre",
-                "occupied": "Occupé",
-            }
-            return [EvidenceFact("occupancy_status", value, labels[value], _excerpt(text, match.start()), 0.82, page)]
-    return []
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            if value == "occupied" and any(
+                start <= match.start() < end or start < match.end() <= end
+                for start, end in owner_spans
+            ):
+                continue
+            facts.append(
+                EvidenceFact(
+                    "occupancy_status",
+                    value,
+                    labels[value],
+                    _excerpt(text, match.start()),
+                    0.82,
+                    page,
+                )
+            )
+    return facts
 
 
 def _starting_price_facts(text: str, page: int) -> list[EvidenceFact]:
-    match = re.search(
-        r"mise\s+[àa]\s+prix[^\d]{0,30}(\d{1,3}(?:[ .\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|euros?)",
-        text,
-        re.IGNORECASE,
-    )
-    if not match:
-        return []
-    raw = re.sub(r"[ .\u202f]", "", match.group(1)).replace(",", ".")
-    value = float(raw)
-    if value <= 0 or value > 1_000_000_000:
-        return []
-    return [
-        EvidenceFact(
-            "starting_price_eur",
-            value,
-            f"{value:,.0f} €".replace(",", " "),
-            _excerpt(text, match.start()),
-            0.94,
-            page,
-            "EUR",
+    pattern = r"mise\s+[àa]\s+prix[^\d]{0,30}(\d{1,3}(?:[ .\u202f]\d{3})*(?:[.,]\d{1,2})?)\s*(?:€|euros?)"
+    facts: list[EvidenceFact] = []
+    for match in re.finditer(pattern, text, re.IGNORECASE):
+        raw = re.sub(r"[ .\u202f]", "", match.group(1)).replace(",", ".")
+        value = float(raw)
+        if value <= 0 or value > 1_000_000_000:
+            continue
+        facts.append(
+            EvidenceFact(
+                "starting_price_eur",
+                value,
+                f"{value:,.0f} €".replace(",", " "),
+                _excerpt(text, match.start()),
+                0.94,
+                page,
+                "EUR",
+            )
         )
-    ]
+    return facts
 
 
 def _diagnostic_facts(text: str, page: int) -> list[EvidenceFact]:
-    match = re.search(r"(?:DPE|diagnostic de performance [ée]nerg[ée]tique)[^A-G]{0,30}([A-G])\b", text, re.IGNORECASE)
-    if not match:
-        return []
-    value = match.group(1).upper()
-    return [EvidenceFact("energy_diagnostics", value, f"DPE {value}", _excerpt(text, match.start()), 0.88, page)]
+    facts: list[EvidenceFact] = []
+    pattern = r"(?:DPE|diagnostic de performance [ée]nerg[ée]tique)[^A-G]{0,30}([A-G])\b"
+    for match in re.finditer(pattern, text, re.IGNORECASE):
+        value = match.group(1).upper()
+        facts.append(EvidenceFact("energy_diagnostics", value, f"DPE {value}", _excerpt(text, match.start()), 0.88, page))
+    return facts
 
 
 def _visit_facts(text: str, page: int) -> list[EvidenceFact]:
-    match = re.search(r"\bvisite(?:s)?\b.{0,180}", text, re.IGNORECASE)
-    if not match:
-        return []
-    excerpt = _excerpt(text, match.start(), radius=220)
-    return [EvidenceFact("visit_information", excerpt, excerpt[:500], excerpt, 0.72, page)]
+    facts: list[EvidenceFact] = []
+    for match in re.finditer(r"\bvisite(?:s)?\b.{0,180}", text, re.IGNORECASE):
+        excerpt = _excerpt(text, match.start(), radius=220)
+        facts.append(EvidenceFact("visit_information", excerpt, excerpt[:500], excerpt, 0.72, page))
+    return facts
 
 
 def _deduplicate_facts(facts: list[EvidenceFact]) -> list[EvidenceFact]:
@@ -850,17 +1206,70 @@ def _process_job(
         ):
             raise RuntimeError("Evidence asset association mismatch")
         content = _download_asset(client, base_url, key, asset)
+        settings = load_settings()
         analysis = analyze_evidence_bytes(
             content,
             filename=str(asset.get("original_filename") or "piece-jointe"),
             declared_mime_type=str(asset.get("mime_type") or ""),
-            ocr_enabled=bool(load_settings().get("pdf_ocr_enabled")),
+            ocr_enabled=_evidence_ocr_enabled(settings),
         )
+        semantic_analysis = run_configured_semantic_analysis(
+            _semantic_pages_from_analysis(analysis),
+            settings,
+        )
+        analysis = _merge_semantic_facts(analysis, semantic_analysis.facts)
+        analysis = _append_semantic_failure_summary(analysis, semantic_analysis)
+        photo_analysis = PhotoSemanticAnalysis("not_run", error_code="EVIDENCE_NOT_IMAGE")
+        if analysis.status == "completed" and analysis.detected_mime_type in {
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/heic",
+            "image/heif",
+        }:
+            if _evidence_vision_enabled(settings):
+                prepared = _prepare_image_for_vision(content, analysis.detected_mime_type)
+                if prepared is None:
+                    photo_analysis = PhotoSemanticAnalysis(
+                        "unavailable",
+                        error_code="VISION_IMAGE_NORMALIZATION_FAILED",
+                    )
+                else:
+                    vision_content, vision_mime_type = prepared
+                    photo_analysis = run_configured_photo_analysis(
+                        vision_content,
+                        vision_mime_type,
+                        settings,
+                        ocr_text=analysis.extracted_text,
+                    )
+            else:
+                photo_analysis = PhotoSemanticAnalysis("disabled")
+            analysis = _append_photo_summary(analysis, photo_analysis)
         if analysis.status == "completed" and analysis.facts:
             case_status = _fetch_case_status(client, base_url, key, str(job.get("case_id") or ""))
             if case_status in FACT_CANDIDATE_CASE_STATUSES:
                 sale = _fetch_sale(client, base_url, key, str(job.get("sale_id") or ""))
-                _insert_fact_candidates(client, base_url, key, job, analysis.facts, sale)
+                existing_body_values: set[tuple[str, str]] = set()
+                asset_metadata = asset.get("metadata")
+                if (
+                    isinstance(asset_metadata, dict)
+                    and asset_metadata.get("evidence_kind") == "email_body"
+                ):
+                    existing_body_values = _fetch_existing_message_fact_values(
+                        client,
+                        base_url,
+                        key,
+                        str(job.get("message_id") or ""),
+                    )
+                _insert_fact_candidates(
+                    client,
+                    base_url,
+                    key,
+                    job,
+                    analysis.facts,
+                    sale,
+                    skip_values=existing_body_values,
+                )
         _finish_job(
             client,
             base_url,
@@ -869,6 +1278,8 @@ def _process_job(
             analysis,
             attempts=attempts,
             locked_at=locked_at,
+            semantic_metadata=semantic_analysis.metadata(),
+            photo_metadata=photo_analysis.metadata(),
         )
         _mark_case_for_review(client, base_url, key, str(job.get("case_id") or ""))
     except Exception as exc:
@@ -888,7 +1299,7 @@ def _fetch_asset(client: httpx.Client, base_url: str, key: str, asset_id: str) -
         f"{base_url}/rest/v1/information_agent_evidence_assets",
         headers=_headers(key),
         params={
-            "select": "id,case_id,message_id,sale_id,storage_bucket,storage_path,original_filename,mime_type,size_bytes,sha256",
+            "select": "id,case_id,message_id,sale_id,storage_bucket,storage_path,original_filename,mime_type,size_bytes,sha256,metadata",
             "id": f"eq.{asset_id}",
             "limit": "1",
         },
@@ -919,7 +1330,7 @@ def _fetch_sale(client: httpx.Client, base_url: str, key: str, sale_id: str) -> 
         f"{base_url}/rest/v1/auction_sales",
         headers=_headers(key),
         params={
-            "select": "surface_m2,land_surface_m2,rooms_count,occupancy_status,starting_price_eur",
+            "select": "surface_m2,app_surface_m2,land_surface_m2,rooms_count,occupancy_status,sale_date,starting_price_eur,property_type,address",
             "id": f"eq.{sale_id}",
             "limit": "1",
         },
@@ -944,6 +1355,51 @@ def _fetch_case_status(client: httpx.Client, base_url: str, key: str, case_id: s
     return str(rows[0].get("status") or "")
 
 
+def _fetch_existing_message_fact_values(
+    client: httpx.Client,
+    base_url: str,
+    key: str,
+    message_id: str,
+) -> set[tuple[str, str]]:
+    """Return body-level facts already persisted by the inbound worker.
+
+    Inbound text facts intentionally have no ``evidence_asset_id``. The
+    evidence worker subsequently processes the same body as a private text
+    asset, so it must not create a second candidate with attachment
+    provenance for the identical value. A failed read is allowed to abort the
+    extraction job; inserting a duplicate would be harder to repair and
+    would make replay behavior depend on request ordering.
+    """
+    if not message_id:
+        return set()
+    response = client.get(
+        f"{base_url}/rest/v1/information_agent_fact_candidates",
+        headers=_headers(key),
+        params={
+            "select": "fact_key,proposed_value,evidence_asset_id",
+            "message_id": f"eq.{message_id}",
+            "evidence_asset_id": "is.null",
+            "limit": "1000",
+        },
+    )
+    response.raise_for_status()
+    rows = response.json()
+    if not isinstance(rows, list):
+        raise RuntimeError("Invalid existing information-agent facts response")
+    values: set[tuple[str, str]] = set()
+    for row in rows:
+        if not isinstance(row, dict) or row.get("evidence_asset_id") is not None:
+            continue
+        fact_key = str(row.get("fact_key") or "").strip()
+        proposed_value = row.get("proposed_value")
+        if not fact_key:
+            continue
+        if isinstance(proposed_value, dict):
+            proposed_value = proposed_value.get("value")
+        values.add((fact_key, _fact_value_key(proposed_value)))
+    return values
+
+
 def _insert_fact_candidates(
     client: httpx.Client,
     base_url: str,
@@ -951,9 +1407,13 @@ def _insert_fact_candidates(
     job: dict[str, Any],
     facts: list[EvidenceFact],
     sale: dict[str, Any],
+    *,
+    skip_values: set[tuple[str, str]] | None = None,
 ) -> None:
     payload = []
-    for fact in facts:
+    for fact in _candidate_facts_for_insertion(facts):
+        if skip_values and (fact.fact_key, _fact_value_key(fact.value)) in skip_values:
+            continue
         item = fact.as_json()
         payload.append(
             {
@@ -966,13 +1426,18 @@ def _insert_fact_candidates(
                 "display_value": fact.display_value[:500],
                 "evidence_excerpt": fact.evidence_excerpt[:2000],
                 "confidence": fact.confidence,
-                "extraction_method": "document_ocr_v1",
+                "extraction_method": fact.extraction_method,
                 "source_page": fact.source_page,
                 "source_locator": f"page:{fact.source_page}",
                 "status": "conflict" if _conflicts_with_sale(fact, sale) else "pending",
-                "metadata": {"processor_version": PROCESSOR_VERSION},
+                "metadata": {
+                    "processor_version": PROCESSOR_VERSION,
+                    "content_trust": "untrusted_external_evidence",
+                },
             }
         )
+    if not payload:
+        return
     response = client.post(
         f"{base_url}/rest/v1/information_agent_fact_candidates",
         headers={**_headers(key), "Prefer": "resolution=ignore-duplicates,return=minimal"},
@@ -982,13 +1447,75 @@ def _insert_fact_candidates(
     response.raise_for_status()
 
 
+def _candidate_facts_for_insertion(facts: list[EvidenceFact]) -> list[EvidenceFact]:
+    """Keep only facts that are sufficiently clear to become review rows.
+
+    The extraction record retains every grounded observation for auditability,
+    but a candidate must not silently select one of two values found in the
+    same reply. Unknown/placeholder values and low-confidence semantic
+    proposals are likewise retained only in the extraction evidence. This
+    keeps the admin queue from presenting an arbitrary answer as the proposed
+    value while preserving the original text for human review.
+    """
+    values_by_key: dict[str, set[str]] = {}
+    for fact in facts:
+        values_by_key.setdefault(fact.fact_key, set()).add(_fact_value_key(fact.value))
+    ambiguous_keys = {fact_key for fact_key, values in values_by_key.items() if len(values) > 1}
+    return [
+        fact
+        for fact in facts
+        if fact.fact_key not in ambiguous_keys
+        and fact.confidence >= MIN_FACT_CANDIDATE_CONFIDENCE
+        and not _uncertain_fact_value(fact.value)
+        and not _uncertain_evidence_excerpt(fact.evidence_excerpt)
+    ]
+
+
+def _uncertain_fact_value(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = clean_text(value) or ""
+    return bool(_UNCERTAIN_FACT_VALUE_RE.search(normalized))
+
+
+def _uncertain_evidence_excerpt(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    return UNCERTAIN_EVIDENCE_RE.search(value) is not None
+
+
+def _fact_value_key(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and math.isfinite(float(value)):
+        return f"{float(value):.12g}"
+    return (clean_text(value) or str(value or "")).strip().casefold()
+
+
 def _conflicts_with_sale(fact: EvidenceFact, sale: dict[str, Any]) -> bool:
-    existing = sale.get(fact.fact_key)
+    if fact.fact_key == "surface_m2":
+        existing = sale.get("app_surface_m2")
+        if existing is None:
+            existing = sale.get("surface_m2")
+    else:
+        existing = sale.get(fact.fact_key)
     if existing is None or fact.fact_key in {"visit_information", "energy_diagnostics"}:
         return False
     if isinstance(existing, (int, float)) and isinstance(fact.value, (int, float)):
-        return abs(float(existing) - float(fact.value)) > 0.01
+        tolerance = 0.5 if fact.fact_key in {"surface_m2", "land_surface_m2"} else 0.01
+        return abs(float(existing) - float(fact.value)) > tolerance
+    if fact.fact_key == "sale_date":
+        return str(existing)[:10] != str(fact.value)[:10]
+    if fact.fact_key == "property_type":
+        return str(existing).strip().casefold() != str(fact.value).strip().casefold()
+    if fact.fact_key == "address":
+        return _normalize_comparable_text(existing) != _normalize_comparable_text(fact.value)
     return str(existing).strip().lower() != str(fact.value).strip().lower()
+
+
+def _normalize_comparable_text(value: object) -> str:
+    text = clean_text(value) or ""
+    return " ".join(text.casefold().split())
 
 
 def _finish_job(
@@ -1000,6 +1527,8 @@ def _finish_job(
     *,
     attempts: int | None = None,
     locked_at: str | None = None,
+    semantic_metadata: dict[str, object] | None = None,
+    photo_metadata: dict[str, object] | None = None,
 ) -> None:
     now = datetime.now(UTC).isoformat()
     payload = {
@@ -1015,6 +1544,17 @@ def _finish_job(
         "extracted_facts": [fact.as_json() for fact in analysis.facts],
         "error_code": analysis.error_code,
         "error_message": analysis.error_message,
+        # Attachment text is evidence supplied by an external sender. Keep a
+        # durable trust marker next to the extraction so a future AI consumer
+        # cannot mistake instructions embedded in a PDF, image or text file
+        # for application instructions.
+        "metadata": {
+            "processor_version": PROCESSOR_VERSION,
+            "content_trust": "untrusted_external_evidence",
+            "prompt_instructions_ignored": True,
+            "semantic": semantic_metadata or {"status": "not_run", "review_required": True},
+            "photo_semantic": photo_metadata or {"status": "not_run", "review_required": True},
+        },
         "locked_at": None,
         "completed_at": now,
     }

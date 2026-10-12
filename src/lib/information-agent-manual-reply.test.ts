@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runAdminInformationAgentAction } from "@/lib/information-agent";
 
 const mocks = vi.hoisted(() => ({
@@ -71,6 +70,12 @@ class Query implements PromiseLike<{ data: Row[] | null; error: Row | null }> {
 
   update(values: Row) {
     this.operation = "update";
+    this.values = values;
+    return this;
+  }
+
+  upsert(values: Row) {
+    this.operation = "insert";
     this.values = values;
     return this;
   }
@@ -197,6 +202,7 @@ function fixture({ moveCaseToReviewBeforeReplyUpdate = false } = {}) {
     ],
     information_agent_messages: [],
     information_agent_fact_candidates: [],
+    information_agent_contacts: [],
   };
   let moveCaseToReview = moveCaseToReviewBeforeReplyUpdate;
   mocks.from.mockImplementation(
@@ -214,6 +220,7 @@ function fixture({ moveCaseToReviewBeforeReplyUpdate = false } = {}) {
     otherMission,
     sharedCase,
     messages: tables.information_agent_messages,
+    contacts: tables.information_agent_contacts,
   };
 }
 
@@ -222,6 +229,40 @@ beforeEach(() => {
 });
 
 describe("manual information agent replies", () => {
+  it("records a global opposition when the recorded reply asks to stop contact", async () => {
+    const state = fixture();
+    await runAdminInformationAgentAction({
+      auth: { isAdmin: true, userId: ADMIN_ID } as never,
+      input: {
+        action: "record_reply",
+        missionId: MISSION_ID,
+        bodyText: "Bonjour,\n\nMerci de ne plus me contacter.",
+      },
+    });
+
+    expect(state.contacts).toEqual([
+      expect.objectContaining({
+        email: "contact@example.test",
+        scope_sale_id: null,
+        opposition_status: "opposed",
+      }),
+    ]);
+    expect(state.messages).toHaveLength(1);
+  });
+
+  it("does not record an opposition for an ordinary reply", async () => {
+    const state = fixture();
+    await runAdminInformationAgentAction({
+      auth: { isAdmin: true, userId: ADMIN_ID } as never,
+      input: {
+        action: "record_reply",
+        missionId: MISSION_ID,
+        bodyText: "Le bien est loué, le bail est joint au cahier des conditions de vente.",
+      },
+    });
+    expect(state.contacts).toEqual([]);
+  });
+
   it("extracts facts as review candidates and stays idempotent on retry", async () => {
     const state = fixture();
     const input = {

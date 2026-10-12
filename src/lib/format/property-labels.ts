@@ -3,6 +3,7 @@ export function occupancyLabel(status: string | null | undefined): string {
   const s = status.toLowerCase();
   if (s === "unknown" || s === "inconnu") return "À confirmer";
   if (s.includes("libre") || s === "vacant" || s === "free") return "Libre";
+  if (s === "owner_occupied") return "Occupé par le propriétaire";
   if (s.includes("occup")) return "Occupé";
   if (s.includes("loué") || s.includes("loue") || s.includes("rented")) return "Loué";
   return status;
@@ -12,6 +13,7 @@ export function propertyTypeLabel(t: string | null | undefined): string {
   if (!t) return "Bien";
   const s = t.toLowerCase();
   if (s === "unknown" || s === "other") return "Bien à qualifier";
+  if (s === "mixed" || s.includes("mixte")) return "Bien mixte";
   if (s.includes("apart") || s.includes("apt")) return "Appartement";
   if (s === "studio" || s.includes("studio")) return "Appartement";
   if (s.includes("house") || s.includes("maison")) return "Maison";
@@ -21,7 +23,8 @@ export function propertyTypeLabel(t: string | null | undefined): string {
   if (s.includes("commerce") || s.includes("commercial") || s.includes("local")) {
     return "Local commercial";
   }
-  return t;
+  // An internal code that has no label yet must never reach a visitor.
+  return /^[a-z][a-z0-9_-]*$/.test(t) ? "Bien à qualifier" : t;
 }
 
 export function saleStatusLabel(status: string | null | undefined): string | null {

@@ -464,25 +464,144 @@ def test_commit_transaction_batch_uses_copy_for_replacement(monkeypatch) -> None
     assert summary.upserted_rows == 1
 
 
-def test_prepare_replacement_import_refuses_other_sources() -> None:
+def test_prepare_staging_table_refuses_other_sources() -> None:
     cursor = RecordingCursor(fetchone_row=(True,))
     connection = RecordingConnection(cursor)
 
     with pytest.raises(RuntimeError, match="another source"):
-        dvf_import._prepare_replacement_import(connection)
+        dvf_import._prepare_staging_table(connection, reset=True)
 
     assert len(cursor.calls) == 1
     assert connection.commits == 0
 
 
-def test_prepare_replacement_import_truncates_dvf_only_table() -> None:
+def _executed_sql(cursor: RecordingCursor) -> str:
+    return " ".join(" ".join(str(statement).split()) for statement, _ in cursor.calls).lower()
+
+
+def test_prepare_staging_table_recreates_staging_and_never_touches_the_live_table() -> None:
     cursor = RecordingCursor(fetchone_row=(False,))
     connection = RecordingConnection(cursor)
 
-    dvf_import._prepare_replacement_import(connection)
+    dvf_import._prepare_staging_table(connection, reset=True)
 
-    assert len(cursor.calls) == 8
+    executed = _executed_sql(cursor)
+    assert "drop table if exists public.dvf_transactions_staging" in executed
+    assert "create table public.dvf_transactions_staging" in executed
+    assert "truncate" not in executed
+    assert "drop index" not in executed
+    assert "delete from" not in executed
     assert connection.commits == 1
+
+
+def test_prepare_staging_table_without_reset_requires_an_existing_staging_table() -> None:
+    connection = RecordingConnection(RecordingCursor(fetchone_row=(False,)))
+
+    with pytest.raises(RuntimeError, match="--reset-staging"):
+        dvf_import._prepare_staging_table(connection, reset=False)
+
+    assert connection.commits == 0
+
+
+def test_staging_load_never_targets_the_live_table() -> None:
+    cursor = RecordingCursor()
+    connection = RecordingConnection(cursor)
+
+    dvf_import._copy_transactions(connection, [{"source_mutation_id": "x"}])
+
+    copy_statement = cursor.copy_calls[0].statement
+    rendered = getattr(copy_statement, "as_string", lambda _ctx=None: str(copy_statement))()
+    assert "dvf_transactions_staging" in rendered
+    assert '"dvf_transactions"' not in rendered
+
+
+def test_swap_statements_rename_in_order_and_drop_the_old_table_last() -> None:
+    statements = [" ".join(statement.split()).lower() for statement in dvf_import.build_swap_statements()]
+
+    rename_live = statements.index("alter table public.dvf_transactions rename to dvf_transactions_old")
+    rename_staging = statements.index("alter table public.dvf_transactions_staging rename to dvf_transactions")
+    drop_old = statements.index("drop table public.dvf_transactions_old")
+    assert rename_live < rename_staging < drop_old
+    assert drop_old == len(statements) - 1
+    assert "set local lock_timeout = '120s'" in statements
+    for suffix in dvf_import.STAGING_INDEX_SUFFIXES:
+        rename_index = (
+            f"alter index public.dvf_transactions_staging_{suffix} rename to dvf_transactions_{suffix}"
+        )
+        assert rename_staging < statements.index(rename_index) < drop_old
+    assert "alter table public.dvf_transactions enable row level security" in statements
+    assert not any(statement.startswith(("truncate", "delete")) for statement in statements)
+
+
+def test_staging_indexes_are_built_before_the_swap_with_staging_names() -> None:
+    statements = [" ".join(statement.split()).lower() for statement in dvf_import.build_staging_index_statements()]
+    joined = " ".join(statements)
+
+    assert "create unique index if not exists dvf_transactions_staging_source_mutation_uidx" in joined
+    assert "add constraint dvf_transactions_staging_pkey primary key (id)" in joined
+    assert "foreign key (import_batch_id) references public.dvf_import_batches(id) on delete set null not valid" in joined
+    assert "on public.dvf_transactions (" not in joined
+    assert "dvf_transactions_old" not in joined
+
+
+def test_swap_rolls_back_and_never_commits_when_a_statement_fails() -> None:
+    cursor = RollbackProbeCursor(fail_on="drop table public.dvf_transactions_old")
+    connection = RecordingConnection(cursor)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        dvf_import.swap_staging_into_live(connection)
+
+    assert connection.rollbacks == 1
+    # Only the index preparation phase committed; the swap itself did not.
+    assert connection.commits == 1
+    assert "alter table public.dvf_transactions rename to dvf_transactions_old" in _executed_sql(cursor)
+
+
+def test_swap_commits_once_for_the_whole_replacement() -> None:
+    cursor = RollbackProbeCursor(fail_on="never-matches")
+    connection = RecordingConnection(cursor)
+
+    dvf_import.swap_staging_into_live(connection)
+
+    assert connection.commits == 2  # staging indexes, then the single swap transaction
+    assert connection.rollbacks == 0
+
+
+def test_swap_refuses_an_empty_staging_table() -> None:
+    connection = RecordingConnection(RecordingCursor(fetchone_row=(False,)))
+
+    with pytest.raises(RuntimeError, match="empty or missing"):
+        dvf_import.swap_staging_into_live(connection)
+
+    assert connection.commits == 0
+
+
+def test_replacement_options_imply_staging_and_reject_a_row_limit(tmp_path) -> None:
+    path = tmp_path / "dvf.txt"
+    path.write_text("id_mutation|date_mutation\n", encoding="utf-8")
+
+    replace = DvfImportOptions(path=path, replace_existing=True)
+    stage = DvfImportOptions(path=path, stage=True)
+    assert replace.uses_staging and replace.resets_staging
+    assert stage.uses_staging and not stage.resets_staging
+    for options in (
+        DvfImportOptions(path=path, replace_existing=True, limit=10),
+        DvfImportOptions(path=path, stage=True, limit=10),
+    ):
+        with pytest.raises(ValueError, match="row limit"):
+            import_dvf_file(options)
+    with pytest.raises(ValueError, match="--reset-staging"):
+        import_dvf_file(DvfImportOptions(path=path, reset_staging=True))
+
+
+def test_cli_swap_staging_is_exclusive_and_path_is_otherwise_required() -> None:
+    assert dvf_import.parse_args(["--swap-staging"]).swap_staging
+    with pytest.raises(SystemExit):
+        dvf_import.parse_args(["--swap-staging", "file.csv"])
+    with pytest.raises(SystemExit):
+        dvf_import.parse_args(["--stage"])
+    args = dvf_import.parse_args(["file.csv", "--stage", "--reset-staging"])
+    assert args.stage and args.reset_staging and not args.replace_existing
 
 
 def test_restore_dvf_indexes_builds_integrity_and_query_indexes() -> None:
@@ -628,3 +747,19 @@ class BrokenConnection:
 
     def close(self) -> None:
         self.closed = True
+
+
+class RollbackProbeCursor(RecordingCursor):
+    def __init__(self, *, fail_on: str) -> None:
+        super().__init__(fetchone_row=(True,))
+        self.fail_on = fail_on
+
+    def execute(self, statement: object, values: object = None) -> None:
+        if self.fail_on in " ".join(str(statement).split()).lower():
+            raise RuntimeError("boom")
+        super().execute(statement, values)
+
+    def fetchone(self):
+        # First check: staging has rows; second check: another source exists? no.
+        self.fetch_count = getattr(self, "fetch_count", 0) + 1
+        return (self.fetch_count == 1,)

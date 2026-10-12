@@ -108,11 +108,12 @@ def test_parse_petites_affiches_public_detail() -> None:
     assert detail["lawyer_name"] == "Maître MERLIN-LABRE"
     assert detail["lawyer_contact"] == "0422140871"
     assert detail["tribunal"] == "TJ DE BORDEAUX"
-    assert detail["visit_dates"] == ["Visite finie Jeudi 25 Juin 2026 à 11:00"]
+    # L'état relatif (« Visite finie ») change chaque jour : seule la date publiée est gardée.
+    assert detail["visit_dates"] == ["Jeudi 25 Juin 2026 à 11:00"]
     assert detail["source_blocks"]["adresse"] == "33000 Bordeaux"
     assert detail["source_blocks"]["mise_a_prix"] == "15 300"
     assert detail["source_blocks"]["contact_avocat"] == "0422140871"
-    assert detail["source_blocks"]["visites"] == "Visite finie Jeudi 25 Juin 2026 à 11:00"
+    assert detail["source_blocks"]["visites"] == "Jeudi 25 Juin 2026 à 11:00"
 
 
 def test_parse_petites_affiches_detail_extracts_status_and_parking_from_scoped_badges() -> None:
@@ -364,7 +365,7 @@ def test_parse_petites_affiches_detail_keeps_thousands_surface() -> None:
 
     detail = parse_petites_affiches_detail_html(html, "https://www.petitesaffiches.fr/vente.html")
 
-    assert detail["surface_m2"] == "2464,70"
+    assert detail["surface_m2"] == "2464.70"
 
 
 def test_parse_petites_affiches_detail_extracts_documents_when_surface_is_in_attachments() -> None:
@@ -552,7 +553,7 @@ def test_petites_affiches_falls_back_to_get_when_national_post_is_refused(monkey
         petites_affiches,
         "load_settings",
         lambda: {
-            "browser_user_agent": "Mozilla/5.0",
+            "user_agent": "ImmojudisBot/1.0 (+https://immojudis.com/contact)",
             "request_delay_seconds": 0,
             "request_timeout_seconds": 1,
         },
@@ -1054,12 +1055,8 @@ def test_parse_encheres_immobilieres_rendered_listing_fallback(monkeypatch) -> N
 
     from src.sources import encheres_immobilieres
 
-    class FixtureDate(date):
-        @classmethod
-        def today(cls):
-            return cls(2026, 8, 1)
-
-    monkeypatch.setattr(encheres_immobilieres, "date", FixtureDate)
+    # La carte n'a pas d'année : la source calcule « aujourd'hui » à l'heure de Paris.
+    monkeypatch.setattr(encheres_immobilieres, "_paris_today", lambda: date(2026, 8, 1))
     html = """
     <main>
       <a href="/ventes/9162-une-maison-dhabitation-a-bonne-74-">

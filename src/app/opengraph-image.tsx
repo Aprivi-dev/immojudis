@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "ImmoJudis — les enchères immobilières en toute clarté";
+export const alt = "Immojudis — les enchères immobilières en toute clarté";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -30,7 +30,7 @@ export default function OpenGraphImage() {
         en toute clarté.
       </div>
       <div style={{ color: "#526170", display: "flex", fontSize: 28, marginTop: 38 }}>
-        Rapports d’opportunité · Comparables DVF · Mise maximale
+        Rapports d’opportunité · Comparables DVF · Enchère plafond
       </div>
     </div>,
     size,

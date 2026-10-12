@@ -1,17 +1,18 @@
 "use client";
 
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AdminPagination } from "@/components/admin/AdminPagination";
+import { ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import {
   fetchAdminAuctionFactClaimReview,
   reviewAdminAuctionFactClaimClient,
-  type AdminAuctionFactClaimReviewPageParam,
 } from "@/lib/client-api";
 import type {
   AdminAuctionFactClaimDecision,
@@ -19,23 +20,26 @@ import type {
 } from "@/lib/admin-auction-fact-claims-review";
 
 const QUERY_KEY = ["admin-auction-fact-claim-review"] as const;
-const PAGE_SIZE = 25;
 
 type ReviewDecision = AdminAuctionFactClaimDecision["decision"];
 
 export function AdminAuctionFactClaimReviewPanel() {
   const queryClient = useQueryClient();
   const [drafts, setDrafts] = useState<Record<string, ReviewDraft>>({});
-  const query = useInfiniteQuery({
-    queryKey: QUERY_KEY,
-    queryFn: ({ pageParam }) => fetchAdminAuctionFactClaimReview(pageParam),
-    initialPageParam: { limit: PAGE_SIZE } satisfies AdminAuctionFactClaimReviewPageParam,
-    getNextPageParam: (lastPage) =>
-      lastPage.hasMore && lastPage.nextCursor
-        ? { limit: PAGE_SIZE, cursor: lastPage.nextCursor }
-        : undefined,
+  const [offset, setOffset] = useState(0);
+  const query = useQuery({
+    queryKey: [...QUERY_KEY, offset],
+    queryFn: () => fetchAdminAuctionFactClaimReview({ offset, limit: ADMIN_PAGE_SIZE }),
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
+  // Après décision sur les dernières lignes d'une page, revient sur la dernière page non vide.
+  useEffect(() => {
+    const data = query.data;
+    if (data && data.items.length === 0 && data.offset > 0) {
+      setOffset(adminClampOffset(data.offset, data.limit, data.total));
+    }
+  }, [query.data]);
   const review = useMutation({
     mutationFn: reviewAdminAuctionFactClaimClient,
     onSuccess: () => {
@@ -48,7 +52,7 @@ export function AdminAuctionFactClaimReviewPanel() {
       toast.error(error instanceof Error ? error.message : "Décision impossible."),
   });
 
-  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const items = query.data?.items ?? [];
   const startDecision = (claimId: string, decision: ReviewDecision) => {
     setDrafts((previous) => ({
       ...previous,
@@ -74,14 +78,14 @@ export function AdminAuctionFactClaimReviewPanel() {
       <div className="border-b px-5 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#a36f2c]">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
               <CheckCircle className="size-4" />
               Contrôle des faits sourcés
             </div>
             <h2 id="fact-review-title" className="mt-2 font-semibold">
               Faits à vérifier
             </h2>
-            <p className="mt-1 max-w-3xl text-sm text-[#132238]/60">
+            <p className="mt-1 max-w-3xl text-sm text-brand-navy/60">
               Comparez la valeur extraite avec la valeur canonique avant de l’accepter. Une preuve
               acceptée ne modifie pas automatiquement la fiche.
             </p>
@@ -99,7 +103,7 @@ export function AdminAuctionFactClaimReviewPanel() {
       </div>
 
       {query.isPending ? (
-        <p role="status" className="p-5 text-sm text-[#132238]/55">
+        <p role="status" className="p-5 text-sm text-brand-navy/55">
           Chargement des faits…
         </p>
       ) : query.error ? (
@@ -142,21 +146,18 @@ export function AdminAuctionFactClaimReviewPanel() {
               }
             />
           ))}
-          {query.hasNextPage ? (
-            <div className="border-t px-5 py-3">
-              <button
-                type="button"
-                className="admin-button-secondary"
-                disabled={query.isFetchingNextPage}
-                onClick={() => void query.fetchNextPage()}
-              >
-                {query.isFetchingNextPage ? "Chargement…" : "Charger les faits suivants"}
-              </button>
-            </div>
-          ) : null}
+          <AdminPagination
+            label="faits à vérifier"
+            offset={query.data?.offset ?? 0}
+            limit={query.data?.limit ?? ADMIN_PAGE_SIZE}
+            total={query.data?.total ?? 0}
+            shown={items.length}
+            busy={query.isFetching}
+            onOffsetChange={setOffset}
+          />
         </div>
       ) : (
-        <p className="p-5 text-sm text-[#132238]/60">Aucun fait en attente de revue.</p>
+        <p className="p-5 text-sm text-brand-navy/60">Aucun fait en attente de revue.</p>
       )}
     </section>
   );
@@ -206,31 +207,33 @@ function ClaimLine({
               )}
               {item.status === "conflicted" ? "Conflit" : "À confirmer"}
             </span>
-            <span className="text-xs text-[#132238]/55">{fieldLabel(item.fieldKey)}</span>
-            <span className="font-mono text-[11px] text-[#132238]/45">{shortId(item.claimId)}</span>
+            <span className="text-xs text-brand-navy/55">{fieldLabel(item.fieldKey)}</span>
+            <span className="font-mono text-[11px] text-brand-navy/45">
+              {shortId(item.claimId)}
+            </span>
           </div>
           <h3 className="mt-2 truncate font-semibold">
             {item.sale.title || item.sale.city || `Vente ${shortId(item.saleId)}`}
           </h3>
-          <p className="mt-1 text-xs text-[#132238]/55">
+          <p className="mt-1 text-xs text-brand-navy/55">
             {[item.sale.city, item.sale.saleDate ? formatDate(item.sale.saleDate) : null]
               .filter(Boolean)
               .join(" · ")}
           </p>
           <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
             <div className="rounded-lg border bg-amber-50/60 p-3">
-              <dt className="text-xs font-medium text-[#132238]/60">Valeur extraite</dt>
+              <dt className="text-xs font-medium text-brand-navy/60">Valeur extraite</dt>
               <dd className="mt-1 font-semibold text-amber-900">{formatValue(item.value)}</dd>
             </div>
             <div className="rounded-lg border bg-slate-50 p-3">
-              <dt className="text-xs font-medium text-[#132238]/60">Valeur canonique actuelle</dt>
-              <dd className="mt-1 font-semibold text-[#132238]">
+              <dt className="text-xs font-medium text-brand-navy/60">Valeur canonique actuelle</dt>
+              <dd className="mt-1 font-semibold text-brand-navy">
                 {formatValue(item.currentCanonicalValue)}
               </dd>
             </div>
           </dl>
-          <div className="mt-3 rounded-lg border border-dashed p-3 text-xs text-[#132238]/65">
-            <p className="font-medium text-[#132238]">Preuve · {item.evidence.kind}</p>
+          <div className="mt-3 rounded-lg border border-dashed p-3 text-xs text-brand-navy/65">
+            <p className="font-medium text-brand-navy">Preuve · {item.evidence.kind}</p>
             {locatorQuote ? <p className="mt-1 whitespace-pre-wrap">« {locatorQuote} »</p> : null}
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
               {item.evidence.sourceUrl ? (
@@ -238,7 +241,7 @@ function ClaimLine({
                   href={item.evidence.sourceUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 font-medium text-[#7c5222] underline"
+                  className="inline-flex items-center gap-1 font-medium text-gold-text underline"
                 >
                   Ouvrir la source <ExternalLink className="size-3" />
                 </a>
@@ -305,7 +308,7 @@ function ClaimLine({
                 : "Motif du conflit"}
           </p>
           {needsNote ? (
-            <label className="mt-2 block text-xs font-medium text-[#132238]/75">
+            <label className="mt-2 block text-xs font-medium text-brand-navy/75">
               Justification obligatoire
               <textarea
                 value={activeDraft.note}
@@ -316,7 +319,7 @@ function ClaimLine({
               />
             </label>
           ) : (
-            <p className="mt-1 text-xs text-[#132238]/60">
+            <p className="mt-1 text-xs text-brand-navy/60">
               La valeur doit encore correspondre au canonique au moment de la validation.
             </p>
           )}

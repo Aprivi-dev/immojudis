@@ -6,16 +6,28 @@ import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combi
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
-import { SaleProcedureBadge } from "@/components/SaleProcedurePanel";
+import { ListingPhoto } from "@/components/ListingPhoto";
+import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { formatPrice } from "@/lib/format";
-import { saleDetailPath } from "@/lib/navigation";
-import { Link } from "@/lib/router-compat";
+import { publicDossierContents, publicSaleDescription } from "@/lib/public-sale-description";
+import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
+import Link from "next/link";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
+  saleVerificationExplanation,
   saleVerificationLabel,
   saleVenueLabel,
 } from "@/lib/sale-procedure";
+import {
+  saleHeadline,
+  saleHearingTime,
+  saleReference,
+  seoLongDate,
+  seoPropertyLabel,
+  seoSurface,
+  tribunalDisplayName,
+} from "@/lib/seo";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
@@ -67,6 +79,67 @@ export function SalePublicPreview({
   const state = procedure.venueType === "state";
   const notary = procedure.venueType === "notary";
   const price = preview.starting_price_eur != null && preview.starting_price_eur > 0;
+  const headline = saleHeadline(preview);
+  const photo = preview.media?.find((item) => item?.url && (item.type ?? "image") === "image");
+  const surface = seoSurface(preview.app_surface_m2);
+  const hearingDate = seoLongDate(preview.sale_date);
+  const hearingTime = saleHearingTime(preview.sale_date);
+  const tribunal = procedure.venueType === "tribunal" ? tribunalDisplayName(preview) : null;
+  const location = [preview.city, preview.department].filter(Boolean).join(" · ");
+  const propertyFacts = (
+    <dl className={styles.facts}>
+      <div className={styles.fact}>
+        <dt>Type de bien</dt>
+        <dd>{seoPropertyLabel(preview.property_type)}</dd>
+      </div>
+      {surface ? (
+        <div className={styles.fact}>
+          <dt>Surface</dt>
+          <dd>{surface}</dd>
+        </div>
+      ) : null}
+      {preview.rooms_count != null && preview.rooms_count > 0 ? (
+        <div className={styles.fact}>
+          <dt>Pièces</dt>
+          <dd>{preview.rooms_count}</dd>
+        </div>
+      ) : null}
+      {location ? (
+        <div className={styles.fact}>
+          <dt>Localisation</dt>
+          <dd>{location}</dd>
+        </div>
+      ) : null}
+      {hearingDate ? (
+        <div className={styles.fact}>
+          <dt>{procedure.venueType === "tribunal" ? "Date de l’audience" : "Date de la vente"}</dt>
+          <dd>
+            {hearingDate}
+            {hearingTime ? ` à ${hearingTime}` : ""}
+          </dd>
+        </div>
+      ) : null}
+      {tribunal ? (
+        <div className={styles.fact}>
+          <dt>Tribunal</dt>
+          <dd>{tribunal}</dd>
+        </div>
+      ) : null}
+    </dl>
+  );
+  const description = publicSaleDescription(preview);
+  const freeContents = publicDossierContents(preview);
+  // Placeholders only: the real figures are never sent to a signed-out visitor.
+  const analysisTeaser = [
+    { label: "Valeur estimée", placeholder: "000 000 € – 000 000 €", tier: "Compte gratuit" },
+    price
+      ? { label: "Écart avec la mise à prix", placeholder: "00 %", tier: "Compte gratuit" }
+      : null,
+    procedure.venueType === "tribunal"
+      ? { label: "Enchère plafond conseillée", placeholder: "000 000 €", tier: "Offre Analyse" }
+      : null,
+    { label: "Ventes comparables du secteur", placeholder: "00 ventes", tier: "Offre Analyse" },
+  ].filter((item): item is { label: string; placeholder: string; tier: string } => item !== null);
   const priceBlock =
     price || !state ? (
       <div className={styles.priceBlock}>
@@ -105,9 +178,9 @@ export function SalePublicPreview({
   );
 
   return (
-    <main className={styles.page}>
+    <main id="contenu" className={styles.page}>
       <div className={styles.container}>
-        <Link to={returnTo} className={styles.back}>
+        <Link href={returnTo} className={styles.back}>
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Retour aux ventes
         </Link>
@@ -117,13 +190,61 @@ export function SalePublicPreview({
         >
           <section className={styles.summary} aria-labelledby="public-sale-title">
             <SaleProcedureBadge sale={preview} />
+            <p className={styles.kicker}>{venueCopy.title}</p>
             <h1 id="public-sale-title" className={styles.title}>
-              {venueCopy.title}
+              {headline}
+              <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
             </h1>
-            <p className={styles.intro}>
-              Cet aperçu protège les informations détaillées du bien tout en vous indiquant
-              clairement comment la vente est organisée.
-            </p>
+            {photo?.url ? (
+              <figure className={styles.photo}>
+                <ListingPhoto
+                  src={photo.url}
+                  alt={`Photo du bien : ${headline}`}
+                  className="h-full w-full object-cover"
+                  fetchPriority="high"
+                />
+              </figure>
+            ) : null}
+            {propertyFacts}
+            <section className={styles.description} aria-labelledby="public-description-title">
+              <h2 id="public-description-title" className={styles.addsTitle}>
+                Le bien en bref
+              </h2>
+              <p>{description.sentence}</p>
+              {description.amenities.length > 0 ? (
+                <ul className={styles.amenities} aria-label="Équipements mentionnés">
+                  {description.amenities.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+            <div className={styles.adds}>
+              <h2 className={styles.addsTitle}>Avec le compte gratuit, vous voyez aussi</h2>
+              <ul>
+                {freeContents.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            <section className={styles.teaser} aria-labelledby="public-teaser-title">
+              <h2 id="public-teaser-title" className={styles.addsTitle}>
+                L’analyse de cette vente
+              </h2>
+              <dl>
+                {analysisTeaser.map((item) => (
+                  <div key={item.label} className={styles.teaserRow}>
+                    <dt>{item.label}</dt>
+                    <dd>
+                      <span className={styles.blurred} aria-hidden>
+                        {item.placeholder}
+                      </span>
+                      <span className={styles.teaserTier}>{item.tier}</span>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
 
             {state || notary ? factsBlock : priceBlock}
             {state || notary ? priceBlock : factsBlock}
@@ -139,7 +260,7 @@ export function SalePublicPreview({
               <p>
                 <strong>{saleVerificationLabel(procedure.verificationStatus)}</strong>
                 <br />
-                La qualification affichée est rapprochée des sources disponibles par Immojudis.
+                {saleVerificationExplanation(procedure.verificationStatus)}
               </p>
             </div>
             <p className={styles.catalogueNote}>
@@ -157,23 +278,22 @@ export function SalePublicPreview({
                 Consulter le dossier
               </h2>
               <p className={styles.accessIntro}>
-                Le compte Découverte est gratuit. Il donne accès aux informations pratiques et au
-                guide de participation de cette vente.
+                Le compte Découverte est gratuit. Il donne accès à l’adresse, aux photos, aux
+                visites et à la fourchette de valeur estimée de cette vente.
               </p>
             </div>
             <div className={styles.actions}>
               <Link
-                to="/login"
-                search={{
+                href={pathWithSearch("/login", {
                   mode: "investor",
                   redirect: `${saleDetailPath(saleId, returnTo)}${requestedHash.startsWith("#") ? requestedHash : ""}`,
-                }}
+                })}
                 className={styles.primary}
               >
                 Voir gratuitement le dossier
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
-              <Link to={returnTo} className={styles.secondary}>
+              <Link href={returnTo} className={styles.secondary}>
                 Continuer ma recherche
               </Link>
             </div>
@@ -187,8 +307,8 @@ export function SalePublicPreview({
               </h3>
               <p>
                 {state
-                  ? "Type de vente, prix s'il est publié et niveau de vérification."
-                  : "Mise à prix, type de vente et niveau de vérification."}
+                  ? "Le bien et ses équipements, la commune, la date de la vente, le prix s'il est publié et le niveau de vérification."
+                  : "Le bien et ses équipements, la commune, la date de la vente, la mise à prix et le niveau de vérification."}
               </p>
             </div>
             <div className={`${styles.tier} ${styles.tierFree}`}>
@@ -196,7 +316,10 @@ export function SalePublicPreview({
                 <LockKeyholeOpen aria-hidden />
                 Découverte · gratuit
               </h3>
-              <p>Date, visites, contact, pièces disponibles et étapes pour participer.</p>
+              <p>
+                Adresse, photos, description, occupation, dates de visite et contact du dossier,
+                fourchette de valeur estimée, Street View, météo et risques de la commune.
+              </p>
             </div>
             <div className={`${styles.tier} ${styles.tierAnalysis}`}>
               <h3 className={styles.tierTitle}>
@@ -205,12 +328,24 @@ export function SalePublicPreview({
               </h3>
               <p>
                 {procedure.venueType === "tribunal"
-                  ? "Marché local, risques du dossier et estimation de votre mise plafond."
-                  : "Marché local et risques du dossier lorsque les données le permettent."}
+                  ? "Pièces du dossier, ventes comparables, travaux, statistiques du tribunal et calcul de votre enchère plafond."
+                  : "Pièces du dossier, ventes comparables et risques repérés lorsque les données le permettent."}
               </p>
             </div>
           </div>
         </section>
+        <p className="mt-6 text-sm leading-relaxed text-slate-600">
+          Les sources officielles restent consultables librement :{" "}
+          <a
+            href="https://www.georisques.gouv.fr/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4"
+          >
+            consulter Géorisques
+          </a>
+          .
+        </p>
       </div>
     </main>
   );

@@ -1,5 +1,7 @@
 # Email de demande d’informations — état éditorial et validation
 
+> **11 octobre 2026.** Le gabarit est passé en `information_request_v6` : origine de l’adresse avec le lien de l’annonce en tête du message, invitation courte à créer un compte professionnel (demandée par le propriétaire, ajoutée par le gabarit et désactivable par `INFORMATION_AGENT_ACCOUNT_INVITATION=false`), questions nommant les pièces manquantes, aperçu exact obligatoire avant tout envoi. L’état courant et la procédure sont décrits dans le [guide d’exploitation](../runbooks/information-agent.md) ; les sections ci-dessous restent l’historique.
+
 Audit initial du 23 septembre 2026. Mise à jour : 28 septembre 2026. **La révision 3 est publiée en production ; la révision 2 est archivée ; aucun email n’a été envoyé à un contact réel.**
 
 ## Statut à prendre comme référence

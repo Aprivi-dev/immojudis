@@ -1,93 +1,22 @@
 import { saleDateBoundary } from "./search/sale-date-range";
-import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
+import { supabase } from "@/integrations/supabase/client";
 import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
-import type { AuctionSale, SaleFilters, SortKey, UserAlert } from "./types";
+import type { AuctionSale, SaleFilters, SortKey } from "./types";
+import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "./sale-views";
+import { assertCloudConfigured } from "./query-configuration";
+import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
+import { fetchPublicSaleSummary } from "./public-sale-summary";
+import { saleRows } from "./sale-rows";
+export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
+export type { CreateAlertPayload } from "./alert-queries";
+export { DETAIL_VIEW, SALE_LIST_COLUMNS };
 
-export const DETAIL_VIEW = "v_auction_sales_app";
 const DISCOVERY_VIEW = "v_auction_sales_discovery" as typeof DETAIL_VIEW;
+const SEARCH_VIEW = "v_auction_sales_app_search" as typeof DETAIL_VIEW;
+const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAIL_VIEW;
 const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
-const CONFIGURATION_ERROR =
-  "La configuration Supabase est absente. Ajoutez les variables d'environnement Supabase pour afficher les données.";
-
-type SupabaseQueryError = {
-  code?: string;
-  message?: string;
-  details?: string;
-};
 
 type SupabaseReader = Pick<typeof supabase, "from">;
-
-export const SALE_LIST_COLUMNS = [
-  "source_checks",
-  "source_conflicts",
-  "analysis_status",
-  "source_presence",
-  "sale_procedure",
-  "sale_venue_type",
-  "sale_legal_framework",
-  "sale_verification_status",
-  "id",
-  "title",
-  "description",
-  "source_description",
-  "llm_display_description",
-  "about_description",
-  "city",
-  "department",
-  "postal_code",
-  "address",
-  "tribunal",
-  "tribunal_code",
-  "tribunal_name",
-  "tribunal_city",
-  "property_type",
-  "starting_price_eur",
-  "sale_date",
-  "visit_dates",
-  "lawyer_name",
-  "lawyer_contact",
-  "adjudication_price_eur",
-  "latitude",
-  "longitude",
-  "occupancy_status",
-  "surface_m2",
-  "habitable_surface_m2",
-  "carrez_surface_m2",
-  "land_surface_m2",
-  "app_surface_m2",
-  "app_surface_kind",
-  "surface_scope",
-  "surface_source",
-  "rooms_count",
-  "bedrooms_count",
-  "bathrooms_count",
-  "has_garden",
-  "has_terrace",
-  "has_garage",
-  "has_pool",
-  "has_air_conditioning",
-  "has_double_glazing",
-  "investment_score",
-  "score_confidence",
-  "surface_confidence",
-  "surface_evidence",
-  "risks",
-  "documents",
-  "documents_rich",
-  "media",
-  "source_name",
-  "source_url",
-  "primary_source",
-  "source_urls",
-  "source_blocks",
-  "source_blocks_by_source",
-  "dedupe_confidence",
-  "quality_flags",
-  "status",
-  "created_at",
-  "updated_at",
-].join(",");
 
 // Fields needed by the search result card only. Keep heavy descriptions,
 // documents, source payloads and analysis evidence on the detail route.
@@ -130,8 +59,9 @@ const SALE_PREVIEW_COLUMNS = [
   "sale_verification_status",
 ].join(",");
 
+// Pins use only scalar catalogue fields. The selected popup fetches its
+// photos, risk and DPE evidence separately, through the same access-controlled view.
 const SALE_MAP_COLUMNS = [
-  "sale_procedure",
   "sale_venue_type",
   "sale_legal_framework",
   "sale_verification_status",
@@ -158,7 +88,6 @@ const SALE_MAP_COLUMNS = [
   "surface_scope",
   "surface_source",
   "surface_confidence",
-  "surface_evidence",
   "rooms_count",
   "bedrooms_count",
   "bathrooms_count",
@@ -167,75 +96,11 @@ const SALE_MAP_COLUMNS = [
   "has_garage",
   "status",
   "investment_score",
-  "risks",
-  "media",
-  "source_name",
-  "primary_source",
-  "source_blocks",
-  "documents_rich",
   "created_at",
 ].join(",");
 
-function assertCloudConfigured() {
-  if (isSupabaseConfigured) return true;
-  // On the SSR worker the env may not be hydrated yet — return false so
-  // callers can short-circuit with empty results and let the browser
-  // refetch once the user session and env are available.
-  if (typeof window === "undefined") return false;
-  throw new Error(CONFIGURATION_ERROR);
-}
-
-function isMissingPreviewViewError(error: SupabaseQueryError | null): boolean {
-  if (!error) return false;
-  const text = `${error.code ?? ""} ${error.message ?? ""} ${error.details ?? ""}`;
-  return text.includes("PGRST205") || text.includes(PUBLIC_PREVIEW_VIEW);
-}
-
 function previewSortDirection(sort: SortKey): boolean {
   return sort === "price_desc" ? false : true;
-}
-
-async function getSalesFromLegacyPreview(
-  filters: SaleFilters,
-  limit: number,
-  sort: SortKey,
-  offset: number,
-): Promise<AuctionSale[]> {
-  let q = supabase
-    .from(DETAIL_VIEW)
-    .select(SALE_PREVIEW_COLUMNS)
-    .order("starting_price_eur", { ascending: previewSortDirection(sort), nullsFirst: false })
-    .range(offset, offset + limit - 1);
-
-  q = applySaleTypeFilter(q, filters);
-  if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
-  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
-
-  const { data, error } = await q;
-  if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
-}
-
-async function getSalePreviewFromLegacyView(id: string): Promise<AuctionSale | null> {
-  const { data, error } = await supabase
-    .from(DETAIL_VIEW)
-    .select(SALE_PREVIEW_COLUMNS)
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw error;
-  return data as unknown as AuctionSale | null;
-}
-
-async function getSalesPreviewCountFromLegacyView(filters: SaleFilters): Promise<number> {
-  let q = supabase.from(DETAIL_VIEW).select("id", { count: "exact" }).range(0, 999);
-
-  q = applySaleTypeFilter(q, filters);
-  if (filters.min_price != null) q = q.gte("starting_price_eur", filters.min_price);
-  if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
-
-  const { count, data, error } = await q;
-  if (error) throw error;
-  return count && count > 0 ? count : (data?.length ?? 0);
 }
 
 const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst?: boolean }> = {
@@ -285,18 +150,21 @@ function accentTolerantPatterns(term: string): string[] {
   return patterns;
 }
 
+// Les requêtes PostgREST sont construites avec des listes de colonnes et des vues dynamiques :
+// le client ne peut pas en déduire le type des lignes, ni de la requête. On les manipule donc
+// via la surface minimale de filtrage ci-dessus.
 function applySaleTypeFilter<TQuery>(query: TQuery, filters: SaleFilters): TQuery {
-  let q = query as unknown as FilterableQuery;
+  let q = query as FilterableQuery;
   if (filters.sale_venue_type === "unknown") {
     q = q.in("sale_venue_type", ["unknown", "online"]);
   } else if (filters.sale_venue_type) {
     q = q.eq("sale_venue_type", filters.sale_venue_type);
   }
-  return q as unknown as TQuery;
+  return q as TQuery;
 }
 
 function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilters) {
-  let q = applySaleTypeFilter(query, filters) as unknown as FilterableQuery;
+  let q = applySaleTypeFilter(query, filters) as FilterableQuery;
 
   if (filters.min_sale_date) q = q.gte("sale_date", saleDateBoundary(filters.min_sale_date));
   if (filters.max_sale_date) q = q.lte("sale_date", saleDateBoundary(filters.max_sale_date, true));
@@ -339,6 +207,7 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
       .gte("longitude", filters.viewport.west)
       .lte("longitude", filters.viewport.east);
   }
+  if (filters.updated_since) q = q.gte("updated_at", filters.updated_since);
   if (filters.only_new) {
     q = q.gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
   }
@@ -365,7 +234,80 @@ function applyAuthenticatedSaleFilters<TQuery>(query: TQuery, filters: SaleFilte
     filters.keywords,
   );
 
-  return q as unknown as TQuery;
+  return q as TQuery;
+}
+
+const SALE_ID_BATCH_SIZE = 100;
+const SALE_ID_BATCH_CONCURRENCY = 4;
+
+function uniqueSaleIds(data: unknown): string[] {
+  if (!Array.isArray(data)) return [];
+  return Array.from(
+    new Set(
+      data
+        .map((row) => (row as { id?: unknown })?.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  );
+}
+
+function orderSalesByIds(rows: AuctionSale[], ids: string[]): AuctionSale[] {
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  return ids.flatMap((id) => {
+    const row = rowsById.get(id);
+    return row ? [row] : [];
+  });
+}
+
+async function fetchSaleRowsByIds(
+  db: SupabaseReader,
+  catalogView: typeof DETAIL_VIEW,
+  columns: string,
+  filters: SaleFilters,
+  ids: string[],
+): Promise<AuctionSale[]> {
+  const batches: string[][] = [];
+  for (let index = 0; index < ids.length; index += SALE_ID_BATCH_SIZE) {
+    batches.push(ids.slice(index, index + SALE_ID_BATCH_SIZE));
+  }
+
+  const rows: AuctionSale[] = [];
+  for (let index = 0; index < batches.length; index += SALE_ID_BATCH_CONCURRENCY) {
+    const batchRows = await Promise.all(
+      batches.slice(index, index + SALE_ID_BATCH_CONCURRENCY).map(async (batch) => {
+        let q = db.from(catalogView).select(columns);
+        q = applyAuthenticatedSaleFilters(q, filters);
+        const { data, error } = await q.in("id", batch);
+        if (error) throw error;
+        return saleRows(data);
+      }),
+    );
+    rows.push(...batchRows.flat());
+  }
+
+  return rows;
+}
+
+async function fetchSearchResultIds(
+  db: SupabaseReader,
+  catalogView: typeof DETAIL_VIEW,
+  filters: SaleFilters,
+  limit: number,
+  sort: SortKey,
+  offset: number,
+): Promise<string[]> {
+  const s = SORT_MAP[sort];
+  let q = db
+    .from(catalogView)
+    .select("id")
+    .order("coordinates_rank", { ascending: true })
+    .order(s.column, { ascending: s.ascending, nullsFirst: false })
+    .range(offset, offset + limit - 1);
+  q = applyAuthenticatedSaleFilters(q, filters);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return uniqueSaleIds(data);
 }
 
 export async function getSales(
@@ -373,7 +315,13 @@ export async function getSales(
   limit = 100,
   sort: SortKey = "date_asc",
   offset = 0,
-  options: { preview?: boolean; discovery?: boolean; client?: SupabaseReader } = {},
+  options: {
+    preview?: boolean;
+    discovery?: boolean;
+    client?: SupabaseReader;
+    /** Add a unique tie-breaker so paging through a large result never skips a row. */
+    stableOrder?: boolean;
+  } = {},
 ): Promise<AuctionSale[]> {
   if (!options.client && !assertCloudConfigured()) return [];
   const db = options.client ?? supabase;
@@ -390,26 +338,25 @@ export async function getSales(
     if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
 
     const { data, error } = await q;
-    if (isMissingPreviewViewError(error)) {
-      return getSalesFromLegacyPreview(filters, limit, sort, offset);
-    }
     if (error) throw error;
-    return (data ?? []) as unknown as AuctionSale[];
+    return saleRows(data);
   }
 
   const s = SORT_MAP[sort];
-  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
   let q = db
     .from(catalogView)
     .select(SALE_LIST_COLUMNS)
-    .order(s.column, { ascending: s.ascending, nullsFirst: false })
-    .range(offset, offset + limit - 1);
+    .order("coordinates_rank", { ascending: true })
+    .order(s.column, { ascending: s.ascending, nullsFirst: false });
+  if (options.stableOrder) q = q.order("id", { ascending: true });
+  q = q.range(offset, offset + limit - 1);
 
   q = applyAuthenticatedSaleFilters(q, filters);
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
 
 export async function getSalesForSearch(
@@ -417,15 +364,30 @@ export async function getSalesForSearch(
   limit = 100,
   sort: SortKey = "date_asc",
   offset = 0,
-  options: { discovery?: boolean } = {},
+  options: { discovery?: boolean; client?: SupabaseReader } = {},
 ): Promise<AuctionSale[]> {
-  if (!assertCloudConfigured()) return [];
+  if (!options.client && !assertCloudConfigured()) return [];
 
   const s = SORT_MAP[sort];
-  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
-  let q = supabase
+  const db = options.client ?? supabase;
+  const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
+
+  // The discovery view is a security barrier. EXPLAIN shows that selecting
+  // IDs and then re-reading the barrier doubles its materialization cost, so
+  // keep its existing single request. The app search view is invoker-safe and
+  // can prune the heavy lateral projections when the first request selects
+  // only IDs.
+  if (!options.discovery) {
+    const ids = await fetchSearchResultIds(db, catalogView, filters, limit, sort, offset);
+    if (ids.length === 0) return [];
+    const rows = await fetchSaleRowsByIds(db, catalogView, SALE_CARD_COLUMNS, filters, ids);
+    return orderSalesByIds(rows, ids);
+  }
+
+  let q = db
     .from(catalogView)
     .select(SALE_CARD_COLUMNS)
+    .order("coordinates_rank", { ascending: true })
     .order(s.column, { ascending: s.ascending, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
@@ -433,7 +395,7 @@ export async function getSalesForSearch(
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
 
 export async function getSalesCount(
@@ -460,9 +422,6 @@ export async function getSalesPreviewCount(filters: SaleFilters = {}): Promise<n
   if (filters.max_price != null) q = q.lte("starting_price_eur", filters.max_price);
 
   const { count, error } = await q;
-  if (isMissingPreviewViewError(error)) {
-    return getSalesPreviewCountFromLegacyView(filters);
-  }
   if (error) throw error;
   return count ?? 0;
 }
@@ -480,31 +439,38 @@ export async function getSaleById(
   const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
   const { data, error } = await supabase.from(catalogView).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
-  return data as AuctionSale | null;
+  return data ? sanitizeAuctionSaleForDisplay(data as AuctionSale) : null;
 }
 
 export async function getSalePreviewById(id: string): Promise<AuctionSale | null> {
   if (!assertCloudConfigured()) return null;
+  // Card-level facts of the public catalogue (type, surface, city, hearing date…).
+  // `unsupported` means the database function is not deployed yet: keep the
+  // minimal preview below so the page still works during a staggered release.
+  const summary = await fetchPublicSaleSummary(supabase, id);
+  if (summary.kind === "found") return summary.sale;
+  if (summary.kind === "missing") return null;
   const { data, error } = await supabase
     .from(PUBLIC_PREVIEW_VIEW)
     .select(SALE_PREVIEW_COLUMNS)
     .eq("id", id)
     .maybeSingle();
-  if (isMissingPreviewViewError(error)) return getSalePreviewFromLegacyView(id);
   if (error) throw error;
-  return data as unknown as AuctionSale | null;
+  return data as AuctionSale | null;
 }
 
 export async function getSalesWithCoords(
   filters: SaleFilters = {},
   limit = 500,
   sort: SortKey = "date_asc",
-  options: { discovery?: boolean } = {},
+  options: { discovery?: boolean; client?: SupabaseReader } = {},
 ): Promise<AuctionSale[]> {
-  if (!assertCloudConfigured()) return [];
+  if (!options.client && !assertCloudConfigured()) return [];
   const s = SORT_MAP[sort];
+  const db = options.client ?? supabase;
   const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
-  let q = supabase
+
+  let q = db
     .from(catalogView)
     .select(SALE_MAP_COLUMNS)
     .not("latitude", "is", null)
@@ -516,7 +482,55 @@ export async function getSalesWithCoords(
 
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
+}
+
+/** Colonnes minimales d'un point de carte : identifiant, position et de quoi étiqueter la pastille. */
+const SALE_MAP_POINT_COLUMNS = [
+  "id",
+  "latitude",
+  "longitude",
+  "starting_price_eur",
+  "city",
+  "department",
+  "property_type",
+  "sale_date",
+  "sale_venue_type",
+  "sale_verification_status",
+].join(",");
+const MAP_POINT_PAGE_SIZE = 1000;
+/** Garde-fou : le catalogue entier (quelques milliers de ventes) tient largement dessous. */
+export const MAP_POINTS_HARD_LIMIT = 10_000;
+
+/**
+ * Tous les points géolocalisés d'une recherche (et non un échantillon), en colonnes
+ * minimales, par pages de 1 000 lignes triées par identifiant pour une pagination stable.
+ */
+export async function getSaleMapPoints(
+  filters: SaleFilters = {},
+  options: { discovery?: boolean; client?: SupabaseReader } = {},
+): Promise<AuctionSale[]> {
+  if (!options.client && !assertCloudConfigured()) return [];
+  const db = options.client ?? supabase;
+  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  const points: AuctionSale[] = [];
+
+  for (let from = 0; from < MAP_POINTS_HARD_LIMIT; from += MAP_POINT_PAGE_SIZE) {
+    let q = db
+      .from(catalogView)
+      .select(SALE_MAP_POINT_COLUMNS)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + MAP_POINT_PAGE_SIZE - 1);
+    q = applyAuthenticatedSaleFilters(q, filters);
+    const { data, error } = await q;
+    if (error) throw error;
+    const page = saleRows(data);
+    points.push(...page);
+    if (page.length < MAP_POINT_PAGE_SIZE) break;
+  }
+  return points;
 }
 
 /**
@@ -547,7 +561,7 @@ export async function getNearbySales(
   if (excludeId) q = q.neq("id", excludeId);
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
 
 export async function getStats(): Promise<{
@@ -559,17 +573,8 @@ export async function getStats(): Promise<{
   const { count, error } = await supabase
     .from(PUBLIC_PREVIEW_VIEW)
     .select("*", { count: "exact", head: true });
-  let totalSales = count ?? 0;
-
-  if (isMissingPreviewViewError(error)) {
-    const { count: legacyCount, error: legacyError } = await supabase
-      .from(DETAIL_VIEW)
-      .select("id", { count: "exact", head: true });
-    if (legacyError) throw legacyError;
-    totalSales = legacyCount ?? 0;
-  } else if (error) {
-    throw error;
-  }
+  if (error) throw error;
+  const totalSales = count ?? 0;
 
   if (typeof window === "undefined") {
     return { totalSales, departments: 0, nextSale: null };
@@ -614,7 +619,7 @@ export async function getFavorites(userId: string): Promise<AuctionSale[]> {
     .select(SALE_LIST_COLUMNS)
     .in("id", ids);
   if (e2) throw e2;
-  return (data ?? []) as unknown as AuctionSale[];
+  return saleRows(data);
 }
 
 export async function getFavoriteIds(userId: string): Promise<Set<string>> {
@@ -642,60 +647,5 @@ export async function removeFavorite(userId: string, saleId: string) {
     .delete()
     .eq("user_id", userId)
     .eq("sale_id", saleId);
-  if (error) throw error;
-}
-
-// Alerts
-type UserAlertInsert = Database["public"]["Tables"]["user_alerts"]["Insert"];
-export type CreateAlertPayload = Omit<
-  UserAlertInsert,
-  "id" | "user_id" | "created_at" | "updated_at" | "last_evaluated_at" | "last_match_count"
-> & {
-  is_active?: boolean;
-};
-
-export async function getAlerts(userId: string): Promise<UserAlert[]> {
-  if (!assertCloudConfigured()) return [];
-  const { data, error } = await supabase
-    .from("user_alerts")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as UserAlert[];
-}
-
-export async function createAlert(userId: string, payload: CreateAlertPayload) {
-  assertCloudConfigured();
-  const insertPayload: UserAlertInsert = {
-    user_id: userId,
-    ...payload,
-    is_active: payload.is_active ?? true,
-    dpe_classes: payload.dpe_classes ?? [],
-    require_house_with_land: payload.require_house_with_land ?? false,
-    alert_frequency: payload.alert_frequency ?? "daily",
-    advanced_criteria: payload.advanced_criteria ?? {},
-  };
-  const { error } = await supabase.from("user_alerts").insert(insertPayload);
-  if (error) throw error;
-}
-
-export async function updateAlert(userId: string, alertId: string, patch: Partial<UserAlert>) {
-  assertCloudConfigured();
-  const { error } = await supabase
-    .from("user_alerts")
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq("id", alertId)
-    .eq("user_id", userId);
-  if (error) throw error;
-}
-
-export async function deleteAlert(userId: string, alertId: string) {
-  assertCloudConfigured();
-  const { error } = await supabase
-    .from("user_alerts")
-    .delete()
-    .eq("id", alertId)
-    .eq("user_id", userId);
   if (error) throw error;
 }

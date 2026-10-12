@@ -1,8 +1,9 @@
-import type { EnvironmentalContext } from "@/lib/environment.functions";
-import type { MarketEstimate } from "@/lib/market.functions";
+import type { EnvironmentalContext } from "@/lib/environmental-context";
+import type { MarketEstimate } from "@/lib/market.server";
 import type { NearbyServicesAnalysis } from "@/lib/nearby-services";
 import type { StreetFacadeAnalysis } from "@/lib/street-facade-analysis";
 import type { AuctionSale, SaleRisk } from "@/lib/types";
+import { excerpt, flattenKeyValues, normalizeText } from "@/lib/analysis-text";
 
 export type NeighborhoodStatus = "profiled" | "market_only" | "location_only" | "missing";
 export type NeighborhoodSignalKind = "market" | "services" | "street" | "environment" | "source";
@@ -367,7 +368,9 @@ function nextActions({
     );
   }
   if (status === "profiled") {
-    actions.push("Reporter les points favorables et défavorables dans le calcul de mise maximale.");
+    actions.push(
+      "Reporter les points favorables et défavorables dans le calcul d’enchère plafond.",
+    );
   }
   return actions.slice(0, 4);
 }
@@ -449,25 +452,6 @@ function dedupeSignals(signals: NeighborhoodSignal[]): NeighborhoodSignal[] {
   });
 }
 
-function flattenKeyValues(value: unknown, path = ""): Array<{ path: string; value: unknown }> {
-  if (!value || typeof value !== "object") return [];
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) => flattenPrimitiveOrObject(item, `${path}[${index}]`));
-  }
-
-  return Object.entries(value as Record<string, unknown>).flatMap(([key, item]) =>
-    flattenPrimitiveOrObject(item, path ? `${path}.${key}` : key),
-  );
-}
-
-function flattenPrimitiveOrObject(
-  value: unknown,
-  path: string,
-): Array<{ path: string; value: unknown }> {
-  if (value && typeof value === "object") return flattenKeyValues(value, path);
-  return [{ path, value }];
-}
-
 function cleanText(value: unknown): string | null {
   if (typeof value === "string" || typeof value === "number") {
     const text = String(value).replace(/\s+/g, " ").trim();
@@ -485,21 +469,6 @@ function cleanText(value: unknown): string | null {
     return text || null;
   }
   return null;
-}
-
-function normalizeText(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[’']/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function excerpt(value: string): string {
-  const text = value.replace(/\s+/g, " ").trim();
-  return text.length > 180 ? `${text.slice(0, 177).trim()}...` : text;
 }
 
 function formatNumber(value: number): string {

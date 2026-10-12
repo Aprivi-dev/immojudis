@@ -7,13 +7,13 @@ import {
 
 describe("lawyer directory", () => {
   it("déduit le barreau depuis le tribunal de l'annonce", () => {
-    expect(inferBarAssociation("Tribunal judiciaire de Bordeaux", "Pessac")).toBe("Bordeaux");
-    expect(inferBarAssociation("TJ de Paris — saisie immobilière", "Clichy")).toBe("Paris");
+    expect(inferBarAssociation("Tribunal judiciaire de Bordeaux")).toBe("Bordeaux");
+    expect(inferBarAssociation("TJ de Paris — saisie immobilière")).toBe("Paris");
   });
 
-  it("utilise la ville lorsque le tribunal ne permet pas de déduire le barreau", () => {
-    expect(inferBarAssociation("Cour d'appel", "Lyon")).toBe("Lyon");
-    expect(inferBarAssociation(null, "Barreau de Lille")).toBe("Lille");
+  it("n'utilise jamais la ville de la vente lorsque le tribunal ne désigne pas de siège", () => {
+    expect(inferBarAssociation("Cour d'appel")).toBeNull();
+    expect(inferBarAssociation(null)).toBeNull();
   });
 
   it("résout les barreaux dont le nom officiel diffère de la ville du tribunal", () => {

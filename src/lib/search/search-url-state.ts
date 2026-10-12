@@ -1,6 +1,7 @@
 import { validSaleDate } from "./sale-date-range";
 import { asFiniteNumber } from "@/lib/types";
 import { parseSaleType, type SaleTypeFilter } from "@/lib/sale-types";
+import { textValue } from "@/lib/guards";
 
 export type ViewportBounds = {
   north: number;
@@ -64,19 +65,17 @@ export type SalesSearchParams = {
 
 export type SalesSearchUrlRecord = Record<string, string | number | boolean | undefined>;
 
-function stringValue(value: unknown): string | undefined {
-  if (typeof value === "string") return value.trim() || undefined;
-  if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  return undefined;
+function optionalText(value: unknown): string | undefined {
+  return textValue(value) ?? undefined;
 }
 
-function numberValue(value: unknown): number | undefined {
+function nonNegativeNumber(value: unknown): number | undefined {
   const parsed = asFiniteNumber(value);
   return parsed != null && parsed >= 0 ? parsed : undefined;
 }
 
 function positiveInteger(value: unknown): number | undefined {
-  const parsed = numberValue(value);
+  const parsed = nonNegativeNumber(value);
   if (parsed == null) return undefined;
   const rounded = Math.floor(parsed);
   return rounded > 0 ? rounded : undefined;
@@ -89,7 +88,7 @@ function booleanValue(value: unknown): boolean | undefined {
 }
 
 function listValue(value: unknown): string[] | undefined {
-  const raw = stringValue(value);
+  const raw = optionalText(value);
   if (!raw) return undefined;
   const next = raw
     .split(",")
@@ -99,7 +98,7 @@ function listValue(value: unknown): string[] | undefined {
 }
 
 export function parseViewport(value: unknown): ViewportBounds | undefined {
-  const raw = stringValue(value);
+  const raw = optionalText(value);
   if (!raw) return undefined;
 
   const [north, south, east, west] = raw.split(":").map((part) => Number(part));
@@ -110,7 +109,7 @@ export function parseViewport(value: unknown): ViewportBounds | undefined {
 }
 
 export function parseBbox(value: unknown): ViewportBounds | undefined {
-  const raw = stringValue(value);
+  const raw = optionalText(value);
   if (!raw) return undefined;
 
   const decoded = raw.includes(",") ? raw : decodeBase64SearchValue(raw);
@@ -147,7 +146,7 @@ function decodeBase64SearchValue(raw: string) {
 }
 
 function parseSort(value: unknown): SearchSortKey | undefined {
-  const raw = stringValue(value);
+  const raw = optionalText(value);
   if (!raw) return undefined;
   if (SEARCH_SORT_KEYS.includes(raw as SearchSortKey)) return raw as SearchSortKey;
 
@@ -160,7 +159,7 @@ function parseSort(value: unknown): SearchSortKey | undefined {
 }
 
 function parseTransactionType(value: unknown): TransactionType | undefined {
-  const raw = stringValue(value);
+  const raw = optionalText(value);
   return TRANSACTION_TYPES.includes(raw as TransactionType) ? (raw as TransactionType) : undefined;
 }
 
@@ -169,33 +168,33 @@ export function validateSalesSearch(search: Record<string, unknown>): SalesSearc
     minSaleDate: validSaleDate(search.minSaleDate),
     maxSaleDate: validSaleDate(search.maxSaleDate),
     saleType: parseSaleType(search.saleType),
-    city: stringValue(search.city),
-    department: stringValue(search.department),
-    tribunal: stringValue(search.tribunal ?? search.tribunal_code),
-    query: stringValue(search.query) ?? stringValue(search.q),
+    city: optionalText(search.city),
+    department: optionalText(search.department),
+    tribunal: optionalText(search.tribunal ?? search.tribunal_code),
+    query: optionalText(search.query) ?? optionalText(search.q),
     viewport: parseViewport(search.viewport) ?? parseBbox(search.bbox),
     sort: parseSort(search.sort),
-    minPrice: numberValue(search.minPrice ?? search.min_price),
-    maxPrice: numberValue(search.maxPrice ?? search.max_price),
-    minBeds: numberValue(search.minBeds ?? search.beds),
-    minBaths: numberValue(search.minBaths ?? search.baths),
-    minSqft: numberValue(search.minSqft ?? search.min_surface),
-    maxSqft: numberValue(search.maxSqft),
+    minPrice: nonNegativeNumber(search.minPrice ?? search.min_price),
+    maxPrice: nonNegativeNumber(search.maxPrice ?? search.max_price),
+    minBeds: nonNegativeNumber(search.minBeds ?? search.beds),
+    minBaths: nonNegativeNumber(search.minBaths ?? search.baths),
+    minSqft: nonNegativeNumber(search.minSqft ?? search.min_surface),
+    maxSqft: nonNegativeNumber(search.maxSqft),
     homeTypes: listValue(search.homeTypes ?? search.type),
     status: listValue(search.status),
     page: positiveInteger(search.page),
     limit: positiveInteger(search.limit),
-    keywords: stringValue(search.keywords),
+    keywords: optionalText(search.keywords),
     transactionType: parseTransactionType(search.transactionType),
-    occupancy: stringValue(search.occupancy),
+    occupancy: optionalText(search.occupancy),
     dpeClasses: listValue(search.dpe ?? search.dpeClasses),
-    minScore: numberValue(search.minScore ?? search.min_score),
-    maxPricePerM2: numberValue(search.maxPricePerM2 ?? search.max_price_per_m2),
-    minYield: numberValue(search.minYield ?? search.min_yield),
-    minMarketDiscount: numberValue(search.minMarketDiscount ?? search.min_market_discount),
+    minScore: nonNegativeNumber(search.minScore ?? search.min_score),
+    maxPricePerM2: nonNegativeNumber(search.maxPricePerM2 ?? search.max_price_per_m2),
+    minYield: nonNegativeNumber(search.minYield ?? search.min_yield),
+    minMarketDiscount: nonNegativeNumber(search.minMarketDiscount ?? search.min_market_discount),
     houseWithLand: booleanValue(search.houseWithLand ?? search.house_with_land),
-    aroundAddress: stringValue(search.aroundAddress ?? search.around_address),
-    aroundRadius: numberValue(search.aroundRadius ?? search.around_radius),
+    aroundAddress: optionalText(search.aroundAddress ?? search.around_address),
+    aroundRadius: nonNegativeNumber(search.aroundRadius ?? search.around_radius),
     yearBuilt: positiveInteger(search.yearBuilt),
     openHouse: booleanValue(search.openHouse),
     map: booleanValue(search.map),
@@ -243,6 +242,22 @@ export function salesSearchToUrlRecord(search: SalesSearchParams): SalesSearchUr
     map: search.map ? true : undefined,
     searchAsMove: search.searchAsMove ? true : undefined,
   };
+}
+
+/**
+ * Stable identity of a search, shared by the server (first paint) and the
+ * client (React Query keys) so hydrated rows are found under the same key.
+ */
+export function stableUrlRecord(record: SalesSearchUrlRecord) {
+  return JSON.stringify(
+    Object.entries(record)
+      .filter(([, value]) => value != null && value !== "")
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+}
+
+export function salesSearchSignature(search: SalesSearchParams): string {
+  return stableUrlRecord(salesSearchToUrlRecord(search));
 }
 
 export function mergeSalesSearch(

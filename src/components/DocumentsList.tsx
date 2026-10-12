@@ -20,7 +20,7 @@ export function DocumentsList({ documents }: { documents: unknown }) {
             rel="noopener noreferrer"
             className="group flex w-full items-center gap-4 py-4 text-sm transition-colors hover:bg-surface/40"
           >
-            <FileText className="h-4 w-4 shrink-0 text-gold" />
+            <FileText className="h-4 w-4 shrink-0 text-gold-text" />
             <span className="min-w-0 flex-1">
               <span className="block break-words font-medium text-foreground">
                 {d.name ?? d.url.split("/").pop() ?? `Pièce ${i + 1}`}
@@ -32,7 +32,7 @@ export function DocumentsList({ documents }: { documents: unknown }) {
                 {documentExtractionSummary(d as SaleDocument & Partial<SaleDocumentRich>)}
               </span>
             </span>
-            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-gold-soft" />
+            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-gold-text" />
           </a>
         </li>
       ))}

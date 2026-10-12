@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getDataQualityReport } from "@/lib/data-quality-monitor";
+import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const report = await getDataQualityReport(bearerTokenFromRequest(request));
     return NextResponse.json(report, {
@@ -12,12 +17,11 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Qualité data indisponible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.startsWith("Forbidden")
-        ? 403
-        : 500;
-    return NextResponse.json({ error: message }, { status });
+    return adminErrorResponse(error, {
+      fallbackMessage: "Qualité data indisponible",
+      fallbackStatus: 500,
+    });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);

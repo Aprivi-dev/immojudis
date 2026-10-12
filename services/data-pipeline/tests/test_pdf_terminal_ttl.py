@@ -135,7 +135,7 @@ def test_robots_block_is_rechecked_after_ttl_but_social_candidate_stays_skipped(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    blocked_url = "https://www.licitor.com/data/pub/media/annonce/pv.pdf"
+    blocked_url = "https://www.licitor.com/data/pub/doc/pv.pdf"
     social_url = "https://www.facebook.com/auction/123"
     sale = _sale(
         "https://www.licitor.com/annonce/terminal-robots-ttl",

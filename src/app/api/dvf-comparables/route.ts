@@ -1,13 +1,21 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { dvfComparablesQuerySchema, getDvfComparables } from "@/lib/dvf-comparables";
 
 export async function GET(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "dvf-comparables",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     const url = new URL(request.url);
     const input = dvfComparablesQuerySchema.parse(Object.fromEntries(url.searchParams.entries()));
     const response = await getDvfComparables({ auth, input });
@@ -19,12 +27,8 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Comparables DVF indisponibles";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservé")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    return apiRouteError(error, request, "dvf-comparables", {
+      fallbackMessage: "Comparables DVF indisponibles",
+    });
   }
 }

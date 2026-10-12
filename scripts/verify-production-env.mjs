@@ -116,7 +116,12 @@ const legalNames = [
   "NEXT_PUBLIC_LEGAL_MEDIATOR_ADDRESS",
   "NEXT_PUBLIC_LEGAL_MEDIATOR_WEBSITE",
 ];
-const missingLegal = stripeEnabled ? legalNames.filter((name) => isMissing(process.env[name])) : [];
+// The legal notice is mandatory as soon as the site is public (LCEN art. 6-III),
+// not only when payments are on. Enforcement is opt-in (REQUIRE_LEGAL_IDENTITY=true)
+// so a build is never blocked before the owner has the values; until then it warns.
+const legalRequired = stripeEnabled || process.env.REQUIRE_LEGAL_IDENTITY === "true";
+const unfilledLegal = legalNames.filter((name) => isMissing(process.env[name]));
+const missingLegal = legalRequired ? unfilledLegal : [];
 const missingTransactionalEmail = stripeEnabled
   ? ["RESEND_API_KEY", "ALERT_EMAIL_FROM"].filter((name) => isMissing(process.env[name]))
   : [];
@@ -150,8 +155,13 @@ if (invalidPortalSecret) {
 }
 
 if (missingLegal.length) {
-  console.error("[env:prod] Paid checkout requires complete legal identity and mediation:");
+  console.error("[env:prod] Complete legal identity and mediation are required:");
   for (const name of missingLegal) console.error(`  - ${name}`);
+} else if (unfilledLegal.length) {
+  console.warn(
+    "[env:prod] Legal notice not filled in (mandatory for a public site; set REQUIRE_LEGAL_IDENTITY=true to enforce):",
+  );
+  for (const name of unfilledLegal) console.warn(`  - ${name}`);
 }
 
 if (missingTransactionalEmail.length) {

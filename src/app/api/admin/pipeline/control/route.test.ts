@@ -101,5 +101,11 @@ it("returns a server error when the update fails", async () => {
   const response = await PATCH(request({ enabled: true }));
 
   expect(response.status).toBe(500);
-  expect(await response.json()).toEqual({ error: "database unavailable" });
+  const body = await response.json();
+  expect(body).toMatchObject({
+    code: "INTERNAL_ERROR",
+    error: "Contrôle du pipeline indisponible",
+  });
+  expect(body.requestId).toEqual(expect.any(String));
+  expect(JSON.stringify(body)).not.toContain("database unavailable");
 });

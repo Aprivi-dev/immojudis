@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import AlertTriangle from "lucide-react/dist/esm/icons/alert-triangle.js";
 import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3.js";
@@ -11,25 +11,44 @@ import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { PremiumAdjudicationExplorer } from "@/components/PremiumAdjudicationExplorer";
+import { useAuth } from "@/hooks/use-auth";
+import { fetchAccessPlan } from "@/lib/client-api";
 import { fetchTribunalJudicialActivityDirectory } from "@/lib/tribunal-judicial-activity-directory-client";
 import type {
   TribunalJudicialActivityHistoryMonths,
   TribunalJudicialActivityRangeMetric,
   TribunalJudicialActivityResponse,
 } from "@/lib/tribunal-judicial-activity";
+import { queryKeys } from "@/lib/query-keys";
 
 const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 
-export function TribunalJudicialActivityExplorer() {
+export function TribunalJudicialActivityExplorer({
+  publicActivity = null,
+}: {
+  /** Free, server-rendered figures of the courts, shown to every visitor. */
+  publicActivity?: ReactNode;
+}) {
+  const { session, loading: authLoading } = useAuth();
   const [historyMonths, setHistoryMonths] = useState<TribunalJudicialActivityHistoryMonths>(36);
   const [search, setSearch] = useState("");
   const [selectedRegion, setSelectedRegion] = useState("");
   const [selectedCourtCode, setSelectedCourtCode] = useState("");
   const [selectedPropertyType, setSelectedPropertyType] = useState("");
+  const planQuery = useQuery({
+    queryKey: queryKeys.tribunalJudicialActivityPlan(session?.user.id),
+    queryFn: fetchAccessPlan,
+    enabled: Boolean(session) && !authLoading,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const hasAccess = planQuery.data?.plan.hasAnalysisAccess === true;
   const query = useQuery({
-    queryKey: ["tribunal-judicial-activity-directory", historyMonths],
+    queryKey: queryKeys.tribunalJudicialActivityDirectory(historyMonths),
     queryFn: () => fetchTribunalJudicialActivityDirectory(historyMonths),
+    enabled: Boolean(session) && hasAccess,
     retry: false,
     staleTime: 5 * 60_000,
   });
@@ -54,121 +73,137 @@ export function TribunalJudicialActivityExplorer() {
   );
 
   return (
-    <main className="min-h-screen bg-[#eef7ff] text-brand-navy">
+    <main id="contenu" className="min-h-screen bg-background text-brand-navy">
       <header className="border-b border-brand-navy/10 bg-white/80">
-        <div className="mx-auto max-w-[1260px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-soft">
+        <div className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
             <Landmark className="h-4 w-4" aria-hidden />
             Observatoire des ventes judiciaires
           </p>
-          <h1 className="mt-3 max-w-5xl font-display text-4xl font-medium leading-tight sm:text-5xl lg:text-6xl">
-            Les adjudications, tribunal par tribunal
+          <h1 className="mt-3 max-w-5xl font-display text-4xl font-medium leading-tight sm:text-5xl">
+            Statistiques Tribunaux
           </h1>
           <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
-            Explorez séparément les annonces suivies par Immojudis et les prix d’adjudication
-            historiques publiés par Licitor. Les membres Analyse peuvent comparer les résultats
-            nationaux et les tribunaux dont l’échantillon a été contrôlé.
+            À quel prix les biens sont-ils adjugés ? Comparez les prix d’adjudication publiés par
+            Licitor, les mises à prix et les types de biens, en France et tribunal par tribunal. Un
+            baromètre réservé aux membres Analyse, complété par l’historique des audiences suivies
+            par Immojudis.
           </p>
-
-          {query.data ? (
-            <dl className="mt-8 grid max-w-5xl border-y border-brand-navy/12 sm:grid-cols-2 lg:grid-cols-4">
-              <SummaryValue label="Tribunaux suivis" value={query.data.totals.trackedCourts} />
-              <SummaryValue
-                label="Annonces passées suivies"
-                value={query.data.totals.observedPastSales}
-              />
-              <SummaryValue label="Ventes à venir" value={query.data.totals.upcomingSales} />
-              <SummaryValue
-                label="Dans les 90 jours"
-                value={query.data.totals.upcomingSales90Days}
-              />
-            </dl>
-          ) : null}
         </div>
       </header>
 
-      <div className="mx-auto max-w-[1260px] px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-        <PremiumAdjudicationExplorer selectedCourtCode={selected?.court.code ?? null} />
+      <div className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        {publicActivity}
+        <PremiumAdjudicationExplorer />
 
-        <div className="mt-10">
-          {query.data ? <NationalOverview data={query.data} /> : null}
-          {query.data?.regions.length ? (
-            <RegionalCoverage
-              data={query.data}
-              selectedRegion={selectedRegion}
-              onRegionChange={(region) => {
-                setSelectedRegion(region);
-                setSelectedCourtCode("");
-                setSelectedPropertyType("");
-              }}
-            />
-          ) : null}
-
-          <section aria-label="Choisir un tribunal" className="grid gap-4 lg:grid-cols-[1fr_auto]">
-            <label>
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
-                Rechercher un tribunal
-              </span>
-              <span className="relative mt-2 block">
-                <Search
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/45"
-                  aria-hidden
-                />
-                <Input
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Marseille, Paris, Lyon…"
-                  className="h-11 border-brand-navy/15 bg-white pl-10"
-                />
-              </span>
-            </label>
-            <fieldset>
-              <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
-                Historique observé
-              </legend>
-              <div className="mt-2 inline-flex rounded-md border border-brand-navy/15 bg-white p-1">
-                {WINDOWS.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={historyMonths === value}
-                    onClick={() => setHistoryMonths(value)}
-                    className={`min-h-9 rounded px-3 text-sm font-semibold ${
-                      historyMonths === value
-                        ? "bg-brand-navy text-white"
-                        : "text-brand-navy/65 hover:bg-brand-navy/5"
-                    }`}
-                  >
-                    {value} mois
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-          </section>
-
-          {query.isLoading ? <ExplorerSkeleton /> : null}
-          {query.isError ? <ExplorerError onRetry={() => void query.refetch()} /> : null}
-          {!query.isLoading && !query.isError && !filteredTribunals.length ? (
-            <p className="mt-8 border-y border-brand-navy/12 bg-white px-4 py-8 text-sm">
-              Aucun tribunal suivi ne correspond aux filtres sélectionnés
-              {search ? ` pour « ${search} »` : ""}.
+        {authLoading || (session && planQuery.isLoading) ? (
+          <p className="mt-10 text-sm text-brand-navy/65" role="status">
+            Vérification de votre accès Analyse…
+          </p>
+        ) : planQuery.isError ? (
+          <PremiumFeaturePreview
+            title="Activité des annonces et prochaines audiences"
+            description="La couverture, les délais de détection et les audiences suivies sont disponibles dans l’espace Analyse."
+            labels={["Couverture suivie", "Délais observés", "Audiences à venir"]}
+          />
+        ) : !hasAccess ? (
+          <PremiumFeaturePreview
+            title="Activité des annonces et prochaines audiences"
+            description="Comparez la couverture du catalogue, les délais observés et les audiences à venir, tribunal par tribunal."
+            labels={["Couverture suivie", "Délais observés", "Audiences à venir"]}
+          />
+        ) : (
+          <details className="mt-10 rounded-xl border border-brand-navy/15 bg-white p-5 sm:p-7">
+            <summary className="cursor-pointer font-display text-2xl font-semibold">
+              Activité des annonces et prochaines audiences
+            </summary>
+            <p className="my-5 max-w-3xl text-sm leading-relaxed text-brand-navy/70">
+              Ce complément décrit le catalogue suivi par Immojudis. Sa période filtre uniquement
+              les annonces ; elle ne modifie pas la période des prix d’adjudication du baromètre.
+              Une audience passée ne prouve pas qu’un bien a été vendu.
             </p>
-          ) : null}
+            {query.data ? <NationalOverview data={query.data} /> : null}
+            {query.data?.regions.length ? (
+              <RegionalCoverage
+                data={query.data}
+                selectedRegion={selectedRegion}
+                onRegionChange={(region) => {
+                  setSelectedRegion(region);
+                  setSelectedCourtCode("");
+                  setSelectedPropertyType("");
+                }}
+              />
+            ) : null}
 
-          {selected ? (
-            <TribunalProfile
-              tribunal={selected}
-              tribunals={filteredTribunals}
-              selectedPropertyType={selectedType?.propertyType ?? ""}
-              onCourtChange={(courtCode) => {
-                setSelectedCourtCode(courtCode);
-                setSelectedPropertyType("");
-              }}
-              onPropertyTypeChange={setSelectedPropertyType}
-            />
-          ) : null}
-        </div>
+            <section
+              aria-label="Choisir un tribunal"
+              className="grid gap-4 lg:grid-cols-[1fr_auto]"
+            >
+              <label>
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
+                  Rechercher un tribunal
+                </span>
+                <span className="relative mt-2 block">
+                  <Search
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-navy/65"
+                    aria-hidden
+                  />
+                  <Input
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Marseille, Paris, Lyon…"
+                    className="h-11 border-brand-navy/15 bg-white pl-10"
+                  />
+                </span>
+              </label>
+              <fieldset>
+                <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
+                  Historique observé
+                </legend>
+                <div className="mt-2 inline-flex rounded-md border border-brand-navy/15 bg-white p-1">
+                  {WINDOWS.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={historyMonths === value}
+                      onClick={() => setHistoryMonths(value)}
+                      className={`min-h-9 rounded px-3 text-sm font-semibold ${
+                        historyMonths === value
+                          ? "bg-brand-navy text-white"
+                          : "text-brand-navy/65 hover:bg-brand-navy/5"
+                      }`}
+                    >
+                      {value} mois
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            </section>
+
+            {query.isLoading ? <ExplorerSkeleton /> : null}
+            {query.isError ? <ExplorerError onRetry={() => void query.refetch()} /> : null}
+            {!query.isLoading && !query.isError && !filteredTribunals.length ? (
+              <p className="mt-8 border-y border-brand-navy/12 bg-white px-4 py-8 text-sm">
+                Aucun tribunal suivi ne correspond aux filtres sélectionnés
+                {search ? ` pour « ${search} »` : ""}.
+              </p>
+            ) : null}
+
+            {selected ? (
+              <TribunalProfile
+                tribunal={selected}
+                tribunals={filteredTribunals}
+                selectedPropertyType={selectedType?.propertyType ?? ""}
+                onCourtChange={(courtCode) => {
+                  setSelectedCourtCode(courtCode);
+                  setSelectedPropertyType("");
+                }}
+                onPropertyTypeChange={setSelectedPropertyType}
+              />
+            ) : null}
+          </details>
+        )}
       </div>
     </main>
   );
@@ -180,7 +215,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
     <section aria-labelledby="national-overview-title" className="mb-10">
       <div className="flex flex-col gap-3 border-b border-brand-navy/14 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             Niveau 1 · Périmètre suivi
           </p>
           <h2
@@ -189,13 +224,16 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
           >
             Repères du périmètre suivi
           </h2>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/62">
-            Les annonces retenues sont judiciaires, vérifiées ou recoupées et rattachées à un
-            tribunal actif du référentiel Justice. Ce périmètre ne prétend pas couvrir toute la
-            France.
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/65">
+            Pipeline à venir : annonces judiciaires du catalogue, vérifiées ou recoupées. Historique
+            : audiences passées du catalogue et de l’archive du graphe des résultats, qui conserve
+            les annonces retirées du catalogue après l’audience. Toutes sont rattachées à un
+            tribunal actif du référentiel Justice (compétence communale vérifiée ou libellé
+            explicite de l’annonce) et une vente publiée par plusieurs sources n’est comptée qu’une
+            fois. Ce périmètre ne prétend pas couvrir toute la France.
           </p>
         </div>
-        <p className="text-xs font-semibold text-brand-navy/58">
+        <p className="text-xs font-semibold text-brand-navy/65">
           Historique observé de {data.period.historyMonths} mois · pipeline à venir sur 12 mois
         </p>
       </div>
@@ -206,11 +244,11 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
           aria-labelledby="national-observed-title"
         >
           <div className="border-b border-brand-navy/10 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
               Historique observé
             </p>
             <h3 id="national-observed-title" className="mt-1 font-display text-2xl font-semibold">
-              Annonces passées suivies
+              Audiences passées suivies
             </h3>
           </div>
           <div className="grid md:grid-cols-2">
@@ -222,14 +260,15 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
             />
             <ProfileMetric
               icon={Clock3}
-              label="Détection → vente · historique"
+              label="Détection → audience · historique"
               value={formatDaysMedian(national.discoveryLeadRangeDays)}
               detail={formatDaysRange(national.discoveryLeadRangeDays)}
             />
           </div>
-          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/58">
-            {formatNumber(national.observedPastSales)} ventes passées observées depuis le{" "}
-            {formatDate(data.period.historyStart)}.
+          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/65">
+            {formatNumber(national.observedPastSales)} audiences passées observées depuis le{" "}
+            {formatDate(data.period.historyStart)}. Une audience passée ne prouve pas que le bien a
+            été vendu.
           </p>
         </section>
 
@@ -238,7 +277,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
           aria-labelledby="national-upcoming-title"
         >
           <div className="border-b border-brand-navy/10 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
               Pipeline à venir
             </p>
             <h3 id="national-upcoming-title" className="mt-1 font-display text-2xl font-semibold">
@@ -259,7 +298,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
               detail={formatDaysRange(national.upcomingDiscoveryLeadRangeDays)}
             />
           </div>
-          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/58">
+          <p className="border-t border-brand-navy/10 px-5 py-4 text-xs leading-relaxed text-brand-navy/65">
             {formatNumber(national.upcomingSales)} ventes à venir suivies, dont{" "}
             {formatNumber(national.upcomingSales90Days)} dans les 90 prochains jours.
           </p>
@@ -282,7 +321,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
         />
       </div>
 
-      <p className="mt-4 text-xs leading-relaxed text-brand-navy/55">
+      <p className="mt-4 text-xs leading-relaxed text-brand-navy/65">
         Ces agrégats décrivent seulement le catalogue suivi par Immojudis. Les prix d’adjudication
         déclarés par Licitor sont présentés séparément aux membres Analyse ; les taux d’issue
         définitive ne sont pas déduits de ces prix.
@@ -311,7 +350,7 @@ function RegionalCoverage({
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             Niveau 2 · Ressorts judiciaires
           </p>
           <h2
@@ -348,7 +387,7 @@ function RegionalCoverage({
               <span className="font-display text-xl font-semibold">{region.name}</span>
               <span
                 className={`mt-2 block text-xs ${
-                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/58"
+                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/65"
                 }`}
               >
                 {region.coverage.publishableCourtProfiles}/{region.coverage.trackedCourts} profils
@@ -356,14 +395,14 @@ function RegionalCoverage({
               </span>
               <span
                 className={`mt-3 block text-sm font-semibold ${
-                  selectedRegion === region.name ? "text-white" : "text-gold-soft"
+                  selectedRegion === region.name ? "text-white" : "text-gold-text"
                 }`}
               >
                 Historique · mise médiane {formatCurrencyMedian(region.startingPriceRangeEur)}
               </span>
               <span
                 className={`mt-1 block text-xs ${
-                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/58"
+                  selectedRegion === region.name ? "text-white/70" : "text-brand-navy/65"
                 }`}
               >
                 Pipeline · {formatNumber(region.upcomingSales)} à venir · mise médiane{" "}
@@ -404,18 +443,18 @@ function TribunalProfile({
     <article className="mt-8 border-t border-brand-navy/14 pt-7" aria-labelledby="court-title">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             Profil statistique du tribunal
           </p>
           <h2 id="court-title" className="mt-2 font-display text-3xl font-semibold sm:text-5xl">
             {tribunal.court.name}
           </h2>
-          <p className="mt-2 text-sm text-brand-navy/60">
+          <p className="mt-2 text-sm text-brand-navy/65">
             {tribunal.court.judicialRegion ?? "Ressort judiciaire non publié"}
           </p>
         </div>
         <label>
-          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/60">
+          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/65">
             Tribunal affiché
           </span>
           <select
@@ -435,8 +474,8 @@ function TribunalProfile({
       <div className="mt-7 flex flex-col gap-4 rounded-lg border border-brand-navy/12 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold">Affiner l’historique observé par type de bien</p>
-          <p className="mt-1 text-xs text-brand-navy/55">
-            Les petits groupes restent masqués sous cinq annonces passées.
+          <p className="mt-1 text-xs text-brand-navy/65">
+            Les petits groupes restent masqués sous cinq audiences passées.
           </p>
         </div>
         <label className="sm:w-72">
@@ -444,7 +483,7 @@ function TribunalProfile({
           <select
             value={selectedPropertyType}
             onChange={(event) => onPropertyTypeChange(event.target.value)}
-            className="h-11 w-full rounded-md border border-brand-navy/15 bg-[#f8fbfe] px-3 text-sm font-semibold"
+            className="h-11 w-full rounded-md border border-brand-navy/15 bg-surface-muted px-3 text-sm font-semibold"
           >
             <option value="">Tous types de biens</option>
             {tribunal.activity.propertyTypeBenchmarks.map((benchmark) => (
@@ -458,11 +497,11 @@ function TribunalProfile({
 
       <section aria-labelledby="court-observed-title" className="mt-6">
         <div className="mb-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             Historique observé
           </p>
           <h3 id="court-observed-title" className="mt-1 font-display text-2xl font-semibold">
-            Annonces passées · {tribunal.period.historyMonths} mois
+            Audiences passées · {tribunal.period.historyMonths} mois
           </h3>
         </div>
         <div className="grid overflow-hidden rounded-lg border border-brand-navy/12 bg-white md:grid-cols-3">
@@ -474,22 +513,24 @@ function TribunalProfile({
           />
           <ProfileMetric
             icon={Clock3}
-            label={`Détection → vente · ${scopeLabel}`}
+            label={`Détection → audience · ${scopeLabel}`}
             value={formatDaysMedian(leadRange)}
             detail={formatDaysRange(leadRange)}
           />
           <ProfileMetric
             icon={CalendarDays}
-            label="Ventes passées observées"
+            label="Audiences passées observées"
             value={formatNumber(tribunal.activity.observedPastSales)}
-            detail={`Depuis le ${formatDate(tribunal.period.historyStart)}`}
+            detail={`Depuis le ${formatDate(tribunal.period.historyStart)} · dont ${formatNumber(
+              tribunal.provenance.archivedPastSales,
+            )} issues de l’archive`}
           />
         </div>
       </section>
 
       <section aria-labelledby="court-upcoming-title" className="mt-7">
         <div className="mb-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-soft">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
             Pipeline à venir
           </p>
           <h3 id="court-upcoming-title" className="mt-1 font-display text-2xl font-semibold">
@@ -530,14 +571,18 @@ function TribunalProfile({
             Comment lire ces chiffres ?
           </h3>
           <p className="mt-3 text-sm leading-relaxed text-brand-navy/66">
-            Les fourchettes historiques vont du 25e au 75e percentile : la moitié des annonces
+            Les fourchettes historiques vont du 25e au 75e percentile : la moitié des audiences
             passées retenues se situe à l’intérieur. Une mise à prix basse ne signifie pas que le
             bien sera adjugé à ce montant. Les frais, l’état du bien et la concurrence restent
             déterminants.
           </p>
-          <p className="mt-3 text-xs leading-relaxed text-brand-navy/54">
-            Échantillons : {priceRange.sampleSize} mises à prix et {leadRange.sampleSize} délais ·
-            annonces judiciaires vérifiées ou recoupées uniquement.
+          <p className="mt-3 text-xs leading-relaxed text-brand-navy/65">
+            Échantillons : {priceRange.sampleSize} mises à prix et {leadRange.sampleSize} délais. Le
+            pipeline ne retient que des annonces vérifiées ou recoupées ; l’archive du graphe des
+            résultats ne conserve ni ce statut ni les dates de visite.
+            {tribunal.provenance.mergedDuplicateAnnouncements > 0
+              ? ` ${formatNumber(tribunal.provenance.mergedDuplicateAnnouncements)} doublons entre sources ont été regroupés.`
+              : ""}
           </p>
         </section>
 
@@ -563,8 +608,8 @@ function TribunalProfile({
         </section>
       </div>
 
-      <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-brand-navy/55">
-        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-soft" aria-hidden />
+      <p className="mt-6 flex items-start gap-2 text-xs leading-relaxed text-brand-navy/65">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" aria-hidden />
         Indicateurs de couverture Immojudis, non exhaustifs du greffe et non prédictifs d’une vente
         individuelle. Données en attente, conflictuelles ou sans rattachement exact exclues.
       </p>
@@ -585,21 +630,12 @@ function ProfileMetric({
 }) {
   return (
     <div className="border-b border-brand-navy/10 p-5 last:border-b-0 md:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0 xl:border-r xl:last:border-r-0">
-      <Icon className="h-5 w-5 text-gold-soft" aria-hidden />
-      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/55">
+      <Icon className="h-5 w-5 text-gold-text" aria-hidden />
+      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/65">
         {label}
       </p>
       <p className="mt-2 font-display text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-2 text-xs leading-relaxed text-brand-navy/55">{detail}</p>
-    </div>
-  );
-}
-
-function SummaryValue({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border-b border-brand-navy/10 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:px-5 sm:first:pl-0 sm:last:border-r-0">
-      <dt className="text-xs text-brand-navy/55">{label}</dt>
-      <dd className="mt-1 font-display text-3xl font-semibold tabular-nums">{value}</dd>
+      <p className="mt-2 text-xs leading-relaxed text-brand-navy/65">{detail}</p>
     </div>
   );
 }
@@ -647,20 +683,6 @@ function formatDaysRange(metric: TribunalJudicialActivityRangeMetric): string {
   return metric.status === "published"
     ? `Fourchette centrale ${formatNumber(metric.p25)} – ${formatNumber(metric.p75)} jours`
     : `${metric.sampleSize} délais · minimum requis : 5`;
-}
-
-function formatCadence(
-  metric: TribunalJudicialActivityResponse["activity"]["medianDaysBetweenHearingDays"],
-): string {
-  return metric.status === "published"
-    ? `Tous les ${formatNumber(metric.value)} jours`
-    : "Non publié";
-}
-
-function formatMetricNumber(
-  metric: TribunalJudicialActivityResponse["activity"]["medianLotsPerHearingDay"],
-): string {
-  return metric.status === "published" ? formatNumber(metric.value) : "Non publié";
 }
 
 function formatPercentMetric(

@@ -11,14 +11,6 @@ import {
   buildAlertName,
 } from "./search-page-state";
 
-vi.mock("@/lib/router-compat", () => ({
-  Link: ({ href, children, ...props }: React.ComponentProps<"a">) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}));
-
 import { SaleTypeFilter } from "./SaleTypeFilter";
 
 function FilterHarness() {
@@ -27,8 +19,24 @@ function FilterHarness() {
 }
 
 describe("sale type search controls", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllEnvs();
+  });
+  it("offers the notarial and State sales by default", () => {
+    render(<FilterHarness />);
+    expect(screen.getByRole("button", { name: "Chez le notaire" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Domaniales" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Au tribunal" })).toBeTruthy();
+  });
+  it("hides them only when the flag is explicitly set to false", () => {
+    vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "false");
+    render(<FilterHarness />);
+    expect(screen.queryByRole("button", { name: "Chez le notaire" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Domaniales" })).toBeNull();
+  });
   it("exposes an accessible selection and a working comparison anchor", () => {
+    vi.stubEnv("NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED", "true");
     render(<FilterHarness />);
     expect(screen.getByRole("group", { name: "Type de vente" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Chez le notaire" }));

@@ -1,3 +1,4 @@
+import { flattenKeyValues } from "@/lib/analysis-text";
 import type { AuctionSale, SaleDocumentRich, SaleRisk } from "@/lib/types";
 
 export type CadastralReference = {
@@ -333,7 +334,7 @@ function confidenceLabel(
     status === "identified" &&
     references.some((reference) => reference.confidence === "structured")
   ) {
-    return "Parcelle API Carto rattachée";
+    return "Parcelle cadastrale rattachée par la cartographie";
   }
   if (status === "identified" && confidence === "high") return "Référence cadastrale structurée";
   if (status === "identified") return "Référence détectée à confirmer";
@@ -365,7 +366,7 @@ function cadastralSummary({
 
   if (status === "identified") {
     if (hasPointIntersection && !hasExplicitReference) {
-      return `Parcelle candidate repérée par intersection du point géocodé : ${formattedReferences.join(", ")}${surface}. À recouper avec le plan officiel.`;
+      return `Parcelle candidate repérée à partir de la position du bien : ${formattedReferences.join(", ")}${surface}. À recouper avec le plan officiel.`;
     }
     return `Parcelle repérée : ${formattedReferences.join(", ")}${surface}.`;
   }
@@ -378,7 +379,7 @@ function cadastralSummary({
   if (status === "surface_only") {
     return `Surface terrain connue (${Math.round(landSurfaceM2 ?? 0)} m²), parcelle à rattacher.`;
   }
-  return "Parcelle cadastrale à connecter ou à confirmer.";
+  return "Référence cadastrale absente ou à confirmer dans le plan officiel.";
 }
 
 function cadastralNextActions({
@@ -425,7 +426,7 @@ function cadastralNextActions({
 function cadastralLimitations(status: CadastralAnalysis["status"]): string[] {
   const limitations = [
     "Analyse issue des données collectées et des libellés de pièces ; elle ne remplace pas le plan cadastral officiel.",
-    "La jointure API Carto par point géocodé doit être recoupée avec l'adresse, le plan et le cahier des conditions de vente.",
+    "Le rattachement obtenu à partir de la position du bien doit être recoupé avec l'adresse, le plan et le cahier des conditions de vente.",
     "La parcelle, la contenance et les servitudes doivent être confirmées dans les pièces officielles.",
   ];
 
@@ -536,25 +537,6 @@ function riskTexts(risk: SaleRisk): string[] {
     );
   }
   return texts.map(cleanText).filter((text): text is string => Boolean(text));
-}
-
-function flattenKeyValues(value: unknown, path = ""): Array<{ path: string; value: unknown }> {
-  if (!value || typeof value !== "object") return [];
-  if (Array.isArray(value)) {
-    return value.flatMap((item, index) => flattenPrimitiveOrObject(item, `${path}[${index}]`));
-  }
-
-  return Object.entries(value as Record<string, unknown>).flatMap(([key, item]) =>
-    flattenPrimitiveOrObject(item, path ? `${path}.${key}` : key),
-  );
-}
-
-function flattenPrimitiveOrObject(
-  value: unknown,
-  path: string,
-): Array<{ path: string; value: unknown }> {
-  if (value && typeof value === "object") return flattenKeyValues(value, path);
-  return [{ path, value }];
 }
 
 function normalizeSection(value: unknown): string | null {

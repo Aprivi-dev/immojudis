@@ -9,7 +9,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil import parser
 
+from src.admission import is_date_only, sale_date_has_passed
+from src.listing_location import recover_listing_address, reject_monetary_address
 from src.models import AuctionSale
+from src.null_text import is_null_text
+from src.surface_text_recovery import extra_built_surface_from_text
 
 FRENCH_MONTHS = {
     "janvier": "January",
@@ -104,8 +108,14 @@ _VISIT_DATE_PATTERN = re.compile(
 )
 
 
-def make_sale_signature(sale_date: object, price: object) -> str:
-    """Stable change-signature for a listing: date (YYYY-MM-DD) + rounded price.
+# A card that turns cancelled, postponed or withdrawn keeps its date and price: only
+# its status tells the detail page must be read again.
+INTERRUPTED_SALE_STATUSES = frozenset({"cancelled", "postponed", "withdrawn"})
+
+
+def make_sale_signature(sale_date: object, price: object, status: object = None) -> str:
+    """Stable change-signature for a listing: date (YYYY-MM-DD) + rounded price,
+    plus the status when the sale is cancelled, postponed or withdrawn.
     Used identically on the DB side and the scrape side to decide whether a
     known listing is unchanged (so its detail page can be skipped)."""
     date_part = str(sale_date)[:10] if sale_date else ""
@@ -113,7 +123,9 @@ def make_sale_signature(sale_date: object, price: object) -> str:
         price_part = str(int(round(float(price)))) if price not in (None, "") else ""
     except (TypeError, ValueError):
         price_part = ""
-    return f"{date_part}|{price_part}"
+    signature = f"{date_part}|{price_part}"
+    interrupted = normalize_status(status) if status else None
+    return f"{signature}|{interrupted}" if interrupted in INTERRUPTED_SALE_STATUSES else signature
 
 
 def strip_accents(value: str) -> str:
@@ -126,7 +138,17 @@ def clean_text(value: object | None) -> str | None:
     if value is None:
         return None
     text = re.sub(r"\s+", " ", str(value).replace("\xa0", " ")).strip()
-    return text or None
+    # « nan » is what str() makes of a missing pandas/JSON value; it is not a city or a name.
+    return None if is_null_text(text) else text or None
+
+
+MIN_PLAUSIBLE_PRICE_EUR = Decimal("100")
+# A number optionally scaled by « k€ » or « M€ » (parse_price applies the factor).
+_PRICE_TOKEN = r"[0-9][0-9\s.,]*(?:\s*(?:[kM]\s*€|millions?\s+d['’]\s*euros?))?"
+_PRICE_SCALES = (
+    (re.compile(r"\s*(?:M\s*€|millions?\b)", re.I), Decimal("1000000")),
+    (re.compile(r"\s*(?:k\s*€|k\s*euros?\b)", re.I), Decimal("1000")),
+)
 
 
 def normalize_listing_address(value: object | None) -> str | None:
@@ -253,6 +275,12 @@ def is_date_only_value(value: object | None) -> bool:
 
 
 def parse_price(value: object | None) -> Decimal | None:
+    """Parse a euro amount (« 125 000,50 € », « 1,5 M€ », « 85 k€ »); under 100 € is not a price."""
+    price = _parse_price_amount(value)
+    return price if price is not None and price >= MIN_PLAUSIBLE_PRICE_EUR else None
+
+
+def _parse_price_amount(value: object | None) -> Decimal | None:
     if isinstance(value, Decimal):
         return value
     if isinstance(value, int):
@@ -267,12 +295,22 @@ def parse_price(value: object | None) -> Decimal | None:
         return None
     number = _normalize_numeric_token(match.group(1))
     try:
-        return Decimal(number)
+        amount = Decimal(number)
     except InvalidOperation:
         return None
+    rest = text[match.end() :]
+    for scale_pattern, factor in _PRICE_SCALES:
+        if scale_pattern.match(rest):
+            return amount * factor
+    return amount
 
 
 def extract_starting_price(raw_sale: dict[str, object]) -> Decimal | None:
+    return resolve_starting_price(raw_sale)[0]
+
+
+def resolve_starting_price(raw_sale: dict[str, object]) -> tuple[Decimal | None, bool]:
+    """Return the starting price and whether the explicit and textual values disagree."""
     explicit = parse_price(
         _field_or_source_block(
             raw_sale,
@@ -296,25 +334,38 @@ def extract_starting_price(raw_sale: dict[str, object]) -> Decimal | None:
         )
     )
     text_price = None
+    lot_scoped = False
     for pattern in (
-        r"(?P<label>mise\s+[àa]\s+prix(?:\s+initiale)?)\s*:?\s*(?P<price>[0-9][0-9\s.,]*)\s*(?:€|euros?)?",
-        r"(?P<label>prix\s+de\s+vente)\s*:\s*(?P<price>[0-9][0-9\s.,]*)\s*(?:€|euros?)?",
-        r"(?P<label>prix\s+plancher)\s*:?\s*(?P<price>[0-9][0-9\s.,]*)\s*(?:€|euros?)?",
+        rf"(?P<label>mise\s+[àa]\s+prix(?:\s+initiale)?)\s*:?\s*(?P<price>{_PRICE_TOKEN})\s*(?:€|euros?)?",
+        rf"(?P<label>prix\s+de\s+vente)\s*:\s*(?P<price>{_PRICE_TOKEN})\s*(?:€|euros?)?",
+        rf"(?P<label>prix\s+plancher)\s*:?\s*(?P<price>{_PRICE_TOKEN})\s*(?:€|euros?)?",
         r"(?P<label>premi[èe]re\s+offre\s+(?:possible\s+)?(?:à\s+partir\s+de\s+)?)"
-        r"(?P<price>[0-9][0-9\s.,]*)\s*(?:€|euros?)?",
+        rf"(?P<price>{_PRICE_TOKEN})\s*(?:€|euros?)?",
     ):
         match = re.search(pattern, text, re.I)
         if match:
             if _is_dvf_comparable_price_context(text, match.start(), match.end(), match.group("label")):
                 continue
             text_price = parse_price(match.group("price"))
+            lot_scoped = _is_lot_scoped_price(text, match.start(), match.end())
             break
-    if explicit is not None and text_price is not None:
+    if explicit is None or text_price is None:
+        return explicit or text_price, False
+    # The text may correct a mistyped explicit value only when both describe the
+    # same lot. A price attached to “lot 2” (or any price of a multi-lot sale)
+    # says nothing about the explicit value, which is then kept and flagged.
+    same_lot = not lot_scoped and "multi_lot_sale" not in (raw_sale.get("quality_flags") or [])
+    if same_lot:
         if explicit == text_price * Decimal("10"):
-            return text_price
+            return text_price, False
         if explicit > Decimal("1000000") and text_price < explicit:
-            return text_price
-    return explicit or text_price
+            return text_price, False
+    return explicit or text_price, bool(explicit) and explicit != text_price
+
+
+def _is_lot_scoped_price(text: str, start: int, end: int) -> bool:
+    context = text[max(0, start - 60) : min(len(text), end + 40)]
+    return bool(re.search(r"\blots?\s*(?:n[°o.]?\s*)?\d+", context, re.I))
 
 
 def _is_dvf_comparable_price_context(text: str, start: int, end: int, label: str) -> bool:
@@ -333,6 +384,18 @@ def _is_dvf_comparable_price_context(text: str, start: int, end: int, label: str
     return sum(bool(re.search(pattern, context)) for pattern in dvf_headers) >= 2
 
 
+_ADJUDICATION_MIN_EUR = Decimal("1000")
+_ADJUDICATION_MIN_RATIO = Decimal("0.1")
+_ADJUDICATION_PRICE = r"([0-9][0-9\s.,]*?\s*(?:[kM]\s*€|millions?\s+d['’]\s*euros?\b|€|euros?\b))"
+# « adjugé le 12/03/2025 pour 150 000 € » : la date qui suit le mot ne doit pas être lue comme un prix.
+_ADJUDICATION_DATE = r"(?:(?:le|du|en\s+date\s+du)\s+)?\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}"
+_ADJUDICATION_PATTERNS = (
+    rf"\badjug[ée]e?s?\b\s*(?:{_ADJUDICATION_DATE})?\s*(?:(?:pour|[àa]|au\s+prix\s+de)\s+)?:?\s*{_ADJUDICATION_PRICE}",
+    rf"\bprix\s+d['’]adjudication\s*:?\s*{_ADJUDICATION_PRICE}",
+    rf"\badjudication\s*:?\s*{_ADJUDICATION_PRICE}",
+)
+
+
 def extract_adjudication_price(raw_sale: dict[str, object]) -> Decimal | None:
     explicit = parse_price(
         _field_or_source_block(
@@ -343,26 +406,31 @@ def extract_adjudication_price(raw_sale: dict[str, object]) -> Decimal | None:
             "prix_adjude",
         )
     )
+    starting_price = extract_starting_price(raw_sale)
     if explicit is not None:
-        return explicit
+        return explicit if _is_plausible_adjudication_price(explicit, starting_price) else None
     # A fee clause ending in “prix d’adjudication” must not consume a
     # separate block containing the starting price.
     texts = [raw_sale.get("raw_text"), raw_sale.get("description")]
     texts.extend(value for _, value in _walk_source_blocks(raw_sale.get("source_blocks"))
                  if not isinstance(value, (dict, list)))
-    for pattern in (
-        r"\badjug[ée]\s*:?\s*([0-9][0-9\s.,]*)\s*(?:€|euros?)?",
-        r"\bprix\s+d['’]adjudication\s*:?\s*([0-9][0-9\s.,]*)\s*(?:€|euros?)?",
-        r"\badjudication\s*:?\s*([0-9][0-9\s.,]*)\s*(?:€|euros?\b)",
-    ):
+    for pattern in _ADJUDICATION_PATTERNS:
         for value in texts:
             text = clean_text(value)
             if not text:
                 continue
-            match = re.search(pattern, text, re.I)
-            if match:
-                return parse_price(match.group(1))
+            for match in re.finditer(pattern, text, re.I):
+                price = parse_price(match.group(1))
+                if price is not None and _is_plausible_adjudication_price(price, starting_price):
+                    return price
     return None
+
+
+def _is_plausible_adjudication_price(price: Decimal, starting_price: Decimal | None) -> bool:
+    """A result far below the reserve is a misread number (a day, a lot count), not a price."""
+    if price < _ADJUDICATION_MIN_EUR:
+        return False
+    return starting_price is None or price >= starting_price * _ADJUDICATION_MIN_RATIO
 
 
 def parse_surface(value: object | None) -> Decimal | None:
@@ -459,7 +527,7 @@ def parse_french_datetime(value: object | None, *, local_timezone: str = "Europe
     lowered = text.lower()
     for weekday in FRENCH_WEEKDAYS:
         lowered = re.sub(rf"\b{weekday}\b", "", lowered)
-    lowered = lowered.replace(" à ", " ")
+    lowered = re.sub(r"\s+(?:à|a)\s+(?=\d)", " ", lowered)  # « 10 SEPTEMBRE 2026 A 14H00 »
     lowered = re.sub(
         r"\b([0-2]?\d)\s*(?:heures?|h)\s*([0-5]\d)?\b",
         lambda m: f"{m.group(1)}:{m.group(2) or '00'}", lowered,
@@ -473,23 +541,41 @@ def parse_french_datetime(value: object | None, *, local_timezone: str = "Europe
         r"(?:\s*,?\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:Z|UTC|GMT|[+-]\d{2}:?\d{2})?)?",
         lowered, re.I,
     ))
-    if len(dated) == 1:
+    if len(dated) == 1:  # dateutil would read stray numbers (« Grasse, 37, ») as the year
         candidate = dated[0].group(0).strip()
-        if not re.search(r"\d{1,2}:\d{2}", lowered) or re.search(r"\d{1,2}:\d{2}", candidate):
-            lowered = candidate
+        clock = re.search(r"\b\d{1,2}:\d{2}\b", f"{lowered[dated[0].end():]} {lowered[: dated[0].start()]}")
+        lowered = f"{candidate} {clock.group(0)}" if clock and ":" not in candidate else candidate
     # dateutil recognizes these timezone names only in their canonical case.
     # Lowercasing the French text above must not turn an explicit UTC/GMT
     # instant into a naive Paris civil time.
     lowered = re.sub(r"\b(utc|gmt|z)\b", lambda match: match.group(1).upper(), lowered, flags=re.I)
-    try:
-        parsed = parser.parse(lowered, dayfirst=True, fuzzy=True)
-    except (ValueError, TypeError, OverflowError):
+    parsed = _parse_complete_date(lowered)
+    if parsed is None:
         return None
     if parsed.tzinfo is None:
         return _civil_time_to_utc(
             parsed, has_time=bool(re.search(r"\d{1,2}:\d{2}", lowered)), local_timezone=local_timezone,
         )
     return parsed.astimezone(UTC)
+
+
+_DATE_SENTINELS = (datetime(1900, 1, 1), datetime(1901, 2, 2))
+
+
+def _parse_complete_date(text: str) -> datetime | None:
+    """Parse with dateutil, but only when the text itself gives day, month and year.
+
+    dateutil fills missing parts from ``default``. Parsing against two different
+    defaults and comparing the results shows which parts came from the text,
+    without mistaking a real 1 January for a missing component.
+    """
+    try:
+        first, second = (parser.parse(text, dayfirst=True, fuzzy=True, default=d) for d in _DATE_SENTINELS)
+    except (ValueError, TypeError, OverflowError):
+        return None
+    if (first.year, first.month, first.day) != (second.year, second.month, second.day):
+        return None
+    return first
 
 
 def normalize_property_type(value: object | None) -> str:
@@ -612,7 +698,13 @@ def has_no_lease_signal(text: str) -> bool:
     )
 
 
-def normalize_status(value: object | None, sale_date: datetime | None = None) -> str:
+def normalize_status(
+    value: object | None,
+    sale_date: datetime | None = None,
+    *,
+    date_only: bool = False,
+    now: datetime | None = None,
+) -> str:
     text = strip_accents(clean_text(value) or "").lower()
     if re.search(r"\b(reportee?s?|postponed|reported)\b", text):
         return "postponed"
@@ -629,7 +721,8 @@ def normalize_status(value: object | None, sale_date: datetime | None = None) ->
     if text in VALID_STATUSES and text != "unknown":
         return text
     if sale_date:
-        return "past" if sale_date < datetime.now(UTC) else "upcoming"
+        # Compared on the Paris civil day: a date-only hearing stays upcoming until the next day.
+        return "past" if sale_date_has_passed(sale_date, date_only=date_only, now=now) else "upcoming"
     return "unknown"
 
 
@@ -647,7 +740,10 @@ def extract_postal_code(*values: object | None) -> str | None:
 def extract_department(postal_code: str | None) -> str | None:
     if not postal_code or len(postal_code) < 2:
         return None
-    if re.match(r"^(?:97[1-8]|98[6-8])\d{2}$", postal_code):
+    if postal_code.startswith("20") and re.fullmatch(r"\d{5}", postal_code):
+        # Corsica shares the 20xxx range: 20000-20199 is Corse-du-Sud, the rest Haute-Corse.
+        return "2A" if int(postal_code) < 20200 else "2B"
+    if re.match(r"^9[78]\d{3}$", postal_code):
         return postal_code[:3]
     return postal_code[:2]
 
@@ -852,12 +948,8 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     address = normalize_listing_address(
         _field_or_source_block(raw_sale, "address", "adresse", "detail_adresse", "address", "localisation")
     )
-    if address and re.fullmatch(r'[\d\s.,]+\s*(?:€|euros?|EUR)', address, re.I):
-        raw_sale = dict(raw_sale)
-        raw_sale['invalid_address_evidence'] = {'value': address, 'reason': 'monetary_value_is_not_address'}
-        raw_sale['quality_flags'] = [*(raw_sale.get('quality_flags') or []), 'address_unverified']
-        raw_sale['latitude'] = raw_sale['longitude'] = None
-        address = None
+    raw_sale, address = reject_monetary_address(raw_sale, address)
+    address = recover_listing_address(raw_sale, address)
     explicit_postal_code = extract_postal_code(
         _field_or_source_block(raw_sale, "postal_code", "code_postal", "codePostal", "postal_code")
     )
@@ -893,36 +985,42 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     city = clean_text(_field_or_source_block(raw_sale, "city", "ville", "commune", "city")) or extract_city(
         address, postal_code
     )
-    sale_date_value = _field_or_source_block(
-            raw_sale,
-            "sale_date",
-            "sale_date",
-            "date_vente",
-            "vente_le",
-            "detail_vente_le",
-            "audience",
-            "date_de_l_audience",
-            "seance_date",
-        )
-    sale_date = parse_french_datetime(
-        sale_date_value,
-        local_timezone=source_sale_timezone(raw_sale),
+    raw_sale_date = _field_or_source_block(
+        raw_sale,
+        "sale_date",
+        "sale_date",
+        "date_vente",
+        "vente_le",
+        "detail_vente_le",
+        "audience",
+        "date_de_l_audience",
+        "seance_date",
     )
-    if sale_date is not None and is_date_only_value(sale_date_value):
-        raw_sale = dict(raw_sale)
-        raw_sale.setdefault("date_precision", "day")
+    sale_date = parse_french_datetime(raw_sale_date, local_timezone=source_sale_timezone(raw_sale))
+    sale_date_only = False
+    if sale_date is not None:
+        precision = clean_text(raw_sale.get("date_precision")) or clean_text(raw_sale.get("sale_date_precision"))
+        sale_date_only = is_date_only(clean_text(raw_sale_date), precision)
+        if sale_date_only and not precision:
+            # Lets admission and the front end read the stored midnight as « day only ».
+            raw_sale["date_precision"] = "day"
+    starting_price, price_conflict = resolve_starting_price(raw_sale)
+    if price_conflict:
+        raw_sale["price_conflict"] = True
+        raw_sale["quality_flags"] = [*dict.fromkeys([*(raw_sale.get("quality_flags") or []), "price_conflict"])]
     raw_department = _field_or_source_block(raw_sale, "department", "departement", "department")
     explicit_department = normalize_department(raw_department)
     postal_department = extract_department(postal_code)
     if explicit_department and postal_department and explicit_department != postal_department:
-        raw_sale = dict(raw_sale)
         flags = list(raw_sale.get("quality_flags") or [])
         if "postal_department_conflict" not in flags:
             flags.append("postal_department_conflict")
         raw_sale["quality_flags"] = flags
     department = postal_department or explicit_department
     adjudication_price = extract_adjudication_price(raw_sale)
-    status = normalize_status(_field_or_source_block(raw_sale, "status", "status", "statut"), sale_date)
+    status = normalize_status(
+        _field_or_source_block(raw_sale, "status", "status", "statut"), sale_date, date_only=sale_date_only
+    )
     if adjudication_price is not None:
         if sale_date is not None and sale_date > datetime.now(UTC):
             raw_sale = {**raw_sale, "unverified_adjudication_candidate": str(adjudication_price),
@@ -972,7 +1070,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     structured_surface_m2 = parse_surface(
         _field_or_source_block(raw_sale, "surface_m2", "surface_m2", "surface", "detail_surface")
     )
-    text_surface_m2 = _extract_built_surface_from_text(source_text)
+    text_surface_m2 = _extract_built_surface_from_text(source_text) or extra_built_surface_from_text(
+        source_text, raw_sale.get("source_name")
+    )
     surface_m2 = (
         text_surface_m2
         if property_type == "mixed"
@@ -1185,7 +1285,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         has_double_glazing=_feature_bool(
             raw_sale.get("has_double_glazing"), source_text, r"\bdouble\s+vitrage\b"
         ),
-        starting_price_eur=extract_starting_price(raw_sale),
+        starting_price_eur=starting_price,
         sale_date=sale_date,
         visit_dates=_normalize_visit_dates(
             _field_or_source_block(
@@ -1221,7 +1321,7 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         longitude=parse_decimal(raw_sale.get("longitude")),
         occupancy_status=occupancy_status,
         risk_notes=risk_notes,
-        investment_score=parse_price(raw_sale.get("investment_score")),
+        investment_score=parse_decimal(raw_sale.get("investment_score")),
         investment_summary=clean_text(raw_sale.get("investment_summary")),
         score_version=clean_text(raw_sale.get("score_version")),
         score_confidence=parse_confidence(raw_sale.get("score_confidence")),
@@ -1588,7 +1688,7 @@ def _walk_source_blocks(value: object, prefix: str = "") -> list[tuple[str, obje
     if isinstance(value, dict):
         for key, nested in value.items():
             key_text = str(key)
-            if key_text == "listing_completeness":
+            if key_text in {"listing_completeness", "caracteristiques_bien"}:  # projections, pas du texte source
                 continue
             nested_key = f"{prefix}_{key_text}" if prefix else key_text
             rows.append((nested_key, nested))

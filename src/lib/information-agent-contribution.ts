@@ -1,3 +1,4 @@
+import "server-only";
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -6,9 +7,11 @@ import { safeExternalHttpUrl } from "@/lib/external-url";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import {
+  detectInformationAgentContactOptOut,
   extractInformationAgentFacts,
   persistFactCandidates,
 } from "@/lib/information-agent-inbound";
+import { recordInformationAgentContactOpposition } from "@/lib/information-agent/contacts";
 import {
   createInformationAgentContributionToken,
   verifyInformationAgentContributionToken,
@@ -36,36 +39,9 @@ const ALLOWED_MIME_TYPES = new Set([
 type Mission = Database["public"]["Tables"]["information_agent_missions"]["Row"];
 type InformationCase = Database["public"]["Tables"]["information_agent_cases"]["Row"];
 
-type PortalUploadQuotaRow = {
-  used_bytes: number;
-  used_files: number;
-  remaining_bytes: number;
-  remaining_files: number;
-};
-
 type PortalUploadQuotaRpcError = {
   code?: string;
   message?: string;
-};
-
-type PortalUploadQuotaRpcClient = {
-  rpc(
-    name: "reserve_information_agent_portal_upload",
-    args: {
-      p_case_id: string;
-      p_storage_path: string;
-      p_size_bytes: number;
-      p_expires_at: string;
-    },
-  ): Promise<{ data: PortalUploadQuotaRow[] | null; error: PortalUploadQuotaRpcError | null }>;
-  rpc(
-    name: "consume_information_agent_portal_upload",
-    args: {
-      p_case_id: string;
-      p_storage_path: string;
-      p_size_bytes: number;
-    },
-  ): Promise<{ data: null; error: PortalUploadQuotaRpcError | null }>;
 };
 
 export type ContributionSession = {
@@ -238,14 +214,15 @@ export async function prepareInformationAgentContributionUpload({
   // quota slot is consumed; callers only receive the token after reservation.
   const { data, error } = await supabaseAdmin.storage.from(BUCKET).createSignedUploadUrl(path);
   if (error || !data?.token) throw error ?? new Error("Autorisation de dépôt indisponible.");
-  const { data: quotaRows, error: quotaError } = await (
-    supabaseAdmin as unknown as PortalUploadQuotaRpcClient
-  ).rpc("reserve_information_agent_portal_upload", {
-    p_case_id: informationCase.id,
-    p_storage_path: path,
-    p_size_bytes: input.size,
-    p_expires_at: uploadExpiresAt,
-  });
+  const { data: quotaRows, error: quotaError } = await supabaseAdmin.rpc(
+    "reserve_information_agent_portal_upload",
+    {
+      p_case_id: informationCase.id,
+      p_storage_path: path,
+      p_size_bytes: input.size,
+      p_expires_at: uploadExpiresAt,
+    },
+  );
   if (quotaError) throwPortalUploadQuotaError(quotaError);
   const quota = quotaRows?.[0];
   if (!quota) throw new Error("Réservation de dépôt indisponible.");
@@ -276,14 +253,11 @@ async function consumeInformationAgentPortalUpload({
   path: string;
   size: number;
 }): Promise<void> {
-  const { error } = await (supabaseAdmin as unknown as PortalUploadQuotaRpcClient).rpc(
-    "consume_information_agent_portal_upload",
-    {
-      p_case_id: caseId,
-      p_storage_path: path,
-      p_size_bytes: size,
-    },
-  );
+  const { error } = await supabaseAdmin.rpc("consume_information_agent_portal_upload", {
+    p_case_id: caseId,
+    p_storage_path: path,
+    p_size_bytes: size,
+  });
   if (error) throwPortalUploadQuotaError(error);
 }
 
@@ -506,6 +480,14 @@ export async function submitInformationAgentContribution({
     facts: extractInformationAgentFacts(input.note),
     assets,
   });
+
+  // Le lien de dépôt n'est remis qu'au destinataire de la demande : une note qui demande de ne
+  // plus être contacté vaut opposition pour cette adresse (s'opposer est sans risque pour elle).
+  if (input.note && detectInformationAgentContactOptOut(input.note)) {
+    await recordInformationAgentContactOpposition({
+      email: informationCase.normalized_recipient_email,
+    });
+  }
 
   const now = new Date().toISOString();
   const { data: updatedCase, error: caseUpdateError } = await supabaseAdmin

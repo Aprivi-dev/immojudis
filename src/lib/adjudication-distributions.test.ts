@@ -13,6 +13,41 @@ const fixture = () => ({
 });
 
 describe("adjudication distributions", () => {
+  it("vérifie les frontières et la cohérence des six tranches avec le regroupement historique", () => {
+    const value = {
+      ...fixture(),
+      detailedBidDistribution: [
+        { band: "below_starting", count: 2, share: 0.2 },
+        { band: "at_starting", count: 2, share: 0.2 },
+        { band: "above_1_below_1_5", count: 2, share: 0.2 },
+        { band: "from_1_5_below_2", count: 2, share: 0.2 },
+        { band: "from_2_below_3", count: 1, share: 0.1 },
+        { band: "at_least_3", count: 1, share: 0.1 },
+      ],
+    };
+    expect(adjudicationDistributionSchema.safeParse(value).success).toBe(true);
+    value.detailedBidDistribution[0].count = 1;
+    value.detailedBidDistribution[0].share = 0.1;
+    value.detailedBidDistribution[5].count = 2;
+    value.detailedBidDistribution[5].share = 0.2;
+    expect(adjudicationDistributionSchema.safeParse(value).success).toBe(false);
+  });
+  it("refuse une médiane de type hors des quartiles et accepte les anciennes publications", () => {
+    const summary = {
+      medianHammerPriceEur: 100000,
+      medianStartingPriceEur: 60000,
+      medianHammerToStartingRatio: 1.5,
+      meanHammerToStartingRatio: 1.7,
+    };
+    expect(adjudicationDistributionSchema.safeParse({ ...fixture(), summary }).success).toBe(true);
+    expect(
+      adjudicationDistributionSchema.safeParse({
+        ...fixture(),
+        summary: { ...summary, medianHammerToStartingRatio: 3 },
+      }).success,
+    ).toBe(false);
+    expect(adjudicationDistributionSchema.safeParse(fixture()).success).toBe(true);
+  });
   it("validates disjoint property samples and rejects duplicated types", () => {
     const item = { propertyType: "house", distribution: fixture() };
     expect(

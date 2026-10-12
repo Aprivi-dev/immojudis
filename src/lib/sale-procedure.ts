@@ -6,6 +6,11 @@ import type {
   SaleVenueType,
   SaleVerificationStatus,
 } from "@/lib/types";
+import {
+  cleanListingAddress,
+  cleanOrganizerContact,
+  cleanOrganizerName,
+} from "./listing-data-cleanup";
 
 const venueTypeSchema = z.enum(["tribunal", "notary", "state", "online", "unknown"]);
 const stateSaleMethodSchema = z.enum([
@@ -153,6 +158,11 @@ export function getSaleProcedure(sale: AuctionSale): SaleProcedurePresentation {
   const venueIsConfirmed =
     verificationStatus === "verified" || verificationStatus === "cross_checked";
   const rules = procedure?.rules;
+  const organizerName =
+    cleanOrganizerName(procedure?.organizer_name) ?? cleanOrganizerName(sale.lawyer_name);
+  const organizerContact =
+    cleanOrganizerContact(procedure?.organizer_contact) ??
+    cleanOrganizerContact(sale.lawyer_contact);
 
   return {
     procedure,
@@ -166,11 +176,11 @@ export function getSaleProcedure(sale: AuctionSale): SaleProcedurePresentation {
       (venueType === "tribunal"
         ? (sale.tribunal_name ?? sale.tribunal)
         : venueType === "notary"
-          ? sale.lawyer_name
+          ? cleanOrganizerName(sale.lawyer_name)
           : null),
-    venueAddress: procedure?.venue_address ?? null,
-    organizerName: procedure?.organizer_name ?? sale.lawyer_name,
-    organizerContact: procedure?.organizer_contact ?? sale.lawyer_contact,
+    venueAddress: cleanListingAddress(procedure?.venue_address),
+    organizerName,
+    organizerContact,
     eligibleBar:
       procedure?.eligible_bar ?? (venueType === "tribunal" ? legacyEligibleBar(sale) : null),
     participationMode:
@@ -240,6 +250,20 @@ export function saleVerificationLabel(status: SaleVerificationStatus): string {
     cross_checked: "Recoupé",
     pending: "En cours de vérification",
     conflict: "Contrôle requis",
+  }[status];
+}
+
+/** Ce que signifie chaque niveau de vérification : une phrase différente par badge. */
+export function saleVerificationExplanation(status: SaleVerificationStatus): string {
+  return {
+    verified:
+      "Vérifié : le type de vente et l’organisateur sont mentionnés explicitement par une source de la vente.",
+    cross_checked:
+      "Recoupé : l’annonce ou la pièce de la vente l’indique, et une seconde référence officielle le confirme.",
+    pending:
+      "En cours de vérification : l’information est partielle, par exemple un tribunal déduit seulement de l’adresse. Les règles à suivre restent à confirmer.",
+    conflict:
+      "Contrôle requis : des indices incompatibles ont été relevés. Vérifiez auprès du tribunal ou de l’organisateur avant toute démarche.",
   }[status];
 }
 

@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import unicodedata
+from contextvars import ContextVar
 from typing import Any
 from urllib.parse import urlencode
 
@@ -13,11 +14,31 @@ from src.config import FRANCE_DEPARTMENTS, TARGET_DEPARTMENTS, load_settings
 from src.normalize import LATIN_LETTERS_PATTERN, SURFACE_VALUE_PATTERN, clean_text, parse_french_datetime, parse_surface
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PaginationCoverage, PoliteHttpClient, ScrapeResult, unique_dicts
+from src.sources.common import PaginationCoverage, PoliteHttpClient, ScrapeResult, should_fetch_detail, unique_dicts
+from src.sources.notaires_extraction import (
+    build_display,
+    build_features,
+    cadastre_location,
+    card_sale_long_past,
+    energy_class,
+    flat_blocks,
+    merge_operator_page,
+    parse_immo_interactif_page,
+)
+from src.sources.notaires_extraction import (
+    legacy_property_features as _notaires_property_features,
+)
+from src.sources.notaires_extraction import (
+    legacy_source_evidence as _notaires_source_evidence,
+)
 from src.sources.source_features import extract_parking_count
 
 BASE_URL = "https://www.immobilier.notaires.fr"
 API_URL = f"{BASE_URL}/pub-services/inotr-www-annonces/v1/annonces"
+# Page publique d'une vente interactive : seule source de l'inventaire des pièces
+# déposées par l'office et de son barème d'honoraires.
+IMMO_INTERACTIF_ORIGIN = "https://www.immo-interactif.fr"
+_PAGE_CONTEXT: ContextVar[tuple[dict[str, Any], dict[str, Any]] | None] = ContextVar("notaires_page_context", default=None)
 TRANSACTION_TYPES = ("VAE", "VNI")
 LOGGER = logging.getLogger(__name__)
 PROPERTY_TYPE_LABELS = {
@@ -31,6 +52,10 @@ PROPERTY_TYPE_LABELS = {
     "COM": "local commercial",
     "GAR": "parking",
     "PKG": "parking",
+    "LAC": "local d'activités",
+    "DIV": "local divers",
+    "AGR": "bien agricole",
+    "VIG": "bien viticole",
 }
 PROPERTY_BLOCK_KEYS = {
     "APP": "appartement",
@@ -40,6 +65,7 @@ PROPERTY_BLOCK_KEYS = {
     "IMM": "immeuble",
     "LOC": "local",
     "COM": "local",
+    "LAC": "localActivites",
 }
 
 
@@ -47,7 +73,7 @@ def scrape_notaires_aquitaine(max_pages: int | None = None) -> list[dict[str, An
     return scrape_notaires_aquitaine_result(max_pages=max_pages).sales
 
 
-def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResult:
+def scrape_notaires_aquitaine_result(max_pages: int | None = None, known: dict[str, str] | None = None) -> ScrapeResult:
     settings = load_settings()
     client = PoliteHttpClient(
         base_url=BASE_URL,
@@ -60,6 +86,8 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
 
     errors: list[str] = []
     raw_sales: list[dict[str, Any]] = CheckpointSales()
+    # Clients des pages Immo-Interactif (autre origine), partagés par toute la collecte.
+    page_token = _PAGE_CONTEXT.set(({}, settings))
     partition_states: list[dict[str, Any]] = []
     inventory_errors: list[str] = []
     for transaction_type in TRANSACTION_TYPES:
@@ -186,8 +214,11 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
                     # rewrite the department; that must not turn an API row
                     # into a successful exclusion after the inventory proof.
                     listing_department = sale.get("department")
-                    from src.source_checkpoint import restore_detail
-                    if restore_detail(sale):
+                    # Closed sale (expired anyway), interrupted-run checkpoint,
+                    # or stored detail whose list card is unchanged.
+                    if card_sale_long_past(sale):
+                        sale["source_detail_status"] = "skipped_closed_sale"
+                    elif not should_fetch_detail(sale, known):
                         pass
                     elif not _enrich_sale_from_detail(client, sale, errors):
                         sale["_detail_fetch_failed"] = True
@@ -219,6 +250,7 @@ def scrape_notaires_aquitaine_result(max_pages: int | None = None) -> ScrapeResu
 
             _finalize_inventory_partition(state, max_pages=max_pages)
 
+    _PAGE_CONTEXT.reset(page_token)
     raw_output_sales = unique_dicts(raw_sales, "source_url")
     validation_error_start = len(errors)
     validated_sales = validate_raw_sales("notaires", raw_output_sales, errors)
@@ -587,7 +619,12 @@ def parse_notaires_json(payload: str) -> list[dict[str, Any]]:
     return sales
 
 
-def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = None) -> dict[str, Any]:
+def parse_notaires_detail_json(
+    payload: str,
+    fallback: dict[str, Any] | None = None,
+    operator_page: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Lit le JSON public de détail ; ``operator_page`` = :func:`parse_immo_interactif_page`."""
     try:
         data = json.loads(payload)
     except json.JSONDecodeError:
@@ -747,8 +784,9 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         "etat": clean_text(property_block.get("etat")),
         "ancien_neuf": clean_text(property_block.get("ancienNeuf")),
         "sous_type": clean_text(property_block.get("sousType")),
-        "dpe_classe": clean_text(property_block.get("consommationClasse")),
-        "ges_classe": clean_text(property_block.get("emissionGesClasse")),
+        # Z = « non soumis », Y = « non disponible » : ce ne sont pas des classes.
+        "dpe_classe": energy_class(property_block.get("consommationClasse"))[0],
+        "ges_classe": energy_class(property_block.get("emissionGesClasse"))[0],
         "dpe_value": _numeric_value(property_block.get("consommation")),
         "dpe_consommation": _numeric_value(property_block.get("consommation")),
         "dpe_unit": "kWh/m²/an" if _numeric_value(property_block.get("consommation")) is not None else None,
@@ -804,6 +842,50 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
     if land_surface_quarantine_reason:
         quality_flags.append("ambiguous_land_surface")
         source_blocks["land_surface_quarantine_reason"] = land_surface_quarantine_reason
+    coproperty_block = bien.get("copropriete") if isinstance(bien.get("copropriete"), dict) else {}
+    visit_dates = _visit_dates(visit)
+    extra_features = merge_operator_page(
+        build_features(
+            data=data,
+            transaction_type=transaction_type,
+            transaction=transaction,
+            property_block=property_block,
+            coproperty=coproperty_block,
+            contact=contact,
+            description=description_text,
+            images=source_images,
+        ),
+        operator_page,
+    )
+    # Parcelles citées au descriptif : seulement à défaut de coordonnées exactes.
+    parcels = None if latitude is not None and longitude is not None else cadastre_location(
+        description_text, property_block.get("inseeCommune"), city
+    )
+    if parcels:
+        extra_features["cadastre_designation"] = parcels["designation"]
+    source_blocks.update(flat_blocks(extra_features, property_block))
+    source_blocks["caracteristiques_bien"] = build_display(
+        property_block=property_block,
+        coproperty=coproperty_block,
+        features=extra_features,
+        visit_dates=visit_dates,
+        contact=contact,
+        office=extra_features.get("office"),
+    )
+    property_features = _notaires_property_features(
+        property_block=property_block,
+        coproperty=coproperty_block,
+        transaction=transaction,
+        contact=contact,
+        description_features=description_features,
+        surface_features=surface_features,
+        source_images=source_images,
+    )
+    property_features.update(extra_features)
+    risk_notes = _risk_notes(description_text)
+    if (extra_features.get("energy_status") or {}).get("dpe") == "Non soumis" and "DPE non soumis" not in (risk_notes or ""):
+        risk_notes = "; ".join(part for part in (risk_notes, "DPE non soumis") if part)
+    adjudication_price = (extra_features.get("sale_conditions") or {}).get("adjudication_price_eur")
     return {
         "source_conflicts": conflicts,
         "department": clean_text(property_block.get("inseeDepartement")),
@@ -858,7 +940,7 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         or transaction.get("prixMin"),
         "sale_date": _sale_date(transaction, transaction_type),
         "source_sale_schedule": _sale_schedule(transaction, transaction_type),
-        "visit_dates": _visit_dates(visit),
+        "visit_dates": visit_dates,
         "lawyer_name": _notary_from_text(description_text)
         or clean_text(contact.get("nom") or visit.get("visiteNomContact")),
         "lawyer_contact": _contact_text(contact) or clean_text(visit.get("visiteContact")),
@@ -866,21 +948,15 @@ def parse_notaires_detail_json(payload: str, fallback: dict[str, Any] | None = N
         "latitude": latitude,
         "longitude": longitude,
         "occupancy_status": clean_text(property_block.get("situationLocative")),
-        "risk_notes": _risk_notes(description_text),
+        "risk_notes": risk_notes,
+        "adjudication_price_eur": adjudication_price,
+        "cadastre_location": parcels,
         "raw_text": raw_text,
         "raw_image_url": source_images[0] if source_images else None,
         "source_images": source_images,
         "quality_flags": quality_flags,
         "source_blocks": source_blocks,
-        "source_property_features": _notaires_property_features(
-            property_block=property_block,
-            coproperty=bien.get("copropriete") if isinstance(bien.get("copropriete"), dict) else {},
-            transaction=transaction,
-            contact=contact,
-            description_features=description_features,
-            surface_features=surface_features,
-            source_images=source_images,
-        ),
+        "source_property_features": property_features,
         "source_evidence": _notaires_source_evidence(
             property_block=property_block,
             transaction=transaction,
@@ -1091,133 +1167,6 @@ def _description_property_features(
     }
 
 
-def _notaires_property_features(
-    *,
-    property_block: dict[str, Any],
-    coproperty: dict[str, Any],
-    transaction: dict[str, Any],
-    contact: dict[str, Any],
-    description_features: dict[str, Any],
-    surface_features: dict[str, Any],
-    source_images: list[str],
-) -> dict[str, Any]:
-    dpe_value = _numeric_value(property_block.get("consommation"))
-    ges_value = _numeric_value(property_block.get("emissionGes"))
-    energy = {
-        "dpe": {
-            "class": _known_source_value(property_block.get("consommationClasse")),
-            "value": dpe_value,
-            "unit": "kWh/m²/an" if dpe_value is not None else None,
-            "date": clean_text(property_block.get("dateRealisationDpe")),
-        },
-        "ges": {
-            "class": _known_source_value(property_block.get("emissionGesClasse")),
-            "value": ges_value,
-            "unit": "kgCO2/m²/an" if ges_value is not None else None,
-            "date": clean_text(property_block.get("dateRealisationDpe")),
-        },
-        "estimated_cost": {
-            "min_eur": _numeric_value(property_block.get("depensesEnergieMin")),
-            "max_eur": _numeric_value(property_block.get("depensesEnergieMax")),
-            "year": _integer_value(property_block.get("depensesEnergieAnnee")),
-        },
-    }
-    coownership = {
-        "is_coownership": _yes_no(coproperty.get("copropriete")),
-        "annual_charges_eur": _numeric_value(coproperty.get("montantChargesAnnuelles")),
-        "lot_count": _integer_value(coproperty.get("nbLots")),
-        "syndic": _known_source_value(coproperty.get("coordonneesSyndic")),
-        "administrator_status": _known_source_value(coproperty.get("adminProvisoire")),
-        "safeguard_plan": _known_source_value(coproperty.get("planSauvegarde")),
-    }
-    technical = dict(description_features.get("technical") or {})
-    technical.update(
-        {
-            "heating_api": _known_source_value(property_block.get("chauffage")),
-            "energy_api": _known_source_value(property_block.get("energie")),
-            "elevator": _yes_no(property_block.get("ascenseur")),
-            "accessibility": _yes_no(property_block.get("accesHandicapes")),
-            "double_glazing": _yes_no(property_block.get("doubleVitrage")),
-        }
-    )
-    return {
-        "floor": _numeric_value(property_block.get("etage")),
-        "building_floors_count": _integer_value(property_block.get("nbEtages")),
-        "energy": energy,
-        "property_tax": {
-            "amount_eur": _numeric_value(property_block.get("taxeFonciere")),
-            "year": None,
-        },
-        "coownership": coownership,
-        "technical": technical,
-        "annexes": description_features.get("annexes") or {},
-        "works_to_plan": description_features.get("works_to_plan"),
-        "surfaces": surface_features,
-        "contact": {
-            "name": _known_source_value(contact.get("nom")),
-            "phone": _known_source_value(contact.get("telephone")),
-            "email": _known_source_value(contact.get("mail")),
-        },
-        "sale": {
-            "first_offer_eur": _numeric_value(
-                transaction.get("premierPrix") or transaction.get("prixMin")
-            ),
-            "offer_step_eur": _numeric_value(transaction.get("pasOffres")),
-        },
-        "media": {"image_count": len(source_images), "images": list(source_images)},
-    }
-
-
-def _notaires_source_evidence(
-    *,
-    property_block: dict[str, Any],
-    transaction: dict[str, Any],
-    coproperty: dict[str, Any],
-    description_features: dict[str, Any],
-    surface_features: dict[str, Any],
-    aggregate_carrez_evidence: str | None,
-) -> dict[str, Any]:
-    evidence: dict[str, Any] = {
-        "floor": {"source": "notaires_detail_api", "field": "etage", "value": property_block.get("etage")},
-        "building_floors_count": {
-            "source": "notaires_detail_api",
-            "field": "nbEtages",
-            "value": property_block.get("nbEtages"),
-        },
-        "dpe": {
-            "source": "notaires_detail_api",
-            "class": property_block.get("consommationClasse"),
-            "value": property_block.get("consommation"),
-            "date": property_block.get("dateRealisationDpe"),
-        },
-        "ges": {
-            "source": "notaires_detail_api",
-            "class": property_block.get("emissionGesClasse"),
-            "value": property_block.get("emissionGes"),
-            "date": property_block.get("dateRealisationDpe"),
-        },
-        "property_tax": {
-            "source": "notaires_detail_api",
-            "field": "taxeFonciere",
-            "value": property_block.get("taxeFonciere"),
-        },
-        "coownership_charges": {
-            "source": "notaires_detail_api",
-            "field": "montantChargesAnnuelles",
-            "value": coproperty.get("montantChargesAnnuelles"),
-        },
-        "surfaces": {
-            "source": "notaires.description",
-            "aggregate_quote": aggregate_carrez_evidence,
-            "assets": surface_features.get("assets", []),
-            "sum_check": surface_features.get("sum_check"),
-        },
-    }
-    if description_features.get("evidence"):
-        evidence["description_features"] = description_features["evidence"]
-    return evidence
-
-
 def _api_url(page: int, transaction_type: str, department: str | None) -> str:
     params = {"page": page, "parPage": 24, "typeTransactions": transaction_type}
     if department:
@@ -1257,13 +1206,62 @@ def _sale_schedule(transaction: dict, transaction_type: str | None) -> dict | No
             'source': 'notarial_transaction'}
 
 
+def immo_interactif_page_url(source_url: object, external_id: object) -> str | None:
+    """URL publique Immo-Interactif d'une vente interactive, si l'annonce y renvoie."""
+    url = clean_text(source_url)
+    marker = clean_text(external_id)
+    if not url or not marker or not marker.isdigit():
+        return None
+    from src.sources.common import is_allowed_origin_url
+
+    if not is_allowed_origin_url(url, (IMMO_INTERACTIF_ORIGIN, "https://immo-interactif.fr")):
+        return None
+    path = url.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    if path.rsplit("/", 1)[-1] != marker or "/encheres-en-ligne/" not in path:
+        return None
+    return path.replace("https://immo-interactif.fr", IMMO_INTERACTIF_ORIGIN, 1)
+
+
+def fetch_immo_interactif_page(
+    clients: dict[str, Any], settings: dict[str, Any], source_url: object, external_id: object
+) -> dict[str, Any]:
+    """Inventaire des pièces et office lus sur la page Immo-Interactif (``{}`` si indisponible).
+
+    Un échec n'invalide jamais le détail lu par l'API : la page n'apporte que des
+    compléments (pièces annoncées, barème d'honoraires).
+    """
+    url = immo_interactif_page_url(source_url, external_id)
+    if not url:
+        return {}
+    try:
+        if IMMO_INTERACTIF_ORIGIN not in clients:
+            clients[IMMO_INTERACTIF_ORIGIN] = PoliteHttpClient(
+                base_url=IMMO_INTERACTIF_ORIGIN,
+                user_agent=str(settings["user_agent"]),
+                delay_seconds=max(2.0, float(settings.get("request_delay_seconds") or 0)),
+                timeout_seconds=float(settings.get("request_timeout_seconds") or 30),
+                accept="text/html,application/xhtml+xml",
+            )
+        return parse_immo_interactif_page(clients[IMMO_INTERACTIF_ORIGIN].get(url), str(external_id))
+    except Exception as exc:
+        LOGGER.warning("Immo-Interactif page unavailable for %s: %s", url, exc)
+        return {}
+
+
 def _enrich_sale_from_detail(client: PoliteHttpClient, sale: dict[str, Any], errors: list[str]) -> bool:
     detail_url = _detail_api_url(sale)
     if not detail_url:
         errors.append(f"missing detail url for {sale.get('source_url')}")
         return False
     try:
-        detail = parse_notaires_detail_json(client.get(detail_url), fallback=sale)
+        payload = client.get(detail_url)
+        context = _PAGE_CONTEXT.get()
+        page = (
+            fetch_immo_interactif_page(context[0], context[1], sale.get("source_url"), sale.get("external_id"))
+            if context is not None
+            else {}
+        )
+        detail = parse_notaires_detail_json(payload, fallback=sale, operator_page=page)
     except Exception as exc:
         LOGGER.warning("Notaires detail fetch failed for %s: %s", detail_url, exc)
         errors.append(f"detail {detail_url}: {exc}")

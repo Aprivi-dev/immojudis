@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { PilotDefinition } from "@/lib/professional-pilots";
@@ -33,23 +33,28 @@ describe("professional pilot entry", () => {
     ["tribunal", "Préparer votre audience", "Dossier d'audience"],
     ["notary", "Préparer votre offre", "Dossier d'offre"],
     ["state", "Préparer votre candidature", "Dossier de candidature"],
-  ] as const)("shows a short %s action before opening the dossier", (kind, title, dossierTitle) => {
-    const client = new QueryClient();
-    render(
-      <QueryClientProvider client={client}>
-        <ProfessionalPilotLauncher
-          sale={EXAMPLE_SALE}
-          definition={{ ...baseDefinition, kind, title: dossierTitle }}
-          publicDemo
-        />
-      </QueryClientProvider>,
-    );
+  ] as const)(
+    "shows a short %s action before opening the dossier",
+    async (kind, title, dossierTitle) => {
+      const client = new QueryClient();
+      render(
+        <QueryClientProvider client={client}>
+          <ProfessionalPilotLauncher
+            sale={EXAMPLE_SALE}
+            definition={{ ...baseDefinition, kind, title: dossierTitle }}
+            publicDemo
+          />
+        </QueryClientProvider>,
+      );
 
-    expect(screen.getByRole("heading", { name: title })).toBeTruthy();
-    expect(screen.queryByText("Consignation")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Ouvrir le dossier" }));
-    expect(screen.getByRole("dialog", { name: dossierTitle })).toBeTruthy();
-    expect(screen.getByText("Consignation")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "2. Budget" })).toBeTruthy();
-  });
+      expect(screen.getByRole("heading", { name: title })).toBeTruthy();
+      expect(screen.queryByText("Consignation")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Ouvrir le dossier" }));
+      expect(screen.getByRole("dialog", { name: dossierTitle })).toBeTruthy();
+      await waitFor(() => {
+        expect(screen.getByText("Consignation")).toBeTruthy();
+        expect(screen.getByRole("button", { name: "2. Budget" })).toBeTruthy();
+      });
+    },
+  );
 });

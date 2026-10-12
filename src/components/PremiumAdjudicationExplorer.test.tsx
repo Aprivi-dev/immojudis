@@ -8,6 +8,7 @@ import type { AdjudicationPriceStatisticsDirectoryResponse } from "@/lib/adjudic
 const mocks = vi.hoisted(() => ({ useAuth: vi.fn(), fetchPlan: vi.fn(), fetchDirectory: vi.fn() }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: mocks.useAuth }));
 vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: mocks.fetchPlan }));
+vi.mock("@/components/CourtAuctionSummaryTable", () => ({ CourtAuctionSummaryTable: () => null }));
 vi.mock("@/lib/adjudication-price-statistics-client", () => ({
   fetchAdjudicationPriceStatisticsDirectory: mocks.fetchDirectory,
 }));
@@ -106,6 +107,19 @@ describe("PremiumAdjudicationExplorer", () => {
     fireEvent.change(selected, { target: { value: "paris" } });
     expect(selected.value).toBe("paris");
     expect(within(panel).getByText(/494 prix publiés/)).toBeTruthy();
-    expect(within(panel).getByText(/non vérifiés auprès du greffe/i)).toBeTruthy();
+    expect(within(panel).getAllByText(/non vérifiés auprès du greffe/i).length).toBeGreaterThan(0);
+  });
+
+  it("ne remplace pas un tribunal sans données par le premier tribunal disponible", async () => {
+    renderExplorer("missing-court");
+    expect(
+      await screen.findByRole("heading", { name: "Tribunal sans résultats publiables" }),
+    ).toBeTruthy();
+    const summary = screen.getByRole("region", { name: "Tribunal sans résultats publiables" });
+    expect(within(summary).queryByText(/126\s?000/)).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: /^Tribunal$/ }), {
+      target: { value: "" },
+    });
+    expect(screen.getByRole("heading", { name: "France entière" })).toBeTruthy();
   });
 });

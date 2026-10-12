@@ -47,7 +47,7 @@ describe("renovation analysis", () => {
       },
     });
     expect(analysis.nextActions).toEqual(
-      expect.arrayContaining(["Reporter l'enveloppe travaux dans le calcul de mise maximale."]),
+      expect.arrayContaining(["Reporter l'enveloppe travaux dans le calcul d’enchère plafond."]),
     );
   });
 

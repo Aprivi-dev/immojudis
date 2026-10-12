@@ -51,14 +51,14 @@ set local "request.jwt.claim.role" = 'authenticated';
 select lives_ok($$insert into public.user_favorites(user_id, sale_id)
 select 'c2600000-0000-4000-8000-000000000001',
 ('c2600000-1000-4000-8000-' || lpad(i::text, 12, '0'))::uuid
-from generate_series(1,10) i$$, 'Discovery can save ten favorites');
+from generate_series(1,3) i$$, 'Discovery can save three favorites');
 select throws_ok($$insert into public.user_favorites(user_id, sale_id) values
-('c2600000-0000-4000-8000-000000000001','c2600000-1000-4000-8000-000000000011')$$,
-'P0001', 'Quota de 10 favoris gratuits atteint. Retirez un favori pour en ajouter un autre.', 'Eleventh favorite rejected');
+('c2600000-0000-4000-8000-000000000001','c2600000-1000-4000-8000-000000000004')$$,
+'P0001', 'Quota de 3 favoris gratuits atteint. Retirez un favori pour en ajouter un autre.', 'Fourth favorite rejected');
 select is((select count(*) from public.auction_sales), 0::bigint, 'No premium data unlocked');
 select lives_ok($$delete from public.user_favorites where sale_id = 'c2600000-1000-4000-8000-000000000001'$$, 'Removal allowed at quota');
 select lives_ok($$insert into public.user_favorites(user_id, sale_id) values
-('c2600000-0000-4000-8000-000000000001','c2600000-1000-4000-8000-000000000011')$$, 'Slot reusable');
+('c2600000-0000-4000-8000-000000000001','c2600000-1000-4000-8000-000000000004')$$, 'Slot reusable');
 set local "request.jwt.claim.sub" = 'c2600000-0000-4000-8000-000000000002';
 select is((select count(*) from public.user_favorites), 0::bigint, 'Other account cannot read favorites');
 select throws_ok($$insert into public.user_favorites(user_id, sale_id) values

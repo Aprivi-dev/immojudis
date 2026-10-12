@@ -97,3 +97,50 @@ def test_replicate_reserves_conservative_utf8_input_and_output_caps(monkeypatch)
         "input_token_ceiling": len("café".encode()) + len("résumé".encode()) + 256,
         "output_token_ceiling": 512,
     }
+
+
+def test_replicate_reserves_conservative_tokens_for_each_vision_image(monkeypatch) -> None:
+    client = llm_client.ReplicateClient(
+        api_token="test-token",
+        model="qwen/qwen3-7-plus",
+        max_tokens=768,
+        min_interval_seconds=0,
+        max_retries=1,
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(llm_client, "reserve_llm_request", lambda **kwargs: None)
+    monkeypatch.setattr(llm_client, "record_llm_request", lambda *args, **kwargs: None)
+    monkeypatch.setattr(llm_client, "record_prediction", lambda *args, **kwargs: None)
+    monkeypatch.setattr(llm_client, "reserve_prediction", lambda model, **kwargs: captured.update(model=model, **kwargs))
+    monkeypatch.setattr(
+        llm_client.httpx,
+        "post",
+        lambda *args, **kwargs: httpx.Response(
+            201,
+            json={
+                "id": "vision-prediction-test",
+                "status": "starting",
+                "urls": {"get": "https://api.replicate.com/v1/predictions/vision-prediction-test"},
+            },
+            request=httpx.Request("POST", "https://api.replicate.com/v1/models/qwen/qwen3-7-plus/predictions"),
+        ),
+    )
+
+    client._post_with_retries(
+        "https://api.replicate.com/v1/models/qwen/qwen3-7-plus/predictions",
+        headers={},
+        payload={
+            "input": {
+                "prompt": "observe",
+                "system_prompt": "vision",
+                "max_tokens": 768,
+                "image": ["data:image/png;base64,AA==", "data:image/png;base64,Ag=="],
+            }
+        },
+    )
+
+    assert captured == {
+        "model": "qwen/qwen3-7-plus",
+        "input_token_ceiling": len(b"observe") + len(b"vision") + 256 + 2 * 16_384,
+        "output_token_ceiling": 768,
+    }

@@ -21,6 +21,18 @@
       "schedule": "45 6 * * *"
     },
     {
+      "path": "/api/cron/smart-alerts",
+      "schedule": "15 8 * * *"
+    },
+    {
+      "path": "/api/cron/alert-notifications",
+      "schedule": "30 8 * * *"
+    },
+    {
+      "path": "/api/cron/sale-change-monitor",
+      "schedule": "45 8 * * *"
+    },
+    {
       "path": "/api/cron/data-retention",
       "schedule": "15 4 * * 0"
     }

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   download: vi.fn(),
   remove: vi.fn(),
   rpc: vi.fn(),
+  assetUpdate: vi.fn(),
   extractionStatus: vi.fn(),
   caseStatus: vi.fn(),
 }));
@@ -20,6 +21,12 @@ vi.mock("@/integrations/supabase/client.server", () => {
   const assetId = "22222222-2222-4222-8222-222222222222";
   const caseId = "33333333-3333-4333-8333-333333333333";
   const query = (table: string) => ({
+    update: (payload: unknown) => ({
+      eq: async () => {
+        mocks.assetUpdate(table, payload);
+        return { error: null };
+      },
+    }),
     select: () => ({
       eq: () => ({
         single: async () => ({
@@ -76,6 +83,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
 describe("admin photo publication", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.assetUpdate.mockReset();
     mocks.rpc.mockResolvedValue({ data: {}, error: null });
     mocks.upload.mockResolvedValue({ data: {}, error: null });
     mocks.remove.mockResolvedValue({ data: {}, error: null });
@@ -93,7 +101,12 @@ describe("admin photo publication", () => {
 
     await reviewAdminInformationAgentFact({
       authToken: "test-token",
-      input: { factId: "fact-1", decision: "accepted" },
+      input: {
+        factId: "fact-1",
+        decision: "accepted",
+        redactionConfirmed: true,
+        redactionVerifiedBy: "Claire Martin",
+      },
     });
 
     const stageCall = mocks.rpc.mock.calls.find(
@@ -152,7 +165,12 @@ describe("admin photo publication", () => {
     await expect(
       reviewAdminInformationAgentFact({
         authToken: "test-token",
-        input: { factId: "fact-1", decision: "accepted" },
+        input: {
+          factId: "fact-1",
+          decision: "accepted",
+          redactionConfirmed: true,
+          redactionVerifiedBy: "Claire Martin",
+        },
       }),
     ).rejects.toThrow("upload failed");
 
@@ -191,7 +209,12 @@ describe("admin photo publication", () => {
     await expect(
       reviewAdminInformationAgentFact({
         authToken: "test-token",
-        input: { factId: "fact-1", decision: "accepted" },
+        input: {
+          factId: "fact-1",
+          decision: "accepted",
+          redactionConfirmed: true,
+          redactionVerifiedBy: "Claire Martin",
+        },
       }),
     ).rejects.toThrow("review failed");
 
@@ -208,7 +231,12 @@ describe("admin photo publication", () => {
     await expect(
       reviewAdminInformationAgentFact({
         authToken: "test-token",
-        input: { factId: "fact-1", decision: "accepted" },
+        input: {
+          factId: "fact-1",
+          decision: "accepted",
+          redactionConfirmed: true,
+          redactionVerifiedBy: "Claire Martin",
+        },
       }),
     ).rejects.toThrow("L’analyse de la pièce doit être terminée");
     expect(mocks.download).not.toHaveBeenCalled();
@@ -222,11 +250,83 @@ describe("admin photo publication", () => {
     await expect(
       reviewAdminInformationAgentFact({
         authToken: "test-token",
-        input: { factId: "fact-1", decision: "accepted" },
+        input: {
+          factId: "fact-1",
+          decision: "accepted",
+          redactionConfirmed: true,
+          redactionVerifiedBy: "Claire Martin",
+        },
       }),
     ).rejects.toThrow("Le dossier n’est plus ouvert");
     expect(mocks.download).not.toHaveBeenCalled();
     expect(mocks.upload).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("redaction check before publication (P4-11)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.rpc.mockResolvedValue({ data: {}, error: null });
+    mocks.extractionStatus.mockReturnValue("completed");
+    mocks.caseStatus.mockReturnValue("review");
+  });
+
+  it("refuses to publish without the redaction confirmation and the verifier's name", async () => {
+    await expect(
+      reviewAdminInformationAgentFact({
+        authToken: "test-token",
+        input: { factId: "fact-1", decision: "accepted" },
+      }),
+    ).rejects.toThrow("Caviardage vérifié");
+    await expect(
+      reviewAdminInformationAgentFact({
+        authToken: "test-token",
+        input: {
+          factId: "fact-1",
+          decision: "accepted",
+          redactionConfirmed: true,
+          redactionVerifiedBy: "  ",
+        },
+      }),
+    ).rejects.toThrow("Caviardage vérifié");
+
+    expect(mocks.assetUpdate).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
+  it("records who verified the redaction, and when, before staging the publication", async () => {
+    const original = await sharp({
+      create: { width: 800, height: 600, channels: 3, background: "#123456" },
+    })
+      .jpeg()
+      .toBuffer();
+    mocks.download.mockResolvedValue({ data: new Blob([original]), error: null });
+    mocks.upload.mockResolvedValue({ data: {}, error: null });
+
+    await reviewAdminInformationAgentFact({
+      authToken: "test-token",
+      input: {
+        factId: "fact-1",
+        decision: "accepted",
+        redactionConfirmed: true,
+        redactionVerifiedBy: "Claire Martin",
+      },
+    });
+
+    expect(mocks.assetUpdate).toHaveBeenCalledWith(
+      "information_agent_evidence_assets",
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          redaction_verified_by: "Claire Martin",
+          redaction_verified_by_admin_id: "admin-1",
+          redaction_verified_at: expect.any(String),
+        }),
+      }),
+    );
+    expect(mocks.assetUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.rpc.mock.invocationCallOrder[0],
+    );
   });
 });

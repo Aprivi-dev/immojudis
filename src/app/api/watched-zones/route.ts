@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -16,13 +17,10 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Zones surveillées indisponibles";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservées")
-        ? 403
-        : 400;
-    return NextResponse.json({ zones: [], error: message }, { status });
+    return apiRouteError(error, request, "watched-zones", {
+      fallbackMessage: "Zones surveillées indisponibles",
+      extra: { zones: [] },
+    });
   }
 }
 
@@ -36,12 +34,9 @@ export async function POST(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Création de zone impossible";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réservées")
-        ? 403
-        : 400;
-    return NextResponse.json({ zone: null, error: message }, { status });
+    return apiRouteError(error, request, "watched-zones", {
+      fallbackMessage: "Création de zone impossible",
+      extra: { zone: null },
+    });
   }
 }

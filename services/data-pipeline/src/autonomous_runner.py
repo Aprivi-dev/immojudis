@@ -15,9 +15,14 @@ from psycopg.types.json import Jsonb
 
 from src.config import load_settings
 from src.run_finalizer import register_run
-from src.storage.supabase_client import _postgres_connect
+from src.source_health import SOURCE_WARNING_EXIT_CODE
+from src.storage.supabase_client import connect
 
-INVENTORY_CADENCE = timedelta(hours=6)
+# Alias de compatibilité : des tests patchent ce nom de module.
+_postgres_connect = connect
+
+# Décision du propriétaire (11/10/2026) : chaque source au plus toutes les 12 h.
+INVENTORY_CADENCE = timedelta(hours=12)
 INVENTORY_DISPATCH_MARGIN = timedelta(minutes=45)
 NEAR_SALE_HORIZON = timedelta(days=7)
 ACTIVE_LISTING_STATUSES = frozenset({'active', 'upcoming', 'postponed', 'unknown'})
@@ -160,8 +165,8 @@ def next_inventory_deadline(*, now: datetime, started_at: object | None, source:
         elif run_started is not None and run_started <= current:
             anchors.append(run_started)
     if not anchors:
-        # No close listing was evidenced by this run. Keep the ordinary six
-        # hour cadence instead of inheriting an old alias/checkpoint forever.
+        # No close listing was evidenced by this run. Keep the ordinary
+        # cadence instead of inheriting an old alias/checkpoint forever.
         return current + INVENTORY_CADENCE
     return max(current, min(anchors) + INVENTORY_CADENCE - INVENTORY_DISPATCH_MARGIN)
 
@@ -279,6 +284,46 @@ def finish_source(db_url: str, run_id: str) -> None:
 
 def record_source_presence(db, run_id: str, source: str, availability: str, complete: bool) -> None:
     # Only a certified full inventory can establish absence. No deletion follows it.
+    # New deployments can provide the compact projection without making the
+    # Python rollout depend on migration order. Until that projection exists,
+    # retain the legacy raw_payload path byte-for-byte for compatibility with
+    # existing views and older databases.
+    compact_objects = db.execute(
+        "select to_regclass(%s), to_regprocedure(%s)",
+        (
+            "app_private.auction_sale_source_presence",
+            "app_private.auction_sale_source_presence_json(uuid)",
+        ),
+    ).fetchone()
+    if compact_objects and compact_objects[0] and compact_objects[1]:
+        db.execute("""insert into app_private.auction_sale_source_presence as current_row(
+            sale_id, source_name, availability, state, attempted_at, checked_at, run_id, legacy_raw)
+          select s.id, %s::text, %s::text,
+            case when %s then case when exists(
+              select 1 from public.auction_collection_items i
+              where i.run_id=%s and (i.source_url=s.source_url or i.canonical_source_url=s.source_url)
+            ) then 'present' else 'absent' end else null end,
+            now(), case when %s then now() else null end, %s::text,
+            false
+          from public.auction_sales s
+          where s.source_name=%s
+             or exists(select 1 from public.auction_sale_source_presence p
+                where p.sale_id=s.id and p.source_name=%s::text)
+             or exists(select 1 from jsonb_array_elements(case when jsonb_typeof(s.observations)='array'
+                then s.observations else '[]'::jsonb end) o where o.value->>'source_name'=%s)
+             or exists(select 1 from public.auction_collection_items i
+                where i.run_id=%s and i.canonical_source_url=s.source_url)
+          on conflict (sale_id, source_name) do update set
+            availability=excluded.availability,
+            state=case when %s then excluded.state else current_row.state end,
+            attempted_at=excluded.attempted_at,
+            checked_at=case when %s then excluded.checked_at else current_row.checked_at end,
+            run_id=excluded.run_id,
+            legacy_raw=false""",
+            (source, availability, complete, run_id, complete, run_id,
+             source, source, source, run_id, complete, complete),
+        )
+        return
     db.execute("""update public.auction_sales s set raw_payload=jsonb_set(
         coalesce(s.raw_payload,'{}'),'{source_presence}',
         coalesce(s.raw_payload->'source_presence','{}') || jsonb_build_object(%s::text,
@@ -296,6 +341,40 @@ def record_source_presence(db, run_id: str, source: str, availability: str, comp
         (source,source,availability,run_id,complete,run_id,source,source,source,run_id))
 
 
+DOCUMENT_READING_BUDGET_SECONDS = 5 * 60
+
+
+def _run_document_reading(env: dict[str, str]) -> int:
+    """Short « lecture des pièces » pass after the enrichment queue.
+
+    Bounded and optional: its exit code is reported in the run summary and never
+    changes the run status.
+    """
+    command = [sys.executable, '-m', 'src.document_reading', '--max-sales', '15', '--budget-minutes', '4']
+    try:
+        result = subprocess.run(command, env=env, timeout=DOCUMENT_READING_BUDGET_SECONDS, check=False)
+        return int(result.returncode)
+    except Exception:
+        return 1
+
+
+LICITOR_HISTORY_BUDGET_SECONDS = 330
+
+
+def _run_licitor_history_refresh(env: dict[str, str]) -> int:
+    """One tick of the Licitor adjudication history collector (owner decision, 12/10/2026).
+
+    Bounded like the document reading: at most 100 polite requests, its exit code
+    is reported in the run summary and never changes the run status.
+    """
+    command = [sys.executable, '-m', 'src.sources.licitor_history_refresh']
+    try:
+        result = subprocess.run(command, env=env, timeout=LICITOR_HISTORY_BUDGET_SECONDS, check=False)
+        return int(result.returncode)
+    except Exception:
+        return 1
+
+
 def execute(run_id: str) -> int:
     run_id = str(UUID(run_id))
     settings = load_settings()
@@ -311,8 +390,11 @@ def execute(run_id: str) -> int:
         return 0
     source = row[0]
     register_run(run_id)
-    env = {**os.environ, 'PIPELINE_AUTONOMOUS_RUN_ID':run_id, 'PIPELINE_ENRICHMENT_BUDGET_SECONDS':'1200', 'PIPELINE_ENRICHMENT_MAX_JOBS':'90', 'REPLICATE_CANCEL_AFTER':'5m',
-           'CADASTRE_ENRICH_ENABLED':'false', 'DPE_ENRICH_ENABLED':'false'}
+    env = {**os.environ, 'PIPELINE_AUTONOMOUS_RUN_ID':run_id, 'PIPELINE_ENRICHMENT_BUDGET_SECONDS':'1200', 'PIPELINE_ENRICHMENT_MAX_JOBS':'180', 'REPLICATE_CANCEL_AFTER':'5m',
+           'CADASTRE_ENRICH_ENABLED':'false', 'DPE_ENRICH_ENABLED':'false',
+           # A scheduled unit must not sit on the catalogue writer lock for
+           # long (its budget is minutes); a busy catalogue fails the unit fast.
+           'PIPELINE_LOCK_WAIT_SECONDS':'300'}
     if source == 'enrichment-queue':
         command = [sys.executable,'-m','src.queued_runner','--enrichment-only']
         budget = 25 * 60
@@ -338,10 +420,24 @@ def execute(run_id: str) -> int:
     except Exception as exc:
         code, failure = 1, str(exc)[:1000]
     worker_code = code
+    reading_code = _run_document_reading(env) if source == 'enrichment-queue' and worker_code == 0 else None
+    licitor_history_code = _run_licitor_history_refresh(env) if source == 'enrichment-queue' else None
+    # Exit 2 from src.main means "published, but an enabled source was empty or
+    # failed": the run itself succeeded, so keep it succeeded and hand the
+    # warning to the workflow instead of recording a worker failure.
+    source_warning = source != 'enrichment-queue' and code == SOURCE_WARNING_EXIT_CODE
+    if source_warning:
+        code = worker_code = 0
     with _postgres_connect(db_url) as db:
         existing_summary = db.execute('select summary from public.auction_runs where id=%s', (run_id,)).fetchone()[0] or {}
         summary = {"scheduler_budget_seconds":budget,"execution_seconds":(datetime.now(UTC)-execution_started).total_seconds(),
-                   "worker_exit_code": worker_code}
+                   "worker_exit_code": SOURCE_WARNING_EXIT_CODE if source_warning else worker_code}
+        if source_warning:
+            summary["source_warning"] = True
+        if reading_code is not None:
+            summary["document_reading_exit_code"] = reading_code
+        if licitor_history_code is not None:
+            summary["licitor_history_exit_code"] = licitor_history_code
         run_errors: dict[str, list[str]] = {}
         counts: dict[object, object] = {}
         exhausted = 0
@@ -408,7 +504,7 @@ def execute(run_id: str) -> int:
              Jsonb(summary),run_id))
         db.execute("update public.auction_runs set summary=coalesce(summary,'{}') || %s where id=%s", (Jsonb(summary),run_id))
     finish_source(db_url, run_id)
-    return code
+    return SOURCE_WARNING_EXIT_CODE if source_warning and not code else code
 
 
 if __name__ == '__main__':

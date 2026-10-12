@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/app/**/*.{ts,tsx}", "scripts/**/*.mjs", "e2e/**/*.ts", "emails/**/*.tsx"],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "scripts/**/*.mjs",
+    "e2e/**/*.ts",
+    "emails/**/*.tsx",
+    "!src/types/**"
+  ],
+  "ignoreBinaries": ["openssl"],
+  "ignoreDependencies": ["@react-email/ui", "tailwindcss", "tw-animate-css"]
+}

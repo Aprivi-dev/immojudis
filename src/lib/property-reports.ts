@@ -1,77 +1,25 @@
-import { randomBytes } from "node:crypto";
+import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
-import { buildActiveComparablesAnalysis } from "@/lib/active-comparables-analysis";
-import { buildAudienceReadinessAnalysis } from "@/lib/audience-readiness-analysis";
-import { buildAuctionCostAnalysis } from "@/lib/auction-cost-analysis";
-import { buildCadastralAnalysis, type StructuredCadastralParcel } from "@/lib/cadastre-analysis";
-import { buildDemographicAnalysis } from "@/lib/demographic-analysis";
-import { buildDpeAnalysis } from "@/lib/dpe-analysis";
-import { normalizeDpeClass, type StructuredDpeDiagnostic } from "@/lib/dpe";
+import { getEnvironmentalContext } from "@/lib/environmental-context";
 import {
-  formatDate,
-  formatPrice,
-  formatPricePerM2,
-  occupancyLabel,
-  propertyTypeLabel,
-} from "@/lib/format";
-import { getEnvironmentalContext, type EnvironmentalContext } from "@/lib/environment.functions";
-import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
-import { buildLegalAttentionAnalysis } from "@/lib/legal-attention-analysis";
-import type { MarketEstimate } from "@/lib/market.functions";
-import { buildMarketComparablesAnalysis } from "@/lib/market-comparables-analysis";
-import { buildNearbyServicesAnalysis } from "@/lib/nearby-services";
-import { buildNeighborhoodAnalysis } from "@/lib/neighborhood-analysis";
-import { buildOccupancyAnalysis } from "@/lib/occupation-analysis";
-import { buildRenovationAnalysis } from "@/lib/renovation-analysis";
-import { cleanSaleTitle } from "@/lib/sale-title";
-import { getPrecomputedMarketEstimate } from "@/lib/sale-market-estimates";
-import {
-  featureAccess,
-  featureIncluded,
   isPlanPeriodActive,
   normalizePlanCode,
-  PLAN_LABELS,
+  pastDueGraceEnd,
   PLAN_LIMITS,
   type FeatureAccess,
   type FeatureKey,
+  type PlanBilling,
   type PlanCode,
+  type PlanStatus,
 } from "@/lib/plans";
-import {
-  computeAcquisitionCosts,
-  computeRecommendedCeilings,
-  computeRentabilityScore,
-  DEFAULT_MARKET_CEILING_SCENARIO,
-  DEFAULTS,
-} from "@/lib/profitability";
 import { createTextPdf } from "@/lib/simple-pdf";
-import {
-  buildReportTraceability,
-  REPORT_COMPLIANCE_NOTICE,
-  type SourceTraceEntry,
-} from "@/lib/source-traceability";
-import { buildStreetFacadeAnalysis } from "@/lib/street-facade-analysis";
-import { getMarketValuationSurfaces, getSaleSurface } from "@/lib/surface";
-import {
-  buildUrbanPlanningAnalysis,
-  type StructuredUrbanPlanningSignal,
-} from "@/lib/urban-planning-analysis";
-import { assertUsageLimitAvailable, recordFeatureUsageEvent } from "@/lib/usage";
-import { buildValuationAudit } from "@/lib/valuation-audit";
+import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
+import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
-import {
-  buildValuationBacktestForSale,
-  type ValuationBacktestResult,
-} from "@/lib/valuation-backtest";
-import type {
-  AuctionSale,
-  SaleDocumentRich,
-  SaleMedia,
-  SaleRisk,
-  SaleScoreFactor,
-} from "@/lib/types";
+import type { AuctionSale } from "@/lib/types";
 import {
   buildCeilingSnapshot,
   buildMarketSnapshot,
@@ -104,11 +52,11 @@ import {
 } from "./property-report/repository";
 import {
   asJson,
-  asRecord,
   attachPlan,
   createShareToken,
   defaultReportTitle,
   emptyToNull,
+  hashShareToken,
   normalizeShareExpiresAt,
   normalizeShareToken,
   normalizeSourceTrace,
@@ -117,8 +65,8 @@ import {
   saleLocation,
   shareIsExpired,
   slugify,
-  stringValue,
 } from "./property-report/serialization";
+import { asRecord, stringOrNumberValue } from "@/lib/guards";
 export type SupabaseClient = SupabaseAuthContext["supabase"];
 export type AppSaleRow = Database["public"]["Views"]["v_auction_sales_app"]["Row"];
 export type SavedReportRow = Database["public"]["Tables"]["saved_property_reports"]["Row"];
@@ -158,6 +106,7 @@ export type PlanEntitlements = {
   label: string;
   hasAnalysisAccess: boolean;
   currentPeriodEnd: string | null;
+  billing?: PlanBilling;
   limits: (typeof PLAN_LIMITS)[PlanCode];
   features: {
     salesStatistics: FeatureAccess;
@@ -220,6 +169,8 @@ export type PropertyReportSaveResponse = {
   report: SavedPropertyReport;
   plan: PlanEntitlements;
 };
+
+export type PropertyReportDetailResponse = PropertyReportSaveResponse;
 
 export type PropertyReportExport = {
   bytes: Uint8Array;
@@ -299,6 +250,23 @@ export async function listPropertyReports({
   };
 }
 
+export async function getPropertyReport({
+  auth,
+  reportId,
+}: {
+  auth: SupabaseAuthContext;
+  reportId: string;
+}): Promise<PropertyReportDetailResponse> {
+  const plan = await resolvePlanEntitlements(auth);
+  assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés au plan Analyse.");
+  const report = await getReport(auth.supabase, auth.userId, reportId);
+
+  return {
+    report: attachPlan(report, plan),
+    plan,
+  };
+}
+
 export async function savePropertyReport({
   auth,
   input,
@@ -359,13 +327,7 @@ export async function savePropertyReport({
   const ceilingSnapshot = buildCeilingSnapshot(sale, marketEstimate);
   if (input.simulation) {
     const personal = computeReportSimulation(sale, marketEstimate, input.simulation);
-    Object.assign(ceilingSnapshot, personal, {
-      personalSimulation: input.simulation,
-      acquisition: personal.simulated,
-      refreshWorksBudget: input.simulation.works,
-      maxBidWithoutWorks: null,
-      maxBidWithRefreshWorks: null,
-    });
+    Object.assign(ceilingSnapshot, personal, { personalSimulation: input.simulation });
   }
   const reportSnapshot = {
     ...buildReportSnapshot({
@@ -497,7 +459,7 @@ export async function exportPropertyReportPdf({
     lines,
     headings: REPORT_PDF_HEADINGS,
     footer:
-      "ImmoJudis - rapport indicatif. Vérifiez les pièces officielles et votre conseil avant toute enchère.",
+      "Immojudis - rapport indicatif. Vérifiez les pièces officielles et votre conseil avant toute enchère.",
     watermark: pdfWatermarkForPlan(plan),
   });
 
@@ -533,7 +495,9 @@ export async function enablePropertyReportShare({
     .from("saved_property_reports")
     .update({
       share_enabled: true,
-      share_token: shareToken,
+      // Only the digest is persisted; the clear token goes back to the owner once.
+      share_token: null,
+      share_token_hash: hashShareToken(shareToken),
       shared_at: now,
       share_expires_at: shareExpiresAt,
     })
@@ -547,7 +511,7 @@ export async function enablePropertyReportShare({
   return {
     report: attachPlan(data, plan),
     plan,
-    share: buildPropertyReportShare(data, origin),
+    share: buildPropertyReportShare(data, origin, shareToken),
   };
 }
 
@@ -569,6 +533,7 @@ export async function disablePropertyReportShare({
     .update({
       share_enabled: false,
       share_token: null,
+      share_token_hash: null,
       share_expires_at: null,
     })
     .eq("id", reportId)
@@ -598,14 +563,18 @@ export async function getSharedPropertyReport({
   const { data, error } = await supabaseAdmin
     .from("saved_property_reports")
     .select(
-      "id,sale_id,title,report_kind,report_snapshot,market_snapshot,environmental_snapshot,ceiling_snapshot,share_enabled,share_token,shared_at,share_expires_at,share_view_count,updated_at",
+      "id,user_id,sale_id,title,report_kind,report_snapshot,market_snapshot,environmental_snapshot,ceiling_snapshot,share_enabled,shared_at,share_expires_at,share_view_count,updated_at",
     )
-    .eq("share_token", normalized)
+    .eq("share_token_hash", hashShareToken(normalized))
     .eq("share_enabled", true)
     .maybeSingle();
 
   if (error) throw error;
   if (!data || shareIsExpired(data.share_expires_at)) {
+    throw new Error("Rapport partagé introuvable ou expiré.");
+  }
+  // A link stops working as soon as its owner no longer has an active Analyse plan.
+  if (!(await shareOwnerKeepsSavedReports(data.user_id))) {
     throw new Error("Rapport partagé introuvable ou expiré.");
   }
 
@@ -623,16 +592,48 @@ export async function getSharedPropertyReport({
   return buildPublicSharedPropertyReport(data);
 }
 
+/**
+ * Whether the owner of a shared report still holds a plan that includes saved reports.
+ * Shared links are cut when the subscription ends (no active period, past due, cancelled).
+ */
+export async function shareOwnerKeepsSavedReports(userId: string): Promise<boolean> {
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("user_profiles")
+    .select("account_tier,user_role")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (profileError) throw profileError;
+  if (profile?.user_role === "admin" || profile?.account_tier === "premium") return true;
+
+  const { data: subscription, error } = await supabaseAdmin
+    .from("user_subscriptions")
+    .select("plan_code,status,current_period_end")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  const plan =
+    subscription && isPlanPeriodActive(subscription.status, subscription.current_period_end)
+      ? normalizePlanCode(subscription.plan_code)
+      : "decouverte";
+  return featureUnlocked(buildPlanEntitlements(plan).features.savedReports);
+}
+
 export function buildPropertyReportShare(
   report: Pick<
     SavedReportRow,
-    "share_enabled" | "share_token" | "shared_at" | "share_expires_at" | "share_view_count"
-  >,
+    "share_enabled" | "shared_at" | "share_expires_at" | "share_view_count"
+  > &
+    Partial<Pick<SavedReportRow, "share_token" | "share_token_hash">>,
   origin?: string | null,
+  // The clear token exists only in the response that creates the link; the database
+  // keeps its digest, so an existing share cannot be re-displayed (rotate to get a new URL).
+  issuedToken?: string | null,
 ): PropertyReportShare {
-  const token = report.share_token;
+  const token = issuedToken ?? report.share_token ?? null;
   const enabled = Boolean(
-    report.share_enabled && token && !shareIsExpired(report.share_expires_at),
+    report.share_enabled &&
+    (token || report.share_token_hash) &&
+    !shareIsExpired(report.share_expires_at),
   );
 
   return {
@@ -684,7 +685,7 @@ export function buildPublicSharedPropertyReport(
     ceiling: report.ceiling_snapshot,
     sourceTrace: normalizeSourceTrace(traceability.entries),
     limitations: normalizeStringList(traceability.limitations),
-    disclaimer: stringValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE),
+    disclaimer: stringOrNumberValue(traceability.complianceNotice, REPORT_COMPLIANCE_NOTICE),
   };
 }
 
@@ -700,7 +701,7 @@ export async function resolvePlanEntitlements(
 
   const { data, error } = await auth.supabase
     .from("user_subscriptions")
-    .select("plan_code,status,current_period_end")
+    .select("plan_code,status,current_period_end,stripe_customer_id")
     .eq("user_id", auth.userId)
     .maybeSingle();
 
@@ -709,7 +710,11 @@ export async function resolvePlanEntitlements(
     data && isPlanPeriodActive(data.status, data.current_period_end)
       ? normalizePlanCode(data.plan_code)
       : "decouverte";
-  return buildPlanEntitlements(plan, data?.current_period_end ?? null);
+  return buildPlanEntitlements(plan, data?.current_period_end ?? null, PLAN_LIMITS[plan], {
+    status: (data?.status as PlanStatus | undefined) ?? null,
+    hasStripeCustomer: Boolean(data?.stripe_customer_id),
+    graceEndsAt: data?.status === "past_due" ? pastDueGraceEnd(data.current_period_end) : null,
+  });
 }
 
 export async function assertFeatureEntitlement(

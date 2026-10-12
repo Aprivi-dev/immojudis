@@ -1,16 +1,19 @@
+import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
-import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
+import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/sale-views";
+import { saleRows } from "@/lib/sale-rows";
 import {
   getPublicationVisibleSaleIds,
   SalePublicationUnavailableError,
 } from "@/lib/sale-publication-guard";
 import type { AuctionSale } from "@/lib/types";
 import { recordFeatureUsageEvent } from "@/lib/usage";
+import { asRecord, numberValue, stringValue } from "@/lib/guards";
 
 export const SALE_WATCH_KINDS = ["alert_match", "favorite", "workspace"] as const;
 export const SALE_CHANGE_EVENT_KINDS = [
@@ -284,8 +287,8 @@ export async function monitorUserSaleChanges({
     });
   }
 
-  await upsertWatchSnapshots(auth, snapshotRows);
-  const insertedRows = await insertChangeEvents(auth, eventRows);
+  await upsertWatchSnapshots(snapshotRows);
+  const insertedRows = await insertChangeEvents(eventRows);
 
   await recordFeatureUsageEvent({
     auth,
@@ -465,10 +468,10 @@ export function saleChangeEventRowToSummary(row: SaleChangeEventRow): SaleChange
   return {
     id: row.id,
     saleId: row.sale_id,
-    watchKind: row.watch_kind,
+    watchKind: row.watch_kind as SaleWatchKind,
     watchId: row.watch_id,
-    eventKind: row.event_kind,
-    severity: row.severity,
+    eventKind: row.event_kind as SaleChangeEventKind,
+    severity: row.severity as SaleChangeSeverity,
     fingerprint: row.fingerprint,
     summaryLabel: row.summary_label,
     changeSummary: asRecord(row.change_summary),
@@ -650,12 +653,12 @@ async function loadSalesByIds(
     .in("id", ids);
 
   if (error) throw error;
-  const rows = (data ?? []) as unknown as AuctionSale[];
+  const rows = saleRows(data);
   const visibleSaleIds = await getPublicationVisibleSaleIds(rows.map((sale) => sale.id));
   return rows.filter((sale) => visibleSaleIds.has(sale.id));
 }
 
-async function upsertWatchSnapshots(auth: SupabaseAuthContext, rows: SaleWatchSnapshotInsert[]) {
+async function upsertWatchSnapshots(rows: SaleWatchSnapshotInsert[]) {
   if (!rows.length) return;
 
   const { error } = await supabaseAdmin
@@ -665,10 +668,7 @@ async function upsertWatchSnapshots(auth: SupabaseAuthContext, rows: SaleWatchSn
   if (error) throw error;
 }
 
-async function insertChangeEvents(
-  auth: SupabaseAuthContext,
-  rows: SaleChangeEventInsert[],
-): Promise<SaleChangeEventRow[]> {
+async function insertChangeEvents(rows: SaleChangeEventInsert[]): Promise<SaleChangeEventRow[]> {
   if (!rows.length) return [];
 
   const { data, error } = await supabaseAdmin
@@ -855,20 +855,6 @@ function cleanString(value: string | null | undefined): string | null {
 
 function finiteNumber(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function numberValue(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }
 
 function asJson(value: unknown): Json {

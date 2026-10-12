@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
+import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
+import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
+import { PublicApiError } from "@/lib/api-errors";
+import { DETAIL_VIEW } from "@/lib/sale-views";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { refreshSaleValuationOnDemand } from "@/lib/sale-market-estimates";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -15,12 +20,26 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "market-estimate",
+      ...RATE_LIMIT_POLICIES.compute,
+    });
     await assertFeatureEntitlement(
       auth,
       "property.valueEstimate",
       "Estimation de marché réservée au plan Analyse.",
     );
     const { saleId } = requestSchema.parse(await request.json());
+    // Same visibility rule as the sale page: the sale must be readable by this user in
+    // the catalogue view (published and ready), not merely present in auction_sales.
+    const { data: visibleSale, error: visibilityError } = await auth.supabase
+      .from(DETAIL_VIEW)
+      .select("id")
+      .eq("id", saleId)
+      .maybeSingle();
+    if (visibilityError) throw visibilityError;
+    if (!visibleSale) throw new PublicApiError("Vente introuvable.", 404);
     const response = await refreshSaleValuationOnDemand(saleId);
     if (response.estimate) {
       await recordFeatureUsageEvent({
@@ -58,12 +77,9 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unauthorized";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.includes("réserv")
-        ? 403
-        : 400;
-    return NextResponse.json({ ok: false, error: message, estimate: null }, { status });
+    return apiRouteError(error, request, "market-estimate", {
+      fallbackMessage: "Unauthorized",
+      extra: { estimate: null },
+    });
   }
 }

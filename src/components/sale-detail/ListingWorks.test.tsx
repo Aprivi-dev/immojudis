@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import { formatPrice } from "@/lib/format";
@@ -14,8 +14,11 @@ describe("ListingWorks", () => {
     const { container } = render(<ListingWorks sale={EXAMPLE_SALE} estimatedBudget={12_500} />);
 
     expect(screen.getByRole("heading", { name: "Travaux et état du bien" })).toBeTruthy();
-    expect(screen.getByText("Point à retenir")).toBeTruthy();
-    expect(screen.getByText("Enveloppe de simulation")).toBeTruthy();
+    expect(screen.getByText("État et énergie")).toBeTruthy();
+    expect(screen.getByText("Budget travaux retenu")).toBeTruthy();
+    expect(screen.getByText("Rafraîchissement à prévoir")).toBeTruthy();
+    expect(screen.getByText("DPE D")).toBeTruthy();
+    expect(screen.getByText(/aucune interdiction de location/)).toBeTruthy();
     expect(container.textContent).toContain(formatPrice(12_500));
 
     const details = container.querySelector("details");
@@ -27,5 +30,120 @@ describe("ListingWorks", () => {
 
     const result = await axe(container, { rules: { "color-contrast": { enabled: false } } });
     expect(result.violations.map(({ id, help }) => ({ id, help }))).toEqual([]);
+  });
+
+  it("keeps the reference estimate until a complete manual detail is explicitly applied", () => {
+    const onBudgetChange = vi.fn();
+    render(
+      <ListingWorks sale={EXAMPLE_SALE} estimatedBudget={12_500} onBudgetChange={onBudgetChange} />,
+    );
+
+    expect(screen.getByText("Montant personnalisé")).toBeTruthy();
+    expect(screen.getByText(/enveloppe de simulation à confirmer par des devis/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Utiliser ce budget" })).toBeNull();
+    expect(onBudgetChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Détailler le budget" }));
+    fireEvent.change(screen.getByLabelText("Libellé du poste 1"), {
+      target: { value: "Peinture" },
+    });
+    fireEvent.change(screen.getByLabelText("Prix unitaire du poste 1"), {
+      target: { value: "2200" },
+    });
+
+    expect(screen.getByLabelText("Total du poste 1").textContent).toContain("2");
+    expect(screen.getByText("Détail saisi")).toBeTruthy();
+    expect(onBudgetChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Utiliser ce budget" }));
+    expect(onBudgetChange).toHaveBeenCalledWith(2_200);
+    expect(screen.getByRole("button", { name: "Budget utilisé" })).toBeTruthy();
+  });
+
+  it("does not invent a budget when the analysis has no estimate", () => {
+    const onBudgetChange = vi.fn();
+    render(
+      <ListingWorks sale={EXAMPLE_SALE} estimatedBudget={null} onBudgetChange={onBudgetChange} />,
+    );
+
+    expect(screen.getByText("Non estimé")).toBeTruthy();
+    expect(screen.getByText("Données insuffisantes")).toBeTruthy();
+    expect(onBudgetChange).not.toHaveBeenCalled();
+  });
+
+  it("restores a draft and emits edits without applying them to the simulation", () => {
+    const onDraftChange = vi.fn();
+    render(
+      <ListingWorks
+        sale={EXAMPLE_SALE}
+        estimatedBudget={12_500}
+        initialDraft={{
+          lines: [{ label: "Peinture", quantity: "2", unit: "m²", unitPrice: "100" }],
+        }}
+        onDraftChange={onDraftChange}
+      />,
+    );
+
+    expect((screen.getByLabelText("Libellé du poste 1") as HTMLInputElement).value).toBe(
+      "Peinture",
+    );
+    expect((screen.getByLabelText("Quantité du poste 1") as HTMLInputElement).value).toBe("2");
+    expect(screen.getByLabelText("Total du poste 1").textContent).toContain("200");
+    expect(onDraftChange).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Prix unitaire du poste 1"), {
+      target: { value: "125" },
+    });
+    expect(onDraftChange).toHaveBeenLastCalledWith({
+      lines: [
+        expect.objectContaining({
+          label: "Peinture",
+          quantity: "2",
+          unit: "m²",
+          unitPrice: "125",
+        }),
+      ],
+    });
+  });
+
+  it("picks a scenario or a quote, suggested by the published condition", () => {
+    const onScenarioSelect = vi.fn();
+    const { rerender } = render(
+      <ListingWorks
+        sale={EXAMPLE_SALE}
+        estimatedBudget={0}
+        surface={68}
+        onScenarioSelect={onScenarioSelect}
+        maxWorks={20_000}
+      />,
+    );
+
+    expect(screen.getAllByText("Aucun travaux").length).toBeGreaterThan(1);
+    expect(screen.getByText(/Aucun budget retenu : choisissez un scénario/)).toBeTruthy();
+    const refresh = screen.getByRole("radio", { name: /Rafraîchissement locatif/ });
+    expect(refresh.textContent).toContain("Suggéré");
+    expect(screen.getByText(/Suggéré par l’état décrit/)).toBeTruthy();
+
+    fireEvent.click(refresh);
+    expect(onScenarioSelect).toHaveBeenLastCalledWith(34_000);
+    fireEvent.change(screen.getByLabelText("Montant d’un devis travaux"), {
+      target: { value: "18000" },
+    });
+    expect(onScenarioSelect).toHaveBeenLastCalledWith(18_000);
+
+    rerender(
+      <ListingWorks
+        sale={EXAMPLE_SALE}
+        estimatedBudget={34_000}
+        surface={68}
+        onScenarioSelect={onScenarioSelect}
+        maxWorks={20_000}
+      />,
+    );
+    expect(
+      screen.getByRole("radio", { name: /Rafraîchissement locatif/ }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getAllByText("Rafraîchissement locatif").length).toBeGreaterThan(1);
+    expect(screen.getByText(/dépasse l’enveloppe travaux maximale/)).toBeTruthy();
   });
 });

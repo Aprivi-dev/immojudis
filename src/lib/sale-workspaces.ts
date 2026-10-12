@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PublicApiError } from "@/lib/api-errors";
 import { pilotDraftSchema } from "@/lib/professional-pilots";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -8,7 +9,6 @@ import {
   DOCUMENT_REVIEW_STATUSES,
   SALE_WORKSPACE_STATUSES,
   type SaleWorkspaceChecklist,
-  type SaleWorkspaceDocumentReview,
   type SaleWorkspaceDocumentReviews,
   type SaleWorkspacePrivateNotes,
   type SaleWorkspaceStatus,
@@ -86,9 +86,9 @@ export const professionalPilotSaveSchema = z.object({
 
 export type ProfessionalPilotSaveInput = z.infer<typeof professionalPilotSaveSchema>;
 
-export class SaleWorkspaceConflictError extends Error {
+export class SaleWorkspaceConflictError extends PublicApiError {
   constructor() {
-    super("Le dossier a changé sur votre compte. Rechargez la page avant de l'enregistrer.");
+    super("Le dossier a changé sur votre compte. Rechargez la page avant de l'enregistrer.", 409);
     this.name = "SaleWorkspaceConflictError";
   }
 }

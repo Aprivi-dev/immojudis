@@ -96,6 +96,60 @@ def test_date_only_marker_uses_the_paris_civil_date_for_an_aware_midnight():
     assert retention_deadline(sale) == datetime(2026, 10, 26, 23, tzinfo=UTC)
 
 
+def test_catalogue_date_only_expires_at_end_of_paris_civil_day():
+    from datetime import UTC, datetime
+
+    from src.admission import catalogue_expiry_deadline, is_catalogue_expired
+
+    sale = AuctionSale(
+        source_name="test",
+        source_url="https://example.org/catalogue-date-only",
+        sale_date="2026-10-25T00:00:00+02:00",
+        raw_payload={"sale_date": "2026-10-25", "date_precision": "day"},
+    )
+    deadline = catalogue_expiry_deadline(sale)
+
+    assert deadline == datetime(2026, 10, 25, 23, tzinfo=UTC)
+    assert not is_catalogue_expired(sale, datetime(2026, 10, 25, 22, 59, tzinfo=UTC))
+    assert is_catalogue_expired(sale, deadline)
+
+
+def test_catalogue_timed_sale_expires_at_observed_timestamp():
+    from datetime import UTC, datetime
+
+    from src.admission import catalogue_expiry_deadline
+
+    sale = AuctionSale(
+        source_name="test",
+        source_url="https://example.org/catalogue-timed",
+        sale_date="2026-10-25T14:00:00+02:00",
+        raw_payload={"sale_date": "25/10/2026 à 14h"},
+    )
+
+    assert catalogue_expiry_deadline(sale) == datetime(2026, 10, 25, 12, tzinfo=UTC)
+
+
+def test_catalogue_online_sale_expires_at_validated_window_close():
+    from datetime import UTC, datetime
+
+    from src.admission import catalogue_expiry_deadline
+
+    sale = AuctionSale(
+        source_name="test",
+        source_url="https://example.org/catalogue-online-window",
+        sale_date="2026-10-25T14:00:00+02:00",
+        sale_procedure={
+            "sale_window": {
+                "opens_at": "2026-10-25T12:00:00Z",
+                "closes_at": "2026-10-25T15:00:00Z",
+            }
+        },
+        raw_payload={"sale_date": "25/10/2026 à 14h"},
+    )
+
+    assert catalogue_expiry_deadline(sale) == datetime(2026, 10, 25, 15, tzinfo=UTC)
+
+
 def test_midnight_sale_date_without_date_only_evidence_keeps_timestamp_semantics():
     from datetime import UTC, datetime
 

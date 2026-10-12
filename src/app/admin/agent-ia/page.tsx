@@ -1,17 +1,12 @@
 import type { Metadata } from "next";
-import { AuthGate } from "@/components/AuthGate";
-import { AdminDashboardPage } from "@/routes/admin";
+import { AdminAgentPage } from "./admin-agent-page";
 
 export const metadata: Metadata = {
   title: "Agent IA admin",
-  description: "Configuration du template de prise de contact de l’agent IA ImmoJudis.",
+  description: "Configuration du template de prise de contact de l’agent IA Immojudis.",
   robots: { index: false, follow: false },
 };
 
 export default function Page() {
-  return (
-    <AuthGate>
-      <AdminDashboardPage initialView="agent" />
-    </AuthGate>
-  );
+  return <AdminAgentPage />;
 }

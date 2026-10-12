@@ -4,6 +4,7 @@ import sys
 import types
 from datetime import UTC, datetime
 from decimal import Decimal
+from threading import Lock
 
 import pytest
 
@@ -63,6 +64,82 @@ def test_needs_heavy_enrichment_skips_complete_sale(monkeypatch) -> None:
     sale.raw_payload["llm_display_status"] = "accepted"
     sale.raw_payload["llm_prompt_version"] = "auction_llm_v5"
     assert main._needs_heavy_enrichment(sale, use_llm=True) is False
+
+
+def test_known_source_urls_from_raw_sales_includes_primary_and_aliases() -> None:
+    assert main._known_source_urls_from_raw_sales([
+        {
+            "source_url": "https://example.test/primary",
+            "source_urls": ["https://example.test/alias"],
+        },
+        {
+            "source_url": "https://example.test/primary",
+            "source_urls": {"secondary": "https://example.test/other"},
+        },
+    ]) == [
+        "https://example.test/alias",
+        "https://example.test/other",
+        "https://example.test/primary",
+    ]
+
+
+def test_known_payload_hydration_fails_closed_without_rich_row() -> None:
+    source_url = "https://example.test/known"
+    known = {source_url: {"raw_payload": {"source_checks": {source_url: {}}}}}
+    loaded: set[str] = set()
+
+    def missing_fetch(**_kwargs):
+        return {}
+
+    with pytest.raises(RuntimeError, match="no complete rows"):
+        main._hydrate_known_payloads_for_rows(
+            [{"source_url": source_url}],
+            known,
+            loaded,
+            fetch_details=missing_fetch,
+            lock=Lock(),
+        )
+
+    assert loaded == set()
+    assert known[source_url]["raw_payload"] == {"source_checks": {source_url: {}}}
+
+
+def test_known_payload_hydration_marks_aliases_returned_by_fetch_as_loaded() -> None:
+    alias_url = "https://example.test/alias"
+    canonical_url = "https://example.test/canonical"
+    known = {
+        alias_url: {"raw_payload": {"source_presence": {}}},
+        canonical_url: {"raw_payload": {"source_presence": {}}},
+    }
+    hydrated = {
+        alias_url: {"raw_payload": {"source_sale_schedule": {"alias": True}}},
+        canonical_url: {"raw_payload": {"source_sale_schedule": {"canonical": True}}},
+    }
+    loaded: set[str] = set()
+    calls: list[dict[str, object]] = []
+
+    def fetch_details(**kwargs):
+        calls.append(kwargs)
+        return hydrated
+
+    main._hydrate_known_payloads_for_rows(
+        [{"source_url": alias_url}],
+        known,
+        loaded,
+        fetch_details=fetch_details,
+        lock=Lock(),
+    )
+    main._hydrate_known_payloads_for_rows(
+        [{"source_url": canonical_url}],
+        known,
+        loaded,
+        fetch_details=fetch_details,
+        lock=Lock(),
+    )
+
+    assert len(calls) == 1
+    assert loaded == {alias_url, canonical_url}
+    assert known[canonical_url] == hydrated[canonical_url]
 
 
 def test_run_scraper_uses_killable_source_worker_when_enabled(monkeypatch) -> None:
@@ -178,6 +255,43 @@ def test_run_scraper_isolates_avoventes_by_default(monkeypatch) -> None:
     assert isolated_calls == ["avoventes"]
 
 
+def test_run_scraper_isolates_petites_affiches_with_existing_source_parameters(monkeypatch) -> None:
+    expected = ScrapeResult([], [], {"coverage_complete": False, "budget_exhausted": True})
+    calls: dict[str, object] = {}
+
+    def fake_isolated(source, **kwargs):
+        calls["source"] = source
+        calls.update(kwargs)
+        return expected, 0.1
+
+    monkeypatch.setattr(main, "run_source_in_subprocess", fake_isolated)
+
+    def progressive_publisher(rows):
+        del rows
+
+    known = {"https://example.test/vente": "sig"}
+
+    result = main._run_scraper(
+        "petites_affiches",
+        lambda: (_ for _ in ()).throw(AssertionError("thread fallback must not run")),
+        {**_settings(), "source_process_isolation": True, "source_scrape_timeout_seconds": 1800},
+        known,
+        {},
+        progressive_publisher,
+    )
+
+    assert result == (expected, 0.1)
+    assert calls == {
+        "source": "petites_affiches",
+        "known": known,
+        "known_details": None,
+        "max_pages": None,
+        "fetch_detail_heavy": True,
+        "timeout_seconds": 1800.0,
+        "on_batch": progressive_publisher,
+    }
+
+
 def test_run_scraper_keeps_other_sources_on_original_thread_path(monkeypatch) -> None:
     expected = ScrapeResult([], [], {"coverage_complete": True})
     isolated_calls: list[str] = []
@@ -198,6 +312,21 @@ def test_run_scraper_keeps_other_sources_on_original_thread_path(monkeypatch) ->
 
     assert result[0] == expected
     assert isolated_calls == []
+
+
+def test_run_scraper_keeps_petites_affiches_thread_path_when_isolation_disabled() -> None:
+    expected = ScrapeResult([], [], {"coverage_complete": True})
+
+    result = main._run_scraper(
+        "petites_affiches",
+        lambda: expected,
+        {**_settings(), "source_process_isolation": False},
+        {},
+        {},
+    )
+
+    assert result[0] == expected
+    assert result[1] >= 0
 
 
 def test_document_facts_version_forces_one_time_pdf_reanalysis(tmp_path, monkeypatch) -> None:
@@ -1154,14 +1283,23 @@ def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
         raw_payload={"source_blocks": {"description": "Appartement."}},
     )
     calls: list[str] = []
+    progress_summaries: list[dict[str, object]] = []
+    finish_summaries: list[dict[str, object]] = []
 
     monkeypatch.setattr(main, "load_settings", lambda: settings)
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-backfill")
-    monkeypatch.setattr(main, "finish_run_in_supabase", lambda *args, **kwargs: calls.append("finish"))
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda *args, **kwargs: (calls.append("finish"), finish_summaries.append(args[2])),
+    )
     monkeypatch.setattr(
         main,
         "update_run_progress_in_supabase",
-        lambda run_id, summary, errors=None: calls.append(f"progress:{summary['completed']}"),
+        lambda run_id, summary, errors=None: (
+            calls.append(f"progress:{summary['completed']}"),
+            progress_summaries.append(summary),
+        ),
     )
     monkeypatch.setattr(main, "fetch_sales_needing_llm_descriptions", lambda **kwargs: [stale, failed])
     monkeypatch.setattr(main, "create_llm_client", lambda: object())
@@ -1190,10 +1328,47 @@ def test_run_llm_description_backfill_marks_failed_sales(monkeypatch) -> None:
 
     monkeypatch.setattr(main, "upsert_sales_to_supabase", fake_upsert)
 
-    assert main.run_llm_description_backfill(main.PipelineOptions(llm_backfill=True, upsert=True)) == 1
+    assert (
+        main.run_llm_description_backfill(
+            main.PipelineOptions(llm_backfill=True, upsert=True, limit=7)
+        )
+        == 1
+    )
     assert calls.count("upsert:1") == 2
     assert calls[-1] == "finish"
     assert failed.raw_payload["llm_display_error_count"] == 1
+    assert progress_summaries
+    assert all(summary["limit"] == 7 for summary in progress_summaries)
+    assert finish_summaries[-1]["limit"] == 7
+
+
+def test_run_llm_description_backfill_persists_limit_when_no_sales(monkeypatch) -> None:
+    settings = {**_settings(), "pipeline_llm_backfill_max_targets": 20}
+    finished: list[dict[str, object]] = []
+
+    monkeypatch.setattr(main, "load_settings", lambda: settings)
+    monkeypatch.setattr(main, "fetch_sales_needing_llm_descriptions", lambda **_: [])
+    monkeypatch.setattr(
+        main,
+        "finish_run_in_supabase",
+        lambda run_id, status, summary, errors: finished.append(summary),
+    )
+
+    assert (
+        main.run_llm_description_backfill(
+            main.PipelineOptions(llm_backfill=True, upsert=True, limit=7, run_id="run-backfill")
+        )
+        == 0
+    )
+    assert len(finished) == 1
+    assert finished[0]["mode"] == "llm_description_backfill"
+    assert finished[0]["limit"] == 7
+    assert finished[0]["selected"] == 0
+    assert finished[0]["processed"] == 0
+    assert finished[0]["updated"] == 0
+    assert finished[0]["prompt_version"] == settings["llm_prompt_version"]
+    assert finished[0]["statuses"] == ["active", "upcoming"]
+    assert finished[0]["skipped_unauthorized"] == 0
 
 
 def test_llm_backfill_progress_is_batched() -> None:
@@ -1232,6 +1407,174 @@ def test_known_unchanged_detail_is_hydrated_from_known_sale() -> None:
     assert raw["visit_dates"] == ["2027-01-05 10:00"]
     assert raw["lawyer_name"] == "Me Test"
     assert raw["source_blocks"] == {"visites": "Sur rendez-vous"}
+
+
+def test_unchanged_card_keeps_the_stored_detail_blocks_for_every_source() -> None:
+    # A list card always carries ``listing_completeness``: without an explicit
+    # restore, every pass without a re-read dropped the blocks of the stored
+    # detail (Enchères Immobilières lost its characteristics this way).
+    url = "https://www.encheres-immobilieres.com/vente/123"
+    raw = {
+        "_known_unchanged": True,
+        "source_url": url,
+        "source_name": "encheres_immobilieres",
+        "source_blocks": {"listing_completeness": {"fresh": True}, "titre": "Maison"},
+    }
+    known = {url: {"raw_payload": {"source_blocks": {
+        "caracteristiques_bien": {"source": "encheres_immobilieres"},
+        "avocat": "Me Exemple",
+        "listing_completeness": {"stale": True},
+    }}}}
+
+    main._hydrate_known_unchanged_sales([raw], known)
+
+    assert raw["source_blocks"] == {
+        "caracteristiques_bien": {"source": "encheres_immobilieres"},
+        "avocat": "Me Exemple",
+        "titre": "Maison",
+    }
+
+
+def test_sparse_known_hydration_preserves_unchanged_coordinates_and_investment() -> None:
+    source_url = "https://example.test/sparse-known"
+    raw = {
+        "_known_unchanged": True,
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+    known = {
+        source_url: {
+            "latitude": 44.84,
+            "longitude": -0.57,
+            "risk_notes": "Adresse à confirmer",
+            "investment_score": 7.4,
+            "investment_summary": "Bonne liquidité",
+            "raw_payload": {},
+        }
+    }
+
+    assert main._hydrate_known_unchanged_sales([raw], known) == 1
+
+    assert raw["latitude"] == 44.84
+    assert raw["longitude"] == -0.57
+    assert raw["risk_notes"] == "Adresse à confirmer"
+    assert raw["investment_score"] == 7.4
+    assert raw["investment_summary"] == "Bonne liquidité"
+
+
+def test_sparse_known_hydration_preserves_geocode_and_tribunal_evidence() -> None:
+    source_url = "https://example.test/sparse-evidence"
+    geocode = {
+        "provider": "ban_geoplateforme",
+        "accepted": True,
+        "citycode": "33063",
+    }
+    tribunal_assignment = {
+        "status": "verified",
+        "insee_code": "33063",
+        "court_name": "Tribunal judiciaire de Bordeaux",
+    }
+    raw = {
+        "_known_unchanged": True,
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+    known = {
+        source_url: {
+            "raw_payload": {
+                "geocode": geocode,
+                "tribunal_assignment": tribunal_assignment,
+            },
+        }
+    }
+
+    assert main._hydrate_known_unchanged_sales([raw], known) == 1
+
+    assert raw["geocode"] == geocode
+    assert raw["tribunal_assignment"] == tribunal_assignment
+
+
+def test_sparse_known_hydration_preserves_sale_schedule_and_date_precision() -> None:
+    source_url = "https://example.test/sparse-retention"
+    retention_metadata = {
+        "source_sale_schedule": {
+            "opens_at": "2027-03-15T10:00:00Z",
+            "closes_at": "2027-03-15T14:00:00Z",
+        },
+        "date_precision": "day",
+        "sale_date_precision": "source_day",
+    }
+    known = {source_url: {"raw_payload": retention_metadata}}
+
+    unchanged = {
+        "_known_unchanged": True,
+        "source_detail_status": "complete",
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+    failed = {
+        "_detail_fetch_failed": True,
+        "source_detail_status": "failed",
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+    sparse = {
+        "source_detail_status": "restricted",
+        "source_url": source_url,
+        "source_name": "vench",
+    }
+
+    assert main._hydrate_known_unchanged_sales([unchanged, failed], known) == 1
+    main._preserve_known_enrichment_payloads([sparse], known)
+
+    for sale in (unchanged, failed, sparse):
+        for key, value in retention_metadata.items():
+            assert sale[key] == value
+
+
+def test_fresh_complete_source_does_not_restore_stale_source_metadata() -> None:
+    source_url = "https://example.test/fresh-land-source"
+    known = {
+        source_url: {
+            "raw_payload": {
+                "source_sale_schedule": {"closes_at": "2027-03-15T14:00:00Z"},
+                "date_precision": "day",
+                "sale_date_precision": "source_day",
+                "operator_land_surface_conflict": True,
+                "operator_land_surface_scope": "copropriété",
+                "source_display_constraints": ["Surface terrain à vérifier"],
+            }
+        }
+    }
+    fresh = {
+        "source_detail_status": "complete",
+        "source_name": "agrasc",
+        "source_url": source_url,
+        "sale_date": "2027-04-20T12:00:00Z",
+        "description": "La nouvelle source décrit le bien sans conflit de surface.",
+    }
+    sparse = {
+        "source_detail_status": "restricted",
+        "source_name": "agrasc",
+        "source_url": source_url,
+    }
+
+    main._preserve_known_enrichment_payloads([fresh], known)
+    main._preserve_known_enrichment_payloads([sparse], known)
+
+    assert "source_sale_schedule" not in fresh
+    assert "date_precision" not in fresh
+    assert "sale_date_precision" not in fresh
+    assert "operator_land_surface_conflict" not in fresh
+    assert "operator_land_surface_scope" not in fresh
+    assert "source_display_constraints" not in fresh
+    assert sparse["operator_land_surface_conflict"] is True
+    assert sparse["operator_land_surface_scope"] == "copropriété"
+    assert sparse["source_display_constraints"] == ["Surface terrain à vérifier"]
+
+    assert sparse["source_sale_schedule"] == {"closes_at": "2027-03-15T14:00:00Z"}
+    assert sparse["date_precision"] == "day"
+    assert sparse["sale_date_precision"] == "source_day"
 
 
 def test_known_pdf_surface_is_preserved_before_incremental_publication() -> None:
@@ -1360,6 +1703,27 @@ def test_cold_worker_roundtrip_keeps_pdf_provenance_and_matching_source_facts() 
     assert cold_raw["pdf_fact_provenance"] == pdf_markers["pdf_fact_provenance"]
     assert cold_raw["rooms_count"] == source_facts["rooms_count"]
     assert cold_raw["surface_m2"] == source_facts["surface_m2"]
+
+
+def test_cold_worker_preserves_vench_source_contract_from_bounded_snapshot() -> None:
+    source_url = "https://example.test/vench/source-contract"
+    contract = {
+        "source_property_features": {"energy": {"dpe_class": "D"}},
+        "source_property_feature_evidence": {"energy": [{"text": "DPE D"}]},
+        "source_property_features_meta": {"version": "source_features_v2"},
+        "source_procedure_profile": {"family": "judicial", "confidence": 0.9},
+        "source_field_observations": {"sale_date": {"state": "observed"}},
+        "source_evidence": {"sale_date": [{"value": "2027-02-15"}]},
+        "source_evidence_provenance": {"sale_date": {"source": "vench"}},
+        "source_energy_diagnostics": {"dpe_class": "D"},
+    }
+    raw = {"source_name": "vench", "source_url": source_url}
+    known = {source_url: {"raw_payload": contract}}
+
+    main._preserve_known_enrichment_payloads([raw], known)
+
+    for key, value in contract.items():
+        assert raw[key] == value
 
 
 def test_known_pdf_price_resolution_is_preserved_until_source_price_changes() -> None:

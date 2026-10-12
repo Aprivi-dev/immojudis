@@ -3,7 +3,7 @@ import { AuthGate } from "@/components/AuthGate";
 import { FavoriteSales } from "@/components/FavoriteSales";
 
 export const metadata: Metadata = {
-  title: "Mes ventes suivies",
+  title: "Mes favoris",
   robots: { index: false, follow: false },
 };
 

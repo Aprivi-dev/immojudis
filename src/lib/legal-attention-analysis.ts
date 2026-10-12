@@ -83,7 +83,7 @@ function documentControlItems(documents: SaleDocumentRich[]): LegalAttentionItem
       source: "Pièces du dossier",
       reason:
         "La pièce centrale qui fixe règles de vente, frais, clauses et contraintes n'est pas repérée.",
-      action: "Récupérer et relire le cahier des conditions avant de figer la mise maximale.",
+      action: "Récupérer et relire le cahier des conditions avant de figer l’enchère plafond.",
     });
   } else {
     items.push({

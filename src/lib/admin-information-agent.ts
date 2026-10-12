@@ -1,35 +1,50 @@
+import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { nullableRpcArg } from "@/lib/rpc-args";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { adminPageQueryShape } from "@/lib/admin-page-query";
+import { ADMIN_PAGE_SIZE, adminPageMeta } from "@/lib/admin-pagination";
 import { optimizeInformationAgentPhoto } from "@/lib/information-agent-image";
+import { flattenPdfForPublication } from "@/lib/information-agent-pdf";
 import {
   createAdminInformationAgentDraft,
   informationAgentAdminActionSchema,
   informationAgentCreateSchema,
   informationAgentListQuerySchema,
+  informationAgentPreviewSchema,
   listAdminInformationAgentMissions,
+  previewAdminInformationAgentMission,
   runAdminInformationAgentAction,
   type InformationAgentAdminActionPayload,
   type InformationAgentAdminListResponse,
+  type InformationAgentAdminMissionPage,
   type InformationAgentAdminResponse,
+  type InformationAgentPreviewInput,
+  type InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
 
 export const adminInformationAgentCreateSchema = informationAgentCreateSchema;
 export const adminInformationAgentActionSchema = informationAgentAdminActionSchema;
 export const adminInformationAgentListQuerySchema = informationAgentListQuerySchema;
+export const adminInformationAgentPreviewSchema = informationAgentPreviewSchema;
 
 export type AdminInformationAgentAction = InformationAgentAdminActionPayload;
 
 export async function listAdminInformationAgentMissionsForToken({
   authToken,
   saleId,
+  offset,
+  limit,
 }: {
   authToken: string;
   saleId?: string;
-}): Promise<InformationAgentAdminListResponse> {
+  offset?: number;
+  limit?: number;
+}): Promise<InformationAgentAdminMissionPage> {
   const auth = await requireAdmin(authToken);
-  return listAdminInformationAgentMissions({ auth, saleId });
+  return listAdminInformationAgentMissions({ auth, saleId, offset, limit });
 }
 
 export async function createAdminInformationAgentMissionForToken({
@@ -54,71 +69,79 @@ export async function runAdminInformationAgentMissionActionForToken({
   return runAdminInformationAgentAction({ auth, input });
 }
 
+/** Aperçu exact de l'e-mail : rien n'est enregistré ni envoyé. */
+export async function previewAdminInformationAgentMissionForToken({
+  authToken,
+  input,
+}: {
+  authToken: string;
+  input: InformationAgentPreviewInput;
+}): Promise<InformationAgentPreviewResponse> {
+  const auth = await requireAdmin(authToken);
+  return previewAdminInformationAgentMission({ auth, input });
+}
+
 export const adminInformationAgentReviewSchema = z.object({
   factId: z.string().uuid(),
   decision: z.enum(["accepted", "rejected"]),
   notes: z.string().trim().max(2000).nullable().optional(),
+  /** "Caviardage vérifié": required to accept a document or a photo for publication. */
+  redactionConfirmed: z.boolean().optional(),
+  redactionVerifiedBy: z.string().trim().min(3).max(120).optional(),
 });
 
 export type AdminInformationAgentReviewInput = z.output<typeof adminInformationAgentReviewSchema>;
 
-const REVIEW_PAGE_SIZE = 100;
-const REVIEW_DONE_CURSOR = "__done__";
-const reviewCursorSchema = z.object({
-  createdAt: z.string().datetime({ offset: true }),
-  id: z.string().uuid(),
-});
+export const adminInformationAgentReviewQuerySchema = z.object(adminPageQueryShape);
 
 type AdminInformationAgentReviewListOptions = {
-  factCursor?: string;
-  messageCursor?: string;
+  offset?: number;
+  limit?: number;
 };
 
+/**
+ * Réponses reçues et faits à contrôler, 50 par page (`offset` / `limit`, validés par zod à la
+ * route). Les deux listes avancent ensemble : la page N montre les lignes N·limit … de chacune,
+ * `factsTotal` et `messagesTotal` donnent leur taille, `total` la plus grande des deux.
+ */
 export async function listAdminInformationAgentReview(
   authToken: string,
   options: AdminInformationAgentReviewListOptions = {},
 ) {
   await requireAdmin(authToken);
-  const factCursor = parseReviewCursor(options.factCursor);
-  const messageCursor = parseReviewCursor(options.messageCursor);
+  const offset = options.offset ?? 0;
+  const limit = options.limit ?? ADMIN_PAGE_SIZE;
+  const to = offset + limit - 1;
 
-  let factQuery = supabaseAdmin
-    .from("information_agent_fact_candidates")
-    .select("*")
-    .in("status", ["pending", "conflict"])
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true });
-  if (factCursor && factCursor !== REVIEW_DONE_CURSOR) {
-    factQuery = factQuery.or(cursorFilter(factCursor, "asc"));
-  }
-  const { data: factRows, error: factsError } =
-    factCursor === REVIEW_DONE_CURSOR
-      ? { data: [], error: null }
-      : await factQuery.range(0, REVIEW_PAGE_SIZE);
-  if (factsError) throw factsError;
-  const facts = (factRows ?? []).slice(0, REVIEW_PAGE_SIZE);
-
-  // created_at is non-null for every message; pairing it with the UUID keeps
-  // the cursor stable when several replies share the same timestamp.
-  let messageQuery = supabaseAdmin
-    .from("information_agent_messages")
-    .select("id,case_id,from_email,subject,body_text,created_at,received_at,metadata")
-    .eq("direction", "inbound")
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false });
-  if (messageCursor && messageCursor !== REVIEW_DONE_CURSOR) {
-    messageQuery = messageQuery.or(cursorFilter(messageCursor, "desc"));
-  }
-  const { data: messageRows, error: messagesError } =
-    messageCursor === REVIEW_DONE_CURSOR
-      ? { data: [], error: null }
-      : await messageQuery.range(0, REVIEW_PAGE_SIZE);
-  if (messagesError) throw messagesError;
-  const messages = (messageRows ?? []).slice(0, REVIEW_PAGE_SIZE);
+  const [factsResult, messagesResult] = await Promise.all([
+    supabaseAdmin
+      .from("information_agent_fact_candidates")
+      .select("*", { count: "exact" })
+      .in("status", ["pending", "conflict"])
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, to),
+    // created_at est non nul pour chaque message ; l'id départage les réponses simultanées.
+    supabaseAdmin
+      .from("information_agent_messages")
+      .select("id,case_id,from_email,subject,body_text,created_at,received_at,metadata", {
+        count: "exact",
+      })
+      .eq("direction", "inbound")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, to),
+  ]);
+  if (factsResult.error) throw factsResult.error;
+  if (messagesResult.error) throw messagesResult.error;
+  const facts = factsResult.data ?? [];
+  const messages = messagesResult.data ?? [];
+  const factsTotal = factsResult.count ?? offset + facts.length;
+  const messagesTotal = messagesResult.count ?? offset + messages.length;
 
   const caseIds = [
     ...new Set([
-      ...(facts ?? []).map((fact) => fact.case_id),
+      ...facts.map((fact) => fact.case_id),
       ...messages.flatMap((message) => (message.case_id ? [message.case_id] : [])),
     ]),
   ];
@@ -133,8 +156,8 @@ export async function listAdminInformationAgentReview(
     : { data: [], error: null };
   if (casesError) throw casesError;
 
-  // A case can accumulate more evidence than PostgREST's default response
-  // cap. The review page only needs assets linked to its facts.
+  // Un dossier peut accumuler plus de pièces que la limite de réponse de PostgREST : la page
+  // de revue n'a besoin que des pièces liées à ses faits.
   const evidenceAssetIds = [
     ...new Set(facts.flatMap((fact) => (fact.evidence_asset_id ? [fact.evidence_asset_id] : []))),
   ];
@@ -146,6 +169,20 @@ export async function listAdminInformationAgentReview(
         .order("created_at", { ascending: true })
     : { data: [], error: null };
   if (assetsError) throw assetsError;
+
+  // Provenance de chaque fait : le message dont il est extrait (réponse e-mail, dépôt du portail
+  // ou import manuel), même s'il n'apparaît pas sur la page de messages affichée.
+  const factMessageIds = [...new Set(facts.map((fact) => fact.message_id).filter(Boolean))];
+  const { data: factMessages, error: factMessagesError } = factMessageIds.length
+    ? await supabaseAdmin
+        .from("information_agent_messages")
+        .select("id,from_email,received_at,metadata")
+        .in("id", factMessageIds)
+    : { data: [], error: null };
+  if (factMessagesError) throw factMessagesError;
+  const factSources = (factMessages ?? []).map((message) =>
+    informationAgentFactSource(message as FactSourceMessage),
+  );
 
   const assetIds = (assets ?? []).map((asset) => asset.id);
   const { data: extractions, error: extractionsError } = assetIds.length
@@ -165,41 +202,47 @@ export async function listAdminInformationAgentReview(
     assets: assets ?? [],
     extractions: extractions ?? [],
     messages,
-    hasMoreFacts: (factRows ?? []).length > REVIEW_PAGE_SIZE,
-    nextFactsCursor:
-      (factRows ?? []).length > REVIEW_PAGE_SIZE && facts.length
-        ? encodeReviewCursor(facts[facts.length - 1])
-        : null,
-    hasMoreMessages: (messageRows ?? []).length > REVIEW_PAGE_SIZE,
-    nextMessagesCursor:
-      (messageRows ?? []).length > REVIEW_PAGE_SIZE && messages.length
-        ? encodeReviewCursor(messages[messages.length - 1])
-        : null,
+    factSources,
+    factsTotal,
+    messagesTotal,
+    ...adminPageMeta({ offset, limit, total: Math.max(factsTotal, messagesTotal) }),
   };
 }
 
-function parseReviewCursor(
-  value: string | undefined,
-): typeof REVIEW_DONE_CURSOR | z.output<typeof reviewCursorSchema> | null {
-  if (!value) return null;
-  if (value === REVIEW_DONE_CURSOR) return REVIEW_DONE_CURSOR;
-  try {
-    return reviewCursorSchema.parse(JSON.parse(value));
-  } catch {
-    throw new Error("Curseur de revue invalide.");
-  }
-}
+type FactSourceMessage = {
+  id: string;
+  from_email: string | null;
+  received_at: string | null;
+  metadata: unknown;
+};
 
-function encodeReviewCursor(row: { created_at: string; id: string }): string {
-  return JSON.stringify({ createdAt: row.created_at, id: row.id });
-}
+export type InformationAgentFactSource = {
+  messageId: string;
+  channel: "email" | "portal" | "admin_manual_reply";
+  fromEmail: string | null;
+  receivedAt: string | null;
+  /** L'expéditeur correspond au contact sollicité (e-mail) ou l'a déclaré (portail). */
+  senderMatchesRecipient: boolean | null;
+};
 
-function cursorFilter(
-  cursor: z.output<typeof reviewCursorSchema>,
-  direction: "asc" | "desc",
-): string {
-  const operator = direction === "asc" ? "gt" : "lt";
-  return `created_at.${operator}.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.${operator}.${cursor.id})`;
+export function informationAgentFactSource(message: FactSourceMessage): InformationAgentFactSource {
+  const metadata = recordOrEmpty(message.metadata);
+  const channel =
+    metadata.channel === "portal"
+      ? "portal"
+      : metadata.channel === "admin_manual_reply" || metadata.imported_manually === true
+        ? "admin_manual_reply"
+        : "email";
+  return {
+    messageId: message.id,
+    channel,
+    fromEmail: message.from_email,
+    receivedAt: message.received_at,
+    senderMatchesRecipient:
+      typeof metadata.sender_matches_recipient === "boolean"
+        ? metadata.sender_matches_recipient
+        : null,
+  };
 }
 
 export type AdminInformationAgentReviewResponse = Awaited<
@@ -215,7 +258,11 @@ export async function reviewAdminInformationAgentFact({
 }) {
   const auth = await requireAdmin(authToken);
   if (input.decision === "accepted") {
-    const publication = await stageApprovedEvidencePublication(input.factId);
+    const publication = await stageApprovedEvidencePublication(input.factId, {
+      adminId: auth.userId,
+      confirmed: input.redactionConfirmed === true,
+      verifiedBy: input.redactionVerifiedBy ?? "",
+    });
     if (publication) {
       try {
         const { data, error } = await callInformationAgentRpc(
@@ -240,7 +287,7 @@ export async function reviewAdminInformationAgentFact({
     p_reviewer_id: auth.userId,
     p_fact_id: input.factId,
     p_decision: input.decision,
-    p_notes: input.notes || null,
+    p_notes: nullableRpcArg(input.notes || null),
   });
   if (error) throw error;
   return { ok: true, result: data };
@@ -259,8 +306,14 @@ type InformationAgentRpc = (
 const callInformationAgentRpc: InformationAgentRpc = (functionName, args) =>
   (supabaseAdmin.rpc as unknown as InformationAgentRpc).call(supabaseAdmin, functionName, args);
 
+type RedactionCheck = { adminId: string; confirmed: boolean; verifiedBy: string };
+
+export const REDACTION_CHECK_REQUIRED_MESSAGE =
+  "Caviardage vérifié : cochez la case et indiquez le nom de la personne qui a contrôlé la pièce avant de la publier.";
+
 async function stageApprovedEvidencePublication(
   factId: string,
+  redaction: RedactionCheck,
 ): Promise<StagedEvidencePublication | null> {
   const { data: fact, error: factError } = await supabaseAdmin
     .from("information_agent_fact_candidates")
@@ -300,11 +353,38 @@ async function stageApprovedEvidencePublication(
     throw new Error("L’analyse de la pièce doit être terminée avant sa publication.");
   }
 
+  // Mandatory human step: someone checked that personal data is redacted on the visible pages.
+  if (!redaction.confirmed || redaction.verifiedBy.trim().length < 3) {
+    throw new Error(REDACTION_CHECK_REQUIRED_MESSAGE);
+  }
+  const publishable = publicRenditionKind(fact.fact_key, asset.mime_type);
+  if (!publishable) {
+    throw new Error(
+      "Ce format de pièce ne peut pas être publié : seuls les PDF et les images le sont.",
+    );
+  }
+  const { error: redactionError } = await supabaseAdmin
+    .from("information_agent_evidence_assets")
+    .update({
+      metadata: {
+        ...recordOrEmpty(asset.metadata),
+        redaction_verified_at: new Date().toISOString(),
+        redaction_verified_by: redaction.verifiedBy.trim(),
+        redaction_verified_by_admin_id: redaction.adminId,
+      },
+    })
+    .eq("id", asset.id);
+  if (redactionError) throw redactionError;
+
   const attemptId = randomUUID();
   const publicPath =
-    fact.fact_key === "photo"
+    publishable === "photo"
       ? `${fact.sale_id}/${asset.id}/photo-${attemptId}.webp`
-      : `${fact.sale_id}/${asset.id}/piece-jointe-${attemptId}.${extensionForMimeType(asset.mime_type)}`;
+      : publishable === "image"
+        ? `${fact.sale_id}/${asset.id}/piece-jointe-${attemptId}.webp`
+        : `${fact.sale_id}/${asset.id}/piece-jointe-${attemptId}.pdf`;
+  // The bucket is private: this URL only identifies the object (older guards validate its shape).
+  // Readers obtain a 10-minute signed URL from /api/information-agent/evidence.
   const publicUrl = supabaseAdmin.storage
     .from("information-agent-approved")
     .getPublicUrl(publicPath).data.publicUrl;
@@ -320,24 +400,24 @@ async function stageApprovedEvidencePublication(
   if (stageError) throw stageError;
 
   try {
-    if (fact.fact_key === "photo") {
-      const { data: original, error: downloadError } = await supabaseAdmin.storage
-        .from(asset.storage_bucket)
-        .download(asset.storage_path);
-      if (downloadError || !original) throw downloadError ?? new Error("Photo source introuvable.");
-      const derivative = await optimizeInformationAgentPhoto(
-        new Uint8Array(await original.arrayBuffer()),
-      );
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from("information-agent-approved")
-        .upload(publicPath, derivative, { contentType: "image/webp", upsert: false });
-      if (uploadError) throw uploadError;
-    } else {
-      const { error: copyError } = await supabaseAdmin.storage
-        .from(asset.storage_bucket)
-        .copy(asset.storage_path, publicPath, { destinationBucket: "information-agent-approved" });
-      if (copyError) throw copyError;
-    }
+    // Never copy the original: every published rendition is rebuilt (photo/image re-encoded without
+    // metadata, PDF flattened to page images without author/XMP), so hidden content cannot leak.
+    const { data: original, error: downloadError } = await supabaseAdmin.storage
+      .from(asset.storage_bucket)
+      .download(asset.storage_path);
+    if (downloadError || !original) throw downloadError ?? new Error("Pièce source introuvable.");
+    const originalBytes = new Uint8Array(await original.arrayBuffer());
+    const isPdf = publishable === "pdf";
+    const rendition = isPdf
+      ? await flattenPdfForPublication(originalBytes)
+      : await optimizeInformationAgentPhoto(originalBytes);
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from("information-agent-approved")
+      .upload(publicPath, rendition, {
+        contentType: isPdf ? "application/pdf" : "image/webp",
+        upsert: false,
+      });
+    if (uploadError) throw uploadError;
   } catch (error) {
     await abortFailedEvidencePublication(fact.id, publicPath);
     throw error;
@@ -367,17 +447,21 @@ async function abortFailedEvidencePublication(factId: string, publicPath: string
   }
 }
 
-function extensionForMimeType(mimeType: string): string {
-  const extensions: Record<string, string> = {
-    "application/pdf": "pdf",
-    "image/jpeg": "jpg",
-    "image/png": "png",
-    "image/webp": "webp",
-    "image/heic": "heic",
-    "image/heif": "heif",
-    "text/plain": "txt",
-  };
-  return extensions[mimeType] ?? "bin";
+function recordOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+/** What can be published for an attachment: photos and images become WebP, PDFs are flattened. */
+export function publicRenditionKind(
+  factKey: string,
+  mimeType: string,
+): "photo" | "image" | "pdf" | null {
+  if (factKey === "photo") return mimeType.startsWith("image/") ? "photo" : null;
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType.startsWith("image/")) return "image";
+  return null;
 }
 
 async function requireAdmin(authToken: string) {

@@ -146,7 +146,7 @@ export function SaleVisual({
     return (
       <div
         className={cn(
-          "relative flex h-full w-full items-center justify-center overflow-hidden bg-[linear-gradient(145deg,#e5f1fb,#fffaf2)]",
+          "relative flex h-full w-full items-center justify-center overflow-hidden bg-gradient-to-br from-background to-surface",
           className,
         )}
       >
@@ -207,7 +207,7 @@ export function SaleVisual({
         }`}
       />
       {candidateIsReady ? (
-        <span className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/65 bg-[#07111f]/78 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white shadow-sm backdrop-blur">
+        <span className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/65 bg-night/78 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white shadow-sm backdrop-blur">
           {candidate.label}
         </span>
       ) : null}

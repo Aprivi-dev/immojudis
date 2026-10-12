@@ -11,6 +11,8 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from src.config import DEFAULT_USER_AGENT
+
 from .base import (
     OfficialSourceConfigurationError,
     OfficialSourceDisabledError,
@@ -454,7 +456,7 @@ class JudilibreClient:
         max_results: int = SEARCH_MAX_RESULTS,
         retry_policy: RetryPolicy | None = None,
         transactional_history_path: str = "/transactionalhistory",
-        user_agent: str = "immojudis-data-pipeline/1.0",
+        user_agent: str = DEFAULT_USER_AGENT,
         transport: httpx.BaseTransport | None = None,
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
@@ -547,7 +549,7 @@ class JudilibreClient:
             transactional_history_path=str(
                 settings.get("judilibre_transactional_history_path") or "/transactionalhistory"
             ),
-            user_agent=str(settings.get("user_agent") or "immojudis-data-pipeline/1.0"),
+            user_agent=str(settings.get("user_agent") or DEFAULT_USER_AGENT),
             transport=transport,
             sleep=sleep,
             monotonic=monotonic,

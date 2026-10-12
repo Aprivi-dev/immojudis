@@ -218,6 +218,7 @@ export function normalizeWatchedZone(row: WatchedZoneRow): UserWatchedZone {
   const parsedDefaults = watchedZoneAlertDefaultsSchema.safeParse(row.alert_defaults);
   return {
     ...row,
+    zone_kind: row.zone_kind as UserWatchedZone["zone_kind"],
     alert_defaults: parsedDefaults.success ? parsedDefaults.data : {},
   };
 }

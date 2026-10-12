@@ -1,12 +1,20 @@
+import "server-only";
 import { z } from "zod";
+import {
+  informationAgentAddressOrigin,
+  informationAgentControllerIdentity,
+} from "@/lib/information-agent-compliance";
 import { renderInformationRequestEmail } from "../../emails/information-request";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { resolveSiteOrigin } from "@/lib/site-url";
 import {
   DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+  INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION,
   INFORMATION_AGENT_EMAIL_VARIABLES,
   INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS,
+  informationAgentAccountInvitationUrl,
   informationAgentEmailTemplateContentSchema,
   parseInformationAgentEmailTemplateContent,
   renderInformationAgentEmailContent,
@@ -102,7 +110,7 @@ export async function getPublishedInformationAgentEmailTemplate(): Promise<{
     );
     return {
       id: null,
-      revision: 1,
+      revision: INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION,
       content: structuredClone(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE),
     };
   }
@@ -177,8 +185,16 @@ async function publishDraft({ adminId, draftId }: { adminId: string; draftId: st
 }
 
 async function previewTemplate(template: InformationAgentEmailTemplateContent) {
+  const previewAppUrl =
+    resolveSiteOrigin(process.env, "https://immojudis.com") ?? "https://immojudis.com";
+  const controller = informationAgentControllerIdentity();
+  const exampleOrigin = informationAgentAddressOrigin({
+    sourceName: "licitor",
+    sourceUrl: "https://www.licitor.com/annonce/exemple.html",
+  });
   const renderedContent = renderInformationAgentEmailContent({
     template,
+    appUrl: previewAppUrl,
     values: Object.fromEntries(
       INFORMATION_AGENT_EMAIL_VARIABLES.map((variable) => [variable.key, variable.example]),
     ) as Record<(typeof INFORMATION_AGENT_EMAIL_VARIABLES)[number]["key"], string>,
@@ -188,7 +204,21 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
     bodyText: renderedContent.bodyText,
     replyTo: "enquete+exemple@reponses.immojudis.com",
     caseReference: "IJ-EXEMPLE",
-    appUrl: "https://immojudis.com",
+    appUrl: previewAppUrl,
+    // The legal footer is added to every real send; show it so the template can be validated whole.
+    legalFooter: {
+      controllerName: controller?.name ?? "[Responsable de traitement à configurer]",
+      controllerAddress: controller?.address ?? "[Adresse à configurer]",
+      contactEmail: controller?.contactEmail ?? null,
+      addressOrigin: exampleOrigin.text,
+      addressOriginUrl: exampleOrigin.url,
+      privacyUrl: new URL("/privacy", previewAppUrl).toString(),
+      optOutUrl: new URL(
+        "/api/information-agent/opt-out?e=exemple&t=exemple",
+        previewAppUrl,
+      ).toString(),
+    },
+    accountInvitationUrl: informationAgentAccountInvitationUrl(previewAppUrl),
   });
   return {
     preview: {
@@ -209,7 +239,7 @@ function templateSummaryFromRow(row: TemplateRow): InformationAgentEmailTemplate
   return {
     id: row.id,
     revision: Number(row.revision),
-    status: row.status,
+    status: row.status as InformationAgentEmailTemplateSummary["status"],
     ...content,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useNavigate } from "@/lib/router-compat";
+import { useRouter } from "next/navigation";
+import { pathWithSearch } from "@/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
 import {
@@ -9,6 +10,8 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { userMessage } from "@/lib/user-messages";
+import { queryKeys } from "@/lib/query-keys";
 
 export function FavoriteButton({
   saleId,
@@ -20,11 +23,11 @@ export function FavoriteButton({
   compact?: boolean;
 }) {
   const { user, loading } = useAuth();
-  const navigate = useNavigate();
+  const router = useRouter();
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
 
-  const favoriteKey = ["favorite-status", user?.id ?? null, saleId];
+  const favoriteKey = queryKeys.favoriteStatus(user?.id ?? null, saleId);
   const favorite = useQuery({
     queryKey: favoriteKey,
     enabled: Boolean(user) && !loading,
@@ -48,7 +51,7 @@ export function FavoriteButton({
         typeof window !== "undefined"
           ? `${window.location.pathname}${window.location.search}`
           : "/sales";
-      navigate({ to: "/login", search: { redirect } });
+      router.push(pathWithSearch("/login", { redirect }));
       return;
     }
     if (favorite.isPending || favorite.isError) {
@@ -56,7 +59,9 @@ export function FavoriteButton({
       return;
     }
     setBusy(true);
+    const searchFavoriteQueryKey = queryKeys.searchFavoriteStatusForUser(user.id);
     try {
+      await qc.cancelQueries({ queryKey: searchFavoriteQueryKey });
       if (isFav) {
         await removeFavoriteSaleRequest({ saleId });
         qc.setQueryData(favoriteKey, false);
@@ -64,9 +69,20 @@ export function FavoriteButton({
         await addFavoriteSaleRequest({ data: { saleId } });
         qc.setQueryData(favoriteKey, true);
       }
-      qc.invalidateQueries({ queryKey: ["favorites", user.id] });
+      qc.setQueriesData<string[] | undefined>(
+        { queryKey: searchFavoriteQueryKey },
+        (favoriteSaleIds) => {
+          const nextFavoriteSaleIds = new Set(favoriteSaleIds ?? []);
+          if (isFav) nextFavoriteSaleIds.delete(saleId);
+          else nextFavoriteSaleIds.add(saleId);
+          return [...nextFavoriteSaleIds];
+        },
+      );
+      qc.invalidateQueries({ queryKey: queryKeys.favorites(user.id) });
+      await qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Erreur");
+      void qc.invalidateQueries({ queryKey: searchFavoriteQueryKey });
+      toast.error(userMessage(e));
     } finally {
       setBusy(false);
     }
@@ -84,7 +100,7 @@ export function FavoriteButton({
       aria-pressed={isFav}
       aria-label={isFav ? "Ne plus suivre cette vente" : "Suivre cette vente"}
       title={isFav ? "Ne plus suivre cette vente" : "Suivre cette vente"}
-      className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-soft disabled:opacity-50 ${className}`}
+      className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-text disabled:opacity-50 ${className}`}
     >
       <Heart
         aria-hidden

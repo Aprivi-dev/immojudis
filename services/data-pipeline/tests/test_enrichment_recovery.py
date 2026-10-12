@@ -149,6 +149,130 @@ def test_ocr_budget_checkpoint_is_distinct_and_continues_from_page_cache(tmp_pat
     assert all(page['status'] == 'extracted' for page in pages)
 
 
+def test_ocr_document_time_budget_resumes_from_valid_page_checkpoints(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf_enrichment, 'PDF_DOCUMENT_TEXTS_DIR', tmp_path / 'cache')
+    monkeypatch.setenv('PDF_MAX_EXTRACT_PAGES', '75')
+    monkeypatch.setenv('PDF_OCR_DOCUMENT_BUDGET_SECONDS', '1')
+    monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
+    path = tmp_path / 'time-budget.pdf'
+    with fitz.open() as document:
+        for _ in range(3):
+            page = document.new_page()
+            page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        document.save(path)
+
+    clock = [0.0]
+    monkeypatch.setattr(pdf_enrichment.time, 'monotonic', lambda: clock[0])
+    calls = []
+
+    def bounded_ocr(page, **_kwargs):
+        calls.append(page.number)
+        clock[0] += 0.6
+        return {
+            'text': f'OCR page {page.number + 1}',
+            'method': 'ocr_test',
+            'confidence': .8,
+        }
+
+    monkeypatch.setattr(pdf_enrichment, '_extract_page_text_with_ocr_result', bounded_ocr)
+
+    with pytest.raises(pdf_enrichment.PdfDocumentOcrBudgetExceeded) as first_error:
+        pdf_enrichment.extract_pdf_pages(path)
+    assert first_error.value.progress_made is True
+    assert first_error.value.checkpointed_pages == 2
+    assert first_error.value.total_pages == 3
+    assert calls == [0, 1]
+
+    pages = pdf_enrichment.extract_pdf_pages(path)
+    assert calls == [0, 1, 2]
+    assert len(pages) == 3
+    assert all(page['status'] == 'extracted' for page in pages)
+    assert pdf_enrichment.pdf_document_ocr_budget_remaining() is None
+
+
+def test_digital_pdf_does_not_consume_ocr_budget_when_ocr_is_enabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf_enrichment, 'PDF_DOCUMENT_TEXTS_DIR', tmp_path / 'cache')
+    monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
+    monkeypatch.setenv('PDF_OCR_DOCUMENT_BUDGET_SECONDS', '0.001')
+    path = tmp_path / 'digital.pdf'
+    with fitz.open() as document:
+        page = document.new_page()
+        page.insert_textbox(
+            fitz.Rect(72, 72, 520, 720),
+            ' '.join(['Texte numérique fiable'] * 20),
+        )
+        document.save(path)
+
+    ocr_calls = []
+    monkeypatch.setattr(
+        pdf_enrichment,
+        '_extract_page_text_with_ocr_result',
+        lambda *args, **kwargs: ocr_calls.append(True)
+        or pytest.fail('digital PDF should not invoke OCR'),
+    )
+
+    pages = pdf_enrichment.extract_pdf_pages(path)
+
+    assert ocr_calls == []
+    assert len(pages) == 1
+    assert pages[0]['status'] == 'extracted'
+    assert pages[0]['retryable'] is False
+
+
+def test_ocr_document_budget_is_checked_after_final_page(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdf_enrichment, 'PDF_DOCUMENT_TEXTS_DIR', tmp_path / 'cache')
+    monkeypatch.setenv('PDF_OCR_ENABLED', 'true')
+    monkeypatch.setenv('PDF_OCR_DOCUMENT_BUDGET_SECONDS', '1')
+    path = tmp_path / 'final-page-budget.pdf'
+    with fitz.open() as document:
+        page = document.new_page()
+        page.draw_rect(fitz.Rect(72, 72, 200, 200), color=(0, 0, 0), fill=(0, 0, 0))
+        document.save(path)
+
+    clock = [0.0]
+    monkeypatch.setattr(pdf_enrichment.time, 'monotonic', lambda: clock[0])
+
+    def bounded_ocr(page, **_kwargs):
+        clock[0] += 1.1
+        return {
+            'text': f'OCR page {page.number + 1}',
+            'method': 'ocr_test',
+            'confidence': .8,
+        }
+
+    monkeypatch.setattr(pdf_enrichment, '_extract_page_text_with_ocr_result', bounded_ocr)
+
+    with pytest.raises(pdf_enrichment.PdfDocumentOcrBudgetExceeded) as error:
+        pdf_enrichment.extract_pdf_pages(path)
+
+    assert error.value.checkpointed_pages == 1
+    assert error.value.total_pages == 1
+    assert error.value.progress_made is True
+    pages = pdf_enrichment.extract_pdf_pages(path)
+    assert len(pages) == 1
+    assert pages[0]['status'] == 'extracted'
+
+
+def test_pdf_document_timing_log_omits_url_and_payload(caplog):
+    document = {
+        'document_type': 'https://private.example/client-document.pdf?token=secret',
+        'url': 'https://private.example/client-document.pdf',
+    }
+    with caplog.at_level('INFO', logger=pdf_enrichment.LOGGER.name):
+        pdf_enrichment._log_pdf_document_transition(
+            document,
+            status='deferred',
+            started_at=time.monotonic() - 1.0,
+            pages=2,
+            error_type='PdfDocumentOcrBudgetExceeded',
+        )
+
+    message = next(record.getMessage() for record in caplog.records if 'PDF document transition' in record.getMessage())
+    assert 'document_type=unknown' in message
+    assert 'private.example' not in message
+    assert 'client-document' not in message
+
+
 def test_ocr_budget_without_new_page_progress_is_bounded(tmp_path, monkeypatch):
     monkeypatch.setattr(pdf_enrichment, 'PDF_DOCUMENT_TEXTS_DIR', tmp_path / 'cache')
     monkeypatch.setenv('PDF_MAX_EXTRACT_PAGES', '1')

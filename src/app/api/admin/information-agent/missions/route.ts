@@ -8,8 +8,13 @@ import {
   listAdminInformationAgentMissionsForToken,
   runAdminInformationAgentMissionActionForToken,
 } from "@/lib/admin-information-agent";
+import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const url = new URL(request.url);
     const input = adminInformationAgentListQuerySchema.parse(
@@ -18,16 +23,18 @@ export async function GET(request: Request) {
     const response = await listAdminInformationAgentMissionsForToken({
       authToken: bearerTokenFromRequest(request),
       saleId: input.saleId,
+      offset: input.offset,
+      limit: input.limit,
     });
     return NextResponse.json(response, {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminError(error);
+    return adminErrorResponse(error);
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const input = adminInformationAgentCreateSchema.parse(await request.json());
     const response = await createAdminInformationAgentMissionForToken({
@@ -39,11 +46,11 @@ export async function POST(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminError(error);
+    return adminErrorResponse(error);
   }
 }
 
-export async function PATCH(request: Request) {
+async function handlePATCH(request: Request) {
   try {
     const input = adminInformationAgentActionSchema.parse(await request.json());
     const response = await runAdminInformationAgentMissionActionForToken({
@@ -54,16 +61,10 @@ export async function PATCH(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminError(error);
+    return adminErrorResponse(error);
   }
 }
 
-function adminError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Erreur admin";
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden")
-      ? 403
-      : 400;
-  return NextResponse.json({ error: message }, { status });
-}
+export const GET = withAdminDeadline(handleGET);
+export const POST = withAdminDeadline(handlePOST);
+export const PATCH = withAdminDeadline(handlePATCH);

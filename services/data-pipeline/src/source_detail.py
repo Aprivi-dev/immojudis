@@ -33,7 +33,9 @@ def fetch_public_detail(source: str, source_url: str, settings: dict, clients: d
             data = json.loads(body)
             if isinstance(data, dict) and data.get('id') is not None and str(data['id']) != expected_id:
                 raise ValueError('Notarial detail identity does not match requested URL')
-            return module.parse_notaires_detail_json(body, fallback={'source_url': listing_url})
+            # Même lecture que la collecte : la page Immo-Interactif complète l'API (pièces annoncées).
+            page = module.fetch_immo_interactif_page(clients, settings, listing_url, expected_id)
+            return module.parse_notaires_detail_json(body, fallback={'source_url': listing_url}, operator_page=page)
     elif source == 'agrasc':
         from src.sources.agrasc_operators import (
             AGORA_ORIGIN,
@@ -173,7 +175,7 @@ def publish_source_revision(sale, job: dict, settings: dict) -> bool:
     """
     from src.storage import supabase_client as storage
 
-    with storage._postgres_connect(str(settings['supabase_db_url'])) as db:
+    with storage.connect(str(settings['supabase_db_url'])) as db:
         db.execute("set local lock_timeout = '15s'")
         db.execute("set local statement_timeout = '120s'")
         db.execute("select pg_advisory_xact_lock(hashtextextended('immojudis:outcome_catalogue_bridge:v1',0))")

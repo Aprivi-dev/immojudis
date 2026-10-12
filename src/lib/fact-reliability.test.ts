@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EXAMPLE_SALE } from "./example-sale";
 import {
+  getFactPresentation,
   getFactReliabilitiesFromClaims,
   getFactReliability,
   getFactReliabilityForDisplay,
@@ -14,6 +15,162 @@ const sale = (overrides: Partial<AuctionSale> = {}): AuctionSale => ({
 });
 
 describe("fact reliability", () => {
+  it("separates a missing value from an automatically reported value", () => {
+    const missing = getFactPresentation(sale({ sale_date: null }), "sale_date");
+    expect(missing).toMatchObject({ kind: "missing", label: "Non renseigné" });
+    expect(missing.detail).toContain("données collectées");
+
+    const facts = getFactReliabilitiesFromClaims(sale(), [
+      { field_key: "sale_date", fact_status: "candidate", captured_at: null },
+    ]);
+    const reported = getFactPresentation(sale(), "sale_date", null, facts);
+    expect(reported).toMatchObject({ kind: "reported", label: "Non vérifié" });
+    expect(reported.detail).toContain("reprise automatiquement");
+    expect(reported.detail).toContain("source ou aux pièces");
+    expect(reported.detail).not.toMatch(/candidate|canonique/i);
+  });
+
+  it("presents a linked check as documented while keeping the internal status", () => {
+    const fact = getFactReliability(
+      sale({ source_checks: { starting_price_eur: { checked_at: "2026-09-12T10:00:00Z" } } }),
+      "starting_price_eur",
+    );
+    const presentation = getFactPresentation(sale(), "starting_price_eur", null, {
+      ...getKeyFactReliabilities(sale()),
+      starting_price_eur: fact,
+    });
+
+    expect(fact.status).toBe("observed");
+    expect(presentation).toMatchObject({ kind: "documented", label: "Documenté" });
+    expect(presentation.detail).toContain("trace de source");
+  });
+
+  it("presents derived values and concrete reservations separately", () => {
+    const estimated = getFactPresentation(
+      sale({
+        app_surface_m2: null,
+        habitable_surface_m2: null,
+        carrez_surface_m2: null,
+        rooms_count: 1,
+      }),
+      "surface",
+    );
+    expect(estimated).toMatchObject({ kind: "estimated", label: "Estimé" });
+    expect(estimated.detail).toContain("déduite automatiquement");
+
+    const review = getFactPresentation(
+      sale({ sale_date: "2026-10-10T10:00:00Z" }),
+      "sale_date",
+      "2026-10-10T11:00:00Z",
+    );
+    expect(review).toMatchObject({ kind: "review", label: "À vérifier" });
+    expect(review.detail).toContain("modalités de vente");
+    expect(review.detail).toContain("source ou les pièces");
+    expect(review.detail).not.toContain("canonique");
+  });
+
+  it("presents a derived display as review even when the API fact is only a candidate", () => {
+    const canonicalSale = sale({ sale_date: "2026-10-10T10:00:00Z" });
+    const facts = getFactReliabilitiesFromClaims(canonicalSale, [
+      { field_key: "sale_date", fact_status: "candidate", captured_at: null },
+    ]);
+
+    const presentation = getFactPresentation(
+      canonicalSale,
+      "sale_date",
+      "2026-10-10T11:00:00Z",
+      facts,
+    );
+
+    expect(presentation).toMatchObject({ kind: "review", label: "À vérifier" });
+    expect(presentation.detail).toContain("modalités de vente");
+    expect(facts.sale_date.status).toBe("to_confirm");
+    expect(facts.sale_date.reasonCode).toBe("candidate_claim");
+  });
+
+  it("keeps an inferred fact as review when its displayed value is derived", () => {
+    const canonicalSale = sale({
+      sale_date: "2026-10-10T10:00:00Z",
+      source_checks: null,
+      quality_flags: ["sale_date_inferred"],
+    });
+    const facts = getKeyFactReliabilities(canonicalSale);
+    facts.sale_date = {
+      ...facts.sale_date,
+      status: "inferred",
+      reasonCode: "inferred_value",
+    };
+
+    const presentation = getFactPresentation(
+      canonicalSale,
+      "sale_date",
+      "2026-10-10T11:00:00Z",
+      facts,
+    );
+
+    expect(presentation).toMatchObject({ kind: "review", label: "À vérifier" });
+    expect(presentation.detail).toContain("modalités de vente");
+    expect(facts.sale_date.status).toBe("inferred");
+  });
+
+  it("keeps a conflict ahead of a derived display", () => {
+    const canonicalSale = sale({ sale_date: "2026-10-10T10:00:00Z" });
+    const facts = getKeyFactReliabilities(canonicalSale);
+    facts.sale_date = {
+      ...facts.sale_date,
+      status: "conflict",
+      reasonCode: "source_conflict",
+    };
+
+    expect(
+      getFactPresentation(canonicalSale, "sale_date", "2026-10-10T11:00:00Z", facts),
+    ).toMatchObject({ kind: "conflict", label: "Sources divergentes" });
+  });
+
+  it("keeps a masked value missing without mutating the internal observed fact", () => {
+    const sourceSale = sale({
+      starting_price_eur: 92_000,
+      source_checks: { starting_price_eur: { checked_at: "2026-09-12T10:00:00Z" } },
+    });
+    const facts = getKeyFactReliabilities(sourceSale);
+    const maskedSale = sale({ starting_price_eur: null });
+
+    expect(getFactPresentation(maskedSale, "starting_price_eur", null, facts)).toMatchObject({
+      kind: "missing",
+      label: "Non renseigné",
+    });
+    expect(getFactReliabilityForDisplay(maskedSale, "starting_price_eur", null, facts).status).toBe(
+      "observed",
+    );
+  });
+
+  it("uses the divergent-sources presentation for conflicts", () => {
+    const presentation = getFactPresentation(
+      sale({
+        source_conflicts: [
+          { field: "occupancy_status", selected: "vacant", alternative: "rented" },
+        ],
+      }),
+      "occupancy_status",
+    );
+
+    expect(presentation).toMatchObject({ kind: "conflict", label: "Sources divergentes" });
+    expect(presentation.detail).toContain("valeurs différentes");
+  });
+
+  it("falls back to review for legacy fact objects without a reason code", () => {
+    const facts = getKeyFactReliabilities(sale());
+    facts.starting_price_eur = {
+      ...facts.starting_price_eur,
+      reasonCode: undefined,
+    };
+
+    expect(getFactPresentation(sale(), "starting_price_eur", null, facts)).toMatchObject({
+      kind: "review",
+      label: "À vérifier",
+    });
+  });
+
   it("requires a recorded source check before calling ordinary fields observed", () => {
     expect(getFactReliability(sale(), "sale_date").status).toBe("to_confirm");
     expect(getFactReliability(sale(), "starting_price_eur").status).toBe("to_confirm");

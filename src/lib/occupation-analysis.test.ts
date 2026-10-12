@@ -143,7 +143,7 @@ describe("occupation analysis", () => {
       confidence: "low",
       confidenceLabel: "Signaux contradictoires à arbitrer",
     });
-    expect(analysis.decisionImpact).toContain("plafond d'enchère");
+    expect(analysis.decisionImpact).toContain("enchère plafond");
   });
 
   it("keeps unknown occupation explicit when only weak source data is present", () => {

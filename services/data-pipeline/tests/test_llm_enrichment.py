@@ -15,6 +15,7 @@ from src.enrichment.extract_structured import (
     needs_fact_extraction,
 )
 from src.enrichment.llm_client import (
+    LLMClientUnavailable,
     LLMProviderOutputRefused,
     ReplicateClient,
     _retry_sleep_seconds,
@@ -581,6 +582,71 @@ def test_replicate_client_formats_qwen37_payload() -> None:
         "presence_penalty": 0,
         "frequency_penalty": 0,
     }
+
+
+def test_qwen37_vision_payload_is_opt_in_and_uses_documented_image_field() -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="qwen/qwen3-7-plus",
+        max_tokens=768,
+        temperature=0,
+    )
+
+    image = "data:image/png;base64,AA=="
+    payload = client._input_payload("describe", system_prompt="vision", image_inputs=[image])
+
+    assert payload["image"] == [image]
+    assert payload["prompt"] == "describe"
+    assert payload["system_prompt"] == "vision"
+
+
+def test_non_vision_model_rejects_image_payload_before_provider_call() -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="moonshotai/kimi-k2.5",
+        max_tokens=768,
+    )
+
+    with pytest.raises(LLMClientUnavailable, match="image input contract"):
+        client._input_payload("describe", system_prompt="vision", image_inputs=["data:image/png;base64,AA=="])
+
+
+def test_versioned_qwen_model_rejects_image_payload_without_approved_contract() -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="qwen/qwen3-7-plus:version-sha",
+        max_tokens=768,
+    )
+
+    with pytest.raises(LLMClientUnavailable, match="image input contract"):
+        client._input_payload("describe", system_prompt="vision", image_inputs=["data:image/png;base64,AA=="])
+
+
+def test_qwen37_generate_json_with_images_makes_one_bounded_request(monkeypatch) -> None:
+    client = ReplicateClient(
+        api_token="replicate-token-test",
+        model="qwen/qwen3-7-plus",
+        max_tokens=768,
+        min_interval_seconds=0,
+    )
+    calls: list[object] = []
+
+    def fake_create_prediction(prompt, system_prompt=None, *, image_inputs=None):
+        calls.append(image_inputs)
+        return {"id": "vision-prediction"}
+
+    monkeypatch.setattr(client, "_create_prediction", fake_create_prediction)
+    monkeypatch.setattr(client, "_wait_for_output", lambda _prediction: '{"description":"Une fenêtre visible"}')
+    monkeypatch.setattr(client, "_record_usage", lambda *args, **kwargs: None)
+
+    result = client.generate_json_with_images(
+        "MODE OBSERVATION PHOTO STRICTE",
+        "Observe seulement.",
+        ["data:image/png;base64,AA=="],
+    )
+
+    assert result == {"description": "Une fenêtre visible"}
+    assert calls == [["data:image/png;base64,AA=="]]
 
 
 def test_qwen37_keeps_system_and_user_prompts_separate() -> None:
@@ -1515,3 +1581,40 @@ def test_fact_context_keeps_richer_aggregate_when_page_text_is_only_native_heade
     chunks = load_llm_fact_context_chunks_for_sale(sale, chunk_chars=3000, max_chunks=0)
 
     assert "TABLEAU DPE" in "\n".join(chunks)
+
+
+def test_fact_context_does_not_repeat_aggregate_built_from_the_pages(tmp_path, monkeypatch) -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "avoventes",
+            "source_url": "https://example.test/aggregate-duplicate",
+            "raw_text": "Annonce source principale.",
+        }
+    )
+    pdf_dir = tmp_path / "pdf_texts"
+    pdf_dir.mkdir()
+    monkeypatch.setattr("src.enrichment.extract_structured.PDF_TEXTS_DIR", pdf_dir)
+    pages = [
+        {"page": 1, "method": "pymupdf_text", "text": "MARQUEUR_UN désignation du bien"},
+        {"page": 2, "method": "tesseract", "text": "MARQUEUR_DEUX conditions d'occupation"},
+    ]
+    (pdf_dir / f"{sale_storage_id(sale)}.json").write_text(
+        json.dumps(
+            [
+                {
+                    "label": "Cahier des conditions de vente",
+                    "document_type": "cahier_conditions_vente",
+                    "url": "https://example.test/ccv.pdf",
+                    # Stored aggregate: the pages joined then whitespace-collapsed.
+                    "text": "MARQUEUR_UN désignation du bien MARQUEUR_DEUX conditions d'occupation",
+                    "pages": pages,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    context = "\n".join(load_llm_fact_context_chunks_for_sale(sale, chunk_chars=3000, max_chunks=0))
+
+    assert context.count("MARQUEUR_UN") == 1
+    assert "PAGE: aggregate" not in context

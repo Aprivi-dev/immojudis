@@ -55,3 +55,32 @@ export const SALE_FAMILIES = [
     linkLabel: "Voir les ventes domaniales référencées",
   },
 ] as const;
+
+/**
+ * Notarial and State sales are part of the product, like court sales: their filters and entry
+ * points are shown by default.  `NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED=false` hides them again
+ * (the listings themselves stay in the catalogue either way).
+ */
+export function notaryAndStatePilotsEnabled(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): boolean {
+  return env.NEXT_PUBLIC_NOTARY_STATE_PILOTS_ENABLED !== "false";
+}
+
+const PILOT_TYPES: ReadonlyArray<SaleTypeFilter> = ["notary", "state"];
+
+export function visibleSaleTypeOptions(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): ReadonlyArray<(typeof SALE_TYPE_OPTIONS)[number]> {
+  return notaryAndStatePilotsEnabled(env)
+    ? SALE_TYPE_OPTIONS
+    : SALE_TYPE_OPTIONS.filter((option) => !PILOT_TYPES.includes(option.value));
+}
+
+export function visibleSaleFamilies(
+  env: Pick<NodeJS.ProcessEnv, string> = process.env,
+): ReadonlyArray<(typeof SALE_FAMILIES)[number]> {
+  return notaryAndStatePilotsEnabled(env)
+    ? SALE_FAMILIES
+    : SALE_FAMILIES.filter((family) => !PILOT_TYPES.includes(family.type));
+}

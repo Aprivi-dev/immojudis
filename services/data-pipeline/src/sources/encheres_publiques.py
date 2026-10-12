@@ -12,7 +12,6 @@ from bs4 import BeautifulSoup
 
 from src.config import TARGET_DEPARTMENTS, load_settings, require_encheres_publiques_access
 from src.normalize import (
-    SURFACE_VALUE_PATTERN,
     clean_text,
     extract_department,
     has_rented_occupancy_signal,
@@ -21,7 +20,15 @@ from src.normalize import (
 )
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
-from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, should_fetch_detail, unique_dicts
+from src.sources.common import (
+    PoliteHttpClient,
+    ScrapeResult,
+    extract_surface,
+    parse_html,
+    should_fetch_detail,
+    unique_dicts,
+)
+from src.sources.encheres_publiques_extraction import refresh_encheres_publiques_raw_sale
 
 BASE_URL = "https://www.encheres-publiques.com"
 CANONICAL_BASE_URL = "https://encheres-publiques.com"
@@ -144,7 +151,7 @@ def parse_encheres_publiques_html(html: str, page_url: str) -> list[dict[str, An
                 "property_type": lot.get("sous_categorie") or lot.get("nom"),
                 "title": lot.get("nom"),
                 "description": lot.get("criteres_resume") or event.get("titre"),
-                "surface_m2": _extract_surface(lot.get("nom"), lot.get("criteres_resume")),
+                "surface_m2": extract_surface(lot.get("nom"), lot.get("criteres_resume")),
                 "starting_price_eur": lot.get("mise_a_prix"),
                 "adjudication_price_eur": adjudication_price,
                 "sale_date": _timestamp_to_iso(lot.get("ouverture_date") or event.get("ouverture_date")),
@@ -197,7 +204,7 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
     title = _plain_text(lot.get("nom"))
     adjudication_price = lot.get("prix_adjuge")
 
-    return {
+    detail = {
         "source_name": "encheres_publiques",
         "source_url": source_url,
         "external_id": str(lot.get("id") or lot_id or ""),
@@ -237,6 +244,9 @@ def parse_encheres_publiques_detail_html(html: str, source_url: str) -> dict[str
         "source_blocks": source_blocks,
         "source_images": _extract_source_images(state, lot),
     }
+    # Caractéristiques pour l'investisseur (honoraires, pas d'enchère, barreau, plancher…).
+    refresh_encheres_publiques_raw_sale(detail)
+    return detail
 
 
 def _extract_apollo_state(soup: BeautifulSoup) -> dict[str, Any]:
@@ -426,17 +436,10 @@ def _timestamp_to_display(value: object) -> str | None:
     return datetime.fromtimestamp(timestamp, PARIS_TZ).strftime("%d/%m/%Y %H:%M")
 
 
-def _extract_surface(*values: object) -> str | None:
-    text = " ".join(str(value) for value in values if value)
-    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b", text, re.I)
-    surface = parse_surface(match.group(1)) if match else None
-    return str(surface) if surface is not None else None
-
-
 def _resolve_built_surface(lot: dict[str, Any]) -> str | None:
     structured = parse_surface(lot.get("critere_surface_habitable"))
-    title_surface = parse_surface(_extract_surface(lot.get("nom")))
-    description_surface = parse_surface(_extract_surface(lot.get("description")))
+    title_surface = parse_surface(extract_surface(lot.get("nom")))
+    description_surface = parse_surface(extract_surface(lot.get("description")))
 
     # Encheres-Publiques can expose a malformed criterion while the editorial
     # title and description both carry the correct built surface.
@@ -444,7 +447,7 @@ def _resolve_built_surface(lot: dict[str, Any]) -> str | None:
         return str(title_surface)
     if structured is not None:
         return str(structured)
-    fallback = title_surface or description_surface or parse_surface(_extract_surface(lot.get("criteres_resume")))
+    fallback = title_surface or description_surface or parse_surface(extract_surface(lot.get("criteres_resume")))
     return str(fallback) if fallback is not None else None
 
 
@@ -492,6 +495,15 @@ def _extract_source_blocks(
         "organisateur": organizer.get("nom"),
         "organisateur_categorie": organizer.get("categorie"),
     }
+    # Autres critères publiés pour le lot (étage, chauffage, charges, taxe foncière…),
+    # gardés sous leur nom d'origine pour la lecture des caractéristiques.
+    handled = {
+        "critere_diagnostic_date", "critere_consommation_energetique", "critere_emissions_de_gaz",
+        "critere_occupation_du_bien",
+    }
+    for key, raw in lot.items():
+        if key.startswith("critere_") and key not in handled and not isinstance(raw, (dict, list)):
+            mapping[key] = raw
     return {key: value for key, raw in mapping.items() if (value := _plain_text(raw))}
 
 
@@ -511,7 +523,7 @@ def _extract_listing_source_blocks(
         "tribunal": _tribunal_name(organizer, event),
         "organisateur": organizer.get("nom"),
         "organisateur_categorie": organizer.get("categorie"),
-        "surface": _extract_surface(lot.get("criteres_resume"), lot.get("nom")),
+        "surface": extract_surface(lot.get("criteres_resume"), lot.get("nom")),
         "page_text": _build_raw_text(lot, address, organizer, event),
     }
     return {key: value for key, raw in mapping.items() if (value := _plain_text(raw))}

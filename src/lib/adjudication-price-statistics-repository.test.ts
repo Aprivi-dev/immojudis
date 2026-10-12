@@ -179,8 +179,8 @@ describe("adjudication price statistics repository", () => {
       ratioMiddle50: { p25: 1.17, p75: 3.1 },
       bidDistribution: bidBands.map((band, index) => ({
         band,
-        count: index === 0 ? 3868 : 0,
-        share: index === 0 ? 1 : 0,
+        count: [282, 130, 1000, 579, 1877][index],
+        share: [282, 130, 1000, 579, 1877][index] / 3868,
       })),
     };
     serverFrom

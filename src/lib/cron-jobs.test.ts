@@ -1,9 +1,28 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { operationalErrorMessage, runMonitoredCron } from "@/lib/cron-jobs";
+
+const mocks = vi.hoisted(() => ({
+  deliverOperationalAlertNotifications: vi.fn(),
+  rpc: vi.fn(),
+}));
+
+vi.mock("@/integrations/supabase/client.server", () => ({
+  supabaseAdmin: { rpc: mocks.rpc },
+}));
+vi.mock("@/lib/operational-alerts", () => ({
+  deliverOperationalAlertNotifications: mocks.deliverOperationalAlertNotifications,
+}));
+
+import {
+  evaluateOperationalHealth,
+  operationalErrorMessage,
+  runMonitoredCron,
+} from "@/lib/cron-jobs";
 
 describe("operational cron errors", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    mocks.deliverOperationalAlertNotifications.mockReset();
+    mocks.rpc.mockReset();
     delete process.env.CRON_SECRET;
   });
 
@@ -20,6 +39,62 @@ describe("operational cron errors", () => {
 
   it("keeps a safe fallback for opaque failures", () => {
     expect(operationalErrorMessage({ unexpected: true })).toBe("Scheduled job failed");
+  });
+
+  it("fails health when no external alert channel is configured", async () => {
+    mocks.rpc.mockResolvedValue({ data: {}, error: null });
+    mocks.deliverOperationalAlertNotifications.mockResolvedValue({
+      channel: null,
+      configured: false,
+      claimed: 0,
+      delivered: 0,
+      failed: 0,
+    });
+
+    await expect(evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z"))).rejects.toThrow(
+      "No external operational alert channel is configured.",
+    );
+    expect(mocks.deliverOperationalAlertNotifications).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails health when an external alert delivery fails", async () => {
+    mocks.rpc.mockResolvedValue({ data: {}, error: null });
+    mocks.deliverOperationalAlertNotifications.mockResolvedValue({
+      channel: "github_actions",
+      configured: true,
+      claimed: 2,
+      delivered: 1,
+      failed: 1,
+    });
+
+    await expect(evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z"))).rejects.toThrow(
+      "1 external operational alert delivery(ies) failed.",
+    );
+  });
+
+  it("returns health data when the existing alert channel is configured", async () => {
+    mocks.rpc.mockResolvedValue({ data: { ok: true }, error: null });
+    mocks.deliverOperationalAlertNotifications.mockResolvedValue({
+      channel: "github_actions",
+      configured: true,
+      claimed: 0,
+      delivered: 0,
+      failed: 0,
+    });
+
+    await expect(evaluateOperationalHealth(new Date("2026-10-09T10:00:00.000Z"))).resolves.toEqual({
+      health: { ok: true },
+      valuation: { ok: true },
+      pipeline: { ok: true },
+      externalAlerts: {
+        channel: "github_actions",
+        configured: true,
+        claimed: 0,
+        delivered: 0,
+        failed: 0,
+      },
+    });
+    expect(mocks.rpc).toHaveBeenCalledTimes(3);
   });
 
   it("rejects unauthorized calls with a safe request id and a structured log", async () => {

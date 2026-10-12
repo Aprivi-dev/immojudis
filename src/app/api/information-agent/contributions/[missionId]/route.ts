@@ -10,8 +10,6 @@ import {
   readContributionJson,
 } from "@/lib/information-agent-contribution-route-error";
 
-export const runtime = "nodejs";
-
 const requestSchema = z.object({ token: z.string().regex(/^[a-f0-9]{64}$/) });
 
 export async function POST(

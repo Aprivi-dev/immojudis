@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+  containsInformationAgentAccountInvitation,
+  INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING,
   informationAgentEmailTemplateContentSchema,
   renderInformationAgentEmailContent,
 } from "@/lib/information-agent-email-template";
@@ -26,17 +28,67 @@ describe("information agent email content template", () => {
       values,
     });
 
-    expect(rendered.subject).toContain("Appartement T3 à Bordeaux");
+    expect(rendered.subject).toBe("Appartement T3 à Bordeaux — précisions pour Immojudis");
     expect(rendered.bodyText).toContain("Bonjour Maître Dupont");
+    expect(rendered.bodyText).toContain(
+      "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires.",
+    );
+    expect(rendered.bodyText).toContain(
+      "Une réponse même partielle nous aide à présenter un dossier plus clair et à limiter les demandes répétées.",
+    );
     expect(rendered.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(rendered.bodyText).toContain("cahier des conditions de vente");
-    expect(rendered.bodyText).toContain("photos récentes");
-    expect(rendered.bodyText).toContain("JPG ou PNG");
-    expect(rendered.bodyText).toContain("moins de 10 Mo");
-    expect(rendered.bodyText).toContain("plusieurs emails de 20 Mo maximum");
-    expect(rendered.bodyText).toContain("vidéo");
+    expect(rendered.bodyText).toContain("Aucun compte n’est nécessaire.");
+    expect(rendered.bodyText).not.toContain(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING);
+    expect(rendered.bodyText).toContain("Bien cordialement");
+    expect(rendered.bodyText).toContain("documents ou photos");
+    expect(rendered.bodyText).toContain(
+      "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager.",
+    );
+    expect(rendered.bodyText).toContain("Aucun compte n’est nécessaire.");
+    expect(rendered.bodyText).not.toContain("JPG ou PNG");
+    expect(rendered.bodyText).not.toContain("plusieurs emails");
+    expect(rendered.bodyText).not.toContain("vidéo");
     expect(rendered.bodyText).not.toContain("utilisateur intéressé");
     expect(rendered.bodyText).not.toContain("{{");
+  });
+
+  it("never adds the professional-account invitation (prospecting) to a request", () => {
+    const rendered = renderInformationAgentEmailContent({
+      template: DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
+      values,
+      appUrl: "https://staging.immojudis.com",
+    });
+
+    expect(rendered.bodyText).not.toContain(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING);
+    expect(rendered.bodyText).not.toContain("Créer un compte professionnel");
+    expect(rendered.bodyText).not.toContain("mode=professional");
+    expect(rendered.bodyText).toContain("Bien cordialement");
+  });
+
+  it("strips the legacy invitation that older published templates still contain", () => {
+    const legacyTemplate = structuredClone(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE);
+    legacyTemplate.blocks = legacyTemplate.blocks.map((block) =>
+      block.id === "closing"
+        ? {
+            ...block,
+            content: [
+              "POUR LES PROFESSIONNELS",
+              INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING,
+              "Vous pouvez créer un compte professionnel ImmoJudis.",
+              "Créer un compte professionnel : https://immojudis.com/login?mode=professional",
+              "",
+              "Bien cordialement,",
+            ].join("\n"),
+          }
+        : block,
+    );
+
+    const rendered = renderInformationAgentEmailContent({ template: legacyTemplate, values });
+
+    expect(containsInformationAgentAccountInvitation(rendered.bodyText)).toBe(false);
+    expect(rendered.bodyText).toContain("Bien cordialement");
+    expect(rendered.bodyText).not.toContain("POUR LES PROFESSIONNELS");
   });
 
   it("rejects unknown variables and removal of the questions placeholder", () => {

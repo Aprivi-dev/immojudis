@@ -1,8 +1,8 @@
 begin;
 select plan(4);
-insert into public.auction_sales(id,source_name,source_url,city,status,raw_payload)
-values ('c3300000-0000-4000-8000-000000000001','catalogue-reserve','https://example.test/reserve/1','CatalogueReserveC330','postponed','{}'),
-('c3300000-0000-4000-8000-000000000002','catalogue-reserve','https://example.test/reserve/2','CatalogueReserveC330','upcoming','{"publication_quarantine":"identity"}');
+insert into public.auction_sales(id,source_name,source_url,city,status,sale_date,raw_payload)
+values ('c3300000-0000-4000-8000-000000000001','catalogue-reserve','https://example.test/reserve/1','CatalogueReserveC330','postponed',now() + interval '30 days','{}'),
+('c3300000-0000-4000-8000-000000000002','catalogue-reserve','https://example.test/reserve/2','CatalogueReserveC330','upcoming',now() + interval '30 days','{"publication_quarantine":"identity"}');
 select is((select count(*) from public.v_auction_sales_app where city='CatalogueReserveC330'),1::bigint,'detail admits missing GPS and excludes critical quarantine');
 set local role authenticated;
 select is((select count(*) from public.v_auction_sales_discovery where city='CatalogueReserveC330'),1::bigint,'discovery admits missing GPS with unchanged premium redactions');

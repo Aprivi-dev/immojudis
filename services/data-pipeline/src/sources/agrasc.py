@@ -17,7 +17,14 @@ from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.agrasc_operators import enrich_agrasc_operator
 from src.sources.agrasc_urls import classify_agrasc_operator_url
-from src.sources.common import PoliteHttpClient, ScrapeResult, parse_html, unique_dicts
+from src.sources.common import (
+    PoliteHttpClient,
+    ScrapeResult,
+    extract_surface,
+    normalize_surface_number,
+    parse_html,
+    unique_dicts,
+)
 from src.sources.image_candidates import html_image_candidates
 from src.sources.linked_pages import LinkedPages
 
@@ -171,7 +178,7 @@ def _parse_card(card: Tag, page_url: str) -> dict[str, Any] | None:
         city = url_city
     title = clean_text(link.get_text(" ", strip=True))
     description = _node_text(card.select_one(".fr-card__desc"))
-    surface = _extract_badge_surface(card) or _extract_surface(raw_text)
+    surface = _extract_badge_surface(card) or extract_surface(raw_text, number=SURFACE_VALUE_PATTERN)
     land_surface = _extract_land_surface(description)
     starting_price = _extract_after(raw_text, r"MAP\s*:?\s*([0-9][0-9\s.,]+)\s*€")
     sale_date = _extract_sale_window(card)
@@ -248,13 +255,8 @@ def _extract_badge_surface(card: Tag) -> str | None:
             continue
         match = re.fullmatch(rf"{SURFACE_VALUE_PATTERN}\s*m(?:²|2)", text, flags=re.I)
         if match:
-            return _normalize_surface_number(match.group(1))
+            return normalize_surface_number(match.group(1))
     return None
-
-
-def _extract_surface(text: str) -> str | None:
-    match = re.search(rf"\b{SURFACE_VALUE_PATTERN}\s*m(?:²|2)\b", text, flags=re.I)
-    return _normalize_surface_number(match.group(1)) if match else None
 
 
 def _extract_land_surface(text: str | None) -> str | None:
@@ -266,7 +268,7 @@ def _extract_land_surface(text: str | None) -> str | None:
     ):
         match = re.search(pattern, text, flags=re.I)
         if match:
-            return _normalize_surface_number(match.group(1))
+            return normalize_surface_number(match.group(1))
     return None
 
 
@@ -298,16 +300,6 @@ def _normalize_sale_window(text: str) -> str:
         match = re.search(pattern, text, flags=re.I)
         if match:
             return clean_text(match.group(1)) or text
-    return text
-
-
-def _normalize_surface_number(value: str) -> str | None:
-    text = clean_text(value)
-    if not text:
-        return None
-    text = text.replace(" ", "")
-    if "," not in text and re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
-        text = text.replace(".", "")
     return text
 
 

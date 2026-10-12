@@ -1,0 +1,95 @@
+// @vitest-environment jsdom
+
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DocumentReadingSection } from "./DocumentReadingSection";
+
+const mocks = vi.hoisted(() => ({ fetchDocumentReading: vi.fn() }));
+vi.mock("@/lib/client-api", () => ({ fetchDocumentReading: mocks.fetchDocumentReading }));
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+function renderSection() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <DocumentReadingSection saleId="sale-1" enabled />
+    </QueryClientProvider>,
+  );
+}
+
+describe("DocumentReadingSection", () => {
+  it("shows each point with its quote and a link to the cited page", async () => {
+    mocks.fetchDocumentReading.mockResolvedValue({
+      access: "full",
+      status: "completed",
+      generatedAt: "2026-10-12T08:00:00Z",
+      partial: false,
+      points: [
+        {
+          theme: "occupation",
+          importance: "alerte",
+          title: "Bien occupé sans bail",
+          explanation: "Une procédure d'expulsion sera nécessaire.",
+          quote: "occupé par Monsieur X et sa famille",
+          page: 2,
+          document: {
+            label: "PV de description",
+            url: "https://example.test/pv.pdf",
+            documentType: "pv_huissier",
+          },
+        },
+      ],
+    });
+    renderSection();
+    const section = await screen.findByRole("region", { name: "Lecture des pièces du dossier" });
+    expect(section.textContent).toContain("1 point relevé dans les pièces");
+    expect(section.textContent).toContain("À vérifier en priorité");
+    expect(section.textContent).toContain("« occupé par Monsieur X et sa famille »");
+    expect(
+      screen.getByRole("link", { name: "PV de description, page 2" }).getAttribute("href"),
+    ).toBe("https://example.test/pv.pdf#page=2");
+  });
+
+  it("gives a free account the count and themes only", async () => {
+    mocks.fetchDocumentReading.mockResolvedValue({
+      access: "teaser",
+      pointCount: 5,
+      alertCount: 2,
+      themes: ["occupation", "diagnostics"],
+    });
+    renderSection();
+    const section = await screen.findByRole("region", { name: "Lecture des pièces du dossier" });
+    expect(section.textContent).toContain(
+      "5 points relevés dans les pièces, dont 2 à vérifier en priorité : occupation, diagnostics.",
+    );
+    expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
+  });
+
+  it("announces a reading in preparation and hides a dossier without text", async () => {
+    mocks.fetchDocumentReading.mockResolvedValue({
+      access: "full",
+      status: "pending",
+      points: [],
+      generatedAt: null,
+      partial: false,
+    });
+    renderSection();
+    expect((await screen.findByRole("region")).textContent).toContain("en préparation");
+    cleanup();
+    mocks.fetchDocumentReading.mockResolvedValue({
+      access: "full",
+      status: "no_text",
+      points: [],
+      generatedAt: null,
+      partial: false,
+    });
+    const { container } = renderSection();
+    await vi.waitFor(() => expect(mocks.fetchDocumentReading).toHaveBeenCalledTimes(2));
+    expect(container.textContent).toBe("");
+  });
+});

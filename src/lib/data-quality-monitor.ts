@@ -1,15 +1,72 @@
+import "server-only";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { normalizeEmail } from "@/lib/account";
+import { throwIfAdminDeadlineExceeded } from "@/lib/admin-route-deadline";
 import { extractDpe } from "@/lib/dpe";
-import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
+import { DETAIL_VIEW } from "@/lib/queries";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { getSaleSurface } from "@/lib/surface";
+import { joinColumns } from "@/lib/supabase-select";
 import type { AuctionSale } from "@/lib/types";
 
-const DATA_QUALITY_SOURCE_LIMIT = 1_000;
+// Leave headroom below PostgREST's statement timeout while workers are active.
+const DATA_QUALITY_PAGE_SIZE = 250;
+
+/**
+ * Keep the quality scan independent from the catalogue/detail projection.
+ * The latter also evaluates media, score factors, source checks and full text
+ * fields that no quality metric reads, which can make a paginated scan time
+ * out on the app view's lateral aggregations.
+ */
+export const DATA_QUALITY_SALE_COLUMNS = [
+  "sale_procedure",
+  "sale_venue_type",
+  "sale_legal_framework",
+  "sale_verification_status",
+  "id",
+  "title",
+  "city",
+  "department",
+  "tribunal",
+  "tribunal_code",
+  "tribunal_name",
+  "tribunal_city",
+  "property_type",
+  "starting_price_eur",
+  "sale_date",
+  "latitude",
+  "longitude",
+  "occupancy_status",
+  "app_surface_m2",
+  "habitable_surface_m2",
+  "carrez_surface_m2",
+  "rooms_count",
+  "score_confidence",
+  "risk_notes",
+  "risks",
+  "documents",
+  "documents_rich",
+  "source_name",
+  "source_url",
+  "primary_source",
+  "source_urls",
+  "source_blocks",
+  "llm_display_description",
+  "lawyer_name",
+  "lawyer_contact",
+  "status",
+  "updated_at",
+] as const;
+
+const DATA_QUALITY_SALE_SELECT = joinColumns(DATA_QUALITY_SALE_COLUMNS);
 
 export type DataQualityStatus = "healthy" | "watch" | "critical";
+
+export type DataQualityPrioritySale = Pick<
+  AuctionSale,
+  "id" | "title" | "city" | "property_type" | "score_confidence"
+> & { flags: string[] };
 
 export type DataQualityMetric = {
   key: string;
@@ -29,7 +86,12 @@ export type DataQualitySourceCoverage = {
   missingLocation: number;
   missingSurface: number;
   missingDocuments: number;
+  missingRichDocuments: number;
   missingAiDescription: number;
+  missingOccupation: number;
+  missingConfidence: number;
+  averageConfidencePct: number | null;
+  weakCount: number;
 };
 
 export type DataQualityFreshness = {
@@ -48,12 +110,19 @@ export type DataQualityReport = {
   sampleSize: number;
   sourceLimit: number;
   capped: boolean;
+  averageConfidencePct: number | null;
+  highConfidenceCount: number;
+  richDocumentsCount: number;
+  occupationCount: number;
+  riskSales: number;
+  sourcedRiskSales: number;
   overallStatus: DataQualityStatus;
   freshness: DataQualityFreshness;
   capabilities: DataQualityMetric[];
   fields: DataQualityMetric[];
   sourceCoverage: DataQualitySourceCoverage[];
   priorityGaps: DataQualityMetric[];
+  prioritySales: DataQualityPrioritySale[];
 };
 
 type AdminContext = {
@@ -70,40 +139,16 @@ type AuctionRunRow = {
   updated_at?: string | null;
 };
 
-type QueryError = {
-  message?: string;
-};
-
-type RunQueryResult = {
-  data: AuctionRunRow[] | null;
-  error: QueryError | null;
-};
-
-type RunQueryBuilder = PromiseLike<RunQueryResult> & {
-  order: (
-    column: string,
-    options?: { ascending?: boolean; nullsFirst?: boolean },
-  ) => RunQueryBuilder;
-  limit: (count: number) => RunQueryBuilder;
-};
-
-type RunTableClient = {
-  select: (columns: string) => RunQueryBuilder;
-};
-
-type RunAdminClient = {
-  from: (table: string) => RunTableClient;
-};
-
 export async function getDataQualityReport(authToken: string): Promise<DataQualityReport> {
   const context = await requireSupabaseAuthContext(authToken);
   const adminEmail = assertAdmin(context as AdminContext);
-  const [sales, runs] = await Promise.all([loadSalesSample(), loadRecentRuns()]);
+  const [sales, runs] = await Promise.all([loadAllSales(), loadRecentRuns()]);
 
   return buildDataQualityReport({
     sales,
     runs,
     adminEmail,
+    capped: false,
   });
 }
 
@@ -112,13 +157,15 @@ export function buildDataQualityReport({
   runs = [],
   adminEmail = "admin",
   now = new Date(),
-  sourceLimit = DATA_QUALITY_SOURCE_LIMIT,
+  sourceLimit = DATA_QUALITY_PAGE_SIZE,
+  capped,
 }: {
   sales: AuctionSale[];
   runs?: AuctionRunRow[];
   adminEmail?: string;
   now?: Date;
   sourceLimit?: number;
+  capped?: boolean;
 }): DataQualityReport {
   const fields = buildFieldMetrics(sales);
   const capabilities = buildCapabilityMetrics(sales);
@@ -136,17 +183,63 @@ export function buildDataQualityReport({
     adminEmail,
     sampleSize: sales.length,
     sourceLimit,
-    capped: sales.length >= sourceLimit,
+    capped: capped ?? sales.length >= sourceLimit,
+    averageConfidencePct: averageConfidencePct(sales),
+    highConfidenceCount: sales.filter((sale) => (sale.score_confidence ?? 0) >= 0.7).length,
+    richDocumentsCount: sales.filter(
+      (sale) => Array.isArray(sale.documents_rich) && sale.documents_rich.length > 0,
+    ).length,
+    occupationCount: sales.filter((sale) =>
+      Boolean(sale.occupancy_status && sale.occupancy_status !== "unknown"),
+    ).length,
+    riskSales: sales.filter((sale) => (sale.risks?.length ?? 0) > 0).length,
+    sourcedRiskSales: sales.filter((sale) =>
+      (sale.risks ?? []).some((risk) => risk.evidence || risk.occurrences?.[0]?.excerpt),
+    ).length,
     overallStatus,
     freshness,
     capabilities,
     fields,
     sourceCoverage: buildSourceCoverage(sales),
+    prioritySales: buildPrioritySales(sales),
     priorityGaps: [...capabilities, ...fields]
       .filter((metric) => metric.status !== "healthy")
       .sort((a, b) => statusWeight(b.status) - statusWeight(a.status) || a.pct - b.pct)
       .slice(0, 8),
   };
+}
+
+function buildPrioritySales(sales: AuctionSale[]): DataQualityPrioritySale[] {
+  const dateOrder = (sale: AuctionSale) => {
+    const timestamp = Date.parse(sale.sale_date ?? "");
+    return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
+  };
+
+  // Reuse the authenticated report scan; a second full catalogue projection
+  // would evaluate expensive joins just to display twelve compact summaries.
+  return [...sales]
+    .sort((a, b) => dateOrder(a) - dateOrder(b) || a.id.localeCompare(b.id))
+    .slice(0, 500)
+    .map((sale) => {
+      const flags: string[] = [];
+      if ((sale.score_confidence ?? 0) < 0.55) flags.push("confiance faible");
+      if (!sale.llm_display_description?.trim()) flags.push("synthèse IA absente");
+      if (!sale.documents_rich?.length) {
+        flags.push(hasDocuments(sale) ? "documents non enrichis" : "documents manquants");
+      }
+      if (!hasSurface(sale)) flags.push("surface absente");
+      if (!sale.occupancy_status || sale.occupancy_status === "unknown") flags.push("occupation");
+      return {
+        id: sale.id,
+        title: sale.title,
+        city: sale.city,
+        property_type: sale.property_type,
+        score_confidence: sale.score_confidence,
+        flags,
+      };
+    })
+    .filter((sale) => sale.flags.length > 0)
+    .slice(0, 12);
 }
 
 function assertAdmin(context: AdminContext): string {
@@ -281,7 +374,7 @@ function buildCapabilityMetrics(sales: AuctionSale[]): DataQualityMetric[] {
     }),
     metric({
       key: "bid_ceiling",
-      label: "Calcul de mise maximale",
+      label: "Calcul d’enchère plafond",
       sales,
       predicate: (sale) => hasPrice(sale) && hasSurface(sale),
       productImpact: "Rend le simulateur actionnable avant audience.",
@@ -372,7 +465,16 @@ function buildSourceCoverage(sales: AuctionSale[]): DataQualitySourceCoverage[] 
       missingLocation: items.filter((sale) => !hasLocation(sale)).length,
       missingSurface: items.filter((sale) => !hasSurface(sale)).length,
       missingDocuments: items.filter((sale) => !hasDocuments(sale)).length,
+      missingRichDocuments: items.filter(
+        (sale) => !Array.isArray(sale.documents_rich) || sale.documents_rich.length === 0,
+      ).length,
       missingAiDescription: items.filter((sale) => !hasAiDisplayDescription(sale)).length,
+      missingOccupation: items.filter(
+        (sale) => !sale.occupancy_status || sale.occupancy_status === "unknown",
+      ).length,
+      missingConfidence: items.filter((sale) => typeof sale.score_confidence !== "number").length,
+      averageConfidencePct: averageConfidencePct(items),
+      weakCount: items.filter(isWeakSale).length,
     }))
     .sort((a, b) => b.count - a.count || a.source.localeCompare(b.source))
     .slice(0, 12);
@@ -411,20 +513,39 @@ function metric({
   };
 }
 
-async function loadSalesSample(): Promise<AuctionSale[]> {
-  const { data, error } = await supabaseAdmin
-    .from(DETAIL_VIEW)
-    .select(SALE_LIST_COLUMNS)
-    .order("updated_at", { ascending: false, nullsFirst: false })
-    .limit(DATA_QUALITY_SOURCE_LIMIT);
+async function loadAllSales(): Promise<AuctionSale[]> {
+  const sales: AuctionSale[] = [];
 
-  if (error) throw error;
-  return (data ?? []) as unknown as AuctionSale[];
+  for (let from = 0; ; from += DATA_QUALITY_PAGE_SIZE) {
+    // Stop scanning the catalogue once the route has already answered 504.
+    throwIfAdminDeadlineExceeded();
+    const to = from + DATA_QUALITY_PAGE_SIZE - 1;
+    // Bound the input before the view evaluates visibility and lateral joins.
+    // LIMIT on the view alone can sort/aggregate the whole catalogue first.
+    const { data: candidates, error: candidateError } = await supabaseAdmin
+      .from("auction_sales")
+      .select("id")
+      .order("id", { ascending: true })
+      .range(from, to);
+    if (candidateError) throw candidateError;
+    const ids = (candidates ?? []).map((sale) => sale.id);
+    if (ids.length === 0) return sales;
+
+    const { data, error } = await supabaseAdmin
+      .from(DETAIL_VIEW)
+      .select(DATA_QUALITY_SALE_SELECT)
+      .in("id", ids);
+
+    if (error) throw error;
+    const page = (data ?? []) as AuctionSale[];
+    sales.push(...page);
+    // A full candidate batch can contain no visible sales. Continue scanning.
+    if (ids.length < DATA_QUALITY_PAGE_SIZE) return sales;
+  }
 }
 
 async function loadRecentRuns(): Promise<AuctionRunRow[]> {
-  const runsClient = supabaseAdmin as unknown as RunAdminClient;
-  const { data, error } = await runsClient
+  const { data, error } = await supabaseAdmin
     .from("auction_runs")
     .select("status,started_at,finished_at,created_at,updated_at")
     .order("created_at", { ascending: false, nullsFirst: false })
@@ -498,6 +619,17 @@ function hasAiDisplayDescription(sale: AuctionSale): boolean {
   return Boolean(sale.llm_display_description?.trim());
 }
 
+function isWeakSale(sale: AuctionSale): boolean {
+  return (
+    (sale.score_confidence ?? 0) < 0.55 ||
+    !hasAiDisplayDescription(sale) ||
+    !hasSurface(sale) ||
+    !hasDocuments(sale) ||
+    !sale.occupancy_status ||
+    sale.occupancy_status === "unknown"
+  );
+}
+
 function isActiveOrUpcoming(sale: AuctionSale): boolean {
   return sale.status === "active" || sale.status === "upcoming";
 }
@@ -534,6 +666,14 @@ function statusWeight(status: DataQualityStatus): number {
 function pct(count: number, total: number): number {
   if (!total) return 0;
   return Math.round((count / total) * 1000) / 10;
+}
+
+function averageConfidencePct(sales: AuctionSale[]): number | null {
+  const values = sales
+    .map((sale) => sale.score_confidence)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (!values.length) return null;
+  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 1000) / 10;
 }
 
 function finite(value: number | null | undefined): boolean {

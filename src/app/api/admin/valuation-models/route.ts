@@ -1,23 +1,24 @@
 import { NextResponse } from "next/server";
 import { bearerTokenFromRequest } from "@/integrations/supabase/auth-middleware";
 import { getValuationAdminOverview } from "@/lib/valuation-admin";
+import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export const runtime = "nodejs";
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   try {
     const overview = await getValuationAdminOverview(bearerTokenFromRequest(request));
     return NextResponse.json(overview, {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Modèles de valorisation indisponibles";
-    const status = message.startsWith("Unauthorized")
-      ? 401
-      : message.startsWith("Forbidden")
-        ? 403
-        : 500;
-    return NextResponse.json({ error: message }, { status });
+    return adminErrorResponse(error, {
+      fallbackMessage: "Modèles de valorisation indisponibles",
+      fallbackStatus: 500,
+    });
   }
 }
+
+export const GET = withAdminDeadline(handleGET);

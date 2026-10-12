@@ -8,8 +8,13 @@ import {
   getAdminSourceRefreshStatus,
   requestAdminSourceRefresh,
 } from "@/lib/admin-source-refresh";
+import { adminErrorResponse } from "@/lib/api-route-errors";
+import { withAdminDeadline } from "@/lib/admin-route-deadline";
 
-export async function GET(request: Request) {
+// Délai maximal des routes admin : 30 s (voir src/lib/admin-route-deadline.ts).
+export const maxDuration = 30;
+
+async function handleGET(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = adminSourceRefreshStatusQuerySchema.parse(
@@ -20,11 +25,11 @@ export async function GET(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminSourceRefreshError(error);
+    return adminErrorResponse(error, { fallbackMessage: "Refresh source indisponible." });
   }
 }
 
-export async function POST(request: Request) {
+async function handlePOST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const input = adminSourceRefreshRequestSchema.parse(await request.json());
@@ -34,16 +39,9 @@ export async function POST(request: Request) {
       headers: { "cache-control": "private, no-store" },
     });
   } catch (error) {
-    return adminSourceRefreshError(error);
+    return adminErrorResponse(error, { fallbackMessage: "Refresh source indisponible." });
   }
 }
 
-function adminSourceRefreshError(error: unknown): Response {
-  const message = error instanceof Error ? error.message : "Refresh source indisponible.";
-  const status = message.startsWith("Unauthorized")
-    ? 401
-    : message.startsWith("Forbidden")
-      ? 403
-      : 400;
-  return Response.json({ error: message }, { status });
-}
+export const GET = withAdminDeadline(handleGET);
+export const POST = withAdminDeadline(handlePOST);

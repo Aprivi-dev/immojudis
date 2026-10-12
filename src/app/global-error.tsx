@@ -1,19 +1,25 @@
 "use client";
 
+/**
+ * Dernier filet de sécurité : cette page remplace le gabarit racine, donc sans
+ * feuille de style du site. Les couleurs reprennent la charte (ciel #eef7ff,
+ * marine #132238, or #c98d45 avec texte marine à 5,6:1).
+ */
 export default function GlobalError({
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   return (
     <html lang="fr">
-      <body>
+      <body style={{ margin: 0 }}>
+        <title>Incident temporaire</title>
         <main
           style={{
             alignItems: "center",
-            background: "#07111f",
-            color: "#f7f3e8",
+            background: "#eef7ff",
+            color: "#132238",
             display: "flex",
             fontFamily: "system-ui, sans-serif",
             justifyContent: "center",
@@ -21,28 +27,49 @@ export default function GlobalError({
             padding: "2rem",
           }}
         >
-          <section style={{ maxWidth: "36rem", textAlign: "center" }}>
-            <p style={{ color: "#d6af55", fontSize: ".75rem", letterSpacing: ".18em" }}>
-              INCIDENT TEMPORAIRE
+          <section
+            role="alert"
+            style={{
+              background: "#ffffff",
+              border: "1px solid #cbd5df",
+              borderRadius: ".75rem",
+              maxWidth: "36rem",
+              padding: "2rem",
+              textAlign: "center",
+            }}
+          >
+            <p
+              style={{
+                color: "#84602e",
+                fontSize: ".75rem",
+                fontWeight: 600,
+                letterSpacing: ".14em",
+                margin: 0,
+                textTransform: "uppercase",
+              }}
+            >
+              Incident temporaire
             </p>
-            <h1 style={{ fontFamily: "Georgia, serif", fontSize: "2.5rem", margin: "1rem 0" }}>
+            <h1 style={{ fontFamily: "Georgia, serif", fontSize: "2rem", margin: "1rem 0" }}>
               Immojudis ne peut pas afficher cette page.
             </h1>
-            <p style={{ color: "#c6ced8", lineHeight: 1.6 }}>
+            <p style={{ color: "#526170", lineHeight: 1.6 }}>
               Vos données n’ont pas été modifiées. Vous pouvez relancer l’affichage immédiatement.
             </p>
             <button
               type="button"
-              onClick={reset}
+              onClick={retry}
               style={{
-                background: "#d6af55",
+                background: "#c98d45",
                 border: 0,
-                borderRadius: ".5rem",
-                color: "#07111f",
+                borderRadius: ".375rem",
+                color: "#132238",
                 cursor: "pointer",
-                fontWeight: 700,
+                fontSize: "1rem",
+                fontWeight: 600,
                 marginTop: "1.5rem",
-                padding: ".8rem 1.25rem",
+                minHeight: "2.75rem",
+                padding: ".6rem 1.5rem",
               }}
             >
               Réessayer

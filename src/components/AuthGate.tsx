@@ -2,8 +2,9 @@
 
 import type { ReactNode } from "react";
 import { useEffect } from "react";
-import { useLocation, useNavigate } from "@/lib/router-compat";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
+import { pathWithSearch } from "@/lib/navigation";
 import {
   getAccountType,
   getProfessionalStatus,
@@ -11,6 +12,7 @@ import {
   isProfessionalAccount,
 } from "@/lib/account";
 import { BrandMark } from "@/components/BrandLogo";
+import { AdminMfaGate } from "@/components/admin/AdminMfaGate";
 
 const PUBLIC_PATHS = new Set([
   "/",
@@ -19,6 +21,7 @@ const PUBLIC_PATHS = new Set([
   "/avocats",
   "/annonce-exemple",
   "/accompagnement",
+  "/offres",
   "/a-propos",
   "/contact",
   "/ressources",
@@ -30,6 +33,7 @@ const PUBLIC_PATHS = new Set([
 ]);
 const PROFESSIONAL_PATHS = new Set(["/publish"]);
 const ADMIN_PREFIX = "/admin";
+const ADMIN_SECURITY_PATH = "/admin/securite";
 
 function normalizePath(pathname: string) {
   if (pathname === "/") return pathname;
@@ -38,11 +42,11 @@ function normalizePath(pathname: string) {
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { user, profile, loading } = useAuth();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const pathname = normalizePath(location.pathname);
+  const router = useRouter();
+  const pathname = normalizePath(usePathname());
   const isPublic =
     PUBLIC_PATHS.has(pathname) ||
+    pathname.startsWith("/ressources/") ||
     pathname.startsWith("/sales/") ||
     pathname.startsWith("/properties/") ||
     pathname.startsWith("/reports/shared/");
@@ -54,24 +58,31 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (isPublic || loading || user) return;
-    void navigate({ to: "/login", search: { redirect: location.href }, replace: true });
-  }, [isPublic, loading, location.href, navigate, user]);
+    // The query string is only needed at redirect time, so it is read from the browser then:
+    // subscribing to it with useSearchParams() would push every protected page out of the
+    // prerendered HTML.
+    const redirect = `${window.location.pathname}${window.location.search}`;
+    router.replace(pathWithSearch("/login", { redirect }));
+  }, [isPublic, loading, router, user]);
 
   if (isPublic) return <>{children}</>;
 
   if (loading) {
     return (
-      <main className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10">
+      <main
+        id="contenu"
+        className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10"
+      >
         <div className="glass-shell grid w-full max-w-3xl overflow-hidden rounded-lg sm:grid-cols-[1fr_15rem]">
           <div className="p-6 sm:p-8">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-text">
               Accès protégé
             </div>
             <h1 className="mt-4 font-display text-3xl leading-tight text-foreground">
               Vérification de l'accès
             </h1>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              Les annonces et analyses Immojudis sont réservées aux comptes connectés.
+              Cette page est réservée aux comptes connectés.
             </p>
             <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-white/10">
               <div className="h-full w-1/2 animate-pulse rounded-full bg-gold" />
@@ -93,9 +104,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (requiresAdminAccount && !isAdmin) {
     return (
-      <main className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10">
+      <main
+        id="contenu"
+        className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10"
+      >
         <div className="liquid-panel max-w-lg rounded-lg p-6 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/25 bg-gold/10 text-gold">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/25 bg-gold/10 text-gold-text">
             Admin
           </div>
           <h1 className="mt-5 font-display text-2xl text-foreground">Accès administrateur</h1>
@@ -105,7 +119,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <div className="mt-6 flex justify-center">
             <a
               href="/sales"
-              className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background"
+              className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
             >
               Retour aux annonces
             </a>
@@ -117,9 +131,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (requiresProfessionalAccount && !isProfessionalAccount(user, profile)) {
     return (
-      <main className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10">
+      <main
+        id="contenu"
+        className="liquid-page flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10"
+      >
         <div className="liquid-panel max-w-lg rounded-lg p-6 text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/25 bg-gold/10 text-gold">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-gold/25 bg-gold/10 text-gold-text">
             Pro
           </div>
           <h1 className="mt-5 font-display text-2xl text-foreground">
@@ -135,13 +152,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
             <a
               href="/sales"
-              className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-background"
+              className="liquid-button inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em]"
             >
               Retour aux annonces
             </a>
             <a
               href="/contact"
-              className="liquid-panel-soft inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold hover:border-gold"
+              className="liquid-panel-soft inline-flex items-center justify-center rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] text-gold-text hover:border-gold"
             >
               Demander un accès pro
             </a>
@@ -149,6 +166,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
         </div>
       </main>
     );
+  }
+
+  // Admin pages ask for the TOTP code first when the session is still aal1. The enrolment page
+  // itself stays reachable so a fresh administrator can set the factor up.
+  if (requiresAdminAccount && pathname !== ADMIN_SECURITY_PATH) {
+    return <AdminMfaGate>{children}</AdminMfaGate>;
   }
 
   return <>{children}</>;

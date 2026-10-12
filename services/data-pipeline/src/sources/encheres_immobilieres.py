@@ -3,27 +3,35 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
+from zoneinfo import ZoneInfo
 
+import httpx
 from bs4 import BeautifulSoup
 
 from src.catalogue_proof import public_page_proof
 from src.config import TARGET_DEPARTMENTS, load_settings
 from src.enrichment.surface_reasoning import extract_surface_facts_from_text
+from src.listing_location import extract_adresse_du_bien
 from src.normalize import clean_text, has_rented_occupancy_signal, no_lease_occupancy_status, strip_accents
 from src.raw_models import validate_raw_sales
 from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
     PaginationCoverage,
     PoliteHttpClient,
+    RobotsAccessRefusedError,
+    RobotsUnavailableError,
     ScrapeResult,
+    fetch_detail_html,
     parse_html,
     should_fetch_detail,
     unique_dicts,
 )
+from src.sources.encheres_immobilieres_payload import extract_vente_payload, vente_fields
 from src.sources.image_candidates import html_image_candidates
+from src.sources.listing_characteristics import known_detail_lacks_characteristics
 
 BASE_URL = "https://encheresimmobilieres.fr"
 LIST_URL = f"{BASE_URL}/biens-en-vente"
@@ -48,6 +56,16 @@ DETAIL_OVERRIDE_FIELDS = {
     "source_images",
     "raw_text",
     "source_blocks",
+    "latitude",
+    "longitude",
+    "adjudication_price_eur",
+    "status",
+    "source_property_features",
+}
+# Champs de la fiche qui remplacent ceux de la carte quand la fiche les publie.
+DETAIL_AUTHORITATIVE_FIELDS = {
+    "description", "visit_dates", "lawyer_contact", "tribunal", "occupancy_status",
+    "lawyer_name", "sale_date", "adjudication_price_eur", "status",
 }
 SHORT_MONTHS = {
     "JANV": "janvier",
@@ -87,7 +105,9 @@ def scrape_encheres_immobilieres_aquitaine(max_pages: int | None = None) -> list
 
 
 def scrape_encheres_immobilieres_aquitaine_result(
-    max_pages: int | None = None, known: dict[str, str] | None = None
+    max_pages: int | None = None,
+    known: dict[str, str] | None = None,
+    known_details: dict[str, dict[str, Any]] | None = None,
 ) -> ScrapeResult:
     settings = load_settings()
     client = PoliteHttpClient(
@@ -95,20 +115,37 @@ def scrape_encheres_immobilieres_aquitaine_result(
         user_agent=str(settings["user_agent"]),
         delay_seconds=float(settings["request_delay_seconds"]),
         timeout_seconds=float(settings["request_timeout_seconds"]),
+        # This source has produced repeated connection timeouts in the audit.
+        # Keep one retry for a transient edge failure, but do not spend the
+        # full four-attempt budget before the collector can report an outage.
+        max_attempts=2,
     )
     max_pages = max_pages or int(settings["encheres_immobilieres_max_pages"])
 
     errors: list[str] = []
+    list_fetch_failures: list[dict[str, str]] = []
     detail_failures: list[dict[str, Any]] = []
     raw_sales: list[dict[str, Any]] = CheckpointSales()
     pagination = PaginationCoverage()
+    consecutive_fetch_failures = 0
     for page_url in _list_urls(max_pages):
         try:
             html = client.get(page_url)
         except Exception as exc:
             LOGGER.error("EncheresImmobilieres list fetch failed for %s: %s", page_url, exc)
             errors.append(f"{page_url}: {exc}")
-            break
+            list_fetch_failures.append({"url": page_url, "error": str(exc)})
+            if not _continue_after_list_fetch_error(exc):
+                break
+            consecutive_fetch_failures += 1
+            # A single transient failure must not discard later pages that are
+            # still reachable. Stop after two consecutive transient failures
+            # to avoid a repeated timeout turning a bounded source run into a
+            # scan loop.
+            if consecutive_fetch_failures >= 2:
+                break
+            continue
+        consecutive_fetch_failures = 0
         page_sales = parse_encheres_immobilieres_html(html)
         page_proof = public_page_proof("encheres_immobilieres", html, page_url)
         advertised_totals = page_proof.get("advertised_totals") or []
@@ -132,13 +169,17 @@ def scrape_encheres_immobilieres_aquitaine_result(
             break
         for sale in page_sales:
             if sale.get("department") in TARGET_DEPARTMENTS:
-                if should_fetch_detail(sale, known):
+                # A stored detail read before the structured extraction is read
+                # again once, otherwise it would never carry its characteristics.
+                if should_fetch_detail(sale, known) or known_detail_lacks_characteristics(sale, known_details):
+                    sale.pop("_known_unchanged", None)
                     _enrich_sale_from_detail(client, sale, errors, detail_failures)
                 raw_sales.append(sale)
         if pagination.exhausted:
             break
 
     coverage = pagination.metrics()
+    coverage["list_fetch_failures"] = list_fetch_failures
     coverage["detail_failures"] = detail_failures
     coverage["detail_identity_mismatches"] = sum(
         failure.get("kind") == "identity_mismatch" for failure in detail_failures
@@ -148,6 +189,16 @@ def scrape_encheres_immobilieres_aquitaine_result(
         errors,
         {**getattr(client, "coverage_metrics", lambda: {})(), **coverage},
     )
+
+
+def _continue_after_list_fetch_error(exc: Exception) -> bool:
+    """Continue only for bounded transport failures that may be transient."""
+    if isinstance(exc, (httpx.HTTPStatusError, RobotsAccessRefusedError, RobotsUnavailableError)):
+        return False
+    message = str(exc).casefold()
+    if any(marker in message for marker in ("certificate_verify_failed", "ssl", "tls")):
+        return False
+    return isinstance(exc, (TimeoutError, ConnectionError, httpx.TransportError))
 
 
 def parse_encheres_immobilieres_html(html: str) -> list[dict[str, Any]]:
@@ -180,8 +231,20 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
     price = _extract_price(compact_text)
     sale_date = _extract_sale_date(compact_text)
     external_id = _extract_after(compact_text, r"(?:Annonce\s*n°|Réf\.\s*annonce\s*:)\s*(\d+)")
-    documents = _detail_documents(soup, source_url)
-    source_images = _detail_images(soup, source_url)
+    vente = extract_vente_payload(html, external_id or _external_id_from_url(source_url))
+    structured = vente_fields(vente) if vente else None
+    read = structured["fields"] if structured else {}
+    documents = _merge_documents(_detail_documents(soup, source_url), read.get("documents"))
+    # La galerie de l'objet ``vente`` fait foi : le HTML mêle les vignettes des ventes
+    # voisines, le visuel du département et le logo du journal de parution.
+    source_images = read.get("source_images") or _detail_images(soup, source_url, external_id)
+    visit_dates = read.get("visit_dates") or visit_dates
+    lawyer_name = read.get("lawyer_name") or lawyer_name
+    lawyer_contact = read.get("lawyer_contact") or lawyer_contact
+    tribunal = read.get("tribunal") or tribunal
+    sale_date = read.get("sale_date") or sale_date
+    address = address or read.get("address")
+    postal_code = postal_code or read.get("postal_code")
     raw_text = "\n".join(
         part
         for part in (
@@ -201,8 +264,8 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
     return {
         "source_name": "encheres_immobilieres",
         "source_url": source_url,
-        "external_id": external_id or _external_id_from_url(source_url),
-        "department": department,
+        "external_id": external_id or read.get("external_id") or _external_id_from_url(source_url),
+        "department": department or read.get("department"),
         "city": city,
         "address": address,
         "postal_code": postal_code,
@@ -222,7 +285,14 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
         "raw_image_url": source_images[0] if source_images else None,
         "source_images": source_images,
         "raw_text": raw_text or page_text,
+        "latitude": read.get("latitude"),
+        "longitude": read.get("longitude"),
+        "adjudication_price_eur": read.get("adjudication_price_eur"),
+        **({"status": "adjudicated"} if read.get("adjudication_price_eur") else {}),
+        "source_property_features": structured["source_property_features"] if structured else {},
         "source_blocks": {
+            **(structured["source_blocks"] if structured else {}),
+            **{
             key: value
             for key, value in {
                 "titre": title,
@@ -245,6 +315,7 @@ def parse_encheres_immobilieres_detail_html(html: str, source_url: str) -> dict[
                 "page_text": page_text,
             }.items()
             if value not in (None, "", [], {})
+            },
         },
     }
 
@@ -258,13 +329,8 @@ def _enrich_sale_from_detail(
     source_url = str(sale.get("source_url") or "")
     if not source_url.startswith(BASE_URL):
         return
-    try:
-        html = client.get(source_url)
-    except Exception as exc:
-        LOGGER.warning("EncheresImmobilieres detail fetch failed for %s: %s", source_url, exc)
-        errors.append(f"detail {source_url}: {exc}")
-        sale["_detail_fetch_failed"] = True
-        sale["source_detail_status"] = "failed"
+    html = fetch_detail_html(client, sale, errors, label="EncheresImmobilieres")
+    if html is None:
         return
     detail = parse_encheres_immobilieres_detail_html(html, source_url)
     listing_external_id = _identity_value(sale.get("external_id"))
@@ -316,9 +382,13 @@ def _enrich_sale_from_detail(
             if not sale.get(key):
                 sale[key] = value
             continue
+        if key == "source_property_features" and isinstance(value, dict):
+            existing = sale.get(key) if isinstance(sale.get(key), dict) else {}
+            sale[key] = {**existing, **value}
+            continue
         if key == "raw_text" and sale.get("raw_text"):
             sale[key] = f"{sale['raw_text']}\n{value}"
-        elif not sale.get(key) or key in {"description", "visit_dates", "lawyer_contact", "tribunal", "occupancy_status"}:
+        elif not sale.get(key) or key in DETAIL_AUTHORITATIVE_FIELDS:
             sale[key] = value
 
 
@@ -380,7 +450,6 @@ def _raw_sale_from_listing_text(text: str | None, source_url: str) -> dict[str, 
         "starting_price_eur": price,
         "sale_date": sale_date,
         "tribunal": tribunal,
-        "status": "upcoming",
         "documents": [],
         "raw_text": raw_text,
         "source_blocks": {
@@ -410,9 +479,12 @@ def _detail_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, st
     documents: list[dict[str, str]] = []
     for link in soup.find_all("a", href=True):
         href = str(link.get("href") or "")
-        label = clean_text(link.get_text(" ", strip=True)) or href.rstrip("/").rsplit("/", 1)[-1] or "document"
-        if not _looks_like_document_link(href, label):
+        text = clean_text(link.get_text(" ", strip=True))
+        # Le libellé de repli (« document ») ne doit pas faire passer le lien d'accueil
+        # ou une icône sans texte pour une pièce jointe.
+        if not _looks_like_document_link(href, text):
             continue
+        label = text or href.rstrip("/").rsplit("/", 1)[-1] or "document"
         documents.append(
             {
                 "label": label,
@@ -423,7 +495,7 @@ def _detail_documents(soup: BeautifulSoup, source_url: str) -> list[dict[str, st
     return _merge_documents([], documents)
 
 
-def _detail_images(soup: BeautifulSoup, source_url: str) -> list[str]:
+def _detail_images(soup: BeautifulSoup, source_url: str, external_id: str | None = None) -> list[str]:
     images: list[str] = []
     for selector in ("meta[property='og:image']", "meta[name='twitter:image']"):
         for node in soup.select(selector):
@@ -431,7 +503,43 @@ def _detail_images(soup: BeautifulSoup, source_url: str) -> list[str]:
     for image in soup.find_all("img"):
         for candidate in html_image_candidates(image):
             _append_image(images, candidate, source_url)
-    return _merge_text_values([], images)
+    sale_id = external_id or _external_id_from_url(source_url)
+    return [url for url in _merge_text_values([], images) if _photo_of_sale(url, sale_id)]
+
+
+def _photo_of_sale(url: str, sale_id: str | None) -> bool:
+    """Écarte les vignettes des autres ventes affichées sur la fiche (« /photos/AAAA/MM/<id>-n »)."""
+    match = re.search(r"/images/photos/\d{4}/\d{2}/(\d+)-\d+", url)
+    return not match or not sale_id or match.group(1) == str(sale_id)
+
+
+def clean_encheres_immobilieres_images(urls: object, sale_id: str | None) -> list[str]:
+    """Images stockées sans visuel de département, logo de journal ni photo d'une autre vente."""
+    kept: list[str] = []
+    for value in urls if isinstance(urls, list) else []:
+        candidate: list[str] = []
+        _append_image(candidate, value)
+        if candidate and _photo_of_sale(candidate[0], sale_id):
+            kept.append(candidate[0])
+    return _merge_text_values([], kept)
+
+
+def refresh_encheres_immobilieres_raw_sale(raw_sale: dict[str, Any]) -> bool:
+    """Relecture sans réseau : retire les images génériques gardées par l'ancienne lecture.
+
+    Le texte stocké d'une fiche ne contient pas l'objet ``vente`` (pièces jointes,
+    galerie) : ces données arrivent à la prochaine collecte de la fiche.
+    """
+    if str(raw_sale.get("source_name") or "") != "encheres_immobilieres":
+        return False
+    sale_id = clean_text(raw_sale.get("external_id")) or _external_id_from_url(str(raw_sale.get("source_url") or ""))
+    images = clean_encheres_immobilieres_images(raw_sale.get("source_images"), sale_id)
+    current = clean_text(raw_sale.get("raw_image_url"))
+    kept_current = clean_encheres_immobilieres_images([current], sale_id) if current else []
+    changed = images != raw_sale.get("source_images") or (current and kept_current != [current])
+    raw_sale["source_images"] = images
+    raw_sale["raw_image_url"] = (kept_current or images or [None])[0]
+    return bool(changed)
 
 
 def _looks_like_document_link(href: str, label: str | None) -> bool:
@@ -485,12 +593,22 @@ def _append_image(images: list[str], value: object | None, base_url: str = BASE_
     if not image_url or image_url.startswith(("data:", "#")):
         return
     absolute = urljoin(base_url, image_url)
+    parsed = urlparse(absolute)
+    if parsed.path == "/_next/image":
+        # Variante redimensionnée par Next.js : l'image d'origine est dans ``url``.
+        original = parse_qs(parsed.query).get("url", [None])[0]
+        if not original:
+            return
+        absolute = urljoin(base_url, original)
     lowered = absolute.lower()
     if re.search(r"\.(?:pdf|svg|ico)(?:$|[?#&])", lowered):
         return
     if not re.search(r"\.(?:avif|jpe?g|png|webp)(?:$|[?#&])", lowered):
         return
-    if any(marker in lowered for marker in ("logo", "favicon", "icon-", "/_next/static/", "/assets/")):
+    # Visuel générique du département, logos des journaux de parution, icônes du site.
+    if any(marker in lowered for marker in (
+        "logo", "favicon", "icon-", "/_next/static/", "/assets/", "/images/departements/", "journaux_vae", "/img/",
+    )):
         return
     images.append(absolute)
 
@@ -534,9 +652,11 @@ def _detail_description(lines: list[str]) -> str | None:
 
 
 def _detail_asset_address(lines: list[str], compact_text: str) -> str | None:
-    address = _line_after_label(lines, "Adresse du bien")
-    if address:
-        return address
+    if _line_index(lines, "Adresse du bien") is not None:
+        # Les libellés de la page précèdent leurs valeurs (prix, puis voie, « , », code postal, commune) :
+        # la ligne qui suit « Adresse du bien » est le prix, pas l'adresse. Le texte libre ci-dessous
+        # contient l'adresse de l'avocat ou du tribunal : on ne s'y replie pas quand le bloc existe.
+        return extract_adresse_du_bien(lines)
     for line in lines:
         match = re.search(r"^(?:À|A)\s+[A-ZÀ-Ÿ' -]+\s+\(\d{2,3}\),\s*(.+)$", line)
         if match:
@@ -640,6 +760,13 @@ def _extract_sale_date(text: str | None) -> str | None:
     return None
 
 
+PAST_SALE_TOLERANCE = timedelta(days=30)
+
+
+def _paris_today() -> date:
+    return datetime.now(ZoneInfo("Europe/Paris")).date()
+
+
 def _list_sale_date(text: str | None) -> str | None:
     match = re.search(r"^\s*(\d{1,2})\s+([A-ZÉÈÊÀÂÎÏÔÛÙÇ]{3,})\b", text or "", re.I)
     if not match:
@@ -648,14 +775,22 @@ def _list_sale_date(text: str | None) -> str | None:
     if not month:
         return None
     day = int(match.group(1))
-    year = date.today().year
     month_number = MONTH_NUMBERS[month]
-    try:
-        candidate = date(year, month_number, day)
-    except ValueError:
+    # The card gives no year. Keep the nearest year that is not more than
+    # PAST_SALE_TOLERANCE in the past, so a hearing held a few weeks ago is not
+    # pushed to next year (and so reported upcoming).
+    oldest = _paris_today() - PAST_SALE_TOLERANCE
+    year = None
+    for candidate_year in range(oldest.year, oldest.year + 3):
+        try:
+            candidate = date(candidate_year, month_number, day)
+        except ValueError:
+            continue
+        if candidate >= oldest:
+            year = candidate_year
+            break
+    if year is None:
         return None
-    if candidate < date.today():
-        year += 1
     return f"{day} {month} {year}"
 
 

@@ -65,7 +65,6 @@ export function buildAudienceReadinessAnalysis({
   const daysUntilAudience = daysUntil(audienceDate, now);
   const visitDates = normalizeVisitDates(sale);
   const checklist = buildChecklist({
-    sale,
     documents,
     auctionCostAnalysis,
     occupancyAnalysis,
@@ -116,7 +115,6 @@ export function buildAudienceReadinessAnalysis({
 }
 
 function buildChecklist({
-  sale,
   documents,
   auctionCostAnalysis,
   occupancyAnalysis,
@@ -128,7 +126,6 @@ function buildChecklist({
   visitDates,
   now,
 }: {
-  sale: AuctionSale;
   documents: SaleDocumentRich[];
   auctionCostAnalysis: AuctionCostAnalysis;
   occupancyAnalysis: OccupancyAnalysis;
@@ -265,7 +262,7 @@ function buildChecklist({
     },
     {
       key: "bid_ceiling",
-      label: "Mise maximale",
+      label: "Enchère plafond",
       status: bidCeilingAvailable ? "done" : "to_do",
       priority: "high",
       source: "Calcul de plafond",

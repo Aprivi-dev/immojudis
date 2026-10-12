@@ -8,6 +8,7 @@ import {
   listingVisits,
   parseBudgetAmount,
 } from "./sale-listing";
+import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
 import type { AuctionSale } from "./types";
 
 const sale = (values: Partial<AuctionSale>) => values as AuctionSale;
@@ -28,6 +29,88 @@ describe("listing facts", () => {
         sale({ address: "16 avenue des Elysées", postal_code: "34350", city: "Valras-Plage" }),
       ),
     ).toBe("16 avenue des Elysées, 34350 Valras-Plage");
+  });
+  it("removes legal notice and map controls accidentally stored with a property address", () => {
+    expect(
+      listingAddress(
+        sale({
+          address:
+            "On ne peut enchérir que par avocat|Saint-Quentin|17 rueRoland Garros|Afficher le plan|(exactitude non garantie)",
+          postal_code: "02100",
+          city: "Saint-Quentin",
+        }),
+      ),
+    ).toBe("17 rue Roland Garros, 02100 Saint-Quentin");
+  });
+  it("sanitizes historical detail rows before the property hero consumes them", () => {
+    const cleaned = sanitizeAuctionSaleForDisplay(
+      sale({
+        address:
+          "On ne peut enchérir que par avocat|Saint-Quentin|17 rueRoland Garros|Afficher le plan",
+        postal_code: "02100",
+        city: "Saint-Quentin",
+        department: "59",
+        sale_date: "2026-10-14T00:00:00+00:00",
+        lawyer_name: "chèque de banque à l’ordre de la CARPA de5.000€",
+        lawyer_contact: "chèque de banque à l’ordre de la CARPA de5.000€",
+        visit_dates: ["vendredi28août2026 à14h et"],
+        sale_procedure: {
+          venue_address:
+            "On ne peut enchérir que par avocat|Saint-Quentin|17 rueRoland Garros|Afficher le plan",
+          organizer_name: "chèque de banque à l’ordre de la CARPA de5.000€",
+          organizer_contact: "chèque de banque à l’ordre de la CARPA de5.000€",
+        },
+      }),
+    );
+
+    expect(cleaned.address).toBe("17 rue Roland Garros");
+    expect(cleaned.department).toBe("02");
+    expect(cleaned.sale_date).toBe("2026-10-14");
+    expect(cleaned.lawyer_name).toBeNull();
+    expect(cleaned.lawyer_contact).toBeNull();
+    expect(cleaned.visit_dates).toEqual(["vendredi 28 août 2026 à 14h"]);
+    expect(cleaned.sale_procedure).toMatchObject({
+      venue_address: "17 rue Roland Garros",
+      organizer_name: null,
+      organizer_contact: null,
+    });
+  });
+  it("keeps only an actionable phone when a contact field also contains a payment clause", () => {
+    expect(
+      sanitizeAuctionSaleForDisplay(
+        sale({ lawyer_contact: "CARPA, chèque de banque · 03 23 00 00 00" }),
+      ).lawyer_contact,
+    ).toBe("03 23 00 00 00");
+  });
+  it("hides a Petites Affiches starting price that was stored as a postal code", () => {
+    const cleaned = sanitizeAuctionSaleForDisplay(
+      sale({
+        source_name: "petites_affiches",
+        address: "Saint-Quentin",
+        city: "Saint-Quentin",
+        department: "50",
+        postal_code: "50000",
+        starting_price_eur: 50_000,
+      }),
+    );
+
+    expect(cleaned.postal_code).toBeNull();
+    expect(cleaned.department).toBeNull();
+  });
+  it("prefers a postal code explicitly present in the Petites Affiches address", () => {
+    const cleaned = sanitizeAuctionSaleForDisplay(
+      sale({
+        source_name: "petites_affiches",
+        address: "39 bis avenue Paul Bert, 93190 Livry-Gargan",
+        city: "Livry-Gargan",
+        department: "02",
+        postal_code: "02889",
+        starting_price_eur: 80_000,
+      }),
+    );
+
+    expect(cleaned.postal_code).toBe("93190");
+    expect(cleaned.department).toBe("93");
   });
   it("preserves measured decimals and distinguishes the starting unit price", () => {
     const result = listingSurface(
@@ -64,7 +147,7 @@ describe("listing facts", () => {
     ).toBeNull();
   });
   it("makes missing surfaces explicit", () => {
-    expect(listingSurface(sale({})).formatted).toBe("À confirmer");
+    expect(listingSurface(sale({})).formatted).toBe("Non renseignée");
   });
   it.each([
     [null, 2],
@@ -87,6 +170,9 @@ describe("listing dates", () => {
   it("displays a zoned auction time in Paris", () => {
     expect(listingDate("2026-10-15T07:30:00Z")).toContain("09:30");
   });
+  it("does not display a fabricated Paris hour for a UTC-midnight date-only value", () => {
+    expect(listingDate("2026-10-14T00:00:00+00:00")).toBe("14 octobre 2026");
+  });
   it.each(["2026-10-02 à 14:00", "2026-10-02T14:00:00"])("keeps the local time of %s", (date) => {
     expect(listingDate(date)).toBe("2 octobre 2026 · 14:00");
   });
@@ -94,7 +180,7 @@ describe("listing dates", () => {
     expect(listingDate("Sur rendez-vous uniquement")).toBe("Sur rendez-vous uniquement");
     expect(listingDate("2026-10-02 à 14:00–15:00")).toBe("2 octobre 2026 · 14:00–15:00");
     expect(listingDate("2026-02-31")).toBe("2026-02-31");
-    expect(listingDate(null)).toBe("À confirmer");
+    expect(listingDate(null)).toBe("Date non renseignée");
   });
   it("deduplicates slots and avoids repeating the raw source block", () => {
     expect(

@@ -1,17 +1,12 @@
 import type { Metadata } from "next";
-import { AuthGate } from "@/components/AuthGate";
-import { AdminDashboardPage } from "@/routes/admin";
+import { AdminLawyersPage } from "./admin-lawyers-page";
 
 export const metadata: Metadata = {
   title: "Avocats admin",
-  description: "Gestion du réseau d’avocats et des mises en relation ImmoJudis.",
+  description: "Gestion du réseau d’avocats et des mises en relation Immojudis.",
   robots: { index: false, follow: false },
 };
 
 export default function Page() {
-  return (
-    <AuthGate>
-      <AdminDashboardPage initialView="lawyers" />
-    </AuthGate>
-  );
+  return <AdminLawyersPage />;
 }
