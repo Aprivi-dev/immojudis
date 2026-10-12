@@ -27,6 +27,7 @@ import {
 } from "@/lib/urban-planning-analysis";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { CadastralPlanDisclosure } from "./CadastralPlanDisclosure";
+import { listingPluZone } from "@/lib/land-report-coherence";
 import { LandPotentialPanel } from "./LandPotentialPanel";
 import styles from "./UrbanismeCadastrePanel.module.css";
 
@@ -132,7 +133,13 @@ export function UrbanismeCadastrePanel({
         </p>
       </div>
 
-      <LandPotentialPanel key={sale.id} saleId={sale.id} enabled={officialLandEnabled} />
+      <LandPotentialPanel
+        key={sale.id}
+        saleId={sale.id}
+        enabled={officialLandEnabled}
+        listingZone={listingPluZone(sale.source_description, sale.description)}
+        landSurfaceM2={sale.land_surface_m2}
+      />
 
       <CadastralPlanDisclosure
         point={coordinates}

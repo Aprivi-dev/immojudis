@@ -16,11 +16,20 @@ import type {
   LandRiskCategory,
   LandRuleEvidence,
 } from "@/lib/land-report-types";
+import { compareListingZone, parcelSurfaceGap } from "@/lib/land-report-coherence";
 import { LandParcelDiagram } from "./LandParcelDiagram";
 import styles from "./LandPotentialPanel.module.css";
 import { userMessage } from "@/lib/user-messages";
 
-type Props = { saleId: string; enabled: boolean; initialReport?: LandReport };
+type Props = {
+  saleId: string;
+  enabled: boolean;
+  initialReport?: LandReport;
+  /** PLU zone quoted in the listing (« UP1*1L40 »), compared with the official zone. */
+  listingZone?: string | null;
+  /** Land surface announced, compared with the parcels found. */
+  landSurfaceM2?: number | null;
+};
 const PROJECT_LABELS: Record<LandProjectKind, string> = {
   extension: "Agrandir",
   height: "Surélever",
@@ -29,7 +38,13 @@ const PROJECT_LABELS: Record<LandProjectKind, string> = {
   destination: "Changer de destination",
 };
 
-export function LandPotentialPanel({ saleId, enabled, initialReport }: Props) {
+export function LandPotentialPanel({
+  saleId,
+  enabled,
+  initialReport,
+  listingZone = null,
+  landSurfaceM2 = null,
+}: Props) {
   const [report, setReport] = useState(initialReport ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +80,8 @@ export function LandPotentialPanel({ saleId, enabled, initialReport }: Props) {
     ? [...report.planning.checks, ...report.risks.checks, ...report.rules.checks]
     : [];
   const unavailableCount = checks.filter((check) => check.status === "unavailable").length;
+  const surfaceGap = report ? parcelSurfaceGap(report.planning.parcels, landSurfaceM2) : null;
+  const zoneCheck = report ? compareListingZone(listingZone, report.planning.zones) : null;
   const warnings = report
     ? [
         ...new Set([
@@ -154,6 +171,7 @@ export function LandPotentialPanel({ saleId, enabled, initialReport }: Props) {
                         ? "Plusieurs rattachements ou zones sont à examiner. Les règles ne sont pas généralisées à tout le terrain."
                         : "La parcelle n’a pas pu être rattachée avec les informations disponibles."}
                 </p>
+                {surfaceGap ? <p className={styles.notice}>{surfaceGap}</p> : null}
                 {report.planning.parcels.length ? (
                   <>
                     <LandParcelDiagram
@@ -201,6 +219,16 @@ export function LandPotentialPanel({ saleId, enabled, initialReport }: Props) {
                     applicable et la couverture des sources ci-dessous.
                   </p>
                 )}
+                {zoneCheck ? (
+                  <p className={zoneCheck.matches === false ? styles.notice : styles.caption}>
+                    Zone citée dans l’annonce : {zoneCheck.zone}
+                    {zoneCheck.matches === true
+                      ? " · concorde avec le zonage officiel."
+                      : zoneCheck.matches === false
+                        ? " · diffère du zonage officiel ci-dessus : à vérifier dans le cahier des conditions de vente."
+                        : "."}
+                  </p>
+                ) : null}
                 {report.planning.documents.map((document) => (
                   <details className={styles.document} key={document.id}>
                     <summary>{document.title || document.name}</summary>

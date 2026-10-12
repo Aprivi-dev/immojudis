@@ -504,3 +504,72 @@ function planningForRegulation(regulationUrl: string): LandPlanningResult {
     completeCoverage: false,
   };
 }
+
+describe("land rule extraction noise", () => {
+  it("reads the articles of a one-letter zone without matching the French word « a »", () => {
+    const result = extractLandRulesFromPages(
+      extractionInput({
+        targetZoneLabels: ["Aa", "A"],
+        pages: [
+          {
+            page: 18,
+            text: "Il a été convenu que la hauteur des clôtures est limitée à 2 mètres.",
+          },
+          {
+            page: 19,
+            text: [
+              "ARTICLE A 10 – HAUTEUR MAXIMUM DES CONSTRUCTIONS",
+              "La hauteur des constructions ne peut excéder 9 mètres au faîtage.",
+            ].join("\n"),
+          },
+        ],
+      }),
+    );
+    expect(result.rules.map((rule) => [rule.page, rule.topic])).toEqual([[19, "height"]]);
+    expect(result.rules[0]?.zoneLabels).toEqual(["A"]);
+    expect(result.rules[0]?.text).toContain("9 mètres");
+  });
+
+  it("drops the table of contents, general provisions and the list of plan pieces", () => {
+    const result = extractLandRulesFromPages(
+      extractionInput({
+        targetZoneLabels: ["UG"],
+        pages: [
+          {
+            page: 2,
+            text: [
+              "Zone UG",
+              "D.4. Au titre du code de la construction et de l’habitation ........................ 11",
+              "ARTICLE 3 – DIVISION DU TERRITOIRE EN ZONES Le PLU divise le territoire en zones urbaines dont la zone UG où l'habitation est autorisée.",
+              "- C - Plan de protection du commerce indiquant les linéaires de protection du commerce en zone UG.",
+            ].join("\n"),
+          },
+        ],
+      }),
+    );
+    expect(result.rules).toEqual([]);
+  });
+
+  it("keeps an article under its own rubrique and only once", () => {
+    const article = [
+      "ARTICLE U 6 - IMPLANTATION DES CONSTRUCTIONS PAR RAPPORT AUX VOIES ET EMPRISES PUBLIQUES",
+      "En zone UA, les constructions doivent être implantées à l’alignement des voies publiques.",
+      "Un recul est autorisé pour l’accès des véhicules et les réseaux.",
+      "ARTICLE U 4 – DESSERTE PAR LES RESEAUX",
+      "En zone UA, toute construction doit être raccordée au réseau public, façade comprise.",
+    ].join("\n");
+    const result = extractLandRulesFromPages(
+      extractionInput({ targetZoneLabels: ["UA"], pages: [{ page: 8, text: article }] }),
+    );
+    expect(result.rules.map((rule) => rule.topic)).toEqual(["setbacks", "access_networks"]);
+  });
+
+  it("says so when the published regulation has no text", () => {
+    const result = extractLandRulesFromPages(
+      extractionInput({ targetZoneLabels: ["A"], pages: [{ page: 104, text: "   " }] }),
+    );
+    expect(result.rules).toEqual([]);
+    expect(result.checks[0]).toMatchObject({ status: "unavailable" });
+    expect(result.warnings[0]).toContain("pas de texte lisible");
+  });
+});

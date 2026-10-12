@@ -216,6 +216,18 @@ describe("LandPotentialPanel", () => {
     expect(screen.getByText(/ne vaut ni droit disponible ni autorisation/)).toBeTruthy();
   });
 
+  it("confronte la zone citée et la surface annoncée au rapport officiel", () => {
+    renderPanel({ listingZone: "UCa2*L12", landSurfaceM2: 4_000 });
+    expect(
+      screen.getByText(/Zone citée dans l’annonce : UCa2\*L12 · concorde avec le zonage officiel/),
+    ).toBeTruthy();
+    expect(screen.getByText(/couvre 698 m² alors que l’annonce indique 4 000 m²/)).toBeTruthy();
+    cleanup();
+    renderPanel({ listingZone: "UB", landSurfaceM2: 700 });
+    expect(screen.getByText(/diffère du zonage officiel/)).toBeTruthy();
+    expect(screen.queryByText(/alors que l’annonce indique/)).toBeNull();
+  });
+
   it("rend la couverture partielle et les limites des sources dans le panneau", () => {
     renderPanel();
 
