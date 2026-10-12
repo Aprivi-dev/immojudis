@@ -5,15 +5,17 @@ import re
 from typing import Any
 
 from src.config import load_settings
+from src.enrichment.display_fallback import (
+    PROPERTY_TYPE_DISPLAY_LABELS,
+    fallback_asset_details,
+    fallback_location,
+    fallback_occupation,
+)
 from src.enrichment.display_quality import DISPLAY_MIN_CHARS, DISPLAY_QUALITY_VERSION, preserve_source_constraints
 from src.enrichment.extract_structured import (
     DISPLAY_DESCRIPTION_MAX_CHARS,
     DISPLAY_DESCRIPTION_MAX_WORDS,
-    PROPERTY_TYPE_DISPLAY_LABELS,
     LLMExtraction,
-    _fallback_asset_details,
-    _fallback_location,
-    _fallback_occupation,
     extract_source_description,
     has_current_fact_analysis,
 )
@@ -116,12 +118,12 @@ def refresh_operational_display(
         # PDF qualifiers may have disappeared from the retained payload.
         return False
     label = PROPERTY_TYPE_DISPLAY_LABELS.get(sale.property_type or "", "Bien immobilier")
-    sentences = [" ".join(filter(None, (label, _fallback_location(sale)))) + "."]
+    sentences = [" ".join(filter(None, (label, fallback_location(sale)))) + "."]
     empty = LLMExtraction()
-    details = _fallback_asset_details(sale, empty)
+    details = fallback_asset_details(sale, empty)
     if details:
         sentences.append("Les éléments disponibles mentionnent " + ", ".join(details) + ".")
-    occupation = _fallback_occupation(sale, empty)
+    occupation = fallback_occupation(sale, empty)
     if occupation:
         sentences.append(occupation + ".")
     sentences.append("Consultez les informations actualisées et les documents de vente pour les conditions détaillées.")
