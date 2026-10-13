@@ -148,7 +148,9 @@ export async function sendCommercialConfirmation({
 
   const { data: acceptance, error: acceptanceError } = await supabaseAdmin
     .from("commercial_acceptances")
-    .select("offer_code,amount_cents,currency,evidence")
+    .select(
+      "offer_code,amount_cents,currency,evidence,terms_version,terms_sha256,privacy_version,privacy_sha256",
+    )
     .eq("id", acceptanceId)
     .maybeSingle();
   if (acceptanceError) throw acceptanceError;
@@ -213,6 +215,13 @@ export async function sendCommercialConfirmation({
     return "failed";
   }
 
+  // Le courriel cite ce que le client a accepté (version et empreinte enregistrées avec
+  // l'acceptation), pas la version en vigueur le jour de l'envoi ou de la relance.
+  const accepted = {
+    termsVersion: acceptance?.terms_version ?? LEGAL_DOCUMENTS.terms.version,
+    termsSha256: acceptance?.terms_sha256 ?? LEGAL_DOCUMENTS.terms.sha256,
+    privacyVersion: acceptance?.privacy_version ?? LEGAL_DOCUMENTS.privacy.version,
+  };
   const termsUrl = `${config.appUrl}${LEGAL_DOCUMENTS.terms.path}`;
   const privacyUrl = `${config.appUrl}${LEGAL_DOCUMENTS.privacy.path}`;
   const rightsUrl = `${config.appUrl}/mes-droits`;
@@ -230,8 +239,8 @@ export async function sendCommercialConfirmation({
     offerDescription,
     `Commande confirmée le : ${paidAt}`,
     `Référence : ${checkoutSessionId}`,
-    `Conditions acceptées : version ${LEGAL_DOCUMENTS.terms.version}`,
-    `Politique de confidentialité : version ${LEGAL_DOCUMENTS.privacy.version}`,
+    `Conditions acceptées : version ${accepted.termsVersion}`,
+    `Politique de confidentialité : version ${accepted.privacyVersion}`,
     "Exécution : accès immédiat demandé avant la fin du délai de rétractation.",
     "",
     `Conditions générales : ${termsUrl}`,
@@ -240,7 +249,7 @@ export async function sendCommercialConfirmation({
     "",
     ...withdrawalLines,
     "",
-    `Empreinte SHA-256 des conditions acceptées : ${LEGAL_DOCUMENTS.terms.sha256}`,
+    `Empreinte SHA-256 des conditions acceptées : ${accepted.termsSha256}`,
   ].join("\n");
 
   try {
@@ -255,7 +264,7 @@ export async function sendCommercialConfirmation({
           ? "Confirmation de votre abonnement Immojudis Analyse"
           : "Confirmation de votre commande Immojudis Analyse",
         text,
-        html: `<h1>${isRecurringOffer ? "Abonnement" : "Commande"} Immojudis Analyse confirmé${isRecurringOffer ? "" : "e"}</h1><p><strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription)}</p><p>Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${escapeHtml(checkoutSessionId)}</p><p>Conditions version ${LEGAL_DOCUMENTS.terms.version} · Confidentialité version ${LEGAL_DOCUMENTS.privacy.version}</p><p><a href="${termsUrl}">Conditions générales</a> · <a href="${privacyUrl}">Confidentialité</a> · <a href="${rightsUrl}">Mes droits et rétractation</a></p><pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(withdrawalLines.join("\n"))}</pre><p>Empreinte SHA-256 des conditions acceptées : ${LEGAL_DOCUMENTS.terms.sha256}</p>`,
+        html: `<h1>${isRecurringOffer ? "Abonnement" : "Commande"} Immojudis Analyse confirmé${isRecurringOffer ? "" : "e"}</h1><p><strong>${escapeHtml(offerLabel)}</strong><br>${escapeHtml(offerDescription)}</p><p>Confirmation : ${escapeHtml(paidAt)}<br>Référence : ${escapeHtml(checkoutSessionId)}</p><p>Conditions version ${escapeHtml(accepted.termsVersion)} · Confidentialité version ${escapeHtml(accepted.privacyVersion)}</p><p><a href="${termsUrl}">Conditions générales</a> · <a href="${privacyUrl}">Confidentialité</a> · <a href="${rightsUrl}">Mes droits et rétractation</a></p><pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(withdrawalLines.join("\n"))}</pre><p>Empreinte SHA-256 des conditions acceptées : ${escapeHtml(accepted.termsSha256)}</p>`,
       },
     });
     await recordConfirmationDelivery({

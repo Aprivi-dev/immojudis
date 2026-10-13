@@ -29,6 +29,7 @@ describe("offerComparisonRows", () => {
     expect(row("statistics").label).toBe("Statistiques des ventes et des tribunaux");
     expect(row("statistics").analyse.included).toBe(true);
     expect(row("statistics").decouverte.included).toBe(false);
+    expect(row("statistics").hint).toBe("Tribunaux : selon l’historique disponible");
     expect(row("pdf").analyse.included).toBe(true);
     expect(row("csv").analyse.included).toBe(true);
   });
