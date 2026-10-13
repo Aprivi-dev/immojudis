@@ -330,7 +330,11 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
   it("records an explicit opening request for a signed-in account and lets them withdraw it", async () => {
     renderActions();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" }));
+    const requestButton = await screen.findByRole("button", { name: "Me prévenir de l’ouverture" });
+    // Avant le clic, on décrit la demande ; on n'annonce pas qu'elle est enregistrée.
+    expect(screen.getByText(/En cliquant, vous demandez à recevoir un seul email/)).toBeTruthy();
+    expect(screen.queryByText(/Votre demande est enregistrée/)).toBeNull();
+    fireEvent.click(requestButton);
     await waitFor(() => expect(mocks.updateOfferOpeningNotification).toHaveBeenCalledWith(true));
     expect(await screen.findByText(/Votre demande est enregistrée/)).toBeTruthy();
     expect(

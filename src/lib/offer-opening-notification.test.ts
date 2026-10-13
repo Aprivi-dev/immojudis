@@ -81,7 +81,7 @@ describe("offer opening notification", () => {
 describe("offer opening consent wording", () => {
   it("promises an intention, with no delay and no claim that an email is already wired", () => {
     expect(OFFER_OPENING_CONSENT_TEXT).toBe(
-      "Votre demande est enregistrée : nous vous écrirons une seule fois à l’ouverture de l’offre Analyse. Vous pouvez la retirer à tout moment.",
+      "En cliquant, vous demandez à recevoir un seul email à l’ouverture de l’offre Analyse. Vous pouvez retirer cette demande à tout moment.",
     );
   });
 

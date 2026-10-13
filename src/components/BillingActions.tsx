@@ -37,7 +37,10 @@ import {
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
-import { OFFER_OPENING_CONSENT_TEXT } from "@/lib/offer-opening-notification";
+import {
+  OFFER_OPENING_CONSENT_TEXT,
+  OFFER_OPENING_REQUESTED_TEXT,
+} from "@/lib/offer-opening-notification";
 import { userMessage } from "@/lib/user-messages";
 import { trackProductEvent } from "@/lib/product-events";
 
@@ -365,7 +368,7 @@ export function BillingActions({
               </p>
               {openingRequested ? (
                 <p role="status" className="mt-3 font-medium">
-                  {OFFER_OPENING_CONSENT_TEXT}{" "}
+                  {OFFER_OPENING_REQUESTED_TEXT}{" "}
                   <button
                     type="button"
                     onClick={() => changeOpeningRequest(false)}
