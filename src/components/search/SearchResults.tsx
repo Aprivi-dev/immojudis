@@ -12,7 +12,6 @@ import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left.js";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
-import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
@@ -20,7 +19,13 @@ import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { supabase } from "@/integrations/supabase/client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
+import { loginPathWithRedirect, pathWithSearch, saleDetailPath } from "@/lib/navigation";
+import {
+  FAVORITE_ADD_LABEL,
+  FAVORITE_ANONYMOUS_TITLE,
+  FAVORITE_REMOVE_LABEL,
+  announceFavoriteAdded,
+} from "@/components/favorite-feedback";
 import {
   addFavoriteSale as addFavoriteSaleRequest,
   removeFavoriteSale as removeFavoriteSaleRequest,
@@ -29,6 +34,7 @@ import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/li
 import { stateListingStatus } from "@/lib/property-characteristics";
 import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
+import type { ActiveFilterChip } from "./active-filter-chips";
 import { ErrorState, NoResultsState } from "./SearchFilters";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
 import styles from "./SearchResults.module.css";
@@ -60,6 +66,11 @@ export function SearchResultsList({
   onToggleComparison,
   aiReviewBySaleId,
   aiReviewStatus = "disabled",
+  activeFilters,
+  onRemoveFilter,
+  onResetFilters,
+  onShowFrance,
+  hideEmptyState = false,
 }: {
   sales: AuctionSale[];
   sponsoredPlacement?: React.ReactNode;
@@ -78,6 +89,13 @@ export function SearchResultsList({
   onToggleComparison: (sale: AuctionSale) => void;
   aiReviewBySaleId?: Readonly<Record<string, readonly AiReviewProjectionReadModel[]>>;
   aiReviewStatus?: AiReviewRequestStatus;
+  /** Critères actifs, affichés en puces retirables quand la recherche ne donne rien. */
+  activeFilters?: ActiveFilterChip[];
+  onRemoveFilter?: (filter: ActiveFilterChip) => void;
+  onResetFilters?: () => void;
+  onShowFrance?: () => void;
+  /** Page au-delà de la dernière : c'est la pagination qui l'explique, pas les critères. */
+  hideEmptyState?: boolean;
 }) {
   const { user, loading: authLoading } = useAuth();
   const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
@@ -104,7 +122,14 @@ export function SearchResultsList({
     <div className="px-3 pb-24 pt-3 sm:px-5 lg:pb-6">
       {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
 
-      {!isLoading && sales.length === 0 && !error ? <NoResultsState /> : null}
+      {!isLoading && sales.length === 0 && !error && !hideEmptyState ? (
+        <NoResultsState
+          filters={activeFilters}
+          onRemoveFilter={onRemoveFilter}
+          onReset={onResetFilters}
+          onShowFrance={onShowFrance}
+        />
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 min-[600px]:grid-cols-2">
         {isLoading
@@ -715,7 +740,7 @@ export function ShareButton({ sale, title }: { sale: AuctionSale; title: string 
     <button
       type="button"
       onClick={share}
-      className="relative z-20 grid h-8 w-8 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
       aria-label="Partager cette vente"
     >
       <Share2 className="h-5 w-5" />
@@ -756,7 +781,7 @@ export function CompactFavoriteButton({
         typeof window !== "undefined"
           ? `${window.location.pathname}${window.location.search}`
           : "/sales";
-      router.push(pathWithSearch("/login", { redirect }));
+      router.push(loginPathWithRedirect(redirect, { reason: "favori" }));
       return;
     }
     if (locked) return;
@@ -769,8 +794,9 @@ export function CompactFavoriteButton({
         await removeFavoriteSaleRequest({ saleId });
         setIsFavorite(false);
       } else {
-        await addFavoriteSaleRequest({ data: { saleId } });
+        const added = await addFavoriteSaleRequest({ data: { saleId } });
         setIsFavorite(true);
+        void announceFavoriteAdded(queryClient, user.id, added?.plan?.limit ?? null);
       }
       queryClient.setQueriesData<string[] | undefined>(
         { queryKey: queryKeys.searchFavoriteStatusForUser(user.id) },
@@ -798,20 +824,11 @@ export function CompactFavoriteButton({
       onClick={toggle}
       disabled={busy}
       aria-pressed={locked ? undefined : isFavorite}
-      aria-label={
-        locked
-          ? "Connectez-vous pour enregistrer jusqu'à trois favoris gratuits"
-          : isFavorite
-            ? "Ne plus suivre cette vente"
-            : "Suivre cette vente"
-      }
-      className="relative z-20 grid h-8 w-8 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60"
+      aria-label={isFavorite && !locked ? FAVORITE_REMOVE_LABEL : FAVORITE_ADD_LABEL}
+      title={locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
+      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60"
     >
-      {locked ? (
-        <LockKeyhole className="h-4 w-4 text-gold-text" />
-      ) : (
-        <Heart className={`h-5 w-5 ${isFavorite ? "fill-danger text-danger" : ""}`} />
-      )}
+      <Heart className={`h-5 w-5 ${isFavorite && !locked ? "fill-danger text-danger" : ""}`} />
     </button>
   );
 }

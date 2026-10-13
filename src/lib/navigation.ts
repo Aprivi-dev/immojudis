@@ -33,11 +33,34 @@ export const ACCOUNT_LINKS: readonly SiteLink[] = [
   { href: "/compte", label: "Mon compte" },
 ];
 
-/** Adresse de connexion qui ramène la personne sur la page d'où elle vient. */
-export function loginPathWithRedirect(returnTo: string | null | undefined): string {
-  if (!returnTo || !returnTo.startsWith("/") || returnTo.startsWith("//")) return "/login";
-  if (returnTo === "/login" || returnTo.startsWith("/login?")) return "/login";
-  return `/login?redirect=${encodeURIComponent(returnTo)}`;
+/** Pourquoi la personne arrive sur la page de connexion : sert au bandeau d'explication. */
+export const LOGIN_REASONS = ["alerte", "favori", "export", "offre"] as const;
+export type LoginReason = (typeof LOGIN_REASONS)[number];
+
+export function loginReason(value: unknown): LoginReason | undefined {
+  return LOGIN_REASONS.find((reason) => reason === value);
+}
+
+/**
+ * Adresse de connexion qui ramène la personne sur la page d'où elle vient. Elle ouvre par défaut
+ * « Créer un compte » (`mode=investor`) : un visiteur qui touche un cœur ou une cloche n'a pas
+ * encore de compte. `reason` explique l'action qui a déclenché le détour.
+ */
+export function loginPathWithRedirect(
+  returnTo: string | null | undefined,
+  options: { mode?: LoginPageMode; reason?: LoginReason } = {},
+): string {
+  const { mode = "investor", reason } = options;
+  const query = new URLSearchParams();
+  const isSameSitePath = (path: string) => path.startsWith("/") && !path.startsWith("//");
+  const isLoginPage = (path: string) => path === "/login" || path.startsWith("/login?");
+  if (returnTo && isSameSitePath(returnTo) && !isLoginPage(returnTo)) {
+    query.set("redirect", returnTo);
+  }
+  if (mode !== "login") query.set("mode", mode);
+  if (reason) query.set("reason", reason);
+  const serialized = query.toString();
+  return serialized ? `/login?${serialized}` : "/login";
 }
 
 export type LoginPageMode = "login" | "investor" | "professional";

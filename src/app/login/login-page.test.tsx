@@ -3,10 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  search: {} as { mode?: "investor" | "professional"; redirect?: string },
+  search: {} as { mode?: "investor" | "professional"; redirect?: string; reason?: string },
   replace: vi.fn(),
   signIn: vi.fn(),
   signUp: vi.fn(),
+  resend: vi.fn(),
   toastError: vi.fn(),
 }));
 
@@ -16,7 +17,7 @@ vi.mock("@/hooks/use-auth", () => ({
 vi.mock("@/integrations/supabase/client", () => ({
   isSupabaseConfigured: true,
   supabase: {
-    auth: { signInWithPassword: mocks.signIn, signUp: mocks.signUp },
+    auth: { signInWithPassword: mocks.signIn, signUp: mocks.signUp, resend: mocks.resend },
   },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: mocks.toastError } }));
@@ -126,5 +127,125 @@ describe("login page", () => {
     expect(mocks.replace).toHaveBeenLastCalledWith(
       "/login?redirect=https%3A%2F%2Fevil.example%2Fphish&mode=investor",
     );
+  });
+
+  it("explique pourquoi on arrive ici : bandeau du motif, en création de compte et en connexion", () => {
+    mocks.search = { mode: "investor", reason: "alerte" };
+    const { unmount } = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Créez votre compte gratuit pour enregistrer cette alerte, sans carte bancaire.",
+    );
+    unmount();
+
+    mocks.search = { reason: "favori" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Connectez-vous pour garder cette vente en favori.",
+    );
+  });
+
+  it("n'affiche aucun bandeau pour un motif inconnu", () => {
+    mocks.search = { mode: "investor", reason: "inconnu" };
+    render(<LoginPage />);
+    expect(screen.queryByTestId("login-reason")).toBeNull();
+  });
+
+  it("signale le mode actif aux lecteurs d'écran et affiche la règle des 12 caractères", () => {
+    mocks.search = { mode: "investor" };
+    render(<LoginPage />);
+    expect(
+      screen.getByRole("button", { name: "Créer un compte" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      screen.getAllByRole("button", { name: "Se connecter" })[0].getAttribute("aria-pressed"),
+    ).toBe("false");
+    const field = screen.getByPlaceholderText("12 caractères minimum");
+    const rule = document.getElementById(field.getAttribute("aria-describedby")!);
+    expect(rule?.textContent).toMatch(/Au moins 12 caractères/);
+  });
+
+  it("n'affiche pas la règle des 12 caractères en connexion", () => {
+    render(<LoginPage />);
+    expect(
+      screen.getByPlaceholderText("Votre mot de passe").getAttribute("aria-describedby"),
+    ).toBeNull();
+  });
+
+  it("emploie « enchère plafond » au singulier", () => {
+    render(<LoginPage />);
+    expect(document.body.textContent).not.toMatch(/enchères plafonds/);
+  });
+
+  describe("confirmation de l'adresse après l'inscription", () => {
+    async function signUpWithoutSession() {
+      mocks.search = { mode: "investor", redirect: "/sales?city=Lyon" };
+      mocks.signUp.mockResolvedValue({ data: { user: { id: "u1" }, session: null }, error: null });
+      render(<LoginPage />);
+      fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+        target: { value: "nouvelle@example.test" },
+      });
+      fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+        target: { value: "un-mot-de-passe-solide" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+      return screen.findByRole("status");
+    }
+
+    it("remplace le formulaire par un panneau de statut quand il n'y a pas de session", async () => {
+      const panel = await signUpWithoutSession();
+      expect(panel.textContent).toContain(
+        "Un email de confirmation a été envoyé à nouvelle@example.test, cliquez sur le lien pour continuer.",
+      );
+      expect(screen.queryByPlaceholderText("vous@exemple.fr")).toBeNull();
+      expect(screen.getByRole("button", { name: "Renvoyer l'email" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Changer d'adresse" })).toBeTruthy();
+    });
+
+    it("renvoie l'email de confirmation vers la même adresse", async () => {
+      mocks.resend.mockResolvedValue({ error: null });
+      const panel = await signUpWithoutSession();
+      fireEvent.click(screen.getByRole("button", { name: "Renvoyer l'email" }));
+      await waitFor(() => expect(mocks.resend).toHaveBeenCalledTimes(1));
+      expect(mocks.resend.mock.calls[0][0]).toMatchObject({
+        type: "signup",
+        email: "nouvelle@example.test",
+      });
+      await waitFor(() =>
+        expect(panel.textContent).toContain("Email renvoyé à nouvelle@example.test"),
+      );
+    });
+
+    it("affiche une erreur en français quand le renvoi échoue", async () => {
+      mocks.resend.mockResolvedValue({ error: new Error("rate limit") });
+      await signUpWithoutSession();
+      fireEvent.click(screen.getByRole("button", { name: "Renvoyer l'email" }));
+      expect((await screen.findByRole("alert")).textContent).toBeTruthy();
+    });
+
+    it("revient au formulaire avec l'adresse saisie quand on change d'adresse", async () => {
+      await signUpWithoutSession();
+      fireEvent.click(screen.getByRole("button", { name: "Changer d'adresse" }));
+      const email = screen.getByPlaceholderText("vous@exemple.fr") as HTMLInputElement;
+      expect(email.value).toBe("nouvelle@example.test");
+      expect(screen.queryByRole("status")).toBeNull();
+    });
+
+    it("ne montre pas le panneau quand une session est ouverte tout de suite", async () => {
+      mocks.search = { mode: "investor" };
+      mocks.signUp.mockResolvedValue({
+        data: { user: { id: "u1" }, session: { access_token: "t" } },
+        error: null,
+      });
+      render(<LoginPage />);
+      fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
+        target: { value: "nouvelle@example.test" },
+      });
+      fireEvent.change(screen.getByPlaceholderText("12 caractères minimum"), {
+        target: { value: "un-mot-de-passe-solide" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: /Créer mon compte gratuit/ }));
+      await waitFor(() => expect(mocks.signUp).toHaveBeenCalled());
+      expect(screen.queryByRole("status")).toBeNull();
+    });
   });
 });
