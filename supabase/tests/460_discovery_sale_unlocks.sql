@@ -305,6 +305,8 @@ select is(
 reset role;
 
 -- Purging a sale does not give the credit back either -----------------------------------------
+-- Catalogue retention only deletes rows that already carry their Outcome Graph bridge.
+do $$ begin perform public.bridge_auction_sales_to_outcome_graph(); end $$;
 delete from public.auction_sales where id = 'c4600000-1000-4000-8000-000000000002';
 select is(
   (select count(*) from public.user_sale_unlocks

@@ -74,9 +74,7 @@ try {
 } finally {
   await admin`delete from auth.users where id = ${userId}`.catch(() => undefined);
   await admin`delete from auth.users where id = ${unlockUserId}`.catch(() => undefined);
-  await admin`delete from public.auction_sales where id = any(${unlockSaleIds})`.catch(
-    () => undefined,
-  );
+  await deleteUnlockFixtureSales(admin).catch(() => undefined);
   await Promise.all([admin.end(), first.end(), second.end()]);
 }
 
@@ -88,7 +86,7 @@ try {
 async function verifyConcurrentSaleUnlocks() {
   await admin.begin(async (sql) => {
     await sql`delete from auth.users where id = ${unlockUserId}`;
-    await sql`delete from public.auction_sales where id = any(${unlockSaleIds})`;
+    await deleteUnlockFixtureSales(sql);
     await sql`
       insert into auth.users (
         id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -155,4 +153,23 @@ async function verifyConcurrentSaleUnlocks() {
   } finally {
     await Promise.all(clients.map((client) => client.end()));
   }
+}
+
+/**
+ * Test-fixture teardown must not manufacture permanent Outcome bridges (pgTAP 120 and 160 count
+ * every catalogue row). Same local/admin-only bypass as scripts/test-phase-2-db-concurrency.mjs:
+ * the account is deleted first so its unlocks cascade, then the production deletion guard is
+ * skipped for the six deterministic fixture IDs only.
+ */
+async function deleteUnlockFixtureSales(client) {
+  const run = async (sql) => {
+    await sql`delete from public.user_sale_unlocks where sale_id = any(${unlockSaleIds})`;
+    await sql`delete from app_private.auction_sale_source_checks where sale_id = any(${unlockSaleIds})`;
+    await sql.unsafe("set local session_replication_role = replica");
+    await sql`delete from public.auction_sales where id = any(${unlockSaleIds})`;
+    await sql.unsafe("set local session_replication_role = origin");
+  };
+  // Inside admin.begin() the client is already a transaction; otherwise open one so that
+  // "set local" stays scoped to the teardown.
+  return typeof client.savepoint === "function" ? run(client) : client.begin(run);
 }
