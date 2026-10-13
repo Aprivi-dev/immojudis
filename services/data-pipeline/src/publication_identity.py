@@ -18,6 +18,7 @@ from src.dedupe import (
 )
 from src.freshness import invalidate_analysis
 from src.models import AuctionSale
+from src.retention_tombstones import drop_retired
 from src.reviewed_aliases import (
     ReviewedAlias,
     ReviewedAliasRegistryError,
@@ -549,4 +550,5 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
         ensure_room_bedroom_consistency(sale)
         existing_by_key[sale.id or sale.source_url] = sale
         resolved[sale.source_url] = sale
-    return list(resolved.values())
+    # The tombstone trigger sees the resolved url/date, so the check belongs after the resolution.
+    return drop_retired(connection, list(resolved.values()), sales)
