@@ -98,14 +98,32 @@ def test_command_line_rejects_negative_limits(tmp_path) -> None:
         prune_cache_dirs.main(["--max-age-days", "-1", str(tmp_path)])
 
 
-def test_workflow_prunes_before_saving_with_a_stable_daily_key() -> None:
+def test_workflow_prunes_before_saving_one_entry_per_run_restored_by_prefix() -> None:
     workflow = (ROOT.parents[1] / ".github/workflows/data-pipeline.yml").read_text(encoding="utf-8")
 
     assert "scripts/prune_cache_dirs.py --max-age-days 14 --max-total-mb 300" in workflow
     assert workflow.index("Bound extraction cache") < workflow.index("Save extraction checkpoints")
     keys = re.findall(r"key: (immojudis-(?:data-pipeline|justice-reference)-\$\{\{ runner\.os \}\}-[^\n]*)", workflow)
     assert keys, "cache keys not found"
+    extraction_keys = [key for key in keys if key.startswith("immojudis-data-pipeline-")]
+    # The restore and the save use the same key: day + run id, one entry per run.
+    assert len(extraction_keys) == 2 and len(set(extraction_keys)) == 1
+    assert extraction_keys[0].endswith("-${{ steps.date.outputs.day }}-${{ github.run_id }}")
     for key in keys:
         assert "steps.date.outputs.day" in key
-        assert "run_id" not in key and "run_attempt" not in key
+        if not key.startswith("immojudis-data-pipeline-"):
+            assert "run_id" not in key and "run_attempt" not in key
+    # The newest entry of the day, then the newest earlier one, is restored by prefix.
+    restore_keys = re.search(
+        r"restore-keys: \|\n\s+(immojudis-data-pipeline-[^\n]*)\n\s+(immojudis-data-pipeline-[^\n]*)\n", workflow
+    )
+    assert restore_keys is not None
+    assert restore_keys.group(1) == "immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}-"
+    assert restore_keys.group(2) == "immojudis-data-pipeline-${{ runner.os }}-"
     assert 'echo "day=$(date -u +%Y-%m-%d)"' in workflow
+
+
+def test_workflow_refreshes_justice_references_only_when_the_copy_is_older_than_seven_days() -> None:
+    workflow = (ROOT.parents[1] / ".github/workflows/data-pipeline.yml").read_text(encoding="utf-8")
+
+    assert "python -m src.official_sources.justice_reference_sync --max-age-days 7" in workflow

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Iterable
@@ -55,18 +56,38 @@ def _enrichment_exhausted_detail(row: tuple[object, ...]) -> dict[str, object]:
     }
 
 
+def _retry_not_before_deadline(value: str | None) -> datetime | None:
+    """Parse a source's Retry-After deadline; ``None`` when absent or unusable."""
+    if not value:
+        return None
+    try:
+        other = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return other if other.tzinfo else None
+
+
 def next_attempt(*, failures: int, access_denied: bool, retry_not_before: str | None,
                  now: datetime) -> datetime:
     delay = timedelta(hours=24) if access_denied and failures >= 2 else timedelta(minutes=min(360, 15 * 2 ** min(failures, 5)))
     deadline = now + delay
-    if retry_not_before:
-        try:
-            other = datetime.fromisoformat(retry_not_before.replace('Z', '+00:00'))
-            if other.tzinfo:
-                deadline = max(deadline, other)
-        except ValueError:
-            pass
+    other = _retry_not_before_deadline(retry_not_before)
+    if other is not None:
+        deadline = max(deadline, other)
     return deadline
+
+
+# Un refus d'accès se lit d'abord dans le compteur structuré du client HTTP
+# (coverage['access_denials']). Les messages d'erreur ne servent qu'en complément
+# et doivent porter l'état HTTP lui-même : un « 403 » dans une URL ne compte pas.
+_HTTP_REFUSAL = re.compile(r'\bHTTP (?:401|403)\b')
+
+
+def access_denied(coverage: dict[str, object], problems: Iterable[object]) -> bool:
+    """True when the source refused access (HTTP 401/403), not when a URL contains 401/403."""
+    return bool(coverage.get('access_denials')) or any(
+        _HTTP_REFUSAL.search(str(problem)) for problem in problems
+    )
 
 
 def _aware_timestamp(value: object) -> datetime | None:
@@ -206,8 +227,7 @@ def finish_source(db_url: str, run_id: str) -> None:
         coverage = dict(coverage)
         problems = errors.get(source) or []
         previous = db.execute('select consecutive_failures from public.auction_source_state where source_name=%s for update', (source,)).fetchone()
-        failures = previous[0] + 1 if problems or status == 'failed' else 0
-        denied = bool(coverage.get('access_denials')) or any('403' in str(e) or '401' in str(e) for e in problems)
+        denied = access_denied(coverage, problems)
         publication_counts = dict(db.execute("""select decision,count(*)
             from public.auction_collection_items where run_id=%s and source_name=%s group by decision""",
             (run_id, source)).fetchall())
@@ -252,11 +272,19 @@ def finish_source(db_url: str, run_id: str) -> None:
             else 'partial' if not global_complete or scoped_complete
             else 'available'
         )
+        # A run that ended `succeeded`, published sales and was not refused
+        # access is only noisy (for instance one detail page in error): it keeps
+        # the ordinary inventory cadence. The retry back-off is reserved for
+        # `failed` runs, runs without published progress and access refusals.
+        backoff = bool(problems or status == 'failed') and (
+            status == 'failed' or denied or not publication_published
+        )
+        failures = previous[0] + 1 if backoff else 0
         pending = publication_pending
         complete = global_complete
         publication_complete = complete and not pending and status == 'succeeded'
         now = datetime.now(UTC)
-        if failures:
+        if backoff:
             # Retry-After and persistent access refusals retain their existing
             # bounded policy and must not be shortened by freshness cadence.
             deadline = next_attempt(failures=failures, access_denied=denied,
@@ -268,6 +296,10 @@ def finish_source(db_url: str, run_id: str) -> None:
                 source=source,
                 evidence_rows=_schedule_evidence_rows(db, run_id, source),
             )
+            # A Retry-After announced during a noisy-but-published run is still honoured.
+            retry_deadline = _retry_not_before_deadline(coverage.get('retry_not_before'))
+            if retry_deadline is not None:
+                deadline = max(deadline, retry_deadline)
         record_source_presence(db, run_id, source, availability, complete)
         db.execute("""update public.auction_source_state set
             availability=%s,coverage=%s,last_error=%s,consecutive_failures=%s,
@@ -275,7 +307,7 @@ def finish_source(db_url: str, run_id: str) -> None:
             last_inventory_complete_at=case when %s then now() else last_inventory_complete_at end,
             last_publication_complete_at=case when %s then now() else last_publication_complete_at end,
             updated_at=now() where source_name=%s and last_run_id=%s""",
-            (availability,Jsonb(coverage),json.dumps(problems or errors,ensure_ascii=False)[:2000] if failures else None,
+            (availability,Jsonb(coverage),json.dumps(problems or errors,ensure_ascii=False)[:2000] if problems or failures else None,
              failures,deadline,deadline if denied or coverage.get('retry_not_before') else None,
              complete,publication_complete,source,run_id))
         db.execute("""update public.auction_runs set summary=coalesce(summary,'{}') || %s
