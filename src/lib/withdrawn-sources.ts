@@ -4,12 +4,13 @@ import type { AuctionSale } from "@/lib/types";
  * Sources retirées du catalogue (interrupteur `auction_source_state.catalogue_withdrawn`, posé et levé
  * par `public.set_catalogue_source_withdrawal`, voir `docs/roadmaps/conditions-de-lancement-2026-10-10.md`).
  *
- * La base masque déjà les ventes dont TOUTES les sources sont retirées. Ce module couvre le reste : une
- * vente fusionnée avec une autre source reste visible, mais ses liens, photos et pièces hébergés par la
- * source retirée ne s'affichent pas. L'état par défaut est « Licitor retiré » : si la base ne répond pas
- * ou si la migration n'est pas appliquée, le contenu reste masqué (on ne lève jamais un retrait par défaut).
+ * Aucune source n'est retirée à ce jour : l'interrupteur est de l'infrastructure, gardée pour un usage futur.
+ * La base masque les ventes dont TOUTES les sources sont retirées. Ce module couvre le reste : une vente
+ * fusionnée avec une autre source reste visible, mais ses liens, photos et pièces hébergés par une source
+ * retirée ne s'affichent pas. L'état par défaut est « aucune source retirée » : si la base ne répond pas ou
+ * si la migration n'est pas appliquée (fonction absente), rien n'est masqué.
  */
-export const DEFAULT_WITHDRAWN_SOURCES: readonly string[] = ["licitor"];
+export const DEFAULT_WITHDRAWN_SOURCES: readonly string[] = [];
 
 /** Hôtes propres à une source (images, pièces, fiches). */
 const SOURCE_HOSTS: Record<string, readonly string[]> = { licitor: ["licitor.com"] };
@@ -46,7 +47,7 @@ export type WithdrawnSourcesClient = {
 
 /**
  * Lit l'interrupteur en base (au plus une fois par minute). En cas d'erreur (réseau, fonction absente
- * parce que la migration n'est pas appliquée), l'état par défaut s'applique : source retirée.
+ * parce que la migration n'est pas appliquée), l'état par défaut s'applique : aucune source retirée.
  */
 export function loadWithdrawnSources(
   client: WithdrawnSourcesClient,

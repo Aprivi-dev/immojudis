@@ -24,15 +24,17 @@ def withdraw_licitor(monkeypatch) -> None:
 # --- lecture de l'interrupteur -------------------------------------------------------------------
 
 
-def test_default_state_is_withdrawn_without_database_or_when_the_database_fails() -> None:
-    assert source_withdrawal.DEFAULT_WITHDRAWN == LICITOR
-    assert source_withdrawal.read_withdrawn_sources(None) == LICITOR
-    assert source_withdrawal.read_withdrawn_sources("") == LICITOR
+def test_default_state_is_no_source_withdrawn_without_database_or_when_the_database_fails() -> None:
+    assert source_withdrawal.DEFAULT_WITHDRAWN == frozenset()
+    assert source_withdrawal.read_withdrawn_sources(None) == frozenset()
+    assert source_withdrawal.read_withdrawn_sources("") == frozenset()
 
     def broken(_url):
+        # Migration pas encore appliquée, base injoignable : Licitor reste collecté.
         raise RuntimeError('column "catalogue_withdrawn" does not exist')
 
-    assert source_withdrawal.read_withdrawn_sources("postgresql://test", connect=broken) == LICITOR
+    assert source_withdrawal.read_withdrawn_sources("postgresql://test", connect=broken) == frozenset()
+    assert not source_withdrawal.is_source_withdrawn("licitor")
 
 
 def test_switch_is_read_from_the_database_and_lifting_it_opens_the_source() -> None:

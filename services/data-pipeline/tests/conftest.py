@@ -50,9 +50,9 @@ def _no_document_politeness_waits(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _sources_not_withdrawn_by_default(monkeypatch):
-    """L'état livré retire Licitor du catalogue (voir ``src.source_withdrawal``).
+    """L'état livré ne retire aucune source du catalogue (voir ``src.source_withdrawal``).
 
-    Les tests historiques des collecteurs tournent source ouverte, sans base ; les tests du retrait
+    Les tests des collecteurs tournent source ouverte, sans base ; les tests du retrait
     (``test_source_withdrawal.py``) posent eux-mêmes l'état qu'ils vérifient.
     """
     from src import source_withdrawal

@@ -74,8 +74,8 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
               max_requests: int = 300, max_seconds: int = 600, resolve_missing_locations: bool = False) -> dict:
     if source not in SOURCES or not 1 <= max_pages <= 150 or not 1 <= max_requests <= 500 or not 1 <= max_seconds <= 900:
         raise ValueError('Invalid source or audit budget')
-    # Source retirée du catalogue : aucun audit réseau. L'audit ne lit pas la base par construction
-    # (identifiants effacés plus bas) : sans SUPABASE_DB_URL, l'état par défaut (retirée) s'applique.
+    # Source retirée du catalogue : aucun audit réseau. L'audit ne lit la base que si SUPABASE_DB_URL est
+    # fourni (identifiants effacés plus bas) : sans lui, l'état par défaut (aucune source retirée) s'applique.
     source_withdrawal.require_source_active(source, os.environ.get('SUPABASE_DB_URL'))
     if source == "encheres_publiques":
         # Guard before importing the collector or installing the audit send

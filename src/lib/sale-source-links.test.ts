@@ -7,8 +7,6 @@ describe("sale source links", () => {
   afterEach(() => resetWithdrawnSources());
 
   it("labels merged source URLs from known domains", () => {
-    // Licitor est retiré du catalogue par défaut : ces libellés supposent le retrait levé.
-    setWithdrawnSources([]);
     const sale = {
       source_name: "avoventes",
       source_url: "https://avoventes.fr/enchere/maison",
@@ -27,6 +25,7 @@ describe("sale source links", () => {
   });
 
   it("hides the links of a source withdrawn from the catalogue", () => {
+    setWithdrawnSources(["licitor"]);
     const sale = {
       source_name: "avoventes",
       source_url: "https://avoventes.fr/enchere/maison",
@@ -42,7 +41,6 @@ describe("sale source links", () => {
   });
 
   it("uses object keys as source names when they are explicit", () => {
-    setWithdrawnSources([]);
     const sale = {
       source_name: "encheres_immobilieres",
       source_url: "https://encheresimmobilieres.fr/ventes/1",
