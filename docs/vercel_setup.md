@@ -19,30 +19,33 @@ npm run dev        # http://localhost:3000
 
 ## 2. Variables d'environnement
 
-| Variable                             | Requis   | Description                                                                                                                 |
-| ------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `VITE_SUPABASE_URL`                  | ✅       | URL du projet Supabase (`https://xxx.supabase.co`)                                                                          |
-| `VITE_SUPABASE_PUBLISHABLE_KEY`      | ✅       | Clé `anon` / `publishable` (publique, safe côté client)                                                                     |
-| `SUPABASE_URL`                       | ✅ prod  | URL Supabase côté serveur. Repli possible sur `NEXT_PUBLIC_SUPABASE_URL`, mais il est préférable de la poser explicitement. |
-| `SUPABASE_SECRET_KEY`                | ✅ prod  | Clé serveur Supabase nouvelle génération, ou utiliser `SUPABASE_SERVICE_ROLE_KEY` pour les projets legacy.                  |
-| `SUPABASE_SERVICE_ROLE_KEY`          | ✅ prod  | Clé serveur legacy Supabase, acceptée en repli de `SUPABASE_SECRET_KEY`.                                                    |
-| `SUPABASE_DB_URL`                    | ✅ ops   | URL Postgres directe pour appliquer les migrations. Repli accepté : `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`.           |
-| `GITHUB_SCROLL_TOKEN`                | ❌       | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.                            |
-| `GITHUB_SCROLL_REPOSITORY`           | ❌       | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                                    |
-| `GITHUB_SCROLL_WORKFLOW`             | ❌       | Workflow cible. Défaut : `data-pipeline.yml`.                                                                               |
-| `GITHUB_SCROLL_REF`                  | ❌       | Branche cible. Défaut : `main`.                                                                                             |
-| `CRON_SECRET`                        | ✅ prod  | Secret Vercel Cron envoyé en `Authorization: Bearer <secret>` pour `/api/cron/smart-alerts`.                                |
-| `OPERATIONS_ALERT_WEBHOOK_URL`       | ❌       | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                                         |
-| `OPERATIONS_ALERT_WEBHOOK_SECRET`    | ❌       | Bearer token associé au webhook opérationnel.                                                                               |
-| `OPERATIONS_ALERT_GITHUB_REPOSITORY` | ❌       | Repo du workflow d'alerte. Défaut : `Aprivi-dev/immojudis`.                                                                 |
-| `SMART_ALERT_CRON_USER_LIMIT`        | ❌       | Nombre max d'utilisateurs Analyse évalués par exécution. Défaut : `25`.                                                     |
-| `SMART_ALERT_CRON_SALE_LIMIT`        | ❌       | Nombre max de ventes actives/à venir évaluées par utilisateur. Défaut : `160`.                                              |
-| `ALERT_NOTIFICATION_CRON_LIMIT`      | ❌       | Nombre max de notifications d'alertes planifiées libérées par exécution. Défaut : `200`.                                    |
-| `STRIPE_SECRET_KEY`                  | ✅ prod  | Clé serveur Stripe utilisée pour le paiement unique Analyse à 29 €.                                                         |
-| `STRIPE_WEBHOOK_SECRET`              | ✅ prod  | Secret de signature du webhook qui attribue les 30 jours d'accès.                                                           |
-| `RESEND_API_KEY`                     | ✅ prod  | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés.                          |
-| `ALERT_EMAIL_FROM`                   | ✅ prod  | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`.                                                  |
-| `NEXT_PUBLIC_LEGAL_*`                | ✅ vente | Identité publique, contact, directeur de publication et médiateur ; le checkout reste bloqué si une valeur requise manque.  |
+| Variable                             | Requis   | Description                                                                                                                                                         |
+| ------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_SUPABASE_URL`                  | ✅       | URL du projet Supabase (`https://xxx.supabase.co`)                                                                                                                  |
+| `VITE_SUPABASE_PUBLISHABLE_KEY`      | ✅       | Clé `anon` / `publishable` (publique, safe côté client)                                                                                                             |
+| `SUPABASE_URL`                       | ✅ prod  | URL Supabase côté serveur. Repli possible sur `NEXT_PUBLIC_SUPABASE_URL`, mais il est préférable de la poser explicitement.                                         |
+| `SUPABASE_SECRET_KEY`                | ✅ prod  | Clé serveur Supabase nouvelle génération, ou utiliser `SUPABASE_SERVICE_ROLE_KEY` pour les projets legacy.                                                          |
+| `SUPABASE_SERVICE_ROLE_KEY`          | ✅ prod  | Clé serveur legacy Supabase, acceptée en repli de `SUPABASE_SECRET_KEY`.                                                                                            |
+| `SUPABASE_DB_URL`                    | ✅ ops   | URL Postgres directe pour appliquer les migrations. Repli accepté : `POSTGRES_URL_NON_POOLING` ou `POSTGRES_URL`.                                                   |
+| `GITHUB_SCROLL_TOKEN`                | ❌       | Token GitHub finement scopé pour déclencher immédiatement le workflow de scroll depuis `/admin`.                                                                    |
+| `GITHUB_SCROLL_REPOSITORY`           | ❌       | Repo cible du workflow. Défaut : `Aprivi-dev/immojudis`.                                                                                                            |
+| `GITHUB_SCROLL_WORKFLOW`             | ❌       | Workflow cible. Défaut : `data-pipeline.yml`.                                                                                                                       |
+| `GITHUB_SCROLL_REF`                  | ❌       | Branche cible. Défaut : `main`.                                                                                                                                     |
+| `CRON_SECRET`                        | ✅ prod  | Secret Vercel Cron envoyé en `Authorization: Bearer <secret>` pour `/api/cron/smart-alerts`.                                                                        |
+| `OPERATIONS_ALERT_WEBHOOK_URL`       | ❌       | Webhook HTTPS externe prioritaire pour les incidents opérationnels.                                                                                                 |
+| `OPERATIONS_ALERT_WEBHOOK_SECRET`    | ❌       | Bearer token associé au webhook opérationnel.                                                                                                                       |
+| `OPERATIONS_ALERT_GITHUB_REPOSITORY` | ❌       | Repo du workflow d'alerte. Défaut : `Aprivi-dev/immojudis`.                                                                                                         |
+| `SMART_ALERT_CRON_USER_LIMIT`        | ❌       | Nombre max d'utilisateurs Analyse évalués par exécution. Défaut : `25`.                                                                                             |
+| `SMART_ALERT_CRON_SALE_LIMIT`        | ❌       | Nombre max de ventes actives/à venir évaluées par utilisateur. Défaut : `160`.                                                                                      |
+| `ALERT_NOTIFICATION_CRON_LIMIT`      | ❌       | Nombre max de notifications d'alertes planifiées libérées par exécution. Défaut : `200`.                                                                            |
+| `STRIPE_SECRET_KEY`                  | ✅ prod  | Clé serveur Stripe utilisée pour le paiement unique Analyse à 29 €.                                                                                                 |
+| `STRIPE_WEBHOOK_SECRET`              | ✅ prod  | Secret de signature du webhook qui attribue les 30 jours d'accès.                                                                                                   |
+| `RESEND_API_KEY`                     | ✅ prod  | Clé serveur Resend pour envoyer les alertes email consenties et les emails aux avocats référencés.                                                                  |
+| `ALERT_EMAIL_FROM`                   | ✅ prod  | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`.                                                                                          |
+| `NEXT_PUBLIC_LEGAL_*`                | ✅ vente | Identité publique, contact, directeur de publication et médiateur ; le checkout reste bloqué et le build de production échoue si une valeur requise manque.         |
+| `SITE_URL`                           | ✅ prod  | Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`. `VERCEL_URL` ne suffit plus en production. |
+| `ADMIN_MFA_REQUIRED`                 | ✅ prod  | Doit valoir `true` : second facteur obligatoire pour l'administration.                                                                                              |
+| `ALLOW_INCOMPLETE_LAUNCH_CONFIG`     | ❌       | Échappatoire temporaire du build de production (voir ci-dessous).                                                                                                   |
 
 Avant un déploiement production complet, vérifier les variables serveur :
 
@@ -179,6 +182,26 @@ Ce script :
 
 Pour la V1 : auth par **email + mot de passe**. La confirmation par email
 peut être désactivée dans Auth → Providers → Email pour accélérer les tests.
+
+### Garde-fous du build de production
+
+Quand `VERCEL_ENV=production`, `npm run build` (script `scripts/verify-required-env.mjs`)
+échoue si l'un de ces points manque :
+
+- une variable `NEXT_PUBLIC_LEGAL_*` requise (sinon le site afficherait « À renseigner avant
+  commercialisation ») ;
+- `ADMIN_MFA_REQUIRED=true` ;
+- une origine canonique explicite (`SITE_URL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL` ou
+  `APP_URL`) : `VERCEL_URL` change à chaque déploiement et ne compte pas.
+
+**Échappatoire.** Tant que les valeurs ne sont pas fournies, `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true`
+(variable Vercel, environnement Production) transforme ces erreurs en avertissements encadrés de
+`!!!` dans le journal de build. Le déploiement passe, mais il n'est **pas conforme** : mentions
+légales absentes, administration sans second facteur ou URL canonique instable. Retirer la
+variable dès que les valeurs sont renseignées, puis redéployer. Seule la valeur exacte `true`
+est prise en compte.
+
+`npm run env:check:prod` n'accepte plus `VERCEL_URL` comme origine canonique.
 
 ## 4. Build
 

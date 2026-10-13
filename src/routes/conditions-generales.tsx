@@ -59,12 +59,12 @@ export function TermsPage() {
             <p>
               Découverte fournit gratuitement les informations essentielles accessibles après
               création d’un compte, avec trois favoris au maximum. Analyse est un abonnement aux
-              outils Premium : statistiques des tribunaux, mise plafond, estimation des travaux,
-              valeur du bien et autres analyses présentées sur la page d’offre. Un essai gratuit de{" "}
-              {ANALYSIS_TRIAL_DAYS} jours nécessite l’enregistrement d’une carte bancaire auprès de
-              Stripe. À son terme, l’abonnement devient payant et se renouvelle automatiquement,
-              sauf résiliation avant la fin de l’essai. Les conditions d’éligibilité et le tarif
-              applicable sont présentés avant la confirmation de la souscription.
+              outils Premium : mise plafond, estimation des travaux, valeur du bien et autres
+              analyses présentées sur la page d’offre. Un essai gratuit de {ANALYSIS_TRIAL_DAYS}{" "}
+              jours nécessite l’enregistrement d’une carte bancaire auprès de Stripe. À son terme,
+              l’abonnement devient payant et se renouvelle automatiquement, sauf résiliation avant
+              la fin de l’essai. Les conditions d’éligibilité et le tarif applicable sont présentés
+              avant la confirmation de la souscription.
             </p>
           </TermsSection>
 

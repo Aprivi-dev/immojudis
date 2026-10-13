@@ -386,6 +386,10 @@ async function releaseAnalyseCheckout(userId: string, checkoutToken: string): Pr
   if (error) throw new Error(error.message || "Libération du checkout Analyse impossible.");
 }
 
+export function billingPortalReturnUrl(appOrigin: string): string {
+  return `${appOrigin}/offres?billing=portal`;
+}
+
 export async function createBillingPortalSession({
   auth,
   origin,
@@ -403,7 +407,7 @@ export async function createBillingPortalSession({
 
   const session = await stripe.billingPortal.sessions.create({
     customer: subscription.stripe_customer_id,
-    return_url: `${appOrigin}/accompagnement?billing=portal`,
+    return_url: billingPortalReturnUrl(appOrigin),
     locale: "fr",
   });
 
@@ -511,9 +515,12 @@ export function stripeSubscriptionStatusToPlanStatus(
     case "active":
       return "active";
     case "past_due":
+      return "past_due";
+    // `incomplete` (first payment not confirmed) and `unpaid` (retries exhausted)
+    // never grant access. They map to `paused`: no access, but the customer
+    // still has a live Stripe subscription to repair from the billing portal.
     case "incomplete":
     case "unpaid":
-      return "past_due";
     case "paused":
       return "paused";
     case "canceled":
@@ -534,6 +541,24 @@ export function stripeCurrentPeriodEndIso(
     subscription.ended_at ??
     null;
   return periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
+}
+
+/**
+ * Value stored as `current_period_end`, which the database turns into the end
+ * of access. For `past_due` Stripe has already moved the period forward to the
+ * unpaid renewal; keeping that end would grant a whole free month plus the
+ * grace. The grace therefore counts from the start of the unpaid period, that
+ * is from the first failed payment, and stays fixed across the retries.
+ */
+export function stripeAccessPeriodEndIso(
+  subscription: Pick<Stripe.Subscription, "ended_at" | "items" | "trial_end">,
+  planStatus: PlanStatus,
+): string | null {
+  if (planStatus === "past_due") {
+    const periodStart = subscription.items.data[0]?.current_period_start;
+    if (periodStart) return new Date(periodStart * 1000).toISOString();
+  }
+  return stripeCurrentPeriodEndIso(subscription);
 }
 
 export function stripeCustomerIdempotencyKey(userId: string): string {
@@ -974,7 +999,7 @@ async function syncStripeSubscription(
     });
   }
   const { data, error } = await supabaseAdmin.rpc("apply_stripe_subscription_state", {
-    p_current_period_end: nullableRpcArg(stripeCurrentPeriodEndIso(current)),
+    p_current_period_end: nullableRpcArg(stripeAccessPeriodEndIso(current, status)),
     p_event_created: eventCreated,
     p_metadata: asJson({
       stripe_status: current.status,
