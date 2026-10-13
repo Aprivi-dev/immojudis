@@ -13,7 +13,10 @@ type OpeningInsert = Database["public"]["Tables"]["offer_opening_notifications"]
  */
 export const OFFER_OPENING_CONSENT_VERSION = "2026-10-21";
 export const OFFER_OPENING_CONSENT_TEXT =
-  "Votre demande est enregistrée : nous vous écrirons une seule fois à l’ouverture de l’offre Analyse. Vous pouvez la retirer à tout moment.";
+  "En cliquant, vous demandez à recevoir un seul email à l’ouverture de l’offre Analyse. Vous pouvez retirer cette demande à tout moment.";
+/** Shown once the request is stored; the consent itself is OFFER_OPENING_CONSENT_TEXT. */
+export const OFFER_OPENING_REQUESTED_TEXT =
+  "Votre demande est enregistrée : nous vous écrirons une seule fois à l’ouverture de l’offre Analyse.";
 
 export const offerOpeningNotificationSchema = z.discriminatedUnion("enabled", [
   z.object({
