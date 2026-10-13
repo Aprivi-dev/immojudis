@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { normalizeDiff, verifyConcurrentIndexes } from "./lib/schema-drift.mjs";
+import { normalizeDiffWithNotes, verifyConcurrentIndexes } from "./lib/schema-drift.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvironmentFiles(root);
@@ -79,7 +79,13 @@ try {
   }
 
   const rawDiff = existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "";
-  const diff = normalizeDiff(rawDiff);
+  const { diff, unusedReconciledChecks } = normalizeDiffWithNotes(rawDiff);
+  if (remote && unusedReconciledChecks.length) {
+    const notice = `RECONCILED_CHECK_CONSTRAINTS (scripts/lib/schema-drift.mjs) lists ${unusedReconciledChecks.length} constraint(s) with no DROP/ADD pair in this diff: ${unusedReconciledChecks.join(", ")}. Remove the entries once the shadow database image matches the production Postgres minor version.`;
+    console.warn(`[schema-drift] Warning: ${notice}`);
+    if (process.env.GITHUB_ACTIONS === "true")
+      console.warn(`::warning title=Stale schema-drift exceptions::${notice}`);
+  }
   if (diff) {
     console.error(
       `[schema-drift] ${remote ? "Production" : "Local database"} differs from committed migrations.`,

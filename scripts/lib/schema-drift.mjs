@@ -37,8 +37,8 @@ const emailRegex = String.raw`'^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$':
 // 17.6), where the BETWEEN stays nested as `((col >= a) AND (col <= b)) AND c`.
 // For the same migration SQL, pg-delta therefore sees two different texts and
 // proposes a DROP + ADD of each of the twelve CHECK constraints below (run 79 of
-// "Apply Supabase Migrations"). They are the only constraints of the schema that
-// combine a BETWEEN with another AND.
+// "Apply Supabase Migrations"). They are the only constraints of the schema whose
+// BETWEEN leads the conjunction.
 //
 // Each entry pins the exact production pg_get_constraintdef text, by table and
 // name. A DROP + ADD pair is ignored only when the ADD definition is logically
@@ -261,7 +261,8 @@ function bareIdentifier(value) {
 
 // Removes, from the diff text, each DROP CONSTRAINT / ADD CONSTRAINT ... CHECK
 // pair that RECONCILED_CHECK_CONSTRAINTS names and whose production definition
-// is logically the pinned one. Anything else is left in the diff.
+// is logically the pinned one. Anything else is left in the diff. `unused` lists
+// the entries for which the diff holds no DROP + ADD pair at all (dead entries).
 function removeReconciledCheckConstraints(text) {
   const identifier = String.raw`[\w".]+`;
   const dropPattern = new RegExp(
@@ -283,11 +284,15 @@ function removeReconciledCheckConstraints(text) {
   const adds = spans(addPattern);
 
   const removals = [];
+  const unused = [];
   for (const reconciled of RECONCILED_CHECK_CONSTRAINTS) {
     const key = `${reconciled.table}#${reconciled.name}`;
     const drop = drops.find((candidate) => candidate.key === key);
     const add = adds.find((candidate) => candidate.key === key);
-    if (!drop || !add) continue;
+    if (!drop || !add) {
+      if (!drop && !add) unused.push(reconciled.name);
+      continue;
+    }
     if (
       canonicalCheckCondition(add.definition) !==
       canonicalCheckCondition(checkBody(reconciled.productionDefinition))
@@ -301,11 +306,23 @@ function removeReconciledCheckConstraints(text) {
   for (const { start, end } of removals.sort((left, right) => right.start - left.start)) {
     result = `${result.slice(0, start)}${result.slice(end)}`;
   }
-  return result;
+  return { text: result, unused };
 }
 
 function normalizeDiff(value) {
-  return removeReconciledCheckConstraints(String(value))
+  return normalizeDiffWithNotes(value).diff;
+}
+
+// Same as normalizeDiff, plus the names of the RECONCILED_CHECK_CONSTRAINTS
+// entries that matched nothing in the diff, so callers can warn that the list is
+// stale (for instance once the shadow image reaches the production minor).
+function normalizeDiffWithNotes(value) {
+  const { text, unused } = removeReconciledCheckConstraints(String(value));
+  return { diff: filterDiffLines(text), unusedReconciledChecks: unused };
+}
+
+function filterDiffLines(text) {
+  return text
     .split(/\r?\n/)
     .filter((line) => {
       const normalized = line.trim();
@@ -340,5 +357,6 @@ export {
   managedConcurrentIndexDefinitions,
   normalizeConcurrentIndexDefinition,
   normalizeDiff,
+  normalizeDiffWithNotes,
   verifyConcurrentIndexes,
 };
