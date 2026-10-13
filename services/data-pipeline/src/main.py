@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
-from src import source_withdrawal
+from src import retention_tombstones, source_withdrawal
 from src.admission import admit_sales, has_price_or_surface, is_expired, publication_rejection, split_insufficient
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
@@ -698,9 +698,9 @@ def _prepare_and_publish_early(run: _PipelineRun) -> None:
         if options.upsert and admitted:
             started = time.perf_counter()
             try:
-                run.early_upserted += upsert_sales_to_supabase(admitted)
-                run.early_publication_fingerprints.update(_sale_publication_fingerprints(admitted))
-                run.early_observations_upserted += upsert_observations_to_supabase(admitted)
+                run.early_upserted += (published := retention_tombstones.publish_batch(admitted, upsert_sales_to_supabase, run_id, record_sale_decisions, errors, run.app_ready)).count
+                run.early_publication_fingerprints.update(_sale_publication_fingerprints(published.sales))
+                run.early_observations_upserted += upsert_observations_to_supabase(published.sales)
             except Exception as exc:
                 record_sale_decisions(run_id, admitted, decision="publication_failed", reason=str(exc)[:1000])
                 LOGGER.exception("Early Supabase batch failed at offset %s: %s", offset, exc)
@@ -1850,7 +1850,7 @@ def publish_factual_batch(run_id: str, raws: list, known: dict, errors: dict) ->
     if not admitted:
         return
     try:
-        count = upsert_sales_to_supabase(admitted)
+        count = retention_tombstones.publish_batch(admitted, upsert_sales_to_supabase, run_id, record_sale_decisions, errors).count
         LOGGER.info("Progressive factual publication: %s catalogue identities", count)
     except Exception as exc:
         record_sale_decisions(run_id, admitted, decision="publication_failed", reason=str(exc)[:1000])
