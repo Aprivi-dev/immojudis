@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { evaluateProductionLaunchConfig } from "./lib/launch-config.mjs";
 
 for (const file of [".env", ".env.local", ".env.production", ".env.production.local"]) {
   if (!existsSync(file)) continue;
@@ -62,6 +63,13 @@ if (
   );
   process.exit(1);
 }
+
+// Launch guards (legal notice, admin MFA, explicit canonical origin). They are the
+// last check so the other errors above keep their own messages.
+const launch = evaluateProductionLaunchConfig(process.env);
+for (const line of launch.warnings) console.warn(line);
+for (const line of launch.errors) console.error(line);
+if (launch.exitCode) process.exit(launch.exitCode);
 
 function unquote(value) {
   return value.replace(/^(['"])(.*)\1$/, "$2");

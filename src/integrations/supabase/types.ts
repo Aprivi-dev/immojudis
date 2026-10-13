@@ -7842,6 +7842,45 @@ export type Database = {
         };
         Relationships: [];
       };
+      offer_opening_notifications: {
+        Row: {
+          consent_source: string;
+          consent_text_version: string;
+          consented_at: string;
+          created_at: string;
+          notified_at: string | null;
+          notify_enabled: boolean;
+          offer_code: string;
+          revoked_at: string | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          consent_source?: string;
+          consent_text_version: string;
+          consented_at?: string;
+          created_at?: string;
+          notified_at?: string | null;
+          notify_enabled?: boolean;
+          offer_code?: string;
+          revoked_at?: string | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          consent_source?: string;
+          consent_text_version?: string;
+          consented_at?: string;
+          created_at?: string;
+          notified_at?: string | null;
+          notify_enabled?: boolean;
+          offer_code?: string;
+          revoked_at?: string | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       operational_alerts: {
         Row: {
           alert_key: string;

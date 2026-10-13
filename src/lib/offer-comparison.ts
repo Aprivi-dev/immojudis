@@ -96,11 +96,6 @@ const SPECS: RowSpec[] = [
     features: ["property.advancedBidScenarios"],
   },
   {
-    id: "statistics",
-    label: "Statistiques des ventes et des tribunaux",
-    features: ["sales.statistics"],
-  },
-  {
     id: "land",
     label: "Urbanisme, cadastre et risques du terrain",
     features: ["property.cadastralAnalysis", "property.urbanPlanning"],
