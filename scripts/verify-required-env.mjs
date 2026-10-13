@@ -1,5 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
-import { evaluateProductionLaunchConfig } from "./lib/launch-config.mjs";
+import {
+  analysisOfferLabelProblems,
+  evaluateProductionLaunchConfig,
+} from "./lib/launch-config.mjs";
 
 for (const file of [".env", ".env.local", ".env.production", ".env.production.local"]) {
   if (!existsSync(file)) continue;
@@ -61,6 +64,13 @@ if (
   console.error(
     "[env] RESEND_WEBHOOK_SECRET must be configured for the production information-agent inbound webhook.",
   );
+  process.exit(1);
+}
+
+// The public price label must state the price that is billed (every build, not only production).
+const offerLabelProblems = analysisOfferLabelProblems(process.env);
+if (offerLabelProblems.length) {
+  for (const problem of offerLabelProblems) console.error(`[env] ${problem}`);
   process.exit(1);
 }
 

@@ -1,9 +1,13 @@
 import { track } from "@vercel/analytics";
+import { isAudienceOptedOut } from "@/lib/audience-opt-out";
 
 /**
- * Mesure du parcours : événements anonymes, sans cookie, envoyés à Vercel Analytics.
+ * Mesure du parcours : événements agrégés, sans identifiant de personne ni cookie, envoyés à
+ * Vercel Analytics.
  *
  * Règles (voir « Mesure et performance » dans `docs/rgpd-processing-register.md`) :
+ * - rien n'est envoyé quand le visiteur s'est opposé à la mesure d'audience dans ce navigateur
+ *   (`audience-opt-out.ts`, interrupteur de la politique de confidentialité) ;
  * - la liste des noms et des propriétés est fermée : un événement ou une propriété hors de cette
  *   liste n'est jamais transmis ;
  * - les propriétés sont des catégories (booléen, statut), jamais un email, un identifiant
@@ -57,7 +61,7 @@ type TrackArguments<N extends ProductEventName> = ProductEventProperties[N] exte
   : [properties: ProductEventProperties[N]];
 
 function trackingEnabled(): boolean {
-  return typeof window !== "undefined" && process.env.NODE_ENV !== "test";
+  return typeof window !== "undefined" && process.env.NODE_ENV !== "test" && !isAudienceOptedOut();
 }
 
 /** Ne garde que les propriétés déclarées dont la valeur appartient au domaine prévu. */

@@ -4,6 +4,7 @@ import {
   createLawyerReferralRequest,
   lawyerReferralRequestInputSchema,
   listLawyerReferralRequests,
+  previewLawyerReferralRecipient,
 } from "@/lib/lawyer-referrals";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { recordFeatureUsageEvent } from "@/lib/usage";
@@ -66,9 +67,6 @@ describe("lawyer referrals", () => {
       input: {
         saleId: SALE_ID,
         preferredContactMethod: "either",
-        message: "Je souhaite préparer l'audience.",
-        financingReady: true,
-        maxBidEur: 126_000,
         dataSharingConfirmed: true,
       },
     });
@@ -113,10 +111,14 @@ describe("lawyer referrals", () => {
         source: "sale_detail",
         matching_basis: "tribunal_bar_association",
         sale_bar_association: "Bordeaux",
-        shared_with_lawyer: expect.arrayContaining(["requester_email", "sale_reference"]),
+        shared_with_lawyer: ["requester_email", "sale_reference", "preferred_contact_method"],
         data_sharing_confirmed_at: expect.any(String),
       },
     });
+    // Nothing beyond what the recap shows is stored for the lawyer.
+    for (const column of ["phone", "message", "financing_ready", "max_bid_eur"]) {
+      expect(auth.inserts[0]).not.toHaveProperty(column);
+    }
     expect(auth.inserts[0]?.sale_snapshot).not.toHaveProperty("lawyer_name");
     expect(auth.inserts[0]?.sale_snapshot).not.toHaveProperty("lawyer_contact");
     expect(recordFeatureUsageEvent).toHaveBeenCalledWith(
@@ -173,6 +175,119 @@ describe("lawyer referrals", () => {
     expect(
       lawyerReferralRequestInputSchema.safeParse({ ...base, dataSharingConfirmed: true }).success,
     ).toBe(true);
+  });
+
+  it("drops any field the recap does not show (phone, message, financing, maximum bid)", () => {
+    const parsed = lawyerReferralRequestInputSchema.parse({
+      saleId: SALE_ID,
+      dataSharingConfirmed: true,
+      phone: "06 00 00 00 00",
+      message: "Bonjour",
+      financingReady: true,
+      maxBidEur: 126_000,
+    });
+    expect(parsed).toEqual({
+      saleId: SALE_ID,
+      preferredContactMethod: "email",
+      dataSharingConfirmed: true,
+    });
+  });
+
+  it("previews the lawyer who would receive the request, without creating anything", async () => {
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
+    const auth = fakeReferralAuth({
+      referencedLawyerRows: [referencedLawyerRow({ paid_placement_status: "trial" })],
+    });
+
+    const response = await previewLawyerReferralRecipient({
+      auth,
+      query: { saleId: SALE_ID },
+    });
+
+    expect(response.recipient).toMatchObject({
+      id: LAWYER_ID,
+      displayName: "Me Référencé",
+      firmName: "Cabinet Immojudis",
+      placement: "trial",
+    });
+    expect(auth.inserts).toHaveLength(0);
+    expect(auth.calls.map((call) => call.table)).toEqual(["auction_sales", "referenced_lawyers"]);
+    expect(recordFeatureUsageEvent).not.toHaveBeenCalled();
+  });
+
+  it("previews the same lawyer as the creation, with an active paid placement", async () => {
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
+    const preview = await previewLawyerReferralRecipient({
+      auth: fakeReferralAuth(),
+      query: { saleId: SALE_ID },
+    });
+    const created = await createLawyerReferralRequest({
+      auth: fakeReferralAuth(),
+      input: confirmedInput(),
+    });
+
+    expect(preview.recipient?.placement).toBe("active");
+    expect(preview.recipient?.id).toBe(created.matchedLawyer?.id);
+  });
+
+  it("previews a lawyer chosen by hand and flags a placement that is not paid", async () => {
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
+    const unpaid = await previewLawyerReferralRecipient({
+      auth: fakeReferralAuth({
+        referencedLawyerRows: [referencedLawyerRow({ paid_placement_status: "cancelled" })],
+      }),
+      query: { saleId: SALE_ID, lawyerId: LAWYER_ID },
+    });
+    expect(unpaid.recipient).toMatchObject({ id: LAWYER_ID, placement: "none" });
+
+    const expired = await previewLawyerReferralRecipient({
+      auth: fakeReferralAuth({
+        referencedLawyerRows: [
+          referencedLawyerRow({
+            paid_placement_status: "active",
+            paid_placement_ends_at: "2025-12-31T23:59:59.999Z",
+          }),
+        ],
+      }),
+      query: { saleId: SALE_ID, lawyerId: LAWYER_ID },
+    });
+    expect(expired.recipient).toMatchObject({ id: LAWYER_ID, placement: "none" });
+  });
+
+  it("previews no recipient when no lawyer can be determined", async () => {
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
+    const auth = fakeReferralAuth({
+      referencedLawyerRows: [
+        referencedLawyerRow({ id: "other", display_name: "Me Lyonnais", bar_association: "Lyon" }),
+      ],
+    });
+
+    const response = await previewLawyerReferralRecipient({ auth, query: { saleId: SALE_ID } });
+
+    expect(response.recipient).toBeNull();
+    expect(auth.inserts).toHaveLength(0);
+  });
+
+  it("applies the eligibility rules to the preview of a lawyer chosen by hand", async () => {
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("analyse"));
+    const auth = fakeReferralAuth({
+      saleRow: { lawyer_name: "Me Référencé" },
+      referencedLawyerRows: [referencedLawyerRow()],
+    });
+
+    await expect(
+      previewLawyerReferralRecipient({ auth, query: { saleId: SALE_ID, lawyerId: LAWYER_ID } }),
+    ).rejects.toThrow("n'est pas proposé pour cette vente");
+  });
+
+  it("keeps the preview for the plans that include the referral", async () => {
+    vi.mocked(resolvePlanEntitlements).mockResolvedValue(planEntitlements("decouverte"));
+    await expect(
+      previewLawyerReferralRecipient({
+        auth: fakeReferralAuth(),
+        query: { saleId: SALE_ID },
+      }),
+    ).rejects.toThrow("Mise en relation avocat réservée au plan Analyse ou Investisseur.");
   });
 
   it("only proposes lawyers of the bar of the sale's tribunal", async () => {
@@ -476,6 +591,7 @@ function referencedLawyerRow(overrides: Record<string, unknown> = {}) {
     city: "Bordeaux",
     department: "33",
     priority_weight: 100,
+    paid_placement_status: "active",
     paid_placement_starts_at: null,
     paid_placement_ends_at: null,
     ...overrides,

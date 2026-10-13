@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { createFileRoute, Link } from "@/lib/router-compat";
+import { AudienceOptOutSwitch } from "@/components/AudienceOptOutSwitch";
 import { LEGAL_DOCUMENTS, legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 
 export const Route = createFileRoute("/privacy")({
@@ -43,10 +44,34 @@ const processingRows = [
     retention: "Jusqu’au retrait du consentement ; notifications clôturées purgées après 6 mois",
   },
   {
-    purpose: "Mise en relation et publication professionnelle",
-    data: "Coordonnées, message, dossier concerné, informations fournies et suivi de la demande",
-    basis: "Mesures précontractuelles, exécution du service et intérêt légitime au suivi",
+    purpose: "Prévenir de l’ouverture de l’offre Analyse",
+    data: "Identifiant de compte (l’email du compte sert à l’envoi), date et version du texte de consentement, date de retrait",
+    basis:
+      "Consentement (clic explicite sur « Me prévenir de l’ouverture »), retirable à tout moment",
+    retention:
+      "Jusqu’à l’envoi de l’email d’ouverture ou au retrait, puis 30 jours ; 12 mois au plus sans ouverture",
+  },
+  {
+    purpose: "Mise en relation avec un avocat",
+    data: "Email du compte, vente concernée (titre, localisation, lien de l’annonce), mode de contact préféré et suivi de la demande",
+    basis:
+      "Mesures précontractuelles et exécution du service demandé ; la transmission à l’avocat n’a lieu qu’après votre confirmation, au vu du récapitulatif",
+    retention:
+      "Supprimée avec la vente concernée à l’échéance de conservation de celle-ci (en principe 24 heures après la vente ; une vente reportée est conservée tant qu’elle l’est) ou avec le compte ; l’avocat conserve de son côté les éléments reçus, sous sa propre responsabilité",
+  },
+  {
+    purpose: "Publication professionnelle",
+    data: "Identité, pièces et demande du professionnel",
+    basis: "Mesures précontractuelles et exécution du service",
     retention: "Durée du traitement puis archivage limité aux délais de preuve applicables",
+  },
+  {
+    purpose: "Annuaire d’avocats",
+    data: "Nom, cabinet, barreau, adresse professionnelle, spécialisations, date de serment et langues des avocats inscrits ; pour les avocats référencés, coordonnées et présentation professionnelles",
+    basis:
+      "Intérêt légitime à informer le public sur les avocats du barreau compétent ; source : annuaire du Conseil national des barreaux (data.gouv.fr, Licence Ouverte 2.0) ; opposition et rectification par email, sans compte",
+    retention:
+      "Tant que l’avocat figure dans le jeu de données du CNB (mis à jour périodiquement, les fiches disparues sont supprimées) ; fiches référencées : tant que la fiche est publiée",
   },
   {
     purpose: "Annonces de ventes et pièces publiques",
@@ -56,18 +81,18 @@ const processingRows = [
       "Tant que la vente est consultable, puis archivage ; opposition et demande de retrait par email, sans compte",
   },
   {
-    purpose: "Cartographie et géocodage (Mapbox)",
-    data: "Adresse ou lieu saisi pour chercher autour d’un point, position et zoom de la carte, adresse IP et données techniques du navigateur, transmises à Mapbox pour afficher cartes et vignettes",
+    purpose: "Cartographie et géocodage (Mapbox, IGN)",
+    data: "Adresse ou lieu saisi pour chercher autour d’un point, position et zoom de la carte, adresse IP et données techniques du navigateur, transmises à Mapbox pour afficher cartes et vignettes. Si Mapbox ne répond pas ou ne trouve pas l’adresse, l’adresse que vous saisissez est transmise à l’API Adresse de la Base Adresse Nationale (service public exploité par l’IGN), avec votre adresse IP. Les cartes cadastrales sont chargées depuis la Géoplateforme de l’IGN (data.geopf.fr), qui reçoit votre adresse IP et la zone affichée.",
     basis:
       "Exécution du service demandé (afficher la carte, chercher autour d’une adresse) et intérêt légitime à proposer une cartographie",
     retention:
-      "Pas de conservation propre à ce traitement par Immojudis ; durée de conservation de Mapbox selon ses conditions",
+      "Pas de conservation propre à ce traitement par Immojudis ; durée de conservation de Mapbox et de l’IGN selon leurs conditions",
   },
   {
     purpose: "Enrichissement de dossier supervisé par Immojudis",
     data: "Annonce, informations manquantes, coordonnées professionnelles, questions, messages, réponses, pièces et décisions de validation",
     basis:
-      "Intérêt légitime à fiabiliser le catalogue pour les contacts professionnels sollicités ; consentement pour la communication de l’email de réponse ; les échanges externes sont déclenchés et validés par un administrateur",
+      "Intérêt légitime à fiabiliser le catalogue auprès des professionnels contactés ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les adresses ayant exercé leur opposition sont conservées pour la respecter.",
     retention:
       "Pendant le suivi ; sans activité, brouillons purgés après 6 mois et échanges après 24 mois",
   },
@@ -75,11 +100,12 @@ const processingRows = [
     purpose: "Formulaire de contact",
     data: "Nom, email, sujet et message saisis dans le formulaire",
     basis: "Intérêt légitime à répondre aux messages reçus",
-    retention: "Durée du traitement puis archivage limité aux délais de preuve applicables",
+    retention:
+      "12 mois après le dernier échange, puis suppression ; en cas de litige ou de réclamation, le temps de la procédure puis, en archive à accès restreint, 5 ans au plus",
   },
   {
     purpose: "Mesure, qualité et exploitation",
-    data: "Événements d’usage anonymes, performances, identifiants techniques, erreurs et état des traitements",
+    data: "Événements d’usage et de parcours agrégés, sans identifiant de personne, performances, identifiants techniques, erreurs et état des traitements",
     basis: "Intérêt légitime à améliorer, sécuriser et maintenir Immojudis",
     retention:
       "Événements d’usage et journaux applicatifs : 24 mois au plus, conformément à la matrice de conservation ; données de mesure conservées par Vercel selon sa propre durée",
@@ -180,13 +206,23 @@ export function PrivacyPage() {
               Les données sont accessibles aux personnes habilitées d’Immojudis et, selon le besoin,
               à Supabase (authentification et base), Vercel (hébergement, journaux et mesure de
               performance), Stripe (paiement), Resend (emails), Mapbox (cartes, vignettes et
-              géocodage), le prestataire d’IA utilisé pour lire les annonces et les pièces
+              géocodage), l’Institut national de l’information géographique et forestière (IGN :
+              Base Adresse Nationale en repli du géocodage, Géoplateforme pour les cartes
+              cadastrales), le prestataire d’IA utilisé pour lire les annonces et les pièces
               (Replicate), le service de rapport d’erreurs lorsqu’il est configuré (sans cookie,
               en-tête, paramètre d’adresse ni contenu de requête), aux avocats référencés uniquement
               lorsqu’une mise en relation est demandée et à l’intermédiaire professionnel contacté
               par Immojudis après validation par un administrateur. Dans ce dernier cas, seules les
               informations nécessaires à l’enrichissement du dossier et au suivi de la réponse sont
               transmises. Les prestataires agissent dans la limite de leurs missions contractuelles.
+            </p>
+            <p className="mt-3">
+              Mise en relation avec un avocat. Si vous ne choisissez pas d’avocat, Immojudis en
+              désigne un parmi les avocats bénéficiant d’une mise en avant payante (ou en période
+              d’essai de cette offre) du barreau compétent. Cet avocat traite ensuite votre demande
+              sous sa propre responsabilité. Le récapitulatif affiché avant l’envoi vous indique
+              l’avocat destinataire, les données transmises et s’il bénéficie d’une mise en avant
+              payante.
             </p>
           </PrivacySection>
 
@@ -204,14 +240,17 @@ export function PrivacyPage() {
             <p>
               Supabase utilise les éléments strictement nécessaires à la session. Le navigateur peut
               conserver des préférences fonctionnelles, comme des paramètres de simulation ou les
-              annonces consultées. Nous mesurons la fréquentation avec Vercel Analytics et Speed
-              Insights, sans cookie et sans suivi entre sites, et des événements de parcours
-              anonymes. Les données ne servent qu’à des statistiques de notre service. Vous pouvez
-              vous y opposer en nous écrivant à {legalValue(publisher.contactEmail)}. Immojudis
-              n’active pas de publicité ciblée ni de traceur publicitaire. Toute future finalité non
-              nécessaire soumise au consentement devra être désactivée par défaut jusqu’au choix de
+              annonces consultées, ou votre choix d’opposition à la mesure d’audience. Nous mesurons
+              la fréquentation avec Vercel Analytics et Speed Insights, sans cookie et sans suivi
+              entre sites, et des événements de parcours agrégés, sans identifiant de personne. Les
+              données ne servent qu’à des statistiques de notre service. Vous pouvez vous opposer à
+              la mesure d’audience depuis cette page (votre choix est mémorisé dans ce navigateur)
+              ou en nous écrivant à {legalValue(publisher.contactEmail)}. Immojudis n’active pas de
+              publicité ciblée ni de traceur publicitaire. Toute future finalité non nécessaire
+              soumise au consentement devra être désactivée par défaut jusqu’au choix de
               l’utilisateur.
             </p>
+            <AudienceOptOutSwitch />
           </PrivacySection>
 
           <PrivacySection title="Décisions automatisées et enrichissements">
@@ -222,9 +261,10 @@ export function PrivacyPage() {
               des pièces officielles. Des outils d’IA peuvent détecter des informations manquantes
               et préparer un projet d’email pour revue administrative. Tout contact externe et toute
               intégration d’information sont déclenchés puis validés par un administrateur ; aucune
-              demande n’est lancée directement par un utilisateur Analyse. Le message indique au
-              destinataire qu’il a été préparé avec un système d’IA et reste purement informatif :
-              il ne contient aucune sollicitation commerciale.
+              demande n’est lancée directement par un utilisateur Analyse. Le message précise qu’une
+              IA aide à lire et classer les réponses et que l’équipe vérifie les informations avant
+              toute mise à jour de la fiche ; il reste purement informatif et ne contient aucune
+              sollicitation commerciale.
             </p>
           </PrivacySection>
 
