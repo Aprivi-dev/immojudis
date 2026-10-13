@@ -44,6 +44,7 @@ export function SearchHeader({
   csvExportLocked,
   signedIn = false,
   dailyAlertsAllowed = false,
+  emailRecapEnabled = false,
   wideMap,
   isDesktop = false,
   onFiltersOpenChange,
@@ -63,11 +64,13 @@ export function SearchHeader({
   csvExportLocked: boolean;
   signedIn?: boolean;
   dailyAlertsAllowed?: boolean;
+  /** Le consentement à l'email récapitulatif est déjà donné : on ne le redemande pas. */
+  emailRecapEnabled?: boolean;
   wideMap: boolean;
   isDesktop?: boolean;
   onFiltersOpenChange: (open: boolean) => void;
   onReset: () => void;
-  onSaveSearch: (options?: { frequency: AlertFrequencyChoice }) => void;
+  onSaveSearch: (options?: SaveSearchOptions) => void;
   onExportCsv: () => void;
   onToggleLayout: () => void;
 }) {
@@ -105,6 +108,7 @@ export function SearchHeader({
                 saving={savingAlert}
                 signedIn={signedIn}
                 dailyAllowed={dailyAlertsAllowed}
+                emailRecapEnabled={emailRecapEnabled}
                 onClick={onSaveSearch}
               />
             ) : null}
@@ -131,7 +135,7 @@ export function SearchHeader({
               <button
                 type="button"
                 onClick={onReset}
-                className="hidden min-h-11 px-2 text-xs font-semibold text-ink-soft underline underline-offset-4 lg:block"
+                className="inline-flex min-h-11 items-center px-2 text-xs font-semibold text-ink-soft underline underline-offset-4"
               >
                 Effacer les filtres
               </button>
@@ -146,6 +150,7 @@ export function SearchHeader({
                 saving={savingAlert}
                 signedIn={signedIn}
                 dailyAllowed={dailyAlertsAllowed}
+                emailRecapEnabled={emailRecapEnabled}
                 onClick={onSaveSearch}
               />
               <LayoutToggle wideMap={wideMap} onToggle={onToggleLayout} />
@@ -221,7 +226,7 @@ export function GeographicSearch({
       <button
         type="submit"
         aria-label="Rechercher la localisation"
-        className="mr-1 grid h-10 w-10 shrink-0 place-items-center rounded hover:bg-surface-tint"
+        className="mr-0.5 grid h-11 w-11 shrink-0 place-items-center rounded hover:bg-surface-tint"
       >
         <SearchIcon className="h-4 w-4" />
       </button>
@@ -425,15 +430,17 @@ export function SortDropdown({
         onChange={(event) => onChange(event.target.value as SearchSortKey)}
         className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
       >
-        {SORT_OPTIONS.filter(
-          (option) =>
-            !(preview && option.value === "beds_desc") &&
-            (option.value !== "distance" || hasCenter),
-        ).map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
+        {SORT_OPTIONS.filter((option) => !(preview && option.value === "beds_desc")).map(
+          (option) => {
+            // Sans adresse, il n'y a rien à mesurer : l'option reste visible mais grisée.
+            const unavailable = option.value === "distance" && !hasCenter;
+            return (
+              <option key={option.value} value={option.value} disabled={unavailable}>
+                {unavailable ? `${option.label} (saisissez une adresse)` : option.label}
+              </option>
+            );
+          },
+        )}
       </select>
       <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
     </label>
@@ -442,11 +449,18 @@ export function SortDropdown({
 
 export type AlertFrequencyChoice = "daily" | "weekly";
 
+export type SaveSearchOptions = {
+  frequency: AlertFrequencyChoice;
+  /** Case « email récapitulatif » cochée : le consentement est donné à la création de l'alerte. */
+  emailRecap?: boolean;
+};
+
 export function SaveSearchButton({
   saving,
   compact = false,
   signedIn = false,
   dailyAllowed = false,
+  emailRecapEnabled = false,
   onClick,
 }: {
   saving: boolean;
@@ -454,9 +468,12 @@ export function SaveSearchButton({
   /** Connecté : on propose le choix de la fréquence ; sinon on envoie vers la connexion. */
   signedIn?: boolean;
   dailyAllowed?: boolean;
-  onClick: (options?: { frequency: AlertFrequencyChoice }) => void;
+  emailRecapEnabled?: boolean;
+  onClick: (options?: SaveSearchOptions) => void;
 }) {
   const [open, setOpen] = useState(false);
+  // Jamais pré-cochée : l'email part seulement si la personne le demande.
+  const [emailRecap, setEmailRecap] = useState(false);
   // The free alert sends one weekly email; the daily digest belongs to Analyse.
   const [frequency, setFrequency] = useState<AlertFrequencyChoice>(
     dailyAllowed ? "daily" : "weekly",
@@ -488,8 +505,8 @@ export function SaveSearchButton({
         >
           <p className="font-display text-xl font-semibold">Créer une alerte</p>
           <p className="mt-1 text-ink-soft">
-            Vous recevez un seul email récapitulatif avec les nouvelles ventes qui correspondent à
-            cette recherche.
+            Les nouvelles ventes qui correspondent à cette recherche apparaissent dans vos alertes.
+            Vous pouvez aussi les recevoir dans un seul email récapitulatif.
           </p>
           <fieldset className="mt-3">
             <legend className="mb-1 font-semibold">Fréquence</legend>
@@ -516,11 +533,35 @@ export function SaveSearchButton({
               Hebdomadaire
             </label>
           </fieldset>
+          {emailRecapEnabled ? (
+            <p className="mt-2 text-xs text-ink-soft">
+              L’email récapitulatif est activé. Vous pouvez le désactiver depuis la cloche des
+              notifications.
+            </p>
+          ) : (
+            <label className="mt-2 flex min-h-11 cursor-pointer items-start gap-2">
+              <input
+                type="checkbox"
+                checked={emailRecap}
+                onChange={(event) => setEmailRecap(event.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                {frequency === "daily"
+                  ? "Recevoir un email récapitulatif chaque jour"
+                  : "Recevoir un email récapitulatif chaque semaine"}
+                <span className="block text-xs text-ink-soft">
+                  Facultatif. Vous pouvez vous désinscrire à tout moment.
+                </span>
+              </span>
+            </label>
+          )}
           <button
             type="button"
             onClick={() => {
               setOpen(false);
-              onClick({ frequency });
+              onClick({ frequency, emailRecap: !emailRecapEnabled && emailRecap });
+              setEmailRecap(false);
             }}
             className="mt-3 inline-flex min-h-11 w-full cursor-pointer items-center justify-center rounded-md bg-gold font-semibold text-brand-navy hover:bg-gold-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
           >
@@ -590,7 +631,7 @@ export function ResultsSummary({
 }) {
   const location = search.city || search.department || search.query || "France entière";
   return (
-    <div className="min-w-0 px-4 py-4 sm:px-5" aria-live="polite">
+    <div className="min-w-0 px-4 py-4 sm:px-5">
       <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gold-text">
         Le catalogue des enchères
       </p>
@@ -600,11 +641,14 @@ export function ResultsSummary({
           : `Ventes immobilières aux enchères à ${location}`}
       </h1>
       <p className="mt-1 text-sm text-ink-soft">
-        {isLoading
-          ? "Recherche en cours…"
-          : hasError
-            ? "Catalogue momentanément indisponible"
-            : `${displayCount.toLocaleString("fr-FR")} annonce${displayCount === 1 ? "" : "s"}`}
+        {/* Seul le compteur est annoncé aux lecteurs d'écran, pas tout l'en-tête. */}
+        <span aria-live="polite">
+          {isLoading
+            ? "Recherche en cours…"
+            : hasError
+              ? "Catalogue momentanément indisponible"
+              : `${displayCount.toLocaleString("fr-FR")} annonce${displayCount === 1 ? "" : "s"}`}
+        </span>
         {" · "}
         {search.viewport ? "Zone sélectionnée" : location}
         {hasLocalFilters ? " · filtres sur la page affichée" : ""}

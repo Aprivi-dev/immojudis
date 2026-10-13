@@ -17,6 +17,8 @@ export type ComparedSale = {
   startingPriceEur: number | null;
   surfaceM2: number | null;
   surfaceKind: string | null;
+  /** Optionnel : les comparaisons enregistrées avant cette ligne n'en portent pas. */
+  occupancy?: string | null;
   rooms: number | null;
   bedrooms: number | null;
   bathrooms: number | null;
@@ -43,6 +45,7 @@ export function toComparedSale(sale: AuctionSale): ComparedSale {
     // Do not infer a studio's area or substitute private surface fields.
     surfaceM2: surface != null && surface > 0 ? surface : null,
     surfaceKind: textOrNull(sale.app_surface_kind),
+    occupancy: textOrNull(sale.occupancy_status),
     rooms: countOrNull(sale.rooms_count),
     bedrooms: countOrNull(sale.bedrooms_count),
     bathrooms: countOrNull(sale.bathrooms_count),
@@ -127,6 +130,8 @@ function normalizeComparedSale(value: Record<string, unknown> | ComparedSale): C
     startingPriceEur: boundedNumber(raw.startingPriceEur, 1_000_000_000),
     surfaceM2: boundedNumber(raw.surfaceM2, 10_000_000, false),
     surfaceKind: boundedText(raw.surfaceKind, 40),
+    // Absent des comparaisons enregistrées avant l'ajout de la ligne « Occupation ».
+    occupancy: boundedText(raw.occupancy, 80),
     rooms: boundedCount(raw.rooms),
     bedrooms: boundedCount(raw.bedrooms),
     bathrooms: boundedCount(raw.bathrooms),

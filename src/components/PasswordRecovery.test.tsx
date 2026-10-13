@@ -77,6 +77,22 @@ describe("password recovery", () => {
     expect(auth.updateUser).not.toHaveBeenCalled();
   });
 
+  it("shows a single message, not two, when the link has expired", async () => {
+    window.history.replaceState(null, "", "/reinitialiser-mot-de-passe#error=access_denied");
+    render(<PasswordRecovery reset />);
+    await screen.findByRole("link", { name: "Demander un nouveau lien" });
+    expect(screen.getAllByText(/Ce lien est invalide ou a expiré/)).toHaveLength(1);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("ties the 12-character rule to the new password field", async () => {
+    auth.getSession.mockResolvedValue({ data: { session: { user: { id: "recovery" } } } });
+    render(<PasswordRecovery reset />);
+    const field = await screen.findByLabelText("Nouveau mot de passe");
+    const rule = document.getElementById(field.getAttribute("aria-describedby")!);
+    expect(rule?.textContent).toBe("Au moins 12 caractères.");
+  });
+
   it("validates confirmation and preserves success if sign-out fails after the update", async () => {
     auth.getSession.mockResolvedValue({ data: { session: { user: { id: "recovery" } } } });
     auth.signOut.mockRejectedValue(new Error("network unavailable"));

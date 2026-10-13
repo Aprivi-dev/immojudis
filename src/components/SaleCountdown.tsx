@@ -66,7 +66,7 @@ export function SaleCountdown({
   if (!valid) {
     if (variant === "chip") {
       return (
-        <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+        <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
           <Clock className="h-3 w-3" /> Échéance à confirmer
         </span>
       );
@@ -110,7 +110,7 @@ export function SaleCountdown({
     if (variant === "chip") {
       return (
         <span
-          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ring-1 ${t.bg} ${t.text} ${t.ring}`}
+          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold ring-1 ${t.bg} ${t.text} ${t.ring}`}
         >
           <Clock className="h-3 w-3" /> {label}
         </span>
@@ -142,7 +142,7 @@ export function SaleCountdown({
           : `${parts.minutes} min`;
     return (
       <span
-        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ring-1 ${t.bg} ${t.text} ${t.ring}`}
+        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold ring-1 ${t.bg} ${t.text} ${t.ring}`}
       >
         <Clock className="h-3 w-3" /> {compact}
       </span>
@@ -167,7 +167,7 @@ export function SaleCountdown({
 function Confirmation({ variant }: { variant: "chip" | "block" }) {
   if (variant === "chip") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+      <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
         <Clock className="h-3 w-3" /> Échéance à confirmer
       </span>
     );
@@ -182,7 +182,7 @@ function Confirmation({ variant }: { variant: "chip" | "block" }) {
 function PastSale({ variant }: { variant: "chip" | "block" }) {
   if (variant === "chip") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+      <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
         <Clock className="h-3 w-3" /> Vente passée
       </span>
     );
