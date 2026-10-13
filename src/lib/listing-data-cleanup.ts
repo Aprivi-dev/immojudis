@@ -1,4 +1,5 @@
 import type { AuctionSale } from "./types";
+import { stripWithdrawnSourceContent } from "./withdrawn-sources";
 
 const STREET_TYPES =
   "rue|avenue|av\\.?|boulevard|bd\\.?|chemin|route|impasse|allée|allee|place|quai|cours|faubourg|passage|square|voie|lotissement|hameau";
@@ -138,7 +139,7 @@ export function sanitizeAuctionSaleForDisplay(sale: AuctionSale): AuctionSale {
     : cleanVisitText(sale.visit_dates)
       ? [cleanVisitText(sale.visit_dates)!]
       : [];
-  return {
+  return stripWithdrawnSourceContent({
     ...sale,
     address: cleanListingAddress(sale.address),
     department,
@@ -148,5 +149,5 @@ export function sanitizeAuctionSaleForDisplay(sale: AuctionSale): AuctionSale {
     lawyer_name: cleanOrganizerName(sale.lawyer_name),
     lawyer_contact: cleanOrganizerContact(sale.lawyer_contact),
     sale_procedure: cleanProcedure(sale.sale_procedure),
-  };
+  });
 }

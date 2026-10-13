@@ -642,6 +642,41 @@ Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiab
 
 ## Source Licitor
 
+> **Licitor est RETIRÉ du catalogue** (décision du propriétaire, faute de licence écrite : droit sui generis
+> des bases de données, CPI L. 341-1 et L. 342-1). Aucune collecte d'annonces ni d'historique des adjudications
+> ne part tant que le retrait n'est pas levé. Ce qui suit décrit le scraper tel qu'il fonctionne **une fois le
+> retrait levé**.
+>
+> **Un seul interrupteur**, en base : `auction_source_state.catalogue_withdrawn`, posé et levé par la fonction
+> `public.set_catalogue_source_withdrawal` (service_role, une transaction, rien n'est supprimé).
+> Migration : `supabase/migrations/20261021110000_licitor_source_withdrawal.sql` (livrée à l'état « retiré »).
+>
+> ```sql
+> -- état actuel
+> select source_name, catalogue_withdrawn, enabled, withdrawn_reason, withdrawn_at
+>   from public.auction_source_state where source_name = 'licitor';
+> -- lever le retrait (le jour où une licence écrite est signée) : remet le catalogue ET la collecte
+> select public.set_catalogue_source_withdrawal('licitor', false);
+> -- retirer de nouveau
+> select public.set_catalogue_source_withdrawal('licitor', true, 'raison');
+> ```
+>
+> Effets du retrait : le planificateur ne lance plus la source (`enabled = false`, imposé par une contrainte :
+> l'écran d'administration ne peut pas la réactiver) ; la file d'enrichissement ne rouvre plus ses fiches
+> détail ; l'observateur ferme l'alerte `pipeline.source.licitor.missed` au lieu de la rouvrir ;
+> `python -m src.main --source licitor` sort proprement (code 0, sans créer de run) ; `--source all` l'ignore ;
+> le tick de l'historique des adjudications (`licitor_history_refresh`) est sauté et le dit dans le résumé du
+> run (`licitor_history_skipped`) ; la file d'enrichissement diffère (24 h, sans consommer d'essai) les ventes
+> dont toutes les sources sont retirées ; les pièces hébergées par `licitor.com` d'une vente fusionnée ne sont
+> pas téléchargées. Module : [source_withdrawal.py](src/source_withdrawal.py).
+>
+> **Par défaut, la source est retirée** : si la base est injoignable, si la colonne n'existe pas encore ou si
+> `SUPABASE_DB_URL` est absent, `DEFAULT_WITHDRAWN` s'applique. Conséquence : un lancement local sans base et
+> l'audit manuel `source_coverage_audit` (qui n'ouvre volontairement pas la base) refusent Licitor ; pour auditer
+> Licitor après la levée, fournir `SUPABASE_DB_URL` en lecture à l'audit.
+> `ENABLE_LICITOR_BENCHMARK` et `LICITOR_HISTORICAL_AUTHORIZED` restent des réglages secondaires : ils ne lèvent
+> jamais le retrait.
+
 Le scraper [licitor.py](src/sources/licitor.py) collecte les six zones publiques Licitor, puis suit les pages détail des annonces.
 
 Champs exploités :

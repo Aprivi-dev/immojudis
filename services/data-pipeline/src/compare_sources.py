@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import sys
 
+from src import source_withdrawal
 from src.comparison import compare_source_sales, export_comparison
+from src.config import load_settings
 from src.normalize import normalize_sale
 from src.sources.avoventes import scrape_avoventes_aquitaine_result
 from src.sources.licitor import scrape_licitor_aquitaine_result
@@ -16,6 +18,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 def run_comparison() -> int:
+    if source_withdrawal.is_source_withdrawn("licitor", str(load_settings().get("supabase_db_url") or "")):
+        print("Licitor est retiré du catalogue : comparaison ignorée (voir src/source_withdrawal.py).")
+        return 0
     errors: dict[str, list[str]] = {"avoventes": [], "licitor": []}
     avoventes_result = scrape_avoventes_aquitaine_result()
     raw_avoventes = avoventes_result.sales
