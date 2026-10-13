@@ -442,3 +442,25 @@ PostgreSQL de la migration 18 h (à faire tourner en CI avec base).
   connaît pas).
 - Limites connues du filtre des noms : enseigne en deux mots après « loué à » remplacée à tort ;
   second nom après « aux époux » non retiré.
+
+## Décisions du propriétaire (13/10/2026, après le bilan)
+
+Le propriétaire suit toutes les recommandations du chef d'orchestre.
+
+| N°  | Décision                                                                       | Réponse    | Suite                                         |
+| --- | ------------------------------------------------------------------------------ | ---------- | --------------------------------------------- |
+| 1   | Corriger l'écrasement d'un nouvel abonnement par un événement Stripe tardif    | Oui        | Chantier K                                    |
+| 2   | Publier la branche et ouvrir une pull request en brouillon                     | Oui        | PR #238                                       |
+| 3   | Corriger les CGV (résiliation, garantie légale, délai de grâce, version)       | Oui        | Chantier L                                    |
+| 4   | Mettre à jour la politique de confidentialité                                  | Oui        | Chantier L                                    |
+| 5   | Annuaire : retirer « Spécialistes », signaler les profils payants              | Oui        | Chantier L                                    |
+| 6   | Fermer plus tard l'accès aux colonnes internes (`raw_payload`, `observations`) | Oui        | Chantier séparé, à planifier                  |
+| 7   | `DEDUPE_RECONCILE_ENABLED=false` au premier déploiement                        | Oui        | Action du propriétaire                        |
+| 8   | Dates invraisemblables en « date à confirmer »                                 | Oui        | Livré                                         |
+| 9   | Scénarios d'enchères masqués tant que la licence Licitor n'est pas réglée      | Oui        | Livré                                         |
+| 10  | Retirer Licitor du catalogue sans licence écrite                               | Oui        | Chantier M                                    |
+| 11  | Une fiche par lot pour les annonces Licitor multi-lots                         | Oui        | Reporté au retour de Licitor (source retirée) |
+| 12  | Départements à 5,81 % dans le simulateur après confirmation officielle         | Oui        | En attente de la source officielle            |
+| 13  | Retirer l'invitation au compte pro des emails aux professionnels               | Oui        | Chantier L                                    |
+| 14  | Ajouts Outcome Graph postérieurs au gel du 10/10 voulus ?                      | En attente | —                                             |
+| 15  | Index pour la recherche par numéro d'annonce                                   | Non        | —                                             |
