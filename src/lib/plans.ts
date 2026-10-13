@@ -57,6 +57,12 @@ export type PlanLimits = {
   savedReports: number | null;
   reportEditing: "limited" | "full";
   favoriteSales: number | null;
+  /**
+   * Ventes qu'un compte peut débloquer par mois civil (heure de Paris). Source unique du
+   * chiffre : les textes (offres, CGV, fiche) et la base de données (`monthly_sale_unlock_limit`)
+   * le reprennent, un test les compare. `null` : pas de déblocage à faire (accès complet).
+   */
+  monthlyUnlocks: number | null;
   watchedZones: number | null;
   saleAnalysisSets: number | null;
   saleAnalysisItems: number | null;
@@ -169,6 +175,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     savedReports: 0,
     reportEditing: "limited",
     favoriteSales: 3,
+    monthlyUnlocks: 3,
     watchedZones: 1,
     saleAnalysisSets: 1,
     saleAnalysisItems: 3,
@@ -181,6 +188,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     savedReports: null,
     reportEditing: "full",
     favoriteSales: null,
+    monthlyUnlocks: null,
     watchedZones: 25,
     saleAnalysisSets: 20,
     saleAnalysisItems: 12,
@@ -188,6 +196,29 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     workspaceCollaborators: 25,
   },
 };
+
+/**
+ * Droits que le déblocage d'UNE vente ouvre à un compte Découverte, pour cette vente seulement :
+ * enchère plafond (et l'estimation qui la nourrit), historique de la vente, lecture des pièces,
+ * statistiques du tribunal de la vente (prix d'adjudication, scénarios d'enchères, prévision
+ * d'audience). Les pièces officielles du dossier sont ouvertes par la base (RLS). Ne figurent pas
+ * ici : exports PDF/CSV, rapports enregistrés, comparables, urbanisme, alertes, espaces de travail.
+ */
+export const SALE_UNLOCK_FEATURES = [
+  "property.bidCeiling",
+  "property.valueEstimate",
+  "property.saleHistory",
+  "property.documentReading",
+  "property.advancedBidScenarios",
+  "property.outcomeGraph",
+  "sales.statistics",
+] as const satisfies readonly FeatureKey[];
+
+export type SaleUnlockFeature = (typeof SALE_UNLOCK_FEATURES)[number];
+
+export function isSaleUnlockFeature(feature: FeatureKey): feature is SaleUnlockFeature {
+  return (SALE_UNLOCK_FEATURES as readonly FeatureKey[]).includes(feature);
+}
 
 export function normalizePlanCode(value: unknown): PlanCode {
   if (value === "analyse" || value === "investisseur") return "analyse";

@@ -9,6 +9,8 @@ import {
   normalizePlanCode,
   pastDueGraceEnd,
   PLAN_LIMITS,
+  featureIncluded,
+  isSaleUnlockFeature,
   type FeatureAccess,
   type FeatureKey,
   type PlanBilling,
@@ -17,6 +19,7 @@ import {
 } from "@/lib/plans";
 import { createTextPdf } from "@/lib/simple-pdf";
 import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
+import { hasUnlockedSale } from "@/lib/sale-unlocks.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
 import type { AuctionSale } from "@/lib/types";
@@ -149,6 +152,7 @@ const ADMIN_PLAN_LIMITS: PlanEntitlements["limits"] = {
   savedReports: null,
   reportEditing: "full",
   favoriteSales: null,
+  monthlyUnlocks: null,
   watchedZones: null,
   saleAnalysisSets: null,
   saleAnalysisItems: null,
@@ -717,12 +721,44 @@ export async function resolvePlanEntitlements(
   });
 }
 
+/**
+ * True when the caller reads `feature` in full for this sale: the offer includes it, or the
+ * account unlocked this sale and the right is one an unlock opens. Used by the routes that serve a
+ * teaser to the other accounts (document reading, sale history).
+ */
+export async function featureIncludedForSale(
+  auth: SupabaseAuthContext,
+  feature: FeatureKey,
+  saleId: string,
+): Promise<boolean> {
+  const plan = await resolvePlanEntitlements(auth);
+  if (featureIncluded(plan.plan, feature)) return true;
+  return isSaleUnlockFeature(feature) && (await hasUnlockedSale(auth, saleId));
+}
+
+/**
+ * Refuse a right the caller's offer does not include.
+ *
+ * With `saleId`, a Découverte account that unlocked that sale ("3 déblocages par mois") is let
+ * through for the rights an unlock opens (`SALE_UNLOCK_FEATURES`), for that sale only: the
+ * database confirms the unlock and that the sale is still online. Every other right, and every
+ * other sale, stays refused.
+ */
 export async function assertFeatureEntitlement(
   auth: SupabaseAuthContext,
   feature: FeatureKey,
   message = "Fonctionnalité réservée au plan Analyse.",
+  options: { saleId?: string } = {},
 ): Promise<PlanEntitlements> {
   const plan = await resolvePlanEntitlements(auth);
+  if (
+    !featureIncluded(plan.plan, feature) &&
+    options.saleId &&
+    isSaleUnlockFeature(feature) &&
+    (await hasUnlockedSale(auth, options.saleId))
+  ) {
+    return plan;
+  }
   assertEntitlementIncluded(plan, feature, message);
   return plan;
 }

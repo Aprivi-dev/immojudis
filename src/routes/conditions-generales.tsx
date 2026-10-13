@@ -10,6 +10,10 @@ import {
 } from "@/lib/legal-documents";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
+import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+
+/** Notice given before the free-offer benefits are changed or withdrawn for the future. */
+const FREE_BENEFIT_NOTICE_DAYS = 30;
 
 export const Route = createFileRoute("/conditions-generales")({
   head: () => ({
@@ -63,20 +67,41 @@ export function TermsPage() {
 
           <TermsSection title="2. Description des offres">
             <p>
-              Découverte fournit gratuitement les informations essentielles accessibles après
-              création d’un compte, avec trois favoris au maximum. Analyse est un abonnement aux
-              outils d’analyse : statistiques des tribunaux et scénarios d’enchères (disponibles
-              lorsque l’historique des ventes du tribunal est suffisant), enchère plafond,
-              estimation des travaux, valeur du bien et autres analyses présentées sur la page
-              d’offre. La couverture varie selon les tribunaux, les biens et les pièces disponibles
-              ; elle est indiquée sur chaque fiche. L’abonnement est conclu pour une durée
-              indéterminée et facturé chaque mois. Vous pouvez le résilier à tout moment, sans frais
-              ni préavis ; la résiliation prend effet à la fin de la période mensuelle en cours.
-              Lorsqu’il est proposé (une seule fois par compte), un essai gratuit de{" "}
-              {ANALYSIS_TRIAL_DAYS} jours nécessite l’enregistrement d’une carte bancaire auprès de
-              Stripe. À son terme, l’abonnement devient payant et se renouvelle automatiquement,
-              sauf résiliation avant la fin de l’essai. Les conditions d’éligibilité et le tarif
-              applicable sont présentés avant la confirmation de la souscription.
+              Découverte est gratuite, sans limite de durée et sans carte bancaire. Elle fournit les
+              informations essentielles accessibles après création d’un compte : l’accès aux fiches
+              des ventes, trois favoris au maximum, une alerte avec un email hebdomadaire et, chaque
+              mois civil, {MONTHLY_SALE_UNLOCKS} déblocages. Un déblocage ouvre, pour une vente de
+              votre choix, cinq éléments de l’offre Analyse : l’enchère plafond chiffrée, la lecture
+              des pièces, l’historique de la vente, les statistiques du tribunal compétent pour
+              cette vente et les pièces officielles du dossier. Il n’ouvre ni l’export PDF ou CSV,
+              ni les rapports enregistrés, ni les autres fonctions d’Analyse. Le déblocage est
+              consommé quand vous le confirmez, après affichage du nombre restant ; il n’est pas
+              consommé en cas d’erreur technique, ni si la vente est déjà débloquée. Il n’est pas
+              restitué si la vente est ensuite retirée, reportée ou adjugée. Les déblocages non
+              utilisés ne sont pas reportés. Le compteur est remis à {MONTHLY_SALE_UNLOCKS} le 1er
+              de chaque mois à 00 h 00, heure de Paris. Une vente débloquée reste consultable avec
+              ces éléments tant qu’elle est en ligne sur Immojudis et que votre compte existe. Les
+              déblocages sont personnels (article 9).
+            </p>
+            <p className="mt-3">
+              Immojudis peut modifier ou supprimer les avantages de l’offre Découverte, dont les
+              déblocages, pour l’avenir, en vous prévenant au moins {FREE_BENEFIT_NOTICE_DAYS} jours
+              à l’avance ; cette modification est sans effet sur les déblocages déjà consommés.
+            </p>
+            <p className="mt-3">
+              Analyse est un abonnement aux outils d’analyse : statistiques des tribunaux et
+              scénarios d’enchères (disponibles lorsque l’historique des ventes du tribunal est
+              suffisant), enchère plafond, estimation des travaux, valeur du bien et autres analyses
+              présentées sur la page d’offre. La couverture varie selon les tribunaux, les biens et
+              les pièces disponibles ; elle est indiquée sur chaque fiche. L’abonnement est conclu
+              pour une durée indéterminée et facturé chaque mois. Vous pouvez le résilier à tout
+              moment, sans frais ni préavis ; la résiliation prend effet à la fin de la période
+              mensuelle en cours. Lorsqu’il est proposé (une seule fois par compte), un essai
+              gratuit de {ANALYSIS_TRIAL_DAYS} jours nécessite l’enregistrement d’une carte bancaire
+              auprès de Stripe. À son terme, l’abonnement devient payant et se renouvelle
+              automatiquement, sauf résiliation avant la fin de l’essai. Les conditions
+              d’éligibilité et le tarif applicable sont présentés avant la confirmation de la
+              souscription.
             </p>
           </TermsSection>
 
@@ -190,7 +215,8 @@ export function TermsPage() {
 
           <TermsSection title="9. Compte et usages autorisés">
             <p>
-              Le client maintient ses accès confidentiels et fournit des informations exactes. Sont
+              Le client maintient ses accès confidentiels et fournit des informations exactes. Les
+              déblocages de ventes sont personnels : ils ne se partagent ni ne se transmettent. Sont
               interdits l’accès automatisé abusif, le contournement des quotas, la redistribution
               massive des données, l’atteinte aux droits de tiers et l’utilisation frauduleuse. Un
               accès peut être suspendu de manière proportionnée en cas de fraude ou d’atteinte

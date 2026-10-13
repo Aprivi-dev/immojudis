@@ -56,6 +56,20 @@ describe("POST /api/market-estimate sale readiness", () => {
     expect(mocks.refresh).not.toHaveBeenCalled();
   });
 
+  it("asks for the entitlement of this very sale, so an unlock opens that sale only", async () => {
+    authWithVisibleSale(true);
+    mocks.refresh.mockResolvedValue({ ok: false, estimate: null, status: "queued" });
+
+    await POST(request());
+
+    expect(mocks.entitlement).toHaveBeenCalledWith(
+      expect.anything(),
+      "property.valueEstimate",
+      expect.any(String),
+      { saleId },
+    );
+  });
+
   it("estimates a sale that is visible to the user", async () => {
     authWithVisibleSale(true);
     mocks.refresh.mockResolvedValue({

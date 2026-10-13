@@ -108,6 +108,7 @@ describe("GET /api/v1/sales/:id/outcome-graph", () => {
       auth,
       "property.outcomeGraph",
       expect.stringContaining("Analyse"),
+      { saleId },
     );
     expect(mocks.getForecast).not.toHaveBeenCalled();
   });

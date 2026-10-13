@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { fetchSalePassages } from "@/lib/client-api";
+import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
 import {
   describePreviousPassage,
   describeTimelineEvent,
@@ -42,13 +43,16 @@ export function SalePassagesSection({
   saleId,
   startingPrice,
   enabled,
+  access = "discovery",
 }: {
   saleId: string;
   startingPrice: number | null;
   enabled: boolean;
+  /** The view the account reads: its key keeps the free teaser out of an unlocked sale's cache. */
+  access?: SaleAccessMode;
 }) {
   const query = useQuery<SalePassagesResponse>({
-    queryKey: ["sale-passages", saleId],
+    queryKey: queryKeys.salePassages(saleId, access),
     queryFn: () => fetchSalePassages(saleId),
     enabled,
     staleTime: 10 * 60_000,
@@ -66,7 +70,7 @@ export function SalePassagesSection({
         <p className={styles.highlight}>{highlight}</p>
         <p className={styles.lead}>
           Dates des audiences précédentes, mises à prix successives et reports : le détail est
-          inclus dans l’offre Analyse.
+          inclus dans l’offre Analyse ou en débloquant cette vente.
         </p>
         <Link href="/offres" className={styles.cta}>
           Découvrir l’offre Analyse

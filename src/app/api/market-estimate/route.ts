@@ -25,12 +25,14 @@ export async function POST(request: Request) {
       bucketKey: "market-estimate",
       ...RATE_LIMIT_POLICIES.compute,
     });
+    const { saleId } = requestSchema.parse(await request.json());
+    // Analyse, or a Découverte account that unlocked this very sale (« 3 déblocages par mois »).
     await assertFeatureEntitlement(
       auth,
       "property.valueEstimate",
       "Estimation de marché réservée au plan Analyse.",
+      { saleId },
     );
-    const { saleId } = requestSchema.parse(await request.json());
     // Same visibility rule as the sale page: the sale must be readable by this user in
     // the catalogue view (published and ready), not merely present in auction_sales.
     const { data: visibleSale, error: visibilityError } = await auth.supabase

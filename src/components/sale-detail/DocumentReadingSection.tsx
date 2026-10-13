@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { fetchDocumentReading } from "@/lib/client-api";
+import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
 import {
   DOCUMENT_READING_IMPORTANCE,
   DOCUMENT_READING_THEMES,
@@ -19,11 +20,20 @@ function plural(count: number, word: string): string {
 /**
  * « Lecture des pièces »: what the case documents say about occupation, works,
  * diagnostics, co-ownership… Every point quotes the document and links to the
- * cited page. A free account only learns how many points were found.
+ * cited page. A free account only learns how many points were found, until it unlocks the sale.
  */
-export function DocumentReadingSection({ saleId, enabled }: { saleId: string; enabled: boolean }) {
+export function DocumentReadingSection({
+  saleId,
+  enabled,
+  access = "discovery",
+}: {
+  saleId: string;
+  enabled: boolean;
+  /** The view the account reads: its key keeps the free teaser out of an unlocked sale's cache. */
+  access?: SaleAccessMode;
+}) {
   const query = useQuery<DocumentReadingResponse>({
-    queryKey: ["document-reading", saleId],
+    queryKey: queryKeys.documentReading(saleId, access),
     queryFn: () => fetchDocumentReading(saleId),
     enabled,
     staleTime: 10 * 60_000,
@@ -42,7 +52,7 @@ export function DocumentReadingSection({ saleId, enabled }: { saleId: string; en
           {plural(data.pointCount, "point")} relevé{data.pointCount > 1 ? "s" : ""} dans les pièces
           {data.alertCount ? `, dont ${data.alertCount} à vérifier en priorité` : ""}
           {themes.length ? ` : ${themes.join(", ")}.` : "."} Chaque point cite le passage exact et
-          la page de la pièce, avec l’offre Analyse.
+          la page de la pièce, avec l’offre Analyse ou en débloquant cette vente.
         </p>
         <Link href="/offres" className={styles.cta}>
           Découvrir l’offre Analyse

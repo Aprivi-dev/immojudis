@@ -555,6 +555,67 @@ if (!/export function redactSaleTexts/.test(personalDataFilter)) {
   failures.push("the TypeScript personal-data filter is missing");
 }
 
+// « 3 déblocages par mois » (Découverte): an account unlocks one online sale at a time, the quota is
+// enforced in the database, and the unlock opens that sale's rows only.
+const [saleUnlockMigration, documentReadingSource] = await Promise.all([
+  readFile(
+    new URL("../supabase/migrations/20261023100000_discovery_sale_unlocks.sql", import.meta.url),
+    "utf8",
+  ),
+  readFile(new URL("../src/lib/document-reading.ts", import.meta.url), "utf8"),
+]);
+if (
+  !/alter\s+table\s+public\.user_sale_unlocks\s+enable\s+row\s+level\s+security/i.test(
+    saleUnlockMigration,
+  )
+) {
+  failures.push("Sale unlocks do not enable RLS");
+}
+const saleUnlockStatements = saleUnlockMigration
+  .split(";")
+  .map((statement) => statement.trim())
+  .filter(Boolean);
+if (
+  saleUnlockStatements.some(
+    (statement) =>
+      /^grant\s/i.test(statement) &&
+      /\bpublic\.user_sale_unlocks\b/i.test(statement) &&
+      /\bto\s+(?:public|anon|authenticated)\b/i.test(statement) &&
+      /\b(?:insert|update|delete|all)\b/i.test(statement.split(/\bon\b/i)[0] ?? ""),
+  )
+) {
+  failures.push("Sale unlocks can be written directly by a browser role");
+}
+for (const unlockFunction of ["unlock_sale_at", "unlock_sale"]) {
+  const definition = new RegExp(
+    `create\\s+or\\s+replace\\s+function\\s+(?:public|app_private)\\.${unlockFunction}\\([^)]*\\)\\s*returns\\s+\\w+\\s+language\\s+\\w+\\s+security\\s+definer\\s+set\\s+search_path\\s*=\\s*''\\s*as`,
+    "i",
+  );
+  if (!definition.test(saleUnlockMigration)) {
+    failures.push(`${unlockFunction} is not SECURITY DEFINER with a fixed search_path`);
+  }
+}
+if (
+  !/alter\s+policy\s+auction_sales_authenticated_read\s+on\s+public\.auction_sales[\s\S]*?public\.is_admin\(\)[\s\S]*?public\.has_analysis_access\(\)\s+or\s+app_private\.current_user_unlocked_sale\(id\)[\s\S]*?catalogue_readiness_allows_premium[\s\S]*?<>\s*'quarantined'[\s\S]*?publication_quarantine/i.test(
+    saleUnlockMigration,
+  )
+) {
+  failures.push(
+    "auction_sales_authenticated_read lets an unlock bypass the readiness or quarantine guards",
+  );
+}
+if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
+  failures.push("The sale unlock migration contains a permissive policy");
+}
+if (
+  !/import\s*\{\s*redactPersonalText\s*\}\s*from\s*"@\/lib\/personal-data-filter"/.test(
+    documentReadingSource,
+  ) ||
+  (documentReadingSource.match(/personText\(point\./g) ?? []).length !== 3
+) {
+  failures.push("document reading quotes reach the page without the personal-data filter");
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -589,6 +650,8 @@ console.log(
       "approved-evidence-private-bucket",
       "raw-columns-not-revoked-without-definer-view",
       "personal-data-filter-write-boundary",
+      "sale-unlock-rls-and-definer-boundary",
+      "document-reading-personal-data-filter",
     ],
   }),
 );

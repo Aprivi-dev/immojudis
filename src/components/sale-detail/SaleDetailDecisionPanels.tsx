@@ -210,7 +210,9 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
         </div>
         <div>
           <dt>Enchère plafond</dt>
-          <dd className={panelStyles.textValue}>Avec l’offre Analyse</dd>
+          <dd className={panelStyles.textValue}>
+            Avec l’offre Analyse ou en débloquant cette vente
+          </dd>
         </div>
       </dl>
       {value?.discountPct != null ? (

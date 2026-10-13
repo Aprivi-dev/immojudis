@@ -2,17 +2,18 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailFallbacks";
 
 import { SalePublicPreview } from "@/components/SalePublicPreview";
 import { useAuth } from "@/hooks/use-auth";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
-import { fetchAccessPlan } from "@/lib/client-api";
+import { fetchAccessPlan, fetchSaleUnlockStatus } from "@/lib/client-api";
 import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import type { AuctionSale } from "@/lib/types";
-import { queryKeys } from "@/lib/query-keys";
+import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
+import type { SaleUnlockResult } from "@/lib/sale-unlocks";
 
 const DiscoverySaleDetailView = dynamic(
   () =>
@@ -26,6 +27,12 @@ const AnalysisSaleDetailView = dynamic(
   { loading: () => <SaleDetailSkeleton /> },
 );
 
+const UnlockedSaleDetailView = dynamic(
+  () =>
+    import("@/components/SimplifiedSaleDetailView").then((module) => module.UnlockedSaleDetailView),
+  { loading: () => <SaleDetailSkeleton /> },
+);
+
 type SaleDetailRouteData = {
   sale: AuctionSale | null;
   preview: AuctionSale | null;
@@ -33,11 +40,12 @@ type SaleDetailRouteData = {
 
 async function loadSaleDetailRouteData(
   id: string,
-  options: { discovery?: boolean; authenticated: boolean },
+  options: { discovery?: boolean; unlocked?: boolean; authenticated: boolean },
 ): Promise<SaleDetailRouteData> {
-  const sale = options.authenticated
-    ? await getSaleById(id, { discovery: options.discovery })
-    : null;
+  let sale = options.authenticated ? await getSaleById(id, { discovery: options.discovery }) : null;
+  // A sale that leaves the catalogue between the unlock check and this read is no longer served
+  // by the full view: fall back to the free one rather than to a missing page.
+  if (!sale && options.unlocked) sale = await getSaleById(id, { discovery: true });
   if (sale) return { sale, preview: null };
   return { sale: null, preview: await getSalePreviewById(id) };
 }
@@ -80,12 +88,35 @@ export function SaleDetailPage({
     staleTime: 5 * 60_000,
   });
   const discovery = Boolean(session) && entitlementsData?.plan.hasAnalysisAccess !== true;
-  const accessReady = !session || Boolean(entitlementsData);
+  // « 3 déblocages par mois » : un compte Découverte peut avoir débloqué cette vente. Sans réponse
+  // (base sans le déblocage, erreur), la fiche reste la fiche gratuite.
+  const unlockEnabled = discovery && !authLoading && Boolean(entitlementsData);
+  const unlockQuery = useQuery({
+    queryKey: queryKeys.saleUnlock(id, sessionKey),
+    queryFn: () => fetchSaleUnlockStatus(id),
+    enabled: unlockEnabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const unlockReady = !unlockEnabled || unlockQuery.isSuccess || unlockQuery.isError;
+  const unlocked = unlockEnabled && unlockQuery.data?.unlocked === true;
+  const accessMode: SaleAccessMode = !discovery ? "analysis" : unlocked ? "unlocked" : "discovery";
+  const accessReady = !session || (Boolean(entitlementsData) && unlockReady);
+  const queryClient = useQueryClient();
+  const handleSaleUnlocked = (result: SaleUnlockResult) => {
+    queryClient.setQueryData(queryKeys.saleUnlock(id, sessionKey), result);
+    void queryClient.invalidateQueries({ queryKey: ["sale-detail", id] });
+  };
   const canUseServerInitialData =
     initialData?.sale?.id === id || (!session && initialData?.preview?.id === id);
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.saleDetail(id, sessionKey, discovery ? "discovery" : "analysis"),
-    queryFn: () => loadSaleDetailRouteData(id, { discovery, authenticated: Boolean(session) }),
+    queryKey: queryKeys.saleDetail(id, sessionKey, accessMode),
+    queryFn: () =>
+      loadSaleDetailRouteData(id, {
+        discovery: accessMode === "discovery",
+        unlocked: accessMode === "unlocked",
+        authenticated: Boolean(session),
+      }),
     enabled: !authLoading && accessReady,
     initialData: canUseServerInitialData ? initialData : undefined,
     staleTime: 5 * 60_000,
@@ -211,11 +242,23 @@ export function SaleDetailPage({
   }
   if (!sale) return <SaleNotFoundComponent />;
 
-  return discovery ? (
+  if (accessMode === "unlocked") {
+    return (
+      <UnlockedSaleDetailView
+        sale={sale}
+        returnTo={returnTo}
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        unlockStatus={unlockQuery.data ?? null}
+      />
+    );
+  }
+  return accessMode === "discovery" ? (
     <DiscoverySaleDetailView
       sale={sale}
       returnTo={returnTo}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+      unlockStatus={unlockQuery.data ?? null}
+      onSaleUnlocked={handleSaleUnlocked}
     />
   ) : (
     <AnalysisSaleDetailView

@@ -10711,6 +10711,77 @@ export type Database = {
           },
         ];
       };
+      user_sale_unlocks: {
+        Row: {
+          id: string;
+          sale_id: string | null;
+          unlocked_at: string;
+          user_id: string;
+        };
+        Insert: {
+          id?: string;
+          sale_id?: string | null;
+          unlocked_at?: string;
+          user_id: string;
+        };
+        Update: {
+          id?: string;
+          sale_id?: string | null;
+          unlocked_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "user_sale_unlocks_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_sale_unlocks_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_sale_unlocks_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_sale_unlocks_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_sale_unlocks_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_sale_unlocks_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_sale_unlocks_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       user_sale_watch_snapshots: {
         Row: {
           created_at: string;
@@ -13390,6 +13461,7 @@ export type Database = {
         }[];
       };
       get_sale_passages: { Args: { p_sale_id: string }; Returns: Json };
+      get_sale_unlock_status: { Args: { p_sale_id?: string }; Returns: Json };
       gettransactionid: { Args: never; Returns: unknown };
       grant_analysis_access_from_checkout: {
         Args: {
@@ -14673,6 +14745,7 @@ export type Database = {
           source_url: string;
         }[];
       };
+      unlock_sale: { Args: { p_sale_id: string }; Returns: Json };
       unlockrows: { Args: { "": string }; Returns: number };
       updategeometrysrid: {
         Args: {

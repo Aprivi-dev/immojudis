@@ -83,6 +83,37 @@ describe("GET /api/v1/tribunals/listing-statistics", () => {
     expect(mocks.getStatistics).not.toHaveBeenCalled();
   });
 
+  it("réserve les statistiques d’un tribunal choisi par code à l’offre Analyse", async () => {
+    await request("?courtCode=justice_tj_1_112");
+
+    expect(mocks.assertEntitlement).toHaveBeenCalledWith(
+      { userId: "premium-user" },
+      "sales.statistics",
+      expect.any(String),
+      { saleId: undefined },
+    );
+  });
+
+  it("transmet la vente à l’entitlement : un déblocage n’ouvre que le tribunal de cette vente", async () => {
+    await request("?saleId=11111111-1111-4111-8111-111111111111");
+
+    expect(mocks.assertEntitlement).toHaveBeenCalledWith(
+      { userId: "premium-user" },
+      "sales.statistics",
+      expect.any(String),
+      { saleId: "11111111-1111-4111-8111-111111111111" },
+    );
+  });
+
+  it("n’ouvre jamais un tribunal par code avec une vente débloquée : requête ambiguë refusée", async () => {
+    const response = await request(
+      "?courtCode=justice_tj_1_112&saleId=11111111-1111-4111-8111-111111111111",
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.getStatistics).not.toHaveBeenCalled();
+  });
+
   it("préserve les fenêtres historiques et la résolution par annonce", async () => {
     const response = await request("?saleId=11111111-1111-4111-8111-111111111111&historyMonths=36");
 

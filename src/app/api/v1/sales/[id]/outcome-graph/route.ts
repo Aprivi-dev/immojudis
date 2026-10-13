@@ -14,12 +14,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const context = createApiRequestContext(request, "outcome-graph.forecast");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    const rawParams = await params;
+    // Analyse, or a Découverte account that unlocked this very sale (« 3 déblocages par mois »).
+    // The identifier is validated after the entitlement, as before; an invalid one simply cannot
+    // match an unlock.
     await assertFeatureEntitlement(
       auth,
       "property.outcomeGraph",
       "Prévision Outcome Graph réservée au plan Analyse.",
+      { saleId: paramsSchema.safeParse(rawParams).data?.id },
     );
-    const { id: saleId } = paramsSchema.parse(await params);
+    const { id: saleId } = paramsSchema.parse(rawParams);
     const forecast = await getOutcomeGraphForecastForSale(saleId);
 
     await recordFeatureUsageEvent({

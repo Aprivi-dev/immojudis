@@ -6,14 +6,14 @@ export const LEGAL_DOCUMENTS = {
     path: "/legal",
   },
   terms: {
-    version: "2026-10-13.2",
-    sha256: "393dacc65852311f18e5113c8abc629a17f8d0d5b6e0a66b7a5197813d611cf3",
+    version: "2026-10-13.3",
+    sha256: "515b259e171b318216c185ae565a0e6c6eb3c1d75eac9b779573b9b628b0a3b5",
     effectiveDate: "13 octobre 2026",
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-10-13.1",
-    sha256: "8cea3d3166b847bf1dbf403a1528c1dfe490cd0dd3bca147c9f0464c18efbd6d",
+    version: "2026-10-13.2",
+    sha256: "c9284668c693c6ed2401c91a72df36a5f082fa4018a5bdcd13c76abdb568ef2d",
     effectiveDate: "13 octobre 2026",
     path: "/privacy",
   },

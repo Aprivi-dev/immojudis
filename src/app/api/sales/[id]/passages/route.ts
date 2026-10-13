@@ -6,8 +6,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { PublicApiError } from "@/lib/api-errors";
 import { apiRouteError } from "@/lib/api-observability";
-import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { featureIncludedForSale } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import type { SalePassagesResponse } from "@/lib/sale-passages";
@@ -18,9 +17,9 @@ import { recordFeatureUsageEvent } from "@/lib/usage";
 const saleIdSchema = z.string().uuid();
 
 /**
- * « Historique de la vente ». Analyse: the full timeline and the earlier
- * passages of the property. Other signed-in accounts: the counts only, as an
- * invitation to the offer. The sale must be visible to the caller first.
+ * « Historique de la vente ». Analyse, or a sale the account unlocked: the full
+ * timeline and the earlier passages of the property. Other signed-in accounts:
+ * the counts only, as an invitation to the offer. The sale must be visible to the caller first.
  */
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -31,8 +30,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       bucketKey: "sale-passages",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    const plan = await resolvePlanEntitlements(auth);
-    const full = featureIncluded(plan.plan, "property.saleHistory");
+    // Analyse, or a Découverte account that unlocked this very sale (« 3 déblocages par mois »).
+    const full = await featureIncludedForSale(auth, "property.saleHistory", saleId);
     const { data: sale, error } = await auth.supabase
       .from(full ? DETAIL_VIEW : "v_auction_sales_discovery")
       .select("id, starting_price_eur")
