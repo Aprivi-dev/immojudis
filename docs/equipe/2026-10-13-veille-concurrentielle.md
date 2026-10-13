@@ -114,4 +114,9 @@ aucune citation nominative d'un concurrent dans les contenus publics.
 
 ## Décisions du propriétaire
 
-À compléter après validation.
+13/10/2026 : **validés n° 5** (3 analyses complètes gratuites par mois) **et n° 10**
+(questions-réponses par IA sur les pièces d'une vente). Les autres numéros ne sont pas retenus
+pour l'instant.
+
+Avant de construire : cadrage juridique (`juridique-rgpd`) des deux fonctionnalités et
+cartographie du code existant (droits par offre, lecture des pièces, budget IA).
