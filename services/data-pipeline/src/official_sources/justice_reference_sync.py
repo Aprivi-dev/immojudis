@@ -33,6 +33,8 @@ REFERENCE_DIR = RAW_DIR / "outcome_sources" / "justice_courts"
 COMPETENCES_FILENAME = "resource-e2a1941b-observed-competences.csv"
 STRUCTURES_FILENAME = "2026-domaine-juridique-adresse.csv"
 MANIFEST_FILENAME = "justice-reference-manifest.json"
+# After a failed refresh with a valid local copy, do not try again before this delay.
+REFRESH_RETRY_THROTTLE_HOURS = 6.0
 _ALLOWED_DOWNLOAD_HOSTS = {"static.data.gouv.fr", "www.data.gouv.fr"}
 _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -106,6 +108,7 @@ def sync_justice_references(
     client: httpx.Client | None = None,
     allow_verified_cache: bool = True,
     max_age_days: float | None = None,
+    retry_throttle_hours: float = REFRESH_RETRY_THROTTLE_HOURS,
 ) -> dict[str, Any]:
     """Refresh both Ministry references and install them only after validation.
 
@@ -116,6 +119,8 @@ def sync_justice_references(
     With ``max_age_days``, a local copy that was verified less than that many
     days ago (and still validates) is kept without any network access. A failed
     refresh keeps a valid local copy; it is an error only when none exists.
+    A failed refresh is recorded in the manifest (``refresh_attempted_at``) and,
+    while a valid copy exists, no new attempt is made for ``retry_throttle_hours``.
     """
 
     destination = Path(output_dir)
@@ -124,6 +129,9 @@ def sync_justice_references(
         fresh = _fresh_cached_manifest(destination, timedelta(days=max_age_days))
         if fresh is not None:
             return fresh
+        throttled = _throttled_cached_manifest(destination, timedelta(hours=retry_throttle_hours))
+        if throttled is not None:
+            return throttled
     owned_client = client is None
     http_client = client or httpx.Client(
         follow_redirects=True,
@@ -402,6 +410,30 @@ def _cached_manifest(destination: Path, *, refresh_error: str) -> dict[str, Any]
     manifest["cache_fallback"] = True
     manifest["refresh_attempted_at"] = datetime.now(UTC).isoformat()
     manifest["refresh_error"] = refresh_error[:500]
+    if "synced_at" in manifest:
+        # Remember the attempt so the next units do not hit data.gouv.fr again at once.
+        try:
+            _atomic_write_json(manifest_path, manifest)
+        except OSError as exc:
+            LOGGER.warning("Could not record the Justice refresh attempt: %s", exc)
+    return manifest
+
+
+def _throttled_cached_manifest(destination: Path, throttle: timedelta) -> dict[str, Any] | None:
+    """The manifest of a valid local copy whose refresh failed less than ``throttle`` ago, else None."""
+    try:
+        manifest = json.loads((destination / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+        attempted_at = datetime.fromisoformat(str(manifest["refresh_attempted_at"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(manifest, dict) or attempted_at.tzinfo is None:
+        return None
+    age = datetime.now(UTC) - attempted_at
+    if not timedelta(0) <= age < throttle or not _validate_cached_pair(destination):
+        return None
+    manifest["cache_fallback"] = True
+    manifest["refresh_skipped"] = True
+    manifest["refresh_throttled"] = True
     return manifest
 
 
