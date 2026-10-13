@@ -40,7 +40,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // A database error is not hidden behind a shorter sitemap: it would tell crawlers that the
   // sales are gone. The request fails (5xx), crawlers retry later, and the data cache never
   // stores a thrown error. `loadPublicTribunalActivity` is the exception: it reports an
-  // unavailable database as an empty list, so `/tribunaux` is left out for a few minutes.
+  // unavailable database as an error result, and `/tribunaux` then stays listed (only a
+  // successful read that finds no court removes it).
   const [sales, tribunals] = await Promise.all([
     loadSitemapSales(0, ROOT_SITEMAP_SALE_CAPACITY),
     loadPublicTribunalActivity(),
@@ -55,7 +56,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     ...PUBLIC_ROUTES
       // The courts page has nothing to list (and is not indexed) while no court is listed.
-      .filter(([path]) => path !== "/tribunaux" || tribunals.length > 0)
+      // A read error is not "no court": the page stays in the sitemap.
+      .filter(
+        ([path]) =>
+          path !== "/tribunaux" || tribunals.status === "error" || tribunals.items.length > 0,
+      )
       .map(([path, modified]) => {
         const lastModified = path === "/sales" ? newestSale : modified;
         return { url: `${origin}${path}`, ...(lastModified ? { lastModified } : {}) };

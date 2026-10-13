@@ -37,7 +37,7 @@ describe("sitemap.xml", () => {
     mocks.loadSitemapSales.mockReset();
     mocks.loadSitemapSaleTotal.mockReset();
     mocks.loadTribunalActivity.mockReset();
-    mocks.loadTribunalActivity.mockResolvedValue([{ code: "pau" }]);
+    mocks.loadTribunalActivity.mockResolvedValue({ status: "ok", items: [{ code: "pau" }] });
   });
   afterEach(() => {
     delete process.env.SITE_URL;
@@ -86,10 +86,17 @@ describe("sitemap.xml", () => {
 
   it("does not list /tribunaux while no court is listed", async () => {
     mocks.loadSitemapSales.mockResolvedValue([]);
-    mocks.loadTribunalActivity.mockResolvedValue([]);
+    mocks.loadTribunalActivity.mockResolvedValue({ status: "ok", items: [] });
     const urls = (await sitemap()).map((entry) => entry.url);
     expect(urls).not.toContain("https://immojudis.com/tribunaux");
     expect(urls).toContain("https://immojudis.com/sales");
+  });
+
+  it("keeps /tribunaux listed when the courts could not be read", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([]);
+    mocks.loadTribunalActivity.mockResolvedValue({ status: "error" });
+    const urls = (await sitemap()).map((entry) => entry.url);
+    expect(urls).toContain("https://immojudis.com/tribunaux");
   });
 
   it("leaves out changeFrequency and priority, which search engines ignore", async () => {
