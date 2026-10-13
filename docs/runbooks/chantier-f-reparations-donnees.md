@@ -2,23 +2,50 @@
 
 Ce document accompagne les corrections du chantier F (exactitude des données collectées, points 11
 à 18 du compte-rendu `docs/equipe/2026-10-13-premiere-session.md`). Le code corrige les nouvelles
-collectes. Les lignes déjà en base se réparent par trois migrations non appliquées, par le recalcul
-existant (`recompute-existing-sales`) et, pour les doublons, par le balayage existant de la collecte.
+collectes. Les lignes déjà en base se réparent par trois **réparations de données** (SQL lancé à
+la main avec `psql`), par le recalcul existant (`recompute-existing-sales`) et, pour les doublons,
+par le balayage existant de la collecte.
 
-Rien ici ne s'exécute tout seul : les migrations attendent `npm run db:migrate`, le recalcul est un
-`workflow_dispatch`. Les migrations ont été relues et leur syntaxe vérifiée avec l'analyseur de
-PostgreSQL ; elles n'ont pas été exécutées contre une base. Les rejouer d'abord sur une copie.
+Les trois réparations ne sont **pas** des migrations de schéma : elles vivent dans
+`supabase/repairs/` (voir son `README.md`), pas dans `supabase/migrations/`. Le workflow « Apply
+Supabase Migrations » applique tout ce qui est en attente dans `supabase/migrations/` sans essai ;
+une réparation placée là partirait en production avec la prochaine migration de schéma. Rien ici ne
+s'exécute tout seul : les réparations se lancent avec `psql`, le recalcul est un `workflow_dispatch`.
+
+Chaque réparation a un **mode comptage par défaut** (aucune écriture, transaction annulée) et un
+mode application (`-v apply=1`). Elles ont été testées avec `psql` sur une base PostgreSQL jetable
+(`services/data-pipeline/tests/test_chantier_f_repairs_sql.py`) mais jamais exécutées sur la base de
+production. Les rejouer d'abord sur une copie.
 
 ## Ordre conseillé
 
-1. Fusionner le code du chantier F.
-2. Appliquer, dans l'ordre, les trois migrations `20261020130001`, `20261020130002`, `20261020130003`.
+1. Fusionner le code du chantier F. Aucune migration de schéma n'est nécessaire pour ce chantier.
+2. Pour chaque réparation, dans l'ordre `20261020130001`, `20261020130002`, `20261020130003` :
+   lancer d'abord le **comptage**, relire les chiffres, puis **appliquer** (voir ci-dessous).
 3. Lancer le recalcul en `dry_run=true`, relire le résumé, puis en `dry_run=false`.
 4. Laisser tourner la collecte normale (doublons) ou la lancer.
 5. Vérifier avec les requêtes ci-dessous.
 
-Les migrations passent avant le recalcul : celle du point 15 retire le point fantôme que le recalcul
+Les réparations passent avant le recalcul : celle du point 15 retire le point fantôme que le recalcul
 géocode ensuite, et celle du point 11 recopie les géocodages déjà acceptés sans appel réseau.
+
+## Commandes des réparations
+
+Depuis la racine du dépôt, avec `SUPABASE_DB_URL` pointant sur la base voulue (copie d'abord) et un
+client `psql` 13 ou plus :
+
+```bash
+f=supabase/repairs/20261020130001_repair_sale_department_and_coordinates.sql   # puis ...0002_..., ...0003_...
+
+# Comptage seulement (défaut) : affiche ce qui serait modifié, n'écrit rien.
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$f"
+
+# Application : une seule transaction, avec copie des valeurs d'origine dans app_private.
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -v apply=1 -f "$f"
+```
+
+Les noms complets, les requêtes de contrôle et les tables de sauvegarde pour le retour arrière sont
+dans `supabase/repairs/README.md`.
 
 ## Commandes du recalcul
 
@@ -48,13 +75,19 @@ indiquées ci-dessous.
 ### 11. Département et coordonnées
 
 - Code : le département se déduit du code postal, puis du code INSEE d'un géocodage BAN accepté
-  (`normalize_sale`), puis du tribunal rattaché (`fill_tribunal`, source écrite dans
-  `raw_payload.department_inference`, drapeau `department_from_tribunal`). Un géocodage accepté,
-  centre de commune compris, est recopié dans `latitude` et `longitude` avec `raw_payload.geo_precision`
-  (`geocode.restore_accepted_geocode`). Le drapeau `missing_gps` disparaît quand les coordonnées existent.
-- Migration : `supabase/migrations/20261020130001_repair_sale_department_and_coordinates.sql`.
-  Elle fait la même chose en SQL, sans réseau, uniquement sur les valeurs absentes, avec copie des
-  valeurs d'origine dans `app_private.location_repair_backup_20261020`. Retour arrière à la fin du fichier.
+  (`normalize_sale`, `fill_tribunal`, source écrite dans `raw_payload.department_inference`). Le
+  **tribunal n'est jamais une source de département** : il peut couvrir une commune d'un département
+  voisin, et une valeur déduite de lui serait écrite comme un fait. Sans code postal ni géocodage
+  accepté, le département reste absent. Un géocodage accepté, centre de commune compris, est recopié
+  dans `latitude` et `longitude` avec `raw_payload.geo_precision` (`geocode.restore_accepted_geocode`).
+  Le drapeau `missing_gps` disparaît quand les coordonnées existent.
+- Réparation : `supabase/repairs/20261020130001_repair_sale_department_and_coordinates.sql`.
+  Elle fait la même chose en SQL, sans réseau, uniquement sur les valeurs absentes et sur les ventes
+  `active`, `upcoming`, `unknown`, avec copie des valeurs d'origine dans
+  `app_private.location_repair_backup_20261020`. La recopie des coordonnées est plus stricte que le
+  code : elle exige que le département de la vente soit celui du code INSEE du géocodage (et du code
+  postal quand il existe), en plus du rectangle connu des départements 24, 33, 40, 47, 64 ; le
+  recalcul complète ensuite les cas écartés. Retour arrière à la fin du fichier.
 - Recalcul : `source=petites_affiches` (76 % des ventes sans département) puis `all`.
 - Avant / après :
 
@@ -77,13 +110,24 @@ select count(*) filter (where department is null or department = '') as sans_dep
   jamais entre deux lots d'une même source ni d'une annonce multi-lots, et jamais si une annonce a
   deux partenaires possibles. La persistance (`resolve_publication_identities`) reconnaît aussi
   l'identifiant commun.
+- L'identifiant commun seul ne suffit plus (le balayage supprime la ligne secondaire, et deux
+  annonces de villes différentes, Ondres 40440 et Lyon 69003, partageaient un numéro). Il faut, en
+  plus : le même code postal ou la même commune normalisée, connus des deux côtés (un lieu inconnu
+  d'un côté refuse la paire), et au moins un fait corroborant connu des deux côtés (même jour civil
+  à Paris ou même mise à prix à l'euro près), sans contradiction sur ces faits. Une paire qui ne
+  remplit pas ces conditions reste en deux lignes, à traiter à la main.
+- Quand le run fusionne en mémoire deux annonces déjà enregistrées à part, la persistance choisit la
+  ligne primaire de façon déterministe (priorité de source, Vench avant Petites Affiches, puis URL)
+  au lieu de mettre les trois lignes en quarantaine ; l'autre ligne reste visible jusqu'au balayage.
 - Réparation de l'existant : uniquement par identifiant commun. Le balayage
   `reconcile_duplicate_sales_in_supabase`, déjà exécuté à chaque collecte
   (`DEDUPE_RECONCILE_ENABLED`, 2 000 lignes), fusionne les deux lignes puis supprime la ligne
   secondaire ; il n'applique pas la clé de repli stricte (`strict_fallback=False`).
   Pour garder la main sur le moment, mettre `DEDUPE_RECONCILE_ENABLED=false` avant de fusionner le code
   et le remettre à `true` après avoir relu la liste ci-dessous.
-- Avant (lecture seule) : les paires qui seront fusionnées.
+- Avant (lecture seule) : les paires de même identifiant. Ce sont des candidates : seules celles dont
+  le lieu et un fait (jour ou mise à prix) concordent seront fusionnées ; vérifier à la main les
+  autres, qui resteront en deux lignes.
 
 ```sql
 with annonces as (
@@ -129,11 +173,11 @@ select left(id::text, 8) as id, city, postal_code, department, source_url
 
 ### 15. Point fantôme Info-Enchères
 
-- Migration : `supabase/migrations/20261020130002_clear_info_encheres_phantom_point.sql`. Elle met à
+- Réparation : `supabase/repairs/20261020130002_clear_info_encheres_phantom_point.sql`. Elle met à
   NULL les coordonnées au point (44.40655, 6.061187), retire ce point du `raw_payload` et supprime les
   parcelles trouvées sous ce point (copies dans `app_private`). Retour arrière à la fin du fichier.
 - Recalcul : `source=info_encheres` (nouveau géocodage des ventes sans point).
-- Avant / après : la requête de l'en-tête de la migration (5 lignes environ, puis 0).
+- Avant / après : la requête de l'en-tête du fichier (5 lignes environ, puis 0).
 
 ### 16. Licitor multi-lots
 
@@ -142,7 +186,7 @@ select left(id::text, 8) as id, city, postal_code, department, source_url
   (`licitor_extraction.extract_licitor_fields`) est correcte, mais ses résultats ne servent qu'aux
   caractéristiques détaillées. Le remède demande un choix de produit (une ligne par lot, ou un
   agrégat) : il n'a pas été deviné.
-- Mesure d'attente : `supabase/migrations/20261020130003_quarantine_licitor_multi_lot_annonces.sql`
+- Mesure d'attente : `supabase/repairs/20261020130003_quarantine_licitor_multi_lot_annonces.sql`
   met les 9 annonces (109863, 109968, 110081, 110098, 110145, 110156, 110160, 110164, 110177) en
   quarantaine durable. Retour arrière à la fin du fichier.
 

@@ -15,6 +15,7 @@ from src.normalize import clean_text, normalize_documents
 PARIS = ZoneInfo("Europe/Paris")
 _STREET_NUMBER_RE = re.compile(r"\d")
 _POSTAL_CODE_RE = re.compile(r"\b(\d{5})\b")
+_TRAILING_DEPARTMENT_RE = re.compile(r"\s*\((?:\d{2}|2[AB]|97\d)\)\s*$", re.IGNORECASE)
 
 PRIMARY_SOURCE_PRIORITY = {
     "avoventes": 0,
@@ -446,23 +447,52 @@ def shared_listing_id(sale: AuctionSale) -> str | None:
     return match.group(1) if match else None
 
 
-def same_shared_listing(first: AuctionSale, second: AuctionSale) -> bool:
-    """Même annonce Vench / Petites Affiches : même identifiant, sources différentes, rien de contradictoire.
+def _locality(sale: AuctionSale) -> tuple[str | None, str | None]:
+    """Code postal et commune normalisée connus d'une vente (champs, sinon adresse)."""
+    address = clean_text(sale.address)
+    postal_code = clean_text(sale.postal_code) or (_postal_code_from_text(address) if address else None)
+    city = clean_text(sale.city) or (_city_from_address(address, postal_code) if address else None)
+    # Petites Affiches écrit « Ondres (40) » : le département entre parenthèses n'est pas la commune.
+    city = _TRAILING_DEPARTMENT_RE.sub("", city) if city else city
+    return postal_code, (_normalize_street_text(city) if city else None) or None
 
-    L'identifiant est une preuve d'identité ; on exige seulement que les faits connus des deux côtés
-    (jour d'audience et mise à prix) ne se contredisent pas, pour qu'une collision d'identifiants ne
-    fusionne jamais deux biens.
+
+def _same_locality_known_on_both_sides(first: AuctionSale, second: AuctionSale) -> bool:
+    """Même code postal ou même commune normalisée, connus des deux côtés (sinon faux)."""
+    (first_postal, first_city), (second_postal, second_city) = _locality(first), _locality(second)
+    if first_postal and second_postal and first_postal == second_postal:
+        return True
+    return bool(first_city and second_city and first_city == second_city)
+
+
+def same_shared_listing(first: AuctionSale, second: AuctionSale) -> bool:
+    """Même annonce Vench / Petites Affiches : même identifiant, même lieu, un fait en commun.
+
+    L'identifiant seul n'est pas une preuve suffisante : le balayage supprime la ligne secondaire,
+    et deux numéros d'annonce peuvent coïncider entre deux biens (Ondres 40440 et Lyon 69003 ont
+    déjà été fusionnés). On exige donc, en plus de l'identifiant et de sources différentes :
+    - même code postal ou même commune normalisée, connus des deux côtés ;
+    - au moins un fait corroborant connu des deux côtés et identique : même jour civil à Paris, ou
+      même mise à prix à l'euro près ;
+    - aucun fait connu des deux côtés (jour, mise à prix) qui se contredise.
+    Un lieu ou un fait inconnu d'un côté ne prouve rien : la paire est refusée, jamais devinée.
     """
     if first.source_name == second.source_name or {first.source_name, second.source_name} != _LISTING_ID_SOURCES:
         return False
     first_id, second_id = shared_listing_id(first), shared_listing_id(second)
     if not first_id or first_id != second_id:
         return False
+    if not _same_locality_known_on_both_sides(first, second):
+        return False
     first_day, second_day = _civil_day(first.sale_date), _civil_day(second.sale_date)
     if first_day and second_day and first_day != second_day:
         return False
     first_price, second_price = _whole_euros(first.starting_price_eur), _whole_euros(second.starting_price_eur)
-    return not (first_price is not None and second_price is not None and first_price != second_price)
+    if first_price is not None and second_price is not None and first_price != second_price:
+        return False
+    same_day = bool(first_day and second_day)
+    same_price = first_price is not None and second_price is not None
+    return same_day or same_price
 
 
 def _merge_by_shared_listing_id(sales: list[AuctionSale]) -> list[AuctionSale]:
