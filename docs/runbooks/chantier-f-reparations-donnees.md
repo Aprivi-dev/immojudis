@@ -123,8 +123,9 @@ select count(*) filter (where department is null or department = '') as sans_dep
   `reconcile_duplicate_sales_in_supabase`, déjà exécuté à chaque collecte
   (`DEDUPE_RECONCILE_ENABLED`, 2 000 lignes), fusionne les deux lignes puis supprime la ligne
   secondaire ; il n'applique pas la clé de repli stricte (`strict_fallback=False`).
-  Pour garder la main sur le moment, mettre `DEDUPE_RECONCILE_ENABLED=false` avant de fusionner le code
-  et le remettre à `true` après avoir relu la liste ci-dessous.
+  Le workflow `data-pipeline.yml` le laisse coupé tant que la variable de dépôt GitHub
+  `DEDUPE_RECONCILE_ENABLED` (Settings → Secrets and variables → Actions → Variables) ne vaut pas
+  `true` : la créer avec `true` après avoir relu la liste ci-dessous.
 - Avant (lecture seule) : les paires de même identifiant. Ce sont des candidates : seules celles dont
   le lieu et un fait (jour ou mise à prix) concordent seront fusionnées ; vérifier à la main les
   autres, qui resteront en deux lignes.

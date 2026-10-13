@@ -455,7 +455,7 @@ Le propriétaire suit toutes les recommandations du chef d'orchestre.
 | 4   | Mettre à jour la politique de confidentialité                                  | Oui     | Chantier L                                    |
 | 5   | Annuaire : retirer « Spécialistes », signaler les profils payants              | Oui     | Chantier L                                    |
 | 6   | Fermer plus tard l'accès aux colonnes internes (`raw_payload`, `observations`) | Oui     | Chantier séparé, à planifier                  |
-| 7   | `DEDUPE_RECONCILE_ENABLED=false` au premier déploiement                        | Oui     | Action du propriétaire                        |
+| 7   | `DEDUPE_RECONCILE_ENABLED=false` au premier déploiement                        | Oui     | Livré : coupé par défaut dans le workflow     |
 | 8   | Dates invraisemblables en « date à confirmer »                                 | Oui     | Livré                                         |
 | 9   | Scénarios d'enchères masqués tant que la licence Licitor n'est pas réglée      | Oui     | Livré                                         |
 | 10  | Retirer Licitor du catalogue sans licence écrite                               | Oui     | Chantier M                                    |
