@@ -100,13 +100,38 @@ ALTER TABLE public.auction_ai_review_case_status
       ).toBe("");
     });
 
-    it("ignores every pinned constraint with its migration definition", () => {
-      const diff = RECONCILED_CHECK_CONSTRAINTS.map(
-        ({ table, name, definition }) =>
-          `ALTER TABLE ${table} DROP CONSTRAINT ${name};\nALTER TABLE ${table} ADD CONSTRAINT ${name} CHECK (${definition});`,
+    const pinned = (name) =>
+      RECONCILED_CHECK_CONSTRAINTS.find((constraint) => constraint.name === name);
+    const pairFor = ({ table, name }, definition) =>
+      `ALTER TABLE ${table} DROP CONSTRAINT ${name};\nALTER TABLE ${table} ADD CONSTRAINT ${name} ${definition};`;
+
+    it("ignores every pinned constraint with its exact production definition", () => {
+      const diff = RECONCILED_CHECK_CONSTRAINTS.map((constraint) =>
+        pairFor(constraint, constraint.productionDefinition),
       ).join("\n");
       expect(RECONCILED_CHECK_CONSTRAINTS).toHaveLength(12);
       expect(normalizeDiff(diff)).toBe("");
+    });
+
+    it("accepts the nested Postgres 17.6 BETWEEN form against the 17.11 pin (no OR)", () => {
+      const constraint = pinned("auction_ai_review_projections_source_url_check");
+      expect(constraint.productionDefinition).toBe(
+        "CHECK (((char_length(source_url) >= 1) AND (char_length(source_url) <= 4096) AND (source_url ~ '^https://'::text)))",
+      );
+      const nested =
+        "CHECK ((((char_length(source_url) >= 1) AND (char_length(source_url) <= 4096)) AND (source_url ~ '^https://'::text)))";
+      expect(normalizeDiff(pairFor(constraint, nested))).toBe("");
+      const nestedAltered = nested.replace("<= 4096", "<= 4097");
+      expect(normalizeDiff(pairFor(constraint, nestedAltered))).toContain("<= 4097");
+    });
+
+    it("accepts the nested Postgres 17.6 BETWEEN form against the 17.11 pin (with OR)", () => {
+      const constraint = pinned("information_agent_missions_reply_to_email_check");
+      const nested = String.raw`CHECK (((reply_to_email IS NULL) OR (((char_length(reply_to_email) >= 3) AND (char_length(reply_to_email) <= 320)) AND (reply_to_email ~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'::text))))`;
+      expect(normalizeDiff(pairFor(constraint, nested))).toBe("");
+      // Same atoms, regrouped: the OR no longer wraps the whole conjunction.
+      const regrouped = String.raw`CHECK ((((reply_to_email IS NULL) OR ((char_length(reply_to_email) >= 3) AND (char_length(reply_to_email) <= 320))) AND (reply_to_email ~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'::text)))`;
+      expect(normalizeDiff(pairFor(constraint, regrouped))).toContain("ADD CONSTRAINT");
     });
 
     it("keeps the pair when the production definition is loosened or changed", () => {
@@ -141,7 +166,12 @@ ALTER TABLE public.auction_ai_review_case_status
     });
 
     it("pins definitions that the named migrations really contain", () => {
-      for (const { table, name, definition, migration } of RECONCILED_CHECK_CONSTRAINTS) {
+      for (const {
+        table,
+        name,
+        productionDefinition: definition,
+        migration,
+      } of RECONCILED_CHECK_CONSTRAINTS) {
         const source = readFileSync(join(migrationsDirectory, migration), "utf8");
         const tableName = table.replace(/^public\./, "");
         expect(source, `${migration} must create ${tableName}`).toMatch(
