@@ -118,5 +118,17 @@ aucune citation nominative d'un concurrent dans les contenus publics.
 (questions-réponses par IA sur les pièces d'une vente). Les autres numéros ne sont pas retenus
 pour l'instant.
 
-Avant de construire : cadrage juridique (`juridique-rgpd`) des deux fonctionnalités et
-cartographie du code existant (droits par offre, lecture des pièces, budget IA).
+Cadrage juridique (`juridique-rgpd`) et cartographie du code faits le 13/10. Le propriétaire
+suit les cinq recommandations du chef d'orchestre :
+
+1. **N° 5, durée** : une vente débloquée reste accessible tant qu'elle est en ligne.
+2. **N° 5, pièces** : le déblocage ouvre aussi les pièces officielles du dossier (PDF).
+3. **N° 10, offre** : questions IA réservées à l'offre Analyse dans un premier temps.
+4. **N° 10, mise en service** : construit maintenant, désactivé par un interrupteur ; activé
+   seulement après vérification du contrat de traitement (DPA) avec Replicate et relecture par
+   un avocat. Les clés Replicate seront ajoutées sur Vercel à ce moment-là.
+5. **Correctif** : filtrer les noms de personnes dans les citations de la lecture des pièces
+   existante.
+
+Nom affiché du n° 5 : « 3 déblocages par mois » (jamais « analyses gratuites » ni « essai
+gratuit »). Deux PR séparées, le n° 5 d'abord.
