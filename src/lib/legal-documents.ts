@@ -7,7 +7,7 @@ export const LEGAL_DOCUMENTS = {
   },
   terms: {
     version: "2026-10-03.1",
-    sha256: "bde7989a42c979643b892c07ef6ed515dc6fe5d425dd5b3d469d5e4a5625f9dc",
+    sha256: "46d60ffb757ac28881b207310eedac33c50972a1c6f8e9ebe0bd98c2d76a6d71",
     effectiveDate: "3 octobre 2026",
     path: "/conditions-generales",
   },

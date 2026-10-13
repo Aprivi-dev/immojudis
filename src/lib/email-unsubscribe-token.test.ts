@@ -47,4 +47,35 @@ describe("unsubscribe tokens", () => {
     expect(verifyUnsubscribeToken(null, { now, env })).toBeNull();
     expect(verifyUnsubscribeToken("n'importe quoi", { now, env })).toBeNull();
   });
+
+  it("choisit la clé dans l'ordre EMAIL_UNSUBSCRIBE_SECRET, SERVICE_ROLE_KEY, SECRET_KEY", () => {
+    const sign = (e: Record<string, string>) => createUnsubscribeToken({ userId, now, env: e });
+    const allThree = {
+      EMAIL_UNSUBSCRIBE_SECRET: "dedie",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
+      SUPABASE_SECRET_KEY: "sb_secret_test",
+    };
+    expect(sign(allThree)).toBe(sign({ EMAIL_UNSUBSCRIBE_SECRET: "dedie" }));
+    expect(sign({ ...allThree, EMAIL_UNSUBSCRIBE_SECRET: "" })).toBe(
+      sign({ SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key" }),
+    );
+    // Les liens déjà envoyés (clé service-role seule) restent valides.
+    expect(verifyUnsubscribeToken(sign(env), { now, env: allThree })).toBeNull();
+    expect(
+      verifyUnsubscribeToken(sign(env), {
+        now,
+        env: { ...env, SUPABASE_SECRET_KEY: "sb_secret_test" },
+      }),
+    ).not.toBeNull();
+  });
+
+  it("signe avec SUPABASE_SECRET_KEY quand elle est la seule clé définie", () => {
+    const only = { SUPABASE_SECRET_KEY: "sb_secret_test" };
+    const token = createUnsubscribeToken({ userId, now, env: only });
+    expect(verifyUnsubscribeToken(token, { now, env: only })).toMatchObject({ userId });
+    expect(
+      verifyUnsubscribeToken(token, { now, env: { SUPABASE_SECRET_KEY: "autre" } }),
+    ).toBeNull();
+    expect(() => createUnsubscribeToken({ userId, now, env: {} })).toThrow(/Aucun secret/);
+  });
 });
