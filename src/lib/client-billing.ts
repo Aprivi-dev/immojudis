@@ -1,8 +1,6 @@
 import type { BillingSessionResponse } from "@/lib/billing";
-import {
-  OFFER_OPENING_CONSENT_VERSION,
-  type OfferOpeningNotificationResponse,
-} from "@/lib/offer-opening-notification";
+import { OFFER_OPENING_CONSENT_VERSION } from "@/lib/offer-opening-consent";
+import type { OfferOpeningNotificationResponse } from "@/lib/offer-opening-notification";
 import type { PlanCode } from "@/lib/plans";
 import type { PlanEntitlements } from "@/lib/property-reports";
 import { authHeaders, readJson } from "@/lib/client-api-core";
