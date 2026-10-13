@@ -1,9 +1,11 @@
 import ListFilter from "lucide-react/dist/esm/icons/list-filter.js";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import Map from "lucide-react/dist/esm/icons/map.js";
+import X from "lucide-react/dist/esm/icons/x.js";
 import SearchIcon from "lucide-react/dist/esm/icons/search.js";
 import { Skeleton } from "@/components/ui/skeleton";
 import { userMessage } from "@/lib/user-messages";
+import type { ActiveFilterChip } from "./active-filter-chips";
 
 export function MobileMapToggle({
   activeFiltersCount,
@@ -40,15 +42,66 @@ export function MobileMapToggle({
     </div>
   );
 }
-export function NoResultsState() {
+export function NoResultsState({
+  filters = [],
+  onRemoveFilter,
+  onReset,
+  onShowFrance,
+}: {
+  /** Critères actifs : chacun peut être retiré seul. */
+  filters?: ActiveFilterChip[];
+  onRemoveFilter?: (filter: ActiveFilterChip) => void;
+  onReset?: () => void;
+  /** Proposé seulement si la recherche est limitée à un lieu. */
+  onShowFrance?: () => void;
+}) {
   return (
-    <div className="rounded-md border border-line-soft bg-white p-10 text-center shadow-sm">
+    <div className="rounded-md border border-line-soft bg-white p-6 text-center shadow-sm sm:p-10">
       <SearchIcon className="mx-auto h-8 w-8 text-brand-navy" />
       <h2 className="mt-4 text-xl font-extrabold text-brand-navy">Aucun dossier trouvé</h2>
       <p className="mt-2 text-sm font-medium text-ink-soft">
         Aucune annonce référencée ne correspond à ces critères pour le moment. Essayez un autre type
         de vente, une autre zone ou élargissez votre budget.
       </p>
+      {filters.length > 0 && onRemoveFilter ? (
+        <ul aria-label="Critères actifs" className="mt-4 flex flex-wrap justify-center gap-2">
+          {filters.map((filter) => (
+            <li key={filter.key}>
+              <button
+                type="button"
+                onClick={() => onRemoveFilter(filter)}
+                aria-label={`Retirer le critère : ${filter.label}`}
+                className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border border-line bg-surface-muted px-3 text-sm font-semibold text-brand-navy hover:border-brand-navy"
+              >
+                {filter.label}
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {onReset || onShowFrance ? (
+        <div className="mt-5 flex flex-wrap justify-center gap-3">
+          {onReset && filters.length > 0 ? (
+            <button
+              type="button"
+              onClick={onReset}
+              className="inline-flex min-h-11 cursor-pointer items-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft"
+            >
+              Effacer les filtres
+            </button>
+          ) : null}
+          {onShowFrance ? (
+            <button
+              type="button"
+              onClick={onShowFrance}
+              className="inline-flex min-h-11 cursor-pointer items-center rounded-md border border-line bg-white px-4 text-sm font-semibold text-brand-navy hover:border-brand-navy"
+            >
+              Voir toute la France
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef } from "react";
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatDate, formatPrice, formatPricePerM2, occupancyLabel } from "@/lib/format";
+import { pricePerM2 } from "@/lib/geo";
 import Link from "next/link";
 import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
 import {
@@ -18,14 +19,23 @@ const VENUE_LABELS = {
   unknown: "À préciser",
 };
 
+/** Largeur d'une colonne de bien : trois biens tiennent dans un défilement horizontal court. */
+const ITEM_COLUMN_WIDTH = 180;
+
 const ROWS: { label: string; value: (sale: ComparedSale) => string }[] = [
-  {
-    label: "Commune",
-    value: (sale) => [sale.city, sale.department].filter(Boolean).join(" · ") || "À préciser",
-  },
+  { label: "Commune", value: (sale) => sale.city || "À préciser" },
+  { label: "Département", value: (sale) => sale.department || "Non renseigné" },
   { label: "Type de vente", value: (sale) => VENUE_LABELS[sale.venueType] },
   { label: "Date de vente", value: (sale) => formatDate(sale.saleDate) },
+  { label: "Occupation", value: (sale) => occupancyLabel(sale.occupancy) },
   { label: "Mise à prix", value: (sale) => formatPrice(sale.startingPriceEur) },
+  {
+    label: "Mise à prix / m²",
+    value: (sale) => {
+      const perM2 = pricePerM2(sale.startingPriceEur, sale.surfaceM2);
+      return perM2 == null ? "Non calculable" : formatPricePerM2(perM2);
+    },
+  },
   {
     label: "Surface publiée",
     value: (sale) =>
@@ -60,14 +70,14 @@ export function SaleComparisonTable({
     >
       <table
         className="w-full table-fixed border-collapse text-left text-sm"
-        style={{ minWidth: 140 + items.length * 220 }}
+        style={{ minWidth: 140 + items.length * ITEM_COLUMN_WIDTH }}
       >
         <caption className="sr-only">Comparaison des {items.length} biens sélectionnés</caption>
         <thead>
           <tr>
             <th
               scope="col"
-              className="sticky left-0 top-0 z-20 w-[140px] border-b border-r border-line-soft bg-surface-tint p-3 align-bottom text-xs font-bold text-ink-soft"
+              className="sticky left-0 top-0 z-20 w-[96px] border-b border-r border-line-soft bg-surface-tint p-2 align-bottom text-xs font-bold text-ink-soft sm:w-[140px] sm:p-3"
             >
               Critères
             </th>
@@ -75,7 +85,8 @@ export function SaleComparisonTable({
               <th
                 key={sale.id}
                 scope="col"
-                className="sticky top-0 z-10 border-b border-r border-line-soft bg-white p-4 align-top"
+                style={{ width: ITEM_COLUMN_WIDTH }}
+                className="sticky top-0 z-10 border-b border-r border-line-soft bg-white p-3 align-top sm:p-4"
               >
                 <p className="text-xs font-bold text-brand-navy">Bien {index + 1}</p>
                 <p className="mt-1 break-words font-extrabold">{comparedSaleTitle(sale)}</p>
@@ -112,7 +123,7 @@ export function SaleComparisonTable({
             <tr key={row.label}>
               <th
                 scope="row"
-                className="sticky left-0 z-10 border-b border-r border-line-soft bg-surface-tint p-3 text-xs font-bold"
+                className="sticky left-0 z-10 border-b border-r border-line-soft bg-surface-tint p-2 text-xs font-bold sm:p-3"
               >
                 {row.label}
               </th>

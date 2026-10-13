@@ -23,7 +23,13 @@ import {
   type AccountType,
   type ProfessionalRole,
 } from "@/lib/account";
-import { loginPageMode, searchParamsToRecord, type LoginPageMode } from "@/lib/navigation";
+import {
+  loginPageMode,
+  loginReason,
+  searchParamsToRecord,
+  type LoginPageMode,
+  type LoginReason,
+} from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { postAuthDestination } from "@/lib/onboarding";
 import { userMessage } from "@/lib/user-messages";
@@ -31,19 +37,45 @@ import { userMessage } from "@/lib/user-messages";
 type LoginSearch = {
   redirect?: string;
   mode?: Exclude<LoginPageMode, "login">;
+  reason?: LoginReason;
 };
 
 /** Keeps only a same-site `redirect` and a known `mode` from the query string. */
 function parseLoginSearch(search: Record<string, unknown>): LoginSearch {
   const redirect = safeRedirect(search.redirect);
   const mode = loginPageMode(search.mode);
+  const reason = loginReason(search.reason);
   return {
     ...(redirect ? { redirect } : {}),
     ...(mode !== "login" ? { mode } : {}),
+    ...(reason ? { reason } : {}),
   };
 }
 
 type LoginMode = LoginPageMode;
+
+const PASSWORD_RULE_ID = "login-password-rule";
+
+/** Phrase du bandeau : l'action qui a envoyé la personne ici, et ce que le compte gratuit change. */
+const reasonCopy: Record<LoginReason, { signup: string; login: string }> = {
+  alerte: {
+    signup: "Créez votre compte gratuit pour enregistrer cette alerte, sans carte bancaire.",
+    login: "Connectez-vous pour enregistrer cette alerte.",
+  },
+  favori: {
+    signup: "Créez votre compte gratuit pour garder cette vente en favori (3 favoris offerts).",
+    login: "Connectez-vous pour garder cette vente en favori.",
+  },
+  export: {
+    signup: "Créez votre compte gratuit pour exporter ces résultats, sans carte bancaire.",
+    login: "Connectez-vous pour exporter ces résultats.",
+  },
+  offre: {
+    signup:
+      "Créez votre compte gratuit : vous pourrez ensuite passer à l'offre Analyse quand vous le souhaitez.",
+    login: "Connectez-vous pour découvrir l'offre Analyse.",
+  },
+};
 
 const modeCopy: Record<
   LoginMode,
@@ -57,7 +89,7 @@ const modeCopy: Record<
   login: {
     eyebrow: "Connexion",
     title: "Reprendre votre analyse",
-    description: "Accédez aux annonces, favoris, alertes et enchères plafonds déjà préparées.",
+    description: "Retrouvez vos annonces, favoris, alertes et calculs d'enchère plafond.",
     submit: "Se connecter",
   },
   investor: {
@@ -81,7 +113,11 @@ export function LoginPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
-  const { redirect, mode: requestedMode } = useMemo(
+  const {
+    redirect,
+    mode: requestedMode,
+    reason,
+  } = useMemo(
     () => parseLoginSearch(searchParamsToRecord(new URLSearchParams(queryString))),
     [queryString],
   );
@@ -94,6 +130,10 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  /** Adresse à laquelle l'email de confirmation vient d'être envoyé (compte sans session). */
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
 
   const copy = modeCopy[mode];
   const isSignup = mode !== "login";
@@ -121,6 +161,46 @@ export function LoginPage() {
     router.replace(query ? `${pathname}?${query}` : pathname);
   }
 
+  /** Where the confirmation link brings the person back to. */
+  function signupRedirectTo(): string | undefined {
+    const origin = typeof window !== "undefined" ? window.location.origin : undefined;
+    const redirectPath = postAuthDestination({
+      mode,
+      redirect,
+      professional: accountType === "b2b",
+    });
+    return origin ? `${origin}${redirectPath}` : undefined;
+  }
+
+  async function resendConfirmation() {
+    if (!pendingEmail || resending) return;
+    setResending(true);
+    setResendNotice(null);
+    setFormError(null);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: pendingEmail,
+        options: { emailRedirectTo: signupRedirectTo() },
+      });
+      if (error) throw error;
+      setResendNotice(
+        `Email renvoyé à ${pendingEmail}. Pensez à vérifier vos courriers indésirables.`,
+      );
+    } catch (err: unknown) {
+      setFormError(userMessage(err, "Impossible de renvoyer l'email pour le moment. Réessayez."));
+    } finally {
+      setResending(false);
+    }
+  }
+
+  function changeAddress() {
+    setPendingEmail(null);
+    setResendNotice(null);
+    setFormError(null);
+    setPassword("");
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!isSupabaseConfigured) {
@@ -143,17 +223,11 @@ export function LoginPage() {
         return;
       }
 
-      const redirectPath = postAuthDestination({
-        mode,
-        redirect,
-        professional: accountType === "b2b",
-      });
-      const origin = typeof window !== "undefined" ? window.location.origin : undefined;
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: origin ? `${origin}${redirectPath}` : undefined,
+          emailRedirectTo: signupRedirectTo(),
           data: {
             account_type: accountType,
             full_name: fullName.trim() || null,
@@ -168,10 +242,17 @@ export function LoginPage() {
         },
       });
       if (error) throw error;
+      // Sans session, le compte attend la confirmation de l'adresse : un toast qui disparaît
+      // laisserait la personne devant le même formulaire, on le remplace donc par un panneau.
+      if (data?.session === null) {
+        setResendNotice(null);
+        setPendingEmail(email.trim());
+        return;
+      }
       toast.success(
         accountType === "b2b"
-          ? "Demande pro créée. Vérifiez votre email si la confirmation est activée."
-          : "Compte Découverte créé. Vérifiez votre email si la confirmation est activée.",
+          ? "Demande pro créée. Vous pouvez poursuivre."
+          : "Compte Découverte créé. Vous pouvez poursuivre.",
       );
     } catch (err: unknown) {
       const message = userMessage(
@@ -192,7 +273,7 @@ export function LoginPage() {
           <div className="cinematic-grid absolute inset-0 opacity-35" />
           <div className="absolute inset-x-10 top-16 h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
           <div className="relative z-10 max-w-xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold-text">
+            <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-xs font-semibold text-gold-text">
               <ShieldCheck className="h-3.5 w-3.5" />
               Accès Immojudis
             </div>
@@ -221,179 +302,260 @@ export function LoginPage() {
         </section>
 
         <section className="glass-shell rounded-lg p-6 sm:p-8">
-          <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-1">
-            <ModeButton active={mode === "login"} onClick={() => switchMode("login")}>
-              Se connecter
-            </ModeButton>
-            <ModeButton active={mode === "investor"} onClick={() => switchMode("investor")}>
-              Créer un compte
-            </ModeButton>
-            <ModeButton active={mode === "professional"} onClick={() => switchMode("professional")}>
-              Professionnel
-            </ModeButton>
-          </div>
-
-          <div className="mt-6 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-gold-text">
-            {mode === "professional" ? (
-              <BriefcaseBusiness className="h-4 w-4" />
-            ) : mode === "investor" ? (
-              <UserRound className="h-4 w-4" />
-            ) : (
-              <LockKeyhole className="h-4 w-4" />
-            )}
-            {copy.eyebrow}
-          </div>
-          <h1 className="mt-4 font-display text-3xl text-foreground">{copy.title}</h1>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{copy.description}</p>
-
-          {!isSupabaseConfigured ? (
-            <div className="mt-5 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-100">
-              Connexion temporairement indisponible : les variables Supabase publiques ne sont pas
-              présentes dans ce build.
+          {pendingEmail ? (
+            <div>
+              <div className="flex items-center gap-3 text-xs font-semibold text-gold-text">
+                <Mail className="h-4 w-4" />
+                Compte créé
+              </div>
+              <h1 className="mt-4 font-display text-3xl text-foreground">
+                Confirmez votre adresse email
+              </h1>
+              <div
+                role="status"
+                className="mt-4 rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm leading-relaxed text-foreground"
+              >
+                <p>
+                  Un email de confirmation a été envoyé à <strong>{pendingEmail}</strong>, cliquez
+                  sur le lien pour continuer.
+                </p>
+                {resendNotice ? <p className="mt-2 text-muted-foreground">{resendNotice}</p> : null}
+              </div>
+              {formError ? (
+                <p
+                  role="alert"
+                  className="mt-3 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-700"
+                >
+                  {formError}
+                </p>
+              ) : null}
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={() => void resendConfirmation()}
+                  disabled={resending}
+                  className="liquid-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {resending ? "Envoi..." : "Renvoyer l'email"}
+                </button>
+                <button
+                  type="button"
+                  onClick={changeAddress}
+                  className="inline-flex min-h-11 items-center justify-center rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-white/5"
+                >
+                  Changer d'adresse
+                </button>
+              </div>
             </div>
-          ) : null}
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+                <ModeButton active={mode === "login"} onClick={() => switchMode("login")}>
+                  Se connecter
+                </ModeButton>
+                <ModeButton active={mode === "investor"} onClick={() => switchMode("investor")}>
+                  Créer un compte
+                </ModeButton>
+                <ModeButton
+                  active={mode === "professional"}
+                  onClick={() => switchMode("professional")}
+                >
+                  Professionnel
+                </ModeButton>
+              </div>
 
-          <form onSubmit={submit} className="mt-6 space-y-3">
-            {isSignup ? (
-              <label className="grid gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Nom complet
-                </span>
-                <input
-                  type="text"
-                  placeholder="Prénom Nom"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="form-input"
-                />
-              </label>
-            ) : null}
+              {reason ? (
+                <p
+                  data-testid="login-reason"
+                  className="mt-5 rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm leading-relaxed text-foreground"
+                >
+                  {isSignup ? reasonCopy[reason].signup : reasonCopy[reason].login}
+                </p>
+              ) : null}
 
-            {mode === "professional" ? (
-              <div className="grid gap-3">
-                <label className="grid gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    Profil professionnel
-                  </span>
-                  <select
-                    value={professionalRole}
-                    onChange={(event) =>
-                      setProfessionalRole(event.target.value as ProfessionalRole)
-                    }
-                    className="form-input"
-                  >
-                    {PROFESSIONAL_ROLE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    Organisation
-                  </span>
-                  <div className="relative">
-                    <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
+              <div className="mt-6 flex items-center gap-3 text-xs font-semibold text-gold-text">
+                {mode === "professional" ? (
+                  <BriefcaseBusiness className="h-4 w-4" />
+                ) : mode === "investor" ? (
+                  <UserRound className="h-4 w-4" />
+                ) : (
+                  <LockKeyhole className="h-4 w-4" />
+                )}
+                {copy.eyebrow}
+              </div>
+              <h1 className="mt-4 font-display text-3xl text-foreground">{copy.title}</h1>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                {copy.description}
+              </p>
+
+              {!isSupabaseConfigured ? (
+                <div className="mt-5 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-100">
+                  Connexion temporairement indisponible : les variables Supabase publiques ne sont
+                  pas présentes dans ce build.
+                </div>
+              ) : null}
+
+              <form onSubmit={submit} className="mt-6 space-y-3">
+                {isSignup ? (
+                  <label className="grid gap-2">
+                    <span className="text-[13px] font-semibold text-muted-foreground">
+                      Nom complet
+                    </span>
                     <input
                       type="text"
+                      placeholder="Prénom Nom"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="form-input"
+                    />
+                  </label>
+                ) : null}
+
+                {mode === "professional" ? (
+                  <div className="grid gap-3">
+                    <label className="grid gap-2">
+                      <span className="text-[13px] font-semibold text-muted-foreground">
+                        Profil professionnel
+                      </span>
+                      <select
+                        value={professionalRole}
+                        onChange={(event) =>
+                          setProfessionalRole(event.target.value as ProfessionalRole)
+                        }
+                        className="form-input"
+                      >
+                        {PROFESSIONAL_ROLE_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-[13px] font-semibold text-muted-foreground">
+                        Organisation
+                      </span>
+                      <div className="relative">
+                        <Building2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
+                        <input
+                          type="text"
+                          required
+                          placeholder="Cabinet, étude, office, tribunal..."
+                          value={organizationName}
+                          onChange={(e) => setOrganizationName(e.target.value)}
+                          className="form-input pl-10"
+                        />
+                      </div>
+                    </label>
+                    <div className="rounded-lg border border-gold/20 bg-gold/10 px-4 py-3 text-xs leading-relaxed text-gold-text">
+                      L'accès pro permet de préparer une annonce. La publication et les options de
+                      référencement pourront être validées séparément.
+                    </div>
+                  </div>
+                ) : null}
+
+                <label className="grid gap-2">
+                  <span className="text-[13px] font-semibold text-muted-foreground">Email</span>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
+                    <input
+                      type="email"
+                      autoComplete="email"
                       required
-                      placeholder="Cabinet, étude, office, tribunal..."
-                      value={organizationName}
-                      onChange={(e) => setOrganizationName(e.target.value)}
+                      placeholder="vous@exemple.fr"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       className="form-input pl-10"
                     />
                   </div>
                 </label>
-                <div className="rounded-lg border border-gold/20 bg-gold/10 px-4 py-3 text-xs leading-relaxed text-gold-text">
-                  L'accès pro permet de préparer une annonce. La publication et les options de
-                  référencement pourront être validées séparément.
+                <div className="grid gap-1.5">
+                  <label className="grid gap-2">
+                    <span className="text-[13px] font-semibold text-muted-foreground">
+                      Mot de passe
+                    </span>
+                    <div className="relative">
+                      <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        autoComplete={isSignup ? "new-password" : "current-password"}
+                        required
+                        minLength={isSignup ? 12 : 6}
+                        placeholder={isSignup ? "12 caractères minimum" : "Votre mot de passe"}
+                        aria-describedby={isSignup ? PASSWORD_RULE_ID : undefined}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="form-input pl-10 pr-12"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((visible) => !visible)}
+                        aria-label={
+                          showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"
+                        }
+                        aria-pressed={showPassword}
+                        className="absolute right-0 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </label>
+                  {isSignup ? (
+                    <p
+                      id={PASSWORD_RULE_ID}
+                      className="text-xs leading-relaxed text-muted-foreground"
+                    >
+                      Au moins 12 caractères. Une phrase facile à retenir fonctionne très bien.
+                    </p>
+                  ) : null}
                 </div>
-              </div>
-            ) : null}
 
-            <label className="grid gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Email
-              </span>
-              <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
-                <input
-                  type="email"
-                  autoComplete="email"
-                  required
-                  placeholder="vous@exemple.fr"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="form-input pl-10"
-                />
-              </div>
-            </label>
-            <label className="grid gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                Mot de passe
-              </span>
-              <div className="relative">
-                <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold/80" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  autoComplete={isSignup ? "new-password" : "current-password"}
-                  required
-                  minLength={isSignup ? 12 : 6}
-                  placeholder={isSignup ? "12 caractères minimum" : "Votre mot de passe"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="form-input pl-10 pr-11"
-                />
+                {!isSignup ? (
+                  <div className="pb-2 text-right">
+                    <Link
+                      href="/mot-de-passe-oublie"
+                      className="inline-flex min-h-11 items-center text-sm underline"
+                    >
+                      Mot de passe oublié ?
+                    </Link>
+                  </div>
+                ) : null}
+                {formError ? (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-700"
+                  >
+                    {formError}
+                  </p>
+                ) : null}
                 <button
-                  type="button"
-                  onClick={() => setShowPassword((visible) => !visible)}
-                  aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                  aria-pressed={showPassword}
-                  className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                  type="submit"
+                  disabled={busy}
+                  className="liquid-button inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {busy ? "Chargement..." : copy.submit}
+                  {!busy ? <ArrowRight className="h-4 w-4" /> : null}
                 </button>
-              </div>
-            </label>
-
-            {!isSignup ? (
-              <div className="pb-2 text-right">
-                <Link href="/mot-de-passe-oublie" className="text-sm underline">
-                  Mot de passe oublié ?
-                </Link>
-              </div>
-            ) : null}
-            {formError ? (
-              <p
-                role="alert"
-                className="rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-700"
-              >
-                {formError}
-              </p>
-            ) : null}
-            <button
-              type="submit"
-              disabled={busy}
-              className="liquid-button inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy ? "Chargement..." : copy.submit}
-              {!busy ? <ArrowRight className="h-4 w-4" /> : null}
-            </button>
-            {isSignup ? (
-              <p className="text-center text-xs leading-relaxed text-muted-foreground">
-                En créant un compte, vous acceptez les{" "}
-                <Link href="/conditions-generales" className="underline">
-                  conditions générales
-                </Link>{" "}
-                et la{" "}
-                <Link href="/privacy" className="underline">
-                  politique de confidentialité
-                </Link>
-                .
-              </p>
-            ) : null}
-          </form>
+                {isSignup ? (
+                  <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                    En créant un compte, vous acceptez les{" "}
+                    <Link href="/conditions-generales" className="underline">
+                      conditions générales
+                    </Link>{" "}
+                    et la{" "}
+                    <Link href="/privacy" className="underline">
+                      politique de confidentialité
+                    </Link>
+                    .
+                  </p>
+                ) : null}
+              </form>
+            </>
+          )}
 
           <div className="mt-6 border-t border-white/10 pt-4 text-center text-xs text-muted-foreground">
             <Link href="/" className="hover:text-foreground">
@@ -437,7 +599,8 @@ function ModeButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+      aria-pressed={active}
+      className={`min-h-11 rounded-md px-3 py-2 text-sm font-semibold transition ${
         active
           ? "bg-gold text-brand-navy shadow-[0_12px_28px_rgb(242_196_135_/_18%)]"
           : "text-muted-foreground hover:bg-white/5 hover:text-foreground"

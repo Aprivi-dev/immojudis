@@ -156,8 +156,9 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
     search.openHouse ||
     search.yearBuilt ||
     search.transactionType === "for_rent" ||
-    search.sort === "beds_desc" ||
-    search.sort === "distance",
+    // « Chambres » n'a pas de tri serveur : il passe par le balayage du catalogue. « Distance »
+    // n'en a pas besoin sans adresse (rien à mesurer) : elle suit déjà `aroundAddress` ci-dessus.
+    search.sort === "beds_desc",
   );
 }
 
