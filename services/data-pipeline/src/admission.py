@@ -1,10 +1,12 @@
 """Minimum collection admission shared by publication entry points."""
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from src.models import AuctionSale
+from src.retention_tombstones import RETENTION_TOMBSTONE_REASON, load_retention_tombstones, sale_is_blocked
 
 DATE_ONLY_PRECISIONS = {"day", "date", "day_only", "date_only", "unknown_time", "time_unknown"}
 PARIS = ZoneInfo("Europe/Paris")
@@ -260,15 +262,24 @@ def split_insufficient(sales: list[AuctionSale], logger) -> tuple[list[AuctionSa
     return kept, summarize_verdicts(rejected)
 
 
-def admit_sales(sales: list[AuctionSale], record) -> list[AuctionSale]:
+def admit_sales(
+    sales: list[AuctionSale],
+    record,
+    *,
+    tombstones: Mapping[str, datetime | None] | None = None,
+) -> list[AuctionSale]:
     """Sépare les ventes publiables des autres et journalise chaque rejet par motif.
 
     ``record(sales, decision=..., reason=...)`` écrit la décision (aucune donnée personnelle).
+    ``tombstones`` (URL -> date de la trace de rétention, voir ``src.retention_tombstones``) écarte, avec la
+    décision ``expired`` et le motif ``retention_tombstone``, les ventes que la base refuserait.
     """
     admitted: list[AuctionSale] = []
     rejected: dict[str, list[AuctionSale]] = {}
     for sale in sales:
         reason = publication_rejection(sale)
+        if reason is None and tombstones and sale_is_blocked(sale, tombstones):
+            reason = RETENTION_TOMBSTONE_REASON
         if reason is None:
             admitted.append(sale)
         else:
@@ -276,6 +287,21 @@ def admit_sales(sales: list[AuctionSale], record) -> list[AuctionSale]:
     for reason, group in rejected.items():
         if reason == "expired":
             record(group, decision="expired", reason="retention_deadline_reached_not_evidence_of_sale")
+        elif reason == RETENTION_TOMBSTONE_REASON:
+            record(group, decision="expired", reason=RETENTION_TOMBSTONE_REASON)
         else:
             record(group, decision="excluded", reason=reason)
+    return admitted
+
+
+def admit_unretired(sales: list[AuctionSale], record, *, forget: list[AuctionSale] | None = None) -> list[AuctionSale]:
+    """``admit_sales`` après lecture (une requête) des traces de rétention des ventes du lot.
+
+    Les ventes que la base refuserait sont notées ``expired`` / ``retention_tombstone`` et, si ``forget`` est
+    donné, retirées de cette liste (en place) pour ne pas être republiées en fin de run.
+    """
+    tombstones = load_retention_tombstones(sales)
+    admitted = admit_sales(sales, record, tombstones=tombstones)
+    if tombstones and forget is not None:
+        forget[:] = [sale for sale in forget if not sale_is_blocked(sale, tombstones)]
     return admitted
