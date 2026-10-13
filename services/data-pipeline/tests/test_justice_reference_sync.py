@@ -293,6 +293,65 @@ def test_cold_start_with_unreachable_source_fails_with_a_clear_message(
     assert "unreachable" in error
 
 
+def test_failed_refresh_is_recorded_and_not_retried_within_six_hours(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_copy(tmp_path, age=timedelta(days=30))
+    monkeypatch.setattr(sync, "_validate_reference_pair", lambda *_args: None)
+
+    with httpx.Client(transport=_unreachable_transport()) as client:
+        first = sync.sync_justice_references(tmp_path, client=client, max_age_days=7)
+    assert first["cache_fallback"] is True and "refresh_skipped" not in first
+    recorded = json.loads((tmp_path / sync.MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    assert recorded["refresh_attempted_at"] and "unreachable" in recorded["refresh_error"]
+    assert recorded["synced_at"] == first["synced_at"]
+
+    # The next units reuse the valid copy without any network access.
+    with _offline_client() as client:
+        second = sync.sync_justice_references(tmp_path, client=client, max_age_days=7)
+    assert second["refresh_throttled"] is True and second["cache_fallback"] is True
+
+
+def test_refresh_is_retried_once_the_throttle_has_elapsed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_copy(tmp_path, age=timedelta(days=30))
+    monkeypatch.setattr(sync, "_validate_reference_pair", lambda *_args: None)
+    manifest_path = tmp_path / sync.MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["refresh_attempted_at"] = (datetime.now(UTC) - timedelta(hours=7)).isoformat()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with httpx.Client(transport=_unreachable_transport()) as client:
+        retried = sync.sync_justice_references(tmp_path, client=client, max_age_days=7)
+
+    assert "refresh_throttled" not in retried
+    assert "unreachable" in retried["refresh_error"]
+
+
+def test_throttle_is_ignored_without_a_valid_copy_and_without_max_age(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_copy(tmp_path, age=timedelta(days=30))
+    manifest_path = tmp_path / sync.MANIFEST_FILENAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["refresh_attempted_at"] = datetime.now(UTC).isoformat()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def broken(*_args):
+        raise sync.JusticeOpenDataSchemaError("corrupted copy")
+
+    monkeypatch.setattr(sync, "_validate_reference_pair", broken)
+    with httpx.Client(transport=_unreachable_transport()) as client:
+        with pytest.raises(sync.JusticeReferenceSyncError, match="no valid local copy exists"):
+            sync.sync_justice_references(tmp_path, client=client, max_age_days=7)
+
+    monkeypatch.setattr(sync, "_validate_reference_pair", lambda *_args: None)
+    with httpx.Client(transport=_unreachable_transport()) as client:
+        without_limit = sync.sync_justice_references(tmp_path, client=client)
+    assert "refresh_throttled" not in without_limit
+
+
 def test_manifest_without_a_usable_date_forces_the_refresh(tmp_path: Path) -> None:
     _write_copy(tmp_path, age=timedelta(days=1))
     max_age = timedelta(days=7)

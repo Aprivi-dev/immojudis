@@ -210,6 +210,15 @@ jobs:
             immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}-
             immojudis-data-pipeline-${{ runner.os }}-
 
+      # Names and sizes of what was restored: the new entry is saved at the end
+      # only if the run changed them (see the save step at the end of the job).
+      - name: Fingerprint restored extraction cache
+        id: cache-before
+        run: >
+          echo "digest=$(python scripts/cache_fingerprint.py
+          data/documents data/raw/pdf_texts data/raw/docling_texts data/processed/llm_extractions)"
+          >> "$GITHUB_OUTPUT"
+
       # Parcels already resolved through API Carto (cessions de l'État): a separate
       # entry so the extraction cache above keeps its own path set.
       - name: Restore cadastral reference cache
@@ -332,11 +341,22 @@ jobs:
           python scripts/prune_cache_dirs.py --max-age-days 14 --max-total-mb 300
           data/documents data/raw/pdf_texts data/raw/docling_texts data/processed/llm_extractions
 
+      - name: Fingerprint extraction cache after the run
+        id: cache-after
+        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true && steps.extraction-cache.outputs.cache-hit != 'true'
+        run: >
+          echo "digest=$(python scripts/cache_fingerprint.py
+          data/documents data/raw/pdf_texts data/raw/docling_texts data/processed/llm_extractions)"
+          >> "$GITHUB_OUTPUT"
+
       - name: Save extraction checkpoints
         # A cache entry cannot be overwritten, so each run writes a new one named
-        # after the day and the run id. A re-run of the same run id finds its
-        # entry already there (exact hit) and skips the save.
-        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true && steps.extraction-cache.outputs.cache-hit != 'true'
+        # after the day and the run id (a re-run of the same run id finds its entry
+        # already there and skips the save). The entry is written only when the
+        # run changed the files (names or sizes) compared with what it restored,
+        # which keeps the repository cache (10 GB) from churning and evicting the
+        # Justice and cadastre reference caches.
+        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true && steps.extraction-cache.outputs.cache-hit != 'true' && steps.cache-after.outputs.digest != steps.cache-before.outputs.digest
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
