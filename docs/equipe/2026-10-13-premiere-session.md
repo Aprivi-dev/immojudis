@@ -437,8 +437,8 @@ PostgreSQL de la migration 18 h (à faire tourner en CI avec base).
 
 ### Points d'attention
 
-- Les scénarios d'enchères de la fiche (PR #226) sont masqués avec l'onglet « Statistiques » tant
-  que le drapeau des statistiques est fermé (données Licitor, licence non réglée).
+- Les scénarios d'enchères de la fiche (PR #226) suivent l'onglet « Statistiques » et le drapeau
+  `ADJUDICATION_PRICE_STATISTICS_ENABLED` (réaffichés le 13/10, voir la dernière section).
 - Le texte des CGV a changé (retrait des statistiques) sans changement de version
   (`2026-10-03.1`) : aucune vente n'a encore eu lieu.
 - Une date de vente invraisemblable est désormais vidée (« date à confirmer ») : 11 ventes
@@ -452,23 +452,23 @@ PostgreSQL de la migration 18 h (à faire tourner en CI avec base).
 
 Le propriétaire suit toutes les recommandations du chef d'orchestre.
 
-| N°  | Décision                                                                       | Réponse | Suite                                         |
-| --- | ------------------------------------------------------------------------------ | ------- | --------------------------------------------- |
-| 1   | Corriger l'écrasement d'un nouvel abonnement par un événement Stripe tardif    | Oui     | Chantier K                                    |
-| 2   | Publier la branche et ouvrir une pull request en brouillon                     | Oui     | PR #238                                       |
-| 3   | Corriger les CGV (résiliation, garantie légale, délai de grâce, version)       | Oui     | Chantier L                                    |
-| 4   | Mettre à jour la politique de confidentialité                                  | Oui     | Chantier L                                    |
-| 5   | Annuaire : retirer « Spécialistes », signaler les profils payants              | Oui     | Chantier L                                    |
-| 6   | Fermer plus tard l'accès aux colonnes internes (`raw_payload`, `observations`) | Oui     | Chantier séparé, à planifier                  |
-| 7   | `DEDUPE_RECONCILE_ENABLED=false` au premier déploiement                        | Oui     | Livré : coupé par défaut dans le workflow     |
-| 8   | Dates invraisemblables en « date à confirmer »                                 | Oui     | Livré                                         |
-| 9   | Scénarios d'enchères masqués tant que la licence Licitor n'est pas réglée      | Oui     | Livré                                         |
-| 10  | Retirer Licitor du catalogue sans licence écrite                               | Oui     | Chantier M                                    |
-| 11  | Une fiche par lot pour les annonces Licitor multi-lots                         | Oui     | Reporté au retour de Licitor (source retirée) |
-| 12  | Départements à 5,81 % dans le simulateur après confirmation officielle         | Oui     | En attente de la source officielle            |
-| 13  | Retirer l'invitation au compte pro des emails aux professionnels               | Oui     | Chantier L                                    |
-| 14  | Ajouts Outcome Graph postérieurs au gel du 10/10 voulus ?                      | Oui     | Confirmé, rien à désactiver                   |
-| 15  | Index pour la recherche par numéro d'annonce                                   | Non     | —                                             |
+| N°  | Décision                                                                       | Réponse | Suite                                     |
+| --- | ------------------------------------------------------------------------------ | ------- | ----------------------------------------- |
+| 1   | Corriger l'écrasement d'un nouvel abonnement par un événement Stripe tardif    | Oui     | Chantier K                                |
+| 2   | Publier la branche et ouvrir une pull request en brouillon                     | Oui     | PR #238                                   |
+| 3   | Corriger les CGV (résiliation, garantie légale, délai de grâce, version)       | Oui     | Chantier L                                |
+| 4   | Mettre à jour la politique de confidentialité                                  | Oui     | Chantier L                                |
+| 5   | Annuaire : retirer « Spécialistes », signaler les profils payants              | Oui     | Chantier L                                |
+| 6   | Fermer plus tard l'accès aux colonnes internes (`raw_payload`, `observations`) | Oui     | Chantier séparé, à planifier              |
+| 7   | `DEDUPE_RECONCILE_ENABLED=false` au premier déploiement                        | Oui     | Livré : coupé par défaut dans le workflow |
+| 8   | Dates invraisemblables en « date à confirmer »                                 | Oui     | Livré                                     |
+| 9   | Scénarios d'enchères masqués tant que la licence Licitor n'est pas réglée      | Annulée | Réaffichés le 13/10 (accord Licitor)      |
+| 10  | Retirer Licitor du catalogue sans licence écrite                               | Annulée | Licitor conservé, interrupteur en réserve |
+| 11  | Une fiche par lot pour les annonces Licitor multi-lots                         | Oui     | À planifier (Licitor conservé)            |
+| 12  | Départements à 5,81 % dans le simulateur après confirmation officielle         | Oui     | En attente de la source officielle        |
+| 13  | Retirer l'invitation au compte pro des emails aux professionnels               | Oui     | Chantier L                                |
+| 14  | Ajouts Outcome Graph postérieurs au gel du 10/10 voulus ?                      | Oui     | Confirmé, rien à désactiver               |
+| 15  | Index pour la recherche par numéro d'annonce                                   | Non     | —                                         |
 
 ## Exécution après les décisions (13/10/2026, suite)
 
@@ -494,10 +494,9 @@ Vérifications sur la branche finale : `tsc`, lint, 3 301 tests Vitest, invarian
 
 1. **Stripe** : portail client, résiliation activée et « en fin de période » (sinon les CGV §2 et §5 sont
    inexactes) ; relances d'impayé et sort de l'abonnement après suspension à fixer puis à écrire au §4.
-2. **Migrations supplémentaires** : `20261021100000` (Stripe) et `20261021110000` (retrait de Licitor : l'appliquer
-   retire Licitor ; à rejouer d'abord sur une copie, verrou court sur `auction_sales`).
-3. **Avant de rouvrir Licitor** : licence écrite, puis `select public.set_catalogue_source_withdrawal('licitor', false);`.
-   Garder fermés les drapeaux de statistiques des tribunaux tant que Licitor est retiré.
+2. **Migrations supplémentaires** : `20261021100000` (Stripe) et `20261021110000` (interrupteur de retrait d'une
+   source, sans effet à l'application : aucune source retirée).
+3. **Licitor** : conservé (voir « Revirement du 13/10 » ci-dessous).
 4. **À faire valider par un avocat** : qualification du contrat, modèle de mise en avant payante des avocats
    (RIN 19.4.2, 11.3, 10 ; C. conso. L. 111-7, L. 121-4), exemption de consentement de la mesure d'audience,
    durées de conservation (contact, mises en relation, adresses opposées), textes issus de Licitor dans les ventes
@@ -505,3 +504,18 @@ Vérifications sur la branche finale : `tsc`, lint, 3 301 tests Vitest, invarian
 5. **Point 14** (ajouts Outcome Graph après le gel) : confirmé voulu par le propriétaire le 13/10, rien à désactiver.
 6. Le repli de géocodage appelle encore `api-adresse.data.gouv.fr`, peut-être arrêté au profit de
    `data.geopf.fr/geocodage` : à vérifier.
+
+## Revirement du 13/10 : Licitor conservé, statistiques réaffichées
+
+Décisions 9 et 10 annulées par le propriétaire : les personnes de Licitor qu'il a contactées n'ont pas
+d'objection à la reprise, sans accord écrit. Recommandation maintenue : leur demander de le confirmer
+par un court email.
+
+- **Licitor** (commit 60266e1) : la migration `20261021110000` crée l'interrupteur sans retirer
+  Licitor. Le site et le pipeline retombent sur « aucune source retirée » quand l'interrupteur est
+  illisible. Collecte, annonces, photos, liens et pièces Licitor restent comme avant.
+- **Statistiques des tribunaux et scénarios d'enchères** : données publiées en production (revue du
+  03/10, ligne nationale et 56 tribunaux ; scénarios pour 145 tribunaux, dont 27 avec un historique
+  Licitor d'au moins 10 ventes). `ADJUDICATION_PRICE_STATISTICS_ENABLED` est déjà réactivé sur Vercel
+  (note du 12/10). Les mentions retirées par le chantier A (offres, comparatif, CGV) et l'onglet de
+  l'annonce d'exemple sont remis.
