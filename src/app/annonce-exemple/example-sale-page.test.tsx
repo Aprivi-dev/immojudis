@@ -3,6 +3,8 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const mocks = vi.hoisted(() => ({ track: vi.fn() }));
+vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   AnalysisSaleDetailView: ({
     sale,
@@ -31,7 +33,16 @@ import { getExampleSaleRecords } from "@/lib/example-sale";
 import { ExampleSalePage } from "./example-sale-page";
 
 describe("ExampleSalePage", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("mesure la consultation de l'annonce exemple, sans identifiant de vente", () => {
+    render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
+    expect(mocks.track).toHaveBeenCalledTimes(1);
+    expect(mocks.track).toHaveBeenCalledWith("sample_report_viewed");
+  });
 
   it.each([
     ["bordeaux", "Bordeaux"],

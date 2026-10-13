@@ -22,7 +22,7 @@ import Minus from "lucide-react/dist/esm/icons/minus.js";
 import Navigation from "lucide-react/dist/esm/icons/navigation.js";
 import Plus from "lucide-react/dist/esm/icons/plus.js";
 import { dpeColor, extractDpe } from "@/lib/dpe";
-import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatPricePerM2, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
 import type { GeographicBoundary } from "@/lib/geographic-boundary";
 import {
@@ -811,7 +811,7 @@ export function MapPanel({
 
       <div className="absolute bottom-10 left-4 z-30 max-w-[calc(100%-2rem)] rounded-md bg-white/95 px-3 py-2 text-xs text-ink-soft">
         {mappablePointsTotal != null && mappablePointsTotal > geocodedSales.length
-          ? `${geocodedSales.length.toLocaleString("fr-FR")} biens affichés sur ${mappablePointsTotal.toLocaleString("fr-FR")}, zoomez pour affiner`
+          ? `${geocodedSales.length.toLocaleString("fr-FR")} biens affichés sur ${mappablePointsTotal.toLocaleString("fr-FR")} : précisez vos filtres ou activez « Chercher en déplaçant la carte »`
           : `${geocodedSales.length.toLocaleString("fr-FR")} annonces situées${
               totalCount != null && totalCount > geocodedSales.length
                 ? ` sur ${totalCount.toLocaleString("fr-FR")} résultats${preview ? " · positions approximatives de cette page" : ""}`
@@ -1120,7 +1120,7 @@ function buildPopupHtml(
       }
       <div class="immo-mapbox-popup-body">
         <strong class="immo-mapbox-popup-price">${escapeHtml(
-          formatPrice(sale.starting_price_eur),
+          formatStartingPrice(sale.starting_price_eur),
         )}</strong>
         <a class="immo-mapbox-popup-title" href="${escapeAttribute(detailUrl)}">${escapeHtml(
           saleTitle,

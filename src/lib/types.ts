@@ -165,6 +165,7 @@ export const SORT_KEYS = [
   "price_desc",
   "score_desc",
   "surface_desc",
+  "beds_desc",
 ] as const;
 
 export type SortKey = (typeof SORT_KEYS)[number];

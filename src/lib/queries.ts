@@ -110,6 +110,7 @@ const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst
   price_desc: { column: "starting_price_eur", ascending: false },
   score_desc: { column: "investment_score", ascending: false },
   surface_desc: { column: "app_surface_m2", ascending: false },
+  beds_desc: { column: "bedrooms_count", ascending: false },
 };
 
 type FilterableQuery = {
