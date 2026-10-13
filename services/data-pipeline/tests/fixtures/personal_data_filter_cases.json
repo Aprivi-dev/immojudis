@@ -4,7 +4,7 @@
     {
       "name": "occupant avec bail",
       "input": "Les locaux sont occupés par Monsieur Pierre DUPONT suivant bail du 1er mars 2019.",
-      "expected": "Les locaux sont occupés par un locataire suivant bail du 1er mars 2019.",
+      "expected": "Les locaux sont occupés par un occupant suivant bail du 1er mars 2019.",
       "absent": [
         "DUPONT",
         "Pierre"
@@ -32,7 +32,7 @@
     {
       "name": "occupant avec abréviation M.",
       "input": "Maison occupée par M. Karim BENALI, locataire en vertu d'un bail verbal.",
-      "expected": "Maison occupée par un locataire, locataire en vertu d'un bail verbal.",
+      "expected": "Maison occupée par un occupant, locataire en vertu d'un bail verbal.",
       "absent": [
         "BENALI",
         "Karim"
@@ -70,7 +70,7 @@
     {
       "name": "occupant en capitales",
       "input": "LOT OCCUPÉ PAR MONSIEUR DUPONT PIERRE SUIVANT BAIL DU 01/03/2019",
-      "expected": "LOT OCCUPÉ PAR un locataire SUIVANT BAIL DU 01/03/2019",
+      "expected": "LOT OCCUPÉ PAR un occupant SUIVANT BAIL DU 01/03/2019",
       "absent": [
         "DUPONT",
         "PIERRE"
@@ -357,7 +357,7 @@
     {
       "name": "deux phrases dans le même texte",
       "input": "Occupé par Monsieur Pierre DUPONT suivant bail. À la requête de Monsieur Henri FAURE, demeurant 14 rue des Lilas 69003 Lyon.",
-      "expected": "Occupé par un locataire suivant bail. À la requête du créancier poursuivant.",
+      "expected": "Occupé par un occupant suivant bail. À la requête du créancier poursuivant.",
       "absent": [
         "DUPONT",
         "FAURE",
@@ -413,7 +413,7 @@
     {
       "name": "nom composé avec Le",
       "input": "occupé par Madame Marie Le GALL suivant bail",
-      "expected": "occupé par un locataire suivant bail",
+      "expected": "occupé par un occupant suivant bail",
       "absent": [
         "GALL",
         "Marie"
@@ -479,6 +479,134 @@
       "absent": [
         "ROUX",
         "Jean-Pierre"
+      ]
+    },
+    {
+      "name": "occupant sans droit ni titre, bail résilié",
+      "input": "Local occupé par Monsieur Jean DUPONT sans droit ni titre, le bail ayant été résilié.",
+      "expected": "Local occupé par un occupant sans droit ni titre, le bail ayant été résilié.",
+      "absent": [
+        "DUPONT",
+        "Jean"
+      ]
+    },
+    {
+      "name": "occupante ancienne locataire, bail expiré",
+      "input": "Appartement occupé par Madame Sophie LEROY, ancien locataire dont le bail a expiré.",
+      "expected": "Appartement occupé par un occupant, ancien locataire dont le bail a expiré.",
+      "absent": [
+        "LEROY",
+        "Sophie"
+      ]
+    },
+    {
+      "name": "occupant ayant reçu un congé délivré au locataire",
+      "input": "Appartement occupé par M. Karim BENALI qui a reçu un congé délivré au locataire.",
+      "expected": "Appartement occupé par un occupant qui a reçu un congé délivré au locataire.",
+      "absent": [
+        "BENALI",
+        "Karim"
+      ]
+    },
+    {
+      "name": "occupant avec loyer impayé",
+      "input": "Maison occupée par Monsieur Paul ROUX, loyer impayé depuis 2022.",
+      "expected": "Maison occupée par un occupant, loyer impayé depuis 2022.",
+      "absent": [
+        "ROUX",
+        "Paul"
+      ]
+    },
+    {
+      "name": "occupante propriétaire sans bail",
+      "input": "Le logement est occupé par Mademoiselle Lina PERRIN, propriétaire depuis 2010, sans bail.",
+      "expected": "Le logement est occupé par un occupant, propriétaire depuis 2010, sans bail.",
+      "absent": [
+        "PERRIN",
+        "Lina"
+      ]
+    },
+    {
+      "name": "couple d'anciens locataires, bail résilié",
+      "input": "Lot occupé par Monsieur et Madame Luc MOREAU, anciens locataires, bail résilié par jugement.",
+      "expected": "Lot occupé par un occupant, anciens locataires, bail résilié par jugement.",
+      "absent": [
+        "MOREAU",
+        "Luc"
+      ]
+    },
+    {
+      "name": "occupant en capitales, bail résilié",
+      "input": "LOCAL OCCUPÉ PAR MONSIEUR PAUL DURAND, DONT LE BAIL A ÉTÉ RÉSILIÉ.",
+      "expected": "LOCAL OCCUPÉ PAR un occupant, DONT LE BAIL A ÉTÉ RÉSILIÉ.",
+      "absent": [
+        "DURAND",
+        "PAUL"
+      ]
+    },
+    {
+      "name": "occupante puis locataire précédent dans la phrase suivante",
+      "input": "Studio occupé par Madame Eva ROY. Le locataire précédent a quitté les lieux, le bail est expiré.",
+      "expected": "Studio occupé par un occupant. Le locataire précédent a quitté les lieux, le bail est expiré.",
+      "absent": [
+        "ROY",
+        "Eva"
+      ]
+    },
+    {
+      "name": "loué à prénom et nom en casse mixte",
+      "input": "Appartement loué à Pierre Martin depuis 2018.",
+      "expected": "Appartement loué à un locataire depuis 2018.",
+      "absent": [
+        "Martin",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "bail consenti à prénom et nom en casse mixte",
+      "input": "Bail consenti à Pierre Durand le 1er mars 2019.",
+      "expected": "Bail consenti à un locataire le 1er mars 2019.",
+      "absent": [
+        "Durand",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "loué à deux personnes en casse mixte",
+      "input": "Lot 3 loué à Jean-Pierre Martin et Paul Durand.",
+      "expected": "Lot 3 loué à un locataire.",
+      "absent": [
+        "Martin",
+        "Durand",
+        "Jean-Pierre",
+        "Paul"
+      ]
+    },
+    {
+      "name": "louée à nom à particule en casse mixte",
+      "input": "Maison louée à Pierre de La Fontaine, loyer 600 euros.",
+      "expected": "Maison louée à un locataire, loyer 600 euros.",
+      "absent": [
+        "Fontaine",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "bail commercial consenti à nom en Le",
+      "input": "Bail commercial consenti à Marie Le Gall pour neuf ans.",
+      "expected": "Bail commercial consenti à un locataire pour neuf ans.",
+      "absent": [
+        "Gall",
+        "Marie"
+      ]
+    },
+    {
+      "name": "loué à prénom et nom en capitales",
+      "input": "Appartement loué à Pierre MARTIN.",
+      "expected": "Appartement loué à un locataire.",
+      "absent": [
+        "MARTIN",
+        "Pierre"
       ]
     }
   ],
@@ -718,6 +846,38 @@
     {
       "name": "escalier et bâtiment",
       "input": "Résidence \"Les Sources\" - Bâtiment M. Escalier B. Occupé par Mme X."
+    },
+    {
+      "name": "loué à une SCI",
+      "input": "Local loué à la SCI Martin."
+    },
+    {
+      "name": "loué à une commune",
+      "input": "Immeuble loué à la commune de Saint-Pierre."
+    },
+    {
+      "name": "loué à une ville seule",
+      "input": "Appartement loué à Paris."
+    },
+    {
+      "name": "loué à un bailleur social",
+      "input": "Local loué à Paris Habitat."
+    },
+    {
+      "name": "bail consenti à une métropole",
+      "input": "Bail consenti à Bordeaux Métropole."
+    },
+    {
+      "name": "bail consenti à une société",
+      "input": "Bail consenti à la société Durand Immobilier."
+    },
+    {
+      "name": "loué à un nom de lieu en Saint",
+      "input": "Local loué à Saint-Pierre Immobilier."
+    },
+    {
+      "name": "prénom et nom en casse mixte hors formule de bail",
+      "input": "Local loué, visite organisée par Pierre Martin le 3 mars."
     }
   ]
 }
