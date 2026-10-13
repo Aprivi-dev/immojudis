@@ -417,6 +417,11 @@ PostgreSQL de la migration 18 h (à faire tourner en CI avec base).
 2. **Variables Vercel** : `SITE_URL` (obligatoire, sinon le build de production échoue),
    `NEXT_PUBLIC_LEGAL_*`, `ADMIN_MFA_REQUIRED=true`. À défaut, `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true`
    laisse passer les mentions légales et la double authentification, jamais l'origine canonique.
+   **Fait le 13/10** : société pas encore créée, donc pas de mentions légales, pas de Stripe et pas de
+   double authentification. `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true` est posée en production sur Vercel,
+   à la demande du propriétaire ; `SITE_URL` existait déjà. À retirer dès que les
+   `NEXT_PUBLIC_LEGAL_*` et `ADMIN_MFA_REQUIRED=true` sont renseignés. Le site ne doit rien vendre
+   d'ici là.
 3. **Migrations** (`Apply Supabase Migrations`) : `20261020100000` (demandes d'ouverture),
    `20261020110045` (`/tribunaux`), `20261020120019` (seuil 18 h), `20261020120021` (tentatives de
    lecture, **avant** le déploiement du code Python), puis régénérer les types (`db:types`).
