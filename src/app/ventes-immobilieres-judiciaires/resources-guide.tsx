@@ -21,7 +21,7 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Un avocat est-il toujours obligatoire ?",
-    a: "Cela dépend du type de vente. En saisie immobilière au tribunal, oui : les enchères sont portées par un avocat inscrit au barreau du tribunal où se tient la vente, et il ne peut porter qu’un seul mandat (art. R. 322-40). Pour une vente par licitation (partage judiciaire), les règles de la saisie sont largement reprises, mais lorsque les enchères sont reçues par un notaire, elles peuvent être faites sans avocat (art. 1278 du Code de procédure civile). Pour une vente notariale volontaire ou une vente domaniale, les pages officielles consultées ne mentionnent pas d’obligation d’avocat : le cahier des conditions de vente ou des charges fait foi, demandez-le à l’organisateur.",
+    a: "Cela dépend du type de vente. En saisie immobilière au tribunal, oui : les enchères sont portées par un avocat inscrit au barreau du tribunal où se tient la vente, et il ne peut porter qu’un seul mandat (art. R. 322-40). Pour une vente par licitation (partage judiciaire), les règles de la saisie sont largement reprises, mais lorsque les enchères sont reçues par un notaire, elles peuvent être faites sans avocat (art. 1377 et 1278 du Code de procédure civile). Pour une vente notariale volontaire ou une vente domaniale, les pages officielles consultées ne mentionnent pas d’obligation d’avocat : le cahier des conditions de vente ou des charges fait foi, demandez-le à l’organisateur.",
   },
   {
     q: "Peut-on obtenir un prêt bancaire ?",
@@ -41,19 +41,19 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Peut-on se rétracter après avoir gagné l'enchère ?",
-    a: "Non. Une enchère portée engage l’acheteur, et les textes cités dans ce guide ne prévoient pas de faculté de rétractation pour l’adjudicataire. En cas de défaut de paiement, le bien est remis en vente (réitération des enchères) et l’adjudicataire défaillant peut devoir la différence de prix (art. L. 322-12).",
+    a: "Non : les textes ne prévoient pas de faculté de rétractation. L’adjudication peut toutefois être remise en cause par une surenchère ou annulée dans les cas prévus par la loi. En cas de défaut de paiement, le bien est remis en vente (réitération des enchères) et l’adjudicataire défaillant peut devoir la différence de prix (art. L. 322-12).",
   },
   {
     q: "Que se passe-t-il en cas de surenchère ?",
-    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. Cette surenchère de dix jours concerne la saisie immobilière au tribunal (et, par renvoi, la licitation judiciaire). Pour une vente notariale ou domaniale, vérifiez les conditions de la vente : un mécanisme comparable peut être prévu, mais ce n’est pas la règle du Code des procédures civiles d’exécution qui s’applique.",
+    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE) et en licitation judiciaire (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art. 1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10 % dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
   },
   {
     q: "Quels frais s’ajoutent au prix d’adjudication ?",
-    a: "Les frais de poursuite taxés par le juge, les droits de mutation, les émoluments des avocats et les honoraires de votre avocat s’ajoutent au prix (art. R. 322-58). À titre d’ordre de grandeur, les hypothèses par défaut du simulateur Immojudis donnent environ 12 % du prix pour un bien à 150 000 € ; ces valeurs sont à vérifier sur le cahier des conditions de vente et auprès de l’avocat. Voir l’article « Frais d’une vente aux enchères judiciaire ».",
+    a: "Les frais de poursuite taxés et les droits de mutation sont payés en sus du prix (art. R. 322-58) ; s’y ajoutent les émoluments d’avocat (art. A. 444-191 du Code de commerce) et les honoraires convenus avec votre avocat. À titre d’ordre de grandeur, les hypothèses par défaut du simulateur Immojudis donnent environ 12 % du prix pour un bien à 150 000 € ; ces valeurs sont à vérifier sur le cahier des conditions de vente et auprès de l’avocat. Voir l’article « Frais d’une vente aux enchères judiciaire ».",
   },
   {
     q: "Immojudis remplace-t-il un avocat ?",
-    a: "Non. Immojudis est un outil de référencement, de lecture et d’aide à la décision. Il ne fournit ni conseil juridique, ni promesse de gain, et ne remplace pas l’accompagnement d’un avocat, seul habilité à porter les enchères et à vous conseiller juridiquement dans la procédure.",
+    a: "Non. Immojudis est un outil de référencement, de lecture et d’aide à la décision. Il ne fournit ni conseil juridique, ni promesse de gain, et ne remplace pas votre avocat, seul habilité à porter les enchères et qui peut vous conseiller sur la procédure.",
   },
 ];
 
@@ -481,8 +481,8 @@ export function ResourcesPage() {
 
             <SubTitle>1. Avant la vente : analyser le dossier</SubTitle>
             <P>
-              La phase préparatoire est la plus importante. C'est avant l'audience que se gagne ou
-              se perd une bonne opération.
+              La phase préparatoire est la plus importante. C'est avant l'audience que se prépare la
+              décision d'enchérir.
             </P>
 
             <SubTitle>Lire l'annonce de vente</SubTitle>
@@ -703,9 +703,13 @@ export function ResourcesPage() {
               Après l’adjudication, une surenchère peut être formée dans le délai légal de dix
               jours. Elle doit respecter les conditions prévues par les textes, notamment être
               déposée par acte d’avocat au greffe du juge de l’exécution et porter sur au moins un
-              dixième du prix principal (art. R. 322-50 et R. 322-51). Cette règle des dix jours
-              vaut pour la saisie immobilière au tribunal ; les ventes notariales et domaniales ont
-              leurs propres conditions.
+              dixième du prix principal (art. R. 322-50 et R. 322-51). La surenchère du dixième dans
+              les dix jours est une règle légale en saisie immobilière et en licitation judiciaire
+              (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art.
+              1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le
+              cahier des charges peut la prévoir (Notaires de France décrit 10 % dans les 10 jours
+              pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des
+              charges. Lisez-le avant d’enchérir.
             </P>
             <P>
               Vous pouvez consulter le texte officiel sur Légifrance :{" "}
@@ -846,8 +850,8 @@ export function ResourcesPage() {
               dépasser son enchère plafond. C'est précisément ce qu'il faut éviter.
             </P>
             <Callout>
-              Immojudis a été pensé pour limiter ces risques en donnant une lecture structurée du
-              dossier avant l'enchère.
+              Immojudis a été pensé pour aider à repérer ces risques en donnant une lecture
+              structurée du dossier avant l'enchère ; il ne les supprime pas.
             </Callout>
           </Section>
 

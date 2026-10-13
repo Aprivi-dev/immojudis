@@ -128,6 +128,9 @@ export function buildTrialEndingMessage({
   const firstPayment = `Sans action de votre part, l’abonnement se poursuit et le premier paiement est prélevé le ${endDate} : ${priceLabel}. Il est ensuite renouvelé chaque mois à la même date.`;
   const cancel =
     "Pour résilier avant cette date ou consulter votre abonnement, rendez-vous sur la page « Mon compte », bouton « Gérer mon abonnement » :";
+  const rightsUrl = `${appUrl}/mes-droits`;
+  const withdrawal =
+    "Vous disposez en principe d’un droit de rétractation de 14 jours à compter de votre souscription (voir « Mes droits »).";
   const lines = [
     "Bonjour,",
     "",
@@ -136,6 +139,8 @@ export function buildTrialEndingMessage({
     "",
     cancel,
     accountUrl,
+    "",
+    `${withdrawal} ${rightsUrl}`,
     "",
     "Cordialement,",
     "L’équipe Immojudis",
@@ -146,7 +151,7 @@ export function buildTrialEndingMessage({
     // The date, not a fixed « dans 3 jours » : the event may arrive earlier or later.
     subject: `Votre essai Immojudis Analyse se termine le ${endDate}`,
     text: lines.join("\n"),
-    html: `<p>Bonjour,</p><p>Votre essai gratuit d'Immojudis Analyse se termine le ${escapeHtml(endDate)}. ${escapeHtml(firstPayment)}</p><p>${escapeHtml(cancel)} <a href="${escapeHtml(accountUrl)}">Résilier ou consulter mon abonnement</a></p><p>Cordialement,<br />L’équipe Immojudis</p>`,
+    html: `<p>Bonjour,</p><p>Votre essai gratuit d'Immojudis Analyse se termine le ${escapeHtml(endDate)}. ${escapeHtml(firstPayment)}</p><p>${escapeHtml(cancel)} <a href="${escapeHtml(accountUrl)}">Résilier ou consulter mon abonnement</a></p><p>${escapeHtml(withdrawal)} <a href="${escapeHtml(rightsUrl)}">Mes droits</a></p><p>Cordialement,<br />L’équipe Immojudis</p>`,
   };
 }
 

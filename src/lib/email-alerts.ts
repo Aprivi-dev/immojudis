@@ -297,7 +297,7 @@ function digestItemFromNotification(notification: NotificationRow): DigestItem {
     discountLine:
       marketDiscountPct == null
         ? null
-        : `Décote estimée : ${Math.round(marketDiscountPct)} % par rapport aux comparables disponibles.`,
+        : `Mise à prix inférieure d’environ ${Math.round(marketDiscountPct)} % à la référence DVF (indicatif : hors frais, travaux et occupation).`,
     hearingDate: formatHearingDate(stringValue(sale.saleDate)),
     startingPrice: formatStartingPrice(numberValue(sale.startingPriceEur)),
   };

@@ -20,7 +20,7 @@
       "id": "chronologie",
       "title": "La chronologie à retenir",
       "paragraphs": [
-        "Les délais ci-dessous comptent à partir de l’audience. Ils sont fixés par le Code des procédures civiles d’exécution (CPCE). Ils sont courts et ne se négocient pas : notez-les dès le jour de l’adjudication."
+        "Les délais ci-dessous comptent à partir de l’audience, sauf le délai de paiement, qui court de l’adjudication définitive (art. R. 322-56). Ils sont fixés par le Code des procédures civiles d’exécution (CPCE). Ils sont courts et ne se négocient pas : notez-les dès le jour de l’adjudication."
       ],
       "table": {
         "headers": ["Quand", "Ce qui se passe", "Texte"],
@@ -63,7 +63,7 @@
       ],
       "bullets": [
         "Pour l’adjudicataire initial, la surenchère signifie que l’achat n’est pas encore sûr : ne planifiez ni travaux ni location avant la fin des dix jours.",
-        "Cette règle des dix jours vaut pour la saisie immobilière au tribunal et, par renvoi du Code de procédure civile, pour la vente par licitation judiciaire (art. 1279). Elle n’est pas automatique dans les autres ventes : pour les ventes notariales « à la bougie », Notaires de France décrit une surenchère de 10 % possible dans les dix jours ; pour une vente domaniale, tout dépend du cahier des charges. Vérifiez toujours le type de vente."
+        "La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE) et en licitation judiciaire (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art. 1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10 % dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir."
       ]
     },
     {
@@ -89,7 +89,7 @@
       "bullets": [
         "Le jugement d’adjudication est notifié aux parties. Seul le jugement qui tranche une contestation peut faire l’objet d’un appel, dans les quinze jours de la notification (art. R. 322-60).",
         "Le jugement d’adjudication vaut titre d’expulsion contre le débiteur saisi (art. L. 322-13).",
-        "L’adjudicataire peut aussi mettre ce titre à exécution contre « tout occupant de son chef n’ayant aucun droit qui lui soit opposable », à partir du versement du prix ou de sa consignation et du paiement des frais taxés, sauf si le cahier prévoit le maintien dans les lieux du saisi (art. R. 322-64). Un locataire dont le bail s’impose à l’acheteur n’est pas visé : voir l’article « Acheter un bien occupé aux enchères »."
+        "L’adjudicataire peut aussi mettre ce titre à exécution contre « tout occupant de son chef n’ayant aucun droit qui lui soit opposable », à partir du versement du prix ou de sa consignation et du paiement des frais taxés, sauf si le cahier prévoit le maintien dans les lieux du saisi (art. R. 322-64). Un locataire dont le bail s’impose à l’acheteur n’est pas visé : voir l’article « Acheter un bien occupé aux enchères ». L’exécution du titre suppose un commandement de quitter les lieux ; un délai de deux mois et la trêve hivernale peuvent différer l’expulsion (art. L. 411-1, L. 412-1 et L. 412-6 du CPCE)."
       ]
     },
     {
@@ -164,6 +164,14 @@
     {
       "label": "Service-Public — Saisie immobilière",
       "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, articles L. 411-1, L. 412-1 et L. 412-6 (expulsion)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000028808273"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1280 (surenchère devant notaire en licitation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039624733"
     }
   ]
 }

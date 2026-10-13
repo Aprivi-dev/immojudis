@@ -18,7 +18,7 @@ export default function Page() {
     <PageShell
       eyebrow="Simulateur de frais"
       title="Combien coûte vraiment un bien adjugé ?"
-      description="Le prix d’adjudication n’est qu’une partie de la dépense. S’y ajoutent les émoluments de l’avocat poursuivant, les droits de mutation, les frais préalables de la procédure, les honoraires de votre avocat et, le cas échéant, les travaux. Saisissez vos hypothèses : le total se met à jour en direct."
+      description="Le prix d’adjudication n’est qu’une partie de la dépense. S’y ajoutent les émoluments proportionnels de vente (répartis entre l’avocat poursuivant et l’avocat de l’adjudicataire), les droits de mutation, les frais préalables de la procédure, les honoraires de votre avocat et, le cas échéant, les travaux. Saisissez vos hypothèses : le total se met à jour en direct."
     >
       <Card as="section" aria-label="Précisions sur l’estimation" className="mb-6 bg-surface-muted">
         <p className="font-semibold">

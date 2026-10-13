@@ -11,7 +11,7 @@
   "takeaways": [
     "Les frais s’ajoutent au prix : frais de poursuite taxés, émoluments des avocats, droits de mutation, honoraires de votre avocat et débours.",
     "Les frais de poursuite sont fixés par le juge et annoncés avant les enchères ; il ne peut rien être exigé au-delà.",
-    "Les droits de mutation sont le poste le plus lourd : de l’ordre de 5,8 à 6,3 % selon le département pour un bien ancien (valeurs à vérifier).",
+    "Les droits de mutation sont le poste le plus lourd : environ 6,3 % du prix dans la plupart des départements pour un bien ancien, un peu moins dans quelques-uns (valeurs à vérifier).",
     "Dans les hypothèses par défaut du simulateur Immojudis, les frais pèsent environ 12 % du prix pour un bien à 150 000 € et davantage, en proportion, sur un petit prix.",
     "Ces ordres de grandeur ne remplacent pas le décompte de l’avocat."
   ],
@@ -42,7 +42,7 @@
           ],
           [
             "Contribution de sécurité immobilière",
-            "Taxe liée à la publication de l’acte au fichier immobilier : 0,10 % du prix selon Notaires de France.",
+            "Taxe liée à la publication de l’acte au fichier immobilier : 0,10 % de la base taxable (le prix augmenté des frais préalables dans le simulateur Immojudis ; Notaires de France indique 0,10 % du prix).",
             "Avocat, Notaires de France"
           ],
           [
@@ -63,7 +63,7 @@
       "title": "Les émoluments : un barème par tranches",
       "paragraphs": [
         "En saisie immobilière, l’émolument proportionnel au prix d’adjudication est celui que le Code de commerce fixe pour les ventes judiciaires, avec un barème dégressif : chaque tranche du prix est multipliée par un taux, et le taux baisse quand le prix monte (art. A. 444-191, qui renvoie à l’art. A. 444-102). L’émolument est réparti entre l’avocat poursuivant (les trois quarts) et l’avocat de l’adjudicataire (le quart restant). En cas de surenchère ou de réitération des enchères, la répartition change (art. A. 444-191, II et III).",
-        "Les taux ci-dessous sont ceux relevés le 09/10/2026 par Immojudis, hors taxe. Ils sont à vérifier sur Légifrance avant toute décision."
+        "Les taux ci-dessous sont ceux relevés le 09/10/2026 par Immojudis, hors taxe, applicables aux procédures ouvertes depuis le 1er janvier 2021 ; à confirmer sur Légifrance et avec l’avocat avant toute décision."
       ],
       "table": {
         "headers": ["Tranche du prix", "Taux hors taxe (relevé au 09/10/2026, à vérifier)"],
@@ -83,7 +83,7 @@
       "id": "droits-de-mutation",
       "title": "Les droits de mutation : le poste le plus lourd",
       "paragraphs": [
-        "Pour un bien ancien, les droits de mutation additionnent une part départementale, une part communale de 1,20 % et des frais d’assiette. Notaires de France indique, sur une page mise à jour le 05/12/2025, un taux global de 6,31 % du prix, la part départementale étant passée de 4,5 % à 5 % en 2025 dans la plupart des départements. Immojudis retient 6,32 % par défaut, ainsi que 5,81 % pour une dizaine de départements et 5,09 % dans l’Indre, selon un relevé du 01/06/2026. Ces taux dépendent du département et de la nature du bien (ancien, neuf ou soumis à TVA) : ils sont à vérifier.",
+        "Pour un bien ancien, les droits de mutation additionnent une part départementale, une part communale de 1,20 % et des frais d’assiette. Notaires de France indique, sur une page mise à jour le 05/12/2025, un taux global de 6,31 % du prix, la part départementale étant passée de 4,5 % à 5 % en 2025 dans la plupart des départements. Le calcul est : 5 % de part départementale + 1,20 % de part communale + 2,37 % de la part départementale, soit 6,3185 %, arrondi à 6,32 %. Le simulateur Immojudis applique 6,32 % partout, sauf dans l’Indre (5,09 %). Une dizaine de départements étaient restés à 5,81 % au 01/06/2026 (non intégrés au simulateur) : leurs droits sont inférieurs d’environ 800 € pour 150 000 €. Ces taux dépendent du département et de la nature du bien (ancien, neuf ou soumis à TVA) : ils sont à vérifier.",
         "L’assiette n’est pas seulement le prix : elle inclut les charges en capital, notamment les frais de poursuite taxés (art. 683 du Code général des impôts). À prix égal, ils augmentent donc légèrement la base taxable."
       ]
     },
@@ -91,7 +91,7 @@
       "id": "ordres-de-grandeur",
       "title": "Ce que cela donne en euros, avec les hypothèses du simulateur",
       "paragraphs": [
-        "Le tableau applique les hypothèses par défaut du simulateur Immojudis : émoluments selon le barème ci-dessus (TVA de 20 %), droits de mutation de 6,32 % sur le prix augmenté de 3 000 € de frais préalables, contribution de sécurité immobilière de 0,10 %, 3 000 € de frais préalables et 1 500 € d’honoraires. Ces hypothèses sont modifiables et ne correspondent à aucun dossier précis. Les montants sont arrondis."
+        "Le tableau applique les hypothèses par défaut du simulateur Immojudis : émoluments selon le barème ci-dessus (TVA de 20 %), droits de mutation de 6,32 % sur le prix augmenté de 3 000 € de frais préalables, contribution de sécurité immobilière de 0,10 % de cette même base, 3 000 € de frais préalables et 1 500 € d’honoraires. Ces hypothèses sont modifiables et ne correspondent à aucun dossier précis. Les montants sont arrondis."
       ],
       "table": {
         "headers": ["Prix d’adjudication", "Frais estimés", "Part du prix"],
@@ -104,7 +104,7 @@
       },
       "bullets": [
         "La part des frais est plus élevée sur les petits prix, car certains frais sont fixes.",
-        "Un bien dans un département à 5,81 % de droits coûtera un peu moins cher en droits de mutation (environ 800 € de moins à 150 000 €).",
+        "Dans un département resté à 5,81 % (non intégré au simulateur), les droits de mutation sont inférieurs d’environ 800 € pour 150 000 €.",
         "Les travaux, le financement et le portage (intérêts, taxe foncière, charges tant que le bien ne rapporte rien) ne sont pas inclus."
       ]
     },
