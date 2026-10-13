@@ -138,6 +138,26 @@ describe("ComparisonsPage", () => {
     ).toBe("https://www.immojudis.fr/comparaisons/shared-token");
   });
 
+  it("shows a starting price of 0 as not communicated, never as 0 €", async () => {
+    const base = comparisonSet();
+    renderPage({
+      sets: [
+        comparisonSet({
+          items: base.items.map((item) => ({
+            ...item,
+            sale: item.sale ? { ...item.sale, startingPriceEur: 0 } : item.sale,
+          })),
+          summary: { ...base.summary, totalStartingPriceEur: 0 },
+        }),
+      ],
+      limit: 1,
+      itemLimit: 3,
+    });
+
+    expect(await screen.findByText(/Mise à prix : Prix non communiqué/)).toBeTruthy();
+    expect(screen.queryByText(/Mise à prix : 0/)).toBeNull();
+  });
+
   it("explains how to start when there are no saved comparisons", async () => {
     renderPage();
 

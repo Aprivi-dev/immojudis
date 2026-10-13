@@ -39,6 +39,11 @@ describe("public preview search", () => {
     });
   });
 
+  it("falls back to relevance for the bedroom sort, which the public RPC does not know", () => {
+    expect(buildPreviewSearchArgs({ sort: "beds_desc" })).toMatchObject({ p_sort: "score_desc" });
+    expect(buildPreviewSearchArgs({ sort: "price_asc" })).toMatchObject({ p_sort: "price_asc" });
+  });
+
   it("paginates with the requested page and size", () => {
     expect(buildPreviewSearchArgs({ page: 3, limit: 10 })).toMatchObject({
       p_limit: 10,

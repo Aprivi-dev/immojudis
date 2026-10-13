@@ -20,7 +20,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 function signingKey(env: Pick<NodeJS.ProcessEnv, string> = process.env): string {
   const dedicated = env.EMAIL_UNSUBSCRIBE_SECRET?.trim();
   if (dedicated) return dedicated;
-  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  // Same order as the rest of the code: the legacy service-role key first, then
+  // the new-format secret key, so links already sent keep verifying.
+  const serviceRole = env.SUPABASE_SERVICE_ROLE_KEY?.trim() || env.SUPABASE_SECRET_KEY?.trim();
   if (!serviceRole)
     throw new Error("Aucun secret disponible pour signer les liens de désinscription.");
   // Derived from the service key with a fixed label, so the raw key never signs

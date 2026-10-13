@@ -94,6 +94,15 @@ async function handlePATCH(request: Request) {
       .eq("source_name", input.source)
       .select("source_name,enabled")
       .maybeSingle();
+    // Une source retirée du catalogue ne se réactive pas ici : il faut lever le retrait
+    // (select public.set_catalogue_source_withdrawal('<source>', false)).
+    // (seule contrainte CHECK qu'une mise à jour de `enabled` peut enfreindre : code 23514)
+    if (error?.code === "23514") {
+      return NextResponse.json(
+        { error: "Source retirée du catalogue : lever d'abord le retrait en base." },
+        { status: 409, headers: { "cache-control": "no-store" } },
+      );
+    }
     if (error) throw error;
     if (!data) return NextResponse.json({ error: "Source inconnue" }, { status: 404 });
     return NextResponse.json(data, { headers: { "cache-control": "no-store" } });

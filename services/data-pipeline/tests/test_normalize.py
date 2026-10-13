@@ -559,16 +559,33 @@ def test_normalize_sale_does_not_mark_future_adjudication_audience_as_adjudicate
 
 
 def test_normalize_sale_infers_future_status_when_source_says_unknown() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    in_a_month = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%dT15:00:00+00:00")
     sale = normalize_sale(
         {
             "source_name": "info_encheres",
             "source_url": "https://example.test/future-unknown-status",
             "status": "unknown",
-            "sale_date": "15 octobre 2099 à 15h00",
+            "sale_date": in_a_month,
         }
     )
 
     assert sale.status == "upcoming"
+
+
+def test_normalize_sale_does_not_infer_upcoming_from_an_implausible_date() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "info_encheres",
+            "source_url": "https://example.test/implausible-date-status",
+            "status": "unknown",
+            "sale_date": "15 octobre 2099 à 15h00",
+        }
+    )
+
+    assert sale.sale_date is None
+    assert sale.status == "unknown"
 
 
 def test_normalize_sale_infers_past_status_when_source_says_unknown() -> None:

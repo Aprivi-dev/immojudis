@@ -1,0 +1,883 @@
+{
+  "_comment": "Cas partagés entre le filtre TypeScript (src/lib/personal-data-filter.ts) et son miroir Python (src/personal_data.py). Exécutés par vitest (src/lib/personal-data-filter.test.ts) ET par pytest (tests/test_personal_data.py). Tous les noms sont fictifs. « changed » : le texte doit être réécrit en « expected ». « unchanged » : le texte doit rester identique (faux positifs à ne jamais toucher). Si le filtre évolue, mettre à jour les DEUX implémentations et ces cas.",
+  "changed": [
+    {
+      "name": "occupant avec bail",
+      "input": "Les locaux sont occupés par Monsieur Pierre DUPONT suivant bail du 1er mars 2019.",
+      "expected": "Les locaux sont occupés par un occupant suivant bail du 1er mars 2019.",
+      "absent": [
+        "DUPONT",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "occupante divorcée avec enfant mineur",
+      "input": "Le bien est occupé par Madame Marie MARTIN divorcée DURAND et son enfant mineur.",
+      "expected": "Le bien est occupé par un occupant et son enfant mineur.",
+      "absent": [
+        "MARTIN",
+        "DURAND",
+        "Marie"
+      ]
+    },
+    {
+      "name": "occupant sans contexte de bail",
+      "input": "Appartement occupé par Monsieur Jean-Luc Bernard depuis plusieurs années.",
+      "expected": "Appartement occupé par un occupant depuis plusieurs années.",
+      "absent": [
+        "Bernard",
+        "Jean-Luc"
+      ]
+    },
+    {
+      "name": "occupant avec abréviation M.",
+      "input": "Maison occupée par M. Karim BENALI, locataire en vertu d'un bail verbal.",
+      "expected": "Maison occupée par un occupant, locataire en vertu d'un bail verbal.",
+      "absent": [
+        "BENALI",
+        "Karim"
+      ]
+    },
+    {
+      "name": "deux occupants",
+      "input": "Logement occupé par Monsieur Paul LEROY et Madame Anne LEROY.",
+      "expected": "Logement occupé par un occupant.",
+      "absent": [
+        "LEROY",
+        "Paul",
+        "Anne"
+      ]
+    },
+    {
+      "name": "occupant avec épouse",
+      "input": "Occupé par Monsieur Paul LEROY et son épouse Madame Anne ROUX.",
+      "expected": "Occupé par un occupant.",
+      "absent": [
+        "LEROY",
+        "ROUX",
+        "Anne"
+      ]
+    },
+    {
+      "name": "occupant sans civilité sous la forme Prénom NOM",
+      "input": "Les lots 2 et 3 sont occupés par Jean DUPONT sans titre.",
+      "expected": "Les lots 2 et 3 sont occupés par un occupant sans titre.",
+      "absent": [
+        "DUPONT",
+        "Jean"
+      ]
+    },
+    {
+      "name": "occupant en capitales",
+      "input": "LOT OCCUPÉ PAR MONSIEUR DUPONT PIERRE SUIVANT BAIL DU 01/03/2019",
+      "expected": "LOT OCCUPÉ PAR un occupant SUIVANT BAIL DU 01/03/2019",
+      "absent": [
+        "DUPONT",
+        "PIERRE"
+      ]
+    },
+    {
+      "name": "occupant nom à particule",
+      "input": "Appartement occupé par Madame Claire de LA FONTAINE, sans bail.",
+      "expected": "Appartement occupé par un occupant, sans bail.",
+      "absent": [
+        "FONTAINE",
+        "Claire"
+      ]
+    },
+    {
+      "name": "locataire nommé",
+      "input": "Locataire Monsieur Ahmed BENSAID, loyer mensuel de 540 euros.",
+      "expected": "Locataire, loyer mensuel de 540 euros.",
+      "absent": [
+        "BENSAID",
+        "Ahmed"
+      ]
+    },
+    {
+      "name": "locataire avec deux points",
+      "input": "Situation locative : locataire : Madame Sophie GARNIER. Loyer 600 euros.",
+      "expected": "Situation locative : locataire. Loyer 600 euros.",
+      "absent": [
+        "GARNIER",
+        "Sophie"
+      ]
+    },
+    {
+      "name": "locataires pluriel",
+      "input": "Les locataires Monsieur Luc PETIT et Madame Eva PETIT ont quitté les lieux.",
+      "expected": "Les locataires ont quitté les lieux.",
+      "absent": [
+        "PETIT",
+        "Luc",
+        "Eva"
+      ]
+    },
+    {
+      "name": "bail consenti à un particulier",
+      "input": "Un bail d'habitation consenti à Monsieur Olivier MOREAU a été signé en 2020.",
+      "expected": "Un bail d'habitation consenti à un locataire a été signé en 2020.",
+      "absent": [
+        "MOREAU",
+        "Olivier"
+      ]
+    },
+    {
+      "name": "bail commercial consenti à une personne",
+      "input": "bail commercial consenti à Madame Julie ROBERT pour neuf ans",
+      "expected": "bail commercial consenti à un locataire pour neuf ans",
+      "absent": [
+        "ROBERT",
+        "Julie"
+      ]
+    },
+    {
+      "name": "loué à un particulier",
+      "input": "Studio loué à Mademoiselle Chloé LAMBERT.",
+      "expected": "Studio loué à un locataire.",
+      "absent": [
+        "LAMBERT",
+        "Chloé"
+      ]
+    },
+    {
+      "name": "créancier poursuivant complet",
+      "input": "À la requête de Monsieur Henri FAURE, né le 12 mars 1958 à Lyon (69), demeurant 14 rue des Lilas 69003 Lyon.",
+      "expected": "À la requête du créancier poursuivant.",
+      "absent": [
+        "FAURE",
+        "Henri",
+        "1958",
+        "Lilas",
+        "Lyon"
+      ]
+    },
+    {
+      "name": "créancier poursuivant sans point final",
+      "input": "À la requête de Monsieur Henri FAURE, né le 12/03/1958 à Saint-Étienne, demeurant 14 rue des Lilas 69003 Lyon",
+      "expected": "À la requête du créancier poursuivant",
+      "absent": [
+        "FAURE",
+        "Lilas",
+        "1958"
+      ]
+    },
+    {
+      "name": "créancier poursuivant avec avocat conservé",
+      "input": "À la requête de Madame Nadia KHALIL, née le 3 janvier 1970 à Marseille, demeurant 8 av. de la Gare 13001 Marseille, ayant pour avocat Maître Claire VIDAL, avocat au barreau de Marseille.",
+      "expected": "À la requête du créancier poursuivant, ayant pour avocat Maître Claire VIDAL, avocat au barreau de Marseille.",
+      "absent": [
+        "KHALIL",
+        "Nadia",
+        "1970",
+        "Gare"
+      ]
+    },
+    {
+      "name": "créancier poursuivant plusieurs personnes",
+      "input": "A la requête de Monsieur Éric ROUSSEL et de Madame Sylvie ROUSSEL, demeurant ensemble 5 chemin du Mas 34000 Montpellier. Le bien est mis à prix 80 000 euros.",
+      "expected": "A la requête du créancier poursuivant. Le bien est mis à prix 80 000 euros.",
+      "absent": [
+        "ROUSSEL",
+        "Éric",
+        "Sylvie",
+        "Mas"
+      ]
+    },
+    {
+      "name": "créancier Prénom NOM",
+      "input": "À la requête de Jean-Marc COLIN, demeurant à Nantes, créancier hypothécaire.",
+      "expected": "À la requête du créancier poursuivant, créancier hypothécaire.",
+      "absent": [
+        "COLIN",
+        "Jean-Marc",
+        "Nantes"
+      ]
+    },
+    {
+      "name": "date et lieu de naissance isolés",
+      "input": "Le débiteur, né le 5 juin 1962 à Villeurbanne, exerce la profession de maçon.",
+      "expected": "Le débiteur, exerce la profession de maçon.",
+      "absent": [
+        "1962",
+        "Villeurbanne"
+      ]
+    },
+    {
+      "name": "née au féminin avec parenthèse",
+      "input": "Madame X, née le 07/11/1975 à Boulogne-sur-Mer (62), est propriétaire.",
+      "expected": "Madame X, est propriétaire.",
+      "absent": [
+        "1975",
+        "Boulogne"
+      ]
+    },
+    {
+      "name": "année de naissance seule",
+      "input": "Le vendeur, né en 1951, a quitté le logement.",
+      "expected": "Le vendeur, a quitté le logement.",
+      "absent": [
+        "1951"
+      ]
+    },
+    {
+      "name": "demeurant jusqu'à la fin de phrase",
+      "input": "Le propriétaire, demeurant 12 boulevard Victor Hugo 75015 Paris. Visite sur rendez-vous.",
+      "expected": "Le propriétaire. Visite sur rendez-vous.",
+      "absent": [
+        "Victor Hugo",
+        "75015"
+      ]
+    },
+    {
+      "name": "domiciliée",
+      "input": "Madame Rose GAUTIER domiciliée à Toulouse (31) a été assignée.",
+      "expected": "Madame Rose GAUTIER a été assignée.",
+      "absent": [
+        "Toulouse"
+      ]
+    },
+    {
+      "name": "résidant",
+      "input": "Le locataire résidant 3 impasse des Roses, 44000 Nantes, paie son loyer.",
+      "expected": "Le locataire, paie son loyer.",
+      "absent": [
+        "Roses",
+        "44000"
+      ]
+    },
+    {
+      "name": "appartenant à un particulier",
+      "input": "Maison appartenant à Monsieur Gérard SIMON.",
+      "expected": "Maison appartenant à un particulier.",
+      "absent": [
+        "SIMON",
+        "Gérard"
+      ]
+    },
+    {
+      "name": "appartient à Prénom NOM",
+      "input": "Le terrain appartient à Paul MARTIN depuis 1998.",
+      "expected": "Le terrain appartient à un particulier depuis 1998.",
+      "absent": [
+        "MARTIN",
+        "Paul"
+      ]
+    },
+    {
+      "name": "propriété de",
+      "input": "Immeuble propriété de Madame Lucie BLANC et de Monsieur Marc BLANC.",
+      "expected": "Immeuble propriété d'un particulier.",
+      "absent": [
+        "BLANC",
+        "Lucie",
+        "Marc"
+      ]
+    },
+    {
+      "name": "propriété des consorts",
+      "input": "Villa, propriété des consorts MERCIER.",
+      "expected": "Villa, propriété des consorts.",
+      "absent": [
+        "MERCIER"
+      ]
+    },
+    {
+      "name": "consorts liste",
+      "input": "Vente sur licitation au profit des consorts DUPUIS, MARTIN et Perrin.",
+      "expected": "Vente sur licitation au profit des consorts.",
+      "absent": [
+        "DUPUIS",
+        "MARTIN",
+        "Perrin"
+      ]
+    },
+    {
+      "name": "héritiers",
+      "input": "Les héritiers de Monsieur Roger FOURNIER ont renoncé à la succession.",
+      "expected": "Les héritiers du défunt ont renoncé à la succession.",
+      "absent": [
+        "FOURNIER",
+        "Roger"
+      ]
+    },
+    {
+      "name": "succession de feu",
+      "input": "Maison dépendant de la succession de feu Madame Odette VINCENT.",
+      "expected": "Maison dépendant de la succession du défunt.",
+      "absent": [
+        "VINCENT",
+        "Odette"
+      ]
+    },
+    {
+      "name": "époux et épouse",
+      "input": "Monsieur Alain GIRARD, époux de Madame Brigitte ROY, a été saisi.",
+      "expected": "Monsieur Alain GIRARD, époux, a été saisi.",
+      "absent": [
+        "ROY",
+        "Brigitte"
+      ]
+    },
+    {
+      "name": "son épouse nommée",
+      "input": "Il vit avec son épouse Madame Karine ROYER dans la maison.",
+      "expected": "Il vit avec son épouse dans la maison.",
+      "absent": [
+        "ROYER",
+        "Karine"
+      ]
+    },
+    {
+      "name": "veuve",
+      "input": "La propriétaire, veuve de Monsieur Jacques MEYER, est décédée.",
+      "expected": "La propriétaire, veuve, est décédée.",
+      "absent": [
+        "MEYER",
+        "Jacques"
+      ]
+    },
+    {
+      "name": "divorcé",
+      "input": "Monsieur Paul ADAM divorcé de Madame Léa ROCHE vit seul.",
+      "expected": "Monsieur Paul ADAM divorcé vit seul.",
+      "absent": [
+        "ROCHE",
+        "Léa"
+      ]
+    },
+    {
+      "name": "née nom de jeune fille",
+      "input": "Madame Anne MOREL, née DUBOIS, est occupante.",
+      "expected": "Madame Anne MOREL, est occupante.",
+      "absent": [
+        "DUBOIS"
+      ]
+    },
+    {
+      "name": "deux phrases dans le même texte",
+      "input": "Occupé par Monsieur Pierre DUPONT suivant bail. À la requête de Monsieur Henri FAURE, demeurant 14 rue des Lilas 69003 Lyon.",
+      "expected": "Occupé par un occupant suivant bail. À la requête du créancier poursuivant.",
+      "absent": [
+        "DUPONT",
+        "FAURE",
+        "Lilas"
+      ]
+    },
+    {
+      "name": "retour à la ligne",
+      "input": "Occupé par Madame Sara LOPEZ\nLoyer 500 euros",
+      "expected": "Occupé par un occupant\nLoyer 500 euros",
+      "absent": [
+        "LOPEZ",
+        "Sara"
+      ]
+    },
+    {
+      "name": "apostrophe typographique",
+      "input": "Maison occupée par Monsieur Jean D’ANGELO sans titre.",
+      "expected": "Maison occupée par un occupant sans titre.",
+      "absent": [
+        "ANGELO",
+        "Jean"
+      ]
+    },
+    {
+      "name": "saisi nommé après un rôle",
+      "input": "Le saisi, Monsieur Paul ROY, occupe le bien.",
+      "expected": "Le saisi, occupe le bien.",
+      "absent": [
+        "ROY",
+        "Paul"
+      ]
+    },
+    {
+      "name": "débiteur saisi avec naissance et adresse",
+      "input": "Bien occupé par le débiteur saisi, Monsieur Alain PERRIN, né le 3 mai 1961 à Paris 15e, demeurant sur place.",
+      "expected": "Bien occupé par le débiteur saisi.",
+      "absent": [
+        "PERRIN",
+        "Alain",
+        "1961"
+      ]
+    },
+    {
+      "name": "Monsieur et Madame",
+      "input": "Le bien appartient à Monsieur et Madame Roger DUPONT.",
+      "expected": "Le bien appartient à un particulier.",
+      "absent": [
+        "DUPONT",
+        "Roger"
+      ]
+    },
+    {
+      "name": "nom composé avec Le",
+      "input": "occupé par Madame Marie Le GALL suivant bail",
+      "expected": "occupé par un occupant suivant bail",
+      "absent": [
+        "GALL",
+        "Marie"
+      ]
+    },
+    {
+      "name": "nom en capitales avec LE",
+      "input": "occupé par Monsieur Pierre LE GOFF depuis 2010",
+      "expected": "occupé par un occupant depuis 2010",
+      "absent": [
+        "GOFF",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "phrase suivante sans point",
+      "input": "occupé par Monsieur Jean DUPONT Le bien est situé à Lyon",
+      "expected": "occupé par un occupant Le bien est situé à Lyon",
+      "absent": [
+        "DUPONT",
+        "Jean"
+      ]
+    },
+    {
+      "name": "propriétaire nommé sans formule",
+      "input": "Propriétaire Madame Anne DUBOIS",
+      "expected": "Propriétaire",
+      "absent": [
+        "DUBOIS",
+        "Anne"
+      ]
+    },
+    {
+      "name": "adresse personnelle avec chaîne d'état civil",
+      "input": "Monsieur Roger DUPONT, né le 02/02/1950 à Brest, de nationalité française, demeurant 2 rue de Siam à Brest, retraité.",
+      "expected": "Monsieur Roger DUPONT, de nationalité française, retraité.",
+      "absent": [
+        "02/02/1950",
+        "rue de Siam"
+      ]
+    },
+    {
+      "name": "locataire en place nommé",
+      "input": "Appartement occupé par le locataire en place, Madame Fatima BENALI, qui paie un loyer mensuel de 480 euros.",
+      "expected": "Appartement occupé par le locataire en place, qui paie un loyer mensuel de 480 euros.",
+      "absent": [
+        "BENALI",
+        "Fatima"
+      ]
+    },
+    {
+      "name": "propriétaires nommés",
+      "input": "Les locaux sont occupés par ses propriétaires, Monsieur et Madame LE ROUX, depuis 1990.",
+      "expected": "Les locaux sont occupés par ses propriétaires, depuis 1990.",
+      "absent": [
+        "ROUX"
+      ]
+    },
+    {
+      "name": "local loué à un exploitant",
+      "input": "Local commercial loué à Monsieur Jean-Pierre ROUX, exploitant d'un commerce de fleurs, suivant bail commercial du 1er janvier 2015.",
+      "expected": "Local commercial loué à un locataire, exploitant d'un commerce de fleurs, suivant bail commercial du 1er janvier 2015.",
+      "absent": [
+        "ROUX",
+        "Jean-Pierre"
+      ]
+    },
+    {
+      "name": "occupant sans droit ni titre, bail résilié",
+      "input": "Local occupé par Monsieur Jean DUPONT sans droit ni titre, le bail ayant été résilié.",
+      "expected": "Local occupé par un occupant sans droit ni titre, le bail ayant été résilié.",
+      "absent": [
+        "DUPONT",
+        "Jean"
+      ]
+    },
+    {
+      "name": "occupante ancienne locataire, bail expiré",
+      "input": "Appartement occupé par Madame Sophie LEROY, ancien locataire dont le bail a expiré.",
+      "expected": "Appartement occupé par un occupant, ancien locataire dont le bail a expiré.",
+      "absent": [
+        "LEROY",
+        "Sophie"
+      ]
+    },
+    {
+      "name": "occupant ayant reçu un congé délivré au locataire",
+      "input": "Appartement occupé par M. Karim BENALI qui a reçu un congé délivré au locataire.",
+      "expected": "Appartement occupé par un occupant qui a reçu un congé délivré au locataire.",
+      "absent": [
+        "BENALI",
+        "Karim"
+      ]
+    },
+    {
+      "name": "occupant avec loyer impayé",
+      "input": "Maison occupée par Monsieur Paul ROUX, loyer impayé depuis 2022.",
+      "expected": "Maison occupée par un occupant, loyer impayé depuis 2022.",
+      "absent": [
+        "ROUX",
+        "Paul"
+      ]
+    },
+    {
+      "name": "occupante propriétaire sans bail",
+      "input": "Le logement est occupé par Mademoiselle Lina PERRIN, propriétaire depuis 2010, sans bail.",
+      "expected": "Le logement est occupé par un occupant, propriétaire depuis 2010, sans bail.",
+      "absent": [
+        "PERRIN",
+        "Lina"
+      ]
+    },
+    {
+      "name": "couple d'anciens locataires, bail résilié",
+      "input": "Lot occupé par Monsieur et Madame Luc MOREAU, anciens locataires, bail résilié par jugement.",
+      "expected": "Lot occupé par un occupant, anciens locataires, bail résilié par jugement.",
+      "absent": [
+        "MOREAU",
+        "Luc"
+      ]
+    },
+    {
+      "name": "occupant en capitales, bail résilié",
+      "input": "LOCAL OCCUPÉ PAR MONSIEUR PAUL DURAND, DONT LE BAIL A ÉTÉ RÉSILIÉ.",
+      "expected": "LOCAL OCCUPÉ PAR un occupant, DONT LE BAIL A ÉTÉ RÉSILIÉ.",
+      "absent": [
+        "DURAND",
+        "PAUL"
+      ]
+    },
+    {
+      "name": "occupante puis locataire précédent dans la phrase suivante",
+      "input": "Studio occupé par Madame Eva ROY. Le locataire précédent a quitté les lieux, le bail est expiré.",
+      "expected": "Studio occupé par un occupant. Le locataire précédent a quitté les lieux, le bail est expiré.",
+      "absent": [
+        "ROY",
+        "Eva"
+      ]
+    },
+    {
+      "name": "loué à prénom et nom en casse mixte",
+      "input": "Appartement loué à Pierre Martin depuis 2018.",
+      "expected": "Appartement loué à un locataire depuis 2018.",
+      "absent": [
+        "Martin",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "bail consenti à prénom et nom en casse mixte",
+      "input": "Bail consenti à Pierre Durand le 1er mars 2019.",
+      "expected": "Bail consenti à un locataire le 1er mars 2019.",
+      "absent": [
+        "Durand",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "loué à deux personnes en casse mixte",
+      "input": "Lot 3 loué à Jean-Pierre Martin et Paul Durand.",
+      "expected": "Lot 3 loué à un locataire.",
+      "absent": [
+        "Martin",
+        "Durand",
+        "Jean-Pierre",
+        "Paul"
+      ]
+    },
+    {
+      "name": "louée à nom à particule en casse mixte",
+      "input": "Maison louée à Pierre de La Fontaine, loyer 600 euros.",
+      "expected": "Maison louée à un locataire, loyer 600 euros.",
+      "absent": [
+        "Fontaine",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "bail commercial consenti à nom en Le",
+      "input": "Bail commercial consenti à Marie Le Gall pour neuf ans.",
+      "expected": "Bail commercial consenti à un locataire pour neuf ans.",
+      "absent": [
+        "Gall",
+        "Marie"
+      ]
+    },
+    {
+      "name": "loué à prénom et nom en capitales",
+      "input": "Appartement loué à Pierre MARTIN.",
+      "expected": "Appartement loué à un locataire.",
+      "absent": [
+        "MARTIN",
+        "Pierre"
+      ]
+    }
+  ],
+  "unchanged": [
+    {
+      "name": "occupé locataire en place",
+      "input": "Occupé, locataire en place."
+    },
+    {
+      "name": "locataire en place seul",
+      "input": "Le bien est loué : locataire en place depuis 2018, loyer 450 euros."
+    },
+    {
+      "name": "libre de toute occupation",
+      "input": "Appartement libre de toute occupation."
+    },
+    {
+      "name": "occupé par le propriétaire",
+      "input": "Maison occupée par le propriétaire."
+    },
+    {
+      "name": "occupé par une société",
+      "input": "Local commercial occupé par la SARL Dupont Frères suivant bail commercial."
+    },
+    {
+      "name": "occupé par une SCI",
+      "input": "Immeuble occupé par la SCI Les Tilleuls."
+    },
+    {
+      "name": "occupé par un organisme",
+      "input": "Logement occupé par Paris Habitat suivant bail."
+    },
+    {
+      "name": "occupé par une entreprise en capitales",
+      "input": "Local occupé par Orange FRANCE."
+    },
+    {
+      "name": "occupé par le syndic",
+      "input": "Les parties communes sont occupées par Monsieur le Syndic."
+    },
+    {
+      "name": "Monsieur le Maire",
+      "input": "À la requête de Monsieur le Maire de la commune de Vichy."
+    },
+    {
+      "name": "Madame La Préfète",
+      "input": "Bien occupé par Madame La Préfète du département."
+    },
+    {
+      "name": "Monsieur LE DIRECTEUR en capitales",
+      "input": "À LA REQUÊTE DE MONSIEUR LE DIRECTEUR DES FINANCES PUBLIQUES"
+    },
+    {
+      "name": "créancier banque",
+      "input": "À la requête de la Banque Populaire du Sud, société anonyme."
+    },
+    {
+      "name": "créancier syndicat de copropriétaires",
+      "input": "À la requête du Syndicat des copropriétaires de la résidence Les Pins."
+    },
+    {
+      "name": "créancier SA",
+      "input": "À la requête de la CAISSE D'EPARGNE, dont le siège est 5 place de la Mairie."
+    },
+    {
+      "name": "bâtiment M. B",
+      "input": "Appartement au 2e étage du bâtiment M. B, occupé."
+    },
+    {
+      "name": "locataire M. B initiale",
+      "input": "Locataire M. B, bail en cours."
+    },
+    {
+      "name": "rue Madame",
+      "input": "Studio situé 12 rue Madame 75006 Paris, loué, locataire en place."
+    },
+    {
+      "name": "rue Madame et locataire",
+      "input": "Studio loué, locataire rue Madame."
+    },
+    {
+      "name": "rue de la Princesse et occupation",
+      "input": "Appartement occupé par un locataire 5 rue Monsieur-le-Prince."
+    },
+    {
+      "name": "Saint-Martin commune",
+      "input": "Maison à Saint-Martin-de-Ré, occupée par le propriétaire."
+    },
+    {
+      "name": "Saint-Martin après appartenant",
+      "input": "Terrain appartenant à la commune de Saint-Martin."
+    },
+    {
+      "name": "église Saint-Martin",
+      "input": "Immeuble situé place de l'église Saint-Martin, locataire en place."
+    },
+    {
+      "name": "propriété de la commune",
+      "input": "Parcelle propriété de la commune de Lyon."
+    },
+    {
+      "name": "propriété de l'État",
+      "input": "Bien propriété de l'État, occupé sans titre."
+    },
+    {
+      "name": "propriété de la SCI",
+      "input": "Immeuble propriété de la SCI Dupont Immobilier."
+    },
+    {
+      "name": "appartenant à une société",
+      "input": "Entrepôt appartenant à la SARL Martin Logistique."
+    },
+    {
+      "name": "tribunal et étude notariale",
+      "input": "Vente au tribunal judiciaire de Nanterre. Étude de Maître Claire VIDAL, notaire à Dijon."
+    },
+    {
+      "name": "avocat demeurant professionnel",
+      "input": "Renseignements auprès de Maître Claire VIDAL, avocat, demeurant 5 rue de la Paix 75002 Paris."
+    },
+    {
+      "name": "notaire demeurant professionnel",
+      "input": "Étude de Me Paul ROCHE, notaire, demeurant 10 place Bellecour 69002 Lyon."
+    },
+    {
+      "name": "tribunal sans personne",
+      "input": "Vente aux enchères au Tribunal judiciaire de Bordeaux, audience du 12 novembre."
+    },
+    {
+      "name": "succession vacante",
+      "input": "Maison dépendant d'une succession vacante."
+    },
+    {
+      "name": "héritiers sans nom",
+      "input": "Les héritiers ont renoncé à la succession."
+    },
+    {
+      "name": "époux sans nom",
+      "input": "Logement occupé par le débiteur et son époux."
+    },
+    {
+      "name": "divorcé sans nom",
+      "input": "Le propriétaire, divorcé, a quitté le logement."
+    },
+    {
+      "name": "consorts en minuscule",
+      "input": "Vente sur licitation entre consorts indivisaires."
+    },
+    {
+      "name": "né sans date",
+      "input": "Bien né de la division d'un lotissement."
+    },
+    {
+      "name": "demeurant sans contexte de personne mais adresse conservée",
+      "input": "Adresse du bien : 12 rue Madame, 75006 Paris."
+    },
+    {
+      "name": "texte sans rien",
+      "input": "Appartement de 3 pièces de 62 m² au 4e étage avec ascenseur, cave et parking."
+    },
+    {
+      "name": "texte vide",
+      "input": ""
+    },
+    {
+      "name": "bail sans nom",
+      "input": "Bail d'habitation consenti pour trois ans, loyer 650 euros par mois."
+    },
+    {
+      "name": "bail consenti à une société",
+      "input": "Bail commercial consenti à la société Boulangerie Martin."
+    },
+    {
+      "name": "requête sans personne",
+      "input": "À la requête du créancier poursuivant."
+    },
+    {
+      "name": "déjà filtré",
+      "input": "Les locaux sont occupés par un locataire suivant bail. À la requête du créancier poursuivant, ayant pour avocat Maître Claire VIDAL."
+    },
+    {
+      "name": "demeurant en début de phrase",
+      "input": "Visites : mardi 12 novembre à 14h. Demeurant sur place, le gardien ouvrira."
+    },
+    {
+      "name": "locataire en place commune",
+      "input": "Locataire en place à Saint-Martin-de-Ré."
+    },
+    {
+      "name": "propriétaire Monsieur le Maire",
+      "input": "Propriétaire Monsieur le Maire de Vichy."
+    },
+    {
+      "name": "locataire immeuble en capitales",
+      "input": "Locataire Immeuble LES TILLEULS, bail en cours."
+    },
+    {
+      "name": "locataire métropole",
+      "input": "Locataire Saint-Étienne Métropole, bail en cours."
+    },
+    {
+      "name": "occupé par une entreprise en capitales",
+      "input": "Local occupé par EDF Collectivités depuis 2012."
+    },
+    {
+      "name": "retour à la ligne entre trigger et mot",
+      "input": "Locataire\nMonsieur Dupont"
+    },
+    {
+      "name": "locataire en place sans nom",
+      "input": "Appartement occupé par le locataire en place, qui paie un loyer mensuel de 480 euros."
+    },
+    {
+      "name": "avocat et barreau",
+      "input": "Cabinet de Maître Paul MARTIN, avocat au Barreau de Paris, demeurant 5 rue de Rivoli, Tél : 01 02 03 04 05"
+    },
+    {
+      "name": "banque créancière avec avocat",
+      "input": "Saisie immobilière à la requête de la Banque Populaire, ayant pour avocat Maître Dupont."
+    },
+    {
+      "name": "société anonyme créancière",
+      "input": "À la requête de la société BNP Paribas Personal Finance, société anonyme, dont le siège est à Paris, représentée par son directeur."
+    },
+    {
+      "name": "ville propriétaire",
+      "input": "Immeuble en copropriété, propriété de la Ville de Paris et de l'OPH."
+    },
+    {
+      "name": "rue des Consorts",
+      "input": "Le bien est situé rue des Consorts à Paris, occupé."
+    },
+    {
+      "name": "né de la fusion",
+      "input": "Une maison née de la fusion de deux lots, né de la volonté du vendeur."
+    },
+    {
+      "name": "escalier et bâtiment",
+      "input": "Résidence \"Les Sources\" - Bâtiment M. Escalier B. Occupé par Mme X."
+    },
+    {
+      "name": "loué à une SCI",
+      "input": "Local loué à la SCI Martin."
+    },
+    {
+      "name": "loué à une commune",
+      "input": "Immeuble loué à la commune de Saint-Pierre."
+    },
+    {
+      "name": "loué à une ville seule",
+      "input": "Appartement loué à Paris."
+    },
+    {
+      "name": "loué à un bailleur social",
+      "input": "Local loué à Paris Habitat."
+    },
+    {
+      "name": "bail consenti à une métropole",
+      "input": "Bail consenti à Bordeaux Métropole."
+    },
+    {
+      "name": "bail consenti à une société",
+      "input": "Bail consenti à la société Durand Immobilier."
+    },
+    {
+      "name": "loué à un nom de lieu en Saint",
+      "input": "Local loué à Saint-Pierre Immobilier."
+    },
+    {
+      "name": "prénom et nom en casse mixte hors formule de bail",
+      "input": "Local loué, visite organisée par Pierre Martin le 3 mars."
+    }
+  ]
+}

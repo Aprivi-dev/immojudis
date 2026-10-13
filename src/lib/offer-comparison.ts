@@ -98,6 +98,7 @@ const SPECS: RowSpec[] = [
   {
     id: "statistics",
     label: "Statistiques des ventes et des tribunaux",
+    hint: "Tribunaux : selon l’historique disponible",
     features: ["sales.statistics"],
   },
   {

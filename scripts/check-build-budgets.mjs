@@ -38,7 +38,15 @@ const MAX_CLIENT_CHUNK_BYTES = 1_875_000;
 // panels to the shared sale detail chunk (measured 5,305,601 bytes in total, no
 // duplication across routes). The ceiling is raised once, to 5,350,000; the route-level
 // initial-load budgets below are unchanged.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_350_000;
+//
+// The first team session (October 2026) adds the public fees simulator, the ceiling
+// glossary and context line, the mobile comparison and empty-search actions, the
+// opening-request and checkout-return states of /offres, and the anonymous journey
+// events (one small module shared by nine route chunks). Measured 5,362,400 bytes in
+// total; the home page itself went DOWN to 525,931 bytes once the consent strings were
+// split from the zod schema. The ceiling is raised once, to 5,400,000; every route-level
+// initial-load budget below is unchanged.
+const MAX_TOTAL_CLIENT_JS_BYTES = 5_400_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;

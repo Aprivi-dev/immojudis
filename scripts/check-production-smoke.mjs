@@ -4,12 +4,18 @@ const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 const DEFAULT_ORIGIN = "https://immojudis.com";
 const TIMEOUT_MS = 10_000;
 
+// A well-formed identifier that no sale carries. Searching it never matches a real record.
+const UNKNOWN_SALE_PATH = "/sales/00000000-0000-4000-8000-000000000000";
+
 const checks = [
   { path: "/", kind: "html", canonical: "/" },
   { path: "/sales", kind: "html", canonical: "/sales" },
   { path: "/annonce-exemple", kind: "html", canonical: "/annonce-exemple" },
   { path: "/legal", kind: "html" },
   { path: "/api/lawyers/directory?department=33", kind: "json" },
+  // A sale that does not exist must answer a real 404, not a 200 page that says "not found"
+  // (a soft 404 that search engines index).
+  { path: UNKNOWN_SALE_PATH, kind: "html", expectedStatus: 404 },
 ];
 
 export async function checkProductionSmoke({ origin = DEFAULT_ORIGIN, fetchImpl = fetch } = {}) {
@@ -42,8 +48,9 @@ async function runCheck({ check, origin, fetchImpl }) {
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 
-  if (response.status !== 200) {
-    throw new Error(`${check.path}: statut HTTP ${response.status} au lieu de 200.`);
+  const expectedStatus = check.expectedStatus ?? 200;
+  if (response.status !== expectedStatus) {
+    throw new Error(`${check.path}: statut HTTP ${response.status} au lieu de ${expectedStatus}.`);
   }
 
   const responseRequestId = response.headers.get("x-request-id");
@@ -52,6 +59,16 @@ async function runCheck({ check, origin, fetchImpl }) {
   }
   if (responseRequestId !== requestId) {
     throw new Error(`${check.path}: la corrélation x-request-id n'est pas préservée.`);
+  }
+
+  if (expectedStatus !== 200) {
+    await response.body?.cancel();
+    return {
+      path: check.path,
+      status: response.status,
+      requestId: responseRequestId,
+      durationMs: Date.now() - startedAt,
+    };
   }
 
   const contentType = response.headers.get("content-type") ?? "";

@@ -4,6 +4,7 @@ import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import { SaleTypesOverview } from "@/components/SaleTypesOverview";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import { jsonLdString } from "@/lib/json-ld";
+import { getResourceArticle } from "@/lib/resource-articles";
 
 const FAQ: Array<{ q: string; a: string }> = [
   {
@@ -16,15 +17,15 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Qui peut acheter un bien aux enchères au tribunal ?",
-    a: "Toute personne juridiquement capable peut acheter un bien aux enchères au tribunal, sous réserve de respecter les formalités, de disposer des garanties financières nécessaires et d'être représentée par un avocat.",
+    a: "En principe, toute personne qui justifie de garanties de paiement peut enchérir (art. L. 322-7 du Code des procédures civiles d’exécution). Au tribunal, elle doit être représentée par un avocat. Certaines personnes ne peuvent pas enchérir, ni directement ni par personne interposée : le débiteur saisi, les auxiliaires de justice intervenus dans la procédure et les magistrats de la juridiction (art. R. 322-39). Une personne condamnée à certaines peines liées au logement ne peut pas, pendant la durée de la peine, enchérir pour acquérir un bien d’habitation, sauf pour l’occuper elle-même (art. L. 322-7-1). L’article 1596 du Code civil interdit enfin, sous peine de nullité, à certaines personnes de se rendre adjudicataires des biens qu’elles gèrent ou doivent vendre : un tuteur pour les biens de la personne protégée, un mandataire pour les biens qu’il est chargé de vendre, par exemple. En cas de doute sur votre situation, interrogez votre avocat.",
   },
   {
     q: "Un avocat est-il toujours obligatoire ?",
-    a: "Pour une vente judiciaire à la barre du tribunal, oui : un avocat est obligatoire. Pour une vente notariale ou domaniale, consultez les conditions du dossier. Au tribunal, les enchères doivent être portées par un avocat inscrit au barreau compétent.",
+    a: "Cela dépend du type de vente. En saisie immobilière au tribunal, oui : les enchères sont portées par un avocat inscrit au barreau du tribunal où se tient la vente, et il ne peut porter qu’un seul mandat (art. R. 322-40). Pour une vente par licitation (partage judiciaire), les règles de la saisie sont largement reprises, mais lorsque les enchères sont reçues par un notaire, elles peuvent être faites sans avocat (art. 1377 et 1278 du Code de procédure civile). Pour une vente notariale volontaire ou une vente domaniale, les pages officielles consultées ne mentionnent pas d’obligation d’avocat : le cahier des conditions de vente ou des charges fait foi, demandez-le à l’organisateur.",
   },
   {
     q: "Peut-on obtenir un prêt bancaire ?",
-    a: "Oui, mais le financement doit être préparé avant l'audience. L'adjudication n'est pas conditionnée à l'obtention d'un prêt comme dans une vente classique. L'acheteur doit donc être certain de sa capacité à payer le prix et les frais.",
+    a: "Oui, mais le financement doit être préparé avant l’audience. Contrairement à une vente classique, l’adjudication n’est pas soumise à une condition suspensive d’obtention de prêt : le prix et les frais doivent être payés dans les deux mois de l’adjudication définitive (art. R. 322-56 et R. 322-58). L’hypothèque de la banque peut être inscrite avant le paiement du prix, mais le bien ne peut pas être revendu avant (art. L. 322-9). L’acheteur doit donc être certain de sa capacité à payer. Voir l’article « Financer un achat aux enchères ».",
   },
   {
     q: "Le bien peut-il être occupé ?",
@@ -32,7 +33,7 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Où consulter le cahier des conditions de vente ?",
-    a: "Il peut être consulté au greffe du tribunal judiciaire ou auprès de l'avocat poursuivant. Immojudis aide à identifier les informations clés à extraire de ce document.",
+    a: "Il peut être consulté au greffe du juge de l’exécution du tribunal judiciaire ou au cabinet de l’avocat du créancier poursuivant (art. R. 322-11). Immojudis aide à identifier les informations clés à extraire de ce document : voir l’article « Lire le cahier des conditions de vente et préparer la visite ».",
   },
   {
     q: "Une mise à prix basse signifie-t-elle une bonne affaire ?",
@@ -40,15 +41,19 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Peut-on se rétracter après avoir gagné l'enchère ?",
-    a: "Non. Une enchère portée engage l'acheteur. En cas de défaut de paiement, l'adjudicataire s'expose à des conséquences financières importantes.",
+    a: "Non : les textes ne prévoient pas de faculté de rétractation. L’adjudication peut toutefois être remise en cause par une surenchère ou annulée dans les cas prévus par la loi. En cas de défaut de paiement, le bien est remis en vente (réitération des enchères) et l’adjudicataire défaillant peut devoir la différence de prix (art. L. 322-12).",
   },
   {
     q: "Que se passe-t-il en cas de surenchère ?",
-    a: "Si une surenchère régulière est formée dans le délai légal, une nouvelle audience est organisée. L'adjudication initiale n'est alors pas définitive.",
+    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE) et en licitation judiciaire (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art. 1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10 % dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
+  },
+  {
+    q: "Quels frais s’ajoutent au prix d’adjudication ?",
+    a: "Les frais de poursuite taxés et les droits de mutation sont payés en sus du prix (art. R. 322-58) ; s’y ajoutent les émoluments d’avocat (art. A. 444-191 du Code de commerce) et les honoraires convenus avec votre avocat. À titre d’ordre de grandeur, les hypothèses par défaut du simulateur Immojudis donnent environ 12 % du prix pour un bien à 150 000 € ; ces valeurs sont à vérifier sur le cahier des conditions de vente et auprès de l’avocat. Voir l’article « Frais d’une vente aux enchères judiciaire ».",
   },
   {
     q: "Immojudis remplace-t-il un avocat ?",
-    a: "Non. Immojudis est un outil de référencement, de lecture et d'aide à la décision. Il ne remplace pas l'accompagnement d'un avocat, seul habilité à porter les enchères et à vous conseiller juridiquement dans la procédure.",
+    a: "Non. Immojudis est un outil de référencement, de lecture et d’aide à la décision. Il ne fournit ni conseil juridique, ni promesse de gain, et ne remplace pas votre avocat, seul habilité à porter les enchères et qui peut vous conseiller sur la procédure.",
   },
 ];
 
@@ -63,6 +68,7 @@ const TOC: Array<{ href: string; label: string }> = [
   { href: "#avantages", label: "Quels sont les avantages ?" },
   { href: "#risques", label: "Quels sont les risques ?" },
   { href: "#methode", label: "La méthode Immojudis" },
+  { href: "#articles-associes", label: "Pour aller plus loin : nos articles" },
   { href: "#lexique", label: "Lexique" },
   { href: "#liens-institutionnels", label: "Liens institutionnels utiles" },
   { href: "#faq", label: "Questions fréquentes" },
@@ -87,56 +93,104 @@ const METHOD: Array<{ n: string; title: string; text: string }> = [
   {
     n: "4",
     title: "Comparer au marché",
-    text: "Analyse des ventes comparables, niveau de prix local, tension locative, potentiel de revente, décote à appliquer, marge de sécurité.",
+    text: "Analyse des ventes comparables, niveau de prix local, tension locative, liquidité à la revente, décote à appliquer, marge de sécurité.",
   },
   {
     n: "5",
     title: "Calculer le coût complet",
-    text: "Prix d'adjudication estimé, frais, droits, honoraires, travaux, charges, délais, financement, fiscalité et imprévus.",
+    text: "Prix d’adjudication estimé, frais, droits, honoraires, travaux, charges, portage (intérêts, taxe foncière et charges tant que le bien ne rapporte rien), délais, financement, fiscalité et imprévus.",
   },
   {
     n: "6",
     title: "Fixer une enchère plafond",
-    text: "L’enchère plafond est la limite à ne pas dépasser. Il doit être défini avant l'audience et respecté strictement.",
+    text: "L’enchère plafond est la limite à ne pas dépasser. Elle doit être définie avant l’audience et respectée strictement.",
   },
 ];
 
 const LEXIQUE: Array<{ term: string; def: string }> = [
   {
-    term: "Adjudication",
-    def: "Attribution du bien au meilleur enchérisseur à l'issue de l'audience.",
-  },
-  {
     term: "Adjudicataire",
     def: "Personne qui remporte la vente et devient acquéreur du bien, sous réserve des suites de la procédure.",
   },
   {
+    term: "Adjudication",
+    def: "Attribution du bien au meilleur enchérisseur à l’issue de l’audience.",
+  },
+  {
     term: "Avocat poursuivant",
-    def: "Avocat qui conduit la procédure pour le compte du créancier ou de la partie à l'origine de la vente.",
+    def: "Avocat qui conduit la procédure pour le compte du créancier ou de la partie à l’origine de la vente.",
   },
   {
     term: "Cahier des conditions de vente",
-    def: "Document juridique décrivant le bien, les règles de la vente, les conditions d'occupation, les diagnostics, les servitudes et les frais.",
+    def: "Document juridique décrivant le bien, les règles de la vente, les conditions d’occupation, les diagnostics, les servitudes et les frais. Il se consulte au greffe ou auprès de l’avocat poursuivant.",
   },
   {
-    term: "Consignation",
-    def: "Garantie financière exigée pour participer à l'enchère ou sécuriser la procédure.",
+    term: "Consignation du prix",
+    def: "Dépôt du prix de l’adjudication sur un compte séquestre ou à la Caisse des dépôts et consignations, après la vente, dans les deux mois de l’adjudication définitive (art. L. 322-9 et R. 322-56). À ne pas confondre avec la garantie remise avant d’enchérir.",
+  },
+  {
+    term: "Débiteur saisi",
+    def: "Personne dont le bien est vendu pour payer ses dettes. Il ne peut pas enchérir (art. R. 322-39).",
+  },
+  {
+    term: "Débours",
+    def: "Sommes qu’un professionnel (avocat, notaire) avance pour votre compte, par exemple des droits ou des frais de formalités, et qu’il vous refacture au réel.",
+  },
+  {
+    term: "Émoluments",
+    def: "Rémunération des avocats fixée par un barème réglementaire et proportionnelle au prix d’adjudication (art. A. 444-191 du Code de commerce). Elle est distincte des honoraires, librement convenus avec l’avocat.",
+  },
+  {
+    term: "Enchère plafond",
+    def: "Montant maximum à ne pas dépasser, calculé à partir du marché, des frais, des travaux, des risques et de la stratégie de l’acheteur.",
+  },
+  {
+    term: "Frais taxés",
+    def: "Frais de la procédure dont le juge a fixé le montant et qui sont annoncés avant l’ouverture des enchères (art. R. 322-42). L’adjudicataire les paie en plus du prix.",
+  },
+  {
+    term: "Garantie pour enchérir",
+    def: "Chèque de banque ou caution bancaire irrévocable remis à l’avocat avant les enchères : 10 % de la mise à prix, avec un minimum de 3 000 € en saisie immobilière (art. R. 322-41). Elle est restituée à l’enchérisseur qui ne gagne pas.",
+  },
+  {
+    term: "Jouissance",
+    def: "Droit d’utiliser le bien, de l’occuper ou d’en percevoir les loyers. La date à laquelle l’acquéreur en dispose dépend notamment de l’occupation et du cahier des conditions de vente.",
   },
   {
     term: "Mise à prix",
     def: "Prix de départ de la vente aux enchères. Elle ne doit pas être confondue avec la valeur réelle du bien.",
   },
   {
-    term: "Enchère plafond",
-    def: "Montant maximum à ne pas dépasser, calculé à partir du marché, des frais, des travaux, des risques et de la stratégie de l'acheteur.",
+    term: "Portage",
+    def: "Coûts supportés tant que le bien ne sert pas ou ne rapporte rien : intérêts d’emprunt, taxe foncière, charges, assurance.",
+  },
+  {
+    term: "Réitération des enchères",
+    def: "Remise en vente du bien lorsque l’adjudicataire ne paie pas le prix ou les frais dans les délais (art. R. 322-66 et suivants). L’adjudicataire défaillant peut devoir la différence de prix.",
   },
   {
     term: "Saisie immobilière",
-    def: "Procédure permettant à un créancier de faire vendre un bien immobilier afin d'obtenir le paiement d'une dette.",
+    def: "Procédure permettant à un créancier de faire vendre un bien immobilier afin d’obtenir le paiement d’une dette.",
+  },
+  {
+    term: "Séquestre",
+    def: "Tiers désigné par le cahier des conditions de vente pour détenir le prix en attendant sa répartition entre les créanciers.",
   },
   {
     term: "Surenchère",
-    def: "Offre formée après une adjudication, dans les conditions et délais prévus par la loi, entraînant une nouvelle audience.",
+    def: "Offre supérieure d’au moins un dixième du prix principal, formée dans les dix jours qui suivent l’adjudication en saisie immobilière, entraînant une nouvelle audience (art. R. 322-50 et R. 322-51).",
+  },
+  {
+    term: "Tantièmes",
+    def: "Part de parties communes attachée à chaque lot d’une copropriété, qui sert notamment à répartir les charges.",
+  },
+  {
+    term: "Titre de vente",
+    def: "Document qui prouve la propriété de l’adjudicataire : l’expédition du cahier des conditions de vente, suivie du jugement d’adjudication (art. R. 322-61).",
+  },
+  {
+    term: "Titre opposable",
+    def: "Droit, par exemple un bail, que l’acheteur doit respecter. Le titre d’expulsion issu du jugement vise le saisi et les occupants de son chef sans droit opposable, pas un locataire dont le bail s’impose à l’acheteur (art. R. 322-64).",
   },
   {
     term: "Vente à la barre",
@@ -176,6 +230,17 @@ const INSTITUTIONAL_LINKS: Array<{ href: string; label: string }> = [
   },
 ];
 
+const RELATED_SLUGS = [
+  "ventes-notariales-domaniales-differences-tribunal",
+  "lire-cahier-conditions-vente-preparer-visite",
+  "jour-audience-encheres-role-avocat",
+  "apres-adjudication-surenchere-paiement-titre-vente",
+  "frais-vente-encheres-judiciaire",
+  "financer-achat-encheres-pret-delais",
+  "acheter-bien-occupe-encheres",
+  "prix-plafond-encheres-immobilieres",
+] as const;
+
 const FAQ_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "FAQPage",
@@ -214,6 +279,9 @@ export function ResourcesPage() {
             ce n'est jamais un achat immobilier classique. Avant d'enchérir, il faut comprendre la
             procédure, lire les pièces, évaluer les risques, intégrer les frais et fixer une limite
             à ne pas dépasser.
+          </p>
+          <p className="mt-4 text-xs text-muted-foreground">
+            Mis à jour le <time dateTime="2026-10-13">13/10/2026</time>
           </p>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
@@ -373,7 +441,7 @@ export function ResourcesPage() {
                 "Le procès-verbal descriptif permet-il d'identifier des travaux importants ?",
                 "La mise à prix est-elle réellement attractive par rapport au marché local ?",
                 "Quel budget total faut-il prévoir après frais, travaux et marge de sécurité ?",
-                "Quel est l’enchère plafond à ne pas dépasser pour que l'opération reste rationnelle ?",
+                "Quelle est l’enchère plafond à ne pas dépasser pour que l’opération reste rationnelle ?",
               ]}
             />
             <Callout>
@@ -397,7 +465,7 @@ export function ResourcesPage() {
             <P>
               Immojudis centralise les annonces et facilite la recherche par critères :
               localisation, tribunal, date d'audience, type de bien, mise à prix, surface,
-              occupation, niveau de risque ou potentiel d'investissement.
+              occupation ou niveau de risque.
             </P>
             <P>
               L'objectif est de permettre une veille efficace sur les ventes judiciaires à venir,
@@ -413,8 +481,8 @@ export function ResourcesPage() {
 
             <SubTitle>1. Avant la vente : analyser le dossier</SubTitle>
             <P>
-              La phase préparatoire est la plus importante. C'est avant l'audience que se gagne ou
-              se perd une bonne opération.
+              La phase préparatoire est la plus importante. C'est avant l'audience que se prépare la
+              décision d'enchérir.
             </P>
 
             <SubTitle>Lire l'annonce de vente</SubTitle>
@@ -446,7 +514,17 @@ export function ResourcesPage() {
               Immojudis accorde une importance particulière à ce document, car il contient souvent
               les informations qui changent complètement la lecture d'une opportunité : bail en
               cours, occupation incertaine, procédure d'expulsion à prévoir, servitude, copropriété
-              en difficulté, état du bien, contraintes de jouissance ou charges particulières.
+              en difficulté, état du bien, contraintes de jouissance (la jouissance est le droit
+              d’utiliser le bien et d’en percevoir les loyers) ou charges particulières. Pour une
+              copropriété, repérez aussi les tantièmes, c’est-à-dire la part de parties communes
+              attachée à chaque lot, qui sert notamment à répartir les charges.
+            </P>
+            <P>
+              Notre article{" "}
+              <ArticleLink slug="lire-cahier-conditions-vente-preparer-visite">
+                Lire le cahier des conditions de vente et préparer la visite
+              </ArticleLink>{" "}
+              détaille la lecture rubrique par rubrique.
             </P>
             <P>
               Pour consulter les textes applicables à la vente par adjudication, vous pouvez vous
@@ -466,7 +544,20 @@ export function ResourcesPage() {
             <P>
               L'impact est majeur : délai de prise de possession, possibilité de louer, coût d'une
               procédure, décote à appliquer, stratégie de revente ou de travaux. Un appartement
-              occupé avec un bail opposable ne se valorise pas comme un appartement libre.
+              occupé avec un bail opposable (un droit que l’acheteur doit respecter) ne se valorise
+              pas comme un appartement libre.
+            </P>
+            <P>
+              Le jugement d’adjudication constitue un titre d’expulsion contre le débiteur saisi
+              (art. L. 322-13 du Code des procédures civiles d’exécution). L’adjudicataire peut
+              aussi l’invoquer contre les occupants de son chef qui n’ont aucun droit opposable,
+              après paiement du prix ou consignation et paiement des frais, sauf si le cahier
+              prévoit le maintien dans les lieux du saisi (art. R. 322-64). Il ne vise pas un
+              locataire dont le bail s’impose à l’acheteur. Voir{" "}
+              <ArticleLink slug="acheter-bien-occupe-encheres">
+                Acheter un bien occupé aux enchères
+              </ArticleLink>
+              .
             </P>
             <P>
               Avant toute enchère, il faut donc vérifier précisément la situation d'occupation dans
@@ -506,11 +597,19 @@ export function ResourcesPage() {
             </P>
             <P>
               Immojudis raisonne en coût complet. Le prix d'adjudication n'est qu'un élément du
-              calcul. Il faut ajouter les frais préalables, droits de mutation, émoluments,
-              honoraires d'avocat, frais de publication, travaux, charges, financement et marge de
-              sécurité.
+              calcul. Il faut ajouter les frais préalables (ou frais taxés, dont le juge a fixé le
+              montant), droits de mutation, émoluments (la rémunération tarifée des avocats),
+              honoraires d’avocat, frais de publication, débours (les sommes que l’avocat avance
+              pour votre compte), travaux, charges, portage (intérêts, taxe foncière et charges tant
+              que le bien ne rapporte rien), financement et marge de sécurité.
             </P>
-            <P>Cette approche permet de fixer une enchère plafond rationnel avant l'audience.</P>
+            <P>
+              Cette approche permet de fixer une enchère plafond rationnelle avant l’audience. Voir{" "}
+              <ArticleLink slug="prix-plafond-encheres-immobilieres">
+                Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir
+              </ArticleLink>
+              .
+            </P>
 
             <SubTitle>Préparer le financement</SubTitle>
             <P>
@@ -525,14 +624,20 @@ export function ResourcesPage() {
             </P>
             <P>
               Un refus de prêt après adjudication ne permet pas de se désengager simplement. Le
-              défaut de paiement peut entraîner des conséquences financières importantes.
+              défaut de paiement entraîne la remise en vente du bien et peut coûter la garantie
+              versée avant l’audience ainsi que la différence de prix (art. L. 322-12 et R. 322-41).
+              Voir{" "}
+              <ArticleLink slug="financer-achat-encheres-pret-delais">
+                Financer un achat aux enchères : prêt, délais, pas de condition suspensive
+              </ArticleLink>
+              .
             </P>
 
             <SubTitle>Être représenté par un avocat</SubTitle>
             <P>
               Pour enchérir lors d'une vente immobilière judiciaire, l'acheteur doit être représenté
-              par un avocat inscrit au barreau du tribunal compétent. L'acheteur ne porte pas
-              lui-même les enchères.
+              par un avocat inscrit au barreau du tribunal compétent, qui ne peut porter qu’un seul
+              mandat (art. R. 322-40). L’acheteur ne porte pas lui-même les enchères.
             </P>
             <P>
               Avant l'audience, l'avocat prépare le pouvoir d'enchérir, vérifie les garanties
@@ -547,18 +652,22 @@ export function ResourcesPage() {
 
             <SubTitle>Prévoir les garanties et frais avant l'audience</SubTitle>
             <P>
-              Avant de pouvoir enchérir, il faut remettre à son avocat les garanties financières
-              nécessaires. En pratique, l'enchérisseur doit notamment prévoir un chèque de banque ou
-              une caution bancaire selon les conditions de la vente, ainsi qu'un montant destiné à
-              couvrir les frais.
+              Avant de porter les enchères, l’avocat se fait remettre par son client, contre
+              récépissé, une garantie : une caution bancaire irrévocable ou un chèque de banque
+              représentant 10 % de la mise à prix, avec un minimum de 3 000 €. C’est le Code des
+              procédures civiles d’exécution qui l’impose (art. R. 322-41) ; le cahier des
+              conditions de vente précise seulement à l’ordre de qui le chèque est rédigé (séquestre
+              ou Caisse des dépôts). Pour un immeuble d’habitation, l’avocat reçoit aussi une
+              attestation sur l’honneur (art. R. 322-41-1).
             </P>
             <P>
-              Ces sommes doivent être préparées avant l'audience. Sans dossier complet, l'avocat ne
-              pourra pas porter les enchères.
+              Ces éléments doivent être préparés avant l’audience. Sans dossier complet, l’avocat ne
+              pourra pas porter les enchères. La garantie est restituée à l’enchérisseur qui ne
+              gagne pas.
             </P>
             <P>
-              Le détail des frais doit être demandé à l'avocat. Il est indispensable de les intégrer
-              dans l’enchère plafond.
+              Le détail des autres frais doit être demandé à l’avocat. Il est indispensable de les
+              intégrer dans l’enchère plafond (voir la section « Quels frais prévoir ? » plus bas).
             </P>
 
             <SubTitle>2. Le jour de l'audience : enchérir au tribunal</SubTitle>
@@ -572,13 +681,18 @@ export function ResourcesPage() {
               l'enchérisseur.
             </P>
             <P>
-              Lorsque plus aucune enchère supérieure n'est portée dans le délai prévu, le dernier
+              Les enchères sont arrêtées lorsque quatre-vingt-dix secondes se sont écoulées depuis
+              la dernière : celle-ci emporte l’adjudication (art. R. 322-45). Le dernier
               enchérisseur est déclaré adjudicataire.
             </P>
             <P>
               Pour un premier achat, il peut être utile d'assister à une audience sans enchérir.
               Cela permet de comprendre le rythme, la procédure, le rôle des avocats et l'ambiance
-              de la salle de vente.
+              de la salle de vente. Voir{" "}
+              <ArticleLink slug="jour-audience-encheres-role-avocat">
+                Le jour de l’audience : déroulé et rôle de l’avocat
+              </ArticleLink>
+              .
             </P>
 
             <SubTitle>3. Après l'adjudication : surenchère, paiement et propriété</SubTitle>
@@ -586,9 +700,16 @@ export function ResourcesPage() {
               Remporter l'audience ne signifie pas toujours que l'achat est immédiatement définitif.
             </P>
             <P>
-              Après l'adjudication, une surenchère peut être formée dans le délai légal. Elle doit
-              respecter les conditions prévues par les textes, notamment être déposée par acte
-              d'avocat au greffe compétent.
+              Après l’adjudication, une surenchère peut être formée dans le délai légal de dix
+              jours. Elle doit respecter les conditions prévues par les textes, notamment être
+              déposée par acte d’avocat au greffe du juge de l’exécution et porter sur au moins un
+              dixième du prix principal (art. R. 322-50 et R. 322-51). La surenchère du dixième dans
+              les dix jours est une règle légale en saisie immobilière et en licitation judiciaire
+              (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art.
+              1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le
+              cahier des charges peut la prévoir (Notaires de France décrit 10 % dans les 10 jours
+              pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des
+              charges. Lisez-le avant d’enchérir.
             </P>
             <P>
               Vous pouvez consulter le texte officiel sur Légifrance :{" "}
@@ -602,8 +723,11 @@ export function ResourcesPage() {
               doit alors payer le prix et les frais dans les délais prévus.
             </P>
             <P>
-              Dans le cadre d'une vente forcée, le prix peut être consigné par l'avocat de
-              l'adjudicataire auprès de la Caisse des Dépôts. Pour plus d'informations, consultez la
+              Dans le cadre d’une vente forcée, l’adjudicataire verse le prix sur un compte
+              séquestre ou le consigne auprès de la Caisse des dépôts et consignations (art. L.
+              322-9). Si le prix ou les frais ne sont pas payés dans les délais, le bien est remis
+              en vente : c’est la réitération des enchères, et l’adjudicataire défaillant peut
+              devoir la différence de prix (art. L. 322-12). Pour plus d’informations, consultez la
               page officielle :{" "}
               <Ext href="https://consignations.caissedesdepots.fr/professionnel-du-droit/difficultes-financieres/saisie-immobiliere">
                 Caisse des Dépôts – Saisie immobilière et consignations
@@ -616,7 +740,11 @@ export function ResourcesPage() {
               greffe puis publié au fichier immobilier selon les formalités applicables. Voir les{" "}
               <Ext href="https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939111/">
                 articles R. 322-61 à R. 322-63 du Code des procédures civiles d’exécution
-              </Ext>
+              </Ext>{" "}
+              et l’article{" "}
+              <ArticleLink slug="apres-adjudication-surenchere-paiement-titre-vente">
+                Après l’adjudication : surenchère, paiement, consignation et titre de vente
+              </ArticleLink>
               .
             </P>
 
@@ -627,17 +755,17 @@ export function ResourcesPage() {
             </P>
             <Checklist
               items={[
-                "une surenchère d'au moins un dixième du prix peut être formée dans les 10 jours qui suivent l'adjudication : l'achat n'est définitif qu'à l'expiration de ce délai ;",
-                "pour enchérir, il faut consigner 10 % de la mise à prix, avec un minimum de 3 000 €, par chèque de banque ou caution bancaire remis à l'avocat avant l'audience ;",
-                "le prix doit être payé dans les deux mois qui suivent le jour où la vente devient définitive ; au-delà, des intérêts sont dus ;",
-                "les frais préalables de la procédure doivent être réglés rapidement après l'adjudication, en plus du prix ;",
-                "l'avocat qui porte les enchères doit être inscrit au barreau du tribunal judiciaire où se tient la vente.",
+                "en saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’achat n’est définitif qu’à l’expiration de ce délai ;",
+                "le Code impose de remettre à l’avocat, avant les enchères, une garantie de 10 % de la mise à prix, avec un minimum de 3 000 €, sous forme de chèque de banque ou de caution bancaire irrévocable (art. R. 322-41) ;",
+                "le prix doit être versé ou consigné dans les deux mois qui suivent l’adjudication définitive ; au-delà, des intérêts sont dus (art. R. 322-56) ;",
+                "les frais de poursuite taxés et les droits de mutation se paient en plus du prix, dans le même délai fixé par le Code : le justificatif doit être remis au greffe avant l’expiration de deux mois à compter de l’adjudication définitive (art. R. 322-58) ;",
+                "l’avocat qui porte les enchères doit être inscrit au barreau du tribunal judiciaire où se tient la vente (art. R. 322-40).",
               ]}
             />
             <P>
-              Ces règles résument les textes applicables à la date de rédaction. Elles ne remplacent
-              pas le cahier des conditions de vente du dossier ni l'avis de votre avocat, qui
-              confirmera les montants et les délais de votre vente.
+              Ces règles résument les textes consultés le 13/10/2026. Elles ne remplacent pas le
+              cahier des conditions de vente du dossier ni l'avis de votre avocat, qui confirmera
+              les montants et les délais de votre vente.
             </P>
           </Section>
 
@@ -660,6 +788,27 @@ export function ResourcesPage() {
                 "une marge de sécurité.",
               ]}
             />
+            <P>
+              Trois termes à connaître : les frais taxés sont ceux dont le juge a fixé le montant
+              avant les enchères ; les émoluments sont la rémunération des avocats fixée par un
+              barème ; les débours sont les sommes que l’avocat avance pour votre compte et vous
+              refacture au réel. Le détail, avec des ordres de grandeur datés et à vérifier, figure
+              dans l’article{" "}
+              <ArticleLink slug="frais-vente-encheres-judiciaire">
+                Frais d’une vente aux enchères judiciaire
+              </ArticleLink>
+              .
+            </P>
+            <P>
+              Pour chiffrer ces frais selon votre département, essayez le{" "}
+              <Link
+                href="/simulateur-frais-encheres"
+                className="text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
+              >
+                simulateur de frais d’enchères
+              </Link>
+              .
+            </P>
             <P>
               Immojudis met l'accent sur cette logique de coût complet. Un bien adjugé sous le prix
               du marché peut rester une mauvaise opération si les frais, travaux ou délais de
@@ -711,8 +860,8 @@ export function ResourcesPage() {
               dépasser son enchère plafond. C'est précisément ce qu'il faut éviter.
             </P>
             <Callout>
-              Immojudis a été pensé pour limiter ces risques en donnant une lecture structurée du
-              dossier avant l'enchère.
+              Immojudis a été pensé pour aider à repérer ces risques en donnant une lecture
+              structurée du dossier avant l'enchère ; il ne les supprime pas.
             </Callout>
           </Section>
 
@@ -734,6 +883,23 @@ export function ResourcesPage() {
             <P className="mt-6">
               C'est le cœur de l'approche Immojudis : analyser, décider, enchérir — dans cet ordre.
             </P>
+          </Section>
+
+          <Section id="articles-associes" title="Pour aller plus loin : nos articles">
+            <P>
+              Chaque étape de ce guide a son article détaillé. Ils s’appuient sur des textes
+              officiels et sont à confronter au cahier des conditions de vente de votre dossier.
+            </P>
+            <ul className="mt-4 grid gap-2.5">
+              {RELATED_SLUGS.map((slug) => {
+                const article = getResourceArticle(slug);
+                return article ? (
+                  <li key={slug}>
+                    <ArticleLink slug={slug}>{article.title}</ArticleLink>
+                  </li>
+                ) : null;
+              })}
+            </ul>
           </Section>
 
           <Section id="lexique" title="Lexique des ventes immobilières judiciaires">
@@ -865,6 +1031,17 @@ function Callout({ children }: { children: React.ReactNode }) {
     <div className="mt-5 rounded-lg border-l-4 border-gold bg-gold/[0.07] px-5 py-4 text-[15px] leading-relaxed text-foreground">
       {children}
     </div>
+  );
+}
+
+function ArticleLink({ slug, children }: { slug: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={`/ressources/${slug}`}
+      className="text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
+    >
+      {children}
+    </Link>
   );
 }
 

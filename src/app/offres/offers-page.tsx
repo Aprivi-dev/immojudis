@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
@@ -15,36 +15,11 @@ import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
 import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
-import { fetchBillingOffer } from "@/lib/client-billing";
+import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-offer";
 import { offerComparisonRows } from "@/lib/offer-comparison";
 import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
-
-type OfferState = { configured: boolean | null; trialAvailable: boolean };
-
-/** La souscription peut être fermée côté serveur : la page le dit au lieu de promettre un essai. */
-function useOfferState(): OfferState {
-  const [state, setState] = useState<OfferState>({ configured: null, trialAvailable: true });
-  useEffect(() => {
-    let active = true;
-    fetchBillingOffer()
-      .then((offer) => {
-        if (active) {
-          setState({
-            configured: offer.configured,
-            trialAvailable: offer.trialAvailable !== false,
-          });
-        }
-      })
-      .catch(() => {
-        if (active) setState({ configured: false, trialAvailable: false });
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-  return state;
-}
+import { trackProductEvent } from "@/lib/product-events";
 
 const BENEFITS = [
   {
@@ -77,30 +52,38 @@ const ANALYSIS_FEATURES = [
   "Historique de la vente : passages précédents, baisses de mise à prix, reports",
   "Estimation détaillée et ventes comparables",
   "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
-  "Statistiques des tribunaux, rapport PDF et export des résultats",
+  "Statistiques des tribunaux : prix d’adjudication et scénarios d’enchères, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
 ] as const;
 
-const FAQ: { question: string; answer: (state: OfferState) => ReactNode }[] = [
+const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }[] = [
   {
     question: "Comment résilier ?",
     answer: () => (
       <>
-        Depuis la page « Mon compte », le bouton « Gérer mon abonnement » ouvre le portail de
-        paiement : vous y résiliez à tout moment et vous téléchargez vos factures. La résiliation
-        prend effet à la fin de la période payée.
+        Depuis la page « Mon compte », le bouton « Résilier mon abonnement » ouvre directement le
+        formulaire de résiliation du portail de paiement : vous résiliez à tout moment, la date de
+        fin d’accès est affichée avant confirmation. La résiliation prend effet à la fin de la
+        période payée. Le bouton « Gérer mon abonnement » donne accès à vos factures et à votre
+        moyen de paiement.
       </>
     ),
   },
   {
     question: "Y a-t-il un essai gratuit ?",
-    answer: ({ configured, trialAvailable }) =>
-      configured === false ? (
+    answer: (offer) =>
+      offer.status === "loading" ? (
+        <>Les conditions de l’essai s’affichent dès que l’offre est chargée.</>
+      ) : offer.status === "error" ? (
         <>
-          Les souscriptions sont fermées pour le moment : aucun essai n’est proposé tant que le
-          paiement est indisponible. Le catalogue reste accessible gratuitement avec l’offre
-          Découverte.
+          Les conditions de l’offre n’ont pas pu être chargées pour le moment. Rechargez la page
+          dans un instant.
         </>
-      ) : trialAvailable ? (
+      ) : !offer.open ? (
+        <>
+          Aucun essai n’est proposé avant l’ouverture des souscriptions. Le catalogue reste
+          accessible gratuitement avec l’offre Découverte.
+        </>
+      ) : offer.trialAvailable ? (
         <>
           Oui. L’offre Analyse démarre par un essai de {ANALYSIS_TRIAL_DAYS} jours avec carte
           bancaire. Sans résiliation avant la fin de l’essai, l’abonnement se poursuit au tarif
@@ -158,13 +141,17 @@ const FAQ: { question: string; answer: (state: OfferState) => ReactNode }[] = [
 ];
 
 export function OffersPage() {
-  const offer = useOfferState();
+  useEffect(() => {
+    trackProductEvent("offers_viewed");
+  }, []);
+  const source = useBillingOffer();
+  const { offer } = source;
   const price = resolveAnalysisOfferLabel();
   const trialLine =
-    offer.configured === null
+    offer.status !== "ready"
       ? null
-      : offer.configured === false
-        ? "Les souscriptions ne sont pas ouvertes pour le moment. Le catalogue reste accessible gratuitement."
+      : !offer.open
+        ? "Ouverture prochaine des souscriptions. Le catalogue reste accessible gratuitement."
         : offer.trialAvailable
           ? `Essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours avec carte bancaire, puis abonnement résiliable à tout moment.`
           : "Abonnement résiliable à tout moment, sans nouvel essai.";
@@ -253,9 +240,15 @@ export function OffersPage() {
             description="Pour décider, chiffrer et préparer l’enchère."
             features={ANALYSIS_FEATURES}
             highlighted
+            recommended={offer.status === "ready" && offer.open}
           >
             {trialLine ? <p className="mb-4 text-center text-sm font-medium">{trialLine}</p> : null}
-            <BillingActions hideHelper className="[&>button]:w-full" />
+            <BillingActions
+              hideHelper
+              offerSource={source}
+              handleCheckoutReturn
+              className="[&>button]:w-full"
+            />
           </PlanPanel>
         </div>
       </section>
@@ -270,8 +263,13 @@ export function OffersPage() {
           </h2>
           <ComparisonTable />
           <p className="mt-4 text-sm text-ink-soft">
-            Les analyses dépendent des informations et des pièces disponibles pour chaque vente.
-            Vérifiez le contenu de la fiche avant de décider.
+            Les scénarios d’enchères s’appuient sur les adjudications des trois dernières années
+            publiées par Licitor (source tierce, non officielle) et sur les prix DVF ; les
+            statistiques de prix d’adjudication portent sur la période publiée indiquée sur la
+            fiche. Ils ne sont affichés que pour les tribunaux disposant d’assez de ventes
+            comparables ; la fiche indique quand ce n’est pas le cas. Ils décrivent le passé et ne
+            prédisent pas le prix final. Les analyses dépendent aussi des informations et des pièces
+            disponibles pour chaque vente. Vérifiez le contenu de la fiche avant de décider.
           </p>
         </div>
       </section>
@@ -420,6 +418,7 @@ function PlanPanel({
   features,
   children,
   highlighted = false,
+  recommended = false,
 }: {
   name: string;
   price: string;
@@ -427,6 +426,8 @@ function PlanPanel({
   features: readonly string[];
   children: ReactNode;
   highlighted?: boolean;
+  /** The « Recommandée » badge only appears once the plan can really be bought. */
+  recommended?: boolean;
 }) {
   return (
     <Card
@@ -445,7 +446,7 @@ function PlanPanel({
         <h3 id={`offre-${name}`} className="font-display text-3xl font-semibold">
           {name}
         </h3>
-        {highlighted ? (
+        {highlighted && recommended ? (
           <Badge tone="gold" className="!border-gold-light !bg-transparent !text-gold-light">
             Recommandée
           </Badge>

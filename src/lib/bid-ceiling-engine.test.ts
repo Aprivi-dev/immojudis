@@ -129,6 +129,51 @@ describe("computeCeilingPlan", () => {
     expect(plan.steps.some((step) => step.key === "yield")).toBe(true);
   });
 
+  it.each([null, 0])("flags a rental project whose rent is %s", (monthly) => {
+    const plan = computeCeilingPlan(
+      hypotheses({
+        project: "louer",
+        rent: { monthly, source: "absent", vacancyPct: 5, nonRecoverablePct: 7 },
+      }),
+    );
+
+    expect(plan.rentMissing).toBe(true);
+    expect(plan.yieldBudget).toBeNull();
+    expect(plan.binding).toBe("valeur");
+    // Sans loyer, le plafond ne repose que sur la valeur : même montant que pour « Habiter ».
+    expect(plan.maxBid).toBeGreaterThan(0);
+  });
+
+  it("does not flag a missing rent outside a rental project, nor a known rent", () => {
+    const noRent = {
+      monthly: null,
+      source: "absent" as const,
+      vacancyPct: 5,
+      nonRecoverablePct: 7,
+    };
+
+    expect(computeCeilingPlan(hypotheses({ project: "habiter", rent: noRent })).rentMissing).toBe(
+      false,
+    );
+    expect(computeCeilingPlan(hypotheses({ project: "revendre", rent: noRent })).rentMissing).toBe(
+      false,
+    );
+    expect(computeCeilingPlan(hypotheses({ project: "louer" })).rentMissing).toBe(false);
+  });
+
+  it("flags a missing rent even when the plan is unavailable for another reason", () => {
+    const plan = computeCeilingPlan(
+      hypotheses({
+        project: "louer",
+        value: { ...hypotheses().value, amount: null },
+        rent: { monthly: null, source: "absent", vacancyPct: 5, nonRecoverablePct: 7 },
+      }),
+    );
+
+    expect(plan.available).toBe(false);
+    expect(plan.rentMissing).toBe(true);
+  });
+
   it("keeps a resale margin and selling costs for a resale project", () => {
     const plan = computeCeilingPlan(hypotheses({ project: "revendre" }));
 

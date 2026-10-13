@@ -6,7 +6,7 @@ import { ExampleSalePage } from "./example-sale-page";
 // "Exemple fictif" banner and the absence of structured data keep it from being
 // mistaken for a real listing.
 export const metadata: Metadata = {
-  title: "Annonce exemple : l’analyse d’une vente au tribunal",
+  title: "Annonce exemple : analyse d’une vente",
   description:
     "Exemple fictif d’analyse Immojudis pour un appartement vendu au tribunal : mise à prix, valeur estimée, frais, travaux, risques et enchère plafond.",
   alternates: { canonical: "/annonce-exemple" },
@@ -21,5 +21,10 @@ export default async function Page({ searchParams }: PageProps) {
   const requested = (await searchParams).bien;
   const key = isExampleSaleKey(requested) ? requested : "bordeaux";
   // Dates are computed now (hearing in 21 days), never frozen at build time.
-  return <ExampleSalePage example={getExampleSaleRecords()[key]} />;
+  return (
+    <ExampleSalePage
+      example={getExampleSaleRecords()[key]}
+      adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
+    />
+  );
 }

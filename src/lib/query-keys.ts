@@ -67,6 +67,8 @@ export const queryKeys = {
   professionalPilotWorkspace: (userId: Id, saleId: string) =>
     ["professional-pilot-workspace", userId, saleId] as const,
   lawyerReferrals: (userKey: Id, saleId: string) => ["lawyer-referrals", userKey, saleId] as const,
+  lawyerReferralPreview: (userKey: Id, saleId: string, lawyerId: Id) =>
+    ["lawyer-referral-preview", userKey, saleId, lawyerId] as const,
   lawyerDirectory: (
     saleId: string | undefined,
     bar: string | undefined,

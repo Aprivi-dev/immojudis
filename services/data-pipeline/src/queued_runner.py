@@ -53,6 +53,7 @@ from src.queue_job_state import finish_job as _finish_claim
 from src.sale_procedure import classify_sale_procedure
 from src.source_detail_worker import run_source_detail_jobs
 from src.source_task_deadline import source_task_deadline_scope
+from src.source_withdrawal import SaleSourceWithdrawn, deferral_for, require_sale_not_withdrawn
 from src.storage.supabase_client import (
     claim_auction_enrichment_jobs_family_from_supabase,
     claim_auction_enrichment_jobs_from_supabase,
@@ -654,10 +655,9 @@ def run_enrichment_queue_batch(
                 documents=sale.documents,
                 settings=settings,
             )
-        except EncheresPubliquesAccessNotAuthorized:
-            access_deferred = QueueJobDeferred(
-                "Encheres Publiques access authorization required before general enrichment"
-            )
+            require_sale_not_withdrawn(sale, str(settings.get("supabase_db_url") or ""))
+        except (EncheresPubliquesAccessNotAuthorized, SaleSourceWithdrawn) as exc:
+            access_deferred = deferral_for(exc)
             _record_worker_deferred_job_ids(sale_jobs)
             _defer_enrichment_jobs(sale_jobs, access_deferred)
             mark_enrichment_jobs_terminal(sale_jobs)

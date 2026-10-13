@@ -128,7 +128,10 @@ function renderDetail(
           adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         />
       ) : (
-        <FreeSaleDetailView sale={sale} />
+        <FreeSaleDetailView
+          sale={sale}
+          adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        />
       )}
     </QueryClientProvider>,
   );
@@ -148,7 +151,7 @@ function expectActivePanel(container: HTMLElement, tab: string): HTMLElement {
 
 describe("integrated listing", () => {
   it("mounts one panel at a time and supports keyboard tab navigation", () => {
-    const { container } = renderDetail("analysis");
+    const { container } = renderDetail("analysis", undefined, true, true);
 
     expect(screen.getAllByRole("tab")).toHaveLength(6);
     expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
@@ -660,7 +663,7 @@ describe("integrated listing", () => {
       discountPct: 32,
       reliability: "medium",
     });
-    renderDetail("discovery");
+    renderDetail("discovery", undefined, true, true);
     selectTab("Estimation");
     expect(
       screen.getByRole("heading", {
@@ -712,17 +715,48 @@ describe("integrated listing", () => {
     "stats-ventes",
     "stats-avocats",
   ])("opens the tribunal statistics panel from #%s without loading it in Aperçu", (anchor) => {
-    const initial = renderDetail("analysis");
+    const initial = renderDetail("analysis", undefined, true, true);
     expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
     initial.unmount();
     window.history.replaceState(null, "", `#${anchor}`);
-    const { container } = renderDetail("analysis");
+    const { container } = renderDetail("analysis", undefined, true, true);
     expectActivePanel(container, "statistiques");
     expect(screen.getByRole("tab", { name: "Statistiques" }).getAttribute("aria-selected")).toBe(
       "true",
     );
     expect(screen.getByText("Statistiques du tribunal")).toBeTruthy();
   });
+
+  it.each(["analysis", "discovery"] as const)(
+    "hides the tribunal statistics, their locked card and their preview while the flag is closed (%s)",
+    (access) => {
+      const { container } = renderDetail(access);
+
+      expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
+      expect(screen.getAllByRole("tab")).toHaveLength(5);
+      expect(container.textContent).not.toContain(
+        "Prix d’adjudication accessibles avec l’offre Analyse",
+      );
+      expect(container.textContent).not.toContain(
+        "Les statistiques du tribunal avec l’offre Analyse",
+      );
+    },
+  );
+
+  it.each(["analysis", "discovery"] as const)(
+    "falls back to Aperçu for a statistics deep link while the flag is closed (%s)",
+    (access) => {
+      window.history.replaceState(null, "", "#stats-adjudications");
+      const { container } = renderDetail(access);
+
+      expectActivePanel(container, "apercu");
+      expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
+      expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
+      expect(container.textContent).not.toContain(
+        "Prix d’adjudication accessibles avec l’offre Analyse",
+      );
+    },
+  );
 
   it.each(["notary", "state", "online", "unknown"] as const)(
     "falls back to Aperçu for a statistics deep link on a %s sale",

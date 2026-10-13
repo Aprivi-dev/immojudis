@@ -82,7 +82,9 @@ function SponsoredLawyerCard({
     >
       <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-gold-text">
         <Megaphone className="h-3.5 w-3.5" aria-hidden />
-        Sponsorisé
+        {lawyer.placement === "trial"
+          ? "Mise en avant en période d'essai"
+          : "Mise en avant payante"}
       </div>
       <h2
         id="search-lawyer-placement-title"
@@ -107,8 +109,8 @@ function SponsoredLawyerCard({
         Voir l’annuaire du secteur
       </a>
       <p className="mt-3 text-[11px] leading-relaxed text-ink-soft">
-        Cette mise en avant est signalée comme sponsorisée et ne constitue ni une recommandation, ni
-        une garantie de résultat.
+        Cette mise en avant est signalée comme telle et ne constitue ni une recommandation, ni une
+        garantie de résultat.
       </p>
     </section>
   );
@@ -121,15 +123,12 @@ function OpenLawyerPlacement({ loading, className }: { loading: boolean; classNa
       aria-busy={loading}
       className={`flex min-h-[320px] flex-col rounded-lg border border-gold-light bg-surface p-4 shadow-sm ${className}`.trim()}
     >
-      <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-ink-soft">
-        <Megaphone className="h-3.5 w-3.5" aria-hidden />
-        Espace partenaire
-      </div>
+      <Megaphone className="h-4 w-4 text-ink-soft" aria-hidden />
       <h2
         id="search-lawyer-placement-title"
         className="mt-2 font-display text-lg font-semibold leading-tight text-brand-navy"
       >
-        Présentez votre cabinet
+        Vous êtes avocat ? Présentez votre cabinet ici
       </h2>
       <p className="mt-2 text-sm leading-relaxed text-ink-soft">
         Présentez votre cabinet aux acquéreurs qui recherchent un bien dans ce secteur.

@@ -96,7 +96,14 @@ function Table({ items, caption }: { items: PublicTribunalActivity[]; caption: s
  * Free, public figures of the courts: what the catalogue lists today. The
  * adjudication results (who won, at what price) remain in the Analyse barometer.
  */
-export function PublicTribunalActivitySection({ items }: { items: PublicTribunalActivity[] }) {
+export function PublicTribunalActivitySection({
+  items,
+  adjudicationStatisticsEnabled = false,
+}: {
+  items: PublicTribunalActivity[];
+  /** Only mentions the Analyse adjudication results once they are open. */
+  adjudicationStatisticsEnabled?: boolean;
+}) {
   if (!items.length) return null;
   const totals = publicTribunalTotals(items);
   const heading = `${formatCount(totals.upcoming)} ${
@@ -120,8 +127,10 @@ export function PublicTribunalActivitySection({ items }: { items: PublicTribunal
       </h2>
       <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/70">
         Le volume d’audiences, la prochaine date et la mise à prix médiane des biens annoncés,
-        tribunal par tribunal. Les prix d’adjudication et les résultats des ventes passées sont
-        réservés à l’offre Analyse.
+        tribunal par tribunal.
+        {adjudicationStatisticsEnabled
+          ? " Les prix d’adjudication et les résultats des ventes passées sont réservés à l’offre Analyse."
+          : null}
       </p>
       <div className="mt-6">
         <Table items={first} caption="Tribunaux ayant le plus de ventes à venir" />

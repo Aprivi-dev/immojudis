@@ -351,7 +351,7 @@ async function copyText(value: string) {
 
 function localRedirect(value: string): string {
   try {
-    const url = new URL(value, "https://www.immojudis.fr");
+    const url = new URL(value, "https://immojudis.com");
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return "/sales";

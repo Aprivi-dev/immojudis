@@ -2,6 +2,12 @@ import budgetArticle from "@/content/resources/prix-plafond-encheres-immobiliere
 import selectionArticle from "@/content/resources/analyser-opportunite-encheres.json";
 import occupationArticle from "@/content/resources/acheter-bien-occupe-encheres.json";
 import buildingArticle from "@/content/resources/immeuble-rapport-encheres.json";
+import hearingArticle from "@/content/resources/jour-audience-encheres-role-avocat.json";
+import afterAwardArticle from "@/content/resources/apres-adjudication-surenchere-paiement-titre-vente.json";
+import saleTypesArticle from "@/content/resources/ventes-notariales-domaniales-differences-tribunal.json";
+import saleConditionsArticle from "@/content/resources/lire-cahier-conditions-vente-preparer-visite.json";
+import costsArticle from "@/content/resources/frais-vente-encheres-judiciaire.json";
+import financingArticle from "@/content/resources/financer-achat-encheres-pret-delais.json";
 
 export interface ResourceSection {
   id: string;
@@ -62,6 +68,12 @@ function defineArticle(content: ResourceContent, image: string): ResourceArticle
 }
 
 export const RESOURCE_ARTICLES: ResourceArticle[] = [
+  defineArticle(hearingArticle, "/media/landing/auction-toulouse.webp"),
+  defineArticle(afterAwardArticle, "/media/landing/gallery-townhouse.webp"),
+  defineArticle(saleTypesArticle, "/media/landing/judicial-candle.webp"),
+  defineArticle(saleConditionsArticle, "/media/landing/home-bordeaux-twilight.webp"),
+  defineArticle(costsArticle, "/media/landing/justice-goddess.webp"),
+  defineArticle(financingArticle, "/media/landing/gallery-land.webp"),
   defineArticle(budgetArticle, "/media/landing/auction-bordeaux.webp"),
   defineArticle(occupationArticle, "/media/landing/dossier-apartment.webp"),
   defineArticle(buildingArticle, "/media/landing/auction-lyon.webp"),

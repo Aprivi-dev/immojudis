@@ -78,6 +78,8 @@ describe("information agent email content template", () => {
               "Vous pouvez créer un compte professionnel ImmoJudis.",
               "Créer un compte professionnel : https://immojudis.com/login?mode=professional",
               "",
+              "Vous publiez d’autres ventes ? Un compte professionnel Immojudis vous permet de nous les transmettre directement.",
+              "",
               "Bien cordialement,",
             ].join("\n"),
           }
@@ -89,6 +91,7 @@ describe("information agent email content template", () => {
     expect(containsInformationAgentAccountInvitation(rendered.bodyText)).toBe(false);
     expect(rendered.bodyText).toContain("Bien cordialement");
     expect(rendered.bodyText).not.toContain("POUR LES PROFESSIONNELS");
+    expect(rendered.bodyText).not.toContain("Vous publiez d’autres ventes");
   });
 
   it("rejects unknown variables and removal of the questions placeholder", () => {

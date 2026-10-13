@@ -1,5 +1,6 @@
 import type { SaleDocument } from "@/lib/types";
 import { safeExternalHttpUrl } from "@/lib/external-url";
+import { isWithdrawnSourceUrl } from "@/lib/withdrawn-sources";
 
 export function parseDocs(raw: unknown): SaleDocument[] {
   if (!raw) return [];
@@ -36,7 +37,9 @@ export function parseDocs(raw: unknown): SaleDocument[] {
 }
 
 export function safeDocumentUrl(value: unknown): string | null {
-  return safeExternalHttpUrl(value);
+  const href = safeExternalHttpUrl(value);
+  // Pièce hébergée par une source retirée du catalogue : jamais proposée (voir withdrawn-sources.ts).
+  return href && !isWithdrawnSourceUrl(href) ? href : null;
 }
 
 export function isEmbeddableDocumentUrl(value: unknown): boolean {

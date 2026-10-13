@@ -6,10 +6,11 @@ import json
 import logging
 import os
 import re
+import sys
 import tempfile
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -32,6 +33,8 @@ REFERENCE_DIR = RAW_DIR / "outcome_sources" / "justice_courts"
 COMPETENCES_FILENAME = "resource-e2a1941b-observed-competences.csv"
 STRUCTURES_FILENAME = "2026-domaine-juridique-adresse.csv"
 MANIFEST_FILENAME = "justice-reference-manifest.json"
+# After a failed refresh with a valid local copy, do not try again before this delay.
+REFRESH_RETRY_THROTTLE_HOURS = 6.0
 _ALLOWED_DOWNLOAD_HOSTS = {"static.data.gouv.fr", "www.data.gouv.fr"}
 _SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -104,16 +107,31 @@ def sync_justice_references(
     *,
     client: httpx.Client | None = None,
     allow_verified_cache: bool = True,
+    max_age_days: float | None = None,
+    retry_throttle_hours: float = REFRESH_RETRY_THROTTLE_HOURS,
 ) -> dict[str, Any]:
     """Refresh both Ministry references and install them only after validation.
 
     data.gouv.fr occasionally retains several main resources, and one resource
     has previously been published on the wrong dataset page. Selection is thus
     based on the expected byte range *and* the detected Justice CSV schema.
+
+    With ``max_age_days``, a local copy that was verified less than that many
+    days ago (and still validates) is kept without any network access. A failed
+    refresh keeps a valid local copy; it is an error only when none exists.
+    A failed refresh is recorded in the manifest (``refresh_attempted_at``) and,
+    while a valid copy exists, no new attempt is made for ``retry_throttle_hours``.
     """
 
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
+    if max_age_days is not None:
+        fresh = _fresh_cached_manifest(destination, timedelta(days=max_age_days))
+        if fresh is not None:
+            return fresh
+        throttled = _throttled_cached_manifest(destination, timedelta(hours=retry_throttle_hours))
+        if throttled is not None:
+            return throttled
     owned_client = client is None
     http_client = client or httpx.Client(
         follow_redirects=True,
@@ -148,8 +166,9 @@ def sync_justice_references(
                         exc,
                     )
                     return _cached_manifest(destination, refresh_error=str(exc))
+                reason = "no valid local copy exists" if allow_verified_cache else "cache fallback is disabled"
                 raise JusticeReferenceSyncError(
-                    f"official Justice references could not be refreshed safely: {exc}"
+                    f"official Justice references could not be refreshed safely and {reason}: {exc}"
                 ) from exc
 
             for spec in DATASET_SPECS:
@@ -391,6 +410,48 @@ def _cached_manifest(destination: Path, *, refresh_error: str) -> dict[str, Any]
     manifest["cache_fallback"] = True
     manifest["refresh_attempted_at"] = datetime.now(UTC).isoformat()
     manifest["refresh_error"] = refresh_error[:500]
+    if "synced_at" in manifest:
+        # Remember the attempt so the next units do not hit data.gouv.fr again at once.
+        try:
+            _atomic_write_json(manifest_path, manifest)
+        except OSError as exc:
+            LOGGER.warning("Could not record the Justice refresh attempt: %s", exc)
+    return manifest
+
+
+def _throttled_cached_manifest(destination: Path, throttle: timedelta) -> dict[str, Any] | None:
+    """The manifest of a valid local copy whose refresh failed less than ``throttle`` ago, else None."""
+    try:
+        manifest = json.loads((destination / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+        attempted_at = datetime.fromisoformat(str(manifest["refresh_attempted_at"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(manifest, dict) or attempted_at.tzinfo is None:
+        return None
+    age = datetime.now(UTC) - attempted_at
+    if not timedelta(0) <= age < throttle or not _validate_cached_pair(destination):
+        return None
+    manifest["cache_fallback"] = True
+    manifest["refresh_skipped"] = True
+    manifest["refresh_throttled"] = True
+    return manifest
+
+
+def _fresh_cached_manifest(destination: Path, max_age: timedelta) -> dict[str, Any] | None:
+    """The manifest of a valid local copy verified less than ``max_age`` ago, else None."""
+    try:
+        manifest = json.loads((destination / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+        synced_at = datetime.fromisoformat(str(manifest["synced_at"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(manifest, dict) or synced_at.tzinfo is None:
+        return None
+    age = datetime.now(UTC) - synced_at
+    if not timedelta(0) <= age < max_age or not _validate_cached_pair(destination):
+        return None
+    manifest["cache_fallback"] = False
+    manifest["refresh_skipped"] = True
+    manifest["age_days"] = round(age.total_seconds() / 86_400, 2)
     return manifest
 
 
@@ -413,11 +474,26 @@ def _main() -> int:
         action="store_true",
         help="Fail instead of using a previously verified local reference.",
     )
-    args = parser.parse_args()
-    manifest = sync_justice_references(
-        args.output_dir,
-        allow_verified_cache=not args.no_cache_fallback,
+    parser.add_argument(
+        "--max-age-days",
+        type=float,
+        default=None,
+        help="Skip the refresh when the local copy was verified less than this many days ago.",
     )
+    args = parser.parse_args()
+    try:
+        manifest = sync_justice_references(
+            args.output_dir,
+            allow_verified_cache=not args.no_cache_fallback,
+            max_age_days=args.max_age_days,
+        )
+    except JusticeReferenceSyncError as exc:
+        message = f"Justice references unavailable: {exc}"
+        if os.getenv("GITHUB_ACTIONS") == "true":
+            print(f"::error title=Justice references unavailable::{message}", file=sys.stderr)
+        else:
+            print(message, file=sys.stderr)
+        return 1
     print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 

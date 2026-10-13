@@ -22,7 +22,7 @@ import Minus from "lucide-react/dist/esm/icons/minus.js";
 import Navigation from "lucide-react/dist/esm/icons/navigation.js";
 import Plus from "lucide-react/dist/esm/icons/plus.js";
 import { dpeColor, extractDpe } from "@/lib/dpe";
-import { formatDate, formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatPricePerM2, formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
 import type { GeographicBoundary } from "@/lib/geographic-boundary";
 import {
@@ -89,6 +89,8 @@ export type MapPanelProps = {
   locationCenter?: { lat: number; lng: number; zoom?: number } | null;
   geographicLabel?: string;
   totalCount?: number;
+  /** Points localisables de la recherche avant le plafond d'affichage (voir `sales`). */
+  mappablePointsTotal?: number;
   preview?: boolean;
   showDpeLegend?: boolean;
   sales: AuctionSale[];
@@ -105,6 +107,8 @@ export type MapPanelProps = {
   onViewportChange: (viewport: MapViewportChange) => void;
   onSearchAsMoveChange: (enabled: boolean) => void;
   onSearchViewport?: () => void;
+  /** Appelé par « Voir la liste » quand la carte ne peut pas s'afficher. */
+  onShowList?: () => void;
 };
 
 export type MapViewportChange = {
@@ -124,6 +128,10 @@ type QueriedMapFeature = {
 };
 
 type PopupAccess = { preview: boolean; analysisLocked: boolean; detailLoading: boolean };
+
+/** Cadenas (tracé lucide « lock ») suivi de « Offre Analyse », pour une valeur réservée. */
+const ANALYSIS_LOCK_HTML =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline;vertical-align:-1px;margin-right:3px"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Offre Analyse';
 
 function saleForMapReview(
   sale: AuctionSale,
@@ -206,6 +214,7 @@ export function MapPanel({
   locationCenter,
   geographicLabel,
   totalCount,
+  mappablePointsTotal,
   preview = false,
   showDpeLegend = true,
   sales,
@@ -222,6 +231,7 @@ export function MapPanel({
   onViewportChange,
   onSearchAsMoveChange,
   onSearchViewport,
+  onShowList,
 }: MapPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapboxMap | null>(null);
@@ -670,7 +680,10 @@ export function MapPanel({
   if (!accessToken) {
     return (
       <div className="relative h-full min-h-[28rem] overflow-hidden bg-surface-tint">
-        <MapFallback message="La carte est indisponible. Vous pouvez continuer à consulter les annonces dans la liste." />
+        <MapFallback
+          message="La carte est indisponible. Vous pouvez continuer à consulter les annonces dans la liste."
+          onShowList={onShowList}
+        />
       </div>
     );
   }
@@ -679,13 +692,17 @@ export function MapPanel({
     <div className="relative h-full min-h-[28rem] overflow-hidden bg-surface-tint">
       <div
         ref={containerRef}
+        role="region"
         aria-label="Carte Mapbox des biens Immojudis"
         data-testid="mapbox-map-panel"
         className="!absolute !inset-0 !h-full !w-full"
       />
 
       {mapError ? (
-        <MapFallback message="La carte n’a pas pu charger. Les annonces restent accessibles dans la liste." />
+        <MapFallback
+          message="La carte n’a pas pu charger. Les annonces restent accessibles dans la liste."
+          onShowList={onShowList}
+        />
       ) : null}
 
       {!mapError && (isLoading || !mapReady) ? (
@@ -703,7 +720,7 @@ export function MapPanel({
         </div>
       ) : null}
 
-      <div className="absolute left-4 top-4 z-30 flex max-w-[calc(100%-6rem)] flex-wrap items-center gap-2">
+      <div className="absolute left-4 top-4 z-30 flex max-w-[calc(100%-6rem)] flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {boundary ? (
           <div
             className="inline-flex items-center gap-2 rounded-md border border-line bg-white/95 px-3 py-2 text-xs font-bold text-brand-navy shadow-lg backdrop-blur"
@@ -753,8 +770,8 @@ export function MapPanel({
             >
               <LocateFixed className="h-4 w-4" />
               {searchAsMove
-                ? "Actualisation automatique activée"
-                : "Actualiser en déplaçant la carte"}
+                ? "Recherche en déplaçant la carte : activée"
+                : "Chercher en déplaçant la carte"}
             </button>
             {onSearchViewport && !searchAsMove && viewportDirty ? (
               <button
@@ -793,10 +810,13 @@ export function MapPanel({
       </div>
 
       <div className="absolute bottom-10 left-4 z-30 max-w-[calc(100%-2rem)] rounded-md bg-white/95 px-3 py-2 text-xs text-ink-soft">
-        {geocodedSales.length.toLocaleString("fr-FR")} annonces situées
-        {totalCount != null && totalCount > geocodedSales.length
-          ? ` sur ${totalCount.toLocaleString("fr-FR")} résultats${preview ? " · positions approximatives de cette page" : ""}`
-          : ""}
+        {mappablePointsTotal != null && mappablePointsTotal > geocodedSales.length
+          ? `${geocodedSales.length.toLocaleString("fr-FR")} biens affichés sur ${mappablePointsTotal.toLocaleString("fr-FR")} : précisez vos filtres ou activez « Chercher en déplaçant la carte »`
+          : `${geocodedSales.length.toLocaleString("fr-FR")} annonces situées${
+              totalCount != null && totalCount > geocodedSales.length
+                ? ` sur ${totalCount.toLocaleString("fr-FR")} résultats${preview ? " · positions approximatives de cette page" : ""}`
+                : ""
+            }`}
         <span className="sr-only">
           {" "}
           Les ronds dorés regroupent plusieurs ventes ({clusterSalesLabel(2)} ou plus) ; zoomez pour
@@ -1067,10 +1087,14 @@ function buildPopupHtml(
   const displaySurface = getDisplaySurface(sale);
   const pricePerSquareMeter = pricePerM2(sale.starting_price_eur, surface);
   const score =
-    sale.investment_score == null ? "À auditer" : `${Math.round(sale.investment_score)}`;
+    sale.investment_score == null ? "non calculé" : `${Math.round(sale.investment_score)}`;
   const riskCount = sale.risks?.length ?? 0;
   const riskLabel =
-    riskCount > 1 ? `${riskCount} alertes` : riskCount === 1 ? "1 alerte" : "À vérifier";
+    riskCount > 1
+      ? `${riskCount} alertes`
+      : riskCount === 1
+        ? "1 alerte"
+        : "à vérifier dans les pièces";
   const imageUrl = access.preview
     ? firstPropertyImage(sale.media)
     : mapboxSatelliteImageUrl({
@@ -1096,7 +1120,7 @@ function buildPopupHtml(
       }
       <div class="immo-mapbox-popup-body">
         <strong class="immo-mapbox-popup-price">${escapeHtml(
-          formatPrice(sale.starting_price_eur),
+          formatStartingPrice(sale.starting_price_eur),
         )}</strong>
         <a class="immo-mapbox-popup-title" href="${escapeAttribute(detailUrl)}">${escapeHtml(
           saleTitle,
@@ -1105,8 +1129,8 @@ function buildPopupHtml(
         <div class="immo-mapbox-popup-metrics">
           <span>${escapeHtml(displaySurface.label)}</span>
           <span>${escapeHtml(formatPricePerM2(pricePerSquareMeter))}</span>
-          <span>Score ${escapeHtml(access.analysisLocked ? "Analyse" : score)}</span>
-          <span>Risque ${escapeHtml(access.analysisLocked ? "Analyse" : riskLabel)}</span>
+          <span>Score : ${access.analysisLocked ? ANALYSIS_LOCK_HTML : escapeHtml(score)}</span>
+          <span>Risques : ${access.analysisLocked ? ANALYSIS_LOCK_HTML : escapeHtml(riskLabel)}</span>
         </div>
         <div class="immo-mapbox-popup-tags">
           <span>${escapeHtml(propertyTypeLabel(sale.property_type))}</span>
@@ -1144,13 +1168,20 @@ function isMobileMap(node: HTMLDivElement | null) {
   return node != null && node.clientWidth > 0 && node.clientWidth < 640;
 }
 
-function MapFallback({ message }: { message: string }) {
+function MapFallback({ message, onShowList }: { message: string; onShowList?: () => void }) {
   return (
     <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-surface-tint/80 px-6 text-center">
-      <div className="max-w-sm rounded-md border border-line bg-white p-5 shadow-lg">
+      <div className="pointer-events-auto max-w-sm rounded-md border border-line bg-white p-5 shadow-lg">
         <MapPin className="mx-auto h-8 w-8 text-brand-navy" />
-        <h2 className="mt-3 text-base font-bold text-brand-navy">Carte Mapbox indisponible</h2>
+        <h2 className="mt-3 text-base font-bold text-brand-navy">Carte indisponible</h2>
         <p className="mt-2 text-sm leading-relaxed text-ink-soft">{message}</p>
+        <a
+          href="#sales-results"
+          onClick={onShowList}
+          className="mt-4 inline-flex min-h-11 items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+        >
+          Voir la liste
+        </a>
       </div>
     </div>
   );

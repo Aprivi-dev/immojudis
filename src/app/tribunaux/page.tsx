@@ -3,19 +3,52 @@ import { PublicTribunalActivitySection } from "@/components/PublicTribunalActivi
 import { TribunalJudicialActivityExplorer } from "@/components/TribunalJudicialActivityExplorer";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
 
-export const metadata: Metadata = {
-  title: "Statistiques Tribunaux",
-  description:
-    "Ventes judiciaires à venir, prochaines audiences et mises à prix tribunal par tribunal ; prix d’adjudication et résultats avec l’offre Analyse.",
-  alternates: { canonical: "/tribunaux" },
-  robots: { index: true, follow: true },
-};
+/**
+ * The adjudication prices (Licitor results) are announced only once the statistics are open.
+ * Same switch as the sale page and `getAdjudicationPriceStatisticsForSale`.
+ */
+function adjudicationStatisticsEnabled(): boolean {
+  return process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true";
+}
+
+// The page is rendered ahead of time and then refreshed by Next.js. Without an explicit value a
+// render made during an outage (empty list, no figures) would be kept until the next deploy.
+// 5 minutes: same delay as PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS (a test checks it; Next.js
+// wants a literal here). The courts themselves stay cached for an hour in the data cache.
+export const revalidate = 300;
+
+export async function generateMetadata(): Promise<Metadata> {
+  const activity = await loadPublicTribunalActivity();
+  const adjudication = adjudicationStatisticsEnabled();
+  return {
+    title: "Ventes judiciaires à venir par tribunal",
+    description: adjudication
+      ? "Ventes judiciaires à venir, prochaines audiences et mises à prix tribunal par tribunal ; prix d’adjudication et résultats avec l’offre Analyse, pour les tribunaux à l’historique suffisant."
+      : "Ventes judiciaires à venir, prochaine audience et mise à prix médiane des biens annoncés, tribunal judiciaire par tribunal judiciaire.",
+    alternates: { canonical: "/tribunaux" },
+    // Without any court to list the page has nothing of its own to offer a search engine. A read
+    // error says nothing about the courts: the page stays indexable, and the short `revalidate`
+    // above keeps that render from lasting.
+    robots:
+      activity.status === "ok" && activity.items.length === 0
+        ? { index: false, follow: true }
+        : { index: true, follow: true },
+  };
+}
 
 export default async function Page() {
-  const publicActivity = await loadPublicTribunalActivity();
+  const activity = await loadPublicTribunalActivity();
+  const publicActivity = activity.status === "ok" ? activity.items : [];
+  const adjudication = adjudicationStatisticsEnabled();
   return (
     <TribunalJudicialActivityExplorer
-      publicActivity={<PublicTribunalActivitySection items={publicActivity} />}
+      adjudicationStatisticsEnabled={adjudication}
+      publicActivity={
+        <PublicTribunalActivitySection
+          items={publicActivity}
+          adjudicationStatisticsEnabled={adjudication}
+        />
+      }
     />
   );
 }

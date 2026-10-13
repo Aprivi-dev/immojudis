@@ -55,9 +55,7 @@ describe("renderInformationRequestEmail", () => {
     expect(message.html).not.toContain("?subject=Re");
   });
 
-  it("n'invite à créer un compte que par le gabarit, une seule fois et sans traceur", async () => {
-    const accountInvitationUrl =
-      "https://staging.immojudis.com/login?mode=professional&redirect=%2Fpublish";
+  it("reste purement informatif : aucune invitation à créer un compte, aucune prospection", async () => {
     const message = await renderInformationRequestEmail({
       subject: "Maison à Bordeaux — précisions sur la vente",
       bodyText,
@@ -65,25 +63,20 @@ describe("renderInformationRequestEmail", () => {
       caseReference: "IJ-8F31A290",
       appUrl: "https://staging.immojudis.com",
       legalFooter,
-      accountInvitationUrl,
     });
 
     for (const output of [message.html, message.text]) {
-      expect(output.match(/Créer un compte professionnel/g)).toHaveLength(1);
-      expect(output).toContain("Un compte professionnel Immojudis vous permet");
+      expect(output).not.toContain("Créer un compte professionnel");
+      expect(output).not.toContain("Vous publiez d’autres ventes");
+      expect(output).not.toContain("service professionnel");
+      expect(output).not.toContain("mode=professional");
       expect(output).not.toContain("Vous avez d’autres ventes à partager");
+      expect(output).toContain("Finalité et base légale : vous demander des informations");
+      expect(output).toContain(
+        "Votre adresse et nos échanges sont conservés au plus 24 mois sans activité.",
+      );
     }
-    expect(message.html).toContain("mode=professional&amp;redirect=%2Fpublish");
     expect(message.html).not.toContain("utm_");
-
-    const withoutInvitation = await renderInformationRequestEmail({
-      subject: "Maison à Bordeaux",
-      bodyText,
-      replyTo: "enquete+1234@reponses.immojudis.com",
-      caseReference: "IJ-8F31A290",
-      legalFooter,
-    });
-    expect(withoutInvitation.text).not.toContain("Créer un compte professionnel");
   });
 
   it("dit d'où vient l'adresse, avec le lien de l'annonce, dès le haut du message", async () => {
@@ -106,12 +99,13 @@ describe("renderInformationRequestEmail", () => {
   it("supprime l'ancienne invitation même si elle figure encore dans un brouillon", async () => {
     const message = await renderInformationRequestEmail({
       subject: "Maison à Bordeaux",
-      bodyText: `${bodyText}\n\nPOUR LES PROFESSIONNELS\nVous avez d’autres ventes à partager ?\nVous pouvez créer un compte.\nCréer un compte professionnel : https://immojudis.com/login?mode=professional\n\nBien cordialement,\nL’équipe Immojudis`,
+      bodyText: `${bodyText}\n\nPOUR LES PROFESSIONNELS\nVous avez d’autres ventes à partager ?\nVous publiez d’autres ventes ? Un compte professionnel Immojudis vous permet de nous les transmettre directement.\nCréer un compte professionnel : https://immojudis.com/login?mode=professional\n\nBien cordialement,\nL’équipe Immojudis`,
       replyTo: "enquete+1234@reponses.immojudis.com",
       caseReference: "IJ-8F31A290",
     });
 
     expect(message.text).not.toContain("Créer un compte professionnel");
+    expect(message.text).not.toContain("Vous publiez d’autres ventes");
     expect(message.text).not.toContain("POUR LES PROFESSIONNELS");
     expect(message.text).toContain("Bien cordialement");
   });

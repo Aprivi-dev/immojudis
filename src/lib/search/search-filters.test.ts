@@ -3,8 +3,10 @@ import {
   applyClientSearchFilters,
   dataFiltersFromSearch,
   countActiveSearchFilters,
+  dataSortFromSearch,
   hasClientOnlyFilters,
   saleIsInViewport,
+  sortClientSearchResults,
 } from "./search-filters";
 import type { ViewportBounds } from "./search-url-state";
 import type { AuctionSale } from "@/lib/types";
@@ -62,6 +64,24 @@ describe("sales search filters", () => {
 
     expect(dataFiltersFromSearch({ viewport })).toMatchObject({ viewport });
     expect(hasClientOnlyFilters({ viewport })).toBe(false);
+  });
+
+  it("ne balaye le catalogue pour le tri par distance que si une adresse est saisie", () => {
+    expect(hasClientOnlyFilters({ sort: "distance" })).toBe(false);
+    expect(hasClientOnlyFilters({ sort: "distance", aroundAddress: "10 rue de Rivoli" })).toBe(
+      true,
+    );
+    // Sans centre, le tri client ne change pas l'ordre venu du serveur.
+    const rows = [sale("b", 44.8, -0.5), sale("a", 43.8, 4.3)];
+    expect(
+      sortClientSearchResults(rows, { sort: "distance" }, null).map((item) => item.id),
+    ).toEqual(["b", "a"]);
+  });
+
+  it("trie par chambres côté serveur, sans balayage du catalogue", () => {
+    expect(dataSortFromSearch("beds_desc")).toBe("beds_desc");
+    expect(hasClientOnlyFilters({ sort: "beds_desc" })).toBe(false);
+    expect(hasClientOnlyFilters({ sort: "beds_desc", dpeClasses: ["A"] })).toBe(true);
   });
 
   it("filters visible sales when the map viewport changes", () => {

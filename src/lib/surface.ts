@@ -106,11 +106,7 @@ export function getSaleSurface(sale: SurfaceSaleLike): SaleSurface {
 
 export function getMarketValuationSurfaces(sale: SurfaceSaleLike): MarketValuationSurfaces {
   const landSurfaceM2 = positiveSurface(sale.land_surface_m2);
-  const type = typeText(sale);
-  const landOnly =
-    sale.app_surface_kind === "land" ||
-    sale.surface_scope === "land" ||
-    /\b(land|terrain|parcelle)\b/.test(type);
+  const landOnly = isLandOnlySurface(sale);
   const rawRecordedBuiltSurface = landOnly ? null : getRecordedSurface(sale);
   const recordedBuiltSurface =
     rawRecordedBuiltSurface != null && rawRecordedBuiltSurface >= 9
@@ -208,12 +204,19 @@ export function getDisplaySurface(sale: SurfaceSaleLike): SaleSurface {
   return primary;
 }
 
+// Terrain nu : uniquement d'après le type, le genre de surface ou la portée de la surface, jamais
+// d'après le titre. Un bien typé maison ou appartement n'est pas un terrain nu à cause d'un
+// libellé du type « maison avec terrain » : sa surface bâtie reste exploitable.
 function isLandOnlySurface(sale: SurfaceSaleLike): boolean {
   const appKind = sale.app_surface_kind?.trim().toLocaleLowerCase("fr-FR");
   const scope = sale.surface_scope?.trim().toLocaleLowerCase("fr-FR");
-  return (
-    appKind === "land" ||
-    scope === "land" ||
-    /\b(?:land|terrain|parcelle)\b/.test(sale.property_type?.toLocaleLowerCase("fr-FR") ?? "")
-  );
+  if (appKind === "land" || scope === "land") return true;
+  const type = sale.property_type?.toLocaleLowerCase("fr-FR") ?? "";
+  if (
+    /\b(?:maison|house|villa|pavillon|appartement|apartment|appart|apt|studio|studette)\b/.test(
+      type,
+    )
+  )
+    return false;
+  return /\b(?:land|terrain|parcelle)\b/.test(type);
 }

@@ -15,6 +15,7 @@ const sale: ComparedSale = {
   startingPriceEur: 50_000,
   surfaceM2: 42,
   surfaceKind: "habitable",
+  occupancy: "libre",
   rooms: 2,
   bedrooms: 1,
   bathrooms: 1,

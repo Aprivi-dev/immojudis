@@ -1,6 +1,6 @@
 import type { Database } from "@/integrations/supabase/types";
 import { isLikelyPropertyImageUrl } from "@/lib/sale-media";
-import type { AuctionSale } from "@/lib/types";
+import type { AuctionSale, SortKey } from "@/lib/types";
 import { departmentSearchValues, frenchSearchTerms } from "./french-geo-search";
 import { DEFAULT_SEARCH_LIMIT, dataFiltersFromSearch, dataSortFromSearch } from "./search-filters";
 import type { SalesSearchParams } from "./search-url-state";
@@ -70,10 +70,16 @@ export function buildPreviewSearchArgs(search: SalesSearchParams) {
     p_south: null,
     p_east: null,
     p_west: null,
-    p_sort: dataSortFromSearch(search.sort),
+    // La RPC publique ne sait pas trier par chambres : repli explicite sur la pertinence (le tri
+    // n'est d'ailleurs pas proposé en aperçu).
+    p_sort: previewSort(dataSortFromSearch(search.sort)),
     p_limit: perPage,
     p_offset: (page - 1) * perPage,
   };
+}
+
+function previewSort(sort: SortKey): SortKey {
+  return sort === "beds_desc" ? "score_desc" : sort;
 }
 
 export function previewSearchRequestKey(search: SalesSearchParams): string {

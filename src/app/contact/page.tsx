@@ -8,7 +8,8 @@ import { publicLegalPublisher } from "@/lib/legal-documents";
 export const metadata: Metadata = {
   alternates: { canonical: "/contact" },
   title: "Contact",
-  description: "Contacter l’équipe Immojudis.",
+  description:
+    "Contacter l’équipe Immojudis : question sur une vente, un accès à votre compte ou vos données personnelles.",
 };
 
 export default function Page() {

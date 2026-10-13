@@ -138,6 +138,16 @@
   font-weight: 600;
   line-height: 1.45;
 }
+.premiumContext {
+  margin: 0 0 4px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.premiumContext strong {
+  color: var(--brand-navy);
+  font-weight: 650;
+}
 .priceExplanation {
   display: inline-block;
   margin-top: 7px;
@@ -800,6 +810,7 @@
     font-size: 11px;
   }
   .heroPrices .muted,
+  .premiumContext,
   .priceExplanation {
     font-size: 11px;
     line-height: 1.4;

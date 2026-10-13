@@ -1,5 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  select: vi.fn(),
+  rows: [] as unknown[],
+}));
+
+vi.mock("@/integrations/supabase/client.server", () => {
+  const query = {
+    select: (columns: string) => {
+      mocks.select(columns);
+      return query;
+    },
+    in: () => query,
+    then: (resolve: (value: { data: unknown[]; error: null }) => void) =>
+      resolve({ data: mocks.rows, error: null }),
+  };
+  return { supabaseAdmin: { from: () => query } };
+});
+
 import {
+  buildCanonicalComparisonSnapshot,
   buildSaleAnalysisSummary,
   saleAnalysisSetInputSchema,
   type SaleAnalysisItem,
@@ -99,5 +119,35 @@ describe("sale analysis sets", () => {
       earliestSaleDate: "2026-07-20T09:00:00.000Z",
       cities: ["Bordeaux", "Nantes"],
     });
+  });
+
+  it("keeps the occupation in the canonical comparison snapshot", async () => {
+    const saleId = "7d335032-e935-4550-9347-ed22b0f63449";
+    mocks.rows = [
+      {
+        id: saleId,
+        city: "Bordeaux",
+        department: "33",
+        property_type: "apartment",
+        sale_venue_type: "tribunal",
+        sale_date: "2026-11-12T09:00:00.000Z",
+        starting_price_eur: 60_000,
+        app_surface_m2: 40,
+        app_surface_kind: "habitable",
+        occupancy_status: "occupé",
+        rooms_count: 2,
+        bedrooms_count: 1,
+        bathrooms_count: 1,
+        status: "upcoming",
+        raw_payload: {},
+      },
+    ];
+
+    const snapshot = await buildCanonicalComparisonSnapshot([
+      { saleId, decisionStatus: "watching" },
+    ]);
+
+    expect(String(mocks.select.mock.calls.at(-1)?.[0]).split(",")).toContain("occupancy_status");
+    expect(snapshot.items[0]).toMatchObject({ id: saleId, occupancy: "occupé" });
   });
 });

@@ -27,9 +27,15 @@ const WINDOWS: TribunalJudicialActivityHistoryMonths[] = [12, 24, 36];
 
 export function TribunalJudicialActivityExplorer({
   publicActivity = null,
+  adjudicationStatisticsEnabled = false,
 }: {
   /** Free, server-rendered figures of the courts, shown to every visitor. */
   publicActivity?: ReactNode;
+  /**
+   * Server switch (`ADJUDICATION_PRICE_STATISTICS_ENABLED`). While it is closed, the adjudication
+   * barometer is neither rendered nor announced.
+   */
+  adjudicationStatisticsEnabled?: boolean;
 }) {
   const { session, loading: authLoading } = useAuth();
   const [historyMonths, setHistoryMonths] = useState<TribunalJudicialActivityHistoryMonths>(36);
@@ -84,17 +90,16 @@ export function TribunalJudicialActivityExplorer({
             Statistiques Tribunaux
           </h1>
           <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
-            À quel prix les biens sont-ils adjugés ? Comparez les prix d’adjudication publiés par
-            Licitor, les mises à prix et les types de biens, en France et tribunal par tribunal. Un
-            baromètre réservé aux membres Analyse, complété par l’historique des audiences suivies
-            par Immojudis.
+            {adjudicationStatisticsEnabled
+              ? "À quel prix les biens sont-ils adjugés ? Comparez les prix d’adjudication publiés par Licitor, les mises à prix et les types de biens, en France et tribunal par tribunal. Un baromètre réservé aux membres Analyse, complété par l’historique des audiences suivies par Immojudis."
+              : "Combien de ventes judiciaires sont à venir, et dans quels tribunaux ? Retrouvez, tribunal par tribunal, le nombre de ventes, la prochaine audience et la mise à prix médiane des biens annoncés, complétés pour les membres Analyse par l’historique des audiences suivies par Immojudis."}
           </p>
         </div>
       </header>
 
       <div className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         {publicActivity}
-        <PremiumAdjudicationExplorer />
+        {adjudicationStatisticsEnabled ? <PremiumAdjudicationExplorer /> : null}
 
         {authLoading || (session && planQuery.isLoading) ? (
           <p className="mt-10 text-sm text-brand-navy/65" role="status">
@@ -118,8 +123,10 @@ export function TribunalJudicialActivityExplorer({
               Activité des annonces et prochaines audiences
             </summary>
             <p className="my-5 max-w-3xl text-sm leading-relaxed text-brand-navy/70">
-              Ce complément décrit le catalogue suivi par Immojudis. Sa période filtre uniquement
-              les annonces ; elle ne modifie pas la période des prix d’adjudication du baromètre.
+              Ce complément décrit le catalogue suivi par Immojudis.{" "}
+              {adjudicationStatisticsEnabled
+                ? "Sa période filtre uniquement les annonces ; elle ne modifie pas la période des prix d’adjudication du baromètre. "
+                : "Sa période filtre uniquement les annonces. "}
               Une audience passée ne prouve pas qu’un bien a été vendu.
             </p>
             {query.data ? <NationalOverview data={query.data} /> : null}
