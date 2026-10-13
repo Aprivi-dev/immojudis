@@ -85,7 +85,13 @@ def dedupe_sales(sales: Iterable[AuctionSale]) -> list[AuctionSale]:
     return merge_duplicate_sales(sales)
 
 
-def merge_duplicate_sales(sales: Iterable[AuctionSale]) -> list[AuctionSale]:
+def merge_duplicate_sales(sales: Iterable[AuctionSale], *, strict_fallback: bool = True) -> list[AuctionSale]:
+    """Fusionne les observations d'un même bien.
+
+    ``strict_fallback=False`` désactive la clé de repli stricte (tribunal, jour, prix, signal fort) :
+    le balayage qui relit les lignes déjà publiées l'utilise pour ne fusionner et supprimer que
+    sur preuve (adresse précise, identifiant d'annonce commun).
+    """
     by_source_url: dict[str, AuctionSale] = {}
     for sale in sales:
         _ensure_observation_metadata(sale)
@@ -131,7 +137,10 @@ def merge_duplicate_sales(sales: Iterable[AuctionSale]) -> list[AuctionSale]:
     # cas typique de deux sources référençant le même bien. Le hash de contenu
     # ci-dessus ne les rapproche pas car il inclut date et prix.
     survivors = [*by_hash.values(), *passthrough]
-    return _merge_by_address(survivors)
+    # Un identifiant d'annonce commun (Vench / Petites Affiches) prouve l'identité ; la clé de repli
+    # stricte (tribunal, jour, prix, signal fort) ne passe qu'en dernier.
+    survivors = _merge_by_address(_merge_by_shared_listing_id(survivors))
+    return _merge_by_strict_key(survivors) if strict_fallback else survivors
 
 
 def _is_richer(candidate: AuctionSale, current: AuctionSale) -> bool:
@@ -417,6 +426,179 @@ def _merge_by_address(sales: list[AuctionSale]) -> list[AuctionSale]:
             _replace_address_candidate(by_address, existing, sale)
         _register_address_candidate(by_address, [*_address_dedupe_keys(preferred), *keys], preferred)
     return [*survivors, *passthrough]
+
+
+_LISTING_ID_PATTERNS = {
+    # https://www.vench.fr/vente-166526-une-maison-ondres.html
+    "vench": re.compile(r"/vente-(\d+)-"),
+    # https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/j/une-maison-a-x-166526.html
+    "petites_affiches": re.compile(r"-(\d+)\.html(?:$|[?#])"),
+}
+_LISTING_ID_SOURCES = frozenset(_LISTING_ID_PATTERNS)
+
+
+def shared_listing_id(sale: AuctionSale) -> str | None:
+    """Identifiant d'annonce que Vench et Petites Affiches (qui reprend Vench) publient dans leur URL."""
+    pattern = _LISTING_ID_PATTERNS.get(sale.source_name)
+    if pattern is None:
+        return None
+    match = pattern.search(sale.source_url or "")
+    return match.group(1) if match else None
+
+
+def same_shared_listing(first: AuctionSale, second: AuctionSale) -> bool:
+    """Même annonce Vench / Petites Affiches : même identifiant, sources différentes, rien de contradictoire.
+
+    L'identifiant est une preuve d'identité ; on exige seulement que les faits connus des deux côtés
+    (jour d'audience et mise à prix) ne se contredisent pas, pour qu'une collision d'identifiants ne
+    fusionne jamais deux biens.
+    """
+    if first.source_name == second.source_name or {first.source_name, second.source_name} != _LISTING_ID_SOURCES:
+        return False
+    first_id, second_id = shared_listing_id(first), shared_listing_id(second)
+    if not first_id or first_id != second_id:
+        return False
+    first_day, second_day = _civil_day(first.sale_date), _civil_day(second.sale_date)
+    if first_day and second_day and first_day != second_day:
+        return False
+    first_price, second_price = _whole_euros(first.starting_price_eur), _whole_euros(second.starting_price_eur)
+    return not (first_price is not None and second_price is not None and first_price != second_price)
+
+
+def _merge_by_shared_listing_id(sales: list[AuctionSale]) -> list[AuctionSale]:
+    by_id: dict[str, AuctionSale] = {}
+    survivors: list[AuctionSale] = []
+    for sale in sales:
+        listing_id = shared_listing_id(sale)
+        existing = by_id.get(listing_id) if listing_id else None
+        if existing is None or not same_shared_listing(existing, sale):
+            survivors.append(sale)
+            if listing_id and listing_id not in by_id:
+                by_id[listing_id] = sale
+            continue
+        preferred = _choose_primary(existing, sale)
+        secondary = sale if preferred is existing else existing
+        _merge_into(preferred, secondary, confidence="listing_id")
+        if preferred is sale:
+            _replace_identity(survivors, existing, sale)
+            by_id[listing_id] = sale
+    return survivors
+
+
+_STRICT_SURFACE_TOLERANCE = 0.05
+_GENERIC_PROPERTY_TYPES = frozenset({"", "other", "unknown", "autre"})
+
+
+def _is_multi_lot(sale: AuctionSale) -> bool:
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    lots = payload.get("source_lots")
+    lot_count = payload.get("lot_count")
+    return (
+        "multi_lot_sale" in sale.quality_flags
+        or (isinstance(lots, list) and len(lots) > 1)
+        or (isinstance(lot_count, int) and lot_count > 1)
+    )
+
+
+def _court_keys(sale: AuctionSale) -> set[str]:
+    keys: set[str] = set()
+    if sale.tribunal_code:
+        keys.add(f"court:{sale.tribunal_code}")
+    geocode = sale.raw_payload.get("geocode") if isinstance(sale.raw_payload, dict) else None
+    if isinstance(geocode, dict) and geocode.get("accepted") is True and geocode.get("citycode"):
+        keys.add(f"insee:{str(geocode['citycode']).upper()}")
+    return keys
+
+
+def _surface_for_comparison(sale: AuctionSale):
+    return sale.app_surface_m2 or sale.habitable_surface_m2 or sale.carrez_surface_m2 or sale.surface_m2
+
+
+def _same_commune(first: AuctionSale, second: AuctionSale) -> bool:
+    first_postal, second_postal = clean_text(first.postal_code), clean_text(second.postal_code)
+    if first_postal and second_postal:
+        return first_postal == second_postal
+    first_city, second_city = _normalize_street_text(first.city or ""), _normalize_street_text(second.city or "")
+    return bool(first_city) and first_city == second_city
+
+
+def strict_duplicate_key_match(first: AuctionSale, second: AuctionSale) -> bool:
+    """Clé de repli stricte : même tribunal (ou code INSEE), même jour, même prix, et un signal fort.
+
+    Toutes les conditions sont nécessaires ; un seul désaccord connu écarte la paire :
+    - deux sources différentes (deux lots d'une même source ne sont jamais fusionnés) ;
+    - aucune des deux annonces n'est multi-lots, aucun numéro de lot ne diffère ;
+    - même jour civil à Paris et même mise à prix à l'euro près ;
+    - même tribunal rattaché au référentiel, ou même code INSEE géocodé ;
+    - signal fort : surfaces à ±5 %, ou même type de bien (précis) ET même commune ; deux surfaces
+      connues qui divergent de plus de 5 % ou deux adresses numérotées différentes écartent la paire.
+    """
+    if first.source_name == second.source_name:
+        return False
+    if _is_multi_lot(first) or _is_multi_lot(second):
+        return False
+    for key in ("lot_number", "lot_id"):
+        first_lot, second_lot = first.raw_payload.get(key), second.raw_payload.get(key)
+        if first_lot and second_lot and str(first_lot) != str(second_lot):
+            return False
+    first_day, second_day = _civil_day(first.sale_date), _civil_day(second.sale_date)
+    if not first_day or first_day != second_day:
+        return False
+    first_price, second_price = _whole_euros(first.starting_price_eur), _whole_euros(second.starting_price_eur)
+    if first_price is None or first_price != second_price:
+        return False
+    if not _court_keys(first) & _court_keys(second):
+        return False
+    first_keys, second_keys = set(_address_dedupe_keys(first)), set(_address_dedupe_keys(second))
+    if first_keys and second_keys and not first_keys & second_keys:
+        return False
+    first_surface, second_surface = _surface_for_comparison(first), _surface_for_comparison(second)
+    if first_surface and second_surface:
+        gap = abs(float(first_surface) - float(second_surface)) / max(float(first_surface), float(second_surface))
+        return gap <= _STRICT_SURFACE_TOLERANCE
+    first_type, second_type = (first.property_type or "").lower(), (second.property_type or "").lower()
+    return (
+        first_type == second_type
+        and first_type not in _GENERIC_PROPERTY_TYPES
+        and _same_commune(first, second)
+    )
+
+
+def _merge_by_strict_key(sales: list[AuctionSale]) -> list[AuctionSale]:
+    """Fusionne les paires que la clé stricte désigne sans ambiguïté, de part et d'autre.
+
+    Si une annonce a deux partenaires possibles (deux lots de même prix le même jour), rien n'est
+    fusionné : on ne peut pas savoir quel lot est lequel.
+    """
+    partners: dict[int, list[AuctionSale]] = {id(sale): [] for sale in sales}
+    buckets: dict[tuple[date, int], list[AuctionSale]] = {}
+    for sale in sales:
+        day, price = _civil_day(sale.sale_date), _whole_euros(sale.starting_price_eur)
+        if day is not None and price is not None:
+            buckets.setdefault((day, price), []).append(sale)
+    for bucket in buckets.values():
+        for index, first in enumerate(bucket):
+            for second in bucket[index + 1 :]:
+                if strict_duplicate_key_match(first, second):
+                    partners[id(first)].append(second)
+                    partners[id(second)].append(first)
+    merged_away: set[int] = set()
+    replacements: dict[int, AuctionSale] = {}
+    for sale in sales:
+        if id(sale) in merged_away or id(sale) in replacements:
+            continue
+        matches = partners[id(sale)]
+        if len(matches) != 1:
+            continue
+        other = matches[0]
+        if len(partners[id(other)]) != 1 or id(other) in merged_away:
+            continue
+        preferred = _choose_primary(sale, other)
+        secondary = other if preferred is sale else sale
+        _merge_into(preferred, secondary, confidence="strict_key")
+        merged_away.add(id(secondary))
+        replacements[id(sale)] = replacements[id(other)] = preferred
+    return [replacements.get(id(sale), sale) for sale in sales if id(sale) not in merged_away]
 
 
 def _find_address_match(

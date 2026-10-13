@@ -1,0 +1,182 @@
+# Chantier F : réparer les données déjà collectées
+
+Ce document accompagne les corrections du chantier F (exactitude des données collectées, points 11
+à 18 du compte-rendu `docs/equipe/2026-10-13-premiere-session.md`). Le code corrige les nouvelles
+collectes. Les lignes déjà en base se réparent par trois migrations non appliquées, par le recalcul
+existant (`recompute-existing-sales`) et, pour les doublons, par le balayage existant de la collecte.
+
+Rien ici ne s'exécute tout seul : les migrations attendent `npm run db:migrate`, le recalcul est un
+`workflow_dispatch`. Les migrations ont été relues et leur syntaxe vérifiée avec l'analyseur de
+PostgreSQL ; elles n'ont pas été exécutées contre une base. Les rejouer d'abord sur une copie.
+
+## Ordre conseillé
+
+1. Fusionner le code du chantier F.
+2. Appliquer, dans l'ordre, les trois migrations `20261020130001`, `20261020130002`, `20261020130003`.
+3. Lancer le recalcul en `dry_run=true`, relire le résumé, puis en `dry_run=false`.
+4. Laisser tourner la collecte normale (doublons) ou la lancer.
+5. Vérifier avec les requêtes ci-dessous.
+
+Les migrations passent avant le recalcul : celle du point 15 retire le point fantôme que le recalcul
+géocode ensuite, et celle du point 11 recopie les géocodages déjà acceptés sans appel réseau.
+
+## Commandes du recalcul
+
+Le recalcul relit chaque vente stockée (`raw_payload` et colonnes), la renormalise avec le code
+corrigé et la réécrit. Il géocode les ventes sans coordonnées (BAN, 4 appels en parallèle).
+
+```bash
+# Essai sans écriture, toutes les sources :
+gh workflow run recompute-existing-sales.yml --ref main \
+  -f confirm_target=production -f source=all -f dry_run=true
+
+# Écriture, par source (une commande par source) :
+gh workflow run recompute-existing-sales.yml --ref main \
+  -f confirm_target=production -f source=licitor -f dry_run=false
+gh workflow run recompute-existing-sales.yml --ref main \
+  -f confirm_target=production -f source=info_encheres -f dry_run=false
+gh workflow run recompute-existing-sales.yml --ref main \
+  -f confirm_target=production -f source=petites_affiches -f dry_run=false
+```
+
+`source=all` fait la même chose en une fois ; lancer les sources une par une garde les temps courts
+et limite le périmètre d'une éventuelle erreur. Les sources concernées par chaque point sont
+indiquées ci-dessous.
+
+## Point par point
+
+### 11. Département et coordonnées
+
+- Code : le département se déduit du code postal, puis du code INSEE d'un géocodage BAN accepté
+  (`normalize_sale`), puis du tribunal rattaché (`fill_tribunal`, source écrite dans
+  `raw_payload.department_inference`, drapeau `department_from_tribunal`). Un géocodage accepté,
+  centre de commune compris, est recopié dans `latitude` et `longitude` avec `raw_payload.geo_precision`
+  (`geocode.restore_accepted_geocode`). Le drapeau `missing_gps` disparaît quand les coordonnées existent.
+- Migration : `supabase/migrations/20261020130001_repair_sale_department_and_coordinates.sql`.
+  Elle fait la même chose en SQL, sans réseau, uniquement sur les valeurs absentes, avec copie des
+  valeurs d'origine dans `app_private.location_repair_backup_20261020`. Retour arrière à la fin du fichier.
+- Recalcul : `source=petites_affiches` (76 % des ventes sans département) puis `all`.
+- Avant / après :
+
+```sql
+select count(*) filter (where department is null or department = '') as sans_departement,
+       count(*) filter (where latitude is null or longitude is null) as sans_coordonnees,
+       count(*) filter (where quality_flags ? 'missing_gps' and latitude is not null
+                          and longitude is not null) as drapeau_perime
+  from public.auction_sales
+ where status in ('active', 'upcoming', 'unknown');
+-- Constat du 2026-10-13 sur les ventes à venir visibles : 410, 790 et environ 90.
+```
+
+### 12. Doublons entre sources
+
+- Code : (1) fusion par identifiant d'annonce commun Vench / Petites Affiches (`vench.fr/vente-166526-…`
+  et `…-166526.html`), refusée si le jour d'audience ou la mise à prix se contredisent ; (2) clé de
+  repli stricte, dans la collecte uniquement : même tribunal (ou code INSEE), même jour civil à Paris,
+  même mise à prix à l'euro, et un signal fort (surface à ±5 % ou même type de bien et même commune),
+  jamais entre deux lots d'une même source ni d'une annonce multi-lots, et jamais si une annonce a
+  deux partenaires possibles. La persistance (`resolve_publication_identities`) reconnaît aussi
+  l'identifiant commun.
+- Réparation de l'existant : uniquement par identifiant commun. Le balayage
+  `reconcile_duplicate_sales_in_supabase`, déjà exécuté à chaque collecte
+  (`DEDUPE_RECONCILE_ENABLED`, 2 000 lignes), fusionne les deux lignes puis supprime la ligne
+  secondaire ; il n'applique pas la clé de repli stricte (`strict_fallback=False`).
+  Pour garder la main sur le moment, mettre `DEDUPE_RECONCILE_ENABLED=false` avant de fusionner le code
+  et le remettre à `true` après avoir relu la liste ci-dessous.
+- Avant (lecture seule) : les paires qui seront fusionnées.
+
+```sql
+with annonces as (
+  select id, source_name, source_url, status,
+         case source_name
+           when 'vench' then substring(source_url from '/vente-([0-9]+)-')
+           when 'petites_affiches' then substring(source_url from '-([0-9]+)\.html')
+         end as listing_id
+    from public.auction_sales
+   where source_name in ('vench', 'petites_affiches')
+)
+select listing_id, array_agg(source_name || ' ' || id::text order by source_name) as lignes
+  from annonces
+ where listing_id is not null
+ group by listing_id
+having count(distinct source_name) = 2
+ order by listing_id;
+-- Attendu avant : au moins 166526, 166431, 166115, 163035. Après la collecte : aucune ligne.
+```
+
+### 13. Licitor : département par sous-chaîne
+
+- Code : URL de l'annonce (`…/isere/109863.html`), puis code postal, puis département de l'en-tête
+  (`(Isère)`), puis nom entier dans le texte, et seulement s'il est seul. « Orglandes » ne donne plus
+  les Landes, « Tribunal de Vienne (Isère) » ne donne plus la Vienne.
+- Réparation : le recalcul `source=licitor` relit l'URL et le texte stockés (`refresh_licitor_raw_sale`)
+  et remplace le département. Ventes à contrôler : `a523e55d`, `91d90d56`, `27008c6f`, `c1c62d33`.
+- Après :
+
+```sql
+select left(id::text, 8) as id, city, postal_code, department, source_url
+  from public.auction_sales
+ where source_name = 'licitor' and left(id::text, 8) in ('a523e55d', '91d90d56', '27008c6f', 'c1c62d33');
+```
+
+### 14. Surfaces
+
+- Code : une valeur « hors Carrez » n'est jamais une Carrez ; une Carrez sous 20 % de la surface
+  habitable est écartée (la valeur écartée reste dans `raw_payload.carrez_surface_reconciliation`) ;
+  moins de 9 m² n'est pas la surface d'un appartement ou d'une maison.
+- Réparation : recalcul `source=all`. Ventes à contrôler : `6d4e4095` (63,83 m² attendus),
+  `b1220a90`, `db26a41e`, `0e09aa58`.
+
+### 15. Point fantôme Info-Enchères
+
+- Migration : `supabase/migrations/20261020130002_clear_info_encheres_phantom_point.sql`. Elle met à
+  NULL les coordonnées au point (44.40655, 6.061187), retire ce point du `raw_payload` et supprime les
+  parcelles trouvées sous ce point (copies dans `app_private`). Retour arrière à la fin du fichier.
+- Recalcul : `source=info_encheres` (nouveau géocodage des ventes sans point).
+- Avant / après : la requête de l'en-tête de la migration (5 lignes environ, puis 0).
+
+### 16. Licitor multi-lots
+
+- Cause confirmée dans le code : une annonce n'a qu'une ligne, avec une adresse, une mise à prix et un
+  point, ceux du premier lot (`parse_licitor_detail_html`). La lecture lot par lot
+  (`licitor_extraction.extract_licitor_fields`) est correcte, mais ses résultats ne servent qu'aux
+  caractéristiques détaillées. Le remède demande un choix de produit (une ligne par lot, ou un
+  agrégat) : il n'a pas été deviné.
+- Mesure d'attente : `supabase/migrations/20261020130003_quarantine_licitor_multi_lot_annonces.sql`
+  met les 9 annonces (109863, 109968, 110081, 110098, 110145, 110156, 110160, 110164, 110177) en
+  quarantaine durable. Retour arrière à la fin du fichier.
+
+### 17. Dates invraisemblables
+
+- Code : une date de vente à plus de 12 mois de la publication de l'annonce, ou à plus de 12 mois
+  d'aujourd'hui, n'est plus présentée comme certaine : la vente n'a plus de date (le site affiche
+  « Date à confirmer » et ne la compte plus parmi les ventes à venir), la valeur lue est gardée dans
+  `raw_payload.sale_date_unverified`, drapeau `sale_date_implausible`.
+- Réparation : recalcul `source=all`. Concerne 11 ventes visibles (jusqu'en 2044) ; `774a1109` perd
+  sa date future.
+- Avant (les ventes que la règle va toucher, d'après la seule limite « aujourd'hui + 12 mois » ; la
+  limite « publication + 12 mois » ne se lit que dans le recalcul) :
+
+```sql
+select left(id::text, 8) as id, source_name, status, sale_date
+  from public.auction_sales
+ where sale_date > now() + interval '12 months'
+ order by sale_date desc;
+```
+
+- Après :
+
+```sql
+select count(*) from public.auction_sales
+ where raw_payload ? 'sale_date_unverified';
+```
+
+### 18. Libellés pollués
+
+- Code : un tribunal pollué (« TJ Tribunal Judiciaire de NANCY le », « TJ Béziers Suite À Des
+  Poursuites… ») est rattaché au référentiel national des tribunaux ; le texte brut reste dans la
+  preuve (`tribunal_label_assignment.raw_source_label`). Un libellé pollué qui ne se rattache à rien
+  est absent (`raw_payload.tribunal_label_rejected`). Une ville comme « USAGE D'HABITATION à Chanteheux »
+  est coupée avant « à » quand le préfixe est un descriptif de bien ; un descriptif seul n'est pas une ville.
+- Réparation : recalcul `source=all`. Le référentiel des tribunaux doit être disponible (le workflow
+  le synchronise avant le recalcul).

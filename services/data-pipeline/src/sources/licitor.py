@@ -28,7 +28,12 @@ from src.sources.common import (
     parse_html,
 )
 from src.sources.image_candidates import html_image_candidates
-from src.sources.licitor_extraction import apply_licitor_fields, dedupe_licitor_images, extract_licitor_fields
+from src.sources.licitor_extraction import (
+    apply_licitor_fields,
+    dedupe_licitor_images,
+    extract_licitor_fields,
+    licitor_department,
+)
 from src.sources.source_features import cadastral_to_m2 as _cadastral_to_m2
 from src.sources.source_features import extract_parking_count as _extract_parking_count
 from src.sources.source_features import extract_qualified_surface as _extract_qualified_surface_impl
@@ -293,7 +298,12 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     title = _extract_title(soup, lines, raw_text)
     city = _extract_city(soup, lines, raw_text)
     postal_code = _extract_postal_code(soup, raw_text, city)
-    department = _extract_department(raw_text) or extract_department(postal_code)
+    department = _extract_department(
+        raw_text,
+        source_url=source_url,
+        postal_code=postal_code,
+        headline_department=_extract_headline_department(soup),
+    )
     address = _extract_address(soup, lines, city, postal_code)
     lawyer_name, lawyer_contact = _extract_lawyer(lines)
     latitude, longitude = _extract_coordinates(soup)
@@ -632,21 +642,23 @@ def _clean_city(value: object | None) -> str | None:
     return clean_text(re.sub(r"\s*\([^)]*\)\s*$", "", city))
 
 
-def _extract_department(raw_text: str) -> str | None:
-    department_names = {
-        "dordogne": "24",
-        "gironde": "33",
-        "landes": "40",
-        "lot-et-garonne": "47",
-        "pyrenees-atlantiques": "64",
-        "pyrénées-atlantiques": "64",
-        "vienne": "86",
-    }
-    lowered = raw_text.lower()
-    for name, code in department_names.items():
-        if name in lowered:
-            return code
-    return None
+def _extract_department(
+    raw_text: str,
+    source_url: str | None = None,
+    postal_code: str | None = None,
+    headline_department: str | None = None,
+) -> str | None:
+    return licitor_department(
+        raw_text, source_url=source_url, postal_code=postal_code, headline_department=headline_department
+    )
+
+
+def _extract_headline_department(soup: BeautifulSoup) -> str | None:
+    h1 = soup.select_one("#legalad-search h1") or soup.find("h1")
+    if h1 is None:
+        return None
+    match = re.search(r"\sà\s+[^,()]+\s+\(([^)]+)\)", h1.get_text(" ", strip=True), re.I)
+    return clean_text(match.group(1)) if match else None
 
 
 def _extract_postal_code(soup: BeautifulSoup, raw_text: str, city: str | None = None) -> str | None:

@@ -304,12 +304,15 @@ def test_storage_recompute_preserves_editorial_text_for_surface_reconciliation()
 
 
 def test_storage_recompute_reclassifies_future_unknown_status() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    in_a_month = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%dT13:00:00+00:00")
     row = {
         "id": "future-status",
         "source_name": "info_encheres",
         "source_url": "https://example.test/future-status",
         "status": "unknown",
-        "sale_date": "2099-10-15T13:00:00+00:00",
+        "sale_date": in_a_month,
         "raw_payload": {"status": "unknown"},
     }
 

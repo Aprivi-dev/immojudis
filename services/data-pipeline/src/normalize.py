@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
@@ -10,10 +11,21 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dateutil import parser
 
 from src.admission import is_date_only, sale_date_has_passed
+from src.department_inference import department_from_geocode_evidence
 from src.listing_location import recover_listing_address, reject_monetary_address
 from src.models import AuctionSale
-from src.null_text import is_null_text
+from src.null_text import clean_text
+from src.room_counts import (
+    _parse_count_token,
+    extract_bedrooms_count_from_text,
+    extract_rooms_count_from_text,
+    parse_bedrooms_count,
+    parse_parking_count,
+    parse_rooms_count,
+)
+from src.sale_date_plausibility import reject_implausible_sale_date
 from src.surface_text_recovery import extra_built_surface_from_text
+from src.tribunal_labels import clean_city_label
 
 FRENCH_MONTHS = {
     "janvier": "January",
@@ -132,14 +144,6 @@ def strip_accents(value: str) -> str:
     return "".join(
         char for char in unicodedata.normalize("NFKD", value) if not unicodedata.combining(char)
     )
-
-
-def clean_text(value: object | None) -> str | None:
-    if value is None:
-        return None
-    text = re.sub(r"\s+", " ", str(value).replace("\xa0", " ")).strip()
-    # « nan » is what str() makes of a missing pandas/JSON value; it is not a city or a name.
-    return None if is_null_text(text) else text or None
 
 
 MIN_PLAUSIBLE_PRICE_EUR = Decimal("100")
@@ -757,165 +761,6 @@ def extract_city(address: str | None, postal_code: str | None) -> str | None:
     return clean_text(match.group(1).replace("France", "").strip(" ,"))
 
 
-def parse_rooms_count(value: object) -> int | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        rooms = int(value)
-        return rooms if rooms > 0 else None
-    text = clean_text(value)
-    if not text:
-        return None
-    match = re.search(r"[1-9][0-9]?", text)
-    return int(match.group(0)) if match else None
-
-
-def parse_parking_count(value: object | None) -> int | None:
-    """Parse a non-negative parking count while preserving an explicit zero."""
-
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float, Decimal)):
-        try:
-            numeric = Decimal(str(value))
-        except (InvalidOperation, ValueError):
-            return None
-        if not numeric.is_finite() or numeric != numeric.to_integral_value():
-            return None
-        count = int(numeric)
-        return count if count >= 0 else None
-    text = clean_text(value)
-    if not text:
-        return None
-    decimal_match = re.search(r"(?<!\d)([0-9]+[.,][0-9]+)(?!\d)", text)
-    if decimal_match:
-        try:
-            numeric = Decimal(decimal_match.group(1).replace(",", "."))
-        except InvalidOperation:
-            return None
-        if not numeric.is_finite() or numeric != numeric.to_integral_value():
-            return None
-        return int(numeric) if numeric >= 0 else None
-    if re.fullmatch(r"0+", text):
-        return 0
-    match = re.search(r"\b([1-9][0-9]?)\b", text)
-    return int(match.group(1)) if match else None
-
-
-def parse_bedrooms_count(value: object) -> int | None:
-    return parse_rooms_count(value)
-
-
-def extract_rooms_count_from_text(*values: object) -> int | None:
-    text = clean_text(" ".join(str(value) for value in values if value))
-    if not text:
-        return None
-
-    for match in re.finditer(r"\bstudio\b", text, re.I):
-        if not _is_rooms_count_false_positive(text, match.start(), match.end()):
-            return 1
-
-    patterns = (
-        r"\b(?:appartement|maison|villa)\b.{0,80}?\blots?\s+\d+\s*,\s*"
-        r"([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pi[eèé]ces?\b",
-        r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pi[eèé]ces?\s+[1-9][0-9]?\s*chambres?\b",
-        r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pi[eèé]ces?\s+"
-        r"[0-9]+(?:[,.][0-9]+)?\s*m(?:2|²)\s+(?:superficie|surface)\b",
-        r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pi[eèé]ces?\s+(?:à\s+propos\s+du\s+bien|a\s+propos\s+du\s+bien)\b",
-        r"\b(?:appartement|maison|villa|immeuble)\s+(?:de\s+)?([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pi[eèé]ces?\b",
-        r"\b(?:appartement|maison|villa)\s+de\s+[0-9]+(?:[,.][0-9]+)?\s*m(?:2|²)\s*,?\s+de\s+([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*pi[eèé]ces?\b",
-        r"\b(?:nombre\s+de\s+)?pi[eèé]ces?\s*(?:principales?)?\s*:?\s*([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\b",
-        r"\bappartement\s+(?:de\s+)?type\s*([1-9]|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\b",
-        r"\btype\s+([1-9]|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\b",
-        r"\b(?:type\s+)?[TF]\s*([1-9])\b",
-    )
-    for pattern in patterns:
-        for match in re.finditer(pattern, text, re.I):
-            if _is_rooms_count_false_positive(text, match.start(1), match.end(1)):
-                continue
-            return _parse_count_token(match.group(1))
-
-    if re.search(r"\b(?:(?:une|1)\s+)?pi[eèé]ce\s+principale\b", text, re.I):
-        return 1
-    return None
-
-
-def extract_bedrooms_count_from_text(*values: object) -> int | None:
-    text = clean_text(" ".join(str(value) for value in values if value))
-    if not text:
-        return None
-
-    numbered = _count_numbered_bedrooms(text)
-    if numbered is not None:
-        return numbered
-
-    patterns = (
-        r"\b[1-9][0-9]?\s*pi[eèé]ces?\s+([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*chambres?\b",
-        r"\b([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*chambres?\b",
-        r"\bchambres?\s*:?\s*([1-9][0-9]?|une?|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\b",
-    )
-    for pattern in patterns:
-        for match in re.finditer(pattern, text, re.I):
-            if _is_rooms_count_false_positive(text, match.start(), match.end()):
-                continue
-            return _parse_count_token(match.group(1))
-    return None
-
-
-def _parse_count_token(value: str) -> int | None:
-    value = value.lower().strip()
-    if value.isdigit():
-        rooms = int(value)
-        return rooms if rooms > 0 else None
-    mapping = {
-        "un": 1,
-        "une": 1,
-        "deux": 2,
-        "trois": 3,
-        "quatre": 4,
-        "cinq": 5,
-        "six": 6,
-        "sept": 7,
-        "huit": 8,
-        "neuf": 9,
-        "dix": 10,
-    }
-    return mapping.get(value)
-
-
-def _count_numbered_bedrooms(text: str) -> int | None:
-    matches = re.findall(r"\bchambre\s*(?:n[°o]\s*)?([1-9][0-9]?)\b", text, re.I)
-    if not matches:
-        return None
-    numbers = {int(match) for match in matches}
-    if len(numbers) >= 2 and numbers == set(range(1, max(numbers) + 1)):
-        return max(numbers)
-    return None
-
-
-def _is_rooms_count_false_positive(text: str, start: int, end: int) -> bool:
-    nearby = text[max(0, start - 20) : min(len(text), end + 30)]
-    if re.search(r"\bchambres?\s+froides?\b", nearby, re.I):
-        return True
-    after_number = text[end : min(len(text), end + 20)]
-    if re.match(r"\s*[,.]\d+\s*m(?:2|²)\b", after_number, re.I):
-        return True
-    nearby = text[max(0, start - 40) : min(len(text), end + 80)]
-    if re.search(r"\b(?:d[ée]pendance|annexe|remise)\b", nearby, re.I):
-        return True
-    before = text[max(0, start - 180) : start]
-    after = text[end : min(len(text), end + 160)]
-    context = before + after
-    return bool(
-        re.search(
-            r"donnn?[ée]es?\s+des\s+valeurs\s+fonci[èe]res|prix\s+de\s+vente|date\s+de\s+vente|nb\s+de\s+pi[eèé]ces|article|page|"
-            r"tous\s+les\s+biens|villa\s+maison\s+appartement\s+studio\s+terrain",
-            context,
-            re.I,
-        )
-    )
-
-
 def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     source_url = clean_text(raw_sale.get("source_url"))
     if not source_url:
@@ -982,8 +827,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
             flags.append("postal_code_unverified")
         raw_sale["quality_flags"] = flags
         postal_code = None
-    city = clean_text(_field_or_source_block(raw_sale, "city", "ville", "commune", "city")) or extract_city(
-        address, postal_code
+    city = clean_city_label(
+        clean_text(_field_or_source_block(raw_sale, "city", "ville", "commune", "city"))
+        or extract_city(address, postal_code)
     )
     raw_sale_date = _field_or_source_block(
         raw_sale,
@@ -1004,6 +850,9 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         if sale_date_only and not precision:
             # Lets admission and the front end read the stored midnight as « day only ».
             raw_sale["date_precision"] = "day"
+    # Une date écartée comme invraisemblable reste « à venir » face à un résultat annoncé.
+    announced_sale_date = sale_date
+    sale_date = reject_implausible_sale_date(raw_sale, sale_date)
     starting_price, price_conflict = resolve_starting_price(raw_sale)
     if price_conflict:
         raw_sale["price_conflict"] = True
@@ -1016,13 +865,13 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         if "postal_department_conflict" not in flags:
             flags.append("postal_department_conflict")
         raw_sale["quality_flags"] = flags
-    department = postal_department or explicit_department
+    department = postal_department or explicit_department or department_from_geocode_evidence(raw_sale)
     adjudication_price = extract_adjudication_price(raw_sale)
     status = normalize_status(
         _field_or_source_block(raw_sale, "status", "status", "statut"), sale_date, date_only=sale_date_only
     )
     if adjudication_price is not None:
-        if sale_date is not None and sale_date > datetime.now(UTC):
+        if announced_sale_date is not None and announced_sale_date > datetime.now(UTC):
             raw_sale = {**raw_sale, "unverified_adjudication_candidate": str(adjudication_price),
                         "quality_flags": list(raw_sale.get("quality_flags") or []) + ["sale_procedure_conflict"]}
             adjudication_price = None
@@ -1094,6 +943,22 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     carrez_surface_m2 = parse_surface(
         _field_or_source_block(raw_sale, "carrez_surface_m2", "surface_carrez", "carrez_surface_m2")
     ) or _extract_carrez_surface_from_text(source_text)
+    if carrez_is_implausible_against_habitable(carrez_surface_m2, habitable_surface_m2):
+        # Une Carrez sous 20 % de la surface habitable est une partie du bien (cave, surface hors
+        # Carrez), pas sa surface légale : la surface habitable fait foi, la valeur écartée reste tracée.
+        raw_sale["carrez_surface_reconciliation"] = {
+            "status": "removed",
+            "rejected_carrez_surface_m2": str(carrez_surface_m2),
+            "resolved_carrez_surface_m2": None,
+            "habitable_surface_m2": str(habitable_surface_m2),
+            "basis": "carrez_below_20_percent_of_habitable_surface",
+        }
+        raw_sale["quality_flags"] = [
+            *dict.fromkeys([*(raw_sale.get("quality_flags") or []), "surface_conflict_resolved"])
+        ]
+        if surface_m2 == carrez_surface_m2:
+            surface_m2 = None
+        carrez_surface_m2 = None
     land_surface_m2 = parse_surface(
         _field_or_source_block(
             raw_sale,
@@ -1403,10 +1268,15 @@ def _derive_initial_app_surface(
         return None, None, surface_scope
     if property_type == "apartment":
         value = carrez_surface_m2 or habitable_surface_m2 or surface_m2
+        if value is not None and value < MIN_DWELLING_SURFACE_M2:
+            # Moins de 9 m² : une cave, un parking ou une annexe, pas la surface du logement.
+            return None, None, surface_scope
         kind = "carrez" if carrez_surface_m2 is not None else "habitable" if habitable_surface_m2 is not None else "built" if value is not None else None
         return value, kind, "total" if value is not None else surface_scope
     if property_type == "house":
         value = habitable_surface_m2 or surface_m2
+        if value is not None and value < MIN_DWELLING_SURFACE_M2:
+            return None, None, surface_scope
         kind = "habitable" if habitable_surface_m2 is not None else "built" if value is not None else None
         return value, kind, "total" if value is not None else surface_scope
     if property_type == "building":
@@ -1795,6 +1665,29 @@ def _extract_habitable_surface_from_text(*values: object) -> Decimal | None:
     return _extract_contextual_surface(text, patterns, exclude_secondary=False)
 
 
+_OUTSIDE_CARREZ_RE = re.compile(r"\bhors\s+(?:de\s+|la\s+)?(?:loi\s+)?carrez\b", re.I)
+# Une « Carrez » sous ce rapport de la surface habitable est une partie du bien (cave, véranda,
+# surface hors Carrez) prise pour sa surface légale, jamais la surface du bien.
+CARREZ_TO_HABITABLE_MIN_RATIO = Decimal("0.2")
+MIN_DWELLING_SURFACE_M2 = Decimal("9")
+
+
+def is_outside_carrez_context(text: str, start: int, end: int) -> bool:
+    """Vrai quand la valeur lue est annoncée « hors Carrez » : elle n'entre pas dans la mesure légale."""
+    return bool(_OUTSIDE_CARREZ_RE.search(text[max(0, start - 14) : end]))
+
+
+def carrez_is_implausible_against_habitable(
+    carrez_surface_m2: Decimal | None, habitable_surface_m2: Decimal | None
+) -> bool:
+    return (
+        carrez_surface_m2 is not None
+        and habitable_surface_m2 is not None
+        and habitable_surface_m2 > 0
+        and carrez_surface_m2 < habitable_surface_m2 * CARREZ_TO_HABITABLE_MIN_RATIO
+    )
+
+
 def _extract_carrez_surface_from_text(*values: object) -> Decimal | None:
     text = _joined_text(*values)
     patterns = (
@@ -1803,7 +1696,9 @@ def _extract_carrez_surface_from_text(*values: object) -> Decimal | None:
         rf"\b(?:superficie|surface)\s+(?:privative|totale|habitable)?\s*"
         rf"\([^)]*loi\s+carrez[^)]*\)\s*:?\s*{SURFACE_VALUE_PATTERN}\s*m(?:2|²)\b",
     )
-    return _extract_contextual_surface(text, patterns, exclude_secondary=False)
+    return _extract_contextual_surface(
+        text, patterns, exclude_secondary=False, skip_match=is_outside_carrez_context
+    )
 
 
 def _extract_land_surface_from_text(*values: object) -> Decimal | None:
@@ -1862,11 +1757,14 @@ def _extract_contextual_surface(
     patterns: tuple[str, ...],
     *,
     exclude_secondary: bool = True,
+    skip_match: Callable[[str, int, int], bool] | None = None,
 ) -> Decimal | None:
     if not text:
         return None
     for pattern in patterns:
         for match in re.finditer(pattern, text, re.I | re.S):
+            if skip_match is not None and skip_match(text, match.start(), match.end()):
+                continue
             if exclude_secondary and _is_secondary_surface_context(text, match.start(), match.end()):
                 continue
             return parse_surface(match.group(1))
