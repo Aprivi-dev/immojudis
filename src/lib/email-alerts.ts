@@ -94,7 +94,43 @@ type DigestItem = {
   location: string;
   reasons: string[];
   discountLine: string | null;
+  /** Hearing date, formatted for the email, when the snapshot carries one. */
+  hearingDate: string | null;
+  /** Starting price (mise à prix), formatted for the email, when known. */
+  startingPrice: string | null;
 };
+
+const hearingDateFormat = new Intl.DateTimeFormat("fr-FR", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "Europe/Paris",
+});
+
+const priceFormat = new Intl.NumberFormat("fr-FR", {
+  style: "currency",
+  currency: "EUR",
+  maximumFractionDigits: 0,
+});
+
+function formatHearingDate(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : hearingDateFormat.format(date);
+}
+
+function formatStartingPrice(value: number | null): string | null {
+  return value == null || !Number.isFinite(value) || value <= 0 ? null : priceFormat.format(value);
+}
+
+/** « Audience : 12 novembre 2026 · Mise à prix : 95 000 € », or null when neither is known. */
+function saleFactsLine(item: Pick<DigestItem, "hearingDate" | "startingPrice">): string | null {
+  const parts = [
+    item.hearingDate ? `Audience : ${item.hearingDate}` : null,
+    item.startingPrice ? `Mise à prix : ${item.startingPrice}` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length ? parts.join(" · ") : null;
+}
 
 export async function dispatchQueuedEmailAlertNotifications({
   notifications,
@@ -253,7 +289,7 @@ function digestItemFromNotification(notification: NotificationRow): DigestItem {
   return {
     notificationId: notification.id,
     alertId: stringValue(alert.id) ?? notification.alert_id ?? null,
-    alertName: stringValue(alert.name) ?? "Alerte ImmoJudis",
+    alertName: stringValue(alert.name) ?? "Alerte Immojudis",
     saleId: stringValue(sale.id) ?? notification.sale_id ?? null,
     title: cleanSaleTitle(stringValue(sale.title)) ?? "Vente judiciaire",
     location: [city, department].filter(Boolean).join(" · "),
@@ -262,6 +298,8 @@ function digestItemFromNotification(notification: NotificationRow): DigestItem {
       marketDiscountPct == null
         ? null
         : `Décote estimée : ${Math.round(marketDiscountPct)} % par rapport aux comparables disponibles.`,
+    hearingDate: formatHearingDate(stringValue(sale.saleDate)),
+    startingPrice: formatStartingPrice(numberValue(sale.startingPriceEur)),
   };
 }
 
@@ -323,18 +361,26 @@ export function buildAlertDigestMessage({
 
   const subject =
     allItems.length === 1
-      ? `Alerte ImmoJudis - ${items[0].title}${items[0].location ? ` (${items[0].location})` : ""}`
-      : `Alerte ImmoJudis - ${allItems.length} ventes correspondent à vos alertes`;
+      ? `Alerte Immojudis — ${items[0].title}${items[0].location ? ` (${items[0].location})` : ""}${
+          items[0].hearingDate ? `, audience le ${items[0].hearingDate}` : ""
+        }`
+      : `Alerte Immojudis — ${allItems.length} ventes correspondent à vos alertes`;
 
   const saleUrl = (item: DigestItem) => `${appUrl}/sales/${encodeURIComponent(item.saleId ?? "")}`;
   const disclaimer =
-    "Les données et estimations ImmoJudis sont indicatives. Elles ne constituent ni une expertise, ni un conseil juridique ou financier, ni une promesse de gain.";
+    "Les données et estimations Immojudis sont indicatives. Elles ne constituent ni une expertise, ni un conseil juridique ou financier, ni une promesse de gain.";
 
-  const textLines: string[] = [];
+  const intro =
+    allItems.length === 1
+      ? "Une vente correspond à l’une de vos alertes Immojudis :"
+      : "Voici les ventes qui correspondent à vos alertes Immojudis :";
+  const textLines: string[] = ["Bonjour,", "", intro, ""];
   for (const group of groups.values()) {
     textLines.push(group.alertName, "");
     for (const item of group.items) {
       textLines.push(`- ${item.title}${item.location ? ` - ${item.location}` : ""}`);
+      const facts = saleFactsLine(item);
+      if (facts) textLines.push(`  ${facts}`);
       if (item.discountLine) textLines.push(`  ${item.discountLine}`);
       if (item.reasons.length) textLines.push(`  Critères détectés : ${item.reasons.join(", ")}`);
       textLines.push(`  Consulter l'annonce : ${saleUrl(item)}`);
@@ -372,6 +418,7 @@ export function buildAlertDigestMessage({
       alertsUrl,
       unsubscribeUrl,
       disclaimer,
+      intro,
     }),
     unsubscribeUrl,
     oneClickUnsubscribe: true,
@@ -705,6 +752,7 @@ function buildAlertDigestHtml({
   alertsUrl,
   unsubscribeUrl,
   disclaimer,
+  intro,
 }: {
   groups: Array<{
     alertName: string;
@@ -715,6 +763,7 @@ function buildAlertDigestHtml({
   alertsUrl: string;
   unsubscribeUrl: string;
   disclaimer: string;
+  intro: string;
 }): string {
   const sections = groups
     .map((group) => {
@@ -726,6 +775,7 @@ function buildAlertDigestHtml({
           return `<div style="margin:0 0 18px;padding:0 0 16px;border-bottom:1px solid #eee7d8;">
           <h2 style="margin:0 0 4px;font-size:18px;line-height:1.3;color:#182033;">${escapeHtml(item.title)}</h2>
           ${item.location ? `<p style="margin:0 0 8px;color:#6c7280;">${escapeHtml(item.location)}</p>` : ""}
+          ${saleFactsLine(item) ? `<p style="margin:0 0 8px;color:#182033;">${escapeHtml(saleFactsLine(item) ?? "")}</p>` : ""}
           ${item.discountLine ? `<p style="margin:0 0 8px;font-weight:700;color:#182033;">${escapeHtml(item.discountLine)}</p>` : ""}
           ${reasons ? `<ul style="margin:0 0 12px;padding-left:18px;color:#4b5563;">${reasons}</ul>` : ""}
           <a href="${escapeAttribute(item.url)}" style="display:inline-block;background:#182033;color:#fff;text-decoration:none;border-radius:8px;padding:10px 14px;font-weight:700;">Voir l'annonce</a>
@@ -747,10 +797,12 @@ function buildAlertDigestHtml({
   <body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif;">
     <div style="max-width:620px;margin:0 auto;padding:28px 18px;">
       <div style="background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:24px;">
+        <p style="margin:0 0 8px;font-size:16px;">Bonjour,</p>
+        <p style="margin:0 0 18px;color:#4b5563;">${escapeHtml(intro)}</p>
         ${sections}
         ${
           hiddenCount > 0
-            ? `<p style="margin:0 0 16px;"><a href="${escapeAttribute(alertsUrl)}" style="color:#182033;font-weight:700;">… et ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} vente${hiddenCount > 1 ? "s" : ""} sur ImmoJudis</a></p>`
+            ? `<p style="margin:0 0 16px;"><a href="${escapeAttribute(alertsUrl)}" style="color:#182033;font-weight:700;">… et ${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} vente${hiddenCount > 1 ? "s" : ""} sur Immojudis</a></p>`
             : ""
         }
         <p style="margin:12px 0 0;color:#6c7280;font-size:12px;line-height:1.5;">${escapeHtml(disclaimer)}</p>

@@ -17,31 +17,39 @@ export const metadata: Metadata = {
 const STEPS = [
   {
     icon: Search,
-    title: "Trouver une vente",
-    text: "Cherchez par ville, département ou région, puis filtrez par type de vente (tribunal, notaire, domaine), budget et surface. Créez une alerte : un email récapitulatif (hebdomadaire avec le compte gratuit, quotidien avec Analyse) vous signale les nouvelles ventes qui vous correspondent.",
+    title: "Repérer une vente",
+    text: "Cherchez par ville, département ou région, puis filtrez par type de vente (tribunal, notaire, domaine), budget et surface. Créez une alerte : un email récapitulatif (hebdomadaire avec le compte gratuit, quotidien avec Analyse) vous signale les nouvelles ventes qui vous correspondent, avec la date d’audience et la mise à prix.",
     links: [{ href: "/sales", label: "Ouvrir le catalogue" }],
   },
   {
     icon: FileSearch,
-    title: "Comprendre le bien",
-    text: "Avec un compte gratuit, la fiche réunit l’adresse, les photos, la description, l’occupation, les visites, les risques de la commune et une fourchette de valeur. L’offre Analyse ajoute les pièces du dossier et les ventes comparables. Comparez jusqu’à trois biens côte à côte pour repérer le bon dossier.",
-    links: [{ href: "/annonce-exemple", label: "Voir une fiche exemple" }],
+    title: "Étudier et visiter",
+    text: "Avec un compte gratuit, la fiche réunit l’adresse, les photos, la description, l’occupation, les visites, les risques de la commune et une fourchette de valeur. L’offre Analyse ajoute les pièces du dossier et les ventes comparables. Lisez le cahier des conditions de vente (le document qui fixe les règles de la vente), visitez le bien et comparez jusqu’à trois biens côte à côte.",
+    links: [
+      { href: "/annonce-exemple", label: "Voir une fiche exemple" },
+      {
+        href: "/ressources/lire-cahier-conditions-vente-preparer-visite",
+        label: "Lire le cahier et préparer la visite",
+      },
+    ],
   },
   {
     icon: BadgeEuro,
     title: "Fixer son enchère plafond",
-    text: "Avec l’offre Analyse, le simulateur chiffre votre enchère plafond : valeur estimée, marge, travaux, libération du bien, portage et tous les frais de la vente, que vous ajustez selon votre projet. Fixez la limite avant l’audience, puis tenez-vous-y.",
+    text: "Avec l’offre Analyse, le simulateur chiffre votre enchère plafond : valeur estimée, marge, travaux, libération du bien, portage (les coûts supportés tant que le bien ne rapporte rien) et tous les frais de la vente, que vous ajustez selon votre projet. Préparez aussi votre financement : il n’y a pas de condition suspensive de prêt aux enchères. Fixez la limite avant l’audience, puis tenez-vous-y.",
     links: [
       { href: "/annonce-exemple", label: "Essayer le simulateur" },
+      { href: "/ressources/frais-vente-encheres-judiciaire", label: "Comprendre les frais" },
       { href: "/offres", label: "Voir les offres" },
     ],
   },
   {
     icon: Scale,
-    title: "Se faire accompagner",
-    text: "Pour une vente au tribunal, un avocat du barreau compétent porte vos enchères. L’annuaire gratuit vous aide à le trouver ; nos guides expliquent chaque type de vente et chaque étape.",
+    title: "Enchérir et finaliser",
+    text: "Pour une vente au tribunal, un avocat du barreau compétent porte vos enchères ; pour une vente notariale ou domaniale, l’organisateur précise les conditions. Si vous gagnez, le prix et les frais se règlent dans des délais fixés par le Code ou le cahier de vente. L’annuaire gratuit vous aide à trouver un avocat ; nos guides expliquent chaque étape.",
     links: [
       { href: "/avocats", label: "Trouver un avocat" },
+      { href: "/ressources/jour-audience-encheres-role-avocat", label: "Le jour de l’audience" },
       { href: "/ressources", label: "Lire les guides" },
     ],
   },
@@ -104,8 +112,9 @@ export default function Page() {
         <p className="mt-2 text-ink-soft">
           Le catalogue couvre la France entière, mais la couverture varie selon les sources : un
           secteur sans résultat ne prouve pas qu’aucune vente n’y est prévue. Les données et les
-          estimations sont des aides à la décision à vérifier dans les pièces officielles ; aucune
-          estimation ne garantit le résultat d’une vente.
+          estimations sont des aides à la décision à vérifier dans les pièces officielles ;
+          Immojudis ne fournit pas de conseil juridique et aucune estimation ne garantit le résultat
+          d’une vente ni un gain.
         </p>
         <Link
           href="/contact"

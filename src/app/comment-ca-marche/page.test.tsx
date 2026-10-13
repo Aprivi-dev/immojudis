@@ -12,10 +12,10 @@ describe("page Comment ça marche", () => {
     expect(steps).toHaveLength(4);
     const titles = steps.map((step) => within(step).getByRole("heading", { level: 2 }).textContent);
     expect(titles).toEqual([
-      "Étape 1 : Trouver une vente",
-      "Étape 2 : Comprendre le bien",
+      "Étape 1 : Repérer une vente",
+      "Étape 2 : Étudier et visiter",
       "Étape 3 : Fixer son enchère plafond",
-      "Étape 4 : Se faire accompagner",
+      "Étape 4 : Enchérir et finaliser",
     ]);
   });
 
