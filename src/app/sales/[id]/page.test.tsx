@@ -68,6 +68,22 @@ describe("public sale page", () => {
     expect(metadata.robots).toBeUndefined();
   });
 
+  it("shares the site preview image and announces the lower-case address, whatever the URL case", async () => {
+    mocks.lookup.mockResolvedValue({ status: "found", sale });
+    const metadata = await generateMetadata({ params: Promise.resolve({ id: ID.toUpperCase() }) });
+    const image = { url: "/opengraph-image", width: 1200, height: 630, alt: "Immojudis" };
+    expect(metadata.alternates).toEqual({ canonical: `/sales/${ID}` });
+    expect(metadata.openGraph).toMatchObject({ url: `/sales/${ID}`, images: [image] });
+    expect(metadata.twitter).toMatchObject({ images: ["/opengraph-image"] });
+
+    const html = renderToStaticMarkup(
+      await Page({ params: Promise.resolve({ id: ID.toUpperCase() }) }),
+    );
+    const json = /<script type="application\/ld\+json">(.*?)<\/script>/.exec(html)![1];
+    expect(json).toContain(`https://immojudis.com/sales/${ID}`);
+    expect(json).not.toContain(ID.toUpperCase());
+  });
+
   it("renders the sale with its structured data, in absolute URLs", async () => {
     mocks.lookup.mockResolvedValue({ status: "found", sale });
     const html = renderToStaticMarkup(await Page({ params }));

@@ -76,7 +76,7 @@ describe("/sales server page", () => {
   });
 
   it("has an accented title and description, without the site name", () => {
-    expect(metadata.title).toBe("Ventes immobilières aux enchères : tribunal, notaire, État");
+    expect(metadata.title).toBe("Ventes immobilières aux enchères en France");
     expect(String(metadata.description)).toMatch(/^Consultez les ventes immobilières aux enchères/);
     expect(String(metadata.title)).not.toMatch(/immojudis/i);
     expect(metadata.alternates).toEqual({ canonical: "/sales" });

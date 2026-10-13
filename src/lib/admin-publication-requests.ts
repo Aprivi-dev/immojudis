@@ -305,7 +305,7 @@ function parisCivilDate(now = new Date()): string {
 }
 
 function publicationSourceUrl(requestId: string): string {
-  const origin = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://immojudis.fr";
+  const origin = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://immojudis.com";
   return `${origin.replace(/\/$/, "")}/publications/professional/${encodeURIComponent(requestId)}`;
 }
 
