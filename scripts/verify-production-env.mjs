@@ -58,7 +58,7 @@ const requiredGroups = [
   },
   {
     label: "Canonical site URL",
-    names: ["SITE_URL", "NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_APP_URL", "APP_URL", "VERCEL_URL"],
+    names: ["SITE_URL", "NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_APP_URL", "APP_URL"],
   },
   {
     label: "Mapbox public access token",
@@ -88,7 +88,6 @@ const configuredSiteUrl = firstValue([
   "NEXT_PUBLIC_SITE_URL",
   "NEXT_PUBLIC_APP_URL",
   "APP_URL",
-  "VERCEL_URL",
 ]);
 const invalidSiteUrl = configuredSiteUrl && !isValidHttpsOrigin(configuredSiteUrl);
 const configuredMapboxToken = firstValue([

@@ -118,4 +118,47 @@ describe("getMarketValuationSurfaces", () => {
       builtSurfaceUncertaintyPct: 45,
     });
   });
+  it("keeps the built surface of a house whose title mentions a terrain", () => {
+    expect(
+      getMarketValuationSurfaces({
+        title: "Maison avec terrain de 500 m²",
+        property_type: "house",
+        app_surface_m2: 90,
+        land_surface_m2: 500,
+      }),
+    ).toMatchObject({
+      builtSurfaceM2: 90,
+      landSurfaceM2: 500,
+      builtSurfaceEstimated: false,
+      surfaceKind: null,
+    });
+  });
+
+  it("keeps the built surface of a house sold with an adjoining plot", () => {
+    expect(
+      getMarketValuationSurfaces({
+        title: "Maison + parcelle attenante",
+        property_type: "Maison avec terrain",
+        app_surface_m2: 90,
+      }),
+    ).toMatchObject({ builtSurfaceM2: 90, landSurfaceM2: null, surfaceKind: null });
+  });
+
+  it("estimates a house surface from its type even when the title mentions a terrain", () => {
+    expect(
+      getMarketValuationSurfaces({
+        title: "Maison avec terrain",
+        property_type: "house",
+        rooms_count: 4,
+      }),
+    ).toMatchObject({ builtSurfaceM2: 100, builtSurfaceEstimated: true });
+  });
+
+  it.each(["land", "terrain", "Parcelle"])("still treats a %s typed lot as bare land", (type) => {
+    expect(getMarketValuationSurfaces({ property_type: type, app_surface_m2: 800 })).toMatchObject({
+      builtSurfaceM2: null,
+      landSurfaceM2: 800,
+      surfaceKind: "land",
+    });
+  });
 });

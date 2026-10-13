@@ -35,6 +35,7 @@ type ReferralMatchedLawyerRow = Pick<
   | "bar_association"
   | "city"
   | "department"
+  | "paid_placement_status"
   | "paid_placement_starts_at"
   | "paid_placement_ends_at"
 >;
@@ -57,17 +58,22 @@ export const lawyerReferralRequestInputSchema = z.object({
   saleId: z.string().uuid(),
   lawyerId: z.string().uuid().optional(),
   preferredContactMethod: z.enum(["email", "phone", "either"]).default("email"),
-  phone: z.string().trim().max(40).optional(),
-  message: z.string().trim().max(1500).optional(),
-  financingReady: z.boolean().optional(),
-  maxBidEur: z.number().finite().nonnegative().optional(),
   /**
    * The user has seen the recap of the data sent to the lawyer and confirms the transmission
    * (plan P4-13). The server refuses a request without it.
+   *
+   * The API accepts nothing else than what the recap shows (sale, account email, contact method):
+   * a free-text message, phone number, financing or maximum bid sent by a client is dropped by the
+   * schema, so no field leaves Immojudis without having been displayed and consented to.
    */
   dataSharingConfirmed: z.literal(true, {
     message: "Confirmez la transmission de vos informations à l'avocat avant l'envoi.",
   }),
+});
+
+export const lawyerReferralPreviewQuerySchema = z.object({
+  saleId: z.string().uuid(),
+  lawyerId: z.string().uuid().optional(),
 });
 
 export const lawyerReferralListQuerySchema = z.object({
@@ -78,6 +84,7 @@ export const lawyerReferralListQuerySchema = z.object({
 export type LawyerReferralRequestInput = z.input<typeof lawyerReferralRequestInputSchema>;
 export type LawyerReferralRequestPayload = z.output<typeof lawyerReferralRequestInputSchema>;
 export type LawyerReferralListQuery = z.output<typeof lawyerReferralListQuerySchema>;
+export type LawyerReferralPreviewQuery = z.output<typeof lawyerReferralPreviewQuerySchema>;
 
 export type LawyerReferralResponse = {
   requestId: string;
@@ -92,6 +99,26 @@ export type LawyerReferralResponse = {
     department: string | null;
   } | null;
   reusedExisting: boolean;
+};
+
+/**
+ * Placement of the lawyer who would receive a request, at the time of the preview: "active" (paid
+ * placement), "trial" (free trial of the paid placement, not yet paid) or "none".
+ */
+export type LawyerReferralPlacement = "active" | "trial" | "none";
+
+export type LawyerReferralPreviewResponse = {
+  /** Null when no lawyer can be determined automatically: the request goes to manual review. */
+  recipient:
+    | (NonNullable<LawyerReferralResponse["matchedLawyer"]> & {
+        placement: LawyerReferralPlacement;
+      })
+    | null;
+};
+
+type ReferralRecipient = {
+  lawyer: NonNullable<LawyerReferralResponse["matchedLawyer"]>;
+  placement: LawyerReferralPlacement;
 };
 
 export type LawyerReferralSummary = {
@@ -135,7 +162,7 @@ const OPEN_REQUEST_STATUSES = ["new", "manual_review", "sent_to_lawyer"] as cons
 const USER_REFERRAL_COLUMNS =
   "id,status,matching_status,requested_lawyer_id,sale_id,sale_snapshot,preferred_contact_method,financing_ready,max_bid_eur,assigned_at,sent_at,responded_at,created_at,updated_at";
 const REFERENCED_LAWYER_MATCH_COLUMNS =
-  "id,display_name,firm_name,bar_association,city,department,paid_placement_starts_at,paid_placement_ends_at";
+  "id,display_name,firm_name,bar_association,city,department,paid_placement_status,paid_placement_starts_at,paid_placement_ends_at";
 
 export async function createLawyerReferralRequest({
   auth,
@@ -165,26 +192,8 @@ export async function createLawyerReferralRequest({
   }
 
   const saleBar = await resolveSaleBarAssociation(sale);
-  const matchedLawyer = input.lawyerId
-    ? await getReferencedLawyerSummary(auth.supabase, input.lawyerId)
-    : await findMatchingReferencedLawyer(auth.supabase, sale, saleBar);
-  if (input.lawyerId && !matchedLawyer) {
-    throw new Error("Avocat référencé introuvable ou indisponible.");
-  }
-  // A lawyer chosen by hand obeys the same rules as an automatic match.
-  if (
-    input.lawyerId &&
-    matchedLawyer &&
-    !isLawyerEligibleForSale({
-      lawyer: matchedLawyer,
-      saleBar,
-      prosecutingLawyerName: sale.lawyer_name,
-    })
-  ) {
-    throw new Error(
-      "Cet avocat n'est pas proposé pour cette vente : seuls les avocats du barreau du tribunal, hors avocat poursuivant, peuvent être sollicités.",
-    );
-  }
+  const matchedLawyer =
+    (await resolveReferralRecipient(auth.supabase, sale, saleBar, input.lawyerId))?.lawyer ?? null;
   const matchingStatus = matchedLawyer ? "matched" : "manual_review";
   const status = matchedLawyer ? "new" : "manual_review";
 
@@ -199,10 +208,6 @@ export async function createLawyerReferralRequest({
       status,
       matching_status: matchingStatus,
       preferred_contact_method: input.preferredContactMethod,
-      phone: emptyToNull(input.phone),
-      message: emptyToNull(input.message),
-      financing_ready: input.financingReady ?? null,
-      max_bid_eur: input.maxBidEur ?? null,
       assigned_at: matchedLawyer ? new Date().toISOString() : null,
       metadata: {
         source: input.lawyerId ? "lawyer_directory" : "sale_detail",
@@ -210,7 +215,7 @@ export async function createLawyerReferralRequest({
         sale_bar_association: saleBar,
         selected_lawyer_id: input.lawyerId ?? null,
         data_sharing_confirmed_at: new Date().toISOString(),
-        shared_with_lawyer: sharedFieldsFor(input),
+        shared_with_lawyer: [...SHARED_WITH_LAWYER_FIELDS],
       },
     })
     .select("id,status,matching_status")
@@ -237,6 +242,28 @@ export async function createLawyerReferralRequest({
     matchedLawyer,
     reusedExisting: false,
   };
+}
+
+/**
+ * Who would receive the request, shown before the user consents. Same selection as
+ * `createLawyerReferralRequest` (same eligibility rules), but nothing is created or recorded.
+ */
+export async function previewLawyerReferralRecipient({
+  auth,
+  query,
+}: {
+  auth: SupabaseAuthContext;
+  query: LawyerReferralPreviewQuery;
+}): Promise<LawyerReferralPreviewResponse> {
+  const plan = await resolvePlanEntitlements(auth);
+  if (!featureIncluded(plan.plan, "lawyers.referrals")) {
+    throw new Error("Mise en relation avocat réservée au plan Analyse ou Investisseur.");
+  }
+
+  const sale = await getSaleSnapshot(auth.supabase, query.saleId);
+  const saleBar = await resolveSaleBarAssociation(sale);
+  const recipient = await resolveReferralRecipient(auth.supabase, sale, saleBar, query.lawyerId);
+  return { recipient: recipient ? { ...recipient.lawyer, placement: recipient.placement } : null };
 }
 
 export async function listLawyerReferralRequests({
@@ -327,11 +354,40 @@ async function getExistingOpenRequest(
   return data;
 }
 
+/**
+ * The lawyer who receives the request: the one chosen by hand (same eligibility rules as an
+ * automatic match) or, without a choice, the first eligible lawyer under a paid placement.
+ */
+async function resolveReferralRecipient(
+  supabase: SupabaseClient,
+  sale: SaleSnapshotSource,
+  saleBar: string | null,
+  lawyerId: string | undefined,
+): Promise<ReferralRecipient | null> {
+  if (!lawyerId) return findMatchingReferencedLawyer(supabase, sale, saleBar);
+
+  const chosen = await getReferencedLawyerRecipient(supabase, lawyerId);
+  if (!chosen) throw new Error("Avocat référencé introuvable ou indisponible.");
+  // A lawyer chosen by hand obeys the same rules as an automatic match.
+  if (
+    !isLawyerEligibleForSale({
+      lawyer: chosen.lawyer,
+      saleBar,
+      prosecutingLawyerName: sale.lawyer_name,
+    })
+  ) {
+    throw new Error(
+      "Cet avocat n'est pas proposé pour cette vente : seuls les avocats du barreau du tribunal, hors avocat poursuivant, peuvent être sollicités.",
+    );
+  }
+  return chosen;
+}
+
 async function findMatchingReferencedLawyer(
   supabase: SupabaseClient,
   sale: SaleSnapshotSource,
   saleBar: string | null,
-): Promise<LawyerReferralResponse["matchedLawyer"]> {
+): Promise<ReferralRecipient | null> {
   // Bar of the sale's tribunal only; the prosecuting lawyer is excluded (conflict of interest).
   if (!saleBar) return null;
 
@@ -359,16 +415,28 @@ async function findMatchingReferencedLawyer(
         prosecutingLawyerName: sale.lawyer_name,
       }),
   );
-  if (!lawyer) return null;
+  return lawyer ? lawyerRowToRecipient(lawyer) : null;
+}
 
+function lawyerRowToRecipient(row: ReferralMatchedLawyerRow): ReferralRecipient {
   return {
-    id: lawyer.id,
-    displayName: lawyer.display_name,
-    firmName: lawyer.firm_name,
-    barAssociation: lawyer.bar_association,
-    city: lawyer.city,
-    department: lawyer.department,
+    lawyer: {
+      id: row.id,
+      displayName: row.display_name,
+      firmName: row.firm_name,
+      barAssociation: row.bar_association,
+      city: row.city,
+      department: row.department,
+    },
+    placement: placementOf(row),
   };
+}
+
+/** "active" or "trial" only while the placement window is open; anything else is "none". */
+function placementOf(row: ReferralMatchedLawyerRow, now = new Date()): LawyerReferralPlacement {
+  const status = row.paid_placement_status;
+  if ((status === "active" || status === "trial") && paidPlacementIsActive(row, now)) return status;
+  return "none";
 }
 
 function paidPlacementIsActive(
@@ -381,17 +449,29 @@ function paidPlacementIsActive(
   return (startsAt == null || startsAt <= timestamp) && (endsAt == null || endsAt >= timestamp);
 }
 
-/** Fields that leave Immojudis for the lawyer, recorded for the audit trail. */
-function sharedFieldsFor(input: LawyerReferralRequestPayload): string[] {
-  return [
-    "requester_email",
-    "sale_reference",
-    ...(input.phone ? ["phone"] : []),
-    ...(input.message ? ["message"] : []),
-    ...(input.financingReady !== undefined ? ["financing_ready"] : []),
-    ...(input.maxBidEur !== undefined ? ["max_bid_eur"] : []),
-    "preferred_contact_method",
-  ];
+/**
+ * Fields that leave Immojudis for the lawyer, recorded for the audit trail. They are exactly the
+ * ones the recap displays: the sale (title, location and link to the listing), the account email
+ * and the contact method.
+ */
+const SHARED_WITH_LAWYER_FIELDS = [
+  "requester_email",
+  "sale_reference",
+  "preferred_contact_method",
+] as const;
+
+async function getReferencedLawyerRecipient(
+  supabase: SupabaseClient,
+  lawyerId: string,
+): Promise<ReferralRecipient | null> {
+  const { data, error } = await supabase
+    .from("referenced_lawyers")
+    .select(REFERENCED_LAWYER_MATCH_COLUMNS)
+    .eq("id", lawyerId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data ? lawyerRowToRecipient(data as ReferralMatchedLawyerRow) : null;
 }
 
 async function getReferencedLawyerSummary(
@@ -565,11 +645,6 @@ function parseDateTime(value: string | null): number | null {
   if (!value) return null;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : null;
-}
-
-function emptyToNull(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
 }
 
 function jsonRecord(value: Json): Record<string, Json> {

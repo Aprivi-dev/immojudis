@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   featureIncluded,
+  hasLiveStripeSubscription,
   isPlanPeriodActive,
   pastDueGraceEnd,
   normalizePlanCode,
@@ -83,5 +84,28 @@ describe("plan matrix", () => {
     expect(pastDueGraceEnd("2026-07-01T00:00:00.000Z")).toBe("2026-07-08T00:00:00.000Z");
     expect(pastDueGraceEnd(null)).toBeNull();
     expect(pastDueGraceEnd("not a date")).toBeNull();
+  });
+
+  it("sees a real Stripe subscription, not a customer left by an abandoned checkout", () => {
+    const periodEnd = "2026-11-01T00:00:00.000Z";
+    // Abandoned checkout: customer and reservation row (active, no period end).
+    expect(hasLiveStripeSubscription({ status: "active", hasStripeCustomer: true }, null)).toBe(
+      false,
+    );
+    expect(hasLiveStripeSubscription({ status: null, hasStripeCustomer: true }, null)).toBe(false);
+    // Cancelled or expired subscriptions can be bought again.
+    expect(
+      hasLiveStripeSubscription({ status: "cancelled", hasStripeCustomer: true }, periodEnd),
+    ).toBe(false);
+    expect(
+      hasLiveStripeSubscription({ status: "expired", hasStripeCustomer: true }, periodEnd),
+    ).toBe(false);
+    for (const status of ["past_due", "paused", "trialing", "active"] as const) {
+      expect(hasLiveStripeSubscription({ status, hasStripeCustomer: true }, periodEnd)).toBe(true);
+    }
+    expect(
+      hasLiveStripeSubscription({ status: "active", hasStripeCustomer: false }, periodEnd),
+    ).toBe(false);
+    expect(hasLiveStripeSubscription(undefined, periodEnd)).toBe(false);
   });
 });

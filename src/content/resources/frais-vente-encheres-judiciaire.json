@@ -1,0 +1,163 @@
+{
+  "slug": "frais-vente-encheres-judiciaire",
+  "publishedAt": "2026-10-13",
+  "title": "Frais d’une vente aux enchères judiciaire",
+  "category": "Budget",
+  "description": "Ce qui s’ajoute au prix d’adjudication : frais taxés, émoluments, droits de mutation, honoraires et débours, avec des ordres de grandeur datés à vérifier avant d’enchérir.",
+  "intro": [
+    "Le prix d’adjudication, c’est-à-dire le prix auquel le bien est attribué à l’audience, n’est qu’une partie de ce que vous paierez. En saisie immobilière, les frais de la vente s’ajoutent en plus du prix et sont à la charge de l’adjudicataire (art. R. 322-58 du Code des procédures civiles d’exécution). Mal anticipés, ils peuvent transformer une enchère raisonnable en mauvaise opération.",
+    "Cet article décrit chaque poste et propose des ordres de grandeur datés. Les barèmes et taux cités n’ont pas encore été validés par un juriste ou un notaire et peuvent évoluer : ils sont à vérifier sur le cahier des conditions de vente (le document qui décrit le bien et fixe les règles de la vente) et auprès de votre avocat avant tout engagement. Ce sont des repères, pas des tarifs."
+  ],
+  "takeaways": [
+    "Les frais s’ajoutent au prix : frais de poursuite taxés, émoluments des avocats, droits de mutation, honoraires de votre avocat et débours.",
+    "Les frais de poursuite sont fixés par le juge et annoncés avant les enchères ; il ne peut rien être exigé au-delà.",
+    "Les droits de mutation sont le poste le plus lourd : environ 6,3 % du prix dans la plupart des départements pour un bien ancien, un peu moins dans quelques-uns (valeurs à vérifier).",
+    "Dans les hypothèses par défaut du simulateur Immojudis, les frais pèsent environ 12 % du prix pour un bien à 150 000 € et davantage, en proportion, sur un petit prix.",
+    "Ces ordres de grandeur ne remplacent pas le décompte de l’avocat."
+  ],
+  "sections": [
+    {
+      "id": "les-postes",
+      "title": "Les postes de frais, un par un",
+      "paragraphs": [
+        "Le tableau classe les frais selon leur nature. Trois termes à connaître : les frais « taxés » sont des frais dont le juge a fixé le montant ; les émoluments sont une rémunération tarifée par un texte réglementaire ; les débours sont des sommes qu’un professionnel avance pour votre compte et qu’il vous refacture au réel."
+      ],
+      "table": {
+        "headers": ["Poste", "Ce que c’est et qui le fixe", "Où le vérifier"],
+        "rows": [
+          [
+            "Frais de poursuite (frais préalables)",
+            "Frais de la procédure avancés par le créancier poursuivant : actes, publicité, etc. Le juge les « taxe » et leur montant est annoncé avant l’ouverture des enchères (art. R. 322-42). L’adjudicataire les paie en plus du prix (art. R. 322-58).",
+            "Annonce à l’audience, jugement d’adjudication, avocat poursuivant"
+          ],
+          [
+            "Émoluments des avocats",
+            "Rémunération tarifée par le Code de commerce (art. A. 444-191 et A. 444-102), proportionnelle au prix. Trois quarts pour l’avocat poursuivant, un quart pour l’avocat de l’adjudicataire.",
+            "Barème légal, décompte de l’avocat"
+          ],
+          [
+            "Droits de mutation",
+            "Impôt dû à l’État et aux collectivités lors d’un achat immobilier, calculé sur le prix augmenté de toutes les charges en capital (art. 683 du Code général des impôts), c’est-à-dire notamment les frais taxés. Payé en plus du prix (art. R. 322-58).",
+            "Avocat, administration fiscale, Notaires de France"
+          ],
+          [
+            "Contribution de sécurité immobilière",
+            "Taxe liée à la publication de l’acte au fichier immobilier : 0,10 % de la base taxable (le prix augmenté des frais préalables dans le simulateur Immojudis ; Notaires de France indique 0,10 % du prix).",
+            "Avocat, Notaires de France"
+          ],
+          [
+            "Honoraires de l’avocat qui porte vos enchères",
+            "Rémunération librement convenue avec lui, en plus des émoluments tarifés. À fixer par écrit avant l’audience.",
+            "Convention d’honoraires"
+          ],
+          [
+            "Débours",
+            "Avances de l’avocat pour votre compte : extraits, droits, formalités. Refacturées au réel.",
+            "Décompte de l’avocat"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "emoluments",
+      "title": "Les émoluments : un barème par tranches",
+      "paragraphs": [
+        "En saisie immobilière, l’émolument proportionnel au prix d’adjudication est celui que le Code de commerce fixe pour les ventes judiciaires, avec un barème dégressif : chaque tranche du prix est multipliée par un taux, et le taux baisse quand le prix monte (art. A. 444-191, qui renvoie à l’art. A. 444-102). L’émolument est réparti entre l’avocat poursuivant (les trois quarts) et l’avocat de l’adjudicataire (le quart restant). En cas de surenchère ou de réitération des enchères, la répartition change (art. A. 444-191, II et III).",
+        "Les taux ci-dessous sont ceux relevés le 09/10/2026 par Immojudis, hors taxe, applicables aux procédures ouvertes depuis le 1er janvier 2021 ; à confirmer sur Légifrance et avec l’avocat avant toute décision."
+      ],
+      "table": {
+        "headers": ["Tranche du prix", "Taux hors taxe (relevé au 09/10/2026, à vérifier)"],
+        "rows": [
+          ["De 0 à 6 500 €", "7,256 %"],
+          ["De 6 500 € à 17 000 €", "2,993 %"],
+          ["De 17 000 € à 60 000 €", "1,995 %"],
+          ["Au-delà de 60 000 €", "1,497 %"]
+        ]
+      },
+      "callout": {
+        "title": "Exemple d’ordre de grandeur",
+        "text": "Pour un prix de 150 000 €, ce barème donne environ 2 990 € hors taxe, soit environ 3 590 € avec 20 % de TVA. Cette somme est un repère, à vérifier avec l’avocat ; le simulateur Immojudis l’intègre en totalité à vos frais par prudence."
+      }
+    },
+    {
+      "id": "droits-de-mutation",
+      "title": "Les droits de mutation : le poste le plus lourd",
+      "paragraphs": [
+        "Pour un bien ancien, les droits de mutation additionnent une part départementale, une part communale de 1,20 % et des frais d’assiette. Notaires de France indique, sur une page mise à jour le 05/12/2025, un taux global de 6,31 % du prix, la part départementale étant passée de 4,5 % à 5 % en 2025 dans la plupart des départements. Le calcul est : 5 % de part départementale + 1,20 % de part communale + 2,37 % de la part départementale, soit 6,3185 %, arrondi à 6,32 %. Le simulateur Immojudis applique 6,32 % partout, sauf dans l’Indre (5,09 %). Une dizaine de départements étaient restés à 5,81 % au 01/06/2026 (non intégrés au simulateur) : leurs droits sont inférieurs d’environ 800 € pour 150 000 €. Ces taux dépendent du département et de la nature du bien (ancien, neuf ou soumis à TVA) : ils sont à vérifier.",
+        "L’assiette n’est pas seulement le prix : elle inclut les charges en capital, notamment les frais de poursuite taxés (art. 683 du Code général des impôts). À prix égal, ils augmentent donc légèrement la base taxable."
+      ]
+    },
+    {
+      "id": "ordres-de-grandeur",
+      "title": "Ce que cela donne en euros, avec les hypothèses du simulateur",
+      "paragraphs": [
+        "Le tableau applique les hypothèses par défaut du simulateur Immojudis : émoluments selon le barème ci-dessus (TVA de 20 %), droits de mutation de 6,32 % sur le prix augmenté de 3 000 € de frais préalables, contribution de sécurité immobilière de 0,10 % de cette même base, 3 000 € de frais préalables et 1 500 € d’honoraires. Ces hypothèses sont modifiables et ne correspondent à aucun dossier précis. Les montants sont arrondis."
+      ],
+      "table": {
+        "headers": ["Prix d’adjudication", "Frais estimés", "Part du prix"],
+        "rows": [
+          ["50 000 €", "environ 9 600 €", "environ 19 %"],
+          ["100 000 €", "environ 13 800 €", "environ 14 %"],
+          ["150 000 €", "environ 17 900 €", "environ 12 %"],
+          ["300 000 €", "environ 30 200 €", "environ 10 %"]
+        ]
+      },
+      "bullets": [
+        "La part des frais est plus élevée sur les petits prix, car certains frais sont fixes.",
+        "Dans un département resté à 5,81 % (non intégré au simulateur), les droits de mutation sont inférieurs d’environ 800 € pour 150 000 €.",
+        "Les travaux, le financement et le portage (intérêts, taxe foncière, charges tant que le bien ne rapporte rien) ne sont pas inclus."
+      ]
+    },
+    {
+      "id": "avant-de-miser",
+      "title": "Les vérifier avant de miser",
+      "paragraphs": [
+        "Demandez à l’avocat poursuivant le montant prévisible des frais taxés, et à l’avocat qui portera vos enchères le décompte de ses honoraires et des débours. Lisez dans le cahier des conditions de vente les stipulations sur les frais. Le montant définitif est connu à l’audience.",
+        "Intégrez ensuite ces frais à votre enchère plafond, recalculés à chaque prix testé, comme l’explique l’article « Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir ». N’oubliez pas la garantie à remettre avant l’audience (10 % de la mise à prix, minimum 3 000 €, art. R. 322-41), qui n’est pas un frais mais immobilise de la trésorerie, et le calendrier de paiement décrit dans « Après l’adjudication : surenchère, paiement, consignation et titre de vente »."
+      ],
+      "bullets": [
+        "Demander le décompte écrit de tous les frais avant l’audience.",
+        "Comparer avec les hypothèses du simulateur et corriger celles qui diffèrent.",
+        "Signaler à l’avocat tout poste inhabituel : frais de copropriété, publicité complémentaire, frais de libération du bien."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-42 (frais de poursuite taxés)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939159"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-58 (frais et droits de mutation payés en sus du prix)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939198"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article A. 444-191 (émoluments en saisie immobilière)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039000802"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article A. 444-102 (barème des émoluments)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000041684399"
+    },
+    {
+      "label": "Légifrance — Code général des impôts, article 683 (assiette des droits de mutation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006310209"
+    },
+    {
+      "label": "Légifrance — Code général des impôts, article 1594 D (taux de la taxe de publicité foncière)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000030024636"
+    },
+    {
+      "label": "Notaires de France — Droits de mutation, frais d’acquisition ou « frais de notaire »",
+      "url": "https://www.notaires.fr/fr/droits-de-mutation-frais-d%E2%80%99acte-de-vente-ou-%C2%AB-frais-de-notaire-%C2%BB"
+    },
+    {
+      "label": "Service-Public — Saisie immobilière",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    },
+    {
+      "label": "Justice.fr — Saisie immobilière",
+      "url": "https://www.justice.fr/fiche/saisie-immobiliere"
+    }
+  ]
+}

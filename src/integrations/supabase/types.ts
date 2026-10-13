@@ -799,6 +799,7 @@ export type Database = {
       };
       auction_document_readings: {
         Row: {
+          attempt_count: number;
           documents: Json;
           error_code: string | null;
           generated_at: string;
@@ -813,6 +814,7 @@ export type Database = {
           updated_at: string;
         };
         Insert: {
+          attempt_count?: number;
           documents?: Json;
           error_code?: string | null;
           generated_at?: string;
@@ -827,6 +829,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          attempt_count?: number;
           documents?: Json;
           error_code?: string | null;
           generated_at?: string;
@@ -4076,6 +4079,7 @@ export type Database = {
       auction_source_state: {
         Row: {
           availability: string;
+          catalogue_withdrawn: boolean;
           consecutive_failures: number;
           coverage: Json;
           enabled: boolean;
@@ -4090,9 +4094,12 @@ export type Database = {
           suspended_until: string | null;
           suspension_reason: string | null;
           updated_at: string;
+          withdrawn_at: string | null;
+          withdrawn_reason: string | null;
         };
         Insert: {
           availability?: string;
+          catalogue_withdrawn?: boolean;
           consecutive_failures?: number;
           coverage?: Json;
           enabled?: boolean;
@@ -4107,9 +4114,12 @@ export type Database = {
           suspended_until?: string | null;
           suspension_reason?: string | null;
           updated_at?: string;
+          withdrawn_at?: string | null;
+          withdrawn_reason?: string | null;
         };
         Update: {
           availability?: string;
+          catalogue_withdrawn?: boolean;
           consecutive_failures?: number;
           coverage?: Json;
           enabled?: boolean;
@@ -4124,6 +4134,8 @@ export type Database = {
           suspended_until?: string | null;
           suspension_reason?: string | null;
           updated_at?: string;
+          withdrawn_at?: string | null;
+          withdrawn_reason?: string | null;
         };
         Relationships: [
           {
@@ -7836,6 +7848,45 @@ export type Database = {
           training_cutoff_at?: string | null;
           training_sample_size?: number | null;
           version?: string;
+        };
+        Relationships: [];
+      };
+      offer_opening_notifications: {
+        Row: {
+          consent_source: string;
+          consent_text_version: string;
+          consented_at: string;
+          created_at: string;
+          notified_at: string | null;
+          notify_enabled: boolean;
+          offer_code: string;
+          revoked_at: string | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          consent_source?: string;
+          consent_text_version: string;
+          consented_at?: string;
+          created_at?: string;
+          notified_at?: string | null;
+          notify_enabled?: boolean;
+          offer_code?: string;
+          revoked_at?: string | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          consent_source?: string;
+          consent_text_version?: string;
+          consented_at?: string;
+          created_at?: string;
+          notified_at?: string | null;
+          notify_enabled?: boolean;
+          offer_code?: string;
+          revoked_at?: string | null;
+          updated_at?: string;
+          user_id?: string;
         };
         Relationships: [];
       };
@@ -13283,6 +13334,7 @@ export type Database = {
         Returns: Json;
       };
       get_court_auction_summaries: { Args: never; Returns: Json };
+      get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
       get_public_sale_details: {
         Args: { p_sale_id: string };
         Returns: {
@@ -13979,6 +14031,10 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      set_catalogue_source_withdrawal: {
+        Args: { p_reason?: string; p_source: string; p_withdrawn: boolean };
+        Returns: Json;
       };
       set_catalogue_readiness_enforcement: {
         Args: { p_enabled: boolean };

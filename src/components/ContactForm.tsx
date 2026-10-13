@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { sendContactMessage } from "@/app/contact/actions";
 import {
@@ -9,6 +10,7 @@ import {
   type ContactState,
 } from "@/lib/contact-message";
 import { Button } from "@/components/ui/primitives";
+import { publicLegalPublisher } from "@/lib/legal-documents";
 
 const INITIAL: ContactState = { status: "idle" };
 
@@ -20,6 +22,9 @@ export function ContactForm({
   const [state, formAction, pending] = useActionState(action, INITIAL);
   const errors: ContactFieldErrors = state.fieldErrors ?? {};
   const values = state.values ?? {};
+  const publisher = publicLegalPublisher();
+  const controller = publisher.entityName ?? "Immojudis";
+  const contactEmail = publisher.contactEmail;
 
   if (state.status === "sent") {
     return (
@@ -122,6 +127,29 @@ export function ContactForm({
           <input name="website" tabIndex={-1} autoComplete="off" />
         </label>
       </div>
+
+      <p id="contact-privacy-notice" className="text-xs leading-relaxed text-ink-soft">
+        {controller} utilise votre nom, votre email et votre message pour répondre à votre demande
+        (intérêt légitime à répondre aux messages reçus). Ils sont conservés 12 mois après le
+        dernier échange, puis supprimés ; en cas de litige ou de réclamation, le temps de la
+        procédure puis, en archive à accès restreint, 5 ans au plus. Voir la{" "}
+        <Link href="/privacy" className="font-semibold text-gold-text underline">
+          politique de confidentialité
+        </Link>{" "}
+        et{" "}
+        <Link href="/mes-droits" className="font-semibold text-gold-text underline">
+          Mes droits
+        </Link>
+        {contactEmail ? (
+          <>
+            . Sans compte, écrivez à{" "}
+            <a href={`mailto:${contactEmail}`} className="font-semibold text-gold-text underline">
+              {contactEmail}
+            </a>
+          </>
+        ) : null}
+        .
+      </p>
 
       <Button
         type="submit"

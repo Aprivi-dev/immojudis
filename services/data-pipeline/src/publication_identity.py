@@ -2,11 +2,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from itertools import combinations
 
 from psycopg.types.json import Jsonb
 
 from src.admission import quarantine_reason
-from src.dedupe import _address_dedupe_keys, _merge_into, _observation_summary, _same_property
+from src.dedupe import (
+    PRIMARY_SOURCE_PRIORITY,
+    _address_dedupe_keys,
+    _merge_into,
+    _observation_summary,
+    _same_property,
+    same_shared_listing,
+    shared_listing_id,
+)
 from src.freshness import invalidate_analysis
 from src.models import AuctionSale
 from src.reviewed_aliases import (
@@ -367,6 +376,63 @@ def _replace_existing(existing: dict[str, AuctionSale], old: AuctionSale, new: A
     existing[key] = new
 
 
+_LISTING_ID_SOURCE_PREFIXES = (
+    # (source_name, motif LIKE) : le motif ne vise que la source qui publie cet identifiant.
+    ('vench', '%/vente-{listing_id}-%'),
+    ('petites_affiches', '%-{listing_id}.html%'),
+)
+_LISTING_LOOKUP_ROWS_PER_ID = 10
+
+
+def _candidate_lock_query(urls, postal_codes, hashes, canonical_ids, listing_ids):
+    """Requête de verrouillage des candidats : identifiants indexés, recherche par numéro d'annonce bornée.
+
+    Un motif ``like '%/vente-N-%'`` à joker initial n'est servi par aucun index : placé dans le même
+    ``or`` que les autres prédicats, il condamnait toute la requête à lire la table entière. Il est
+    donc isolé dans sa propre branche, ajoutée seulement quand une annonce Vench / Petites Affiches
+    est en jeu, limitée à la source qui publie cet identifiant et à quelques lignes par annonce. Les
+    autres prédicats (URL, source_urls, code postal, empreinte, identifiant) restent indexables.
+    """
+    indexed = """select a.id from public.auction_sales a
+        where a.source_url=any(%s) or a.source_urls ?| %s or a.postal_code=any(%s)
+          or a.content_hash=any(%s) or a.id=any(%s::uuid[])"""
+    params: list = [urls, urls, postal_codes, hashes, canonical_ids]
+    listing_branch = ''
+    if listing_ids:
+        conditions = []
+        for source_name, pattern in _LISTING_ID_SOURCE_PREFIXES:
+            conditions.append('(b.source_name=%s and b.source_url like any(%s))')
+            params += [source_name, [pattern.format(listing_id=listing_id) for listing_id in listing_ids]]
+        listing_branch = f"""
+          union (select b.id from public.auction_sales b where {' or '.join(conditions)}
+                 order by b.id limit %s)"""
+        params.append(_LISTING_LOOKUP_ROWS_PER_ID * len(listing_ids))
+    sql = f"""select s.id from public.auction_sales s
+        where s.id in ({indexed}{listing_branch})
+        order by s.id for update"""
+    return sql, tuple(params)
+
+
+def _shared_listing_primary(rows: list[AuctionSale], incoming: AuctionSale) -> AuctionSale | None:
+    """Ligne qui reçoit la fusion quand l'entrante réunit deux lignes persistées d'une même annonce.
+
+    Vench et Petites Affiches peuvent avoir été enregistrées à part ; fusionnées en mémoire dans un
+    run, l'annonce entrante réclame alors les deux lignes. Ce n'est pas une ambiguïté si les lignes
+    sont liées entre elles par le même identifiant d'annonce, le même lieu et un fait commun
+    (``same_shared_listing``) et si aucune ne contredit l'entrante. La ligne primaire est choisie
+    sans dépendre de l'ordre de lecture : priorité de source (Vench avant Petites Affiches), puis
+    URL, puis identifiant. L'autre ligne reste en place, visible, pour le balayage de réconciliation.
+    """
+    if len(rows) < 2 or any(not shared_listing_id(row) for row in rows):
+        return None
+    if any(conflicting_identity(row, incoming) for row in rows):
+        return None
+    if any(not same_shared_listing(first, second) for first, second in combinations(rows, 2)):
+        return None
+    return min(rows, key=lambda row: (PRIMARY_SOURCE_PRIORITY.get(row.source_name, 99),
+                                      row.source_url or '', row.id or ''))
+
+
 def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list[AuctionSale]:
     if not sales:
         return []
@@ -377,6 +443,9 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
     urls = sorted(set().union(*(_urls(sale) for sale in sales)))
     postal_codes = sorted({sale.postal_code for sale in sales if sale.postal_code})
     hashes = sorted({sale.content_hash for sale in sales if sale.content_hash})
+    # Vench et Petites Affiches publient le même identifiant d'annonce dans leur URL : l'autre
+    # source est chargée même si le code postal manque d'un côté.
+    listing_ids = sorted({listing_id for sale in sales if (listing_id := shared_listing_id(sale))})
     relevant_aliases = registry.aliases_for_urls(urls)
     canonical_ids = sorted({alias.canonical_sale_id for alias in relevant_aliases})
     # Lock and de-duplicate candidate IDs before touching the wide JSON row.
@@ -385,10 +454,8 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
     # boundary without sorting/detoasting every candidate as part of FOR
     # UPDATE.  Keep the explicit ID predicate for reviewed aliases whose
     # current URL no longer matches the incoming source URL.
-    candidate_rows = connection.execute("""select s.id from public.auction_sales s
-        where source_url=any(%s) or source_urls ?| %s or postal_code=any(%s)
-          or content_hash=any(%s) or s.id=any(%s::uuid[])
-        order by s.id for update""", (urls, urls, postal_codes, hashes, canonical_ids)).fetchall()
+    candidate_rows = connection.execute(*_candidate_lock_query(
+        urls, postal_codes, hashes, canonical_ids, listing_ids)).fetchall()
     candidate_ids = sorted({str(row[0]) for row in candidate_rows if row and row[0]})
     if candidate_ids:
         rows = connection.execute("""select to_jsonb(s) from public.auction_sales s
@@ -462,8 +529,10 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
 
         existing = list(existing_by_key.values())
         exact = [row for row in existing if _urls(row) & _urls(sale)]
-        matches = exact or [row for row in existing
+        matches = exact or [row for row in existing if same_shared_listing(row, sale)] or [row for row in existing
             if set(_address_dedupe_keys(row)) & set(_address_dedupe_keys(sale)) and _same_property(row, sale)]
+        if len(matches) > 1 and (primary := _shared_listing_primary(matches, sale)) is not None:
+            matches = [primary]
         if len(matches) > 1 or any(conflicting_identity(row, sale) for row in matches):
             hold_identity(connection, sale, matches, 'ambiguous_persisted_identity')
             for row in matches:

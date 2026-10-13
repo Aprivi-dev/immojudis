@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect } from "react";
 import dynamic from "next/dynamic";
 import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
+import { trackProductEvent } from "@/lib/product-events";
 
 const AnalysisSaleDetailView = dynamic(
   () =>
@@ -17,9 +19,15 @@ const AnalysisSaleDetailView = dynamic(
  */
 export function ExampleSalePage({
   example,
+  adjudicationStatisticsEnabled = false,
 }: {
   example: { sale: AuctionSale; marketEstimate: MarketEstimate };
+  /** Lu côté serveur (`ADJUDICATION_PRICE_STATISTICS_ENABLED`) : la démo montre l'onglet quand le drapeau est ouvert. */
+  adjudicationStatisticsEnabled?: boolean;
 }) {
+  useEffect(() => {
+    trackProductEvent("sample_report_viewed");
+  }, []);
   return (
     <>
       <div
@@ -35,6 +43,7 @@ export function ExampleSalePage({
         returnTo="/#exemples"
         backLabel="Retour aux exemples"
         publicDemo
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       />
     </>
   );

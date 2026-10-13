@@ -22,6 +22,9 @@ import Link from "next/link";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
 
+/** At most three areas of practice are shown per lawyer (RIN, art. 10.2). */
+const MAX_PRACTICE_TAGS = 3;
+
 const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
   month: "long",
@@ -57,12 +60,29 @@ export function LawyerDirectoryPage({ search }: { search: DirectorySearch }) {
           <div className="mt-7 grid gap-7 lg:grid-cols-[minmax(0,1fr)_25rem] lg:items-end">
             <div>
               <h1 className="max-w-4xl font-display text-5xl font-medium leading-[0.98] text-brand-navy sm:text-6xl">
-                Avocats en droit immobilier
+                Avocats inscrits au barreau
               </h1>
               <p className="mt-5 max-w-3xl text-base leading-relaxed text-brand-navy/70 sm:text-lg">
-                Consultez les avocats du barreau compétent. Les profils partenaires sont signalés
-                séparément et bénéficient d'une visibilité renforcée.
+                Consultez les avocats du barreau compétent. Les profils bénéficiant d'une mise en
+                avant payante (ou en période d'essai de cette offre) sont signalés séparément.
               </p>
+              <section aria-labelledby="lawyer-ranking-title" className="mt-5 max-w-3xl">
+                <h2
+                  id="lawyer-ranking-title"
+                  className="text-sm font-semibold text-brand-navy sm:text-base"
+                >
+                  Comment sont classés les avocats ?
+                </h2>
+                <p className="mt-1 text-sm leading-relaxed text-brand-navy/70">
+                  La liste est d'abord limitée au barreau recherché (pour une annonce : celui du
+                  tribunal qui juge la vente, hors avocat poursuivant). Les avocats bénéficiant
+                  d'une mise en avant sont affichés en premier, dans une section à part, selon un
+                  niveau de priorité attribué par Immojudis puis par ordre alphabétique. Les autres
+                  suivent par ordre alphabétique : d'abord les avocats référencés par Immojudis,
+                  puis ceux de l'annuaire officiel du CNB. Aucune note, aucun avis ni critère de
+                  qualité n'entre dans ce classement.
+                </p>
+              </section>
             </div>
 
             <form
@@ -162,6 +182,8 @@ function DirectoryResults({
 
   const sponsoredLawyers = lawyers.filter((lawyer) => lawyer.isSponsored);
   const directoryLawyers = lawyers.filter((lawyer) => !lawyer.isSponsored);
+  // One term everywhere: a placement still in its free trial is named as such, never as paid.
+  const hasTrialPlacement = sponsoredLawyers.some((lawyer) => lawyer.placement === "trial");
 
   return (
     <>
@@ -189,17 +211,19 @@ function DirectoryResults({
             <div>
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-gold-text">
                 <Megaphone className="h-4 w-4" aria-hidden />
-                Profils sponsorisés
+                {hasTrialPlacement ? "Mise en avant (essai ou payante)" : "Mise en avant payante"}
               </div>
               <h3
                 id="partner-lawyers-title"
                 className="mt-2 font-display text-3xl font-semibold text-brand-navy"
               >
-                Avocats partenaires
+                Avocats mis en avant
               </h3>
             </div>
             <p className="max-w-xl text-sm leading-relaxed text-brand-navy/65 sm:text-right">
-              Ces avocats rémunèrent Immojudis pour une visibilité renforcée sur ce barreau.
+              {hasTrialPlacement
+                ? "Ces avocats bénéficient d'une visibilité renforcée sur ce barreau : mise en avant payante ou période d'essai de cette offre."
+                : "Ces avocats rémunèrent Immojudis pour une visibilité renforcée sur ce barreau."}
             </p>
           </div>
           <div className="grid gap-5 lg:grid-cols-2">
@@ -223,7 +247,7 @@ function DirectoryResults({
               id="directory-lawyers-title"
               className="mt-2 font-display text-3xl font-semibold text-brand-navy"
             >
-              Spécialistes en droit immobilier
+              Avocats de l'annuaire
             </h3>
           </div>
           <p className="text-sm text-brand-navy/65">
@@ -267,8 +291,8 @@ function DirectoryResults({
           </div>
         ) : (
           <div className="rounded-lg border border-dashed border-brand-navy/20 bg-white/60 p-6 text-sm leading-relaxed text-brand-navy/65">
-            Aucune fiche standard n'est encore publiée pour ce barreau. Les profils partenaires
-            affichés ci-dessus restent identifiés comme sponsorisés.
+            Aucune fiche standard n'est encore publiée pour ce barreau. Les profils mis en avant
+            affichés ci-dessus restent identifiés comme tels.
           </div>
         )}
       </section>
@@ -277,9 +301,9 @@ function DirectoryResults({
         <div className="flex gap-3">
           <Info className="mt-0.5 h-5 w-5 shrink-0 text-gold-text" aria-hidden />
           <p>
-            La mise en avant payante ne constitue ni une notation, ni une recommandation juridique,
-            ni une garantie de résultat. Vérifiez directement auprès de l'avocat sa disponibilité et
-            les conditions de son intervention.
+            Une mise en avant, payante ou en période d'essai, ne constitue ni une notation, ni une
+            recommandation juridique, ni une garantie de résultat. Vérifiez directement auprès de
+            l'avocat sa disponibilité et les conditions de son intervention.
           </p>
         </div>
         <CnbDirectoryLink barAssociation={barAssociation} />
@@ -320,7 +344,9 @@ function LawyerCard({
         <div className="min-w-0">
           {sponsored ? (
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-gold-text">
-              Profil sponsorisé
+              {lawyer.placement === "trial"
+                ? "Mise en avant en période d'essai"
+                : "Mise en avant payante"}
             </p>
           ) : lawyer.source === "cnb" ? (
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">
@@ -345,7 +371,7 @@ function LawyerCard({
 
       {lawyer.practiceTags.length ? (
         <ul className="mt-4 flex flex-wrap gap-2" aria-label="Domaines d'intervention">
-          {lawyer.practiceTags.slice(0, 4).map((tag) => (
+          {lawyer.practiceTags.slice(0, MAX_PRACTICE_TAGS).map((tag) => (
             <li
               key={tag}
               className={`rounded-full px-2.5 py-1 text-[11px] font-semibold text-brand-navy/70 ${

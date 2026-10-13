@@ -44,6 +44,7 @@ import type { MarketEstimate } from "@/lib/market.server";
 import { computeAcquisitionCosts } from "@/lib/profitability";
 import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
 import { computeCeilingPlan, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
+import { ceilingGap, valueGapReason } from "@/lib/bid-ceiling-gaps";
 import { buildDpeAnalysis } from "@/lib/dpe-analysis";
 import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
 import { useCeilingChoices, worksChoiceForAmount } from "@/components/ceiling/use-ceiling-choices";
@@ -167,6 +168,7 @@ export function AnalysisSaleDetailView({
 export function FreeSaleDetailView({
   sale,
   returnTo = "/sales",
+  adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
 }: SaleDetailProps) {
   return (
@@ -174,6 +176,7 @@ export function FreeSaleDetailView({
       key={sale.id}
       sale={sale}
       returnTo={returnTo}
+      adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       aiReviewProjections={aiReviewProjections}
       access="discovery"
     />
@@ -261,6 +264,9 @@ function SaleDetailWorkspace({
   const criticalAnalysisInputsBlocked =
     priceReview.blocked || surfaceBlocked || propertyTypeReview.blocked || roomsReview.blocked;
   const isTribunalSale = saleIsTribunalVenue(sale);
+  // Les statistiques des tribunaux restent fermées tant que le drapeau l'est : ni l'onglet, ni
+  // son aperçu verrouillé, ni les ancres qui y mènent.
+  const statisticsAvailable = isTribunalSale && adjudicationStatisticsEnabled;
   const budgetTarget =
     access === "analysis"
       ? isTribunalSale && !valuationConflict
@@ -305,6 +311,11 @@ function SaleDetailWorkspace({
     surface,
   ]);
   const ceilingPlan = useMemo(() => computeCeilingPlan(ceilingHypotheses), [ceilingHypotheses]);
+  const marketPending = marketQuery.isLoading && marketEstimate == null;
+  const valueReason = marketPending
+    ? "estimation en cours"
+    : valueGapReason({ surface, marketStatus: marketQuery.data?.status });
+  const ceilingMissing = ceilingGap(ceilingPlan, valueReason);
   const dpeClass = useMemo(() => buildDpeAnalysis(displaySale).class, [displaySale]);
   // Aucun travaux n'est supposé tant que l'utilisateur n'en a pas chiffré.
   const retainedWorks =
@@ -360,6 +371,23 @@ function SaleDetailWorkspace({
   };
   const heroCeiling =
     ceilingEnabled && ceilingPlan.available && ceilingPlan.reachable ? ceilingPlan.maxBid : null;
+  const ceilingContext =
+    heroCeiling != null
+      ? {
+          worksAmount: ceilingHypotheses.works.amount,
+          worksPriced: ceilingChoices.choices.works != null || personalWorksBudget != null,
+          marginPct: ceilingPlan.marginPct + ceilingPlan.dataMarginPct,
+          valueAmount: ceilingHypotheses.value.amount,
+          valueSource:
+            ceilingHypotheses.value.source === "saisie"
+              ? "votre prix au m²"
+              : (marketEstimate?.source ?? "DVF"),
+          valueDate:
+            ceilingHypotheses.value.source === "saisie"
+              ? null
+              : (marketEstimate?.sourceUpdatedAt ?? marketQuery.data?.computedAt ?? null),
+        }
+      : null;
 
   const [activeTab, setActiveTab] = useState<SaleDetailTab>("apercu");
   const [anchorVisit, setAnchorVisit] = useState(0);
@@ -375,7 +403,7 @@ function SaleDetailWorkspace({
   useEffect(() => {
     const syncTabWithHash = () => {
       const anchor = window.location.hash.slice(1);
-      setActiveTab(tabForAnchor(anchor, isTribunalSale));
+      setActiveTab(tabForAnchor(anchor, statisticsAvailable));
       const detail = legacyDetailForAnchor(anchor, budgetTarget);
       if (detail) setDetailOpen(detail, true);
       setAnchorVisit((current) => current + 1);
@@ -383,7 +411,7 @@ function SaleDetailWorkspace({
     syncTabWithHash();
     window.addEventListener("hashchange", syncTabWithHash);
     return () => window.removeEventListener("hashchange", syncTabWithHash);
-  }, [budgetTarget, isTribunalSale]);
+  }, [budgetTarget, statisticsAvailable]);
 
   useEffect(() => {
     const anchor = window.location.hash.slice(1);
@@ -403,7 +431,7 @@ function SaleDetailWorkspace({
     const link = origin.closest<HTMLAnchorElement>('a[href^="#"]');
     const anchor = link?.getAttribute("href")?.slice(1);
     if (!anchor) return;
-    const tab = knownTabForAnchor(anchor, isTribunalSale);
+    const tab = knownTabForAnchor(anchor, statisticsAvailable);
     if (!tab) return;
     const detail = legacyDetailForAnchor(anchor, budgetTarget);
     if (detail) setDetailOpen(detail, true);
@@ -440,6 +468,7 @@ function SaleDetailWorkspace({
               sale={displaySale}
               publicDemo={publicDemo}
               premiumCeiling={heroCeiling}
+              ceilingContext={ceilingContext}
               showPremiumTeaser={access === "discovery" && isTribunalSale}
               factReliabilities={factReliabilities}
               aiReviewProjections={resolvedAiReviewProjections}
@@ -482,7 +511,7 @@ function SaleDetailWorkspace({
         <SaleDetailTabNav
           activeTab={activeTab}
           onTabChange={changeTab}
-          showStatistics={isTribunalSale}
+          showStatistics={statisticsAvailable}
         />
         <div
           id={`sale-detail-panel-${activeTab}`}
@@ -609,6 +638,8 @@ function SaleDetailWorkspace({
                     worksBudget={retainedWorks}
                     recommendedCeiling={ceilingPlan.maxBid}
                     ceilingAvailable={ceilingPlan.available && ceilingPlan.reachable}
+                    ceilingGap={ceilingMissing}
+                    valueReason={valueReason}
                     onAdjust={() => undefined}
                     onEditWorks={() => changeTab("travaux")}
                   />
@@ -639,6 +670,7 @@ function SaleDetailWorkspace({
                     onReset={ceilingChoices.reset}
                     onEditWorks={() => changeTab("travaux")}
                     marketLoading={marketQuery.isLoading && marketEstimate == null}
+                    valueReason={valueReason}
                     dpeClass={dpeClass}
                   />
                 </div>
@@ -686,6 +718,7 @@ function SaleDetailWorkspace({
                 <TribunalEstimationEvidence
                   sale={displaySale}
                   valuationConflict={Boolean(valuationConflict)}
+                  statisticsAvailable={statisticsAvailable}
                   open={Boolean(expandedDetails["tribunal-perspective"])}
                   onOpenChange={(open) => setDetailOpen("tribunal-perspective", open)}
                 />
@@ -693,7 +726,7 @@ function SaleDetailWorkspace({
             </>
           ) : null}
 
-          {activeTab === "statistiques" && isTribunalSale ? (
+          {activeTab === "statistiques" && statisticsAvailable ? (
             access === "analysis" ? (
               <>
                 <AuctionScenariosSection saleId={sale.id} enabled={!publicDemo} />

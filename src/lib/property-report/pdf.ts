@@ -1,5 +1,5 @@
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
-import { formatDate, formatPrice, formatPricePerM2 } from "@/lib/format";
+import { formatDate, formatPrice, formatPricePerM2, formatStartingPrice } from "@/lib/format";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import { REPORT_COMPLIANCE_NOTICE } from "@/lib/source-traceability";
 import {
@@ -209,7 +209,7 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
     ...reportSaleSchedule(sale).map(({ label, value }) => `${label}: ${value}`),
     `Préparation audience: ${stringOrNumberValue(audienceReadinessAnalysis.summary, "à compléter")}`,
     `Urgence audience: ${stringOrNumberValue(audienceReadinessAnalysis.urgencyLabel, "date à confirmer")}`,
-    `Mise à prix: ${formatPrice(numberValue(sale.startingPrice))}`,
+    `Mise à prix: ${formatStartingPrice(numberValue(sale.startingPrice))}`,
     "",
     "Estimation marché",
     valueEstimate.medianPricePerM2

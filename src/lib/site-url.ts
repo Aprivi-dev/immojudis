@@ -8,11 +8,27 @@ export const SITE_URL_ENV_NAMES = [
 
 type SiteUrlEnv = Readonly<Record<string, string | undefined>>;
 
+/**
+ * Vrai pour un déploiement Vercel qui n'est pas la production (aperçu, développement) :
+ * `VERCEL_ENV` est défini et différent de `production`. Hors Vercel (poste local, CI), la
+ * variable est absente et le résultat est faux. Ces déploiements ne doivent pas être indexés.
+ */
+export function isNonProductionVercelDeployment(env: SiteUrlEnv = process.env): boolean {
+  const vercelEnv = env.VERCEL_ENV?.trim();
+  return Boolean(vercelEnv) && vercelEnv !== "production";
+}
+
 export function resolveSiteOrigin(
   env: SiteUrlEnv = process.env,
   fallback: string | null = null,
 ): string | null {
-  const configured = SITE_URL_ENV_NAMES.map((name) => env[name]).find(isFilled);
+  // `VERCEL_URL` est l'adresse propre au déploiement (xxx.vercel.app), jamais le domaine public :
+  // en production elle ne doit pas devenir l'origine canonique. Le domaine doit y être déclaré
+  // explicitement (`SITE_URL`).
+  const names = SITE_URL_ENV_NAMES.filter(
+    (name) => name !== "VERCEL_URL" || env.VERCEL_ENV?.trim() !== "production",
+  );
+  const configured = names.map((name) => env[name]).find(isFilled);
   const rawValue = configured ?? fallback;
   if (!rawValue) return null;
   const raw = rawValue.trim();

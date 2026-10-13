@@ -16,6 +16,7 @@ from urllib.parse import urljoin
 
 import httpx
 
+from src import source_withdrawal
 from src.catalogue_proof import canonical, certify_catalogue, public_page_proof, record_id
 from src.config import load_settings, require_encheres_publiques_access
 from src.sources.agrasc_urls import classify_agrasc_operator_url
@@ -73,6 +74,9 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
               max_requests: int = 300, max_seconds: int = 600, resolve_missing_locations: bool = False) -> dict:
     if source not in SOURCES or not 1 <= max_pages <= 150 or not 1 <= max_requests <= 500 or not 1 <= max_seconds <= 900:
         raise ValueError('Invalid source or audit budget')
+    # Source retirée du catalogue : aucun audit réseau. L'audit ne lit la base que si SUPABASE_DB_URL est
+    # fourni (identifiants effacés plus bas) : sans lui, l'état par défaut (aucune source retirée) s'applique.
+    source_withdrawal.require_source_active(source, os.environ.get('SUPABASE_DB_URL'))
     if source == "encheres_publiques":
         # Guard before importing the collector or installing the audit send
         # hook, so an unauthorized audit cannot reach the provider at all.
@@ -211,6 +215,13 @@ def run_audit(source: str, output: Path, *, max_pages: int = 100,
 
 
 def main():
+    try:
+        _main()
+    except source_withdrawal.SourceWithdrawn as exc:
+        print(f'Audit ignoré : {exc}')
+
+
+def _main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', choices=SOURCES, required=True)
     parser.add_argument('--output', type=Path, required=True)

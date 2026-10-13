@@ -22,6 +22,7 @@ from typing import Any
 
 import psycopg
 
+from src import source_withdrawal
 from src.sources.licitor_cloud import run_tick, start_monthly
 from src.sources.licitor_cloud_store import CloudStore
 
@@ -90,7 +91,14 @@ def refresh(
     tick: Callable[[CloudStore], dict] = run_tick,
     start: Callable[[CloudStore], dict] = start_monthly,
 ) -> dict[str, object]:
-    """One bounded refresh: make sure the month's campaign exists, run one tick, attest."""
+    """One bounded refresh: make sure the month's campaign exists, run one tick, attest.
+
+    Licitor is collected normally. Only when the withdrawal switch is set for it
+    (``public.set_catalogue_source_withdrawal``, not the case today) does the refresh answer
+    ``skipped`` before opening any connection to the collector.
+    """
+    if "licitor" in source_withdrawal.withdrawn_sources(db_url):
+        return {"status": "skipped", "reason": "source_withdrawn"}
     report: dict[str, object] = {}
     with connect(db_url) as connection:
         collector = CollectorRoleConnection(connection)
@@ -118,7 +126,7 @@ def main() -> int:
         return 0
     report = refresh(db_url)
     print(json.dumps(report, ensure_ascii=False, default=str))
-    return 0 if report.get("status") == "ok" else 1
+    return 0 if report.get("status") in {"ok", "skipped"} else 1
 
 
 if __name__ == "__main__":

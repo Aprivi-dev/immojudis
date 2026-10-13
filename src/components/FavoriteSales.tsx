@@ -90,8 +90,8 @@ export function FavoriteSales() {
       title="Mes favoris"
       description={
         <>
-          Retrouvez ici les ventes que vous suivez, sur tous vos appareils. L’offre Découverte
-          permet 3 favoris ; l’offre Analyse n’a pas de limite.
+          Retrouvez ici les ventes que vous avez ajoutées aux favoris, sur tous vos appareils.
+          L’offre Découverte permet 3 favoris ; l’offre Analyse n’a pas de limite.
           {limit != null && data ? (
             <>
               {" "}

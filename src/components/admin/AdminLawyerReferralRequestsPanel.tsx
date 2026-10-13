@@ -261,7 +261,7 @@ function LawyerReferralRequestCard({
         </div>
 
         <form
-          className="grid gap-3 rounded-lg border border-brand-navy/10 bg-white p-3"
+          className="grid min-w-0 gap-3 rounded-lg border border-brand-navy/10 bg-white p-3"
           onSubmit={(event) => {
             event.preventDefault();
             onSave({
@@ -272,12 +272,12 @@ function LawyerReferralRequestCard({
             });
           }}
         >
-          <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="grid min-w-0 gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Statut
             <select
               value={status}
               onChange={(event) => setStatus(event.target.value as ReferralStatus)}
-              className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+              className="w-full min-w-0 rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
             >
               {STATUS_OPTIONS.map(([optionValue, label]) => (
                 <option key={optionValue} value={optionValue}>
@@ -287,12 +287,12 @@ function LawyerReferralRequestCard({
             </select>
           </label>
 
-          <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="grid min-w-0 gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Avocat référencé
             <select
               value={requestedLawyerId}
               onChange={(event) => setRequestedLawyerId(event.target.value)}
-              className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+              className="w-full min-w-0 rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
             >
               <option value="">Aucun avocat assigné</option>
               {request.requestedLawyer &&
@@ -309,13 +309,13 @@ function LawyerReferralRequestCard({
             </select>
           </label>
 
-          <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="grid min-w-0 gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Notes admin
             <textarea
               value={adminNotes}
               onChange={(event) => setAdminNotes(event.target.value)}
               rows={4}
-              className="rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
+              className="w-full min-w-0 rounded-lg border border-brand-navy/10 bg-white px-3 py-2.5 text-sm normal-case tracking-normal text-foreground outline-none transition focus:border-gold"
             />
           </label>
 

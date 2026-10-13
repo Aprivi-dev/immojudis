@@ -14,8 +14,10 @@ select is(
   'adjudication prices and results stay out of the public activity'
 );
 
+-- Since 20261020110045 the quarantine is read from the materialized column
+-- (synchronised by trigger) instead of raw_payload->>'publication_quarantine'.
 select ok(
-  (select pg_get_functiondef('app_private.get_public_tribunal_activity()'::regprocedure) ~ 'publication_quarantine'),
+  (select pg_get_functiondef('app_private.get_public_tribunal_activity()'::regprocedure) ~ 'not s\.catalogue_quarantined'),
   'quarantined sales are not counted'
 );
 

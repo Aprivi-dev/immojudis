@@ -64,7 +64,7 @@ export function buildMapboxSaleFeatureCollection(
 }
 
 export function formatMapboxMarkerPrice(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return "Prix";
+  if (value == null || !Number.isFinite(value) || value <= 0) return "Prix";
   if (Math.abs(value) >= 1_000_000) {
     return `${new Intl.NumberFormat("fr-FR", {
       maximumFractionDigits: Math.abs(value) >= 10_000_000 ? 0 : 1,

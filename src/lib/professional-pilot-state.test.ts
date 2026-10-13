@@ -169,6 +169,13 @@ describe("state professional pilot", () => {
     );
   });
 
+  it("treats a published price of 0 as unknown and formats a real price", () => {
+    const priced = buildStatePilot(stateSale({ starting_price_eur: 125_000 }));
+    expect(priced.facts.find((fact) => fact.label === "Prix publié")?.value).toMatch(/125\s000/);
+    const zero = buildStatePilot(stateSale({ starting_price_eur: 0 }));
+    expect(zero.facts.find((fact) => fact.label === "Prix publié")?.value).toBeNull();
+  });
+
   it("filters unsafe document and source URLs", () => {
     const unsafe = stateProcedure({
       verification: {

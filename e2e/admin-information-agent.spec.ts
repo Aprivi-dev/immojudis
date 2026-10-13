@@ -314,6 +314,11 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       await route.fulfill({ status: 200, json: session });
       return;
     }
+    if (url.pathname === "/rest/v1/rpc/get_withdrawn_catalogue_sources") {
+      // Lu sur chaque page par le fournisseur global (sources retirées du catalogue).
+      await route.fulfill({ status: 200, json: [] });
+      return;
+    }
     if (url.pathname === "/rest/v1/user_profiles") {
       await route.fulfill({
         status: 200,
@@ -434,7 +439,6 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
             url: "https://annuaire.example.test/reviewed-contact",
             known: true,
           },
-          accountInvitation: true,
           fingerprint: "e".repeat(64),
         },
       });

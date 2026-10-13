@@ -22,8 +22,8 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
       new URLSearchParams(window.location.hash.slice(1)).has("error") ||
       new URLSearchParams(window.location.search).has("error");
     if (invalidLink) {
+      // `ready` reste faux : le bloc « lien invalide » ci-dessous porte l'unique message.
       setChecking(false);
-      setError("Ce lien est invalide ou a expiré. Demandez un nouveau lien.");
       return;
     }
     const {
@@ -123,7 +123,7 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
             Vérification du lien…
           </p>
         ) : invalid ? (
-          <p className="mt-5 text-sm">
+          <p role="alert" className="mt-5 text-sm">
             {needsNewRecoveryLink
               ? "Pour confirmer votre identité, demandez un nouveau lien de récupération avant de changer votre mot de passe."
               : "Ce lien est invalide ou a expiré. Demandez un nouveau lien pour continuer."}
@@ -139,12 +139,15 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
                     type="password"
                     required
                     minLength={12}
+                    aria-describedby="recovery-password-rule"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     className="form-input"
                   />
                 </label>
-                <p className="text-xs text-muted-foreground">Au moins 12 caractères.</p>
+                <p id="recovery-password-rule" className="text-xs text-muted-foreground">
+                  Au moins 12 caractères.
+                </p>
                 <label className="grid gap-2 text-sm">
                   Confirmer le mot de passe
                   <input

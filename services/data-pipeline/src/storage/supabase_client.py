@@ -54,6 +54,7 @@ from src.pdf_progress import (
     is_modern_payload,
     modern_progress_entries,
 )
+from src.personal_data import redact_storage_row
 from src.reviewed_aliases import (
     ReviewedAliasRegistry,
     ReviewedAliasRegistryError,
@@ -574,7 +575,7 @@ def _write_sale_revisions(
         else:
             sale.raw_payload.pop("publication_quarantine", None)
         data = sale.to_storage_dict(exclude_none=False)
-        row = {column: data.get(column) for column in UPSERT_COLUMNS}
+        row = redact_storage_row({column: data.get(column) for column in UPSERT_COLUMNS})
         row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
         row["updated_at"] = now
         payload.append(row)
@@ -2940,7 +2941,8 @@ def reconcile_duplicate_sales_in_supabase(
     if len(sales) < 2:
         return 0
 
-    merged = merge_duplicate_sales(sales)
+    # Le balayage supprime les lignes secondaires : preuve seulement, jamais la clé de repli stricte.
+    merged = merge_duplicate_sales(sales, strict_fallback=False)
     protected_urls = reviewed_aliases.protected_source_urls()
     secondary_urls = [
         source_url
@@ -2969,7 +2971,7 @@ def reconcile_duplicate_sales_in_supabase(
         else:
             sale.raw_payload.pop("publication_quarantine", None)
         data = sale.to_storage_dict(exclude_none=False)
-        row = {column: data.get(column) for column in UPSERT_COLUMNS}
+        row = redact_storage_row({column: data.get(column) for column in UPSERT_COLUMNS})
         row["updated_at"] = now
         row["last_seen_at"] = data.get("last_seen_at") or now
         payload.append(row)

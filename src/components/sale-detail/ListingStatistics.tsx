@@ -10,7 +10,7 @@ import type {
 } from "@/lib/adjudication-price-statistics";
 import { bidBandLabels } from "@/lib/adjudication-distributions";
 import { getExampleTribunalStatistics } from "@/lib/example-tribunal-statistics";
-import { formatDateTime, formatPrice } from "@/lib/format";
+import { formatDateTime, formatPrice, formatStartingPrice } from "@/lib/format";
 import type { TribunalListingStatisticsResponse } from "@/lib/tribunal-listing-statistics";
 import { fetchTribunalListingStatistics } from "@/lib/tribunal-listing-statistics-client";
 import type { AuctionSale } from "@/lib/types";
@@ -708,7 +708,7 @@ export function ListingStatistics({
                       )}
                       <p className={styles.saleMeta}>
                         {listing.city || "Commune à confirmer"} ·{" "}
-                        {formatPrice(listing.startingPriceEur)}
+                        {formatStartingPrice(listing.startingPriceEur)}
                       </p>
                       <div className={styles.saleEvidence}>
                         <span>{listing.hasVisit ? "Visite renseignée" : "Visite à confirmer"}</span>

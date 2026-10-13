@@ -115,6 +115,7 @@ export {
 export {
   requestLawyerReferral,
   fetchLawyerReferrals,
+  fetchLawyerReferralPreview,
   fetchFeaturedReferencedLawyer,
   fetchLawyerDirectory,
   recordLawyerPlacementEvent,
@@ -140,7 +141,6 @@ export {
   fetchSaleUrbanismeCadastre,
   fetchValuationAdminOverview,
   fetchEnvironmentalContext,
-  calculateBidCeilingClient,
   fetchSaleHistory,
   fetchMarketAnalytics,
   fetchDvfComparables,
