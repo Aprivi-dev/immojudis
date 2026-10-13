@@ -1,6 +1,6 @@
 begin;
 
-select plan(13);
+select plan(15);
 
 select ok(
   position('exhausted' in lower(pg_get_functiondef(
@@ -229,7 +229,8 @@ select is(
   'a retryable old job opens pipeline.enrichment.stalled'
 );
 
--- Once the retryable job completes, only exhausted jobs remain and the alert closes.
+-- Once the retryable job completes, only exhausted jobs remain: the alert goes inactive, then
+-- closes after the two-hour hysteresis of app_private.sync_operational_alert.
 update public.auction_enrichment_jobs
    set status = 'completed',
        completed_at = statement_timestamp(),
@@ -246,6 +247,28 @@ select lives_ok(
      where case_name = 'recovered';
   $sql$,
   'the observer runs once the retryable job is completed'
+);
+
+select ok(
+  (
+    select inactive_since is not null
+      from public.operational_alerts
+     where alert_key = 'pipeline.enrichment.stalled'
+       and status = 'open'
+  ),
+  'with only exhausted jobs left, pipeline.enrichment.stalled turns inactive'
+);
+
+insert into pgtap_459_context(case_name, p_now)
+values ('closed', statement_timestamp() + interval '2 hours 5 minutes');
+
+select lives_ok(
+  $sql$
+    update pgtap_459_context
+       set payload = public.observe_autonomous_pipeline(p_now)
+     where case_name = 'closed';
+  $sql$,
+  'the observer runs again after the hysteresis window'
 );
 
 select is(
