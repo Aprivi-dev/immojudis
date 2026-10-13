@@ -15,6 +15,7 @@ import {
 import { containsInformationAgentAccountInvitation } from "../src/lib/information-agent-email-template";
 import {
   INFORMATION_AGENT_PURPOSE_STATEMENT,
+  INFORMATION_AGENT_RETENTION_STATEMENT,
   type InformationAgentLegalFooter,
 } from "../src/lib/information-agent-compliance";
 
@@ -253,6 +254,8 @@ function LegalFooter({ footer }: { footer: InformationAgentLegalFooter }) {
         ) : null}
         <br />
         {INFORMATION_AGENT_PURPOSE_STATEMENT}
+        <br />
+        {INFORMATION_AGENT_RETENTION_STATEMENT}
       </Text>
       <Text style={styles.footerLegal}>
         <Link href={footer.privacyUrl} style={styles.footerLink}>

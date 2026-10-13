@@ -6,8 +6,13 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
 import { pathWithSearch } from "@/lib/navigation";
-import { fetchAccessPlan, fetchLawyerReferrals, requestLawyerReferral } from "@/lib/client-api";
-import type { LawyerReferralSummary } from "@/lib/lawyer-referrals";
+import {
+  fetchAccessPlan,
+  fetchLawyerReferralPreview,
+  fetchLawyerReferrals,
+  requestLawyerReferral,
+} from "@/lib/client-api";
+import type { LawyerReferralPreviewResponse, LawyerReferralSummary } from "@/lib/lawyer-referrals";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -43,6 +48,18 @@ export function LawyerReferralButton({
     enabled: Boolean(user) && !loading,
     staleTime: 60_000,
   });
+
+  // The recap names the lawyer who would receive the request (same selection as the server) and
+  // says whether he pays for a placement; the consent stays disabled until it is known.
+  // `staleTime: 0` + `isFetching` guard: a recipient seen in a previous recap is never reused.
+  const recipientQuery = useQuery({
+    queryKey: queryKeys.lawyerReferralPreview(user?.id ?? "anonymous", saleId, requestedLawyerId),
+    queryFn: () => fetchLawyerReferralPreview({ saleId, lawyerId: requestedLawyerId }),
+    enabled: confirming && Boolean(user) && !loading,
+    staleTime: 0,
+    retry: false,
+  });
+  const recipientReady = recipientQuery.isSuccess && !recipientQuery.isFetching;
 
   const referralLocked = entitlementsData?.plan.features.lawyerReferrals === "locked";
   const latestRequest = referralData?.requests[0] ?? null;
@@ -130,6 +147,10 @@ export function LawyerReferralButton({
         <LawyerReferralRecap
           consent={consent}
           busy={busy}
+          recipient={recipientReady ? recipientQuery.data.recipient : undefined}
+          recipientError={
+            recipientQuery.isError ? userMessage(recipientQuery.error, "Avocat indisponible") : null
+          }
           onConsentChange={setConsent}
           onConfirm={sendReferral}
           onCancel={() => {
@@ -143,15 +164,22 @@ export function LawyerReferralButton({
   );
 }
 
+type Recipient = LawyerReferralPreviewResponse["recipient"];
+
 function LawyerReferralRecap({
   consent,
   busy,
+  recipient,
+  recipientError,
   onConsentChange,
   onConfirm,
   onCancel,
 }: {
   consent: boolean;
   busy: boolean;
+  /** `undefined` while the recipient is being determined; `null` when none can be determined. */
+  recipient: Recipient | undefined;
+  recipientError: string | null;
   onConsentChange: (value: boolean) => void;
   onConfirm: () => void;
   onCancel: () => void;
@@ -167,21 +195,23 @@ function LawyerReferralRecap({
       </div>
       <ul className="mt-2 list-disc space-y-1 pl-4">
         <li>L'adresse email de votre compte, pour que l'avocat puisse vous répondre.</li>
-        <li>La référence de cette vente.</li>
-        <li>Votre mode de contact préféré (email par défaut).</li>
+        <li>La vente concernée : son titre, sa localisation et le lien vers l'annonce.</li>
+        <li>Votre mode de contact préféré : email.</li>
       </ul>
       <p className="mt-2">
-        L'avocat proposé est inscrit au barreau du tribunal qui juge cette vente. L'avocat qui
-        poursuit la vente n'est jamais proposé. Aucune autre donnée de votre compte n'est transmise.
+        Aucune autre donnée de votre compte n'est transmise. L'avocat proposé est inscrit au barreau
+        du tribunal qui juge cette vente ; l'avocat qui poursuit la vente n'est jamais proposé.
       </p>
+      <RecipientDisclosure recipient={recipient} error={recipientError} />
       <p className="mt-2">
-        L'avocat proposé peut être un partenaire qui rémunère Immojudis pour sa visibilité. Vous
-        restez libre de choisir un autre avocat. Ses honoraires sont fixés avec lui.
+        Vous restez libre de choisir un autre avocat dans l'annuaire ou d'en contacter un
+        directement. Ses honoraires sont fixés librement avec lui.
       </p>
       <label className="mt-3 flex items-start gap-2 text-foreground">
         <input
           type="checkbox"
           checked={consent}
+          disabled={recipient === undefined}
           onChange={(event) => onConsentChange(event.target.checked)}
           className="mt-0.5 h-3.5 w-3.5"
         />
@@ -207,6 +237,63 @@ function LawyerReferralRecap({
       </div>
     </div>
   );
+}
+
+function RecipientDisclosure({
+  recipient,
+  error,
+}: {
+  recipient: Recipient | undefined;
+  error: string | null;
+}) {
+  if (error) {
+    return (
+      <p role="alert" className="mt-2 font-medium text-red-700">
+        {error} Réessayez plus tard : la demande ne peut pas être envoyée sans savoir qui la
+        recevra.
+      </p>
+    );
+  }
+  if (recipient === undefined) {
+    return (
+      <p className="mt-2" aria-live="polite">
+        Recherche de l'avocat qui recevrait votre demande...
+      </p>
+    );
+  }
+  if (recipient === null) {
+    return (
+      <p className="mt-2">
+        <span className="font-semibold text-foreground">Avocat destinataire : aucun.</span> Aucun
+        avocat n'est désigné automatiquement pour cette vente. L'équipe Immojudis examine votre
+        demande et ne peut la transmettre qu'à un avocat référencé du barreau compétent bénéficiant
+        d'une mise en avant payante (ou en période d'essai) ; elle reste sans suite si aucun n'est
+        disponible. L'avocat désigné apparaît ensuite dans le suivi de votre demande.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-2">
+      <p>
+        Avocat destinataire :{" "}
+        <span className="font-semibold text-foreground">
+          {recipient.displayName}
+          {recipient.firmName ? ` · ${recipient.firmName}` : ""}
+        </span>
+      </p>
+      <p className="mt-1">{placementDisclosure(recipient.placement)}</p>
+    </div>
+  );
+}
+
+function placementDisclosure(placement: "active" | "trial" | "none"): string {
+  if (placement === "active") {
+    return "Cet avocat bénéficie d'une mise en avant payante sur Immojudis.";
+  }
+  if (placement === "trial") {
+    return "Cet avocat bénéficie d'une mise en avant sur Immojudis, actuellement en période d'essai de l'offre payante.";
+  }
+  return "Cet avocat ne rémunère pas Immojudis.";
 }
 
 function LawyerReferralStatus({ request }: { request: LawyerReferralSummary }) {

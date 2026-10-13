@@ -14,7 +14,12 @@ import {
 } from "@/lib/commercial-acceptance";
 import { assertPaidOfferLegalReadiness } from "@/lib/legal-documents";
 import type { BillingPortalIntent } from "@/lib/billing-portal-request";
-import { sendPaymentFailedNotice, sendTrialEndingNotice } from "@/lib/billing-notices";
+import {
+  sendCancellationConfirmationNotice,
+  sendPaymentFailedNotice,
+  sendTrialEndingNotice,
+  type CancellationNoticeKind,
+} from "@/lib/billing-notices";
 import {
   ANALYSIS_BILLING_MODEL,
   ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
@@ -502,6 +507,12 @@ export async function handleStripeWebhook({
           event.data.object as Stripe.Subscription,
           null,
           event.created,
+          {
+            eventType: event.type,
+            previousAttributes: (
+              event.data as { previous_attributes?: Partial<Stripe.Subscription> }
+            ).previous_attributes,
+          },
         );
         break;
       case "customer.subscription.trial_will_end":
@@ -1034,6 +1045,10 @@ async function syncStripeSubscription(
   subscription: Stripe.Subscription,
   fallbackUserId: string | null | undefined,
   eventCreated: number,
+  cancellationContext?: {
+    eventType: string;
+    previousAttributes?: Partial<Stripe.Subscription>;
+  },
 ): Promise<boolean> {
   const userId = fallbackUserId || (await findUserIdForSubscription(subscription));
   if (!userId) return false;
@@ -1096,10 +1111,103 @@ async function syncStripeSubscription(
       reason: result.reason,
     });
   }
+  // The confirmation does not depend on the event being the newest one applied (a stale event
+  // may be the only one carrying the cancellation), but never concerns a replaced subscription.
+  if (cancellationContext && result?.reason !== SUPERSEDED_SUBSCRIPTION_REASON) {
+    await confirmCancellationIfRequested({
+      userId,
+      current,
+      payloadSubscription: subscription,
+      eventType: cancellationContext.eventType,
+      previousAttributes: cancellationContext.previousAttributes,
+      eventCreated,
+    });
+  }
   // A superseded event (an old subscription reported after a re-subscription) is
   // fully handled: the row already holds the newer subscription, so the webhook
   // is a success without change and must not be reported as failed or replayed.
   return result?.applied === true || result?.reason === SUPERSEDED_SUBSCRIPTION_REASON;
+}
+
+/**
+ * Which confirmation of cancellation (code de la consommation, L. 215-1-1) a subscription event
+ * calls for, if any. It is decided from the event itself, so a given cancellation yields one
+ * confirmation: the event journal (`begin_stripe_webhook_event`) drops a replayed event, and the
+ * other events of the same cancellation do not carry the transition.
+ *
+ * - `scheduled`: `customer.subscription.updated` where `cancel_at_period_end` just turned true
+ *   (`previous_attributes.cancel_at_period_end === false`) and is still true at Stripe.
+ * - `immediate`: `customer.subscription.deleted` of a subscription that was not already scheduled
+ *   to end (otherwise the cancellation was confirmed when it was scheduled) and that Stripe did
+ *   not cancel for non-payment or a dispute.
+ */
+export function cancellationNoticeKind({
+  eventType,
+  previousAttributes,
+  payloadSubscription,
+  current,
+}: {
+  eventType: string;
+  previousAttributes?: Partial<Stripe.Subscription>;
+  payloadSubscription: Pick<Stripe.Subscription, "cancel_at_period_end">;
+  current: Pick<Stripe.Subscription, "status" | "cancel_at_period_end" | "cancellation_details">;
+}): CancellationNoticeKind | null {
+  if (eventType === "customer.subscription.updated") {
+    const justScheduled =
+      payloadSubscription.cancel_at_period_end === true &&
+      previousAttributes?.cancel_at_period_end === false;
+    return justScheduled && current.cancel_at_period_end === true && current.status !== "canceled"
+      ? "scheduled"
+      : null;
+  }
+  if (eventType === "customer.subscription.deleted") {
+    const reason = current.cancellation_details?.reason;
+    if (payloadSubscription.cancel_at_period_end === true) return null;
+    if (reason === "payment_failed" || reason === "payment_disputed") return null;
+    return current.status === "canceled" ? "immediate" : null;
+  }
+  return null;
+}
+
+async function confirmCancellationIfRequested({
+  userId,
+  current,
+  payloadSubscription,
+  eventType,
+  previousAttributes,
+  eventCreated,
+}: {
+  userId: string;
+  current: Stripe.Subscription;
+  payloadSubscription: Stripe.Subscription;
+  eventType: string;
+  previousAttributes?: Partial<Stripe.Subscription>;
+  eventCreated: number;
+}): Promise<void> {
+  const kind = cancellationNoticeKind({
+    eventType,
+    previousAttributes,
+    payloadSubscription,
+    current,
+  });
+  if (!kind) return;
+
+  const accessEndsAt =
+    kind === "scheduled"
+      ? (current.cancel_at ??
+        current.items.data[0]?.current_period_end ??
+        current.trial_end ??
+        eventCreated)
+      : (current.ended_at ?? current.canceled_at ?? eventCreated);
+  // Never throws: a delivery problem must not fail (and replay) the subscription sync.
+  await sendCancellationConfirmationNotice({
+    userId,
+    subscriptionId: current.id,
+    requestedAt: current.canceled_at ?? eventCreated,
+    kind,
+    accessEndsAt,
+    trialing: kind === "scheduled" && current.status === "trialing",
+  });
 }
 
 export function resolveCheckoutPlanCode(_value: unknown): Exclude<PlanCode, "decouverte"> {

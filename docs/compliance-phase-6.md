@@ -35,8 +35,9 @@ automatique ; une acceptation antérieure n’est jamais réécrite.
 
 ## Commande Analyse
 
-Avant Stripe, l’utilisateur voit le produit, le prix TTC, la périodicité mensuelle sans engagement de
-durée, le renouvellement jusqu’à résiliation, l’essai éventuel et deux consentements distincts. Le bouton final porte la mention « Commander avec obligation de
+Avant Stripe, l’utilisateur voit le produit, le prix TTC, la périodicité mensuelle, le renouvellement
+jusqu’à résiliation, l’essai éventuel et deux consentements distincts. Le récapitulatif doit être
+relu avec la qualification « durée indéterminée » des CGV (voir la validation attendue ci-dessous). Le bouton final porte la mention « Commander avec obligation de
 paiement ».
 
 Chaque passage crée une ligne `commercial_acceptances` liée à la Checkout Session. Elle contient les
@@ -80,7 +81,16 @@ doit être motivée et annoncée avant la première échéance.
 - commande Stripe de test et preuve `commercial_acceptances` vérifiées ;
 - demande d’accès, d’effacement et de rétractation testées de bout en bout ;
 - procédure de remboursement et suppression Storage/Auth répétée sur un compte de test ;
-- contrats/DPA et mécanismes de transfert des fournisseurs vérifiés.
+- contrats/DPA et mécanismes de transfert des fournisseurs vérifiés ;
+- bouton « Résilier mon abonnement » (page Mon compte) testé de bout en bout, y compris la
+  configuration du portail Stripe : la résiliation doit se programmer **en fin de période**
+  (`cancel_at_period_end`), comme l'annoncent les CGV et la page Mon compte ;
+- email « Confirmation de votre résiliation » reçu après une résiliation (webhook
+  `customer.subscription.updated` rejoué : un seul email) et canal Resend configuré ;
+- qualification du contrat validée par le conseil : abonnement à durée indéterminée, facturé chaque
+  mois, résiliable à tout moment sans frais ni préavis (CGV § 2) ;
+- coordonnées du formulaire type de rétractation (raison sociale, adresse, email) renseignées par
+  les variables `NEXT_PUBLIC_LEGAL_*` et relues (CGV § 6).
 
 Références de cadrage : [mentions obligatoires](https://www.economie.gouv.fr/entreprises/developper-son-entreprise/innover-et-numeriser-son-entreprise/mentions-sur-votre-site-internet-les-obligations-respecter),
 [e-commerce B2C](https://www.economie.gouv.fr/dgccrf/les-fiches-pratiques/e-commerce-les-regles-entre-professionnels-et-consommateurs),

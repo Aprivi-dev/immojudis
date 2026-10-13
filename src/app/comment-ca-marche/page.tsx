@@ -47,7 +47,7 @@ const STEPS = [
   {
     icon: Scale,
     title: "Enchérir et finaliser",
-    text: "Pour une vente au tribunal, un avocat du barreau compétent porte vos enchères ; pour une vente notariale ou domaniale, l’organisateur précise les conditions. Si vous gagnez, le prix et les frais se règlent dans des délais fixés par le Code ou le cahier de vente. L’annuaire est gratuit pour vous ; certains profils sont sponsorisés et identifiés comme tels. Il vous aide à trouver un avocat ; nos guides expliquent chaque étape.",
+    text: "Pour une vente au tribunal, un avocat du barreau compétent porte vos enchères ; pour une vente notariale ou domaniale, l’organisateur précise les conditions. Si vous gagnez, le prix et les frais se règlent dans des délais fixés par le Code ou le cahier de vente. La consultation de l’annuaire est gratuite. Certains avocats rémunèrent Immojudis pour une mise en avant payante. La demande de mise en relation depuis une annonce fait partie de l’offre Analyse. L’annuaire vous aide à trouver un avocat ; nos guides expliquent chaque étape.",
     links: [
       { href: "/avocats", label: "Trouver un avocat" },
       { href: "/ressources/jour-audience-encheres-role-avocat", label: "Le jour de l’audience" },

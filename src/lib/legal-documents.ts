@@ -7,13 +7,13 @@ export const LEGAL_DOCUMENTS = {
   },
   terms: {
     version: "2026-10-13.1",
-    sha256: "d603257fc031a4f8b602806cbbe787ccafe3460bce21d632b2e9a7c948fb183b",
+    sha256: "e8eac6956072c9b414d1cfb8a6f5122da604bc392411759238f8760fba18e51c",
     effectiveDate: "13 octobre 2026",
     path: "/conditions-generales",
   },
   privacy: {
     version: "2026-10-13.1",
-    sha256: "3b0d2a315d8331a7f7a572eb91131a5c49ae66ef5cda19b24ded93f7982e8651",
+    sha256: "8cea3d3166b847bf1dbf403a1528c1dfe490cd0dd3bca147c9f0464c18efbd6d",
     effectiveDate: "13 octobre 2026",
     path: "/privacy",
   },

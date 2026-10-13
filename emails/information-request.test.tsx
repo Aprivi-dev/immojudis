@@ -72,6 +72,9 @@ describe("renderInformationRequestEmail", () => {
       expect(output).not.toContain("mode=professional");
       expect(output).not.toContain("Vous avez d’autres ventes à partager");
       expect(output).toContain("Finalité et base légale : vous demander des informations");
+      expect(output).toContain(
+        "Votre adresse et nos échanges sont conservés au plus 24 mois sans activité.",
+      );
     }
     expect(message.html).not.toContain("utm_");
   });

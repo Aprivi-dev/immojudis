@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const track = vi.hoisted(() => vi.fn());
 vi.mock("@vercel/analytics", () => ({ track }));
 
+import { AUDIENCE_OPT_OUT_STORAGE_KEY, setAudienceOptOut } from "./audience-opt-out";
 import {
   PRODUCT_EVENT_NAMES,
   sanitizeProductEventProperties,
@@ -12,6 +13,8 @@ import {
 
 beforeEach(() => {
   track.mockReset();
+  window.localStorage.clear();
+  setAudienceOptOut(false);
 });
 
 afterEach(() => {
@@ -93,6 +96,23 @@ describe("product events", () => {
       // @ts-expect-error The consent is a boolean, never a string.
       trackProductEvent("alert_created", { email_consent: "oui" });
       expect(track.mock.calls).toEqual([["checkout_returned"], ["alert_created"]]);
+    });
+
+    it("sends nothing once the visitor has opposed the audience measurement", () => {
+      setAudienceOptOut(true);
+      trackProductEvent("signup_completed");
+      trackProductEvent("alert_created", { email_consent: true });
+      expect(track).not.toHaveBeenCalled();
+
+      setAudienceOptOut(false);
+      trackProductEvent("signup_completed");
+      expect(track.mock.calls).toEqual([["signup_completed"]]);
+    });
+
+    it("honours an opposition stored by an earlier visit", () => {
+      window.localStorage.setItem(AUDIENCE_OPT_OUT_STORAGE_KEY, "1");
+      trackProductEvent("offers_viewed");
+      expect(track).not.toHaveBeenCalled();
     });
 
     it("never lets an analytics failure reach the caller", () => {

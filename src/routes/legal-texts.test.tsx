@@ -23,11 +23,32 @@ afterEach(() => {
 });
 
 describe("conditions générales", () => {
-  it("annoncent leur version et un abonnement mensuel sans engagement de durée", () => {
+  it("annoncent leur version et un abonnement à durée indéterminée résiliable à tout moment", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(`Version ${LEGAL_DOCUMENTS.terms.version}`);
-    expect(text).toContain("mensuel, sans engagement de durée, et reconduit chaque mois");
-    expect(text).toContain("jusqu’à résiliation");
+    expect(text).toContain(
+      "L’abonnement est conclu pour une durée indéterminée et facturé chaque mois. Vous pouvez le résilier à tout moment, sans frais ni préavis ; la résiliation prend effet à la fin de la période mensuelle en cours.",
+    );
+    expect(text).not.toContain("reconduit chaque mois");
+  });
+
+  it("annoncent l'email de confirmation de la résiliation", () => {
+    expect(pageText(<TermsPage />)).toContain(
+      "Nous vous confirmons par email la réception de votre demande et la date de fin du contrat.",
+    );
+  });
+
+  it("adressent le formulaire de rétractation à l'éditeur, avec ses coordonnées", () => {
+    vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_NAME", "Immojudis SAS");
+    vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS", "1 rue de Paris, 75001 Paris");
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "À l’attention de Immojudis SAS, 1 rue de Paris, 75001 Paris, contact@immojudis.example :",
+    );
+    expect(text).not.toContain("À l’attention de l’éditeur Immojudis");
+    expect(text).toContain(
+      "Pendant l’essai gratuit, aucun montant n’est dû en cas de rétractation.",
+    );
   });
 
   it("affichent le prix configurable et l'essai gratuit s'il est proposé", () => {
@@ -35,8 +56,9 @@ describe("conditions générales", () => {
       `Prix de l’abonnement Analyse : ${DEFAULT_ANALYSIS_OFFER_LABEL}, précédé d’un essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours lorsque celui-ci est proposé`,
     );
     cleanup();
-    vi.stubEnv("NEXT_PUBLIC_ANALYSIS_OFFER_LABEL", "39 € TTC / mois");
-    expect(pageText(<TermsPage />)).toContain("Prix de l’abonnement Analyse : 39 € TTC / mois");
+    // Only a label stating the billed price passes the build (scripts/verify-required-env.mjs).
+    vi.stubEnv("NEXT_PUBLIC_ANALYSIS_OFFER_LABEL", "29 € / mois");
+    expect(pageText(<TermsPage />)).toContain("Prix de l’abonnement Analyse : 29 € / mois");
   });
 
   it("décrivent un seul chemin de résiliation, aligné sur le bouton réel du compte", () => {
@@ -51,13 +73,17 @@ describe("conditions générales", () => {
   it("énoncent le délai de grâce réel en cas d'impayé", () => {
     expect(PAST_DUE_GRACE_DAYS).toBe(7);
     expect(pageText(<TermsPage />)).toContain(
-      `En cas d’échec de paiement, l’accès Analyse reste ouvert pendant ${PAST_DUE_GRACE_DAYS} jours à compter de la fin de la période payée, le temps de mettre à jour votre moyen de paiement ; il est ensuite suspendu.`,
+      `En cas d’échec de paiement, Stripe retente le prélèvement. Votre accès Analyse reste ouvert ${PAST_DUE_GRACE_DAYS} jours à compter de la fin de la période payée pour vous permettre de mettre à jour votre moyen de paiement ; la mensualité reste due. Passé ce délai sans paiement, l’accès est suspendu. Votre compte Découverte et vos données restent accessibles.`,
     );
   });
 
-  it("rappellent la garantie légale de conformité", () => {
-    expect(pageText(<TermsPage />)).toContain(
-      "Vous bénéficiez de la garantie légale de conformité des contenus et services numériques (articles L. 224-25-12 et suivants du code de la consommation).",
+  it("rappellent la garantie légale de conformité, y compris pour un service continu", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Vous bénéficiez de la garantie légale de conformité des contenus et services numériques (articles L. 224-25-12 à L. 224-25-26 du code de la consommation).",
+    );
+    expect(text).toContain(
+      "Pour un service fourni de manière continue, nous répondons des défauts de conformité qui apparaissent pendant toute la durée de l’abonnement.",
     );
   });
 
@@ -82,7 +108,47 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("noms remplacés par leur rôle");
     expect(text).toContain("Intérêt légitime à informer le public");
     expect(text).toContain("opposition et demande de retrait par email, sans compte");
-    expect(text).toContain("Cartographie et géocodage (Mapbox)");
+    expect(text).toContain("Cartographie et géocodage (Mapbox, IGN)");
+  });
+
+  it("déclare le repli de géocodage et les cartes cadastrales de l'IGN, avec l'adresse IP", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "l’adresse que vous saisissez est transmise à l’API Adresse de la Base Adresse Nationale (service public exploité par l’IGN), avec votre adresse IP.",
+    );
+    expect(text).toContain(
+      "Les cartes cadastrales sont chargées depuis la Géoplateforme de l’IGN (data.geopf.fr), qui reçoit votre adresse IP et la zone affichée.",
+    );
+    expect(text).toContain("l’Institut national de l’information géographique et forestière (IGN");
+  });
+
+  it("décrit l'annuaire d'avocats et l'ouverture de l'offre Analyse comme des traitements distincts", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Annuaire d’avocats");
+    expect(text).toContain("Licence Ouverte 2.0");
+    expect(text).toContain("opposition et rectification par email, sans compte");
+    expect(text).toContain("Prévenir de l’ouverture de l’offre Analyse");
+    expect(text).toContain(
+      "Jusqu’à l’envoi de l’email d’ouverture ou au retrait, puis 30 jours ; 12 mois au plus sans ouverture",
+    );
+  });
+
+  it("aligne la mise en relation sur le code : avocat désigné et conservation avec la vente", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "Si vous ne choisissez pas d’avocat, Immojudis en désigne un parmi les avocats bénéficiant d’une mise en avant payante",
+    );
+    expect(text).toContain(
+      "Cet avocat traite ensuite votre demande sous sa propre responsabilité.",
+    );
+    expect(text).toContain("Supprimée avec la vente concernée à l’échéance de conservation");
+    expect(text).not.toContain("message, dossier concerné");
+  });
+
+  it("annonce la conservation du formulaire de contact : 12 mois, puis suppression", () => {
+    expect(pageText(<PrivacyPage />)).toContain(
+      "12 mois après le dernier échange, puis suppression ; en cas de litige ou de réclamation, le temps de la procédure puis, en archive à accès restreint, 5 ans au plus",
+    );
   });
 
   it("permet à une personne citée de demander retrait ou rectification sans compte", () => {
@@ -102,11 +168,12 @@ describe("politique de confidentialité", () => {
   it("décrit la mesure d'audience, son opposition et une conservation de 25 mois au plus", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Nous mesurons la fréquentation avec Vercel Analytics et Speed Insights, sans cookie et sans suivi entre sites, et des événements de parcours anonymes.",
+      "Nous mesurons la fréquentation avec Vercel Analytics et Speed Insights, sans cookie et sans suivi entre sites, et des événements de parcours agrégés, sans identifiant de personne.",
     );
+    expect(text).not.toContain("parcours anonymes");
     expect(text).toContain("Les données ne servent qu’à des statistiques de notre service.");
     expect(text).toContain(
-      "Vous pouvez vous y opposer en nous écrivant à contact@immojudis.example.",
+      "Vous pouvez vous opposer à la mesure d’audience depuis cette page (votre choix est mémorisé dans ce navigateur) ou en nous écrivant à contact@immojudis.example.",
     );
     const months = [...text.matchAll(/(\d+) mois au plus/g)].map((match) => Number(match[1]));
     expect(months.length).toBeGreaterThan(0);
@@ -116,10 +183,25 @@ describe("politique de confidentialité", () => {
   it("aligne la base légale de l'enquête dossier sur le registre et ne parle plus de prospection", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Intérêt légitime à fiabiliser le catalogue pour les contacts professionnels",
+      "Intérêt légitime à fiabiliser le catalogue auprès des professionnels contactés ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les adresses ayant exercé leur opposition sont conservées pour la respecter.",
     );
-    expect(text).toContain("consentement pour la communication de l’email de réponse");
+    // L'email du demandeur n'est jamais communiqué (share_requester_email reste à false).
+    expect(text).not.toContain("consentement pour la communication de l’email de réponse");
     expect(text).not.toContain("service professionnel");
     expect(text).toContain("aucune sollicitation commerciale");
+  });
+
+  it("décrit l'IA du message d'enquête comme le fait le message lui-même", () => {
+    expect(pageText(<PrivacyPage />)).toContain(
+      "Le message précise qu’une IA aide à lire et classer les réponses et que l’équipe vérifie les informations avant toute mise à jour de la fiche",
+    );
+  });
+
+  it("propose l'interrupteur d'opposition à la mesure d'audience", () => {
+    const { getByRole } = render(<PrivacyPage />);
+    const toggle = getByRole("switch", {
+      name: "Je m’oppose à la mesure d’audience sur ce navigateur",
+    }) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
   });
 });

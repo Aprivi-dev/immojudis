@@ -28,6 +28,38 @@ export function resolveAnalysisOfferLabel(
   return label || DEFAULT_ANALYSIS_OFFER_LABEL;
 }
 
+const LABEL_AMOUNT = String.raw`\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?`;
+const LABEL_CURRENCY = String.raw`(?:€|eur(?:os?)?)`;
+
+/**
+ * Every amount in euros written in a public price label ("29 € TTC / mois", "29,00 EUR",
+ * "€29"), in cents. Keep in sync with `analysisOfferLabelAmountsCents` in
+ * scripts/lib/launch-config.mjs (plain .mjs, tested against this module).
+ */
+export function analysisOfferLabelAmountsCents(label: string): number[] {
+  const pattern = new RegExp(
+    `(${LABEL_AMOUNT})\\s*${LABEL_CURRENCY}(?![\\p{L}])|${LABEL_CURRENCY}\\s*(${LABEL_AMOUNT})`,
+    "giu",
+  );
+  return Array.from(label.matchAll(pattern), (match) => {
+    const raw = (match[1] ?? match[2] ?? "").replace(/[ \u00a0\u202f]/g, "").replace(",", ".");
+    return Math.round(Number.parseFloat(raw) * 100);
+  });
+}
+
+/**
+ * True when the label states the billed price (`ANALYSIS_RECURRING_PRICE_CENTS`) and no other
+ * amount. The label (NEXT_PUBLIC_ANALYSIS_OFFER_LABEL) is only copy: the amount charged is
+ * the Stripe Price, so a label that disagrees would advertise a price that is not billed.
+ */
+export function analysisOfferLabelMatchesPrice(
+  label: string,
+  priceCents: number = ANALYSIS_RECURRING_PRICE_CENTS,
+): boolean {
+  const amounts = analysisOfferLabelAmountsCents(label);
+  return amounts.length > 0 && amounts.every((amount) => amount === priceCents);
+}
+
 export const ANALYSIS_TRIAL_LABEL = `Essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours avec carte bancaire`;
 export const ANALYSIS_RECURRING_LABEL = "Puis abonnement récurrent résiliable depuis Mon compte";
 export const ANALYSIS_SUBSCRIPTION_ONLY_LABEL = "Abonnement récurrent résiliable depuis Mon compte";
