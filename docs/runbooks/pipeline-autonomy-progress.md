@@ -234,3 +234,13 @@ PR135 fusionnée normalement via GitHub à 09:45:22 UTC, commit277556b292b4e9789
 Le passage repris automatiquement se termine à 10:22:17 UTC : 54 tâches traitées, 52 terminées et 2 erreurs documentaires isolées. 45 contrôles source sont publiés; leur file diminue de 648 à 603. Une erreur de surface de 0 m² dans un PDF nécessite un correctif; le PDF Alata conserve 75/120 pages OCR et reprendra le restant. Le run est failed et les erreurs restent visibles, sans annuler les publications réussies. Le débit durable et 95 % de fraîcheur ne sont pas encore prouvés.
 
 PR 136 intégrée à 10:24:03 UTC, merge e997725aeaab53da8c934f15bba57d1bb2e03c90. Tous les contrôles CI réussis ; 1 355 tests Python avec PostgreSQL et 18 ignorés. Migrations 20260913092901/20260913100110 appliquées via workflow 34751612435 sur la branche testée, sans réécriture du registre; dérive production vérifiée avec succès. Production dpl_EGUpymciSaYjzyf4d2WJhF9BQMZ4 READY/PROMOTED sur le merge ; smoke 5/5 à 10:25:53 UTC. Alias revus, déduplication observations, certificats des six sources accessibles et rétention date-only sont déployés. Les relations Agde et activations hors pilote ne sont pas encore appliquées.
+
+## Ordre de déploiement — compteur de tentatives des lectures documentaires (octobre 2026)
+
+La migration `supabase/migrations/20261020120021_document_readings_attempt_count.sql` (colonne `auction_document_readings.attempt_count`) doit être **appliquée avant** le déploiement du code Python correspondant (`services/data-pipeline/src/document_reading.py`, repli 12 h / 24 h / 72 h et abandon à la quatrième tentative). Le code lit et écrit cette colonne ; déployé en premier, chaque requête de lecture documentaire échouerait sur une colonne inexistante.
+
+Ordre à suivre :
+
+1. Appliquer la migration par le workflow de migration habituel (elle est idempotente : `add column if not exists`) et vérifier qu'elle figure au registre.
+2. Seulement ensuite, fusionner et déployer le code Python (workers et workflows GitHub).
+3. Un worker déjà démarré avec l'ancien code reste compatible avec la colonne ajoutée : elle a une valeur par défaut à 0.
