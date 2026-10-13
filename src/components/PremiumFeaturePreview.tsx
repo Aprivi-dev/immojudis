@@ -48,12 +48,20 @@ export function PremiumFeaturePreview({
           L’offre Analyse n’est pas encore ouverte à la souscription.
         </p>
       ) : null}
-      <Link
-        href="/offres"
-        className="mt-4 inline-flex rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-brand-navy hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
-      >
-        Découvrir l’offre Analyse
-      </Link>
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
+        <Link
+          href="/offres"
+          className="inline-flex rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-brand-navy hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+        >
+          Découvrir l’offre Analyse
+        </Link>
+        <Link
+          href="/annonce-exemple"
+          className="inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+        >
+          Voir une analyse exemple
+        </Link>
+      </div>
     </section>
   );
 }

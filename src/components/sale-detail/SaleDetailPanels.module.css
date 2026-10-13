@@ -339,6 +339,22 @@
   line-height: 1.4;
 }
 
+.priceGrid .valueNote {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.priceGrid .valueLink {
+  color: var(--gold-text, var(--gold-text));
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .estimationFoot {
   display: flex;
   align-items: center;
