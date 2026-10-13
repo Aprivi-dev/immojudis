@@ -25,9 +25,10 @@ describe("offerComparisonRows", () => {
     expect(row("alerts").analyse.text).toBe("Jusqu’à 25, email quotidien");
   });
 
-  it("ne promet pas les statistiques des tribunaux, fonction gelée", () => {
-    expect(rows.find((candidate) => candidate.id === "statistics")).toBeUndefined();
-    expect(JSON.stringify(rows)).not.toMatch(/statistiques/i);
+  it("promet les statistiques des ventes et des tribunaux à l'offre Analyse seulement", () => {
+    expect(row("statistics").label).toBe("Statistiques des ventes et des tribunaux");
+    expect(row("statistics").analyse.included).toBe(true);
+    expect(row("statistics").decouverte.included).toBe(false);
     expect(row("pdf").analyse.included).toBe(true);
     expect(row("csv").analyse.included).toBe(true);
   });

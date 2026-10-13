@@ -52,7 +52,7 @@ const ANALYSIS_FEATURES = [
   "Historique de la vente : passages précédents, baisses de mise à prix, reports",
   "Estimation détaillée et ventes comparables",
   "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
-  "Rapport PDF et export des résultats",
+  "Statistiques des tribunaux, rapport PDF et export des résultats",
 ] as const;
 
 const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }[] = [
