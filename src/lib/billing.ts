@@ -969,10 +969,16 @@ export function isAnalysisSubscriptionPrice(
   return !configured || !priceId || priceId === configured;
 }
 
+/** `apply_stripe_subscription_state` refusal for an old subscription id that no longer matters. */
+const SUPERSEDED_SUBSCRIPTION_REASON = "superseded_subscription";
+
 /**
  * Store the state Stripe holds now, not the one in the (possibly late or
  * replayed) payload. The database applies it only if it is not older than the
- * newest applied event and not a reactivation of a refunded subscription.
+ * newest applied event, not a reactivation of a refunded subscription, and not
+ * the inactive state of an old subscription replaced by one that grants access.
+ * The id read back from Stripe is the one sent to the database, which compares
+ * it with the stored subscription under the user lock.
  */
 async function syncStripeSubscription(
   subscription: Stripe.Subscription,
@@ -1035,12 +1041,15 @@ async function syncStripeSubscription(
     }
   }
   if (result && !result.applied) {
-    console.info("[billing] stale or reversed subscription event ignored", {
+    console.info("[billing] stale, reversed or superseded subscription event ignored", {
       subscription: current.id,
       reason: result.reason,
     });
   }
-  return result?.applied === true;
+  // A superseded event (an old subscription reported after a re-subscription) is
+  // fully handled: the row already holds the newer subscription, so the webhook
+  // is a success without change and must not be reported as failed or replayed.
+  return result?.applied === true || result?.reason === SUPERSEDED_SUBSCRIPTION_REASON;
 }
 
 export function resolveCheckoutPlanCode(_value: unknown): Exclude<PlanCode, "decouverte"> {
