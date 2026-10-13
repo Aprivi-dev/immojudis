@@ -195,11 +195,13 @@ Quand `VERCEL_ENV=production`, `npm run build` (script `scripts/verify-required-
   `APP_URL`) : `VERCEL_URL` change à chaque déploiement et ne compte pas.
 
 **Échappatoire.** Tant que les valeurs ne sont pas fournies, `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true`
-(variable Vercel, environnement Production) transforme ces erreurs en avertissements encadrés de
-`!!!` dans le journal de build. Le déploiement passe, mais il n'est **pas conforme** : mentions
-légales absentes, administration sans second facteur ou URL canonique instable. Retirer la
-variable dès que les valeurs sont renseignées, puis redéployer. Seule la valeur exacte `true`
-est prise en compte.
+(variable Vercel, environnement Production) transforme les erreurs sur les mentions légales et
+`ADMIN_MFA_REQUIRED` en avertissements encadrés de `!!!` dans le journal de build. Le déploiement
+passe, mais il n'est **pas conforme** : mentions légales absentes ou administration sans second
+facteur. Retirer la variable dès que les valeurs sont renseignées, puis redéployer. Seule la
+valeur exacte `true` est prise en compte. L'origine canonique n'est jamais contournable : sans
+elle, les adresses canoniques, `robots.txt` et le sitemap de production pointeraient vers
+`localhost`.
 
 `npm run env:check:prod` n'accepte plus `VERCEL_URL` comme origine canonique.
 

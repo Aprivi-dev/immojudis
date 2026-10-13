@@ -5,8 +5,9 @@
  * "À renseigner" fallback, with the admin second factor optional, or with a
  * canonical origin that is only the throw-away `VERCEL_URL`.
  *
- * `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true` turns these errors into loud warnings,
- * so a deployment is never blocked before the owner has the values.
+ * `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true` turns the legal and MFA errors into loud
+ * warnings, so a deployment is not blocked before the owner has the values. A
+ * missing canonical origin always blocks (see `blockingLaunchProblems`).
  */
 
 /** Keep in sync with REQUIRED_PUBLISHER_FIELDS in src/lib/legal-documents.ts (tested). */
@@ -77,13 +78,18 @@ export function productionLaunchProblems(env) {
     );
   }
 
-  if (!EXPLICIT_SITE_URL_ENV_NAMES.some((name) => !isMissingValue(env[name]))) {
-    problems.push(
-      `Aucune origine canonique explicite : définir ${EXPLICIT_SITE_URL_ENV_NAMES.join(", ")} (VERCEL_URL ne compte pas : elle change à chaque déploiement).`,
-    );
-  }
-
   return problems;
+}
+
+/**
+ * Problems the escape hatch cannot waive. Without an explicit origin, canonical
+ * URLs, robots.txt and the sitemap of production would point to localhost.
+ */
+export function blockingLaunchProblems(env) {
+  if (EXPLICIT_SITE_URL_ENV_NAMES.some((name) => !isMissingValue(env[name]))) return [];
+  return [
+    `Aucune origine canonique explicite : définir ${EXPLICIT_SITE_URL_ENV_NAMES.join(", ")} (VERCEL_URL ne compte pas : elle change à chaque déploiement).`,
+  ];
 }
 
 /**
@@ -92,10 +98,11 @@ export function productionLaunchProblems(env) {
  */
 export function evaluateProductionLaunchConfig(env) {
   if (!isProductionBuild(env)) return { exitCode: 0, errors: [], warnings: [] };
-  const problems = productionLaunchProblems(env);
+  const blocking = blockingLaunchProblems(env);
+  const problems = [...productionLaunchProblems(env), ...blocking];
   if (!problems.length) return { exitCode: 0, errors: [], warnings: [] };
 
-  if (launchEscapeHatchEnabled(env)) {
+  if (launchEscapeHatchEnabled(env) && !blocking.length) {
     const bar = "!".repeat(78);
     return {
       exitCode: 0,
@@ -115,7 +122,9 @@ export function evaluateProductionLaunchConfig(env) {
     errors: [
       "[env] Configuration de lancement incomplète : le build de production est bloqué.",
       ...problems.map((problem) => `[env]   - ${problem}`),
-      `[env] Renseigner ces variables dans Vercel, ou définir ${ESCAPE_HATCH}=true pour ne recevoir que des avertissements (déploiement non conforme).`,
+      blocking.length
+        ? `[env] L'origine canonique ne peut pas être contournée par ${ESCAPE_HATCH} : définir SITE_URL dans Vercel.`
+        : `[env] Renseigner ces variables dans Vercel, ou définir ${ESCAPE_HATCH}=true pour ne recevoir que des avertissements (déploiement non conforme).`,
     ],
     warnings: [],
   };

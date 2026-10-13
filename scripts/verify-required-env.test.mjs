@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { legalConfigurationStatus } from "../src/lib/legal-documents";
 import {
+  blockingLaunchProblems,
   EXPLICIT_SITE_URL_ENV_NAMES,
   LEGAL_ENV_NAMES,
   evaluateProductionLaunchConfig,
@@ -46,11 +47,9 @@ describe("garde-fous de lancement (build de production)", () => {
 
   it("ne compte pas VERCEL_URL comme origine canonique explicite", () => {
     expect(EXPLICIT_SITE_URL_ENV_NAMES).not.toContain("VERCEL_URL");
-    const problems = productionLaunchProblems({
-      ...completeLaunch,
-      SITE_URL: "",
-      VERCEL_URL: "x.app",
-    });
+    const env = { ...completeLaunch, SITE_URL: "", VERCEL_URL: "x.app" };
+    expect(productionLaunchProblems(env)).toEqual([]);
+    const problems = blockingLaunchProblems(env);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatch(/origine canonique/);
   });
@@ -109,6 +108,7 @@ describe("garde-fous de lancement (build de production)", () => {
     const result = runBuildCheck({
       ...supabase,
       VERCEL_ENV: "production",
+      SITE_URL: "https://immojudis.com",
       ALLOW_INCOMPLETE_LAUNCH_CONFIG: "true",
     });
     expect(result.status).toBe(0);
@@ -119,15 +119,29 @@ describe("garde-fous de lancement (build de production)", () => {
     const refused = runBuildCheck({
       ...supabase,
       VERCEL_ENV: "production",
+      SITE_URL: "https://immojudis.com",
       ALLOW_INCOMPLETE_LAUNCH_CONFIG: "yes",
     });
     expect(refused.status).toBe(1);
+  });
+
+  it("l'échappatoire ne couvre pas l'absence d'origine canonique", () => {
+    const outcome = evaluateProductionLaunchConfig({
+      ...supabase,
+      VERCEL_ENV: "production",
+      ALLOW_INCOMPLETE_LAUNCH_CONFIG: "true",
+    });
+    expect(outcome.exitCode).toBe(1);
+    const text = outcome.errors.join("\n");
+    expect(text).toContain("origine canonique");
+    expect(text).toContain("ne peut pas être contournée");
   });
 
   it("l'échappatoire affiche chaque problème en avertissement", () => {
     const outcome = evaluateProductionLaunchConfig({
       ...supabase,
       VERCEL_ENV: "production",
+      SITE_URL: "https://immojudis.com",
       ALLOW_INCOMPLETE_LAUNCH_CONFIG: "true",
     });
     expect(outcome.exitCode).toBe(0);
@@ -136,7 +150,6 @@ describe("garde-fous de lancement (build de production)", () => {
     expect(text).toContain("ATTENTION");
     expect(text).toContain("NEXT_PUBLIC_LEGAL_ENTITY_NAME");
     expect(text).toContain("ADMIN_MFA_REQUIRED");
-    expect(text).toContain("origine canonique");
   });
 
   it("l'échappatoire ne change rien quand la configuration est complète", () => {
