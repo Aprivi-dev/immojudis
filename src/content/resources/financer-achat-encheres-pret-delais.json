@@ -1,0 +1,156 @@
+{
+  "slug": "financer-achat-encheres-pret-delais",
+  "publishedAt": "2026-10-13",
+  "title": "Financer un achat aux enchères : prêt, délais, pas de condition suspensive",
+  "category": "Budget",
+  "description": "Pourquoi le financement se prépare avant l’audience, quels délais s’imposent entre l’adjudication et le paiement, et quelles questions poser à votre banque.",
+  "intro": [
+    "Dans une vente immobilière classique, l’acheteur signe un avant-contrat qui prévoit presque toujours une condition suspensive d’obtention de prêt : si la banque refuse, la vente tombe. Une vente aux enchères n’offre pas ce filet de sécurité. L’adjudication est l’attribution du bien au dernier enchérisseur ; une fois prononcée, il est engagé.",
+    "Cet article explique pourquoi le financement doit être prêt avant l’audience, quels délais encadrent le paiement, ce que la banque doit savoir et ce qui se passe si le prêt n’arrive pas à temps. Il ne remplace ni l’avis d’une banque ou d’un courtier, ni celui de votre avocat, et Immojudis ne propose pas de financement."
+  ],
+  "takeaways": [
+    "Le Code des procédures civiles d’exécution ne prévoit pas de condition suspensive de prêt dans l’adjudication : défaut de paiement, remise en vente et conséquences financières.",
+    "Avant les enchères, il faut disposer de la garantie : chèque de banque ou caution bancaire irrévocable, 10 % de la mise à prix, minimum 3 000 €.",
+    "Le prix et les frais se règlent dans les deux mois de l’adjudication définitive, soit environ deux mois et dix jours après l’audience en l’absence de surenchère.",
+    "Une offre de prêt s’accepte au plus tôt dix jours après sa réception : planifiez ce délai avec la banque.",
+    "L’hypothèque de la banque peut être inscrite avant le paiement du prix, mais le bien ne peut pas être revendu avant."
+  ],
+  "sections": [
+    {
+      "id": "pas-de-condition",
+      "title": "Pourquoi il n’y a pas de condition suspensive",
+      "paragraphs": [
+        "Pour les ventes classiques, le Code de la consommation prévoit que l’acte qui indique un paiement du prix par prêt est conclu sous la condition suspensive de l’obtention de ce prêt (art. L. 313-41). L’acheteur qui n’obtient pas son crédit récupère alors ses sommes.",
+        "Pour l’adjudication, la procédure est différente. Si le prix n’est pas versé ou consigné et si les frais ne sont pas payés, la vente est résolue de plein droit et l’adjudicataire défaillant doit la différence entre son enchère et le prix de la revente, si celui-ci est moindre (art. L. 322-12 du Code des procédures civiles d’exécution). Le Code organise ensuite la remise en vente, la réitération des enchères (art. R. 322-66 et suivants). Notaires de France précise de son côté que les ventes aux enchères notariales classiques ne comportent pas de condition suspensive de prêt, alors que la vente interactive en ligne peut en insérer. Le cahier de chaque vente fait foi."
+      ],
+      "callout": {
+        "title": "En pratique",
+        "text": "Enchérir sans financement acquis revient à parier que la banque suivra. Fixez votre enchère plafond à un montant que votre banque a déjà accepté de financer par écrit, sinon réduisez-la."
+      }
+    },
+    {
+      "id": "calendrier",
+      "title": "Le calendrier qui s’impose à votre financement",
+      "paragraphs": [
+        "Votre financement doit s’intégrer dans une chronologie fixée par le Code. Le tableau résume ce qui compte pour la trésorerie. Pour le détail, voir l’article « Après l’adjudication : surenchère, paiement, consignation et titre de vente »."
+      ],
+      "table": {
+        "headers": ["Étape", "Délai", "Ce que cela implique pour le financement"],
+        "rows": [
+          [
+            "Avant les enchères",
+            "Avant l’audience",
+            "Remettre à l’avocat un chèque de banque ou une caution bancaire irrévocable de 10 % de la mise à prix, minimum 3 000 € (art. R. 322-41). Il faut disposer de ces fonds ou de cette caution à l’avance."
+          ],
+          [
+            "Après l’adjudication",
+            "10 jours",
+            "Une surenchère peut remettre l’adjudication en cause (art. R. 322-51). Une nouvelle audience a lieu deux à quatre mois plus tard (art. R. 322-53)."
+          ],
+          [
+            "Paiement du prix et des frais",
+            "2 mois après l’adjudication définitive",
+            "Verser ou consigner le prix, payer les frais taxés et les droits de mutation, et en justifier au greffe (art. R. 322-56 et R. 322-58). Au-delà, des intérêts au taux légal sont dus sur le prix."
+          ],
+          [
+            "Après le paiement",
+            "Dès le paiement",
+            "La banque peut inscrire son hypothèque ; avant le paiement, l’adjudicataire ne peut disposer du bien, sauf cette hypothèque (art. L. 322-9)."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "offre-de-pret",
+      "title": "Ce que la loi sur le crédit impose à votre banque et à vous",
+      "paragraphs": [
+        "Une offre de prêt immobilier oblige la banque à maintenir ses conditions pendant au moins trente jours à compter de sa réception. L’emprunteur ne peut l’accepter que dix jours après l’avoir reçue (art. L. 313-34 du Code de la consommation). Aucun versement ne peut avoir lieu avant l’acceptation (art. L. 313-35).",
+        "Ces délais comptent à rebours. Pour payer dans les deux mois de l’adjudication définitive, demandez à la banque, avant l’audience, un accord de principe écrit puis une offre de prêt dès que le jugement est rendu. Lorsque l’offre est acceptée, elle l’est toujours sous la condition résolutoire que le contrat pour lequel le prêt est demandé ne soit pas conclu dans un délai de quatre mois (art. L. 313-36). Si une surenchère décale l’audience de deux à quatre mois, cette échéance peut devenir serrée : faites-la confirmer par la banque."
+      ],
+      "bullets": [
+        "Un accord de principe n’est pas une offre de prêt : demandez ce qu’il engage réellement.",
+        "Demandez à la banque si elle a déjà financé une adjudication judiciaire et quels documents elle exigera (jugement, titre de vente).",
+        "Demandez comment seront débloqués les fonds : directement au séquestre ou à la Caisse des dépôts ?"
+      ]
+    },
+    {
+      "id": "budget-tresorerie",
+      "title": "Ce qu’il faut avoir sous la main, et quand",
+      "paragraphs": [
+        "Trois besoins se succèdent. D’abord la garantie, avant l’audience : avec une mise à prix de 60 000 €, elle est de 6 000 € ; avec une mise à prix de 20 000 €, elle reste de 3 000 € car le minimum légal s’applique. Elle est restituée à l’enchérisseur qui ne gagne pas. Pour le gagnant, demandez à l’avocat comment elle s’impute sur le prix.",
+        "Ensuite, le prix d’adjudication, qui est à régler dans les deux mois. Enfin, les frais : frais de poursuite taxés, droits de mutation, émoluments et honoraires, qui s’ajoutent au prix (voir « Frais d’une vente aux enchères judiciaire »). Les travaux et le portage (intérêts, taxe foncière, charges tant que le bien ne rapporte rien) viennent en plus. Le simulateur d’enchère plafond d’Immojudis les additionne pour vous donner un coût complet."
+      ],
+      "bullets": [
+        "Séparer l’apport (argent disponible) du montant à emprunter.",
+        "Prévoir une réserve pour les imprévus : frais plus élevés qu’estimé, intérêts de retard, travaux.",
+        "Ne pas compter sur une revente ou un loyer pour rembourser : le bien ne peut être revendu avant le paiement du prix et des frais."
+      ]
+    },
+    {
+      "id": "si-le-pret-ne-vient-pas",
+      "title": "Si le prêt n’arrive pas à temps",
+      "paragraphs": [
+        "En cas de retard, le prix est majoré des intérêts au taux légal à compter de l’expiration du délai de deux mois (art. R. 322-56). Si le prix ou les frais ne sont toujours pas versés, le bien peut être remis en vente à la demande d’un créancier ou du débiteur. L’adjudicataire défaillant perd la garantie remise avant l’audience, qui est acquise aux créanciers (art. R. 322-41), conserve à sa charge les frais de la première vente et doit la différence de prix si la revente est moins élevée (art. L. 322-12 et R. 322-72).",
+        "Le plus sûr est de ne pas vous mettre dans cette situation : n’enchérissez qu’avec un financement acquis, un plafond cohérent avec votre capacité de remboursement et une marge pour les aléas."
+      ]
+    },
+    {
+      "id": "questions-banque",
+      "title": "Les questions à poser à votre banque ou courtier",
+      "paragraphs": [
+        "Préparez ces questions avant de chercher un montant. Conservez les réponses par écrit."
+      ],
+      "bullets": [
+        "Quel montant maximal pouvez-vous financer sur mon dossier, et à quelles conditions ?",
+        "Pouvez-vous émettre une caution bancaire irrévocable pour la garantie, et à quel coût ?",
+        "Dans quel délai pouvez-vous me remettre une offre de prêt après le jugement d’adjudication ?",
+        "Quelle durée de validité a votre accord de principe ?",
+        "Quels frais de dossier, de garantie et d’assurance vont s’ajouter ?",
+        "Que se passe-t-il si l’adjudication est suivie d’une surenchère ?",
+        "Votre hypothèque peut-elle être inscrite avant le paiement complet du prix ?"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-9 (paiement du prix et hypothèque du prêt)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025983"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-12 (défaut de paiement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025989"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-41 (garantie avant les enchères)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939157"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-56 (paiement du prix dans les deux mois)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939193"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-58 (frais taxés et droits de mutation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939198"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-72 (adjudicataire défaillant)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939240"
+    },
+    {
+      "label": "Légifrance — Code de la consommation, article L. 313-34 (délais d’une offre de prêt immobilier)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032433173"
+    },
+    {
+      "label": "Légifrance — Code de la consommation, article L. 313-41 (condition suspensive d’obtention du prêt)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000032433227"
+    },
+    {
+      "label": "Notaires de France — Les ventes aux enchères immobilières notariales",
+      "url": "https://www.notaires.fr/fr/immobilier-fiscalite/vente-rapide/les-ventes-aux-encheres-immobilieres-notariales"
+    },
+    {
+      "label": "Service-Public — Saisie immobilière",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    }
+  ]
+}

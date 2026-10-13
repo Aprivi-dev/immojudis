@@ -1,0 +1,179 @@
+{
+  "slug": "lire-cahier-conditions-vente-preparer-visite",
+  "publishedAt": "2026-10-13",
+  "title": "Lire le cahier des conditions de vente et préparer la visite",
+  "category": "Méthode",
+  "description": "Où trouver le cahier des conditions de vente, quelles rubriques lire en priorité, comment préparer la visite du bien et transformer ce que vous voyez en hypothèses chiffrées.",
+  "intro": [
+    "Le cahier des conditions de vente est le document central d’une vente judiciaire. Il décrit le bien et fixe les règles de la vente : prix de départ, garanties, frais, occupation. Lui et la visite sont les deux sources les plus fiables avant d’enchérir. Une annonce, elle, ne reprend qu’une partie de ses informations.",
+    "Cet article explique où le trouver, comment le lire sans être juriste, comment préparer la visite et comment convertir vos constats en chiffres pour votre enchère plafond, c’est-à-dire la limite que vous vous interdisez de dépasser. Les ventes notariales et domaniales ont un cahier « des charges » qui répond à la même logique : voir l’article « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal »."
+  ],
+  "takeaways": [
+    "En saisie immobilière, le cahier se consulte au greffe du juge de l’exécution ou au cabinet de l’avocat du créancier poursuivant.",
+    "Le Code fixe son contenu minimal : désignation du bien, origine de propriété, servitudes, baux, procès-verbal de description, mise à prix, conditions de la vente, séquestre ou Caisse des dépôts.",
+    "Les diagnostics techniques sont annexés au cahier en cas de vente publique.",
+    "Dans une vente par autorité de justice, la garantie des vices cachés ne s’applique pas : la visite est d’autant plus importante.",
+    "Chaque constat de visite doit devenir une hypothèse chiffrée, avec sa source et sa date."
+  ],
+  "sections": [
+    {
+      "id": "ou-trouver",
+      "title": "Où trouver le cahier et qui l’écrit",
+      "paragraphs": [
+        "Le cahier est élaboré sous la responsabilité du créancier poursuivant, c’est-à-dire la personne qui fait vendre le bien. Il peut être consulté au greffe du juge de l’exécution ou au cabinet de l’avocat du créancier poursuivant (art. R. 322-11 du Code des procédures civiles d’exécution). Il est déposé au greffe au plus tard le cinquième jour ouvrable suivant l’assignation du débiteur (art. R. 322-10).",
+        "L’avis de vente, publié entre un et deux mois avant l’audience, rappelle où le consulter et peut indiquer les dates et heures de visite (art. R. 322-31). Certains documents sont aussi accessibles en ligne via les sites d’annonces. Dans Immojudis, lorsque des pièces sont référencées, la fiche renvoie vers elles ; la version du greffe ou de l’avocat reste la référence."
+      ],
+      "bullets": [
+        "Demandez une copie complète, annexes comprises.",
+        "Notez la date de la version que vous lisez : le cahier peut être complété ou contesté.",
+        "Les stipulations du cahier peuvent être contestées par tout intéressé, sauf le montant de la mise à prix qui obéit à une règle propre (art. R. 322-11)."
+      ]
+    },
+    {
+      "id": "contenu",
+      "title": "Ce que le cahier contient, rubrique par rubrique",
+      "paragraphs": [
+        "Le Code impose un contenu minimal (art. R. 322-10). Le tableau suivant le traduit en questions à vous poser. Trois termes à connaître : une servitude est un droit qu’un tiers ou un voisin a sur le bien (passage, vue, canalisation) ; l’origine de propriété retrace les propriétaires successifs ; les tantièmes sont la part de parties communes rattachée à chaque lot d’une copropriété."
+      ],
+      "table": {
+        "headers": [
+          "Rubrique",
+          "Ce qu’on y cherche",
+          "Pourquoi cela compte pour l’enchère plafond"
+        ],
+        "rows": [
+          [
+            "Désignation de l’immeuble",
+            "Adresse, lots, surfaces, annexes (cave, parking), copropriété et tantièmes.",
+            "Vérifier que le bien décrit correspond à l’annonce et à ce que vous visitez."
+          ],
+          [
+            "Origine de propriété et servitudes",
+            "Droits d’un tiers sur le bien (passage, vue, mitoyenneté).",
+            "Une servitude peut réduire l’usage ou la valeur."
+          ],
+          [
+            "Baux consentis et procès-verbal de description",
+            "Qui occupe le bien, sous quel titre, depuis quand, pour quel loyer (art. R. 322-2).",
+            "Détermine les revenus possibles et le délai avant de pouvoir disposer du bien."
+          ],
+          [
+            "Conditions de la vente et mise à prix",
+            "Mise à prix, règles particulières, clauses d’occupation ou de maintien dans les lieux du saisi.",
+            "Le cahier peut prévoir que le saisi reste dans les lieux, ce qui change le calendrier (art. R. 322-64)."
+          ],
+          [
+            "Séquestre ou Caisse des dépôts",
+            "Qui détient le prix, et à quel taux d’intérêt si les fonds sont séquestrés.",
+            "Précise comment et à qui payer, dans les deux mois (art. R. 322-56 et R. 322-57)."
+          ],
+          [
+            "Dossier de diagnostic technique",
+            "DPE, amiante, plomb, électricité, gaz, risques, termites selon le bien.",
+            "En cas de vente publique, ce dossier est annexé au cahier (art. L. 271-4 du Code de la construction et de l’habitation) : il chiffre des travaux possibles."
+          ],
+          [
+            "Frais, garantie et paiement",
+            "Montant de la garantie, frais à la charge de l’adjudicataire, modalités de paiement.",
+            "Alimente les frais de votre budget (voir « Frais d’une vente aux enchères judiciaire »)."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "methode-lecture",
+      "title": "Une méthode de lecture en trois passes",
+      "paragraphs": [
+        "Ne lisez pas le cahier d’un trait. Procédez par passes, avec un objectif différent à chaque fois.",
+        "La première passe vérifie l’identité : le bien, les lots, les surfaces, la copropriété. La deuxième passe s’intéresse à l’occupation et à la jouissance, c’est-à-dire le droit d’utiliser le bien et d’en percevoir les loyers : qui occupe le bien, qui peut y entrer, quand. La troisième passe construit le coût : frais, diagnostics, travaux annoncés, charges de copropriété."
+      ],
+      "bullets": [
+        "Passe 1 : le bien décrit est-il celui de l’annonce ? Les surfaces sont-elles documentées ?",
+        "Passe 2 : quel titre d’occupation est cité et est-il opposable (un droit que l’acheteur doit respecter, comme un bail en cours) ?",
+        "Passe 3 : quels coûts sont écrits, lesquels manquent, lesquels sont à demander à l’avocat ?",
+        "Pour chaque information : noter la page, la date et ce qui reste à confirmer."
+      ],
+      "callout": {
+        "title": "Un document ne remplace pas la visite",
+        "text": "L’article 1649 du Code civil écarte la garantie des vices cachés dans les ventes faites par autorité de justice. Ce que vous n’avez pas vu ou fait vérifier, vous risquez de le découvrir après l’achat. Cette règle vise les ventes par autorité de justice ; pour une vente notariale volontaire, demandez la clause du cahier des charges."
+      }
+    },
+    {
+      "id": "preparer-visite",
+      "title": "Préparer la visite",
+      "paragraphs": [
+        "Les dates de visite figurent dans l’avis de vente quand elles sont prévues. Elles sont souvent collectives et encadrées par un commissaire de justice, l’officier chargé de constater les faits et de signifier les actes. Demandez à l’avocat poursuivant ou au greffe qui organise la visite, car les modalités varient.",
+        "Relisez le cahier avant d’y aller : la visite sert à confirmer ou infirmer ce que le document annonce. Si le bien est à rénover, envisagez de vous faire accompagner par un professionnel du bâtiment. Une estimation faite seul peut s’écarter nettement du coût réel."
+      ],
+      "bullets": [
+        "Imprimer le cahier et les diagnostics, avec vos annotations.",
+        "Prévoir un appareil photo, une lampe, un mètre et un cahier de notes.",
+        "Préparer une liste de questions pour le commissaire de justice ou l’avocat.",
+        "Demander si les photos sont autorisées et si la visite inclut les parties communes et la cave."
+      ]
+    },
+    {
+      "id": "pendant-visite",
+      "title": "Pendant la visite : ce qu’il faut regarder",
+      "paragraphs": [
+        "Soyez méthodique : une visite de vente judiciaire est souvent courte. Parcourez le bien dans le même ordre à chaque fois pour pouvoir comparer plusieurs dossiers."
+      ],
+      "bullets": [
+        "Humidité, fissures, traces d’infiltration, état de la toiture et des façades quand ils sont visibles.",
+        "Installations : électricité, plomberie, chauffage, ventilation, menuiseries.",
+        "Parties communes : entrée, escaliers, toiture, caves, locaux techniques, compteurs.",
+        "Surfaces : comparez avec le cahier et les diagnostics, sans vous fier à l’annonce seule.",
+        "Occupation : présence d’occupants, d’effets personnels, de boîtes aux lettres au nom d’un tiers.",
+        "Environnement : bruit, luminosité, accès, stationnement, voisinage immédiat."
+      ]
+    },
+    {
+      "id": "apres-visite",
+      "title": "Après la visite : chiffrer et décider",
+      "paragraphs": [
+        "Le soir même, écrivez ce que vous avez constaté et ce que vous n’avez pas pu voir. Transformez chaque constat en hypothèse : un montant de travaux, un délai, une question. Reportez les montants dans votre simulation d’enchère plafond dans Immojudis, avec leur source et leur date.",
+        "Si une rubrique essentielle manque (occupation, diagnostics, copropriété), demandez l’information à l’avocat avant l’audience. Si elle reste inconnue, réduisez votre engagement ou renoncez : c’est une décision cohérente."
+      ],
+      "bullets": [
+        "Faire chiffrer les travaux par un professionnel si le bien est à rénover.",
+        "Mettre à jour l’enchère plafond avec les frais du cahier (voir « Fixer son enchère plafond : raisonner par le coût complet avant d’enchérir »).",
+        "Faire valider l’analyse juridique par votre avocat, notamment sur l’occupation.",
+        "Lire aussi « Le jour de l’audience : déroulé et rôle de l’avocat » pour préparer la suite."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-10 (contenu du cahier des conditions de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939072"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-11 (consultation et contestation du cahier)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939074"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-2 (procès-verbal de description)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939046"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-31 (avis de vente et visites)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343494"
+    },
+    {
+      "label": "Légifrance — Code de la construction et de l’habitation, article L. 271-4 (dossier de diagnostic technique)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000049398848"
+    },
+    {
+      "label": "Légifrance — Code civil, article 1649 (vices cachés et ventes par autorité de justice)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006442022"
+    },
+    {
+      "label": "Service-Public — Saisie immobilière",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    },
+    {
+      "label": "Chambre nationale des commissaires de justice",
+      "url": "https://commissaire-justice.fr/"
+    }
+  ]
+}

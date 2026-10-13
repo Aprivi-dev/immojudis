@@ -257,7 +257,7 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 4",
+  name: "Demande de précisions sur une vente — version 5",
   subjectTemplate: "{{sale_subject_title}} — précisions pour Immojudis",
   blocks: [
     {
@@ -271,7 +271,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Présentation Immojudis",
       content:
-        "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous complétons la fiche ci-dessous et votre connaissance du dossier nous serait précieuse.",
+        "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous vous écrivons au sujet de la vente ci-dessous : nous complétons sa fiche à destination des acquéreurs, et votre connaissance du dossier nous serait précieuse.",
     },
     {
       id: "sale_details",

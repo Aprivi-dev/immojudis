@@ -16,7 +16,7 @@ describe("email alerts", () => {
     expect(
       resolveEmailAlertDeliveryConfig({
         RESEND_API_KEY: "re_test",
-        ALERT_EMAIL_FROM: "ImmoJudis <alertes@immojudis.fr>",
+        ALERT_EMAIL_FROM: "Immojudis <alertes@immojudis.fr>",
         NEXT_PUBLIC_APP_URL: "https://immojudis.example/",
       }),
     ).toMatchObject({
@@ -26,7 +26,7 @@ describe("email alerts", () => {
   });
 
   it("prefers SITE_URL and keeps NEXT_PUBLIC_APP_URL as a fallback", () => {
-    const base = { RESEND_API_KEY: "re_test", ALERT_EMAIL_FROM: "ImmoJudis <a@immojudis.fr>" };
+    const base = { RESEND_API_KEY: "re_test", ALERT_EMAIL_FROM: "Immojudis <a@immojudis.fr>" };
     expect(
       resolveEmailAlertDeliveryConfig({
         ...base,
@@ -43,13 +43,18 @@ describe("email alerts", () => {
   const env = { SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key" };
   const userId = "7d335032-e935-4550-9347-ed22b0f63449";
   const alertA = "11111111-2222-4333-8444-555555555555";
-  const notification = (id: string, saleId: string, title: string) => ({
+  const notification = (
+    id: string,
+    saleId: string,
+    title: string,
+    saleFacts: { saleDate?: string; startingPriceEur?: number } = {},
+  ) => ({
     id,
     alert_id: alertA,
     sale_id: saleId,
     notification_snapshot: {
       alert: { id: alertA, name: "Bordeaux décoté" },
-      sale: { id: saleId, title, city: "Bordeaux", department: "33" },
+      sale: { id: saleId, title, city: "Bordeaux", department: "33", ...saleFacts },
       match: { marketDiscountPct: 31.6, reasons: ["Mise à prix basse", "DPE C"] },
     },
   });
@@ -57,7 +62,7 @@ describe("email alerts", () => {
   it("builds one compliant digest for all the sales found for a user", () => {
     const message = buildAlertDigestMessage({
       userId,
-      from: "ImmoJudis <alertes@immojudis.fr>",
+      from: "Immojudis <alertes@immojudis.fr>",
       recipientEmail: "client@example.test",
       appUrl: "https://immojudis.example",
       now: new Date("2026-10-09T10:00:00Z"),
@@ -70,7 +75,11 @@ describe("email alerts", () => {
     });
 
     expect(message.to).toBe("client@example.test");
-    expect(message.subject).toBe("Alerte ImmoJudis - 3 ventes correspondent à vos alertes");
+    expect(message.subject).toBe("Alerte Immojudis — 3 ventes correspondent à vos alertes");
+    expect(message.text.startsWith("Bonjour,")).toBe(true);
+    expect(message.html).toContain("Bonjour,");
+    expect(message.text).not.toContain("ImmoJudis");
+    expect(message.html).not.toContain("ImmoJudis");
     for (const title of ["Maison judiciaire", "Appartement T3", "Studio"]) {
       expect(message.text).toContain(title);
       expect(message.html).toContain(title);
@@ -91,6 +100,46 @@ describe("email alerts", () => {
     expect(message.text).toContain("Désactiver cette alerte");
   });
 
+  it("shows the hearing date and the starting price of each sale when the snapshot has them", () => {
+    const message = buildAlertDigestMessage({
+      userId,
+      from: "Immojudis <alertes@immojudis.fr>",
+      recipientEmail: "client@example.test",
+      appUrl: "https://immojudis.example",
+      env,
+      notifications: [
+        notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e17d", "sale-1", "Maison judiciaire", {
+          saleDate: "2026-11-12T13:00:00.000Z",
+          startingPriceEur: 95000,
+        }),
+      ],
+    });
+
+    expect(message.subject).toBe(
+      "Alerte Immojudis — Maison judiciaire (Bordeaux · 33), audience le 12 novembre 2026",
+    );
+    expect(message.text).toContain("Audience : 12 novembre 2026 · Mise à prix : 95");
+    expect(message.text).toMatch(/Mise à prix : 95\s000\s€/);
+    expect(message.html).toContain("Audience : 12 novembre 2026");
+  });
+
+  it("leaves the facts line out when the snapshot has neither a date nor a price", () => {
+    const message = buildAlertDigestMessage({
+      userId,
+      from: "Immojudis <alertes@immojudis.fr>",
+      recipientEmail: "client@example.test",
+      appUrl: "https://immojudis.example",
+      env,
+      notifications: [
+        notification("6b6b42a1-b719-48cc-9c9f-f0c9f707e17d", "sale-1", "Maison judiciaire"),
+      ],
+    });
+
+    expect(message.subject).toBe("Alerte Immojudis — Maison judiciaire (Bordeaux · 33)");
+    expect(message.text).not.toContain("Audience :");
+    expect(message.text).not.toContain("Mise à prix :");
+  });
+
   it("caps the list and points to the alerts page for the rest", () => {
     const many = Array.from({ length: 14 }, (_, index) =>
       notification(
@@ -101,7 +150,7 @@ describe("email alerts", () => {
     );
     const message = buildAlertDigestMessage({
       userId,
-      from: "ImmoJudis <alertes@immojudis.fr>",
+      from: "Immojudis <alertes@immojudis.fr>",
       recipientEmail: "client@example.test",
       appUrl: "https://immojudis.example",
       env,
@@ -121,7 +170,7 @@ describe("email alerts", () => {
       idempotencyKey: "digest-1",
       fetchImpl: fetchMock as unknown as typeof fetch,
       message: {
-        from: "ImmoJudis <alertes@immojudis.fr>",
+        from: "Immojudis <alertes@immojudis.fr>",
         to: "client@example.test",
         subject: "Alerte",
         html: "<p>x</p>",
@@ -149,7 +198,7 @@ describe("email alerts", () => {
       idempotencyKey: "mission-1",
       fetchImpl: fetchMock as unknown as typeof fetch,
       message: {
-        from: "Assistant ImmoJudis <assistant@immojudis.fr>",
+        from: "Assistant Immojudis <assistant@immojudis.fr>",
         to: "cabinet@example.test",
         replyTo: "utilisateur@example.test",
         subject: "Demande d'informations",

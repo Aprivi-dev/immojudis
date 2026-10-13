@@ -55,7 +55,7 @@ import { dispatchQueuedEmailAlertNotifications } from "./email-alerts";
 
 const env = {
   RESEND_API_KEY: "re_test",
-  ALERT_EMAIL_FROM: "ImmoJudis <alertes@immojudis.fr>",
+  ALERT_EMAIL_FROM: "Immojudis <alertes@immojudis.fr>",
   NEXT_PUBLIC_APP_URL: "https://immojudis.example",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-test-key",
 };

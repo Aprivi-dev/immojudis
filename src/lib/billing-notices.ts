@@ -5,6 +5,7 @@ import {
   sendResendEmail,
   type ResendEmailMessage,
 } from "@/lib/email-alerts";
+import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
 
 const dateFormat = new Intl.DateTimeFormat("fr-FR", {
@@ -27,35 +28,45 @@ export function buildPaymentFailedMessage({
   to,
   appUrl,
   nextAttemptAt,
+  priceLabel = resolveAnalysisOfferLabel(),
 }: {
   from: string;
   to: string;
   appUrl: string;
   /** Unix seconds of the next automatic retry announced by Stripe, if any. */
   nextAttemptAt?: number | null;
+  /** Public price of the subscription, e.g. « 29 € TTC / mois ». */
+  priceLabel?: string;
 }): ResendEmailMessage {
   const accountUrl = `${appUrl}/compte`;
   const retry = nextAttemptAt
-    ? `Stripe retentera automatiquement le prélèvement le ${dateFormat.format(new Date(nextAttemptAt * 1000))}.`
+    ? `Prochain prélèvement automatique : le ${dateFormat.format(new Date(nextAttemptAt * 1000))}.`
     : "Stripe retentera automatiquement le prélèvement dans les prochains jours.";
+  const amount = `Montant de l’abonnement : ${priceLabel}.`;
+  const cancel =
+    "Si vous ne souhaitez pas poursuivre, vous pouvez résilier à tout moment depuis la page « Mon compte », bouton « Gérer mon abonnement ».";
   const lines = [
     "Bonjour,",
     "",
     "Le dernier paiement de votre abonnement Immojudis Analyse n'a pas abouti.",
+    amount,
     `Votre accès reste ouvert pendant ${PAST_DUE_GRACE_DAYS} jours après la fin de la période payée.`,
     retry,
     "",
     "Pour éviter toute interruption, mettez à jour votre moyen de paiement :",
     accountUrl,
     "",
-    "Si vous ne souhaitez pas poursuivre, vous pouvez aussi résilier depuis la même page.",
+    cancel,
+    "",
+    "Cordialement,",
+    "L’équipe Immojudis",
   ];
   return {
     from,
     to,
     subject: "Votre paiement Immojudis n'a pas abouti",
     text: lines.join("\n"),
-    html: `<p>Bonjour,</p><p>Le dernier paiement de votre abonnement Immojudis Analyse n'a pas abouti. Votre accès reste ouvert pendant ${PAST_DUE_GRACE_DAYS} jours après la fin de la période payée.</p><p>${escapeHtml(retry)}</p><p><a href="${escapeHtml(accountUrl)}">Mettre à jour mon moyen de paiement</a></p><p>Si vous ne souhaitez pas poursuivre, vous pouvez aussi résilier depuis la même page.</p>`,
+    html: `<p>Bonjour,</p><p>Le dernier paiement de votre abonnement Immojudis Analyse n'a pas abouti. ${escapeHtml(amount)} Votre accès reste ouvert pendant ${PAST_DUE_GRACE_DAYS} jours après la fin de la période payée.</p><p>${escapeHtml(retry)}</p><p><a href="${escapeHtml(accountUrl)}">Mettre à jour mon moyen de paiement</a></p><p>${escapeHtml(cancel)}</p><p>Cordialement,<br />L’équipe Immojudis</p>`,
   };
 }
 
@@ -102,30 +113,40 @@ export function buildTrialEndingMessage({
   to,
   appUrl,
   trialEnd,
+  priceLabel = resolveAnalysisOfferLabel(),
 }: {
   from: string;
   to: string;
   appUrl: string;
   /** Unix seconds of the end of the free trial. */
   trialEnd: number;
+  /** Public price of the subscription, e.g. « 29 € TTC / mois ». */
+  priceLabel?: string;
 }): ResendEmailMessage {
   const accountUrl = `${appUrl}/compte`;
   const endDate = dateFormat.format(new Date(trialEnd * 1000));
+  const firstPayment = `Sans action de votre part, l’abonnement se poursuit et le premier paiement est prélevé le ${endDate} : ${priceLabel}. Il est ensuite renouvelé chaque mois à la même date.`;
+  const cancel =
+    "Pour résilier avant cette date ou consulter votre abonnement, rendez-vous sur la page « Mon compte », bouton « Gérer mon abonnement » :";
   const lines = [
     "Bonjour,",
     "",
     `Votre essai gratuit d'Immojudis Analyse se termine le ${endDate}.`,
-    "Sans action de votre part, l'abonnement se poursuit et le premier paiement est prélevé ce jour-là.",
+    firstPayment,
     "",
-    "Pour résilier avant cette date ou consulter votre abonnement :",
+    cancel,
     accountUrl,
+    "",
+    "Cordialement,",
+    "L’équipe Immojudis",
   ];
   return {
     from,
     to,
-    subject: "Votre essai Immojudis se termine dans 3 jours",
+    // The date, not a fixed « dans 3 jours » : the event may arrive earlier or later.
+    subject: `Votre essai Immojudis Analyse se termine le ${endDate}`,
     text: lines.join("\n"),
-    html: `<p>Bonjour,</p><p>Votre essai gratuit d'Immojudis Analyse se termine le ${escapeHtml(endDate)}. Sans action de votre part, l'abonnement se poursuit et le premier paiement est prélevé ce jour-là.</p><p><a href="${escapeHtml(accountUrl)}">Résilier ou consulter mon abonnement</a></p>`,
+    html: `<p>Bonjour,</p><p>Votre essai gratuit d'Immojudis Analyse se termine le ${escapeHtml(endDate)}. ${escapeHtml(firstPayment)}</p><p>${escapeHtml(cancel)} <a href="${escapeHtml(accountUrl)}">Résilier ou consulter mon abonnement</a></p><p>Cordialement,<br />L’équipe Immojudis</p>`,
   };
 }
 
