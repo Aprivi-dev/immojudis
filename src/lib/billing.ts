@@ -13,6 +13,7 @@ import {
   sendCommercialConfirmation,
 } from "@/lib/commercial-acceptance";
 import { assertPaidOfferLegalReadiness } from "@/lib/legal-documents";
+import type { BillingPortalIntent } from "@/lib/billing-portal-request";
 import { sendPaymentFailedNotice, sendTrialEndingNotice } from "@/lib/billing-notices";
 import {
   ANALYSIS_BILLING_MODEL,
@@ -390,12 +391,51 @@ export function billingPortalReturnUrl(appOrigin: string): string {
   return `${appOrigin}/offres?billing=portal`;
 }
 
+/** Where Stripe sends the subscriber back once the cancellation flow is completed. */
+export function billingPortalCancelReturnUrl(appOrigin: string): string {
+  return `${appOrigin}/compte`;
+}
+
+/** Subscription statuses for which the cancellation flow of the portal is offered. */
+const CANCELLABLE_SUBSCRIPTION_STATUSES: readonly string[] = ["trialing", "active", "past_due"];
+
+export function buildBillingPortalSessionParams({
+  appOrigin,
+  customerId,
+  cancelSubscriptionId,
+}: {
+  appOrigin: string;
+  customerId: string;
+  /** Stripe id read from the signed-in user's own row, never from the request. */
+  cancelSubscriptionId?: string | null;
+}): Stripe.BillingPortal.SessionCreateParams {
+  return {
+    customer: customerId,
+    return_url: billingPortalReturnUrl(appOrigin),
+    locale: "fr",
+    ...(cancelSubscriptionId
+      ? {
+          flow_data: {
+            type: "subscription_cancel",
+            subscription_cancel: { subscription: cancelSubscriptionId },
+            after_completion: {
+              type: "redirect",
+              redirect: { return_url: billingPortalCancelReturnUrl(appOrigin) },
+            },
+          },
+        }
+      : {}),
+  };
+}
+
 export async function createBillingPortalSession({
   auth,
   origin,
+  intent = "manage",
 }: {
   auth: SupabaseAuthContext;
   origin?: string | null;
+  intent?: BillingPortalIntent;
 }): Promise<BillingSessionResponse> {
   const stripe = getStripe();
   const appOrigin = resolveBillingOrigin(origin);
@@ -405,11 +445,21 @@ export async function createBillingPortalSession({
     throw new Error("Aucun compte Stripe n'est encore associé à ce compte.");
   }
 
-  const session = await stripe.billingPortal.sessions.create({
-    customer: subscription.stripe_customer_id,
-    return_url: billingPortalReturnUrl(appOrigin),
-    locale: "fr",
-  });
+  let cancelSubscriptionId: string | null = null;
+  if (intent === "cancel") {
+    cancelSubscriptionId = subscription.stripe_subscription_id;
+    if (!cancelSubscriptionId || !CANCELLABLE_SUBSCRIPTION_STATUSES.includes(subscription.status)) {
+      throw new Error("Aucun abonnement Analyse à résilier n'est associé à ce compte.");
+    }
+  }
+
+  const session = await stripe.billingPortal.sessions.create(
+    buildBillingPortalSessionParams({
+      appOrigin,
+      customerId: subscription.stripe_customer_id,
+      cancelSubscriptionId,
+    }),
+  );
 
   return { url: session.url };
 }

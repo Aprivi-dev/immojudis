@@ -13,6 +13,7 @@ import {
   fetchAccessPlan,
   fetchBillingOffer,
   openBillingPortal,
+  openSubscriptionCancellation,
   startAnalyseCheckout,
 } from "./client-billing";
 
@@ -94,6 +95,23 @@ describe("client billing API", () => {
     expect(mocks.fetch).toHaveBeenNthCalledWith(2, "/api/billing/portal", {
       method: "POST",
       headers: { Authorization: "Bearer test-access-token" },
+    });
+  });
+
+  it("ouvre la résiliation en n'envoyant que l'intention, jamais un identifiant d'abonnement", async () => {
+    mocks.getSession.mockResolvedValue({
+      data: { session: { access_token: "test-access-token" } },
+      error: null,
+    });
+    mocks.fetch.mockResolvedValueOnce(jsonResponse({ url: "https://portal.example.test/cancel" }));
+
+    await expect(openSubscriptionCancellation()).resolves.toEqual({
+      url: "https://portal.example.test/cancel",
+    });
+    expect(mocks.fetch).toHaveBeenCalledWith("/api/billing/portal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-access-token" },
+      body: JSON.stringify({ intent: "cancel" }),
     });
   });
 

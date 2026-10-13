@@ -124,12 +124,12 @@ export function TermsPage() {
               <Link to="/compte" className="text-gold underline">
                 Mon compte
               </Link>
-              , bouton « Gérer mon abonnement Analyse », qui ouvre le portail de paiement sécurisé
-              Stripe où l’abonnement se résilie. Le portail indique la date de fin d’accès et
-              confirme la résiliation. Une résiliation pendant l’essai évite le premier prélèvement
-              ; après l’essai, elle empêche les prochains renouvellements et l’accès reste ouvert
-              jusqu’à la fin de la période payée. Les accès précédemment achetés par paiement unique
-              restent valables jusqu’à leur échéance initiale.
+              , bouton « Résilier mon abonnement », qui ouvre directement le formulaire de
+              résiliation du portail de paiement sécurisé Stripe. La date de fin d’accès est
+              affichée avant confirmation. Une résiliation pendant l’essai évite le premier
+              prélèvement ; après l’essai, elle empêche les prochains renouvellements et l’accès
+              reste ouvert jusqu’à la fin de la période payée. Les accès précédemment achetés par
+              paiement unique restent valables jusqu’à leur échéance initiale.
             </p>
           </TermsSection>
 

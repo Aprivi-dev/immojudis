@@ -79,9 +79,9 @@ export function AccountPage() {
         ) : null}
         <BillingActions className="mt-4" hideHelper />
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          Le bouton ouvre le portail sécurisé Stripe : vous y changez de carte, téléchargez vos
-          factures et résiliez à tout moment. La résiliation prend effet à la fin de la période
-          payée.
+          « Gérer mon abonnement » ouvre le portail sécurisé Stripe : vous y changez de carte et
+          téléchargez vos factures. « Résilier mon abonnement » ouvre directement le formulaire de
+          résiliation, à tout moment. La résiliation prend effet à la fin de la période payée.
         </p>
       </section>
 

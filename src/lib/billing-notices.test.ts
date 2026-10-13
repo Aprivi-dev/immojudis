@@ -14,7 +14,7 @@ describe("buildPaymentFailedMessage", () => {
     expect(message.text).toContain("pendant 7 jours");
     expect(message.text).toContain("le 15 octobre 2026");
     expect(message.text).toContain("Montant de l’abonnement : 29 € TTC / mois");
-    expect(message.text).toContain("Gérer mon abonnement");
+    expect(message.text).toContain("Résilier mon abonnement");
     expect(message.text).toContain("L’équipe Immojudis");
     expect(message.text).toContain("https://immojudis.com/compte");
     expect(message.html).toContain('href="https://immojudis.com/compte"');
@@ -45,7 +45,7 @@ describe("buildTrialEndingMessage", () => {
     expect(message.text).toContain(
       "le premier paiement est prélevé le 20 octobre 2026 : 29 € TTC / mois",
     );
-    expect(message.text).toContain("Gérer mon abonnement");
+    expect(message.text).toContain("Résilier mon abonnement");
     expect(message.text).toContain("https://immojudis.com/compte");
     expect(message.text).toContain("L’équipe Immojudis");
     expect(message.text).toContain("droit de rétractation de 14 jours");
