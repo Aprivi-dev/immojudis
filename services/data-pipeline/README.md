@@ -778,6 +778,25 @@ Chaque run affiche :
 - pourcentage de risques détectés par LLM ;
 - erreurs LLM.
 
+## Données personnelles dans les textes
+
+Les annonces nomment parfois un occupant, un locataire, un propriétaire ou un créancier particulier. Un compte
+connecté lit `description`, `raw_payload` (`source_description`, `source_blocks`, `llm_display_description`…),
+`observations` et `risks` directement dans la base : le texte stocké doit donc être propre.
+
+- `src/personal_data.py` remplace le nom d'une personne physique par un rôle (« occupés par un locataire »,
+  « À la requête du créancier poursuivant »), retire la date et le lieu de naissance et l'adresse « demeurant… »,
+  sans toucher aux communes, rues, tribunaux, études ni sociétés. Son miroir TypeScript est
+  `src/lib/personal-data-filter.ts` ; les deux sont gardés identiques par
+  `tests/fixtures/personal_data_filter_cases.json`, exécuté par pytest et par vitest.
+- La collecte l'applique à l'écriture (`redact_storage_row` dans `supabase_client.py` et `sale_row_builders.py`,
+  extraits des risques compris) : le texte en mémoire, les empreintes et l'extraction restent ceux de la source.
+  Les prompts (`prompts.py`) interdisent en plus au modèle de reproduire ces données.
+- Réparer les lignes écrites avant (ventes à venir) : `python -m src.redact_personal_data` compte seulement (lecture
+  seule, ni texte ni nom dans la sortie) ; `--check` sort en code 1 s'il reste des lignes ; `--apply` écrit sous le
+  verrou d'écriture du catalogue. Le workflow « Recompute Existing Sales » les rattraperait aussi, mais refait
+  toute la normalisation.
+
 ## Tests
 
 ```bash

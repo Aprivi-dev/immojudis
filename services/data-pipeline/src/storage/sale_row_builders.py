@@ -9,6 +9,7 @@ from typing import Any
 
 from src.admission import quarantine_reason
 from src.models import AuctionSale
+from src.personal_data import redact_personal_text, redact_storage_row
 from src.storage.column_sets import JUDICIAL_SALE_COLUMNS, PROPERTY_COLUMNS
 
 
@@ -45,7 +46,7 @@ def _property_rows_for_sales(
         row["source_urls"] = _normalized_source_urls(sale, data)
         row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
         row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
-        rows.append(row)
+        rows.append(redact_storage_row(row))
     return rows
 
 
@@ -78,7 +79,7 @@ def _judicial_sale_rows_for_sales(
         row["quality_flags"] = data.get("quality_flags") if isinstance(data.get("quality_flags"), list) else []
         row["raw_payload"] = data.get("raw_payload") if isinstance(data.get("raw_payload"), dict) else {}
         row["last_seen_at"] = now if refresh_last_seen else data.get("last_seen_at") or now
-        rows.append(row)
+        rows.append(redact_storage_row(row))
     return rows
 
 
@@ -117,7 +118,7 @@ def _public_occurrence_row(occurrence: dict[str, object]) -> dict[str, object]:
         "document_label": occurrence.get("document_label"),
         "document_type": occurrence.get("document_type"),
         "page_number": occurrence.get("page_number"),
-        "excerpt": occurrence["excerpt"],
+        "excerpt": redact_personal_text(occurrence["excerpt"]),
         "confidence": occurrence.get("confidence"),
         "detector": occurrence.get("detector"),
         "detector_version": occurrence.get("detector_version"),
