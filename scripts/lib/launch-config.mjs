@@ -7,7 +7,7 @@
  *
  * `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true` turns the legal and MFA errors into loud
  * warnings, so a deployment is not blocked before the owner has the values. A
- * missing canonical origin always blocks (see `blockingLaunchProblems`).
+ * missing or unusable canonical origin always blocks (see `blockingLaunchProblems`).
  */
 
 /** Keep in sync with REQUIRED_PUBLISHER_FIELDS in src/lib/legal-documents.ts (tested). */
@@ -31,6 +31,22 @@ export const EXPLICIT_SITE_URL_ENV_NAMES = [
   "NEXT_PUBLIC_APP_URL",
   "APP_URL",
 ];
+
+/**
+ * Same test as `isFilled` in src/lib/site-url.ts, which `resolveSiteOrigin` uses to pick the
+ * canonical origin: the first variable (in `EXPLICIT_SITE_URL_ENV_NAMES` order) whose value is
+ * not blank. The guard must judge exactly the value the site will resolve, so a test compares
+ * both. (The script is plain .mjs and cannot import the TypeScript module.)
+ */
+function isFilled(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/** The raw value `resolveSiteOrigin` would use in production, with the variable it comes from. */
+export function explicitSiteUrl(env) {
+  const name = EXPLICIT_SITE_URL_ENV_NAMES.find((candidate) => isFilled(env[candidate]));
+  return name ? { name, raw: env[name].trim() } : null;
+}
 
 export const ESCAPE_HATCH = "ALLOW_INCOMPLETE_LAUNCH_CONFIG";
 
@@ -81,15 +97,56 @@ export function productionLaunchProblems(env) {
   return problems;
 }
 
+/** Host names that only exist on the machine that serves them. */
+function isLocalHostname(hostname) {
+  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    /^127(\.\d{1,3}){3}$/.test(host)
+  );
+}
+
 /**
- * Problems the escape hatch cannot waive. Without an explicit origin, canonical
- * URLs, robots.txt and the sitemap of production would point to localhost.
+ * Problems the escape hatch cannot waive. Without a usable explicit origin, canonical URLs,
+ * robots.txt and the sitemap of production would point to localhost, to a placeholder or to
+ * plain http. The value judged is the one `resolveSiteOrigin` resolves (first non-blank
+ * variable), not "any variable that looks valid": `SITE_URL=placeholder` with a valid
+ * `APP_URL` makes the site use `https://placeholder`.
  */
 export function blockingLaunchProblems(env) {
-  if (EXPLICIT_SITE_URL_ENV_NAMES.some((name) => !isMissingValue(env[name]))) return [];
-  return [
-    `Aucune origine canonique explicite : définir ${EXPLICIT_SITE_URL_ENV_NAMES.join(", ")} (VERCEL_URL ne compte pas : elle change à chaque déploiement).`,
-  ];
+  const configured = explicitSiteUrl(env);
+  if (!configured) {
+    return [
+      `Aucune origine canonique explicite : définir ${EXPLICIT_SITE_URL_ENV_NAMES.join(", ")} (VERCEL_URL ne compte pas : elle change à chaque déploiement).`,
+    ];
+  }
+  const { name, raw } = configured;
+  if (isMissingValue(raw)) {
+    return [
+      `Origine canonique fictive : ${name} vaut « ${raw} » et c'est cette valeur que le site utiliserait (les variables suivantes sont ignorées).`,
+    ];
+  }
+  let url;
+  try {
+    url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
+  } catch {
+    return [`Origine canonique invalide : ${name} vaut « ${raw} ».`];
+  }
+  const problems = [];
+  if (isLocalHostname(url.hostname)) {
+    problems.push(
+      `Origine canonique locale : ${name} vaut « ${raw} » ; la production ne peut pas publier des URL en localhost.`,
+    );
+  }
+  if (url.protocol !== "https:") {
+    problems.push(
+      `Origine canonique en ${url.protocol.replace(":", "")} : ${name} vaut « ${raw} » ; la production doit être en https://.`,
+    );
+  }
+  return problems;
 }
 
 /**
@@ -123,7 +180,7 @@ export function evaluateProductionLaunchConfig(env) {
       "[env] Configuration de lancement incomplète : le build de production est bloqué.",
       ...problems.map((problem) => `[env]   - ${problem}`),
       blocking.length
-        ? `[env] L'origine canonique ne peut pas être contournée par ${ESCAPE_HATCH} : définir SITE_URL dans Vercel.`
+        ? `[env] L'origine canonique ne peut pas être contournée par ${ESCAPE_HATCH} : définir SITE_URL (https, domaine public) dans Vercel.`
         : `[env] Renseigner ces variables dans Vercel, ou définir ${ESCAPE_HATCH}=true pour ne recevoir que des avertissements (déploiement non conforme).`,
     ],
     warnings: [],

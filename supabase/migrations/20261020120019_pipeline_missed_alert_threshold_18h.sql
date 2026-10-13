@@ -10,7 +10,8 @@ set local lock_timeout = '5s';
 -- the alert would open at every cycle. Raise the threshold to 18 hours, which
 -- leaves a real margin before a missed cycle is reported. In-place body patch of
 -- the latest observe_autonomous_pipeline(timestamptz) definition, like the
--- previous scheduler migrations; the invariant is checked by
+-- previous scheduler migrations, idempotent (an observer already at 18 hours is a
+-- no-op); the invariant is checked by
 -- services/data-pipeline/tests/test_pipeline_cadence_invariants.py.
 do $patch$
 declare
@@ -19,9 +20,23 @@ declare
   );
   old_threshold constant text := $old$) < p_now - interval '12 hours';$old$;
   new_threshold constant text := $new$) < p_now - interval '18 hours';$new$;
+  old_count integer;
+  new_count integer;
 begin
-  if (length(definition) - length(replace(definition, old_threshold, '')))
-       / length(old_threshold) <> 1 then
+  old_count := (length(definition) - length(replace(definition, old_threshold, '')))
+    / length(old_threshold);
+  new_count := (length(definition) - length(replace(definition, new_threshold, '')))
+    / length(new_threshold);
+
+  -- Already patched (second application, or a database rebuilt with the 18-hour observer):
+  -- nothing to do, and this must not fail the whole migration run.
+  if old_count = 0 and new_count = 1 then
+    raise notice 'Missed-inventory alert threshold is already 18 hours; nothing to patch.';
+    return;
+  end if;
+
+  -- Neither the 12-hour nor the 18-hour threshold, or an ambiguous body: refuse to guess.
+  if old_count <> 1 or new_count <> 0 then
     raise exception using
       errcode = '55000',
       message = 'Unexpected missed-inventory alert threshold; refusing 18-hour threshold patch.';

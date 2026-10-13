@@ -24,7 +24,12 @@ import {
   startAnalyseCheckout,
   updateOfferOpeningNotification,
 } from "@/lib/client-billing";
-import { hasLiveStripeSubscription, type PlanBilling, type PlanCode } from "@/lib/plans";
+import {
+  hasLiveStripeSubscription,
+  pastDueGraceEnd,
+  type PlanBilling,
+  type PlanCode,
+} from "@/lib/plans";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import {
   ANALYSIS_RECURRING_LABEL,
@@ -264,7 +269,7 @@ export function BillingActions({
       : trialAvailable
         ? "Démarrer l’essai Analyse"
         : "Souscrire à Analyse";
-  const expiryLabel = formatAccessEnd(currentPeriodEnd);
+  const expiryLabel = formatAccessEnd(currentPeriodEnd, billing);
   const checkoutBanner = checkoutReturnBanner({
     checkoutReturn,
     signedIn: Boolean(userId),
@@ -360,7 +365,7 @@ export function BillingActions({
               </p>
               {openingRequested ? (
                 <p role="status" className="mt-3 font-medium">
-                  Votre demande est enregistrée : un email vous préviendra à l’ouverture.{" "}
+                  {OFFER_OPENING_CONSENT_TEXT}{" "}
                   <button
                     type="button"
                     onClick={() => changeOpeningRequest(false)}
@@ -531,7 +536,19 @@ function checkoutReturnBanner({
   };
 }
 
-function formatAccessEnd(value: string | null): string | null {
+/**
+ * End of access shown on the portal button.  For a renewal that failed (`past_due`),
+ * `current_period_end` holds the start of the unpaid period (already past): access
+ * actually ends with the grace period, computed as in `plans.ts`.
+ */
+function formatAccessEnd(
+  currentPeriodEnd: string | null,
+  billing: Pick<PlanBilling, "status" | "graceEndsAt"> | null = null,
+): string | null {
+  const value =
+    billing?.status === "past_due"
+      ? (billing.graceEndsAt ?? pastDueGraceEnd(currentPeriodEnd))
+      : currentPeriodEnd;
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;

@@ -11,8 +11,14 @@ function adjudicationStatisticsEnabled(): boolean {
   return process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true";
 }
 
+// The page is rendered ahead of time and then refreshed by Next.js. Without an explicit value a
+// render made during an outage (empty list, no figures) would be kept until the next deploy.
+// 5 minutes: same delay as PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS (a test checks it; Next.js
+// wants a literal here). The courts themselves stay cached for an hour in the data cache.
+export const revalidate = 300;
+
 export async function generateMetadata(): Promise<Metadata> {
-  const publicActivity = await loadPublicTribunalActivity();
+  const activity = await loadPublicTribunalActivity();
   const adjudication = adjudicationStatisticsEnabled();
   return {
     title: "Ventes judiciaires à venir par tribunal",
@@ -20,14 +26,19 @@ export async function generateMetadata(): Promise<Metadata> {
       ? "Ventes judiciaires à venir, prochaines audiences et mises à prix tribunal par tribunal ; prix d’adjudication et résultats avec l’offre Analyse."
       : "Ventes judiciaires à venir, prochaine audience et mise à prix médiane des biens annoncés, tribunal judiciaire par tribunal judiciaire.",
     alternates: { canonical: "/tribunaux" },
-    // Without any court to list the page has nothing of its own to offer a search engine.
+    // Without any court to list the page has nothing of its own to offer a search engine. A read
+    // error says nothing about the courts: the page stays indexable, and the short `revalidate`
+    // above keeps that render from lasting.
     robots:
-      publicActivity.length > 0 ? { index: true, follow: true } : { index: false, follow: true },
+      activity.status === "ok" && activity.items.length === 0
+        ? { index: false, follow: true }
+        : { index: true, follow: true },
   };
 }
 
 export default async function Page() {
-  const publicActivity = await loadPublicTribunalActivity();
+  const activity = await loadPublicTribunalActivity();
+  const publicActivity = activity.status === "ok" ? activity.items : [];
   const adjudication = adjudicationStatisticsEnabled();
   return (
     <TribunalJudicialActivityExplorer

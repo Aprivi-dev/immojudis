@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
@@ -10,9 +11,9 @@ type OpeningInsert = Database["public"]["Tables"]["offer_opening_notifications"]
  * and the version together: the version is stored with the timestamp as proof of
  * what the user agreed to, and the server refuses a request that echoes another one.
  */
-export const OFFER_OPENING_CONSENT_VERSION = "2026-10-20";
+export const OFFER_OPENING_CONSENT_VERSION = "2026-10-21";
 export const OFFER_OPENING_CONSENT_TEXT =
-  "Un seul email vous prévient le jour de l’ouverture des souscriptions. Aucune autre utilisation de votre adresse, et vous pouvez retirer votre demande à tout moment.";
+  "Votre demande est enregistrée : nous vous écrirons une seule fois à l’ouverture de l’offre Analyse. Vous pouvez la retirer à tout moment.";
 
 export const offerOpeningNotificationSchema = z.discriminatedUnion("enabled", [
   z.object({
@@ -48,16 +49,23 @@ export async function getOfferOpeningNotification({
   return { notification: rowToState(data) };
 }
 
+/**
+ * Writes go through the service client, after the route has authenticated the user:
+ * the `authenticated` role has no write grant on the table, so nobody can forge
+ * `consented_at`, `consent_text_version` or `notified_at` from the browser.
+ */
 export async function setOfferOpeningNotification({
   auth,
+  admin,
   input,
   now = new Date(),
 }: {
-  auth: SupabaseAuthContext;
+  auth: Pick<SupabaseAuthContext, "userId">;
+  admin: SupabaseClient<Database>;
   input: OfferOpeningNotificationInput;
   now?: Date;
 }): Promise<OfferOpeningNotificationResponse> {
-  const { data: current, error: readError } = await auth.supabase
+  const { data: current, error: readError } = await admin
     .from("offer_opening_notifications")
     .select("*")
     .eq("user_id", auth.userId)
@@ -71,7 +79,7 @@ export async function setOfferOpeningNotification({
   });
   if (!patch) return { notification: rowToState(current) };
 
-  const { data, error } = await auth.supabase
+  const { data, error } = await admin
     .from("offer_opening_notifications")
     .upsert({ user_id: auth.userId, ...patch }, { onConflict: "user_id" })
     .select("*")

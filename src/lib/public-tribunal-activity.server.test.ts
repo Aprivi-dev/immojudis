@@ -37,10 +37,23 @@ describe("loadPublicTribunalActivity", () => {
     mocks.rpc.mockResolvedValue({ data: [ROW], error: null });
     const { loadPublicTribunalActivity } = await import("./public-tribunal-activity.server");
 
-    const items = await loadPublicTribunalActivity(1_000);
+    const result = await loadPublicTribunalActivity(1_000);
 
+    expect(result.status).toBe("ok");
+    const items = result.status === "ok" ? result.items : [];
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ code: "pau", upcomingCount: 7 });
+  });
+
+  it("tells an empty list from a failed read", async () => {
+    mocks.rpc.mockResolvedValue({ data: [], error: null });
+    const { loadPublicTribunalActivity } = await import("./public-tribunal-activity.server");
+    expect(await loadPublicTribunalActivity(1_000)).toEqual({ status: "ok", items: [] });
+
+    vi.resetModules();
+    mocks.rpc.mockResolvedValue({ data: null, error: new Error("database down") });
+    const failing = await import("./public-tribunal-activity.server");
+    expect(await failing.loadPublicTribunalActivity(1_000)).toEqual({ status: "error" });
   });
 
   it("remembers a failure for a few minutes instead of asking the database again", async () => {
@@ -48,11 +61,11 @@ describe("loadPublicTribunalActivity", () => {
     const { loadPublicTribunalActivity, PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS } =
       await import("./public-tribunal-activity.server");
 
-    expect(await loadPublicTribunalActivity(10_000)).toEqual([]);
+    expect(await loadPublicTribunalActivity(10_000)).toEqual({ status: "error" });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
 
     // Inside the window: no new call.
-    expect(await loadPublicTribunalActivity(10_000 + 60_000)).toEqual([]);
+    expect(await loadPublicTribunalActivity(10_000 + 60_000)).toEqual({ status: "error" });
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
 
     // After the window the database is asked again, and a success clears the memory.
@@ -61,6 +74,7 @@ describe("loadPublicTribunalActivity", () => {
       10_000 + PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS,
     );
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
-    expect(recovered).toHaveLength(1);
+    expect(recovered.status).toBe("ok");
+    expect(recovered.status === "ok" ? recovered.items : []).toHaveLength(1);
   });
 });
