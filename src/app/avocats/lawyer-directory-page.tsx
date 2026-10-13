@@ -57,11 +57,11 @@ export function LawyerDirectoryPage({ search }: { search: DirectorySearch }) {
           <div className="mt-7 grid gap-7 lg:grid-cols-[minmax(0,1fr)_25rem] lg:items-end">
             <div>
               <h1 className="max-w-4xl font-display text-5xl font-medium leading-[0.98] text-brand-navy sm:text-6xl">
-                Avocats en droit immobilier
+                Avocats inscrits au barreau
               </h1>
               <p className="mt-5 max-w-3xl text-base leading-relaxed text-brand-navy/70 sm:text-lg">
-                Consultez les avocats du barreau compétent. Les profils partenaires sont signalés
-                séparément et bénéficient d'une visibilité renforcée.
+                Consultez les avocats du barreau compétent. Les profils bénéficiant d'une mise en
+                avant payante sont signalés séparément.
               </p>
             </div>
 
@@ -189,7 +189,7 @@ function DirectoryResults({
             <div>
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-gold-text">
                 <Megaphone className="h-4 w-4" aria-hidden />
-                Profils sponsorisés
+                Mise en avant payante
               </div>
               <h3
                 id="partner-lawyers-title"
@@ -223,7 +223,7 @@ function DirectoryResults({
               id="directory-lawyers-title"
               className="mt-2 font-display text-3xl font-semibold text-brand-navy"
             >
-              Spécialistes en droit immobilier
+              Avocats de l'annuaire
             </h3>
           </div>
           <p className="text-sm text-brand-navy/65">
@@ -268,7 +268,7 @@ function DirectoryResults({
         ) : (
           <div className="rounded-lg border border-dashed border-brand-navy/20 bg-white/60 p-6 text-sm leading-relaxed text-brand-navy/65">
             Aucune fiche standard n'est encore publiée pour ce barreau. Les profils partenaires
-            affichés ci-dessus restent identifiés comme sponsorisés.
+            affichés ci-dessus restent identifiés comme bénéficiant d'une mise en avant payante.
           </div>
         )}
       </section>
@@ -320,7 +320,7 @@ function LawyerCard({
         <div className="min-w-0">
           {sponsored ? (
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-gold-text">
-              Profil sponsorisé
+              Mise en avant payante
             </p>
           ) : lawyer.source === "cnb" ? (
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">

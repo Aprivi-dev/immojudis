@@ -12,11 +12,7 @@ import {
   Text,
   render,
 } from "react-email";
-import {
-  containsInformationAgentAccountInvitation,
-  INFORMATION_AGENT_ACCOUNT_INVITATION_CTA,
-  INFORMATION_AGENT_ACCOUNT_INVITATION_TEXT,
-} from "../src/lib/information-agent-email-template";
+import { containsInformationAgentAccountInvitation } from "../src/lib/information-agent-email-template";
 import {
   INFORMATION_AGENT_PURPOSE_STATEMENT,
   type InformationAgentLegalFooter,
@@ -31,14 +27,9 @@ export type InformationRequestEmailProps = {
   contributionUrl?: string;
   /** GDPR art. 14 information and one-click objection link, mandatory for real sends. */
   legalFooter?: InformationAgentLegalFooter;
-  /**
-   * Invitation sobre à créer un compte professionnel pour déposer d'autres annonces (choix du
-   * propriétaire, 11 octobre 2026). Rendue par le gabarit, jamais par le texte éditable.
-   */
-  accountInvitationUrl?: string | null;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v6";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v7";
 
 type BodyBlock =
   | { kind: "paragraph"; lines: string[] }
@@ -63,7 +54,6 @@ export function InformationRequestEmail({
   appUrl = "https://immojudis.com",
   contributionUrl,
   legalFooter,
-  accountInvitationUrl,
 }: InformationRequestEmailProps) {
   const blocks = parseBodyBlocks(bodyText);
   const replyHref = `mailto:${replyTo}`;
@@ -117,12 +107,6 @@ export function InformationRequestEmail({
                   Le dépôt reste soumis à une vérification avant toute publication.
                 </Text>
               </Section>
-            ) : null}
-            {accountInvitationUrl ? (
-              <Text style={styles.invitation}>
-                {INFORMATION_AGENT_ACCOUNT_INVITATION_TEXT}{" "}
-                <Link href={accountInvitationUrl}>{INFORMATION_AGENT_ACCOUNT_INVITATION_CTA}</Link>
-              </Text>
             ) : null}
           </Section>
 
@@ -339,14 +323,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   hr: { margin: "18px 0", borderColor: BRAND.line },
   origin: { margin: "10px 0 0", color: BRAND.muted, fontSize: "12px", lineHeight: "18px" },
-  invitation: {
-    margin: "4px 0 0",
-    paddingTop: "12px",
-    borderTop: `1px solid ${BRAND.line}`,
-    color: BRAND.muted,
-    fontSize: "13px",
-    lineHeight: "19px",
-  },
   paragraph: { margin: "0 0 14px", color: "#303A50", fontSize: "15px", lineHeight: "21px" },
   salePanel: {
     margin: "2px 0 16px",

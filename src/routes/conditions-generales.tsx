@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { createFileRoute, Link } from "@/lib/router-compat";
 import { LEGAL_DOCUMENTS, legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
 
 export const Route = createFileRoute("/conditions-generales")({
   head: () => ({
@@ -59,12 +60,14 @@ export function TermsPage() {
             <p>
               Découverte fournit gratuitement les informations essentielles accessibles après
               création d’un compte, avec trois favoris au maximum. Analyse est un abonnement aux
-              outils Premium : mise plafond, estimation des travaux, valeur du bien et autres
-              analyses présentées sur la page d’offre. Un essai gratuit de {ANALYSIS_TRIAL_DAYS}{" "}
-              jours nécessite l’enregistrement d’une carte bancaire auprès de Stripe. À son terme,
-              l’abonnement devient payant et se renouvelle automatiquement, sauf résiliation avant
-              la fin de l’essai. Les conditions d’éligibilité et le tarif applicable sont présentés
-              avant la confirmation de la souscription.
+              outils d’analyse : enchère plafond, estimation des travaux, valeur du bien et autres
+              analyses présentées sur la page d’offre. L’abonnement est mensuel, sans engagement de
+              durée, et reconduit chaque mois jusqu’à résiliation. Lorsqu’il est proposé (une seule
+              fois par compte), un essai gratuit de {ANALYSIS_TRIAL_DAYS} jours nécessite
+              l’enregistrement d’une carte bancaire auprès de Stripe. À son terme, l’abonnement
+              devient payant et se renouvelle automatiquement, sauf résiliation avant la fin de
+              l’essai. Les conditions d’éligibilité et le tarif applicable sont présentés avant la
+              confirmation de la souscription.
             </p>
           </TermsSection>
 
@@ -96,11 +99,16 @@ export function TermsPage() {
 
           <TermsSection title="4. Prix et paiement">
             <p>
-              {resolveAnalysisOfferLabel()}. Le montant TTC et la périodicité sont précisés dans le
-              récapitulatif avant toute souscription. Après l’essai, Stripe prélève ce montant à
-              chaque échéance tant que l’abonnement n’est pas résilié. Immojudis ne reçoit ni ne
-              conserve le numéro complet de la carte. Un paiement refusé peut entraîner la
-              suspension de l’accès Premium ; le compte Découverte reste accessible.
+              Prix de l’abonnement Analyse : {resolveAnalysisOfferLabel()}, précédé d’un essai
+              gratuit de {ANALYSIS_TRIAL_DAYS} jours lorsque celui-ci est proposé. Le montant TTC et
+              la périodicité sont précisés dans le récapitulatif avant toute souscription. Après
+              l’essai, Stripe prélève ce montant à chaque échéance tant que l’abonnement n’est pas
+              résilié. Immojudis ne reçoit ni ne conserve le numéro complet de la carte.
+            </p>
+            <p className="mt-3">
+              En cas d’échec de paiement, l’accès Analyse reste ouvert pendant {PAST_DUE_GRACE_DAYS}{" "}
+              jours à compter de la fin de la période payée, le temps de mettre à jour votre moyen
+              de paiement ; il est ensuite suspendu. Le compte Découverte reste accessible.
             </p>
           </TermsSection>
 
@@ -112,13 +120,15 @@ export function TermsPage() {
               fonctions ; Immojudis met alors en œuvre les moyens raisonnables de rétablissement.
             </p>
             <p className="mt-3">
-              Le client peut résilier depuis le bouton de gestion de son abonnement sur la page{" "}
-              <Link to="/accompagnement" className="text-gold underline">
-                Offres
+              Résiliation. Vous pouvez résilier à tout moment, gratuitement, depuis la page{" "}
+              <Link to="/compte" className="text-gold underline">
+                Mon compte
               </Link>
-              . Le portail Stripe indique la date de fin d’accès et confirme la résiliation. Une
-              résiliation pendant l’essai évite le premier prélèvement ; après l’essai, elle empêche
-              les prochains renouvellements. Les accès précédemment achetés par paiement unique
+              , bouton « Gérer mon abonnement Analyse », qui ouvre le portail de paiement sécurisé
+              Stripe où l’abonnement se résilie. Le portail indique la date de fin d’accès et
+              confirme la résiliation. Une résiliation pendant l’essai évite le premier prélèvement
+              ; après l’essai, elle empêche les prochains renouvellements et l’accès reste ouvert
+              jusqu’à la fin de la période payée. Les accès précédemment achetés par paiement unique
               restent valables jusqu’à leur échéance initiale.
             </p>
           </TermsSection>
@@ -146,7 +156,15 @@ export function TermsPage() {
             <WithdrawalForm />
           </TermsSection>
 
-          <TermsSection title="7. Nature des analyses et responsabilité">
+          <TermsSection title="7. Garantie légale de conformité">
+            <p>
+              Garantie légale de conformité. Vous bénéficiez de la garantie légale de conformité des
+              contenus et services numériques (articles L. 224-25-12 et suivants du code de la
+              consommation).
+            </p>
+          </TermsSection>
+
+          <TermsSection title="8. Nature des analyses et responsabilité">
             <p>
               Immojudis fournit une aide à la lecture, sans conseil juridique, financier ou
               patrimonial individualisé. Le client doit vérifier les pièces officielles, faire la
@@ -156,7 +174,7 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="8. Compte et usages autorisés">
+          <TermsSection title="9. Compte et usages autorisés">
             <p>
               Le client maintient ses accès confidentiels et fournit des informations exactes. Sont
               interdits l’accès automatisé abusif, le contournement des quotas, la redistribution
@@ -166,7 +184,7 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="9. Données personnelles">
+          <TermsSection title="10. Données personnelles">
             <p>
               Les traitements nécessaires au compte, à la commande et au service sont décrits dans
               la politique de confidentialité. Les droits d’accès, portabilité, rectification,
@@ -175,7 +193,7 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="10. Réclamations, médiation et droit applicable">
+          <TermsSection title="11. Réclamations, médiation et droit applicable">
             <p>
               Une réclamation préalable peut être adressée à {legalValue(publisher.contactEmail)} ou
               au {legalValue(publisher.contactPhone)}. En cas d’échec, le consommateur peut saisir

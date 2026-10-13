@@ -23,11 +23,11 @@ de TVA sont publiés lorsqu’ils sont applicables.
 
 Les versions et empreintes sont centralisées dans `src/lib/legal-documents.ts` :
 
-| Document         | Route                   | Version initiale Phase 6 |
-| ---------------- | ----------------------- | ------------------------ |
-| Mentions légales | `/legal`                | `2026-07-29.1`           |
-| CGVU             | `/conditions-generales` | `2026-07-29.1`           |
-| Confidentialité  | `/privacy`              | `2026-07-29.2`           |
+| Document         | Route                   | Version en vigueur (13/10/2026) |
+| ---------------- | ----------------------- | ------------------------------- |
+| Mentions légales | `/legal`                | `2026-07-29.1`                  |
+| CGVU             | `/conditions-generales` | `2026-10-13.1`                  |
+| Confidentialité  | `/privacy`              | `2026-10-13.1`                  |
 
 Toute modification substantielle crée une nouvelle version, une nouvelle empreinte et une date
 d’effet. Les empreintes correspondent aux sources des pages publiées et sont contrôlées par un test
@@ -35,8 +35,8 @@ automatique ; une acceptation antérieure n’est jamais réécrite.
 
 ## Commande Analyse
 
-Avant Stripe, l’utilisateur voit le produit, le prix TTC, la durée, l’absence de renouvellement et
-deux consentements distincts. Le bouton final porte la mention « Commander avec obligation de
+Avant Stripe, l’utilisateur voit le produit, le prix TTC, la périodicité mensuelle sans engagement de
+durée, le renouvellement jusqu’à résiliation, l’essai éventuel et deux consentements distincts. Le bouton final porte la mention « Commander avec obligation de
 paiement ».
 
 Chaque passage crée une ligne `commercial_acceptances` liée à la Checkout Session. Elle contient les

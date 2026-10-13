@@ -108,6 +108,6 @@ export function informationAgentLegalFooterLines(footer: InformationAgentLegalFo
   ];
 }
 
-/** Finalité et base légale ; l'opposition couvre aussi l'invitation à créer un compte. */
+/** Finalité et base légale ; l'email reste purement informatif, sans sollicitation commerciale. */
 export const INFORMATION_AGENT_PURPOSE_STATEMENT =
-  "Finalité et base légale : vous demander des informations sur cette vente et vous faire connaître notre service professionnel, dans notre intérêt légitime à fiabiliser l’annonce. Aucune autre sollicitation ne vous sera adressée pour ce motif pendant 30 jours ; le lien ci-dessous met fin à tout envoi.";
+  "Finalité et base légale : vous demander des informations sur cette vente, dans notre intérêt légitime à fiabiliser l’annonce. Aucune autre sollicitation ne vous sera adressée pour ce motif pendant 30 jours ; le lien ci-dessous met fin à tout envoi.";
