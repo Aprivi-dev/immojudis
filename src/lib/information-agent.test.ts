@@ -330,11 +330,12 @@ describe("supervised information agent", () => {
           expect(sent).toContain("Immojudis SAS");
           expect(sent).toContain("https://immojudis.example/privacy");
           expect(sent).toContain("https://immojudis.example/api/information-agent/opt-out?e=");
-          // Origine de l'adresse citée avec son lien, invitation sobre à créer un compte.
+          // Origine de l'adresse citée avec son lien ; aucune invitation à créer un compte.
           expect(sent).toContain("relevée sur une page publique (annuaire.example.test)");
           expect(sent).toContain("https://annuaire.example.test/me-dupont");
-          expect(sent).toContain("Créer un compte professionnel");
-          expect(sent).toContain("mode=professional");
+          expect(sent).not.toContain("compte professionnel");
+          expect(sent).not.toContain("mode=professional");
+          expect(sent).not.toContain("service professionnel");
           expect(emailMocks.sendResendEmail.mock.calls[0][0].message).toMatchObject({
             unsubscribeUrl: expect.stringContaining("/api/information-agent/opt-out?e="),
             oneClickUnsubscribe: true,

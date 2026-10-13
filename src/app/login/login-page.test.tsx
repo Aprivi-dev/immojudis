@@ -49,6 +49,9 @@ describe("login page", () => {
     mocks.search = { mode: "investor" };
     render(<LoginPage />);
     expect(screen.getByText(/En créant un compte, vous acceptez/)).toBeTruthy();
+    expect(
+      screen.getByText(/vous reconnaissez avoir pris connaissance de la/).textContent,
+    ).toContain("les conditions générales et vous reconnaissez avoir pris connaissance de la");
     expect(screen.getByRole("link", { name: "conditions générales" }).getAttribute("href")).toBe(
       "/conditions-generales",
     );

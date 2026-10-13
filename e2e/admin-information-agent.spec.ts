@@ -434,7 +434,6 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
             url: "https://annuaire.example.test/reviewed-contact",
             known: true,
           },
-          accountInvitation: true,
           fingerprint: "e".repeat(64),
         },
       });

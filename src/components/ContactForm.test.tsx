@@ -18,6 +18,19 @@ describe("ContactForm", () => {
     expect(screen.getByRole("button", { name: "Envoyer le message" })).toBeTruthy();
   });
 
+  it("informe sur le traitement des données avec les liens vers la politique et Mes droits", () => {
+    render(<ContactForm action={vi.fn()} />);
+    const notice = screen.getByText(/pour répondre à votre demande/);
+    expect(notice.textContent).toContain("Immojudis");
+    expect(notice.textContent).toContain("conservés le temps du traitement");
+    expect(
+      screen.getByRole("link", { name: "politique de confidentialité" }).getAttribute("href"),
+    ).toBe("/privacy");
+    expect(screen.getByRole("link", { name: "Mes droits" }).getAttribute("href")).toBe(
+      "/mes-droits",
+    );
+  });
+
   it("affiche l'erreur sous le champ concerné", async () => {
     const action = vi.fn(
       async (): Promise<ContactState> => ({
