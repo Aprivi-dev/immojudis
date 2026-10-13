@@ -92,6 +92,9 @@ jobs:
       # Secrets are not part of the job environment: the pip and apt steps
       # must not see them. Only the Python business steps below receive them.
       SOURCE_FETCH_RELAY_URL: ${{ vars.SOURCE_FETCH_RELAY_URL }}
+      # Merging duplicates already in the database stays off until the repository variable
+      # DEDUPE_RECONCILE_ENABLED is set to true (docs/runbooks/chantier-f-reparations-donnees.md).
+      DEDUPE_RECONCILE_ENABLED: ${{ vars.DEDUPE_RECONCILE_ENABLED || 'false' }}
       REPLICATE_MODEL: qwen/qwen3-7-plus
       PIPELINE_ENRICH_WORKERS: 2
       PIPELINE_LLM_WORKERS: 1
