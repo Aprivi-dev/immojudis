@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { fetchPublicSaleSummary, SALE_ID_PATTERN } from "@/lib/public-sale-summary";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
+import { loadWithdrawnSources } from "@/lib/withdrawn-sources";
 import type { AuctionSale } from "@/lib/types";
 
 export type PublicSaleLookup =
@@ -51,6 +52,8 @@ async function readPublicSale(
   client: NonNullable<ReturnType<typeof createPublicSupabaseClient>>,
   id: string,
 ): Promise<PublicSaleLookup> {
+  // Le contenu d'une source retirée (photo d'une vente fusionnée) ne sort pas, y compris côté serveur.
+  await loadWithdrawnSources(client);
   const summary = await fetchPublicSaleSummary(client, id);
   if (summary.kind === "found") return { status: "found", sale: summary.sale };
   if (summary.kind === "missing") return { status: "missing" };

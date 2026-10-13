@@ -96,6 +96,7 @@ from src.pdf_page_analysis import (
     is_decorative_edge_only_page as _is_decorative_edge_only_page,  # noqa: F401
 )
 from src.pdf_word_documents import extract_docx_document, extract_legacy_word_document
+from src.source_withdrawal import is_withdrawn_source_url
 from src.sources.cloud_transport import configured_transport
 from src.pdf_progress import PDF_TEXT_CACHE_VERSION, checkpoint_partial_pdf_progress, merge_pdf_cache, restore_pdf_page_caches_from_manifest, stale_complete_document_urls
 from src.pdf_fact_scope import _clear_pdf_derived_source_description, _clear_pdf_fact_projections
@@ -439,6 +440,11 @@ def download_documents(
         if not url or document_type == "other" or url in seen_urls:
             continue
         seen_urls.add(url)
+        if is_withdrawn_source_url(url, str(settings.get("supabase_db_url") or "")):
+            # Pièce hébergée par une source retirée du catalogue (vente fusionnée) : on ne la télécharge pas.
+            # Rien n'est consigné comme « bloqué » : lever le retrait la remet dans la file.
+            LOGGER.info("Skipping document hosted by a withdrawn source %s", url)
+            continue
         if _is_robots_disallowed_licitor_document(url):
             LOGGER.info("Skipping robots-disallowed Licitor document %s", url)
             if stats is not None:

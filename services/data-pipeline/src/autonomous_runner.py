@@ -14,6 +14,7 @@ from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
+from src import source_withdrawal
 from src.config import load_settings
 from src.run_finalizer import register_run
 from src.source_health import SOURCE_WARNING_EXIT_CODE
@@ -391,6 +392,7 @@ def _run_document_reading(env: dict[str, str]) -> int:
 
 
 LICITOR_HISTORY_BUDGET_SECONDS = 330
+LICITOR_SOURCE = 'licitor'
 
 
 def _run_licitor_history_refresh(env: dict[str, str]) -> int:
@@ -407,6 +409,15 @@ def _run_licitor_history_refresh(env: dict[str, str]) -> int:
         return 1
 
 
+def _skip_withdrawn_run(db_url: str, run_id: str, source: str) -> None:
+    """Close a scheduled run of a withdrawn source as skipped, without running anything."""
+    print(f'Source {source} retirée du catalogue; scheduled run closed without collecting')
+    with _postgres_connect(db_url) as db:
+        db.execute("""update public.auction_runs set status='succeeded',finished_at=now(),updated_at=now(),
+            summary=coalesce(summary,'{}') || %s where id=%s""",
+            (Jsonb({'completion_status': 'skipped', 'skipped_reason': 'source_withdrawn'}), run_id))
+
+
 def execute(run_id: str) -> int:
     run_id = str(UUID(run_id))
     settings = load_settings()
@@ -421,6 +432,12 @@ def execute(run_id: str) -> int:
         print('Scheduled run already claimed, finished or invalid; nothing to execute')
         return 0
     source = row[0]
+    withdrawn = source_withdrawal.withdrawn_sources(db_url)
+    if source in withdrawn:
+        # Source retirée du catalogue entre le lancement et l'exécution : aucune requête, aucun
+        # échec, et finish_source n'est pas appelé (pas de recul, pas d'alerte « source manquée »).
+        _skip_withdrawn_run(db_url, run_id, source)
+        return 0
     register_run(run_id)
     env = {**os.environ, 'PIPELINE_AUTONOMOUS_RUN_ID':run_id, 'PIPELINE_ENRICHMENT_BUDGET_SECONDS':'1200', 'PIPELINE_ENRICHMENT_MAX_JOBS':'180', 'REPLICATE_CANCEL_AFTER':'5m',
            'CADASTRE_ENRICH_ENABLED':'false', 'DPE_ENRICH_ENABLED':'false',
@@ -453,7 +470,11 @@ def execute(run_id: str) -> int:
         code, failure = 1, str(exc)[:1000]
     worker_code = code
     reading_code = _run_document_reading(env) if source == 'enrichment-queue' and worker_code == 0 else None
-    licitor_history_code = _run_licitor_history_refresh(env) if source == 'enrichment-queue' else None
+    licitor_history_code = (
+        _run_licitor_history_refresh(env)
+        if source == 'enrichment-queue' and LICITOR_SOURCE not in withdrawn
+        else None
+    )
     # Exit 2 from src.main means "published, but an enabled source was empty or
     # failed": the run itself succeeded, so keep it succeeded and hand the
     # warning to the workflow instead of recording a worker failure.
@@ -470,6 +491,8 @@ def execute(run_id: str) -> int:
             summary["document_reading_exit_code"] = reading_code
         if licitor_history_code is not None:
             summary["licitor_history_exit_code"] = licitor_history_code
+        elif source == 'enrichment-queue' and LICITOR_SOURCE in withdrawn:
+            summary["licitor_history_skipped"] = "source_withdrawn"
         run_errors: dict[str, list[str]] = {}
         counts: dict[object, object] = {}
         exhausted = 0

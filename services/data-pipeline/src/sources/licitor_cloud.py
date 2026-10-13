@@ -14,6 +14,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 import psycopg
 
+from src import source_withdrawal
 from src.sources.common import RobotsRules, is_allowed_origin_url
 from src.sources.licitor import ALLOWED_ORIGINS
 from src.sources.licitor_cloud_store import CloudStore, LeaseLost
@@ -295,6 +296,10 @@ class CollectorHandler(BaseHTTPRequestHandler):
             return
         if os.environ.get("VERCEL_ENV") != "production":
             self.respond(409, {"ok": False, "error": "Collection is production-only"})
+            return
+        if source_withdrawal.is_source_withdrawn("licitor", os.environ.get("SUPABASE_DB_URL")):
+            # Fail closed: without the main database URL the switch cannot be read, so the source counts as withdrawn.
+            self.respond(409, {"ok": False, "error": "Source withdrawn from the catalogue"})
             return
         store = None
         try:
