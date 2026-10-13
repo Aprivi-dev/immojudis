@@ -22,13 +22,35 @@ describe("ContactForm", () => {
     render(<ContactForm action={vi.fn()} />);
     const notice = screen.getByText(/pour répondre à votre demande/);
     expect(notice.textContent).toContain("Immojudis");
-    expect(notice.textContent).toContain("conservés le temps du traitement");
+    expect(notice.textContent).toContain(
+      "conservés 12 mois après le dernier échange, puis supprimés ; en cas de litige ou de réclamation, le temps de la procédure puis, en archive à accès restreint, 5 ans au plus",
+    );
     expect(
       screen.getByRole("link", { name: "politique de confidentialité" }).getAttribute("href"),
     ).toBe("/privacy");
     expect(screen.getByRole("link", { name: "Mes droits" }).getAttribute("href")).toBe(
       "/mes-droits",
     );
+  });
+
+  it("propose d'écrire à l'adresse de contact, sans compte, à côté de Mes droits", () => {
+    vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "contact@immojudis.example");
+    render(<ContactForm action={vi.fn()} />);
+    const notice = screen.getByText(/pour répondre à votre demande/);
+    expect(notice.textContent).toContain(
+      "Mes droits. Sans compte, écrivez à contact@immojudis.example",
+    );
+    expect(
+      screen.getByRole("link", { name: "contact@immojudis.example" }).getAttribute("href"),
+    ).toBe("mailto:contact@immojudis.example");
+    vi.unstubAllEnvs();
+  });
+
+  it("n'invente pas d'adresse quand le contact légal n'est pas renseigné", () => {
+    vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "");
+    render(<ContactForm action={vi.fn()} />);
+    expect(screen.queryByText(/Sans compte, écrivez à/)).toBeNull();
+    vi.unstubAllEnvs();
   });
 
   it("affiche l'erreur sous le champ concerné", async () => {

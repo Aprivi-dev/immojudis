@@ -103,10 +103,19 @@ export function informationAgentLegalFooterLines(footer: InformationAgentLegalFo
       ? `${footer.addressOrigin} Annonce : ${footer.addressOriginUrl}`
       : footer.addressOrigin,
     INFORMATION_AGENT_PURPOSE_STATEMENT,
+    INFORMATION_AGENT_RETENTION_STATEMENT,
     `Politique de confidentialité et vos droits : ${footer.privacyUrl}`,
     `Ne plus être contacté (un clic) : ${footer.optOutUrl}`,
   ];
 }
+
+/**
+ * Durée de conservation annoncée au destinataire (art. 14(2)(a) RGPD) : les échanges d'une
+ * enquête sans activité sont supprimés après 24 mois (matrice de conservation,
+ * `docs/data-retention-matrix.md`).
+ */
+export const INFORMATION_AGENT_RETENTION_STATEMENT =
+  "Votre adresse et nos échanges sont conservés au plus 24 mois sans activité.";
 
 /** Finalité et base légale ; l'email reste purement informatif, sans sollicitation commerciale. */
 export const INFORMATION_AGENT_PURPOSE_STATEMENT =

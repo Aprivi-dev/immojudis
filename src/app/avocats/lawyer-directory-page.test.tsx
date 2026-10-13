@@ -30,6 +30,7 @@ function profile(overrides: Partial<LawyerDirectoryProfile>): LawyerDirectoryPro
     coverageLabels: [],
     matchingLabel: null,
     isSponsored: false,
+    placement: null,
     source: "immojudis",
     oathDate: null,
     languages: [],
@@ -69,7 +70,12 @@ describe("annuaire des avocats", () => {
 
   it("affiche « Mise en avant payante » sur les profils sponsorisés seulement", async () => {
     renderDirectory([
-      profile({ id: "a", displayName: "Maître Sponsorisé", isSponsored: true }),
+      profile({
+        id: "a",
+        displayName: "Maître Sponsorisé",
+        isSponsored: true,
+        placement: "active",
+      }),
       profile({ id: "b", displayName: "Maître Standard" }),
     ]);
     const sponsored = (await screen.findByText("Maître Sponsorisé")).closest("article");
@@ -78,5 +84,41 @@ describe("annuaire des avocats", () => {
     expect(standard).not.toBeNull();
     expect(within(sponsored as HTMLElement).getByText("Mise en avant payante")).toBeTruthy();
     expect(within(standard as HTMLElement).queryByText("Mise en avant payante")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/partenaire/i);
+  });
+
+  it("n'appelle pas « payante » une mise en avant encore en essai", async () => {
+    renderDirectory([
+      profile({ id: "t", displayName: "Maître Essai", isSponsored: true, placement: "trial" }),
+    ]);
+    const trial = (await screen.findByText("Maître Essai")).closest("article") as HTMLElement;
+    expect(within(trial).getByText("Mise en avant en période d'essai")).toBeTruthy();
+    expect(within(trial).queryByText("Mise en avant payante")).toBeNull();
+    expect(screen.getByText("Mise en avant (essai ou payante)")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("rémunèrent Immojudis");
+  });
+
+  it("décrit le classement réel des avocats", async () => {
+    renderDirectory([profile({ id: "a" })]);
+    const heading = await screen.findByRole("heading", {
+      name: "Comment sont classés les avocats ?",
+    });
+    const text = heading.parentElement?.textContent ?? "";
+    expect(text).toContain("barreau");
+    expect(text).toContain("niveau de priorité attribué par Immojudis");
+    expect(text).toContain("ordre alphabétique");
+    expect(text).toContain("annuaire officiel du CNB");
+  });
+
+  it("n'affiche pas plus de trois domaines d'intervention par avocat", async () => {
+    renderDirectory([
+      profile({ id: "a", practiceTags: ["un", "deux", "trois", "quatre", "cinq"] }),
+    ]);
+    const tags = await screen.findByRole("list", { name: "Domaines d'intervention" });
+    expect(
+      within(tags)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Un", "Deux", "Trois"]);
   });
 });

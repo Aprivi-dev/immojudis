@@ -544,7 +544,7 @@ export function LoginPage() {
                 </button>
                 {isSignup ? (
                   <p className="text-center text-xs leading-relaxed text-muted-foreground">
-                    En créant un compte, vous acceptez les{" "}
+                    En cliquant sur « {copy.submit} », vous acceptez les{" "}
                     <Link href="/conditions-generales" className="underline">
                       conditions générales
                     </Link>{" "}

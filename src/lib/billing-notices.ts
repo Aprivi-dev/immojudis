@@ -43,6 +43,8 @@ export function buildPaymentFailedMessage({
     ? `Prochain prélèvement automatique : le ${dateFormat.format(new Date(nextAttemptAt * 1000))}.`
     : "Stripe retentera automatiquement le prélèvement dans les prochains jours.";
   const amount = `Montant de l’abonnement : ${priceLabel}.`;
+  // Same wording as § 4 of the conditions générales (`PAST_DUE_GRACE_DAYS`).
+  const grace = `Votre accès Analyse reste ouvert ${PAST_DUE_GRACE_DAYS} jours à compter de la fin de la période payée pour vous permettre de mettre à jour votre moyen de paiement ; la mensualité reste due. Passé ce délai sans paiement, l’accès est suspendu. Votre compte Découverte et vos données restent accessibles.`;
   const cancel =
     "Si vous ne souhaitez pas poursuivre, vous pouvez résilier à tout moment depuis la page « Mon compte », bouton « Résilier mon abonnement ».";
   const lines = [
@@ -50,8 +52,8 @@ export function buildPaymentFailedMessage({
     "",
     "Le dernier paiement de votre abonnement Immojudis Analyse n'a pas abouti.",
     amount,
-    `Votre accès reste ouvert pendant ${PAST_DUE_GRACE_DAYS} jours après la fin de la période payée.`,
     retry,
+    grace,
     "",
     "Pour éviter toute interruption, mettez à jour votre moyen de paiement :",
     accountUrl,
@@ -66,7 +68,7 @@ export function buildPaymentFailedMessage({
     to,
     subject: "Votre paiement Immojudis n'a pas abouti",
     text: lines.join("\n"),
-    html: `<p>Bonjour,</p><p>Le dernier paiement de votre abonnement Immojudis Analyse n'a pas abouti. ${escapeHtml(amount)} Votre accès reste ouvert pendant ${PAST_DUE_GRACE_DAYS} jours après la fin de la période payée.</p><p>${escapeHtml(retry)}</p><p><a href="${escapeHtml(accountUrl)}">Mettre à jour mon moyen de paiement</a></p><p>${escapeHtml(cancel)}</p><p>Cordialement,<br />L’équipe Immojudis</p>`,
+    html: `<p>Bonjour,</p><p>Le dernier paiement de votre abonnement Immojudis Analyse n'a pas abouti. ${escapeHtml(amount)}</p><p>${escapeHtml(retry)} ${escapeHtml(grace)}</p><p><a href="${escapeHtml(accountUrl)}">Mettre à jour mon moyen de paiement</a></p><p>${escapeHtml(cancel)}</p><p>Cordialement,<br />L’équipe Immojudis</p>`,
   };
 }
 
@@ -186,6 +188,108 @@ export async function sendTrialEndingNotice({
     return "sent";
   } catch (error) {
     console.error("[billing] trial ending notice failed", error);
+    return "failed";
+  }
+}
+
+export type CancellationNoticeKind = "scheduled" | "immediate";
+
+export function buildCancellationConfirmationMessage({
+  from,
+  to,
+  appUrl,
+  kind,
+  accessEndsAt,
+  trialing = false,
+}: {
+  from: string;
+  to: string;
+  appUrl: string;
+  /**
+   * `scheduled`: the cancellation takes effect at the end of the current period (access stays
+   * open until then). `immediate`: the subscription is already cancelled (access is over).
+   */
+  kind: CancellationNoticeKind;
+  /** Unix seconds of the end of Analyse access. */
+  accessEndsAt: number;
+  /** True while the free trial is running: nothing will be charged. */
+  trialing?: boolean;
+}): ResendEmailMessage {
+  const accountUrl = `${appUrl}/compte`;
+  const endDate = dateFormat.format(new Date(accessEndsAt * 1000));
+  const receipt =
+    "Nous confirmons avoir bien reçu votre demande de résiliation de l’abonnement Immojudis Analyse.";
+  const effect =
+    kind === "scheduled"
+      ? `Votre contrat prend fin le ${endDate}, à la fin de la période en cours : votre accès Analyse reste ouvert jusqu’à cette date, puis l’abonnement n’est pas renouvelé.${trialing ? " Votre essai gratuit n’étant pas terminé, aucun montant ne sera prélevé." : ""}`
+      : `Votre contrat a pris fin le ${endDate} : votre accès Analyse est terminé et l’abonnement n’est pas renouvelé.`;
+  const remains = "Votre compte Découverte et vos données restent accessibles.";
+  const lines = [
+    "Bonjour,",
+    "",
+    receipt,
+    effect,
+    remains,
+    "",
+    `Mon compte : ${accountUrl}`,
+    "",
+    "Cordialement,",
+    "L’équipe Immojudis",
+  ];
+  return {
+    from,
+    to,
+    subject: "Confirmation de votre résiliation",
+    text: lines.join("\n"),
+    html: `<p>Bonjour,</p><p>${escapeHtml(receipt)}</p><p>${escapeHtml(effect)}</p><p>${escapeHtml(remains)} <a href="${escapeHtml(accountUrl)}">Mon compte</a></p><p>Cordialement,<br />L’équipe Immojudis</p>`,
+  };
+}
+
+/**
+ * Confirm a cancellation on a durable medium (code de la consommation, L. 215-1-1). The Resend
+ * idempotency key (subscription + moment of the request) absorbs a retried webhook; the decision
+ * to send only once per cancellation is taken by the caller from the Stripe event. A delivery
+ * problem never fails the webhook.
+ */
+export async function sendCancellationConfirmationNotice({
+  userId,
+  subscriptionId,
+  requestedAt,
+  kind,
+  accessEndsAt,
+  trialing,
+}: {
+  userId: string;
+  subscriptionId: string;
+  /** Unix seconds of the cancellation request, part of the idempotency key. */
+  requestedAt: number;
+  kind: CancellationNoticeKind;
+  accessEndsAt: number;
+  trialing?: boolean;
+}): Promise<"sent" | "skipped" | "failed"> {
+  const config = resolveEmailAlertDeliveryConfig();
+  if (!config.configured || !config.apiKey || !config.from || !config.appUrl) return "skipped";
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (error) throw error;
+    const recipient = data.user?.email?.trim();
+    if (!recipient) return "skipped";
+    await sendResendEmail({
+      apiKey: config.apiKey,
+      idempotencyKey: `immojudis-cancellation-confirmation-${subscriptionId}-${requestedAt}`,
+      fetchImpl: fetch,
+      message: buildCancellationConfirmationMessage({
+        from: config.from,
+        to: recipient,
+        appUrl: config.appUrl,
+        kind,
+        accessEndsAt,
+        trialing,
+      }),
+    });
+    return "sent";
+  } catch (error) {
+    console.error("[billing] cancellation confirmation failed", error);
     return "failed";
   }
 }

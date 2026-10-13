@@ -48,7 +48,16 @@ describe("login page", () => {
   it("mentions the terms and the privacy policy when creating an account", () => {
     mocks.search = { mode: "investor" };
     render(<LoginPage />);
-    expect(screen.getByText(/En créant un compte, vous acceptez/)).toBeTruthy();
+    // The sentence quotes the exact label of the button that triggers the sign-up.
+    const submit = screen.getByRole("button", { name: /Créer mon compte gratuit/ });
+    expect(
+      screen
+        .getByText(/vous acceptez les/)
+        .textContent?.startsWith(
+          `En cliquant sur « ${submit.textContent?.trim()} », vous acceptez les`,
+        ),
+    ).toBe(true);
+    expect(screen.queryByText(/En créant un compte/)).toBeNull();
     expect(
       screen.getByText(/vous reconnaissez avoir pris connaissance de la/).textContent,
     ).toContain("les conditions générales et vous reconnaissez avoir pris connaissance de la");

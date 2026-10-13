@@ -27,6 +27,15 @@ describe("page Comment ça marche", () => {
     );
   });
 
+  it("décrit l'annuaire et la mise en relation avec le vocabulaire de la mise en avant payante", () => {
+    const { container } = render(<Page />);
+    const text = container.textContent ?? "";
+    expect(text).toContain(
+      "La consultation de l’annuaire est gratuite. Certains avocats rémunèrent Immojudis pour une mise en avant payante. La demande de mise en relation depuis une annonce fait partie de l’offre Analyse.",
+    );
+    expect(text).not.toMatch(/sponsoris/i);
+  });
+
   it("ne mentionne plus les limites internes du produit", () => {
     const { container } = render(<Page />);
     expect(container.textContent).not.toMatch(

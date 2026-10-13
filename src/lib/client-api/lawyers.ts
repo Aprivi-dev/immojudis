@@ -7,6 +7,7 @@ import type {
 } from "@/lib/lawyer-placement-events";
 import type {
   LawyerReferralListResponse,
+  LawyerReferralPreviewResponse,
   LawyerReferralRequestInput,
   LawyerReferralResponse,
 } from "@/lib/lawyer-referrals";
@@ -24,6 +25,19 @@ export async function requestLawyerReferral(args: {
   });
 
   return readJson<LawyerReferralResponse>(response);
+}
+
+export async function fetchLawyerReferralPreview(args: {
+  saleId: string;
+  lawyerId?: string;
+}): Promise<LawyerReferralPreviewResponse> {
+  const search = new URLSearchParams({ saleId: args.saleId });
+  if (args.lawyerId) search.set("lawyerId", args.lawyerId);
+  const response = await fetch(`/api/lawyer-referrals/preview?${search.toString()}`, {
+    headers: await authHeaders(),
+  });
+
+  return readJson<LawyerReferralPreviewResponse>(response);
 }
 
 export async function fetchLawyerReferrals(
