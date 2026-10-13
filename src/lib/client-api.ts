@@ -140,7 +140,6 @@ export {
   fetchSaleUrbanismeCadastre,
   fetchValuationAdminOverview,
   fetchEnvironmentalContext,
-  calculateBidCeilingClient,
   fetchSaleHistory,
   fetchMarketAnalytics,
   fetchDvfComparables,

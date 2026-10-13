@@ -330,6 +330,38 @@ describe("readable listing sections", () => {
     expect(screen.queryByRole("note", { name: /Mise à prix :/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Mise à prix/ })).toBeNull();
   });
+  it("explains what the ceiling rests on, and says so when the works are not priced", () => {
+    const context = {
+      worksAmount: 0,
+      worksPriced: false,
+      marginPct: 13,
+      valueAmount: 200_000,
+      valueSource: "DVF normalisé",
+      valueDate: "2026-10-01T08:00:00Z",
+    };
+    const { rerender } = render(
+      <ListingOverview sale={item()} premiumCeiling={120_000} ceilingContext={context} />,
+    );
+
+    const line = screen.getByText(/Travaux : .*\(à chiffrer\)/);
+    expect(line.textContent).toMatch(/Marge : 13 %/);
+    expect(line.textContent).toMatch(/Valeur : 200\s000\s€ \(DVF normalisé, 01 octobre 2026\)/);
+    expect(line.textContent).toContain("Plafond hors travaux.");
+
+    rerender(
+      <ListingOverview
+        sale={item()}
+        premiumCeiling={120_000}
+        ceilingContext={{ ...context, worksAmount: 25_000, worksPriced: true }}
+      />,
+    );
+    const priced = screen.getByText(/Travaux : /);
+    expect(priced.textContent).not.toContain("à chiffrer");
+    expect(priced.textContent).not.toContain("hors travaux");
+
+    rerender(<ListingOverview sale={item()} premiumCeiling={120_000} />);
+    expect(screen.queryByText(/Marge : /)).toBeNull();
+  });
   it("does not expose premium or scenario values while a pricing input is protected", () => {
     const projection: AiReviewProjectionReadModel = {
       auction_sale_id: "sale-1",
