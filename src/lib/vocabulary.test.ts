@@ -16,7 +16,7 @@ const ROOT = process.cwd();
 // l'empreinte est verrouillée, routes API, facturation, e-mails d'alerte).
 const EXEMPT = [
   /^src\/app\/api\//,
-  /^src\/routes\/(legal|conditions-generales|privacy)\.tsx$/,
+  /^src\/routes\/legal\.tsx$/,
   /^src\/lib\/legal-documents/,
   /^src\/lib\/billing/,
   /^src\/lib\/email-alerts/,

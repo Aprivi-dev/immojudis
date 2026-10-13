@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./example-sale-page", () => ({ ExampleSalePage: () => null }));
 
@@ -15,6 +15,23 @@ describe("/annonce-exemple server page", () => {
   ])("picks the example from the URL on the server: %j", async (params, city) => {
     const element = await Page({ searchParams: Promise.resolve(params) });
     expect(element.props.example.sale.city).toBe(city);
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("opens the statistics tab of the demo only when the server flag is open", async () => {
+    vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "true");
+    const open = await Page({ searchParams: Promise.resolve({}) });
+    expect(open.props.adjudicationStatisticsEnabled).toBe(true);
+
+    vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "false");
+    const closed = await Page({ searchParams: Promise.resolve({}) });
+    expect(closed.props.adjudicationStatisticsEnabled).toBe(false);
+
+    vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "");
+    delete process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED;
+    const absent = await Page({ searchParams: Promise.resolve({}) });
+    expect(absent.props.adjudicationStatisticsEnabled).toBe(false);
   });
 
   it("computes the dates when the page is generated: the hearing is in the future", async () => {

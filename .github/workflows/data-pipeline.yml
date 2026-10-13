@@ -92,6 +92,9 @@ jobs:
       # Secrets are not part of the job environment: the pip and apt steps
       # must not see them. Only the Python business steps below receive them.
       SOURCE_FETCH_RELAY_URL: ${{ vars.SOURCE_FETCH_RELAY_URL }}
+      # Merging duplicates already in the database stays off until the repository variable
+      # DEDUPE_RECONCILE_ENABLED is set to true (docs/runbooks/chantier-f-reparations-donnees.md).
+      DEDUPE_RECONCILE_ENABLED: ${{ vars.DEDUPE_RECONCILE_ENABLED || 'false' }}
       REPLICATE_MODEL: qwen/qwen3-7-plus
       PIPELINE_ENRICH_WORKERS: 2
       PIPELINE_LLM_WORKERS: 1
@@ -201,11 +204,23 @@ jobs:
             services/data-pipeline/data/raw/pdf_texts
             services/data-pipeline/data/raw/docling_texts
             services/data-pipeline/data/processed/llm_extractions
-          # One entry per UTC day instead of one per run: the newest earlier
-          # entry is restored by prefix, and the repository cache stays bounded.
-          key: immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}
+          # Every run saves its own entry (day + run id, see "Save extraction
+          # checkpoints"), so no run's work is lost behind the first run of the
+          # day. The key below never matches exactly: the most recent entry of
+          # the day, then the most recent earlier one, is restored by prefix.
+          key: immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}-${{ github.run_id }}
           restore-keys: |
+            immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}-
             immojudis-data-pipeline-${{ runner.os }}-
+
+      # Names and sizes of what was restored: the new entry is saved at the end
+      # only if the run changed them (see the save step at the end of the job).
+      - name: Fingerprint restored extraction cache
+        id: cache-before
+        run: >
+          echo "digest=$(python scripts/cache_fingerprint.py
+          data/documents data/raw/pdf_texts data/raw/docling_texts data/processed/llm_extractions)"
+          >> "$GITHUB_OUTPUT"
 
       # Parcels already resolved through API Carto (cessions de l'État): a separate
       # entry so the extraction cache above keeps its own path set.
@@ -237,8 +252,12 @@ jobs:
       - name: Install Python dependencies
         run: python -m pip install --require-hashes -r requirements.lock
 
+      # The references change rarely: a verified copy younger than 7 days (restored
+      # from the cache above) is kept without any network access. A failed refresh
+      # keeps the valid copy; the step fails, with an explicit message, only when no
+      # valid copy exists at all.
       - name: Refresh and verify official Justice references
-        run: python -m src.official_sources.justice_reference_sync
+        run: python -m src.official_sources.justice_reference_sync --max-age-days 7
 
       - name: Run manually requested pipeline
         id: pipeline
@@ -325,10 +344,22 @@ jobs:
           python scripts/prune_cache_dirs.py --max-age-days 14 --max-total-mb 300
           data/documents data/raw/pdf_texts data/raw/docling_texts data/processed/llm_extractions
 
-      - name: Save extraction checkpoints
-        # A cache entry cannot be overwritten: once today's entry exists, later
-        # runs of the same day restore it and skip the save.
+      - name: Fingerprint extraction cache after the run
+        id: cache-after
         if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true && steps.extraction-cache.outputs.cache-hit != 'true'
+        run: >
+          echo "digest=$(python scripts/cache_fingerprint.py
+          data/documents data/raw/pdf_texts data/raw/docling_texts data/processed/llm_extractions)"
+          >> "$GITHUB_OUTPUT"
+
+      - name: Save extraction checkpoints
+        # A cache entry cannot be overwritten, so each run writes a new one named
+        # after the day and the run id (a re-run of the same run id finds its entry
+        # already there and skips the save). The entry is written only when the
+        # run changed the files (names or sizes) compared with what it restored,
+        # which keeps the repository cache (10 GB) from churning and evicting the
+        # Justice and cadastre reference caches.
+        if: always() && steps.pipeline.outcome != 'skipped' && inputs.publication_check != true && steps.extraction-cache.outputs.cache-hit != 'true' && steps.cache-after.outputs.digest != steps.cache-before.outputs.digest
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -336,7 +367,7 @@ jobs:
             services/data-pipeline/data/raw/pdf_texts
             services/data-pipeline/data/raw/docling_texts
             services/data-pipeline/data/processed/llm_extractions
-          key: immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}
+          key: immojudis-data-pipeline-${{ runner.os }}-${{ steps.date.outputs.day }}-${{ github.run_id }}
 
   model-benchmark:
     if: github.event_name == 'workflow_dispatch' && inputs.model_benchmark

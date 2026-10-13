@@ -203,11 +203,38 @@ export const PAST_DUE_GRACE_DAYS = 7;
 
 export type PlanBilling = {
   status: PlanStatus | null;
-  /** True once a Stripe customer exists: the billing portal can then be opened. */
+  /** True once a Stripe customer exists (created when the payment page opens, even if abandoned). */
   hasStripeCustomer: boolean;
   /** End of the grace period when the last renewal failed. */
   graceEndsAt: string | null;
 };
+
+/** Statuses that mean Stripe holds a live subscription the customer can still manage. */
+const STRIPE_SUBSCRIPTION_STATUSES: readonly string[] = [
+  "past_due",
+  "paused",
+  "trialing",
+  "active",
+];
+
+/**
+ * True when a real Stripe subscription exists, so the billing portal (not a new
+ * checkout) is the way to manage it.  A Stripe customer alone proves nothing:
+ * it is created as soon as the payment page opens, even if the visitor leaves.
+ * That abandoned checkout leaves a reservation row (`active`, no period end);
+ * a real subscription always carries the end of its current period.
+ */
+export function hasLiveStripeSubscription(
+  billing: Pick<PlanBilling, "status" | "hasStripeCustomer"> | null | undefined,
+  currentPeriodEnd: string | null | undefined,
+): boolean {
+  return Boolean(
+    billing?.hasStripeCustomer &&
+    billing.status &&
+    STRIPE_SUBSCRIPTION_STATUSES.includes(billing.status) &&
+    currentPeriodEnd,
+  );
+}
 
 export function pastDueGraceEnd(currentPeriodEnd: unknown): string | null {
   if (typeof currentPeriodEnd !== "string") return null;

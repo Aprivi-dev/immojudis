@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CsvExportButton, SaveSearchButton } from "./SearchHeader";
+import {
+  CsvExportButton,
+  ResultsSummary,
+  SaveSearchButton,
+  SearchHeader,
+  SortDropdown,
+} from "./SearchHeader";
+import { emptySearchDraft } from "./search-page-state";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/sales" }));
 vi.mock("@/hooks/use-auth", () => ({
@@ -40,7 +47,7 @@ describe("SaveSearchButton avec compte", () => {
       true,
     );
     fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
-    expect(onClick).toHaveBeenCalledWith({ frequency: "weekly" });
+    expect(onClick).toHaveBeenCalledWith({ frequency: "weekly", emailRecap: false });
   });
 
   it("propose le quotidien par défaut avec l'offre Analyse", () => {
@@ -52,7 +59,95 @@ describe("SaveSearchButton avec compte", () => {
     );
     fireEvent.click(screen.getByRole("radio", { name: /Hebdomadaire/ }));
     fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
-    expect(onClick).toHaveBeenCalledWith({ frequency: "weekly" });
+    expect(onClick).toHaveBeenCalledWith({ frequency: "weekly", emailRecap: false });
+  });
+});
+
+describe("SaveSearchButton : email récapitulatif", () => {
+  it("propose une case non cochée et transmet le choix à la création", () => {
+    const onClick = vi.fn();
+    render(<SaveSearchButton signedIn saving={false} onClick={onClick} />);
+    fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
+    const checkbox = screen.getByRole("checkbox", {
+      name: /Recevoir un email récapitulatif chaque semaine/,
+    }) as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
+    expect(onClick).toHaveBeenCalledWith({ frequency: "weekly", emailRecap: true });
+  });
+
+  it("annonce un email quotidien quand la fréquence quotidienne est choisie", () => {
+    render(<SaveSearchButton signedIn dailyAllowed saving={false} onClick={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
+    expect(screen.getByRole("checkbox", { name: /chaque jour/ })).toBeTruthy();
+  });
+
+  it("ne redemande pas le consentement s'il est déjà donné", () => {
+    const onClick = vi.fn();
+    render(<SaveSearchButton signedIn emailRecapEnabled saving={false} onClick={onClick} />);
+    fireEvent.click(screen.getByRole("button", { name: "Créer une alerte" }));
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.getByText(/L’email récapitulatif est activé/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Créer l’alerte" }));
+    expect(onClick).toHaveBeenCalledWith({ frequency: "weekly", emailRecap: false });
+  });
+});
+
+describe("SortDropdown", () => {
+  it("grise « Distance » tant qu'aucune adresse n'est saisie", () => {
+    render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
+    const option = screen.getByRole("option", { name: /Distance/ }) as HTMLOptionElement;
+    expect(option.disabled).toBe(true);
+    cleanup();
+    render(<SortDropdown hasCenter sort="distance" onChange={vi.fn()} />);
+    expect((screen.getByRole("option", { name: "Distance" }) as HTMLOptionElement).disabled).toBe(
+      false,
+    );
+  });
+});
+
+describe("ResultsSummary", () => {
+  it("n'annonce que le compteur aux lecteurs d'écran", () => {
+    const { container } = render(
+      <ResultsSummary
+        search={{ city: "Lyon" }}
+        displayCount={12}
+        hasLocalFilters={false}
+        isLoading={false}
+        geocoding={false}
+      />,
+    );
+    const live = container.querySelectorAll("[aria-live]");
+    expect(live).toHaveLength(1);
+    expect(live[0].textContent).toBe("12 annonces");
+  });
+});
+
+describe("SearchHeader : effacer les filtres", () => {
+  it("n'est plus caché sous le breakpoint desktop", () => {
+    const base = {
+      draft: emptySearchDraft(),
+      setDraft: vi.fn(),
+      activeFiltersCount: 2,
+      isLoading: false,
+      isFetching: false,
+      filtersOpen: false,
+      savingAlert: false,
+      exportingCsv: false,
+      csvExportLocked: false,
+      wideMap: false,
+      onFiltersOpenChange: vi.fn(),
+      onReset: vi.fn(),
+      onSaveSearch: vi.fn(),
+      onExportCsv: vi.fn(),
+      onToggleLayout: vi.fn(),
+    };
+    render(<SearchHeader {...base} />);
+    const reset = screen.getByRole("button", { name: "Effacer les filtres" });
+    expect(reset.className).not.toMatch(/\bhidden\b/);
+    fireEvent.click(reset);
+    expect(base.onReset).toHaveBeenCalledTimes(1);
   });
 });
 

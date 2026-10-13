@@ -1,4 +1,5 @@
 import type { AuctionSale } from "./types";
+import { stripWithdrawnSourceContent } from "./withdrawn-sources";
 
 /**
  * Lignes des vues du catalogue (`v_auction_sales_app`…) vues comme `AuctionSale`.
@@ -8,10 +9,10 @@ import type { AuctionSale } from "./types";
  * en déduire ce type. La conversion est centralisée ici plutôt que répétée à chaque requête.
  */
 export function saleRows(data: unknown): AuctionSale[] {
-  return (data ?? []) as AuctionSale[];
+  return ((data ?? []) as AuctionSale[]).map((sale) => stripWithdrawnSourceContent(sale));
 }
 
 /** Une ligne de vue du catalogue vue comme `AuctionSale` (voir `saleRows`). */
 export function saleRow(data: unknown): AuctionSale {
-  return data as AuctionSale;
+  return stripWithdrawnSourceContent(data as AuctionSale);
 }

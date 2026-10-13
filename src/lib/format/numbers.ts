@@ -1,10 +1,26 @@
+const PRICE_NOT_COMMUNICATED = "Prix non communiqué";
+
+/**
+ * Montant en euros. Une valeur absente ou non finie (NaN, Infinity) n'est jamais affichée comme un
+ * montant. 0 reste « 0 € » : frais nuls, marge nulle ou mensualité nulle sont des montants réels.
+ * Pour une mise à prix, où 0 signifie « non communiquée », utiliser `formatStartingPrice`.
+ */
 export function formatPrice(value: number | null | undefined): string {
-  if (value == null) return "Prix non communiqué";
+  if (value == null || !Number.isFinite(value)) return PRICE_NOT_COMMUNICATED;
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
     currency: "EUR",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+/**
+ * Mise à prix ou prix publié. La base autorise 0 (`starting_price_eur >= 0`) mais une vente à
+ * 0 € n'est jamais annoncée : 0 est traité comme un prix non communiqué.
+ */
+export function formatStartingPrice(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value) || value <= 0) return PRICE_NOT_COMMUNICATED;
+  return formatPrice(value);
 }
 
 export function formatCurrency(

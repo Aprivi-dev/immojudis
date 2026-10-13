@@ -722,7 +722,6 @@ function previewResponse(
       url: "https://www.licitor.com/annonce/1.html",
       known: true,
     },
-    accountInvitation: true,
     fingerprint: "f".repeat(64),
     ...overrides,
   };

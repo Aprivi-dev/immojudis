@@ -642,6 +642,41 @@ Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiab
 
 ## Source Licitor
 
+> **Licitor est collecté et affiché normalement.** Aucune source n'est retirée du catalogue à ce jour. Le dépôt
+> garde toutefois un **interrupteur de retrait** pour un usage futur (par exemple si une source devait être
+> retirée pour un motif juridique).
+>
+> **Un seul interrupteur**, en base : `auction_source_state.catalogue_withdrawn`, posé et levé par la fonction
+> `public.set_catalogue_source_withdrawal` (service_role, une transaction, rien n'est supprimé).
+> Migration : `supabase/migrations/20261021110000_licitor_source_withdrawal.sql` (livrée sans aucune source
+> retirée : l'appliquer ne change rien au catalogue ni à la collecte).
+>
+> ```sql
+> -- état actuel
+> select source_name, catalogue_withdrawn, enabled, withdrawn_reason, withdrawn_at
+>   from public.auction_source_state where source_name = 'licitor';
+> -- retirer une source : coupe la collecte ET masque les ventes dont c'est la seule source
+> select public.set_catalogue_source_withdrawal('licitor', true, 'raison');
+> -- lever le retrait : remet le catalogue ET la collecte
+> select public.set_catalogue_source_withdrawal('licitor', false);
+> ```
+>
+> Effets d'un retrait (quand il est posé) : le planificateur ne lance plus la source (`enabled = false`, imposé
+> par une contrainte : l'écran d'administration ne peut pas la réactiver) ; la file d'enrichissement ne rouvre
+> plus ses fiches détail ; l'observateur ferme l'alerte `pipeline.source.licitor.missed` au lieu de la rouvrir ;
+> `python -m src.main --source licitor` sort proprement (code 0, sans créer de run) ; `--source all` l'ignore ;
+> le tick de l'historique des adjudications (`licitor_history_refresh`) est sauté et le dit dans le résumé du
+> run (`licitor_history_skipped`) ; la file d'enrichissement diffère (24 h, sans consommer d'essai) les ventes
+> dont toutes les sources sont retirées ; les pièces hébergées par `licitor.com` d'une vente fusionnée ne sont
+> pas téléchargées. Module : [source_withdrawal.py](src/source_withdrawal.py).
+>
+> **Par défaut, aucune source n'est retirée** : si la base est injoignable, si la colonne n'existe pas encore
+> (migration non appliquée) ou si `SUPABASE_DB_URL` est absent, `DEFAULT_WITHDRAWN` (vide) s'applique, donc
+> Licitor est collecté. Contrepartie : tant que l'interrupteur est illisible (panne, `SUPABASE_DB_URL` absent
+> d'un lancement local ou de l'audit manuel `source_coverage_audit`), un retrait posé n'est pas vu.
+> `ENABLE_LICITOR_BENCHMARK` et `LICITOR_HISTORICAL_AUTHORIZED` restent des réglages secondaires : ils ne
+> lèvent jamais un retrait.
+
 Le scraper [licitor.py](src/sources/licitor.py) collecte les six zones publiques Licitor, puis suit les pages détail des annonces.
 
 Champs exploités :
@@ -777,6 +812,25 @@ Chaque run affiche :
 - pourcentage d'occupation extraite par LLM ;
 - pourcentage de risques détectés par LLM ;
 - erreurs LLM.
+
+## Données personnelles dans les textes
+
+Les annonces nomment parfois un occupant, un locataire, un propriétaire ou un créancier particulier. Un compte
+connecté lit `description`, `raw_payload` (`source_description`, `source_blocks`, `llm_display_description`…),
+`observations` et `risks` directement dans la base : le texte stocké doit donc être propre.
+
+- `src/personal_data.py` remplace le nom d'une personne physique par un rôle (« occupés par un locataire »,
+  « À la requête du créancier poursuivant »), retire la date et le lieu de naissance et l'adresse « demeurant… »,
+  sans toucher aux communes, rues, tribunaux, études ni sociétés. Son miroir TypeScript est
+  `src/lib/personal-data-filter.ts` ; les deux sont gardés identiques par
+  `tests/fixtures/personal_data_filter_cases.json`, exécuté par pytest et par vitest.
+- La collecte l'applique à l'écriture (`redact_storage_row` dans `supabase_client.py` et `sale_row_builders.py`,
+  extraits des risques compris) : le texte en mémoire, les empreintes et l'extraction restent ceux de la source.
+  Les prompts (`prompts.py`) interdisent en plus au modèle de reproduire ces données.
+- Réparer les lignes écrites avant (ventes à venir) : `python -m src.redact_personal_data` compte seulement (lecture
+  seule, ni texte ni nom dans la sortie) ; `--check` sort en code 1 s'il reste des lignes ; `--apply` écrit sous le
+  verrou d'écriture du catalogue. Le workflow « Recompute Existing Sales » les rattraperait aussi, mais refait
+  toute la normalisation.
 
 ## Tests
 

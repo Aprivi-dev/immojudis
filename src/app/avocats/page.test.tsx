@@ -18,7 +18,7 @@ describe("/avocats server page", () => {
   });
 
   it("has an accented title without the site name", () => {
-    expect(metadata.title).toBe("Annuaire des avocats en droit immobilier");
+    expect(metadata.title).toBe("Annuaire des avocats par barreau");
     expect(metadata.alternates).toEqual({ canonical: "/avocats" });
   });
 });

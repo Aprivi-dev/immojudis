@@ -33,7 +33,5 @@ export default async function sitemap(props: {
   return sales.map((sale) => ({
     url: `${origin}/sales/${sale.id}`,
     ...(sale.lastModified ? { lastModified: sale.lastModified } : {}),
-    changeFrequency: "daily" as const,
-    priority: 0.6,
   }));
 }

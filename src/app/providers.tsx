@@ -1,11 +1,13 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
 import { SiteFooter } from "@/components/SiteFooter";
 import { AppToaster } from "@/components/AppToaster";
+import { supabase } from "@/integrations/supabase/client";
+import { getWithdrawnSources, loadWithdrawnSources } from "@/lib/withdrawn-sources";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -14,6 +16,20 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         defaultOptions: { queries: { retry: 1, staleTime: 60_000 } },
       }),
   );
+
+  useEffect(() => {
+    // Sources retirées du catalogue (aucune à ce jour) : la liste vient de la base (interrupteur unique).
+    // Si elle diffère de celle déjà appliquée, les données déjà affichées sont relues.
+    let cancelled = false;
+    const before = [...getWithdrawnSources()].sort().join(",");
+    void loadWithdrawnSources(supabase).then((names) => {
+      if (!cancelled && [...names].sort().join(",") !== before)
+        void queryClient.invalidateQueries();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>

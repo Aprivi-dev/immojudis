@@ -1,0 +1,189 @@
+{
+  "slug": "ventes-notariales-domaniales-differences-tribunal",
+  "publishedAt": "2026-10-13",
+  "title": "Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal",
+  "category": "Les fondamentaux",
+  "description": "Qui organise la vente, avocat obligatoire ou non, garantie, surenchère, délais de paiement : les différences entre enchères au tribunal, chez le notaire et ventes de l’État.",
+  "intro": [
+    "Toutes les ventes aux enchères immobilières ne se déroulent pas au tribunal. Un bien peut être vendu par un tribunal à la suite d’une dette (c’est la saisie immobilière), par un notaire à la demande de son propriétaire, ou par l’État lorsqu’il se sépare d’un immeuble qui lui appartient. Ce sont trois cadres juridiques différents, avec des règles de garantie, de délai et de représentation qui ne se ressemblent pas.",
+    "Immojudis distingue ces trois types de vente sur chaque fiche. Cet article les compare pour que vous sachiez quelles questions poser selon l’organisateur. Il s’appuie sur des textes officiels et sur des pages de Notaires de France dont certaines datent de 2020 ou 2021 : confirmez toujours les montants et délais dans le cahier des conditions de vente (ou cahier des charges), le document qui fixe les règles de la vente."
+  ],
+  "takeaways": [
+    "L’organisateur détermine les règles : juge de l’exécution au tribunal, notaire pour une vente notariale, administration de l’État pour une vente domaniale.",
+    "Un avocat est obligatoire pour porter les enchères en saisie immobilière ; pour les ventes notariales et domaniales, lisez le cahier, qui fait foi.",
+    "La garantie de 10 % de la mise à prix (minimum 3 000 €) est imposée par le Code pour la saisie immobilière ; ailleurs, c’est le cahier qui la fixe.",
+    "La surenchère de dix jours est une règle légale en saisie immobilière et en licitation judiciaire ; dans une vente notariale volontaire ou domaniale, seul le cahier des charges peut la prévoir.",
+    "« En ligne » ne désigne pas un type de vente : c’est une façon de participer."
+  ],
+  "sections": [
+    {
+      "id": "comparatif",
+      "title": "Le comparatif en un tableau",
+      "paragraphs": [
+        "Ce tableau résume les différences principales. Les cellules marquées « à vérifier » renvoient à des informations qui varient selon le dossier ou qui proviennent de pages dont la date de mise à jour est ancienne."
+      ],
+      "table": {
+        "headers": [
+          "Critère",
+          "Au tribunal (saisie immobilière)",
+          "Chez le notaire",
+          "Vente de l’État (domaniale)"
+        ],
+        "rows": [
+          [
+            "Qui organise",
+            "Le juge de l’exécution du tribunal judiciaire, à la demande d’un créancier.",
+            "Un notaire, à la demande du propriétaire (vente volontaire) ou commis par un tribunal.",
+            "L’administration : adjudication autorisée par le préfet, mise à prix fixée par la direction départementale des finances publiques."
+          ],
+          [
+            "Avocat",
+            "Obligatoire : les enchères sont portées par un avocat du barreau du tribunal (art. R. 322-40).",
+            "Notaires de France ne le mentionne pas ; dans une licitation reçue par un notaire, les enchères peuvent être faites sans avocat (art. 1278 et 1377 du Code de procédure civile). À vérifier dans le cahier.",
+            "Aucune obligation relevée dans les textes consultés. À vérifier dans le cahier des charges."
+          ],
+          [
+            "Garantie pour enchérir",
+            "Imposée par le Code : chèque de banque ou caution bancaire irrévocable, 10 % de la mise à prix, minimum 3 000 € (art. R. 322-41).",
+            "Fixée par le cahier. Notaires de France cite 20 % de la mise à prix, en chèque de banque ou certifié (à vérifier).",
+            "Fixée par le cahier des charges (à vérifier)."
+          ],
+          [
+            "Surenchère",
+            "Règle légale : un dixième du prix principal, dans les dix jours (art. R. 322-50 et R. 322-51 du CPCE ; en licitation, art. 1377 et 1279 du CPC).",
+            "Non prévue par la loi dans une vente volontaire : seul le cahier des charges peut la prévoir. Notaires de France décrit 10 % dans les 10 jours pour la vente « à la bougie » (à vérifier). Dans une licitation reçue par un notaire, elle se forme par requête au greffe (art. 1280 du CPC).",
+            "Selon le cahier des charges (à vérifier)."
+          ],
+          [
+            "Délai de paiement",
+            "Deux mois après l’adjudication définitive (art. R. 322-56).",
+            "45 jours selon Notaires de France (à vérifier dans le cahier).",
+            "Selon le cahier des charges. En cas de défaut, l’acquéreur peut être déchu de la vente après mise en demeure d’un mois (art. R. 3211-8 du Code général de la propriété des personnes publiques) et devoir une amende d’au moins 5 % du prix (art. L. 3211-12)."
+          ],
+          [
+            "Condition suspensive de prêt",
+            "Aucune prévue dans la procédure.",
+            "Aucune pour les ventes classiques, selon Notaires de France ; la vente interactive en ligne peut comporter des clauses suspensives (la source ne précise pas lesquelles).",
+            "À vérifier dans le cahier des charges."
+          ],
+          [
+            "Frais",
+            "Frais taxés et droits de mutation en plus du prix (art. R. 322-58).",
+            "Listés dans le cahier des charges : vérifiez s’ils s’ajoutent au prix.",
+            "Cahier des charges ; les ventes d’immeubles domaniaux sont soumises aux droits d’enregistrement (art. 683 du Code général des impôts)."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "tribunal",
+      "title": "Au tribunal : la procédure la plus encadrée",
+      "paragraphs": [
+        "La saisie immobilière est la procédure par laquelle un créancier fait vendre le bien de son débiteur pour être payé. Le Code des procédures civiles d’exécution (CPCE) en fixe presque toutes les règles : avocat obligatoire pour enchérir, garantie, déroulement de l’audience, surenchère de dix jours, paiement en deux mois, titre d’expulsion.",
+        "Le tribunal peut aussi ordonner la vente d’un bien par licitation judiciaire, par exemple lorsque des héritiers ou des ex-époux ne peuvent pas partager un bien (art. 1377 du Code de procédure civile). Les règles de la saisie sont alors largement reprises. Les enchères peuvent être reçues par le juge ou par un notaire commis par le tribunal (art. 1272). Le détail de la saisie figure dans les articles « Le jour de l’audience : déroulé et rôle de l’avocat » et « Après l’adjudication : surenchère, paiement, consignation et titre de vente »."
+      ]
+    },
+    {
+      "id": "notaire",
+      "title": "Chez le notaire : les ventes à la bougie et interactives",
+      "paragraphs": [
+        "Dans une vente notariale, le propriétaire choisit de vendre aux enchères par l’intermédiaire d’un notaire. Notaires de France décrit deux formules : la vente « à la bougie », en salle, où l’adjudication est prononcée après l’extinction de deux feux successifs sans nouvelle enchère, et la vente interactive en ligne, d’une durée limitée (24 heures selon la page consultée), où l’on suit les offres sur le site des notaires. Pour enchérir en ligne, il faut signer une demande d’agrément et les conditions de vente, puis s’inscrire.",
+        "Le notaire fixe la mise à prix avec le vendeur, après expertise. Notaires de France indique que les enchérisseurs déposent un chèque de consignation de 20 % de la mise à prix, restitué s’ils ne gagnent pas. Les visites sont groupées, à dates fixes, la dernière au moins dix jours avant la vente. Sans surenchère dans les dix jours, l’adjudicataire dispose de 45 jours pour payer le prix. Selon la même source, il n’y a ni délai de rétractation de dix jours ni, pour une vente à la bougie, de condition suspensive d’obtention de prêt.",
+        "Ces informations proviennent de pages de Notaires de France mises en ligne en 2020 et 2021. Les pratiques varient d’un office à l’autre : le cahier des charges de chaque vente prime."
+      ],
+      "bullets": [
+        "Avocat : les pages consultées ne mentionnent pas d’obligation d’avocat. Demandez-le explicitement au notaire.",
+        "Frais : le cahier des charges indique ce qui est à la charge de l’acquéreur. Vérifiez si les frais sont inclus dans le prix annoncé ou s’ajoutent à lui.",
+        "Vente d’origine judiciaire : un notaire peut recevoir des enchères ordonnées par un tribunal. Les règles du Code de procédure civile s’appliquent alors, avec la possibilité d’enchérir sans avocat (art. 1278, rendu applicable à la licitation par l’art. 1377)."
+      ]
+    },
+    {
+      "id": "etat",
+      "title": "Les ventes de l’État : adjudication, appel d’offres ou vente amiable",
+      "paragraphs": [
+        "L’État peut vendre les immeubles de son domaine privé lorsqu’ils ne sont plus utilisés par un service public (art. L. 3211-1 du Code général de la propriété des personnes publiques). Le principe est la publicité et la mise en concurrence, soit par adjudication publique, soit à l’amiable (art. R. 3211-2).",
+        "L’adjudication publique est autorisée par le préfet après avis du directeur départemental des finances publiques, qui fixe la mise à prix (art. R. 3211-3). La cession amiable est annoncée par un avis du préfet qui précise les modalités de présentation des offres et de visite. Les offres sont jugées notamment sur les conditions financières et les garanties de bonne fin et de solvabilité (art. R. 3211-4 et R. 3211-5). Dans certains cas, par exemple si l’adjudication a été infructueuse, la cession peut se faire à l’amiable sans nouvelle mise en concurrence (art. R. 3211-7).",
+        "Le site des cessions immobilières de l’État recense les biens à vendre. Selon l’article R. 3211-2, la vente se fait avec publicité et mise en concurrence, soit par adjudication publique, soit à l’amiable. L’acquéreur qui ne paie pas aux échéances peut être déchu de la vente après mise en demeure d’un mois (art. R. 3211-8) et doit alors une amende égale au dixième de la somme exigible, sans pouvoir être inférieure au vingtième du prix (art. L. 3211-12) ; il n’y a pas de réitération des enchères. Le régime de l’acquéreur (garantie, surenchère éventuelle, délais) figure dans le cahier des charges de chaque vente : demandez-le avant de vous engager."
+      ]
+    },
+    {
+      "id": "reconnaitre-type",
+      "title": "Reconnaître le type de vente dans Immojudis",
+      "paragraphs": [
+        "Sur chaque fiche, Immojudis indique l’organisateur (tribunal, office notarial ou organisme de l’État) et le type de vente. Une vente organisée par un notaire n’est pas forcément judiciaire, et une vente judiciaire peut être confiée à un notaire. Le mode de participation (sur place, en ligne ou les deux) est une information distincte.",
+        "Le catalogue n’est pas exhaustif et la couverture varie selon les sources. En cas de doute, remontez à l’annonce d’origine et à l’organisateur."
+      ],
+      "callout": {
+        "title": "À retenir",
+        "text": "Ne transposez pas sans vérifier les règles d’un type de vente à un autre. La garantie, le délai de paiement et la surenchère d’une vente notariale ou domaniale se lisent dans son cahier, pas dans l’article R. 322-41. Exception : lorsqu’un notaire reçoit des enchères ordonnées par un tribunal (licitation), une partie des règles d’enchères du CPCE s’applique (art. 1278 du CPC). La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE) et en licitation judiciaire (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art. 1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10 % dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir."
+      }
+    },
+    {
+      "id": "questions-organisateur",
+      "title": "Les questions à poser, quel que soit l’organisateur",
+      "paragraphs": [
+        "Ces questions s’adressent à l’avocat poursuivant, à l’office notarial ou au service de l’État qui organise la vente. Notez les réponses et conservez-les avec votre analyse."
+      ],
+      "bullets": [
+        "Qui organise la vente et où puis-je consulter le cahier des conditions de vente ou des charges ?",
+        "Un avocat est-il obligatoire pour enchérir ? Puis-je enchérir en ligne ?",
+        "Quelle garantie dois-je remettre, sous quelle forme et à l’ordre de qui ?",
+        "Une surenchère est-elle possible ? Dans quel délai et pour quel montant ?",
+        "Quel est le délai pour payer le prix, et que se passe-t-il en cas de retard ?",
+        "Quels frais s’ajoutent au prix, et sont-ils inclus dans la mise à prix annoncée ?",
+        "Le bien est-il occupé et quels documents le confirment ?",
+        "Quelles sont les dates de visite ?"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, articles R. 322-40 et R. 322-41 (avocat et garantie)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939147"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, articles 1278 (enchères reçues par un notaire), 1279 et 1280 (surenchère) et 1377 (licitation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026459902"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, article R. 3211-2 (aliénation des immeubles de l’État)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000024885632"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, article R. 3211-3 (adjudication publique)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000024885635"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, article R. 3211-8 (déchéance de l’acquéreur défaillant)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000024885647"
+    },
+    {
+      "label": "Légifrance — Code général des impôts, article 683 (droits d’enregistrement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006310209"
+    },
+    {
+      "label": "Notaires de France — Les ventes aux enchères immobilières notariales",
+      "url": "https://www.notaires.fr/fr/immobilier-fiscalite/vente-rapide/les-ventes-aux-encheres-immobilieres-notariales"
+    },
+    {
+      "label": "Notaires de France — Les ventes aux enchères notariales (vente à la bougie)",
+      "url": "https://www.immobilier.notaires.fr/fr/articles/conseils-et-actualites/achat-vente/les-ventes-aux-encheres-notariales"
+    },
+    {
+      "label": "Bercy — Qu’est-ce qu’une vente domaniale ? (appels d’offres, intermédiaires, adjudications)",
+      "url": "https://www.economie.gouv.fr/cedef/fiches-pratiques/quest-ce-quune-vente-domaniale"
+    },
+    {
+      "label": "Cessions immobilières de l’État — annonces des biens à vendre",
+      "url": "https://cessions.immobilier-etat.gouv.fr/"
+    },
+    {
+      "label": "Justice.fr — Saisie immobilière",
+      "url": "https://www.justice.fr/fiche/saisie-immobiliere"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, article L. 3211-12 (amende de l’acquéreur déchu)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000030254174"
+    }
+  ]
+}

@@ -43,7 +43,7 @@
       "id": "pieces-et-tracabilite",
       "title": "Relier chaque affirmation à une pièce",
       "paragraphs": [
-        "Ouvrez le cahier des conditions de vente et les documents proposés : descriptif, diagnostics, procès-verbal, copropriété, plans ou éléments cadastraux. Notez ce que chaque pièce confirme, ce qu’elle ne dit pas et la question à poser au professionnel compétent.",
+        "Ouvrez le cahier des conditions de vente (le document qui décrit le bien et fixe les règles de la vente) et les documents proposés : descriptif, diagnostics, procès-verbal, copropriété, plans ou éléments cadastraux. Notez ce que chaque pièce confirme, ce qu’elle ne dit pas et la question à poser au professionnel compétent.",
         "Une donnée extraite automatiquement doit être relue dans le document original. Conservez le nom ou le lien de la pièce pour que l’origine de chaque hypothèse reste compréhensible."
       ],
       "callout": {
@@ -56,7 +56,7 @@
       "title": "Convertir les risques en hypothèses de coût",
       "paragraphs": [
         "Occupation inconnue, DPE à relire, travaux de copropriété, surface provisoire ou visite limitée peuvent modifier délai, budget ou usage. Traduisez chaque sujet en action et, si possible, en montant : devis, enveloppe de remise en état, coût de financement, délai de libération ou scénario sans travaux.",
-        "L’assistant de mise plafond propose des scénarios de travaux calculés à partir de la surface et accepte votre propre montant. Il affiche aussi l’enveloppe de travaux compatible avec le prix simulé. Utilisez-la pour repérer le point de rupture, pas pour valider un devis absent."
+        "L’assistant d’enchère plafond propose des scénarios de travaux calculés à partir de la surface et accepte votre propre montant. Il affiche aussi l’enveloppe de travaux compatible avec le prix simulé. Utilisez-la pour repérer le point de rupture, pas pour valider un devis absent."
       ],
       "bullets": [
         "Surface ou occupation à confirmer : recalculer avant de retenir le plafond.",
@@ -68,7 +68,7 @@
       "id": "scenarios-et-plafond",
       "title": "Comparer des scénarios plutôt qu’un chiffre unique",
       "paragraphs": [
-        "Comparez dans Immojudis les profils prudent, intermédiaire, offensif ou personnalisé. Regardez le coût complet au plafond : enchère, frais estimés, travaux, portage et autres postes renseignés. Le chiffre doit rester accompagné de sa référence de marché et de sa marge de sécurité.",
+        "Comparez dans Immojudis les profils prudent, intermédiaire, offensif ou personnalisé. Regardez le coût complet au plafond : enchère, frais estimés, travaux, portage (les coûts supportés tant que le bien ne sert pas ou ne rapporte rien) et autres postes renseignés. Le chiffre doit rester accompagné de sa référence de marché et de sa marge de sécurité.",
         "Commencez par le scénario documenté, puis testez un marché plus conservateur et un budget travaux différent. Si le plafond passe sous la mise à prix, si l’enveloppe travaux tombe à zéro ou si le marché est inexploitable, collectez une preuve ou arrêtez l’analyse."
       ],
       "table": {
@@ -102,7 +102,7 @@
       "id": "preparer-audience",
       "title": "Préparer l’audience avec le professionnel compétent",
       "paragraphs": [
-        "Vérifiez calendrier et formalités avec l’avocat du dossier. Pour une saisie immobilière, l’article R322-40 du Code des procédures civiles d’exécution prévoit que les enchères sont portées par un avocat inscrit au barreau du tribunal concerné. Le cahier indique les éléments pratiques ; R322-41 encadre la garantie remise avant les enchères et R322-42 les frais de poursuite annoncés avant l’ouverture.",
+        "Vérifiez calendrier et formalités avec l’avocat du dossier. Pour une saisie immobilière, l’article R322-40 du Code des procédures civiles d’exécution prévoit que les enchères sont portées par un avocat inscrit au barreau du tribunal concerné. Le cahier indique les éléments pratiques ; R322-41 impose la garantie remise avant les enchères (10 % de la mise à prix, minimum 3 000 €) et R322-42 prévoit que les frais de poursuite, fixés par le juge (on dit « taxés »), soient annoncés avant l’ouverture.",
         "Transmettez une note : plafond en euros, scénario, coût complet, pièces lues, incertitudes et consigne d’arrêt. Immojudis aide à la structurer ; faites confirmer les hypothèses juridiques, techniques et de financement pertinentes par les professionnels compétents."
       ],
       "callout": {

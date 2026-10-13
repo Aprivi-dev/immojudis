@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   inferBarAssociation,
   isSponsoredLawyerPlacement,
+  lawyerPlacementKind,
   resolveCnbDatasetBarKey,
 } from "@/lib/lawyer-directory";
 
@@ -20,6 +21,25 @@ describe("lawyer directory", () => {
     expect(resolveCnbDatasetBarKey("Bobigny")).toBe("seine saint denis");
     expect(resolveCnbDatasetBarKey("Angoulême")).toBe("charente");
     expect(resolveCnbDatasetBarKey("Niort")).toBe("deux sevres");
+  });
+
+  it("distingue la mise en avant payante de l'essai, dans la fenêtre de diffusion seulement", () => {
+    const now = new Date("2026-07-14T10:00:00.000Z");
+    const open = { paid_placement_starts_at: null, paid_placement_ends_at: null };
+
+    expect(lawyerPlacementKind({ paid_placement_status: "active", ...open }, now)).toBe("active");
+    expect(lawyerPlacementKind({ paid_placement_status: "trial", ...open }, now)).toBe("trial");
+    expect(lawyerPlacementKind({ paid_placement_status: "past_due", ...open }, now)).toBeNull();
+    expect(
+      lawyerPlacementKind(
+        {
+          paid_placement_status: "active",
+          paid_placement_starts_at: null,
+          paid_placement_ends_at: "2026-07-01T00:00:00.000Z",
+        },
+        now,
+      ),
+    ).toBeNull();
   });
 
   it("ne sponsorise que les placements payants dans leur fenêtre de diffusion", () => {

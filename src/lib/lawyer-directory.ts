@@ -91,6 +91,8 @@ export type LawyerDirectoryProfile = {
   coverageLabels: string[];
   matchingLabel: string | null;
   isSponsored: boolean;
+  /** Kind of the active placement: "active" (paid) or "trial" (free trial); null without one. */
+  placement: "active" | "trial" | null;
   source: "immojudis" | "cnb";
   oathDate: string | null;
   languages: string[];
@@ -211,6 +213,7 @@ export async function listLawyerDirectory(
         lawyer,
         lawyerCoverage,
         match: bestMatch(lawyer, lawyerCoverage, criteria),
+        placement: lawyerPlacementKind(lawyer, now),
         isSponsored: isSponsoredLawyerPlacement(lawyer, now),
       };
     })
@@ -235,8 +238,8 @@ export async function listLawyerDirectory(
       });
     });
 
-  const referencedProfiles = matched.map(({ lawyer, lawyerCoverage, match, isSponsored }) =>
-    toDirectoryProfile(lawyer, lawyerCoverage, match?.label ?? null, isSponsored),
+  const referencedProfiles = matched.map(({ lawyer, lawyerCoverage, match, placement }) =>
+    toDirectoryProfile(lawyer, lawyerCoverage, match?.label ?? null, placement),
   );
   const referencedIdentities = new Set(referencedProfiles.map(directoryIdentityKey));
   const officialProfiles = cnbLawyers
@@ -298,7 +301,14 @@ function demoLawyerDirectory(
     languages: ["Français"],
   } satisfies Omit<
     LawyerDirectoryProfile,
-    "id" | "displayName" | "firmName" | "email" | "profileSummary" | "practiceTags" | "isSponsored"
+    | "id"
+    | "displayName"
+    | "firmName"
+    | "email"
+    | "profileSummary"
+    | "practiceTags"
+    | "isSponsored"
+    | "placement"
   >;
 
   return {
@@ -313,6 +323,7 @@ function demoLawyerDirectory(
           "Accompagnement des adjudicataires, analyse du cahier des conditions de vente et préparation de l'audience.",
         practiceTags: ["ventes judiciaires", "droit immobilier", "adjudication"],
         isSponsored: true,
+        placement: "active",
       },
       {
         ...baseProfile,
@@ -324,6 +335,7 @@ function demoLawyerDirectory(
           "Conseil en acquisition immobilière judiciaire, financement de l'enchère et formalités après adjudication.",
         practiceTags: ["adjudication", "saisie immobilière", "financement"],
         isSponsored: true,
+        placement: "active",
       },
       {
         ...baseProfile,
@@ -334,6 +346,7 @@ function demoLawyerDirectory(
         profileSummary: null,
         practiceTags: ["droit immobilier"],
         isSponsored: false,
+        placement: null,
       },
       {
         ...baseProfile,
@@ -344,6 +357,7 @@ function demoLawyerDirectory(
         profileSummary: null,
         practiceTags: ["droit immobilier"],
         isSponsored: false,
+        placement: null,
       },
     ],
     sectorLabel: `Barreau de ${barAssociation}`,
@@ -464,7 +478,7 @@ function toDirectoryProfile(
   lawyer: LawyerRow,
   coverage: CoverageRow[],
   matchingLabel: string | null,
-  isSponsored: boolean,
+  placement: LawyerDirectoryProfile["placement"],
 ): LawyerDirectoryProfile {
   return {
     id: lawyer.id,
@@ -493,7 +507,8 @@ function toDirectoryProfile(
       ),
     ),
     matchingLabel,
-    isSponsored,
+    isSponsored: placement !== null,
+    placement,
     source: "immojudis",
     oathDate: null,
     languages: [],
@@ -523,6 +538,7 @@ function toCnbDirectoryProfile(lawyer: CnbLawyerRow): LawyerDirectoryProfile {
     coverageLabels: [`Barreau de ${lawyer.bar_association}`],
     matchingLabel: `Barreau de ${lawyer.bar_association}`,
     isSponsored: false,
+    placement: null,
     source: "cnb",
     oathDate: lawyer.oath_date,
     languages: lawyer.languages,
@@ -543,6 +559,18 @@ function normalizeDirectoryIdentity(value: string) {
     .toLocaleLowerCase("fr")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+/** "active" (paid) or "trial" (free trial) while the placement window is open, else null. */
+export function lawyerPlacementKind(
+  lawyer: Pick<
+    LawyerRow,
+    "paid_placement_status" | "paid_placement_starts_at" | "paid_placement_ends_at"
+  >,
+  now: Date,
+): LawyerDirectoryProfile["placement"] {
+  if (!isSponsoredLawyerPlacement(lawyer, now)) return null;
+  return lawyer.paid_placement_status === "trial" ? "trial" : "active";
 }
 
 export function isSponsoredLawyerPlacement(

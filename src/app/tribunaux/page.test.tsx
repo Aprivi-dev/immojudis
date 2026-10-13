@@ -7,7 +7,8 @@ import {
   buildTribunalJudicialActivityDirectory,
   type TribunalJudicialActivityDirectorySale,
 } from "@/lib/tribunal-judicial-activity-directory";
-import Page from "./page";
+import { PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS } from "@/lib/public-tribunal-activity.server";
+import Page, { generateMetadata, revalidate } from "./page";
 
 const mocks = vi.hoisted(() => ({
   fetchDirectory: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/public-tribunal-activity.server", () => ({
   loadPublicTribunalActivity: mocks.loadPublicActivity,
+  PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS: 5 * 60_000,
 }));
 
 vi.mock("@/lib/tribunal-judicial-activity-directory-client", () => ({
@@ -28,6 +30,20 @@ vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: mocks.fetchPlan }));
 vi.mock("@/components/PremiumAdjudicationExplorer", () => ({
   PremiumAdjudicationExplorer: () => <section aria-label="Résultats premium Licitor" />,
 }));
+
+const ACTIVITY = {
+  code: "bobigny",
+  name: "Bobigny",
+  searchName: "TJ Bobigny",
+  city: "Bobigny",
+  department: "93",
+  upcomingCount: 107,
+  nextSaleDate: "2026-10-13T00:00:00Z",
+  medianStartingPriceEur: 40_500,
+  houseCount: 20,
+  apartmentCount: 80,
+  otherCount: 7,
+};
 
 const AS_OF = new Date("2026-08-20T12:00:00.000Z");
 const DIRECTORY = buildTribunalJudicialActivityDirectory({
@@ -49,12 +65,16 @@ describe("/tribunaux", () => {
     });
     mocks.fetchPlan.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
     mocks.fetchDirectory.mockResolvedValue(DIRECTORY);
-    mocks.loadPublicActivity.mockResolvedValue([]);
+    mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [] });
   });
 
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllEnvs();
+  });
 
   it("affiche les fourchettes de mise et de délai au membre Analyse", async () => {
+    vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "true");
     await renderPage();
 
     expect(await screen.findByRole("heading", { name: "TJ Marseille" })).toBeTruthy();
@@ -108,21 +128,7 @@ describe("/tribunaux", () => {
 
   it("montre l’activité publique des tribunaux sans compte, sans résultat d’adjudication", async () => {
     mocks.useAuth.mockReturnValue({ session: null, loading: false });
-    mocks.loadPublicActivity.mockResolvedValue([
-      {
-        code: "bobigny",
-        name: "Bobigny",
-        searchName: "TJ Bobigny",
-        city: "Bobigny",
-        department: "93",
-        upcomingCount: 107,
-        nextSaleDate: "2026-10-13T00:00:00Z",
-        medianStartingPriceEur: 40_500,
-        houseCount: 20,
-        apartmentCount: 80,
-        otherCount: 7,
-      },
-    ]);
+    mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
 
     await renderPage();
 
@@ -134,8 +140,92 @@ describe("/tribunaux", () => {
     );
     expect(section.textContent).toMatch(/40\s500\s€/);
     expect(section.textContent).toContain("13 oct.");
-    expect(section.textContent).toContain("réservés à l’offre Analyse");
+    // Tant que les statistiques d'adjudication sont fermées, la page ne les annonce pas.
+    expect(section.textContent).not.toContain("adjudication");
+    expect(screen.queryByRole("region", { name: "Résultats premium Licitor" })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/adjug|adjudication/i);
     expect(mocks.fetchDirectory).not.toHaveBeenCalled();
+  });
+
+  it("annonce les résultats d’adjudication réservés à Analyse une fois les statistiques ouvertes", async () => {
+    vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "true");
+    mocks.useAuth.mockReturnValue({ session: null, loading: false });
+    mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
+
+    await renderPage();
+
+    expect(
+      screen.getByRole("region", { name: "107 ventes judiciaires à venir dans 1 tribunal" })
+        .textContent,
+    ).toContain("réservés à l’offre Analyse");
+    expect(screen.getByRole("region", { name: "Résultats premium Licitor" })).toBeTruthy();
+  });
+
+  it("n’affiche pas le baromètre d’adjudication tant que le drapeau est fermé", async () => {
+    await renderPage();
+
+    await screen.findByRole("heading", { name: "TJ Marseille" });
+    expect(screen.queryByRole("region", { name: "Résultats premium Licitor" })).toBeNull();
+  });
+
+  describe("métadonnées", () => {
+    it("décrit ce qui est affiché, sans prix d’adjudication, et s’indexe quand des tribunaux sont listés", async () => {
+      mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
+
+      const metadata = await generateMetadata();
+
+      expect(metadata.title).toBe("Ventes judiciaires à venir par tribunal");
+      expect(String(metadata.description)).not.toMatch(/adjudication/i);
+      expect(metadata.alternates?.canonical).toBe("/tribunaux");
+      expect(metadata.robots).toEqual({ index: true, follow: true });
+    });
+
+    it("annonce les prix d’adjudication avec leur réserve de couverture quand le drapeau est ouvert", async () => {
+      vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "true");
+      mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
+
+      const { description } = await generateMetadata();
+
+      expect(String(description)).toMatch(
+        /prix d’adjudication et résultats avec l’offre Analyse, pour les tribunaux à l’historique suffisant\.$/,
+      );
+    });
+
+    it("n’indexe pas la page quand la lecture réussit et que la liste des tribunaux est vide", async () => {
+      mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [] });
+
+      const metadata = await generateMetadata();
+
+      expect(metadata.robots).toEqual({ index: false, follow: true });
+    });
+
+    it("ne pose pas noindex quand la lecture des tribunaux a échoué", async () => {
+      mocks.loadPublicActivity.mockResolvedValue({ status: "error" });
+
+      const metadata = await generateMetadata();
+
+      expect(metadata.robots).toEqual({ index: true, follow: true });
+    });
+
+    it("rafraîchit la page toutes les 5 minutes, comme la mémoire d’un échec de lecture", () => {
+      expect(revalidate).toBe(PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS / 1000);
+    });
+
+    it("mentionne les prix d’adjudication seulement une fois les statistiques ouvertes", async () => {
+      vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "true");
+      mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
+
+      expect(String((await generateMetadata()).description)).toMatch(/adjudication/i);
+    });
+  });
+
+  it("affiche le baromètre Analyse seul quand la lecture des tribunaux a échoué", async () => {
+    mocks.loadPublicActivity.mockResolvedValue({ status: "error" });
+
+    await renderPage();
+
+    expect(await screen.findByRole("heading", { name: "TJ Marseille" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: /ventes judiciaires à venir dans/ })).toBeNull();
   });
 
   it("remplace une erreur interne par un message stable pour le membre Analyse", async () => {

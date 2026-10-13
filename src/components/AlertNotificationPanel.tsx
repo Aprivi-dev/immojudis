@@ -43,7 +43,8 @@ export default function AlertNotificationPanel({
     queryKey: queryKeys.featureEntitlementsPlan(userId),
     queryFn: fetchAccessPlan,
   });
-  const emailAvailable = entitlements.data?.plan.hasAnalysisAccess === true;
+  // Free accounts can switch the email on too: they get one weekly digest, Analyse a daily one.
+  const hasAnalysisAccess = entitlements.data?.plan.hasAnalysisAccess === true;
   const preferencesQuery = useQuery({
     queryKey: queryKeys.notificationPreferences(userId),
     queryFn: fetchNotificationPreferences,
@@ -98,17 +99,19 @@ export default function AlertNotificationPanel({
         <span>
           <span className="block font-semibold text-foreground">Alertes email</span>
           <span className="block text-xs text-muted-foreground">
-            {!emailAvailable
-              ? "Emails réservés à Analyse ; notifications dans l’application en Découverte"
-              : emailEnabled
+            {emailEnabled
+              ? hasAnalysisAccess
                 ? "Consentement actif"
-                : "Notifications in-app uniquement"}
+                : "Consentement actif : un email récapitulatif par semaine"
+              : hasAnalysisAccess
+                ? "Notifications dans l’application uniquement"
+                : "Cochez pour recevoir un email récapitulatif chaque semaine"}
           </span>
         </span>
         <input
           type="checkbox"
-          checked={emailAvailable && emailEnabled}
-          disabled={!emailAvailable || preferencesQuery.isLoading || preferencesMutation.isPending}
+          checked={emailEnabled}
+          disabled={preferencesQuery.isLoading || preferencesMutation.isPending}
           onChange={(event) =>
             preferencesMutation.mutate({
               alertEmailEnabled: event.target.checked,

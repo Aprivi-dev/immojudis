@@ -14,7 +14,6 @@ import {
   INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION,
   INFORMATION_AGENT_EMAIL_VARIABLES,
   INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS,
-  informationAgentAccountInvitationUrl,
   informationAgentEmailTemplateContentSchema,
   parseInformationAgentEmailTemplateContent,
   renderInformationAgentEmailContent,
@@ -218,7 +217,6 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
         previewAppUrl,
       ).toString(),
     },
-    accountInvitationUrl: informationAgentAccountInvitationUrl(previewAppUrl),
   });
   return {
     preview: {

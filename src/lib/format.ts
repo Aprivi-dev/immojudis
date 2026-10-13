@@ -1,5 +1,6 @@
 export {
   formatPrice,
+  formatStartingPrice,
   formatCurrency,
   formatNumber,
   formatPropertyArea,

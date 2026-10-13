@@ -27,6 +27,16 @@ describe("Supabase sale search query", () => {
     },
   );
 
+  it("sorts by bedroom count on the server, empty values last", async () => {
+    const builder = new QueryRecorder();
+    await getSales({}, 24, "beds_desc", 0, { client: { from: () => builder } as never });
+    expect(builder.calls).toContainEqual([
+      "order",
+      "bedrooms_count",
+      { ascending: false, nullsFirst: false },
+    ]);
+  });
+
   it("matches canonical vacant occupancy before pagination", async () => {
     const builder = new QueryRecorder();
     await getSales({ occupancy_status: "free" }, 24, "price_asc", 24, {

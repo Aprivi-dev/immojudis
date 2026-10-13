@@ -51,6 +51,7 @@ from src.llm_task_deadline import LLMTaskDeadlineExceeded
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_bedrooms_count_from_text, extract_rooms_count_from_text
 from src.pdf_enrichment import sale_storage_id
+from src.personal_data import redact_personal_text
 from src.pipeline_usage import PINNED_MODEL, PipelineBudgetExhausted
 
 LOGGER = logging.getLogger(__name__)
@@ -1622,25 +1623,33 @@ def _llm_cache_key(context: str, model: str, prompt_version: str = "auction_llm_
 
 
 def _fact_chunk_cache_key(context: str, model: str, prompt_version: str) -> str:
+    # Même normalisation que `_fact_input_cache_key` : une vente relue depuis la base (noms filtrés)
+    # et la même vente fraîchement collectée doivent partager leur clé.
     return _llm_cache_key(
-        context,
+        redact_personal_text(context) or "",
         model,
         f"facts_complete_v2:{prompt_version}:{SURFACE_REASONING_VERSION}",
     )
 
 
 def _fact_input_cache_key(context: str, model: str, prompt_version: str) -> str:
-    """Identify the exact complete fact input, independent of display output."""
+    """Identify the exact complete fact input, independent of display output.
+
+    Personal names are filtered from the stored texts (``personal_data``) but not from the freshly
+    collected ones; the key ignores them so a sale hashes alike before and after storage and is not
+    re-extracted (a paid call) each time it moves between the two.
+    """
     return _llm_cache_key(
-        context,
+        redact_personal_text(context) or "",
         model,
         f"facts_input_v1:{prompt_version}:{SURFACE_REASONING_VERSION}",
     )
 
 
 def _display_cache_key(context: str, model: str, prompt_version: str) -> str:
+    # Voir `_fact_chunk_cache_key` : le contexte est normalisé avant d'être haché.
     return _llm_cache_key(
-        context,
+        redact_personal_text(context) or "",
         model,
         f"display_v1:{prompt_version}:{DISPLAY_QUALITY_VERSION}",
     )

@@ -7,6 +7,7 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import { exampleHeadlineFigures } from "@/lib/example-sale";
 import { formatPrice } from "@/lib/format";
+import { DOSSIER_APARTMENT_QUALITY, DOSSIER_APARTMENT_SIZES } from "./home-images";
 import styles from "./CinematicHome.module.css";
 
 // Same figures as /annonce-exemple: computed once from the example, not typed here.
@@ -69,10 +70,8 @@ export function CinematicHero() {
               src="/media/landing/dossier-apartment.webp"
               alt="Appartement lumineux avec moulures et parquet, visuel d’illustration"
               fill
-              sizes="(max-width: 760px) calc(100vw - 48px), (max-width: 1100px) 38vw, 480px"
-              quality={85}
-              loading="eager"
-              fetchPriority="high"
+              sizes={DOSSIER_APARTMENT_SIZES}
+              quality={DOSSIER_APARTMENT_QUALITY}
             />
             <span className={styles.fictionBadge}>Exemple fictif</span>
           </div>

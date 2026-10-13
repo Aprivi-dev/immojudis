@@ -7,32 +7,33 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { DOSSIER_APARTMENT_QUALITY, DOSSIER_APARTMENT_SIZES } from "./home-images";
 import styles from "./HomeDiscovery.module.css";
 
 const methodSteps = [
   {
     number: "01",
-    title: "Repérez un bien",
+    title: "Repérez une vente",
     description:
-      "Choisissez votre secteur, puis repérez la mise à prix, la date et le type de vente.",
+      "Choisissez votre secteur, puis repérez la mise à prix, la date d’audience et le type de vente.",
   },
   {
     number: "02",
     title: "Étudiez et visitez",
     description:
-      "Lisez les documents et participez aux visites proposées pour comprendre l’état du bien, son occupation et les conditions de vente.",
+      "Lisez le cahier des conditions de vente (le document qui fixe les règles de la vente) et les pièces, puis participez aux visites pour comprendre l’état du bien et son occupation.",
   },
   {
     number: "03",
-    title: "Fixez votre budget",
+    title: "Fixez votre enchère plafond",
     description:
-      "Intégrez les frais et les travaux, préparez votre financement et fixez votre enchère plafond.",
+      "Additionnez le prix, les frais et les travaux, préparez votre financement, puis fixez la limite à ne pas dépasser avant l’audience.",
   },
   {
     number: "04",
-    title: "Passez à l’enchère",
+    title: "Enchérissez et finalisez",
     description:
-      "Préparez les formalités pour participer. Si vous remportez la vente, finalisez l’achat dans les délais prévus.",
+      "Au tribunal, un avocat porte vos enchères. Si vous remportez la vente, payez le prix et les frais dans les délais prévus.",
   },
 ] as const;
 
@@ -132,7 +133,8 @@ export function HomeDiscovery() {
             src="/media/landing/dossier-apartment.webp"
             alt="Intérieur lumineux d’un appartement de caractère, visuel d’illustration"
             fill
-            sizes="(max-width: 760px) 100vw, 50vw"
+            sizes={DOSSIER_APARTMENT_SIZES}
+            quality={DOSSIER_APARTMENT_QUALITY}
           />
           <p className={styles.imageCaption}>
             <strong>Visuel d’illustration</strong>

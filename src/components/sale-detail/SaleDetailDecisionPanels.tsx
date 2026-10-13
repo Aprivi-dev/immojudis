@@ -1,12 +1,16 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
+import { useAuth } from "@/hooks/use-auth";
+import { UNPROFITABLE_HEADLINE, type CeilingGap } from "@/lib/bid-ceiling-gaps";
 import { fetchValuePreview } from "@/lib/client-api";
-import { formatPrice } from "@/lib/format";
+import { formatPrice, formatStartingPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
 import { getSaleProcedure } from "@/lib/sale-procedure";
+import { saleDetailPath } from "@/lib/navigation";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
@@ -17,6 +21,8 @@ export function AnalysisDecisionPanel({
   worksBudget,
   recommendedCeiling,
   ceilingAvailable,
+  ceilingGap = null,
+  valueReason,
   onAdjust,
   onEditWorks,
 }: {
@@ -27,6 +33,10 @@ export function AnalysisDecisionPanel({
   worksBudget: number | null;
   recommendedCeiling: number;
   ceilingAvailable: boolean;
+  /** Why the ceiling is not a number (missing input, or no profitable bid). */
+  ceilingGap?: CeilingGap | null;
+  /** Why the market value is missing, when it is (« surface manquante », …). */
+  valueReason?: string;
   onAdjust: () => void;
   /** Opens the Travaux tab, where the works budget is chosen. */
   onEditWorks?: () => void;
@@ -34,8 +44,26 @@ export function AnalysisDecisionPanel({
   const ceiling = ceilingAvailable ? recommendedCeiling : null;
   const marketValue =
     marketEstimate?.actionable === true ? roundedValue(marketEstimate.estimatedValueEur) : null;
+  const missingMarker = (label: string): { main: string; note?: string; compact?: boolean } => {
+    if (label === "Mise à prix") return { main: "À confirmer" };
+    if (label === "Valeur estimée") {
+      return marketLoading
+        ? { main: "Calcul…" }
+        : { main: "À compléter", note: valueReason ?? "valeur de marché manquante" };
+    }
+    if (ceilingGap?.kind === "unprofitable") {
+      return { main: UNPROFITABLE_HEADLINE, compact: true };
+    }
+    return {
+      main: "À compléter",
+      note: ceilingGap?.reason ?? valueReason ?? "valeur de marché manquante",
+    };
+  };
   const markers = comparisonMarkerPositions({
-    start: sale.starting_price_eur,
+    start:
+      sale.starting_price_eur != null && sale.starting_price_eur > 0
+        ? sale.starting_price_eur
+        : null,
     ceiling,
     market: marketValue,
   });
@@ -43,18 +71,20 @@ export function AnalysisDecisionPanel({
   return (
     <aside className={panelStyles.estimationCard} aria-label="Votre analyse de prix">
       <dl className={panelStyles.priceGrid}>
-        {markers.map((marker) => (
-          <div key={marker.label}>
-            <dt>{marker.label}</dt>
-            <dd>
-              {marker.value == null
-                ? marker.label === "Valeur estimée" && marketLoading
-                  ? "Calcul…"
-                  : "À compléter"
-                : formatPrice(marker.value)}
-            </dd>
-          </div>
-        ))}
+        {markers.map((marker) => {
+          const missing = marker.value == null ? missingMarker(marker.label) : null;
+          return (
+            <div key={marker.label}>
+              <dt>{marker.label}</dt>
+              <dd className={missing?.compact ? panelStyles.textValue : undefined}>
+                {marker.value != null ? formatPrice(marker.value) : missing?.main}
+                {missing?.note ? (
+                  <small className={panelStyles.valueNote}>{missing.note}</small>
+                ) : null}
+              </dd>
+            </div>
+          );
+        })}
       </dl>
       <div className={panelStyles.estimationFoot}>
         <p>
@@ -115,9 +145,7 @@ export function NonJudicialDecisionPanel({
       <dl className={panelStyles.priceGrid}>
         <div>
           <dt>{venue === "state" ? "Prix publié" : "Mise à prix"}</dt>
-          <dd>
-            {sale.starting_price_eur == null ? "À confirmer" : formatPrice(sale.starting_price_eur)}
-          </dd>
+          <dd>{startingPriceOrConfirm(sale.starting_price_eur)}</dd>
         </div>
         <div>
           <dt>Valeur estimée</dt>
@@ -139,30 +167,45 @@ export function NonJudicialDecisionPanel({
 }
 
 export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
+  const { user, loading: authLoading } = useAuth();
+  // The value route requires an account: a visitor never gets an answer from it.
   const preview = useQuery({
     queryKey: ["value-preview", sale.id],
     queryFn: () => fetchValuePreview(sale.id),
+    enabled: Boolean(user),
     staleTime: 60 * 60_000,
     retry: false,
   });
-  const value = preview.data?.available ? preview.data : null;
+  const value = user && preview.data?.available ? preview.data : null;
+  const salePath = saleDetailPath(sale.id);
   return (
     <aside className={panelStyles.estimationCard} aria-label="Aperçu des repères de prix">
       <dl className={panelStyles.priceGrid}>
         <div>
           <dt>Mise à prix</dt>
-          <dd>
-            {sale.starting_price_eur == null ? "À confirmer" : formatPrice(sale.starting_price_eur)}
-          </dd>
+          <dd>{startingPriceOrConfirm(sale.starting_price_eur)}</dd>
         </div>
         <div>
           <dt>Valeur estimée</dt>
           <dd className={value ? undefined : panelStyles.textValue}>
-            {value
-              ? `${formatPrice(value.lowEur)} – ${formatPrice(value.highEur)}`
-              : preview.isLoading
-                ? "Calcul…"
-                : "Pas encore d’estimation"}
+            {value ? (
+              `${formatPrice(value.lowEur)} – ${formatPrice(value.highEur)}`
+            ) : !user ? (
+              authLoading ? (
+                "Calcul…"
+              ) : (
+                <Link
+                  href={`/login?mode=investor&redirect=${encodeURIComponent(salePath)}`}
+                  className={panelStyles.valueLink}
+                >
+                  Créez un compte gratuit pour voir la fourchette de valeur
+                </Link>
+              )
+            ) : preview.isLoading ? (
+              "Calcul…"
+            ) : (
+              "Pas encore d’estimation"
+            )}
           </dd>
         </div>
         <div>
@@ -188,6 +231,11 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
       />
     </aside>
   );
+}
+
+/** « À confirmer » for an absent or zero starting price, the amount otherwise. */
+function startingPriceOrConfirm(value: number | null | undefined): string {
+  return value != null && value > 0 ? formatStartingPrice(value) : "À confirmer";
 }
 
 /** A model estimate is not precise to the euro: show it to the nearest thousand. */
