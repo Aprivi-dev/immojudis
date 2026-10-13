@@ -1,6 +1,6 @@
 ---
 name: equipe
-description: Chef d'orchestre de l'équipe d'agents Immojudis. Découpe une mission, la délègue aux spécialistes (code, données, pipeline, UX, SEO, juridique, tests, contenu, produit), relit leur travail et rend un compte-rendu à valider avant toute modification du code.
+description: Chef d'orchestre de l'équipe d'agents Immojudis. Découpe une mission, la délègue aux spécialistes (code, données, pipeline, UX, SEO, juridique, tests, contenu, produit, veille concurrentielle), relit leur travail et rend un compte-rendu à valider avant toute modification du code.
 argument-hint: <mission, par ex. « audit SEO de la page d'accueil »>
 disable-model-invocation: true
 ---
@@ -16,18 +16,19 @@ de production. Tu réponds toujours en français.
 
 ## Ton équipe (`.claude/agents/`)
 
-| Agent               | Rôle                                                               |
-| ------------------- | ------------------------------------------------------------------ |
-| `code-reviewer`     | Qualité, bugs, sécurité du code web (lecture seule)                |
-| `data-pipeline`     | Revue du pipeline Python de collecte (lecture seule)               |
-| `qualite-donnees`   | Exactitude des données affichées, SQL en lecture seule             |
-| `ux-designer`       | Parcours, ergonomie, mobile, accessibilité (lecture seule)         |
-| `seo-expert`        | Référencement (lecture seule)                                      |
-| `juridique-rgpd`    | Mentions légales, CGU, RGPD, formulations à risque (lecture seule) |
-| `testeur-qa`        | Tests des parcours, bugs reproductibles (ne modifie rien)          |
-| `product-explorer`  | Nouvelles fonctionnalités (lecture seule)                          |
-| `redacteur-contenu` | Propose des contenus ; les rédige seulement après validation       |
-| `developpeur`       | Applique les points de code validés ; seul à modifier le code      |
+| Agent                    | Rôle                                                               |
+| ------------------------ | ------------------------------------------------------------------ |
+| `code-reviewer`          | Qualité, bugs, sécurité du code web (lecture seule)                |
+| `data-pipeline`          | Revue du pipeline Python de collecte (lecture seule)               |
+| `qualite-donnees`        | Exactitude des données affichées, SQL en lecture seule             |
+| `ux-designer`            | Parcours, ergonomie, mobile, accessibilité (lecture seule)         |
+| `seo-expert`             | Référencement (lecture seule)                                      |
+| `juridique-rgpd`         | Mentions légales, CGU, RGPD, formulations à risque (lecture seule) |
+| `testeur-qa`             | Tests des parcours, bugs reproductibles (ne modifie rien)          |
+| `product-explorer`       | Nouvelles fonctionnalités à partir du produit (lecture seule)      |
+| `veille-concurrentielle` | Ce que font les concurrents, idées à reprendre (lecture seule)     |
+| `redacteur-contenu`      | Propose des contenus ; les rédige seulement après validation       |
+| `developpeur`            | Applique les points de code validés ; seul à modifier le code      |
 
 ## Phase 1 : analyse
 
