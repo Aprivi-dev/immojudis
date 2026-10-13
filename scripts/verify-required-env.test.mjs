@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { legalConfigurationStatus } from "../src/lib/legal-documents";
+import { resolveSiteOrigin, SITE_URL_ENV_NAMES } from "../src/lib/site-url";
 import {
   blockingLaunchProblems,
+  explicitSiteUrl,
   EXPLICIT_SITE_URL_ENV_NAMES,
   LEGAL_ENV_NAMES,
   evaluateProductionLaunchConfig,
@@ -52,6 +54,89 @@ describe("garde-fous de lancement (build de production)", () => {
     const problems = blockingLaunchProblems(env);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatch(/origine canonique/);
+  });
+
+  it("liste les mêmes variables d'origine que src/lib/site-url.ts, sans VERCEL_URL", () => {
+    expect([...EXPLICIT_SITE_URL_ENV_NAMES]).toEqual(
+      SITE_URL_ENV_NAMES.filter((name) => name !== "VERCEL_URL"),
+    );
+  });
+
+  it("juge la valeur que resolveSiteOrigin retient, avec le même test de valeur vide", () => {
+    const cases = [
+      { SITE_URL: "  ", APP_URL: "https://immojudis.com" },
+      { SITE_URL: "", NEXT_PUBLIC_SITE_URL: "https://a.example", APP_URL: "https://b.example" },
+      { NEXT_PUBLIC_APP_URL: " https://c.example ", APP_URL: "https://b.example" },
+      { SITE_URL: "placeholder", APP_URL: "https://immojudis.com" },
+      { SITE_URL: "http://localhost:3000", APP_URL: "https://immojudis.com" },
+    ];
+    for (const env of cases) {
+      const production = { ...env, VERCEL_ENV: "production" };
+      const configured = explicitSiteUrl(production);
+      // Le garde regarde la même variable que le site : même hôte.
+      expect(new URL(resolveSiteOrigin(production)).host).toBe(
+        new URL(
+          /^[a-z][a-z\d+.-]*:\/\//i.test(configured.raw)
+            ? configured.raw
+            : `https://${configured.raw}`,
+        ).host,
+      );
+    }
+  });
+
+  it("refuse une origine fictive même quand une variable suivante est valide", () => {
+    const env = {
+      SITE_URL: "placeholder",
+      APP_URL: "https://immojudis.com",
+      VERCEL_ENV: "production",
+    };
+    // Le site résoudrait https://placeholder : c'est ce que le garde doit bloquer.
+    expect(resolveSiteOrigin(env)).toBe("https://placeholder");
+    const problems = blockingLaunchProblems(env);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/fictive.*SITE_URL/);
+    // Une valeur vide, elle, est sautée par le site comme par le garde.
+    expect(blockingLaunchProblems({ SITE_URL: "   ", APP_URL: "https://immojudis.com" })).toEqual(
+      [],
+    );
+    expect(resolveSiteOrigin({ SITE_URL: "   ", APP_URL: "https://immojudis.com" })).toBe(
+      "https://immojudis.com",
+    );
+  });
+
+  it("refuse en production une origine locale ou en http", () => {
+    for (const SITE_URL of [
+      "http://localhost:3000",
+      "localhost:3000",
+      "https://localhost",
+      "http://127.0.0.1:3000",
+      "https://127.0.0.1",
+      "http://[::1]:3000",
+      "https://app.localhost",
+      "http://immojudis.com",
+    ]) {
+      expect(blockingLaunchProblems({ SITE_URL }), SITE_URL).not.toEqual([]);
+    }
+    for (const SITE_URL of [
+      "https://immojudis.com",
+      "immojudis.com",
+      "https://www.immojudis.fr/",
+    ]) {
+      expect(blockingLaunchProblems({ SITE_URL }), SITE_URL).toEqual([]);
+    }
+  });
+
+  it("ne laisse pas l'échappatoire contourner une origine locale, http ou fictive", () => {
+    for (const SITE_URL of ["http://localhost:3000", "http://immojudis.com", "placeholder"]) {
+      const outcome = evaluateProductionLaunchConfig({
+        ...completeLaunch,
+        SITE_URL,
+        VERCEL_ENV: "production",
+        ALLOW_INCOMPLETE_LAUNCH_CONFIG: "true",
+      });
+      expect(outcome.exitCode, SITE_URL).toBe(1);
+      expect(outcome.errors.join("\n")).toContain("ne peut pas être contournée");
+    }
   });
 
   it("ne vérifie rien hors production", () => {

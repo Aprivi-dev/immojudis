@@ -7,7 +7,8 @@ import {
   buildTribunalJudicialActivityDirectory,
   type TribunalJudicialActivityDirectorySale,
 } from "@/lib/tribunal-judicial-activity-directory";
-import Page, { generateMetadata } from "./page";
+import { PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS } from "@/lib/public-tribunal-activity.server";
+import Page, { generateMetadata, revalidate } from "./page";
 
 const mocks = vi.hoisted(() => ({
   fetchDirectory: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/public-tribunal-activity.server", () => ({
   loadPublicTribunalActivity: mocks.loadPublicActivity,
+  PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS: 5 * 60_000,
 }));
 
 vi.mock("@/lib/tribunal-judicial-activity-directory-client", () => ({
@@ -63,7 +65,7 @@ describe("/tribunaux", () => {
     });
     mocks.fetchPlan.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
     mocks.fetchDirectory.mockResolvedValue(DIRECTORY);
-    mocks.loadPublicActivity.mockResolvedValue([]);
+    mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [] });
   });
 
   afterEach(() => {
@@ -126,7 +128,7 @@ describe("/tribunaux", () => {
 
   it("montre l’activité publique des tribunaux sans compte, sans résultat d’adjudication", async () => {
     mocks.useAuth.mockReturnValue({ session: null, loading: false });
-    mocks.loadPublicActivity.mockResolvedValue([ACTIVITY]);
+    mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
 
     await renderPage();
 
@@ -148,7 +150,7 @@ describe("/tribunaux", () => {
   it("annonce les résultats d’adjudication réservés à Analyse une fois les statistiques ouvertes", async () => {
     vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "true");
     mocks.useAuth.mockReturnValue({ session: null, loading: false });
-    mocks.loadPublicActivity.mockResolvedValue([ACTIVITY]);
+    mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
 
     await renderPage();
 
@@ -168,7 +170,7 @@ describe("/tribunaux", () => {
 
   describe("métadonnées", () => {
     it("décrit ce qui est affiché, sans prix d’adjudication, et s’indexe quand des tribunaux sont listés", async () => {
-      mocks.loadPublicActivity.mockResolvedValue([ACTIVITY]);
+      mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
 
       const metadata = await generateMetadata();
 
@@ -178,20 +180,41 @@ describe("/tribunaux", () => {
       expect(metadata.robots).toEqual({ index: true, follow: true });
     });
 
-    it("n’indexe pas la page quand la liste des tribunaux est vide", async () => {
-      mocks.loadPublicActivity.mockResolvedValue([]);
+    it("n’indexe pas la page quand la lecture réussit et que la liste des tribunaux est vide", async () => {
+      mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [] });
 
       const metadata = await generateMetadata();
 
       expect(metadata.robots).toEqual({ index: false, follow: true });
     });
 
+    it("ne pose pas noindex quand la lecture des tribunaux a échoué", async () => {
+      mocks.loadPublicActivity.mockResolvedValue({ status: "error" });
+
+      const metadata = await generateMetadata();
+
+      expect(metadata.robots).toEqual({ index: true, follow: true });
+    });
+
+    it("rafraîchit la page toutes les 5 minutes, comme la mémoire d’un échec de lecture", () => {
+      expect(revalidate).toBe(PUBLIC_TRIBUNAL_ACTIVITY_FAILURE_RETRY_MS / 1000);
+    });
+
     it("mentionne les prix d’adjudication seulement une fois les statistiques ouvertes", async () => {
       vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "true");
-      mocks.loadPublicActivity.mockResolvedValue([ACTIVITY]);
+      mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
 
       expect(String((await generateMetadata()).description)).toMatch(/adjudication/i);
     });
+  });
+
+  it("affiche le baromètre Analyse seul quand la lecture des tribunaux a échoué", async () => {
+    mocks.loadPublicActivity.mockResolvedValue({ status: "error" });
+
+    await renderPage();
+
+    expect(await screen.findByRole("heading", { name: "TJ Marseille" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: /ventes judiciaires à venir dans/ })).toBeNull();
   });
 
   it("remplace une erreur interne par un message stable pour le membre Analyse", async () => {

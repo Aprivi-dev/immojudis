@@ -99,6 +99,40 @@ describe("BillingActions", () => {
     expect(mocks.startAnalyseCheckout).not.toHaveBeenCalled();
   });
 
+  it("shows the end of the grace period, not the start of the unpaid period, when a renewal failed", async () => {
+    mocks.fetchAccessPlan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        // Start of the unpaid period, already past: this is what is stored for past_due.
+        currentPeriodEnd: "2026-10-01T12:00:00.000Z",
+        billing: {
+          status: "past_due",
+          hasStripeCustomer: true,
+          graceEndsAt: "2026-10-08T12:00:00.000Z",
+        },
+      },
+    });
+    renderActions();
+
+    const access = await screen.findByRole("button", { name: /Actif jusqu/ });
+    expect(access.textContent).toContain("08");
+    expect(access.textContent).not.toContain("01 oct");
+  });
+
+  it("computes the grace end like plans.ts when the response carries no graceEndsAt", async () => {
+    mocks.fetchAccessPlan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        currentPeriodEnd: "2026-10-01T12:00:00.000Z",
+        billing: { status: "past_due", hasStripeCustomer: true, graceEndsAt: null },
+      },
+    });
+    renderActions();
+
+    const access = await screen.findByRole("button", { name: /Actif jusqu/ });
+    expect(access.textContent).toContain("08");
+  });
+
   it("lets a subscriber whose renewal failed update the card instead of re-subscribing", async () => {
     mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: true, missing: [] });
     mocks.fetchAccessPlan.mockResolvedValue({
@@ -299,6 +333,10 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" }));
     await waitFor(() => expect(mocks.updateOfferOpeningNotification).toHaveBeenCalledWith(true));
     expect(await screen.findByText(/Votre demande est enregistrée/)).toBeTruthy();
+    expect(
+      screen.getByText(/nous vous écrirons une seule fois à l’ouverture de l’offre Analyse/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/un email vous préviendra/)).toBeNull();
     expect(mocks.track).toHaveBeenCalledWith("opening_notification_requested");
 
     mocks.updateOfferOpeningNotification.mockResolvedValue({

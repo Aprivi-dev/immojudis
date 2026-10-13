@@ -1,4 +1,6 @@
+import "server-only";
 import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { apiRouteError } from "@/lib/api-observability";
 import {
   bearerTokenFromRequest,
@@ -36,7 +38,7 @@ export async function PUT(request: Request) {
       ...RATE_LIMIT_POLICIES.formSubmit,
     });
     const input = offerOpeningNotificationSchema.parse(await request.json());
-    const response = await setOfferOpeningNotification({ auth, input });
+    const response = await setOfferOpeningNotification({ auth, admin: supabaseAdmin, input });
     return NextResponse.json(response, { headers: NO_STORE });
   } catch (error) {
     return apiRouteError(error, request, "billing-opening-notification", {

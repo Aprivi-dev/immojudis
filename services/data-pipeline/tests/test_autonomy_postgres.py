@@ -81,7 +81,7 @@ def test_persistent_refusal_and_retry_after_delay_the_next_source_attempt():
     assert next_attempt(failures=1,access_denied=False,retry_not_before=future.isoformat(),now=now) == future
 
 
-def test_missed_alert_threshold_migration_patches_the_latest_observer_exactly_once():
+def test_missed_alert_threshold_migration_patches_the_latest_observer_and_is_idempotent():
     url = os.getenv('PIPELINE_TEST_DB_URL')
     if not url:
         pytest.skip('Requires disposable PostgreSQL')
@@ -100,11 +100,17 @@ def test_missed_alert_threshold_migration_patches_the_latest_observer_exactly_on
             assert ") < p_now - interval '18 hours';" in after
             assert "interval '12 hours'" not in after
             assert after.replace('18 hours', '12 hours') == before
-            # A second application no longer finds the expected text: it refuses instead of guessing.
-            db.execute('savepoint again')
+            # A second application finds the 18-hour threshold already there: no-op, no error,
+            # otherwise the whole migration run would fail on re-application.
+            db.execute(patch)
+            again = db.execute(f"select pg_get_functiondef('{signature}'::regprocedure)").fetchone()[0]
+            assert again == after
+            # Neither 12 nor 18 hours: it refuses instead of guessing.
+            db.execute(after.replace("interval '18 hours'", "interval '24 hours'"))
+            db.execute('savepoint unexpected')
             with pytest.raises(Exception, match='refusing 18-hour threshold patch'):
                 db.execute(patch)
-            db.execute('rollback to savepoint again')
+            db.execute('rollback to savepoint unexpected')
         finally:
             db.rollback()
 
