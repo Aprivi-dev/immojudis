@@ -49,7 +49,8 @@ describe("pages that crawlers must read", () => {
   it("/avocats renders its heading and the search form from the filters it is given", () => {
     const output = html(<LawyerDirectoryPage search={{ bar: "Bordeaux" }} />);
     expect(output.match(/<h1/g)).toHaveLength(1);
-    expect(output).toContain("Avocats en droit immobilier");
+    expect(output).toContain("Avocats inscrits au barreau");
+    expect(output).not.toContain("Spécialistes en droit immobilier");
     expect(output).toContain('value="Bordeaux"');
     expect(mocks.useSearchParams).not.toHaveBeenCalled();
   });

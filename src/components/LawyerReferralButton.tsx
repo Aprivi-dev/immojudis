@@ -174,6 +174,10 @@ function LawyerReferralRecap({
         L'avocat proposé est inscrit au barreau du tribunal qui juge cette vente. L'avocat qui
         poursuit la vente n'est jamais proposé. Aucune autre donnée de votre compte n'est transmise.
       </p>
+      <p className="mt-2">
+        L'avocat proposé peut être un partenaire qui rémunère Immojudis pour sa visibilité. Vous
+        restez libre de choisir un autre avocat. Ses honoraires sont fixés avec lui.
+      </p>
       <label className="mt-3 flex items-start gap-2 text-foreground">
         <input
           type="checkbox"

@@ -114,33 +114,14 @@ export type InformationAgentEmailTemplatePreview = {
 
 /**
  * Ancien bloc « Vous avez d’autres ventes à partager ? » que des modèles publiés ou des brouillons
- * peuvent encore contenir dans leur texte éditable. Il est toujours retiré du corps : l'invitation
- * n'est plus rédigée par le modèle mais ajoutée, sous une forme courte et fixe, par le gabarit
- * (`emails/information-request.tsx`), ce qui évite tout doublon.
+ * peuvent encore contenir dans leur texte éditable. Les emails aux professionnels restent purement
+ * informatifs (décision du 13 octobre 2026) : ce bloc est toujours retiré du corps, ainsi que
+ * l'ancienne phrase fixe « Vous publiez d’autres ventes ? ».
  */
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
   "Vous avez d’autres ventes à partager ?";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
-
-/**
- * Invitation demandée par le propriétaire (11 octobre 2026) : une phrase, un lien, sans traceur.
- * Prospection B2B liée à l'activité du destinataire, couverte par le lien d'opposition du pied de
- * message. Désactivable sans déploiement avec `INFORMATION_AGENT_ACCOUNT_INVITATION=false`.
- */
-export const INFORMATION_AGENT_ACCOUNT_INVITATION_TEXT =
-  "Vous publiez d’autres ventes ? Un compte professionnel Immojudis vous permet de nous les transmettre directement.";
-
-/** Lien de l'invitation, ou `null` si elle est désactivée. */
-export function informationAgentAccountInvitationUrl(
-  appUrl: string,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): string | null {
-  if (env.INFORMATION_AGENT_ACCOUNT_INVITATION?.trim().toLowerCase() === "false") return null;
-  const url = new URL("/login", appUrl);
-  url.searchParams.set("mode", "professional");
-  url.searchParams.set("redirect", "/publish");
-  return url.toString();
-}
+export const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autres ventes ?";
 
 export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 5;
 
@@ -153,6 +134,7 @@ export type InformationAgentEmailRenderOptions = {
 export function containsInformationAgentAccountInvitation(text: string): boolean {
   return (
     text.includes(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING) ||
+    text.includes(INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT) ||
     text.includes(`${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} :`)
   );
 }

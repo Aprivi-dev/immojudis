@@ -620,8 +620,8 @@ export function AdminInformationAgentMissionsPanel({
             ) : null}
             <p className="text-xs text-brand-navy/65">
               Le mail envoyé ajoutera une adresse de réponse propre au dossier, un lien privé de
-              dépôt sans compte, l’origine de l’adresse avec le lien de l’annonce, une invitation à
-              créer un compte professionnel et un lien de désinscription.
+              dépôt sans compte, l’origine de l’adresse avec le lien de l’annonce et un lien de
+              désinscription.
             </p>
             <InventoryPanel items={activeMission.inventory ?? []} />
             {isMissionEditable(activeMission.status) ? (
