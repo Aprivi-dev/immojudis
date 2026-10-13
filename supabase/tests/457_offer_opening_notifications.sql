@@ -1,5 +1,5 @@
 begin;
-select plan(12);
+select plan(11);
 
 select has_table('public', 'offer_opening_notifications', 'opening requests are stored');
 
