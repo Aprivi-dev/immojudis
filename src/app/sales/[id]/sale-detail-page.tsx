@@ -212,7 +212,11 @@ export function SaleDetailPage({
   if (!sale) return <SaleNotFoundComponent />;
 
   return discovery ? (
-    <DiscoverySaleDetailView sale={sale} returnTo={returnTo} />
+    <DiscoverySaleDetailView
+      sale={sale}
+      returnTo={returnTo}
+      adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+    />
   ) : (
     <AnalysisSaleDetailView
       sale={sale}

@@ -26,7 +26,7 @@ import { StreetViewDialog } from "@/components/StreetViewDialog";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { safeExternalHttpUrl } from "@/lib/external-url";
 import { saleSourceLinks } from "@/lib/sale-source-links";
-import { formatPrice, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatPrice, propertyTypeLabel } from "@/lib/format";
 import { buildStructuredDescription } from "@/lib/sale-description";
 import {
   listingContactLinks,
@@ -116,6 +116,38 @@ export function ListingActions({
   );
 }
 
+/** What the displayed ceiling rests on, shown under the amount. */
+export type CeilingContext = {
+  /** Works retained in the ceiling, in euros. */
+  worksAmount: number;
+  /** False until the user (or a scenario) has priced the works: the ceiling is then before works. */
+  worksPriced: boolean;
+  /** Safety margin, in percent (the extra prudence points are included). */
+  marginPct: number;
+  valueAmount: number | null;
+  /** « DVF normalisé », « votre prix au m² »… */
+  valueSource: string;
+  valueDate: string | null;
+};
+
+function ceilingContextItems(context: CeilingContext): string[] {
+  const works = !context.worksPriced
+    ? `Travaux : ${formatPrice(context.worksAmount)} (à chiffrer)`
+    : context.worksAmount > 0
+      ? `Travaux : ${formatPrice(context.worksAmount)}`
+      : "Travaux : aucun";
+  const source = [context.valueSource, context.valueDate ? formatDate(context.valueDate) : null]
+    .filter(Boolean)
+    .join(", ");
+  return [
+    works,
+    `Marge : ${context.marginPct.toLocaleString("fr-FR")} %`,
+    context.valueAmount != null
+      ? `Valeur : ${formatPrice(context.valueAmount)}${source ? ` (${source})` : ""}`
+      : "Valeur : à compléter",
+  ];
+}
+
 export function ListingOverview({
   sale,
   publicDemo = false,
@@ -125,10 +157,12 @@ export function ListingOverview({
   aiReviewProjections = null,
   aiReviewStatus = "ready",
   scenarioSummary = null,
+  ceilingContext = null,
 }: {
   sale: AuctionSale;
   publicDemo?: boolean;
   premiumCeiling?: number | null;
+  ceilingContext?: CeilingContext | null;
   showPremiumTeaser?: boolean;
   factReliabilities?: FactReliabilityMap | null;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
@@ -391,6 +425,17 @@ export function ListingOverview({
             <div className={styles.premiumPrice}>
               <p className={styles.priceLabel}>Enchère plafond indicative</p>
               <p className={styles.premiumPriceValue}>{formatPrice(guardedPremiumCeiling)}</p>
+              {ceilingContext ? (
+                <p className={styles.premiumContext}>
+                  {ceilingContextItems(ceilingContext).join(" · ")}
+                  {ceilingContext.worksPriced ? null : (
+                    <>
+                      {" "}
+                      <strong>Plafond hors travaux.</strong>
+                    </>
+                  )}
+                </p>
+              ) : null}
               <a href="#why-this-ceiling" className={styles.priceExplanation}>
                 Comprendre le calcul
               </a>

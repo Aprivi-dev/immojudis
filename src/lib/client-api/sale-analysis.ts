@@ -1,5 +1,4 @@
 import { authHeaders, readJson } from "@/lib/client-api-core";
-import type { BidCeilingAnalysisResponse, BidCeilingRequestInput } from "@/lib/bid-ceiling";
 import type { StructuredCadastralParcel } from "@/lib/cadastre-analysis";
 import type { EnvironmentalContextResponse } from "@/lib/environmental-context";
 import type { FactReliabilityMap } from "@/lib/fact-reliability";
@@ -173,21 +172,6 @@ export async function fetchEnvironmentalContext(args: {
   });
 
   return readJson<EnvironmentalContextResponse>(response);
-}
-
-export async function calculateBidCeilingClient(args: {
-  data: BidCeilingRequestInput;
-}): Promise<BidCeilingAnalysisResponse> {
-  const response = await fetch("/api/bid-ceiling", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(await authHeaders()),
-    },
-    body: JSON.stringify(args.data),
-  });
-
-  return readJson<BidCeilingAnalysisResponse>(response);
 }
 
 export async function fetchSaleHistory(args: {
