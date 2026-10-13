@@ -31,7 +31,9 @@ from src.normalize import (
     _preferred_surface_evidence_value,
     _surface_evidence_for_value,
     _surface_evidence_matches_value,
+    carrez_is_implausible_against_habitable,
     clean_text,
+    is_outside_carrez_context,
     parse_surface,
 )
 
@@ -118,6 +120,21 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
             sale.carrez_surface_m2 = text_carrez_surface
         if _corroborated_text_built_surface(sale) == text_built_surface:
             _record_surface_conflict_resolution(sale, previous_surface, text_built_surface)
+    if carrez_is_implausible_against_habitable(sale.carrez_surface_m2, sale.habitable_surface_m2):
+        # Une Carrez à moins de 20 % de la surface habitable est une partie du bien (cave,
+        # surface hors Carrez) : la surface habitable fait foi, la valeur écartée reste tracée.
+        rejected_carrez_surface = sale.carrez_surface_m2
+        if sale.surface_m2 == rejected_carrez_surface:
+            sale.surface_m2 = None
+        sale.carrez_surface_m2 = None
+        sale.raw_payload["carrez_surface_reconciliation"] = {
+            "status": "removed",
+            "rejected_carrez_surface_m2": str(rejected_carrez_surface),
+            "resolved_carrez_surface_m2": None,
+            "habitable_surface_m2": str(sale.habitable_surface_m2),
+            "basis": "carrez_below_20_percent_of_habitable_surface",
+        }
+        _add_quality_flag(sale, "surface_conflict_resolved")
     explicit_app_surface = None
     min_app_surface = Decimal("20")
     if sale.property_type == "apartment":
@@ -517,7 +534,15 @@ def _extract_surface_kind(text: str, kind: str, sale: AuctionSale | None = None)
         if values:
             return values.pop()
     for pattern in SURFACE_PATTERNS[kind]:
-        match = re.search(pattern, text, re.I | re.S)
+        match = next(
+            (
+                candidate
+                for candidate in re.finditer(pattern, text, re.I | re.S)
+                # « hors Carrez 4,16 m² » est une surface exclue de la mesure légale.
+                if not (kind == "carrez_surface_m2" and is_outside_carrez_context(text, candidate.start(), candidate.end()))
+            ),
+            None,
+        )
         if not match:
             continue
         if len(match.groups()) == 2:

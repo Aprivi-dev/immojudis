@@ -10,7 +10,13 @@ from src.asset_normalization import (
     ScoreComponent,
 )
 from src.models import AuctionSale
-from src.normalize import SURFACE_VALUE_PATTERN, _is_ambiguous_mixed_lot_surface, clean_text, parse_surface
+from src.normalize import (
+    MIN_DWELLING_SURFACE_M2,
+    SURFACE_VALUE_PATTERN,
+    _is_ambiguous_mixed_lot_surface,
+    clean_text,
+    parse_surface,
+)
 
 
 def _set_app_surface(sale: AuctionSale) -> None:
@@ -72,7 +78,10 @@ def _set_app_surface(sale: AuctionSale) -> None:
 def _validate_app_surface_scope(sale: AuctionSale) -> None:
     if sale.app_surface_m2 is None:
         return
-    if sale.property_type in {"house", "building"} and sale.app_surface_m2 < Decimal("20"):
+    if (
+        sale.property_type in {"house", "building"} and sale.app_surface_m2 < Decimal("20")
+    ) or (sale.property_type == "apartment" and sale.app_surface_m2 < MIN_DWELLING_SURFACE_M2):
+        # Moins de 9 m² n'est pas un logement : c'est une cave, un parking ou une annexe.
         sale.surface_scope = "room_or_annex"
         sale.app_surface_m2 = None
         sale.app_surface_kind = None
@@ -1307,6 +1316,11 @@ def _float_or_none(value: Decimal | None) -> float | None:
 def _fill_quality_flags(sale: AuctionSale) -> None:
     if sale.latitude is None or sale.longitude is None:
         _add_quality_flag(sale, "missing_gps")
+    else:
+        # Un drapeau hérité d'une lecture sans coordonnées ne survit pas à l'arrivée des coordonnées.
+        sale.quality_flags = [flag for flag in sale.quality_flags if flag != "missing_gps"]
+    if isinstance(sale.raw_payload, dict) and sale.raw_payload.get("sale_date_unverified"):
+        _add_quality_flag(sale, "sale_date_implausible")
     if not sale.documents:
         _add_quality_flag(sale, "source_page_only")
     if _sale_type_context(sale).get("status") == "non_judicial":

@@ -2940,7 +2940,8 @@ def reconcile_duplicate_sales_in_supabase(
     if len(sales) < 2:
         return 0
 
-    merged = merge_duplicate_sales(sales)
+    # Le balayage supprime les lignes secondaires : preuve seulement, jamais la clé de repli stricte.
+    merged = merge_duplicate_sales(sales, strict_fallback=False)
     protected_urls = reviewed_aliases.protected_source_urls()
     secondary_urls = [
         source_url

@@ -6,7 +6,14 @@ from datetime import UTC, datetime
 from psycopg.types.json import Jsonb
 
 from src.admission import quarantine_reason
-from src.dedupe import _address_dedupe_keys, _merge_into, _observation_summary, _same_property
+from src.dedupe import (
+    _address_dedupe_keys,
+    _merge_into,
+    _observation_summary,
+    _same_property,
+    same_shared_listing,
+    shared_listing_id,
+)
 from src.freshness import invalidate_analysis
 from src.models import AuctionSale
 from src.reviewed_aliases import (
@@ -377,6 +384,12 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
     urls = sorted(set().union(*(_urls(sale) for sale in sales)))
     postal_codes = sorted({sale.postal_code for sale in sales if sale.postal_code})
     hashes = sorted({sale.content_hash for sale in sales if sale.content_hash})
+    # Vench et Petites Affiches publient le même identifiant d'annonce dans leur URL : l'autre
+    # source est chargée même si le code postal manque d'un côté.
+    listing_url_patterns = sorted(
+        {pattern for sale in sales if (listing_id := shared_listing_id(sale))
+         for pattern in (f'%/vente-{listing_id}-%', f'%-{listing_id}.html%')}
+    )
     relevant_aliases = registry.aliases_for_urls(urls)
     canonical_ids = sorted({alias.canonical_sale_id for alias in relevant_aliases})
     # Lock and de-duplicate candidate IDs before touching the wide JSON row.
@@ -387,8 +400,9 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
     # current URL no longer matches the incoming source URL.
     candidate_rows = connection.execute("""select s.id from public.auction_sales s
         where source_url=any(%s) or source_urls ?| %s or postal_code=any(%s)
-          or content_hash=any(%s) or s.id=any(%s::uuid[])
-        order by s.id for update""", (urls, urls, postal_codes, hashes, canonical_ids)).fetchall()
+          or content_hash=any(%s) or s.id=any(%s::uuid[]) or s.source_url like any(%s)
+        order by s.id for update""", (urls, urls, postal_codes, hashes, canonical_ids,
+                                       listing_url_patterns)).fetchall()
     candidate_ids = sorted({str(row[0]) for row in candidate_rows if row and row[0]})
     if candidate_ids:
         rows = connection.execute("""select to_jsonb(s) from public.auction_sales s
@@ -462,7 +476,7 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
 
         existing = list(existing_by_key.values())
         exact = [row for row in existing if _urls(row) & _urls(sale)]
-        matches = exact or [row for row in existing
+        matches = exact or [row for row in existing if same_shared_listing(row, sale)] or [row for row in existing
             if set(_address_dedupe_keys(row)) & set(_address_dedupe_keys(sale)) and _same_property(row, sale)]
         if len(matches) > 1 or any(conflicting_identity(row, sale) for row in matches):
             hold_identity(connection, sale, matches, 'ambiguous_persisted_identity')
