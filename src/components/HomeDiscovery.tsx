@@ -7,6 +7,7 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { DOSSIER_APARTMENT_QUALITY, DOSSIER_APARTMENT_SIZES } from "./home-images";
 import styles from "./HomeDiscovery.module.css";
 
 const methodSteps = [
@@ -132,7 +133,8 @@ export function HomeDiscovery() {
             src="/media/landing/dossier-apartment.webp"
             alt="Intérieur lumineux d’un appartement de caractère, visuel d’illustration"
             fill
-            sizes="(max-width: 760px) 100vw, 50vw"
+            sizes={DOSSIER_APARTMENT_SIZES}
+            quality={DOSSIER_APARTMENT_QUALITY}
           />
           <p className={styles.imageCaption}>
             <strong>Visuel d’illustration</strong>

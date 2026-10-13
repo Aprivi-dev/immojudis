@@ -12,12 +12,17 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 const cormorantGaramond = Cormorant_Garamond({
   subsets: ["latin"],
   // Seules les graisses réellement employées par font-display : 400 (dont l'italique des
-  // accents de titre), 500 et 600. Les graisses 300 et 700 ne sont jamais demandées.
+  // accents de titre), 500 et 600. Les graisses 300 et 700 ne sont jamais demandées. Le h1 de
+  // l'accueil n'emploie que 500 et l'italique 400, mais 600 sert à d'autres titres : on ne
+  // réduit pas la liste. Cela ne coûte rien au préchargement : Google sert une police variable,
+  // donc un seul fichier par style (normal et italique), quelles que soient les graisses.
   weight: ["400", "500", "600"],
   style: ["normal", "italic"],
   display: "swap",
   variable: "--font-cormorant-garamond",
-  preload: false,
+  // Préchargée : le h1 de l'accueil s'affiche avec cette police, qui sinon n'est demandée
+  // qu'après le calcul des styles (changement visible à l'affichage, `display: swap`).
+  preload: true,
 });
 
 const ibmPlexSans = IBM_Plex_Sans({
@@ -51,7 +56,8 @@ export const metadata: Metadata = {
     description:
       "Ventes au tribunal, notariales et domaniales référencées : comprenez les règles et préparez votre achat avec Immojudis.",
     type: "website",
-    url: siteOrigin,
+    // Pas d'`url` ici : cet objet est hérité par toutes les pages, et fixer l'accueil comme
+    // adresse Open Graph de chacune d'elles serait faux. Chaque page pose la sienne.
     siteName: "Immojudis",
     locale: "fr_FR",
   },
