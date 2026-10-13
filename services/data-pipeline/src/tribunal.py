@@ -9,11 +9,7 @@ from src.court_competence import (
     resolve_court_by_label,
     verified_sale_insee_code,
 )
-from src.department_inference import (
-    DEPARTMENT_FROM_TRIBUNAL_FLAG,
-    department_from_court_evidence,
-    department_from_geocode_evidence,
-)
+from src.department_inference import department_from_geocode_evidence
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_department
 from src.tribunal_labels import court_name_candidates, tribunal_label_is_polluted, trim_court_city
@@ -128,32 +124,25 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
     return sale
 
 
-_TRIBUNAL_DEPARTMENT = {
-    tribunal: department for department, tribunals in DEPARTMENT_TRIBUNALS.items() for tribunal in tribunals
-}
-
-
 def infer_missing_department(sale: AuctionSale) -> AuctionSale:
-    """Département déduit du code postal, du code INSEE géocodé, puis du tribunal (jamais écrasé)."""
+    """Département déduit du code INSEE géocodé, puis du code postal (jamais écrasé).
+
+    Le tribunal n'est pas une source : il peut couvrir une commune d'un département voisin, et une
+    valeur déduite de lui serait écrite comme un fait. Sans code postal ni géocodage accepté, le
+    département reste absent.
+    """
     if sale.department:
         return sale
     payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
     candidates = (
         ("geocode_citycode", department_from_geocode_evidence(payload)),
         ("postal_code", extract_department(sale.postal_code)),
-        (
-            "tribunal",
-            department_from_court_evidence(payload, sale.tribunal_code)
-            or _TRIBUNAL_DEPARTMENT.get(sale.tribunal or ""),
-        ),
     )
     for source, department in candidates:
         if not department:
             continue
         sale.department = department
         payload["department_inference"] = {"source": source, "value": department}
-        if source == "tribunal":
-            _add_quality_flag(sale, DEPARTMENT_FROM_TRIBUNAL_FLAG)
         return sale
     return sale
 

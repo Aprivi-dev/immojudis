@@ -1,4 +1,4 @@
-"""Département et coordonnées déduits des preuves déjà stockées (code INSEE, tribunal, géocodage accepté)."""
+"""Département et coordonnées déduits des preuves déjà stockées (code postal, code INSEE, géocodage accepté)."""
 
 from decimal import Decimal
 
@@ -6,11 +6,7 @@ import pytest
 
 from src.asset_normalization import normalize_asset_features
 from src.court_competence import OfficialCourt, OfficialCourtLabelIndex
-from src.department_inference import (
-    department_from_citycode,
-    department_from_court_evidence,
-    department_from_geocode_evidence,
-)
+from src.department_inference import department_from_citycode, department_from_geocode_evidence
 from src.geocode import restore_accepted_geocode
 from src.normalize import normalize_sale
 from src.recompute_scoring import _recomputed_sale_from_storage_row
@@ -83,26 +79,27 @@ def test_normalize_ignores_a_rejected_geocode_and_never_overrides_the_postal_cod
     assert department_from_geocode_evidence({"geocode": {**_geocode(), "provider": "other"}}) is None
 
 
-def test_fill_tribunal_infers_the_department_from_an_exact_court_label() -> None:
+def test_fill_tribunal_never_infers_the_department_from_the_court() -> None:
     sale = normalize_sale(_raw(tribunal="TJ Marseille"))
     assert sale.department is None
 
     fill_tribunal(sale)
 
     assert sale.tribunal == "TJ Marseille"
-    assert sale.department == "13"
-    assert sale.raw_payload["department_inference"] == {"source": "tribunal", "value": "13"}
-    assert "department_from_tribunal" in sale.quality_flags
+    assert sale.department is None
+    assert "department_inference" not in sale.raw_payload
+    assert "department_from_tribunal" not in sale.quality_flags
 
 
-def test_fill_tribunal_infers_the_department_of_a_legacy_aquitaine_court(monkeypatch) -> None:
+def test_fill_tribunal_leaves_the_department_of_a_legacy_aquitaine_court_absent(monkeypatch) -> None:
     monkeypatch.setattr("src.tribunal.resolve_court_by_label", lambda label: None)
     sale = normalize_sale(_raw(tribunal="TJ Dax", city="Dax"))
 
     fill_tribunal(sale)
 
     assert sale.tribunal == "TJ Dax"
-    assert sale.department == "40"
+    assert sale.department is None
+    assert "department_from_tribunal" not in sale.quality_flags
 
 
 def test_fill_tribunal_prefers_the_geocode_citycode_over_the_tribunal() -> None:
@@ -130,14 +127,6 @@ def test_an_unknown_tribunal_gives_no_department() -> None:
     fill_tribunal(sale)
 
     assert sale.department is None
-
-
-def test_court_evidence_must_belong_to_the_sale_court() -> None:
-    payload = {"tribunal_label_assignment": {"court_code": "justice_tj_1_210", "court_department": "13"}}
-
-    assert department_from_court_evidence(payload, "justice_tj_1_210") == "13"
-    assert department_from_court_evidence(payload, "bordeaux") is None
-    assert department_from_court_evidence(payload, None) is None
 
 
 def test_restore_copies_an_accepted_municipality_geocode_with_its_precision() -> None:

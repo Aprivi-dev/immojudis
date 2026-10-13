@@ -101,11 +101,59 @@ def test_listing_id_never_merges_contradicting_or_same_source_sales() -> None:
     assert len(merge_duplicate_sales([vench, other_day])) == 2
 
 
-def test_listing_id_pair_unknown_price_or_day_is_still_the_same_listing() -> None:
+def test_listing_id_pair_needs_one_corroborating_fact_known_on_both_sides() -> None:
     vench = _sale("vench", _vench_url(166526))
-    petites_affiches = _sale("petites_affiches", _pa_url(166526), price=None, sale_date=None)
 
-    assert same_shared_listing(vench, petites_affiches)
+    # Un seul fait commun suffit : le jour (prix inconnu d'un côté) ou le prix (jour inconnu).
+    assert same_shared_listing(vench, _sale("petites_affiches", _pa_url(166526), price=None))
+    assert same_shared_listing(vench, _sale("petites_affiches", _pa_url(166526), sale_date=None))
+    assert same_shared_listing(
+        vench, _sale("petites_affiches", _pa_url(166526), sale_date="mardi 10 novembre 2026 à 9h", price=None)
+    )
+
+    # Aucun fait connu des deux côtés : l'identifiant seul ne suffit pas.
+    assert not same_shared_listing(vench, _sale("petites_affiches", _pa_url(166526), price=None, sale_date=None))
+    assert not same_shared_listing(
+        _sale("vench", _vench_url(166526), price=None), _sale("petites_affiches", _pa_url(166526), sale_date=None)
+    )
+
+
+def test_listing_id_collision_between_ondres_and_lyon_is_never_merged() -> None:
+    ondres = _sale("vench", _vench_url(166526), city="Ondres", postal_code="40440")
+    lyon = _sale("petites_affiches", _pa_url(166526), city="Lyon", postal_code="69003")
+
+    assert not same_shared_listing(ondres, lyon)
+    assert not same_shared_listing(lyon, ondres)
+    result = merge_duplicate_sales([ondres, lyon])
+    assert len(result) == 2
+    assert all(len(sale.source_urls) <= 1 for sale in result)
+
+    # Même jour, même prix, même identifiant : le lieu différent suffit à refuser.
+    assert (ondres.sale_date, ondres.starting_price_eur) == (lyon.sale_date, lyon.starting_price_eur)
+
+
+def test_listing_id_pair_needs_a_locality_known_on_both_sides() -> None:
+    vench = _sale("vench", _vench_url(166526))
+    no_locality = _sale("petites_affiches", _pa_url(166526), city=None, postal_code=None)
+    other_locality_unknown = _sale("vench", _vench_url(166526), city=None, postal_code=None)
+
+    assert not same_shared_listing(vench, no_locality)
+    assert not same_shared_listing(other_locality_unknown, _sale("petites_affiches", _pa_url(166526)))
+    assert len(merge_duplicate_sales([vench, no_locality])) == 2
+
+
+def test_listing_id_pair_accepts_the_same_postal_code_or_the_same_normalized_city() -> None:
+    vench = _sale("vench", _vench_url(166526), city="Ondres", postal_code="40440")
+
+    same_postal_other_spelling = _sale("petites_affiches", _pa_url(166526), city="ONDRES-PLAGE", postal_code="40440")
+    same_city_no_postal = _sale("petites_affiches", _pa_url(166526), city="ONDRES", postal_code=None)
+    same_city_accents = _sale("petites_affiches", _pa_url(166526), city="Ôndrès", postal_code=None)
+    other_postal_other_city = _sale("petites_affiches", _pa_url(166526), city="Tarnos", postal_code="40220")
+
+    assert same_shared_listing(vench, same_postal_other_spelling)
+    assert same_shared_listing(vench, same_city_no_postal)
+    assert same_shared_listing(vench, same_city_accents)
+    assert not same_shared_listing(vench, other_postal_other_city)
 
 
 # --- clé de repli stricte ---------------------------------------------------------------------
