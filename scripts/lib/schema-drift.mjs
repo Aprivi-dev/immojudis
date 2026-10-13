@@ -26,114 +26,108 @@ async function verifyConcurrentIndexes(databaseUrl, runCheck = runConcurrentInde
   await runCheck({ checkOnly: true, databaseUrl });
 }
 
-const EMAIL_PATTERN = String.raw`'^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'`;
-const FIELD_KEY_PATTERN = String.raw`'^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){0,3}$'`;
-const SOURCE_URL_BOUNDS = (column) =>
-  `char_length(${column}) >= 1 AND char_length(${column}) <= 4096 AND ${column} ~ '^https://'`;
-const FIELD_KEY_DEFINITION =
-  `char_length(field_key) >= 2 AND char_length(field_key) <= 128 ` +
-  `AND field_key ~ ${FIELD_KEY_PATTERN}`;
+const sourceUrlCheck = (column) =>
+  `CHECK (((char_length(${column}) >= 1) AND (char_length(${column}) <= 4096) AND (${column} ~ '^https://'::text)))`;
+const fieldKeyCheck = String.raw`CHECK (((char_length(field_key) >= 2) AND (char_length(field_key) <= 128) AND (field_key ~ '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){0,3}$'::text)))`;
+const emailRegex = String.raw`'^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'::text`;
 
-// Production (run 79 of "Apply Supabase Migrations", 2026-10-13) reports a
-// DROP + ADD of the twelve CHECK constraints below although the migrations
-// replay the exact same SQL as production (statement digests are verified by
-// the migration runner). All twelve share one shape: a `col BETWEEN a AND b`
-// conjunct followed by another AND, which Postgres stores as `>= a AND <= b`.
-// The textual deparse of that conjunction differs between the shadow database
-// replayed from the migrations and production, while the constraint is the
-// same. Each entry pins the exact production definition (as written by the
-// migration) by name: a pair is ignored only when production's ADD CONSTRAINT
-// is logically equal to this definition (see canonicalCheckCondition), so a
-// renamed, loosened or otherwise altered constraint still fails the check.
+// Postgres 17.11 (production, read on 2026-10-13) deparses `col BETWEEN a AND b
+// AND c` as one flat three-term conjunction. The Supabase CLI 2.110.0 replays the
+// migrations on a shadow database running supabase/postgres 17.6.1.143 (Postgres
+// 17.6), where the BETWEEN stays nested as `((col >= a) AND (col <= b)) AND c`.
+// For the same migration SQL, pg-delta therefore sees two different texts and
+// proposes a DROP + ADD of each of the twelve CHECK constraints below (run 79 of
+// "Apply Supabase Migrations"). They are the only constraints of the schema that
+// combine a BETWEEN with another AND.
+//
+// Each entry pins the exact production pg_get_constraintdef text, by table and
+// name. A DROP + ADD pair is ignored only when the ADD definition is logically
+// equal to that pin (see canonicalCheckCondition), so a renamed, loosened or
+// otherwise altered constraint, or any constraint not listed here, still fails
+// the check. Remove an entry once the shadow image reaches the production minor
+// version. `migration` names the file whose SQL the pin was reviewed against.
 const RECONCILED_CHECK_CONSTRAINTS = Object.freeze([
   {
     table: "public.auction_ai_review_case_status",
     name: "auction_ai_review_case_status_source_url_check",
-    definition: SOURCE_URL_BOUNDS("source_url"),
+    productionDefinition: sourceUrlCheck("source_url"),
     migration: "20260929103000_ai_review_projection_guard.sql",
   },
   {
     table: "public.auction_ai_review_projections",
     name: "auction_ai_review_projections_field_key_check",
-    definition: FIELD_KEY_DEFINITION,
+    productionDefinition: fieldKeyCheck,
     migration: "20260929103000_ai_review_projection_guard.sql",
   },
   {
     table: "public.auction_ai_review_projections",
     name: "auction_ai_review_projections_source_url_check",
-    definition: SOURCE_URL_BOUNDS("source_url"),
+    productionDefinition: sourceUrlCheck("source_url"),
     migration: "20260929103000_ai_review_projection_guard.sql",
   },
   {
     table: "public.auction_fact_claims",
     name: "auction_fact_claims_conflict_group_check",
-    definition:
-      "conflict_group IS NULL OR (char_length(conflict_group) >= 1 " +
-      "AND char_length(conflict_group) <= 200 AND NULLIF(btrim(conflict_group), '') IS NOT NULL)",
+    productionDefinition:
+      "CHECK (((conflict_group IS NULL) OR ((char_length(conflict_group) >= 1) AND (char_length(conflict_group) <= 200) AND (NULLIF(btrim(conflict_group), ''::text) IS NOT NULL))))",
     migration: "20260928140000_auction_fact_claims.sql",
   },
   {
     table: "public.auction_fact_claims",
     name: "auction_fact_claims_field_key_check",
-    definition: FIELD_KEY_DEFINITION,
+    productionDefinition: fieldKeyCheck,
     migration: "20260928140000_auction_fact_claims.sql",
   },
   {
     table: "public.auction_fact_claims",
     name: "auction_fact_claims_source_url_check",
-    definition: `source_url IS NULL OR (${SOURCE_URL_BOUNDS("source_url")})`,
+    productionDefinition:
+      "CHECK (((source_url IS NULL) OR ((char_length(source_url) >= 1) AND (char_length(source_url) <= 4096) AND (source_url ~ '^https://'::text))))",
     migration: "20260928140000_auction_fact_claims.sql",
   },
   {
     table: "public.information_agent_cases",
     name: "information_agent_cases_recipient_email_check",
-    definition:
-      "char_length(recipient_email) >= 3 AND char_length(recipient_email) <= 320 " +
-      `AND recipient_email ~* ${EMAIL_PATTERN} ` +
-      "AND normalized_recipient_email = lower(btrim(recipient_email))",
+    productionDefinition: `CHECK (((char_length(recipient_email) >= 3) AND (char_length(recipient_email) <= 320) AND (recipient_email ~* ${emailRegex}) AND (normalized_recipient_email = lower(btrim(recipient_email)))))`,
     migration: "20260825103748_centralize_information_agent_cases.sql",
   },
   {
     table: "public.information_agent_contacts",
     name: "information_agent_contacts_email_check",
-    definition:
-      "char_length(btrim(email)) >= 3 AND char_length(btrim(email)) <= 320 " +
-      `AND email ~* ${EMAIL_PATTERN}`,
+    productionDefinition: `CHECK (((char_length(btrim(email)) >= 3) AND (char_length(btrim(email)) <= 320) AND (email ~* ${emailRegex})))`,
     migration: "20260928160000_information_agent_contact_registry.sql",
   },
   {
     table: "public.information_agent_email_templates",
     name: "information_agent_email_templates_subject_template_check",
-    definition:
-      "char_length(subject_template) >= 3 AND char_length(subject_template) <= 200 " +
-      String.raw`AND subject_template !~ '[\r\n]'`,
+    productionDefinition: String.raw`CHECK (((char_length(subject_template) >= 3) AND (char_length(subject_template) <= 200) AND (subject_template !~ '[\r\n]'::text)))`,
     migration: "20260825131959_information_agent_email_templates.sql",
   },
   {
     table: "public.information_agent_missions",
     name: "information_agent_missions_recipient_email_check",
-    definition:
-      "char_length(recipient_email) >= 3 AND char_length(recipient_email) <= 320 " +
-      `AND recipient_email ~* ${EMAIL_PATTERN}`,
+    productionDefinition: `CHECK (((char_length(recipient_email) >= 3) AND (char_length(recipient_email) <= 320) AND (recipient_email ~* ${emailRegex})))`,
     migration: "20260824151027_supervised_information_agent.sql",
   },
   {
     table: "public.information_agent_missions",
     name: "information_agent_missions_reply_to_email_check",
-    definition:
-      "reply_to_email IS NULL OR (char_length(reply_to_email) >= 3 " +
-      `AND char_length(reply_to_email) <= 320 AND reply_to_email ~* ${EMAIL_PATTERN})`,
+    productionDefinition: `CHECK (((reply_to_email IS NULL) OR ((char_length(reply_to_email) >= 3) AND (char_length(reply_to_email) <= 320) AND (reply_to_email ~* ${emailRegex}))))`,
     migration: "20260824151027_supervised_information_agent.sql",
   },
   {
     table: "public.justice_jurisdiction_activity_imports",
     name: "justice_jurisdiction_activity_imports_period_check",
-    definition:
-      "period_start_year >= 1900 AND period_start_year <= 2100 " +
-      "AND period_end_year = period_start_year",
+    productionDefinition:
+      "CHECK (((period_start_year >= 1900) AND (period_start_year <= 2100) AND (period_end_year = period_start_year)))",
     migration: "20260824160007_justice_jurisdiction_activity.sql",
   },
 ]);
+
+// Body of a `CHECK (...)` definition, as printed by pg_get_constraintdef.
+function checkBody(definition) {
+  return /^CHECK \(([\s\S]*)\)$/.exec(String(definition).trim())?.[1] ?? "";
+}
 
 // Reduces a CHECK condition to its logical shape so that purely textual
 // variants compare equal: whitespace, redundant parentheses, `::text` casts and
@@ -295,7 +289,8 @@ function removeReconciledCheckConstraints(text) {
     const add = adds.find((candidate) => candidate.key === key);
     if (!drop || !add) continue;
     if (
-      canonicalCheckCondition(add.definition) !== canonicalCheckCondition(reconciled.definition)
+      canonicalCheckCondition(add.definition) !==
+      canonicalCheckCondition(checkBody(reconciled.productionDefinition))
     ) {
       continue;
     }
@@ -340,6 +335,7 @@ function normalizeDiff(value) {
 export {
   RECONCILED_CHECK_CONSTRAINTS,
   canonicalCheckCondition,
+  checkBody,
   isManagedConcurrentIndexDefinition,
   managedConcurrentIndexDefinitions,
   normalizeConcurrentIndexDefinition,
