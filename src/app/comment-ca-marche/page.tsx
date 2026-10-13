@@ -36,7 +36,7 @@ const STEPS = [
   {
     icon: BadgeEuro,
     title: "Fixer son enchère plafond",
-    text: "Avec l’offre Analyse, le simulateur chiffre votre enchère plafond : valeur estimée, marge, travaux, libération du bien, portage (les coûts supportés tant que le bien ne rapporte rien) et tous les frais de la vente, que vous ajustez selon votre projet. Préparez aussi votre financement : il n’y a pas de condition suspensive de prêt aux enchères. Fixez la limite avant l’audience, puis tenez-vous-y.",
+    text: "Avec l’offre Analyse, le simulateur chiffre votre enchère plafond : valeur estimée, marge, travaux, libération du bien, portage (les coûts supportés tant que le bien ne rapporte rien) et tous les frais de la vente, que vous ajustez selon votre projet. Préparez aussi votre financement : il n’y a en principe pas de condition suspensive de prêt dans les ventes judiciaires ; vérifiez le cahier pour les autres ventes. Fixez la limite avant l’audience, puis tenez-vous-y.",
     links: [
       { href: "/annonce-exemple", label: "Essayer le simulateur" },
       { href: "/ressources/frais-vente-encheres-judiciaire", label: "Comprendre les frais" },
@@ -46,7 +46,7 @@ const STEPS = [
   {
     icon: Scale,
     title: "Enchérir et finaliser",
-    text: "Pour une vente au tribunal, un avocat du barreau compétent porte vos enchères ; pour une vente notariale ou domaniale, l’organisateur précise les conditions. Si vous gagnez, le prix et les frais se règlent dans des délais fixés par le Code ou le cahier de vente. L’annuaire gratuit vous aide à trouver un avocat ; nos guides expliquent chaque étape.",
+    text: "Pour une vente au tribunal, un avocat du barreau compétent porte vos enchères ; pour une vente notariale ou domaniale, l’organisateur précise les conditions. Si vous gagnez, le prix et les frais se règlent dans des délais fixés par le Code ou le cahier de vente. L’annuaire est gratuit pour vous ; certains profils sont sponsorisés et identifiés comme tels. Il vous aide à trouver un avocat ; nos guides expliquent chaque étape.",
     links: [
       { href: "/avocats", label: "Trouver un avocat" },
       { href: "/ressources/jour-audience-encheres-role-avocat", label: "Le jour de l’audience" },

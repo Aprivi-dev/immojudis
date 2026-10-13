@@ -144,9 +144,15 @@ export function FeesSimulator() {
             value={price}
             onChange={setPrice}
           />
-          <Field label="Département du bien" htmlFor={departmentId}>
+          <Field
+            label="Département du bien"
+            htmlFor={departmentId}
+            hintId={`${departmentId}-hint`}
+            hint="Taux de 6,32 % appliqué sauf dans l’Indre ; certains départements sont à 5,81 % : vérifiez avec votre avocat."
+          >
             <select
               id={departmentId}
+              aria-describedby={`${departmentId}-hint`}
               value={department}
               onChange={(event) => setDepartment(event.target.value)}
               className={FIELD_CLASSES}
@@ -187,7 +193,7 @@ export function FeesSimulator() {
         <dl className="mt-4 divide-y divide-line text-sm">
           <Line label="Prix d’adjudication" value={costs.price} />
           <Line
-            label="Émoluments de l’avocat poursuivant (TTC)"
+            label="Émoluments proportionnels de vente, TTC (avocat poursuivant : 3/4 ; avocat de l’adjudicataire : 1/4)"
             detail={`HT : ${euro.format(costs.emolumentsHT)}`}
             value={costs.emolumentsTTC}
           />
@@ -221,6 +227,10 @@ export function FeesSimulator() {
               Saisissez un prix d’adjudication pour chiffrer les frais.
             </p>
           )}
+          <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+            Hors travaux saisis ci-dessus, le financement et le portage (intérêts, taxe foncière,
+            charges tant que le bien ne rapporte rien) ne sont pas inclus.
+          </p>
         </div>
       </Card>
     </div>

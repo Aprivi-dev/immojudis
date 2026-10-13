@@ -85,6 +85,10 @@ describe("email alerts", () => {
       expect(message.html).toContain(title);
     }
     expect(message.text).toContain("ni une promesse de gain");
+    expect(message.text).toContain(
+      "Mise à prix inférieure d’environ 32 % à la référence DVF (indicatif : hors frais, travaux et occupation)",
+    );
+    expect(message.text).not.toContain("Décote estimée");
     expect(message.html).toContain("Se désinscrire des alertes email");
     expect(message.oneClickUnsubscribe).toBe(true);
 
