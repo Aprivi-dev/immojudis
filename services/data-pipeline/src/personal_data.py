@@ -16,6 +16,10 @@ avec les mêmes cas.
 - Il ne retire jamais une commune, une rue, un tribunal, une étude notariale ni une société (SCI,
   SARL…) : un nom n'est reconnu qu'après une civilité (Monsieur, Mme, M.…) ou sous la forme
   « Prénom NOM ».
+- Le statut n'est jamais déduit : « occupé(e)(s) par <nom> » devient toujours « un occupant ». « Un
+  locataire » n'apparaît que si la formule source le dit (« loué à <nom> », « bail consenti à <nom> »,
+  « locataire <nom> » : on remplace le nom, pas le rôle).
+- Après « loué à » et « bail consenti à » seulement, un « Prénom Nom » en casse mixte est reconnu.
 - Les contacts professionnels (« Me X, avocat, demeurant … ») ne sont pas touchés ; ils restent
   régis par les règles existantes (`scrub_public_text`).
 - Idempotent : filtrer un texte déjà filtré ne le change pas.
@@ -55,6 +59,9 @@ _BARE = (
 )
 _NAMESEQ = rf"(?:{_INITIAL})*{_TOKEN}(?:{_SP}+(?:{_PARTICLE}{_SP}+)?{_NEXT}){{0,4}}"
 _NAME_SINGLE = rf"{_TOKEN}(?:{_SP}+(?:{_PARTICLE}{_SP}+)?{_NEXT}){{0,2}}"
+# « Pierre Martin » en casse mixte, sans civilité : deux à trois mots, jamais un début de phrase.
+# N'est utilisé qu'après « loué à » et « bail consenti à » (`_lease`).
+_NAME_MIXED = rf"{_NOT_SENTENCE_START}{_NOT_STOP}{_TOKEN}(?:{_SP}+(?:{_PARTICLE}{_SP}+)?{_NEXT}){{1,2}}"
 _CIV = (
     r"(?:(?:Monsieur|Madame|MONSIEUR|MADAME|M\.|Mme)" + _SP + r"+(?:et|ou|ET|OU)" + _SP + r"+)?"
     r"(?:(?:Monsieur|Madame|Mademoiselle|Messieurs|Mesdames|MONSIEUR|MADAME|MADEMOISELLE|MESSIEURS|MESDAMES"
@@ -63,6 +70,7 @@ _CIV = (
 _PERSON_CIV = re.compile(rf"{_CIV}{_NAMESEQ}")
 _PERSON_BARE = re.compile(_BARE)
 _PERSON_SINGLE = re.compile(_NAME_SINGLE)
+_PERSON_MIXED = re.compile(_NAME_MIXED)
 _CIV_PREFIX = re.compile(rf"^{_CIV}")
 _ALIAS = re.compile(
     rf"(?:{_SP}*,)?{_SP}*(?:née|épouse|époux|veuve|veuf|divorcée|divorcé)(?![{_L}]){_SP}+"
@@ -118,9 +126,6 @@ _PLACE = re.compile(
     rf"(?:(?:{_SP}+|-)(?:(?:de|du|des|sur|sous|en|lès|aux|la|le|les)(?:{_SP}+|-)|d{_APOS})?"
     rf"{_NOT_STOP}{_NOT_SENTENCE_START}{_TOKEN}){{0,4}}"
     rf"(?:{_SP}+\d{{1,2}}(?:er|e|ème))?(?:{_SP}*\([^)\n]{{1,20}}\))?"
-)
-_LEASE_CONTEXT = re.compile(
-    rf"(?<![{_L}])(?<!sans{_SP})(?:bail|locataires?|locatif|loyers?|louée?s?|location)(?![{_L}])", re.IGNORECASE
 )
 _PROFESSIONAL = re.compile(
     rf"(?<![{_L}])(?:ma[iî]tre|me|avocats?|notaires?|huissiers?|scp|selarl|cabinet|étude|etude)(?![{_L}])",
@@ -178,15 +183,19 @@ _ROLE = re.compile(
     re.IGNORECASE,
 )
 _MARITAL_LINK = re.compile(rf"{_SP}+(?:(?:de|d{_APOS}|du){_SP}*)?")
+# Ces deux motifs commencent par leur mot-clé : un préfixe d'espaces non ancré (`SP*,?SP*`) serait
+# quadratique sur une longue suite d'espaces. L'espace et la virgule qui précèdent le mot-clé sont
+# rattachés ensuite, en remontant (`_with_leading_separator`).
 _BIRTH = re.compile(
-    rf"(?:{_SP}*,)?{_SP}*(?<![{_L}])n[ée](?:e|\(e\))?(?![{_L}]){_SP}+(?:le{_SP}+{_DATE}|en{_SP}+\d{{4}})",
+    rf"(?<![{_L}])n[ée](?:e|\(e\))?(?![{_L}]){_SP}+(?:le{_SP}+{_DATE}|en{_SP}+\d{{4}})",
     re.IGNORECASE,
 )
 _RESIDENCE = re.compile(
-    rf"(?:{_SP}*,)?{_SP}*{_NO_BEFORE}(?:demeurant|demeurante|demeurants|domicili[ée](?:e|s|es)?"
+    rf"{_NO_BEFORE}(?:demeurant|demeurante|demeurants|domicili[ée](?:e|s|es)?"
     rf"|r[ée]sidant|r[ée]sidante)(?![{_L}])",
     re.IGNORECASE,
 )
+_SP_CHAR = re.compile(_SP)
 
 _Edit = tuple[int, int, str]
 
@@ -208,6 +217,20 @@ def _substitute(text: str, pattern: re.Pattern[str], handler: Callable[[str, re.
     return "".join(out)
 
 
+def _skip_spaces_back(text: str, index: int) -> int:
+    while index > 0 and _SP_CHAR.match(text, index - 1):
+        index -= 1
+    return index
+
+
+def _with_leading_separator(text: str, index: int) -> int:
+    """Début de `(?:SP*,)?SP*` juste avant `index`, en temps linéaire."""
+    start = _skip_spaces_back(text, index)
+    if start > 0 and text[start - 1] == ",":
+        start = _skip_spaces_back(text, start - 1)
+    return start
+
+
 # --- Reconnaissance d'une personne --------------------------------------------------------------
 def _acceptable(span: str, kind: str) -> bool:
     """`kind` : « civ » (après une civilité), « bare » (Prénom NOM) ou « single » (un nom isolé)."""
@@ -221,7 +244,7 @@ def _acceptable(span: str, kind: str) -> bool:
     return first not in (_STOP_FIRST_SINGLE if kind == "single" else _STOP_FIRST)
 
 
-def _one_person(text: str, pos: int, *, single: bool = False) -> int | None:
+def _one_person(text: str, pos: int, *, single: bool = False, mixed: bool = False) -> int | None:
     match = _PERSON_CIV.match(text, pos)
     if match and _acceptable(match.group(0), "civ"):
         return match.end()
@@ -232,12 +255,16 @@ def _one_person(text: str, pos: int, *, single: bool = False) -> int | None:
         match = _PERSON_SINGLE.match(text, pos)
         if match and _acceptable(match.group(0), "single"):
             return match.end()
+    if mixed:
+        match = _PERSON_MIXED.match(text, pos)
+        if match and _acceptable(match.group(0), "bare"):
+            return match.end()
     return None
 
 
-def _person_end(text: str, pos: int) -> int | None:
+def _person_end(text: str, pos: int, *, mixed: bool = False) -> int | None:
     """Fin d'une ou plusieurs personnes (« M. X et Mme Y, née Z ») commençant en `pos`."""
-    end = _one_person(text, pos)
+    end = _one_person(text, pos, mixed=mixed)
     if end is None:
         return None
     while True:
@@ -249,18 +276,11 @@ def _person_end(text: str, pos: int) -> int | None:
                 end, extended = after, True
         separator = _SEPARATOR.match(text, end)
         if separator:
-            after = _one_person(text, separator.end())
+            after = _one_person(text, separator.end(), mixed=mixed)
             if after is not None:
                 end, extended = after, True
         if not extended:
             return end
-
-
-def _clause(text: str, pos: int) -> str:
-    """Texte de la proposition qui suit `pos`, sans dépasser la fin de phrase."""
-    chunk = text[pos : pos + 120]
-    stop = re.search(r"[.;\n]", chunk)
-    return chunk[: stop.start()] if stop else chunk
 
 
 # --- Règles -------------------------------------------------------------------------------------
@@ -275,8 +295,8 @@ def _occupied(text: str, match: re.Match[str]) -> _Edit | None:
     end = _person_end(text, match.end())
     if end is None:
         return None
-    role = "un locataire" if _LEASE_CONTEXT.search(_clause(text, end)) else "un occupant"
-    return match.end(), end, role
+    # Le statut (locataire, occupant sans titre, ancien locataire…) n'est jamais déduit du voisinage.
+    return match.end(), end, "un occupant"
 
 
 def _role(text: str, match: re.Match[str]) -> _Edit | None:
@@ -297,7 +317,7 @@ def _tenant(text: str, match: re.Match[str]) -> _Edit | None:
 
 
 def _lease(text: str, match: re.Match[str]) -> _Edit | None:
-    end = _person_end(text, match.end())
+    end = _person_end(text, match.end(), mixed=True)
     if end is None:
         return None
     return match.end(), end, "un locataire"
@@ -362,7 +382,7 @@ def _marital(text: str, match: re.Match[str]) -> _Edit | None:
 
 def _birth(text: str, match: re.Match[str]) -> _Edit | None:
     place = _PLACE.match(text, match.end())
-    return match.start(), place.end() if place else match.end(), ""
+    return _with_leading_separator(text, match.start()), place.end() if place else match.end(), ""
 
 
 def _address_end(text: str, pos: int) -> int | None:
@@ -405,12 +425,13 @@ def _has_subject(text: str, index: int) -> bool:
 
 
 def _residence(text: str, match: re.Match[str]) -> _Edit | None:
-    if not _has_subject(text, match.start()) or _PROFESSIONAL.search(_clause_window(text, match.start())):
+    start = _with_leading_separator(text, match.start())
+    if not _has_subject(text, start) or _PROFESSIONAL.search(_clause_window(text, start)):
         return None
     end = _address_end(text, match.end())
     if end is None:
         return None
-    return match.start(), end, ""
+    return start, end, ""
 
 
 _RULES: tuple[tuple[re.Pattern[str], Callable[[str, re.Match[str]], _Edit | None]], ...] = (

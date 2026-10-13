@@ -84,7 +84,7 @@ def test_plan_sale_changes_lists_only_what_changes() -> None:
     changes = plan_sale_changes(
         _sale_row(), text_columns=("description", "risk_notes", "investment_summary"), has_observations=True
     )
-    assert changes["description"] == "Appartement occupé par un locataire suivant bail."
+    assert changes["description"] == "Appartement occupé par un occupant suivant bail."
     assert changes["payload"] == {"source_description": "À la requête du créancier poursuivant."}
     assert changes["observations"][0]["raw_payload"]["source_blocks"] == {"t": "locataire"}
     assert "risk_notes" not in changes and "investment_summary" not in changes

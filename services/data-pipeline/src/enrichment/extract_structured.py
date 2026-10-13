@@ -1623,8 +1623,10 @@ def _llm_cache_key(context: str, model: str, prompt_version: str = "auction_llm_
 
 
 def _fact_chunk_cache_key(context: str, model: str, prompt_version: str) -> str:
+    # Même normalisation que `_fact_input_cache_key` : une vente relue depuis la base (noms filtrés)
+    # et la même vente fraîchement collectée doivent partager leur clé.
     return _llm_cache_key(
-        context,
+        redact_personal_text(context) or "",
         model,
         f"facts_complete_v2:{prompt_version}:{SURFACE_REASONING_VERSION}",
     )
@@ -1645,8 +1647,9 @@ def _fact_input_cache_key(context: str, model: str, prompt_version: str) -> str:
 
 
 def _display_cache_key(context: str, model: str, prompt_version: str) -> str:
+    # Voir `_fact_chunk_cache_key` : le contexte est normalisé avant d'être haché.
     return _llm_cache_key(
-        context,
+        redact_personal_text(context) or "",
         model,
         f"display_v1:{prompt_version}:{DISPLAY_QUALITY_VERSION}",
     )
