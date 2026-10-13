@@ -27,6 +27,11 @@ describe("/annonce-exemple server page", () => {
     vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "false");
     const closed = await Page({ searchParams: Promise.resolve({}) });
     expect(closed.props.adjudicationStatisticsEnabled).toBe(false);
+
+    vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "");
+    delete process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED;
+    const absent = await Page({ searchParams: Promise.resolve({}) });
+    expect(absent.props.adjudicationStatisticsEnabled).toBe(false);
   });
 
   it("computes the dates when the page is generated: the hearing is in the future", async () => {

@@ -180,6 +180,17 @@ describe("/tribunaux", () => {
       expect(metadata.robots).toEqual({ index: true, follow: true });
     });
 
+    it("annonce les prix d’adjudication avec leur réserve de couverture quand le drapeau est ouvert", async () => {
+      vi.stubEnv("ADJUDICATION_PRICE_STATISTICS_ENABLED", "true");
+      mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [ACTIVITY] });
+
+      const { description } = await generateMetadata();
+
+      expect(String(description)).toMatch(
+        /prix d’adjudication et résultats avec l’offre Analyse, pour les tribunaux à l’historique suffisant\.$/,
+      );
+    });
+
     it("n’indexe pas la page quand la lecture réussit et que la liste des tribunaux est vide", async () => {
       mocks.loadPublicActivity.mockResolvedValue({ status: "ok", items: [] });
 

@@ -23,7 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Ventes judiciaires à venir par tribunal",
     description: adjudication
-      ? "Ventes judiciaires à venir, prochaines audiences et mises à prix tribunal par tribunal ; prix d’adjudication et résultats avec l’offre Analyse."
+      ? "Ventes judiciaires à venir, prochaines audiences et mises à prix tribunal par tribunal ; prix d’adjudication et résultats avec l’offre Analyse, pour les tribunaux à l’historique suffisant."
       : "Ventes judiciaires à venir, prochaine audience et mise à prix médiane des biens annoncés, tribunal judiciaire par tribunal judiciaire.",
     alternates: { canonical: "/tribunaux" },
     // Without any court to list the page has nothing of its own to offer a search engine. A read

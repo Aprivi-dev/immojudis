@@ -89,8 +89,18 @@ describe("page Offres", () => {
   it("promet les statistiques des tribunaux, le rapport PDF et l'export", () => {
     render(<OffersPage />);
     expect(
-      screen.getByText("Statistiques des tribunaux, rapport PDF et export des résultats"),
+      screen.getByText(
+        "Statistiques des tribunaux : prix d’adjudication et scénarios d’enchères, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
+      ),
     ).toBeTruthy();
+    // Réserve de couverture sous le comparatif : source tierce, période, passé, seuil de ventes.
+    const note = screen.getByText(/Les scénarios d’enchères s’appuient sur les adjudications/);
+    expect(note.textContent).toMatch(
+      /trois dernières années publiées par Licitor \(source tierce, non officielle\)/,
+    );
+    expect(note.textContent).toMatch(/assez de ventes comparables/);
+    expect(note.textContent).toMatch(/ne prédisent pas le prix final/);
+    expect(note.textContent).toMatch(/informations et des pièces disponibles/);
   });
 
   it("promet l'essai seulement quand la souscription est ouverte", async () => {

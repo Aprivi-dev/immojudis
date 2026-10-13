@@ -52,7 +52,7 @@ const ANALYSIS_FEATURES = [
   "Historique de la vente : passages précédents, baisses de mise à prix, reports",
   "Estimation détaillée et ventes comparables",
   "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
-  "Statistiques des tribunaux, rapport PDF et export des résultats",
+  "Statistiques des tribunaux : prix d’adjudication et scénarios d’enchères, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
 ] as const;
 
 const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }[] = [
@@ -263,8 +263,13 @@ export function OffersPage() {
           </h2>
           <ComparisonTable />
           <p className="mt-4 text-sm text-ink-soft">
-            Les analyses dépendent des informations et des pièces disponibles pour chaque vente.
-            Vérifiez le contenu de la fiche avant de décider.
+            Les scénarios d’enchères s’appuient sur les adjudications des trois dernières années
+            publiées par Licitor (source tierce, non officielle) et sur les prix DVF ; les
+            statistiques de prix d’adjudication portent sur la période publiée indiquée sur la
+            fiche. Ils ne sont affichés que pour les tribunaux disposant d’assez de ventes
+            comparables ; la fiche indique quand ce n’est pas le cas. Ils décrivent le passé et ne
+            prédisent pas le prix final. Les analyses dépendent aussi des informations et des pièces
+            disponibles pour chaque vente. Vérifiez le contenu de la fiche avant de décider.
           </p>
         </div>
       </section>

@@ -93,8 +93,9 @@ def refresh(
 ) -> dict[str, object]:
     """One bounded refresh: make sure the month's campaign exists, run one tick, attest.
 
-    Nothing is collected while the source is withdrawn from the catalogue (no licence): the refresh
-    answers ``skipped`` before opening any connection to the collector.
+    Licitor is collected normally. Only when the withdrawal switch is set for it
+    (``public.set_catalogue_source_withdrawal``, not the case today) does the refresh answer
+    ``skipped`` before opening any connection to the collector.
     """
     if "licitor" in source_withdrawal.withdrawn_sources(db_url):
         return {"status": "skipped", "reason": "source_withdrawn"}

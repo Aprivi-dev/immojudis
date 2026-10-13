@@ -620,7 +620,8 @@ def main(argv: list[str] | None = None) -> int:
     if not load_settings()["licitor_historical_authorized"]:
         parser.error("LICITOR_HISTORICAL_AUTHORIZED must be true for this authorized run")
     if "licitor" in source_withdrawal.withdrawn_sources(str(load_settings().get("supabase_db_url") or "")):
-        parser.error("Licitor est retiré du catalogue (public.set_catalogue_source_withdrawal) : lever le retrait d'abord")
+        # Only when the withdrawal switch is set for Licitor (not the case today).
+        parser.error("Le retrait de Licitor est posé (public.set_catalogue_source_withdrawal) : lever le retrait d'abord")
     authorization = read_authorization(args.authorization_record)
     if min(args.max_pages_per_zone, args.max_requests, args.max_runtime_seconds) < 1:
         parser.error("Budgets must be positive")

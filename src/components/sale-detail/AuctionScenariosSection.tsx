@@ -29,7 +29,7 @@ function yearLabel(date: string | null): string {
 }
 
 /**
- * « Scénarios d'enchères » (offre Analyse) : les chances de chaque issue et la
+ * « Scénarios d'enchères » (offre Analyse) : la répartition observée des issues et la
  * fourchette de prix final, d'après les trois dernières années d'adjudications
  * du tribunal (Licitor pour les rapports à la mise à prix, DVF pour les prix
  * officiels). Rendered for Analyse members only.
@@ -89,7 +89,7 @@ export function AuctionScenariosSection({ saleId, enabled }: { saleId: string; e
               </small>
             </div>
           ) : null}
-          <ul className={styles.scenarios} aria-label="Chances de chaque scénario">
+          <ul className={styles.scenarios} aria-label="Répartition observée des issues">
             {scenarios.scenarios.map((scenario) => (
               <li key={scenario.key}>
                 <div className={styles.scenarioTop}>
@@ -104,7 +104,7 @@ export function AuctionScenariosSection({ saleId, enabled }: { saleId: string; e
             ))}
           </ul>
           <p className={styles.chance}>
-            Chance que le prix final dépasse le double de la mise à prix :{" "}
+            Part des ventes comparables adjugées au moins au double de la mise à prix :{" "}
             <strong>{formatPercent(probabilityAtLeast(scenarios.scenarios, 2))}</strong>
           </p>
         </>
@@ -159,6 +159,8 @@ export function AuctionScenariosSection({ saleId, enabled }: { saleId: string; e
       <p className={styles.caveat}>
         Statistiques sur les ventes adjugées : elles ne comptent ni les reports ni les ventes sans
         enchérisseur, et ne remplacent pas la visite ni la lecture du cahier des conditions de
+        vente. Fréquences observées dans le passé sur un échantillon limité, issues de données
+        tierces non vérifiées auprès du greffe ; elles ne constituent pas une probabilité pour cette
         vente. Sources : historique des adjudications publié par Licitor, DVF (DGFiP).
       </p>
     </section>
