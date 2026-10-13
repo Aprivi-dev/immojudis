@@ -81,6 +81,34 @@ def test_persistent_refusal_and_retry_after_delay_the_next_source_attempt():
     assert next_attempt(failures=1,access_denied=False,retry_not_before=future.isoformat(),now=now) == future
 
 
+def test_missed_alert_threshold_migration_patches_the_latest_observer_exactly_once():
+    url = os.getenv('PIPELINE_TEST_DB_URL')
+    if not url:
+        pytest.skip('Requires disposable PostgreSQL')
+    patch = migration('20261020120019_pipeline_missed_alert_threshold_18h.sql')
+    with _postgres_connect(url) as db:
+        try:
+            for role in ('anon', 'authenticated', 'service_role'):
+                db.execute(f"do $$ begin if not exists(select from pg_roles where rolname='{role}') then create role {role}; end if; end $$")
+            # The body is only resolved at run time: the function can be created without its tables.
+            db.execute(migration('20260929234000_optimize_pipeline_health_observe.sql'))
+            signature = 'public.observe_autonomous_pipeline(timestamptz)'
+            before = db.execute(f"select pg_get_functiondef('{signature}'::regprocedure)").fetchone()[0]
+            assert ") < p_now - interval '12 hours';" in before
+            db.execute(patch)
+            after = db.execute(f"select pg_get_functiondef('{signature}'::regprocedure)").fetchone()[0]
+            assert ") < p_now - interval '18 hours';" in after
+            assert "interval '12 hours'" not in after
+            assert after.replace('18 hours', '12 hours') == before
+            # A second application no longer finds the expected text: it refuses instead of guessing.
+            db.execute('savepoint again')
+            with pytest.raises(Exception, match='refusing 18-hour threshold patch'):
+                db.execute(patch)
+            db.execute('rollback to savepoint again')
+        finally:
+            db.rollback()
+
+
 def test_observation_emits_one_incident_and_one_recovery():
     url = os.getenv('PIPELINE_TEST_DB_URL')
     if not url:
