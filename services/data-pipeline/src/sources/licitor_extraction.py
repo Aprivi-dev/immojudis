@@ -27,7 +27,12 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from src.cadastre_references import designation, parse_cadastral_references
-from src.normalize import clean_text
+from src.department_names import (
+    department_from_licitor_url,
+    department_from_name,
+    departments_named_in_text,
+)
+from src.normalize import clean_text, extract_department
 from src.pdf_document_types import classify_document_type
 
 FEATURES_SCHEMA_VERSION = "licitor_features_v1"
@@ -987,6 +992,34 @@ def dedupe_licitor_images(images: object) -> list[str]:
     return list(dict.fromkeys(kept))
 
 
+_TEXT_SEARCH_DEPARTMENTS = ("24", "33", "40", "47", "64", "86", "87")
+
+
+def licitor_department(
+    raw_text: str | None,
+    source_url: str | None = None,
+    postal_code: str | None = None,
+    headline_department: str | None = None,
+) -> str | None:
+    """Département d'une annonce : URL, code postal, en-tête, puis nom entier dans le texte.
+
+    Le nom n'est jamais cherché comme sous-chaîne : « Orglandes » ne nomme pas les Landes et
+    « Tribunal de Vienne (Isère) » ne désigne pas la Vienne. Le texte ne sert qu'en dernier
+    recours, et seulement quand un seul département y est nommé.
+    """
+    from_url = department_from_licitor_url(source_url)
+    if from_url:
+        return from_url
+    from_postal = extract_department(str(postal_code) if postal_code else None)
+    if from_postal:
+        return from_postal
+    from_headline = department_from_name(headline_department)
+    if from_headline:
+        return from_headline
+    named = departments_named_in_text(raw_text, _TEXT_SEARCH_DEPARTMENTS)
+    return named[0] if len(named) == 1 else None
+
+
 def refresh_licitor_raw_sale(raw_sale: dict[str, Any]) -> bool:
     """Rejoue la lecture structurée sur le texte stocké d'une vente ``licitor`` (sans réseau)."""
     if str(raw_sale.get("source_name") or "") != "licitor":
@@ -1004,6 +1037,15 @@ def refresh_licitor_raw_sale(raw_sale: dict[str, Any]) -> bool:
     if extracted is None:
         return False
     apply_licitor_fields(raw_sale, extracted)
+    # Une relecture corrige aussi un département déduit d'une sous-chaîne (« Orglandes » -> 40).
+    department = licitor_department(
+        page_text,
+        source_url=raw_sale.get("source_url"),
+        postal_code=raw_sale.get("postal_code"),
+        headline_department=extracted["page"].headline_department,
+    )
+    if department:
+        raw_sale["department"] = department
     return True
 
 
@@ -1013,6 +1055,7 @@ __all__ = [
     "apply_licitor_fields",
     "dedupe_licitor_images",
     "extract_licitor_fields",
+    "licitor_department",
     "parse_licitor_page",
     "refresh_licitor_raw_sale",
 ]
