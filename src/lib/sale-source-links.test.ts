@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { saleSourceLinks, sourceLabel, sourceLabelFromUrl } from "@/lib/sale-source-links";
 import type { AuctionSale } from "@/lib/types";
+import { resetWithdrawnSources, setWithdrawnSources } from "@/lib/withdrawn-sources";
 
 describe("sale source links", () => {
+  afterEach(() => resetWithdrawnSources());
+
   it("labels merged source URLs from known domains", () => {
+    // Licitor est retiré du catalogue par défaut : ces libellés supposent le retrait levé.
+    setWithdrawnSources([]);
     const sale = {
       source_name: "avoventes",
       source_url: "https://avoventes.fr/enchere/maison",
@@ -21,7 +26,23 @@ describe("sale source links", () => {
     ]);
   });
 
+  it("hides the links of a source withdrawn from the catalogue", () => {
+    const sale = {
+      source_name: "avoventes",
+      source_url: "https://avoventes.fr/enchere/maison",
+      source_urls: [
+        "https://avoventes.fr/enchere/maison",
+        "https://www.licitor.com/annonce/10/maison.html",
+      ],
+    } as AuctionSale;
+
+    expect(saleSourceLinks(sale)).toEqual([
+      { label: "Avoventes", href: "https://avoventes.fr/enchere/maison" },
+    ]);
+  });
+
   it("uses object keys as source names when they are explicit", () => {
+    setWithdrawnSources([]);
     const sale = {
       source_name: "encheres_immobilieres",
       source_url: "https://encheresimmobilieres.fr/ventes/1",

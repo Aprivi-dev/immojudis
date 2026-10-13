@@ -1,4 +1,5 @@
 import type { AuctionSale, SaleMedia } from "./types";
+import { isWithdrawnSourceUrl } from "./withdrawn-sources";
 
 const STRONG_NON_PROPERTY_IMAGE_PATTERN =
   /(^|[/_.-])(avatar|banner|banniere|brand|default|favicon|icon|icone|logo|logos|newsletter|prochainesventes|journaux_vae|departements|placeholder|profile|sprite|user)([/_.-]|$)/i;
@@ -35,6 +36,8 @@ export function isLikelyPropertyImageUrl(url: string | null | undefined): url is
   try {
     const parsed = propertyImageSource(url);
     if (!parsed) return false;
+    // Photo hébergée par une source retirée du catalogue (voir withdrawn-sources.ts).
+    if (isWithdrawnSourceUrl(url) || isWithdrawnSourceUrl(parsed.href)) return false;
     const path = decodeURIComponent(parsed.pathname);
     const searchable = `${parsed.hostname}${path}`.toLowerCase();
 
