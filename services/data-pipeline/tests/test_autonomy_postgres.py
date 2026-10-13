@@ -115,6 +115,59 @@ def test_missed_alert_threshold_migration_patches_the_latest_observer_and_is_ide
             db.rollback()
 
 
+def test_enrichment_stalled_patch_counts_exhausted_jobs_apart_and_is_idempotent():
+    url = os.getenv('PIPELINE_TEST_DB_URL')
+    if not url:
+        pytest.skip('Requires disposable PostgreSQL')
+    patch = migration('20261022100000_enrichment_stalled_excludes_exhausted.sql')
+    signature = 'public.observe_autonomous_pipeline(timestamptz)'
+    with _postgres_connect(url) as db:
+        try:
+            setup(db)
+            # Latest observer: the 20260929 definition, then the in-place patches that touch its queue block
+            # (only the observer half of the 20261001 migration; its claim half needs other tables).
+            db.execute(migration('20260929234000_optimize_pipeline_health_observe.sql'))
+            db.execute(migration('20260930002000_narrow_pipeline_health_baseline.sql'))
+            scheduler = migration('20261001070853_scheduler_claimable_queue_metrics.sql')
+            db.execute(scheduler[scheduler.index('do $patch$', scheduler.index('$patch$;')):])
+            db.execute(migration('20261008121947_health_queue_due_revision_candidates.sql'))
+            db.execute(migration('20261020120019_pipeline_missed_alert_threshold_18h.sql'))
+            before = db.execute(f"select pg_get_functiondef('{signature}'::regprocedure)").fetchone()[0]
+            assert "'exhausted'" not in before
+            db.execute(patch)
+            after = db.execute(f"select pg_get_functiondef('{signature}'::regprocedure)").fetchone()[0]
+            assert "  exhausted integer;\n" in after
+            assert "'exhausted', exhausted," in after
+            assert "and not (status = 'failed' and attempt_count >= max_attempts)" in after
+            # The earlier patches survive.
+            assert 'claimable_due' in after and "interval '18 hours'" in after
+            # A second application finds the exhausted counter already there: no-op, no error.
+            db.execute(patch)
+            assert db.execute(f"select pg_get_functiondef('{signature}'::regprocedure)").fetchone()[0] == after
+            # The aggregate itself: exhausted failed jobs leave older_than_24h but stay in the backlog.
+            block = after[after.index('  select count(*),\n         count(*) filter (\n'):after.index("  evidence := jsonb_build_object(\n    'backlog'")]
+            for index, (status, attempts, age) in enumerate([
+                ('failed', 4, '2 days'), ('failed', 6, '2 days'), ('failed', 1, '2 days'),
+                ('queued', 0, '2 days'), ('running', 4, '2 days'), ('queued', 0, '1 hour'), ('completed', 4, '2 days'),
+            ]):
+                db.execute('insert into auction_sales(source_url) values (%s)', (f'u{index}',))
+                db.execute("""insert into auction_enrichment_jobs(source_url,job_type,input_hash,status,attempt_count,max_attempts,created_at)
+                    values (%s,'pdf',%s,%s,%s,4,now()-%s::interval)""", (f'u{index}', f'h{index}', status, attempts, age))
+            db.execute('create temporary table stalled_result(backlog integer, delayed integer, exhausted integer) on commit drop')
+            db.execute(f"""do $$ declare p_now timestamptz := now(); backlog integer; delayed integer; exhausted integer;
+                begin {block}
+                insert into stalled_result values (backlog, delayed, exhausted); end $$""")
+            assert db.execute('select backlog, delayed, exhausted from stalled_result').fetchone() == (6, 3, 2)
+            # An unexpected queue block is refused, never guessed at.
+            db.execute(before.replace("'older_than_24h', delayed,", "'older_than_24h', delayed, 'x', 1,"))
+            db.execute('savepoint unexpected')
+            with pytest.raises(Exception, match='refusing exhausted-jobs patch'):
+                db.execute(patch)
+            db.execute('rollback to savepoint unexpected')
+        finally:
+            db.rollback()
+
+
 def test_observation_emits_one_incident_and_one_recovery():
     url = os.getenv('PIPELINE_TEST_DB_URL')
     if not url:

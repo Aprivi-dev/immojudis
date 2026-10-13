@@ -14,8 +14,8 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
-from src import source_withdrawal
-from src.admission import admit_sales, has_price_or_surface, is_expired, publication_rejection, split_insufficient
+from src import retention_tombstones, source_withdrawal
+from src.admission import admit_unretired, has_price_or_surface, is_expired, publication_rejection, split_insufficient
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
 from src.catalogue_readiness import apply_catalogue_readiness
@@ -693,14 +693,14 @@ def _prepare_and_publish_early(run: _PipelineRun) -> None:
         preparation_seconds += time.perf_counter() - started
         run.lifecycle_stats.marked_past += mark_past_sales(batch).marked_past
         run.app_ready.extend(batch)
-        admitted = admit_sales(batch, lambda group, **kw: record_sale_decisions(run_id, group, **kw))
+        admitted = admit_unretired(batch, lambda group, **kw: record_sale_decisions(run_id, group, **kw), forget=run.app_ready)
         record_sale_decisions(run_id, admitted, decision="admitted")
         if options.upsert and admitted:
             started = time.perf_counter()
             try:
-                run.early_upserted += upsert_sales_to_supabase(admitted)
-                run.early_publication_fingerprints.update(_sale_publication_fingerprints(admitted))
-                run.early_observations_upserted += upsert_observations_to_supabase(admitted)
+                run.early_upserted += (published := retention_tombstones.publish_batch(admitted, upsert_sales_to_supabase, run_id, record_sale_decisions, errors, run.app_ready)).count
+                run.early_publication_fingerprints.update(_sale_publication_fingerprints(published.sales))
+                run.early_observations_upserted += upsert_observations_to_supabase(published.sales)
             except Exception as exc:
                 record_sale_decisions(run_id, admitted, decision="publication_failed", reason=str(exc)[:1000])
                 LOGGER.exception("Early Supabase batch failed at offset %s: %s", offset, exc)
@@ -1846,11 +1846,11 @@ def publish_factual_batch(run_id: str, raws: list, known: dict, errors: dict) ->
             record_items(run_id, [raw], decision="normalization_failed", reason=str(exc)[:1000])
     sales = merge_duplicate_sales(normalized)
     mark_past_sales(sales)
-    admitted = admit_sales(sales, lambda group, **kw: record_sale_decisions(run_id, group, **kw))
+    admitted = admit_unretired(sales, lambda group, **kw: record_sale_decisions(run_id, group, **kw))
     if not admitted:
         return
     try:
-        count = upsert_sales_to_supabase(admitted)
+        count = retention_tombstones.publish_batch(admitted, upsert_sales_to_supabase, run_id, record_sale_decisions, errors).count
         LOGGER.info("Progressive factual publication: %s catalogue identities", count)
     except Exception as exc:
         record_sale_decisions(run_id, admitted, decision="publication_failed", reason=str(exc)[:1000])
