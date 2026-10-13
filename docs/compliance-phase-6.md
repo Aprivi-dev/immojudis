@@ -81,7 +81,8 @@ doit être motivée et annoncée avant la première échéance.
 - identité et médiateur configurés en production ;
 - revue juridique écrite conservée ;
 - commande Stripe de test et preuve `commercial_acceptances` vérifiées ;
-- demande d’accès, d’effacement et de rétractation testées de bout en bout ;
+- demande d’accès (copie incluant les déblocages de ventes, table `user_sale_unlocks`), d’effacement et de
+  rétractation testées de bout en bout ;
 - procédure de remboursement et suppression Storage/Auth répétée sur un compte de test ;
 - contrats/DPA et mécanismes de transfert des fournisseurs vérifiés ;
 - bouton « Résilier mon abonnement » (page Mon compte) testé de bout en bout, y compris la

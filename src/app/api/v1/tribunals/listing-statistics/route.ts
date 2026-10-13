@@ -3,6 +3,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
+import { PublicApiError } from "@/lib/api-errors";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import {
@@ -17,6 +18,15 @@ export async function GET(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
+    // One reading of the query serves both the entitlement and the data. A repeated parameter
+    // (`?saleId=U&saleId=V`) would be read as the first value by one and the last by the other, so
+    // an unlock of U could open the tribunal of V: it is refused.
+    for (const name of new Set(url.searchParams.keys())) {
+      if (url.searchParams.getAll(name).length > 1) {
+        throw new PublicApiError("Requête invalide : paramètre répété.", 400);
+      }
+    }
+    const query = Object.fromEntries(url.searchParams.entries());
     // Analyse, or a Découverte account that unlocked the sale given as `saleId` (« 3 déblocages
     // par mois »): the tribunal of that sale only. A query by `courtCode` stays on Analyse. The
     // query is validated after the entitlement, as before; the schema then requires exactly one of
@@ -25,11 +35,9 @@ export async function GET(request: Request) {
       auth,
       "sales.statistics",
       "Statistiques des annonces judiciaires réservées au plan Analyse.",
-      { saleId: z.string().uuid().safeParse(url.searchParams.get("saleId")).data },
+      { saleId: z.string().uuid().safeParse(query.saleId).data },
     );
-    const input = tribunalListingStatisticsQuerySchema.parse(
-      Object.fromEntries(url.searchParams.entries()),
-    );
+    const input = tribunalListingStatisticsQuerySchema.parse(query);
     const statistics = tribunalListingStatisticsResponseSchema.parse(
       await getTribunalListingStatistics(input),
     );

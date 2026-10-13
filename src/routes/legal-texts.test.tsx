@@ -126,7 +126,16 @@ describe("conditions générales : 3 déblocages par mois", () => {
     expect(text).toContain(
       `Le compteur est remis à ${n} le 1er de chaque mois à 00 h 00, heure de Paris.`,
     );
-    expect(text).toContain("tant qu’elle est en ligne sur Immojudis et que votre compte existe");
+    expect(text).toContain(
+      "tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le déblocage, et tant que votre compte existe",
+    );
+  });
+
+  it("disent le sort des ventes débloquées après un abonnement Analyse", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Pendant un abonnement Analyse, essai compris, aucun déblocage n’est consommé. À la fin de l’abonnement, le compte revient à Découverte : les ventes que vous aviez déjà débloquées restent accessibles ; les autres ventes consultées pendant l’abonnement redeviennent soumises aux déblocages.",
+    );
   });
 
   it("prévoient la modification de l’avantage gratuit avec trente jours de préavis", () => {
@@ -172,7 +181,7 @@ describe("politique de confidentialité", () => {
       "Exécution du contrat : appliquer l’avantage et sa limite prévus par les conditions générales",
     );
     expect(text).toContain(
-      "Tant que la vente débloquée est consultable, puis 24 mois au plus ; suppression avec le compte",
+      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, jusqu’à la fin du mois civil en cours (effacement lors de la purge hebdomadaire qui suit), pour que le compteur du mois ne soit pas remis à zéro.",
     );
   });
 

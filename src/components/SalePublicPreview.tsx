@@ -69,11 +69,14 @@ export function SalePublicPreview({
   preview,
   returnTo,
   requestedHash = "",
+  adjudicationStatisticsEnabled = false,
 }: {
   saleId: string;
   preview: AuctionSale;
   returnTo: string;
   requestedHash?: string;
+  /** The statistics of the tribunal are only announced while their flag is open. */
+  adjudicationStatisticsEnabled?: boolean;
 }) {
   const procedure = getSaleProcedure(preview);
   const venueCopy = publicSaleVenueCopy(procedure.venueType);
@@ -288,7 +291,7 @@ export function SalePublicPreview({
                 débloquer {MONTHLY_SALE_UNLOCKS} ventes par mois (
                 {unlockedItemsText({
                   ceiling: procedure.venueType === "tribunal",
-                  statistics: procedure.venueType === "tribunal",
+                  statistics: procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
                 })}
                 ).
               </p>
@@ -301,7 +304,7 @@ export function SalePublicPreview({
                 })}
                 className={styles.primary}
               >
-                Voir gratuitement le dossier
+                Créer mon compte gratuit
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
               <Link href={returnTo} className={styles.secondary}>

@@ -49,6 +49,7 @@ describe("DocumentReadingSection", () => {
     const section = await screen.findByRole("region", { name: "Lecture des pièces du dossier" });
     expect(section.textContent).toContain("1 point relevé dans les pièces");
     expect(section.textContent).toContain("À vérifier en priorité");
+    expect(section.textContent).toContain("noms de personnes remplacés par leur rôle");
     expect(section.textContent).toContain("« occupé par Monsieur X et sa famille »");
     expect(
       screen.getByRole("link", { name: "PV de description, page 2" }).getAttribute("href"),

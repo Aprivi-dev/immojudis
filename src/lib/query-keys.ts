@@ -56,12 +56,12 @@ export const queryKeys = {
   saleDetail: (saleId: string, sessionKey: Id, mode: SaleAccessMode) =>
     ["sale-detail", saleId, sessionKey, mode] as const,
   saleUnlock: (saleId: string, userKey: Id) => ["sale-unlock", saleId, userKey] as const,
-  documentReading: (saleId: string, access: SaleAccessMode) =>
-    ["document-reading", saleId, access] as const,
-  salePassages: (saleId: string, access: SaleAccessMode) =>
-    ["sale-passages", saleId, access] as const,
-  auctionScenarios: (saleId: string, access: SaleAccessMode) =>
-    ["auction-scenarios", saleId, access] as const,
+  documentReading: (saleId: string, access: SaleAccessMode, userKey?: Id) =>
+    ["document-reading", saleId, access, userKey ?? "anonymous"] as const,
+  salePassages: (saleId: string, access: SaleAccessMode, userKey?: Id) =>
+    ["sale-passages", saleId, access, userKey ?? "anonymous"] as const,
+  auctionScenarios: (saleId: string, access: SaleAccessMode, userKey?: Id) =>
+    ["auction-scenarios", saleId, access, userKey ?? "anonymous"] as const,
   saleAiReview: (saleId: string, userKey: Id) => ["sale-ai-review", saleId, userKey] as const,
   saleFactReliability: (saleId: string, userKey: Id) =>
     ["sale-fact-reliability", saleId, userKey] as const,
@@ -72,7 +72,8 @@ export const queryKeys = {
   streetViewPanorama: (lat: number, lng: number) =>
     ["street-view-panorama", lat.toFixed(6), lng.toFixed(6)] as const,
   saleWorkspace: (saleId: string) => ["sale-workspace", saleId] as const,
-  precomputedMarketEstimate: (saleId: string) => ["precomputed-market-estimate", saleId] as const,
+  precomputedMarketEstimate: (saleId: string, userKey?: Id) =>
+    ["precomputed-market-estimate", saleId, userKey ?? "anonymous"] as const,
   outcomeGraph: (saleId: string) => ["outcome-graph", saleId] as const,
   listingStatistics: (saleId: string, historyMonths: number, mode: "demo" | "live") =>
     ["listing-statistics", saleId, historyMonths, mode] as const,

@@ -57,6 +57,10 @@ describe("offerComparisonRows", () => {
       expect(candidate.analyse.included, candidate.id).toBe(true);
     }
     expect(row("statistics").decouverte.text).toBe("Pour 3 ventes par mois (tribunal de la vente)");
+    // L'onglet Travaux reste fermé sur une vente débloquée : le budget travaux n'est pas promis.
+    expect(row("scenarios").decouverte.text).toBe(
+      "Pour 3 ventes par mois (hors budget travaux détaillé)",
+    );
   });
 
   it("garde « Non inclus » pour ce qu'un déblocage n'ouvre jamais", () => {

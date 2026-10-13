@@ -80,8 +80,12 @@ export function TermsPage() {
               restitué si la vente est ensuite retirée, reportée ou adjugée. Les déblocages non
               utilisés ne sont pas reportés. Le compteur est remis à {MONTHLY_SALE_UNLOCKS} le 1er
               de chaque mois à 00 h 00, heure de Paris. Une vente débloquée reste consultable avec
-              ces éléments tant qu’elle est en ligne sur Immojudis et que votre compte existe. Les
-              déblocages sont personnels (article 9).
+              ces éléments tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après
+              le déblocage, et tant que votre compte existe. Les déblocages sont personnels (article
+              9). Pendant un abonnement Analyse, essai compris, aucun déblocage n’est consommé. À la
+              fin de l’abonnement, le compte revient à Découverte : les ventes que vous aviez déjà
+              débloquées restent accessibles ; les autres ventes consultées pendant l’abonnement
+              redeviennent soumises aux déblocages.
             </p>
             <p className="mt-3">
               Immojudis peut modifier ou supprimer les avantages de l’offre Découverte, dont les

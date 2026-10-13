@@ -327,15 +327,33 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: true });
   });
 
-  it("keeps the free view when the unlock status cannot be read", async () => {
+  it("retries once, then keeps the free view with a notice and a retry button", async () => {
     mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
     mocks.unlockStatus.mockRejectedValue(new Error("indisponible"));
     mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
 
     renderPage();
 
-    await screen.findByText("Offre Découverte");
+    const alert = await screen.findByRole("alert", {}, { timeout: 5000 });
+    expect(alert.textContent).toContain("État de vos déblocages indisponible");
+    expect(mocks.unlockStatus).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Offre Découverte")).toBeTruthy();
     expect(screen.getByTestId("remaining").textContent).toBe("inconnu");
+  });
+
+  it("shows the unlocked sale once the retry button reads the status", async () => {
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+    mocks.unlockStatus.mockRejectedValueOnce(new Error("indisponible"));
+    mocks.unlockStatus.mockRejectedValueOnce(new Error("indisponible"));
+    mocks.unlockStatus.mockResolvedValue(status(true));
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+    renderPage();
+    await screen.findByRole("alert", {}, { timeout: 5000 });
+    fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+
+    await screen.findByText("Vente débloquée");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("never asks for an unlock status from an Analyse account", async () => {

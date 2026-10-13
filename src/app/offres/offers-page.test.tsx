@@ -186,9 +186,13 @@ describe("page Offres", () => {
     const text = container.textContent ?? "";
 
     expect(
-      screen.getByText(new RegExp(`^${n} déblocages par mois : enchère plafond`)),
+      screen.getByText(
+        new RegExp(`^${n} déblocages par mois : l’enchère plafond, la lecture des pièces`),
+      ),
     ).toBeTruthy();
-    expect(text).toContain(`avec ${n} déblocages par mois pour ouvrir l’analyse d’une vente`);
+    expect(text).toContain(
+      `elle comprend ${n} déblocages par mois, chacun ouvrant, pour une vente, l’enchère plafond`,
+    );
     // Never the names the owner excluded.
     expect(text).not.toMatch(
       /analyses? (complètes? )?gratuites?|essai gratuit des? (déblocages|ventes)/i,
@@ -205,7 +209,7 @@ describe("page Offres", () => {
     expect(answer).toContain(
       "les statistiques du tribunal de cette vente et les pièces du dossier",
     );
-    expect(answer).toContain("le 1er du mois à minuit (heure de Paris)");
+    expect(answer).toContain("le 1er du mois à 00 h 00, heure de Paris");
     expect(answer).toContain("ne sont pas reportés");
     expect(answer).toContain("tant qu’elle est en ligne");
     expect(answer).toContain("Aucune carte bancaire n’est demandée");

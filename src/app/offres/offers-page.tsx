@@ -18,7 +18,7 @@ import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives"
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-offer";
 import { offerComparisonRows, type OfferCell } from "@/lib/offer-comparison";
-import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
@@ -41,8 +41,10 @@ const BENEFITS = [
   },
 ] as const;
 
+const UNLOCKED_ITEMS = unlockedItemsText({ ceiling: true, statistics: true });
+
 const DISCOVERY_FEATURES = [
-  `${MONTHLY_SALE_UNLOCKS} déblocages par mois : enchère plafond, lecture des pièces, historique et statistiques du tribunal pour la vente choisie`,
+  `${MONTHLY_SALE_UNLOCKS} déblocages par mois : ${UNLOCKED_ITEMS}, pour la vente choisie`,
   "Fiches complètes : adresse, photos, description, occupation, visites et contact",
   "Fourchette de valeur estimée et écart avec la mise à prix",
   "Une alerte avec un email récapitulatif par semaine, trois favoris",
@@ -106,7 +108,7 @@ const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }
         Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes avec votre compte
         Découverte. Pour chacune, vous voyez l’enchère plafond, la lecture des pièces, l’historique
         de la vente, les statistiques du tribunal de cette vente et les pièces du dossier. Le
-        compteur repart à {MONTHLY_SALE_UNLOCKS} le 1er du mois à minuit (heure de Paris) ; les
+        compteur repart à {MONTHLY_SALE_UNLOCKS} le 1er du mois à 00 h 00, heure de Paris ; les
         déblocages non utilisés ne sont pas reportés. Une vente débloquée reste accessible tant
         qu’elle est en ligne sur Immojudis. Aucune carte bancaire n’est demandée et rien ne devient
         payant automatiquement. L’export PDF ou CSV, les rapports enregistrés et les alertes
@@ -234,8 +236,9 @@ export function OffersPage() {
           Deux offres, un prix clair
         </h2>
         <p className="mt-2 max-w-3xl text-ink-soft">
-          Découverte est gratuite, sans limite de durée, avec {MONTHLY_SALE_UNLOCKS} déblocages par
-          mois pour ouvrir l’analyse d’une vente. Analyse coûte {price}, résiliable à tout moment.
+          Découverte est gratuite, sans limite de durée ; elle comprend {MONTHLY_SALE_UNLOCKS}{" "}
+          déblocages par mois, chacun ouvrant, pour une vente, {UNLOCKED_ITEMS}. Analyse coûte{" "}
+          {price}, résiliable à tout moment.
         </p>
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
           <PlanPanel

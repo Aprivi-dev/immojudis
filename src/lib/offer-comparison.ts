@@ -129,6 +129,8 @@ const SPECS: RowSpec[] = [
     id: "scenarios",
     label: "Scénarios de frais, de travaux et de marge de sécurité",
     features: ["property.advancedBidScenarios"],
+    // L'onglet Travaux reste fermé sur une vente débloquée.
+    lockedCustom: { decouverte: `${UNLOCK_CELL_TEXT} (hors budget travaux détaillé)` },
   },
   {
     id: "statistics",
