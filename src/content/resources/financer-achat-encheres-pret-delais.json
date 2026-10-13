@@ -13,7 +13,7 @@
     "Avant les enchères, il faut disposer de la garantie : chèque de banque ou caution bancaire irrévocable, 10 % de la mise à prix, minimum 3 000 €.",
     "Le prix et les frais se règlent dans les deux mois de l’adjudication définitive, soit environ deux mois et dix jours après l’audience en l’absence de surenchère.",
     "Une offre de prêt s’accepte au plus tôt dix jours après sa réception : planifiez ce délai avec la banque.",
-    "L’hypothèque de la banque peut être inscrite avant le paiement du prix, mais le bien ne peut pas être revendu avant."
+    "Avant le paiement, l’adjudicataire ne peut disposer du bien, sauf pour constituer l’hypothèque garantissant le prêt qui finance l’acquisition."
   ],
   "sections": [
     {
@@ -21,11 +21,11 @@
       "title": "Pourquoi il n’y a pas de condition suspensive",
       "paragraphs": [
         "Pour les ventes classiques, le Code de la consommation prévoit que l’acte qui indique un paiement du prix par prêt est conclu sous la condition suspensive de l’obtention de ce prêt (art. L. 313-41). L’acheteur qui n’obtient pas son crédit récupère alors ses sommes.",
-        "Pour l’adjudication, la procédure est différente. Si le prix n’est pas versé ou consigné et si les frais ne sont pas payés, la vente est résolue de plein droit et l’adjudicataire défaillant doit la différence entre son enchère et le prix de la revente, si celui-ci est moindre (art. L. 322-12 du Code des procédures civiles d’exécution). Le Code organise ensuite la remise en vente, la réitération des enchères (art. R. 322-66 et suivants). Notaires de France précise de son côté que les ventes aux enchères notariales classiques ne comportent pas de condition suspensive de prêt, alors que la vente interactive en ligne peut en insérer. Le cahier de chaque vente fait foi."
+        "Pour l’adjudication, la procédure est différente. Si le prix n’est pas versé ou consigné et si les frais ne sont pas payés, la vente est résolue de plein droit et l’adjudicataire défaillant doit la différence entre son enchère et le prix de la revente, si celui-ci est moindre (art. L. 322-12 du Code des procédures civiles d’exécution). Le Code organise ensuite la remise en vente, la réitération des enchères (art. R. 322-66 et suivants). Notaires de France précise de son côté que les ventes aux enchères notariales classiques ne comportent pas de condition suspensive de prêt, alors que la vente interactive en ligne peut comporter des clauses suspensives (la source ne précise pas lesquelles). Le cahier de chaque vente fait foi."
       ],
       "callout": {
         "title": "En pratique",
-        "text": "Enchérir sans financement acquis revient à parier que la banque suivra. Fixez votre enchère plafond à un montant que votre banque a déjà accepté de financer par écrit, sinon réduisez-la."
+        "text": "Enchérir sans financement acquis revient à parier que la banque suivra. Il est prudent de ne pas dépasser un montant que votre banque a accepté de financer par écrit."
       }
     },
     {
@@ -55,7 +55,7 @@
           [
             "Après le paiement",
             "Dès le paiement",
-            "La banque peut inscrire son hypothèque ; avant le paiement, l’adjudicataire ne peut disposer du bien, sauf cette hypothèque (art. L. 322-9)."
+            "Avant le paiement, l’adjudicataire ne peut disposer du bien, sauf pour constituer l’hypothèque garantissant le prêt qui finance l’acquisition (art. L. 322-9). Après paiement des frais et du prix, il peut revendre."
           ]
         ]
       }

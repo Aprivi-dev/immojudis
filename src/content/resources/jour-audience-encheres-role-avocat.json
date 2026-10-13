@@ -9,7 +9,7 @@
     "Cet article suit le fil de la journée : ce qui doit être prêt avant, ce qui se passe dans la salle, les cas particuliers et les questions à poser à votre avocat. Il décrit les règles de la saisie immobilière ; les ventes notariales et domaniales fonctionnent autrement, comme l’explique l’article « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal »."
   ],
   "takeaways": [
-    "Les enchères sont portées par un avocat inscrit au barreau du tribunal où se tient la vente, et il ne peut porter qu’un seul mandat.",
+    "Les enchères sont portées par un avocat inscrit au barreau du tribunal où se tient la vente ; un avocat ne peut être porteur que d’un seul mandat (art. R. 322-40).",
     "Avant d’enchérir, l’avocat doit avoir reçu votre garantie : chèque de banque ou caution bancaire irrévocable, 10 % de la mise à prix, minimum 3 000 €.",
     "Les enchères s’arrêtent quand 90 secondes se sont écoulées depuis la dernière : celle-ci emporte l’adjudication.",
     "Fixez votre enchère plafond avant l’audience et donnez à l’avocat une consigne écrite.",
@@ -21,7 +21,7 @@
       "title": "Avant l’audience : ce que votre avocat doit avoir en main",
       "paragraphs": [
         "L’avis de vente est publié entre un et deux mois avant l’audience. Il indique la mise à prix (le montant de départ des enchères), la date, l’heure, le lieu, et rappelle que les enchères ne peuvent être portées que par un avocat du barreau du tribunal (art. R. 322-31 du Code des procédures civiles d’exécution). Le cahier des conditions de vente, qui décrit le bien et fixe les règles de la vente, peut être consulté au greffe ou au cabinet de l’avocat du créancier poursuivant.",
-        "Vous donnez ensuite à votre avocat un mandat, c’est-à-dire le pouvoir d’enchérir pour vous. Un avocat ne peut être porteur que d’un seul mandat par vente (art. R. 322-40). Avant de porter les enchères, il doit se faire remettre, contre récépissé, une garantie (art. R. 322-41)."
+        "Vous donnez ensuite à votre avocat un mandat, c’est-à-dire le pouvoir d’enchérir pour vous. Un avocat ne peut être porteur que d’un seul mandat (art. R. 322-40). Avant de porter les enchères, il doit se faire remettre, contre récépissé, une garantie (art. R. 322-41)."
       ],
       "table": {
         "headers": ["Ce qu’on remet à l’avocat", "À quoi cela sert", "Repère"],
@@ -79,7 +79,7 @@
         "Mise à prix modifiée par le juge : à défaut d’enchère, le bien est remis en vente sur des baisses successives, jusqu’à la mise à prix initiale (art. R. 322-47).",
         "Enchère irrégulière : les règles sur les enchères sont prescrites à peine de nullité. Une nouvelle enchère régulière couvre la nullité des précédentes, mais la nullité de la dernière enchère entraîne celle de l’adjudication (art. R. 322-48).",
         "Personnes qui ne peuvent pas enchérir : le débiteur saisi, les auxiliaires de justice intervenus dans la procédure et les magistrats de la juridiction, ni directement ni par personne interposée (art. R. 322-39).",
-        "Immeuble d’habitation sans occupation personnelle déclarée : le greffe demande le casier judiciaire de l’adjudicataire. Si une condamnation visée par la loi apparaît, le juge peut annuler l’adjudication (art. R. 322-49-1).",
+        "Immeuble d’habitation sans occupation personnelle déclarée : le greffe demande le casier judiciaire de l’adjudicataire. Si une condamnation visée par la loi apparaît, le juge prononce d’office la nullité de l’adjudication et fixe une nouvelle audience de vente (art. R. 322-49-1).",
         "Surenchère : dans les dix jours, toute personne peut faire une offre supérieure d’au moins un dixième. L’adjudication n’est alors pas définitive. Le mécanisme est détaillé dans l’article « Après l’adjudication »."
       ]
     },
@@ -92,7 +92,7 @@
       ],
       "callout": {
         "title": "Trouver un avocat",
-        "text": "L’annuaire des avocats d’Immojudis (rubrique « Avocats ») aide à repérer un cabinet du barreau compétent. Le choix de votre avocat vous appartient : Immojudis ne le recommande pas."
+        "text": "L’annuaire des avocats d’Immojudis (rubrique « Avocats ») aide à repérer un cabinet du barreau compétent. Certains profils de l’annuaire sont sponsorisés (mise en avant payante, signalée comme telle) ; ce n’est ni une notation ni une recommandation. Le choix de votre avocat vous appartient."
       }
     },
     {
