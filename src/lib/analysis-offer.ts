@@ -29,7 +29,5 @@ export function resolveAnalysisOfferLabel(
 }
 
 export const ANALYSIS_TRIAL_LABEL = `Essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours avec carte bancaire`;
-export const ANALYSIS_RECURRING_LABEL =
-  "Puis abonnement récurrent résiliable depuis le portail Stripe";
-export const ANALYSIS_SUBSCRIPTION_ONLY_LABEL =
-  "Abonnement récurrent résiliable depuis le portail Stripe";
+export const ANALYSIS_RECURRING_LABEL = "Puis abonnement récurrent résiliable depuis Mon compte";
+export const ANALYSIS_SUBSCRIPTION_ONLY_LABEL = "Abonnement récurrent résiliable depuis Mon compte";

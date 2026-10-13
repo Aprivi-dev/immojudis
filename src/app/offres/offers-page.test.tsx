@@ -60,6 +60,13 @@ describe("page Offres", () => {
     await waitFor(() => expect(mocks.offer).toHaveBeenCalled());
   });
 
+  it("indique le chemin de résiliation : Mon compte, bouton « Résilier mon abonnement »", () => {
+    const { container } = render(<OffersPage />);
+    const answer = container.querySelector("details")?.textContent ?? "";
+    expect(answer).toContain("« Mon compte », le bouton « Résilier mon abonnement »");
+    expect(answer).toContain("date de fin d’accès est affichée avant confirmation");
+  });
+
   it("répond aux cinq questions attendues", () => {
     const { container } = render(<OffersPage />);
     const questions = Array.from(container.querySelectorAll("details > summary")).map((node) =>
