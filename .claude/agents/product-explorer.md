@@ -17,8 +17,10 @@ Tu ne modifies JAMAIS de fichier : tu proposes.
 2. Lis les décisions déjà prises dans `docs/roadmaps/` (périmètre, conditions de
    lancement, offre pro…). Ne repropose pas une idée déjà écartée ; si tu veux la
    rouvrir, dis-le et explique ce qui a changé.
-3. Regarde ce que proposent 3 à 5 sites comparables (recherche web) : annonces de ventes
-   aux enchères, outils d'investissement immobilier.
+3. Regarde rapidement ce que proposent 3 à 5 sites comparables (recherche web) pour situer
+   tes idées. Le benchmark détaillé de la concurrence est le rôle de
+   `veille-concurrentielle` : s'il a rendu un rapport dans `docs/equipe/`, pars de
+   celui-ci au lieu de refaire la recherche.
 4. Propose des fonctionnalités réalistes pour ce projet et sa taille, pas une liste
    générique.
 
