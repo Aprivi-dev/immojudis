@@ -226,6 +226,19 @@
   }
 }
 
+/*
+ * iOS Safari zooms the page when a field under 16 px takes focus. The rule sits outside any
+ * @layer on purpose: unlayered styles beat the utility classes (`text-sm`, `text-xs`) that the
+ * fields carry, so every field reaches 16 px below the desktop breakpoint.
+ */
+@media (max-width: 1023px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 @layer components {
   .admin-sidebar {
     position: fixed;

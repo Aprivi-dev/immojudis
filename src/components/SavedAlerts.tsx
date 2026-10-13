@@ -181,7 +181,7 @@ function AccountAlerts({ userId }: { userId: string }) {
       toast.success(
         result.matchCount === 0
           ? "Aucune vente ne correspond à vos alertes pour le moment."
-          : `${result.matchCount} vente${result.matchCount > 1 ? "s correspondent" : " correspond"} à vos alertes. Vous les recevrez dans votre prochain récapitulatif.`,
+          : `${result.matchCount} vente${result.matchCount > 1 ? "s correspondent" : " correspond"} à vos alertes. Elles apparaissent dans vos alertes, et dans votre prochain email récapitulatif si vous l’avez activé.`,
       );
       await client.invalidateQueries({ queryKey: alertsKey });
     },
@@ -197,7 +197,9 @@ function AccountAlerts({ userId }: { userId: string }) {
         <>
           Une alerte vous prévient quand une nouvelle vente correspond à vos critères. L’offre
           Découverte permet une alerte et une zone actives, avec un email récapitulatif par semaine
-          ; l’offre Analyse jusqu’à 25, avec un email quotidien et des critères avancés.
+          ; l’offre Analyse jusqu’à 25, avec un email quotidien et des critères avancés. L’email
+          n’est envoyé que si vous l’avez activé, en créant une alerte ou depuis la cloche des
+          notifications.
         </>
       }
       actions={

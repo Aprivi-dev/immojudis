@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { pathWithSearch } from "@/lib/navigation";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
 import {
@@ -12,6 +12,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
+import {
+  FAVORITE_ADD_LABEL,
+  FAVORITE_ANONYMOUS_TITLE,
+  FAVORITE_REMOVE_LABEL,
+  announceFavoriteAdded,
+} from "./favorite-feedback";
 
 export function FavoriteButton({
   saleId,
@@ -51,7 +57,7 @@ export function FavoriteButton({
         typeof window !== "undefined"
           ? `${window.location.pathname}${window.location.search}`
           : "/sales";
-      router.push(pathWithSearch("/login", { redirect }));
+      router.push(loginPathWithRedirect(redirect, { reason: "favori" }));
       return;
     }
     if (favorite.isPending || favorite.isError) {
@@ -66,8 +72,9 @@ export function FavoriteButton({
         await removeFavoriteSaleRequest({ saleId });
         qc.setQueryData(favoriteKey, false);
       } else {
-        await addFavoriteSaleRequest({ data: { saleId } });
+        const added = await addFavoriteSaleRequest({ data: { saleId } });
         qc.setQueryData(favoriteKey, true);
+        void announceFavoriteAdded(qc, user.id, added?.plan?.limit ?? null);
       }
       qc.setQueriesData<string[] | undefined>(
         { queryKey: searchFavoriteQueryKey },
@@ -88,6 +95,9 @@ export function FavoriteButton({
     }
   }
 
+  const label = isFav ? FAVORITE_REMOVE_LABEL : FAVORITE_ADD_LABEL;
+  const title = !user && !loading ? FAVORITE_ANONYMOUS_TITLE : label;
+
   return (
     <button
       type="button"
@@ -98,15 +108,15 @@ export function FavoriteButton({
       }}
       disabled={busy || loading || (Boolean(user) && favorite.isPending)}
       aria-pressed={isFav}
-      aria-label={isFav ? "Ne plus suivre cette vente" : "Suivre cette vente"}
-      title={isFav ? "Ne plus suivre cette vente" : "Suivre cette vente"}
+      aria-label={label}
+      title={title}
       className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-text disabled:opacity-50 ${className}`}
     >
       <Heart
         aria-hidden
         className={`${compact ? "h-5 w-5" : "h-3.5 w-3.5"} ${isFav ? "fill-red-500 text-red-500" : ""}`}
       />
-      {!compact ? (isFav ? "Vente suivie" : "Suivre cette vente") : null}
+      {!compact ? label : null}
     </button>
   );
 }

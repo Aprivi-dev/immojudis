@@ -43,7 +43,7 @@ export function SaleComparisonBar({
         ref={barRef}
         tabIndex={-1}
         aria-label="Sélection à comparer"
-        className="sticky top-0 lg:top-[var(--sales-header-height)] z-20 border-y border-line-soft bg-surface-tint px-3 py-3 shadow-sm outline-none sm:px-5"
+        className="sticky top-[var(--sales-header-height)] z-20 border-y border-line-soft bg-surface-tint px-3 py-3 shadow-sm outline-none sm:px-5"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>

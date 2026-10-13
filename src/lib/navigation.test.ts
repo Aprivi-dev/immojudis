@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   loginPathWithRedirect,
+  loginReason,
   pathWithSearch,
   searchParamsToRecord,
   SITE_NAV_LINKS,
@@ -10,16 +11,42 @@ import { validateSalesSearch } from "./search/search-url-state";
 describe("loginPathWithRedirect", () => {
   it("ramène la personne sur sa recherche après la connexion", () => {
     expect(loginPathWithRedirect("/sales?city=Bordeaux&maxPrice=150000")).toBe(
-      "/login?redirect=%2Fsales%3Fcity%3DBordeaux%26maxPrice%3D150000",
+      "/login?redirect=%2Fsales%3Fcity%3DBordeaux%26maxPrice%3D150000&mode=investor",
     );
   });
 
-  it("refuse les adresses extérieures ou déjà sur la connexion", () => {
-    expect(loginPathWithRedirect("https://exemple.test/sales")).toBe("/login");
-    expect(loginPathWithRedirect("//exemple.test")).toBe("/login");
-    expect(loginPathWithRedirect("/login?redirect=%2Fsales")).toBe("/login");
-    expect(loginPathWithRedirect(null)).toBe("/login");
-    expect(loginPathWithRedirect("")).toBe("/login");
+  it("ouvre « Créer un compte » par défaut et transmet le motif", () => {
+    expect(loginPathWithRedirect("/sales", { reason: "alerte" })).toBe(
+      "/login?redirect=%2Fsales&mode=investor&reason=alerte",
+    );
+    expect(loginPathWithRedirect("/sales/abc", { reason: "favori" })).toContain("reason=favori");
+  });
+
+  it("laisse choisir le mode ; « login » ne l'écrit pas dans l'adresse", () => {
+    expect(loginPathWithRedirect("/sales", { mode: "login" })).toBe("/login?redirect=%2Fsales");
+    expect(loginPathWithRedirect("/sales", { mode: "professional" })).toBe(
+      "/login?redirect=%2Fsales&mode=professional",
+    );
+  });
+
+  it("refuse les adresses extérieures ou déjà sur la connexion, sans perdre le mode", () => {
+    expect(loginPathWithRedirect("https://exemple.test/sales")).toBe("/login?mode=investor");
+    expect(loginPathWithRedirect("//exemple.test")).toBe("/login?mode=investor");
+    expect(loginPathWithRedirect("/login?redirect=%2Fsales")).toBe("/login?mode=investor");
+    expect(loginPathWithRedirect(null)).toBe("/login?mode=investor");
+    expect(loginPathWithRedirect("")).toBe("/login?mode=investor");
+    expect(loginPathWithRedirect("https://exemple.test", { reason: "export" })).toBe(
+      "/login?mode=investor&reason=export",
+    );
+  });
+});
+
+describe("loginReason", () => {
+  it("ne garde que les motifs connus", () => {
+    expect(loginReason("alerte")).toBe("alerte");
+    expect(loginReason("offre")).toBe("offre");
+    expect(loginReason("<script>")).toBeUndefined();
+    expect(loginReason(undefined)).toBeUndefined();
   });
 });
 
