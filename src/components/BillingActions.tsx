@@ -40,7 +40,7 @@ import {
 import {
   OFFER_OPENING_CONSENT_TEXT,
   OFFER_OPENING_REQUESTED_TEXT,
-} from "@/lib/offer-opening-notification";
+} from "@/lib/offer-opening-consent";
 import { userMessage } from "@/lib/user-messages";
 import { trackProductEvent } from "@/lib/product-events";
 

@@ -2,21 +2,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
+import { OFFER_OPENING_CONSENT_VERSION } from "@/lib/offer-opening-consent";
 
 type OpeningRow = Database["public"]["Tables"]["offer_opening_notifications"]["Row"];
 type OpeningInsert = Database["public"]["Tables"]["offer_opening_notifications"]["Insert"];
 
-/**
- * Wording shown next to the "Me prévenir de l'ouverture" button. Change the text
- * and the version together: the version is stored with the timestamp as proof of
- * what the user agreed to, and the server refuses a request that echoes another one.
- */
-export const OFFER_OPENING_CONSENT_VERSION = "2026-10-21";
-export const OFFER_OPENING_CONSENT_TEXT =
-  "En cliquant, vous demandez à recevoir un seul email à l’ouverture de l’offre Analyse. Vous pouvez retirer cette demande à tout moment.";
-/** Shown once the request is stored; the consent itself is OFFER_OPENING_CONSENT_TEXT. */
-export const OFFER_OPENING_REQUESTED_TEXT =
-  "Votre demande est enregistrée : nous vous écrirons une seule fois à l’ouverture de l’offre Analyse.";
+export {
+  OFFER_OPENING_CONSENT_TEXT,
+  OFFER_OPENING_CONSENT_VERSION,
+  OFFER_OPENING_REQUESTED_TEXT,
+} from "@/lib/offer-opening-consent";
 
 export const offerOpeningNotificationSchema = z.discriminatedUnion("enabled", [
   z.object({
