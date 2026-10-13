@@ -1,0 +1,168 @@
+{
+  "slug": "jour-audience-encheres-role-avocat",
+  "publishedAt": "2026-10-13",
+  "title": "Le jour de l’audience : déroulé et rôle de l’avocat",
+  "category": "Les fondamentaux",
+  "description": "Ce que vous remettez à votre avocat, comment se déroulent les enchères à l’audience d’adjudication au tribunal et quelles questions poser avant d’y aller.",
+  "intro": [
+    "L’audience d’adjudication est le moment où le bien est attribué au meilleur enchérisseur. Elle se tient au tribunal judiciaire, devant le juge de l’exécution, dans le cas d’une saisie immobilière (la procédure par laquelle un créancier fait vendre le bien de son débiteur). Vous n’y parlez pas vous-même : ce sont les avocats qui portent les enchères.",
+    "Cet article suit le fil de la journée : ce qui doit être prêt avant, ce qui se passe dans la salle, les cas particuliers et les questions à poser à votre avocat. Il décrit les règles de la saisie immobilière ; les ventes notariales et domaniales fonctionnent autrement, comme l’explique l’article « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal »."
+  ],
+  "takeaways": [
+    "Les enchères sont portées par un avocat inscrit au barreau du tribunal où se tient la vente, et il ne peut porter qu’un seul mandat.",
+    "Avant d’enchérir, l’avocat doit avoir reçu votre garantie : chèque de banque ou caution bancaire irrévocable, 10 % de la mise à prix, minimum 3 000 €.",
+    "Les enchères s’arrêtent quand 90 secondes se sont écoulées depuis la dernière : celle-ci emporte l’adjudication.",
+    "Fixez votre enchère plafond avant l’audience et donnez à l’avocat une consigne écrite.",
+    "Assister d’abord à une audience, sans enchérir, aide à comprendre le rythme de la salle."
+  ],
+  "sections": [
+    {
+      "id": "avant-audience",
+      "title": "Avant l’audience : ce que votre avocat doit avoir en main",
+      "paragraphs": [
+        "L’avis de vente est publié entre un et deux mois avant l’audience. Il indique la mise à prix (le montant de départ des enchères), la date, l’heure, le lieu, et rappelle que les enchères ne peuvent être portées que par un avocat du barreau du tribunal (art. R. 322-31 du Code des procédures civiles d’exécution). Le cahier des conditions de vente, qui décrit le bien et fixe les règles de la vente, peut être consulté au greffe ou au cabinet de l’avocat du créancier poursuivant.",
+        "Vous donnez ensuite à votre avocat un mandat, c’est-à-dire le pouvoir d’enchérir pour vous. Un avocat ne peut être porteur que d’un seul mandat par vente (art. R. 322-40). Avant de porter les enchères, il doit se faire remettre, contre récépissé, une garantie (art. R. 322-41)."
+      ],
+      "table": {
+        "headers": ["Ce qu’on remet à l’avocat", "À quoi cela sert", "Repère"],
+        "rows": [
+          [
+            "Chèque de banque ou caution bancaire irrévocable",
+            "Garantir le paiement. Montant : 10 % de la mise à prix, avec un minimum de 3 000 €. Le chèque est rédigé à l’ordre du séquestre ou de la Caisse des dépôts, selon le cahier.",
+            "Art. R. 322-41"
+          ],
+          [
+            "Attestation sur l’honneur (immeuble d’habitation)",
+            "Indiquer si vous avez été condamné à certaines peines qui interdisent d’enchérir, et si le bien sera votre habitation personnelle.",
+            "Art. R. 322-41-1 et L. 322-7-1"
+          ],
+          [
+            "Éléments d’identité complets",
+            "Permettre la publication du titre de vente. L’avocat peut compléter une identité incomplète dans les trois jours ouvrables suivant l’audience.",
+            "Art. R. 322-61"
+          ],
+          [
+            "Votre consigne écrite",
+            "Enchère plafond, scénario retenu et conditions d’arrêt, fixés avant la pression de la salle.",
+            "Pratique recommandée"
+          ]
+        ]
+      },
+      "callout": {
+        "title": "Le chèque n’est pas le prix",
+        "text": "La garantie représente 10 % de la mise à prix. Elle est restituée à celui qui n’est pas déclaré adjudicataire. Pour le gagnant, le prix complet et les frais restent à payer ensuite, dans les délais décrits dans l’article « Après l’adjudication : surenchère, paiement, consignation et titre de vente »."
+      }
+    },
+    {
+      "id": "deroulement-salle",
+      "title": "Dans la salle : le déroulé des enchères",
+      "paragraphs": [
+        "Les débats sont publics (art. 22 du Code de procédure civile) : toute personne peut assister à l’audience. Seuls les avocats portent les enchères. Voici les étapes prévues par le Code.",
+        "Le juge rappelle que les enchères partiront de la mise à prix (art. R. 322-43). Les frais de poursuite, que le juge a « taxés » (fixés) après les avoir vérifiés, sont annoncés publiquement avant l’ouverture des enchères : il ne peut rien être exigé au-delà du montant de la taxe (art. R. 322-42). Ces frais s’ajoutent au prix à la charge de l’adjudicataire."
+      ],
+      "bullets": [
+        "Les enchères sont « pures et simples » : sans condition. Chaque enchère doit couvrir celle qui la précède (art. R. 322-44).",
+        "Elles sont arrêtées lorsque quatre-vingt-dix secondes se sont écoulées depuis la dernière enchère. Un signal visuel ou sonore marque chaque seconde. Le juge constate le montant de la dernière enchère, qui emporte adjudication (art. R. 322-45).",
+        "Avant la fin de l’audience, l’avocat du dernier enchérisseur déclare au greffier l’identité de son client et remet l’attestation éventuelle (art. R. 322-46). L’adjudication ne peut pas donner lieu à « déclaration de command », c’est-à-dire qu’on ne peut pas désigner après coup un autre acquéreur (art. L. 322-8).",
+        "Une contestation sur la validité des enchères se fait oralement à l’audience, par un avocat. Le juge statue sur-le-champ (art. R. 322-49).",
+        "Le jugement d’adjudication mentionne notamment le prix et les frais taxés (art. R. 322-59). Le premier jour ouvrable suivant la vente, un extrait du procès-verbal est affiché à la porte de la salle d’audience, avec le délai de dix jours pour surenchérir (art. R. 322-34)."
+      ]
+    },
+    {
+      "id": "cas-particuliers",
+      "title": "Cas particuliers à connaître",
+      "paragraphs": [
+        "Toutes les audiences ne se terminent pas par une adjudication à un tiers. Plusieurs situations sont prévues par le Code, et votre avocat doit vous dire laquelle peut concerner votre dossier."
+      ],
+      "bullets": [
+        "Aucune enchère : le créancier poursuivant est déclaré adjudicataire d’office à la mise à prix (art. L. 322-6).",
+        "Mise à prix modifiée par le juge : à défaut d’enchère, le bien est remis en vente sur des baisses successives, jusqu’à la mise à prix initiale (art. R. 322-47).",
+        "Enchère irrégulière : les règles sur les enchères sont prescrites à peine de nullité. Une nouvelle enchère régulière couvre la nullité des précédentes, mais la nullité de la dernière enchère entraîne celle de l’adjudication (art. R. 322-48).",
+        "Personnes qui ne peuvent pas enchérir : le débiteur saisi, les auxiliaires de justice intervenus dans la procédure et les magistrats de la juridiction, ni directement ni par personne interposée (art. R. 322-39).",
+        "Immeuble d’habitation sans occupation personnelle déclarée : le greffe demande le casier judiciaire de l’adjudicataire. Si une condamnation visée par la loi apparaît, le juge peut annuler l’adjudication (art. R. 322-49-1).",
+        "Surenchère : dans les dix jours, toute personne peut faire une offre supérieure d’au moins un dixième. L’adjudication n’est alors pas définitive. Le mécanisme est détaillé dans l’article « Après l’adjudication »."
+      ]
+    },
+    {
+      "id": "role-avocat",
+      "title": "Ce que fait l’avocat, et ce qu’il coûte",
+      "paragraphs": [
+        "L’avocat porte vos enchères dans la limite que vous avez fixée, vérifie la garantie, déclare votre identité au greffier à l’issue de l’audience et vous accompagne pour les formalités suivantes. Il agit selon votre consigne : indiquez-lui clairement votre enchère plafond.",
+        "Son intervention comporte deux types de rémunération. Les émoluments sont tarifés par un barème réglementaire : en saisie immobilière, l’émolument proportionnel au prix est réparti entre l’avocat poursuivant (les trois quarts) et l’avocat de l’adjudicataire (le quart restant) selon l’article A. 444-191 du Code de commerce. Les honoraires, eux, sont librement convenus : demandez une convention d’honoraires écrite avant l’audience. L’article « Frais d’une vente aux enchères judiciaire » détaille ces postes."
+      ],
+      "callout": {
+        "title": "Trouver un avocat",
+        "text": "L’annuaire des avocats d’Immojudis (rubrique « Avocats ») aide à repérer un cabinet du barreau compétent. Le choix de votre avocat vous appartient : Immojudis ne le recommande pas."
+      }
+    },
+    {
+      "id": "questions-avocat",
+      "title": "Dix questions à poser à votre avocat avant l’audience",
+      "paragraphs": [
+        "Préparez cette liste lors de votre premier échange. Elle évite les surprises le jour J."
+      ],
+      "bullets": [
+        "L’audience est-elle bien maintenue à la date indiquée ? Y a-t-il un risque de report ?",
+        "Quel est le montant exact de la garantie et à l’ordre de qui le chèque doit-il être rédigé ?",
+        "Quels sont les frais préalables taxés annoncés pour cette vente, et à combien estimez-vous l’ensemble des frais en plus du prix ?",
+        "Quels honoraires facturez-vous et que comprennent-ils ?",
+        "Quelle est la situation d’occupation du bien et quel document la prouve ?",
+        "Quelle consigne d’arrêt retenez-vous : puis-je vous appeler pendant l’audience ?",
+        "Quel est le pas d’enchère habituel à cette audience ?",
+        "Que se passe-t-il si une surenchère est formée dans les dix jours ?",
+        "Dans quel délai le prix doit-il être payé et par qui est-il versé ?",
+        "Quels documents recevrai-je après la vente (jugement, titre de vente, quittances) ?"
+      ]
+    },
+    {
+      "id": "assister-audience",
+      "title": "Assister d’abord à une audience, sans enchérir",
+      "paragraphs": [
+        "Les audiences sont publiques. Assister à une audience de vente avant de se lancer permet de voir le rythme des enchères, la façon dont les avocats interviennent, le rôle du juge et du greffier. Renseignez-vous sur la date et le lieu auprès du greffe du tribunal, ou repérez les ventes à venir dans le catalogue Immojudis, rubrique « Ventes ».",
+        "Venez avec la fiche d’une vente que vous avez analysée : comparez votre enchère plafond au prix final, en gardant à l’esprit qu’une vente passée ne dit rien du résultat d’une vente future. Prévoyez du temps pour l’accès au tribunal et pour attendre l’appel du dossier qui vous intéresse."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, articles R. 322-39 à R. 322-49 (enchères)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939147"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-41 (garantie)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939157"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-45 (arrêt des enchères)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939165"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-31 (avis de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343494"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-6 (mise à prix, adjudication d’office)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025977"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-7-1 (personnes condamnées)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000041587166"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article A. 444-191 (émoluments)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039000802"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 22 (publicité des débats)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006410115"
+    },
+    {
+      "label": "Justice.fr — Saisie immobilière",
+      "url": "https://www.justice.fr/fiche/saisie-immobiliere"
+    },
+    {
+      "label": "Service-Public — Saisie immobilière",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    }
+  ]
+}

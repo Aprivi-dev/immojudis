@@ -76,7 +76,9 @@ export function InformationRequestEmail({
           <Section style={styles.topBar} />
           <Section style={styles.header}>
             <Text style={styles.wordmark}>IMMOJUDIS</Text>
-            <Text style={styles.tagline}>Analyse des ventes immobilières judiciaires</Text>
+            <Text style={styles.tagline}>
+              Ventes immobilières aux enchères : tribunal, notaire, État
+            </Text>
           </Section>
 
           <Section style={styles.content}>
