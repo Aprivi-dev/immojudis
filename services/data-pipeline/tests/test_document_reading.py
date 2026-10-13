@@ -169,8 +169,8 @@ def test_run_stores_readings_and_skips_unchanged_texts(monkeypatch) -> None:
             if "from public.auction_sales sale" in statement:
                 return SimpleNamespace(
                     fetchall=lambda: [
-                        ("sale-1", "https://example.test/1", MANIFEST, None),
-                        ("sale-2", "https://example.test/2", MANIFEST, unchanged),
+                        ("sale-1", "https://example.test/1", MANIFEST, None, None, 0, False),
+                        ("sale-2", "https://example.test/2", MANIFEST, unchanged, "completed", 0, False),
                     ]
                 )
             return SimpleNamespace(fetchone=lambda: None)
@@ -182,7 +182,131 @@ def test_run_stores_readings_and_skips_unchanged_texts(monkeypatch) -> None:
         budget_seconds=60,
         generator=(lambda _s, _u: {"points": []}, "test-model"),
     )
-    assert counts == {"candidates": 2, "completed": 1, "unchanged": 1, "failed": 0, "no_text": 0}
+    assert counts == {"candidates": 2, "completed": 1, "unchanged": 1, "failed": 0, "abandoned": 0, "no_text": 0}
     upserts = [params for statement, params in executed if "insert into public.auction_document_readings" in statement]
     assert len(upserts) == 1 and upserts[0][0] == "sale-1" and upserts[0][5] == "completed"
+    assert upserts[0][-1] == 0  # attempt_count of a completed reading
     assert any("set updated_at = now()" in statement for statement, _ in executed)
+
+
+def _run_with_candidate(monkeypatch, row, generate_json):
+    """Run one candidate through run_document_readings; return (counts, upserts, touched)."""
+    executed: list[tuple[str, tuple]] = []
+
+    class FakeConnection:
+        def execute(self, statement, params=()):
+            executed.append((statement, params))
+            if "from public.auction_sales sale" in statement:
+                return SimpleNamespace(fetchall=lambda: [row])
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(reading, "_connect", lambda _url: nullcontext(FakeConnection()))
+    counts = reading.run_document_readings(
+        "postgresql://test", max_sales=10, budget_seconds=60, generator=(generate_json, "test-model")
+    )
+    upserts = [params for statement, params in executed if "insert into public.auction_document_readings" in statement]
+    touched = [params for statement, params in executed if "set updated_at = now()" in statement]
+    return counts, upserts, touched
+
+
+def _boom(_system: str, _user: str):
+    raise RuntimeError("provider down")
+
+
+def test_retry_backoff_is_12_then_24_then_72_hours_and_stops_at_the_fourth_failure() -> None:
+    assert [reading.retry_delay_hours(n) for n in (1, 2, 3, 4, 5)] == [12, 24, 72, None, None]
+    assert reading.MAX_FAILED_ATTEMPTS == 4
+    # The SQL condition is generated from the same constants.
+    assert "interval '12 hours'" in reading.CANDIDATES_SQL
+    assert "interval '24 hours'" in reading.CANDIDATES_SQL
+    assert "interval '72 hours'" in reading.CANDIDATES_SQL
+    assert "reading.attempt_count < 4" in reading.CANDIDATES_SQL
+
+
+def test_failed_reading_is_retried_when_due_and_counts_the_attempt(monkeypatch) -> None:
+    same = reading.input_fingerprint(MANIFEST)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 1, True)
+
+    counts, upserts, touched = _run_with_candidate(monkeypatch, row, _boom)
+
+    assert counts["failed"] == 1 and counts["abandoned"] == 0 and counts["unchanged"] == 0
+    assert not touched
+    assert upserts[0][5] == "failed"
+    assert upserts[0][-2] == "RuntimeError"
+    assert upserts[0][-1] == 2
+
+
+def test_failed_reading_gives_up_at_the_fourth_failure_with_a_readable_error_code(monkeypatch) -> None:
+    same = reading.input_fingerprint(MANIFEST)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 3, True)
+
+    counts, upserts, _ = _run_with_candidate(monkeypatch, row, _boom)
+
+    assert counts["failed"] == 1 and counts["abandoned"] == 1
+    assert upserts[0][5] == "failed"
+    assert upserts[0][-2] == "READING_ABANDONED_AFTER_4_ATTEMPTS:RuntimeError"
+    assert upserts[0][-1] == 4
+
+
+def test_failed_reading_waiting_for_its_backoff_is_not_read_again(monkeypatch) -> None:
+    same = reading.input_fingerprint(MANIFEST)
+    # Candidate because its extraction was rewritten, but the back-off has not elapsed (or attempts ran out).
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 4, False)
+    calls: list[str] = []
+
+    def generator(_system: str, _user: str):
+        calls.append("called")
+        return {"points": []}
+
+    counts, upserts, touched = _run_with_candidate(monkeypatch, row, generator)
+
+    assert counts["unchanged"] == 1 and counts["failed"] == 0
+    assert not calls and not upserts and len(touched) == 1
+
+
+def test_changed_text_restarts_the_attempt_count(monkeypatch) -> None:
+    row = ("sale-1", "https://example.test/1", MANIFEST, "an-older-fingerprint", "failed", 4, False)
+
+    counts, upserts, _ = _run_with_candidate(monkeypatch, row, _boom)
+
+    assert counts["abandoned"] == 0
+    assert upserts[0][-1] == 1
+    assert upserts[0][-2] == "RuntimeError"
+
+
+def test_completed_reading_after_failures_resets_the_counter(monkeypatch) -> None:
+    same = reading.input_fingerprint(MANIFEST)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 2, True)
+
+    counts, upserts, _ = _run_with_candidate(monkeypatch, row, lambda _s, _u: {"points": []})
+
+    assert counts["completed"] == 1
+    assert upserts[0][5] == "completed" and upserts[0][-1] == 0
+
+
+def test_budget_refusal_does_not_use_up_an_attempt(monkeypatch) -> None:
+    from src.pipeline_usage import PipelineBudgetExhausted
+
+    def over_budget(_system: str, _user: str):
+        raise PipelineBudgetExhausted("Daily LLM budget exhausted")
+
+    same = reading.input_fingerprint(MANIFEST)
+    row = ("sale-1", "https://example.test/1", MANIFEST, same, "failed", 3, True)
+
+    counts, upserts, _ = _run_with_candidate(monkeypatch, row, over_budget)
+
+    assert counts["failed"] == 1 and counts["abandoned"] == 0
+    assert upserts[0][-1] == 3
+    assert upserts[0][-2] == "PipelineBudgetExhausted"
+
+
+def test_invalid_output_cooldown_counts_as_an_attempt() -> None:
+    from src.llm_requests import LLMRequestDeterministicCooldown
+
+    def cooling(_system: str, _user: str):
+        raise LLMRequestDeterministicCooldown("exact invalid output")
+
+    documents = reading.documents_from_manifest(MANIFEST)
+    result = reading.read_sale_documents(documents, generate_json=cooling)
+
+    assert result.status == "failed" and result.attempt_counted is True
