@@ -14,7 +14,7 @@ Le tick `immojudis-operational-health` de pg_cron, toutes les 15 minutes, est le
 
 Les migrations laissent le contrôle global et les dix sources désactivés. Le pilote prévu porte sur Licitor et Vench. L’activation est une opération distincte du déploiement.
 
-- Inventaire : échéance de six heures par source ; détails connus vérifiés toutes les 24 heures, ou six heures à moins de sept jours de la vente lorsque l’adaptateur exploite la fraîcheur.
+- Inventaire : échéance de douze heures par source (décision du 11 octobre 2026, `INVENTORY_CADENCE`) ; l'alerte critique « collecte manquée » (`pipeline.source.<source>.missed`) s'ouvre après 18 heures sans inventaire complet ; détails connus vérifiés toutes les 24 heures, ou six heures à moins de sept jours de la vente lorsque l’adaptateur exploite la fraîcheur.
 - Enrichissement : unité toutes les 30 minutes, au maximum 40 tâches et 1 200 secondes de travail ; processus interrompu après 25 minutes. Collecte interrompue après 35 minutes.
 - Écrivain : réservation SQL unique et groupe de concurrence GitHub partagé avec les lancements manuels. Les réservations automatiques abandonnées expirent après une heure.
 - Publication : lots de 25, journal des décisions dans la transaction. Un enrichissement ne peut pas recréer une ligne supprimée ou remplacer une révision plus récente.

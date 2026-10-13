@@ -799,6 +799,7 @@ export type Database = {
       };
       auction_document_readings: {
         Row: {
+          attempt_count: number;
           documents: Json;
           error_code: string | null;
           generated_at: string;
@@ -813,6 +814,7 @@ export type Database = {
           updated_at: string;
         };
         Insert: {
+          attempt_count?: number;
           documents?: Json;
           error_code?: string | null;
           generated_at?: string;
@@ -827,6 +829,7 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          attempt_count?: number;
           documents?: Json;
           error_code?: string | null;
           generated_at?: string;
