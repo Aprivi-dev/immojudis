@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseDocs } from "@/lib/documents";
 import { sanitizeAuctionSaleForDisplay } from "@/lib/listing-data-cleanup";
 import { isLikelyPropertyImageUrl, propertyImages } from "@/lib/sale-media";
@@ -7,6 +7,7 @@ import { saleRows } from "@/lib/sale-rows";
 import { saleSourceLinks } from "@/lib/sale-source-links";
 import type { AuctionSale } from "@/lib/types";
 import {
+  DEFAULT_WITHDRAWN_SOURCES,
   getWithdrawnSources,
   loadWithdrawnSources,
   resetWithdrawnSources,
@@ -48,10 +49,28 @@ function mergedSale(): AuctionSale {
 
 afterEach(() => resetWithdrawnSources());
 
-describe("source retirée du catalogue : état livré", () => {
-  it("part de l'état « Licitor retiré » sans rien lire en base", () => {
-    expect([...getWithdrawnSources()]).toEqual(["licitor"]);
+describe("état livré : aucune source retirée", () => {
+  it("part de l'état « aucune source retirée » sans rien lire en base", () => {
+    expect(DEFAULT_WITHDRAWN_SOURCES).toEqual([]);
+    expect([...getWithdrawnSources()]).toEqual([]);
   });
+
+  it("Licitor reste affiché : liens, photos et pièces d'une vente fusionnée", () => {
+    const sale = sanitizeAuctionSaleForDisplay(mergedSale());
+    expect(sale.source_name).toBe("licitor");
+    expect(sale.source_url).toBe("https://www.licitor.com/annonce/1/2/3/vente.html");
+    expect(sale.source_urls).toHaveLength(2);
+    expect(sale.media).toHaveLength(2);
+    expect(sale.documents).toHaveLength(2);
+    expect(sale.documents_rich).toHaveLength(1);
+    expect(isLikelyPropertyImageUrl(LICITOR_PHOTO)).toBe(true);
+    expect(saleSourceLinks(sale).map((link) => link.label)).toContain("Licitor");
+    expect(stripWithdrawnSourceContent(mergedSale())).toEqual(mergedSale());
+  });
+});
+
+describe("source retirée par l'interrupteur (usage futur)", () => {
+  beforeEach(() => setWithdrawnSources(["licitor"]));
 
   it("une vente fusionnée n'affiche aucun contenu propre à Licitor", () => {
     const sale = sanitizeAuctionSaleForDisplay(mergedSale());
@@ -117,6 +136,7 @@ describe("source retirée du catalogue : état livré", () => {
 
 describe("retrait levé", () => {
   it("le contenu Licitor réapparaît quand la base ne retire plus rien", () => {
+    setWithdrawnSources(["licitor"]);
     setWithdrawnSources([]);
     const sale = sanitizeAuctionSaleForDisplay(mergedSale());
     expect(sale.source_url).toBe("https://www.licitor.com/annonce/1/2/3/vente.html");
@@ -139,18 +159,30 @@ describe("retrait levé", () => {
     expect(getWithdrawnSources().size).toBe(0);
   });
 
-  it("une base injoignable ou sans la fonction laisse la source retirée", async () => {
-    setWithdrawnSources([]);
+  it("la base dit qu'une source est retirée : elle l'est, puis le retrait se lève", async () => {
+    const client = { rpc: () => Promise.resolve({ data: ["licitor"], error: null }) };
+    expect(await loadWithdrawnSources(client, 1_000)).toEqual(["licitor"]);
+    expect(sanitizeAuctionSaleForDisplay(mergedSale()).media).toHaveLength(1);
+    expect(await loadWithdrawnSources(client, 100_000)).toEqual(["licitor"]);
+    resetWithdrawnSources();
+    expect(sanitizeAuctionSaleForDisplay(mergedSale()).media).toHaveLength(2);
+  });
+
+  it("une base injoignable ou sans la fonction ne retire aucune source", async () => {
+    setWithdrawnSources(["licitor"]);
     await loadWithdrawnSources(
       { rpc: () => Promise.resolve({ data: null, error: { code: "PGRST202" } }) },
       1_000,
     );
-    expect([...getWithdrawnSources()]).toEqual(["licitor"]);
+    expect([...getWithdrawnSources()]).toEqual([]);
+    expect(sanitizeAuctionSaleForDisplay(mergedSale()).source_url).toBe(
+      "https://www.licitor.com/annonce/1/2/3/vente.html",
+    );
 
     resetWithdrawnSources();
-    setWithdrawnSources([]);
+    setWithdrawnSources(["licitor"]);
     await loadWithdrawnSources({ rpc: () => Promise.reject(new Error("réseau")) }, 1_000);
-    expect([...getWithdrawnSources()]).toEqual(["licitor"]);
+    expect([...getWithdrawnSources()]).toEqual([]);
   });
 });
 
@@ -160,12 +192,13 @@ describe("migration 20261021110000_licitor_source_withdrawal.sql", () => {
     "utf8",
   );
 
-  it("pose un interrupteur unique, retire Licitor par défaut et ne supprime rien", () => {
+  it("pose un interrupteur unique, ne retire aucune source et ne supprime rien", () => {
     expect(sql).toContain(
       "add column if not exists catalogue_withdrawn boolean not null default false",
     );
     expect(sql).toContain("check (not (catalogue_withdrawn and enabled))");
-    expect(sql).toMatch(/set_catalogue_source_withdrawal\(\s*'licitor',\s*true,/);
+    // Aucun appel du geste : le fichier le définit, mais ne l'exécute pas (aucune source retirée).
+    expect(sql).not.toMatch(/^\s*select\s+public\.set_catalogue_source_withdrawal/im);
     expect(sql).toContain("zzz_auction_sales_source_withdrawal");
     expect(sql).not.toMatch(/\bdelete\s+from\b/i);
     expect(sql).not.toMatch(/\bdrop\s+(table|column)\b/i);

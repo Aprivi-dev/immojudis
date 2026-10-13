@@ -1,8 +1,8 @@
 """Retrait d'une source du catalogue (migration 20261021110000_licitor_source_withdrawal.sql).
 
 Joue la vraie migration sur un schéma minimal (PIPELINE_TEST_DB_URL, base jetable, sinon ignoré) :
-l'interrupteur arrête la collecte ET masque les ventes de la seule source retirée, sans rien supprimer,
-et se lève d'un seul geste.
+elle ne retire AUCUNE source ; une fois posé, l'interrupteur arrête la collecte ET masque les ventes de la
+seule source retirée, sans rien supprimer, et se lève d'un seul geste.
 """
 
 import os
@@ -94,13 +94,75 @@ def seed_sales(db) -> None:
     add_sale(db, "licitor-garde-ia", "licitor", payload={"publication_quarantine": "ai_review_projection_blocked"})
 
 
-def test_migration_withdraws_licitor_and_hides_only_its_sole_source_sales():
+def withdraw_licitor(db) -> None:
+    db.execute("select public.set_catalogue_source_withdrawal('licitor', true, 'Raison de test')")
+
+
+def test_migration_withdraws_no_source_and_leaves_every_sale_untouched():
     with connect() as db:
         try:
             setup(db, apply_withdrawal=False)
             seed_sales(db)
             before = db.execute("select count(*) from auction_sales").fetchone()[0]
+            enabled_before = db.execute(
+                "select source_name, enabled from auction_source_state order by source_name"
+            ).fetchall()
             db.execute(migration(WITHDRAWAL))
+
+            assert db.execute("select count(*) from auction_source_state where catalogue_withdrawn").fetchone()[0] == 0
+            assert db.execute(
+                "select catalogue_withdrawn, withdrawn_reason is null, withdrawn_at is null "
+                "from auction_source_state where source_name='licitor'"
+            ).fetchone() == (False, True, True)
+            # La migration ne change l'activation d'aucune source.
+            assert (
+                db.execute("select source_name, enabled from auction_source_state order by source_name").fetchall()
+                == enabled_before
+            )
+            assert db.execute("select public.get_withdrawn_catalogue_sources()").fetchone()[0] == []
+
+            # Aucune vente n'est masquée : Licitor reste dans le catalogue.
+            for url in ("licitor-seul", "licitor-sans-observation", "licitor-fusionnee"):
+                assert state(db, url) == ("", False)
+            assert state(db, "autre-source-avec-licitor") == ("", False)
+            assert state(db, "avoventes") == ("", False)
+            # Le marqueur d'une autre garde n'est jamais écrasé.
+            assert state(db, "licitor-garde-ia") == ("ai_review_projection_blocked", True)
+            # Rien n'est supprimé, les déclencheurs des autres gardes sont actifs, updated_at est intact.
+            assert db.execute("select count(*) from auction_sales").fetchone()[0] == before
+            assert db.execute(
+                "select tgenabled from pg_trigger where tgname='auction_sales_pgtest_touch'"
+            ).fetchone()[0] == "O"
+            assert db.execute(
+                "select count(*) from auction_sales where updated_at > now() + interval '12 hours'"
+            ).fetchone()[0] == 0
+        finally:
+            db.rollback()
+
+
+def test_new_and_rewritten_licitor_rows_stay_visible_while_nothing_is_withdrawn():
+    with connect() as db:
+        try:
+            setup(db)
+            add_sale(db, "nouvelle", "licitor")
+            assert state(db, "nouvelle") == ("", False)
+            db.execute("update auction_sales set raw_payload = '{}'::jsonb where source_url='nouvelle'")
+            assert state(db, "nouvelle") == ("", False)
+        finally:
+            db.rollback()
+
+
+def test_withdrawing_hides_only_sole_source_sales_and_never_deletes():
+    with connect() as db:
+        try:
+            setup(db)
+            seed_sales(db)
+            before = db.execute("select count(*) from auction_sales").fetchone()[0]
+            result = db.execute(
+                "select public.set_catalogue_source_withdrawal('licitor', true, 'Raison de test')"
+            ).fetchone()[0]
+            assert result["withdrawn"] is True
+            assert result["sales_reprojected"] == 2
 
             assert db.execute(
                 "select catalogue_withdrawn, enabled, withdrawn_reason is not null, withdrawn_at is not null "
@@ -118,9 +180,7 @@ def test_migration_withdraws_licitor_and_hides_only_its_sole_source_sales():
             assert state(db, "avoventes") == ("", False)
             # Le marqueur d'une autre garde n'est jamais écrasé.
             assert state(db, "licitor-garde-ia") == ("ai_review_projection_blocked", True)
-            # Rien n'est supprimé.
             assert db.execute("select count(*) from auction_sales").fetchone()[0] == before
-            # Les déclencheurs des autres gardes sont de nouveau actifs.
             assert db.execute(
                 "select tgenabled from pg_trigger where tgname='auction_sales_pgtest_touch'"
             ).fetchone()[0] == "O"
@@ -136,6 +196,7 @@ def test_new_and_rewritten_licitor_rows_stay_hidden_while_withdrawn():
     with connect() as db:
         try:
             setup(db)
+            withdraw_licitor(db)
             add_sale(db, "nouvelle", "licitor")
             assert state(db, "nouvelle") == ("source_withdrawn", True)
             add_sale(db, "nouvelle-fusionnee", "licitor", observations=["licitor", "vench"])
@@ -157,6 +218,7 @@ def test_withdrawn_source_cannot_be_reenabled_by_hand():
     with connect() as db:
         try:
             setup(db)
+            withdraw_licitor(db)
             with pytest.raises(psycopg.errors.CheckViolation):
                 db.execute("update auction_source_state set enabled=true where source_name='licitor'")
         finally:
@@ -166,10 +228,10 @@ def test_withdrawn_source_cannot_be_reenabled_by_hand():
 def test_lifting_the_switch_restores_catalogue_and_collection_in_one_call_and_can_be_repeated():
     with connect() as db:
         try:
-            setup(db, apply_withdrawal=False)
+            setup(db)
             seed_sales(db)
             before = db.execute("select count(*) from auction_sales").fetchone()[0]
-            db.execute(migration(WITHDRAWAL))
+            withdraw_licitor(db)
 
             lifted = db.execute("select public.set_catalogue_source_withdrawal('licitor', false)").fetchone()[0]
             assert lifted["withdrawn"] is False
@@ -238,6 +300,7 @@ def test_scheduler_never_claims_a_withdrawn_source():
             db.execute(migration("20260912113935_pipeline_queue_lifecycle.sql"))
             db.execute("update auction_pipeline_control set enabled=true")
             db.execute("update auction_source_state set enabled=true where not catalogue_withdrawn")
+            withdraw_licitor(db)
             db.execute("update auction_source_state set next_inventory_at = now() - interval '1 hour'")
             claimed: list[str] = []
             for _ in range(12):

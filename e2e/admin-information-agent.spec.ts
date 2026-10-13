@@ -316,7 +316,7 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
     }
     if (url.pathname === "/rest/v1/rpc/get_withdrawn_catalogue_sources") {
       // Lu sur chaque page par le fournisseur global (sources retirées du catalogue).
-      await route.fulfill({ status: 200, json: ["licitor"] });
+      await route.fulfill({ status: 200, json: [] });
       return;
     }
     if (url.pathname === "/rest/v1/user_profiles") {

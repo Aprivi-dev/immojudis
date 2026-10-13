@@ -1,21 +1,21 @@
 begin;
 
-select plan(8);
+select plan(10);
 
--- Retrait de Licitor du catalogue (migration 20261021110000) : un seul interrupteur arrête la collecte
--- et masque les ventes de la seule source retirée, sans rien supprimer. Les lignes de test sont
--- annulées en fin de fichier.
+-- Interrupteur de retrait d'une source (migration 20261021110000) : livré SANS aucune source retirée
+-- (Licitor reste collecté et affiché). Une fois posé, un seul interrupteur arrête la collecte et masque
+-- les ventes de la seule source retirée, sans rien supprimer ; il se lève d'un seul geste. Les lignes de
+-- test sont annulées en fin de fichier.
 
 select ok(
-  (select catalogue_withdrawn and not enabled from public.auction_source_state where source_name = 'licitor'),
-  'Licitor is delivered withdrawn and therefore disabled'
+  not exists (select 1 from public.auction_source_state where catalogue_withdrawn),
+  'delivered state: no source is withdrawn'
 );
 
-select throws_ok(
-  $$ update public.auction_source_state set enabled = true where source_name = 'licitor' $$,
-  '23514',
-  null,
-  'a withdrawn source cannot be re-enabled by hand'
+select ok(
+  (select not catalogue_withdrawn and withdrawn_at is null and withdrawn_reason is null
+     from public.auction_source_state where source_name = 'licitor'),
+  'Licitor is delivered neither withdrawn nor flagged'
 );
 
 select ok(
@@ -27,8 +27,8 @@ select ok(
 
 select ok(
   has_function_privilege('anon', 'public.get_withdrawn_catalogue_sources()', 'execute')
-  and 'licitor' = any (public.get_withdrawn_catalogue_sources()),
-  'visitors can read which sources are withdrawn'
+  and cardinality(public.get_withdrawn_catalogue_sources()) = 0,
+  'visitors can read which sources are withdrawn, and none is'
 );
 
 insert into public.auction_sales (source_name, source_url, observations, raw_payload)
@@ -37,11 +37,35 @@ values
   ('licitor', 'https://www.licitor.com/pgtap-fusionnee',
    '[{"source_name":"licitor"},{"source_name":"info_encheres"}]', '{}');
 
+select ok(
+  (select count(*) = 2 and bool_and(coalesce(raw_payload ->> 'publication_quarantine', '') = '')
+          and not bool_or(catalogue_quarantined)
+     from public.auction_sales where source_url like 'https://www.licitor.com/pgtap-%'),
+  'with no source withdrawn, Licitor sales are inserted visible'
+);
+
+set local role service_role;
+select public.set_catalogue_source_withdrawal('licitor', true, 'pgTAP');
+reset role;
+
+select ok(
+  (select catalogue_withdrawn and not enabled from public.auction_source_state where source_name = 'licitor')
+  and 'licitor' = any (public.get_withdrawn_catalogue_sources()),
+  'withdrawing a source disables it and lists it'
+);
+
+select throws_ok(
+  $$ update public.auction_source_state set enabled = true where source_name = 'licitor' $$,
+  '23514',
+  null,
+  'a withdrawn source cannot be re-enabled by hand'
+);
+
 select is(
   (select raw_payload ->> 'publication_quarantine' from public.auction_sales
     where source_url = 'https://www.licitor.com/pgtap-seul'),
   'source_withdrawn',
-  'a sale whose only source is withdrawn is quarantined on insert'
+  'a sale whose only source is withdrawn is quarantined'
 );
 
 select ok(
@@ -57,19 +81,9 @@ reset role;
 select ok(
   (select enabled and not catalogue_withdrawn from public.auction_source_state where source_name = 'licitor')
   and (select coalesce(raw_payload ->> 'publication_quarantine', '') = '' from public.auction_sales
-        where source_url = 'https://www.licitor.com/pgtap-seul'),
+        where source_url = 'https://www.licitor.com/pgtap-seul')
+  and cardinality(public.get_withdrawn_catalogue_sources()) = 0,
   'lifting the switch re-enables the source and restores the sale'
-);
-
-set local role service_role;
-select public.set_catalogue_source_withdrawal('licitor', true, 'pgTAP');
-reset role;
-
-select is(
-  (select raw_payload ->> 'publication_quarantine' from public.auction_sales
-    where source_url = 'https://www.licitor.com/pgtap-seul'),
-  'source_withdrawn',
-  'withdrawing again hides the sale again'
 );
 
 select * from finish();

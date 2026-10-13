@@ -1,18 +1,17 @@
 """Retrait d'une source du catalogue : l'interrupteur vu du pipeline.
 
-Décision du propriétaire : Licitor est retiré tant qu'il n'existe pas de licence écrite (droit sui
-generis des bases de données, CPI L. 341-1 et L. 342-1). L'interrupteur unique est la colonne
-``public.auction_source_state.catalogue_withdrawn``, posée et levée par
-``select public.set_catalogue_source_withdrawal('licitor', true|false)`` (migration
+Infrastructure gardée pour un usage futur : **aucune source n'est retirée à ce jour** (Licitor est collecté
+et affiché normalement). L'interrupteur unique est la colonne ``public.auction_source_state.catalogue_withdrawn``,
+posée et levée par ``select public.set_catalogue_source_withdrawal('<source>', true|false)`` (migration
 ``20261021110000_licitor_source_withdrawal.sql``). Le planificateur SQL ne lance déjà pas une source
 ``enabled = false``, et une source retirée l'est toujours ; ce module couvre les autres chemins :
-lancement manuel (``python -m src.main --source licitor``), collecte de l'historique des adjudications,
+lancement manuel (``python -m src.main --source <source>``), collecte de l'historique des adjudications,
 téléchargement des pièces hébergées par la source.
 
-**Par défaut, la source est retirée.** Si la base ne répond pas, si la colonne n'existe pas encore
-(migration non appliquée) ou si aucune URL de base n'est configurée, ``DEFAULT_WITHDRAWN`` s'applique : un
-doute ne déclenche jamais une collecte. Lever le retrait est donc un geste explicite en base, jamais un
-effet de bord d'une panne.
+**Par défaut, aucune source n'est retirée.** Si la base ne répond pas, si la colonne n'existe pas encore
+(migration non appliquée) ou si aucune URL de base n'est configurée, ``DEFAULT_WITHDRAWN`` (vide) s'applique :
+une panne ou une migration en retard ne coupe jamais une collecte. Retirer une source est donc un geste
+explicite en base ; en contrepartie, tant que l'interrupteur est illisible, un retrait posé n'est pas vu.
 """
 
 from __future__ import annotations
@@ -25,8 +24,8 @@ from urllib.parse import urlsplit
 
 LOGGER = logging.getLogger(__name__)
 
-#: Sources retirées quand la base ne dit rien (état livré : Licitor sans licence écrite).
-DEFAULT_WITHDRAWN: frozenset[str] = frozenset({"licitor"})
+#: Sources retirées quand la base ne dit rien : aucune (Licitor reste collecté et affiché).
+DEFAULT_WITHDRAWN: frozenset[str] = frozenset()
 
 #: Hôtes propres à une source retirée (images, pièces, fiches), pour reconnaître son contenu dans une
 #: vente fusionnée.
@@ -55,7 +54,7 @@ def read_withdrawn_sources(
     *,
     connect: Callable[..., object] | None = None,
 ) -> frozenset[str]:
-    """Lit l'interrupteur en base ; ``DEFAULT_WITHDRAWN`` au moindre doute."""
+    """Lit l'interrupteur en base ; ``DEFAULT_WITHDRAWN`` (aucune source retirée) au moindre doute."""
     if not db_url:
         return DEFAULT_WITHDRAWN
     try:
@@ -66,8 +65,8 @@ def read_withdrawn_sources(
         with connect(db_url) as db:  # type: ignore[misc]
             rows = db.execute(QUERY).fetchall()  # type: ignore[attr-defined]
         return frozenset(str(row[0]).lower() for row in rows)
-    except Exception as exc:  # colonne absente, base injoignable, droits : on reste fermé
-        LOGGER.warning("Withdrawal switch unreadable (%s); sources withdrawn by default", type(exc).__name__)
+    except Exception as exc:  # colonne absente, base injoignable, droits : aucune source retirée
+        LOGGER.warning("Withdrawal switch unreadable (%s); no source treated as withdrawn", type(exc).__name__)
         return DEFAULT_WITHDRAWN
 
 

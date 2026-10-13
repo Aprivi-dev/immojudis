@@ -2,12 +2,13 @@ begin;
 
 set local lock_timeout = '5s';
 
--- Retrait de la source Licitor du catalogue, tant qu'il n'existe pas de licence écrite
--- (droit sui generis des bases de données, CPI L. 341-1 et L. 342-1). Décision du propriétaire.
+-- Interrupteur de retrait d'une source du catalogue. AUCUNE SOURCE N'EST RETIRÉE À L'APPLICATION de cette
+-- migration : Licitor reste collecté et affiché. L'infrastructure est posée pour un usage futur (par exemple
+-- si une source devait être retirée pour un motif juridique) ; retirer une source reste un geste explicite.
 --
 -- UN SEUL INTERRUPTEUR : public.auction_source_state.catalogue_withdrawn, posé et levé par
---   select public.set_catalogue_source_withdrawal('licitor', true,  'raison');   -- retirer
---   select public.set_catalogue_source_withdrawal('licitor', false);             -- lever
+--   select public.set_catalogue_source_withdrawal('<source>', true,  'raison');   -- retirer
+--   select public.set_catalogue_source_withdrawal('<source>', false);             -- lever
 -- (service_role seulement, une seule transaction). Il commande à la fois :
 --   - la collecte : une source retirée est aussi « enabled = false » (contrainte ci-dessous), donc le
 --     planificateur ne la lance plus, la file d'enrichissement ne rouvre plus ses fiches détail et
@@ -262,14 +263,8 @@ grant execute on function public.set_catalogue_source_withdrawal(text, boolean, 
 comment on function public.set_catalogue_source_withdrawal(text, boolean, text) is
   'Pose (true) ou lève (false) le retrait d''une source : arrête ou reprend sa collecte (enabled) et masque ou remet à l''affichage les ventes dont c''est la seule source. Aucune donnée supprimée.';
 
--- 6. État livré : Licitor est RETIRÉ (pas de licence écrite). Lever le retrait est un geste explicite :
---    select public.set_catalogue_source_withdrawal('licitor', false);
-select public.set_catalogue_source_withdrawal(
-  'licitor',
-  true,
-  'Pas de licence écrite : droit sui generis des bases de données (CPI L. 341-1 et L. 342-1)'
-)
-where exists (select 1 from public.auction_source_state where source_name = 'licitor');
+-- 6. État livré : aucune source n'est retirée (catalogue_withdrawn vaut false partout, par défaut de la
+--    colonne). Rien n'est réécrit dans auction_sales à l'application de cette migration.
 
 notify pgrst, 'reload schema';
 

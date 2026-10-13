@@ -7,7 +7,7 @@ import { AuthProvider } from "@/components/AuthProvider";
 import { SiteFooter } from "@/components/SiteFooter";
 import { AppToaster } from "@/components/AppToaster";
 import { supabase } from "@/integrations/supabase/client";
-import { loadWithdrawnSources } from "@/lib/withdrawn-sources";
+import { getWithdrawnSources, loadWithdrawnSources } from "@/lib/withdrawn-sources";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -18,11 +18,13 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    // Sources retirées du catalogue : le contenu fusionné d'une source retirée reste masqué par défaut ;
-    // la liste vient de la base (interrupteur unique) et les données déjà affichées sont relues si elle change.
+    // Sources retirées du catalogue (aucune à ce jour) : la liste vient de la base (interrupteur unique).
+    // Si elle diffère de celle déjà appliquée, les données déjà affichées sont relues.
     let cancelled = false;
+    const before = [...getWithdrawnSources()].sort().join(",");
     void loadWithdrawnSources(supabase).then((names) => {
-      if (!cancelled && names.length === 0) void queryClient.invalidateQueries();
+      if (!cancelled && [...names].sort().join(",") !== before)
+        void queryClient.invalidateQueries();
     });
     return () => {
       cancelled = true;
