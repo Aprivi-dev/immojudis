@@ -20,14 +20,14 @@ Le socle est sain. Aucune faille bloquante n'a été trouvée côté sécurité 
 protégées, webhook Stripe signé et idempotent, RLS et invariants au vert, aucun secret commité.
 Toutes les suites passent :
 
-| Vérification                        | Résultat                                              |
-| ----------------------------------- | ----------------------------------------------------- |
-| `npx tsc --noEmit`                  | OK                                                    |
-| `npm run lint`                      | OK                                                    |
-| `npm test`                          | 2 621 tests OK, 7 ignorés                             |
-| `npm run test:security-invariants`  | OK (23 invariants)                                    |
-| Playwright desktop + mobile         | 65 OK, 5 ignorés volontairement, 0 échec              |
-| Pipeline `ruff` + `pytest`          | OK, 3 289 tests (les 127 tests PostgreSQL : en CI)    |
+| Vérification                       | Résultat                                           |
+| ---------------------------------- | -------------------------------------------------- |
+| `npx tsc --noEmit`                 | OK                                                 |
+| `npm run lint`                     | OK                                                 |
+| `npm test`                         | 2 621 tests OK, 7 ignorés                          |
+| `npm run test:security-invariants` | OK (23 invariants)                                 |
+| Playwright desktop + mobile        | 65 OK, 5 ignorés volontairement, 0 échec           |
+| Pipeline `ruff` + `pytest`         | OK, 3 289 tests (les 127 tests PostgreSQL : en CI) |
 
 Les audits ont été faits sous Node 22 (le projet exige Node 24). Cela n'a eu aucun effet sur les
 résultats, à part un crash de worker Vitest isolé.
@@ -79,95 +79,95 @@ Priorités : Critique / Haute / Moyenne / Basse. Effort : S < 1 h, M < 1 jour, L
 
 ### A. Lancement : paiement, conformité, confiance
 
-| N° | Agent | Proposition | Priorité | Effort | Avis du chef |
-| -- | ----- | ----------- | -------- | ------ | ------------ |
-| 1 | code-reviewer | Réabonnement impossible après un paiement Stripe abandonné : le bouton devient « Gérer mon abonnement » | Haute | S | garder |
-| 2 | code-reviewer | Les statuts Stripe `incomplete` et `unpaid` donnent l'accès Analyse | Haute | S-M | garder |
-| 3 | code-reviewer, juridique | Le build de production échoue si une mention légale ou `ADMIN_MFA_REQUIRED` manque ; remplacer le repli visible « À renseigner » | Haute | S | garder |
-| 4 | code-reviewer | Liens de désinscription et emails d'alerte cassés si seule `SUPABASE_SECRET_KEY` est définie | Haute | S | garder |
-| 5 | juridique, UX, SEO | Retirer les « Statistiques des tribunaux » (offres, comparatif, CGV, onglet et carte verrouillée de la fiche, explorateur payant de `/tribunaux`) ; `/tribunaux` : titre fidèle, noindex si vide | Haute | S | garder |
-| 6 | product, juridique | Email hebdomadaire gratuit promis mais impossible à activer : case de consentement non pré-cochée en Découverte | Haute | M | garder |
-| 7 | juridique, qualité | Masquer les noms de particuliers dans les textes bruts (5 ventes) ; fermer `raw_payload` et `observations` aux comptes connectés | Haute | M | garder |
-| 8 | juridique | CGV : bouton « Résilier », garantie légale de conformité, prix, un seul chemin de résiliation | Haute | M | garder (texte à faire valider par un avocat) |
-| 9 | juridique | Confidentialité : Mapbox, IA et service d'erreurs dans les destinataires ; traitement des annonces ; retrait sans compte ; formulaire de contact ; phrase d'inscription ; opposition à la mesure d'audience | Haute | M | garder |
-| 10 | juridique | Annuaire des avocats : retirer « Spécialistes », indiquer la mise en avant payante | Moyenne | S | garder |
+| N°  | Agent                    | Proposition                                                                                                                                                                                                 | Priorité | Effort | Avis du chef                                 |
+| --- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------ | -------------------------------------------- |
+| 1   | code-reviewer            | Réabonnement impossible après un paiement Stripe abandonné : le bouton devient « Gérer mon abonnement »                                                                                                     | Haute    | S      | garder                                       |
+| 2   | code-reviewer            | Les statuts Stripe `incomplete` et `unpaid` donnent l'accès Analyse                                                                                                                                         | Haute    | S-M    | garder                                       |
+| 3   | code-reviewer, juridique | Le build de production échoue si une mention légale ou `ADMIN_MFA_REQUIRED` manque ; remplacer le repli visible « À renseigner »                                                                            | Haute    | S      | garder                                       |
+| 4   | code-reviewer            | Liens de désinscription et emails d'alerte cassés si seule `SUPABASE_SECRET_KEY` est définie                                                                                                                | Haute    | S      | garder                                       |
+| 5   | juridique, UX, SEO       | Retirer les « Statistiques des tribunaux » (offres, comparatif, CGV, onglet et carte verrouillée de la fiche, explorateur payant de `/tribunaux`) ; `/tribunaux` : titre fidèle, noindex si vide            | Haute    | S      | garder                                       |
+| 6   | product, juridique       | Email hebdomadaire gratuit promis mais impossible à activer : case de consentement non pré-cochée en Découverte                                                                                             | Haute    | M      | garder                                       |
+| 7   | juridique, qualité       | Masquer les noms de particuliers dans les textes bruts (5 ventes) ; fermer `raw_payload` et `observations` aux comptes connectés                                                                            | Haute    | M      | garder                                       |
+| 8   | juridique                | CGV : bouton « Résilier », garantie légale de conformité, prix, un seul chemin de résiliation                                                                                                               | Haute    | M      | garder (texte à faire valider par un avocat) |
+| 9   | juridique                | Confidentialité : Mapbox, IA et service d'erreurs dans les destinataires ; traitement des annonces ; retrait sans compte ; formulaire de contact ; phrase d'inscription ; opposition à la mesure d'audience | Haute    | M      | garder                                       |
+| 10  | juridique                | Annuaire des avocats : retirer « Spécialistes », indiquer la mise en avant payante                                                                                                                          | Moyenne  | S      | garder                                       |
 
 ### B. Données affichées
 
-| N° | Agent | Proposition | Priorité | Effort | Avis du chef |
-| -- | ----- | ----------- | -------- | ------ | ------------ |
-| 11 | qualite-donnees | Département et coordonnées Petites Affiches : réparation depuis le géocodage déjà stocké, puis déduction du département dans tous les parseurs | Critique | S+M | garder |
-| 12 | qualite-donnees | Doublons entre sources : fusion par identifiant commun Vench / Petites Affiches, puis clé de repli prudente | Critique | M | garder (identifiant) / discutable (repli) |
-| 13 | qualite-donnees | Licitor : département détecté par sous-chaîne (« Orglandes » donne 40, « Vienne (Isère) » donne 86) | Haute | S | garder |
-| 14 | qualite-donnees | Surfaces « hors Carrez » ou de parking retenues comme surface du bien (« Appartement 4 m² ») | Haute | M | garder |
-| 15 | qualite-donnees | Point GPS fantôme Info-Enchères sur 5 ventes | Haute | S | garder |
-| 16 | qualite-donnees | Licitor multi-lots : le lot 2 copie l'adresse et le prix du lot 1 | Haute | M | garder (confirmer la cause d'abord) |
-| 17 | qualite-donnees | Dates invraisemblables (2029, 2044) : « date à confirmer » | Moyenne | S | garder |
-| 18 | qualite-donnees | Libellés de tribunal et de ville pollués : rattachement au référentiel | Moyenne | S | garder |
+| N°  | Agent           | Proposition                                                                                                                                    | Priorité | Effort | Avis du chef                              |
+| --- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------ | ----------------------------------------- |
+| 11  | qualite-donnees | Département et coordonnées Petites Affiches : réparation depuis le géocodage déjà stocké, puis déduction du département dans tous les parseurs | Critique | S+M    | garder                                    |
+| 12  | qualite-donnees | Doublons entre sources : fusion par identifiant commun Vench / Petites Affiches, puis clé de repli prudente                                    | Critique | M      | garder (identifiant) / discutable (repli) |
+| 13  | qualite-donnees | Licitor : département détecté par sous-chaîne (« Orglandes » donne 40, « Vienne (Isère) » donne 86)                                            | Haute    | S      | garder                                    |
+| 14  | qualite-donnees | Surfaces « hors Carrez » ou de parking retenues comme surface du bien (« Appartement 4 m² »)                                                   | Haute    | M      | garder                                    |
+| 15  | qualite-donnees | Point GPS fantôme Info-Enchères sur 5 ventes                                                                                                   | Haute    | S      | garder                                    |
+| 16  | qualite-donnees | Licitor multi-lots : le lot 2 copie l'adresse et le prix du lot 1                                                                              | Haute    | M      | garder (confirmer la cause d'abord)       |
+| 17  | qualite-donnees | Dates invraisemblables (2029, 2044) : « date à confirmer »                                                                                     | Moyenne  | S      | garder                                    |
+| 18  | qualite-donnees | Libellés de tribunal et de ville pollués : rattachement au référentiel                                                                         | Moyenne  | S      | garder                                    |
 
 ### C. Pipeline de collecte
 
-| N° | Agent | Proposition | Priorité | Effort | Avis du chef |
-| -- | ----- | ----------- | -------- | ------ | ------------ |
-| 19 | data-pipeline | L'alerte critique `.missed` (seuil de 12 h) s'ouvrira à chaque cycle de 12 h : seuil à 18 h, plus un test d'invariant | Haute | S | garder |
-| 20 | data-pipeline | Une seule fiche en erreur relance la collecte toutes les 30 min à 6 h ; « 401 » ou « 403 » dans une URL suspend la source 24 h | Haute | S-M | garder |
-| 21 | data-pipeline | Lectures de pièces en échec relancées toutes les 12 h sans limite | Moyenne | S | garder |
-| 22 | data-pipeline | Cache des PDF sauvegardé seulement par le premier run du jour | Moyenne | M | discutable (mesurer d'abord) |
-| 23 | data-pipeline | Synchronisation des références Justice bloquante à froid ; documentation encore à 6 h ; `pytest` en production | Basse | S | garder |
+| N°  | Agent         | Proposition                                                                                                                    | Priorité | Effort | Avis du chef                 |
+| --- | ------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------- | ------ | ---------------------------- |
+| 19  | data-pipeline | L'alerte critique `.missed` (seuil de 12 h) s'ouvrira à chaque cycle de 12 h : seuil à 18 h, plus un test d'invariant          | Haute    | S      | garder                       |
+| 20  | data-pipeline | Une seule fiche en erreur relance la collecte toutes les 30 min à 6 h ; « 401 » ou « 403 » dans une URL suspend la source 24 h | Haute    | S-M    | garder                       |
+| 21  | data-pipeline | Lectures de pièces en échec relancées toutes les 12 h sans limite                                                              | Moyenne  | S      | garder                       |
+| 22  | data-pipeline | Cache des PDF sauvegardé seulement par le premier run du jour                                                                  | Moyenne  | M      | discutable (mesurer d'abord) |
+| 23  | data-pipeline | Synchronisation des références Justice bloquante à froid ; documentation encore à 6 h ; `pytest` en production                 | Basse    | S      | garder                       |
 
 ### D. Calcul de l'enchère plafond
 
-| N° | Agent | Proposition | Priorité | Effort | Avis du chef |
-| -- | ----- | ----------- | -------- | ------ | ------------ |
-| 24 | testeur-qa | « Maison avec terrain » dans le titre : pas de plafond ni d'estimation | Haute | S | garder |
-| 25 | testeur-qa | Panneau des hypothèses : vider un champ réinjecte la valeur par défaut (« 50007 ») | Haute | S | garder |
-| 26 | testeur-qa | Projet « Louer » sans loyer de référence (77 départements) : aucun avertissement | Haute | M | garder |
-| 27 | testeur-qa | `formatPrice` affiche « 0 € », « NaN € » ou « ∞ € » | Moyenne | S | garder |
-| 28 | testeur-qa | Tris « Distance » et « Chambres » : balayage du catalogue côté navigateur | Moyenne | M | garder |
-| 29 | testeur-qa | Pagination vide, message en double sur un lien expiré, ancien moteur `/api/bid-ceiling` inutilisé à supprimer | Basse | S | garder |
-| 30 | testeur-qa | Tests à ajouter : plafond, compte et récupération du mot de passe, favoris, alertes et comparaison | Moyenne | M | garder |
+| N°  | Agent      | Proposition                                                                                                   | Priorité | Effort | Avis du chef |
+| --- | ---------- | ------------------------------------------------------------------------------------------------------------- | -------- | ------ | ------------ |
+| 24  | testeur-qa | « Maison avec terrain » dans le titre : pas de plafond ni d'estimation                                        | Haute    | S      | garder       |
+| 25  | testeur-qa | Panneau des hypothèses : vider un champ réinjecte la valeur par défaut (« 50007 »)                            | Haute    | S      | garder       |
+| 26  | testeur-qa | Projet « Louer » sans loyer de référence (77 départements) : aucun avertissement                              | Haute    | M      | garder       |
+| 27  | testeur-qa | `formatPrice` affiche « 0 € », « NaN € » ou « ∞ € »                                                           | Moyenne  | S      | garder       |
+| 28  | testeur-qa | Tris « Distance » et « Chambres » : balayage du catalogue côté navigateur                                     | Moyenne  | M      | garder       |
+| 29  | testeur-qa | Pagination vide, message en double sur un lien expiré, ancien moteur `/api/bid-ceiling` inutilisé à supprimer | Basse    | S      | garder       |
+| 30  | testeur-qa | Tests à ajouter : plafond, compte et récupération du mot de passe, favoris, alertes et comparaison            | Moyenne  | M      | garder       |
 
 ### E. Parcours et interface
 
-| N° | Agent | Proposition | Priorité | Effort | Avis du chef |
-| -- | ----- | ----------- | -------- | ------ | ------------ |
-| 31 | ux-designer | Cœur, cloche et export pour un visiteur : ouvrir « Créer un compte » avec le motif, pas « Se connecter » | Haute | S | garder |
-| 32 | product-explorer | Fiche pour un visiteur : remplacer « Pas encore d'estimation » par une invitation à créer un compte | Haute | S | garder |
-| 33 | ux-designer | Après inscription : écran de confirmation et bouton « Renvoyer l'email » au lieu d'un toast | Haute | M | garder |
-| 34 | ux-designer | Plafond : hypothèses sous le chiffre (travaux, marge, source de la valeur), libellés clairs, mini-glossaire | Haute | M | garder |
-| 35 | ux, code, qa, product | `/offres` : pas d'« indisponible » au chargement, erreur distincte de « fermé », message après paiement, « Me prévenir de l'ouverture » | Haute | M | garder |
-| 36 | ux-designer | Comparateur sur mobile ; ajouter prix au m² et occupation | Moyenne | M | garder |
-| 37 | ux-designer | Cibles tactiles de 44 px ; champs en 16 px contre le zoom d'iOS | Moyenne | S | garder |
-| 38 | ux-designer | Aucun résultat : boutons d'action ; « Effacer les filtres » sur mobile | Moyenne | S | garder |
-| 39 | ux-designer | Carte : « 500 affichés sur N », libellés compréhensibles | Moyenne | S | garder |
-| 40 | ux-designer | Favoris : un seul vocabulaire (pas « Suivre », qui promet une notification) | Basse | S | garder |
+| N°  | Agent                 | Proposition                                                                                                                             | Priorité | Effort | Avis du chef |
+| --- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------ | ------------ |
+| 31  | ux-designer           | Cœur, cloche et export pour un visiteur : ouvrir « Créer un compte » avec le motif, pas « Se connecter »                                | Haute    | S      | garder       |
+| 32  | product-explorer      | Fiche pour un visiteur : remplacer « Pas encore d'estimation » par une invitation à créer un compte                                     | Haute    | S      | garder       |
+| 33  | ux-designer           | Après inscription : écran de confirmation et bouton « Renvoyer l'email » au lieu d'un toast                                             | Haute    | M      | garder       |
+| 34  | ux-designer           | Plafond : hypothèses sous le chiffre (travaux, marge, source de la valeur), libellés clairs, mini-glossaire                             | Haute    | M      | garder       |
+| 35  | ux, code, qa, product | `/offres` : pas d'« indisponible » au chargement, erreur distincte de « fermé », message après paiement, « Me prévenir de l'ouverture » | Haute    | M      | garder       |
+| 36  | ux-designer           | Comparateur sur mobile ; ajouter prix au m² et occupation                                                                               | Moyenne  | M      | garder       |
+| 37  | ux-designer           | Cibles tactiles de 44 px ; champs en 16 px contre le zoom d'iOS                                                                         | Moyenne  | S      | garder       |
+| 38  | ux-designer           | Aucun résultat : boutons d'action ; « Effacer les filtres » sur mobile                                                                  | Moyenne  | S      | garder       |
+| 39  | ux-designer           | Carte : « 500 affichés sur N », libellés compréhensibles                                                                                | Moyenne  | S      | garder       |
+| 40  | ux-designer           | Favoris : un seul vocabulaire (pas « Suivre », qui promet une notification)                                                             | Basse    | S      | garder       |
 
 ### F. Référencement et performance
 
-| N° | Agent | Proposition | Priorité | Effort | Avis du chef |
-| -- | ----- | ----------- | -------- | ------ | ------------ |
-| 41 | seo-expert | Origine canonique stricte en production, noindex hors production, `immojudis.fr` vers `.com` | Critique | S | garder |
-| 42 | seo-expert, code | Vraie erreur 404 pour une vente inconnue ou passée (aujourd'hui 200 à cause de `app/loading.tsx`) | Haute | S | garder |
-| 43 | seo-expert | Sitemap : `/offres` au lieu de `/accompagnement` (redirigé) ; adresse de retour du portail Stripe | Moyenne | S | garder |
-| 44 | seo-expert | `og:url` faux, image de partage absente sur les fiches, canonical en minuscules | Moyenne | S | garder |
-| 45 | code-reviewer | `get_public_tribunal_activity` relit `raw_payload` (requête lente pour les visiteurs) | Moyenne | S | garder |
-| 46 | seo-expert | Métadonnées des pages éditoriales, sitemap en erreur 5xx si la base échoue, nettoyage de `robots` | Basse | S | garder |
-| 47 | seo-expert | Accueil : deux images prioritaires, police du titre non préchargée | Moyenne | S | discutable (mesurer avec Lighthouse d'abord) |
+| N°  | Agent            | Proposition                                                                                       | Priorité | Effort | Avis du chef                                 |
+| --- | ---------------- | ------------------------------------------------------------------------------------------------- | -------- | ------ | -------------------------------------------- |
+| 41  | seo-expert       | Origine canonique stricte en production, noindex hors production, `immojudis.fr` vers `.com`      | Critique | S      | garder                                       |
+| 42  | seo-expert, code | Vraie erreur 404 pour une vente inconnue ou passée (aujourd'hui 200 à cause de `app/loading.tsx`) | Haute    | S      | garder                                       |
+| 43  | seo-expert       | Sitemap : `/offres` au lieu de `/accompagnement` (redirigé) ; adresse de retour du portail Stripe | Moyenne  | S      | garder                                       |
+| 44  | seo-expert       | `og:url` faux, image de partage absente sur les fiches, canonical en minuscules                   | Moyenne  | S      | garder                                       |
+| 45  | code-reviewer    | `get_public_tribunal_activity` relit `raw_payload` (requête lente pour les visiteurs)             | Moyenne  | S      | garder                                       |
+| 46  | seo-expert       | Métadonnées des pages éditoriales, sitemap en erreur 5xx si la base échoue, nettoyage de `robots` | Basse    | S      | garder                                       |
+| 47  | seo-expert       | Accueil : deux images prioritaires, police du titre non préchargée                                | Moyenne  | S      | discutable (mesurer avec Lighthouse d'abord) |
 
 ### G. Contenus
 
-| N° | Agent | Proposition | Priorité | Effort | Avis du chef |
-| -- | ----- | ----------- | -------- | ------ | ------------ |
-| 48 | rédacteur, juridique | Harmoniser le vocabulaire (« enchère plafond », « Immojudis ») ; réécrire À propos ; FAQ et lexique du guide ; corriger le juridique (R. 322-41, surenchère, expulsion, date de mise à jour) | Haute | M | garder |
-| 49 | redacteur-contenu | Emails : alertes avec date, mise à prix et type de vente ; fin d'essai avec montant ; impayé | Moyenne | M | garder |
-| 50 | redacteur-contenu | Article « Le jour de l'audience et le rôle de l'avocat » | Haute | M | garder |
-| 51 | redacteur-contenu | Article « Après l'adjudication : surenchère, paiement, consignation » | Haute | M | garder |
-| 52 | redacteur-contenu | Article « Ventes notariales et domaniales » | Haute | L | garder |
-| 53 | redacteur-contenu | Article « Lire le cahier des conditions de vente et préparer la visite » | Moyenne | M | garder |
-| 54 | redacteur-contenu | Article « Financer un achat aux enchères » | Moyenne | M | garder |
-| 55 | redacteur-contenu | Article sur les frais, avec correction de l'exemple irréaliste à 9 500 € | Haute | L | discutable (barème à valider) |
-| 56 | product-explorer | Simulateur public « coût total à la mise à prix » | Haute | M | discutable (barème à valider) |
-| 57 | product-explorer | Mesure de l'entonnoir (inscription, alerte, offres, paiement) | Moyenne | M | discutable (RGPD, plan Vercel) |
+| N°  | Agent                | Proposition                                                                                                                                                                                  | Priorité | Effort | Avis du chef                   |
+| --- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------ | ------------------------------ |
+| 48  | rédacteur, juridique | Harmoniser le vocabulaire (« enchère plafond », « Immojudis ») ; réécrire À propos ; FAQ et lexique du guide ; corriger le juridique (R. 322-41, surenchère, expulsion, date de mise à jour) | Haute    | M      | garder                         |
+| 49  | redacteur-contenu    | Emails : alertes avec date, mise à prix et type de vente ; fin d'essai avec montant ; impayé                                                                                                 | Moyenne  | M      | garder                         |
+| 50  | redacteur-contenu    | Article « Le jour de l'audience et le rôle de l'avocat »                                                                                                                                     | Haute    | M      | garder                         |
+| 51  | redacteur-contenu    | Article « Après l'adjudication : surenchère, paiement, consignation »                                                                                                                        | Haute    | M      | garder                         |
+| 52  | redacteur-contenu    | Article « Ventes notariales et domaniales »                                                                                                                                                  | Haute    | L      | garder                         |
+| 53  | redacteur-contenu    | Article « Lire le cahier des conditions de vente et préparer la visite »                                                                                                                     | Moyenne  | M      | garder                         |
+| 54  | redacteur-contenu    | Article « Financer un achat aux enchères »                                                                                                                                                   | Moyenne  | M      | garder                         |
+| 55  | redacteur-contenu    | Article sur les frais, avec correction de l'exemple irréaliste à 9 500 €                                                                                                                     | Haute    | L      | discutable (barème à valider)  |
+| 56  | product-explorer     | Simulateur public « coût total à la mise à prix »                                                                                                                                            | Haute    | M      | discutable (barème à valider)  |
+| 57  | product-explorer     | Mesure de l'entonnoir (inscription, alerte, offres, paiement)                                                                                                                                | Moyenne  | M      | discutable (RGPD, plan Vercel) |
 
 Pour les points 11, 13, 15, 16 et 17 : le `developpeur` écrit le correctif et le script de
 réparation, avec ses tests. **L'application en production reste à votre main** : aucun agent
@@ -330,11 +330,11 @@ mention contraire.
     (« dans 3 jours » en dur).
 50. à 54. Plans détaillés dans le rapport du rédacteur. Tous contiennent des informations
     juridiques et seront relus par `juridique-rgpd` avant publication.
-55. `src/content/resources/prix-plafond-encheres-immobilieres.json:64` et `:71` (9 500 € de
+51. `src/content/resources/prix-plafond-encheres-immobilieres.json:64` et `:71` (9 500 € de
     frais pour un plafond d'environ 158 000 €).
-56. `computeAcquisitionCosts` (`src/lib/profitability.ts:144`) existe mais n'est exposé qu'en
+52. `computeAcquisitionCosts` (`src/lib/profitability.ts:144`) existe mais n'est exposé qu'en
     offre Analyse.
-57. Seuls `<Analytics />` et `<SpeedInsights />` sont présents dans `layout.tsx`.
+53. Seuls `<Analytics />` et `<SpeedInsights />` sont présents dans `layout.tsx`.
 
 ## Lots conseillés
 
@@ -346,4 +346,99 @@ mention contraire.
 
 ## Exécution
 
-_À compléter après validation._
+**Validation de l'utilisateur** : toutes les propositions des agents `code-reviewer`,
+`qualite-donnees`, `data-pipeline`, `testeur-qa`, `ux-designer`, `product-explorer`, `seo-expert`
+et `redacteur-contenu`. Les points propres à `juridique-rgpd` (8, 9, 10) n'ont pas été validés et
+ne sont pas faits. Les points 3, 5, 6 et 7, partagés avec un agent validé, ont été faits.
+
+Branche : `equipe/premiere-session-2026-10-13` (283 fichiers, environ 18 300 lignes ajoutées et
+2 000 retirées).
+
+### Chantiers
+
+| Chantier                      | Points                                               | Résultat                                                                                                                                         |
+| ----------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A. Paiement et offres         | 1, 2, 3, 4, 5 (offres), 35                           | Fait                                                                                                                                             |
+| B. Recherche, compte, alertes | 6, 28, 29, 31, 33, 36 à 40, 30 (e2e compte, favoris) | Fait                                                                                                                                             |
+| C. Fiche et enchère plafond   | 24 à 27, 29, 32, 34, 5 (fiche), 30 (e2e plafond)     | Fait ; 2 scénarios e2e restent en Vitest (fiche lue côté serveur)                                                                                |
+| D. Référencement              | 41 à 47, 5 (`/tribunaux`)                            | Fait                                                                                                                                             |
+| E. Robustesse du pipeline     | 19 à 23                                              | Fait ; cache sauvegardé seulement s'il change                                                                                                    |
+| F. Exactitude des données     | 11 à 18                                              | Fait, sauf 16 : cause confirmée, quarantaine ciblée livrée, le choix « une ligne par lot ou un agrégat » reste à trancher                        |
+| G. Données personnelles       | 7                                                    | Filtre à l'écriture, rapports filtrés, script de réparation ; révocation des colonnes internes non faite (elle casserait la fiche, étape à part) |
+| H. Contenus                   | 48 à 55                                              | Fait ; relu par `juridique-rgpd` puis corrigé (12 corrections)                                                                                   |
+| I. Simulateur de frais        | 56                                                   | Fait (`/simulateur-frais-encheres`)                                                                                                              |
+| J. Finitions                  | 57, restes d'intégration                             | Fait (mise à prix à 0, tri chambres côté serveur, occupation des comparaisons, liens, événements anonymes)                                       |
+
+### Relectures
+
+- `juridique-rgpd` sur les contenus : aucun point critique ; la divergence sur la surenchère
+  notariale est tranchée (légale en saisie et licitation, contractuelle en vente notariale
+  volontaire) ; 12 corrections appliquées.
+- `code-reviewer` sur l'ensemble : aucun point critique ; défauts corrigés ensuite :
+  - le filtre des noms transformait un occupant sans titre en « locataire » : il écrit désormais
+    « un occupant » ;
+  - expressions régulières à coût quadratique : réécrites, avec un test de performance ;
+  - le balayage des doublons pouvait supprimer une annonce sur une simple collision d'identifiant :
+    il exige maintenant le même lieu et un fait concordant ; deux annonces fusionnées en mémoire
+    ne passent plus en quarantaine ;
+  - les réparations de données étaient rangées avec les migrations : elles sont dans
+    `supabase/repairs/`, en mode comptage par défaut ;
+  - le département n'est plus déduit du tribunal ;
+  - « Me prévenir de l'ouverture » ne promet plus d'envoi, le consentement est posé côté serveur,
+    la purge est ajoutée à `run_data_retention` ;
+  - `/tribunaux` ne passe plus en noindex sur une panne de base ;
+  - le garde-fou d'origine canonique refuse `localhost`, `http://` et les valeurs fictives ;
+  - la migration du seuil de 18 h est rejouable ;
+  - l'abonnement en retard de paiement affiche la fin réelle du délai de grâce.
+- Défaut **antérieur à la session**, non corrigé, en attente de décision : un événement Stripe
+  tardif de l'ancien abonnement peut écraser un nouvel abonnement
+  (`20261009181000_stripe_subscription_ordering_and_grace.sql:131-152`, `billing.ts`).
+
+### Vérifications finales (branche fusionnée)
+
+| Vérification                       | Résultat                                                             |
+| ---------------------------------- | -------------------------------------------------------------------- |
+| `npx tsc --noEmit`                 | OK                                                                   |
+| `npm run lint`                     | OK                                                                   |
+| `npm test` (Vitest)                | 3 170 OK, 7 ignorés                                                  |
+| `npm run test:security-invariants` | OK (25 contrôles, dont 2 nouveaux)                                   |
+| `npm run check:migrations`         | OK                                                                   |
+| Pipeline `ruff` + `pytest`         | OK, 3 729 tests (tests PostgreSQL : en CI)                           |
+| Playwright                         | specs nouveaux passés par leurs auteurs (desktop et mobile Chromium) |
+
+Non exécuté ici : le test pgTAP `supabase/tests/457_offer_opening_notifications.sql` et le test
+PostgreSQL de la migration 18 h (à faire tourner en CI avec base).
+
+### À faire par le propriétaire, dans l'ordre
+
+1. **Avant de déployer** : décider du balayage des doublons. Il fusionnera puis supprimera les
+   doublons confirmés à la collecte suivante ; `DEDUPE_RECONCILE_ENABLED=false` permet de choisir
+   le moment.
+2. **Variables Vercel** : `SITE_URL` (obligatoire, sinon le build de production échoue),
+   `NEXT_PUBLIC_LEGAL_*`, `ADMIN_MFA_REQUIRED=true`. À défaut, `ALLOW_INCOMPLETE_LAUNCH_CONFIG=true`
+   laisse passer les mentions légales et la double authentification, jamais l'origine canonique.
+3. **Migrations** (`Apply Supabase Migrations`) : `20261020100000` (demandes d'ouverture),
+   `20261020110045` (`/tribunaux`), `20261020120019` (seuil 18 h), `20261020120021` (tentatives de
+   lecture, **avant** le déploiement du code Python), puis régénérer les types (`db:types`).
+4. **Réparations** (`supabase/repairs/README.md`) : 130001, 130002, 130003 en comptage, relecture,
+   puis `-v apply=1` ; ensuite `recompute-existing-sales` en `dry_run=true` puis `false`.
+5. **Données personnelles** : `python -m src.redact_personal_data` (comptage), puis `--apply`,
+   puis `--check` ; ensuite `--all-statuses`. Planifier à part la révocation de `raw_payload` et
+   `observations` (vue en definer, et tables `properties` et `judicial_sales`).
+6. **Vercel Analytics** : vérifier que l'offre Vercel accepte les événements personnalisés.
+7. **Juridique** : barème des émoluments et des droits de mutation (dont les départements à 5,81 %),
+   CGV (délai de grâce de 7 jours, version à changer en une fois avec le point 8), contrat de
+   visibilité des avocats, licence Licitor.
+
+### Points d'attention
+
+- Les scénarios d'enchères de la fiche (PR #226) sont masqués avec l'onglet « Statistiques » tant
+  que le drapeau des statistiques est fermé (données Licitor, licence non réglée).
+- Le texte des CGV a changé (retrait des statistiques) sans changement de version
+  (`2026-10-03.1`) : aucune vente n'a encore eu lieu.
+- Une date de vente invraisemblable est désormais vidée (« date à confirmer ») : 11 ventes
+  sortent de la liste des ventes à venir après recalcul.
+- Le tri « Chambres » en aperçu public retombe sur la pertinence (la fonction publique ne le
+  connaît pas).
+- Limites connues du filtre des noms : enseigne en deux mots après « loué à » remplacée à tort ;
+  second nom après « aux époux » non retiré.
