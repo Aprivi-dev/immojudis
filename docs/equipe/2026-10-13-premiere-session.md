@@ -464,3 +464,39 @@ Le propriétaire suit toutes les recommandations du chef d'orchestre.
 | 13  | Retirer l'invitation au compte pro des emails aux professionnels               | Oui        | Chantier L                                    |
 | 14  | Ajouts Outcome Graph postérieurs au gel du 10/10 voulus ?                      | En attente | —                                             |
 | 15  | Index pour la recherche par numéro d'annonce                                   | Non        | —                                             |
+
+## Exécution après les décisions (13/10/2026, suite)
+
+| Chantier                                 | Décision    | Résultat                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| K. Abonnement Stripe écrasé              | 1           | Un événement tardif d'un ancien abonnement est ignoré (`superseded_subscription`) ; migration `20261021100000`                                                                                                                                                                                                                         |
+| L. Textes juridiques                     | 3, 4, 5, 13 | CGV (durée indéterminée, garantie légale, délai de grâce), confidentialité, inscription, contact, annuaire, emails aux professionnels purement informatifs                                                                                                                                                                             |
+| N. Bouton « Résilier mon abonnement »    | 3           | Ouvre directement le formulaire de résiliation du portail Stripe ; CGV, FAQ et emails alignés                                                                                                                                                                                                                                          |
+| M. Retrait de Licitor                    | 10          | Interrupteur unique en base (`set_catalogue_source_withdrawal`), retrait par défaut, collecte arrêtée, ventes Licitor seules masquées, contenus Licitor retirés des ventes fusionnées ; migration `20261021110000`                                                                                                                     |
+| O. Corrections de la relecture juridique | 3, 4, 5     | Avocat nommé avant consentement avec mention exacte de la mise en avant payante ; API bridée aux données affichées ; vocabulaire unique ; classement expliqué ; email de confirmation de résiliation ; interrupteur d'opposition à la mesure d'audience ; garde-fou prix affiché = prix facturé ; IGN et API Adresse dans la politique |
+
+Corrections apportées pendant la CI de la PR #238 :
+
+- page d'accueil : le texte de consentement chargeait `zod` (582 Ko > 555 Ko), sorti dans un module léger (526 Ko) ; plafond total relevé une fois à 5,40 Mo ;
+- tests pgTAP 453 (colonne de quarantaine) et 457 (nombre d'assertions) ;
+- formulaire d'administration des mises en relation : champs rétrécissables sur mobile (bouton masqué par le débordement) ;
+- conflit avec #237 (README) résolu.
+
+Vérifications sur la branche finale : `tsc`, lint, 3 301 tests Vitest, invariants de sécurité, build et budgets,
+`check:migrations` et pipeline (3 744 tests) au vert.
+
+### Nouvelles actions du propriétaire
+
+1. **Stripe** : portail client, résiliation activée et « en fin de période » (sinon les CGV §2 et §5 sont
+   inexactes) ; relances d'impayé et sort de l'abonnement après suspension à fixer puis à écrire au §4.
+2. **Migrations supplémentaires** : `20261021100000` (Stripe) et `20261021110000` (retrait de Licitor : l'appliquer
+   retire Licitor ; à rejouer d'abord sur une copie, verrou court sur `auction_sales`).
+3. **Avant de rouvrir Licitor** : licence écrite, puis `select public.set_catalogue_source_withdrawal('licitor', false);`.
+   Garder fermés les drapeaux de statistiques des tribunaux tant que Licitor est retiré.
+4. **À faire valider par un avocat** : qualification du contrat, modèle de mise en avant payante des avocats
+   (RIN 19.4.2, 11.3, 10 ; C. conso. L. 111-7, L. 121-4), exemption de consentement de la mesure d'audience,
+   durées de conservation (contact, mises en relation, adresses opposées), textes issus de Licitor dans les ventes
+   fusionnées.
+5. **Point 14** (ajouts Outcome Graph après le gel) : réponse attendue.
+6. Le repli de géocodage appelle encore `api-adresse.data.gouv.fr`, peut-être arrêté au profit de
+   `data.geopf.fr/geocodage` : à vérifier.
