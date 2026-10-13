@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ loadSitemapSales: vi.fn(), loadSitemapSaleTotal: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  loadSitemapSales: vi.fn(),
+  loadSitemapSaleTotal: vi.fn(),
+  loadTribunalActivity: vi.fn(),
+}));
+
+vi.mock("@/lib/public-tribunal-activity.server", () => ({
+  loadPublicTribunalActivity: mocks.loadTribunalActivity,
+}));
 
 vi.mock("@/lib/public-sitemap.server", async () => {
   const actual = await vi.importActual<typeof import("@/lib/public-sitemap.server")>(
@@ -15,6 +23,7 @@ vi.mock("@/lib/public-sitemap.server", async () => {
 
 import sitemap from "./sitemap";
 import robots from "./robots";
+import nextConfig from "../../next.config";
 import { ROOT_SITEMAP_SALE_CAPACITY, SITEMAP_URL_LIMIT } from "@/lib/public-sitemap.server";
 
 const manySales = Array.from({ length: 2276 }, (_, index) => ({
@@ -27,6 +36,8 @@ describe("sitemap.xml", () => {
     process.env.SITE_URL = "https://immojudis.com";
     mocks.loadSitemapSales.mockReset();
     mocks.loadSitemapSaleTotal.mockReset();
+    mocks.loadTribunalActivity.mockReset();
+    mocks.loadTribunalActivity.mockResolvedValue([{ code: "pau" }]);
   });
   afterEach(() => {
     delete process.env.SITE_URL;
@@ -54,20 +65,53 @@ describe("sitemap.xml", () => {
     const byUrl = new Map(entries.map((entry) => [entry.url, entry]));
     expect(byUrl.has("https://immojudis.com/tribunaux")).toBe(true);
     expect(byUrl.has("https://immojudis.com/annonce-exemple")).toBe(true);
-    for (const path of ["", "/avocats", "/accompagnement", "/tribunaux", "/legal"]) {
+    for (const path of ["", "/avocats", "/offres", "/tribunaux", "/legal"]) {
       expect(byUrl.get(`https://immojudis.com${path}`)?.lastModified).toBeTruthy();
     }
     // The catalogue page changes with its newest sale.
     expect(byUrl.get("https://immojudis.com/sales")?.lastModified).toBe(manySales[0].lastModified);
   });
 
-  it("still serves the static pages when the database cannot be read", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  it("answers an error instead of a reduced sitemap when the database cannot be read", async () => {
     mocks.loadSitemapSales.mockRejectedValue(new Error("down"));
+    await expect(sitemap()).rejects.toThrow("down");
+  });
+
+  it("lists /offres, the address of the offers page, not its /accompagnement redirect", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([]);
+    const urls = (await sitemap()).map((entry) => entry.url);
+    expect(urls).toContain("https://immojudis.com/offres");
+    expect(urls).not.toContain("https://immojudis.com/accompagnement");
+  });
+
+  it("does not list /tribunaux while no court is listed", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([]);
+    mocks.loadTribunalActivity.mockResolvedValue([]);
+    const urls = (await sitemap()).map((entry) => entry.url);
+    expect(urls).not.toContain("https://immojudis.com/tribunaux");
+    expect(urls).toContain("https://immojudis.com/sales");
+  });
+
+  it("leaves out changeFrequency and priority, which search engines ignore", async () => {
+    mocks.loadSitemapSales.mockResolvedValue(manySales.slice(0, 3));
     const entries = await sitemap();
-    expect(entries.length).toBeGreaterThan(10);
-    expect(entries.some((entry) => entry.url.includes("/sales/0"))).toBe(false);
-    expect(entries.find((entry) => entry.url === "https://immojudis.com/sales")).toBeDefined();
+    expect(entries.some((entry) => "changeFrequency" in entry || "priority" in entry)).toBe(false);
+  });
+
+  it("never lists the source of a redirect declared in next.config.ts", async () => {
+    mocks.loadSitemapSales.mockResolvedValue(manySales.slice(0, 3));
+    const paths = (await sitemap()).map((entry) => new URL(entry.url).pathname);
+    const redirects = await nextConfig.redirects!();
+    expect(redirects.length).toBeGreaterThan(0);
+    for (const { source } of redirects) {
+      const pattern = new RegExp(
+        `^${source.replace(/:[A-Za-z]+\*/g, ".*").replace(/:[A-Za-z]+/g, "[^/]+")}$`,
+      );
+      expect(
+        paths.filter((path) => pattern.test(path)),
+        `le sitemap liste une source de redirection (${source})`,
+      ).toEqual([]);
+    }
   });
 
   it("stays under the 5 000 URLs per file", async () => {
@@ -105,5 +149,38 @@ describe("robots.txt", () => {
   it("keeps working when the database is unreachable", async () => {
     mocks.loadSitemapSaleTotal.mockRejectedValue(new Error("down"));
     expect((await robots()).sitemap).toEqual(["https://immojudis.com/sitemap.xml"]);
+  });
+
+  it("drops the obsolete host directive and lets /login be crawled (its noindex must be seen)", async () => {
+    mocks.loadSitemapSaleTotal.mockResolvedValue(10);
+    const result = await robots();
+    expect(result.host).toBeUndefined();
+    const rules = Array.isArray(result.rules) ? result.rules[0] : result.rules;
+    expect(rules.disallow).toEqual(["/admin/", "/api/", "/publish", "/reports/shared/"]);
+  });
+
+  it.each(["preview", "development"])(
+    "blocks every crawler, without sitemap, on a Vercel %s deployment",
+    async (vercelEnv) => {
+      vi.stubEnv("VERCEL_ENV", vercelEnv);
+      try {
+        expect(await robots()).toEqual({ rules: { userAgent: "*", disallow: "/" } });
+        expect(mocks.loadSitemapSaleTotal).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
+  it("stays open on the Vercel production deployment", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    try {
+      mocks.loadSitemapSaleTotal.mockResolvedValue(10);
+      const result = await robots();
+      expect(Array.isArray(result.rules) ? result.rules[0].allow : result.rules.allow).toBe("/");
+      expect(result.sitemap).toEqual(["https://immojudis.com/sitemap.xml"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
