@@ -1,5 +1,6 @@
 import type { AuctionSale } from "@/lib/types";
 import { safeExternalHttpUrl } from "@/lib/external-url";
+import { isWithdrawnSourceUrl } from "@/lib/withdrawn-sources";
 
 export type SaleSourceLink = { label: string; href: string };
 
@@ -73,7 +74,9 @@ export function sourceLabelFromUrl(href: string): string | null {
 }
 
 function cleanHref(value: unknown): string | null {
-  return safeExternalHttpUrl(value);
+  const href = safeExternalHttpUrl(value);
+  // Lien vers une source retirée du catalogue : jamais affiché (voir withdrawn-sources.ts).
+  return href && !isWithdrawnSourceUrl(href) ? href : null;
 }
 
 function cleanLabel(value: unknown): string | null {

@@ -139,3 +139,31 @@ it("pause does not erase an access refusal cooldown", async () => {
   expect(update.mock.calls[0][0].enabled).toBe(false);
   expect(update.mock.calls[0][0]).not.toHaveProperty("suspended_until");
 });
+
+it("refuses to re-enable a source withdrawn from the catalogue", async () => {
+  mocks.auth.mockResolvedValue({ isAdmin: true });
+  const update = vi.fn();
+  mocks.from.mockReturnValue({ update });
+  update.mockReturnValue({
+    eq: () => ({
+      select: () => ({
+        maybeSingle: async () => ({
+          data: null,
+          error: {
+            code: "23514",
+            message:
+              'new row for relation "auction_source_state" violates check constraint "auction_source_state_withdrawn_not_enabled"',
+          },
+        }),
+      }),
+    }),
+  });
+  const response = await PATCH(
+    new Request("https://example.test/api/admin/pipeline", {
+      method: "PATCH",
+      body: JSON.stringify({ source: "licitor", enabled: true }),
+    }),
+  );
+  expect(response.status).toBe(409);
+  expect((await response.json()).error).toContain("retirée du catalogue");
+});
