@@ -65,15 +65,16 @@ export function TermsPage() {
             <p>
               Découverte fournit gratuitement les informations essentielles accessibles après
               création d’un compte, avec trois favoris au maximum. Analyse est un abonnement aux
-              outils d’analyse : enchère plafond, estimation des travaux, valeur du bien et autres
-              analyses présentées sur la page d’offre. L’abonnement est conclu pour une durée
-              indéterminée et facturé chaque mois. Vous pouvez le résilier à tout moment, sans frais
-              ni préavis ; la résiliation prend effet à la fin de la période mensuelle en cours.
-              Lorsqu’il est proposé (une seule fois par compte), un essai gratuit de{" "}
-              {ANALYSIS_TRIAL_DAYS} jours nécessite l’enregistrement d’une carte bancaire auprès de
-              Stripe. À son terme, l’abonnement devient payant et se renouvelle automatiquement,
-              sauf résiliation avant la fin de l’essai. Les conditions d’éligibilité et le tarif
-              applicable sont présentés avant la confirmation de la souscription.
+              outils d’analyse : statistiques des tribunaux, enchère plafond, estimation des
+              travaux, valeur du bien et autres analyses présentées sur la page d’offre.
+              L’abonnement est conclu pour une durée indéterminée et facturé chaque mois. Vous
+              pouvez le résilier à tout moment, sans frais ni préavis ; la résiliation prend effet à
+              la fin de la période mensuelle en cours. Lorsqu’il est proposé (une seule fois par
+              compte), un essai gratuit de {ANALYSIS_TRIAL_DAYS} jours nécessite l’enregistrement
+              d’une carte bancaire auprès de Stripe. À son terme, l’abonnement devient payant et se
+              renouvelle automatiquement, sauf résiliation avant la fin de l’essai. Les conditions
+              d’éligibilité et le tarif applicable sont présentés avant la confirmation de la
+              souscription.
             </p>
           </TermsSection>
 

@@ -19,8 +19,11 @@ const AnalysisSaleDetailView = dynamic(
  */
 export function ExampleSalePage({
   example,
+  adjudicationStatisticsEnabled = false,
 }: {
   example: { sale: AuctionSale; marketEstimate: MarketEstimate };
+  /** Lu côté serveur (`ADJUDICATION_PRICE_STATISTICS_ENABLED`) : la démo montre l'onglet quand le drapeau est ouvert. */
+  adjudicationStatisticsEnabled?: boolean;
 }) {
   useEffect(() => {
     trackProductEvent("sample_report_viewed");
@@ -40,6 +43,7 @@ export function ExampleSalePage({
         returnTo="/#exemples"
         backLabel="Retour aux exemples"
         publicDemo
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       />
     </>
   );

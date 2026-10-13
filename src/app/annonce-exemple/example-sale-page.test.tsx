@@ -11,11 +11,13 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
     marketEstimateOverride,
     publicDemo,
     returnTo,
+    adjudicationStatisticsEnabled,
   }: {
     sale: { city: string; title: string };
     marketEstimateOverride: { actionable?: boolean };
     publicDemo?: boolean;
     returnTo?: string;
+    adjudicationStatisticsEnabled?: boolean;
   }) => (
     <div
       data-testid="example-detail"
@@ -23,6 +25,7 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
       data-access={publicDemo ? "public-analysis" : "restricted"}
       data-market={marketEstimateOverride.actionable ? "complete" : "missing"}
       data-return-to={returnTo}
+      data-statistics={adjudicationStatisticsEnabled ? "open" : "closed"}
     >
       {sale.title}
     </div>
@@ -42,6 +45,16 @@ describe("ExampleSalePage", () => {
     render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
     expect(mocks.track).toHaveBeenCalledTimes(1);
     expect(mocks.track).toHaveBeenCalledWith("sample_report_viewed");
+  });
+
+  it("transmet le drapeau des statistiques à la vue, fermé par défaut", async () => {
+    const { unmount } = render(<ExampleSalePage example={getExampleSaleRecords().bordeaux} />);
+    expect((await screen.findByTestId("example-detail")).dataset.statistics).toBe("closed");
+    unmount();
+    render(
+      <ExampleSalePage example={getExampleSaleRecords().bordeaux} adjudicationStatisticsEnabled />,
+    );
+    expect((await screen.findByTestId("example-detail")).dataset.statistics).toBe("open");
   });
 
   it.each([

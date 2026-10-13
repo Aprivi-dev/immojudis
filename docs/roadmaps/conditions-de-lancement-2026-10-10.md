@@ -33,7 +33,11 @@ de tribunaux, JudiLibre et l'activité de la justice.
 - Les drapeaux `TRIBUNAL_STATISTICS_ENABLED`, `OUTCOME_EVALUATION_ENABLED`, `JUDILIBRE_ENABLED` et
   `JUSTICE_ACTIVITY_ENABLED` restent fermés. Vérifié le 10/10/2026 : aucun n'est défini en production ;
   seuls trois existent en preview.
-- `ADJUDICATION_PRICE_STATISTICS_ENABLED` est à `false` en production (modifié le 09/10/2026).
+- `ADJUDICATION_PRICE_STATISTICS_ENABLED` : fermé en production le 09/10/2026, **réactivé le 12/10/2026**. Le
+  13/10/2026, à la demande du propriétaire (qui déclare l'accord de Licitor), les statistiques des tribunaux et les
+  scénarios d'enchères sont de nouveau affichés et promis : ligne « Statistiques des tribunaux » de la page Offres et
+  du comparatif, mention dans les CGV §2 (version `2026-10-13.2`), onglet de la fiche d'exemple. Les autres drapeaux
+  de cette liste restent fermés.
 - Aucune PR « Outcome Graph » avant le lancement. Les workflows `outcome-*` ne doivent pas être planifiés.
 - Le code reste dans `main` : le retirer coûterait plus cher qu'il ne rapporte tant qu'il est inactif.
 
@@ -78,8 +82,8 @@ Le chantier garde l'**interrupteur de retrait** comme infrastructure, pour un us
   par la source retirée (`src/lib/withdrawn-sources.ts`). Les textes (titre, description) ne portent pas leur
   provenance champ par champ et ne sont pas filtrés.
 
-Les drapeaux de statistiques et de scénarios d'enchères des tribunaux (`TRIBUNAL_STATISTICS_ENABLED`,
-`ADJUDICATION_PRICE_STATISTICS_ENABLED`) relèvent d'une décision distincte : ils ne dépendent pas de cet interrupteur.
+Les drapeaux de statistiques et de scénarios d'enchères des tribunaux ne dépendent pas de cet interrupteur (voir
+« Chantier gelé : Outcome Graph » pour leur état).
 
 ### Mise en production
 

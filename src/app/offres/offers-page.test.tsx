@@ -86,10 +86,11 @@ describe("page Offres", () => {
     expect(container.textContent).not.toMatch(/Stripe|Meteostat|ClimaScore|Premium|météo/i);
   });
 
-  it("ne promet plus les statistiques des tribunaux, fonction gelée", () => {
-    const { container } = render(<OffersPage />);
-    expect(container.textContent).not.toMatch(/statistiques/i);
-    expect(screen.getByText("Rapport PDF et export des résultats")).toBeTruthy();
+  it("promet les statistiques des tribunaux, le rapport PDF et l'export", () => {
+    render(<OffersPage />);
+    expect(
+      screen.getByText("Statistiques des tribunaux, rapport PDF et export des résultats"),
+    ).toBeTruthy();
   });
 
   it("promet l'essai seulement quand la souscription est ouverte", async () => {

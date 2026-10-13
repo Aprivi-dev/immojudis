@@ -21,5 +21,10 @@ export default async function Page({ searchParams }: PageProps) {
   const requested = (await searchParams).bien;
   const key = isExampleSaleKey(requested) ? requested : "bordeaux";
   // Dates are computed now (hearing in 21 days), never frozen at build time.
-  return <ExampleSalePage example={getExampleSaleRecords()[key]} />;
+  return (
+    <ExampleSalePage
+      example={getExampleSaleRecords()[key]}
+      adjudicationStatisticsEnabled={process.env.ADJUDICATION_PRICE_STATISTICS_ENABLED === "true"}
+    />
+  );
 }
