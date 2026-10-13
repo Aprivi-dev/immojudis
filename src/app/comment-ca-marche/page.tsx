@@ -40,6 +40,7 @@ const STEPS = [
     links: [
       { href: "/annonce-exemple", label: "Essayer le simulateur" },
       { href: "/ressources/frais-vente-encheres-judiciaire", label: "Comprendre les frais" },
+      { href: "/simulateur-frais-encheres", label: "Simuler les frais" },
       { href: "/offres", label: "Voir les offres" },
     ],
   },

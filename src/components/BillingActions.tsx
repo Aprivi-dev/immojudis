@@ -34,6 +34,7 @@ import {
 } from "@/lib/analysis-offer";
 import { OFFER_OPENING_CONSENT_TEXT } from "@/lib/offer-opening-notification";
 import { userMessage } from "@/lib/user-messages";
+import { trackProductEvent } from "@/lib/product-events";
 
 /** After a Stripe payment the webhook may take a moment: re-read the plan every 2 s, 30 s at most. */
 const ACTIVATION_POLL_INTERVAL_MS = 2_000;
@@ -206,6 +207,7 @@ export function BillingActions({
           withdrawalInformationAcknowledged: true,
         },
       });
+      trackProductEvent("checkout_started");
       window.location.assign(response.url);
     } catch (error) {
       toast.error(userMessage(error, "Paiement indisponible"));
@@ -240,6 +242,9 @@ export function BillingActions({
     try {
       const response = await updateOfferOpeningNotification(enabled);
       setOpeningRequested(response.notification.requested);
+      if (enabled && response.notification.requested) {
+        trackProductEvent("opening_notification_requested");
+      }
     } catch (error) {
       toast.error(userMessage(error, "Demande impossible"));
     } finally {

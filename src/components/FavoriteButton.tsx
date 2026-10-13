@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { userMessage } from "@/lib/user-messages";
+import { trackProductEvent } from "@/lib/product-events";
 import { queryKeys } from "@/lib/query-keys";
 import {
   FAVORITE_ADD_LABEL,
@@ -73,6 +74,7 @@ export function FavoriteButton({
         qc.setQueryData(favoriteKey, false);
       } else {
         const added = await addFavoriteSaleRequest({ data: { saleId } });
+        trackProductEvent("favorite_added");
         qc.setQueryData(favoriteKey, true);
         void announceFavoriteAdded(qc, user.id, added?.plan?.limit ?? null);
       }

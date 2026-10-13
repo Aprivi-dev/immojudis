@@ -19,6 +19,14 @@ describe("page Comment ça marche", () => {
     ]);
   });
 
+  it("renvoie l'étape budget vers le simulateur de frais", () => {
+    render(<Page />);
+    const step = within(screen.getByRole("list")).getAllByRole("listitem")[2]!;
+    expect(within(step).getByRole("link", { name: "Simuler les frais" }).getAttribute("href")).toBe(
+      "/simulateur-frais-encheres",
+    );
+  });
+
   it("ne mentionne plus les limites internes du produit", () => {
     const { container } = render(<Page />);
     expect(container.textContent).not.toMatch(

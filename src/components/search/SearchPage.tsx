@@ -20,6 +20,7 @@ import {
   fetchSalesStatistics,
 } from "@/lib/client-api";
 import { createAlert, getSaleById } from "@/lib/queries";
+import { trackProductEvent } from "@/lib/product-events";
 import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
@@ -669,9 +670,11 @@ export function SearchPage({
       const saved = watchedZoneResponse
         ? "Zone surveillée et alerte créées"
         : "Recherche enregistrée";
+      let emailConsent = emailRecapEnabled;
       if (options?.emailRecap && !emailRecapEnabled) {
         // Le consentement est explicite (case non pré-cochée) et horodaté côté serveur.
         if (await enableAlertEmailRecap(queryClient, user.id)) {
+          emailConsent = true;
           toast.success(`${saved}. Email récapitulatif activé.`);
         } else {
           toast.error(
@@ -681,6 +684,7 @@ export function SearchPage({
       } else {
         toast.success(saved);
       }
+      trackProductEvent("alert_created", { email_consent: emailConsent });
     } catch (saveError) {
       toast.error(userMessage(saveError));
     } finally {
@@ -942,7 +946,7 @@ export function SearchPage({
               </button>
               <span className="text-sm font-bold text-ink-strong">
                 {mappablePointsTotal > mapSales.length
-                  ? `${mapSales.length.toLocaleString("fr-FR")} biens affichés sur ${mappablePointsTotal.toLocaleString("fr-FR")}, zoomez pour affiner`
+                  ? `${mapSales.length.toLocaleString("fr-FR")} biens affichés sur ${mappablePointsTotal.toLocaleString("fr-FR")} : précisez vos filtres ou activez « Chercher en déplaçant la carte »`
                   : `${mapSales.length.toLocaleString("fr-FR")} biens sur la carte`}
               </span>
             </div>

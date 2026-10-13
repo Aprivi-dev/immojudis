@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getSharedPropertyReport } from "@/lib/property-reports";
 import { ReportSourceChangedError } from "@/lib/property-report/source-integrity";
-import { formatDate, formatPrice, formatPricePerM2 } from "@/lib/format";
+import { formatDate, formatPrice, formatPricePerM2, formatStartingPrice } from "@/lib/format";
 import { reportSaleSchedule } from "@/lib/report-sale-schedule";
 import { describeReportSimulation, isCurrentReportSimulation } from "@/lib/report-simulation";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
@@ -147,7 +147,10 @@ export default async function SharedReportPage({ params }: PageParams) {
             label="Préparation audience"
             value={stringOrNumberValue(audienceReadinessAnalysis.summary, "À compléter")}
           />
-          <SharedMetric label="Mise à prix" value={formatPrice(numberValue(sale.startingPrice))} />
+          <SharedMetric
+            label="Mise à prix"
+            value={formatStartingPrice(numberValue(sale.startingPrice))}
+          />
           <SharedMetric
             label="Occupation"
             value={stringOrNumberValue(
@@ -1165,7 +1168,7 @@ function normalizeActiveComparableItems(value: unknown): string[] {
         title,
         city,
         saleDate ? formatDate(saleDate) : null,
-        startingPrice != null ? formatPrice(startingPrice) : null,
+        startingPrice != null ? formatStartingPrice(startingPrice) : null,
         pricePerM2 != null ? formatPricePerM2(pricePerM2) : null,
         surface != null ? `${Math.round(surface)} m²` : null,
       ]

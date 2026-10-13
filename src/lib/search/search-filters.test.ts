@@ -3,6 +3,7 @@ import {
   applyClientSearchFilters,
   dataFiltersFromSearch,
   countActiveSearchFilters,
+  dataSortFromSearch,
   hasClientOnlyFilters,
   saleIsInViewport,
   sortClientSearchResults,
@@ -77,8 +78,10 @@ describe("sales search filters", () => {
     ).toEqual(["b", "a"]);
   });
 
-  it("garde le balayage pour le tri par chambres, faute de tri serveur", () => {
-    expect(hasClientOnlyFilters({ sort: "beds_desc" })).toBe(true);
+  it("trie par chambres côté serveur, sans balayage du catalogue", () => {
+    expect(dataSortFromSearch("beds_desc")).toBe("beds_desc");
+    expect(hasClientOnlyFilters({ sort: "beds_desc" })).toBe(false);
+    expect(hasClientOnlyFilters({ sort: "beds_desc", dpeClasses: ["A"] })).toBe(true);
   });
 
   it("filters visible sales when the map viewport changes", () => {

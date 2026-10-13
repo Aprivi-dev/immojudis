@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect } from "react";
 import dynamic from "next/dynamic";
 import { SaleDetailSkeleton } from "@/components/SaleDetailFallbacks";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
+import { trackProductEvent } from "@/lib/product-events";
 
 const AnalysisSaleDetailView = dynamic(
   () =>
@@ -20,6 +22,9 @@ export function ExampleSalePage({
 }: {
   example: { sale: AuctionSale; marketEstimate: MarketEstimate };
 }) {
+  useEffect(() => {
+    trackProductEvent("sample_report_viewed");
+  }, []);
   return (
     <>
       <div

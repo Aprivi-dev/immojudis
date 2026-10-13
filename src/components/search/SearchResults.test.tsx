@@ -230,6 +230,34 @@ describe("useful public discovery", () => {
     expect(screen.getByText(/Fiche complète avec un compte gratuit/)).toBeTruthy();
   });
 
+  it("shows a starting price of 0 as not communicated on the listing card", () => {
+    const sale = {
+      id: "sale-zero",
+      city: "Lille",
+      department: "59",
+      property_type: "apartment",
+      starting_price_eur: 0,
+      sale_date: "2026-10-01T09:00:00Z",
+      sale_venue_type: "tribunal",
+      media: [],
+    } as unknown as AuctionSale;
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ListingCard
+          sale={sale}
+          returnTo="/sales"
+          locked
+          analysisLocked={false}
+          active={false}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    expect(container.textContent).toContain("Prix non communiqué");
+    expect(container.textContent).not.toMatch(/0\s?€/);
+  });
+
   it("offers a working example instead of fabricated statistics", () => {
     const { container } = render(
       <SearchStatisticsPanel
