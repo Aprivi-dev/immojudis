@@ -49,6 +49,43 @@ class GeocodeResult:
     provider: str = "ban_geoplateforme"
 
 
+def restore_accepted_geocode(sale: AuctionSale) -> bool:
+    """Copy an accepted BAN result stored in ``raw_payload['geocode']`` into the empty coordinates.
+
+    A commune-level result (``type`` municipality) used to stay in the evidence while
+    ``latitude``/``longitude`` were empty. The point keeps its precision in ``geo_precision``
+    (``municipality`` for a commune centroid) so the app can show it as approximate.
+    """
+    if sale.latitude is not None and sale.longitude is not None:
+        return False
+    evidence = sale.raw_payload.get("geocode") if isinstance(sale.raw_payload, dict) else None
+    if not isinstance(evidence, dict):
+        return False
+    if evidence.get("provider") != "ban_geoplateforme" or evidence.get("accepted") is not True:
+        return False
+    try:
+        latitude = Decimal(str(evidence["latitude"]))
+        longitude = Decimal(str(evidence["longitude"]))
+    except (KeyError, ArithmeticError, ValueError):
+        return False
+    if GEO_PRECISION_BY_TYPE.get(str(evidence.get("type") or "")) != "municipality" and sale.raw_payload.get(
+        "invalid_address_evidence"
+    ):
+        # Les coordonnées d'une adresse écartée (prix, bloc de cabinet) ont été retirées exprès.
+        return False
+    department = sale.department or extract_department(sale.postal_code)
+    if not (Decimal(-90) <= latitude <= Decimal(90) and Decimal(-180) <= longitude <= Decimal(180)):
+        return False
+    if department and not _coordinates_in_department(latitude, longitude, department):
+        return False
+    sale.latitude = latitude
+    sale.longitude = longitude
+    precision = GEO_PRECISION_BY_TYPE.get(str(evidence.get("type") or ""))
+    if precision:
+        sale.raw_payload["geo_precision"] = precision
+    return True
+
+
 def geocode_sale(sale: AuctionSale) -> AuctionSale:
     """Fill latitude/longitude: cadastral parcels first, then the BAN geocoding service."""
     settings = load_settings()
@@ -56,6 +93,7 @@ def geocode_sale(sale: AuctionSale) -> AuctionSale:
     # commune centroid; a stored resolution is reused without a request.
     if resolve_sale_cadastre(sale, settings=settings, network=bool(settings["geocode_enabled"])):
         return sale
+    restore_accepted_geocode(sale)
     if coordinates_are_verified(sale) and _coordinates_match_department(sale):
         return sale
     if sale.latitude is not None and sale.longitude is not None:
@@ -126,7 +164,8 @@ def geocode_sale(sale: AuctionSale) -> AuctionSale:
 def locate_sale_by_cadastre(sale: AuctionSale) -> AuctionSale:
     """Parcel location only (runs without BAN geocoding, e.g. in autonomous runs)."""
     settings = load_settings()
-    resolve_sale_cadastre(sale, settings=settings, network=bool(settings["geocode_enabled"]))
+    if not resolve_sale_cadastre(sale, settings=settings, network=bool(settings["geocode_enabled"])):
+        restore_accepted_geocode(sale)
     return sale
 
 

@@ -9,8 +9,14 @@ from src.court_competence import (
     resolve_court_by_label,
     verified_sale_insee_code,
 )
+from src.department_inference import (
+    DEPARTMENT_FROM_TRIBUNAL_FLAG,
+    department_from_court_evidence,
+    department_from_geocode_evidence,
+)
 from src.models import AuctionSale
-from src.normalize import clean_text
+from src.normalize import clean_text, extract_department
+from src.tribunal_labels import court_name_candidates, tribunal_label_is_polluted, trim_court_city
 
 CITY_TO_TRIBUNAL = {
     "bordeaux": "TJ Bordeaux",
@@ -117,6 +123,42 @@ def infer_tribunal(sale: AuctionSale) -> str | None:
 
 
 def fill_tribunal(sale: AuctionSale) -> AuctionSale:
+    _fill_tribunal_fields(sale)
+    infer_missing_department(sale)
+    return sale
+
+
+_TRIBUNAL_DEPARTMENT = {
+    tribunal: department for department, tribunals in DEPARTMENT_TRIBUNALS.items() for tribunal in tribunals
+}
+
+
+def infer_missing_department(sale: AuctionSale) -> AuctionSale:
+    """Département déduit du code postal, du code INSEE géocodé, puis du tribunal (jamais écrasé)."""
+    if sale.department:
+        return sale
+    payload = sale.raw_payload if isinstance(sale.raw_payload, dict) else {}
+    candidates = (
+        ("geocode_citycode", department_from_geocode_evidence(payload)),
+        ("postal_code", extract_department(sale.postal_code)),
+        (
+            "tribunal",
+            department_from_court_evidence(payload, sale.tribunal_code)
+            or _TRIBUNAL_DEPARTMENT.get(sale.tribunal or ""),
+        ),
+    )
+    for source, department in candidates:
+        if not department:
+            continue
+        sale.department = department
+        payload["department_inference"] = {"source": source, "value": department}
+        if source == "tribunal":
+            _add_quality_flag(sale, DEPARTMENT_FROM_TRIBUNAL_FLAG)
+        return sale
+    return sale
+
+
+def _fill_tribunal_fields(sale: AuctionSale) -> AuctionSale:
     if _is_non_judicial_sale_context(sale) and not _extract_explicit_tribunal(sale.raw_text):
         sale.tribunal = None
         sale.tribunal_code = None
@@ -151,12 +193,25 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
     # Nanterre") is resolved against the whole national Justice registry. It
     # stays flagged as unverified: only the INSEE competence above is verified.
     national = _resolve_label_court(sale.tribunal) or _resolve_label_court(canonical)
+    source_label = str(clean_text(sale.tribunal) or canonical)
+    raw_label = None
+    if national is None:
+        # « TJ Tribunal Judiciaire de NANCY le » : rattaché au tribunal que le libellé nomme.
+        national, cleaned_label = _resolve_polluted_label_court(sale.tribunal)
+        if national is not None:
+            raw_label, source_label = source_label, cleaned_label
     if national is not None:
-        _apply_label_court(sale, national, str(clean_text(sale.tribunal) or canonical))
+        _apply_label_court(sale, national, source_label)
+        if raw_label:
+            sale.raw_payload[LABEL_ASSIGNMENT_KEY]["raw_source_label"] = raw_label
         _remove_quality_flag(sale, "tribunal_inconsistent")
         validate_tribunal(sale)
         _add_quality_flag(sale, "tribunal_competence_unverified")
         return sale
+    if canonical and tribunal_label_is_polluted(canonical):
+        # Du texte d'annonce qui ne se rattache à aucun tribunal n'est pas un tribunal : valeur absente.
+        sale.raw_payload["tribunal_label_rejected"] = clean_text(sale.tribunal)
+        canonical = None
     if canonical:
         sale.tribunal = canonical
         sale.tribunal_code = TRIBUNAL_CODES.get(canonical)
@@ -187,6 +242,17 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
 
 def _resolve_label_court(label: str | None) -> OfficialCourt | None:
     return resolve_court_by_label(label) if clean_text(label) else None
+
+
+def _resolve_polluted_label_court(label: str | None) -> tuple[OfficialCourt | None, str | None]:
+    """Tribunal nommé au début d'un libellé suivi de texte d'annonce, avec le libellé nettoyé."""
+    if not clean_text(label):
+        return None, None
+    for candidate in court_name_candidates(label):
+        court = _resolve_label_court(f"TJ {candidate}")
+        if court is not None:
+            return court, f"TJ {candidate}"
+    return None, None
 
 
 def _apply_label_court(sale: AuctionSale, court: OfficialCourt, source_label: str) -> None:
@@ -235,12 +301,20 @@ def _extract_explicit_tribunal(raw_text: str | None) -> str | None:
     match = re.search(r"\bTribunal\s+Judiciaire\s+de\s+([A-Za-zÀ-ÿ' -]+)", text, re.I)
     if match:
         city = clean_text(match.group(1).split("(")[0])
-        return f"TJ {city}" if city else None
+        return f"TJ {_trim_explicit_court_city(city)}" if city else None
     match = re.search(r"\bTJ\s+([A-Za-zÀ-ÿ' -]+)", text, re.I)
     if match:
         city = clean_text(match.group(1).split("(")[0])
-        return f"TJ {city}" if city else None
+        return f"TJ {_trim_explicit_court_city(city)}" if city else None
     return None
+
+
+def _trim_explicit_court_city(city: str) -> str:
+    """Nom de tribunal lu dans un texte, sans la suite de phrase (« NANCY le 15 octobre » -> « NANCY »)."""
+    court, _ = _resolve_polluted_label_court(city)
+    if court is not None and court.court_name.startswith("TJ "):
+        return court.court_name[3:]
+    return trim_court_city(city)
 
 
 def _is_non_judicial_sale_context(sale: AuctionSale) -> bool:
