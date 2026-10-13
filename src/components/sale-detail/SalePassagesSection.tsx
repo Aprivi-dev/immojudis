@@ -44,15 +44,18 @@ export function SalePassagesSection({
   startingPrice,
   enabled,
   access = "discovery",
+  userKey = null,
 }: {
   saleId: string;
   startingPrice: number | null;
   enabled: boolean;
   /** The view the account reads: its key keeps the free teaser out of an unlocked sale's cache. */
   access?: SaleAccessMode;
+  /** The signed-in account, so that a cached reading never crosses accounts. */
+  userKey?: string | null;
 }) {
   const query = useQuery<SalePassagesResponse>({
-    queryKey: queryKeys.salePassages(saleId, access),
+    queryKey: queryKeys.salePassages(saleId, access, userKey),
     queryFn: () => fetchSalePassages(saleId),
     enabled,
     staleTime: 10 * 60_000,

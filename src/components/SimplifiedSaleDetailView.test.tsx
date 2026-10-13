@@ -672,7 +672,7 @@ describe("integrated listing", () => {
     selectTab("Estimation");
     expect(
       screen.getByRole("heading", {
-        name: "Votre enchère plafond, les comparables et les travaux avec l’offre Analyse",
+        name: "Les comparables et les travaux avec l’offre Analyse ; l’enchère plafond aussi en débloquant cette vente",
       }),
     ).toBeTruthy();
     expect((await screen.findByRole("status")).textContent).toContain(
@@ -685,7 +685,9 @@ describe("integrated listing", () => {
     expect(screen.queryByText("Simulateur d’enchère plafond chargé")).toBeNull();
     selectTab("Statistiques");
     expect(
-      screen.getByRole("heading", { name: "Les statistiques du tribunal avec l’offre Analyse" }),
+      screen.getByRole("heading", {
+        name: "Les statistiques du tribunal avec l’offre Analyse ou en débloquant cette vente",
+      }),
     ).toBeTruthy();
     expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
     expect(mocks.fetchMarket).not.toHaveBeenCalled();

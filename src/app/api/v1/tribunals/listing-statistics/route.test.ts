@@ -114,6 +114,27 @@ describe("GET /api/v1/tribunals/listing-statistics", () => {
     expect(mocks.getStatistics).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "?saleId=11111111-1111-4111-8111-111111111111&saleId=22222222-2222-4222-8222-222222222222",
+    "?saleId=22222222-2222-4222-8222-222222222222&saleId=11111111-1111-4111-8111-111111111111",
+    "?courtCode=justice_tj_1_112&courtCode=justice_tj_1_113",
+    "?saleId=11111111-1111-4111-8111-111111111111&historyMonths=3&historyMonths=36",
+  ])("refuse un paramètre répété (%s) avant toute habilitation ou lecture", async (query) => {
+    const response = await request(query);
+
+    expect(response.status).toBe(400);
+    expect(mocks.assertEntitlement).not.toHaveBeenCalled();
+    expect(mocks.getStatistics).not.toHaveBeenCalled();
+  });
+
+  it("lit l’habilitation et les données sur la même valeur de saleId", async () => {
+    await request("?saleId=11111111-1111-4111-8111-111111111111");
+
+    const entitled = mocks.assertEntitlement.mock.calls[0][3];
+    expect(entitled).toEqual({ saleId: "11111111-1111-4111-8111-111111111111" });
+    expect(mocks.getStatistics.mock.calls[0][0].saleId).toBe(entitled.saleId);
+  });
+
   it("préserve les fenêtres historiques et la résolution par annonce", async () => {
     const response = await request("?saleId=11111111-1111-4111-8111-111111111111&historyMonths=36");
 

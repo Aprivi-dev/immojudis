@@ -557,12 +557,13 @@ if (!/export function redactSaleTexts/.test(personalDataFilter)) {
 
 // « 3 déblocages par mois » (Découverte): an account unlocks one online sale at a time, the quota is
 // enforced in the database, and the unlock opens that sale's rows only.
-const [saleUnlockMigration, documentReadingSource] = await Promise.all([
+const [saleUnlockMigration, documentReadingServer, documentReadingRedaction] = await Promise.all([
   readFile(
     new URL("../supabase/migrations/20261023100000_discovery_sale_unlocks.sql", import.meta.url),
     "utf8",
   ),
-  readFile(new URL("../src/lib/document-reading.ts", import.meta.url), "utf8"),
+  readFile(new URL("../src/lib/document-reading.server.ts", import.meta.url), "utf8"),
+  readFile(new URL("../src/lib/document-reading-redaction.ts", import.meta.url), "utf8"),
 ]);
 if (
   !/alter\s+table\s+public\.user_sale_unlocks\s+enable\s+row\s+level\s+security/i.test(
@@ -608,10 +609,11 @@ if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
   failures.push("The sale unlock migration contains a permissive policy");
 }
 if (
+  !/redactReadingTexts\(\s*mapDocumentReading\(/.test(documentReadingServer) ||
   !/import\s*\{\s*redactPersonalText\s*\}\s*from\s*"@\/lib\/personal-data-filter"/.test(
-    documentReadingSource,
+    documentReadingRedaction,
   ) ||
-  (documentReadingSource.match(/personText\(point\./g) ?? []).length !== 3
+  (documentReadingRedaction.match(/redactPersonalText\(point\./g) ?? []).length !== 3
 ) {
   failures.push("document reading quotes reach the page without the personal-data filter");
 }

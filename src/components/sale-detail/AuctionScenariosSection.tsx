@@ -39,14 +39,17 @@ export function AuctionScenariosSection({
   saleId,
   enabled,
   access = "analysis",
+  userKey = null,
 }: {
   saleId: string;
   enabled: boolean;
   /** The view the account reads (Analyse, or a sale unlocked with « 3 déblocages par mois »). */
   access?: SaleAccessMode;
+  /** The signed-in account, so that a cached reading never crosses accounts. */
+  userKey?: string | null;
 }) {
   const query = useQuery<AuctionScenariosResponse>({
-    queryKey: queryKeys.auctionScenarios(saleId, access),
+    queryKey: queryKeys.auctionScenarios(saleId, access, userKey),
     queryFn: () => fetchAuctionScenarios(saleId),
     enabled,
     staleTime: 30 * 60_000,

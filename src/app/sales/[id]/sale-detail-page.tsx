@@ -96,14 +96,19 @@ export function SaleDetailPage({
     queryFn: () => fetchSaleUnlockStatus(id),
     enabled: unlockEnabled,
     staleTime: 60_000,
-    retry: false,
+    // One more try before the free view is shown with a notice: a transient failure must not look
+    // like a lost unlock.
+    retry: 1,
+    retryDelay: 800,
   });
   const unlockReady = !unlockEnabled || unlockQuery.isSuccess || unlockQuery.isError;
   const unlocked = unlockEnabled && unlockQuery.data?.unlocked === true;
   const accessMode: SaleAccessMode = !discovery ? "analysis" : unlocked ? "unlocked" : "discovery";
   const accessReady = !session || (Boolean(entitlementsData) && unlockReady);
   const queryClient = useQueryClient();
+  const [justUnlocked, setJustUnlocked] = useState(false);
   const handleSaleUnlocked = (result: SaleUnlockResult) => {
+    setJustUnlocked(true);
     queryClient.setQueryData(queryKeys.saleUnlock(id, sessionKey), result);
     void queryClient.invalidateQueries({ queryKey: ["sale-detail", id] });
   };
@@ -201,6 +206,7 @@ export function SaleDetailPage({
         preview={serverPreview}
         returnTo={returnTo}
         requestedHash={requestedHash}
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       />
     );
   }
@@ -215,6 +221,7 @@ export function SaleDetailPage({
         preview={preview}
         returnTo={returnTo}
         requestedHash={requestedHash}
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       />
     );
   }
@@ -249,17 +256,40 @@ export function SaleDetailPage({
         returnTo={returnTo}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
         unlockStatus={unlockQuery.data ?? null}
+        justUnlocked={justUnlocked}
       />
     );
   }
   return accessMode === "discovery" ? (
-    <DiscoverySaleDetailView
-      sale={sale}
-      returnTo={returnTo}
-      adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
-      unlockStatus={unlockQuery.data ?? null}
-      onSaleUnlocked={handleSaleUnlocked}
-    />
+    <>
+      {unlockEnabled && unlockQuery.isError ? (
+        <div
+          role="alert"
+          className="mx-auto mt-4 flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          <p className="font-medium">État de vos déblocages indisponible</p>
+          <p>
+            Si vous avez déjà débloqué cette vente, elle apparaîtra de nouveau dès que l’état sera
+            relu.
+          </p>
+          <button
+            type="button"
+            className="min-h-10 rounded-md border border-amber-700/40 bg-white px-3 font-semibold text-amber-900"
+            onClick={() => void unlockQuery.refetch()}
+            disabled={unlockQuery.isFetching}
+          >
+            Réessayer
+          </button>
+        </div>
+      ) : null}
+      <DiscoverySaleDetailView
+        sale={sale}
+        returnTo={returnTo}
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        unlockStatus={unlockQuery.data ?? null}
+        onSaleUnlocked={handleSaleUnlocked}
+      />
+    </>
   ) : (
     <AnalysisSaleDetailView
       sale={sale}

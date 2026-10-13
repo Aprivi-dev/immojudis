@@ -1,3 +1,10 @@
+/**
+ * Date d'entrée en vigueur des versions CGV 2026-10-13.3 et confidentialité 2026-10-13.2
+ * (« 3 déblocages par mois »). À REMPLACER par la date réelle de mise en ligne, en toutes lettres,
+ * au moment de la fusion. Elle n'entre pas dans l'empreinte des textes.
+ */
+const UNLOCKS_VERSIONS_EFFECTIVE_DATE = "13 octobre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-07-29.1",
@@ -7,14 +14,14 @@ export const LEGAL_DOCUMENTS = {
   },
   terms: {
     version: "2026-10-13.3",
-    sha256: "515b259e171b318216c185ae565a0e6c6eb3c1d75eac9b779573b9b628b0a3b5",
-    effectiveDate: "13 octobre 2026",
+    sha256: "2d2b8879b9b5b1a171f915284656f30b91dd925374dae41a8ffd087f84ceacc6",
+    effectiveDate: UNLOCKS_VERSIONS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },
   privacy: {
     version: "2026-10-13.2",
-    sha256: "c9284668c693c6ed2401c91a72df36a5f082fa4018a5bdcd13c76abdb568ef2d",
-    effectiveDate: "13 octobre 2026",
+    sha256: "578d9e8f872b214a29b3ecb01045b01aa7f140c1e5676ebd44283547df7ee144",
+    effectiveDate: UNLOCKS_VERSIONS_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;

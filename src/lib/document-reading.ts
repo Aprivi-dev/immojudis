@@ -1,14 +1,7 @@
-import { redactPersonalText } from "@/lib/personal-data-filter";
-
 /**
  * « Lecture des pièces » : points a buyer must know, read in the case documents
  * by the pipeline, each with a quote verified word for word in the cited page.
  * Shared by the API route (server) and the sale page (browser).
- *
- * The quotes are copied from the case documents, which name occupants, tenants and debtors. The
- * texts of a point go through the personal-data filter (the one the collection and the shared
- * reports use) before they leave the server: a private individual is shown by role, as the privacy
- * policy states.
  */
 
 export type DocumentReadingTheme =
@@ -82,11 +75,6 @@ function text(value: unknown, max: number): string | null {
   return trimmed ? trimmed.slice(0, max) : null;
 }
 
-/** A text copied from a case document: private individuals are replaced by their role. */
-function personText(value: unknown, max: number): string | null {
-  return text(typeof value === "string" ? redactPersonalText(value) : value, max);
-}
-
 /** Only http(s) links are rendered: a document URL comes from a third-party site. */
 function safeUrl(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -116,8 +104,8 @@ export function mapDocumentReading(
   for (const item of Array.isArray(raw.points) ? raw.points : []) {
     if (!item || typeof item !== "object") continue;
     const point = item as Record<string, unknown>;
-    const title = personText(point.title, 120);
-    const quote = personText(point.quote, 400);
+    const title = text(point.title, 120);
+    const quote = text(point.quote, 400);
     const page = Number(point.page);
     if (!title || !quote || !Number.isInteger(page) || page < 1) continue;
     points.push({
@@ -126,7 +114,7 @@ export function mapDocumentReading(
         ? point.importance
         : "info") as DocumentReadingImportance,
       title,
-      explanation: personText(point.explanation, 400),
+      explanation: text(point.explanation, 400),
       quote,
       page,
       document: documents.get(Number(point.document_index)) ?? null,

@@ -43,7 +43,7 @@ const processingRows = [
     basis:
       "Exécution du contrat : appliquer l’avantage et sa limite prévus par les conditions générales",
     retention:
-      "Tant que la vente débloquée est consultable, puis 24 mois au plus ; suppression avec le compte. Si la vente est supprimée avant la fin du mois, la date seule est gardée jusqu’à la fin du mois pour tenir le compteur",
+      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, jusqu’à la fin du mois civil en cours (effacement lors de la purge hebdomadaire qui suit), pour que le compteur du mois ne soit pas remis à zéro.",
   },
   {
     purpose: "Alertes email",

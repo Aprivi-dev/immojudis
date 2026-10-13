@@ -150,6 +150,8 @@ type SaleDetailProps = {
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
   /** Where the account stands this month; drives the « Débloquer cette vente » panel. */
   unlockStatus?: SaleUnlockStatus | null;
+  /** The sale was unlocked on this page a moment ago: the result takes the focus. */
+  justUnlocked?: boolean;
   onSaleUnlocked?: (result: SaleUnlockResult) => void;
 };
 
@@ -206,6 +208,7 @@ export function UnlockedSaleDetailView({
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
   unlockStatus = null,
+  justUnlocked = false,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
@@ -215,6 +218,7 @@ export function UnlockedSaleDetailView({
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
+      justUnlocked={justUnlocked}
       access="unlocked"
     />
   );
@@ -234,6 +238,7 @@ function SaleDetailWorkspace({
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
   unlockStatus = null,
+  justUnlocked = false,
   onSaleUnlocked,
   access,
 }: SaleDetailProps & { access: SaleDetailAccess }) {
@@ -322,7 +327,7 @@ function SaleDetailWorkspace({
   // The market estimate feeds the bid ceiling (judicial sales) and, for Analyse, the market blocks.
   const marketAccess = access === "analysis" || (access === "unlocked" && isTribunalSale);
   const marketQuery = useQuery({
-    queryKey: queryKeys.precomputedMarketEstimate(sale.id),
+    queryKey: queryKeys.precomputedMarketEstimate(sale.id, user?.id),
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
     enabled:
       marketAccess &&
@@ -552,6 +557,7 @@ function SaleDetailWorkspace({
             status={unlockStatus}
             unlocked={access === "unlocked"}
             opens={{ ceiling: isTribunalSale, statistics: statisticsAvailable }}
+            announce={justUnlocked}
             onUnlocked={(result) => onSaleUnlocked?.(result)}
           />
         ) : null}
@@ -590,12 +596,14 @@ function SaleDetailWorkspace({
                 saleId={sale.id}
                 enabled={!publicDemo && !authLoading && Boolean(user)}
                 access={access}
+                userKey={user?.id}
               />
               <SalePassagesSection
                 saleId={sale.id}
                 startingPrice={displaySale.starting_price_eur ?? null}
                 enabled={!publicDemo && !authLoading && Boolean(user)}
                 access={access}
+                userKey={user?.id}
               />
               {access === "analysis" ? (
                 <RisksAndDocuments sale={displaySale} />
@@ -781,7 +789,12 @@ function SaleDetailWorkspace({
           {activeTab === "statistiques" && statisticsAvailable ? (
             fullData ? (
               <>
-                <AuctionScenariosSection saleId={sale.id} enabled={!publicDemo} access={access} />
+                <AuctionScenariosSection
+                  saleId={sale.id}
+                  enabled={!publicDemo}
+                  access={access}
+                  userKey={user?.id}
+                />
                 <ListingStatistics
                   sale={sale}
                   premium={fullData && adjudicationStatisticsEnabled}
@@ -791,7 +804,11 @@ function SaleDetailWorkspace({
               </>
             ) : (
               <PremiumFeaturePreview
-                title="Les statistiques du tribunal avec l’offre Analyse"
+                title={
+                  user && !publicDemo
+                    ? "Les statistiques du tribunal avec l’offre Analyse ou en débloquant cette vente"
+                    : "Les statistiques du tribunal avec l’offre Analyse"
+                }
                 description="Consultez les tendances, les adjudications et les indicateurs disponibles pour préparer votre enchère."
                 labels={["Scénarios d’enchères", "Prix d’adjudication", "Activité du tribunal"]}
               />

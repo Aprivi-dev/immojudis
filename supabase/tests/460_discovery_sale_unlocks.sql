@@ -1,7 +1,7 @@
 -- "3 déblocages par mois": a Découverte account unlocks one sale at a time, three per Paris month.
 begin;
 
-select plan(52);
+select plan(59);
 
 -- Fixtures -------------------------------------------------------------------------------------
 insert into auth.users (
@@ -322,6 +322,76 @@ select is(
   'a purged sale does not restore a credit'
 );
 reset role;
+
+-- A duplicate merge keeps the unlock: the secondary row is deleted, the canonical row lists its url -----
+insert into public.auction_sales (id, source_name, source_url, title, status, sale_date, source_urls)
+values
+  ('c4600000-1000-4000-8000-000000000011', 'sale-unlock-test', 'https://example.test/sale-unlock/merge-secondary',
+   'Protected unlock title merge secondary', 'upcoming', '2099-01-01 12:00:00Z', '[]'::jsonb),
+  ('c4600000-1000-4000-8000-000000000012', 'sale-unlock-test', 'https://example.test/sale-unlock/merge-canonical',
+   'Protected unlock title merge canonical', 'upcoming', '2099-01-01 12:00:00Z',
+   '["https://example.test/sale-unlock/merge-canonical", "https://example.test/sale-unlock/merge-secondary"]'::jsonb);
+set local "request.jwt.claim.sub" = 'c4600000-0000-4000-8000-000000000002';
+set local role authenticated;
+select lives_ok(
+  $$select public.unlock_sale('c4600000-1000-4000-8000-000000000011')$$,
+  'an account unlocks the secondary listing of a duplicated sale'
+);
+reset role;
+do $$ begin perform public.bridge_auction_sales_to_outcome_graph(); end $$;
+delete from public.auction_sales where id = 'c4600000-1000-4000-8000-000000000011';
+select is(
+  (select sale_id from public.user_sale_unlocks
+    where user_id = 'c4600000-0000-4000-8000-000000000002'),
+  'c4600000-1000-4000-8000-000000000012'::uuid,
+  'the merge moves the unlock to the canonical sale'
+);
+set local role authenticated;
+select is(
+  (select count(*) from public.auction_sales where id = 'c4600000-1000-4000-8000-000000000012'),
+  1::bigint,
+  'the merged sale stays readable for the account that unlocked it'
+);
+select is(
+  (select (public.get_sale_unlock_status() ->> 'used')::integer),
+  1,
+  'the merge neither adds nor removes a credit'
+);
+reset role;
+
+-- An account that unlocked both listings keeps both credits counted, with one access left.
+insert into public.auction_sales (id, source_name, source_url, title, status, sale_date, source_urls)
+values
+  ('c4600000-1000-4000-8000-000000000013', 'sale-unlock-test', 'https://example.test/sale-unlock/merge-secondary-2',
+   'Protected unlock title merge secondary 2', 'upcoming', '2099-01-01 12:00:00Z', '[]'::jsonb),
+  ('c4600000-1000-4000-8000-000000000014', 'sale-unlock-test', 'https://example.test/sale-unlock/merge-canonical-2',
+   'Protected unlock title merge canonical 2', 'upcoming', '2099-01-01 12:00:00Z',
+   '["https://example.test/sale-unlock/merge-secondary-2"]'::jsonb);
+insert into public.user_sale_unlocks (user_id, sale_id) values
+  ('c4600000-0000-4000-8000-000000000003', 'c4600000-1000-4000-8000-000000000013'),
+  ('c4600000-0000-4000-8000-000000000003', 'c4600000-1000-4000-8000-000000000014');
+do $$ begin perform public.bridge_auction_sales_to_outcome_graph(); end $$;
+delete from public.auction_sales where id = 'c4600000-1000-4000-8000-000000000013';
+select is(
+  (select count(*) from public.user_sale_unlocks where user_id = 'c4600000-0000-4000-8000-000000000003'),
+  2::bigint,
+  'an account that unlocked both listings keeps both credits counted'
+);
+select is(
+  (select count(*) from public.user_sale_unlocks
+    where user_id = 'c4600000-0000-4000-8000-000000000003'
+      and sale_id = 'c4600000-1000-4000-8000-000000000014'),
+  1::bigint,
+  'and still has a single unlock on the canonical sale'
+);
+
+select is(
+  (select count(*) from public.user_sale_unlocks
+    where user_id = 'c4600000-0000-4000-8000-000000000003' and sale_id is null),
+  1::bigint,
+  'the duplicate unlock is detached, never merged into one credit'
+);
+delete from public.user_sale_unlocks where user_id = 'c4600000-0000-4000-8000-000000000003';
 
 -- Paris month change, clock injected ---------------------------------------------------------------
 set local "request.jwt.claim.sub" = 'c4600000-0000-4000-8000-000000000004';

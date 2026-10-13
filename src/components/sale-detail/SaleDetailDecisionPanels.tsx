@@ -227,7 +227,11 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
         </p>
       ) : null}
       <PremiumFeaturePreview
-        title="Votre enchère plafond, les comparables et les travaux avec l’offre Analyse"
+        title={
+          getSaleProcedure(sale).venueType === "tribunal"
+            ? "Les comparables et les travaux avec l’offre Analyse ; l’enchère plafond aussi en débloquant cette vente"
+            : "Les comparables et les travaux avec l’offre Analyse"
+        }
         description="Le calcul complet de la mise à ne pas dépasser : valeur du bien, marge, travaux, libération, portage et tous les frais de la vente, avec les ventes comparables du secteur."
         labels={["Enchère plafond", "Ventes comparables", "Travaux et frais"]}
       />
