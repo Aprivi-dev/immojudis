@@ -17,6 +17,7 @@ import {
   SavedReportRow,
 } from "../property-reports";
 import { asRecord, numberValue, stringOrNumberValue } from "@/lib/guards";
+import { redactSaleTexts } from "@/lib/personal-data-filter";
 export function pdfWatermarkForPlan(plan: PlanEntitlements): string | null {
   return plan.features.pdfExport === "limited" ? "VERSION DECOUVERTE - EXTRAIT LIMITE" : null;
 }
@@ -26,7 +27,8 @@ export function attachPlan(report: SavedReportRow, plan: PlanEntitlements): Save
 }
 
 export function appSaleRowToAuctionSale(row: AppSaleRow): AuctionSale {
-  return {
+  // Les rapports sont figés puis partagés par lien : aucun nom de particulier ne doit y entrer.
+  return redactSaleTexts({
     ...(row as AuctionSale),
     id: row.id ?? "",
     documents_rich: Array.isArray(row.documents_rich)
@@ -45,7 +47,7 @@ export function appSaleRowToAuctionSale(row: AppSaleRow): AuctionSale {
       row.source_blocks_by_source && typeof row.source_blocks_by_source === "object"
         ? (row.source_blocks_by_source as Record<string, Record<string, unknown>>)
         : null,
-  };
+  });
 }
 
 export function normalizeRisks(risks: AuctionSale["risks"]) {
