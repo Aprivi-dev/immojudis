@@ -22,7 +22,9 @@ export function ContactForm({
   const [state, formAction, pending] = useActionState(action, INITIAL);
   const errors: ContactFieldErrors = state.fieldErrors ?? {};
   const values = state.values ?? {};
-  const controller = publicLegalPublisher().entityName ?? "Immojudis";
+  const publisher = publicLegalPublisher();
+  const controller = publisher.entityName ?? "Immojudis";
+  const contactEmail = publisher.contactEmail;
 
   if (state.status === "sent") {
     return (
@@ -128,8 +130,9 @@ export function ContactForm({
 
       <p id="contact-privacy-notice" className="text-xs leading-relaxed text-ink-soft">
         {controller} utilise votre nom, votre email et votre message pour répondre à votre demande
-        (intérêt légitime à répondre aux messages reçus). Ils sont conservés le temps du traitement,
-        puis pendant les délais de preuve applicables. Voir la{" "}
+        (intérêt légitime à répondre aux messages reçus). Ils sont conservés 12 mois après le
+        dernier échange, puis supprimés ; en cas de litige ou de réclamation, le temps de la
+        procédure puis, en archive à accès restreint, 5 ans au plus. Voir la{" "}
         <Link href="/privacy" className="font-semibold text-gold-text underline">
           politique de confidentialité
         </Link>{" "}
@@ -137,6 +140,14 @@ export function ContactForm({
         <Link href="/mes-droits" className="font-semibold text-gold-text underline">
           Mes droits
         </Link>
+        {contactEmail ? (
+          <>
+            . Sans compte, écrivez à{" "}
+            <a href={`mailto:${contactEmail}`} className="font-semibold text-gold-text underline">
+              {contactEmail}
+            </a>
+          </>
+        ) : null}
         .
       </p>
 

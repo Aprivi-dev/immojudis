@@ -5,9 +5,17 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 
+import {
+  ANALYSIS_RECURRING_PRICE_CENTS as TS_ANALYSIS_RECURRING_PRICE_CENTS,
+  analysisOfferLabelAmountsCents,
+  DEFAULT_ANALYSIS_OFFER_LABEL,
+} from "../src/lib/analysis-offer";
 import { legalConfigurationStatus } from "../src/lib/legal-documents";
 import { resolveSiteOrigin, SITE_URL_ENV_NAMES } from "../src/lib/site-url";
 import {
+  ANALYSIS_RECURRING_PRICE_CENTS,
+  analysisOfferLabelAmountsCents as scriptAmounts,
+  analysisOfferLabelProblems,
   blockingLaunchProblems,
   explicitSiteUrl,
   EXPLICIT_SITE_URL_ENV_NAMES,
@@ -176,6 +184,67 @@ describe("garde-fous de lancement (build de production)", () => {
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/origine canonique/);
+  });
+
+  it("lit le prix facturé et le libellé comme src/lib/analysis-offer.ts", () => {
+    expect(ANALYSIS_RECURRING_PRICE_CENTS).toBe(TS_ANALYSIS_RECURRING_PRICE_CENTS);
+    for (const label of [
+      DEFAULT_ANALYSIS_OFFER_LABEL,
+      "29 € / mois",
+      "29,00 € TTC par mois",
+      "€29 / mois",
+      "39 € TTC / mois",
+      "19 € puis 29 € / mois",
+      "1 290,50 € / mois",
+      "Sur devis",
+    ]) {
+      expect(scriptAmounts(label), label).toEqual(analysisOfferLabelAmountsCents(label));
+    }
+  });
+
+  it("refuse un libellé de prix qui ne correspond pas au prix facturé, sur tout build", () => {
+    for (const label of [
+      "39 € TTC / mois",
+      "2,90 € / mois",
+      "Sur devis",
+      "19 € puis 29 € / mois",
+    ]) {
+      expect(
+        analysisOfferLabelProblems({ NEXT_PUBLIC_ANALYSIS_OFFER_LABEL: label }),
+        label,
+      ).toHaveLength(1);
+      const result = runBuildCheck({
+        ...supabase,
+        VERCEL_ENV: "preview",
+        NEXT_PUBLIC_ANALYSIS_OFFER_LABEL: label,
+      });
+      expect(result.status, label).toBe(1);
+      expect(result.stderr).toContain("NEXT_PUBLIC_ANALYSIS_OFFER_LABEL");
+    }
+    // L'échappatoire du lancement ne couvre pas un prix faux.
+    const waived = runBuildCheck({
+      ...supabase,
+      VERCEL_ENV: "production",
+      SITE_URL: "https://immojudis.com",
+      ALLOW_INCOMPLETE_LAUNCH_CONFIG: "true",
+      NEXT_PUBLIC_ANALYSIS_OFFER_LABEL: "39 € TTC / mois",
+    });
+    expect(waived.status).toBe(1);
+  });
+
+  it("accepte un libellé vide ou conforme au prix facturé", () => {
+    for (const label of [undefined, "", "  ", "29 € TTC / mois", "29 € / mois"]) {
+      expect(
+        analysisOfferLabelProblems({ NEXT_PUBLIC_ANALYSIS_OFFER_LABEL: label }),
+        label,
+      ).toEqual([]);
+    }
+    const result = runBuildCheck({
+      ...completeLaunch,
+      VERCEL_ENV: "production",
+      NEXT_PUBLIC_ANALYSIS_OFFER_LABEL: "29 € / mois",
+    });
+    expect(result.status).toBe(0);
   });
 
   it("laisse passer un build de production complet", () => {

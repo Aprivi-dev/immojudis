@@ -159,6 +159,9 @@ describe("art. 14 GDPR prerequisites (P4-12)", () => {
     expect(lines).toContain("Responsable de traitement : Immojudis SAS, 1 rue de la Paix");
     expect(lines).toContain("Origine X. Annonce : https://www.licitor.com/annonce/1");
     expect(lines).toContain("https://immojudis.com/privacy");
+    expect(lines).toContain(
+      "Votre adresse et nos échanges sont conservés au plus 24 mois sans activité.",
+    );
     expect(lines).toContain("opt-out?e=a&t=b");
   });
 });

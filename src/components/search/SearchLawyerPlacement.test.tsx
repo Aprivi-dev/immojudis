@@ -61,6 +61,7 @@ describe("SearchLawyerPlacement", () => {
             department: "33",
             matchingLabel: "Bordeaux",
             isSponsored: true,
+            placement: "active",
             source: "immojudis",
           },
         ],
@@ -70,7 +71,7 @@ describe("SearchLawyerPlacement", () => {
     renderPlacement({ geographicLabel: "Bordeaux · 33", city: "Bordeaux", department: "33" });
 
     await waitFor(() => expect(screen.getByText("Cabinet Martin")).toBeTruthy());
-    expect(screen.getByText("Sponsorisé")).toBeTruthy();
+    expect(screen.getByText("Mise en avant payante")).toBeTruthy();
     expect(screen.queryByText("Espace partenaire")).toBeNull();
     expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({
       city: "Bordeaux",
@@ -79,6 +80,30 @@ describe("SearchLawyerPlacement", () => {
     expect(
       screen.getByRole("link", { name: "Voir l’annuaire du secteur" }).getAttribute("href"),
     ).toBe("/avocats?city=Bordeaux&department=33");
+  });
+
+  it("names a placement still in trial as such, never as paid", async () => {
+    mocks.fetchLawyerDirectory.mockResolvedValue(
+      directoryResponse({
+        lawyers: [
+          {
+            id: "lawyer-2",
+            displayName: "Maître Essai",
+            firmName: "Cabinet Essai",
+            isSponsored: true,
+            placement: "trial",
+            source: "immojudis",
+          },
+        ],
+      }),
+    );
+
+    renderPlacement({ city: "Bordeaux" });
+
+    await waitFor(() => expect(screen.getByText("Cabinet Essai")).toBeTruthy());
+    expect(screen.getByText("Mise en avant en période d'essai")).toBeTruthy();
+    expect(screen.queryByText("Mise en avant payante")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/sponsoris/i);
   });
 
   it("keeps a transparent contact slot when there is no configured campaign", async () => {
@@ -98,11 +123,13 @@ describe("SearchLawyerPlacement", () => {
     renderPlacement({ geographicLabel: "Bordeaux", city: "Bordeaux" });
 
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Présentez votre cabinet" })).toBeTruthy(),
+      expect(
+        screen.getByRole("heading", { name: "Vous êtes avocat ? Présentez votre cabinet ici" }),
+      ).toBeTruthy(),
     );
-    expect(screen.getByText("Espace partenaire")).toBeTruthy();
+    expect(screen.queryByText("Espace partenaire")).toBeNull();
     expect(screen.queryByText("Maître Claire Bernard")).toBeNull();
-    expect(screen.queryByText("Sponsorisé")).toBeNull();
+    expect(screen.queryByText("Mise en avant payante")).toBeNull();
     expect(
       screen.getByText(
         "Présentez votre cabinet aux acquéreurs qui recherchent un bien dans ce secteur.",
@@ -122,6 +149,7 @@ describe("SearchLawyerPlacement", () => {
             id: "demo-1",
             displayName: "Maître Cabinet Démo",
             isSponsored: true,
+            placement: "active",
             source: "immojudis",
           },
         ],
@@ -131,7 +159,9 @@ describe("SearchLawyerPlacement", () => {
     renderPlacement({ city: "Bordeaux" });
 
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Présentez votre cabinet" })).toBeTruthy(),
+      expect(
+        screen.getByRole("heading", { name: "Vous êtes avocat ? Présentez votre cabinet ici" }),
+      ).toBeTruthy(),
     );
     expect(screen.queryByText("Maître Cabinet Démo")).toBeNull();
   });
@@ -149,7 +179,9 @@ describe("SearchLawyerPlacement", () => {
   it("does not query the directory without a commune or a single department", () => {
     renderPlacement({ geographicLabel: "Recherche libre" });
 
-    expect(screen.getByRole("heading", { name: "Présentez votre cabinet" })).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Vous êtes avocat ? Présentez votre cabinet ici" }),
+    ).toBeTruthy();
     expect(mocks.fetchLawyerDirectory).not.toHaveBeenCalled();
 
     cleanup();

@@ -310,12 +310,12 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Informations RGPD et opposition",
     description:
-      "Le pied du message est ajouté automatiquement : responsable de traitement, origine de l’adresse avec le lien de l’annonce publique (art. 14 RGPD), lien vers la politique de confidentialité et lien d’opposition en un clic.",
+      "Le pied du message est ajouté automatiquement : responsable de traitement, origine de l’adresse avec le lien de l’annonce publique (art. 14 RGPD), durée de conservation de l’adresse et des échanges, lien vers la politique de confidentialité et lien d’opposition en un clic.",
   },
   {
-    title: "Invitation à créer un compte",
+    title: "Aucune sollicitation commerciale",
     description:
-      "Une phrase courte invite le professionnel à créer un compte pour transmettre ses prochaines annonces. Elle est ajoutée par le gabarit (jamais dupliquée par le modèle) et couverte par le lien d’opposition.",
+      "Aucune sollicitation commerciale : toute invitation à créer un compte est retirée du corps du message.",
   },
 ] as const;
 

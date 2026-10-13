@@ -115,6 +115,7 @@ export {
 export {
   requestLawyerReferral,
   fetchLawyerReferrals,
+  fetchLawyerReferralPreview,
   fetchFeaturedReferencedLawyer,
   fetchLawyerDirectory,
   recordLawyerPlacementEvent,

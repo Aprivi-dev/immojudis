@@ -97,6 +97,43 @@ export function productionLaunchProblems(env) {
   return problems;
 }
 
+/** Billed price of the Analyse subscription. Keep in sync with src/lib/analysis-offer.ts (tested). */
+export const ANALYSIS_RECURRING_PRICE_CENTS = 2_900;
+export const ANALYSIS_OFFER_LABEL_ENV = "NEXT_PUBLIC_ANALYSIS_OFFER_LABEL";
+
+const LABEL_AMOUNT = String.raw`\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?`;
+const LABEL_CURRENCY = String.raw`(?:€|eur(?:os?)?)`;
+
+/** Same parsing as `analysisOfferLabelAmountsCents` in src/lib/analysis-offer.ts (tested). */
+export function analysisOfferLabelAmountsCents(label) {
+  const pattern = new RegExp(
+    `(${LABEL_AMOUNT})\\s*${LABEL_CURRENCY}(?![\\p{L}])|${LABEL_CURRENCY}\\s*(${LABEL_AMOUNT})`,
+    "giu",
+  );
+  return Array.from(String(label).matchAll(pattern), (match) => {
+    const raw = (match[1] ?? match[2] ?? "").replace(/[ \u00a0\u202f]/g, "").replace(",", ".");
+    return Math.round(Number.parseFloat(raw) * 100);
+  });
+}
+
+/**
+ * The public price label is only copy; the amount charged is the Stripe Price (2 900 cents).
+ * A label that states another amount, or none, would advertise a price that is not billed:
+ * the build is refused. An unset (blank) label falls back to the approved default label.
+ * Not covered by the launch escape hatch: it is a wrong price, not a missing value.
+ */
+export function analysisOfferLabelProblems(env) {
+  const label = String(env[ANALYSIS_OFFER_LABEL_ENV] ?? "").trim();
+  if (!label) return [];
+  const amounts = analysisOfferLabelAmountsCents(label);
+  if (amounts.length && amounts.every((amount) => amount === ANALYSIS_RECURRING_PRICE_CENTS)) {
+    return [];
+  }
+  return [
+    `${ANALYSIS_OFFER_LABEL_ENV} vaut « ${label} » mais l'abonnement Analyse est facturé ${ANALYSIS_RECURRING_PRICE_CENTS / 100} € par mois : corriger ou supprimer la variable.`,
+  ];
+}
+
 /** Host names that only exist on the machine that serves them. */
 function isLocalHostname(hostname) {
   const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
