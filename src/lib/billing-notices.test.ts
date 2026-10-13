@@ -48,6 +48,8 @@ describe("buildTrialEndingMessage", () => {
     expect(message.text).toContain("Gérer mon abonnement");
     expect(message.text).toContain("https://immojudis.com/compte");
     expect(message.text).toContain("L’équipe Immojudis");
+    expect(message.text).toContain("droit de rétractation de 14 jours");
+    expect(message.text).toContain("https://immojudis.com/mes-droits");
     expect(message.html).toContain('href="https://immojudis.com/compte"');
   });
 });

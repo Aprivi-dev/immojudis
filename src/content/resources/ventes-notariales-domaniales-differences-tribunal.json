@@ -12,7 +12,7 @@
     "L’organisateur détermine les règles : juge de l’exécution au tribunal, notaire pour une vente notariale, administration de l’État pour une vente domaniale.",
     "Un avocat est obligatoire pour porter les enchères en saisie immobilière ; pour les ventes notariales et domaniales, lisez le cahier, qui fait foi.",
     "La garantie de 10 % de la mise à prix (minimum 3 000 €) est imposée par le Code pour la saisie immobilière ; ailleurs, c’est le cahier qui la fixe.",
-    "Un délai de surenchère de dix jours existe au tribunal ; pour les autres ventes, vérifiez s’il est prévu.",
+    "La surenchère de dix jours est une règle légale en saisie immobilière et en licitation judiciaire ; dans une vente notariale volontaire ou domaniale, seul le cahier des charges peut la prévoir.",
     "« En ligne » ne désigne pas un type de vente : c’est une façon de participer."
   ],
   "sections": [
@@ -50,20 +50,20 @@
           ],
           [
             "Surenchère",
-            "Dix jours, au moins un dixième du prix principal (art. R. 322-50 et R. 322-51).",
-            "Notaires de France décrit une surenchère de 10 % dans les dix jours pour les ventes « à la bougie » (à vérifier).",
+            "Règle légale : un dixième du prix principal, dans les dix jours (art. R. 322-50 et R. 322-51 du CPCE ; en licitation, art. 1377 et 1279 du CPC).",
+            "Non prévue par la loi dans une vente volontaire : seul le cahier des charges peut la prévoir. Notaires de France décrit 10 % dans les 10 jours pour la vente « à la bougie » (à vérifier). Dans une licitation reçue par un notaire, elle se forme par requête au greffe (art. 1280 du CPC).",
             "Selon le cahier des charges (à vérifier)."
           ],
           [
             "Délai de paiement",
             "Deux mois après l’adjudication définitive (art. R. 322-56).",
             "45 jours selon Notaires de France (à vérifier dans le cahier).",
-            "Selon le cahier des charges. En cas de défaut, l’État peut prononcer la déchéance de l’acquéreur (art. R. 3211-8 du Code général de la propriété des personnes publiques)."
+            "Selon le cahier des charges. En cas de défaut, l’acquéreur peut être déchu de la vente après mise en demeure d’un mois (art. R. 3211-8 du Code général de la propriété des personnes publiques) et devoir une amende d’au moins 5 % du prix (art. L. 3211-12)."
           ],
           [
             "Condition suspensive de prêt",
             "Aucune prévue dans la procédure.",
-            "Aucune pour les ventes classiques, selon Notaires de France ; la vente interactive en ligne peut en insérer.",
+            "Aucune pour les ventes classiques, selon Notaires de France ; la vente interactive en ligne peut comporter des clauses suspensives (la source ne précise pas lesquelles).",
             "À vérifier dans le cahier des charges."
           ],
           [
@@ -103,7 +103,7 @@
       "paragraphs": [
         "L’État peut vendre les immeubles de son domaine privé lorsqu’ils ne sont plus utilisés par un service public (art. L. 3211-1 du Code général de la propriété des personnes publiques). Le principe est la publicité et la mise en concurrence, soit par adjudication publique, soit à l’amiable (art. R. 3211-2).",
         "L’adjudication publique est autorisée par le préfet après avis du directeur départemental des finances publiques, qui fixe la mise à prix (art. R. 3211-3). La cession amiable est annoncée par un avis du préfet qui précise les modalités de présentation des offres et de visite. Les offres sont jugées notamment sur les conditions financières et les garanties de bonne fin et de solvabilité (art. R. 3211-4 et R. 3211-5). Dans certains cas, par exemple si l’adjudication a été infructueuse, la cession peut se faire à l’amiable sans nouvelle mise en concurrence (art. R. 3211-7).",
-        "Le site des cessions immobilières de l’État recense les biens à vendre. Bercy indique que les ventes se font par appels d’offres, par intermédiaires ou par adjudications. Le régime de l’acquéreur (garantie, surenchère éventuelle, délais) figure dans le cahier des charges de chaque vente : demandez-le avant de vous engager."
+        "Le site des cessions immobilières de l’État recense les biens à vendre. Selon l’article R. 3211-2, la vente se fait avec publicité et mise en concurrence, soit par adjudication publique, soit à l’amiable. L’acquéreur qui ne paie pas aux échéances peut être déchu de la vente après mise en demeure d’un mois (art. R. 3211-8) et doit alors une amende égale au dixième de la somme exigible, sans pouvoir être inférieure au vingtième du prix (art. L. 3211-12) ; il n’y a pas de réitération des enchères. Le régime de l’acquéreur (garantie, surenchère éventuelle, délais) figure dans le cahier des charges de chaque vente : demandez-le avant de vous engager."
       ]
     },
     {
@@ -115,7 +115,7 @@
       ],
       "callout": {
         "title": "À retenir",
-        "text": "Ne transposez jamais les règles d’un type de vente à un autre. La garantie, le délai de paiement et la surenchère d’une vente notariale ou domaniale se lisent dans son cahier, pas dans l’article R. 322-41."
+        "text": "Ne transposez pas sans vérifier les règles d’un type de vente à un autre. La garantie, le délai de paiement et la surenchère d’une vente notariale ou domaniale se lisent dans son cahier, pas dans l’article R. 322-41. Exception : lorsqu’un notaire reçoit des enchères ordonnées par un tribunal (licitation), une partie des règles d’enchères du CPCE s’applique (art. 1278 du CPC). La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE) et en licitation judiciaire (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art. 1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10 % dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir."
       }
     },
     {
@@ -142,7 +142,7 @@
       "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939147"
     },
     {
-      "label": "Légifrance — Code de procédure civile, article 1278 (enchères reçues par un notaire) et article 1377 (licitation)",
+      "label": "Légifrance — Code de procédure civile, articles 1278 (enchères reçues par un notaire), 1279 et 1280 (surenchère) et 1377 (licitation)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026459902"
     },
     {
@@ -170,7 +170,7 @@
       "url": "https://www.immobilier.notaires.fr/fr/articles/conseils-et-actualites/achat-vente/les-ventes-aux-encheres-notariales"
     },
     {
-      "label": "Bercy — Qu’est-ce qu’une vente domaniale ?",
+      "label": "Bercy — Qu’est-ce qu’une vente domaniale ? (appels d’offres, intermédiaires, adjudications)",
       "url": "https://www.economie.gouv.fr/cedef/fiches-pratiques/quest-ce-quune-vente-domaniale"
     },
     {
@@ -180,6 +180,10 @@
     {
       "label": "Justice.fr — Saisie immobilière",
       "url": "https://www.justice.fr/fiche/saisie-immobiliere"
+    },
+    {
+      "label": "Légifrance — Code général de la propriété des personnes publiques, article L. 3211-12 (amende de l’acquéreur déchu)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000030254174"
     }
   ]
 }
