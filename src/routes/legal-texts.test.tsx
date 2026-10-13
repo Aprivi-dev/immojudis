@@ -42,9 +42,9 @@ describe("conditions générales", () => {
   it("décrivent un seul chemin de résiliation, aligné sur le bouton réel du compte", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      "Vous pouvez résilier à tout moment, gratuitement, depuis la page Mon compte, bouton « Gérer mon abonnement Analyse »",
+      "Vous pouvez résilier à tout moment, gratuitement, depuis la page Mon compte, bouton « Résilier mon abonnement », qui ouvre directement le formulaire de résiliation du portail de paiement sécurisé Stripe. La date de fin d’accès est affichée avant confirmation.",
     );
-    expect(text).toContain("Le portail indique la date de fin d’accès et confirme la résiliation");
+    expect(text).not.toContain("Gérer mon abonnement");
     expect(text).not.toContain("page Offres");
   });
 

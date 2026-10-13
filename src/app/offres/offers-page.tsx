@@ -60,9 +60,11 @@ const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }
     question: "Comment résilier ?",
     answer: () => (
       <>
-        Depuis la page « Mon compte », le bouton « Gérer mon abonnement » ouvre le portail de
-        paiement : vous y résiliez à tout moment et vous téléchargez vos factures. La résiliation
-        prend effet à la fin de la période payée.
+        Depuis la page « Mon compte », le bouton « Résilier mon abonnement » ouvre directement le
+        formulaire de résiliation du portail de paiement : vous résiliez à tout moment, la date de
+        fin d’accès est affichée avant confirmation. La résiliation prend effet à la fin de la
+        période payée. Le bouton « Gérer mon abonnement » donne accès à vos factures et à votre
+        moyen de paiement.
       </>
     ),
   },

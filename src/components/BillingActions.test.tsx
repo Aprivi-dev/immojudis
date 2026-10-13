@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   updateOfferOpeningNotification: vi.fn(),
   startAnalyseCheckout: vi.fn(),
   openBillingPortal: vi.fn(),
+  openSubscriptionCancellation: vi.fn(),
   legalPublisherConfigurationStatus: vi.fn(),
   toastError: vi.fn(),
   track: vi.fn(),
@@ -35,6 +36,7 @@ vi.mock("@/lib/client-billing", () => ({
   updateOfferOpeningNotification: mocks.updateOfferOpeningNotification,
   startAnalyseCheckout: mocks.startAnalyseCheckout,
   openBillingPortal: mocks.openBillingPortal,
+  openSubscriptionCancellation: mocks.openSubscriptionCancellation,
 }));
 
 vi.mock("@/lib/legal-documents", () => ({
@@ -73,6 +75,7 @@ beforeEach(() => {
   });
   mocks.startAnalyseCheckout.mockRejectedValue(new Error("test checkout arrêté"));
   mocks.openBillingPortal.mockRejectedValue(new Error("test portail arrêté"));
+  mocks.openSubscriptionCancellation.mockRejectedValue(new Error("test résiliation arrêtée"));
   mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: false, missing: ["publisher"] });
 });
 
@@ -97,6 +100,53 @@ describe("BillingActions", () => {
 
     await waitFor(() => expect(mocks.openBillingPortal).toHaveBeenCalledTimes(1));
     expect(mocks.startAnalyseCheckout).not.toHaveBeenCalled();
+  });
+
+  it.each(["trialing", "active", "past_due"] as const)(
+    "shows « Résilier mon abonnement » next to the portal for a %s subscriber and opens the cancellation flow",
+    async (status) => {
+      mocks.fetchAccessPlan.mockResolvedValue({
+        plan: {
+          plan: "analyse",
+          currentPeriodEnd: "2026-12-01T00:00:00.000Z",
+          billing: { status, hasStripeCustomer: true, graceEndsAt: null },
+        },
+      });
+      renderActions();
+
+      expect(
+        await screen.findByRole("button", { name: "Gérer mon abonnement Analyse" }),
+      ).toBeTruthy();
+      const cancel = await screen.findByRole("button", { name: "Résilier mon abonnement" });
+      expect((cancel as HTMLButtonElement).disabled).toBe(false);
+
+      fireEvent.click(cancel);
+      await waitFor(() => expect(mocks.openSubscriptionCancellation).toHaveBeenCalledTimes(1));
+      expect(mocks.openBillingPortal).not.toHaveBeenCalled();
+      await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
+    },
+  );
+
+  it("hides « Résilier mon abonnement » without a live Stripe subscription", async () => {
+    mocks.fetchAccessPlan.mockResolvedValue({
+      plan: { plan: "analyse", currentPeriodEnd: "2026-12-01T00:00:00.000Z" },
+    });
+    renderActions();
+    await screen.findByRole("button", { name: "Gérer mon abonnement Analyse" });
+    expect(screen.queryByRole("button", { name: "Résilier mon abonnement" })).toBeNull();
+  });
+
+  it("hides « Résilier mon abonnement » once the subscription is paused", async () => {
+    mocks.fetchAccessPlan.mockResolvedValue({
+      plan: {
+        plan: "decouverte",
+        currentPeriodEnd: "2026-12-01T00:00:00.000Z",
+        billing: { status: "paused", hasStripeCustomer: true, graceEndsAt: null },
+      },
+    });
+    renderActions();
+    await screen.findByRole("button", { name: "Gérer mon abonnement" });
+    expect(screen.queryByRole("button", { name: "Résilier mon abonnement" })).toBeNull();
   });
 
   it("shows the end of the grace period, not the start of the unpaid period, when a renewal failed", async () => {

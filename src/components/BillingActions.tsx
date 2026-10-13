@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import CreditCard from "lucide-react/dist/esm/icons/credit-card.js";
+import CircleX from "lucide-react/dist/esm/icons/circle-x.js";
 import Settings from "lucide-react/dist/esm/icons/settings.js";
 import { toast } from "sonner";
 import {
@@ -21,6 +22,7 @@ import {
   fetchAccessPlan,
   fetchOfferOpeningNotification,
   openBillingPortal,
+  openSubscriptionCancellation,
   startAnalyseCheckout,
   updateOfferOpeningNotification,
 } from "@/lib/client-billing";
@@ -47,6 +49,9 @@ import { trackProductEvent } from "@/lib/product-events";
 /** After a Stripe payment the webhook may take a moment: re-read the plan every 2 s, 30 s at most. */
 const ACTIVATION_POLL_INTERVAL_MS = 2_000;
 const ACTIVATION_POLL_WINDOW_MS = 30_000;
+
+/** Statuses for which the cancellation flow of the Stripe portal can be opened. */
+const CANCELLABLE_STATUSES: readonly string[] = ["trialing", "active", "past_due"];
 
 type PlanReadState = "loading" | "ready" | "error";
 type ActivationState = "idle" | "pending" | "active" | "timeout";
@@ -75,7 +80,7 @@ export function BillingActions({
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
   const [billing, setBilling] = useState<PlanBilling | null>(null);
   const [activation, setActivation] = useState<ActivationState>("idle");
-  const [busy, setBusy] = useState<"checkout" | "portal" | null>(null);
+  const [busy, setBusy] = useState<"checkout" | "portal" | "cancel" | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const checkoutTriggerRef = useRef<HTMLButtonElement>(null);
   const activationStartedAt = useRef<number | null>(null);
@@ -163,6 +168,13 @@ export function BillingActions({
   // A subscriber whose renewal failed has lost the plan but still needs the portal to
   // update the card: a new checkout would be refused for them.
   const managesBilling = hasAnalysis || hasLiveStripeSubscription(billing, currentPeriodEnd);
+  // The cancellation flow needs a live Stripe subscription in a status Stripe can cancel.
+  // The server checks this again against the user's own row and supplies the subscription id.
+  const canCancel =
+    managesBilling &&
+    billing?.status != null &&
+    CANCELLABLE_STATUSES.includes(billing.status) &&
+    Boolean(currentPeriodEnd);
   const checkingAccount = loading || (Boolean(userId) && planState === "loading");
   const showOpeningRequest = !managesBilling && !checkingAccount && offerReady && !offerOpen;
 
@@ -240,6 +252,23 @@ export function BillingActions({
     }
   }
 
+  async function openCancellation() {
+    if (loading || busy) return;
+    if (!user) {
+      redirectToLogin();
+      return;
+    }
+
+    setBusy("cancel");
+    try {
+      const response = await openSubscriptionCancellation();
+      window.location.assign(response.url);
+    } catch (error) {
+      toast.error(userMessage(error, "Résiliation indisponible"));
+      setBusy(null);
+    }
+  }
+
   async function changeOpeningRequest(enabled: boolean) {
     if (openingBusy) return;
     if (!user) {
@@ -313,6 +342,17 @@ export function BillingActions({
               {busy === "portal" ? "Ouverture..." : (expiryLabel ?? "Voir mes paiements")}
             </button>
           ) : null}
+          {canCancel ? (
+            <button
+              type="button"
+              onClick={openCancellation}
+              disabled={loading || Boolean(busy)}
+              className="ij-login-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <CircleX className="h-4 w-4" aria-hidden />
+              {busy === "cancel" ? "Ouverture..." : "Résilier mon abonnement"}
+            </button>
+          ) : null}
         </div>
       ) : checkingAccount || offer.status === "loading" ? (
         <div
@@ -350,7 +390,7 @@ export function BillingActions({
             {offerOpen && !hideHelper ? (
               <span className="inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-muted-foreground">
                 {trialAvailable
-                  ? `${ANALYSIS_TRIAL_LABEL} · abonnement résiliable depuis le portail Stripe`
+                  ? `${ANALYSIS_TRIAL_LABEL} · abonnement résiliable depuis Mon compte`
                   : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL} · sans nouvel essai`}
               </span>
             ) : null}
@@ -430,10 +470,8 @@ export function BillingActions({
               {trialAvailable
                 ? "Carte bancaire requise pendant l’essai. "
                 : "Carte bancaire requise. "}
-              {trialAvailable
-                ? ANALYSIS_RECURRING_LABEL
-                : "Abonnement récurrent résiliable depuis le portail Stripe"}
-              . Le montant et la périodicité sont affichés par Stripe avant confirmation.
+              {trialAvailable ? ANALYSIS_RECURRING_LABEL : ANALYSIS_SUBSCRIPTION_ONLY_LABEL}. Le
+              montant et la périodicité sont affichés par Stripe avant confirmation.
             </p>
           </div>
 
