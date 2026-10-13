@@ -25,7 +25,7 @@ describe("appSaleRowToAuctionSale", () => {
     const sale = appSaleRowToAuctionSale(row);
 
     expect(sale.city).toBe("Lyon");
-    expect(sale.description).toBe("Appartement occupé par un locataire suivant bail.");
+    expect(sale.description).toBe("Appartement occupé par un occupant suivant bail.");
     expect(sale.source_description).toBe("À la requête du créancier poursuivant.");
     expect(sale.source_blocks).toEqual({ detail: { Occupation: "Locataire" } });
     expect(sale.source_blocks_by_source).toEqual({

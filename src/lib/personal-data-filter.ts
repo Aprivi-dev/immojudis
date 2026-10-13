@@ -17,6 +17,10 @@
  * - Il ne retire jamais une commune, une rue, un tribunal, une étude notariale ni une société (SCI,
  *   SARL…) : un nom n'est reconnu qu'après une civilité (Monsieur, Mme, M.…) ou sous la forme
  *   « Prénom NOM ».
+ * - Le statut n'est jamais déduit : « occupé(e)(s) par <nom> » devient toujours « un occupant ». « Un
+ *   locataire » n'apparaît que si la formule source le dit (« loué à <nom> », « bail consenti à
+ *   <nom> », « locataire <nom> » : on remplace le nom, pas le rôle).
+ * - Après « loué à » et « bail consenti à » seulement, un « Prénom Nom » en casse mixte est reconnu.
  * - Les contacts professionnels (« Me X, avocat, demeurant … ») ne sont pas touchés.
  * - Idempotent : filtrer un texte déjà filtré ne le change pas.
  *
@@ -49,6 +53,9 @@ const BARE =
   `(?:${SP}+(?:${PARTICLE}${SP}*)?${NOT_STOP}${UPW}){0,2}`;
 const NAMESEQ = `(?:${INITIAL})*${TOKEN}(?:${SP}+(?:${PARTICLE}${SP}+)?${NEXT}){0,4}`;
 const NAME_SINGLE = `${TOKEN}(?:${SP}+(?:${PARTICLE}${SP}+)?${NEXT}){0,2}`;
+// « Pierre Martin » en casse mixte, sans civilité : deux à trois mots, jamais un début de phrase.
+// N'est utilisé qu'après « loué à » et « bail consenti à » (`lease`).
+const NAME_MIXED = `${NOT_SENTENCE_START}${NOT_STOP}${TOKEN}(?:${SP}+(?:${PARTICLE}${SP}+)?${NEXT}){1,2}`;
 const CIV =
   `(?:(?:Monsieur|Madame|MONSIEUR|MADAME|M\\.|Mme)${SP}+(?:et|ou|ET|OU)${SP}+)?` +
   "(?:(?:Monsieur|Madame|Mademoiselle|Messieurs|Mesdames|MONSIEUR|MADAME|MADEMOISELLE|MESSIEURS|MESDAMES" +
@@ -67,6 +74,7 @@ function matchAt(regex: RegExp, text: string, pos: number): RegExpExecArray | nu
 const PERSON_CIV = sticky(`${CIV}${NAMESEQ}`);
 const PERSON_BARE = sticky(BARE);
 const PERSON_SINGLE = sticky(NAME_SINGLE);
+const PERSON_MIXED = sticky(NAME_MIXED);
 const CIV_PREFIX = new RegExp(`^${CIV}`);
 const ALIAS = sticky(
   `(?:${SP}*,)?${SP}*(?:née|épouse|époux|veuve|veuf|divorcée|divorcé)(?![${L}])${SP}+` +
@@ -125,10 +133,6 @@ const PLACE = sticky(
     `(?:(?:${SP}+|-)(?:(?:de|du|des|sur|sous|en|lès|aux|la|le|les)(?:${SP}+|-)|d${APOS})?` +
     `${NOT_STOP}${NOT_SENTENCE_START}${TOKEN}){0,4}` +
     `(?:${SP}+\\d{1,2}(?:er|e|ème))?(?:${SP}*\\([^)\\n]{1,20}\\))?`,
-);
-const LEASE_CONTEXT = new RegExp(
-  `(?<![${L}])(?<!sans${SP})(?:bail|locataires?|locatif|loyers?|louée?s?|location)(?![${L}])`,
-  "i",
 );
 const PROFESSIONAL = new RegExp(
   `(?<![${L}])(?:ma[iî]tre|me|avocats?|notaires?|huissiers?|scp|selarl|cabinet|étude|etude)(?![${L}])`,
@@ -189,15 +193,19 @@ const ROLE = new RegExp(
   "gi",
 );
 const MARITAL_LINK = sticky(`${SP}+(?:(?:de|d${APOS}|du)${SP}*)?`);
+// Ces deux motifs commencent par leur mot-clé : un préfixe d'espaces non ancré (`SP*,?SP*`) serait
+// quadratique sur une longue suite d'espaces. L'espace et la virgule qui précèdent le mot-clé sont
+// rattachés ensuite, en remontant (`withLeadingSeparator`).
 const BIRTH = new RegExp(
-  `(?:${SP}*,)?${SP}*(?<![${L}])n[ée](?:e|\\(e\\))?(?![${L}])${SP}+(?:le${SP}+${DATE}|en${SP}+\\d{4})`,
+  `(?<![${L}])n[ée](?:e|\\(e\\))?(?![${L}])${SP}+(?:le${SP}+${DATE}|en${SP}+\\d{4})`,
   "gi",
 );
 const RESIDENCE = new RegExp(
-  `(?:${SP}*,)?${SP}*${NO_BEFORE}(?:demeurant|demeurante|demeurants|domicili[ée](?:e|s|es)?` +
+  `${NO_BEFORE}(?:demeurant|demeurante|demeurants|domicili[ée](?:e|s|es)?` +
     `|r[ée]sidant|r[ée]sidante)(?![${L}])`,
   "gi",
 );
+const SP_CHAR = sticky(SP);
 
 type Edit = [start: number, end: number, replacement: string];
 type Handler = (text: string, match: RegExpExecArray) => Edit | null;
@@ -225,6 +233,19 @@ function substitute(text: string, pattern: RegExp, handler: Handler): string {
   return out + text.slice(cursor);
 }
 
+function skipSpacesBack(text: string, index: number): number {
+  let start = index;
+  while (start > 0 && matchAt(SP_CHAR, text, start - 1)) start -= 1;
+  return start;
+}
+
+/** Début de `(?:SP*,)?SP*` juste avant `index`, en temps linéaire. */
+function withLeadingSeparator(text: string, index: number): number {
+  let start = skipSpacesBack(text, index);
+  if (start > 0 && text[start - 1] === ",") start = skipSpacesBack(text, start - 1);
+  return start;
+}
+
 // --- Reconnaissance d'une personne ---------------------------------------------------------------
 type PersonKind = "civ" | "bare" | "single";
 
@@ -236,7 +257,7 @@ function acceptable(span: string, kind: PersonKind): boolean {
   return !(kind === "single" ? STOP_FIRST_SINGLE : STOP_FIRST).has(first);
 }
 
-function onePerson(text: string, pos: number, single = false): number | null {
+function onePerson(text: string, pos: number, single = false, mixed = false): number | null {
   let match = matchAt(PERSON_CIV, text, pos);
   if (match && acceptable(match[0], "civ")) return matchEnd(match);
   match = matchAt(PERSON_BARE, text, pos);
@@ -245,12 +266,16 @@ function onePerson(text: string, pos: number, single = false): number | null {
     match = matchAt(PERSON_SINGLE, text, pos);
     if (match && acceptable(match[0], "single")) return matchEnd(match);
   }
+  if (mixed) {
+    match = matchAt(PERSON_MIXED, text, pos);
+    if (match && acceptable(match[0], "bare")) return matchEnd(match);
+  }
   return null;
 }
 
 /** Fin d'une ou plusieurs personnes (« M. X et Mme Y, née Z ») commençant en `pos`. */
-function personEnd(text: string, pos: number): number | null {
-  let end = onePerson(text, pos);
+function personEnd(text: string, pos: number, mixed = false): number | null {
+  let end = onePerson(text, pos, false, mixed);
   if (end === null) return null;
   for (;;) {
     let extended = false;
@@ -264,7 +289,7 @@ function personEnd(text: string, pos: number): number | null {
     }
     const separator = matchAt(SEPARATOR, text, end);
     if (separator) {
-      const after = onePerson(text, matchEnd(separator));
+      const after = onePerson(text, matchEnd(separator), false, mixed);
       if (after !== null) {
         end = after;
         extended = true;
@@ -272,13 +297,6 @@ function personEnd(text: string, pos: number): number | null {
     }
     if (!extended) return end;
   }
-}
-
-/** Texte de la proposition qui suit `pos`, sans dépasser la fin de phrase. */
-function clause(text: string, pos: number): string {
-  const chunk = text.slice(pos, pos + 120);
-  const stop = /[.;\n]/.exec(chunk);
-  return stop ? chunk.slice(0, stop.index) : chunk;
 }
 
 // --- Règles --------------------------------------------------------------------------------------
@@ -292,7 +310,8 @@ const occupied: Handler = (text, match) => {
   const start = matchEnd(match);
   const end = personEnd(text, start);
   if (end === null) return null;
-  return [start, end, LEASE_CONTEXT.test(clause(text, end)) ? "un locataire" : "un occupant"];
+  // Le statut (locataire, occupant sans titre, ancien locataire…) n'est jamais déduit du voisinage.
+  return [start, end, "un occupant"];
 };
 
 const tenant: Handler = (text, match) => {
@@ -311,7 +330,7 @@ const role: Handler = (text, match) => {
 
 const lease: Handler = (text, match) => {
   const start = matchEnd(match);
-  const end = personEnd(text, start);
+  const end = personEnd(text, start, true);
   if (end === null) return null;
   return [start, end, "un locataire"];
 };
@@ -368,7 +387,7 @@ const marital: Handler = (text, match) => {
 
 const birth: Handler = (text, match) => {
   const place = matchAt(PLACE, text, matchEnd(match));
-  return [match.index, place ? matchEnd(place) : matchEnd(match), ""];
+  return [withLeadingSeparator(text, match.index), place ? matchEnd(place) : matchEnd(match), ""];
 };
 
 function skipSeparators(text: string, pos: number): number {
@@ -417,12 +436,11 @@ function hasSubject(text: string, index: number): boolean {
 }
 
 const residence: Handler = (text, match) => {
-  if (!hasSubject(text, match.index) || PROFESSIONAL.test(clauseWindow(text, match.index))) {
-    return null;
-  }
+  const start = withLeadingSeparator(text, match.index);
+  if (!hasSubject(text, start) || PROFESSIONAL.test(clauseWindow(text, start))) return null;
   const end = addressEnd(text, matchEnd(match));
   if (end === null) return null;
-  return [match.index, end, ""];
+  return [start, end, ""];
 };
 
 const RULES: ReadonlyArray<readonly [RegExp, Handler]> = [

@@ -51,6 +51,39 @@ describe("redactPersonalText", () => {
   });
 });
 
+describe("redactPersonalText : temps linéaire sur de longues suites d'espaces", () => {
+  const BUDGET_MS = 200;
+  const spaces = (count: number) => " ".repeat(count);
+  const texts: Record<string, string> = {
+    "né et 20 000 espaces": `né${spaces(20000)}`,
+    "née et 20 000 espaces": `Madame X, née${spaces(20000)}`,
+    "demeurant et 20 000 espaces": `Madame X, demeurant${spaces(20000)}`,
+    "20 000 espaces avant né": `${spaces(20000)}né le 3 mai 1950`,
+    "20 000 espaces avant demeurant": `Madame X,${spaces(20000)}demeurant 3 rue A 75000 Paris`,
+    "naissance répétée": `Madame X, née le 3 mai 1950${spaces(300)}`.repeat(200),
+    "résidence répétée": `Madame X, demeurant 3 rue des Lilas 69000 Lyon${spaces(300)}`.repeat(200),
+    "locataire répété": `Le locataire${spaces(300)}`.repeat(200),
+    "bail consenti répété": `bail consenti${spaces(300)}`.repeat(200),
+    "occupé par répété": `occupé par Madame Eva ROY${spaces(300)}`.repeat(200),
+    "à la requête de répété": `à la requête de${spaces(300)}`.repeat(200),
+  };
+
+  it.each(Object.entries(texts))("%s", (_name, text) => {
+    const started = performance.now();
+    redactPersonalText(text);
+    expect(performance.now() - started).toBeLessThan(BUDGET_MS);
+  });
+
+  it("retire toujours la naissance et la résidence avec leur séparateur", () => {
+    expect(
+      redactPersonalText("Madame X , née le 3 mai 1950 à Lyon , demeurant 3 rue A 75000 Paris."),
+    ).toBe("Madame X.");
+    expect(redactPersonalText("Madame X    née le 3 mai 1950 vend.")).toBe("Madame X vend.");
+    const long = `Madame X, née le 3 mai 1950${spaces(300)}`.repeat(200);
+    expect(redactPersonalText(long)).not.toContain("1950");
+  });
+});
+
 describe("redactPersonalData", () => {
   it("parcourt les chaînes d'une valeur JSON sans toucher au reste", () => {
     const value = {
@@ -58,7 +91,7 @@ describe("redactPersonalData", () => {
       b: { c: "À la requête de Madame Anne ROUX, demeurant 3 rue X 75000 Paris." },
     };
     expect(redactPersonalData(value)).toEqual({
-      a: ["Occupé par un locataire suivant bail", 3, null],
+      a: ["Occupé par un occupant suivant bail", 3, null],
       b: { c: "À la requête du créancier poursuivant." },
     });
     expect(value.a[0]).toContain("Monsieur Pierre DUPONT");
@@ -88,7 +121,7 @@ describe("redactSaleTexts", () => {
     };
     expect(redactSaleTexts(sale)).toEqual({
       ...sale,
-      description: "Appartement occupé par un locataire suivant bail.",
+      description: "Appartement occupé par un occupant suivant bail.",
       source_description: "À la requête du créancier poursuivant.",
       llm_display_description: "Locataire, loyer 500 euros.",
       surface_evidence: "62 m² occupés par un occupant",
