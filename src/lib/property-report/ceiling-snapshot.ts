@@ -7,7 +7,7 @@ import {
   evaluateBid,
 } from "@/lib/bid-ceiling-engine";
 import type { MarketEstimate } from "@/lib/market.server";
-import { computeAcquisitionCosts } from "@/lib/profitability";
+import { computeAcquisitionCosts, estimateWorksBudget } from "@/lib/profitability";
 import type { AuctionSale } from "@/lib/types";
 
 /**
@@ -45,7 +45,7 @@ export function buildCeilingSnapshot(
     maxBid: available ? plan.maxBid : null,
     maxBidWithoutWorks: ceilingFor("aucun"),
     maxBidWithRefreshWorks: ceilingFor("rafraichissement"),
-    refreshWorksBudget: hypotheses.works.amount,
+    refreshWorksBudget: estimateWorksBudget(hypotheses.surface, "rafraichissement"),
     works: { key: hypotheses.works.key, amount: hypotheses.works.amount },
     occupation: hypotheses.occupation.case,
     targetTotalCost: plan.available ? plan.budget : null,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import type { CeilingHypotheses, OccupationCase } from "@/lib/bid-ceiling-engine";
 import { marginPctFor, targetYieldPct } from "@/lib/bid-ceiling-engine";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
@@ -31,6 +31,8 @@ export function CeilingHypothesesPanel({
     onChoicesChange((current) => ({ ...current, [field]: value }));
   const surface = h.surface ?? 0;
   const pricePerM2 = h.value.amount && surface ? Math.round(h.value.amount / surface) : null;
+  // 0 n'est pas un prix : il revient à l'estimation, comme un champ vide.
+  const manualPricePerM2 = (choices.manualPricePerM2 ?? 0) > 0 ? choices.manualPricePerM2! : null;
   const release =
     h.occupation.case === "occupe" ||
     h.occupation.case === "squat" ||
@@ -42,9 +44,10 @@ export function CeilingHypothesesPanel({
         <NumberField
           label="Prix au m² du bien"
           suffix="€/m²"
-          value={choices.manualPricePerM2 ?? pricePerM2}
+          value={manualPricePerM2 ?? pricePerM2}
+          zeroMeansEmpty
           hint={
-            choices.manualPricePerM2 != null
+            manualPricePerM2 != null
               ? "Votre prix remplace l’estimation Immojudis."
               : h.value.source === "absente"
                 ? "Aucune estimation exploitable : saisissez un prix de marché."
@@ -166,7 +169,14 @@ export function CeilingHypothesesPanel({
             label="Loyer mensuel hors charges"
             suffix="€"
             value={h.rent.monthly}
-            hint={h.rent.source === "estime" ? "Loyer de référence du département." : undefined}
+            zeroMeansEmpty
+            hint={
+              h.rent.source === "estime"
+                ? "Loyer de référence du département. Remplacez-le si vous connaissez le loyer réel."
+                : h.rent.source === "absent"
+                  ? "Aucun loyer de référence pour ce département : saisissez un loyer, sinon le plafond ne tient pas compte du rendement."
+                  : undefined
+            }
             onChange={(value) => set("monthlyRent", value)}
           />
           <NumberField
@@ -206,12 +216,18 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
+/**
+ * Champ numérique à saisie locale : ce que l'utilisateur tape reste affiché tel quel (un champ vidé
+ * reste vide, la valeur retenue apparaît en grisé) et n'est remplacé par la valeur retenue qu'à la
+ * sortie du champ. Un champ vide, ou à 0 quand `zeroMeansEmpty`, revient à la valeur par défaut.
+ */
 function NumberField({
   label,
   suffix,
   value,
   hint,
   step = 1,
+  zeroMeansEmpty = false,
   onChange,
 }: {
   label: string;
@@ -219,9 +235,21 @@ function NumberField({
   value: number | null;
   hint?: string;
   step?: number;
+  zeroMeansEmpty?: boolean;
   onChange: (value: number | null) => void;
 }) {
   const id = useId();
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = (raw: string) => {
+    const number = Number(raw);
+    if (raw.trim() === "" || !Number.isFinite(number)) return onChange(null);
+    const clean = Math.max(0, number);
+    onChange(zeroMeansEmpty && clean === 0 ? null : clean);
+  };
+  const leave = () => {
+    if (draft != null) commit(draft);
+    setDraft(null);
+  };
   return (
     <div className="grid content-start gap-1 text-sm">
       <label htmlFor={id} className="font-medium text-foreground">
@@ -234,11 +262,15 @@ function NumberField({
           inputMode="decimal"
           min={0}
           step={step}
-          value={value ?? ""}
+          value={draft ?? value ?? ""}
+          placeholder={value != null ? String(value) : undefined}
           onChange={(event) => {
-            const raw = event.target.value;
-            const number = Number(raw);
-            onChange(raw === "" || !Number.isFinite(number) ? null : Math.max(0, number));
+            setDraft(event.target.value);
+            commit(event.target.value);
+          }}
+          onBlur={leave}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") leave();
           }}
           className="min-h-11 w-full bg-transparent tabular-nums outline-none"
         />

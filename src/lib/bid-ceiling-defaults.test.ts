@@ -5,6 +5,7 @@ import {
   occupationCaseForStatus,
   preliminaryFeesFromSale,
 } from "@/lib/bid-ceiling-defaults";
+import { computeCeilingPlan } from "@/lib/bid-ceiling-engine";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { AuctionSale } from "@/lib/types";
 
@@ -78,6 +79,48 @@ describe("buildCeilingHypotheses", () => {
     expect(h.occupation.case).toBe("libre");
     expect(h.fees.fpt).toBe(DEFAULT_PRELIMINARY_FEES);
     expect(h.feesSource.fpt).toBe("defaut");
+  });
+
+  it("falls back to the department reference rent, and treats a rent of 0 as not entered", () => {
+    expect(buildCeilingHypotheses(sale, estimate).rent).toMatchObject({
+      monthly: 84 * 13,
+      source: "estime",
+    });
+    expect(buildCeilingHypotheses(sale, estimate, { monthlyRent: 900 }).rent).toMatchObject({
+      monthly: 900,
+      source: "saisi",
+    });
+    expect(buildCeilingHypotheses(sale, estimate, { monthlyRent: 0 }).rent).toMatchObject({
+      monthly: 84 * 13,
+      source: "estime",
+    });
+  });
+
+  it("has no reference rent outside the covered departments", () => {
+    const uncovered = { ...sale, department: "23" } as unknown as AuctionSale;
+
+    expect(buildCeilingHypotheses(uncovered, estimate).rent).toMatchObject({
+      monthly: null,
+      source: "absent",
+    });
+    expect(buildCeilingHypotheses(uncovered, estimate, { monthlyRent: 0 }).rent).toMatchObject({
+      monthly: null,
+      source: "absent",
+    });
+  });
+
+  it("keeps the built surface of a house sold with a terrain, so the ceiling is computed", () => {
+    const house = {
+      ...sale,
+      title: "Maison avec terrain de 500 m²",
+      property_type: "house",
+      app_surface_m2: 90,
+      land_surface_m2: 500,
+    } as unknown as AuctionSale;
+    const h = buildCeilingHypotheses(house, estimate);
+
+    expect(h.surface).toBe(90);
+    expect(computeCeilingPlan(h)).toMatchObject({ available: true, reachable: true });
   });
 
   it("has no value without an actionable estimate", () => {

@@ -76,6 +76,8 @@ export function buildCeilingHypotheses(
   const preliminary = preliminaryFeesFromSale(sale);
   const consignation = findConsignation(sale)?.amountEur ?? null;
   const works = choices.works ?? { key: "aucun" as const, amount: 0 };
+  // 0 n'est pas un loyer : un champ vidé ou à 0 revient au loyer de référence, ou à « absent ».
+  const manualRent = positive(choices.monthlyRent);
 
   return {
     project: choices.project ?? "habiter",
@@ -126,8 +128,8 @@ export function buildCeilingHypotheses(
       consignation: consignation != null ? "document" : "regle",
     },
     rent: {
-      monthly: choices.monthlyRent ?? estimatedRent,
-      source: choices.monthlyRent != null ? "saisi" : estimatedRent ? "estime" : "absent",
+      monthly: manualRent ?? estimatedRent,
+      source: manualRent != null ? "saisi" : estimatedRent ? "estime" : "absent",
       vacancyPct: DEFAULT_VACANCY_PCT,
       nonRecoverablePct: DEFAULT_NON_RECOVERABLE_PCT,
       targetNetYieldPct: choices.targetNetYieldPct ?? null,

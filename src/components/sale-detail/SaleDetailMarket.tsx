@@ -21,11 +21,14 @@ const OutcomeForecast = dynamic(() =>
 export function TribunalEstimationEvidence({
   sale,
   valuationConflict,
+  statisticsAvailable = true,
   open,
   onOpenChange,
 }: {
   sale: AuctionSale;
   valuationConflict: boolean;
+  /** False while the tribunal statistics are closed: the pointer to their tab is then hidden. */
+  statisticsAvailable?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -42,13 +45,15 @@ export function TribunalEstimationEvidence({
         Perspective d’adjudication
       </summary>
       {forecastReady ? <OutcomeForecast forecastQuery={forecastQuery} /> : null}
-      <p className="text-sm text-muted-foreground">
-        Les observations du tribunal sont disponibles dans l’onglet{" "}
-        <a href="#statistiques" className="font-semibold underline underline-offset-4">
-          Statistiques
-        </a>
-        .
-      </p>
+      {statisticsAvailable ? (
+        <p className="text-sm text-muted-foreground">
+          Les observations du tribunal sont disponibles dans l’onglet{" "}
+          <a href="#statistiques" className="font-semibold underline underline-offset-4">
+            Statistiques
+          </a>
+          .
+        </p>
+      ) : null}
     </details>
   );
 }
