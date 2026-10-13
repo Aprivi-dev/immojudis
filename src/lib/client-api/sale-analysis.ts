@@ -13,6 +13,11 @@ import type { SaleHistoryResponse } from "@/lib/sale-history";
 import type { SalePassagesResponse } from "@/lib/sale-passages";
 import type { AuctionScenariosResponse, CourtAuctionSummary } from "@/lib/auction-scenarios";
 import type { DocumentReadingResponse } from "@/lib/document-reading";
+import type {
+  SaleUnlockQuotaReachedResponse,
+  SaleUnlockResult,
+  SaleUnlockStatus,
+} from "@/lib/sale-unlocks";
 import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
 import type { ValuationBacktestResponse } from "@/lib/valuation-backtest";
 import type { ValuationAdminResponse } from "@/lib/valuation-admin";
@@ -72,6 +77,47 @@ export async function fetchValuePreview(saleId: string): Promise<ValuePreview> {
     signal: AbortSignal.timeout(10_000),
   });
   return readJson<ValuePreview>(response);
+}
+
+/** Where the account stands this month and whether this sale is unlocked. Consumes nothing. */
+export async function fetchSaleUnlockStatus(saleId: string): Promise<SaleUnlockStatus> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/unlock`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  return (await readJson<{ status: SaleUnlockStatus }>(response)).status;
+}
+
+/** The monthly quota is spent: carries the counter so the page can explain it. */
+export class SaleUnlockQuotaReachedError extends Error {
+  readonly status: SaleUnlockStatus;
+
+  constructor(status: SaleUnlockStatus) {
+    super("Vous avez utilisé tous vos déblocages de ce mois-ci.");
+    this.name = "SaleUnlockQuotaReachedError";
+    this.status = status;
+  }
+}
+
+/** Unlocks this sale (idempotent: an already unlocked sale consumes nothing). */
+export async function unlockSaleRequest(saleId: string): Promise<SaleUnlockResult> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/unlock`, {
+    method: "POST",
+    headers: await authHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (response.status === 409) {
+    const payload = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as SaleUnlockQuotaReachedResponse | null;
+    if (payload?.code === "unlock_quota_reached") {
+      throw new SaleUnlockQuotaReachedError(payload.status);
+    }
+  }
+  return (await readJson<{ result: SaleUnlockResult }>(response)).result;
 }
 
 export async function fetchDocumentReading(saleId: string): Promise<DocumentReadingResponse> {

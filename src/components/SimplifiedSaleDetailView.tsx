@@ -10,6 +10,8 @@ import { listingValuationConflict } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
+import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
+import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
 import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenariosSection";
 import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
 import { ListingWeatherHistory } from "@/components/sale-detail/ListingWeatherHistory";
@@ -131,6 +133,13 @@ const ListingRental = dynamic(() =>
   import("@/components/sale-detail/ListingRental").then((module) => module.ListingRental),
 );
 
+/**
+ * What the account reads: the free view, a sale unlocked with « 3 déblocages par mois » (the sale
+ * rows are open, and the bid ceiling, document reading, sale history, tribunal statistics and
+ * official documents with them), or the full Analyse view.
+ */
+type SaleDetailAccess = "discovery" | "unlocked" | "analysis";
+
 type SaleDetailProps = {
   sale: AuctionSale;
   marketEstimateOverride?: MarketEstimate | null;
@@ -139,6 +148,9 @@ type SaleDetailProps = {
   publicDemo?: boolean;
   adjudicationStatisticsEnabled?: boolean;
   aiReviewProjections?: readonly AiReviewProjectionReadModel[] | null;
+  /** Where the account stands this month; drives the « Débloquer cette vente » panel. */
+  unlockStatus?: SaleUnlockStatus | null;
+  onSaleUnlocked?: (result: SaleUnlockResult) => void;
 };
 
 export function AnalysisSaleDetailView({
@@ -170,6 +182,8 @@ export function FreeSaleDetailView({
   returnTo = "/sales",
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
+  unlockStatus = null,
+  onSaleUnlocked,
 }: SaleDetailProps) {
   return (
     <SimplifiedSaleDetailView
@@ -178,12 +192,35 @@ export function FreeSaleDetailView({
       returnTo={returnTo}
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       aiReviewProjections={aiReviewProjections}
+      unlockStatus={unlockStatus}
+      onSaleUnlocked={onSaleUnlocked}
       access="discovery"
     />
   );
 }
 
-function SimplifiedSaleDetailView(props: SaleDetailProps & { access: "discovery" | "analysis" }) {
+/** A Découverte account reading a sale it unlocked (« 3 déblocages par mois »). */
+export function UnlockedSaleDetailView({
+  sale,
+  returnTo = "/sales",
+  adjudicationStatisticsEnabled = false,
+  aiReviewProjections = null,
+  unlockStatus = null,
+}: SaleDetailProps) {
+  return (
+    <SimplifiedSaleDetailView
+      key={sale.id}
+      sale={sale}
+      returnTo={returnTo}
+      adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+      aiReviewProjections={aiReviewProjections}
+      unlockStatus={unlockStatus}
+      access="unlocked"
+    />
+  );
+}
+
+function SimplifiedSaleDetailView(props: SaleDetailProps & { access: SaleDetailAccess }) {
   const { user } = useAuth();
   return <SaleDetailWorkspace key={`${user?.id ?? "guest-demo"}:${props.sale.id}`} {...props} />;
 }
@@ -196,8 +233,10 @@ function SaleDetailWorkspace({
   publicDemo = false,
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
+  unlockStatus = null,
+  onSaleUnlocked,
   access,
-}: SaleDetailProps & { access: "discovery" | "analysis" }) {
+}: SaleDetailProps & { access: SaleDetailAccess }) {
   const [personalWorksBudget, setPersonalWorksBudget] = useState<number | null>(null);
   const [worksDraft, setWorksDraft] = useState<ListingWorksDraft | null>(null);
   const [financingDraft, setFinancingDraft] = useState<FinancingDraft | null>(null);
@@ -205,11 +244,14 @@ function SaleDetailWorkspace({
   const [rentalDraft, setRentalDraft] = useState<ListingRentalDraft | null>(null);
   const { user, loading: authLoading } = useAuth();
   const ceilingChoices = useCeilingChoices(user?.id ?? "guest-demo", sale.id);
+  // The sale rows are open (Analyse, or a sale this account unlocked). Everything below that
+  // only Analyse has stays on `access === "analysis"`.
+  const fullData = access !== "discovery";
   const aiReviewQuery = useQuery({
     queryKey: queryKeys.saleAiReview(sale.id, user?.id ?? "anonymous"),
     queryFn: () => fetchSaleAiReviewProjections(sale.id),
     enabled: Boolean(
-      access === "analysis" && user && !publicDemo && !authLoading && aiReviewProjections == null,
+      fullData && user && !publicDemo && !authLoading && aiReviewProjections == null,
     ),
     staleTime: 5 * 60_000,
     retry: false,
@@ -226,8 +268,9 @@ function SaleDetailWorkspace({
             : aiReviewQuery.data
               ? "ready"
               : "loading";
-  const resolvedAiReviewProjections =
-    access === "analysis" ? (aiReviewProjections ?? aiReviewQuery.data?.projections ?? null) : null;
+  const resolvedAiReviewProjections = fullData
+    ? (aiReviewProjections ?? aiReviewQuery.data?.projections ?? null)
+    : null;
   const displaySale = useMemo(
     () => saleForAiReviewDisplay(sale, resolvedAiReviewProjections, aiReviewStatus),
     [aiReviewStatus, resolvedAiReviewProjections, sale],
@@ -235,12 +278,11 @@ function SaleDetailWorkspace({
   const factReliabilityQuery = useQuery({
     queryKey: queryKeys.saleFactReliability(sale.id, user?.id ?? "anonymous"),
     queryFn: () => fetchSaleFactReliabilities(sale.id),
-    enabled: Boolean(access === "analysis" && user && !publicDemo && !authLoading),
+    enabled: Boolean(fullData && user && !publicDemo && !authLoading),
     staleTime: 5 * 60_000,
     retry: false,
   });
-  const factReliabilities =
-    access === "analysis" ? (factReliabilityQuery.data?.facts ?? null) : null;
+  const factReliabilities = fullData ? (factReliabilityQuery.data?.facts ?? null) : null;
   const valuationConflict = listingValuationConflict(sale);
   const priceReview = getAiReviewFieldResult(
     resolvedAiReviewProjections,
@@ -268,20 +310,22 @@ function SaleDetailWorkspace({
   // son aperçu verrouillé, ni les ancres qui y mènent.
   const statisticsAvailable = isTribunalSale && adjudicationStatisticsEnabled;
   const budgetTarget =
-    access === "analysis"
-      ? isTribunalSale && !valuationConflict
-        ? "calculation"
-        : "budget"
-      : "summary";
+    fullData && isTribunalSale && !valuationConflict
+      ? "calculation"
+      : access === "analysis"
+        ? "budget"
+        : "summary";
   const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
   const venueType = getSaleProcedure(sale).venueType;
   const marketSurfaces = getMarketValuationSurfaces(displaySale);
   const surface = criticalAnalysisInputsBlocked ? null : marketSurfaces.builtSurfaceM2;
+  // The market estimate feeds the bid ceiling (judicial sales) and, for Analyse, the market blocks.
+  const marketAccess = access === "analysis" || (access === "unlocked" && isTribunalSale);
   const marketQuery = useQuery({
     queryKey: queryKeys.precomputedMarketEstimate(sale.id),
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
     enabled:
-      access === "analysis" &&
+      marketAccess &&
       marketEstimateOverride == null &&
       !valuationConflict &&
       !criticalAnalysisInputsBlocked,
@@ -290,11 +334,11 @@ function SaleDetailWorkspace({
       query.state.data?.status === "queued" && !query.state.data.estimate ? 15_000 : false,
   });
   const marketEstimate =
-    access !== "analysis" || valuationConflict || criticalAnalysisInputsBlocked
+    !marketAccess || valuationConflict || criticalAnalysisInputsBlocked
       ? null
       : (marketEstimateOverride ?? marketQuery.data?.estimate ?? null);
   const ceilingEnabled =
-    access === "analysis" && isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked;
+    fullData && isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked;
   const ceilingHypotheses = useMemo(() => {
     const built = buildCeilingHypotheses(displaySale, ceilingEnabled ? marketEstimate : null, {
       ...ceilingChoices.choices,
@@ -319,7 +363,7 @@ function SaleDetailWorkspace({
   const dpeClass = useMemo(() => buildDpeAnalysis(displaySale).class, [displaySale]);
   // Aucun travaux n'est supposé tant que l'utilisateur n'en a pas chiffré.
   const retainedWorks =
-    access !== "analysis" || valuationConflict || criticalAnalysisInputsBlocked
+    !fullData || valuationConflict || criticalAnalysisInputsBlocked
       ? null
       : ceilingHypotheses.works.amount;
   const projectCosts =
@@ -499,12 +543,18 @@ function SaleDetailWorkspace({
           aiReviewProjections={resolvedAiReviewProjections}
           aiReviewStatus={aiReviewStatus}
           canSimulate={
-            access === "analysis" &&
-            isTribunalSale &&
-            !valuationConflict &&
-            !criticalAnalysisInputsBlocked
+            fullData && isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked
           }
         />
+        {!publicDemo && user && access !== "analysis" ? (
+          <SaleUnlockPanel
+            saleId={sale.id}
+            status={unlockStatus}
+            unlocked={access === "unlocked"}
+            opens={{ ceiling: isTribunalSale, statistics: statisticsAvailable }}
+            onUnlocked={(result) => onSaleUnlocked?.(result)}
+          />
+        ) : null}
       </div>
 
       <div id="annonce-sections" className={panelStyles.tabRegion}>
@@ -539,11 +589,13 @@ function SaleDetailWorkspace({
               <DocumentReadingSection
                 saleId={sale.id}
                 enabled={!publicDemo && !authLoading && Boolean(user)}
+                access={access}
               />
               <SalePassagesSection
                 saleId={sale.id}
                 startingPrice={displaySale.starting_price_eur ?? null}
                 enabled={!publicDemo && !authLoading && Boolean(user)}
+                access={access}
               />
               {access === "analysis" ? (
                 <RisksAndDocuments sale={displaySale} />
@@ -590,7 +642,7 @@ function SaleDetailWorkspace({
                     : "Le prix publié et les références de marché disponibles."
                 }
               />
-              {access === "analysis" &&
+              {marketAccess &&
               marketEstimateOverride == null &&
               !marketEstimate &&
               (marketQuery.data?.error || marketQuery.error) ? (
@@ -630,7 +682,7 @@ function SaleDetailWorkspace({
                       )}
                     </div>
                   </div>
-                ) : access === "analysis" && isTribunalSale ? (
+                ) : fullData && isTribunalSale ? (
                   <AnalysisDecisionPanel
                     sale={displaySale}
                     marketEstimate={marketEstimate}
@@ -660,7 +712,7 @@ function SaleDetailWorkspace({
                   loading={marketQuery.isLoading && marketEstimate == null}
                 />
               ) : null}
-              {access === "analysis" && isTribunalSale && !valuationConflict ? (
+              {fullData && isTribunalSale && !valuationConflict ? (
                 <div id="calculation" className="scroll-mt-36">
                   <CeilingPlanner
                     hypotheses={ceilingHypotheses}
@@ -714,7 +766,7 @@ function SaleDetailWorkspace({
                   )}
                 </details>
               ) : null}
-              {access === "analysis" && !publicDemo && hasVerifiedTribunal ? (
+              {fullData && !publicDemo && hasVerifiedTribunal ? (
                 <TribunalEstimationEvidence
                   sale={displaySale}
                   valuationConflict={Boolean(valuationConflict)}
@@ -727,12 +779,12 @@ function SaleDetailWorkspace({
           ) : null}
 
           {activeTab === "statistiques" && statisticsAvailable ? (
-            access === "analysis" ? (
+            fullData ? (
               <>
-                <AuctionScenariosSection saleId={sale.id} enabled={!publicDemo} />
+                <AuctionScenariosSection saleId={sale.id} enabled={!publicDemo} access={access} />
                 <ListingStatistics
                   sale={sale}
-                  premium={access === "analysis" && adjudicationStatisticsEnabled}
+                  premium={fullData && adjudicationStatisticsEnabled}
                   publicDemo={publicDemo}
                   propertyTypeVerified={!valuationConflict && !propertyTypeReview.blocked}
                 />
@@ -837,7 +889,7 @@ function SaleDetailWorkspace({
                 sale={displaySale}
                 open={Boolean(expandedDetails.documents)}
                 onOpenChange={(open) => setDetailOpen("documents", open)}
-                locked={access !== "analysis"}
+                locked={!fullData}
               />
               <LawyerSection sale={displaySale} />
               <details

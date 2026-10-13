@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_ANALYSIS_OFFER_LABEL, ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
-import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
+import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
 import { TermsPage } from "./conditions-generales";
 import { PrivacyPage } from "./privacy";
 
@@ -94,7 +96,86 @@ describe("conditions générales", () => {
   });
 });
 
+describe("conditions générales : 3 déblocages par mois", () => {
+  const n = PLAN_LIMITS.decouverte.monthlyUnlocks;
+
+  it("définissent le déblocage : une vente, cinq éléments, ni exports ni rapports", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain("Découverte est gratuite, sans limite de durée et sans carte bancaire.");
+    expect(text).toContain(`chaque mois civil, ${n} déblocages`);
+    expect(text).toContain(
+      "Un déblocage ouvre, pour une vente de votre choix, cinq éléments de l’offre Analyse : l’enchère plafond chiffrée, la lecture des pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette vente et les pièces officielles du dossier.",
+    );
+    expect(text).toContain(
+      "Il n’ouvre ni l’export PDF ou CSV, ni les rapports enregistrés, ni les autres fonctions d’Analyse.",
+    );
+  });
+
+  it("disent quand le déblocage est consommé, non restitué, non reporté, et quand le compteur repart", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Le déblocage est consommé quand vous le confirmez, après affichage du nombre restant",
+    );
+    expect(text).toContain(
+      "il n’est pas consommé en cas d’erreur technique, ni si la vente est déjà débloquée",
+    );
+    expect(text).toContain(
+      "Il n’est pas restitué si la vente est ensuite retirée, reportée ou adjugée.",
+    );
+    expect(text).toContain("Les déblocages non utilisés ne sont pas reportés.");
+    expect(text).toContain(
+      `Le compteur est remis à ${n} le 1er de chaque mois à 00 h 00, heure de Paris.`,
+    );
+    expect(text).toContain("tant qu’elle est en ligne sur Immojudis et que votre compte existe");
+  });
+
+  it("prévoient la modification de l’avantage gratuit avec trente jours de préavis", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Immojudis peut modifier ou supprimer les avantages de l’offre Découverte, dont les déblocages, pour l’avenir, en vous prévenant au moins 30 jours à l’avance ; cette modification est sans effet sur les déblocages déjà consommés.",
+    );
+  });
+
+  it("rendent les déblocages personnels (article 9) sans parler d’analyses gratuites", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Les déblocages de ventes sont personnels : ils ne se partagent ni ne se transmettent.",
+    );
+    expect(text).not.toMatch(/analyses? (complètes? )?gratuites?|analyse offerte/i);
+  });
+
+  it("ne réécrivent à la main ni le chiffre des déblocages ni leur nom dans les textes publics", () => {
+    for (const file of [
+      "src/routes/conditions-generales.tsx",
+      "src/app/offres/offers-page.tsx",
+      "src/lib/offer-comparison.ts",
+      "src/components/sale-detail/SaleUnlockPanel.tsx",
+      "src/components/SalePublicPreview.tsx",
+      "src/lib/sale-unlocks.ts",
+    ]) {
+      // Comments name the feature in prose; only the strings the page renders matter.
+      const source = readFileSync(resolve(file), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      expect(source, file).not.toMatch(/(?<![\w$])(3|trois) (déblocages|ventes par mois)/i);
+      expect(source, file).not.toMatch(/analyses? (complètes? )?gratuites?|Analyse offerte/i);
+    }
+  });
+});
+
 describe("politique de confidentialité", () => {
+  it("décrit le traitement des déblocages : base contractuelle et conservation de 24 mois au plus", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Déblocages mensuels de ventes (offre Découverte)");
+    expect(text).toContain("Identifiant de compte, vente débloquée, date du déblocage");
+    expect(text).toContain(
+      "Exécution du contrat : appliquer l’avantage et sa limite prévus par les conditions générales",
+    );
+    expect(text).toContain(
+      "Tant que la vente débloquée est consultable, puis 24 mois au plus ; suppression avec le compte",
+    );
+  });
+
   it("annonce sa version et écrit Immojudis", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(`Version ${LEGAL_DOCUMENTS.privacy.version}`);

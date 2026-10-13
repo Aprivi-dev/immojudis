@@ -26,8 +26,8 @@ Les versions et empreintes sont centralisées dans `src/lib/legal-documents.ts` 
 | Document         | Route                   | Version en vigueur (13/10/2026) |
 | ---------------- | ----------------------- | ------------------------------- |
 | Mentions légales | `/legal`                | `2026-07-29.1`                  |
-| CGVU             | `/conditions-generales` | `2026-10-13.2`                  |
-| Confidentialité  | `/privacy`              | `2026-10-13.1`                  |
+| CGVU             | `/conditions-generales` | `2026-10-13.3`                  |
+| Confidentialité  | `/privacy`              | `2026-10-13.2`                  |
 
 Toute modification substantielle crée une nouvelle version, une nouvelle empreinte et une date
 d’effet. Les empreintes correspondent aux sources des pages publiées et sont contrôlées par un test
@@ -64,6 +64,8 @@ Chaque demande reçoit :
 1. Ouvrir le panneau « Demandes RGPD et rétractations » au moins chaque semaine.
 2. Passer la demande à `in_review`, ou à `identity_verification` si l’identité est réellement douteuse.
 3. Rechercher les données du seul utilisateur concerné ; exclure les données de tiers et secrets.
+   Pour une demande d’accès ou de portabilité, la copie comprend les déblocages de ventes de l’offre
+   Découverte (table `user_sale_unlocks` : vente, date) en plus des favoris, alertes et rapports.
 4. Exécuter le droit demandé ou documenter le motif légal d’une limitation/refus.
 5. Pour un effacement, supprimer d’abord les objets Storage via l’API Storage, puis le compte Auth ;
    les clés étrangères `on delete cascade` retirent les espaces personnels.

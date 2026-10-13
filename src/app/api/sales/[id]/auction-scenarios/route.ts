@@ -18,7 +18,8 @@ const saleIdSchema = z.string().uuid();
 /**
  * « Scénarios d'enchères » (offre Analyse) : chances de chaque issue et
  * fourchette de prix final, d'après les trois dernières années d'adjudications
- * du tribunal. The sale must be visible to the caller first.
+ * du tribunal. The sale must be visible to the caller first. A Découverte account that unlocked
+ * this sale (« 3 déblocages par mois ») reads it too, for this sale only.
  */
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -28,6 +29,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       auth,
       "property.advancedBidScenarios",
       "Les scénarios d’enchères sont réservés à l’offre Analyse.",
+      { saleId },
     );
     await enforceUserRateLimit({
       userId: auth.userId,

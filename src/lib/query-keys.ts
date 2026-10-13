@@ -10,6 +10,13 @@
 
 type Id = string | null | undefined;
 
+/**
+ * What the account reads on a sale page: the free view, a sale unlocked with « 3 déblocages par
+ * mois », or the full Analyse view. Keys of the data that differs between these views carry it, so
+ * unlocking a sale never leaves the free teaser in the cache.
+ */
+export type SaleAccessMode = "discovery" | "unlocked" | "analysis";
+
 export const queryKeys = {
   // Account, alerts and notifications
   featureEntitlementsPlan: (userKey: Id) => ["feature-entitlements", userKey, "plan"] as const,
@@ -46,8 +53,15 @@ export const queryKeys = {
     ["search-lawyer-placement", city, department] as const,
 
   // Sale detail
-  saleDetail: (saleId: string, sessionKey: Id, mode: "discovery" | "analysis") =>
+  saleDetail: (saleId: string, sessionKey: Id, mode: SaleAccessMode) =>
     ["sale-detail", saleId, sessionKey, mode] as const,
+  saleUnlock: (saleId: string, userKey: Id) => ["sale-unlock", saleId, userKey] as const,
+  documentReading: (saleId: string, access: SaleAccessMode) =>
+    ["document-reading", saleId, access] as const,
+  salePassages: (saleId: string, access: SaleAccessMode) =>
+    ["sale-passages", saleId, access] as const,
+  auctionScenarios: (saleId: string, access: SaleAccessMode) =>
+    ["auction-scenarios", saleId, access] as const,
   saleAiReview: (saleId: string, userKey: Id) => ["sale-ai-review", saleId, userKey] as const,
   saleFactReliability: (saleId: string, userKey: Id) =>
     ["sale-fact-reliability", saleId, userKey] as const,

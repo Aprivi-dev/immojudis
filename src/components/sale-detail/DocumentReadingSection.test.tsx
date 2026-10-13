@@ -67,7 +67,48 @@ describe("DocumentReadingSection", () => {
     expect(section.textContent).toContain(
       "5 points relevés dans les pièces, dont 2 à vérifier en priorité : occupation, diagnostics.",
     );
+    expect(section.textContent).toContain("avec l’offre Analyse ou en débloquant cette vente");
     expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
+  });
+
+  it("reads the full reading again once the sale is unlocked, never serving the cached teaser", async () => {
+    mocks.fetchDocumentReading.mockResolvedValueOnce({
+      access: "teaser",
+      pointCount: 1,
+      alertCount: 0,
+      themes: ["occupation"],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = (access: "discovery" | "unlocked") => (
+      <QueryClientProvider client={client}>
+        <DocumentReadingSection saleId="sale-1" enabled access={access} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view("discovery"));
+    expect((await screen.findByRole("region")).textContent).toContain("1 point relevé");
+    expect(mocks.fetchDocumentReading).toHaveBeenCalledTimes(1);
+
+    mocks.fetchDocumentReading.mockResolvedValueOnce({
+      access: "full",
+      status: "completed",
+      generatedAt: "2026-10-12T08:00:00Z",
+      partial: false,
+      points: [
+        {
+          theme: "occupation",
+          importance: "info",
+          title: "Bien occupé",
+          explanation: null,
+          quote: "occupé par un occupant",
+          page: 3,
+          document: null,
+        },
+      ],
+    });
+    rerender(view("unlocked"));
+
+    expect(await screen.findByText("« occupé par un occupant »")).toBeTruthy();
+    expect(mocks.fetchDocumentReading).toHaveBeenCalledTimes(2);
   });
 
   it("announces a reading in preparation and hides a dossier without text", async () => {

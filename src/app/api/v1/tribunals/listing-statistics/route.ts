@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
@@ -15,12 +16,17 @@ export async function GET(request: Request) {
   const context = createApiRequestContext(request, "tribunal.listing_statistics");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    const url = new URL(request.url);
+    // Analyse, or a Découverte account that unlocked the sale given as `saleId` (« 3 déblocages
+    // par mois »): the tribunal of that sale only. A query by `courtCode` stays on Analyse. The
+    // query is validated after the entitlement, as before; the schema then requires exactly one of
+    // `courtCode` and `saleId`.
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",
       "Statistiques des annonces judiciaires réservées au plan Analyse.",
+      { saleId: z.string().uuid().safeParse(url.searchParams.get("saleId")).data },
     );
-    const url = new URL(request.url);
     const input = tribunalListingStatisticsQuerySchema.parse(
       Object.fromEntries(url.searchParams.entries()),
     );

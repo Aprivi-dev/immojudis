@@ -38,6 +38,14 @@ const processingRows = [
       "Preuves contractuelles et comptables jusqu’à 10 ans ; données carte conservées par Stripe, pas par Immojudis",
   },
   {
+    purpose: "Déblocages mensuels de ventes (offre Découverte)",
+    data: "Identifiant de compte, vente débloquée, date du déblocage",
+    basis:
+      "Exécution du contrat : appliquer l’avantage et sa limite prévus par les conditions générales",
+    retention:
+      "Tant que la vente débloquée est consultable, puis 24 mois au plus ; suppression avec le compte. Si la vente est supprimée avant la fin du mois, la date seule est gardée jusqu’à la fin du mois pour tenir le compteur",
+  },
+  {
     purpose: "Alertes email",
     data: "Préférences, consentement horodaté, révocation et historique de livraison",
     basis: "Consentement ; exécution du service pour les messages strictement transactionnels",

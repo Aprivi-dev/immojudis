@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { offerComparisonRows } from "./offer-comparison";
-import { PLAN_FEATURES } from "./plans";
+import { PLAN_FEATURES, PLAN_LIMITS } from "./plans";
 
 describe("offerComparisonRows", () => {
   const rows = offerComparisonRows();
@@ -10,7 +10,11 @@ describe("offerComparisonRows", () => {
     expect(row("ceiling").decouverte.included).toBe(
       PLAN_FEATURES.decouverte["property.bidCeiling"] !== "locked",
     );
-    expect(row("ceiling").decouverte).toEqual({ included: false, text: "Non inclus" });
+    expect(row("ceiling").decouverte).toEqual({
+      included: false,
+      limited: true,
+      text: "Pour 3 ventes par mois",
+    });
     expect(row("ceiling").analyse).toEqual({ included: true, text: "Inclus" });
     expect(row("catalogue").decouverte.included).toBe(true);
     expect(row("directory").decouverte.included).toBe(true);
@@ -23,6 +27,42 @@ describe("offerComparisonRows", () => {
     expect(row("favorites").analyse.text).toBe("Illimités");
     expect(row("alerts").decouverte.text).toBe("1 alerte, email hebdomadaire");
     expect(row("alerts").analyse.text).toBe("Jusqu’à 25, email quotidien");
+    expect(row("unlocks").decouverte.text).toBe(
+      `${PLAN_LIMITS.decouverte.monthlyUnlocks} déblocages par mois`,
+    );
+    expect(row("unlocks").decouverte.text).toBe("3 déblocages par mois");
+    expect(row("unlocks").analyse.text).toMatch(/^Illimités/);
+  });
+
+  it("n'écrit « Non inclus » pour aucune ligne qu'un déblocage ouvre", () => {
+    const opened = rows.filter((candidate) =>
+      ["documents", "document-reading", "passages", "ceiling", "scenarios", "statistics"].includes(
+        candidate.id,
+      ),
+    );
+    expect(opened.map((candidate) => candidate.id)).toEqual([
+      "documents",
+      "document-reading",
+      "passages",
+      "ceiling",
+      "scenarios",
+      "statistics",
+    ]);
+    for (const candidate of opened) {
+      expect(candidate.decouverte.text, candidate.id).not.toBe("Non inclus");
+      expect(candidate.decouverte.text, candidate.id).toMatch(/^Pour 3 ventes par mois/);
+      expect(candidate.decouverte.limited, candidate.id).toBe(true);
+      // Fermé dans l'offre : la coche « inclus » reste réservée à ce que l'offre donne vraiment.
+      expect(candidate.decouverte.included, candidate.id).toBe(false);
+      expect(candidate.analyse.included, candidate.id).toBe(true);
+    }
+    expect(row("statistics").decouverte.text).toBe("Pour 3 ventes par mois (tribunal de la vente)");
+  });
+
+  it("garde « Non inclus » pour ce qu'un déblocage n'ouvre jamais", () => {
+    for (const id of ["pdf", "csv", "referrals", "estimate", "land"]) {
+      expect(row(id).decouverte, id).toEqual({ included: false, text: "Non inclus" });
+    }
   });
 
   it("promet les statistiques des ventes et des tribunaux à l'offre Analyse seulement", () => {

@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { fetchAuctionScenarios } from "@/lib/client-api";
+import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
 import {
   AUCTION_SCENARIO_LABELS,
   STARTING_PRICE_BAND_LABELS,
@@ -32,11 +33,20 @@ function yearLabel(date: string | null): string {
  * « Scénarios d'enchères » (offre Analyse) : la répartition observée des issues et la
  * fourchette de prix final, d'après les trois dernières années d'adjudications
  * du tribunal (Licitor pour les rapports à la mise à prix, DVF pour les prix
- * officiels). Rendered for Analyse members only.
+ * officiels). Rendered for Analyse members and for a sale the account unlocked.
  */
-export function AuctionScenariosSection({ saleId, enabled }: { saleId: string; enabled: boolean }) {
+export function AuctionScenariosSection({
+  saleId,
+  enabled,
+  access = "analysis",
+}: {
+  saleId: string;
+  enabled: boolean;
+  /** The view the account reads (Analyse, or a sale unlocked with « 3 déblocages par mois »). */
+  access?: SaleAccessMode;
+}) {
   const query = useQuery<AuctionScenariosResponse>({
-    queryKey: ["auction-scenarios", saleId],
+    queryKey: queryKeys.auctionScenarios(saleId, access),
     queryFn: () => fetchAuctionScenarios(saleId),
     enabled,
     staleTime: 30 * 60_000,
