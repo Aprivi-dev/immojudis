@@ -19,9 +19,11 @@ import {
   type CeilingStep,
 } from "@/lib/bid-ceiling-engine";
 import type { CeilingUserChoices } from "@/lib/bid-ceiling-defaults";
+import { ceilingGap, UNPROFITABLE_HEADLINE } from "@/lib/bid-ceiling-gaps";
 import { formatPrice } from "@/lib/format";
 import { dpeRentalNote } from "@/lib/works-guidance";
 import { CeilingHypothesesPanel } from "@/components/ceiling/CeilingHypothesesPanel";
+import { Terme, type TermeKey } from "@/components/ceiling/Terme";
 
 type ChoicesUpdate = (change: (choices: CeilingUserChoices) => CeilingUserChoices) => void;
 
@@ -33,6 +35,7 @@ export function CeilingPlanner({
   onReset,
   onEditWorks,
   marketLoading = false,
+  valueReason,
   dpeClass = null,
 }: {
   hypotheses: CeilingHypotheses;
@@ -42,10 +45,13 @@ export function CeilingPlanner({
   onReset: () => void;
   onEditWorks?: () => void;
   marketLoading?: boolean;
+  /** Pourquoi la valeur de marché manque (« estimation en cours », …), quand elle manque. */
+  valueReason?: string;
   dpeClass?: string | null;
 }) {
   const [hypothesesOpen, setHypothesesOpen] = useState(false);
   const confidence = ceilingConfidence(hypotheses);
+  const gap = ceilingGap(plan, valueReason);
   const profilePlans = useMemo(
     () =>
       CEILING_PROFILES.map((profile) => ({
@@ -93,15 +99,17 @@ export function CeilingPlanner({
                 <Target className="h-4 w-4" />
                 Enchère plafond · {profileLabel(hypotheses)}
               </div>
-              <div className="mt-3 text-4xl font-semibold leading-none tabular-nums text-foreground sm:text-5xl">
-                {plan.available && plan.reachable
-                  ? formatPrice(plan.maxBid)
-                  : marketLoading
-                    ? "Calcul…"
-                    : plan.available
-                      ? "Aucune"
-                      : "À compléter"}
-              </div>
+              {gap == null || marketLoading ? (
+                <div className="mt-3 text-4xl font-semibold leading-none tabular-nums text-foreground sm:text-5xl">
+                  {gap == null ? formatPrice(plan.maxBid) : "Calcul…"}
+                </div>
+              ) : (
+                <div className="mt-3 max-w-md text-2xl font-semibold leading-tight text-foreground sm:text-3xl">
+                  {gap.kind === "unprofitable"
+                    ? UNPROFITABLE_HEADLINE
+                    : `À compléter : ${gap.reason}`}
+                </div>
+              )}
               <Verdict hypotheses={hypotheses} plan={plan} />
             </div>
             <ProfilePicker
@@ -243,24 +251,47 @@ function ProfilePicker({
 }
 
 function Verdict({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
-  const start = hypotheses.startingPrice;
-  let text: string;
-  if (!plan.available) {
-    text = `${plan.reason}. Complétez-la dans les hypothèses ci-dessous pour obtenir votre plafond.`;
-  } else if (!plan.reachable) {
-    text =
-      "À ces hypothèses, aucune enchère n’est rentable : travaux, libération et frais dépassent déjà le coût total acceptable.";
-  } else if (start && plan.maxBid < start) {
-    text = `Votre plafond est inférieur à la mise à prix (${formatPrice(start)}) : à ces hypothèses, mieux vaut ne pas enchérir.`;
-  } else if (start) {
-    text = `La mise à prix (${formatPrice(start)}) vous laisse ${formatPrice(plan.maxBid - start)} de marge d’enchère.`;
-  } else {
-    text = "Mise à prix non communiquée : comparez votre plafond au montant annoncé à l’audience.";
-  }
-  if (plan.available && plan.reachable && plan.binding === "rendement") {
-    text += ` Ici, c’est le loyer qui limite le plafond (rendement net visé ${targetYieldPct(hypotheses)} %).`;
-  }
-  return <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">{text}</p>;
+  const start = positiveAmount(hypotheses.startingPrice);
+  const startingPrice = <Terme terme="mise-a-prix">mise à prix</Terme>;
+  const limitedByRent = plan.available && plan.reachable && plan.binding === "rendement";
+  return (
+    <>
+      <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+        {!plan.available ? (
+          `${plan.reason}. Complétez-la dans les hypothèses ci-dessous pour obtenir votre plafond.`
+        ) : !plan.reachable ? (
+          "À ces hypothèses, aucune enchère n’est rentable : travaux, libération et frais dépassent déjà le coût total maximal."
+        ) : start && plan.maxBid < start ? (
+          <>
+            Votre plafond est inférieur à la {startingPrice} ({formatPrice(start)}) : à ces
+            hypothèses, mieux vaut ne pas enchérir.
+          </>
+        ) : start ? (
+          <>
+            La {startingPrice} ({formatPrice(start)}) vous laisse {formatPrice(plan.maxBid - start)}{" "}
+            de marge d’enchère.
+          </>
+        ) : (
+          <>
+            <Terme terme="mise-a-prix">Mise à prix</Terme> non communiquée : comparez votre plafond
+            au montant annoncé à l’audience.
+          </>
+        )}
+        {limitedByRent
+          ? ` Ici, c’est le loyer qui limite le plafond (rendement net visé ${targetYieldPct(hypotheses)} %).`
+          : ""}
+      </p>
+      {plan.rentMissing ? (
+        <p role="status" className="mt-2 max-w-xl text-sm font-semibold leading-relaxed">
+          Loyer non renseigné : le plafond ne tient pas compte du rendement. Saisissez un loyer.
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+function positiveAmount(value: number | null | undefined): number | null {
+  return value != null && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function ConfidenceNote({ confidence }: { confidence: ReturnType<typeof ceilingConfidence> }) {
@@ -285,23 +316,29 @@ function CeilingSteps({ steps }: { steps: CeilingStep[] }) {
         Le calcul, étape par étape
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Touchez une ligne pour voir d’où vient le chiffre.
+        Touchez ou cliquez sur une ligne pour voir d’où vient le chiffre.
       </p>
       <ol className="mt-4 divide-y divide-border border-y border-border">
         {steps.map((step) => (
           <li key={step.key}>
             <details className="group">
               <summary
-                className={`flex cursor-pointer list-none items-baseline justify-between gap-4 py-3 ${
+                className={`flex min-h-11 cursor-pointer list-none items-baseline justify-between gap-4 py-3 [&::-webkit-details-marker]:hidden ${
                   step.kind === "subtotal" || step.kind === "result" ? "font-semibold" : ""
                 }`}
               >
-                <span
-                  className={`text-sm sm:text-base ${
-                    step.kind === "result" ? "text-brand-navy" : "text-foreground"
-                  }`}
-                >
-                  {step.label}
+                <span className="flex min-w-0 items-baseline gap-2">
+                  <ChevronDown
+                    aria-hidden
+                    className="h-4 w-4 shrink-0 translate-y-0.5 text-muted-foreground transition-transform group-open:rotate-180"
+                  />
+                  <span
+                    className={`text-sm sm:text-base ${
+                      step.kind === "result" ? "text-brand-navy" : "text-foreground"
+                    }`}
+                  >
+                    {step.label}
+                  </span>
                 </span>
                 <span
                   className={`shrink-0 tabular-nums ${
@@ -316,7 +353,9 @@ function CeilingSteps({ steps }: { steps: CeilingStep[] }) {
                   {formatPrice(Math.abs(step.amount))}
                 </span>
               </summary>
-              <p className="pb-3 text-sm leading-relaxed text-muted-foreground">{step.detail}</p>
+              <p className="pb-3 pl-6 text-sm leading-relaxed text-muted-foreground">
+                {step.detail}
+              </p>
             </details>
           </li>
         ))}
@@ -398,15 +437,15 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
   const [bid, setBid] = useState<number>(defaultBid);
   const evaluation = evaluateBid(hypotheses, plan, bid);
   const fees = evaluation.fees;
-  const rows: Array<[string, number]> = [
-    ["Prix d’adjudication", evaluation.price],
+  const rows: Array<[label: string, value: number, term?: TermeKey]> = [
+    ["Prix d’adjudication", evaluation.price, "adjudication"],
     ["Frais préalables", fees.fpt],
     ["Droits d’enregistrement", fees.registrationDuties + fees.csi + fees.vatOnPrice],
-    ["Émoluments de l’avocat poursuivant", fees.emolumentsTTC],
+    ["Émoluments de l’avocat poursuivant", fees.emolumentsTTC, "emoluments"],
     ["Honoraires de votre avocat", fees.lawyerFees],
     ["Travaux et imprévus", plan.worksTotal],
-    ["Libération du bien", plan.releaseCost],
-    ["Portage", plan.carryingFixed + evaluation.financing],
+    ["Libération du bien", plan.releaseCost, "liberation"],
+    ["Portage", plan.carryingFixed + evaluation.financing, "portage"],
   ];
   return (
     <section aria-labelledby="ceiling-simulator-title" className="mt-8">
@@ -435,9 +474,11 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
       <dl className="mt-4 divide-y divide-border border-y border-border text-sm">
         {rows
           .filter(([, value]) => value > 0)
-          .map(([label, value]) => (
+          .map(([label, value, term]) => (
             <div key={label} className="flex justify-between gap-4 py-2">
-              <dt className="text-muted-foreground">{label}</dt>
+              <dt className="text-muted-foreground">
+                {term ? <Terme terme={term}>{label}</Terme> : label}
+              </dt>
               <dd className="tabular-nums">{formatPrice(Math.round(value))}</dd>
             </div>
           ))}
@@ -488,6 +529,12 @@ function QuickBid({
   );
 }
 
+/** Libellés de `buildCashPlan` qui portent un terme à définir. */
+const CASH_STEP_TERMS: Record<string, TermeKey> = {
+  "Fin du délai de surenchère": "surenchere",
+  "Libération du bien": "liberation",
+};
+
 function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
   const price = plan.reachable ? plan.maxBid : (hypotheses.startingPrice ?? 0);
   const steps = buildCashPlan(hypotheses, plan, price);
@@ -509,7 +556,13 @@ function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: C
               {step.when}
             </span>
             <span className="text-sm">
-              <span className="font-semibold text-foreground">{step.label}</span>
+              <span className="font-semibold text-foreground">
+                {CASH_STEP_TERMS[step.label] ? (
+                  <Terme terme={CASH_STEP_TERMS[step.label]}>{step.label}</Terme>
+                ) : (
+                  step.label
+                )}
+              </span>
               <span className="block text-muted-foreground">{step.detail}</span>
             </span>
             <span className="text-sm font-semibold tabular-nums sm:text-right">

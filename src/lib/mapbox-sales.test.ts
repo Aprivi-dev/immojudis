@@ -55,6 +55,8 @@ describe("mapbox sale features", () => {
 
   it("formats compact marker price labels", () => {
     expect(formatMapboxMarkerPrice(null)).toBe("Prix");
+    expect(formatMapboxMarkerPrice(0)).toBe("Prix");
+    expect(formatMapboxMarkerPrice(-1)).toBe("Prix");
     expect(formatMapboxMarkerPrice(180_000)).toBe("180K€");
     expect(formatMapboxMarkerPrice(1_200_000)).toBe("1,2M€");
     expect(formatMapboxMarkerPrice(12_000_000)).toBe("12M€");

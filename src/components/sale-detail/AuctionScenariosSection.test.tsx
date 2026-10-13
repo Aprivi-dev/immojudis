@@ -80,7 +80,7 @@ afterEach(() => {
 });
 
 describe("AuctionScenariosSection", () => {
-  it("shows the chances of each scenario, the likely range and the court's averages", async () => {
+  it("shows the observed distribution of outcomes, the likely range and the court's averages", async () => {
     fetchAuctionScenarios.mockResolvedValue(RESPONSE);
     renderSection();
 
@@ -89,7 +89,14 @@ describe("AuctionScenariosSection", () => {
     expect(screen.getByText(/92\s000\s€ à 208\s000\s€/)).toBeTruthy();
     expect(screen.getByText("Plus de 3 fois la mise à prix")).toBeTruthy();
     expect(screen.getByText(/^52\s%$/)).toBeTruthy();
-    expect(screen.getByText(/dépasse le double de la mise à prix/).textContent).toMatch(/76\s%/);
+    expect(screen.getByLabelText("Répartition observée des issues")).toBeTruthy();
+    expect(screen.getByText(/adjugées au moins au double de la mise à prix/).textContent).toMatch(
+      /Part des ventes comparables.*76\s%/,
+    );
+    expect(screen.queryByText(/Chance/)).toBeNull();
+    expect(
+      screen.getByText(/ne constituent pas une probabilité pour cette vente/).textContent,
+    ).toMatch(/Fréquences observées dans le passé sur un échantillon limité/);
     expect(screen.getByText("Prix final moyen")).toBeTruthy();
     expect(screen.getByText(/2024 : 160 · 2025 : 170/)).toBeTruthy();
     expect(screen.getByText(/2\s160 €\/m², soit environ 112\s000\s€ pour 52 m²/)).toBeTruthy();

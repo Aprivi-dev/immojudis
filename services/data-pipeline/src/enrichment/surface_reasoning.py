@@ -10,7 +10,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.models import AuctionSale
-from src.normalize import clean_text
+from src.normalize import (
+    MIN_DWELLING_SURFACE_M2,
+    carrez_is_implausible_against_habitable,
+    clean_text,
+    is_outside_carrez_context,
+)
 
 SURFACE_REASONING_VERSION = "surface_reasoning_v1"
 SURFACE_TOLERANCE_ABSOLUTE_M2 = Decimal("1")
@@ -314,6 +319,9 @@ def extract_surface_facts_from_text(
                 raw_text, match.start(), match.end()
             ):
                 continue
+            if kind == "explicit_carrez" and is_outside_carrez_context(raw_text, match.start(), match.end()):
+                # « hors Carrez 4,16 m² » : surface exclue de la mesure légale, jamais celle du bien.
+                continue
             unit = _match_unit(match)
             quote = _quote(raw_text, match.start(), match.end(), radius=85)
             total_match = _TYPED_TOTAL_SURFACE_RE.search(match.group(0))
@@ -338,6 +346,8 @@ def extract_surface_facts_from_text(
         if any(start <= match.start() and match.end() <= end for start, end in explicit_spans):
             continue
         if _energy_false_positive(raw_text, match.start(), match.end()):
+            continue
+        if is_outside_carrez_context(raw_text, match.start(), match.end()):
             continue
         value = _decimal(match.group("value"))
         if value is None or value <= 0 or value > Decimal("1000"):
@@ -426,6 +436,9 @@ def reason_about_surfaces(
             candidate = _prepare_candidate(candidate, asset.asset_id)
             if _candidate_is_supported(candidate, context_normalized):
                 valid_candidates.append(candidate)
+        valid_candidates = _drop_implausible_dwelling_candidates(
+            valid_candidates, property_type=property_type or asset.property_type, result=result
+        )
         validated_assets.append(
             asset.model_copy(
                 update={
@@ -452,6 +465,45 @@ def reason_about_surfaces(
         selected = sale_total
     result.selected_derivation_id = selected.derivation_id if selected else None
     return result
+
+
+_DWELLING_SURFACE_KINDS = frozenset({"explicit_carrez", "explicit_habitable", "explicit_total", "explicit_built"})
+
+
+def _drop_implausible_dwelling_candidates(
+    candidates: list[SurfaceCandidate],
+    *,
+    property_type: str | None,
+    result: SurfaceReasoningResult,
+) -> list[SurfaceCandidate]:
+    """Écarte une surface qui ne peut pas être celle d'un logement.
+
+    - moins de 9 m² pour un appartement ou une maison : cave, parking, annexe ;
+    - une Carrez à moins de 20 % de la surface habitable annoncée : partie du bien (cave, hors
+      Carrez), la surface habitable fait foi.
+    """
+    if property_type not in {"apartment", "house"}:
+        return candidates
+    kept = [
+        item
+        for item in candidates
+        if not (item.kind in _DWELLING_SURFACE_KINDS and item.value_m2 < MIN_DWELLING_SURFACE_M2)
+    ]
+    habitable = [item.value_m2 for item in kept if item.kind == "explicit_habitable"]
+    if habitable:
+        largest = max(habitable)
+        for item in list(kept):
+            if item.kind == "explicit_carrez" and carrez_is_implausible_against_habitable(item.value_m2, largest):
+                kept.remove(item)
+                result.contradictions.append(
+                    {
+                        "asset_id": item.asset_id,
+                        "kind": "carrez_below_20_percent_of_habitable",
+                        "carrez_value_m2": str(item.value_m2),
+                        "habitable_value_m2": str(largest),
+                    }
+                )
+    return kept
 
 
 def apply_surface_reasoning_to_sale(

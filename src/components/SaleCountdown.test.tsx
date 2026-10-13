@@ -74,6 +74,18 @@ describe("sale countdown deadline", () => {
     expect(screen.queryByText("Vente passée")).toBeNull();
   });
 
+  it("keeps the chip text at 12 px or more, never 10 px", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-03T12:00:00Z"));
+    const { container, rerender } = render(
+      <SaleCountdown sale={sale({ sale_date: "2026-10-02T00:00:00Z" })} precisionUnknown />,
+    );
+    expect(screen.getByText("Échéance à confirmer").className).toContain("text-xs");
+    rerender(<SaleCountdown sale={sale({ sale_date: "2026-11-20T09:00:00Z" })} />);
+    expect(container.innerHTML).not.toContain("text-[10px]");
+    expect(container.querySelector("span.text-xs")).toBeTruthy();
+  });
+
   it("labels the countdown to the closing time of a bidding window", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-10-03T12:00:00Z"));

@@ -114,33 +114,14 @@ export type InformationAgentEmailTemplatePreview = {
 
 /**
  * Ancien bloc « Vous avez d’autres ventes à partager ? » que des modèles publiés ou des brouillons
- * peuvent encore contenir dans leur texte éditable. Il est toujours retiré du corps : l'invitation
- * n'est plus rédigée par le modèle mais ajoutée, sous une forme courte et fixe, par le gabarit
- * (`emails/information-request.tsx`), ce qui évite tout doublon.
+ * peuvent encore contenir dans leur texte éditable. Les emails aux professionnels restent purement
+ * informatifs (décision du 13 octobre 2026) : ce bloc est toujours retiré du corps, ainsi que
+ * l'ancienne phrase fixe « Vous publiez d’autres ventes ? ».
  */
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
   "Vous avez d’autres ventes à partager ?";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
-
-/**
- * Invitation demandée par le propriétaire (11 octobre 2026) : une phrase, un lien, sans traceur.
- * Prospection B2B liée à l'activité du destinataire, couverte par le lien d'opposition du pied de
- * message. Désactivable sans déploiement avec `INFORMATION_AGENT_ACCOUNT_INVITATION=false`.
- */
-export const INFORMATION_AGENT_ACCOUNT_INVITATION_TEXT =
-  "Vous publiez d’autres ventes ? Un compte professionnel Immojudis vous permet de nous les transmettre directement.";
-
-/** Lien de l'invitation, ou `null` si elle est désactivée. */
-export function informationAgentAccountInvitationUrl(
-  appUrl: string,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): string | null {
-  if (env.INFORMATION_AGENT_ACCOUNT_INVITATION?.trim().toLowerCase() === "false") return null;
-  const url = new URL("/login", appUrl);
-  url.searchParams.set("mode", "professional");
-  url.searchParams.set("redirect", "/publish");
-  return url.toString();
-}
+export const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autres ventes ?";
 
 export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 5;
 
@@ -153,6 +134,7 @@ export type InformationAgentEmailRenderOptions = {
 export function containsInformationAgentAccountInvitation(text: string): boolean {
   return (
     text.includes(INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING) ||
+    text.includes(INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT) ||
     text.includes(`${INFORMATION_AGENT_ACCOUNT_INVITATION_CTA} :`)
   );
 }
@@ -257,7 +239,7 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 4",
+  name: "Demande de précisions sur une vente — version 5",
   subjectTemplate: "{{sale_subject_title}} — précisions pour Immojudis",
   blocks: [
     {
@@ -271,7 +253,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Présentation Immojudis",
       content:
-        "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous complétons la fiche ci-dessous et votre connaissance du dossier nous serait précieuse.",
+        "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous vous écrivons au sujet de la vente ci-dessous : nous complétons sa fiche à destination des acquéreurs, et votre connaissance du dossier nous serait précieuse.",
     },
     {
       id: "sale_details",
@@ -328,12 +310,12 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Informations RGPD et opposition",
     description:
-      "Le pied du message est ajouté automatiquement : responsable de traitement, origine de l’adresse avec le lien de l’annonce publique (art. 14 RGPD), lien vers la politique de confidentialité et lien d’opposition en un clic.",
+      "Le pied du message est ajouté automatiquement : responsable de traitement, origine de l’adresse avec le lien de l’annonce publique (art. 14 RGPD), durée de conservation de l’adresse et des échanges, lien vers la politique de confidentialité et lien d’opposition en un clic.",
   },
   {
-    title: "Invitation à créer un compte",
+    title: "Aucune sollicitation commerciale",
     description:
-      "Une phrase courte invite le professionnel à créer un compte pour transmettre ses prochaines annonces. Elle est ajoutée par le gabarit (jamais dupliquée par le modèle) et couverte par le lien d’opposition.",
+      "Aucune sollicitation commerciale : toute invitation à créer un compte est retirée du corps du message.",
   },
 ] as const;
 

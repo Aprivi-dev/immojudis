@@ -58,8 +58,8 @@ def timestamp_is_fresh(value: object, *, hours: float = 24, now: datetime | None
 
 # Sources whose robots.txt Crawl-delay makes a daily re-read of every detail
 # impossible within the scheduled budget. Notaires asks for 10 s between
-# requests: about 810 details take 2 h 20, while it gets four 35-minute runs a
-# day. An unchanged list card (date, price, interrupted status) keeps the
+# requests: about 810 details take 2 h 20, while it gets two 35-minute runs a
+# day (one inventory every 12 hours). An unchanged list card (date, price, interrupted status) keeps the
 # stored detail this long; any change on the card still triggers a re-read.
 SOURCE_DETAIL_FRESHNESS_HOURS = {"notaires": 72}
 

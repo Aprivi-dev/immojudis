@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type Stripe from "stripe";
+import { isPlanPeriodActive } from "@/lib/plans";
 import {
   ANALYSIS_ACCESS_DAYS,
   ANALYSIS_CHECKOUT_EXPIRY_MINUTES,
@@ -8,6 +9,7 @@ import {
   ANALYSIS_SUBSCRIPTION_OFFER_CODE,
   ANALYSIS_PRICE_CENTS,
   ANALYSIS_TRIAL_DAYS,
+  billingPortalReturnUrl,
   buildAnalysisCheckoutSessionParams,
   canReleaseCheckoutReservationAfterFailure,
   isAnalysisSubscriptionPrice,
@@ -17,6 +19,7 @@ import {
   stripeDisputeStatusToPaymentState,
   stripeDisputeStatusToPlanStatus,
   stripeRefundRequiresAccessRevocation,
+  stripeAccessPeriodEndIso,
   stripeCurrentPeriodEndIso,
   stripeSubscriptionStatusToPlanStatus,
 } from "@/lib/billing";
@@ -25,10 +28,36 @@ describe("billing helpers", () => {
   it("maps Stripe subscription states to ImmoJudis plan states", () => {
     expect(stripeSubscriptionStatusToPlanStatus("trialing")).toBe("trialing");
     expect(stripeSubscriptionStatusToPlanStatus("active")).toBe("active");
-    expect(stripeSubscriptionStatusToPlanStatus("incomplete")).toBe("past_due");
-    expect(stripeSubscriptionStatusToPlanStatus("unpaid")).toBe("past_due");
+    expect(stripeSubscriptionStatusToPlanStatus("past_due")).toBe("past_due");
+    expect(stripeSubscriptionStatusToPlanStatus("paused")).toBe("paused");
     expect(stripeSubscriptionStatusToPlanStatus("canceled")).toBe("cancelled");
     expect(stripeSubscriptionStatusToPlanStatus("incomplete_expired")).toBe("expired");
+  });
+
+  it("never grants access for incomplete or unpaid Stripe subscriptions", () => {
+    const now = new Date("2026-10-13T12:00:00.000Z");
+    const periodEnd = "2026-11-13T12:00:00.000Z";
+    for (const stripeStatus of ["incomplete", "unpaid"]) {
+      const status = stripeSubscriptionStatusToPlanStatus(stripeStatus);
+      expect(status).toBe("paused");
+      expect(isPlanPeriodActive(status, periodEnd, now)).toBe(false);
+    }
+    // past_due, lui, garde la grâce de 7 jours.
+    expect(isPlanPeriodActive("past_due", "2026-10-10T12:00:00.000Z", now)).toBe(true);
+  });
+
+  it("counts the past_due grace from the start of the unpaid period", () => {
+    const subscription = {
+      ended_at: null,
+      trial_end: null,
+      items: {
+        data: [{ current_period_start: 1_800_000_000, current_period_end: 1_802_592_000 }],
+      },
+    } as Stripe.Subscription;
+
+    expect(stripeAccessPeriodEndIso(subscription, "past_due")).toBe("2027-01-15T08:00:00.000Z");
+    expect(stripeAccessPeriodEndIso(subscription, "active")).toBe("2027-02-14T08:00:00.000Z");
+    expect(stripeAccessPeriodEndIso(subscription, "trialing")).toBe("2027-02-14T08:00:00.000Z");
   });
 
   it("reads the period end from the current subscription item", () => {
@@ -41,6 +70,12 @@ describe("billing helpers", () => {
     } as Stripe.Subscription;
 
     expect(stripeCurrentPeriodEndIso(subscription)).toBe("2027-01-15T08:00:00.000Z");
+  });
+
+  it("returns from the billing portal to the offers page", () => {
+    expect(billingPortalReturnUrl("https://immojudis.test")).toBe(
+      "https://immojudis.test/offres?billing=portal",
+    );
   });
 
   it("normalizes configured billing origins", () => {

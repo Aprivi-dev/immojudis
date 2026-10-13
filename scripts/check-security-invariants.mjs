@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 const pipelineSchemaUrl = new URL("../services/data-pipeline/sql/schema.sql", import.meta.url);
 const schema = await readFile(pipelineSchemaUrl, "utf8");
@@ -500,6 +500,61 @@ if (
   failures.push("information-agent-approved is not made private");
 }
 
+// Chantier G: no personal name in the stored texts a signed-in account can read.
+// raw_payload / observations / lawyer_contact feed v_auction_sales_app (security_invoker) and the
+// fiche displays the lawyer line: revoking them from `authenticated` without turning that view into
+// a definer view (stage 2 of 20261010003000) breaks the whole catalogue for connected users.
+const migrationsUrl = new URL("../supabase/migrations/", import.meta.url);
+for (const name of (await readdir(migrationsUrl)).filter((file) => file.endsWith(".sql"))) {
+  const migration = await readFile(new URL(name, migrationsUrl), "utf8");
+  const rawColumnRevoke =
+    /revoke\s+select\s*\([^)]*\b(?:raw_payload|observations|lawyer_contact)\b[^)]*\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+from\s+[^;]*\bauthenticated\b/i;
+  if (rawColumnRevoke.test(migration) && !/security_invoker\s*=\s*false/i.test(migration)) {
+    failures.push(
+      `${name} revokes raw_payload/observations/lawyer_contact from authenticated without making v_auction_sales_app a definer view`,
+    );
+  }
+}
+
+// The collection writes the texts it stores through the personal-data filter, and the shared
+// reports go through its TypeScript mirror (services/data-pipeline/src/personal_data.py).
+const [supabaseClientSource, saleRowBuilders, reportSerialization, personalDataFilter] =
+  await Promise.all([
+    readFile(
+      new URL("../services/data-pipeline/src/storage/supabase_client.py", import.meta.url),
+      "utf8",
+    ),
+    readFile(
+      new URL("../services/data-pipeline/src/storage/sale_row_builders.py", import.meta.url),
+      "utf8",
+    ),
+    readFile(new URL("../src/lib/property-report/serialization.ts", import.meta.url), "utf8"),
+    readFile(new URL("../src/lib/personal-data-filter.ts", import.meta.url), "utf8"),
+  ]);
+if (
+  (
+    supabaseClientSource.match(
+      /redact_storage_row\(\{column: data\.get\(column\) for column in UPSERT_COLUMNS\}\)/g,
+    ) ?? []
+  ).length !== 2
+) {
+  failures.push("auction_sales rows are written without the personal-data filter");
+}
+if (
+  (saleRowBuilders.match(/rows\.append\(redact_storage_row\(row\)\)/g) ?? []).length !== 2 ||
+  !/redact_personal_text\(occurrence\["excerpt"\]\)/.test(saleRowBuilders)
+) {
+  failures.push(
+    "properties, judicial_sales or risk excerpts are written without the personal-data filter",
+  );
+}
+if (!/return redactSaleTexts\(/.test(reportSerialization)) {
+  failures.push("sale texts reach saved and shared reports without the personal-data filter");
+}
+if (!/export function redactSaleTexts/.test(personalDataFilter)) {
+  failures.push("the TypeScript personal-data filter is missing");
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -532,6 +587,8 @@ console.log(
       "auction-sales-column-grants",
       "function-default-privileges",
       "approved-evidence-private-bucket",
+      "raw-columns-not-revoked-without-definer-view",
+      "personal-data-filter-write-boundary",
     ],
   }),
 );

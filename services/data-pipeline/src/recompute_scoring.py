@@ -17,7 +17,7 @@ from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import ROOT_DIR, load_settings, require_encheres_publiques_access
 from src.enrichment.surface_reasoning import extract_and_apply_deterministic_surface_reasoning
 from src.extraction_profiles import attach_source_property_features
-from src.geocode import geocode_sale
+from src.geocode import geocode_sale, restore_accepted_geocode
 from src.normalize import normalize_sale
 from src.sale_procedure import SALE_PROCEDURE_SCHEMA_VERSION, classify_sale_procedure
 from src.sources.agrasc_extraction import refresh_agrasc_raw_sale
@@ -628,6 +628,8 @@ def _recomputed_sale_from_storage_row(row: dict[str, Any], *, geocode: bool = Fa
     else:
         # Reprend la localisation cadastrale déjà résolue, sans requête.
         resolve_sale_cadastre(sale, network=False)
+        # Et le géocodage déjà accepté (centre de commune compris) qui n'avait pas été recopié.
+        restore_accepted_geocode(sale)
     fill_tribunal(sale)
     classify_sale_procedure(sale)
     payload = sale.raw_payload

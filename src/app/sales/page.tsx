@@ -10,7 +10,7 @@ import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { SalesPage } from "./sales-page";
 
 export const metadata: Metadata = {
-  title: "Ventes immobilières aux enchères : tribunal, notaire, État",
+  title: "Ventes immobilières aux enchères en France",
   description:
     "Consultez les ventes immobilières aux enchères : tribunal, notaire et État. Filtrez par lieu, type de bien, budget et date de vente.",
   alternates: { canonical: "/sales" },

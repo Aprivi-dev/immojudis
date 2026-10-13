@@ -46,3 +46,16 @@ def _no_document_politeness_waits(monkeypatch):
     from src import document_politeness
 
     monkeypatch.setattr(document_politeness, "POLITENESS_ENABLED", False)
+
+
+@pytest.fixture(autouse=True)
+def _sources_not_withdrawn_by_default(monkeypatch):
+    """L'état livré ne retire aucune source du catalogue (voir ``src.source_withdrawal``).
+
+    Les tests des collecteurs tournent source ouverte, sans base ; les tests du retrait
+    (``test_source_withdrawal.py``) posent eux-mêmes l'état qu'ils vérifient.
+    """
+    from src import source_withdrawal
+
+    source_withdrawal.reset_cache()
+    monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset())

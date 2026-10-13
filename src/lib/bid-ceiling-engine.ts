@@ -139,6 +139,8 @@ export type CeilingPlan = {
   /** Faux quand frais et travaux dépassent déjà le budget : aucune enchère n'est rentable. */
   reachable: boolean;
   binding: "valeur" | "rendement";
+  /** Projet « Louer » sans loyer exploitable : le rendement ne limite pas le plafond. */
+  rentMissing: boolean;
   valueAfterWorks: number;
   marginPct: number;
   dataMarginPct: number;
@@ -252,6 +254,7 @@ export function computeCeilingPlan(h: CeilingHypotheses): CeilingPlan {
     maxBid,
     reachable,
     binding,
+    rentMissing: h.project === "louer" && yieldBudget == null,
     valueAfterWorks,
     marginPct,
     dataMarginPct: extraPct,
@@ -362,7 +365,7 @@ function buildSteps(h: CeilingHypotheses, plan: CeilingPlan, value: number): Cei
   }
   steps.push({
     key: "budget",
-    label: "Coût total à ne pas dépasser",
+    label: "Coût total maximal",
     amount: plan.budget,
     kind: "subtotal",
     detail: "Tout compris : prix, frais de la vente, travaux, libération et portage.",
@@ -489,7 +492,7 @@ export type BidEvaluation = {
   fees: AcquisitionCostResult;
   financing: number;
   totalCost: number;
-  /** Ce qu'il reste sous le coût total à ne pas dépasser (négatif : dépassement). */
+  /** Ce qu'il reste sous le coût total maximal (négatif : dépassement). */
   headroom: number;
   netYieldPct: number | null;
   resaleProfit: number | null;
@@ -538,7 +541,7 @@ export function evaluateBid(h: CeilingHypotheses, plan: CeilingPlan, price: numb
 
 /**
  * Budget travaux maximal si l'on remporte la vente à `price` : ce qui reste sous
- * le coût total à ne pas dépasser une fois le prix, les frais, la libération et
+ * le coût total maximal une fois le prix, les frais, la libération et
  * le portage payés. Le montant est un devis (sans imprévus ajoutés).
  */
 export function maxWorksAtBid(h: CeilingHypotheses, price: number): number {
@@ -722,6 +725,7 @@ function unavailablePlan(reason: string, h: CeilingHypotheses): CeilingPlan {
     maxBid: 0,
     reachable: false,
     binding: "valeur",
+    rentMissing: h.project === "louer" && positive(h.rent.monthly) == null,
     valueAfterWorks: 0,
     marginPct: marginPctFor(h),
     dataMarginPct: 0,

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import Bell from "lucide-react/dist/esm/icons/bell.js";
 import CreditCard from "lucide-react/dist/esm/icons/credit-card.js";
+import CircleX from "lucide-react/dist/esm/icons/circle-x.js";
 import Settings from "lucide-react/dist/esm/icons/settings.js";
 import { toast } from "sonner";
 import {
@@ -11,83 +13,185 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/use-auth";
+import { useBillingOffer, type BillingOfferSource } from "@/hooks/use-billing-offer";
+import { useCheckoutReturn } from "@/hooks/use-checkout-return";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { pathWithSearch } from "@/lib/navigation";
 import {
   fetchAccessPlan,
-  fetchBillingOffer,
+  fetchOfferOpeningNotification,
   openBillingPortal,
+  openSubscriptionCancellation,
   startAnalyseCheckout,
+  updateOfferOpeningNotification,
 } from "@/lib/client-billing";
-import type { PlanCode } from "@/lib/plans";
-import { LEGAL_DOCUMENTS, legalPublisherConfigurationStatus } from "@/lib/legal-documents";
+import {
+  hasLiveStripeSubscription,
+  pastDueGraceEnd,
+  type PlanBilling,
+  type PlanCode,
+} from "@/lib/plans";
+import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import {
   ANALYSIS_RECURRING_LABEL,
   ANALYSIS_SUBSCRIPTION_ONLY_LABEL,
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
+import {
+  OFFER_OPENING_CONSENT_TEXT,
+  OFFER_OPENING_REQUESTED_TEXT,
+} from "@/lib/offer-opening-consent";
 import { userMessage } from "@/lib/user-messages";
+import { trackProductEvent } from "@/lib/product-events";
+
+/** After a Stripe payment the webhook may take a moment: re-read the plan every 2 s, 30 s at most. */
+const ACTIVATION_POLL_INTERVAL_MS = 2_000;
+const ACTIVATION_POLL_WINDOW_MS = 30_000;
+
+/** Statuses for which the cancellation flow of the Stripe portal can be opened. */
+const CANCELLABLE_STATUSES: readonly string[] = ["trialing", "active", "past_due"];
+
+type PlanReadState = "loading" | "ready" | "error";
+type ActivationState = "idle" | "pending" | "active" | "timeout";
 
 export function BillingActions({
   className = "",
   hideHelper = false,
+  offerSource,
+  handleCheckoutReturn = false,
 }: {
   className?: string;
   hideHelper?: boolean;
+  /** Offer already read by the page; without it this component reads the offer itself. */
+  offerSource?: BillingOfferSource;
+  /** Show the Stripe return message and wait for the plan to switch to Analyse. */
+  handleCheckoutReturn?: boolean;
 }) {
   const { user, loading } = useAuth();
+  const userId = user?.id ?? null;
   const router = useRouter();
+  const ownOffer = useBillingOffer(!offerSource);
+  const { offer, reload: reloadOffer } = offerSource ?? ownOffer;
+  const checkoutReturn = useCheckoutReturn(handleCheckoutReturn);
   const [plan, setPlan] = useState<PlanCode | null>(null);
+  const [planState, setPlanState] = useState<PlanReadState>("loading");
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
-  const [hasStripeCustomer, setHasStripeCustomer] = useState(false);
-  const [offerConfigured, setOfferConfigured] = useState(false);
-  const [offerLabel, setOfferLabel] = useState(() => resolveAnalysisOfferLabel());
-  const [trialAvailable, setTrialAvailable] = useState(true);
-  const [busy, setBusy] = useState<"checkout" | "portal" | null>(null);
+  const [billing, setBilling] = useState<PlanBilling | null>(null);
+  const [activation, setActivation] = useState<ActivationState>("idle");
+  const [busy, setBusy] = useState<"checkout" | "portal" | "cancel" | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const checkoutTriggerRef = useRef<HTMLButtonElement>(null);
+  const activationStartedAt = useRef<number | null>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [immediatePerformanceAccepted, setImmediatePerformanceAccepted] = useState(false);
-  const checkoutAvailable = legalPublisherConfigurationStatus().ready;
+  const [openingRequested, setOpeningRequested] = useState<boolean | null>(null);
+  const [openingBusy, setOpeningBusy] = useState(false);
+
+  const offerReady = offer.status === "ready";
+  const offerOpen = offer.status === "ready" && offer.open;
+  const trialAvailable = offer.status === "ready" ? offer.trialAvailable : true;
+  const offerLabel = (offer.status === "ready" ? offer.label : null) ?? resolveAnalysisOfferLabel();
 
   useEffect(() => {
     let active = true;
     setPlan(null);
     setCurrentPeriodEnd(null);
-    setHasStripeCustomer(false);
+    setBilling(null);
 
-    fetchBillingOffer()
-      .then((offer) => {
-        if (active) {
-          setOfferConfigured(offer.configured);
-          setOfferLabel(offer.label);
-          setTrialAvailable(offer.trialAvailable !== false);
-        }
+    if (!userId) {
+      setPlanState("ready");
+      return;
+    }
+    setPlanState("loading");
+    fetchAccessPlan()
+      .then((response) => {
+        if (!active) return;
+        setPlan(response.plan.plan);
+        setCurrentPeriodEnd(response.plan.currentPeriodEnd);
+        setBilling(response.plan.billing ?? null);
+        setPlanState("ready");
       })
       .catch(() => {
-        if (active) setOfferConfigured(false);
+        if (!active) return;
+        setPlan(null);
+        setPlanState("error");
       });
-
-    if (user) {
-      fetchAccessPlan()
-        .then((response) => {
-          if (active) {
-            setPlan(response.plan.plan);
-            setCurrentPeriodEnd(response.plan.currentPeriodEnd);
-            setHasStripeCustomer(response.plan.billing?.hasStripeCustomer === true);
-          }
-        })
-        .catch(() => {
-          if (active) setPlan(null);
-        });
-    }
 
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [userId]);
+
+  // Back from a successful Stripe payment: the subscription is activated by a webhook,
+  // so the plan may still read "Découverte" for a few seconds.
+  useEffect(() => {
+    if (checkoutReturn !== "success" || !userId || planState === "loading") return;
+    if (plan === "analyse") {
+      setActivation("active");
+      return;
+    }
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    activationStartedAt.current ??= Date.now();
+    setActivation("pending");
+
+    const poll = async () => {
+      try {
+        const response = await fetchAccessPlan();
+        if (!active) return;
+        setCurrentPeriodEnd(response.plan.currentPeriodEnd);
+        setBilling(response.plan.billing ?? null);
+        setPlan(response.plan.plan);
+        if (response.plan.plan === "analyse") return;
+      } catch {
+        if (!active) return;
+      }
+      if (Date.now() - (activationStartedAt.current ?? Date.now()) >= ACTIVATION_POLL_WINDOW_MS) {
+        setActivation("timeout");
+        return;
+      }
+      timer = setTimeout(poll, ACTIVATION_POLL_INTERVAL_MS);
+    };
+    timer = setTimeout(poll, ACTIVATION_POLL_INTERVAL_MS);
+
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [checkoutReturn, userId, planState, plan]);
+
+  const hasAnalysis = plan === "analyse";
+  // Only a real Stripe subscription sends to the portal.  A Stripe customer alone is not
+  // enough: it exists as soon as the payment page opens, even if the visitor never paid.
+  // A subscriber whose renewal failed has lost the plan but still needs the portal to
+  // update the card: a new checkout would be refused for them.
+  const managesBilling = hasAnalysis || hasLiveStripeSubscription(billing, currentPeriodEnd);
+  // The cancellation flow needs a live Stripe subscription in a status Stripe can cancel.
+  // The server checks this again against the user's own row and supplies the subscription id.
+  const canCancel =
+    managesBilling &&
+    billing?.status != null &&
+    CANCELLABLE_STATUSES.includes(billing.status) &&
+    Boolean(currentPeriodEnd);
+  const checkingAccount = loading || (Boolean(userId) && planState === "loading");
+  const showOpeningRequest = !managesBilling && !checkingAccount && offerReady && !offerOpen;
+
+  useEffect(() => {
+    if (!userId || !showOpeningRequest) return;
+    let active = true;
+    fetchOfferOpeningNotification()
+      .then((response) => {
+        if (active) setOpeningRequested(response.notification.requested);
+      })
+      .catch(() => {
+        if (active) setOpeningRequested(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [userId, showOpeningRequest]);
 
   function redirectToLogin() {
     const redirect =
@@ -98,7 +202,7 @@ export function BillingActions({
   }
 
   async function openCheckoutReview() {
-    if (loading || busy || !checkoutAvailable || !offerConfigured) return;
+    if (loading || busy || !offerOpen) return;
     if (!user) {
       redirectToLogin();
       return;
@@ -110,14 +214,7 @@ export function BillingActions({
   }
 
   async function confirmCheckout() {
-    if (
-      !termsAccepted ||
-      !immediatePerformanceAccepted ||
-      busy ||
-      !checkoutAvailable ||
-      !offerConfigured
-    )
-      return;
+    if (!termsAccepted || !immediatePerformanceAccepted || busy || !offerOpen) return;
     setBusy("checkout");
     try {
       const response = await startAnalyseCheckout({
@@ -130,6 +227,7 @@ export function BillingActions({
           withdrawalInformationAcknowledged: true,
         },
       });
+      trackProductEvent("checkout_started");
       window.location.assign(response.url);
     } catch (error) {
       toast.error(userMessage(error, "Paiement indisponible"));
@@ -154,71 +252,194 @@ export function BillingActions({
     }
   }
 
-  const hasAnalysis = plan === "analyse";
-  // A subscriber whose renewal failed has lost the plan but still needs the
-  // portal to update the card: checkout would be refused for them.
-  const managesBilling = hasAnalysis || hasStripeCustomer;
-  const primaryLabel = managesBilling
-    ? busy === "portal"
+  async function openCancellation() {
+    if (loading || busy) return;
+    if (!user) {
+      redirectToLogin();
+      return;
+    }
+
+    setBusy("cancel");
+    try {
+      const response = await openSubscriptionCancellation();
+      window.location.assign(response.url);
+    } catch (error) {
+      toast.error(userMessage(error, "Résiliation indisponible"));
+      setBusy(null);
+    }
+  }
+
+  async function changeOpeningRequest(enabled: boolean) {
+    if (openingBusy) return;
+    if (!user) {
+      router.push(pathWithSearch("/login", { mode: "investor", redirect: "/offres" }));
+      return;
+    }
+    setOpeningBusy(true);
+    try {
+      const response = await updateOfferOpeningNotification(enabled);
+      setOpeningRequested(response.notification.requested);
+      if (enabled && response.notification.requested) {
+        trackProductEvent("opening_notification_requested");
+      }
+    } catch (error) {
+      toast.error(userMessage(error, "Demande impossible"));
+    } finally {
+      setOpeningBusy(false);
+    }
+  }
+
+  const portalLabel =
+    busy === "portal"
       ? "Ouverture..."
       : hasAnalysis
         ? "Gérer mon abonnement Analyse"
-        : "Gérer mon abonnement"
-    : !checkoutAvailable || !offerConfigured
-      ? "Paiement temporairement indisponible"
-      : busy === "checkout"
-        ? "Redirection..."
-        : trialAvailable
-          ? "Démarrer l’essai Analyse"
-          : "Souscrire à Analyse";
-  const expiryLabel = formatAccessEnd(currentPeriodEnd);
+        : "Gérer mon abonnement";
+  const purchaseLabel =
+    busy === "checkout"
+      ? "Redirection..."
+      : trialAvailable
+        ? "Démarrer l’essai Analyse"
+        : "Souscrire à Analyse";
+  const expiryLabel = formatAccessEnd(currentPeriodEnd, billing);
+  const checkoutBanner = checkoutReturnBanner({
+    checkoutReturn,
+    signedIn: Boolean(userId),
+    activation: hasAnalysis ? "active" : activation,
+  });
 
   return (
     <>
-      <div className={`flex flex-col gap-2 sm:flex-row ${className}`}>
-        <button
-          type="button"
-          onClick={managesBilling ? openPortal : openCheckoutReview}
-          ref={checkoutTriggerRef}
-          disabled={
-            loading ||
-            Boolean(busy) ||
-            (!managesBilling && (!checkoutAvailable || !offerConfigured))
-          }
-          className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+      {checkoutBanner ? (
+        <p
+          role="status"
+          className="mb-3 rounded-lg border border-border bg-muted/35 p-3 text-sm leading-relaxed text-brand-navy"
         >
-          <CreditCard className="h-4 w-4" />
-          {primaryLabel}
-        </button>
-        {hasAnalysis ? (
+          <strong>{checkoutBanner.title}</strong> {checkoutBanner.text}
+        </p>
+      ) : null}
+
+      {managesBilling ? (
+        <div className={`flex flex-col gap-2 sm:flex-row ${className}`}>
           <button
             type="button"
             onClick={openPortal}
+            ref={checkoutTriggerRef}
             disabled={loading || Boolean(busy)}
-            className="ij-login-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+            className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Settings className="h-4 w-4" />
-            {busy === "portal" ? "Ouverture..." : (expiryLabel ?? "Voir mes paiements")}
+            <CreditCard className="h-4 w-4" />
+            {portalLabel}
           </button>
-        ) : hideHelper ? null : (
-          <span className="inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-muted-foreground">
-            {trialAvailable
-              ? `${ANALYSIS_TRIAL_LABEL} · abonnement résiliable depuis le portail Stripe`
-              : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL} · sans nouvel essai`}
-          </span>
-        )}
-      </div>
+          {hasAnalysis ? (
+            <button
+              type="button"
+              onClick={openPortal}
+              disabled={loading || Boolean(busy)}
+              className="ij-login-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Settings className="h-4 w-4" />
+              {busy === "portal" ? "Ouverture..." : (expiryLabel ?? "Voir mes paiements")}
+            </button>
+          ) : null}
+          {canCancel ? (
+            <button
+              type="button"
+              onClick={openCancellation}
+              disabled={loading || Boolean(busy)}
+              className="ij-login-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <CircleX className="h-4 w-4" aria-hidden />
+              {busy === "cancel" ? "Ouverture..." : "Résilier mon abonnement"}
+            </button>
+          ) : null}
+        </div>
+      ) : checkingAccount || offer.status === "loading" ? (
+        <div
+          role="status"
+          aria-busy="true"
+          aria-label="Chargement de l’offre"
+          className={`flex flex-col gap-2 sm:flex-row ${className}`}
+        >
+          <div aria-hidden className="h-11 w-full animate-pulse rounded-md bg-muted sm:w-64" />
+        </div>
+      ) : offer.status === "error" ? (
+        <div role="alert" className="text-sm leading-relaxed text-brand-navy/80">
+          <p>L’offre n’a pas pu être chargée. Ce n’est pas une fermeture des souscriptions.</p>
+          <button
+            type="button"
+            onClick={reloadOffer}
+            className="ij-login-button mt-2 inline-flex items-center justify-center px-4 py-2 text-sm font-semibold"
+          >
+            Réessayer
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className={`flex flex-col gap-2 sm:flex-row ${className}`}>
+            <button
+              type="button"
+              onClick={openCheckoutReview}
+              ref={checkoutTriggerRef}
+              disabled={loading || Boolean(busy) || !offerOpen}
+              className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <CreditCard className="h-4 w-4" />
+              {offerOpen ? purchaseLabel : "Ouverture prochaine"}
+            </button>
+            {offerOpen && !hideHelper ? (
+              <span className="inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-muted-foreground">
+                {trialAvailable
+                  ? `${ANALYSIS_TRIAL_LABEL} · abonnement résiliable depuis Mon compte`
+                  : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL} · sans nouvel essai`}
+              </span>
+            ) : null}
+          </div>
 
-      {!managesBilling && (!checkoutAvailable || !offerConfigured) ? (
-        <p role="status" className="mt-3 text-sm leading-relaxed text-brand-navy/80">
-          Les souscriptions sont temporairement indisponibles. Vous pouvez explorer gratuitement le
-          catalogue.{" "}
-          <Link href="/legal" className="underline">
-            Voir les mentions légales
-          </Link>
-          .
-        </p>
-      ) : null}
+          {!offerOpen ? (
+            <div className="mt-3 text-sm leading-relaxed text-brand-navy/80">
+              <p role="status">
+                Les souscriptions ouvriront prochainement. Vous pouvez explorer gratuitement le
+                catalogue.{" "}
+                <Link href="/legal" className="underline">
+                  Voir les mentions légales
+                </Link>
+                .
+              </p>
+              {openingRequested ? (
+                <p role="status" className="mt-3 font-medium">
+                  {OFFER_OPENING_REQUESTED_TEXT}{" "}
+                  <button
+                    type="button"
+                    onClick={() => changeOpeningRequest(false)}
+                    disabled={openingBusy}
+                    className="font-semibold underline disabled:opacity-60"
+                  >
+                    Retirer ma demande
+                  </button>
+                </p>
+              ) : (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => changeOpeningRequest(true)}
+                    disabled={openingBusy || loading}
+                    className="ij-login-button inline-flex w-full items-center justify-center gap-2 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Bell className="h-4 w-4" aria-hidden />
+                    Me prévenir de l’ouverture
+                  </button>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {user
+                      ? OFFER_OPENING_CONSENT_TEXT
+                      : "Un compte gratuit est nécessaire pour être prévenu : vous serez invité à le créer."}
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </>
+      )}
 
       <Dialog open={checkoutOpen} onOpenChange={(open) => !busy && setCheckoutOpen(open)}>
         <DialogContent
@@ -249,10 +470,8 @@ export function BillingActions({
               {trialAvailable
                 ? "Carte bancaire requise pendant l’essai. "
                 : "Carte bancaire requise. "}
-              {trialAvailable
-                ? ANALYSIS_RECURRING_LABEL
-                : "Abonnement récurrent résiliable depuis le portail Stripe"}
-              . Le montant et la périodicité sont affichés par Stripe avant confirmation.
+              {trialAvailable ? ANALYSIS_RECURRING_LABEL : ANALYSIS_SUBSCRIPTION_ONLY_LABEL}. Le
+              montant et la périodicité sont affichés par Stripe avant confirmation.
             </p>
           </div>
 
@@ -313,7 +532,7 @@ export function BillingActions({
               type="button"
               onClick={confirmCheckout}
               disabled={
-                !termsAccepted || !immediatePerformanceAccepted || Boolean(busy) || !offerConfigured
+                !termsAccepted || !immediatePerformanceAccepted || Boolean(busy) || !offerOpen
               }
               className="ij-signup-button inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -327,7 +546,50 @@ export function BillingActions({
   );
 }
 
-function formatAccessEnd(value: string | null): string | null {
+function checkoutReturnBanner({
+  checkoutReturn,
+  signedIn,
+  activation,
+}: {
+  checkoutReturn: "success" | "cancelled" | null;
+  signedIn: boolean;
+  activation: ActivationState;
+}): { title: string; text: string } | null {
+  if (checkoutReturn === "cancelled") {
+    return {
+      title: "Paiement annulé.",
+      text: "Vous pouvez reprendre la souscription quand vous le souhaitez.",
+    };
+  }
+  if (checkoutReturn !== "success" || !signedIn) return null;
+  if (activation === "active") {
+    return { title: "Paiement reçu.", text: "Votre accès Analyse est activé." };
+  }
+  if (activation === "timeout") {
+    return {
+      title: "Paiement reçu.",
+      text: "L’activation prend plus de temps que prévu. Actualisez la page dans quelques minutes : votre accès apparaîtra dès qu’elle sera terminée.",
+    };
+  }
+  return {
+    title: "Paiement reçu, activation en cours.",
+    text: "Votre accès Analyse sera disponible dans quelques secondes.",
+  };
+}
+
+/**
+ * End of access shown on the portal button.  For a renewal that failed (`past_due`),
+ * `current_period_end` holds the start of the unpaid period (already past): access
+ * actually ends with the grace period, computed as in `plans.ts`.
+ */
+function formatAccessEnd(
+  currentPeriodEnd: string | null,
+  billing: Pick<PlanBilling, "status" | "graceEndsAt"> | null = null,
+): string | null {
+  const value =
+    billing?.status === "past_due"
+      ? (billing.graceEndsAt ?? pastDueGraceEnd(currentPeriodEnd))
+      : currentPeriodEnd;
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;

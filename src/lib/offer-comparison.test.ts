@@ -25,6 +25,15 @@ describe("offerComparisonRows", () => {
     expect(row("alerts").analyse.text).toBe("Jusqu’à 25, email quotidien");
   });
 
+  it("promet les statistiques des ventes et des tribunaux à l'offre Analyse seulement", () => {
+    expect(row("statistics").label).toBe("Statistiques des ventes et des tribunaux");
+    expect(row("statistics").analyse.included).toBe(true);
+    expect(row("statistics").decouverte.included).toBe(false);
+    expect(row("statistics").hint).toBe("Tribunaux : selon l’historique disponible");
+    expect(row("pdf").analyse.included).toBe(true);
+    expect(row("csv").analyse.included).toBe(true);
+  });
+
   it("n'expose aucun fournisseur ni « Premium »", () => {
     const text = JSON.stringify(rows);
     expect(text).not.toMatch(/Stripe|Meteostat|ClimaScore|Premium|météo/i);

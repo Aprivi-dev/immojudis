@@ -103,6 +103,7 @@ describe("saved alert management", () => {
     expect(screen.queryByText(/Immédiate/i)).toBeNull();
     expect(screen.getAllByText("Quotidienne").length).toBeGreaterThan(0);
     expect(screen.getByText(/un email récapitulatif par semaine/)).toBeTruthy();
+    expect(screen.getByText(/n’est envoyé que si vous l’avez activé/)).toBeTruthy();
   });
 
   it("change la fréquence et réserve le quotidien à l'offre Analyse", async () => {

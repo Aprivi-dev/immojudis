@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
+from src import source_withdrawal
 from src.admission import admit_sales, has_price_or_surface, is_expired, publication_rejection, split_insufficient
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
@@ -388,6 +389,8 @@ def run_pipeline(options: PipelineOptions | None = None) -> int:
     execution, and stages 2 and 4 can end the run early with exit code 1.
     """
     options = options or PipelineOptions()
+    if source_withdrawal.refuse_withdrawn_run(options.source, load_settings()):
+        return 0  # pas de run, donc pas d'alerte « source manquée » : un retrait volontaire n'est pas une panne
     run = _open_run(options)
     if not _load_known_sale_details(run):
         return 1
@@ -1741,11 +1744,8 @@ def _enabled_scrapers(
             lambda: scrape_notaires_aquitaine_result(max_pages=int(settings["notaires_max_pages"]), known=known),
         ),
     ]
-    enabled: dict[str, Callable[[], ScrapeResult]] = {}
-    for name, benchmark_on, fn in candidates:
-        if source == name or (source == "all" and benchmark_on):
-            enabled[name] = fn
-    return enabled
+    return source_withdrawal.without_withdrawn(
+        {n: fn for n, ok, fn in candidates if source == n or (source == "all" and ok)}, settings)
 
 
 def _configured_page_limit(source_name: str, settings: dict[str, object]) -> int | None:

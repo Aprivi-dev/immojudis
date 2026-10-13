@@ -31,6 +31,7 @@ const testState = vi.hoisted(() => {
     },
     addFavoriteSale: vi.fn(),
     removeFavoriteSale: vi.fn(),
+    push: vi.fn(),
   };
 });
 
@@ -42,7 +43,7 @@ vi.mock("@/lib/client-api", () => ({
   removeFavoriteSale: testState.removeFavoriteSale,
 }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push: testState.push, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
 vi.mock("@/components/SaleVisual", () => ({
   SaleVisual: ({ locked, title }: { locked: boolean; title: string }) => (
@@ -58,6 +59,7 @@ afterEach(() => {
   testState.favoriteQuery.in.mockReset();
   testState.addFavoriteSale.mockReset().mockResolvedValue({});
   testState.removeFavoriteSale.mockReset().mockResolvedValue({});
+  testState.push.mockReset();
 });
 
 function setAuthenticatedUser(id: string | null) {
@@ -226,6 +228,34 @@ describe("useful public discovery", () => {
     }
     expect(container.querySelector('[class*="blur-"]')).toBeNull();
     expect(screen.getByText(/Fiche complète avec un compte gratuit/)).toBeTruthy();
+  });
+
+  it("shows a starting price of 0 as not communicated on the listing card", () => {
+    const sale = {
+      id: "sale-zero",
+      city: "Lille",
+      department: "59",
+      property_type: "apartment",
+      starting_price_eur: 0,
+      sale_date: "2026-10-01T09:00:00Z",
+      sale_venue_type: "tribunal",
+      media: [],
+    } as unknown as AuctionSale;
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ListingCard
+          sale={sale}
+          returnTo="/sales"
+          locked
+          analysisLocked={false}
+          active={false}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    expect(container.textContent).toContain("Prix non communiqué");
+    expect(container.textContent).not.toMatch(/0\s?€/);
   });
 
   it("offers a working example instead of fabricated statistics", () => {
@@ -507,9 +537,9 @@ describe("catalogue favorite status", () => {
       "sale-c",
     ]);
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Ne plus suivre cette vente" })).toBeTruthy(),
+      expect(screen.getByRole("button", { name: "Retirer des favoris" })).toBeTruthy(),
     );
-    expect(screen.getAllByRole("button", { name: "Suivre cette vente" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Ajouter aux favoris" })).toHaveLength(2);
   });
 
   it("updates the batched cache after a toggle and reuses it on remount", async () => {
@@ -522,12 +552,12 @@ describe("catalogue favorite status", () => {
     const { client } = renderResults(sales);
     await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledOnce());
 
-    fireEvent.click(screen.getByRole("button", { name: "Suivre cette vente" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter aux favoris" }));
     await waitFor(() =>
       expect(testState.addFavoriteSale).toHaveBeenCalledWith({ data: { saleId: "sale-a" } }),
     );
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Ne plus suivre cette vente" })).toBeTruthy(),
+      expect(screen.getByRole("button", { name: "Retirer des favoris" })).toBeTruthy(),
     );
     expect(client.getQueryData(["search-favorite-status", "user-a", ["sale-a"]])).toEqual([
       "sale-a",
@@ -535,7 +565,7 @@ describe("catalogue favorite status", () => {
 
     cleanup();
     renderResults(sales, client);
-    expect(screen.getByRole("button", { name: "Ne plus suivre cette vente" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retirer des favoris" })).toBeTruthy();
     expect(testState.favoriteQuery.in).toHaveBeenCalledTimes(2);
   });
 
@@ -577,9 +607,9 @@ describe("catalogue favorite status", () => {
 
     resolveUserA({ data: [{ sale_id: "sale-a" }], error: null });
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Suivre cette vente" })).toBeTruthy(),
+      expect(screen.getByRole("button", { name: "Ajouter aux favoris" })).toBeTruthy(),
     );
-    expect(screen.queryByRole("button", { name: "Ne plus suivre cette vente" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retirer des favoris" })).toBeNull();
   });
 
   it("cancels the first read before a toggle so its stale response cannot undo the new state", async () => {
@@ -607,7 +637,7 @@ describe("catalogue favorite status", () => {
     const { client } = renderResults(sales);
     await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalledOnce());
 
-    fireEvent.click(screen.getByRole("button", { name: "Suivre cette vente" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter aux favoris" }));
     await waitFor(() => expect(testState.addFavoriteSale).toHaveBeenCalledOnce());
 
     resolveInitial({ data: [], error: null });
@@ -619,11 +649,53 @@ describe("catalogue favorite status", () => {
 
     resolveRefresh({ data: [{ sale_id: "sale-a" }], error: null });
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Ne plus suivre cette vente" })).toBeTruthy(),
+      expect(screen.getByRole("button", { name: "Retirer des favoris" })).toBeTruthy(),
     );
 
     resolveInitial({ data: [], error: null });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(screen.getByRole("button", { name: "Ne plus suivre cette vente" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retirer des favoris" })).toBeTruthy();
+  });
+});
+
+describe("favourite heart for a visitor", () => {
+  function renderAnonymous() {
+    window.history.pushState({}, "", "/sales?city=Lyon");
+    return render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SearchResultsList
+          sales={[sale("sale-a")]}
+          returnTo="/sales"
+          locked
+          analysisLocked
+          isLoading={false}
+          error={null}
+          selectedSaleId={null}
+          hoveredSaleId={null}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          comparedSaleIds={[]}
+          comparisonDisabled={false}
+          onToggleComparison={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("keeps the heart and explains the free account instead of showing a padlock", () => {
+    renderAnonymous();
+    const heart = screen.getByRole("button", { name: "Ajouter aux favoris" });
+    expect(heart.getAttribute("title")).toBe(
+      "Créer un compte gratuit pour garder cette vente (3 favoris)",
+    );
+    expect(heart.className).toContain("h-11");
+  });
+
+  it("opens the sign-up page with the favourite reason and comes back to the search", () => {
+    renderAnonymous();
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter aux favoris" }));
+    expect(testState.push).toHaveBeenCalledWith(
+      "/login?redirect=%2Fsales%3Fcity%3DLyon&mode=investor&reason=favori",
+    );
   });
 });

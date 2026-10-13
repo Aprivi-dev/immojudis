@@ -10,7 +10,8 @@ quote reaches a subscriber.
 
 Results go to ``public.auction_document_readings`` (service role only); the web
 app serves them to Analyse members. A reading is redone only when the persisted
-text or the prompt version changes.
+text or the prompt version changes; a failed one is retried with a growing delay
+(12 h, 24 h, 72 h) and abandoned at the fourth failure on the same text.
 """
 
 from __future__ import annotations
@@ -111,6 +112,35 @@ SYSTEM_PROMPT = (
 )
 
 
+# A failed reading is retried with a growing delay (12 h, 24 h, then 72 h after the
+# 1st, 2nd and 3rd failure) and abandoned at the 4th failure on the same input.
+RETRY_BACKOFF_HOURS = (12, 24, 72)
+MAX_FAILED_ATTEMPTS = len(RETRY_BACKOFF_HOURS) + 1
+ABANDONED_ERROR_PREFIX = "READING_ABANDONED_AFTER_"
+
+
+def retry_delay_hours(failed_attempts: int) -> int | None:
+    """Hours to wait after ``failed_attempts`` consecutive failures; None once abandoned."""
+    if failed_attempts >= MAX_FAILED_ATTEMPTS:
+        return None
+    return RETRY_BACKOFF_HOURS[max(failed_attempts, 1) - 1]
+
+
+def failed_attempts_after(
+    result: ReadingResult, *, previous_status: str | None, previous_attempts: int, same_input: bool
+) -> int:
+    """Consecutive failed attempts stored with a reading; 0 when it did not fail."""
+    if result.status != "failed":
+        return 0
+    carried = previous_attempts if same_input and previous_status == "failed" else 0
+    return carried + (1 if result.attempt_counted else 0)
+
+
+def abandoned_error_code(cause: str | None) -> str:
+    """Readable error code stored when the last allowed attempt failed."""
+    return f"{ABANDONED_ERROR_PREFIX}{MAX_FAILED_ATTEMPTS}_ATTEMPTS:{cause or 'UNKNOWN'}"[:200]
+
+
 @dataclass
 class ReadingDocument:
     index: int
@@ -131,6 +161,9 @@ class ReadingResult:
     input_truncated: bool = False
     error_code: str | None = None
     model: str | None = None
+    # False for a failure that says nothing about the dossier (daily or hourly LLM budget
+    # exhausted): it is retried later without using one of the allowed attempts.
+    attempt_counted: bool = True
 
 
 def documents_from_manifest(manifest: object) -> list[ReadingDocument]:
@@ -324,6 +357,18 @@ def validate_reading_points(raw_points: object, documents: Sequence[ReadingDocum
     return points
 
 
+def _counts_as_attempt(exc: BaseException) -> bool:
+    """A spending-budget refusal is not a failure of the reading itself.
+
+    An exact invalid-output cooldown, on the other hand, is one: the model already
+    failed on this very request.
+    """
+    from src.llm_requests import LLMRequestDeterministicCooldown
+    from src.pipeline_usage import PipelineBudgetExhausted
+
+    return not isinstance(exc, PipelineBudgetExhausted) or isinstance(exc, LLMRequestDeterministicCooldown)
+
+
 def read_sale_documents(
     documents: Sequence[ReadingDocument],
     *,
@@ -342,7 +387,13 @@ def read_sale_documents(
             payload = generate_json(SYSTEM_PROMPT, prompt)
     except Exception as exc:  # provider, budget or transport failure: retried on a later run
         LOGGER.warning("Document reading failed: %s", type(exc).__name__)
-        return ReadingResult("failed", input_truncated=truncated, error_code=type(exc).__name__, model=model)
+        return ReadingResult(
+            "failed",
+            input_truncated=truncated,
+            error_code=type(exc).__name__,
+            model=model,
+            attempt_counted=_counts_as_attempt(exc),
+        )
     if not isinstance(payload, Mapping):
         return ReadingResult("failed", input_truncated=truncated, error_code="READING_OUTPUT_INVALID", model=model)
     points = validate_reading_points(payload.get("points"), documents)
@@ -359,8 +410,24 @@ def input_fingerprint(manifest: object) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-CANDIDATES_SQL = """
-select sale.id, sale.source_url, latest.result, reading.input_fingerprint
+def _retry_due_sql() -> str:
+    """SQL condition: failed reading whose back-off has elapsed and attempts remain."""
+    delays = " ".join(
+        f"when reading.attempt_count <= {attempts} then interval '{hours} hours'"
+        for attempts, hours in enumerate(RETRY_BACKOFF_HOURS[:-1], start=1)
+    )
+    delay = f"case {delays} else interval '{RETRY_BACKOFF_HOURS[-1]} hours' end"
+    return (
+        f"(reading.status = 'failed' and reading.attempt_count < {MAX_FAILED_ATTEMPTS}"
+        f" and reading.generated_at < now() - {delay})"
+    )
+
+
+_RETRY_DUE_SQL = _retry_due_sql()
+
+CANDIDATES_SQL = f"""
+select sale.id, sale.source_url, latest.result, reading.input_fingerprint,
+       reading.status, coalesce(reading.attempt_count, 0), coalesce({_RETRY_DUE_SQL}, false)
   from public.auction_sales sale
   join lateral (
     select extraction.result
@@ -377,7 +444,7 @@ select sale.id, sale.source_url, latest.result, reading.input_fingerprint
    and (
      reading.sale_id is null
      or reading.prompt_version <> %s
-     or reading.status = 'failed' and reading.generated_at < now() - interval '12 hours'
+     or {_RETRY_DUE_SQL}
      or reading.updated_at < (
        select max(extraction.updated_at) from public.auction_extractions extraction
         where extraction.source_url = sale.source_url and extraction.provider = 'pdf_text'
@@ -390,8 +457,8 @@ select sale.id, sale.source_url, latest.result, reading.input_fingerprint
 UPSERT_SQL = """
 insert into public.auction_document_readings (
   sale_id, source_url, input_fingerprint, prompt_version, model, status,
-  points, documents, input_truncated, error_code, generated_at, updated_at
-) values (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, now(), now())
+  points, documents, input_truncated, error_code, attempt_count, generated_at, updated_at
+) values (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, now(), now())
 on conflict (sale_id) do update set
   source_url = excluded.source_url,
   input_fingerprint = excluded.input_fingerprint,
@@ -402,6 +469,7 @@ on conflict (sale_id) do update set
   documents = excluded.documents,
   input_truncated = excluded.input_truncated,
   error_code = excluded.error_code,
+  attempt_count = excluded.attempt_count,
   generated_at = excluded.generated_at,
   updated_at = now()
 """
@@ -445,16 +513,19 @@ def run_document_readings(
 ) -> dict[str, int]:
     """Read the dossiers that have no up-to-date reading. Never raises on one sale."""
     started = time.monotonic()
-    counts = {"candidates": 0, "completed": 0, "unchanged": 0, "failed": 0, "no_text": 0}
+    counts = {"candidates": 0, "completed": 0, "unchanged": 0, "failed": 0, "abandoned": 0, "no_text": 0}
     with _connect(db_url) as connection:
         rows = connection.execute(CANDIDATES_SQL, (DOCUMENT_READING_VERSION, int(max_sales))).fetchall()
     counts["candidates"] = len(rows)
     generate_json, model = generator if generator is not None else _llm_generator()
-    for sale_id, source_url, manifest, previous_fingerprint in rows:
+    for sale_id, source_url, manifest, previous_fingerprint, previous_status, previous_attempts, retry_due in rows:
         if time.monotonic() - started >= budget_seconds:
             break
         fingerprint = input_fingerprint(manifest)
-        if fingerprint == previous_fingerprint:
+        same_input = fingerprint == previous_fingerprint
+        # A failed reading on the same text is read again only when its back-off
+        # has elapsed and attempts remain; otherwise it waits for a new text.
+        if same_input and not (previous_status == "failed" and retry_due):
             with _connect(db_url) as connection:
                 connection.execute(TOUCH_SQL, (sale_id,))
             counts["unchanged"] += 1
@@ -464,6 +535,16 @@ def run_document_readings(
         if result.status == "unavailable":
             LOGGER.info("Document reading skipped: no LLM provider configured")
             break
+        attempts = failed_attempts_after(
+            result,
+            previous_status=previous_status,
+            previous_attempts=int(previous_attempts or 0),
+            same_input=same_input,
+        )
+        error_code = result.error_code
+        if attempts >= MAX_FAILED_ATTEMPTS:
+            error_code = abandoned_error_code(result.error_code)
+            counts["abandoned"] += 1
         counts[result.status if result.status in counts else "failed"] += 1
         with _connect(db_url) as connection:
             connection.execute(
@@ -478,7 +559,8 @@ def run_document_readings(
                     json.dumps(result.points, ensure_ascii=False),
                     json.dumps(_documents_payload(documents), ensure_ascii=False),
                     result.input_truncated,
-                    result.error_code,
+                    error_code,
+                    attempts,
                 ),
             )
         LOGGER.info(

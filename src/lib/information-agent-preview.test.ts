@@ -153,10 +153,10 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       expect(output).toContain("procès-verbal descriptif");
       expect(output).toContain("Immojudis SAS");
       expect(output).toContain("https://www.licitor.com/annonce/109972.html");
-      expect(output).toContain("Créer un compte professionnel");
+      expect(output).not.toContain("compte professionnel");
+      expect(output).not.toContain("service professionnel");
       expect(output).toContain("https://immojudis.example/api/information-agent/opt-out?e=");
     }
-    expect(result.accountInvitation).toBe(true);
     expect(db.writes).toEqual([]);
     expect(supabaseAdmin.rpc).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
@@ -183,13 +183,6 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       ]),
     );
     expect(db.writes).toEqual([]);
-  });
-
-  it("n'utilise pas l'invitation quand elle est désactivée", async () => {
-    vi.stubEnv("INFORMATION_AGENT_ACCOUNT_INVITATION", "false");
-    const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
-    expect(result.accountInvitation).toBe(false);
-    expect(result.preview.text).not.toContain("Créer un compte professionnel");
   });
 
   it("refuse un envoi dont le contenu a changé après l'aperçu, avant toute écriture", async () => {

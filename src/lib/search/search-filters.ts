@@ -53,6 +53,7 @@ export function dataSortFromSearch(sort: SearchSortKey | undefined): SortKey {
     case "sqft_desc":
       return "surface_desc";
     case "beds_desc":
+      return "beds_desc";
     case "distance":
     case "relevance":
     default:
@@ -155,9 +156,9 @@ export function hasClientOnlyFilters(search: SalesSearchParams): boolean {
     search.dpeClasses?.length ||
     search.openHouse ||
     search.yearBuilt ||
-    search.transactionType === "for_rent" ||
-    search.sort === "beds_desc" ||
-    search.sort === "distance",
+    // « Distance » n'a pas besoin de balayage sans adresse (rien à mesurer) : elle suit déjà
+    // `aroundAddress` ci-dessus. « Chambres » se trie côté serveur (`beds_desc`).
+    search.transactionType === "for_rent",
   );
 }
 

@@ -4,7 +4,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
@@ -15,10 +15,12 @@ import {
   fetchAccessPlan,
   fetchDpeExplorer,
   exportSalesCsv,
+  fetchNotificationPreferences,
   fetchSalesAiReviewProjections,
   fetchSalesStatistics,
 } from "@/lib/client-api";
 import { createAlert, getSaleById } from "@/lib/queries";
+import { trackProductEvent } from "@/lib/product-events";
 import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
 import { departmentSearchValues, resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
@@ -31,6 +33,7 @@ import {
   sortClientSearchResults,
 } from "@/lib/search/search-filters";
 import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
+import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
 import {
   ANONYMOUS_PREVIEW_SCOPE,
   catalogPlaceholder,
@@ -51,8 +54,10 @@ import {
 import type { MapViewportChange } from "./MapPanel";
 import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
+import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
-import { ResultsSummary, SearchHeader, SortDropdown } from "./SearchHeader";
+import { ResultsSummary, SearchHeader, SortDropdown, type SaveSearchOptions } from "./SearchHeader";
+import { enableAlertEmailRecap } from "./alert-email-consent";
 import { SearchResultsList } from "./SearchResults";
 import { SaleComparisonBar } from "./SaleComparisonBar";
 import { SaleTypeFilter } from "./SaleTypeFilter";
@@ -77,6 +82,9 @@ const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPan
   ssr: false,
   loading: () => <MapPanelSkeleton />,
 });
+
+/** The map draws at most this many points: more would make clusters and popups sluggish. */
+const MAP_POINT_LIMIT = 500;
 
 function SearchStatisticsLoading() {
   return (
@@ -114,6 +122,7 @@ export function SearchPage({
   serverSeeded?: boolean;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
@@ -341,7 +350,7 @@ export function SearchPage({
     [center, isPreview, rawSales, search],
   );
 
-  const mapSales = useMemo(
+  const mappableSales = useMemo(
     () =>
       (!mapVisible
         ? []
@@ -352,11 +361,11 @@ export function SearchPage({
               search,
               center,
             )
-      )
-        .filter(hasCoordinates)
-        .slice(0, 500),
+      ).filter(hasCoordinates),
     [center, isPreview, mapVisible, rawMapSales, rawSales, search],
   );
+  const mapSales = useMemo(() => mappableSales.slice(0, MAP_POINT_LIMIT), [mappableSales]);
+  const mappablePointsTotal = mappableSales.length;
 
   // The map projection is intentionally lightweight. Fetch the complete row
   // only after an authenticated user selects a sale that is actually present
@@ -407,6 +416,7 @@ export function SearchPage({
   const hasLocalFilters = false;
   const isInitialLoading = (authLoading && !serverSeeded) || entitlementsLoading || isLoading;
   const activeFiltersCount = countActiveSearchFilters(search);
+  const activeFilters = useMemo(() => activeFilterChips(search), [search]);
   const displayCount = totalCount ?? filteredSales.length;
   const filteredCount = displayedSales.length;
   const hasMore =
@@ -428,6 +438,14 @@ export function SearchPage({
     !user || !entitlementsData || entitlementsData.plan.features.watchedZones === "locked";
   const alertsLocked =
     !user || !entitlementsData || entitlementsData.plan.features.smartAlerts === "locked";
+  const { data: notificationPreferences } = useQuery({
+    queryKey: queryKeys.notificationPreferences(user?.id ?? "anonymous"),
+    queryFn: fetchNotificationPreferences,
+    enabled: Boolean(user) && !authLoading,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const emailRecapEnabled = notificationPreferences?.preferences.alertEmailEnabled === true;
   const { data: salesStatisticsData, isFetching: salesStatisticsLoading } = useQuery({
     queryKey: queryKeys.salesStatistics(searchKeySignature),
     queryFn: () => fetchSalesStatistics({ search }),
@@ -540,6 +558,7 @@ export function SearchPage({
     },
     locationCenter,
     totalCount,
+    mappablePointsTotal,
     hoveredSaleId,
     selectedSaleId,
     selectedSaleDetail:
@@ -555,13 +574,30 @@ export function SearchPage({
     onSelect: handleMapSelect,
     onViewportChange: handleViewportChange,
     onSearchAsMoveChange: handleSearchAsMoveChange,
+    // Sur mobile la carte recouvre la liste : « Voir la liste » la referme.
+    onShowList: () => {
+      if (!isDesktop) updateSearch({ map: false });
+    },
   };
 
-  async function saveSearch(options?: { frequency: "daily" | "weekly" }) {
+  /**
+   * A feature reserved to Analyse: send the person to the offers page only when the
+   * subscription can really be bought, otherwise explain instead of leading to a dead end.
+   */
+  async function explainReservedFeature(reservedMessage: string) {
+    if (await isAnalysisOfferOpen()) {
+      toast.message(reservedMessage);
+      router.push(OFFERS_PATH);
+      return;
+    }
+    toast.message(`${reservedMessage} L'abonnement Analyse n'est pas encore ouvert.`);
+  }
+
+  async function saveSearch(options?: SaveSearchOptions) {
     if (!user) {
-      // La première alerte est gratuite : on invite à se connecter puis on
+      // La première alerte est gratuite : on invite à créer un compte puis on
       // ramène la personne sur sa recherche.
-      router.push(loginPathWithRedirect(currentHref));
+      router.push(loginPathWithRedirect(currentHref, { reason: "alerte" }));
       return;
     }
     if (entitlementsLoading || !entitlementsData) {
@@ -569,8 +605,9 @@ export function SearchPage({
       return;
     }
     if (alertsLocked) {
-      toast.message("Les alertes de cette recherche sont réservées à l'offre Analyse.");
-      router.push(OFFERS_PATH);
+      await explainReservedFeature(
+        "Les alertes de cette recherche sont réservées à l'offre Analyse.",
+      );
       return;
     }
     if (activeFiltersCount === 0) {
@@ -630,9 +667,24 @@ export function SearchPage({
           watched_zone_id: watchedZoneResponse?.zone.id ?? null,
         },
       });
-      toast.success(
-        watchedZoneResponse ? "Zone surveillée et alerte créées" : "Recherche enregistrée",
-      );
+      const saved = watchedZoneResponse
+        ? "Zone surveillée et alerte créées"
+        : "Recherche enregistrée";
+      let emailConsent = emailRecapEnabled;
+      if (options?.emailRecap && !emailRecapEnabled) {
+        // Le consentement est explicite (case non pré-cochée) et horodaté côté serveur.
+        if (await enableAlertEmailRecap(queryClient, user.id)) {
+          emailConsent = true;
+          toast.success(`${saved}. Email récapitulatif activé.`);
+        } else {
+          toast.error(
+            `${saved}, mais l'email récapitulatif n'a pas pu être activé. Réessayez depuis la cloche des notifications.`,
+          );
+        }
+      } else {
+        toast.success(saved);
+      }
+      trackProductEvent("alert_created", { email_consent: emailConsent });
     } catch (saveError) {
       toast.error(userMessage(saveError));
     } finally {
@@ -642,7 +694,7 @@ export function SearchPage({
 
   async function exportCsv() {
     if (!user) {
-      router.push(loginPathWithRedirect(currentHref));
+      router.push(loginPathWithRedirect(currentHref, { reason: "export" }));
       return;
     }
     if (entitlementsLoading || !entitlementsData) {
@@ -650,8 +702,7 @@ export function SearchPage({
       return;
     }
     if (csvExportLocked) {
-      toast.message("L'export CSV est réservé à l'offre Analyse.");
-      router.push(OFFERS_PATH);
+      await explainReservedFeature("L'export CSV est réservé à l'offre Analyse.");
       return;
     }
 
@@ -691,6 +742,7 @@ export function SearchPage({
         csvExportLocked={csvExportLocked}
         signedIn={Boolean(user)}
         dailyAlertsAllowed={entitlementsData?.plan.hasAnalysisAccess === true}
+        emailRecapEnabled={emailRecapEnabled}
         wideMap={wideMap}
         isDesktop={isDesktop}
         onFiltersOpenChange={setFiltersOpen}
@@ -776,6 +828,13 @@ export function SearchPage({
             onToggleComparison={comparison.toggle}
             aiReviewBySaleId={aiReviewBySaleId}
             aiReviewStatus={aiReviewStatus}
+            activeFilters={activeFilters}
+            onRemoveFilter={(filter) => updateSearch(filter.clear)}
+            onResetFilters={resetFilters}
+            onShowFrance={
+              hasGeographicFilter(search) ? () => updateSearch(WHOLE_FRANCE_PATCH) : undefined
+            }
+            hideEmptyState={page > 1}
             sponsoredPlacement={
               <SearchLawyerPlacement
                 geographicLabel={geographicLabel}
@@ -796,6 +855,7 @@ export function SearchPage({
             pageSize={pageSize}
             onNext={loadNextPage}
             onPrevious={loadPreviousPage}
+            onFirstPage={() => updateSearch({ page: 1 })}
           />
 
           <details
@@ -879,13 +939,15 @@ export function SearchPage({
               <button
                 type="button"
                 onClick={() => updateSearch({ map: false })}
-                className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md border border-line-soft bg-white px-3 text-sm font-bold text-brand-navy shadow-sm"
+                className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md border border-line-soft bg-white px-3 text-sm font-bold text-brand-navy shadow-sm"
               >
                 <X className="h-4 w-4" />
                 Liste
               </button>
               <span className="text-sm font-bold text-ink-strong">
-                {mapSales.length.toLocaleString("fr-FR")} biens sur la carte
+                {mappablePointsTotal > mapSales.length
+                  ? `${mapSales.length.toLocaleString("fr-FR")} biens affichés sur ${mappablePointsTotal.toLocaleString("fr-FR")} : précisez vos filtres ou activez « Chercher en déplaçant la carte »`
+                  : `${mapSales.length.toLocaleString("fr-FR")} biens sur la carte`}
               </span>
             </div>
             <div className="h-full pt-14">

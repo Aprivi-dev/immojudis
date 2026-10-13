@@ -12,11 +12,28 @@ describe("page Comment ça marche", () => {
     expect(steps).toHaveLength(4);
     const titles = steps.map((step) => within(step).getByRole("heading", { level: 2 }).textContent);
     expect(titles).toEqual([
-      "Étape 1 : Trouver une vente",
-      "Étape 2 : Comprendre le bien",
+      "Étape 1 : Repérer une vente",
+      "Étape 2 : Étudier et visiter",
       "Étape 3 : Fixer son enchère plafond",
-      "Étape 4 : Se faire accompagner",
+      "Étape 4 : Enchérir et finaliser",
     ]);
+  });
+
+  it("renvoie l'étape budget vers le simulateur de frais", () => {
+    render(<Page />);
+    const step = within(screen.getByRole("list")).getAllByRole("listitem")[2]!;
+    expect(within(step).getByRole("link", { name: "Simuler les frais" }).getAttribute("href")).toBe(
+      "/simulateur-frais-encheres",
+    );
+  });
+
+  it("décrit l'annuaire et la mise en relation avec le vocabulaire de la mise en avant payante", () => {
+    const { container } = render(<Page />);
+    const text = container.textContent ?? "";
+    expect(text).toContain(
+      "La consultation de l’annuaire est gratuite. Certains avocats rémunèrent Immojudis pour une mise en avant payante. La demande de mise en relation depuis une annonce fait partie de l’offre Analyse.",
+    );
+    expect(text).not.toMatch(/sponsoris/i);
   });
 
   it("ne mentionne plus les limites internes du produit", () => {

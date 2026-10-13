@@ -2,9 +2,9 @@
 
 ## Exécution
 
-- Découverte multi-sources uniquement sur lancement manuel (`workflow_dispatch` ou admin).
-- File documentaire et IA uniquement sur lancement manuel (`enrichment_only=true`).
-- `workflow_dispatch` conserve le scan manuel et ajoute `enrichment_only`.
+- Découverte multi-sources : une unité par source au plus toutes les 12 heures, réservée par l'ordonnanceur SQL (tick pg_cron de 15 minutes) qui déclenche `workflow_dispatch` ; le lancement manuel (admin) reste possible.
+- File documentaire et IA : une unité toutes les 30 minutes par le même ordonnanceur (ou à la demande avec `enrichment_only=true`).
+- `workflow_dispatch` conserve le scan manuel et ajoute `enrichment_only`. Le workflow n'a pas de cron GitHub.
 - Un seul workflow écrivain à la fois ; aucune annulation du run actif.
 - Scan : 10 biens documentaires et 20 synthèses maximum. Le reliquat est enregistré en base.
 - Worker manuel : deux jobs réservés à la fois, budget de 40 minutes ; reprise au prochain lancement manuel.

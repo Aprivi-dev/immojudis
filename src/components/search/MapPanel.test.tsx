@@ -159,10 +159,51 @@ describe("public map resilience", () => {
     const html = mocks.setHtml.mock.calls.at(-1)?.[0];
     expect(html).toContain("Appartement à Bordeaux");
     expect(html).toContain("Position approximative");
-    expect(html).toContain("Risque Analyse");
+    expect(html).toContain("Score : ");
+    expect(html).toContain("Risques : ");
+    expect(html).toContain("Offre Analyse");
+    expect(html).toContain("<svg");
     expect(html).not.toContain("Faible");
-    expect(html).not.toContain("Score 85");
+    expect(html).not.toContain("85");
     expect(html).not.toContain("Private source title");
+  });
+  it("shows a starting price of 0 as not communicated in the popup", async () => {
+    const sale = {
+      id: "zero-price",
+      city: "Lille",
+      property_type: "apartment",
+      latitude: 50.63,
+      longitude: 3.06,
+      starting_price_eur: 0,
+      app_surface_m2: 50,
+      media: [],
+    } as unknown as AuctionSale;
+    await showMap({ sales: [sale], selectedSaleId: sale.id });
+    act(() => mocks.handlers.get("load")?.());
+    const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
+    expect(html).toContain("Prix non communiqué");
+    expect(html).not.toMatch(/popup-price">\s*0/);
+  });
+  it("says what is missing for a subscriber instead of « À auditer »", async () => {
+    const sale = {
+      id: "unscored",
+      city: "Lyon",
+      property_type: "apartment",
+      latitude: 45.76,
+      longitude: 4.83,
+      starting_price_eur: 80_000,
+      app_surface_m2: 50,
+      investment_score: null,
+      risks: null,
+      media: [],
+    } as unknown as AuctionSale;
+    await showMap({ sales: [sale], preview: false, showDpeLegend: true, selectedSaleId: sale.id });
+    act(() => mocks.handlers.get("load")?.());
+    const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
+    expect(html).toContain("Score : non calculé");
+    expect(html).toContain("Risques : à vérifier dans les pièces");
+    expect(html).not.toContain("Offre Analyse");
+    expect(html).not.toContain("À auditer");
   });
   it("masks an authenticated popup value when the review projection is blocked", async () => {
     const sale = {
@@ -227,6 +268,58 @@ describe("public map resilience", () => {
     expect(screen.getByText(/continuer à consulter les annonces dans la liste/)).toBeTruthy();
     expect(screen.queryByText("Chargement de la carte")).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
+    expect(screen.getByRole("heading", { name: "Carte indisponible" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Voir la liste" }).getAttribute("href")).toBe(
+      "#sales-results",
+    );
+  });
+  it("lets the list be shown from the fallback", async () => {
+    mocks.token = "";
+    const onShowList = vi.fn();
+    await showMap({ onShowList });
+    fireEvent.click(screen.getByRole("link", { name: "Voir la liste" }));
+    expect(onShowList).toHaveBeenCalledTimes(1);
+  });
+  it("exposes the map container as a labelled region", async () => {
+    await showMap();
+    expect(screen.getByRole("region", { name: /Carte/ })).toBeTruthy();
+  });
+  it("names the move toggle « Chercher en déplaçant la carte »", async () => {
+    const sale = {
+      id: "movable",
+      city: "Lyon",
+      property_type: "apartment",
+      latitude: 45.76,
+      longitude: 4.83,
+      media: [],
+    } as unknown as AuctionSale;
+    await showMap({ sales: [sale], preview: false });
+    act(() => mocks.handlers.get("load")?.());
+    const toggle = screen.getByRole("button", { name: "Chercher en déplaçant la carte" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    cleanup();
+    await showMap({ sales: [sale], preview: false, searchAsMove: true });
+    act(() => mocks.handlers.get("load")?.());
+    expect(
+      screen.getByRole("button", { name: "Recherche en déplaçant la carte : activée" }),
+    ).toBeTruthy();
+  });
+  it("says how many points are shown when the display cap hides some", async () => {
+    const sale = {
+      id: "capped",
+      city: "Lyon",
+      property_type: "apartment",
+      latitude: 45.76,
+      longitude: 4.83,
+      media: [],
+    } as unknown as AuctionSale;
+    await showMap({ sales: [sale], mappablePointsTotal: 1200 });
+    expect(
+      screen.getByText(
+        /1 biens affichés sur 1\s?200 : précisez vos filtres ou activez « Chercher en déplaçant la carte »/,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/zoomez pour affiner/)).toBeNull();
   });
   it("does not crash the search page when WebGL cannot start", async () => {
     mocks.throws = true;

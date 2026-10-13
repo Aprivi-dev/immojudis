@@ -2,8 +2,14 @@
 
 import type { ReactNode } from "react";
 import { createFileRoute, Link } from "@/lib/router-compat";
-import { LEGAL_DOCUMENTS, legalValue, publicLegalPublisher } from "@/lib/legal-documents";
+import {
+  LEGAL_DOCUMENTS,
+  legalValue,
+  publicLegalPublisher,
+  type LegalPublisher,
+} from "@/lib/legal-documents";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
 
 export const Route = createFileRoute("/conditions-generales")({
   head: () => ({
@@ -59,8 +65,14 @@ export function TermsPage() {
             <p>
               Découverte fournit gratuitement les informations essentielles accessibles après
               création d’un compte, avec trois favoris au maximum. Analyse est un abonnement aux
-              outils Premium : statistiques des tribunaux, mise plafond, estimation des travaux,
-              valeur du bien et autres analyses présentées sur la page d’offre. Un essai gratuit de{" "}
+              outils d’analyse : statistiques des tribunaux et scénarios d’enchères (disponibles
+              lorsque l’historique des ventes du tribunal est suffisant), enchère plafond,
+              estimation des travaux, valeur du bien et autres analyses présentées sur la page
+              d’offre. La couverture varie selon les tribunaux, les biens et les pièces disponibles
+              ; elle est indiquée sur chaque fiche. L’abonnement est conclu pour une durée
+              indéterminée et facturé chaque mois. Vous pouvez le résilier à tout moment, sans frais
+              ni préavis ; la résiliation prend effet à la fin de la période mensuelle en cours.
+              Lorsqu’il est proposé (une seule fois par compte), un essai gratuit de{" "}
               {ANALYSIS_TRIAL_DAYS} jours nécessite l’enregistrement d’une carte bancaire auprès de
               Stripe. À son terme, l’abonnement devient payant et se renouvelle automatiquement,
               sauf résiliation avant la fin de l’essai. Les conditions d’éligibilité et le tarif
@@ -96,11 +108,18 @@ export function TermsPage() {
 
           <TermsSection title="4. Prix et paiement">
             <p>
-              {resolveAnalysisOfferLabel()}. Le montant TTC et la périodicité sont précisés dans le
-              récapitulatif avant toute souscription. Après l’essai, Stripe prélève ce montant à
-              chaque échéance tant que l’abonnement n’est pas résilié. Immojudis ne reçoit ni ne
-              conserve le numéro complet de la carte. Un paiement refusé peut entraîner la
-              suspension de l’accès Premium ; le compte Découverte reste accessible.
+              Prix de l’abonnement Analyse : {resolveAnalysisOfferLabel()}, précédé d’un essai
+              gratuit de {ANALYSIS_TRIAL_DAYS} jours lorsque celui-ci est proposé. Le montant TTC et
+              la périodicité sont précisés dans le récapitulatif avant toute souscription. Après
+              l’essai, Stripe prélève ce montant à chaque échéance tant que l’abonnement n’est pas
+              résilié. Immojudis ne reçoit ni ne conserve le numéro complet de la carte.
+            </p>
+            <p className="mt-3">
+              En cas d’échec de paiement, Stripe retente le prélèvement. Votre accès Analyse reste
+              ouvert {PAST_DUE_GRACE_DAYS} jours à compter de la fin de la période payée pour vous
+              permettre de mettre à jour votre moyen de paiement ; la mensualité reste due. Passé ce
+              délai sans paiement, l’accès est suspendu. Votre compte Découverte et vos données
+              restent accessibles.
             </p>
           </TermsSection>
 
@@ -112,20 +131,24 @@ export function TermsPage() {
               fonctions ; Immojudis met alors en œuvre les moyens raisonnables de rétablissement.
             </p>
             <p className="mt-3">
-              Le client peut résilier depuis le bouton de gestion de son abonnement sur la page{" "}
-              <Link to="/accompagnement" className="text-gold underline">
-                Offres
+              Résiliation. Vous pouvez résilier à tout moment, gratuitement, depuis la page{" "}
+              <Link to="/compte" className="text-gold underline">
+                Mon compte
               </Link>
-              . Le portail Stripe indique la date de fin d’accès et confirme la résiliation. Une
-              résiliation pendant l’essai évite le premier prélèvement ; après l’essai, elle empêche
-              les prochains renouvellements. Les accès précédemment achetés par paiement unique
-              restent valables jusqu’à leur échéance initiale.
+              , bouton « Résilier mon abonnement », qui ouvre directement le formulaire de
+              résiliation du portail de paiement sécurisé Stripe. La date de fin d’accès est
+              affichée avant confirmation. Une résiliation pendant l’essai évite le premier
+              prélèvement ; après l’essai, elle empêche les prochains renouvellements et l’accès
+              reste ouvert jusqu’à la fin de la période payée. Les accès précédemment achetés par
+              paiement unique restent valables jusqu’à leur échéance initiale. Nous vous confirmons
+              par email la réception de votre demande et la date de fin du contrat.
             </p>
           </TermsSection>
 
           <TermsSection title="6. Droit de rétractation">
             <p className="mb-3">
               L’essai commercial de sept jours ne remplace pas le droit légal de rétractation.
+              Pendant l’essai gratuit, aucun montant n’est dû en cas de rétractation.
             </p>
             <p>
               Le consommateur dispose en principe de 14 jours à compter de la conclusion du contrat
@@ -143,10 +166,19 @@ export function TermsPage() {
               Lorsqu’un remboursement est dû, il est réalisé par le même moyen de paiement, sauf
               accord contraire, dans le délai légal applicable.
             </p>
-            <WithdrawalForm />
+            <WithdrawalForm publisher={publisher} />
           </TermsSection>
 
-          <TermsSection title="7. Nature des analyses et responsabilité">
+          <TermsSection title="7. Garantie légale de conformité">
+            <p>
+              Garantie légale de conformité. Vous bénéficiez de la garantie légale de conformité des
+              contenus et services numériques (articles L. 224-25-12 à L. 224-25-26 du code de la
+              consommation). Pour un service fourni de manière continue, nous répondons des défauts
+              de conformité qui apparaissent pendant toute la durée de l’abonnement.
+            </p>
+          </TermsSection>
+
+          <TermsSection title="8. Nature des analyses et responsabilité">
             <p>
               Immojudis fournit une aide à la lecture, sans conseil juridique, financier ou
               patrimonial individualisé. Le client doit vérifier les pièces officielles, faire la
@@ -156,7 +188,7 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="8. Compte et usages autorisés">
+          <TermsSection title="9. Compte et usages autorisés">
             <p>
               Le client maintient ses accès confidentiels et fournit des informations exactes. Sont
               interdits l’accès automatisé abusif, le contournement des quotas, la redistribution
@@ -166,7 +198,7 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="9. Données personnelles">
+          <TermsSection title="10. Données personnelles">
             <p>
               Les traitements nécessaires au compte, à la commande et au service sont décrits dans
               la politique de confidentialité. Les droits d’accès, portabilité, rectification,
@@ -175,7 +207,7 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="10. Réclamations, médiation et droit applicable">
+          <TermsSection title="11. Réclamations, médiation et droit applicable">
             <p>
               Une réclamation préalable peut être adressée à {legalValue(publisher.contactEmail)} ou
               au {legalValue(publisher.contactPhone)}. En cas d’échec, le consommateur peut saisir
@@ -213,12 +245,12 @@ function TermsSection({ title, children }: { title: string; children: ReactNode 
   );
 }
 
-function WithdrawalForm() {
+function WithdrawalForm({ publisher }: { publisher: LegalPublisher }) {
   return (
     <div className="mt-4 rounded-lg border border-white/10 bg-black/10 p-4">
       <h3 className="font-semibold text-foreground">Formulaire type de rétractation</h3>
       <p className="mt-2 whitespace-pre-line text-xs leading-relaxed">
-        {`À l’attention de l’éditeur Immojudis :
+        {`À l’attention de ${legalValue(publisher.entityName)}, ${legalValue(publisher.address)}, ${legalValue(publisher.contactEmail)} :
 Je vous notifie ma rétractation du contrat portant sur l’accès Analyse.
 Commande du : …
 Nom et email du consommateur : …

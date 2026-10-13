@@ -1,0 +1,177 @@
+{
+  "slug": "apres-adjudication-surenchere-paiement-titre-vente",
+  "publishedAt": "2026-10-13",
+  "title": "Après l’adjudication : surenchère, paiement, consignation et titre de vente",
+  "category": "Les fondamentaux",
+  "description": "Surenchère de dix jours, délai de deux mois pour payer, consignation du prix, titre de vente, défaut de paiement : la chronologie qui suit une adjudication au tribunal.",
+  "intro": [
+    "Être déclaré gagnant à l’audience ne règle pas tout. L’adjudication est l’attribution du bien au dernier enchérisseur. Elle transfère la propriété (art. L. 322-10 du Code des procédures civiles d’exécution), mais elle peut encore être remise en cause par une surenchère, et elle doit être suivie du paiement du prix et des frais dans des délais courts.",
+    "Cet article décrit la chronologie d’une saisie immobilière jugée au tribunal. Les ventes notariales et domaniales suivent d’autres règles : voir l’article « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal ». Les dates et montants applicables à votre dossier figurent dans le cahier des conditions de vente et doivent être confirmés par votre avocat."
+  ],
+  "takeaways": [
+    "Pendant dix jours, toute personne peut surenchérir d’au moins un dixième du prix principal : l’adjudication n’est définitive qu’à l’issue de ce délai.",
+    "Le prix, versé sur un compte séquestre ou consigné à la Caisse des dépôts, et les frais doivent être réglés dans les deux mois de l’adjudication définitive.",
+    "La garantie remise avant l’audience (10 % de la mise à prix) et la consignation du prix sont deux choses différentes.",
+    "Si vous ne payez pas, le bien est remis en vente, vous perdez la garantie et vous pouvez devoir la différence de prix.",
+    "Le titre de vente n’est délivré qu’après paiement des frais taxés."
+  ],
+  "sections": [
+    {
+      "id": "chronologie",
+      "title": "La chronologie à retenir",
+      "paragraphs": [
+        "Les délais ci-dessous comptent à partir de l’audience, sauf le délai de paiement, qui court de l’adjudication définitive (art. R. 322-56). Ils sont fixés par le Code des procédures civiles d’exécution (CPCE). Ils sont courts et ne se négocient pas : notez-les dès le jour de l’adjudication."
+      ],
+      "table": {
+        "headers": ["Quand", "Ce qui se passe", "Texte"],
+        "rows": [
+          [
+            "Jour de l’audience",
+            "Le jugement d’adjudication mentionne le prix, l’adjudicataire et les frais taxés.",
+            "Art. R. 322-59"
+          ],
+          [
+            "Premier jour ouvrable suivant",
+            "Affichage à la porte de la salle d’un extrait du procès-verbal, avec le délai de surenchère.",
+            "Art. R. 322-34"
+          ],
+          [
+            "Trois jours ouvrables",
+            "Délai pour que l’avocat complète une identité insuffisante.",
+            "Art. R. 322-61"
+          ],
+          ["Dix jours", "Dernier jour pour déposer une surenchère au greffe.", "Art. R. 322-51"],
+          [
+            "Après les dix jours, sans surenchère valide",
+            "L’adjudication est définitive. Le délai de paiement commence.",
+            "Art. R. 322-56"
+          ],
+          [
+            "Deux mois après l’adjudication définitive",
+            "Dernier jour pour verser ou consigner le prix et justifier du paiement des frais taxés et des droits de mutation.",
+            "Art. R. 322-56 et R. 322-58"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "surenchere",
+      "title": "La surenchère : dix jours pour tout remettre en jeu",
+      "paragraphs": [
+        "La surenchère est une offre supérieure faite après l’adjudication. Toute personne peut la former, à condition qu’elle soit d’au moins un dixième du prix principal de la vente (art. R. 322-50). Elle doit être faite par acte d’avocat, déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication, sous peine d’irrecevabilité (art. R. 322-51). L’avocat atteste avoir reçu de son client une caution bancaire irrévocable ou un chèque de banque du dixième du prix principal. La déclaration ne peut pas être rétractée.",
+        "Le surenchérisseur dénonce sa démarche, au plus tard le troisième jour ouvrable, au créancier poursuivant, à l’adjudicataire et au débiteur (art. R. 322-52). Le juge fixe alors une audience de surenchère, entre deux et quatre mois après la déclaration (art. R. 322-53). Les enchères reprennent à partir du prix surenchéri. Si personne ne couvre cette surenchère, le surenchérisseur est déclaré adjudicataire, et aucune nouvelle surenchère n’est reçue sur la seconde adjudication (art. R. 322-55)."
+      ],
+      "bullets": [
+        "Pour l’adjudicataire initial, la surenchère signifie que l’achat n’est pas encore sûr : ne planifiez ni travaux ni location avant la fin des dix jours.",
+        "La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE) et en licitation judiciaire (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art. 1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10 % dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir."
+      ]
+    },
+    {
+      "id": "paiement",
+      "title": "Payer : le prix, les frais et les droits",
+      "paragraphs": [
+        "Après l’adjudication définitive, l’adjudicataire verse le prix sur un compte séquestre ou le consigne auprès de la Caisse des dépôts et consignations, puis paie les frais de la vente (art. L. 322-9). Le séquestre est un tiers désigné par le cahier des conditions de vente pour détenir les fonds ; consigner, c’est déposer une somme auprès de la Caisse des dépôts, organisme public, jusqu’à sa répartition entre les créanciers.",
+        "Le délai est de deux mois à compter de l’adjudication définitive, à peine de réitération des enchères. Passé ce délai, le prix est augmenté de plein droit des intérêts au taux légal jusqu’au versement complet (art. R. 322-56). Les frais de poursuite taxés et les droits de mutation sont payés en plus du prix. Leur paiement doit être justifié au greffe avant l’expiration du même délai de deux mois (art. R. 322-58). Les fonds séquestrés produisent des intérêts à un taux fixé par le cahier (art. R. 322-57).",
+        "Tant que le prix et les frais ne sont pas payés, l’adjudicataire ne peut pas disposer du bien, par exemple le revendre. Une exception existe pour l’hypothèque accordée à la banque qui finance l’acquisition (art. L. 322-9). Le financement est abordé dans l’article « Financer un achat aux enchères : prêt, délais, pas de condition suspensive »."
+      ],
+      "callout": {
+        "title": "Garantie pour enchérir et consignation du prix : deux sommes distinctes",
+        "text": "La garantie (chèque de banque ou caution, 10 % de la mise à prix, minimum 3 000 €) est remise à l’avocat avant les enchères, selon l’article R. 322-41. Elle est restituée à celui qui ne gagne pas. La consignation concerne le prix de l’adjudicataire, après la vente. Ne confondez pas les deux dans votre budget."
+      }
+    },
+    {
+      "id": "titre-de-vente",
+      "title": "Le titre de vente et la prise de possession",
+      "paragraphs": [
+        "Le titre de vente est le document qui prouve votre propriété. Il consiste dans l’expédition du cahier des conditions de vente, revêtue de la formule exécutoire, à la suite de laquelle est transcrit le jugement d’adjudication (art. R. 322-61). Le greffier le délivre à l’adjudicataire, avec la quittance du paiement des frais annexée (art. R. 322-62). Il n’est délivré que sur justification du paiement des frais taxés (art. L. 322-11).",
+        "Le titre est ensuite publié au fichier immobilier, à la requête de l’acquéreur ou, à défaut, du créancier (art. R. 322-63). Le versement du prix ou sa consignation et le paiement des frais purgent l’immeuble des sûretés publiées du chef du débiteur, notamment des hypothèques (art. L. 322-14). L’adjudicataire peut demander au juge de l’exécution d’ordonner la radiation des inscriptions correspondantes (art. R. 322-65). Les clés et l’entrée dans les lieux dépendent de l’occupation : voir ci-dessous."
+      ],
+      "bullets": [
+        "Le jugement d’adjudication est notifié aux parties. Seul le jugement qui tranche une contestation peut faire l’objet d’un appel, dans les quinze jours de la notification (art. R. 322-60).",
+        "Le jugement d’adjudication vaut titre d’expulsion contre le débiteur saisi (art. L. 322-13).",
+        "L’adjudicataire peut aussi mettre ce titre à exécution contre « tout occupant de son chef n’ayant aucun droit qui lui soit opposable », à partir du versement du prix ou de sa consignation et du paiement des frais taxés, sauf si le cahier prévoit le maintien dans les lieux du saisi (art. R. 322-64). Un locataire dont le bail s’impose à l’acheteur n’est pas visé : voir l’article « Acheter un bien occupé aux enchères ». L’exécution du titre suppose un commandement de quitter les lieux ; un délai de deux mois et la trêve hivernale peuvent différer l’expulsion (art. L. 411-1, L. 412-1 et L. 412-6 du CPCE)."
+      ]
+    },
+    {
+      "id": "defaut-paiement",
+      "title": "Si vous ne payez pas : la réitération des enchères",
+      "paragraphs": [
+        "Si le prix ou les frais ne sont pas versés dans les délais, la vente est résolue de plein droit. L’adjudicataire défaillant doit payer la différence entre son enchère et le prix de la revente si celui-ci est moindre, et ne peut pas réclamer les sommes déjà versées (art. L. 322-12). La garantie remise avant l’audience est acquise aux créanciers et, le cas échéant, au débiteur (art. R. 322-41).",
+        "La réitération des enchères est la remise en vente du bien, aux conditions de la première vente forcée, à la demande du créancier poursuivant, d’un créancier inscrit ou du débiteur (art. R. 322-66). Le greffe délivre un certificat constatant le défaut de paiement. Il est signifié à l’adjudicataire avec une sommation de payer dans un délai de huit jours (art. R. 322-67). À défaut, la nouvelle audience est fixée entre deux et quatre mois plus tard (art. R. 322-69). L’adjudicataire défaillant conserve à sa charge les frais taxés de la première vente. Passé deux mois, il doit les intérêts au taux légal sur son enchère jusqu’à la nouvelle vente (art. R. 322-72)."
+      ],
+      "bullets": [
+        "Les textes cités ne prévoient pas de faculté de rétractation pour l’adjudicataire. Ne pas payer entraîne la remise en vente du bien et des conséquences financières.",
+        "Ces textes ne prévoient pas de sortie en cas de refus de prêt. Préparez le financement avant d’enchérir."
+      ]
+    },
+    {
+      "id": "checklist",
+      "title": "Votre liste de contrôle après l’audience",
+      "paragraphs": [
+        "Reprenez cette liste avec votre avocat le jour même. Elle se limite à ce que le Code impose ; votre cahier des conditions de vente peut y ajouter des précisions."
+      ],
+      "bullets": [
+        "Noter la date de l’adjudication et calculer les dix jours puis les deux mois.",
+        "Vérifier avec l’avocat le montant exact du prix, des frais taxés et des droits de mutation.",
+        "Confirmer qui verse les fonds et sur quel compte (séquestre ou Caisse des dépôts).",
+        "Demander le jugement d’adjudication et, après paiement, le titre de vente et la quittance.",
+        "Faire le point sur l’occupation du bien avant toute démarche pour entrer dans les lieux.",
+        "Garder une copie de tous les justificatifs de paiement remis au greffe."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, surenchère (articles R. 322-50 à R. 322-55)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939177"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-56 (délai de deux mois)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939193"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-58 (frais taxés et droits de mutation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939198"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, articles R. 322-61 à R. 322-63 (titre de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939208"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-64 (titre d’expulsion de l’adjudicataire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939222"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, articles R. 322-66 à R. 322-72 (réitération des enchères)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939228"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, articles L. 322-9 à L. 322-14 (effets de l’adjudication)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025983"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1279 (surenchère en cas de licitation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026460004"
+    },
+    {
+      "label": "Caisse des Dépôts — Saisie immobilière et consignations",
+      "url": "https://consignations.caissedesdepots.fr/professionnel-du-droit/difficultes-financieres/saisie-immobiliere"
+    },
+    {
+      "label": "Notaires de France — Les ventes aux enchères immobilières notariales",
+      "url": "https://www.notaires.fr/fr/immobilier-fiscalite/vente-rapide/les-ventes-aux-encheres-immobilieres-notariales"
+    },
+    {
+      "label": "Service-Public — Saisie immobilière",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, articles L. 411-1, L. 412-1 et L. 412-6 (expulsion)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000028808273"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1280 (surenchère devant notaire en licitation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039624733"
+    }
+  ]
+}

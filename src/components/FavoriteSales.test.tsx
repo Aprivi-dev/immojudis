@@ -128,7 +128,7 @@ describe("FavoriteSales", () => {
 
     await screen.findByText("Bordeaux · Gironde");
     expect(screen.getByText("Mise à prix")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Ne plus suivre cette vente" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
     const [message, options] = mocks.toast.mock.calls[0];
     expect(message).toBe("Favori supprimé");

@@ -4,12 +4,12 @@ import SharedReportPage from "./page";
 const mocks = vi.hoisted(() => ({ report: vi.fn() }));
 vi.mock("@/lib/property-reports", () => ({ getSharedPropertyReport: mocks.report }));
 
-async function markup(personal: boolean | "v2") {
+async function markup(personal: boolean | "v2", startingPrice = 50000) {
   mocks.report.mockResolvedValue({
     title: "Rapport de recette",
     updatedAt: "2026-09-09",
     sharedAt: null,
-    sale: { startingPrice: 50000 },
+    sale: { startingPrice },
     analysis: { opportunity: { acquisitionCosts: { totalCost: 143000 } } },
     sourceTrace: [],
     limitations: [],
@@ -64,6 +64,11 @@ describe("shared personal simulation", () => {
     expect(html).toContain("Scénariopersonnelsauvegardé");
     for (const value of ["Louer", "Prudent", "31000", "5000"]) expect(html).toContain(value);
     expect(html).toContain("Coûtcompletàlamiseàprix");
+  });
+  it("shows a starting price of 0 as not communicated", async () => {
+    const html = await markup(false, 0);
+    expect(html).toMatch(/Miseàprix<\/p><p[^>]*>Prixnoncommuniqué</);
+    expect(html).not.toMatch(/Miseàprix<\/p><p[^>]*>0€/);
   });
   it("does not invent personal inputs for a report without a saved simulation", async () => {
     expect(await markup(false)).not.toContain("Scénariopersonnelsauvegardé");
