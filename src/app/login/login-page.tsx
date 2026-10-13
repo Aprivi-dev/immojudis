@@ -548,7 +548,7 @@ export function LoginPage() {
                     <Link href="/conditions-generales" className="underline">
                       conditions générales
                     </Link>{" "}
-                    et la{" "}
+                    et vous reconnaissez avoir pris connaissance de la{" "}
                     <Link href="/privacy" className="underline">
                       politique de confidentialité
                     </Link>

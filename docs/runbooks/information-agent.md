@@ -41,7 +41,7 @@ Mise à jour : 11 octobre 2026. Écran : **Admin › Agent IA** (`/admin/agent-i
 - Présentation succincte d’Immojudis, référence de la fiche et date annoncée (« Audience annoncée » pour une vente judiciaire, « Date de vente annoncée » sinon), questions, consignes de réponse.
 - En tête, sous la référence de suivi : origine de l’adresse avec le lien de l’annonce publique (« Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor. Voir l’annonce »). Pour une adresse saisie à la main, la page publique indiquée par l’administrateur est citée.
 - Lien privé de dépôt sans compte.
-- Invitation courte à créer un compte professionnel pour transmettre de futures annonces (`/login?mode=professional&redirect=/publish`), sans traceur. Elle est ajoutée par le gabarit, jamais par le modèle éditable ; `INFORMATION_AGENT_ACCOUNT_INVITATION=false` la retire sans déploiement.
+- Aucune invitation à créer un compte professionnel ni aucune sollicitation commerciale (décision du 13 octobre 2026, gabarit `information_request_v7`) : le message reste purement informatif. L’ancien bloc « Vous avez d’autres ventes à partager ? » est retiré s’il figure encore dans un modèle éditable.
 - Pied RGPD (art. 14) : responsable de traitement, origine de l’adresse avec le lien, finalité et base légale, politique de confidentialité, lien « Ne plus être contacté ».
 - En-têtes `List-Unsubscribe` et `List-Unsubscribe-Post` (désinscription en un clic de la messagerie, RFC 8058).
 
@@ -72,7 +72,6 @@ Mise à jour : 11 octobre 2026. Écran : **Admin › Agent IA** (`/admin/agent-i
 | `INFORMATION_AGENT_EMAIL_FROM`, `RESEND_API_KEY`, `INFORMATION_AGENT_INBOUND_DOMAIN`                   | Expéditeur (sous-domaine dédié recommandé), clé, domaine de réception.              |
 | `INFORMATION_AGENT_PORTAL_SECRET`                                                                      | ≥ 32 octets ; signe le lien de dépôt, le lien d’opposition et l’empreinte d’aperçu. |
 | `NEXT_PUBLIC_LEGAL_ENTITY_NAME`, `NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS`, `NEXT_PUBLIC_LEGAL_CONTACT_EMAIL` | Responsable de traitement du pied RGPD ; sans nom et adresse, l’envoi est refusé.   |
-| `INFORMATION_AGENT_ACCOUNT_INVITATION`                                                                 | `false` retire l’invitation à créer un compte.                                      |
 
 ## Avant le premier envoi réel
 

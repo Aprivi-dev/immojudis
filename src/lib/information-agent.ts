@@ -30,7 +30,6 @@ import {
 import { formatDate, formatStartingPrice } from "@/lib/format";
 import {
   DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
-  informationAgentAccountInvitationUrl,
   renderInformationAgentEmailContent,
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
@@ -769,7 +768,6 @@ async function approveAndSendMission({
       email: edited.recipient_email,
       addressOrigin: addressOrigin.origin,
     });
-    const accountInvitationUrl = informationAgentAccountInvitationUrl(config.appUrl);
     const renderedEmail = await renderInformationRequestEmail({
       subject: edited.subject,
       bodyText: edited.body_text,
@@ -778,7 +776,6 @@ async function approveAndSendMission({
       appUrl: config.appUrl,
       contributionUrl,
       legalFooter,
-      accountInvitationUrl,
     });
     await assertInformationAgentContactAllowed({
       saleId: subscribedMission.sale_id,
@@ -821,7 +818,6 @@ async function approveAndSendMission({
         preview_fingerprint: input.previewFingerprint,
         approved_by_admin: adminId,
         address_origin_url: legalFooter.addressOriginUrl ?? null,
-        account_invitation: Boolean(accountInvitationUrl),
         email_template_version: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
         email_content_template_id: missionMetadata.email_content_template_id ?? null,
         email_content_template_revision: missionMetadata.email_content_template_revision ?? null,
@@ -1075,7 +1071,6 @@ export type InformationAgentPreviewResponse = {
   /** Motifs qui empêcheront l'envoi (opposition, délai de 30 jours, configuration…). */
   blockers: string[];
   addressOrigin: { text: string; url: string | null; known: boolean };
-  accountInvitation: boolean;
   /** À renvoyer avec « Valider et envoyer » ; null si l'envoi est impossible. */
   fingerprint: string | null;
 };
@@ -1144,7 +1139,6 @@ export async function previewAdminInformationAgentMission({
   const inboundDomain =
     env.INFORMATION_AGENT_INBOUND_DOMAIN?.trim().toLowerCase() || "reponses.immojudis.com";
   const replyTo = `enquete+jeton-attribue-a-l-envoi@${inboundDomain}`;
-  const accountInvitationUrl = informationAgentAccountInvitationUrl(appUrl, env);
   const rendered = await renderInformationRequestEmail({
     subject: input.subject,
     bodyText: input.bodyText,
@@ -1153,7 +1147,6 @@ export async function previewAdminInformationAgentMission({
     appUrl,
     contributionUrl: new URL("/contribuer/lien-prive-attribue-a-l-envoi", appUrl).toString(),
     legalFooter,
-    accountInvitationUrl,
   });
   return {
     ok: true,
@@ -1167,7 +1160,6 @@ export async function previewAdminInformationAgentMission({
     },
     blockers: [...new Set(blockers)],
     addressOrigin: { ...addressOrigin.origin, known: addressOrigin.known },
-    accountInvitation: Boolean(accountInvitationUrl),
     fingerprint: informationAgentPreviewFingerprint({ adminId: auth.userId, ...input }, env),
   };
 }
