@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
@@ -19,6 +19,7 @@ import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-off
 import { offerComparisonRows } from "@/lib/offer-comparison";
 import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
+import { trackProductEvent } from "@/lib/product-events";
 
 const BENEFITS = [
   {
@@ -138,6 +139,9 @@ const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }
 ];
 
 export function OffersPage() {
+  useEffect(() => {
+    trackProductEvent("offers_viewed");
+  }, []);
   const source = useBillingOffer();
   const { offer } = source;
   const price = resolveAnalysisOfferLabel();

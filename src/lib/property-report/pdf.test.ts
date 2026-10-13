@@ -95,6 +95,21 @@ describe("property report rental PDF", () => {
     expect(lines.some((line) => line.includes("Cashflow mensuel estime:"))).toBe(false);
   });
 
+  it("prints a starting price of 0 as not communicated, never as 0 €", () => {
+    const report = reportWithRentalScenario();
+    const snapshot = report.report_snapshot as { sale: Record<string, unknown> };
+    const lines = reportToPdfLines(
+      {
+        ...report,
+        report_snapshot: { ...snapshot, sale: { ...snapshot.sale, startingPrice: 0 } } as Json,
+      },
+      buildPlanEntitlements("analyse"),
+    );
+
+    expect(lines).toContain("Mise à prix: Prix non communiqué");
+    expect(lines.some((line) => line.startsWith("Mise à prix: 0"))).toBe(false);
+  });
+
   it("identifies blank expense fields while keeping an explicit zero distinguishable", () => {
     const lines = reportToPdfLines(
       reportWithRentalScenario({

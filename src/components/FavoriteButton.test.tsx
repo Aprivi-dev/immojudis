@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   fetchFavorites: vi.fn(),
   toastSuccess: vi.fn(),
+  track: vi.fn(),
 }));
+vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
+
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mocks.push, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
@@ -180,5 +183,7 @@ describe("favorite vocabulary and onboarding", () => {
     await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledOnce());
     expect(mocks.toastSuccess.mock.calls[0][0]).toBe("Vente ajoutée aux favoris.");
     expect(mocks.fetchFavorites).not.toHaveBeenCalled();
+    expect(mocks.track).toHaveBeenCalledOnce();
+    expect(mocks.track).toHaveBeenCalledWith("favorite_added");
   });
 });

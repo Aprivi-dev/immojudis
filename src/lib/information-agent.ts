@@ -27,7 +27,7 @@ import {
   type InformationAgentInventorySale,
   type InformationAgentMissingDocument,
 } from "@/lib/information-agent-inventory";
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatDate, formatStartingPrice } from "@/lib/format";
 import {
   DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE,
   informationAgentAccountInvitationUrl,
@@ -476,8 +476,8 @@ export function buildInformationRequestDraft({
         sale.starting_price_eur <= 0
           ? "Mise à prix à confirmer"
           : priceStatus && priceStatus !== "observed"
-            ? `${formatPrice(sale.starting_price_eur)} (à confirmer)`
-            : formatPrice(sale.starting_price_eur),
+            ? `${formatStartingPrice(sale.starting_price_eur)} (à confirmer)`
+            : formatStartingPrice(sale.starting_price_eur),
       questions: questionKeys
         .map((key) => `- ${informationAgentQuestionText(key, questionContext)}`)
         .join("\n"),

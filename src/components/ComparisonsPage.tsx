@@ -10,7 +10,7 @@ import {
   enableSaleComparisonShare,
   fetchSaleAnalysisSets,
 } from "@/lib/client-api";
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatDate, formatPrice, formatStartingPrice } from "@/lib/format";
 import { userMessage } from "@/lib/user-messages";
 import type {
   SaleAnalysisItem,
@@ -240,7 +240,7 @@ function ComparisonCard({
       </header>
 
       <dl className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-        <Metric label="Mises à prix" value={formatPrice(summary.totalStartingPriceEur)} />
+        <Metric label="Mises à prix" value={formatStartingPrice(summary.totalStartingPriceEur)} />
         <Metric label="Plafonds saisis" value={formatPrice(summary.totalUserMaxBidEur)} />
         <Metric
           label="Score moyen"
@@ -348,7 +348,7 @@ function ComparisonItem({ item }: { item: SaleAnalysisItem }) {
           </p>
         </div>
         <div className="text-right text-xs text-muted-foreground">
-          <p>Mise à prix : {formatPrice(sale?.startingPriceEur)}</p>
+          <p>Mise à prix : {formatStartingPrice(sale?.startingPriceEur)}</p>
           {item.user_max_bid_eur != null ? (
             <p className="mt-1 font-semibold text-foreground">
               Plafond : {formatPrice(item.user_max_bid_eur)}

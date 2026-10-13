@@ -1,7 +1,8 @@
 "use client";
 
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { Card } from "@/components/ui/primitives";
+import { trackProductEvent } from "@/lib/product-events";
 import { computeAcquisitionCosts, DEFAULTS, DMTO_TABLE_DATE } from "@/lib/profitability";
 import { FEES_SIMULATOR_DEPARTMENTS } from "./departments";
 import { formatScaleDate } from "./scale-date";
@@ -127,6 +128,16 @@ export function FeesSimulator() {
     [price, fpt, lawyerFees, works, department],
   );
 
+  // Mesure anonyme : une seule fois par visite de la page, au premier changement d'un champ.
+  const usageTracked = useRef(false);
+  const edited = (setValue: (value: string) => void) => (value: string) => {
+    if (!usageTracked.current) {
+      usageTracked.current = true;
+      trackProductEvent("fees_simulator_used");
+    }
+    setValue(value);
+  };
+
   return (
     <div className="grid min-w-0 gap-6 md:grid-cols-2">
       <Card as="section" aria-labelledby="simulateur-hypotheses" className="min-w-0">
@@ -142,13 +153,13 @@ export function FeesSimulator() {
             label="Prix d’adjudication"
             hint="Le prix auquel le bien est adjugé, hors frais."
             value={price}
-            onChange={setPrice}
+            onChange={edited(setPrice)}
           />
           <Field label="Département du bien" htmlFor={departmentId}>
             <select
               id={departmentId}
               value={department}
-              onChange={(event) => setDepartment(event.target.value)}
+              onChange={(event) => edited(setDepartment)(event.target.value)}
               className={FIELD_CLASSES}
             >
               <option value="">Non précisé (taux par défaut)</option>
@@ -163,19 +174,19 @@ export function FeesSimulator() {
             label="Frais préalables de la procédure"
             hint={`Valeur d’exemple (${euro.format(DEFAULTS.fpt)}) : remplacez-la par le montant indiqué dans le cahier des conditions de vente.`}
             value={fpt}
-            onChange={setFpt}
+            onChange={edited(setFpt)}
           />
           <AmountField
             label="Honoraires de l’avocat enchérisseur"
             hint={`Valeur d’exemple (${euro.format(DEFAULTS.lawyerFees)}) : remplacez-la par le montant convenu avec votre avocat, TTC.`}
             value={lawyerFees}
-            onChange={setLawyerFees}
+            onChange={edited(setLawyerFees)}
           />
           <AmountField
             label="Travaux"
             hint="Votre budget de travaux, s’il y en a."
             value={works}
-            onChange={setWorks}
+            onChange={edited(setWorks)}
           />
         </form>
       </Card>
