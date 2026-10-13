@@ -106,3 +106,19 @@ def test_reconcile_sweep_repairs_a_listing_id_pair(monkeypatch) -> None:
     assert deleted == 1
     assert len(captured["payload"]) == 1
     assert captured["payload"][0]["dedupe_confidence"] == "listing_id"
+
+
+def test_reconcile_sweep_never_deletes_on_an_id_collision_between_two_places(monkeypatch) -> None:
+    ondres = _sale("vench", "https://www.vench.fr/vente-166526-une-maison-ondres.html", starting_price_eur="50 000 €")
+    lyon = _sale(
+        "petites_affiches",
+        "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/j/un-appartement-a-lyon-166526.html",
+        starting_price_eur="50 000 €",
+        city="Lyon",
+        postal_code="69003",
+    )
+
+    deleted, captured = _run_sweep(monkeypatch, [ondres, lyon])
+
+    assert deleted == 0
+    assert "payload" not in captured
