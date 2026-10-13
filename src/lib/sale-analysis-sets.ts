@@ -748,14 +748,14 @@ async function prepareAnalysisSetUpdate(
   };
 }
 
-async function buildCanonicalComparisonSnapshot(
+export async function buildCanonicalComparisonSnapshot(
   items: z.output<typeof saleAnalysisItemInputSchema>[],
 ) {
   const saleIds = items.map((item) => item.saleId);
   const { data, error } = await supabaseAdmin
     .from("auction_sales")
     .select(
-      "id,city,department,property_type,sale_venue_type,sale_date,starting_price_eur,app_surface_m2,app_surface_kind,rooms_count,bedrooms_count,bathrooms_count,status,raw_payload",
+      "id,city,department,property_type,sale_venue_type,sale_date,starting_price_eur,app_surface_m2,app_surface_kind,occupancy_status,rooms_count,bedrooms_count,bathrooms_count,status,raw_payload",
     )
     .in("id", saleIds)
     .in("status", ["upcoming", "postponed", "unknown"]);
@@ -777,6 +777,7 @@ async function buildCanonicalComparisonSnapshot(
       startingPriceEur: sale.starting_price_eur,
       surfaceM2: sale.app_surface_m2,
       surfaceKind: sale.app_surface_kind,
+      occupancy: sale.occupancy_status,
       rooms: sale.rooms_count,
       bedrooms: sale.bedrooms_count,
       bathrooms: sale.bathrooms_count,

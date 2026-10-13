@@ -30,7 +30,8 @@ import {
   addFavoriteSale as addFavoriteSaleRequest,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatStartingPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import type { AuctionSale } from "@/lib/types";
 import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
@@ -344,7 +345,7 @@ export const ListingCard = memo(function ListingCard({
             sourceUrl={sale.source_url}
             showSourceLink={false}
           >
-            {formatPrice(sale.starting_price_eur)}
+            {formatStartingPrice(sale.starting_price_eur)}
           </AiReviewField>
         </p>
         <p className="text-xs text-ink-soft">Mise à prix</p>
@@ -795,6 +796,7 @@ export function CompactFavoriteButton({
         setIsFavorite(false);
       } else {
         const added = await addFavoriteSaleRequest({ data: { saleId } });
+        trackProductEvent("favorite_added");
         setIsFavorite(true);
         void announceFavoriteAdded(queryClient, user.id, added?.plan?.limit ?? null);
       }

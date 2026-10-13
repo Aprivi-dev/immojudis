@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { formatDate, formatPrice, formatPricePerM2, occupancyLabel } from "@/lib/format";
+import { formatDate, formatPricePerM2, formatStartingPrice, occupancyLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
 import Link from "next/link";
 import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
@@ -28,7 +28,7 @@ const ROWS: { label: string; value: (sale: ComparedSale) => string }[] = [
   { label: "Type de vente", value: (sale) => VENUE_LABELS[sale.venueType] },
   { label: "Date de vente", value: (sale) => formatDate(sale.saleDate) },
   { label: "Occupation", value: (sale) => occupancyLabel(sale.occupancy) },
-  { label: "Mise à prix", value: (sale) => formatPrice(sale.startingPriceEur) },
+  { label: "Mise à prix", value: (sale) => formatStartingPrice(sale.startingPriceEur) },
   {
     label: "Mise à prix / m²",
     value: (sale) => {

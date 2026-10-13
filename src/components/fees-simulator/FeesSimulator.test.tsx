@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ track: vi.fn() }));
+vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
+
 import { departmentCode } from "@/lib/department-code";
 import { computeAcquisitionCosts, DEFAULTS } from "@/lib/profitability";
 import { FEES_SIMULATOR_DEPARTMENTS } from "./departments";
 import { DEFAULT_SIMULATOR_PRICE, FeesSimulator } from "./FeesSimulator";
 import { formatScaleDate } from "./scale-date";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 const euro = new Intl.NumberFormat("fr-FR", {
   style: "currency",
@@ -25,6 +31,15 @@ function field(name: string) {
 }
 
 describe("FeesSimulator", () => {
+  it("mesure l'usage une seule fois, au premier changement d'un champ", () => {
+    render(<FeesSimulator />);
+    expect(mocks.track).not.toHaveBeenCalled();
+    fireEvent.change(field("Prix d’adjudication"), { target: { value: "120000" } });
+    fireEvent.change(field("Travaux"), { target: { value: "5000" } });
+    expect(mocks.track).toHaveBeenCalledTimes(1);
+    expect(mocks.track).toHaveBeenCalledWith("fees_simulator_used");
+  });
+
   it("affiche par défaut le calcul de computeAcquisitionCosts avec les valeurs d'exemple", () => {
     render(<FeesSimulator />);
     const expected = computeAcquisitionCosts({

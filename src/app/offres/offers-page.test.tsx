@@ -6,7 +6,9 @@ const mocks = vi.hoisted(() => ({
   offer: vi.fn(),
   legalReady: vi.fn(),
   billingActionsProps: vi.fn(),
+  track: vi.fn(),
 }));
+vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
 vi.mock("@/lib/client-billing", () => ({ fetchBillingOffer: mocks.offer }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: null, loading: false }) }));
@@ -35,6 +37,12 @@ afterEach(() => {
 });
 
 describe("page Offres", () => {
+  it("mesure la consultation des offres une fois, sans donnée personnelle", () => {
+    render(<OffersPage />);
+    expect(mocks.track).toHaveBeenCalledTimes(1);
+    expect(mocks.track).toHaveBeenCalledWith("offers_viewed");
+  });
+
   it("présente trois bénéfices concrets, le comparatif, la FAQ et le prix TTC", async () => {
     render(<OffersPage />);
     expect(screen.getByRole("heading", { name: "Une enchère plafond chiffrée" })).toBeTruthy();

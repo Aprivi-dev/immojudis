@@ -167,6 +167,23 @@ describe("public map resilience", () => {
     expect(html).not.toContain("85");
     expect(html).not.toContain("Private source title");
   });
+  it("shows a starting price of 0 as not communicated in the popup", async () => {
+    const sale = {
+      id: "zero-price",
+      city: "Lille",
+      property_type: "apartment",
+      latitude: 50.63,
+      longitude: 3.06,
+      starting_price_eur: 0,
+      app_surface_m2: 50,
+      media: [],
+    } as unknown as AuctionSale;
+    await showMap({ sales: [sale], selectedSaleId: sale.id });
+    act(() => mocks.handlers.get("load")?.());
+    const html = mocks.setHtml.mock.calls.at(-1)?.[0] as string;
+    expect(html).toContain("Prix non communiqué");
+    expect(html).not.toMatch(/popup-price">\s*0/);
+  });
   it("says what is missing for a subscriber instead of « À auditer »", async () => {
     const sale = {
       id: "unscored",
@@ -297,7 +314,12 @@ describe("public map resilience", () => {
       media: [],
     } as unknown as AuctionSale;
     await showMap({ sales: [sale], mappablePointsTotal: 1200 });
-    expect(screen.getByText(/1 biens affichés sur 1\s?200, zoomez pour affiner/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /1 biens affichés sur 1\s?200 : précisez vos filtres ou activez « Chercher en déplaçant la carte »/,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/zoomez pour affiner/)).toBeNull();
   });
   it("does not crash the search page when WebGL cannot start", async () => {
     mocks.throws = true;

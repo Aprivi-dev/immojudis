@@ -1,4 +1,4 @@
-import { formatPrice } from "./format";
+import { formatStartingPrice } from "./format";
 import { safeDocumentUrl } from "./documents";
 import { buildCadastralAnalysis, formatCadastralReference } from "./cadastre-analysis";
 import { listingDate, listingVisits } from "./sale-listing";
@@ -86,8 +86,10 @@ export function buildStatePilot(sale: AuctionSale): PilotDefinition {
     {
       label: "Prix publié",
       value:
-        sale.starting_price_eur != null && Number.isFinite(sale.starting_price_eur)
-          ? formatPrice(sale.starting_price_eur)
+        sale.starting_price_eur != null &&
+        Number.isFinite(sale.starting_price_eur) &&
+        sale.starting_price_eur > 0
+          ? formatStartingPrice(sale.starting_price_eur)
           : null,
       sourceUrl: officialSourceUrl,
       detail:

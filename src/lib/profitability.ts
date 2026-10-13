@@ -66,7 +66,7 @@ export const DEFAULTS = {
   occupancyCarryMonths: 12,
 };
 
-export const DEFAULT_MARKET_CEILING_SCENARIO = "prudent" as const;
+const DEFAULT_MARKET_CEILING_SCENARIO = "prudent" as const;
 
 export const REFRESH_WORKS_PRICE_PER_M2 = 500;
 
@@ -585,53 +585,6 @@ export function computeRentabilityScore(inputs: RentabilityScoreInputs): Rentabi
     totalCost: Math.round(acquisition.totalCost),
     assumptions,
     factors,
-  };
-}
-
-export function marketCeilingVerdict(result: MarketCeilingResult): {
-  label: string;
-  detail: string;
-  tone: "good" | "ok" | "warn" | "bad";
-} {
-  if (!result.available) {
-    return {
-      label: "Marché à compléter",
-      detail: result.reason ?? "Il manque une référence de marché fiable.",
-      tone: "warn",
-    };
-  }
-  if (!result.maxBidIsReachable) {
-    return {
-      label: "Projet difficile à sécuriser",
-      detail: "Les frais et travaux dépassent déjà le seuil de marché retenu.",
-      tone: "bad",
-    };
-  }
-  if (result.marginPerM2 >= 200) {
-    return {
-      label: "Sous le seuil de sécurité",
-      detail: `${formatSigned(result.marginPerM2)} €/m² de marge tout compris.`,
-      tone: "good",
-    };
-  }
-  if (result.marginPerM2 >= 0) {
-    return {
-      label: "Encore dans la zone cible",
-      detail: `${formatSigned(result.marginPerM2)} €/m² avant le seuil.`,
-      tone: "ok",
-    };
-  }
-  if (result.marginPerM2 >= -200) {
-    return {
-      label: "Seuil presque dépassé",
-      detail: `${formatSigned(result.marginPerM2)} €/m² au-dessus du seuil.`,
-      tone: "warn",
-    };
-  }
-  return {
-    label: "Au-dessus du marché cible",
-    detail: `${formatSigned(result.marginPerM2)} €/m² au-dessus du seuil.`,
-    tone: "bad",
   };
 }
 

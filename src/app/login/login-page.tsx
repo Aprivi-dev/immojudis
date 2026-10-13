@@ -32,6 +32,7 @@ import {
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { postAuthDestination } from "@/lib/onboarding";
+import { trackProductEvent } from "@/lib/product-events";
 import { userMessage } from "@/lib/user-messages";
 
 type LoginSearch = {
@@ -242,6 +243,7 @@ export function LoginPage() {
         },
       });
       if (error) throw error;
+      trackProductEvent("signup_completed");
       // Sans session, le compte attend la confirmation de l'adresse : un toast qui disparaît
       // laisserait la personne devant le même formulaire, on le remplace donc par un panneau.
       if (data?.session === null) {

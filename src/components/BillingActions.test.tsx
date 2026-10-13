@@ -16,7 +16,9 @@ const mocks = vi.hoisted(() => ({
   openBillingPortal: vi.fn(),
   legalPublisherConfigurationStatus: vi.fn(),
   toastError: vi.fn(),
+  track: vi.fn(),
 }));
+vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: mocks.user, loading: mocks.loading }),
@@ -184,6 +186,24 @@ describe("BillingActions", () => {
         },
       }),
     );
+    // Le paiement n'a pas démarré (le mock refuse) : rien n'est mesuré.
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
+    expect(mocks.track).not.toHaveBeenCalled();
+  });
+
+  it("measures the start of a checkout once the payment address is returned", async () => {
+    mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: true, missing: [] });
+    // Une ancre du document : jsdom l'accepte sans quitter la page.
+    mocks.startAnalyseCheckout.mockResolvedValue({ url: "#paiement" });
+    renderActions();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Démarrer l’essai Analyse" }));
+    await screen.findByRole("dialog");
+    for (const consent of screen.getAllByRole("checkbox")) fireEvent.click(consent);
+    fireEvent.click(screen.getByRole("button", { name: "Commander avec obligation de paiement" }));
+
+    await waitFor(() => expect(mocks.track).toHaveBeenCalledWith("checkout_started"));
+    expect(mocks.track).toHaveBeenCalledTimes(1);
   });
 
   it("offers a recurring subscription without a second trial after trial history", async () => {
@@ -279,6 +299,7 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" }));
     await waitFor(() => expect(mocks.updateOfferOpeningNotification).toHaveBeenCalledWith(true));
     expect(await screen.findByText(/Votre demande est enregistrée/)).toBeTruthy();
+    expect(mocks.track).toHaveBeenCalledWith("opening_notification_requested");
 
     mocks.updateOfferOpeningNotification.mockResolvedValue({
       notification: { requested: false, consentedAt: null },
@@ -288,6 +309,8 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
       expect(mocks.updateOfferOpeningNotification).toHaveBeenLastCalledWith(false),
     );
     expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
+    // Retirer sa demande n'est pas une demande d'ouverture.
+    expect(mocks.track).toHaveBeenCalledTimes(1);
   });
 
   it("shows the request as recorded when the account already asked", async () => {
@@ -388,6 +411,7 @@ describe("BillingActions : retour de Stripe", () => {
     expect(window.location.search).toBe("");
     await screen.findByRole("button", { name: "Démarrer l’essai Analyse" });
     expect(mocks.fetchAccessPlan).toHaveBeenCalledTimes(1);
+    expect(mocks.track).toHaveBeenCalledWith("checkout_returned", { status: "cancelled" });
   });
 
   it("ignores the return parameters when the page does not ask for them", async () => {

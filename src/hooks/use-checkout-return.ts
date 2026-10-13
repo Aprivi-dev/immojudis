@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { trackProductEvent } from "@/lib/product-events";
 
 export type CheckoutReturn = "success" | "cancelled" | null;
 
@@ -29,6 +30,7 @@ export function useCheckoutReturn(enabled = true): CheckoutReturn {
     const found = parseCheckoutReturn(window.location.search);
     if (!found) return;
     setResult(found);
+    trackProductEvent("checkout_returned", { status: found });
     window.history.replaceState(window.history.state, "", withoutCheckoutReturn(window.location));
   }, [enabled]);
 

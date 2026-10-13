@@ -800,6 +800,16 @@ export function ResourcesPage() {
               .
             </P>
             <P>
+              Pour chiffrer ces frais selon votre département, essayez le{" "}
+              <Link
+                href="/simulateur-frais-encheres"
+                className="text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
+              >
+                simulateur de frais d’enchères
+              </Link>
+              .
+            </P>
+            <P>
               Immojudis met l'accent sur cette logique de coût complet. Un bien adjugé sous le prix
               du marché peut rester une mauvaise opération si les frais, travaux ou délais de
               libération sont sous-estimés.

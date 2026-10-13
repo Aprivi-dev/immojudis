@@ -62,6 +62,18 @@ describe("SaleComparisonTable", () => {
     expect(department.map((cell) => cell.textContent)).toEqual(["69", "13"]);
   });
 
+  it("reads « Prix non communiqué » for a starting price of 0, never « 0 € »", () => {
+    render(
+      <SaleComparisonTable
+        returnTo="/sales"
+        items={[compared("a", { startingPriceEur: 0 }), compared("b")]}
+      />,
+    );
+    const price = within(rowOf("Mise à prix")).getAllByRole("cell");
+    expect(price[0].textContent).toBe("Prix non communiqué");
+    expect(price[1].textContent).toMatch(/60\s000/);
+  });
+
   it("reads « Non renseignée » for an older saved comparison without occupation", () => {
     const { occupancy: _unused, ...legacy } = compared("a");
     void _unused;

@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   signUp: vi.fn(),
   resend: vi.fn(),
   toastError: vi.fn(),
+  track: vi.fn(),
 }));
+vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: null, profile: null, loading: false }),
@@ -71,6 +73,8 @@ describe("login page", () => {
     expect(options.terms_version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
     expect(options.privacy_version).toMatch(/^\d{4}-\d{2}-\d{2}\.\d+$/);
     expect(typeof options.terms_accepted_at).toBe("string");
+    expect(mocks.track).toHaveBeenCalledTimes(1);
+    expect(mocks.track).toHaveBeenCalledWith("signup_completed");
   });
 
   it("shows a French error inside the form instead of the raw Supabase message", async () => {
