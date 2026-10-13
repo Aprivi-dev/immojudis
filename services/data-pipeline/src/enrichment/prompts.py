@@ -42,6 +42,28 @@ def wrap_untrusted_source_context(context_text: str) -> str:
     return f"{opening}\n{context}\n{closing}"
 
 
+# Données personnelles : le texte affiché ne nomme jamais une personne physique. Le filtre
+# déterministe `src/personal_data.py` s'applique en plus à l'écriture, mais le modèle ne doit pas
+# les reproduire.
+PERSONAL_DATA_BLACKLIST = (
+    "Données personnelles : ne reproduis jamais le nom, la date de naissance ni l'adresse personnelle "
+    "d'une personne physique (débiteur, saisi, propriétaire, occupant, locataire, héritier, créancier "
+    "personne physique). Écris « le saisi », « l'occupant », « le locataire », « le propriétaire », "
+    "« le créancier ». Les sociétés, communes, tribunaux et études notariales peuvent être nommés."
+)
+
+PERSONAL_DATA_EXTRACTION_RULE = (
+    "Règles données personnelles :\n"
+    "- Dans les champs rédigés (occupancy_details, legal_risks, physical_risks, servitudes, works_needed, "
+    "summary, investor_notes, statement, reasoning, answer), ne reproduis jamais le nom, la date de "
+    "naissance ni l'adresse personnelle d'une personne physique (débiteur, saisi, propriétaire, occupant, "
+    "locataire, héritier, créancier personne physique). Écris « le saisi », « l'occupant », « le locataire », "
+    "« le propriétaire », « le créancier ».\n"
+    "- Les sociétés, communes, tribunaux et études notariales peuvent être nommés.\n"
+    "- Les citations (quote) restent copiées telles quelles depuis le texte : elles sont filtrées à "
+    "l'enregistrement."
+)
+
 SYSTEM_PROMPT = (
     "MODE EXTRACTION STRICTE. Ne produis aucune étape intermédiaire. "
     "Commence immédiatement par { et termine par }. "
@@ -115,6 +137,7 @@ def build_user_prompt(context_text: str) -> str:
         "- owner_occupied uniquement si propriétaire occupant est explicitement écrit.\n"
         "- occupied si occupé est mentionné sans précision fiable.\n"
         "- Si des passages se contredisent, retourne unknown.\n\n"
+        f"{PERSONAL_DATA_EXTRACTION_RULE}\n\n"
         "Règles risques :\n"
         "- legal_risks et physical_risks doivent contenir uniquement des risques explicitement mentionnés.\n"
         "- Une simple clause standard du cahier des conditions ne suffit pas à créer un risque.\n"
@@ -263,6 +286,7 @@ def build_display_description_prompt(context_text: str) -> str:
         "- Conseils et invitations : « se rapprocher de… », « il convient de… », « il est recommandé de… », "
         "« prendre contact », « s'adresser à… ».\n"
         "- Coordonnées et noms d'avocats, de notaires ou de gestionnaires, liens, téléphones, e-mails.\n"
+        f"- {PERSONAL_DATA_BLACKLIST}\n"
         "- Formules commerciales comme exceptionnel, idéal ou sans risque.\n\n"
         "Sécurité du contexte :\n"
         f"- {UNTRUSTED_SOURCE_INSTRUCTIONS}\n"
