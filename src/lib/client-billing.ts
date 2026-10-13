@@ -63,6 +63,20 @@ export async function openBillingPortal(): Promise<BillingSessionResponse> {
   return readJson<BillingSessionResponse>(response);
 }
 
+/**
+ * Opens the cancellation form of the Stripe portal directly.  The subscription is resolved
+ * by the server from the signed-in user's own row: only the intent is sent.
+ */
+export async function openSubscriptionCancellation(): Promise<BillingSessionResponse> {
+  const response = await fetch("/api/billing/portal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ intent: "cancel" }),
+  });
+
+  return readJson<BillingSessionResponse>(response);
+}
+
 export async function fetchOfferOpeningNotification(): Promise<OfferOpeningNotificationResponse> {
   const response = await fetch("/api/billing/opening-notification", {
     headers: await authHeaders(),

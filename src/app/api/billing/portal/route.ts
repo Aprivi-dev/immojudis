@@ -3,6 +3,7 @@ import {
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
 import { createBillingPortalSession } from "@/lib/billing";
+import { billingPortalRequestSchema } from "@/lib/billing-portal-request";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 
 export async function POST(request: Request) {
@@ -10,7 +11,10 @@ export async function POST(request: Request) {
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
     const url = new URL(request.url);
-    const response = await createBillingPortalSession({ auth, origin: url.origin });
+    // The body is optional: the historical call (no body) opens the generic portal.
+    const rawBody = await request.text();
+    const { intent } = billingPortalRequestSchema.parse(rawBody.trim() ? JSON.parse(rawBody) : {});
+    const response = await createBillingPortalSession({ auth, origin: url.origin, intent });
     return apiJson(response, context);
   } catch (error) {
     return apiError(error, context, {
