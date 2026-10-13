@@ -9,7 +9,7 @@ import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 
 export const metadata: Metadata = {
   alternates: { canonical: "/comment-ca-marche" },
-  title: "Comment ça marche : rechercher et préparer une vente",
+  title: "Comment ça marche : préparer une vente",
   description:
     "Trouver une vente aux enchères, comprendre le bien, fixer son enchère plafond et se faire accompagner : les quatre étapes d’Immojudis.",
 };

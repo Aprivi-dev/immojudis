@@ -13,7 +13,8 @@ import { RESOURCES_PATH } from "@/lib/navigation";
 export const metadata: Metadata = {
   alternates: { canonical: "/a-propos" },
   title: "À propos",
-  description: "La mission Immojudis et l'approche produit.",
+  description:
+    "Immojudis centralise les annonces de ventes aux enchères immobilières, les qualifie et aide à préparer sa décision avant d’enchérir.",
 };
 
 export default function Page() {
