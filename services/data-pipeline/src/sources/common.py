@@ -16,7 +16,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 
 from src.source_task_deadline import (
     SourceTaskDeadlineExceeded,
@@ -137,6 +137,76 @@ def parse_html(
         parsed = BeautifulSoup(html, parser)
     ensure_source_task_deadline("finishing source HTML parsing")
     return parsed
+
+
+_CLOUDFLARE_EMAIL_LINK_RE = re.compile(r"/cdn-cgi/l/email-protection#(?P<hex>[^?&\s]*)", re.I)
+_PLAUSIBLE_EMAIL_RE = re.compile(
+    r"[a-z0-9_%+'-]+(?:\.[a-z0-9_%+'-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}",
+    re.I | re.ASCII,
+)
+
+
+def is_plausible_email(value: object) -> bool:
+    """Adresse e-mail plausible (forme seulement : ni DNS, ni boîte vérifiée)."""
+    return isinstance(value, str) and len(value) <= 254 and _PLAUSIBLE_EMAIL_RE.fullmatch(value) is not None
+
+
+def decode_cloudflare_email(encoded: object) -> str | None:
+    """Décode une adresse masquée par la protection anti-spam de Cloudflare.
+
+    Le premier octet (hexadécimal) est la clé ; chaque octet suivant, combiné par OU exclusif
+    avec la clé, donne un octet de l'adresse (UTF-8). Renvoie l'adresse en minuscules, ou ``None``
+    si la donnée n'est pas de l'hexadécimal valide ou ne donne pas une adresse plausible.
+    """
+    if not isinstance(encoded, str):
+        return None
+    text = encoded.strip()
+    if len(text) < 4 or len(text) % 2 or re.fullmatch(r"[0-9a-fA-F]+", text) is None:
+        return None
+    data = bytes.fromhex(text)
+    key = data[0]
+    try:
+        decoded = bytes(byte ^ key for byte in data[1:]).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    decoded = decoded.strip().lower()
+    return decoded if is_plausible_email(decoded) else None
+
+
+def reveal_cloudflare_emails(
+    soup: BeautifulSoup, *, accept: Callable[[str], bool] | None = None
+) -> list[str]:
+    """Remplace dans ``soup`` les adresses masquées par Cloudflare par l'adresse décodée.
+
+    Sont lus les éléments ``data-cfemail`` et les liens ``/cdn-cgi/l/email-protection#<hex>``.
+    Une adresse décodée et acceptée (``accept``, tout par défaut) prend la place de l'élément ;
+    une donnée invalide ou une adresse refusée est retirée sans erreur, pour que le texte
+    « [email protected] » ne subsiste pas. Un refus n'est jamais conservé. Renvoie les adresses
+    gardées, dans l'ordre de la page, sans doublon.
+    """
+    revealed: list[str] = []
+    candidates = [
+        (node, node.get("data-cfemail"))
+        for node in soup.find_all(attrs={"data-cfemail": True})
+    ]
+    for link in soup.find_all("a", href=True):
+        match = _CLOUDFLARE_EMAIL_LINK_RE.search(str(link.get("href")))
+        if match:
+            candidates.append((link, match.group("hex")))
+    # Document order, parents first, so a link wrapping a ``data-cfemail`` span is replaced once.
+    order = {id(node): index for index, node in enumerate(soup.find_all(True))}
+    candidates.sort(key=lambda item: order.get(id(item[0]), 0))
+    for node, encoded in candidates:
+        if node.parent is None:  # déjà remplacé ou retiré avec son parent
+            continue
+        email = decode_cloudflare_email(encoded)
+        if email and (accept is None or accept(email)):
+            node.replace_with(NavigableString(email))
+            if email not in revealed:
+                revealed.append(email)
+        else:
+            node.decompose()
+    return revealed
 
 
 def _source_task_sleep(seconds: float, operation: str) -> None:
