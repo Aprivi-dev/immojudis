@@ -141,7 +141,7 @@ describe("renderInformationRequestEmail", () => {
       expect(output).toContain("accès, rectification, effacement et limitation");
       expect(output).toContain("Vous pouvez vous opposer à tout moment, sans motif");
       expect(output).toContain("https://www.cnil.fr/fr/plaintes");
-      expect(output).not.toContain("outil de recherche automatisé");
+      expect(output).not.toContain("retrouvée automatiquement");
     }
     expect(message.html).toContain("Ne plus être contacté (un clic)");
     expect(message.html).toContain("Politique de confidentialité et vos droits");
@@ -158,7 +158,7 @@ describe("renderInformationRequestEmail", () => {
     });
     for (const output of [message.html, message.text]) {
       expect(output).toContain(
-        "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
+        "Cette adresse a été retrouvée automatiquement par un outil d’Immojudis à partir d’une page publique (voir l’origine ci-dessus). L’outil ne conserve aucune copie de la page : seuls l’adresse, le lien de la page, la date de relevé et le critère de rapprochement utilisé sont enregistrés. Ce message a été relu et validé par un membre de l’équipe avant son envoi.",
       );
     }
   });

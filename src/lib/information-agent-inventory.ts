@@ -601,3 +601,16 @@ function text(value: unknown): string | null {
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
+
+/** Forme enregistrée de l'inventaire dans `metadata.inventory` de la mission. */
+export function informationAgentInventorySnapshot(
+  inventory: InformationAgentInventory,
+): { key: string; label: string; status: string; detail: string; origin: string | null }[] {
+  return inventory.items.map((entry) => ({
+    key: entry.key,
+    label: entry.label,
+    status: entry.status,
+    detail: entry.detail,
+    origin: entry.origin,
+  }));
+}

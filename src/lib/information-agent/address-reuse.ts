@@ -6,6 +6,7 @@ import {
 } from "@/lib/information-agent/excluded-addresses";
 import { normalizeInformationAgentIdentityName } from "@/lib/information-agent/identity";
 import { normalizedEmail } from "@/lib/information-agent/contacts";
+import { emailRecallsName, isGenericEmailLocal } from "@/lib/information-agent/firm-site-extract";
 import { isWithdrawnSourceUrl } from "@/lib/withdrawn-sources";
 
 /**
@@ -21,6 +22,8 @@ import { isWithdrawnSourceUrl } from "@/lib/withdrawn-sources";
 export const ADDRESS_REUSE_MAX_AGE_MONTHS = 6;
 const MAX_ROWS = 200;
 const MAX_PHONES = 3;
+/** Durée maximale de la lecture en base quand l'appelant ne fixe pas de budget. */
+const DEFAULT_READ_TIMEOUT_MS = 8_000;
 
 /** Numéros français : `01 23 45 67 89`, `01.23.45.67.89`, `+33 1 23 45 67 89`, `+33 (0)1…`. */
 const FRENCH_PHONE =
@@ -44,9 +47,9 @@ function nameTokens(name: string | null | undefined): string[] {
 }
 
 /**
- * Même professionnel : au moins deux jetons de nom de chaque côté (nom de famille et un autre
- * jeton) et tous les jetons du nom le plus court figurent dans l'autre (« Jean Dupont » =
- * « Me Dupont Jean-Pierre »). Un nom d'un seul jeton ne suffit jamais.
+ * Même professionnel : au moins deux jetons de nom (nom de famille et un autre jeton) et des
+ * ensembles de jetons ÉGAUX, titres et formes sociales ôtés (« Jean Dupont » = « Me DUPONT Jean »).
+ * « Jean Dupont » n'est donc pas « Jean-Louis Dupont ». Un nom d'un seul jeton ne suffit jamais.
  */
 export function isSameInformationAgentProfessional(
   left: string | null | undefined,
@@ -55,8 +58,7 @@ export function isSameInformationAgentProfessional(
   const a = nameTokens(left);
   const b = nameTokens(right);
   if (a.length < 2 || b.length < 2) return false;
-  const [small, large] = a.length <= b.length ? [a, b] : [b, a];
-  return small.every((token) => large.includes(token));
+  return a.length === b.length && a.every((token) => b.includes(token));
 }
 
 export function addressReuseCutoff(now: Date): Date {
@@ -117,7 +119,7 @@ export type ReusableAddress = {
 
 export type AddressReuseResult =
   | { status: "found"; address: ReusableAddress }
-  | { status: "none"; reason: "no_name" | "no_phone" | "no_match" }
+  | { status: "none"; reason: "no_name" | "no_phone" | "no_match" | "truncated" }
   | { status: "ambiguous" };
 
 /**
@@ -154,6 +156,10 @@ export function selectReusableAddress({
     if (!/^https:\/\/[^\s]+$/i.test(sourceUrl)) continue;
     if (isInformationAgentExcludedSourceUrl(sourceUrl) || isWithdrawnSourceUrl(sourceUrl)) continue;
     for (const email of publishedEmails(row.lawyer_contact)) {
+      // La partie locale rappelle le nom du professionnel (segments entiers) ou est celle du cabinet.
+      const recalls =
+        emailRecallsName(email, lawyerName) || emailRecallsName(email, row.lawyer_name);
+      if (!recalls && !isGenericEmailLocal(email)) continue;
       const current = byEmail.get(email);
       if (current && current.time >= time) continue;
       byEmail.set(email, {
@@ -195,35 +201,58 @@ export async function findReusableInformationAgentAddress({
   lawyerName,
   lawyerContact,
   now = new Date(),
+  timeoutMs = DEFAULT_READ_TIMEOUT_MS,
 }: {
   saleId: string;
   lawyerName: string | null | undefined;
   lawyerContact: string | null | undefined;
   now?: Date;
+  /** Temps imparti à la lecture, pris sur le budget de la recherche. */
+  timeoutMs?: number;
 }): Promise<AddressReuseResult> {
   if (nameTokens(lawyerName).length < 2) return { status: "none", reason: "no_name" };
   const phones = normalizedFrenchPhones(lawyerContact).slice(0, MAX_PHONES);
   if (!phones.length) return { status: "none", reason: "no_phone" };
   const since = addressReuseCutoff(now).toISOString();
 
-  const results = await Promise.all(
-    phones.map((phone) =>
-      supabaseAdmin
-        .from("auction_sales")
-        .select("id,source_name,source_url,sale_date,last_seen_at,lawyer_name,lawyer_contact")
-        .neq("id", saleId)
-        .eq("catalogue_quarantined", false)
-        .ilike("lawyer_contact", phoneLikePattern(phone))
-        .ilike("lawyer_contact", "%@%")
-        .or(`last_seen_at.gte.${since},sale_date.gte.${since}`)
-        .order("last_seen_at", { ascending: false, nullsFirst: false })
-        .limit(MAX_ROWS),
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error("Lecture des annonces du professionnel trop longue.")),
+      Math.max(1, timeoutMs),
+    );
+  });
+  const results = await Promise.race([
+    Promise.all(
+      phones.map((phone) =>
+        supabaseAdmin
+          .from("auction_sales")
+          .select("id,source_name,source_url,sale_date,last_seen_at,lawyer_name,lawyer_contact")
+          .neq("id", saleId)
+          .eq("catalogue_quarantined", false)
+          .ilike("lawyer_contact", phoneLikePattern(phone))
+          .or(`last_seen_at.gte.${since},sale_date.gte.${since}`)
+          .order("last_seen_at", { ascending: false, nullsFirst: false })
+          .limit(MAX_ROWS),
+      ),
     ),
-  );
+    timeout,
+  ]).finally(() => clearTimeout(timer));
   const rows = new Map<string, ReusableAddressRow>();
   for (const { data, error } of results) {
     if (error) throw error;
     if (!data) throw new Error("Annonces du professionnel indisponibles.");
+    // Une lecture tronquée peut cacher une seconde adresse : on ne réemploie rien (et on le dit).
+    if (data.length >= MAX_ROWS) {
+      console.warn(
+        JSON.stringify({
+          scope: "information-agent.address-reuse",
+          event: "rows_truncated",
+          limit: MAX_ROWS,
+        }),
+      );
+      return { status: "none", reason: "truncated" };
+    }
     for (const row of data) rows.set(row.id, row);
   }
   return selectReusableAddress({

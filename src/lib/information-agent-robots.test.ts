@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { evaluateRobots } from "@/lib/information-agent/robots";
+import {
+  evaluateRobots,
+  ROBOTS_MAX_PATTERN_LENGTH,
+  ROBOTS_MAX_RULES,
+  robotsPatternMatches,
+} from "@/lib/information-agent/robots";
 import { INFORMATION_AGENT_ROBOTS_TOKEN } from "@/lib/information-agent/firm-site-search";
 
 const TOKEN = INFORMATION_AGENT_ROBOTS_TOKEN;
@@ -66,6 +71,43 @@ describe("lecture de robots.txt", () => {
     expect(evaluateRobots(robots, "/contact", TOKEN)).toEqual({
       allowed: true,
       crawlDelaySeconds: 4,
+    });
+  });
+
+  describe("robustesse face à un fichier hostile", () => {
+    it("30 jokers contre un chemin de 200 caractères restent quasi instantanés", () => {
+      const pattern = `/${"*a".repeat(30)}b`;
+      const path = `/${"a".repeat(200)}`;
+      const started = performance.now();
+      for (let i = 0; i < 200; i += 1) expect(robotsPatternMatches(pattern, path)).toBe(false);
+      expect(performance.now() - started).toBeLessThan(50);
+      const text = `User-agent: *\nDisallow: ${pattern}`;
+      const single = performance.now();
+      expect(allowed(text, path)).toBe(true);
+      expect(performance.now() - single).toBeLessThan(50);
+    });
+
+    it("apparie comme la spécification les cas limites de jokers", () => {
+      expect(robotsPatternMatches("/a*b*c", "/aXXbYYc")).toBe(true);
+      expect(robotsPatternMatches("/a*b*c", "/aXXbYY")).toBe(false);
+      expect(robotsPatternMatches("/*", "/")).toBe(true);
+      expect(robotsPatternMatches("/fish*", "/fish")).toBe(true);
+      expect(robotsPatternMatches("/fish", "/fi")).toBe(false);
+      expect(robotsPatternMatches("/*.php$", "/x.php")).toBe(true);
+      expect(robotsPatternMatches("/*.php$", "/x.php?a=1")).toBe(false);
+      expect(robotsPatternMatches("/a$", "/a/")).toBe(false);
+      expect(robotsPatternMatches("/**//", "/a//")).toBe(true);
+    });
+
+    it("refuse en bloc un fichier de plus de 1000 règles ou à motif de plus de 512 caractères", () => {
+      const many = Array.from({ length: ROBOTS_MAX_RULES + 1 }, (_, i) => `Disallow: /x${i}`);
+      expect(allowed(`User-agent: *\n${many.join("\n")}`, "/contact")).toBe(false);
+      const atLimit = Array.from({ length: ROBOTS_MAX_RULES }, (_, i) => `Disallow: /x${i}`);
+      expect(allowed(`User-agent: *\n${atLimit.join("\n")}`, "/contact")).toBe(true);
+      const longPattern = `/${"a".repeat(ROBOTS_MAX_PATTERN_LENGTH)}`;
+      expect(allowed(`User-agent: *\nDisallow: ${longPattern}`, "/contact")).toBe(false);
+      const fits = `/${"a".repeat(ROBOTS_MAX_PATTERN_LENGTH - 1)}`;
+      expect(allowed(`User-agent: *\nDisallow: ${fits}`, "/contact")).toBe(true);
     });
   });
 });

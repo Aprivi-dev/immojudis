@@ -21,6 +21,7 @@ import {
 } from "@/lib/fact-reliability";
 import {
   buildInformationAgentInventory,
+  informationAgentInventorySnapshot,
   type InformationAgentInventory,
   type InformationAgentInventoryItem,
   type InformationAgentInventoryKey,
@@ -63,7 +64,10 @@ import {
   persistInformationAgentContactObservations,
   selectInformationAgentContact,
 } from "@/lib/information-agent/contacts";
-import { searchInformationAgentAddressForDraft } from "@/lib/information-agent/address-search";
+import {
+  assertInformationAgentSearchedAddressAllowed,
+  searchInformationAgentAddressForDraft,
+} from "@/lib/information-agent/address-search";
 import { recordManualMissionReply } from "@/lib/information-agent/manual-reply";
 import {
   assertInformationAgentSourceAllowed,
@@ -569,8 +573,7 @@ export async function createAdminInformationAgentDraft({
   const candidatesSkippedForOpposition = discovered.length - listingCandidates.length;
   const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
 
-  // Recherche autonome (niveau 1), seulement sans adresse dans l'annonce ni saisie : elle prépare,
-  // l'administrateur relit l'origine de l'adresse dans l'aperçu avant de valider l'envoi.
+  // Recherche autonome (niveau 1), sans adresse dans l'annonce ni saisie : elle ne fait que préparer.
   const search = await searchInformationAgentAddressForDraft({
     sale,
     identityPlace,
@@ -581,7 +584,7 @@ export async function createAdminInformationAgentDraft({
   const contactCandidates = foundContact ? [foundContact] : listingCandidates;
   await persistInformationAgentContactObservations({
     saleId: sale.id,
-    candidates: contactCandidates,
+    candidates: foundContact ? [] : contactCandidates,
   });
   const selectedContact = foundContact ?? selectInformationAgentContact(contactCandidates);
   const recipientEmail = explicitRecipientEmail ?? selectedContact?.email;
@@ -656,7 +659,7 @@ export async function createAdminInformationAgentDraft({
           candidates: contactCandidates.slice(0, 8).map(contactCandidateSnapshot),
         },
         initiated_by_admin: auth.userId,
-        inventory: inventorySnapshot(inventory),
+        inventory: informationAgentInventorySnapshot(inventory),
         email_content_template_id: emailTemplate.id,
         email_content_template_revision: emailTemplate.revision,
       },
@@ -670,6 +673,13 @@ export async function createAdminInformationAgentDraft({
     p_mission_id: data.id,
   });
   if (subscribeError) throw subscribeError;
+  // L'adresse trouvée n'est enregistrée qu'une fois contrôlée et le brouillon créé.
+  if (foundContact) {
+    await persistInformationAgentContactObservations({
+      saleId: sale.id,
+      candidates: [foundContact],
+    });
+  }
   const subscribedMission = await loadOwnedMission(auth.userId, data.id);
   return {
     ok: true,
@@ -776,6 +786,7 @@ async function approveAndSendMission({
   });
   if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   assertInformationAgentSourceAllowed(addressOrigin);
+  assertInformationAgentSearchedAddressAllowed(addressOrigin.origin);
   assertInformationAgentOutboundEnabled();
   assertInformationAgentCanaryRecipient(input.recipientEmail);
   // Validate delivery prerequisites before approval reserves the case for sending.
@@ -1005,6 +1016,7 @@ function buildInformationAgentLegalFooter({
     addressOrigin: addressOrigin.text,
     addressOriginUrl: addressOrigin.url,
     automatedSearch: addressOrigin.automated,
+    automatedSearchSource: addressOrigin.searchSource,
     // Lève une erreur si la configuration désigne un prestataire d'IA non nommé dans le pied.
     aiProvider: informationAgentAiProvider(env),
     privacyUrl: new URL("/privacy", appUrl).toString(),
@@ -1144,6 +1156,7 @@ export async function previewAdminInformationAgentMission({
   });
   if (!addressOrigin.known) blockers.push(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   await collect(() => assertInformationAgentSourceAllowed(addressOrigin));
+  await collect(() => assertInformationAgentSearchedAddressAllowed(addressOrigin.origin, env));
   await collect(() => assertInformationAgentOutboundEnabled(env));
   await collect(() => assertInformationAgentCanaryRecipient(recipient, env));
   await collect(() => resolveInformationAgentEmailConfig(env));
@@ -1161,6 +1174,7 @@ export async function previewAdminInformationAgentMission({
     addressOrigin: addressOrigin.origin.text,
     addressOriginUrl: addressOrigin.origin.url,
     automatedSearch: addressOrigin.origin.automated,
+    automatedSearchSource: addressOrigin.origin.searchSource,
     aiProvider: previewAiProvider(env, blockers),
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: secret
@@ -1319,16 +1333,6 @@ function missionFromRow(row: MissionRow): InformationAgentMission {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-}
-
-function inventorySnapshot(inventory: InformationAgentInventory): Json {
-  return inventory.items.map((entry) => ({
-    key: entry.key,
-    label: entry.label,
-    status: entry.status,
-    detail: entry.detail,
-    origin: entry.origin,
-  }));
 }
 
 const INVENTORY_STATUSES = new Set(["present", "to_confirm", "missing", "not_applicable"]);

@@ -23,6 +23,8 @@ export type InformationAgentLegalFooter = {
   addressOriginUrl?: string | null;
   /** Adresse retrouvée par l'outil de recherche automatisé : le pied le dit. */
   automatedSearch?: boolean;
+  /** Type de source de la recherche : l'autre annonce n'est pas « une page publique » consultée. */
+  automatedSearchSource?: InformationAgentAddressSourceKind;
   /** Prestataire d'IA qui lit les réponses (art. 14(1)(e)), tiré de la configuration. */
   aiProvider: InformationAgentAiProvider;
   privacyUrl: string;
@@ -104,6 +106,8 @@ export type InformationAgentAddressOrigin = {
   url: string | null;
   /** Vrai quand l'outil de recherche automatisé a retrouvé l'adresse sur une page publique. */
   automated: boolean;
+  /** Type de source quand l'adresse a été retrouvée par l'outil (absent sinon). */
+  searchSource?: InformationAgentAddressSourceKind;
 };
 
 /** Date de relevé au format JJ/MM/AAAA, à l'heure de Paris ; null si la date est absente. */
@@ -130,7 +134,16 @@ export function formatInformationAgentOriginDate(
  * `sourceKind` absent : `manual` (ancien paramètre) désigne une saisie d'administrateur, sinon
  * l'annonce publique de la vente.
  */
-export function informationAgentAddressOrigin({
+export function informationAgentAddressOrigin(
+  input: Parameters<typeof originForKind>[0],
+): InformationAgentAddressOrigin {
+  const origin = originForKind(input);
+  return origin.automated && input.sourceKind
+    ? { ...origin, searchSource: input.sourceKind }
+    : origin;
+}
+
+function originForKind({
   sourceName,
   sourceUrl,
   manual = false,
@@ -138,6 +151,7 @@ export function informationAgentAddressOrigin({
   directoryName,
   observedAt,
   observedBy,
+  matchRule,
 }: {
   sourceName?: string | null;
   sourceUrl?: string | null;
@@ -147,6 +161,8 @@ export function informationAgentAddressOrigin({
   directoryName?: string | null;
   observedAt?: string | Date | null;
   observedBy?: InformationAgentAddressObserver | null;
+  /** Règle d'appariement de la recherche (`firm_site_generic` : adresse du cabinet, pas d'une personne). */
+  matchRule?: string | null;
 }): InformationAgentAddressOrigin {
   const kind: InformationAgentAddressSourceKind =
     sourceKind ?? (manual ? "admin_entry" : "sale_listing");
@@ -171,7 +187,7 @@ export function informationAgentAddressOrigin({
       return {
         text: `Votre adresse professionnelle figure dans une autre annonce publique de vente qui vous mentionne comme interlocuteur${
           label ? `, sur ${label}` : ""
-        }${link}${consulted(true)}.`,
+        }${link} ; Immojudis l’a reprise de cette annonce${observedOn ? ` le ${observedOn}` : ""}.`,
         url,
         automated,
       };
@@ -189,7 +205,10 @@ export function informationAgentAddressOrigin({
     }
     case "firm_website":
       return {
-        text: `Votre adresse professionnelle figure sur le site de votre cabinet ou de votre étude${link}${consulted(false)}.`,
+        text:
+          matchRule === "firm_site_generic"
+            ? `L’adresse de contact de votre cabinet ou de votre étude figure sur son site${link}${consulted(false)}.`
+            : `Votre adresse professionnelle figure sur le site de votre cabinet ou de votre étude${link}${consulted(false)}.`,
         url,
         automated,
       };
@@ -243,7 +262,7 @@ export function informationAgentLegalFooterSections(
   if (footer.automatedSearch) {
     sections.push({
       label: "Recherche de l’adresse :",
-      text: INFORMATION_AGENT_AUTOMATED_SEARCH_STATEMENT,
+      text: informationAgentAutomatedSearchStatement(footer.automatedSearchSource),
     });
   }
   sections.push(
@@ -292,8 +311,18 @@ export const INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT =
  * address-search.ts`). Elle ne peut apparaître que pour une source `other_listing`,
  * `firm_website` ou `official_directory` relevée par l'agent.
  */
+export function informationAgentAutomatedSearchStatement(
+  source?: InformationAgentAddressSourceKind | null,
+): string {
+  const from =
+    source === "other_listing"
+      ? "une annonce publique déjà enregistrée par Immojudis"
+      : "une page publique";
+  return `Cette adresse a été retrouvée automatiquement par un outil d’Immojudis à partir d’${from} (voir l’origine ci-dessus). L’outil ne conserve aucune copie de la page : seuls l’adresse, le lien de la page, la date de relevé et le critère de rapprochement utilisé sont enregistrés. Ce message a été relu et validé par un membre de l’équipe avant son envoi.`;
+}
+
 export const INFORMATION_AGENT_AUTOMATED_SEARCH_STATEMENT =
-  "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.";
+  informationAgentAutomatedSearchStatement();
 
 /**
  * Durées de conservation annoncées au destinataire (art. 14(2)(a) RGPD), identiques à la purge

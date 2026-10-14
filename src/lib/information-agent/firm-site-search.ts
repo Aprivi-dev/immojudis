@@ -1,6 +1,9 @@
 import "server-only";
+import { request as httpsRequest } from "node:https";
 import { lookup as dnsLookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { isIP, type LookupFunction } from "node:net";
+import type { Readable } from "node:stream";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import {
   chooseFirmAddress,
   extractFirmSiteLinks,
@@ -20,9 +23,12 @@ import { evaluateRobots } from "@/lib/information-agent/robots";
  * - au plus 3 pages par domaine, en GET, après lecture de `robots.txt` (refus si le fichier
  *   interdit la page, est illisible ou répond autre chose que 200, 404 ou 410) ;
  * - aucune requête hors du domaine de départ (redirections comprises), jamais d'adresse IP, de
- *   port particulier ni d'hôte résolu vers un réseau privé ;
+ *   port particulier ni d'hôte résolu vers un réseau non public : la résolution DNS se fait AU
+ *   MOMENT de la connexion (option `lookup` de `https.request`), l'adresse contrôlée est celle à
+ *   laquelle on se connecte (pas de réécriture DNS entre contrôle et connexion) ;
  * - arrêt immédiat sur 401, 403, 429, erreur serveur, captcha ou défi anti-robot ;
- * - user-agent qui identifie Immojudis, expiration courte par requête et budget de temps global ;
+ * - user-agent qui identifie Immojudis, expiration courte par requête, budget de temps global,
+ *   plafond de requêtes et de 1 Mio de contenu décompressé par page ;
  * - aucune copie de page : seuls l'adresse retenue, l'adresse web de la page et le nombre de pages
  *   lues sont rendus. Le contenu des pages n'est ni stocké ni journalisé.
  */
@@ -30,14 +36,21 @@ import { evaluateRobots } from "@/lib/information-agent/robots";
 /** Jeton de produit de `robots.txt` (minuscules) : les éditeurs peuvent nous exclure par ce nom. */
 export const INFORMATION_AGENT_ROBOTS_TOKEN = "immojudisadresses";
 export const FIRM_SITE_MAX_PAGES = 3;
+/** robots.txt, 3 pages et 2 redirections au plus par page : jamais plus de 8 requêtes par site. */
+export const FIRM_SITE_MAX_REQUESTS = 8;
 const MAX_REDIRECTS = 2;
 const MAX_BODY_BYTES = 1_048_576;
 const MAX_ROBOTS_CRAWL_DELAY_SECONDS = 10;
 const DEFAULT_BUDGET_MS = 15_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
 const DEFAULT_PAUSE_MS = 600;
+const DNS_TIMEOUT_MS = 3_000;
 
-/** User-agent de l'outil : le jeton `ImmojudisAdresses` et la page de contact du site. */
+/**
+ * User-agent de l'outil : le jeton `ImmojudisAdresses` et la page de contact du site.
+ * À REMPLACER par la page `/agent-information` quand elle sera publiée : c'est une condition
+ * d'activation de la recherche (voir le runbook de l'agent d'information).
+ */
 export function informationAgentSearchUserAgent(siteOrigin: string): string {
   return `ImmojudisAdresses/1.0 (+${siteOrigin.replace(/\/+$/, "")}/contact)`;
 }
@@ -62,16 +75,77 @@ export type FirmSiteSearchResult = {
   email?: string;
   /** Page (https) où l'adresse retenue figure. */
   pageUrl?: string;
-  reason?: "single" | "name" | "generic" | "offsite_name";
+  /** `name` : nom et prénom de l'avocat dans l'adresse ; `generic` : adresse du cabinet. */
+  reason?: "name" | "generic";
 };
 
+export type FirmSiteLookup = (hostname: string) => Promise<Array<{ address: string }>>;
+
+export type FirmSiteTransportRequest = {
+  url: URL;
+  headers: Record<string, string>;
+  signal: AbortSignal;
+  /** Plafond de contenu décompressé, en octets. */
+  maxBytes: number;
+  dnsTimeoutMs: number;
+};
+
+export type FirmSiteTransportResponse = {
+  status: number;
+  location: string | null;
+  contentType: string;
+  body: string;
+  /** Le contenu dépassait `maxBytes` et a été coupé. */
+  truncated: boolean;
+};
+
+export type FirmSiteTransport = (
+  request: FirmSiteTransportRequest,
+) => Promise<FirmSiteTransportResponse>;
+
 export type FirmSiteSearchDeps = {
-  fetchImpl?: typeof fetch;
-  lookupImpl?: (hostname: string) => Promise<Array<{ address: string }>>;
+  /** Transport HTTP (tests) ; par défaut `https.request` avec résolution DNS contrôlée. */
+  transport?: FirmSiteTransport;
+  /** Résolution DNS du transport par défaut (tests). */
+  lookupImpl?: FirmSiteLookup;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
 };
 
+// ---------------------------------------------------------------------------
+// Adresses réseau : liste d'autorisation
+// ---------------------------------------------------------------------------
+
+function expandIpv6(address: string): number[] | null {
+  let value = address.toLowerCase().split("%")[0] ?? "";
+  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(value);
+  if (dotted) {
+    const octets = dotted.slice(1, 5).map(Number);
+    if (octets.some((octet) => octet > 255)) return null;
+    const high = ((octets[0]! << 8) | octets[1]!).toString(16);
+    const low = ((octets[2]! << 8) | octets[3]!).toString(16);
+    value = `${value.slice(0, value.length - dotted[0].length)}${high}:${low}`;
+  }
+  const halves = value.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 2 ? missing < 1 : missing !== 0) return null;
+  const groups = [...head, ...Array<string>(halves.length === 2 ? missing : 0).fill("0"), ...tail];
+  const numbers = groups.map((group) =>
+    /^[0-9a-f]{1,4}$/.test(group) ? parseInt(group, 16) : NaN,
+  );
+  return numbers.length === 8 && numbers.every((n) => Number.isInteger(n)) ? numbers : null;
+}
+
+/**
+ * Vrai pour toute adresse qui n'est pas une adresse publique routable. IPv4 : liste d'exclusion des
+ * plages privées, locales et réservées. IPv6 : liste d'AUTORISATION, seul l'unicast global
+ * (2000::/3) est admis, hors Teredo (2001::/32), documentation (2001:db8::/32) et 6to4 (2002::/16) ;
+ * les formes IPv4-mappées (`::ffff:a.b.c.d`, développées ou non) suivent la règle IPv4 et les
+ * IPv4-compatibles (`::7f00:1`) sont refusées. L'adresse est développée avant toute comparaison.
+ */
 export function isPrivateNetworkAddress(address: string): boolean {
   const family = isIP(address);
   if (family === 4) {
@@ -89,22 +163,160 @@ export function isPrivateNetworkAddress(address: string): boolean {
       a >= 224
     );
   }
-  if (family === 6) {
-    const value = address.toLowerCase();
-    if (value === "::" || value === "::1") return true;
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(value);
-    if (mapped?.[1]) return isPrivateNetworkAddress(mapped[1]);
-    if (value.startsWith("::ffff:") || value.startsWith("64:ff9b:")) return true;
-    const first = Number.parseInt(value.split(":")[0] || "0", 16);
-    return (
-      (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xff00) === 0xff00
-    );
+  if (family !== 6) return true;
+  const groups = expandIpv6(address);
+  if (!groups) return true;
+  if (groups.slice(0, 5).every((group) => group === 0)) {
+    if (groups[5] !== 0xffff) return true;
+    const [high = 0, low = 0] = groups.slice(6);
+    return isPrivateNetworkAddress(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
   }
-  return true;
+  const first = groups[0]!;
+  if ((first & 0xe000) !== 0x2000) return true;
+  if (first === 0x2001 && (groups[1] === 0 || groups[1] === 0x0db8)) return true;
+  return first === 0x2002;
 }
 
 async function defaultLookup(hostname: string): Promise<Array<{ address: string }>> {
   return dnsLookup(hostname, { all: true });
+}
+
+/**
+ * Fonction `lookup` de `https.request` : résout le nom, refuse l'ensemble des adresses dès que l'une
+ * n'est pas publique, et ne rend à la connexion que les adresses contrôlées. La résolution est
+ * bornée dans le temps.
+ */
+export function createPublicOnlyLookup(
+  lookupImpl: FirmSiteLookup,
+  dnsTimeoutMs: number = DNS_TIMEOUT_MS,
+): LookupFunction {
+  return (hostname, options, callback) => {
+    const wantsAll = typeof options === "object" && options !== null && options.all === true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(Object.assign(new Error("Résolution DNS trop longue."), { code: "EDNSTIMEOUT" })),
+        dnsTimeoutMs,
+      );
+    });
+    Promise.race([lookupImpl(hostname), timeout]).then(
+      (addresses) => {
+        clearTimeout(timer);
+        if (
+          !addresses.length ||
+          addresses.some(({ address }) => isPrivateNetworkAddress(address))
+        ) {
+          callback(
+            Object.assign(new Error("Adresse réseau non publique refusée."), {
+              code: "EPRIVATEADDRESS",
+            }) as NodeJS.ErrnoException,
+            "",
+            0,
+          );
+          return;
+        }
+        const resolved = addresses.map(({ address }) => ({ address, family: isIP(address) }));
+        if (wantsAll) callback(null, resolved);
+        else callback(null, resolved[0]!.address, resolved[0]!.family);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        callback(error as NodeJS.ErrnoException, "", 0);
+      },
+    );
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Transport HTTPS par défaut
+// ---------------------------------------------------------------------------
+
+function decoderFor(encoding: string) {
+  if (encoding === "gzip" || encoding === "x-gzip") return createGunzip();
+  if (encoding === "deflate") return createInflate();
+  if (encoding === "br") return createBrotliDecompress();
+  return null;
+}
+
+/**
+ * Transport réel : `https.request` avec résolution DNS contrôlée à la connexion, SNI et `Host`
+ * d'origine, aucune redirection suivie, contenu décompressé plafonné à `maxBytes`.
+ */
+export function createHttpsTransport({
+  lookupImpl = defaultLookup,
+}: { lookupImpl?: FirmSiteLookup } = {}): FirmSiteTransport {
+  return (request) =>
+    new Promise<FirmSiteTransportResponse>((resolve, reject) => {
+      let settled = false;
+      const settle = (action: () => void) => {
+        if (settled) return;
+        settled = true;
+        action();
+      };
+      const req = httpsRequest(
+        {
+          protocol: "https:",
+          hostname: request.url.hostname,
+          port: 443,
+          path: `${request.url.pathname}${request.url.search}`,
+          method: "GET",
+          headers: { ...request.headers, "accept-encoding": "gzip, deflate, br" },
+          agent: false,
+          signal: request.signal,
+          lookup: createPublicOnlyLookup(lookupImpl, request.dnsTimeoutMs),
+        },
+        (res) => {
+          const status = res.statusCode ?? 0;
+          const location = typeof res.headers.location === "string" ? res.headers.location : null;
+          const contentType = String(res.headers["content-type"] ?? "");
+          const head = { status, location, contentType };
+          if (status < 200 || status >= 300) {
+            settle(() => resolve({ ...head, body: "", truncated: false }));
+            res.destroy();
+            return;
+          }
+          const encoding = String(res.headers["content-encoding"] ?? "")
+            .toLowerCase()
+            .trim();
+          const decoder = decoderFor(encoding);
+          if (encoding && encoding !== "identity" && !decoder) {
+            settle(() => reject(new Error("Encodage de contenu non pris en charge.")));
+            res.destroy();
+            return;
+          }
+          const stream: Readable = decoder ? res.pipe(decoder) : res;
+          const chunks: Buffer[] = [];
+          let total = 0;
+          const done = (truncated: boolean) =>
+            settle(() =>
+              resolve({ ...head, body: Buffer.concat(chunks).toString("utf8"), truncated }),
+            );
+          stream.on("data", (chunk: Buffer) => {
+            if (settled) return;
+            const room = request.maxBytes - total;
+            if (chunk.length > room) {
+              chunks.push(chunk.subarray(0, room));
+              total += room;
+              done(true);
+              res.destroy();
+              stream.destroy();
+              return;
+            }
+            chunks.push(chunk);
+            total += chunk.length;
+          });
+          stream.on("end", () => done(false));
+          stream.on("error", (error) => settle(() => reject(error)));
+          res.on("error", (error) => settle(() => reject(error)));
+          res.on("close", () => {
+            if (!res.complete) settle(() => reject(new Error("Connexion interrompue.")));
+          });
+        },
+      );
+      req.on("error", (error) => settle(() => reject(error)));
+      req.end();
+    });
 }
 
 type FetchOutcome =
@@ -118,23 +330,14 @@ type FetchOutcome =
   | { kind: "failed" }
   | { kind: "budget" };
 
-async function readCapped(response: Response): Promise<string> {
-  const reader = response.body?.getReader();
-  if (!reader) return (await response.text()).slice(0, MAX_BODY_BYTES);
-  const decoder = new TextDecoder("utf-8");
-  let text = "";
-  let received = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done || !value) break;
-    received += value.byteLength;
-    text += decoder.decode(value, { stream: true });
-    if (received >= MAX_BODY_BYTES) {
-      await reader.cancel().catch(() => undefined);
-      break;
-    }
-  }
-  return text + decoder.decode();
+/** Rejette dès que `signal` est abandonné, même si le transport ne l'écoute pas. */
+function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("Requête abandonnée."));
+    if (signal.aborted) return onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
 
 export async function searchFirmWebsiteAddress({
@@ -157,8 +360,7 @@ export async function searchFirmWebsiteAddress({
   signal?: AbortSignal;
   deps?: FirmSiteSearchDeps;
 }): Promise<FirmSiteSearchResult> {
-  const fetchImpl = deps.fetchImpl ?? fetch;
-  const lookupImpl = deps.lookupImpl ?? defaultLookup;
+  const transport = deps.transport ?? createHttpsTransport({ lookupImpl: deps.lookupImpl });
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
   const now = deps.now ?? Date.now;
 
@@ -168,6 +370,8 @@ export async function searchFirmWebsiteAddress({
   } catch {
     return { status: "invalid_url", host: null, pagesFetched: 0 };
   }
+  // `cabinet.fr.` et `cabinet.fr` sont le même hôte (le point final est ôté, SNI compris).
+  start.hostname = start.hostname.replace(/\.$/, "");
   const site = siteHost(start.hostname);
   if (
     start.protocol !== "https:" ||
@@ -189,24 +393,9 @@ export async function searchFirmWebsiteAddress({
     extra: Partial<FirmSiteSearchResult> = {},
   ): FirmSiteSearchResult => ({ status, host: site, pagesFetched, ...extra });
 
-  const resolved = new Map<string, boolean>();
-  async function resolvesPublicly(hostname: string): Promise<boolean> {
-    const cached = resolved.get(hostname);
-    if (cached !== undefined) return cached;
-    let ok: boolean;
-    try {
-      const addresses = await lookupImpl(hostname);
-      ok =
-        addresses.length > 0 && addresses.every(({ address }) => !isPrivateNetworkAddress(address));
-    } catch {
-      ok = false;
-    }
-    resolved.set(hostname, ok);
-    return ok;
-  }
-
   let lastRequestAt: number | null = null;
   let currentPauseMs = pauseMs;
+  let requests = 0;
 
   async function get(
     url: string,
@@ -231,9 +420,11 @@ export async function searchFirmWebsiteAddress({
       ) {
         return { kind: "offsite" };
       }
+      target.hostname = target.hostname.replace(/\.$/, "");
       // Une redirection ne contourne pas `robots.txt` : le nouveau chemin est contrôlé à son tour.
       if (!isAllowed(target)) return { kind: "disallowed" };
-      if (!(await resolvesPublicly(target.hostname))) return { kind: "failed" };
+      // Les redirections comptent dans le plafond de requêtes.
+      if (requests >= FIRM_SITE_MAX_REQUESTS) return { kind: "budget" };
 
       if (lastRequestAt !== null) {
         const wait = Math.min(Math.max(0, lastRequestAt + currentPauseMs - now()), remaining());
@@ -241,61 +432,52 @@ export async function searchFirmWebsiteAddress({
       }
       const timeout = Math.min(requestTimeoutMs, remaining());
       if (timeout <= 0 || signal?.aborted) return { kind: "budget" };
+      requests += 1;
       lastRequestAt = now();
 
-      let response: Response;
+      let response: FirmSiteTransportResponse;
       try {
-        const signals = [AbortSignal.timeout(timeout)];
-        if (signal) signals.push(signal);
-        response = await fetchImpl(target.toString(), {
-          method: "GET",
-          redirect: "manual",
-          headers: {
-            "user-agent": userAgent,
-            accept: expect === "robots" ? "text/plain" : "text/html,application/xhtml+xml",
-            "accept-language": "fr-FR,fr;q=0.9",
-          },
-          signal: AbortSignal.any(signals),
-        });
+        const abort = AbortSignal.any(
+          signal ? [AbortSignal.timeout(timeout), signal] : [AbortSignal.timeout(timeout)],
+        );
+        response = await raceAbort(
+          transport({
+            url: target,
+            headers: {
+              "user-agent": userAgent,
+              accept: expect === "robots" ? "text/plain" : "text/html,application/xhtml+xml",
+              "accept-language": "fr-FR,fr;q=0.9",
+            },
+            signal: abort,
+            maxBytes: MAX_BODY_BYTES,
+            dnsTimeoutMs: Math.max(1, Math.min(remaining(), DNS_TIMEOUT_MS)),
+          }),
+          abort,
+        );
       } catch {
         return remaining() <= 0 ? { kind: "budget" } : { kind: "failed" };
       }
 
       const status = response.status;
       if (status >= 300 && status < 400) {
-        const location = response.headers.get("location");
-        await response.body?.cancel().catch(() => undefined);
-        if (!location) return { kind: "client_error", status };
+        if (!response.location) return { kind: "client_error", status };
         try {
-          current = new URL(location, target).toString();
+          current = new URL(response.location, target).toString();
         } catch {
           return { kind: "failed" };
         }
         continue;
       }
-      if (status === 401 || status === 403 || status === 429) {
-        await response.body?.cancel().catch(() => undefined);
-        return { kind: "blocked" };
-      }
-      if (status >= 500) {
-        await response.body?.cancel().catch(() => undefined);
-        return { kind: "server_error" };
-      }
-      if (status < 200 || status >= 300) {
-        await response.body?.cancel().catch(() => undefined);
-        return { kind: "client_error", status };
-      }
-      const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
-      const isHtml = /html/.test(contentType);
+      if (status === 401 || status === 403 || status === 429) return { kind: "blocked" };
+      if (status >= 500) return { kind: "server_error" };
+      if (status < 200 || status >= 300) return { kind: "client_error", status };
+      const isHtml = /html/i.test(response.contentType);
       if ((expect === "html" && !isHtml) || (expect === "robots" && isHtml)) {
-        await response.body?.cancel().catch(() => undefined);
         return { kind: "wrong_type" };
       }
-      try {
-        return { kind: "ok", url: target.toString(), body: await readCapped(response) };
-      } catch {
-        return { kind: "failed" };
-      }
+      // Contenu coupé à 1 Mio : le dernier mot est peut-être incomplet (adresse tronquée), on l'ôte.
+      const body = response.truncated ? response.body.replace(/\S*$/, "") : response.body;
+      return { kind: "ok", url: target.toString(), body };
     }
     return { kind: "offsite" };
   }
@@ -323,6 +505,7 @@ export async function searchFirmWebsiteAddress({
   let disallowed = 0;
   let readable = 0;
   let sawAmbiguity = false;
+  let choice: ReturnType<typeof chooseFirmAddress> = { status: "none" };
 
   while (queue.length && pages < FIRM_SITE_MAX_PAGES) {
     const pageUrl = queue.shift()!;
@@ -373,22 +556,25 @@ export async function searchFirmWebsiteAddress({
       queue.push(...extractFirmSiteLinks(page.body, page.url).slice(0, FIRM_SITE_MAX_PAGES - 1));
     }
 
-    const choice = chooseFirmAddress({
+    choice = chooseFirmAddress({
       emails: [...emailPages.keys()],
       siteHostname: site,
       lawyerName,
     });
-    if (choice.status === "retained") {
-      return result("found", pages, {
-        email: choice.email,
-        pageUrl: emailPages.get(choice.email),
-        reason: choice.reason,
-      });
-    }
+    // On ne s'arrête qu'à une correspondance forte (nom ET prénom de l'avocat, dans le domaine du
+    // cabinet) ; une adresse générique est confirmée par la lecture des pages de contact.
+    if (choice.status === "retained" && choice.reason === "name") break;
     if (choice.status === "ambiguous") sawAmbiguity = true;
   }
 
+  if (choice.status === "retained") {
+    return result("found", pages, {
+      email: choice.email,
+      pageUrl: emailPages.get(choice.email),
+      reason: choice.reason,
+    });
+  }
   if (!pages && disallowed) return result("robots_disallowed", 0);
   if (!readable) return result(disallowed ? "robots_disallowed" : "unreachable", pages);
-  return result(sawAmbiguity ? "ambiguous" : "none", pages);
+  return result(sawAmbiguity || choice.status === "ambiguous" ? "ambiguous" : "none", pages);
 }
