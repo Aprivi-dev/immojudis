@@ -1,9 +1,9 @@
 /**
  * Date d'entrée en vigueur des versions CGV 2026-10-13.3 et confidentialité 2026-10-13.2
- * (« 3 déblocages par mois »). À REMPLACER par la date réelle de mise en ligne, en toutes lettres,
- * au moment de la fusion. Elle n'entre pas dans l'empreinte des textes.
+ * (« 3 déblocages par mois »), soit leur date de mise en ligne. Elle n'entre pas dans
+ * l'empreinte des textes.
  */
-const UNLOCKS_VERSIONS_EFFECTIVE_DATE = "13 octobre 2026";
+const UNLOCKS_VERSIONS_EFFECTIVE_DATE = "14 octobre 2026";
 
 export const LEGAL_DOCUMENTS = {
   legal: {
