@@ -9,6 +9,7 @@ import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { DPE_CLASSES, dpeColor } from "@/lib/dpe";
 import type { DpeExplorerResponse } from "@/lib/dpe-explorer";
 import { formatPrice, formatPricePerM2, propertyTypeLabel } from "@/lib/format";
+import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 import Link from "next/link";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { SearchStatistics } from "./search-page-state";
@@ -45,8 +46,8 @@ export function SearchStatisticsPanel({
         </h2>
         <p className="mt-1 text-sm leading-relaxed text-ink-soft">
           {signedIn
-            ? "Votre compte ouvre les fiches complètes et la fourchette de valeur. Analyse ajoute les pièces du dossier, les comparables, les statistiques et le calcul de votre enchère plafond."
-            : "Le compte gratuit ouvre les fiches complètes et la fourchette de valeur. Analyse ajoute les pièces du dossier, les comparables et le calcul de votre enchère plafond."}
+            ? `Votre compte ouvre les fiches complètes et la fourchette de valeur, et ${MONTHLY_SALE_UNLOCKS} ventes par mois en détail. Analyse ouvre toutes les ventes et ajoute les comparables et les exports.`
+            : `Le compte gratuit ouvre les fiches complètes et la fourchette de valeur, et ${MONTHLY_SALE_UNLOCKS} ventes par mois en détail. Analyse ouvre toutes les ventes et ajoute les comparables et les exports.`}
         </p>
         <Link
           href={signedIn ? "/offres" : "/annonce-exemple"}

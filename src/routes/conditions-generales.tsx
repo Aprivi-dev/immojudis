@@ -10,6 +10,10 @@ import {
 } from "@/lib/legal-documents";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
+import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+
+/** Notice given before the free-offer benefits are changed or withdrawn for the future. */
+const FREE_BENEFIT_NOTICE_DAYS = 30;
 
 export const Route = createFileRoute("/conditions-generales")({
   head: () => ({
@@ -63,20 +67,61 @@ export function TermsPage() {
 
           <TermsSection title="2. Description des offres">
             <p>
-              Découverte fournit gratuitement les informations essentielles accessibles après
-              création d’un compte, avec trois favoris au maximum. Analyse est un abonnement aux
-              outils d’analyse : statistiques des tribunaux et scénarios d’enchères (disponibles
-              lorsque l’historique des ventes du tribunal est suffisant), enchère plafond,
-              estimation des travaux, valeur du bien et autres analyses présentées sur la page
-              d’offre. La couverture varie selon les tribunaux, les biens et les pièces disponibles
-              ; elle est indiquée sur chaque fiche. L’abonnement est conclu pour une durée
-              indéterminée et facturé chaque mois. Vous pouvez le résilier à tout moment, sans frais
-              ni préavis ; la résiliation prend effet à la fin de la période mensuelle en cours.
-              Lorsqu’il est proposé (une seule fois par compte), un essai gratuit de{" "}
-              {ANALYSIS_TRIAL_DAYS} jours nécessite l’enregistrement d’une carte bancaire auprès de
-              Stripe. À son terme, l’abonnement devient payant et se renouvelle automatiquement,
-              sauf résiliation avant la fin de l’essai. Les conditions d’éligibilité et le tarif
-              applicable sont présentés avant la confirmation de la souscription.
+              Découverte est gratuite, sans limite de durée et sans carte bancaire. Elle fournit les
+              informations essentielles accessibles après création d’un compte : l’accès aux fiches
+              des ventes, trois favoris au maximum, une alerte avec un email hebdomadaire et, chaque
+              mois civil, {MONTHLY_SALE_UNLOCKS} déblocages. Un déblocage ouvre, pour une vente de
+              votre choix, les éléments suivants de l’offre Analyse lorsque cette vente les comporte
+              : l’enchère plafond chiffrée, la lecture des pièces, l’historique de la vente, les
+              statistiques du tribunal compétent pour cette vente et les pièces du dossier. Les
+              autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports
+              enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les
+              alertes avancées et la mise en relation avec un avocat référencé, restent réservées à
+              cette offre. Le déblocage est consommé quand vous le confirmez, après affichage du
+              nombre restant ; il n’est pas consommé en cas d’erreur technique, ni si la vente est
+              déjà débloquée. Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni
+              si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la
+              vente ou en suspend la publication pour une raison qui lui est imputable (par exemple
+              une erreur de publication ou la suspension d’une source décidée par Immojudis), le
+              déblocage est restitué sur simple demande adressée à{" "}
+              {legalValue(publisher.contactEmail)}, qui reçoit une réponse sous un mois. Le
+              déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la fin
+              de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés. Les
+              déblocages non utilisés ne sont pas reportés. Le compteur est remis à{" "}
+              {MONTHLY_SALE_UNLOCKS} le 1er de chaque mois à 00 h 00, heure de Paris. Une vente
+              débloquée reste consultable avec ces éléments tant qu’elle est en ligne sur Immojudis,
+              dans la limite de 24 mois après le déblocage, et tant que votre compte existe. Les
+              déblocages sont personnels (article 9). Pendant un abonnement Analyse, essai compris,
+              aucun déblocage n’est consommé. À la fin de l’abonnement, le compte revient à
+              Découverte : les ventes que vous aviez déjà débloquées restent accessibles ; les
+              autres ventes consultées pendant l’abonnement redeviennent soumises aux déblocages.
+            </p>
+            <p className="mt-3">
+              Immojudis peut modifier ou supprimer les déblocages mensuels pour l’avenir, en vous
+              prévenant au moins {FREE_BENEFIT_NOTICE_DAYS} jours à l’avance par un message dans
+              l’application ou à l’adresse email de votre compte. Les ventes que vous avez déjà
+              débloquées restent accessibles dans les conditions ci-dessus, et les déblocages déjà
+              consommés ne sont pas affectés. Si la modification ne vous convient pas, vous pouvez
+              fermer votre compte gratuitement depuis{" "}
+              <Link to="/mes-droits" className="text-gold underline">
+                Mes droits
+              </Link>
+              .
+            </p>
+            <p className="mt-3">
+              Analyse est un abonnement aux outils d’analyse : statistiques des tribunaux et
+              scénarios d’enchères (disponibles lorsque l’historique des ventes du tribunal est
+              suffisant), enchère plafond, estimation des travaux, valeur du bien et autres analyses
+              présentées sur la page d’offre. La couverture varie selon les tribunaux, les biens et
+              les pièces disponibles ; elle est indiquée sur chaque fiche. L’abonnement est conclu
+              pour une durée indéterminée et facturé chaque mois. Vous pouvez le résilier à tout
+              moment, sans frais ni préavis ; la résiliation prend effet à la fin de la période
+              mensuelle en cours. Lorsqu’il est proposé (une seule fois par compte), un essai
+              gratuit de {ANALYSIS_TRIAL_DAYS} jours nécessite l’enregistrement d’une carte bancaire
+              auprès de Stripe. À son terme, l’abonnement devient payant et se renouvelle
+              automatiquement, sauf résiliation avant la fin de l’essai. Les conditions
+              d’éligibilité et le tarif applicable sont présentés avant la confirmation de la
+              souscription.
             </p>
           </TermsSection>
 
@@ -190,8 +235,10 @@ export function TermsPage() {
 
           <TermsSection title="9. Compte et usages autorisés">
             <p>
-              Le client maintient ses accès confidentiels et fournit des informations exactes. Sont
-              interdits l’accès automatisé abusif, le contournement des quotas, la redistribution
+              Le client maintient ses accès confidentiels et fournit des informations exactes. Les
+              déblocages de ventes sont personnels : ils ne se partagent ni ne se transmettent. Sont
+              interdits l’accès automatisé abusif, le contournement des quotas, notamment la
+              création de plusieurs comptes pour multiplier les déblocages, la redistribution
               massive des données, l’atteinte aux droits de tiers et l’utilisation frauduleuse. Un
               accès peut être suspendu de manière proportionnée en cas de fraude ou d’atteinte
               grave, sans priver le consommateur de ses droits légaux.
