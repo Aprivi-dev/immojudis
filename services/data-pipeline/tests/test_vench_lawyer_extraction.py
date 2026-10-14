@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.extraction_profiles import attach_source_property_features
 from src.sources.professional_contact import keep_professional
 from src.sources.vench import parse_vench_detail_html
 
@@ -115,3 +116,75 @@ def test_notary_block_is_a_professional_and_a_private_person_is_not_kept() -> No
     assert keep_professional("Maître Hélène MODELE") == "Maître Hélène MODELE"
     assert keep_professional("débiteur Monsieur Jean DURAND") is None
     assert keep_professional("occupé par Madame Marie MARTIN") is None
+
+
+def _poursuivant_html(names: str, coords: str) -> str:
+    return (
+        '<div id="left-info"><div class="enquiry"><div class="head-side-bar"><p class="h4">Avocat poursuivant</p></div>'
+        f'<div class="contact-form"><p>{names}</p></div>'
+        f'<div class="contact-form displayAPcoords"><p>{coords}</p></div></div></div>'
+    )
+
+
+VENCH_URL = "https://www.vench.fr/vente-170005-une-maison-testville.html"
+
+
+def test_role_line_avocat_au_barreau_is_neither_a_name_nor_a_firm() -> None:
+    for role in ("Avocat au Barreau de Paris", "Avocat à la Cour", "Avocat près la Cour d'appel", "Avocat inscrit au barreau de Lyon"):
+        sale = parse_vench_detail_html(
+            _poursuivant_html(f"{role}<br/>Avocat Alix MODELE-TEST", "05 00 00 00 15"), VENCH_URL
+        )
+        assert sale["lawyer_name"] == "Alix MODELE-TEST", role
+        assert "Barreau" not in sale["lawyer_name"] and "Cour" not in sale["lawyer_name"], role
+    alone = parse_vench_detail_html(_poursuivant_html("Avocat au Barreau de Paris", "05 00 00 00 15"), VENCH_URL)
+    assert alone.get("lawyer_name") is None
+    # « Avocat Prénom NOM » reste un nom.
+    assert parse_vench_detail_html(_poursuivant_html("Avocat Alix MODELE-TEST", ""), VENCH_URL)["lawyer_name"] == "Alix MODELE-TEST"
+
+
+def test_mailto_link_is_decoded_and_its_text_is_not_part_of_the_postal_address() -> None:
+    coords = (
+        "<span>2 place du Test<br/>31000 Testville</span><br/>05 00 00 00 15<br/>"
+        '<a href="mailto:contact%40cabinet-test.example?subject=Vente%20Testville">Nous écrire au cabinet</a>'
+    )
+    sale = parse_vench_detail_html(_poursuivant_html("Maître Alix MODELE-TEST", coords), VENCH_URL)
+
+    lawyer = sale["source_property_features"]["lawyer"]["lawyer"]
+    assert lawyer["email"] == "contact@cabinet-test.example"
+    assert lawyer["address"] == "2 place du Test 31000 Testville"
+    assert sale["lawyer_contact"] == "05 00 00 00 15 · contact@cabinet-test.example"
+
+
+def test_rpva_mailto_is_not_kept() -> None:
+    coords = '2 place du Test<br/>05 00 00 00 15<br/><a href="mailto:rpva.modele@avocat-conseil.fr">rpva.modele@avocat-conseil.fr</a>'
+    sale = parse_vench_detail_html(_poursuivant_html("Maître Alix MODELE-TEST", coords), VENCH_URL)
+
+    assert sale["lawyer_contact"] == "05 00 00 00 15"
+    assert "email" not in sale["source_property_features"]["lawyer"]["lawyer"]
+    assert "avocat-conseil" not in sale["source_property_features"]["lawyer"]["lawyer"].get("address", "")
+
+
+def test_phone_and_email_are_separate_channels_in_the_features() -> None:
+    coords = '2 place du Test<br/>05 00 00 00 15<br/><a href="mailto:contact@cabinet-test.example">contact@cabinet-test.example</a>'
+    sale = parse_vench_detail_html(_poursuivant_html("Maître Alix MODELE-TEST", coords), VENCH_URL)
+    features = sale["source_property_features"]
+
+    assert sale["lawyer_contact"] == "05 00 00 00 15 · contact@cabinet-test.example"
+    assert features["contact"] == {"phone": "05 00 00 00 15", "email": "contact@cabinet-test.example"}
+
+    resolved = attach_source_property_features(
+        {
+            "source_url": VENCH_URL,
+            "description": "Tribunal judiciaire de Testville. Vente aux enchères.",
+            "lawyer_name": sale["lawyer_name"],
+            "lawyer_contact": sale["lawyer_contact"],
+            "source_property_features": features,
+        }
+    )
+    observation = resolved["source_field_observations"]["lawyer_contact"]
+    assert observation["value"] == {"phone": "05 00 00 00 15", "email": "contact@cabinet-test.example"}
+    assert observation["state"] == "observed" and "conflicts" not in observation
+
+    # Sans email, seul le canal téléphone est émis.
+    phone_only = parse_vench_detail_html(_poursuivant_html("Maître Alix MODELE-TEST", "05 00 00 00 15"), VENCH_URL)
+    assert phone_only["source_property_features"]["contact"] == {"phone": "05 00 00 00 15"}

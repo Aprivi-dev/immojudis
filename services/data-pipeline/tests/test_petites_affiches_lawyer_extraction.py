@@ -10,11 +10,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.extraction_profiles import attach_source_property_features
 from src.sources.petites_affiches import (
     parse_petites_affiches_detail_html,
     refresh_petites_affiches_raw_sale,
 )
-from src.sources.petites_affiches_extraction import extract_petites_affiches_fields
+from src.sources.petites_affiches_extraction import (
+    PetitesAffichesPage,
+    _contact_box,
+    _poursuivant,
+    extract_petites_affiches_fields,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 URL = "https://www.petitesaffiches.fr/encheres-immobilieres/vente/immobiliere/j/un-bien-a-exempleville-170010.html"
@@ -206,3 +212,147 @@ def test_refresh_replays_stored_text_and_fills_the_lawyer_without_network() -> N
     assert raw_sale["lawyer_name"] == "Maître Léa MODELE-TEST"
     assert raw_sale["lawyer_contact"] == "05 00 00 00 05 · lea.modele@cabinet-test.example"
     assert raw_sale["source_blocks"]["avocat_poursuivant_barreau"] == "TESTVILLE"
+
+
+def test_lawyer_name_stops_at_the_end_of_the_sentence() -> None:
+    fields = _read(
+        "VENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT "
+        + PARTIES
+        + "la SA BANQUE EXEMPLE, ayant pour avocat Maître Jean MODELE. Mise à prix : 80 000 euros."
+    )
+
+    assert fields["fields"]["lawyer_name"] == "Maître Jean MODELE"
+    header = _read("Maître Jean MODELE. Mise à prix\nAvocat\nVENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT")
+    assert header["fields"]["lawyer_name"] == "Maître Jean MODELE"
+    # Une initiale isolée reste dans le nom.
+    initial = _read("VENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT " + PARTIES + "la SA BANQUE EXEMPLE, ayant pour avocat Maître Jean M. MODELE, avocat")
+    assert initial["fields"]["lawyer_name"] == "Maître Jean M. MODELE"
+
+
+def test_lawyer_of_the_owners_is_not_the_claimants_lawyer() -> None:
+    for owner in (
+        "Le bien appartient aux époux TESTARD",
+        "Le bien est la propriété de la succession TESTARD",
+        "Le bien est occupé par le locataire M. TESTARD",
+        "Le bien appartient aux consorts TESTARD",
+        "Le bien est loué au propriétaire occupant TESTARD",
+    ):
+        fields = _read(
+            "VENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT "
+            + PARTIES
+            + f"la SA BANQUE EXEMPLE. {owner}, ayant pour avocat Maître Pierre GRIS, avocat au barreau de Lyon, "
+            "Tél : 04 00 00 00 09"
+        )
+        assert not fields["fields"]["lawyer_name"], owner
+        assert not fields["fields"]["lawyer_contact"], owner
+
+
+def test_third_party_email_and_fax_are_not_the_lawyers_contact() -> None:
+    fields = _read(
+        "VENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT "
+        + PARTIES
+        + "la SA BANQUE EXEMPLE, ayant pour avocat Maître Claire VIDAL, avocat au barreau de Marseille, "
+        "Fax : 04 00 00 00 11, Tél : 04 00 00 00 08. Le prêt a été consenti par la BANQUE EXEMPLE, "
+        "contact : service@banque-exemple.example, tél. 04 00 00 00 12"
+    )
+
+    assert fields["fields"]["lawyer_name"] == "Maître Claire VIDAL"
+    assert fields["fields"]["lawyer_contact"] == "04 00 00 00 08"
+    assert fields["source_property_features"]["contact"] == {"phone": "04 00 00 00 08"}
+
+    fax_only = _read(
+        "VENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT "
+        + PARTIES
+        + "la SA BANQUE EXEMPLE, ayant pour avocat Maître Claire VIDAL, Fax : 04 00 00 00 11. Voir service@banque-exemple.example"
+    )
+    assert fax_only["fields"]["lawyer_name"] == "Maître Claire VIDAL"
+    assert not fax_only["fields"]["lawyer_contact"]
+
+
+def test_header_fax_and_third_party_email() -> None:
+    fields = _read(
+        "Maître Anne MODELE SELARL MODELE AVOCATS Avocat au barreau de PARIS Fax : 01 00 00 00 11 "
+        "Tél : 01 00 00 00 10 Mail : anne@cabinet-test.example. Banque : agence@banque-exemple.example\n"
+        "VENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT"
+    )
+    assert fields["fields"]["lawyer_contact"] == "01 00 00 00 10 · anne@cabinet-test.example"
+
+    fax_only = _read(
+        "Maître Anne MODELE SELARL MODELE AVOCATS Avocat au barreau de PARIS Fax : 01 00 00 00 11\n"
+        "VENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT"
+    )
+    assert fax_only["fields"]["lawyer_name"] == "Maître Anne MODELE SELARL MODELE AVOCATS"
+    assert not fax_only["fields"]["lawyer_contact"]
+
+
+def test_bailiff_notary_or_registry_is_not_a_lawyer() -> None:
+    for header in (
+        "Maître Pierre MARTIN Huissier de Justice 1 rue Fictive Tél : 01 00 00 00 12",
+        "Maître Pierre MARTIN Commissaire de justice Tél : 01 00 00 00 12",
+        "Maître Pierre MARTIN Notaire Tél : 01 00 00 00 12",
+        "Greffe du tribunal Maître Pierre MARTIN Tél : 01 00 00 00 12",
+    ):
+        fields = _read(header + "\nVENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT")
+        assert not fields["fields"]["lawyer_name"], header
+        assert not fields["fields"]["lawyer_contact"], header
+    clause = _read(
+        "VENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT "
+        + PARTIES
+        + "la SA BANQUE EXEMPLE, ayant pour avocat Maître Pierre MARTIN Huissier de Justice, Tél : 01 00 00 00 12"
+    )
+    assert not clause["fields"]["lawyer_name"]
+
+
+def test_other_sources_complete_only_the_same_family_name() -> None:
+    page = PetitesAffichesPage(lawyer_name="Maître Pierre MARTIN")
+    _poursuivant(page, "Maître Pierre LEROY Avocat au barreau de Lille Tél : 03 00 00 00 13 Mail : leroy@cabinet-test.example")
+    assert (page.lawyer_name, page.lawyer_phone, page.lawyer_email, page.lawyer_bar) == ("Maître Pierre MARTIN", None, None, None)
+
+    page = PetitesAffichesPage(lawyer_name="Maître Pierre MARTIN")
+    _poursuivant(page, "Me Pierre MARTIN Avocat au barreau de Lille Tél : 03 00 00 00 14")
+    assert (page.lawyer_phone, page.lawyer_bar) == ("03 00 00 00 14", "Lille")
+
+
+def test_contact_box_reads_a_labelled_email_and_drops_rpva() -> None:
+    assert _contact_box(["Maître Léa MODELE", "Email : lea.modele@cabinet-test.example", "04 00 00 00 20"]) == (
+        "Maître Léa MODELE",
+        None,
+        "04 00 00 00 20",
+        "lea.modele@cabinet-test.example",
+    )
+    assert _contact_box(["Maître Léa MODELE", "Mail : lea.modele@cabinet-test.example"])[3] == (
+        "lea.modele@cabinet-test.example"
+    )
+    assert _contact_box(["Maître Léa MODELE", "lea.modele@cabinet-test.example"])[3] == "lea.modele@cabinet-test.example"
+    # Une adresse RPVA n'est ni un contact, ni un nom, ni une adresse postale.
+    assert _contact_box(["Maître Léa MODELE", "Email : lea@avocat-conseil.fr", "1 rue Fictive 75001 PARIS"]) == (
+        "Maître Léa MODELE",
+        "1 rue Fictive 75001 PARIS",
+        None,
+        None,
+    )
+
+
+def test_phone_and_email_are_separate_channels_and_the_column_stays_readable() -> None:
+    fields = _read(
+        "Maître Léa MODELE-TEST Avocat au barreau de TESTVILLE Tél : 05 00 00 00 05 "
+        "Mail : lea.modele@cabinet-test.example\nVENTE AUX ENCHERES PUBLIQUES UN APPARTEMENT"
+    )
+
+    # Colonne ``lawyer_contact`` : « téléphone · email », que le front et la normalisation relisent tels quels.
+    assert fields["fields"]["lawyer_contact"] == "05 00 00 00 05 · lea.modele@cabinet-test.example"
+    features = fields["source_property_features"]
+    assert features["contact"] == {"phone": "05 00 00 00 05", "email": "lea.modele@cabinet-test.example"}
+
+    sale = attach_source_property_features(
+        {
+            "source_url": URL,
+            "description": "Tribunal judiciaire de Testville. Vente aux enchères.",
+            **fields["fields"],
+            "source_property_features": features,
+        }
+    )
+    observation = sale["source_field_observations"]["lawyer_contact"]
+    assert observation["state"] == "observed"
+    assert observation["value"] == {"phone": "05 00 00 00 05", "email": "lea.modele@cabinet-test.example"}
+    assert "conflicts" not in observation

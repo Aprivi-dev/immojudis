@@ -38,6 +38,7 @@ from src.sources.professional_contact import (
     french_phone,
     keep_professional,
     labelled_phone,
+    professional_sentence,
     same_professional,
 )
 
@@ -66,6 +67,7 @@ _OCCUPANCY_BADGES = {
     "squattee": ("squatted", "Squatté"),
 }
 _RESTRICTED_RE = re.compile(r"reservee?\s+(?:uniquement\s+)?aux\s+abonnes|devez\s+etre\s+abonne")
+_EMAIL_LABEL_RE = re.compile(r"^\s*(?:e-?mail|mail|courriel)\s*:?\s*", re.I)
 _EMAIL_PLACEHOLDER_RE = re.compile(r"^\[email(?:&#160;|\s)*protected\]$", re.I)
 _PHONE_RE = re.compile(r"^(?:\+33\s?|0)[1-9](?:[\s.-]?\d{2}){4}$")
 _PRICE_RE = re.compile(r"^\d{1,3}(?:[\s\u00a0\u202f.]\d{3})*(?:,\d{2})?$")
@@ -200,7 +202,9 @@ def _split_announcement(text: str | None, title: str | None) -> tuple[str | None
 # partie saisie n'est pas un interlocuteur de la vente.
 _ROLE_CUT_RE = re.compile(r"\bavocats?\b(?:\s+associ[ée]s?)?\s+(?:au|à|a|près|inscrits?)\b", re.I)
 _HEADER_END_RE = re.compile(r"\b(?:T[ée]l(?:[ée]phone)?|Fax|E-?mail|Mail|Adresse|Barreau)\b\.?|\d", re.I)
-_NAME_WORD = r"[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’&.-]*"
+# Un mot de nom ne contient pas de point (« DUPONT. Mise à prix » s'arrête à DUPONT) ; seule une initiale
+# isolée (« J. ») en porte un.
+_NAME_WORD = r"(?:[A-ZÀ-ÖØ-Þ]\.(?=\s)|[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’&-]*)"
 _LAWYER_NAME_RE = re.compile(
     rf"(?:Ma[îi]tre|Me|M[eE]\.|SCP|SELARL|SELAS|SELURL|SELAFA|AARPI|Cabinet)\s+{_NAME_WORD}"
     rf"(?:\s+(?:(?:de|du|des|d['’]|le|la)\s*)?{_NAME_WORD}){{0,5}}"
@@ -210,28 +214,36 @@ _OWN_LAWYER_RE = re.compile(
 )
 _OPPOSING_PARTY_RE = re.compile(
     r"\b(?:contre|[àa]\s+l['’]encontre|au\s+pr[ée]judice|en\s+pr[ée]sence|d[ée]biteurs?|d[ée]fendeurs?|"
-    r"saisi(?:e|s|es)?|partie\s+saisie|poursuivi(?:e|s|es)?)\b",
+    r"saisi(?:e|s|es)?|partie\s+saisie|poursuivi(?:e|s|es)?|"
+    r"appartien(?:t|nent|drait)|appartenant|[ée]poux|[ée]pouse|propri[ée]taires?|consorts|succession|"
+    r"locataires?|occupants?)\b",
     re.I,
 )
 _TRAILING_ROLE_WORDS = ("Avocat", "Avocats", "Associés", "Associes", "Membre")
+# Un huissier, un commissaire de justice, un notaire ou un greffe n'est pas l'avocat poursuivant.
+_NOT_A_LAWYER_RE = re.compile(r"\b(?:huissiers?|commissaires?\s+de\s+justice|notaires?|greffes?)\b", re.I)
+_LAWYER_ROLE_RE = re.compile(r"\b(?:avocats?|barreau)\b", re.I)
 
 
 def _lawyer_name(text: str) -> str | None:
     """Nom d'un professionnel en tête de ``text`` (Maître, cabinet, société d'avocats) ; jamais « Monsieur X »."""
-    match = _LAWYER_NAME_RE.match(text.strip())
+    match = _LAWYER_NAME_RE.match(professional_sentence(text.strip()))
     if not match:
         return None
     words = match.group(0).split()
     while len(words) > 1 and words[-1].strip(".,;") in _TRAILING_ROLE_WORDS:
         words.pop()
     name = keep_professional(" ".join(words).strip(" ,;:-–"))
-    return name if name and PROFESSIONAL_PREFIX_RE.match(name) else None
+    if not name or _NOT_A_LAWYER_RE.search(name):
+        return None
+    return name if PROFESSIONAL_PREFIX_RE.match(name) else None
 
 
 def _header_lawyer(header: str | None) -> dict[str, str] | None:
     """Avocat de l'en-tête (« Maître X SELARL Y Avocat au barreau de Z 1 rue… Tél : … Mail : … »)."""
-    if not header:
-        return None
+    if not header or not _LAWYER_ROLE_RE.search(header):
+        return None  # « Maître X Huissier de Justice » : sans « avocat » ni barreau, ce n'est pas un avocat
+    header = professional_sentence(header)
     role = _ROLE_CUT_RE.search(header)
     lead = header[: role.start()] if role else header
     end = _HEADER_END_RE.search(lead)
@@ -270,7 +282,7 @@ def _announcement_lawyer(announcement: str | None) -> dict[str, str] | None:
     name = _lawyer_name(clause[cited.end() :])
     if not name:
         return None
-    after = clause[cited.end() :][:260]
+    after = professional_sentence(clause[cited.end() :])[:260]
     found = {"name": name, "phone": labelled_phone(after), "email": clear_email(after), "bar": bar_name(after)}
     return {key: value for key, value in found.items() if value}
 
@@ -354,8 +366,10 @@ def _contact_box(lines: list[str]) -> tuple[str | None, str | None, str | None, 
             phone = line.strip()
         elif _EMAIL_PLACEHOLDER_RE.match(line):
             continue  # adresse masquée par Cloudflare : ni décodée, ni prise pour un nom ou une adresse postale
-        elif email is None and clear_email(line) and clear_email(line) == line.strip(" :"):
-            email = clear_email(line)
+        elif "@" in (bare := _EMAIL_LABEL_RE.sub("", line).strip(" :")) and " " not in bare:
+            # « x@y.fr », « Email : x@y.fr » ; une adresse écartée (RPVA…) n'est ni un nom ni une adresse postale.
+            if email is None:
+                email = clear_email(bare)
         elif name is None:
             name = line
         elif address is None:
@@ -718,6 +732,8 @@ def extract_petites_affiches_fields(
             "bar": page.lawyer_bar,
             "origin": page.lawyer_origin,
         },
+        # Canaux séparés (téléphone, email) : le profil d'extraction les projette en ``lawyer_contact``.
+        "contact": {"phone": page.lawyer_phone, "email": page.lawyer_email},
         "visits": page.visits,
         "visit_contact": page.visit_contact,
         "surface": surfaces,

@@ -10,6 +10,8 @@ from src.sources.professional_contact import (
     french_phone,
     keep_professional,
     labelled_phone,
+    mailto_address,
+    professional_sentence,
     same_professional,
 )
 
@@ -65,3 +67,48 @@ def test_keep_professional_drops_what_names_a_private_person() -> None:
     assert keep_professional("à la requête de Madame Nadia KHALIL") is None
     assert keep_professional("") is None
     assert keep_professional(None) is None
+
+
+def test_rpva_addresses_are_never_kept() -> None:
+    # Décision juridique : l'adresse RPVA est réservée à la procédure, pas à un contact public.
+    assert clear_email("rpva.modele@avocat-conseil.fr") is None
+    assert clear_email("Mail : Rpva.Modele@AVOCAT-CONSEIL.FR") is None
+    assert clear_email("rpva.modele@avocat-conseil.fr ou contact@cabinet-test.example") == "contact@cabinet-test.example"
+    assert clear_email("contact@cabinet-test.example") == "contact@cabinet-test.example"
+    assert clear_email("contact@mon-avocat-conseil.fr") == "contact@mon-avocat-conseil.fr"
+
+
+def test_mailto_is_decoded_and_cut_at_the_query() -> None:
+    assert mailto_address("mailto:contact@cabinet-test.example") == "contact@cabinet-test.example"
+    assert mailto_address("mailto:contact%40cabinet-test.example?subject=Vente%20n%C2%B01&body=x") == (
+        "contact@cabinet-test.example"
+    )
+    assert mailto_address("MAILTO:contact@cabinet-test.example?cc=autre@example.test") == "contact@cabinet-test.example"
+    assert mailto_address("mailto:rpva@avocat-conseil.fr") is None
+    assert mailto_address("/cdn-cgi/l/email-protection#3c5f5352485d5f48") is None
+    assert mailto_address(None) is None
+
+
+def test_fax_numbers_are_not_phones() -> None:
+    assert french_phone("Fax : 01 00 00 00 01") is None
+    assert french_phone("Télécopie 01.00.00.00.01") is None
+    assert french_phone("Fax: 01 00 00 00 01 Tél : 01 00 00 00 02") == "01 00 00 00 02"
+    assert french_phone("Tél : 01 00 00 00 02 Fax : 01 00 00 00 01") == "01 00 00 00 02"
+    assert french_phone("01 00 00 00 03") == "01 00 00 00 03"
+
+
+def test_professional_sentence_stops_at_the_first_full_stop_before_a_capital() -> None:
+    assert professional_sentence("Maître Jean DUPONT. Mise à prix 80 000") == "Maître Jean DUPONT."
+    # Initiales, « Me. », « M. » et rubriques de coordonnées ne terminent pas la phrase.
+    assert professional_sentence("Maître Jean M. DUPONT, Tél : 01 00 00 00 02") == "Maître Jean M. DUPONT, Tél : 01 00 00 00 02"
+    assert professional_sentence("Me. Jean DUPONT, avocat") == "Me. Jean DUPONT, avocat"
+    assert professional_sentence("barreau de PARIS. Tél : 01 00 00 00 02") == "barreau de PARIS. Tél : 01 00 00 00 02"
+    assert professional_sentence("barreau de PARIS. La banque écrit à x@banque.example") == "barreau de PARIS."
+
+
+def test_same_professional_compares_the_family_name_not_the_first_name() -> None:
+    assert not same_professional("Maître Pierre MARTIN", "Maître Pierre LEROY")
+    assert not same_professional("Maître Pierre Martin", "Maître Pierre Leroy Avocat")
+    assert same_professional("Maître Pierre MARTIN", "Me Pierre MARTIN Avocat")
+    assert same_professional("SELARL MARTIN & LEROY AVOCATS", "Maître Pierre LEROY")
+    assert same_professional("Maître Pierre Martin", "SCP Martin Avocats associés")

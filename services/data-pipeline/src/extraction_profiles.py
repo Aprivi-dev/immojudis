@@ -16,6 +16,8 @@ import unicodedata
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from src.contact_channels import contact_channels
+
 PROPERTY_FEATURE_SCHEMA_VERSION = "source_property_features_v1"
 PROCEDURE_PROFILE_SCHEMA_VERSION = "source_procedure_profile_v1"
 _GENERATED_FEATURE_ORIGIN = "source_text_extraction"
@@ -591,27 +593,6 @@ def _normalized_heating_energy(value: Any) -> Any:
         if any(marker in folded for marker in markers):
             return canonical
     return value
-
-
-def _contact_channel(value: Any) -> str | None:
-    """Infer a contact channel for a legacy scalar contact claim.
-
-    Structured ``contact.phone`` and ``contact.email`` claims carry their
-    channel explicitly.  This fallback keeps older ``eligible_lawyer`` and
-    canonical contact claims mergeable without treating a phone and an email
-    as competing scalar values.
-    """
-
-    if isinstance(value, Mapping):
-        return None
-    text = _clean(value)
-    if not text:
-        return None
-    if re.search(r"@[A-Za-z0-9][^\s@]*", text):
-        return "email"
-    if re.search(r"(?<!\w)\+?\d[\d .()/-]{5,}\d(?!\w)", text):
-        return "phone"
-    return None
 
 
 def _feature_claim_projections(
@@ -1586,8 +1567,14 @@ def build_source_field_observations(
                 yielded = True
             if yielded:
                 return
-        channel = _contact_channel(value) or "value"
-        yield channel, dict(claim)
+        parts = {} if isinstance(value, Mapping) else contact_channels(_clean(value))
+        if len(parts) > 1:
+            # « téléphone · email » : chaque canal garde sa valeur, sinon le téléphone disparaît du canal
+            # phone et l'email entre en conflit avec ``contact.email``.
+            for channel, part in parts.items():
+                yield channel, {**claim, "value": part, "_contact_channel": channel}
+            return
+        yield next(iter(parts), "value"), dict(claim)
 
     def flush_contact_claims() -> None:
         if not contact_claims:
