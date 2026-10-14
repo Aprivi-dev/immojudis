@@ -1,14 +1,22 @@
-"""Adresses e-mail des avocats Licitor masquées par Cloudflare (fixtures fictives, domaine exemple.test)."""
+"""Adresses e-mail des avocats Licitor masquées par Cloudflare (fixtures fictives, domaine exemple.test).
+
+Décision du propriétaire (14/10/2026) : l'adresse décodée est conservée uniquement dans le registre interne de
+l'agent d'information (``internal_contacts``) et n'apparaît dans aucun champ publié.
+"""
 
 import json
 
 import pytest
 from bs4 import BeautifulSoup
 
-from src.information_sufficiency import extract_emails
-from src.sources.common import decode_cloudflare_email, is_plausible_email, reveal_cloudflare_emails
+from src.dedupe import merge_duplicate_sales
+from src.information_sufficiency import usable_contact_emails
+from src.models import AuctionSale
+from src.normalize import normalize_sale
+from src.sources.common import decode_cloudflare_email, extract_cloudflare_emails, is_plausible_email
 from src.sources.licitor import parse_licitor_detail_html
 from src.sources.licitor_extraction import refresh_licitor_raw_sale
+from src.storage.column_sets import UPSERT_COLUMNS
 from tests.test_licitor_extraction import DETAIL_HTML, MULTI_LOT_TEXT, URL
 
 PLACEHOLDER_BLOCK = (
@@ -74,30 +82,42 @@ def test_plausible_email_rejects_malformed_addresses() -> None:
         assert not is_plausible_email(value)
 
 
-def test_data_cfemail_address_fills_the_lawyer_contact() -> None:
-    raw = parse_licitor_detail_html(_html(_data_cfemail_block("maitre@exemple.test")), URL)
+LAWYER_EMAIL = "maitre@exemple.test"
+LAWYER_NAME = "Maître Jeanne Exemple, membre de la SELARL Exemple Avocats, Avocat"
 
-    assert raw["lawyer_contact"] == (
-        "1, rue du Palais - 75001 Paris | Tél.: 01 00 00 00 01 | Fax : 01 00 00 00 02"
-        " | maitre@exemple.test | www.exemple-avocats.test"
-    )
-    assert raw["source_blocks"]["contact_avocat"] == raw["lawyer_contact"]
+
+def _storage_json(sale: AuctionSale) -> str:
+    """Tout ce qui part vers auction_sales : colonnes d'écriture, raw_payload et observations compris."""
+    data = sale.to_storage_dict(exclude_none=False)
+    row = {column: data.get(column) for column in UPSERT_COLUMNS}
+    return json.dumps([row, sale.raw_payload, sale.observations, data], ensure_ascii=False, default=str)
+
+
+def test_data_cfemail_address_is_kept_apart_and_never_published() -> None:
+    raw = parse_licitor_detail_html(_html(_data_cfemail_block(LAWYER_EMAIL)), URL)
+
+    assert raw["internal_contacts"] == [{"email": LAWYER_EMAIL, "name": LAWYER_NAME, "role": "lawyer"}]
+    # Aucun champ de la vente brute ne porte l'adresse, hormis la clé interne.
+    published = {key: value for key, value in raw.items() if key != "internal_contacts"}
+    assert LAWYER_EMAIL not in _published_text(published)
+    assert "protected" not in _published_text(published)
+    assert raw["lawyer_contact"] == CONTACT_WITHOUT_EMAIL
+    assert raw["source_blocks"]["contact_avocat"] == CONTACT_WITHOUT_EMAIL
+    assert LAWYER_EMAIL not in raw["raw_text"] and LAWYER_EMAIL not in raw["source_blocks"]["page_text"]
     lawyers = raw["source_property_features"]["lawyers"]
-    assert lawyers[0]["email"] == "maitre@exemple.test" and lawyers[0]["email_published"] is True
-    assert "email" not in lawyers[1]
-    # L'agent d'information trouve l'adresse dans le même champ que pour les autres sources.
-    assert extract_emails(raw["lawyer_contact"]) == {"maitre@exemple.test"}
-    assert "protected" not in _published_text(raw)
+    assert all("email" not in lawyer for lawyer in lawyers)
+    assert "contact" not in raw["source_property_features"]
 
 
-def test_email_protection_link_alone_is_decoded() -> None:
+def test_email_protection_link_alone_is_kept_apart() -> None:
     encoded = cloudflare_encode("cabinet@exemple.test", 0x5C)
     link = f'<p><a href="/cdn-cgi/l/email-protection#{encoded}">[email&#160;protected]</a></p>'
     raw = parse_licitor_detail_html(_html(link), URL)
 
-    assert "cabinet@exemple.test" in raw["lawyer_contact"]
-    assert raw["source_property_features"]["lawyers"][0]["email"] == "cabinet@exemple.test"
-    assert "protected" not in _published_text(raw)
+    assert [item["email"] for item in raw["internal_contacts"]] == ["cabinet@exemple.test"]
+    published = {key: value for key, value in raw.items() if key != "internal_contacts"}
+    assert "cabinet@exemple.test" not in _published_text(published)
+    assert "protected" not in _published_text(published)
 
 
 def test_invalid_hex_is_ignored_and_the_placeholder_is_dropped() -> None:
@@ -107,49 +127,51 @@ def test_invalid_hex_is_ignored_and_the_placeholder_is_dropped() -> None:
     )
     raw = parse_licitor_detail_html(_html(invalid), URL)
 
+    assert "internal_contacts" not in raw
     assert raw["lawyer_contact"] == CONTACT_WITHOUT_EMAIL
-    assert "email" not in raw["source_property_features"]["lawyers"][0]
     assert "protected" not in _published_text(raw)
-    assert raw["lawyer_name"] == "Maître Jeanne Exemple, membre de la SELARL Exemple Avocats, Avocat"
+    assert raw["lawyer_name"] == LAWYER_NAME
 
 
 @pytest.mark.parametrize("court_email", ["greffe@tj-exemple.justice.fr", "accueil@ta-exemple.justice.gouv.fr"])
 def test_court_address_is_never_decoded_nor_stored(court_email: str) -> None:
     raw = parse_licitor_detail_html(_html(_data_cfemail_block(court_email)), URL)
 
+    assert "internal_contacts" not in raw
     assert raw["lawyer_contact"] == CONTACT_WITHOUT_EMAIL
-    assert "email" not in raw["source_property_features"]["lawyers"][0]
     assert court_email not in _published_text(raw)
     assert "protected" not in _published_text(raw)
 
 
 def test_court_address_is_dropped_but_the_lawyer_address_kept_on_the_same_page() -> None:
     court = _data_cfemail_block("greffe@tj-exemple.justice.fr")
-    lawyer = _data_cfemail_block("maitre@exemple.test")
+    lawyer = _data_cfemail_block(LAWYER_EMAIL)
     raw = parse_licitor_detail_html(_html(court + lawyer), URL)
 
-    assert extract_emails(raw["lawyer_contact"]) == {"maitre@exemple.test"}
+    assert [item["email"] for item in raw["internal_contacts"]] == [LAWYER_EMAIL]
     assert "greffe@" not in _published_text(raw)
 
 
 def test_page_without_email_is_unchanged() -> None:
     raw = parse_licitor_detail_html(_html(""), URL)
 
+    assert "internal_contacts" not in raw
     assert raw["lawyer_contact"] == CONTACT_WITHOUT_EMAIL
     lawyer = raw["source_property_features"]["lawyers"][0]
     assert "email" not in lawyer and "email_published" not in lawyer
 
 
-def test_reveal_returns_each_address_once_in_page_order() -> None:
+def test_extract_returns_each_address_once_in_page_order_and_removes_the_elements() -> None:
     first, second = cloudflare_encode("a.b@exemple.test"), cloudflare_encode("c@exemple.test", 0x11)
     soup = BeautifulSoup(
         f'<p><a href="/cdn-cgi/l/email-protection#{first}"><span data-cfemail="{first}">x</span></a>'
-        f'<span data-cfemail="{second}">y</span><a href="/cdn-cgi/l/email-protection#{first}">z</a></p>',
+        f'<span data-cfemail="{second}">y</span><a href="/cdn-cgi/l/email-protection#{first}">z</a>'
+        "<b>reste</b></p>",
         "html.parser",
     )
 
-    assert reveal_cloudflare_emails(soup) == ["a.b@exemple.test", "c@exemple.test"]
-    assert soup.get_text("|") == "a.b@exemple.test|c@exemple.test|a.b@exemple.test"
+    assert extract_cloudflare_emails(soup) == ["a.b@exemple.test", "c@exemple.test"]
+    assert soup.get_text("|") == "reste"
 
 
 def test_stored_page_text_with_the_placeholder_has_no_address_to_decode() -> None:
@@ -159,22 +181,7 @@ def test_stored_page_text_with_the_placeholder_has_no_address_to_decode() -> Non
     assert refresh_licitor_raw_sale(raw) is True
     assert raw["lawyer_contact"] == "3, rue des États - 78000 Versailles | Tél.: 01 00 00 00 03"
     assert raw["source_property_features"]["lawyers"][0]["email_published"] is True
-
-
-def test_stored_page_text_with_a_decoded_address_replays_it_but_never_a_court_one() -> None:
-    kept = MULTI_LOT_TEXT.replace("Tél.: 01 00 00 00 03", "Tél.: 01 00 00 00 03\nmaitre@exemple.test")
-    raw = {"source_name": "licitor", "source_url": URL, "source_blocks": {"page_text": kept}}
-    assert refresh_licitor_raw_sale(raw) is True
-    assert raw["lawyer_contact"].endswith("Tél.: 01 00 00 00 03 | maitre@exemple.test")
-
-    court = MULTI_LOT_TEXT.replace("Tél.: 01 00 00 00 03", "Tél.: 01 00 00 00 03\ngreffe@tj-exemple.justice.fr")
-    raw = {"source_name": "licitor", "source_url": URL, "source_blocks": {"page_text": court}}
-    assert refresh_licitor_raw_sale(raw) is True
-    assert "justice.fr" not in raw["lawyer_contact"]
-    assert "email" not in raw["source_property_features"]["lawyers"][0]
-
-
-# --- Décision du propriétaire (14/10/2026) : décodage en lot pour Licitor seulement -------------------------
+    assert "internal_contacts" not in raw
 
 
 @pytest.mark.parametrize(
@@ -190,30 +197,20 @@ def test_stored_page_text_with_a_decoded_address_replays_it_but_never_a_court_on
 def test_decoded_address_filtered_like_a_clear_one_is_dropped(excluded: str) -> None:
     raw = parse_licitor_detail_html(_html(_data_cfemail_block(excluded)), URL)
 
+    assert "internal_contacts" not in raw
     assert raw["lawyer_contact"] == CONTACT_WITHOUT_EMAIL
-    assert "email" not in raw["source_property_features"]["lawyers"][0]
-    assert "email" not in raw["source_property_features"].get("contact", {})
     assert excluded.lower() not in _published_text(raw).lower()
     assert "protected" not in _published_text(raw)
-
-
-def test_clear_and_decoded_addresses_go_through_the_same_filter() -> None:
-    for email in ("maitre@avocat-conseil.fr", "greffe@tj-exemple.justice.fr", "maitre@exemple.test"):
-        clear = _html(f"<p>{email}</p>")
-        decoded = _html(_data_cfemail_block(email))
-        kept_clear = parse_licitor_detail_html(clear, URL)["source_property_features"]["lawyers"][0].get("email")
-        kept_decoded = parse_licitor_detail_html(decoded, URL)["source_property_features"]["lawyers"][0].get("email")
-        assert kept_clear == kept_decoded
 
 
 def test_only_the_professional_blocks_are_decoded() -> None:
     # Une adresse masquée hors du bloc d'un professionnel (texte de l'annonce, pied de page) n'est pas décodée.
     outside = _data_cfemail_block("particulier@exemple.test")
-    html = _html(_data_cfemail_block("maitre@exemple.test")).replace('<div class="Trusts">', outside + '<div class="Trusts">')
+    html = _html(_data_cfemail_block(LAWYER_EMAIL)).replace('<div class="Trusts">', outside + '<div class="Trusts">')
     raw = parse_licitor_detail_html(html, URL)
 
     assert "particulier@exemple.test" not in _published_text(raw)
-    assert extract_emails(raw["lawyer_contact"]) == {"maitre@exemple.test"}
+    assert [item["email"] for item in raw["internal_contacts"]] == [LAWYER_EMAIL]
 
 
 def test_corrupt_strings_never_raise_and_never_leave_an_address() -> None:
@@ -225,8 +222,8 @@ def test_corrupt_strings_never_raise_and_never_leave_an_address() -> None:
     )
     raw = parse_licitor_detail_html(_html(block), URL)
 
+    assert "internal_contacts" not in raw
     assert raw["lawyer_contact"] == CONTACT_WITHOUT_EMAIL
-    assert "@" not in raw["lawyer_contact"]
     assert "protected" not in _published_text(raw)
 
 
@@ -246,46 +243,81 @@ def test_vench_pages_are_never_decoded() -> None:
     published = _published_text(sale)
     assert all(address not in published for address in decodable)
     assert "[email protected]" in sale["source_blocks"]["page_text"]
-
-
-def test_contact_stays_in_channel_format_with_a_postal_address_full_of_digits() -> None:
-    from src.extraction_profiles import attach_source_property_features
-
-    html = _html(_data_cfemail_block("maitre@exemple.test")).replace(
-        "1, rue du Palais - 75001 Paris", "14, bd Chasseigne - CS 60062 - 86002 Poitiers Cedex"
-    )
-    raw = parse_licitor_detail_html(html, URL)
-    assert raw["source_property_features"]["contact"] == {"phone": "01 00 00 00 01", "email": "maitre@exemple.test"}
-
-    observation = attach_source_property_features(raw)["source_field_observations"]["lawyer_contact"]
-
-    assert observation["value"] == {"phone": "01 00 00 00 01", "email": "maitre@exemple.test"}
-    assert set(observation["channels"]) == {"phone", "email"}
-    assert observation["state"] == "observed"
-    assert "conflicts" not in observation
-
-
-def test_decoded_address_is_a_channel_of_the_lawyer_not_of_a_private_person() -> None:
-    raw = parse_licitor_detail_html(_html(_data_cfemail_block("maitre@exemple.test")), URL)
-    lawyers = raw["source_property_features"]["lawyers"]
-
-    assert lawyers[0]["name"].startswith("Maître Jeanne Exemple") and lawyers[0]["role"] == "avocat"
-    assert lawyers[0]["email"] == "maitre@exemple.test"
-    assert "email" not in lawyers[1]
+    assert "internal_contacts" not in sale
 
 
 def test_masked_address_outside_trust_blocks_is_logged_not_failed(caplog: pytest.LogCaptureFixture) -> None:
     import logging
 
     outside = _data_cfemail_block("particulier@exemple.test")
-    html = _html(_data_cfemail_block("maitre@exemple.test")).replace('<div class="Trusts">', outside + '<div class="Trusts">')
+    html = _html(_data_cfemail_block(LAWYER_EMAIL)).replace('<div class="Trusts">', outside + '<div class="Trusts">')
     with caplog.at_level(logging.DEBUG, logger="src.sources.licitor"):
         raw = parse_licitor_detail_html(html, URL)
-    assert raw["lawyer_contact"]
+    assert raw["internal_contacts"]
     assert any("hors des blocs .Trust" in record.getMessage() for record in caplog.records)
+    assert all(LAWYER_EMAIL not in record.getMessage() for record in caplog.records)
 
     caplog.clear()
     no_trust = _html("").replace('class="Trust"', 'class="Autre"')
     with caplog.at_level(logging.DEBUG, logger="src.sources.licitor"):
         parse_licitor_detail_html(no_trust, URL)
     assert any("aucun bloc .Trust" in record.getMessage() for record in caplog.records)
+
+
+# --- Non-fuite : rien de ce qui part vers auction_sales ne porte l'adresse -----------------------------------
+
+
+def test_normalized_sale_keeps_the_address_out_of_every_persisted_field() -> None:
+    raw = parse_licitor_detail_html(_html(_data_cfemail_block(LAWYER_EMAIL)), URL)
+    sale = normalize_sale(raw)
+
+    assert sale.internal_contacts == [
+        {"email": LAWYER_EMAIL, "name": LAWYER_NAME, "role": "lawyer", "source_url": URL}
+    ]
+    assert LAWYER_EMAIL not in _storage_json(sale)
+    assert "internal_contacts" not in _storage_json(sale)
+    assert "protected" not in _storage_json(sale)
+    assert sale.lawyer_contact == CONTACT_WITHOUT_EMAIL
+    # Ni sérialisation du modèle (prompt, export), ni copie profonde ne l'exposent.
+    assert LAWYER_EMAIL not in json.dumps(sale.model_dump(), default=str)
+    assert sale.model_copy(deep=True).internal_contacts == sale.internal_contacts
+
+
+def test_normalize_does_not_consume_the_raw_sale_and_is_repeatable() -> None:
+    raw = parse_licitor_detail_html(_html(_data_cfemail_block(LAWYER_EMAIL)), URL)
+
+    first, second = normalize_sale(raw), normalize_sale(raw)
+
+    assert raw["internal_contacts"][0]["email"] == LAWYER_EMAIL
+    assert first.internal_contacts == second.internal_contacts
+    assert "internal_contacts" not in first.raw_payload
+
+
+def test_sale_without_internal_address_has_none() -> None:
+    assert normalize_sale(parse_licitor_detail_html(_html(""), URL)).internal_contacts == []
+
+
+def test_merged_duplicates_keep_the_internal_address_once() -> None:
+    sale = normalize_sale(parse_licitor_detail_html(_html(_data_cfemail_block(LAWYER_EMAIL)), URL))
+    twin = sale.model_copy(deep=True)
+    twin.source_name, twin.source_url = "vench", "https://www.vench.fr/vente-170001-un-bien.html"
+    twin.internal_contacts = [
+        {"email": LAWYER_EMAIL, "name": "", "role": "lawyer", "source_url": URL},
+        {"email": "autre@exemple.test", "name": "", "role": "lawyer", "source_url": URL},
+    ]
+
+    merged = merge_duplicate_sales([sale, twin])
+
+    assert len(merged) == 1
+    assert sorted(item["email"] for item in merged[0].internal_contacts) == ["autre@exemple.test", LAWYER_EMAIL]
+    assert LAWYER_EMAIL not in _storage_json(merged[0])
+
+
+def test_publication_gate_counts_the_internal_address_as_a_contact_but_not_a_court_one() -> None:
+    sale = AuctionSale(source_name="licitor", source_url=URL, internal_contacts=[
+        {"email": LAWYER_EMAIL, "name": "", "role": "lawyer", "source_url": URL},
+        {"email": "greffe@tj-exemple.justice.fr", "name": "", "role": "lawyer", "source_url": URL},
+    ])
+
+    assert usable_contact_emails(sale) == {LAWYER_EMAIL}
+    assert usable_contact_emails(AuctionSale(source_name="licitor", source_url=URL)) == set()

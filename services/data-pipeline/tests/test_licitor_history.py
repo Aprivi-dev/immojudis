@@ -247,9 +247,8 @@ def test_history_rows_never_carry_the_decoded_lawyer_email() -> None:
     assert rows
     for row in rows:
         assert "avocats-dc.fr" not in json.dumps(row, ensure_ascii=False, default=str)
+        assert "internal_contacts" not in row
         features = row["source_property_features"]
-        assert "email" not in features.get("contact", {})
         assert all("email" not in lawyer for lawyer in features["lawyers"])
-        # Le reste est inchangé : téléphone et nom de l'avocat restent dans les features.
-        assert features["contact"] == {"phone": "05 49 88 96 40"}
+        # Le reste est inchangé : le téléphone de l'avocat reste dans les features.
         assert features["lawyers"][0]["phone"] == "05 49 88 96 40"

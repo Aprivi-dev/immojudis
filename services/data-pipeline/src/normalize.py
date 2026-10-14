@@ -1193,9 +1193,43 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
         score_factors=raw_sale.get("score_factors") if isinstance(raw_sale.get("score_factors"), list) else [],
         quality_flags=raw_sale.get("quality_flags") if isinstance(raw_sale.get("quality_flags"), list) else [],
         raw_text=clean_text(raw_sale.get("raw_text")),
-        raw_payload=raw_sale,
+        # Les adresses décodées à usage interne ne font jamais partie du contenu publié : hors de raw_payload.
+        raw_payload=(
+            {key: value for key, value in raw_sale.items() if key != INTERNAL_CONTACTS_KEY}
+            if INTERNAL_CONTACTS_KEY in raw_sale
+            else raw_sale
+        ),
         observations=raw_sale.get("observations") if isinstance(raw_sale.get("observations"), list) else [],
+        internal_contacts=normalize_internal_contacts(raw_sale.get(INTERNAL_CONTACTS_KEY), source_url),
     )
+
+
+INTERNAL_CONTACTS_KEY = "internal_contacts"
+
+
+def normalize_internal_contacts(value: object | None, source_url: str) -> list[dict[str, str]]:
+    """Adresses internes d'une vente brute : e-mail, nom et rôle, avec la page où elles ont été relevées.
+
+    Aucune adresse n'est conservée sans e-mail en minuscules ; les doublons sont écartés.
+    """
+    contacts: list[dict[str, str]] = []
+    if not isinstance(value, list):
+        return contacts
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        email = clean_text(item.get("email"))
+        if not email or "@" not in email or any(email.lower() == known["email"] for known in contacts):
+            continue
+        contacts.append(
+            {
+                "email": email.lower(),
+                "name": clean_text(item.get("name")) or "",
+                "role": clean_text(item.get("role")) or "lawyer",
+                "source_url": clean_text(item.get("source_url")) or source_url,
+            }
+        )
+    return contacts
 
 
 def normalize_documents(value: object | None, *, source_url: str | None = None) -> list[dict[str, str]]:

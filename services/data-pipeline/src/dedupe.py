@@ -188,6 +188,11 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
             target.source_urls.append(url)
 
     target.observations.extend(_new_observations(target, source))
+    # Adresses internes (non persistées sur la vente) : celles de la source fusionnée suivent la survivante.
+    known_contacts = {contact["email"] for contact in target.internal_contacts}
+    target.internal_contacts.extend(
+        contact for contact in source.internal_contacts if contact["email"] not in known_contacts
+    )
 
     for field in _mergeable_fields():
         current = getattr(target, field)
