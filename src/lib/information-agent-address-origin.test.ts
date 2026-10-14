@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatInformationAgentOriginDate,
+  informationAgentControllerIdentity,
   informationAgentAddressOrigin,
   informationAgentLegalFooterLines,
   informationAgentLegalFooterSections,
@@ -44,7 +45,7 @@ describe("libellé d'origine de l'adresse (art. 14 RGPD)", () => {
       observedBy: "agent",
     });
     expect(origin.text).toBe(
-      "Votre adresse professionnelle figure dans une autre annonce publique de vente que vous avez publiée, sur Licitor (https://www.licitor.com/annonce/2), consultée le 14/10/2026.",
+      "Votre adresse professionnelle figure dans une autre annonce publique de vente qui vous mentionne comme interlocuteur, sur Licitor (https://www.licitor.com/annonce/2), consultée le 14/10/2026.",
     );
     expect(origin.text).not.toContain("annonce publique de cette vente");
     expect(origin.automated).toBe(true);
@@ -61,6 +62,16 @@ describe("libellé d'origine de l'adresse (art. 14 RGPD)", () => {
       "https://www.barreaulyon.com/annuaire/avocat/jean-dupont/",
       "Votre adresse professionnelle figure sur votre fiche publique de l’annuaire du barreau de Lyon (https://www.barreaulyon.com/annuaire/avocat/jean-dupont/), consultée le 14/10/2026.",
     ],
+    [
+      "annuaire des avocats du CNB",
+      "https://www.cnb.avocat.fr/fiche/1",
+      "Votre adresse professionnelle figure sur votre fiche publique de l’annuaire des avocats du Conseil national des barreaux (https://www.cnb.avocat.fr/fiche/1), consultée le 14/10/2026.",
+    ],
+    [
+      "annuaire du barreau de Bordeaux",
+      "https://www.barreau-bordeaux.com/avocat/jean-dupont/",
+      "Votre adresse professionnelle figure sur votre fiche publique de l’annuaire du barreau de Bordeaux (https://www.barreau-bordeaux.com/avocat/jean-dupont/), consultée le 14/10/2026.",
+    ],
   ])("annuaire officiel nommé : %s", (directoryName, sourceUrl, text) => {
     const origin = informationAgentAddressOrigin({
       sourceKind: "official_directory",
@@ -74,6 +85,19 @@ describe("libellé d'origine de l'adresse (art. 14 RGPD)", () => {
     expect(origin.automated).toBe(true);
   });
 
+  it("un nom d'annuaire hors de la liste fermée n'est jamais interpolé", () => {
+    const origin = informationAgentAddressOrigin({
+      sourceKind: "official_directory",
+      directoryName: "annuaire inventé <b>",
+      sourceUrl: "https://annuaire.example.test/x",
+      observedAt: OBSERVED_AT,
+      observedBy: "agent",
+    });
+    expect(origin.text).toBe(
+      "Votre adresse professionnelle figure sur votre fiche publique de l’annuaire officiel de votre profession (https://annuaire.example.test/x), consultée le 14/10/2026.",
+    );
+  });
+
   it("site du cabinet : consulté le, avec le lien", () => {
     expect(
       informationAgentAddressOrigin({
@@ -83,7 +107,7 @@ describe("libellé d'origine de l'adresse (art. 14 RGPD)", () => {
         observedBy: "agent",
       }).text,
     ).toBe(
-      "Votre adresse professionnelle figure sur le site de votre cabinet (https://cabinet-dupont.example.test/contact), consulté le 14/10/2026.",
+      "Votre adresse professionnelle figure sur le site de votre cabinet ou de votre étude (https://cabinet-dupont.example.test/contact), consulté le 14/10/2026.",
     );
   });
 
@@ -149,7 +173,9 @@ describe("pied de message art. 14 : version complète", () => {
       "Pourquoi ce message ? Immojudis vous écrit à titre professionnel pour vérifier des informations sur la vente Appartement T3 à Bordeaux",
     );
     expect(text).toContain("Ce message ne contient aucune offre commerciale.");
-    expect(text).toContain("intérêt légitime à publier des informations exactes (art. 6.1.f RGPD)");
+    expect(text).toContain(
+      "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance.",
+    );
     expect(text).toContain(
       "Responsable de traitement : Immojudis SAS, 1 rue de la Paix, 75002 Paris — contact@immojudis.test.",
     );
@@ -157,17 +183,30 @@ describe("pied de message art. 14 : version complète", () => {
       "Vos données : votre nom, votre fonction, votre adresse professionnelle et nos échanges. Origine : Origine X.",
     );
     expect(text).toContain("Destinataires : l’équipe Immojudis et ses prestataires");
-    expect(text).toContain("Vercel et Supabase (hébergement), Resend (envoi des courriels)");
+    expect(text).toContain("Resend (envoi et réception des courriels)");
+    expect(text).toContain("GitHub (exécution des traitements automatisés)");
     expect(text).toContain("Replicate (États-Unis), outil d’IA");
-    expect(text).toContain("hors de l’Union européenne");
     expect(text).toContain(
-      "Conservation : 30 jours si aucun message ne vous est finalement envoyé, 12 mois sans réponse de votre part, 24 mois après le dernier échange.",
+      "Ces prestataires peuvent traiter des données hors de l’Union européenne, notamment aux États-Unis. Pour savoir quelle garantie s’applique à chacun, ou en obtenir une copie, écrivez à contact@immojudis.test ; aucun compte n’est nécessaire.",
+    );
+    // Aucun mécanisme de transfert non vérifié.
+    expect(text).not.toMatch(
+      /clauses contractuelles|décision d’adéquation|Data Privacy Framework/i,
     );
     expect(text).toContain(
-      "Vos droits : accès, rectification, effacement et limitation du traitement.",
+      "Conservation : 12 mois si vous ne répondez pas ; 24 mois après le dernier échange si vous répondez.",
     );
-    expect(text).toContain("Vous pouvez vous opposer à tout moment, sans motif");
-    expect(text).toContain("cnil.fr/plaintes");
+    expect(text).not.toContain("30 jours si aucun message");
+    expect(text).toContain(
+      "Vos droits : accès, rectification, effacement et limitation du traitement. Pour les exercer sans créer de compte, écrivez à contact@immojudis.test ou répondre à ce message.".replace(
+        "répondre",
+        "répondez",
+      ),
+    );
+    expect(text).toContain("saisir la CNIL d’une réclamation (cnil.fr/plaintes)");
+    expect(text).toContain(
+      "Opposition : Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Nous supprimons alors vos données, sauf l’information strictement nécessaire pour ne plus vous solliciter (adresse, identité professionnelle, date de l’opposition), conservée uniquement à cette fin. Votre opposition vaut pour tous nos canaux.",
+    );
     expect(text).toContain("https://immojudis.com/privacy");
     expect(text).toContain("Ne plus être contacté (un clic) : https://immojudis.com/api/");
     expect(text).not.toContain("outil de recherche automatisé");
@@ -185,7 +224,16 @@ describe("pied de message art. 14 : version complète", () => {
   it("ajoute la mention de la recherche automatique quand l'adresse a été retrouvée par l'agent", () => {
     const sections = informationAgentLegalFooterSections({ ...footer, automatedSearch: true });
     expect(sections.find((section) => section.label === "Recherche de l’adresse :")?.text).toBe(
-      "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques sans en conserver de copie. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
+      "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
     );
+  });
+
+  it("refuse un pied sans adresse de contact : l'identité du responsable l'exige", () => {
+    expect(
+      informationAgentControllerIdentity({
+        NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS",
+        NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS: "1 rue de la Paix",
+      }),
+    ).toBeNull();
   });
 });

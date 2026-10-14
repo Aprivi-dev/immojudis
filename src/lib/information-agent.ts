@@ -55,6 +55,10 @@ import { saleDisplayTitle } from "@/lib/sale-title";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import type { AuctionSale } from "@/lib/types";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
+import {
+  INFORMATION_AGENT_EXCLUDED_SOURCE_MESSAGE,
+  isInformationAgentExcludedSourceUrl,
+} from "@/lib/information-agent/excluded-addresses";
 import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
 import {
   assertInformationAgentContactAllowed,
@@ -752,6 +756,7 @@ async function approveAndSendMission({
     fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+  assertInformationAgentSourceAllowed(addressOrigin);
   assertInformationAgentOutboundEnabled();
   assertInformationAgentCanaryRecipient(input.recipientEmail);
   // Validate delivery prerequisites before approval reserves the case for sending.
@@ -857,6 +862,9 @@ async function approveAndSendMission({
     });
     assertNoInformationAgentCommercialMention(`${renderedEmail.html}\n${renderedEmail.text}`, {
       appOrigin: config.appUrl,
+      allowedUrls: [legalFooter.addressOriginUrl],
+      // La référence de la vente vient de l'annonce : elle ne peut pas faire échouer l'envoi.
+      ignore: [legalFooter.saleReference],
     });
     await assertInformationAgentContactAllowed({
       saleId: subscribedMission.sale_id,
@@ -941,7 +949,7 @@ export function assertInformationAgentControllerIdentity(
 ): void {
   if (!informationAgentControllerIdentity(env)) {
     throw new Error(
-      "Identité du responsable de traitement non configurée : envoi impossible (NEXT_PUBLIC_LEGAL_ENTITY_NAME et NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS).",
+      "Identité du responsable de traitement non configurée : envoi impossible (NEXT_PUBLIC_LEGAL_ENTITY_NAME, NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS et NEXT_PUBLIC_LEGAL_CONTACT_EMAIL).",
     );
   }
 }
@@ -1034,6 +1042,23 @@ function buildInformationAgentLegalFooter({
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: buildInformationAgentOptOutUrl({ appUrl, email: normalized, secret }),
   };
+}
+
+/**
+ * Une adresse saisie par un administrateur ne peut venir ni d'un réseau social, ni d'un moteur de
+ * recherche, ni d'un annuaire exclu (notaires.fr, barreaux de Paris et de Marseille…).
+ */
+function assertInformationAgentSourceAllowed(addressOrigin: {
+  origin: InformationAgentAddressOrigin;
+  kind: InformationAgentAddressSourceKind | null;
+}): void {
+  if (
+    addressOrigin.kind === "admin_entry" &&
+    addressOrigin.origin.url &&
+    isInformationAgentExcludedSourceUrl(addressOrigin.origin.url)
+  ) {
+    throw new Error(INFORMATION_AGENT_EXCLUDED_SOURCE_MESSAGE);
+  }
 }
 
 export const INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE =
@@ -1246,6 +1271,7 @@ export async function previewAdminInformationAgentMission({
     fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) blockers.push(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+  await collect(() => assertInformationAgentSourceAllowed(addressOrigin));
   await collect(() => assertInformationAgentOutboundEnabled(env));
   await collect(() => assertInformationAgentCanaryRecipient(recipient, env));
   await collect(() => resolveInformationAgentEmailConfig(env));
@@ -1258,7 +1284,7 @@ export async function previewAdminInformationAgentMission({
   const legalFooter: InformationAgentLegalFooter = {
     controllerName: controller?.name ?? "[Responsable de traitement à configurer]",
     controllerAddress: controller?.address ?? "[Adresse à configurer]",
-    contactEmail: controller?.contactEmail ?? null,
+    contactEmail: controller?.contactEmail ?? "[Contact à configurer]",
     saleReference: missionSaleReference(mission),
     addressOrigin: addressOrigin.origin.text,
     addressOriginUrl: addressOrigin.origin.url,
@@ -1284,6 +1310,8 @@ export async function previewAdminInformationAgentMission({
   await collect(() =>
     assertNoInformationAgentCommercialMention(`${rendered.html}\n${rendered.text}`, {
       appOrigin: appUrl,
+      allowedUrls: [addressOrigin.origin.url],
+      ignore: [legalFooter.saleReference],
     }),
   );
   return {

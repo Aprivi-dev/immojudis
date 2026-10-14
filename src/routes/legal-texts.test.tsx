@@ -307,7 +307,7 @@ describe("politique de confidentialité", () => {
   it("aligne la base légale de l'enquête dossier sur le registre et ne parle plus de prospection", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. Les oppositions, par adresse et par identité du professionnel, sont conservées pour être respectées.",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     );
     // L'email du demandeur n'est jamais communiqué (share_requester_email reste à false).
     expect(text).not.toContain("consentement pour la communication de l’email de réponse");
@@ -315,27 +315,49 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("aucune sollicitation commerciale");
   });
 
-  it("décrit les professionnels contactés : sources, durées, opposition, recherche automatisée (cadrage 8.2)", () => {
+  it("décrit les professionnels contactés : sources, durées, opposition, droits sans compte", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).not.toContain("Enrichissement de dossier supervisé par Immojudis");
     expect(text).toContain(
       "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
     );
     expect(text).toContain(
-      "relevés dans l’annonce publique de la vente, dans un annuaire professionnel officiel (annuaire des avocats du CNB, sites des barreaux, annuaire des notaires, annuaire des commissaires de justice) ou sur le site de son cabinet ou de son étude. La source et la date de relevé sont indiquées dans chaque message.",
+      "relevés dans l’annonce publique de la vente, dans un annuaire professionnel officiel (annuaire des avocats du CNB, annuaires de certains barreaux, annuaire des commissaires de justice) ou sur le site de son cabinet ou de son étude. La source et la date de relevé sont indiquées dans chaque message.",
     );
+    expect(text).not.toContain("annuaire des notaires");
     expect(text).toContain("Base juridique : intérêt légitime à publier des informations exactes");
     expect(text).toContain("Les messages ne contiennent aucune offre commerciale.");
     expect(text).toContain(
-      "Les données sont conservées 30 jours si aucun message n’est envoyé, 12 mois sans réponse, 24 mois après le dernier échange.",
+      "Les données sont conservées un mois au plus si aucun message n’est envoyé, 12 mois si vous ne répondez pas, 24 mois après le dernier échange si vous répondez.",
     );
     expect(text).toContain(
       "Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus être contacté » de chaque message ou à contact@immojudis.example. Votre opposition est enregistrée et vaut pour tous nos canaux.",
     );
     expect(text).toContain(
-      "Un outil de recherche automatisé consulte ponctuellement, pour une vente précise, une page publique du professionnel concerné. Aucune copie d’annuaire n’est conservée.",
+      "Pour exercer ces droits, écrivez à contact@immojudis.example ; aucun compte n’est nécessaire.",
     );
+    expect(text).toContain(
+      "liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle",
+    );
+    expect(text).toContain("adresses invalides (rebond permanent) : 12 mois");
+  });
+
+  it("ne publie pas l'outil de recherche automatisé tant qu'il n'existe pas", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).not.toContain("outil de recherche automatisé");
+    expect(text).not.toContain("agent-information");
+  });
+
+  it("nomme le prestataire d'IA et GitHub, sans affirmer de mécanisme de transfert non vérifié", () => {
+    const text = pageText(<PrivacyPage />);
     expect(text).toContain("les réponses des professionnels contactés (Replicate, États-Unis)");
+    expect(text).toContain("Resend (envoi et réception des courriels)");
+    expect(text).toContain("GitHub (exécution des traitements automatisés)");
+    expect(text).toContain(
+      "Pour savoir quelle garantie s’applique à chacun, ou en obtenir une copie, écrivez à contact@immojudis.example ; aucun compte n’est nécessaire.",
+    );
+    expect(text).not.toContain("clauses contractuelles types");
+    expect(text).not.toContain("décision d’adéquation");
   });
 
   it("décrit l'IA du message d'enquête comme le fait le message lui-même", () => {

@@ -48,8 +48,6 @@ const MULTIPOSTULATION_BARS = [
   "hauts de seine",
 ] as const;
 
-const MIN_NAME_LENGTH = 3;
-
 function roleForKey(role: string | null | undefined): InformationAgentIdentityRole[] {
   switch (role) {
     case "lawyer":
@@ -66,12 +64,64 @@ function roleForKey(role: string | null | undefined): InformationAgentIdentityRo
   }
 }
 
+/**
+ * Mots de fonction ou de forme sociale qui ne désignent pas la personne : ils sont retirés avant de
+ * compter les jetons du nom (« Me Dupont », « Étude Martin », « SCP Dupont » ne portent aucun nom
+ * complet).
+ */
+const FUNCTION_WORDS = new Set([
+  "notaire",
+  "notaires",
+  "huissier",
+  "huissiers",
+  "commissaire",
+  "commissaires",
+  "justice",
+  "avocat",
+  "avocats",
+  "maitre",
+  "maitres",
+  "me",
+  "mes",
+  "mr",
+  "mme",
+  "monsieur",
+  "madame",
+  "scp",
+  "selarl",
+  "selas",
+  "selafa",
+  "aarpi",
+  "sarl",
+  "sas",
+  "sasu",
+  "eurl",
+  "etude",
+  "etudes",
+  "office",
+  "cabinet",
+  "associes",
+  "associe",
+  "de",
+  "du",
+  "des",
+  "la",
+  "le",
+  "et",
+]);
+
+/** Une clé nominale exige au moins deux jetons de nom (prénom et nom) ; sinon seul un SIREN compte. */
+const MIN_NAME_TOKENS = 2;
+const MAX_NAME_TOKENS = 8;
+const MAX_KEY_LENGTH = 400;
+const MAX_KEYS = 64;
+
 /** Nom sans titre ni forme sociale, accents ôtés, mots triés : « Me Jean DUPONT » = « Dupont Jean ». */
 export function normalizeInformationAgentIdentityName(value: string | null | undefined): string {
   const tokens = normalizeLawyerIdentity(value)
     .split(" ")
-    .filter((token) => token.length > 0);
-  return [...new Set(tokens)].sort().join(" ");
+    .filter((token) => token.length > 0 && !FUNCTION_WORDS.has(token));
+  return [...new Set(tokens)].sort().slice(0, MAX_NAME_TOKENS).join(" ");
 }
 
 function normalizePlace(value: string | null | undefined): string | null {
@@ -102,7 +152,8 @@ function normalizedSiren(value: string | null | undefined): string | null {
 
 /**
  * Toutes les clés sous lesquelles ce professionnel doit être reconnu (vide si l'identité est
- * insuffisante : sans nom exploitable ni SIREN, seule l'opposition par adresse s'applique).
+ * insuffisante : sans nom complet (au moins deux jetons) ni SIREN, seule l'opposition par adresse
+ * s'applique).
  */
 export function informationAgentIdentityKeys(identity: InformationAgentIdentity): string[] {
   const keys = new Set<string>();
@@ -110,18 +161,22 @@ export function informationAgentIdentityKeys(identity: InformationAgentIdentity)
   if (siren) keys.add(`siren|${siren}`);
 
   const name = normalizeInformationAgentIdentityName(identity.name);
-  if (name.length >= MIN_NAME_LENGTH) {
+  if (name.split(" ").length >= MIN_NAME_TOKENS) {
     const places = placesFor(identity);
     for (const role of roleForKey(identity.role)) {
       for (const place of places) keys.add(`${role}|${place}|${name}`);
     }
   }
-  return [...keys].sort();
+  // Plafonds : le déclencheur d'opposition ne doit jamais échouer à cause des clés.
+  return [...keys]
+    .filter((key) => key.length >= 3 && key.length <= MAX_KEY_LENGTH)
+    .sort()
+    .slice(0, MAX_KEYS);
 }
 
 /** Les clés de plusieurs identités, sans doublon. */
 export function informationAgentIdentityKeySet(
   identities: readonly InformationAgentIdentity[],
 ): string[] {
-  return [...new Set(identities.flatMap(informationAgentIdentityKeys))].sort();
+  return [...new Set(identities.flatMap(informationAgentIdentityKeys))].sort().slice(0, MAX_KEYS);
 }

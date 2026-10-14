@@ -113,6 +113,13 @@ describe("art. 14 GDPR prerequisites (P4-12)", () => {
     expect(() =>
       assertInformationAgentControllerIdentity({ NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS" }),
     ).toThrow("responsable de traitement");
+    // L'adresse de contact est obligatoire : c'est le moyen d'exercer ses droits sans compte.
+    expect(() =>
+      assertInformationAgentControllerIdentity({
+        NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS",
+        NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS: "1 rue de la Paix",
+      }),
+    ).toThrow("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL");
     expect(
       informationAgentControllerIdentity({
         NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS",
@@ -151,7 +158,7 @@ describe("art. 14 GDPR prerequisites (P4-12)", () => {
     const lines = informationAgentLegalFooterLines({
       controllerName: "Immojudis SAS",
       controllerAddress: "1 rue de la Paix",
-      contactEmail: null,
+      contactEmail: "contact@immojudis.test",
       addressOrigin: "Origine X.",
       addressOriginUrl: "https://www.licitor.com/annonce/1",
       aiProvider: { id: "replicate", name: "Replicate", country: "États-Unis" },

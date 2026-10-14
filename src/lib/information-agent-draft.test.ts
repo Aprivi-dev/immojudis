@@ -44,7 +44,7 @@ beforeEach(() => {
     postal_code: "33000",
     sale_date: null,
     starting_price_eur: null,
-    lawyer_name: "Maître Dupont",
+    lawyer_name: "Maître Jean Dupont",
     lawyer_contact: "cabinet@example.test",
   } as AuctionSale);
   mocks.template.mockResolvedValue({
@@ -97,7 +97,7 @@ describe("manual admin draft preparation", () => {
     const result = await createAdminInformationAgentDraft({ auth: admin, input: { saleId } });
     expect(result.mission).toMatchObject({
       recipientEmail: "cabinet@example.test",
-      recipientName: "Maître Dupont",
+      recipientName: "Maître Jean Dupont",
       status: "draft",
     });
     expect(result.mission.bodyText).toContain("12 rue du Palais");
@@ -117,11 +117,11 @@ describe("manual admin draft preparation", () => {
       email: "cabinet@example.test",
       source_kind: "sale_listing",
       observed_by: "agent",
-      identity_keys: ["lawyer|bordeaux|dupont"],
+      identity_keys: ["lawyer|bordeaux|dupont jean"],
     });
     expect(observed[0]?.observed_at).toEqual(expect.any(String));
     // Le brouillon garde les clés d'identité (jamais l'adresse) pour le contrôle avant envoi.
-    expect(inserted).toMatchObject({ recipient_identity_keys: ["lawyer|bordeaux|dupont"] });
+    expect(inserted).toMatchObject({ recipient_identity_keys: ["lawyer|bordeaux|dupont jean"] });
     expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("subscribe_information_agent_mission", {
       p_user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       p_mission_id: "22222222-2222-4222-8222-222222222222",
@@ -136,7 +136,7 @@ describe("manual admin draft preparation", () => {
     });
     expect(result.mission.recipientName).toBeNull();
     expect(result.mission.bodyText).toContain("Madame, Monsieur,");
-    expect(result.mission.bodyText).not.toContain("Maître Dupont");
+    expect(result.mission.bodyText).not.toContain("Maître Jean Dupont");
   });
 
   it.each([null, "premier@example.test et second@example.test"])(
@@ -154,7 +154,7 @@ describe("manual admin draft preparation", () => {
   );
 
   it("ne retient ni ne stocke l'adresse d'un professionnel opposé sous une autre adresse", async () => {
-    opposedIdentityKeys = ["lawyer|bordeaux|dupont"];
+    opposedIdentityKeys = ["lawyer|bordeaux|dupont jean"];
     await expect(
       createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
     ).rejects.toThrow("s'est opposé à être contacté");
@@ -164,11 +164,15 @@ describe("manual admin draft preparation", () => {
   });
 
   it("refuse une adresse saisie à la main pour un professionnel opposé", async () => {
-    opposedIdentityKeys = ["lawyer|bordeaux|dupont"];
+    opposedIdentityKeys = ["lawyer|bordeaux|dupont jean"];
     await expect(
       createAdminInformationAgentDraft({
         auth: admin,
-        input: { saleId, recipientEmail: "autre-adresse@example.test", recipientName: "Me Dupont" },
+        input: {
+          saleId,
+          recipientEmail: "autre-adresse@example.test",
+          recipientName: "Me Jean Dupont",
+        },
       }),
     ).rejects.toThrow("s'est opposé à être contacté");
     expect(inserted).toBeNull();

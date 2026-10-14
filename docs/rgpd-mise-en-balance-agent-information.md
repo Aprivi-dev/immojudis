@@ -20,10 +20,14 @@ responsable de traitement.
 
 1. **Intérêt poursuivi.** Fiabiliser l’information publiée sur une vente aux enchères auprès du
    professionnel qui la mène (avocat poursuivant, notaire, commissaire de justice, gestionnaire).
+   C’est aussi un intérêt économique d’Immojudis : un catalogue complet et exact fait la valeur du
+   service. Il est légitime mais doit être pesé comme tel, d’où l’exclusion de toute promotion.
 2. **Nécessité.** Le professionnel est la source directe des informations absentes ou
    contradictoires (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de
    visite, mise à prix, consignation, audience). Alternatives examinées : pièces publiques, greffe,
-   téléphone. **À compléter :** pourquoi elles ne suffisent pas pour les ventes concernées.
+   téléphone. **À chiffrer :** part des ventes dont la fiche reste incomplète sans réponse du professionnel,
+   avec `services/data-pipeline/sql/insufficient_information_report.sql` (à exécuter par le
+   propriétaire), pour établir pourquoi les alternatives ne suffisent pas.
 3. **Attentes raisonnables.** L’adresse est publiée par la personne pour être contactée sur cette
    vente (annonce) ou sur son activité (annuaire officiel, site de son cabinet ou de son étude). Le
    message concerne exactement la vente qu’elle mène et ne contient aucune promotion. La CNIL
@@ -33,7 +37,7 @@ responsable de traitement.
 5. **Garanties.** Validation humaine de chaque message après aperçu ; une sollicitation par adresse
    et par 30 jours, aucune relance ; opposition en un clic, par adresse et par identité, valable
    pour tous les canaux ; information immédiate (pied art. 14 complet, source typée et datée) ;
-   purge des adresses non utilisées sous 30 jours ; aucune mention commerciale (contrôle
+   purge des adresses non utilisées sous un mois au plus ; aucune mention commerciale (contrôle
    automatique) ; adresses de juridiction, RPVA, Ordre, CARPA, `noreply`, `dpo` et `rgpd`
    exclues.
 6. **Risques résiduels.** Adresse nominative plutôt que générique ; homonymes ; secret
@@ -54,17 +58,21 @@ confondre deux personnes.
 | Risque                                         | Garantie prévue                                                                                                                                       |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Collecte en masse ou parcours d’un annuaire    | Déclenchement par un brouillon, un professionnel à la fois ; fiches ciblées, ni pagination ni formulaire ; plafonds quotidiens ; arrêt sur 403 ou 429 |
-| Copie ou index d’un annuaire                   | Aucune copie de page ; cache de 24 h au plus (noms et adresses web), en mémoire ; pas de rafraîchissement périodique                                  |
+| Copie ou index d’un annuaire                   | Aucune copie de page ; liste temporaire de noms et d’adresses web conservée 24 heures au plus ; pas de rafraîchissement périodique                                  |
 | Erreur d’identité (homonyme, associé, cabinet) | Au moins deux indices concordants ; « ambigu » si deux candidats sont proches ; l’administrateur ouvre la page source avant de valider                |
 | Collecte d’une personne qui s’est opposée      | Contrôle d’opposition par identité et par adresse **avant** toute requête réseau                                                                      |
 | Site qui refuse la collecte                    | `robots.txt` respecté ; illisible ou erreur 5xx : aucune collecte ; revue trimestrielle de chaque source                                              |
 | Provenance fausse dans le message              | Libellé d’origine tiré du type de source du registre (annonce, autre annonce, annuaire nommé, site du cabinet), avec lien et date                     |
+| Décodage des adresses masquées de Licitor | Le parseur ne décode pas ces adresses et ne doit jamais le faire. Décodage à la demande uniquement, pour la seule fiche de la vente en préparation, après confirmation écrite de Licitor, sans requête en lot et sans contourner aucun défi ni blocage. Tant que cette confirmation n’est pas obtenue, aucun outil ne décode |
+| Données de tiers dans les réponses (parties, occupants, pièces) | Pas de collecte recherchée ; réponses lues par l’outil d’IA puis relues par un administrateur avant toute publication ; caviardage vérifié avant publication d’une pièce ou d’une photo |
+| Transfert du contenu des réponses au prestataire d’IA (Replicate, États-Unis) | Mécanisme de transfert et DPA à vérifier avant le premier envoi réel ; information dans le pied du message ; le destinataire peut demander la garantie applicable |
 | Contrôle humain de pure forme                  | Source cliquable, date et score affichés ; l’envoi reste déclenché à la main après aperçu                                                             |
 
 ## 3. Compatibilité de finalité du réemploi d’une adresse (art. 6.4 RGPD)
 
-Cas : une adresse publiée par un professionnel dans une autre annonce est réutilisée pour lui
-écrire à propos d’une autre vente.
+Cas principal : l’adresse d’un professionnel, relevée dans l’annonce ou un annuaire pour publier la
+fiche de la vente, est ensuite utilisée pour lui écrire au sujet de cette vente. Cas voisin : une
+adresse publiée dans une autre annonce est réutilisée pour lui écrire à propos d’une autre vente.
 
 - **Lien entre les finalités :** même professionnel, même activité (la conduite de ventes aux
   enchères), même objet (demande d’information sur une vente).
@@ -99,9 +107,19 @@ critères du CEPD (lignes directrices WP 248 rév. 01), sauf justification contr
 | 8   | **Usage innovant ou nouvelles solutions technologiques**  | **Potentiellement réuni.** Agent d’IA qui retrouve des adresses, et outil d’IA qui classe les réponses.                     |
 | 9   | Exclusion du bénéfice d’un droit, d’un service ou contrat | Non.                                                                                                                        |
 
-**Lecture :** les critères 6 et 8 sont potentiellement réunis, donc le seuil des deux critères est
-potentiellement atteint. Facteurs qui jouent en sens inverse : petit nombre de personnes, données
-professionnelles, aucune donnée sensible, validation humaine, aucune copie, opposition simple.
+**Lecture, par voie :**
+
+- **Voie manuelle** (l’administrateur saisit ou choisit l’adresse ; l’IA ne fait que classer les
+  réponses) : un seul critère potentiellement réuni (8, usage d’un outil d’IA). Le seuil des deux
+  critères n’est pas atteint : AIPD non obligatoire, sous réserve de validation.
+- **Voie automatique** (recherche d’adresse par l’agent) : les critères 6 et 8 sont potentiellement
+  réunis, donc le seuil des deux critères est potentiellement atteint : AIPD recommandée avant
+  l’activation. À rapprocher de la liste des types d’opérations pour lesquelles la CNIL exige une
+  AIPD ([liste CNIL](https://www.cnil.fr/fr/liste-des-traitements-pour-lesquels-une-aipd-est-requise))
+  pour vérifier qu’aucune ne vise ce traitement.
+
+Facteurs qui jouent en sens inverse : petit nombre de personnes, données professionnelles, aucune
+donnée sensible, validation humaine, aucune copie, opposition simple.
 
 **Recommandation :** avant d’activer la recherche automatisée,
 
@@ -111,7 +129,7 @@ professionnelles, aucune donnée sensible, validation humaine, aucune copie, opp
    risques pour les personnes, mesures) à partir du présent document ;
 3. consulter le DPO s’il en existe un ; l’inscrire à la prochaine revue du registre.
 
-La lecture des réponses par le prestataire d’IA ne dépend pas de cette activation : elle est déjà
+La lecture des réponses par le prestataire d’IA relève de la voie manuelle, déjà en place : elle est
 couverte par le registre et le pied du message.
 
 ## 5. Points à faire valider par un avocat
@@ -120,11 +138,12 @@ couverte par le registre et le pied du message.
 2. Sources admises : droit des producteurs de bases de données (CPI L. 342-1 à L. 342-3), mentions
    légales de la CNCJ, des barreaux de Lyon et de Bordeaux ; maintien de Paris, Marseille et
    notaires.fr désactivés.
-3. Décodage des adresses masquées par Cloudflare (accord écrit de Licitor préalable).
+3. Décodage des adresses masquées par Cloudflare : uniquement à la demande, sur la fiche de la vente
+   en préparation et après accord écrit de Licitor ; aucun décodage dans le parseur.
 4. Compatibilité de finalité du réemploi (section 3).
 5. Seuil d’AIPD (section 4).
-6. Pied du message : suffisance, mention de la recherche automatique, durées (30 jours, 12 mois,
-   24 mois, au moins 3 ans pour la liste d’opposition), transferts liés au prestataire d’IA
+6. Pied du message : suffisance, mention de la recherche automatique, durées (un mois au plus,
+   12 mois, 24 mois, au moins 3 ans pour la liste d’opposition), transferts liés au prestataire d’IA
    (Replicate, États-Unis) et à l’hébergement du worker.
 7. Secret professionnel du destinataire et libellé des questions autorisées.
 

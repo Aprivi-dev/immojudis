@@ -99,6 +99,11 @@ export type InformationAgentEmailTemplateSummary = InformationAgentEmailTemplate
 
 export type InformationAgentEmailTemplateWorkspace = {
   published: InformationAgentEmailTemplateSummary;
+  /** Vrai quand le modèle publié est antérieur à `minCompliantRevision` : il est ignoré. */
+  publishedIgnored: boolean;
+  minCompliantRevision: number;
+  /** Modèle du code, utilisé tant que le modèle publié est ignoré. */
+  fallback: InformationAgentEmailTemplateContent & { revision: number };
   draft: InformationAgentEmailTemplateSummary | null;
   history: InformationAgentEmailTemplateSummary[];
   variables: typeof INFORMATION_AGENT_EMAIL_VARIABLES;
@@ -123,7 +128,15 @@ export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autres ventes ?";
 
-export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 6;
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 7;
+
+/**
+ * Révision minimale d'un modèle publié en base pour qu'il soit utilisé. Un modèle publié avant cette
+ * révision (présentation d'Immojudis, invitation à créer un compte…) est ignoré au profit du modèle
+ * du code, sans rien écrire en base ; un nouveau modèle publié depuis l'éditeur reprend la
+ * numérotation après cette révision (migration `information_agent_legal_safeguards`).
+ */
+export const MIN_COMPLIANT_TEMPLATE_REVISION = INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION;
 
 export type InformationAgentEmailRenderOptions = {
   /** Environment origin of the site (kept for callers that build absolute links). */
@@ -239,7 +252,7 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 6",
+  name: "Demande de précisions sur une vente — version 7",
   subjectTemplate: "{{sale_subject_title}} — précisions pour Immojudis",
   blocks: [
     {
@@ -253,7 +266,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Objet du message",
       content:
-        "Nous vous écrivons au sujet de la vente ci-dessous, afin de vérifier des informations publiées sur cette vente : votre connaissance du dossier nous serait précieuse.",
+        "Nous vous écrivons au sujet de la vente ci-dessous, afin de vérifier des informations publiées sur cette vente, dans la seule mesure où elles sont communicables à tout candidat acquéreur.",
     },
     {
       id: "sale_details",
@@ -279,7 +292,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Consignes de réponse",
       content:
-        "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire. Si ce dossier relève d’un autre interlocuteur, son contact nous serait utile.",
+        "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire. Si ce dossier relève d’un autre interlocuteur, son contact nous serait utile. Vous n’êtes tenu de répondre à aucune de ces questions. Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, consignation, audience) : votre secret professionnel prime sur notre demande.",
     },
     {
       id: "closing",

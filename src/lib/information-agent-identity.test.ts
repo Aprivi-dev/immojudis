@@ -43,8 +43,12 @@ describe("clé d'identité d'un professionnel (opposition par identité)", () =>
 
   it("utilise la ville à défaut de barreau", () => {
     expect(
-      informationAgentIdentityKeys({ role: "notary", name: "Étude Martin", city: "Bordeaux" }),
-    ).toEqual(["notary|bordeaux|etude martin"]);
+      informationAgentIdentityKeys({
+        role: "notary",
+        name: "Étude Pierre Martin",
+        city: "Bordeaux",
+      }),
+    ).toEqual(["notary|bordeaux|martin pierre"]);
   });
 
   it("étend un rôle inconnu à tous les rôles plutôt que de manquer une personne opposée", () => {
@@ -101,6 +105,47 @@ describe("clé d'identité d'un professionnel (opposition par identité)", () =>
     expect(informationAgentIdentityKeys({ role: "lawyer", name: null, bar: "Lyon" })).toEqual([]);
     expect(informationAgentIdentityKeys({ role: "lawyer", name: "Me", bar: "Lyon" })).toEqual([]);
     expect(informationAgentIdentityKeys({ role: "lawyer", name: "Jean Dupont" })).toEqual([]);
+    expect(informationAgentIdentityKeys({ role: "lawyer", name: "Jean Dupont" })).toEqual([]);
+  });
+
+  it("exige un nom complet : un seul jeton, une fonction ou une forme sociale ne fait pas une clé", () => {
+    for (const name of [
+      "Dupont",
+      "Me Dupont",
+      "Maître Dupont",
+      "Étude Martin",
+      "SCP Dupont",
+      "Notaire Martin",
+      "Huissier de justice",
+      "Commissaire de justice Martin",
+      "SELARL Dupont et associés",
+    ]) {
+      expect(informationAgentIdentityKeys({ role: "lawyer", name, bar: "Lyon" }), name).toEqual([]);
+    }
+    expect(normalizeInformationAgentIdentityName("Maître Jean Dupont, notaire")).toBe(
+      "dupont jean",
+    );
+    expect(
+      informationAgentIdentityKeys({
+        role: "lawyer",
+        name: "Dupont",
+        bar: "Lyon",
+        siren: "123456789",
+      }),
+    ).toEqual(["siren|123456789"]);
+  });
+
+  it("plafonne le nombre et la taille des clés", () => {
+    const keys = informationAgentIdentityKeys({
+      role: "lawyer",
+      name: Array.from({ length: 40 }, (_, index) => `nom${index}`).join(" "),
+      bar: "x".repeat(900),
+    });
+    expect(keys.length).toBeLessThanOrEqual(64);
+    expect(keys.every((key) => key.length <= 400)).toBe(true);
+    expect(
+      normalizeInformationAgentIdentityName("a b c d e f g h i j k l").split(" ").length,
+    ).toBeLessThanOrEqual(8);
   });
 
   it("ne contient jamais d'adresse email", () => {

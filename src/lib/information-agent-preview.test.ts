@@ -95,10 +95,10 @@ const MISSION_ID = "22222222-2222-4222-8222-222222222222";
 const content = {
   missionId: MISSION_ID,
   recipientEmail: "cabinet@example.test",
-  recipientName: "Maître Dupont",
+  recipientName: "Maître Jean Dupont",
   subject: "Appartement à Bordeaux — précisions pour Immojudis",
   bodyText:
-    "Bonjour Maître Dupont,\n\nPourriez-vous nous transmettre le procès-verbal descriptif ?",
+    "Bonjour Maître Jean Dupont,\n\nPourriez-vous nous transmettre le procès-verbal descriptif ?",
 };
 
 beforeEach(() => {
@@ -141,6 +141,7 @@ beforeEach(() => {
   vi.stubEnv("SITE_URL", "https://immojudis.example");
   vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_NAME", "Immojudis SAS");
   vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS", "1 rue de la Paix, 33000 Bordeaux");
+  vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "contact@immojudis.example");
   send.mockReset();
   vi.mocked(supabaseAdmin.rpc).mockClear();
 });
@@ -173,8 +174,8 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       expect(output).toContain("Ce message ne contient aucune offre commerciale.");
       expect(output).toContain("votre nom, votre fonction, votre adresse professionnelle");
       expect(output).toContain("Replicate (États-Unis)");
-      expect(output).toContain("30 jours si aucun message");
-      expect(output).toContain("12 mois sans réponse");
+      expect(output).toContain("12 mois si vous ne répondez pas");
+      expect(output).toContain("12 mois si vous ne répondez pas");
       expect(output).toContain("24 mois après le dernier échange");
       expect(output).toContain("accès, rectification, effacement et limitation");
       expect(output).toContain("vous opposer à tout moment, sans motif");
@@ -300,7 +301,7 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     for (const output of [result.preview.html, result.preview.text]) {
       expect(output).toContain("fiche publique de l’annuaire officiel des commissaires de justice");
       expect(output).toContain(
-        "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques sans en conserver de copie. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
+        "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
       );
     }
   });
@@ -371,7 +372,7 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
   });
 
   it("bloque l'aperçu et l'envoi pour un professionnel opposé sous une autre adresse", async () => {
-    db.identityOppositions = [{ identity_key: "lawyer|bordeaux|dupont" }];
+    db.identityOppositions = [{ identity_key: "lawyer|bordeaux|dupont jean" }];
     const result = await previewAdminInformationAgentMission({
       auth: ADMIN,
       input: { ...content, recipientEmail: "nouvelle-adresse@example.test" },
@@ -418,5 +419,45 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       });
       expect(result.blockers.join(" ")).toContain("n’est jamais sollicitée par l’agent");
     }
+  });
+
+  it("bloque une adresse saisie dont la page d'origine est un réseau social ou un annuaire exclu", async () => {
+    db.contacts = [];
+    for (const recipientOriginUrl of [
+      "https://www.linkedin.com/in/jean-dupont",
+      "https://www.notaires.fr/fr/office/etude-x",
+      "https://www.avocatparis.org/annuaire/avocat/1",
+    ]) {
+      const result = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: { ...content, recipientOriginUrl },
+      });
+      expect(result.blockers.join(" ")).toContain("n’est pas une source admise");
+    }
+  });
+
+  it("refuse l'envoi d'une adresse saisie dont la page d'origine est exclue", async () => {
+    db.contacts = [];
+    const input = { ...content, recipientOriginUrl: "https://www.facebook.com/cabinet" };
+    const { fingerprint } = await previewAdminInformationAgentMission({ auth: ADMIN, input });
+    await expect(
+      runAdminInformationAgentAction({
+        auth: ADMIN,
+        input: {
+          action: "approve_and_send",
+          approvalConfirmed: true,
+          ...input,
+          previewFingerprint: fingerprint!,
+        },
+      }),
+    ).rejects.toThrow("n’est pas une source admise");
+    expect(db.writes).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("refuse l'envoi sans adresse de contact du responsable de traitement", async () => {
+    vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "");
+    const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+    expect(result.blockers.join(" ")).toContain("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL");
   });
 });

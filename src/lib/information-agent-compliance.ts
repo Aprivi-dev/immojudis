@@ -13,7 +13,8 @@ export type InformationAgentLegalFooter = {
   /** Data controller (responsable de traitement). */
   controllerName: string;
   controllerAddress: string;
-  contactEmail: string | null;
+  /** Adresse de contact : obligatoire, c'est le moyen d'exercer ses droits sans compte. */
+  contactEmail: string;
   /** Référence de la vente concernée, pour « vérifier des informations sur la vente ». */
   saleReference?: string | null;
   /** Where the recipient's address came from (art. 14(2)(f)): type, link and date. */
@@ -32,7 +33,7 @@ export type InformationAgentLegalFooter = {
 export type InformationAgentControllerIdentity = {
   name: string;
   address: string;
-  contactEmail: string | null;
+  contactEmail: string;
 };
 
 /**
@@ -44,8 +45,9 @@ export function informationAgentControllerIdentity(
 ): InformationAgentControllerIdentity | null {
   const name = env.NEXT_PUBLIC_LEGAL_ENTITY_NAME?.trim();
   const address = env.NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS?.trim();
-  if (!name || !address) return null;
-  return { name, address, contactEmail: env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL?.trim() || null };
+  const contactEmail = env.NEXT_PUBLIC_LEGAL_CONTACT_EMAIL?.trim();
+  if (!name || !address || !contactEmail) return null;
+  return { name, address, contactEmail };
 }
 
 /**
@@ -66,6 +68,26 @@ export const INFORMATION_AGENT_ADDRESS_SOURCE_KINDS = [
 
 export type InformationAgentAddressSourceKind =
   (typeof INFORMATION_AGENT_ADDRESS_SOURCE_KINDS)[number];
+
+/**
+ * Annuaires officiels admis comme source d'une adresse (liste fermée, reprise par la contrainte SQL
+ * `information_agent_contacts_directory_name_check`) et leur complément dans la phrase d'origine.
+ */
+export const INFORMATION_AGENT_DIRECTORY_NAMES = {
+  "annuaire officiel des commissaires de justice":
+    "l’annuaire officiel des commissaires de justice",
+  "annuaire du barreau de Lyon": "l’annuaire du barreau de Lyon",
+  "annuaire du barreau de Bordeaux": "l’annuaire du barreau de Bordeaux",
+  "annuaire des avocats du CNB": "l’annuaire des avocats du Conseil national des barreaux",
+} as const;
+
+export type InformationAgentDirectoryName = keyof typeof INFORMATION_AGENT_DIRECTORY_NAMES;
+
+export function isInformationAgentDirectoryName(
+  value: unknown,
+): value is InformationAgentDirectoryName {
+  return typeof value === "string" && Object.hasOwn(INFORMATION_AGENT_DIRECTORY_NAMES, value);
+}
 
 export type InformationAgentAddressObserver = "agent" | "admin";
 
@@ -121,7 +143,7 @@ export function informationAgentAddressOrigin({
   sourceUrl?: string | null;
   manual?: boolean;
   sourceKind?: InformationAgentAddressSourceKind | null;
-  /** Nom de l'annuaire officiel, ex. « annuaire officiel des commissaires de justice ». */
+  /** Nom de l'annuaire officiel (liste fermée `INFORMATION_AGENT_DIRECTORY_NAMES`). */
   directoryName?: string | null;
   observedAt?: string | Date | null;
   observedBy?: InformationAgentAddressObserver | null;
@@ -147,7 +169,7 @@ export function informationAgentAddressOrigin({
       };
     case "other_listing":
       return {
-        text: `Votre adresse professionnelle figure dans une autre annonce publique de vente que vous avez publiée${
+        text: `Votre adresse professionnelle figure dans une autre annonce publique de vente qui vous mentionne comme interlocuteur${
           label ? `, sur ${label}` : ""
         }${link}${consulted(true)}.`,
         url,
@@ -157,7 +179,9 @@ export function informationAgentAddressOrigin({
       const name = directoryName?.trim();
       return {
         text: `Votre adresse professionnelle figure sur votre fiche publique de ${
-          name ? `l’${name}` : "l’annuaire officiel de votre profession"
+          isInformationAgentDirectoryName(name)
+            ? INFORMATION_AGENT_DIRECTORY_NAMES[name]
+            : "l’annuaire officiel de votre profession"
         }${link}${consulted(true)}.`,
         url,
         automated,
@@ -165,7 +189,7 @@ export function informationAgentAddressOrigin({
     }
     case "firm_website":
       return {
-        text: `Votre adresse professionnelle figure sur le site de votre cabinet${link}${consulted(false)}.`,
+        text: `Votre adresse professionnelle figure sur le site de votre cabinet ou de votre étude${link}${consulted(false)}.`,
         url,
         automated,
       };
@@ -203,9 +227,7 @@ export function informationAgentLegalFooterSections(
   footer: InformationAgentLegalFooter,
 ): InformationAgentFooterSection[] {
   const sale = footer.saleReference?.trim();
-  const controller = `${footer.controllerName}, ${footer.controllerAddress}${
-    footer.contactEmail ? ` — ${footer.contactEmail}` : ""
-  }`;
+  const controller = `${footer.controllerName}, ${footer.controllerAddress} — ${footer.contactEmail}`;
   const sections: InformationAgentFooterSection[] = [
     {
       label: "Pourquoi ce message ?",
@@ -225,13 +247,16 @@ export function informationAgentLegalFooterSections(
     });
   }
   sections.push(
-    { label: "Destinataires :", text: informationAgentRecipientsStatement(footer.aiProvider) },
-    { label: "Conservation :", text: INFORMATION_AGENT_RETENTION_STATEMENT },
-    { label: "Vos droits :", text: INFORMATION_AGENT_RIGHTS_STATEMENT },
     {
-      label: "Opposition :",
-      text: `${INFORMATION_AGENT_OBJECTION_STATEMENT} ${INFORMATION_AGENT_COMPLAINT_STATEMENT}`,
+      label: "Destinataires :",
+      text: informationAgentRecipientsStatement(footer.aiProvider, footer.contactEmail),
     },
+    { label: "Conservation :", text: INFORMATION_AGENT_RETENTION_STATEMENT },
+    {
+      label: "Vos droits :",
+      text: `${informationAgentRightsStatement(footer.contactEmail)} ${INFORMATION_AGENT_COMPLAINT_STATEMENT}`,
+    },
+    { label: "Opposition :", text: INFORMATION_AGENT_OBJECTION_STATEMENT },
   );
   return sections;
 }
@@ -249,9 +274,13 @@ export function informationAgentLegalFooterLines(footer: InformationAgentLegalFo
 export const INFORMATION_AGENT_NO_OFFER_STATEMENT =
   "Ce message ne contient aucune offre commerciale.";
 
-/** Finalité et base légale (art. 14(1)(c) RGPD). */
+/**
+ * Finalité et base légale (art. 14(1)(c) RGPD). Le rythme annoncé est celui du code : une seule
+ * sollicitation par adresse et par période de 30 jours (`assertInformationAgentRecipientCooldown`)
+ * et aucune relance.
+ */
 export const INFORMATION_AGENT_PURPOSE_STATEMENT =
-  "Base : intérêt légitime à publier des informations exactes (art. 6.1.f RGPD). Aucune autre sollicitation ne vous sera adressée pour ce motif pendant 30 jours.";
+  "Base : intérêt légitime à publier des informations exactes sur les ventes aux enchères (art. 6.1.f RGPD). Nous vous écrivons au plus une fois par période de 30 jours, toutes ventes confondues, et sans relance.";
 
 /** Catégories de données (art. 14(1)(d) RGPD). */
 export const INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT =
@@ -259,26 +288,30 @@ export const INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT =
 
 /**
  * Mention de la recherche automatique (avis juridique du 14/10/2026, section 7), ajoutée quand
- * l'adresse a été retrouvée par l'outil de recherche.
+ * l'adresse a été retrouvée par l'outil de recherche. Dormante tant que l'outil n'existe pas : elle
+ * ne peut apparaître que pour une source `other_listing`, `firm_website` ou `official_directory`
+ * relevée par l'agent.
  */
 export const INFORMATION_AGENT_AUTOMATED_SEARCH_STATEMENT =
-  "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques sans en conserver de copie. Ce message a été relu et validé par un membre de l’équipe avant envoi.";
+  "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.";
 
 /**
  * Durées de conservation annoncées au destinataire (art. 14(2)(a) RGPD), identiques à la purge
- * (`app_private.purge_information_agent_data`) : 30 jours sans envoi, 12 mois sans réponse,
- * 24 mois après le dernier échange (matrice de conservation, `docs/data-retention-matrix.md`).
+ * (`app_private.purge_information_agent_data`, hebdomadaire) ; les demandes qui n'ont pas été
+ * envoyées sont supprimées sous un mois au plus (matrice de conservation,
+ * `docs/data-retention-matrix.md`).
  */
 export const INFORMATION_AGENT_RETENTION_STATEMENT =
-  "30 jours si aucun message ne vous est finalement envoyé, 12 mois sans réponse de votre part, 24 mois après le dernier échange.";
+  "12 mois si vous ne répondez pas ; 24 mois après le dernier échange si vous répondez.";
 
-/** Droits (art. 14(2)(c) RGPD). */
-export const INFORMATION_AGENT_RIGHTS_STATEMENT =
-  "accès, rectification, effacement et limitation du traitement.";
+/** Droits (art. 14(2)(c) RGPD), exercés sans compte. */
+export function informationAgentRightsStatement(contactEmail: string): string {
+  return `accès, rectification, effacement et limitation du traitement. Pour les exercer sans créer de compte, écrivez à ${contactEmail} ou répondez à ce message.`;
+}
 
 /** Droit d'opposition formulé clairement et séparément (art. 21(4) RGPD). */
 export const INFORMATION_AGENT_OBJECTION_STATEMENT =
-  "Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions et à ce que nous conservions vos coordonnées : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Votre opposition vaut pour tous nos canaux.";
+  "Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Nous supprimons alors vos données, sauf l’information strictement nécessaire pour ne plus vous solliciter (adresse, identité professionnelle, date de l’opposition), conservée uniquement à cette fin. Votre opposition vaut pour tous nos canaux.";
 
 /** Droit de réclamation (art. 14(2)(e) RGPD). */
 export const INFORMATION_AGENT_COMPLAINT_STATEMENT =
@@ -287,12 +320,13 @@ export const INFORMATION_AGENT_COMPLAINT_STATEMENT =
 export const INFORMATION_AGENT_CNIL_COMPLAINT_URL = "https://www.cnil.fr/fr/plaintes";
 
 /**
- * Destinataires et prestataires (art. 14(1)(e)-(f) RGPD) : l'équipe Immojudis et les prestataires
- * d'hébergement, d'envoi des courriels et d'IA. Le prestataire d'IA vient de la configuration
- * (`informationAgentAiProvider`), jamais d'un texte figé.
+ * Destinataires et prestataires (art. 14(1)(e)-(f) RGPD). Le prestataire d'IA vient de la
+ * configuration (`informationAgentAiProvider`). Aucun mécanisme de transfert n'est affirmé tant
+ * qu'il n'est pas vérifié pour chaque prestataire : le destinataire peut le demander.
  */
 export function informationAgentRecipientsStatement(
   aiProvider: InformationAgentAiProvider,
+  contactEmail: string,
 ): string {
-  return `l’équipe Immojudis et ses prestataires : Vercel et Supabase (hébergement), Resend (envoi des courriels) et ${aiProvider.name} (${aiProvider.country}), outil d’IA qui aide à lire et classer les réponses. Certains de ces prestataires peuvent traiter des données hors de l’Union européenne, notamment aux États-Unis ; les garanties applicables sont décrites dans la politique de confidentialité.`;
+  return `l’équipe Immojudis et ses prestataires : Vercel et Supabase (hébergement), Resend (envoi et réception des courriels), GitHub (exécution des traitements automatisés) et ${aiProvider.name} (${aiProvider.country}), outil d’IA qui aide à lire et classer les réponses. Ces prestataires peuvent traiter des données hors de l’Union européenne, notamment aux États-Unis. Pour savoir quelle garantie s’applique à chacun, ou en obtenir une copie, écrivez à ${contactEmail} ; aucun compte n’est nécessaire.`;
 }

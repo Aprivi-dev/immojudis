@@ -297,6 +297,7 @@ describe("supervised information agent", () => {
       vi.stubEnv("SITE_URL", "https://immojudis.example");
       vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_NAME", "Immojudis SAS");
       vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS", "1 rue de la Paix, 33000 Bordeaux");
+      vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "contact@immojudis.example");
 
       try {
         const operation = runAdminInformationAgentAction({

@@ -110,8 +110,6 @@ export function InformationRequestEmail({
               ; notre équipe vérifie les informations avant toute mise à jour de la fiche.
               <br />
               Merci de ne transmettre que des pièces que vous êtes autorisé à partager.
-              <br />
-              Vous pouvez aussi vous opposer à tout contact en répondant simplement à ce message.
             </Text>
           </Section>
         </Container>
@@ -214,7 +212,10 @@ function LegalFooter({ footer }: { footer: InformationAgentLegalFooter }) {
   return (
     <>
       {informationAgentLegalFooterSections(footer).map((section) => (
-        <Text key={section.label} style={styles.footerLegal}>
+        <Text
+          key={section.label}
+          style={section.label === "Opposition :" ? styles.footerObjection : styles.footerLegal}
+        >
           <strong>{section.label}</strong> {section.text}
         </Text>
       ))}
@@ -321,9 +322,27 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "16px",
     fontWeight: 700,
   },
-  footerText: { margin: "2px 0", color: BRAND.muted, fontSize: "11px", lineHeight: "17px" },
+  footerText: { margin: "2px 0", color: "#5B6270", fontSize: "12px", lineHeight: "18px" },
   footerLink: { color: BRAND.ink, fontWeight: 700, textDecoration: "none" },
-  footerLegal: { margin: "14px 0 0", color: "#8B909C", fontSize: "10px", lineHeight: "16px" },
+  footerLegal: {
+    margin: "14px 0 0",
+    color: "#5B6270",
+    fontSize: "12px",
+    lineHeight: "18px",
+    textAlign: "left",
+  },
+  // Droit d'opposition : bloc distinct, lisible au premier regard (art. 21(4) RGPD).
+  footerObjection: {
+    margin: "14px 0 0",
+    padding: "10px 12px",
+    color: BRAND.ink,
+    backgroundColor: BRAND.goldSoft,
+    border: `1px solid ${BRAND.line}`,
+    borderRadius: "8px",
+    fontSize: "12px",
+    lineHeight: "18px",
+    textAlign: "left",
+  },
 };
 
 export default InformationRequestEmail;
