@@ -10,7 +10,10 @@ import {
   checkBody,
   normalizeConcurrentIndexDefinition,
   normalizeDiff,
+  TRANSIENT_RETRY_DELAYS_SECONDS,
+  isTransientConnectionFailure,
   normalizeDiffWithNotes,
+  runWithTransientRetry,
   verifyConcurrentIndexes,
 } from "./lib/schema-drift.mjs";
 
@@ -310,5 +313,120 @@ ALTER TABLE public.information_agent_cases
     expect(calls).toEqual([
       { checkOnly: true, databaseUrl: "postgres://example.invalid/postgres" },
     ]);
+  });
+});
+
+describe("Transient connection failures of the diff tool (run 80)", () => {
+  const run80 =
+    "error diffing schema: error running script: Error: timeout exceeded when trying to connect\n    at pg-pool extractCurrentUser\nPGDELTA_SCRIPT_ERROR";
+
+  it("recognises the run 80 pg-delta timeout and other connection failures", () => {
+    for (const output of [
+      run80,
+      "Error: Connection terminated due to connection timeout",
+      "read ECONNRESET",
+      "connect ETIMEDOUT 10.0.0.1:5432",
+      "connect ECONNREFUSED 127.0.0.1:5432",
+      "getaddrinfo EAI_AGAIN db.example.supabase.co",
+      "failed to connect to `host=db.example user=postgres`: dial error (timeout: 10s)",
+      "dial tcp 10.0.0.1:5432: i/o timeout",
+    ]) {
+      expect(isTransientConnectionFailure(output), output).toBe(true);
+    }
+  });
+
+  it("does not treat real errors, SQL errors or an empty output as transient", () => {
+    for (const output of [
+      "",
+      undefined,
+      "PGDELTA_SCRIPT_ERROR",
+      'error diffing schema: error running script: Error: syntax error at or near "FROM"\nPGDELTA_SCRIPT_ERROR',
+      "password authentication failed for user postgres",
+      "ALTER TABLE public.auction_sales DROP CONSTRAINT auction_sales_other_check;",
+    ]) {
+      expect(isTransientConnectionFailure(output), String(output)).toBe(false);
+    }
+  });
+
+  it("waits 20 s then 40 s and succeeds on the third attempt", async () => {
+    const outcomes = [
+      { status: 1, stdout: "", stderr: run80 },
+      { status: 1, stdout: "", stderr: "read ECONNRESET" },
+      { status: 0, stdout: "", stderr: "" },
+    ];
+    const sleeps = [];
+    const logs = [];
+    const outcome = await runWithTransientRetry({
+      attempt: async (number) => outcomes[number - 1],
+      sleep: async (seconds) => sleeps.push(seconds),
+      log: (message) => logs.push(message),
+    });
+    expect(TRANSIENT_RETRY_DELAYS_SECONDS).toEqual([20, 40]);
+    expect(sleeps).toEqual([20, 40]);
+    expect(logs).toHaveLength(2);
+    expect(outcome).toMatchObject({ attempts: 3, transient: false, result: { status: 0 } });
+  });
+
+  it("gives up after 3 attempts and reports the tool as unreachable", async () => {
+    let calls = 0;
+    const sleeps = [];
+    const outcome = await runWithTransientRetry({
+      attempt: async () => {
+        calls += 1;
+        return { status: 1, stdout: "", stderr: run80 };
+      },
+      sleep: async (seconds) => sleeps.push(seconds),
+    });
+    expect(calls).toBe(3);
+    expect(sleeps).toEqual([20, 40]);
+    expect(outcome).toMatchObject({ attempts: 3, transient: true, result: { status: 1 } });
+  });
+
+  it("never retries a non-transient failure", async () => {
+    let calls = 0;
+    const outcome = await runWithTransientRetry({
+      attempt: async () => {
+        calls += 1;
+        return { status: 1, stdout: "", stderr: "syntax error at or near" };
+      },
+      sleep: async () => {
+        throw new Error("must not wait");
+      },
+    });
+    expect(calls).toBe(1);
+    expect(outcome).toMatchObject({ attempts: 1, transient: false });
+  });
+
+  it("never re-runs a completed diff, so a real drift is not retried or masked", async () => {
+    let calls = 0;
+    const outcome = await runWithTransientRetry({
+      attempt: async () => {
+        calls += 1;
+        // The tool succeeded; the drift lives in the output file, not in the output.
+        // Even a stray connection-looking text on a successful run is not a failure.
+        return { status: 0, stdout: "", stderr: "read ECONNRESET (recovered)" };
+      },
+      sleep: async () => {
+        throw new Error("must not wait");
+      },
+    });
+    expect(calls).toBe(1);
+    expect(outcome).toMatchObject({ attempts: 1, transient: false, result: { status: 0 } });
+  });
+
+  it("does not retry at all with an empty delay list (local mode)", async () => {
+    let calls = 0;
+    const outcome = await runWithTransientRetry({
+      attempt: async () => {
+        calls += 1;
+        return { status: 1, stdout: "", stderr: run80 };
+      },
+      delaysSeconds: [],
+      sleep: async () => {
+        throw new Error("must not wait");
+      },
+    });
+    expect(calls).toBe(1);
+    expect(outcome.transient).toBe(true);
   });
 });
