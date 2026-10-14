@@ -117,7 +117,7 @@ describe("texts of the unlock", () => {
 
   it("says before the click that the unlock is final and when the counter restarts", () => {
     expect(unlockConfirmationText(status)).toBe(
-      "Ce déblocage est définitif et ne sera pas restitué. Le compteur est remis à 3 le 1er novembre.",
+      "Ce déblocage est définitif : il n’est restitué que si Immojudis retire elle-même la vente (conditions générales, article 2). Le compteur est remis à 3 le 1er novembre.",
     );
   });
 

@@ -1,7 +1,7 @@
 -- "3 déblocages par mois": a Découverte account unlocks one sale at a time, three per Paris month.
 begin;
 
-select plan(63);
+select plan(66);
 
 -- Fixtures -------------------------------------------------------------------------------------
 insert into auth.users (
@@ -38,6 +38,31 @@ select
   case when i = 6 then 'past' else 'upcoming' end,
   case when i = 6 then now() - interval '30 days' else '2099-01-01 12:00:00Z'::timestamptz end
 from generate_series(1, 8) i;
+
+-- s1 carries what a real listing carries in its source blocks: the page text (with the preliminary
+-- fees), the completeness evidence with the listing url, a contact, a cost condition, and a second
+-- source observation.  An unlocked account must only get what the bid ceiling reads.
+update public.auction_sales
+set raw_payload = jsonb_build_object(
+      'source_blocks', jsonb_build_object(
+        'page_text', 'Page complete. Les frais préalables s’élèvent à 4 250,50 € TTC.',
+        'conditions', jsonb_build_object('consignation', '3 000 €'),
+        'avocat', 'Me Contact',
+        'listing_completeness', jsonb_build_object(
+          'source_field_observations', jsonb_build_array(
+            jsonb_build_object('evidence', jsonb_build_array(
+              jsonb_build_object('source_url', 'https://example.test/sale-unlock/1'))))
+        )
+      )
+    ),
+    observations = jsonb_build_array(jsonb_build_object(
+      'source_name', 'other-platform',
+      'raw_payload', jsonb_build_object('source_blocks', jsonb_build_object(
+        'page_text', 'Autre page complete',
+        'paiement', jsonb_build_object('caution', '3 000 €')
+      ))
+    ))
+where id = 'c4600000-1000-4000-8000-000000000001';
 
 -- Official documents, risks and score factors of s1 and s2.
 insert into public.auction_documents (source_url, document_url, label, document_type)
@@ -175,6 +200,23 @@ select is(
     where id = 'c4600000-1000-4000-8000-000000000001'),
   1,
   'the unlocked-sale view carries the official documents'
+);
+select ok(
+  (select source_blocks ->> '_' = 'frais préalables s’élèvent à 4 250,50 €'
+      and source_blocks ->> 'conditions.consignation' = '3 000 €'
+      and source_blocks_by_source = '{"source_1": {"conditions.consignation": "3 000 €"}, "source_2": {"paiement.caution": "3 000 €"}}'::jsonb
+    from public.v_auction_sales_unlocked where id = 'c4600000-1000-4000-8000-000000000001'),
+  'the unlocked-sale view keeps what the bid ceiling reads: the preliminary fees, the deposit, the sources re-keyed'
+);
+select ok(
+  (select source_blocks::text !~ 'source_url|https?:|page_text|Page complete|Me Contact|listing_completeness'
+    from public.v_auction_sales_unlocked where id = 'c4600000-1000-4000-8000-000000000001'),
+  'the unlocked-sale view serves no listing url, page text, contact or completeness evidence'
+);
+select ok(
+  (select source_blocks_by_source::text !~ ':primary|other-platform|licitor|page_text|Autre page'
+    from public.v_auction_sales_unlocked where id = 'c4600000-1000-4000-8000-000000000001'),
+  'the unlocked-sale view does not name the source platforms nor serve their page text'
 );
 select is(
   (select count(*) from public.auction_documents where source_url = 'https://example.test/sale-unlock/1'),

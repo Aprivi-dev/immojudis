@@ -66,7 +66,7 @@ const SPECS: RowSpec[] = [
   {
     id: "unlocks",
     label: "Déblocage d’une vente : enchère plafond, pièces, historique, statistiques du tribunal",
-    hint: "Ouvre ces éléments pour la vente choisie, tant qu’elle est en ligne ; exports et rapports restent avec Analyse",
+    hint: "Ouvre ces éléments pour la vente choisie, tant qu’elle est en ligne (24 mois au plus) ; exports et rapports restent avec Analyse",
     features: ["sales.filters"],
     custom: {
       decouverte: `${UNLOCKS_PER_MONTH} déblocages par mois`,

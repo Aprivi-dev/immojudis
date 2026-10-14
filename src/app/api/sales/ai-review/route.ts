@@ -388,7 +388,7 @@ export async function GET(request: Request) {
     );
     // A Découverte account does not read the full catalogue view; the sales it unlocked
     // (« 3 déblocages par mois ») are visible through their own view. The review stays applied to
-    // the figures of the bid ceiling, but the citation links of an unlocked sale are not returned.
+    // the figures of the bid ceiling, but neither the citation links nor the source names of an unlocked sale are returned.
     const unlockedSaleIds = new Set<string>();
     const hiddenIds = parsedIds.data.filter((id) => !visibleSaleIds.has(id));
     if (hiddenIds.length > 0) {
@@ -451,7 +451,7 @@ export async function GET(request: Request) {
         ...unavailableRows,
       ].map((projection) =>
         projection.auction_sale_id && unlockedSaleIds.has(projection.auction_sale_id)
-          ? { ...projection, source_url: null }
+          ? { ...projection, source_name: null, source_url: null }
           : projection,
       ),
     });

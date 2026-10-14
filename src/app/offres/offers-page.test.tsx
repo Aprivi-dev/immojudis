@@ -214,6 +214,9 @@ describe("page Offres", () => {
     expect(answer).toContain("tant qu’elle est en ligne");
     expect(answer).toContain("Aucune carte bancaire n’est demandée");
     expect(answer).toContain("L’export PDF ou CSV, les rapports enregistrés");
+    expect(answer).toContain("lorsque la vente les comporte");
+    expect(answer).toContain("dans la limite de 24 mois après le déblocage");
+    expect(answer).toContain("l’estimation détaillée et les ventes comparables restent réservés");
   });
 
   it("montre dans le comparatif « Pour 3 ventes par mois » plutôt que « Non inclus »", () => {

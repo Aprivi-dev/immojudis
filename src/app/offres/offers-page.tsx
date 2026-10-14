@@ -52,9 +52,9 @@ const DISCOVERY_FEATURES = [
 ] as const;
 
 const ANALYSIS_FEATURES = [
-  "Enchère plafond chiffrée : travaux, libération, portage et tous les frais",
-  "Pièces du dossier et leur lecture : points clés cités avec la page",
-  "Historique de la vente : passages précédents, baisses de mise à prix, reports",
+  "Enchère plafond chiffrée pour toutes les ventes : travaux, libération, portage et tous les frais",
+  "Pièces du dossier et leur lecture pour toutes les ventes : points clés cités avec la page",
+  "Historique de la vente pour toutes les ventes : passages précédents, baisses de mise à prix, reports",
   "Estimation détaillée et ventes comparables",
   "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
   "Statistiques des tribunaux : prix d’adjudication et scénarios d’enchères, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
@@ -106,13 +106,14 @@ const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }
     answer: () => (
       <>
         Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes avec votre compte
-        Découverte. Pour chacune, vous voyez l’enchère plafond, la lecture des pièces, l’historique
-        de la vente, les statistiques du tribunal de cette vente et les pièces du dossier. Le
-        compteur repart à {MONTHLY_SALE_UNLOCKS} le 1er du mois à 00 h 00, heure de Paris ; les
-        déblocages non utilisés ne sont pas reportés. Une vente débloquée reste accessible tant
-        qu’elle est en ligne sur Immojudis. Aucune carte bancaire n’est demandée et rien ne devient
-        payant automatiquement. L’export PDF ou CSV, les rapports enregistrés et les alertes
-        avancées restent réservés à Analyse.
+        Découverte. Pour chacune, vous voyez, lorsque la vente les comporte, l’enchère plafond, la
+        lecture des pièces, l’historique de la vente, les statistiques du tribunal de cette vente et
+        les pièces du dossier. Le compteur repart à {MONTHLY_SALE_UNLOCKS} le 1er du mois à 00 h 00,
+        heure de Paris ; les déblocages non utilisés ne sont pas reportés. Une vente débloquée reste
+        accessible tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le
+        déblocage. Aucune carte bancaire n’est demandée et rien ne devient payant automatiquement.
+        L’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée
+        et les ventes comparables restent réservés à Analyse.
       </>
     ),
   },

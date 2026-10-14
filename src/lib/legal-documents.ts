@@ -14,13 +14,13 @@ export const LEGAL_DOCUMENTS = {
   },
   terms: {
     version: "2026-10-13.3",
-    sha256: "cbab800d88cd9039eaec3a24b022373f3a831aaaed74b8b80e31b3ff05fc0f0f",
+    sha256: "6d610065c7c925663bfe0fc67739fe1bb296e316b1bbd71aab790f35fcf9453f",
     effectiveDate: UNLOCKS_VERSIONS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },
   privacy: {
     version: "2026-10-13.2",
-    sha256: "578d9e8f872b214a29b3ecb01045b01aa7f140c1e5676ebd44283547df7ee144",
+    sha256: "63c2889e2871fec41092e8fda0a4fdda12c841dd1d07d7b2ba9de4704efcfcbc",
     effectiveDate: UNLOCKS_VERSIONS_EFFECTIVE_DATE,
     path: "/privacy",
   },

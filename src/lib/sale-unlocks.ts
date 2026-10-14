@@ -71,9 +71,9 @@ export function remainingUnlocksLine(status: Pick<SaleUnlockStatus, "remaining" 
   return `Il vous reste ${unlockCountLabel(status.remaining)} sur ${status.limit} ce mois-ci.`;
 }
 
-/** « Ce déblocage est définitif et ne sera pas restitué. Le compteur est remis à 3 le 1er novembre. » */
+/** « Ce déblocage est définitif : il n’est restitué que si Immojudis retire elle-même la vente (conditions générales, article 2). Le compteur est remis à 3 le 1er novembre. » */
 export function unlockConfirmationText(status: Pick<SaleUnlockStatus, "limit" | "resetsAt">) {
-  return `Ce déblocage est définitif et ne sera pas restitué. Le compteur est remis à ${status.limit ?? MONTHLY_SALE_UNLOCKS} le ${parisDayMonthLabel(status.resetsAt)}.`;
+  return `Ce déblocage est définitif : il n’est restitué que si Immojudis retire elle-même la vente (conditions générales, article 2). Le compteur est remis à ${status.limit ?? MONTHLY_SALE_UNLOCKS} le ${parisDayMonthLabel(status.resetsAt)}.`;
 }
 
 /** « Vous avez utilisé vos 3 déblocages d’octobre. Ils reviennent le 1er novembre. » */
