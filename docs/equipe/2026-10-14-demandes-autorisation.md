@@ -14,15 +14,28 @@ envoie lui-même. Rien n'a été envoyé et personne n'a été contacté.
   ci-dessous. Ils font partie du plan (garde-fous n° 4 du compte-rendu), mais aucun n'est
   livré à ce jour. Ne postez pas les lettres sans avoir décidé de les construire, ou retirez
   la phrase concernée :
-  - décodage de l'adresse masquée à la demande, fiche par fiche, jamais dans le parseur global ;
-  - suppression sous 30 jours d'une adresse relevée mais jamais utilisée ;
+  - décodage de l'adresse masquée **en lot, à la collecte** (livré dans la PR #258, avec l'accord oral
+    de Licitor invoqué à titre provisoire) : le courrier le demande explicitement, sur le HTML déjà
+    récupéré, sans requête supplémentaire. La version « à la demande, fiche par fiche » de la première
+    rédaction est abandonnée ;
+  - adresse conservée en interne seulement, jamais publiée (livré) ;
+  - suppression d'une adresse relevée mais jamais utilisée, au plus tard 28 jours après la dernière
+    consultation de l'annonce (livré : purge hebdomadaire, seuil de 21 jours) ;
+  - **suspension du décodage si Licitor refuse ou ne confirme pas** : livrée. L'interrupteur
+    `LICITOR_DECODE_PROTECTED_EMAILS` (actif par défaut) coupe le décodage sans arrêter la collecte ;
+    les adresses déjà relevées disparaissent par la purge (28 jours au plus après la dernière
+    consultation de l'annonce, rien n'étant rafraîchi une fois le décodage coupé). Il n'y a pas de
+    suppression immédiate outillée ; une requête manuelle est décrite au runbook, sans être exécutée ;
   - opposition qui suit la personne (nom et barreau), pas seulement l'adresse ;
   - test automatique qui refuse toute mention commerciale dans le message ;
   - respect de `robots.txt`, rythme humain, identification de l'agent lors des consultations ;
   - interrogation de l'annuaire de l'Ordre : aucune n'est en service, et aucune ne le sera
     sans réponse écrite favorable.
-- **Durées de conservation.** Elles ne sont pas encore validées par un avocat (30 jours, 12 mois,
-  24 mois). Le texte ne les cite donc pas. Ajoutez-les seulement après validation.
+- **Durées de conservation.** Elles ne sont pas encore validées par un avocat. Le courrier à Licitor
+  cite la durée réelle du relevé en lot (28 jours au plus après la dernière consultation de
+  l'annonce) ; les durées de 12 et 24 mois des échanges restent hors du texte. Les captures HTML du
+  collecteur d'historique (`licitor_ingestion.captures`) n'ont aucune purge codée : le courrier ne
+  s'engage pas sur elles, à trancher avant l'envoi.
 - **Mention de la visibilité payante dans la lettre à l'Ordre.** Elle y figure volontairement :
   mieux vaut que l'Ordre l'apprenne de vous. Vous pouvez la retirer. Si vous la retirez, ne la
   remplacez pas par une formule qui la contredit.
@@ -119,30 +132,43 @@ les affiche sur son site avec la mention de la source et un lien vers l'annonce 
 tire des statistiques. [Si vous ne reprenez pas les photos ou les PDF, dites-le ici.] Confirmez
 que vous l'acceptez, et à quelles conditions.
 
-**(b) La lecture de l'adresse email de l'avocat.** Dans une annonce, l'avocat publie son adresse
-email pour qu'on le contacte au sujet de la vente. Licitor la masque derrière la protection
-anti-spam de Cloudflare. Pour une vente donnée, quand Immojudis prépare une demande
-d'information, nous voudrions lire cette adresse dans la page de l'annonce, y compris lorsqu'elle
-est masquée. Nous écririons à cet avocat au sujet de cette seule vente. Nous le ferions ainsi :
+**(b) Le décodage de l'adresse email de l'avocat, en lot, à la collecte.** Dans une annonce,
+l'avocat publie son adresse email pour qu'on le contacte au sujet de la vente. Licitor la masque
+derrière la protection anti-spam de Cloudflare. Immojudis décode cette adresse **pour toutes les
+annonces en cours qu'il collecte**, au moment de la collecte, à partir de la page déjà récupérée
+pour l'afficher : le décodage n'ajoute aucune requête vers votre site et ne peut pas se faire
+après coup. Nous le faisons ainsi :
 
-- nous lisons l'adresse uniquement sur la page de la vente concernée, au moment où la demande
-  est préparée, jamais sur l'ensemble des annonces ;
-- nous utilisons la page telle que votre site la sert à tout visiteur. Nous ne contournons
-  aucun blocage, aucune vérification ni aucune limite d'accès, et nous respectons votre fichier
+- nous lisons l'adresse dans la page telle que votre site la sert à tout visiteur, uniquement dans
+  le bloc de l'avocat présenté comme interlocuteur de la vente ; nous ne contournons aucun
+  blocage, aucune vérification ni aucune limite d'accès, et nous respectons votre fichier
   `robots.txt` ;
-- nous ne conservons que l'adresse nécessaire à la demande ;
-- le message ne sert qu'à vérifier des informations sur la vente que l'avocat mène.
+- l'adresse est conservée **en interne seulement**, dans un registre réservé à nos administrateurs.
+  Elle n'est jamais publiée : ni sur notre site, ni dans nos données, ni dans nos statistiques ;
+- nous écartons les adresses de juridictions, de l'Ordre, des barreaux et des CARPA, la messagerie
+  RPVA et les adresses techniques (`noreply`, `dpo`, `rgpd`) ;
+- durée : une adresse que nous n'utilisons pas pour écrire est supprimée au plus tard 28 jours
+  après la dernière fois que nous avons consulté l'annonce, et elle n'est plus entretenue après la
+  date de la vente ;
+- elle ne sert qu'à écrire à cet avocat, au sujet de cette seule vente, après validation du message
+  par une personne d'Immojudis ;
+- nous contrôlons l'opposition par adresse au moment de la collecte, et par identité avant tout
+  envoi.
 
-Confirmez que vous l'acceptez, ou précisez ce que vous refusez.
+Confirmez que vous l'acceptez, ou précisez ce que vous refusez. **Si vous refusez ou ne confirmez
+pas, nous suspendons le décodage** : un interrupteur le permet immédiatement, sans arrêter notre
+collecte. Les adresses déjà relevées ne sont plus rafraîchies et sont supprimées au plus tard 28
+jours après la dernière consultation de l'annonce.
 
 **(c) Le périmètre.**
 
-- _Volume :_ au plus [nombre] adresses lues par mois, soit une par avocat et par vente
-  concernée.
+- _Volume :_ une adresse par avocat et par annonce en cours collectée, soit environ [nombre]
+  adresses relevées au total.
 - _Fréquence :_ un message par adresse et par mois au plus, toutes ventes confondues. Pas de
   relance.
-- _Pas de fichier d'adresses :_ Immojudis ne constitue pas de liste ou de base d'adresses
-  d'avocats à partir de Licitor. Nous ne les extrayons pas en masse.
+- _Pas d'exportation ni de publication :_ les adresses restent dans notre registre interne ; nous
+  n'en faisons ni liste diffusée, ni base commerciale, et nous ne les utilisons pas pour de la
+  prospection.
 
 Dites-nous si ce périmètre vous convient, ou quelles limites vous préférez.
 
@@ -168,8 +194,8 @@ Nous l'enregistrons dans un délai de [nombre] jours ouvrés après réception.
 
 Pouvez-vous me répondre par écrit, par retour d'email ou par courrier, en indiquant la date, le
 nom et la fonction de la personne qui répond ? Si l'un de ces points ne vous convient pas,
-dites-le-moi : je corrigerai notre fonctionnement avant de l'appliquer. D'ici votre réponse, je
-n'applique le point (b) à aucune annonce.
+dites-le-moi : je corrigerai notre fonctionnement. Le décodage (point b) repose aujourd'hui sur
+votre accord oral du [date] ; à défaut de votre confirmation écrite, nous le suspendons.
 
 Je reste disponible par téléphone au [numéro] ou par email à [adresse] pour en parler.
 

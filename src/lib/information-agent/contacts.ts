@@ -73,9 +73,33 @@ export type InformationAgentContactRegistryBlock = Pick<
   "scope_sale_id" | "opposition_status" | "bounce_status"
 >;
 
-/** Vente lue par le résolveur ; `source_block_urls` (chargeur admin) précise l'URL de chaque bloc. */
+/**
+ * Canal d'observation des adresses que le pipeline relève pour l'agent sans jamais les publier
+ * (email Licitor décodé, `metadata.observation_channel`). Miroir de `OBSERVATION_CHANNEL` dans
+ * `services/data-pipeline/src/storage/internal_contacts.py`.
+ */
+export const INFORMATION_AGENT_PIPELINE_CHANNEL = "licitor_cloudflare_decoded";
+
+/**
+ * Adresse relevée par le pipeline et conservée uniquement dans le registre interne
+ * (`information_agent_contacts`, service_role) : elle ne figure ni dans la vente ni dans ses blocs.
+ */
+export type InformationAgentRegistryContact = {
+  email: string;
+  displayName: string | null;
+  role: string;
+  sourceName: string | null;
+  sourceUrl: string | null;
+  observedAt: string | null;
+};
+
+/**
+ * Vente lue par le résolveur ; `source_block_urls` (chargeur admin) précise l'URL de chaque bloc et
+ * `registry_contacts` porte les adresses du registre interne pour cette vente.
+ */
 export type InformationAgentContactSale = AuctionSale & {
   source_block_urls?: Record<string, string | null> | null;
+  registry_contacts?: readonly InformationAgentRegistryContact[] | null;
 };
 
 /**
@@ -175,9 +199,65 @@ export function discoverInformationAgentContacts(
     }
   }
 
+  addRegistryContacts(byEmail, sale.registry_contacts ?? []);
+
   return [...byEmail.values()].sort(
     (left, right) => right.score - left.score || left.email.localeCompare(right.email),
   );
+}
+
+/**
+ * Adresses du registre interne pour cette vente (relevées par le pipeline, jamais publiées). Mêmes
+ * exclusions que pour les données de l'annonce (juridiction, RPVA, Ordre, barreau, CARPA) ; l'origine
+ * reste l'annonce (`sale_listing`), avec sa page et sa date de relevé pour le pied du message.
+ */
+function addRegistryContacts(
+  byEmail: Map<string, InformationAgentContactCandidate>,
+  contacts: readonly InformationAgentRegistryContact[],
+) {
+  for (const contact of contacts) {
+    const email = normalizedEmail(contact.email);
+    if (!email || isInformationAgentExcludedAddress(email)) continue;
+    const role: InformationAgentContactRole =
+      contact.role === "lawyer" || contact.role === "notary" || contact.role === "organizer"
+        ? contact.role
+        : "source_contact";
+    const sourceUrl = safeSourceUrlOrNull(contact.sourceUrl);
+    const provenance: InformationAgentContactProvenance = {
+      kind: "source_block",
+      field: "information_agent_contacts",
+      sourceName: cleanContactValue(contact.sourceName),
+      sourceUrl,
+    };
+    const source: InformationAgentContactSource | undefined = contact.observedAt
+      ? {
+          kind: "sale_listing",
+          url: sourceUrl,
+          observedAt: contact.observedAt,
+          observedBy: "agent",
+        }
+      : undefined;
+    const score = 100 + (role === "source_contact" ? 0 : 4);
+    const current = byEmail.get(email);
+    if (!current) {
+      byEmail.set(email, {
+        email,
+        name: cleanContactValue(contact.displayName),
+        role,
+        recipientKind: role === "lawyer" ? "source_lawyer" : "source_contact",
+        confidence: confidenceForContactScore(score),
+        score,
+        provenance: [provenance],
+        ...(source ? { source } : {}),
+      });
+      continue;
+    }
+    if (!current.provenance.some((item) => sameContactProvenance(item, provenance))) {
+      current.provenance.push(provenance);
+    }
+    if (!current.source && source) current.source = source;
+    if (!current.name) current.name = cleanContactValue(contact.displayName);
+  }
 }
 
 /**

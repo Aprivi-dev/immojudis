@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 from src.null_text import is_null_text, null_if_placeholder
 
+# Clé de la vente brute qui porte les adresses internes (jamais publiées, jamais sérialisées).
+INTERNAL_CONTACTS_KEY = "internal_contacts"
+
 # Free-text columns: a literal « nan » or « None » means "missing", never a value.
 NULLABLE_TEXT_FIELDS = (
     "external_id",
@@ -105,6 +108,10 @@ class AuctionSale(BaseModel):
     raw_text: str | None = None
     raw_payload: dict[str, Any] = Field(default_factory=dict)
     observations: list[dict[str, Any]] = Field(default_factory=list)
+    # Adresses décodées (Licitor) à usage interne de l'agent d'information. Jamais sérialisées
+    # (``exclude=True`` : ni ``to_storage_dict``, ni ``model_dump``, donc ni colonne, ni prompt, ni
+    # export) ; elles ne sont écrites que dans le registre ``information_agent_contacts``.
+    internal_contacts: list[dict[str, str]] = Field(default_factory=list, exclude=True, repr=False)
     content_hash: str | None = None
     last_run_id: str | None = None
     first_seen_at: datetime | None = None

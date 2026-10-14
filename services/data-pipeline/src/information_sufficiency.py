@@ -118,7 +118,10 @@ def contact_emails(sale: AuctionSale) -> set[str]:
 
     Même périmètre que le module TypeScript : ``lawyer_contact``, les blocs
     ``source_blocks`` de la vente et de chaque observation, la description
-    source (``raw_payload.source_description``) et la description.
+    source (``raw_payload.source_description``) et la description. Les adresses internes de la vente
+    (``internal_contacts``, décodées de Licitor, conservées dans le registre) ne comptent pas : le
+    miroir TypeScript ne les voit pas dans la vente publiée, et le verdict reste stable d'un run à
+    l'autre (avant ce décodage ces ventes n'avaient pas d'e-mail non plus).
     """
     emails: set[str] = set()
     for text in _contact_texts(sale):

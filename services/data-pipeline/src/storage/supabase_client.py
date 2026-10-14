@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import math
 import os
 import threading
 import time
@@ -11,7 +10,6 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -61,6 +59,7 @@ from src.reviewed_aliases import (
     load_reviewed_aliases,
     registry_from_rows,
 )
+from src.storage import internal_contacts
 from src.storage.column_sets import (
     DEDUPLICATION_SALE_SELECT,
     JUDICIAL_SALE_COLUMNS,  # noqa: F401  (re-exported)
@@ -115,6 +114,8 @@ from src.storage.pdf_persistence_rows import (
     _rekey_pdf_job_after_checkpoint_with_connection,
 )
 from src.storage.postgrest_helpers import (
+    _claim_error_diagnostic,
+    _claim_retry_after_seconds,
     _has_current_document_analysis,
     _is_uuid,
     _known_source_urls,
@@ -607,6 +608,7 @@ def _write_sale_revisions(
     )
     _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
     _enqueue_due_enrichment(sales, str(url), str(key))
+    internal_contacts.write_safely(sales, str(url), str(key), now, _PUBLICATION_CONNECTION.get(), _sale_ids_for_rest)
     if refresh_last_seen and _PUBLICATION_CONNECTION.get() is not None:
         from src.collection_evidence import record_sale_decisions
         for run_id in {sale.last_run_id for sale in sales if sale.last_run_id}:
@@ -1368,46 +1370,6 @@ def _persist_queue_claim_backoff(
         if not row:
             raise RuntimeError("auction_pipeline_control singleton is missing")
         return row[0]
-
-
-def _claim_error_diagnostic(response: httpx.Response, max_chars: int = 256) -> str:
-    """Log only bounded PostgREST code/message fields, never raw response data."""
-    try:
-        payload = response.json()
-    except Exception:  # pragma: no cover - defensive for test doubles.
-        return f"http_{response.status_code}"
-    if isinstance(payload, dict):
-        fields = [
-            str(payload[key]).replace("\x00", " ")
-            for key in ("code", "message")
-            if payload.get(key) not in (None, "")
-        ]
-        sanitized = " ".join(" ".join(fields).split())
-    else:
-        sanitized = f"http_{response.status_code}"
-    if not sanitized:
-        sanitized = f"http_{response.status_code}"
-    return sanitized[:max_chars]
-
-
-def _claim_retry_after_seconds(value: str | None) -> float | None:
-    if not value:
-        return None
-    try:
-        seconds = float(value)
-    except (TypeError, ValueError):
-        try:
-            retry_at = parsedate_to_datetime(value)
-            if retry_at.tzinfo is None:
-                retry_at = retry_at.replace(tzinfo=UTC)
-            seconds = (retry_at - datetime.now(UTC)).total_seconds()
-        except (TypeError, ValueError, OverflowError):
-            return None
-    if not math.isfinite(seconds):
-        return None
-    if seconds < 0:
-        return 0.0
-    return seconds
 
 
 def record_llm_usage_event(event: dict[str, Any]) -> None:

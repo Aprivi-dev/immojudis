@@ -13,14 +13,18 @@ du même jour ; à faire valider.
    `ImmojudisAdresses/1.0 (+https://<domaine>/agent-information)`. Le jeton et l’adresse de la page
    doivent être repris tels quels dans la page publique, afin que les éditeurs puissent
    l’interdire dans leur `robots.txt`.
-2. **Aucune liste ni cache.** L’outil ne conserve aucune liste de noms ou d’adresses web : n’en
-   annoncer aucune.
+2. **Aucune liste ni cache pour la recherche de l’outil.** L’outil de recherche ne conserve aucune
+   liste de noms ou d’adresses web : n’en annoncer aucune. Cette phrase ne couvre ni le relevé en lot
+   des adresses des annonces Licitor (adresses décodées conservées dans le registre interne, voir le
+   paragraphe Licitor de la page), ni les captures HTML du collecteur d’historique Licitor
+   (`licitor_ingestion.captures`, sans purge codée à ce jour) : ne rien annoncer qui les contredise.
 3. **Pas de journal de consultation distinct.** La trace des tentatives (source essayée, résultat,
    domaine, nombre de pages lues, sans contenu) est conservée avec la demande, pas ailleurs : ne
    rien annoncer de plus.
 4. **Liste exacte de ce qui sera stocké.** Seuls : l’adresse retenue, l’adresse web de la page, la
    date de consultation, le type de source, la règle et le score d’appariement, l’administrateur
-   qui valide. Aucun contenu de page, aucun extrait. À confirmer avec
+   qui valide. Pour Licitor : l’adresse décodée, le nom et la fonction imprimés dans le bloc de
+   l’avocat, le lien de l’annonce et la date de relevé. Aucun contenu de page, aucun extrait. À confirmer avec
    l’implémentation (l’avis prévoyait un hash et un extrait de 240 caractères facultatifs : ils ne
    figurent pas dans ce texte).
 5. **Sources.** La liste annoncée doit être celle des sources activées (registre des sources avec
@@ -67,9 +71,16 @@ aucune offre commerciale, et chacun sera relu et validé par un membre de l’é
 - Il ne conservera pas la page lue. Seront enregistrés : l’adresse retenue, l’adresse web de la
   page, la date de relevé, le type de source et le critère de rapprochement utilisé. Aucune liste
   de noms ou d’adresses web n’est conservée.
-- Une adresse qui ne serait finalement pas utilisée pour un envoi sera supprimée sous un mois.
+- Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).
 - Il s’identifiera à chaque requête : le jeton `ImmojudisAdresses` et l’adresse de cette page
   figureront dans son user-agent.
+
+#### Annonces publiées sur Licitor
+
+Les adresses professionnelles des avocats figurant dans les annonces publiées sur Licitor, que le
+site masque par une protection anti-spam, sont relevées automatiquement lors de la collecte de
+l’annonce. Elles sont conservées en interne, jamais publiées, et ne servent qu’à une demande
+d’information validée par un membre de l’équipe sur la vente concernée. Durée : adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours). Opposition : voir ci-dessous ; elle est contrôlée par adresse à la collecte et par identité avant tout envoi.
 
 #### Comment vous y opposer
 

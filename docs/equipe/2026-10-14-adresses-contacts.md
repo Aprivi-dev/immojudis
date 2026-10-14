@@ -114,3 +114,25 @@ propriétaire répond oui à quatre décisions :
    Licitor, et l'Ordre des avocats de Paris.
 4. **Validation de l'envoi.** L'envoi reste validé d'un clic par l'administrateur, après l'aperçu :
    l'agent trouve et prépare, il n'envoie pas seul.
+
+## Addendum du 14/10/2026 : décision du propriétaire (décodage en lot, usage interne)
+
+Les lignes ci-dessus qui écartent le décodage en lot (verdict « À éviter », ligne n° 1 du plan
+« décoder à la demande ») sont **remplacées par la décision du propriétaire du 14/10/2026** :
+
+- Licitor : décodage **en lot, à la collecte**, sur le HTML déjà récupéré, avec l'accord oral de
+  Licitor invoqué à titre provisoire (portée à confirmer par écrit ; décodage suspendu si Licitor
+  ne confirme pas) ; Vench : pas de décodage ;
+- l'adresse décodée est conservée **uniquement dans le registre interne de l'agent d'information**
+  (`information_agent_contacts`), **jamais publiée** (« c'est une information que nous gardons en
+  interne ») ;
+- durée : adresse non utilisée supprimée au plus tard 28 jours après la dernière consultation de
+  l'annonce, jamais rafraîchie après la vente ;
+- détails et limites : `docs/runbooks/information-agent.md` (« Limites connues »),
+  `docs/rgpd-mise-en-balance-agent-information.md` (section 2 bis) et
+  `docs/rgpd-processing-register.md`.
+
+**Chiffres des fiches à adresse masquée.** Le 202 de ce compte-rendu (202 fiches Licitor, 52 %,
+mesure du 14/10/2026 à 07:01 UTC) et le 105 du runbook (fiches actives au 11/10/2026) viennent de
+deux mesures de dates et de périmètres différents ; ils ne s'additionnent pas et aucun n'est
+recalculé ici.
