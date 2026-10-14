@@ -2,7 +2,7 @@ import { saleDateBoundary } from "./search/sale-date-range";
 import { supabase } from "@/integrations/supabase/client";
 import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
 import type { AuctionSale, SaleFilters, SortKey } from "./types";
-import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "./sale-views";
+import { DETAIL_VIEW, SALE_LIST_COLUMNS, UNLOCKED_VIEW } from "./sale-views";
 import { assertCloudConfigured } from "./query-configuration";
 import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
 import { fetchPublicSaleSummary } from "./public-sale-summary";
@@ -12,6 +12,7 @@ export type { CreateAlertPayload } from "./alert-queries";
 export { DETAIL_VIEW, SALE_LIST_COLUMNS };
 
 const DISCOVERY_VIEW = "v_auction_sales_discovery" as typeof DETAIL_VIEW;
+const UNLOCKED_SALE_VIEW = UNLOCKED_VIEW as typeof DETAIL_VIEW;
 const SEARCH_VIEW = "v_auction_sales_app_search" as typeof DETAIL_VIEW;
 const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAIL_VIEW;
 const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
@@ -50,7 +51,11 @@ export const SALE_CARD_COLUMNS = [
   "risks",
   "media",
   "status",
+  "completeness_tier",
 ].join(",");
+
+/** Colonnes d'une ligne de recherche complète, avec le palier de complétude de la carte. */
+const SALE_LIST_COLUMNS_WITH_TIER = `${SALE_LIST_COLUMNS},completeness_tier`;
 
 const SALE_PREVIEW_COLUMNS = [
   "id",
@@ -59,59 +64,50 @@ const SALE_PREVIEW_COLUMNS = [
   "sale_verification_status",
 ].join(",");
 
-// Pins use only scalar catalogue fields. The selected popup fetches its
-// photos, risk and DPE evidence separately, through the same access-controlled view.
-const SALE_MAP_COLUMNS = [
-  "sale_venue_type",
-  "sale_legal_framework",
-  "sale_verification_status",
-  "id",
-  "title",
-  "city",
-  "department",
-  "postal_code",
-  "address",
-  "tribunal",
-  "tribunal_name",
-  "tribunal_city",
-  "property_type",
-  "starting_price_eur",
-  "sale_date",
-  "latitude",
-  "longitude",
-  "occupancy_status",
-  "app_surface_m2",
-  "habitable_surface_m2",
-  "carrez_surface_m2",
-  "land_surface_m2",
-  "app_surface_kind",
-  "surface_scope",
-  "surface_source",
-  "surface_confidence",
-  "rooms_count",
-  "bedrooms_count",
-  "bathrooms_count",
-  "has_garden",
-  "has_terrace",
-  "has_garage",
-  "status",
-  "investment_score",
-  "created_at",
-].join(",");
-
 function previewSortDirection(sort: SortKey): boolean {
   return sort === "price_desc" ? false : true;
 }
 
-const SORT_MAP: Record<SortKey, { column: string; ascending: boolean; nullsFirst?: boolean }> = {
-  date_asc: { column: "sale_date", ascending: true },
-  date_desc: { column: "sale_date", ascending: false },
-  price_asc: { column: "starting_price_eur", ascending: true },
-  price_desc: { column: "starting_price_eur", ascending: false },
-  score_desc: { column: "investment_score", ascending: false },
-  surface_desc: { column: "app_surface_m2", ascending: false },
-  beds_desc: { column: "bedrooms_count", ascending: false },
+type SortClause = { column: string; ascending: boolean };
+
+/**
+ * Colonnes de tri de chaque option, dans l'ordre de priorité. `coordinates_rank` (ventes
+ * géolocalisées d'abord) passe toujours avant, et `id` départage toujours en dernier : sans
+ * clé unique, une pagination par décalage peut sauter ou répéter des ventes.
+ * Les valeurs vides vont toujours en fin de liste.
+ */
+const SORT_CLAUSES: Record<SortKey, SortClause[]> = {
+  // Tri par défaut : palier de complétude (annonces bien renseignées d'abord), puis date de vente
+  // la plus proche. Voir `src/lib/listing-completeness-ranking.ts`.
+  completeness_desc: [
+    { column: "completeness_tier", ascending: false },
+    { column: "sale_date", ascending: true },
+  ],
+  date_asc: [{ column: "sale_date", ascending: true }],
+  date_desc: [{ column: "sale_date", ascending: false }],
+  price_asc: [{ column: "starting_price_eur", ascending: true }],
+  price_desc: [{ column: "starting_price_eur", ascending: false }],
+  // Tri explicite réservé à l'offre Analyse (le score n'existe pas dans les autres vues).
+  score_desc: [{ column: "investment_score", ascending: false }],
+  surface_desc: [{ column: "app_surface_m2", ascending: false }],
+  beds_desc: [{ column: "bedrooms_count", ascending: false }],
 };
+
+type OrderableQuery<TQuery> = {
+  order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => TQuery;
+};
+
+/** Applique le tri complet d'une recherche sur une vue `_search` (voir `SORT_CLAUSES`). */
+function applySearchOrder<TQuery extends OrderableQuery<TQuery>>(
+  query: TQuery,
+  sort: SortKey,
+): TQuery {
+  let ordered = query.order("coordinates_rank", { ascending: true });
+  for (const clause of SORT_CLAUSES[sort]) {
+    ordered = ordered.order(clause.column, { ascending: clause.ascending, nullsFirst: false });
+  }
+  return ordered.order("id", { ascending: true });
+}
 
 type FilterableQuery = {
   eq: (column: string, value: string | number | boolean) => FilterableQuery;
@@ -297,13 +293,10 @@ async function fetchSearchResultIds(
   sort: SortKey,
   offset: number,
 ): Promise<string[]> {
-  const s = SORT_MAP[sort];
-  let q = db
-    .from(catalogView)
-    .select("id")
-    .order("coordinates_rank", { ascending: true })
-    .order(s.column, { ascending: s.ascending, nullsFirst: false })
-    .range(offset, offset + limit - 1);
+  let q = applySearchOrder(db.from(catalogView).select("id"), sort).range(
+    offset,
+    offset + limit - 1,
+  );
   q = applyAuthenticatedSaleFilters(q, filters);
 
   const { data, error } = await q;
@@ -320,8 +313,8 @@ export async function getSales(
     preview?: boolean;
     discovery?: boolean;
     client?: SupabaseReader;
-    /** Add a unique tie-breaker so paging through a large result never skips a row. */
-    stableOrder?: boolean;
+    /** Also read `completeness_tier`, for result cards that show the « bien renseignée » badge. */
+    completenessTier?: boolean;
   } = {},
 ): Promise<AuctionSale[]> {
   if (!options.client && !assertCloudConfigured()) return [];
@@ -343,15 +336,13 @@ export async function getSales(
     return saleRows(data);
   }
 
-  const s = SORT_MAP[sort];
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
-  let q = db
-    .from(catalogView)
-    .select(SALE_LIST_COLUMNS)
-    .order("coordinates_rank", { ascending: true })
-    .order(s.column, { ascending: s.ascending, nullsFirst: false });
-  if (options.stableOrder) q = q.order("id", { ascending: true });
-  q = q.range(offset, offset + limit - 1);
+  let q = applySearchOrder(
+    db
+      .from(catalogView)
+      .select(options.completenessTier ? SALE_LIST_COLUMNS_WITH_TIER : SALE_LIST_COLUMNS),
+    sort,
+  ).range(offset, offset + limit - 1);
 
   q = applyAuthenticatedSaleFilters(q, filters);
 
@@ -369,7 +360,6 @@ export async function getSalesForSearch(
 ): Promise<AuctionSale[]> {
   if (!options.client && !assertCloudConfigured()) return [];
 
-  const s = SORT_MAP[sort];
   const db = options.client ?? supabase;
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
 
@@ -385,12 +375,10 @@ export async function getSalesForSearch(
     return orderSalesByIds(rows, ids);
   }
 
-  let q = db
-    .from(catalogView)
-    .select(SALE_CARD_COLUMNS)
-    .order("coordinates_rank", { ascending: true })
-    .order(s.column, { ascending: s.ascending, nullsFirst: false })
-    .range(offset, offset + limit - 1);
+  let q = applySearchOrder(db.from(catalogView).select(SALE_CARD_COLUMNS), sort).range(
+    offset,
+    offset + limit - 1,
+  );
 
   q = applyAuthenticatedSaleFilters(q, filters);
 
@@ -429,7 +417,7 @@ export async function getSalesPreviewCount(filters: SaleFilters = {}): Promise<n
 
 export async function getSaleById(
   id: string,
-  options: { discovery?: boolean } = {},
+  options: { discovery?: boolean; unlocked?: boolean } = {},
 ): Promise<AuctionSale | null> {
   if (!assertCloudConfigured()) return null;
   if (typeof window === "undefined") return null;
@@ -437,7 +425,12 @@ export async function getSaleById(
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) return null;
-  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  // A sale the account unlocked is read through its own redacted view, never through the full one.
+  const catalogView = options.unlocked
+    ? UNLOCKED_SALE_VIEW
+    : options.discovery
+      ? DISCOVERY_VIEW
+      : DETAIL_VIEW;
   const { data, error } = await supabase.from(catalogView).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   return data ? sanitizeAuctionSaleForDisplay(data as AuctionSale) : null;
@@ -458,32 +451,6 @@ export async function getSalePreviewById(id: string): Promise<AuctionSale | null
     .maybeSingle();
   if (error) throw error;
   return data as AuctionSale | null;
-}
-
-export async function getSalesWithCoords(
-  filters: SaleFilters = {},
-  limit = 500,
-  sort: SortKey = "date_asc",
-  options: { discovery?: boolean; client?: SupabaseReader } = {},
-): Promise<AuctionSale[]> {
-  if (!options.client && !assertCloudConfigured()) return [];
-  const s = SORT_MAP[sort];
-  const db = options.client ?? supabase;
-  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
-
-  let q = db
-    .from(catalogView)
-    .select(SALE_MAP_COLUMNS)
-    .not("latitude", "is", null)
-    .not("longitude", "is", null)
-    .order(s.column, { ascending: s.ascending, nullsFirst: false })
-    .limit(limit);
-
-  q = applyAuthenticatedSaleFilters(q, filters);
-
-  const { data, error } = await q;
-  if (error) throw error;
-  return saleRows(data);
 }
 
 /** Colonnes minimales d'un point de carte : identifiant, position et de quoi étiqueter la pastille. */

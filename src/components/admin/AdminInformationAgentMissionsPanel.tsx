@@ -993,10 +993,7 @@ function PreviewPanel({
             </div>
             <div>
               <dt className="inline font-medium">Origine de l’adresse : </dt>
-              <dd className="inline">
-                {preview.addressOrigin.text}
-                {preview.addressOrigin.url ? ` (${preview.addressOrigin.url})` : ""}
-              </dd>
+              <dd className="inline">{preview.addressOrigin.text}</dd>
             </div>
           </dl>
           <iframe

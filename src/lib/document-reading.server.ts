@@ -1,8 +1,12 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { mapDocumentReading, type DocumentReadingResponse } from "@/lib/document-reading";
+import { redactReadingTexts } from "@/lib/document-reading-redaction";
 
-/** Stored reading of one sale (service role: the plan is checked by the caller). */
+/**
+ * Stored reading of one sale (service role: the plan is checked by the caller). The names of
+ * private individuals in the quoted passages are replaced by their role.
+ */
 export async function getDocumentReading(
   saleId: string,
 ): Promise<Extract<DocumentReadingResponse, { access: "full" }>> {
@@ -12,5 +16,5 @@ export async function getDocumentReading(
     .eq("sale_id", saleId)
     .maybeSingle();
   if (error) throw error;
-  return mapDocumentReading(data);
+  return redactReadingTexts(mapDocumentReading(data));
 }

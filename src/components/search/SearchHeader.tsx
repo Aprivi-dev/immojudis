@@ -13,7 +13,11 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import SearchIcon from "lucide-react/dist/esm/icons/search.js";
 import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
 import { SiteHeader } from "@/components/SiteHeader";
-import { HOME_TYPE_OPTIONS, SORT_OPTIONS } from "@/lib/search/search-filters";
+import {
+  ANALYSIS_ONLY_SORT_KEYS,
+  HOME_TYPE_OPTIONS,
+  SORT_OPTIONS,
+} from "@/lib/search/search-filters";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
 import type { SearchDraft } from "./search-page-state";
@@ -413,11 +417,14 @@ export function HomeTypeFilter({
 export function SortDropdown({
   preview = false,
   hasCenter = false,
+  investmentScore = false,
   sort,
   onChange,
 }: {
   preview?: boolean;
   hasCenter?: boolean;
+  /** Offre Analyse : propose aussi le tri par score d'investissement (absent ailleurs). */
+  investmentScore?: boolean;
   sort: SearchSortKey;
   onChange: (sort: SearchSortKey) => void;
 }) {
@@ -430,17 +437,19 @@ export function SortDropdown({
         onChange={(event) => onChange(event.target.value as SearchSortKey)}
         className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
       >
-        {SORT_OPTIONS.filter((option) => !(preview && option.value === "beds_desc")).map(
-          (option) => {
-            // Sans adresse, il n'y a rien à mesurer : l'option reste visible mais grisée.
-            const unavailable = option.value === "distance" && !hasCenter;
-            return (
-              <option key={option.value} value={option.value} disabled={unavailable}>
-                {unavailable ? `${option.label} (saisissez une adresse)` : option.label}
-              </option>
-            );
-          },
-        )}
+        {SORT_OPTIONS.filter(
+          (option) =>
+            !(preview && option.value === "beds_desc") &&
+            !(!investmentScore && ANALYSIS_ONLY_SORT_KEYS.includes(option.value)),
+        ).map((option) => {
+          // Sans adresse, il n'y a rien à mesurer : l'option reste visible mais grisée.
+          const unavailable = option.value === "distance" && !hasCenter;
+          return (
+            <option key={option.value} value={option.value} disabled={unavailable}>
+              {unavailable ? `${option.label} (saisissez une adresse)` : option.label}
+            </option>
+          );
+        })}
       </select>
       <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
     </label>

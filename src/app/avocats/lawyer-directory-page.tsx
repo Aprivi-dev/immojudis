@@ -16,6 +16,7 @@ import Search from "lucide-react/dist/esm/icons/search.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { fetchLawyerDirectory } from "@/lib/client-api";
+import { sponsoredPlacementLabel } from "@/lib/lawyer-placement-label";
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import type { DirectorySearch } from "@/lib/lawyer-directory-search";
 import Link from "next/link";
@@ -343,10 +344,8 @@ function LawyerCard({
         </span>
         <div className="min-w-0">
           {sponsored ? (
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-gold-text">
-              {lawyer.placement === "trial"
-                ? "Mise en avant en période d'essai"
-                : "Mise en avant payante"}
+            <p className="mb-1 text-xs font-bold uppercase tracking-[0.1em] text-gold-text">
+              {sponsoredPlacementLabel(lawyer.placement)}
             </p>
           ) : lawyer.source === "cnb" ? (
             <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-700">

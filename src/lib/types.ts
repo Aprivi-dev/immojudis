@@ -1,4 +1,9 @@
 export type AuctionSale = {
+  /**
+   * Completeness tier of the listing (1 = well documented, 0 = otherwise or not yet evaluated).
+   * Only the tier is public: the numeric score and its inputs never leave the database.
+   */
+  completeness_tier?: number | null;
   /** Number of case documents; published to free accounts, which do not receive the documents. */
   document_count?: number | null;
   /** Signed-out page only: number of photos of the full listing. */
@@ -163,6 +168,7 @@ export const SORT_KEYS = [
   "date_desc",
   "price_asc",
   "price_desc",
+  "completeness_desc",
   "score_desc",
   "surface_desc",
   "beds_desc",

@@ -24,6 +24,14 @@ it("gives every public page access to the legal documents", () => {
   expect(legal.getByRole("link", { name: "Mes droits" }).getAttribute("href")).toBe("/mes-droits");
 });
 
+it("renvoie, depuis toutes les pages, vers l'explication du classement des annonces", () => {
+  render(<SiteFooter />);
+  const legal = within(screen.getByRole("navigation", { name: "Informations légales" }));
+  expect(legal.getByRole("link", { name: "Classement des annonces" }).getAttribute("href")).toBe(
+    "/classement-des-annonces",
+  );
+});
+
 it("stays out of the admin console", () => {
   expect(showsSiteFooter("/admin")).toBe(false);
   expect(showsSiteFooter("/admin/operations")).toBe(false);

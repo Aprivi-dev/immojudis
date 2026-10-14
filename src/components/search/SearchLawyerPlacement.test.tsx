@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -71,7 +71,7 @@ describe("SearchLawyerPlacement", () => {
     renderPlacement({ geographicLabel: "Bordeaux · 33", city: "Bordeaux", department: "33" });
 
     await waitFor(() => expect(screen.getByText("Cabinet Martin")).toBeTruthy());
-    expect(screen.getByText("Mise en avant payante")).toBeTruthy();
+    expect(screen.getByText("Publicité · Sponsorisé")).toBeTruthy();
     expect(screen.queryByText("Espace partenaire")).toBeNull();
     expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({
       city: "Bordeaux",
@@ -80,6 +80,43 @@ describe("SearchLawyerPlacement", () => {
     expect(
       screen.getByRole("link", { name: "Voir l’annuaire du secteur" }).getAttribute("href"),
     ).toBe("/avocats?city=Bordeaux&department=33");
+  });
+
+  it("announces « Publicité · Sponsorisé » before the firm name, and says who pays", async () => {
+    mocks.fetchLawyerDirectory.mockResolvedValue(
+      directoryResponse({
+        lawyers: [
+          {
+            id: "lawyer-1",
+            displayName: "Maître Élodie Martin",
+            firmName: "Cabinet Martin",
+            isSponsored: true,
+            placement: "active",
+            source: "immojudis",
+          },
+        ],
+      }),
+    );
+
+    renderPlacement({ city: "Bordeaux" });
+
+    const region = await screen.findByRole("region", {
+      name: "Publicité · Sponsorisé Cabinet Martin",
+    });
+    const label = screen.getByText("Publicité · Sponsorisé");
+    expect(label.id).toBe("search-lawyer-placement-label");
+    // Visible before the firm name, at 12 px at least (no text-[10px]/text-[11px] class).
+    const title = screen.getByRole("heading", { name: "Cabinet Martin" });
+    expect(label.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(region.innerHTML).not.toMatch(/text-\[(?:\d|1[01])px\]/);
+    expect(region.textContent).toContain(
+      "Ce cabinet rémunère Immojudis pour apparaître ici. Il ne s’agit ni d’une recommandation, ni d’une notation, ni d’une garantie de résultat, et l’ordre des annonces n’en est pas modifié.",
+    );
+    expect(
+      within(region)
+        .getByRole("link", { name: "Comment sont classés les avocats ?" })
+        .getAttribute("href"),
+    ).toBe("/avocats#lawyer-ranking-title");
   });
 
   it("names a placement still in trial as such, never as paid", async () => {
@@ -101,9 +138,14 @@ describe("SearchLawyerPlacement", () => {
     renderPlacement({ city: "Bordeaux" });
 
     await waitFor(() => expect(screen.getByText("Cabinet Essai")).toBeTruthy());
-    expect(screen.getByText("Mise en avant en période d'essai")).toBeTruthy();
-    expect(screen.queryByText("Mise en avant payante")).toBeNull();
-    expect(document.body.textContent).not.toMatch(/sponsoris/i);
+    expect(screen.getByText("Publicité · Sponsorisé (période d’essai gratuite)")).toBeTruthy();
+    expect(screen.queryByText("Publicité · Sponsorisé")).toBeNull();
+    expect(document.body.textContent).toMatch(/Publicité/);
+    expect(document.body.textContent).toMatch(/Sponsorisé/);
+    expect(document.body.textContent).toContain(
+      "Ce cabinet bénéficie actuellement d’une période d’essai gratuite de cette offre payante. Il ne s’agit ni d’une recommandation",
+    );
+    expect(document.body.textContent).not.toContain("rémunère Immojudis");
   });
 
   it("keeps a transparent contact slot when there is no configured campaign", async () => {
@@ -129,7 +171,16 @@ describe("SearchLawyerPlacement", () => {
     );
     expect(screen.queryByText("Espace partenaire")).toBeNull();
     expect(screen.queryByText("Maître Claire Bernard")).toBeNull();
-    expect(screen.queryByText("Mise en avant payante")).toBeNull();
+    expect(screen.queryByText(/Sponsorisé/)).toBeNull();
+    // Libellé propre à l'invitation, au même style que le libellé sponsorisé, annoncé avant le titre.
+    const label = screen.getByText("Pour les avocats · Immojudis");
+    expect(label.id).toBe("search-lawyer-placement-label");
+    expect(label.className).toContain("text-xs");
+    expect(
+      screen.getByRole("region", {
+        name: "Pour les avocats · Immojudis Vous êtes avocat ? Présentez votre cabinet ici",
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByText(
         "Présentez votre cabinet aux acquéreurs qui recherchent un bien dans ce secteur.",

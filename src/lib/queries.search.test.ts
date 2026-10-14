@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getSaleMapPoints, getSales, getSalesForSearch, getSalesWithCoords } from "./queries";
+import { getSaleMapPoints, getSales, getSalesForSearch } from "./queries";
 
 describe("Supabase sale search query", () => {
   it.each([false, true])(
@@ -35,6 +35,83 @@ describe("Supabase sale search query", () => {
       "bedrooms_count",
       { ascending: false, nullsFirst: false },
     ]);
+  });
+
+  const orderCalls = (builder: QueryRecorder) =>
+    builder.calls.filter((call) => call[0] === "order").map((call) => call.slice(1));
+
+  it("classe par défaut: localisées d'abord, palier de complétude, date de vente, puis id", async () => {
+    const builder = new QueryRecorder();
+    await getSales({}, 24, "completeness_desc", 0, { client: { from: () => builder } as never });
+    expect(orderCalls(builder)).toEqual([
+      ["coordinates_rank", { ascending: true }],
+      ["completeness_tier", { ascending: false, nullsFirst: false }],
+      ["sale_date", { ascending: true, nullsFirst: false }],
+      ["id", { ascending: true }],
+    ]);
+  });
+
+  it.each([
+    ["date_asc", ["sale_date", { ascending: true, nullsFirst: false }]],
+    ["date_desc", ["sale_date", { ascending: false, nullsFirst: false }]],
+    ["price_asc", ["starting_price_eur", { ascending: true, nullsFirst: false }]],
+    ["price_desc", ["starting_price_eur", { ascending: false, nullsFirst: false }]],
+    ["surface_desc", ["app_surface_m2", { ascending: false, nullsFirst: false }]],
+    ["beds_desc", ["bedrooms_count", { ascending: false, nullsFirst: false }]],
+    ["score_desc", ["investment_score", { ascending: false, nullsFirst: false }]],
+  ] as const)(
+    "départage toujours par id, y compris pour le tri %s (pagination stable)",
+    async (sort, expected) => {
+      const builder = new QueryRecorder();
+      await getSales({}, 24, sort, 0, { client: { from: () => builder } as never });
+      expect(orderCalls(builder)).toEqual([
+        ["coordinates_rank", { ascending: true }],
+        expected,
+        ["id", { ascending: true }],
+      ]);
+    },
+  );
+
+  it("applique le même ordre à la sélection des identifiants (Analyse)", async () => {
+    const client = new QueryClient([[{ id: "a" }], [{ id: "a" }]]);
+    await getSalesForSearch({}, 24, "completeness_desc", 0, { client: client as never });
+    expect(orderCalls(client.builders[0])).toEqual([
+      ["coordinates_rank", { ascending: true }],
+      ["completeness_tier", { ascending: false, nullsFirst: false }],
+      ["sale_date", { ascending: true, nullsFirst: false }],
+      ["id", { ascending: true }],
+    ]);
+    expect(String(client.builders[1].calls.find((call) => call[0] === "select")?.[1])).toContain(
+      "completeness_tier",
+    );
+  });
+
+  it("applique le même ordre, déterministe, à l'offre Découverte", async () => {
+    const client = new QueryClient([[{ id: "d" }]]);
+    await getSalesForSearch({}, 24, "completeness_desc", 0, {
+      discovery: true,
+      client: client as never,
+    });
+    expect(orderCalls(client.builders[0])).toEqual([
+      ["coordinates_rank", { ascending: true }],
+      ["completeness_tier", { ascending: false, nullsFirst: false }],
+      ["sale_date", { ascending: true, nullsFirst: false }],
+      ["id", { ascending: true }],
+    ]);
+  });
+
+  it("ne lit le palier d'une recherche complète que si la carte l'affiche", async () => {
+    const withTier = new QueryRecorder();
+    await getSales({}, 24, "date_asc", 0, {
+      client: { from: () => withTier } as never,
+      completenessTier: true,
+    });
+    const without = new QueryRecorder();
+    await getSales({}, 24, "date_asc", 0, { client: { from: () => without } as never });
+    const selected = (builder: QueryRecorder) =>
+      String(builder.calls.find((call) => call[0] === "select")?.[1]);
+    expect(selected(withTier).split(",")).toContain("completeness_tier");
+    expect(selected(without).split(",")).not.toContain("completeness_tier");
   });
 
   it("matches canonical vacant occupancy before pagination", async () => {
@@ -102,38 +179,6 @@ describe("Supabase sale search query", () => {
     expect(client.builders[1].calls).toContainEqual(["in", "id", ["first", "second", "removed"]]);
     expect(client.builders[1].calls.some((call) => call[0] === "range")).toBe(false);
   });
-
-  it.each([false, true])(
-    "loads light map rows in one request with discovery=%s",
-    async (discovery) => {
-      const client = new QueryClient([[{ id: "map-first" }, { id: "map-second" }]]);
-      const rows = await getSalesWithCoords({ city: "Bordeaux" }, 2, "date_asc", {
-        discovery,
-        client: client as never,
-      });
-      expect(rows.map((row) => row.id)).toEqual(["map-first", "map-second"]);
-      expect(client.builders).toHaveLength(1);
-      const calls = client.builders[0].calls;
-      expect(calls).toContainEqual(["not", "latitude", "is", null]);
-      expect(calls).toContainEqual(["not", "longitude", "is", null]);
-      expect(calls).toContainEqual(["limit", 2]);
-      expect(calls).toContainEqual(["order", "sale_date", { ascending: true, nullsFirst: false }]);
-      const columns = String(calls.find((call) => call[0] === "select")?.[1]).split(",");
-      expect(columns).toEqual(
-        expect.arrayContaining(["id", "latitude", "longitude", "starting_price_eur"]),
-      );
-      expect(columns).not.toEqual(expect.arrayContaining(["media"]));
-      for (const heavy of [
-        "risks",
-        "source_blocks",
-        "documents_rich",
-        "surface_evidence",
-        "sale_procedure",
-      ]) {
-        expect(columns).not.toContain(heavy);
-      }
-    },
-  );
 
   it("charge tous les points de la carte, par pages de 1 000, avec des colonnes minimales", async () => {
     const page = (start: number, count: number) =>

@@ -31,7 +31,7 @@ describe("information agent email content template", () => {
     expect(rendered.subject).toBe("Appartement T3 à Bordeaux — précisions pour Immojudis");
     expect(rendered.bodyText).toContain("Bonjour Maître Dupont");
     expect(rendered.bodyText).toContain(
-      "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires.",
+      "Nous vous écrivons au sujet de la vente ci-dessous, afin de vérifier des informations publiées sur cette vente",
     );
     expect(rendered.bodyText).toContain(
       "Une réponse même partielle nous aide à présenter un dossier plus clair et à limiter les demandes répétées.",

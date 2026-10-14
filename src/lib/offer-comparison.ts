@@ -1,11 +1,25 @@
-import { PLAN_FEATURES, PLAN_LIMITS, type FeatureKey, type PlanCode } from "@/lib/plans";
+import {
+  isSaleUnlockFeature,
+  PLAN_FEATURES,
+  PLAN_LIMITS,
+  type FeatureKey,
+  type PlanCode,
+} from "@/lib/plans";
 
 /**
  * Tableau comparatif Découverte / Analyse. Chaque ligne est calculée à partir des
  * droits réels de src/lib/plans.ts : la page ne peut pas promettre ce que l'offre
  * ne donne pas, ni cacher ce qu'elle donne.
  */
-export type OfferCell = { included: boolean; text: string };
+export type OfferCell = {
+  included: boolean;
+  text: string;
+  /**
+   * Droit fermé dans l'offre mais ouvert vente par vente par les déblocages mensuels : jamais
+   * présenté comme « Non inclus ».
+   */
+  limited?: boolean;
+};
 export type OfferRow = {
   id: string;
   label: string;
@@ -22,9 +36,17 @@ type RowSpec = {
   features?: FeatureKey[];
   /** Texte propre à un plan quand les droits ne suffisent pas (quotas). */
   custom?: Partial<Record<PlanCode, string>>;
+  /**
+   * Texte propre à un plan dont les droits sont fermés. Par défaut, une ligne dont tous les droits
+   * sont ouverts par un déblocage affiche « Pour N ventes par mois » au lieu de « Non inclus ».
+   */
+  lockedCustom?: Partial<Record<PlanCode, string>>;
   includedText?: string;
   limitedText?: string;
 };
+
+const UNLOCKS_PER_MONTH = PLAN_LIMITS.decouverte.monthlyUnlocks;
+const UNLOCK_CELL_TEXT = `Pour ${UNLOCKS_PER_MONTH} ventes par mois`;
 
 const SPECS: RowSpec[] = [
   {
@@ -39,6 +61,19 @@ const SPECS: RowSpec[] = [
     custom: {
       decouverte: `${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
       analyse: PLAN_LIMITS.analyse.favoriteSales == null ? "Illimités" : undefined,
+    },
+  },
+  {
+    id: "unlocks",
+    label: "Déblocage d’une vente : enchère plafond, pièces, historique, statistiques du tribunal",
+    hint: "Ouvre ces éléments pour la vente choisie, tant qu’elle est en ligne (24 mois au plus) ; exports et rapports restent avec Analyse",
+    features: ["sales.filters"],
+    custom: {
+      decouverte: `${UNLOCKS_PER_MONTH} déblocages par mois`,
+      analyse:
+        PLAN_LIMITS.analyse.monthlyUnlocks == null
+          ? "Illimités : toutes les ventes sont ouvertes"
+          : undefined,
     },
   },
   {
@@ -69,10 +104,14 @@ const SPECS: RowSpec[] = [
   },
   {
     // The free catalogue view publishes only the number of documents; the
-    // documents themselves come with the detailed analysis.
+    // documents themselves come with the detailed analysis, or with the unlock of the sale.
     id: "documents",
     label: "Pièces du dossier (cahier des conditions, procès-verbal, diagnostics)",
+    // Les pièces officielles sont ouvertes par la base (vue des ventes débloquées), pas par un droit
+    // de `SALE_UNLOCK_FEATURES` : l'indicateur de substitution est l'estimation détaillée, fermée
+    // pour Découverte, d'où le texte explicite.
     features: ["property.valueEstimate"],
+    lockedCustom: { decouverte: UNLOCK_CELL_TEXT },
   },
   {
     id: "document-reading",
@@ -87,6 +126,9 @@ const SPECS: RowSpec[] = [
   {
     id: "estimate",
     label: "Estimation détaillée et ventes comparables",
+    hint: "La valeur de référence entre dans l’enchère plafond d’une vente débloquée ; la fourchette détaillée et les ventes comparables restent avec Analyse",
+    // Un déblocage ne renvoie ni la fourchette, ni les quartiles, ni les ventes comparables : « Non
+    // inclus » est exact (voir ceilingMarketContext).
     features: ["property.valueEstimate", "property.soldComparables"],
   },
   { id: "ceiling", label: "Enchère plafond chiffrée", features: ["property.bidCeiling"] },
@@ -94,12 +136,16 @@ const SPECS: RowSpec[] = [
     id: "scenarios",
     label: "Scénarios de frais, de travaux et de marge de sécurité",
     features: ["property.advancedBidScenarios"],
+    // L'onglet Travaux reste fermé sur une vente débloquée.
+    lockedCustom: { decouverte: `${UNLOCK_CELL_TEXT} (hors budget travaux détaillé)` },
   },
   {
     id: "statistics",
     label: "Statistiques des ventes et des tribunaux",
     hint: "Tribunaux : selon l’historique disponible",
     features: ["sales.statistics"],
+    // Un déblocage n'ouvre que les statistiques du tribunal de la vente débloquée.
+    lockedCustom: { decouverte: `${UNLOCK_CELL_TEXT} (tribunal de la vente)` },
   },
   {
     id: "land",
@@ -115,6 +161,15 @@ function cell(plan: PlanCode, spec: RowSpec): OfferCell {
   const included = levels.length > 0 && levels.every((level) => level !== "locked");
   const custom = spec.custom?.[plan];
   if (custom && included) return { included: true, text: custom };
+  if (!included) {
+    // Fermé dans l'offre, ouvert par un déblocage : on le dit, on ne l'écrit pas « Non inclus ».
+    const opensWithUnlock =
+      plan === "decouverte" &&
+      (spec.features ?? []).length > 0 &&
+      (spec.features ?? []).every(isSaleUnlockFeature);
+    const lockedText = spec.lockedCustom?.[plan] ?? (opensWithUnlock ? UNLOCK_CELL_TEXT : null);
+    if (lockedText) return { included: false, limited: true, text: lockedText };
+  }
   return { included, text: included ? (spec.includedText ?? "Inclus") : "Non inclus" };
 }
 

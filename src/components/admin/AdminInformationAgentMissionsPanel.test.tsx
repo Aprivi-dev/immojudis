@@ -718,8 +718,9 @@ function previewResponse(
     },
     blockers: [],
     addressOrigin: {
-      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor.",
+      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/1.html), consultée le 14/10/2026.",
       url: "https://www.licitor.com/annonce/1.html",
+      automated: false,
       known: true,
     },
     fingerprint: "f".repeat(64),
