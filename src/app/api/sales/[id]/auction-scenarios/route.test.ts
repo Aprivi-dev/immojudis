@@ -13,7 +13,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.auth,
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: mocks.enforce }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlement: mocks.assertEntitlement }));
+vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlementVia: mocks.assertEntitlement }));
 vi.mock("@/lib/auction-scenarios.server", () => ({ getAuctionScenarios: mocks.getScenarios }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: mocks.recordUsage }));
 
@@ -41,7 +41,7 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
     vi.resetAllMocks();
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     mocks.enforce.mockResolvedValue(1);
-    mocks.assertEntitlement.mockResolvedValue({ plan: "decouverte" });
+    mocks.assertEntitlement.mockResolvedValue({ plan: { plan: "decouverte" }, door: "unlock" });
     mocks.getScenarios.mockResolvedValue({ scenarios: null, history: {} });
     mocks.recordUsage.mockResolvedValue(undefined);
   });
@@ -58,6 +58,18 @@ describe("GET /api/sales/[id]/auction-scenarios", () => {
       expect.any(String),
       { saleId },
     );
+  });
+
+  it("reads the sale through the discovery view for an unlock, the full view for Analyse", async () => {
+    const unlocked = accountSeeing(true);
+    await call();
+    expect(unlocked).toHaveBeenCalledWith("v_auction_sales_discovery");
+    expect(unlocked).not.toHaveBeenCalledWith("v_auction_sales_app");
+
+    mocks.assertEntitlement.mockResolvedValue({ plan: { plan: "analyse" }, door: "plan" });
+    const analysis = accountSeeing(true);
+    await call();
+    expect(analysis).toHaveBeenCalledWith("v_auction_sales_app");
   });
 
   it("refuses an account that neither subscribes nor unlocked this sale", async () => {

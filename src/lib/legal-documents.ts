@@ -14,7 +14,7 @@ export const LEGAL_DOCUMENTS = {
   },
   terms: {
     version: "2026-10-13.3",
-    sha256: "2d2b8879b9b5b1a171f915284656f30b91dd925374dae41a8ffd087f84ceacc6",
+    sha256: "cbab800d88cd9039eaec3a24b022373f3a831aaaed74b8b80e31b3ff05fc0f0f",
     effectiveDate: UNLOCKS_VERSIONS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },

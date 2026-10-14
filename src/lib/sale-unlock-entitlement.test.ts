@@ -4,7 +4,12 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 const mocks = vi.hoisted(() => ({ hasUnlockedSale: vi.fn() }));
 vi.mock("@/lib/sale-unlocks.server", () => ({ hasUnlockedSale: mocks.hasUnlockedSale }));
 
-import { assertFeatureEntitlement, featureIncludedForSale } from "@/lib/property-reports";
+import {
+  assertFeatureEntitlement,
+  assertFeatureEntitlementVia,
+  featureIncludedForSale,
+  saleFeatureDoor,
+} from "@/lib/property-reports";
 import { SALE_UNLOCK_FEATURES, type FeatureKey } from "@/lib/plans";
 
 const saleId = "11111111-1111-4111-8111-111111111111";
@@ -82,6 +87,8 @@ describe("entitlement of an unlocked sale", () => {
     "property.savedReports",
     "sales.csvExport",
     "property.soldComparables",
+    "property.valueEstimate",
+    "property.outcomeGraph",
     "property.urbanPlanning",
     "alerts.realtimeChanges",
     "workspace.collaboration",
@@ -129,5 +136,35 @@ describe("featureIncludedForSale", () => {
     expect(await featureIncludedForSale(discoveryAccount(), "property.pdfExport", saleId)).toBe(
       false,
     );
+  });
+});
+
+describe("door of a right for a sale", () => {
+  beforeEach(() => {
+    mocks.hasUnlockedSale.mockReset();
+  });
+
+  it("tells the offer from the unlock", async () => {
+    expect(await saleFeatureDoor(analysisAccount(), "property.documentReading", saleId)).toBe(
+      "plan",
+    );
+    mocks.hasUnlockedSale.mockResolvedValue(true);
+    expect(await saleFeatureDoor(discoveryAccount(), "property.documentReading", saleId)).toBe(
+      "unlock",
+    );
+    mocks.hasUnlockedSale.mockResolvedValue(false);
+    expect(await saleFeatureDoor(discoveryAccount(), "property.documentReading", saleId)).toBe(
+      null,
+    );
+  });
+
+  it("reports the unlock door when the right is granted by an unlock", async () => {
+    mocks.hasUnlockedSale.mockResolvedValue(true);
+    await expect(
+      assertFeatureEntitlementVia(discoveryAccount(), "sales.statistics", "x", { saleId }),
+    ).resolves.toMatchObject({ door: "unlock" });
+    await expect(
+      assertFeatureEntitlementVia(analysisAccount(), "sales.statistics", "x", { saleId }),
+    ).resolves.toMatchObject({ door: "plan" });
   });
 });

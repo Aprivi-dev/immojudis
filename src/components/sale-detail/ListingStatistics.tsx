@@ -32,6 +32,11 @@ type ExampleTribunalStatistics = {
 export type ListingStatisticsProps = {
   sale: AuctionSale;
   premium?: boolean;
+  /**
+   * The list of the other upcoming sales of the tribunal. False for a sale unlocked by a Découverte
+   * account: the server does not send that list to it.
+   */
+  showUpcomingListings?: boolean;
   publicDemo?: boolean;
   propertyTypeVerified?: boolean;
 };
@@ -417,6 +422,7 @@ function PriceSection({
 export function ListingStatistics({
   sale,
   premium = false,
+  showUpcomingListings = true,
   publicDemo = false,
 }: ListingStatisticsProps) {
   const [historyMonths, setHistoryMonths] = useState<ListingHistoryMonths>(3);
@@ -585,11 +591,13 @@ export function ListingStatistics({
           </label>
         </div>
         <nav className={styles.anchorNav} aria-label="Sections des statistiques">
-          {ANCHORS.map(([id, label]) => (
-            <a key={id} href={`#${id}`}>
-              {label}
-            </a>
-          ))}
+          {ANCHORS.filter(([id]) => showUpcomingListings || id !== "stats-ventes").map(
+            ([id, label]) => (
+              <a key={id} href={`#${id}`}>
+                {label}
+              </a>
+            ),
+          )}
         </nav>
       </header>
 
@@ -670,86 +678,90 @@ export function ListingStatistics({
             </div>
           </section>
 
-          <section
-            id="stats-ventes"
-            className={styles.section}
-            aria-labelledby="stats-ventes-title"
-          >
-            <SectionHeading
-              eyebrow="02 / Ventes à venir"
-              title="Les prochaines annonces du tribunal"
-              titleId="stats-ventes-title"
-              description="Les audiences à venir sont affichées séparément, avec leur date, leur mise à prix et les sources visibles."
-            />
-            {upcomingListings.length > 0 ? (
-              <>
-                <div id="stats-upcoming-list" className={styles.salesGrid} aria-live="polite">
-                  {visibleUpcomingListings.map((listing) => (
-                    <article key={listing.id} className={styles.saleItem}>
-                      <div className={styles.saleItemTopline}>
-                        <span className={styles.saleDate}>{formatDate(listing.saleAt)}</span>
-                        {listing.occupationStatus ? (
-                          <span className={styles.sampleBadge}>
-                            {occupationStatusLabel(listing.occupationStatus)}
+          {showUpcomingListings ? (
+            <section
+              id="stats-ventes"
+              className={styles.section}
+              aria-labelledby="stats-ventes-title"
+            >
+              <SectionHeading
+                eyebrow="02 / Ventes à venir"
+                title="Les prochaines annonces du tribunal"
+                titleId="stats-ventes-title"
+                description="Les audiences à venir sont affichées séparément, avec leur date, leur mise à prix et les sources visibles."
+              />
+              {upcomingListings.length > 0 ? (
+                <>
+                  <div id="stats-upcoming-list" className={styles.salesGrid} aria-live="polite">
+                    {visibleUpcomingListings.map((listing) => (
+                      <article key={listing.id} className={styles.saleItem}>
+                        <div className={styles.saleItemTopline}>
+                          <span className={styles.saleDate}>{formatDate(listing.saleAt)}</span>
+                          {listing.occupationStatus ? (
+                            <span className={styles.sampleBadge}>
+                              {occupationStatusLabel(listing.occupationStatus)}
+                            </span>
+                          ) : null}
+                        </div>
+                        {publicDemo ? (
+                          <span className={styles.saleLink}>
+                            {listing.title || "Vente immobilière judiciaire"}
                           </span>
-                        ) : null}
-                      </div>
-                      {publicDemo ? (
-                        <span className={styles.saleLink}>
-                          {listing.title || "Vente immobilière judiciaire"}
-                        </span>
-                      ) : (
-                        <a
-                          className={styles.saleLink}
-                          href={`/sales/${encodeURIComponent(listing.id)}`}
-                        >
-                          {listing.title || "Vente immobilière judiciaire"}
-                        </a>
-                      )}
-                      <p className={styles.saleMeta}>
-                        {listing.city || "Commune à confirmer"} ·{" "}
-                        {formatStartingPrice(listing.startingPriceEur)}
-                      </p>
-                      <div className={styles.saleEvidence}>
-                        <span>{listing.hasVisit ? "Visite renseignée" : "Visite à confirmer"}</span>
-                        {listing.sourceNames?.length ? (
-                          <span>{listing.sourceNames.map(humanizeSourceName).join(" · ")}</span>
-                        ) : null}
-                      </div>
-                    </article>
-                  ))}
-                </div>
-                {remainingUpcomingListings > 0 || upcomingListIsApiLimited ? (
-                  <div className={styles.upcomingControls}>
-                    {remainingUpcomingListings > 0 ? (
-                      <button
-                        type="button"
-                        className={styles.upcomingToggle}
-                        aria-controls="stats-upcoming-list"
-                        aria-expanded={showAllUpcoming}
-                        onClick={() => setShowAllUpcoming((expanded) => !expanded)}
-                      >
-                        {showAllUpcoming
-                          ? "Réduire la liste"
-                          : "Voir les " +
-                            formatNumber(remainingUpcomingListings) +
-                            " autres annonces"}
-                      </button>
-                    ) : null}
-                    {upcomingListIsApiLimited ? (
-                      <p className={styles.upcomingCount} role="status">
-                        {formatNumber(visibleUpcomingListings.length)} affichées sur{" "}
-                        {formatNumber(activity.upcomingSales)} annonces recensées. Les détails
-                        disponibles sont limités aux 100 premières.
-                      </p>
-                    ) : null}
+                        ) : (
+                          <a
+                            className={styles.saleLink}
+                            href={`/sales/${encodeURIComponent(listing.id)}`}
+                          >
+                            {listing.title || "Vente immobilière judiciaire"}
+                          </a>
+                        )}
+                        <p className={styles.saleMeta}>
+                          {listing.city || "Commune à confirmer"} ·{" "}
+                          {formatStartingPrice(listing.startingPriceEur)}
+                        </p>
+                        <div className={styles.saleEvidence}>
+                          <span>
+                            {listing.hasVisit ? "Visite renseignée" : "Visite à confirmer"}
+                          </span>
+                          {listing.sourceNames?.length ? (
+                            <span>{listing.sourceNames.map(humanizeSourceName).join(" · ")}</span>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
                   </div>
-                ) : null}
-              </>
-            ) : (
-              <EmptyData>Aucune vente à venir n’est recensée sur cette période.</EmptyData>
-            )}
-          </section>
+                  {remainingUpcomingListings > 0 || upcomingListIsApiLimited ? (
+                    <div className={styles.upcomingControls}>
+                      {remainingUpcomingListings > 0 ? (
+                        <button
+                          type="button"
+                          className={styles.upcomingToggle}
+                          aria-controls="stats-upcoming-list"
+                          aria-expanded={showAllUpcoming}
+                          onClick={() => setShowAllUpcoming((expanded) => !expanded)}
+                        >
+                          {showAllUpcoming
+                            ? "Réduire la liste"
+                            : "Voir les " +
+                              formatNumber(remainingUpcomingListings) +
+                              " autres annonces"}
+                        </button>
+                      ) : null}
+                      {upcomingListIsApiLimited ? (
+                        <p className={styles.upcomingCount} role="status">
+                          {formatNumber(visibleUpcomingListings.length)} affichées sur{" "}
+                          {formatNumber(activity.upcomingSales)} annonces recensées. Les détails
+                          disponibles sont limités aux 100 premières.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <EmptyData>Aucune vente à venir n’est recensée sur cette période.</EmptyData>
+              )}
+            </section>
+          ) : null}
 
           <section
             id="stats-chiffres"

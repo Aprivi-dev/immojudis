@@ -198,19 +198,22 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
 };
 
 /**
- * Droits que le déblocage d'UNE vente ouvre à un compte Découverte, pour cette vente seulement :
- * enchère plafond (et l'estimation qui la nourrit), historique de la vente, lecture des pièces,
- * statistiques du tribunal de la vente (prix d'adjudication, scénarios d'enchères, prévision
- * d'audience). Les pièces officielles du dossier sont ouvertes par la base (RLS). Ne figurent pas
- * ici : exports PDF/CSV, rapports enregistrés, comparables, urbanisme, alertes, espaces de travail.
+ * Droits que le déblocage d'UNE vente ouvre à un compte Découverte, pour cette vente seulement, et
+ * rien d'autre : enchère plafond, historique de la vente, lecture des pièces, statistiques du
+ * tribunal de la vente (prix d'adjudication et scénarios d'enchères). Les pièces officielles du
+ * dossier sont ouvertes par la base (vue `v_auction_sales_unlocked`, aucune table d'enfants n'est ouverte).
+ *
+ * Ne figurent pas ici : l'estimation détaillée (`property.valueEstimate`), la prévision d'audience
+ * (`property.outcomeGraph`), les comparables, l'urbanisme, les exports PDF/CSV, les rapports
+ * enregistrés, les alertes, les espaces de travail. Le calcul de l'enchère plafond a besoin d'une
+ * valeur de référence : `/api/market-estimate` la sert sous le droit `property.bidCeiling`, réduite
+ * aux seuls champs que le plafond lit (voir `ceilingMarketContext`).
  */
 export const SALE_UNLOCK_FEATURES = [
   "property.bidCeiling",
-  "property.valueEstimate",
   "property.saleHistory",
   "property.documentReading",
   "property.advancedBidScenarios",
-  "property.outcomeGraph",
   "sales.statistics",
 ] as const satisfies readonly FeatureKey[];
 

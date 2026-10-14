@@ -721,6 +721,25 @@ export async function resolvePlanEntitlements(
   });
 }
 
+/** The door that opens a right for a sale: the offer itself, or the unlock of this very sale. */
+export type SaleFeatureDoor = "plan" | "unlock";
+
+/**
+ * Which door opens `feature` for this sale, or null when neither does. The unlock opens only the
+ * rights of `SALE_UNLOCK_FEATURES`, for the sale the database confirms (unlocked and still online).
+ * Routes use the door to choose what they return: the full read for the offer, the reduced one for
+ * an unlock.
+ */
+export async function saleFeatureDoor(
+  auth: SupabaseAuthContext,
+  feature: FeatureKey,
+  saleId: string,
+): Promise<SaleFeatureDoor | null> {
+  const plan = await resolvePlanEntitlements(auth);
+  if (featureIncluded(plan.plan, feature)) return "plan";
+  return isSaleUnlockFeature(feature) && (await hasUnlockedSale(auth, saleId)) ? "unlock" : null;
+}
+
 /**
  * True when the caller reads `feature` in full for this sale: the offer includes it, or the
  * account unlocked this sale and the right is one an unlock opens. Used by the routes that serve a
@@ -731,34 +750,41 @@ export async function featureIncludedForSale(
   feature: FeatureKey,
   saleId: string,
 ): Promise<boolean> {
-  const plan = await resolvePlanEntitlements(auth);
-  if (featureIncluded(plan.plan, feature)) return true;
-  return isSaleUnlockFeature(feature) && (await hasUnlockedSale(auth, saleId));
+  return (await saleFeatureDoor(auth, feature, saleId)) !== null;
 }
 
 /**
- * Refuse a right the caller's offer does not include.
+ * Refuse a right the caller's offer does not include, and say which door opened it.
  *
  * With `saleId`, a Découverte account that unlocked that sale ("3 déblocages par mois") is let
  * through for the rights an unlock opens (`SALE_UNLOCK_FEATURES`), for that sale only: the
  * database confirms the unlock and that the sale is still online. Every other right, and every
  * other sale, stays refused.
  */
+export async function assertFeatureEntitlementVia(
+  auth: SupabaseAuthContext,
+  feature: FeatureKey,
+  message = "Fonctionnalité réservée au plan Analyse.",
+  options: { saleId?: string } = {},
+): Promise<{ plan: PlanEntitlements; door: SaleFeatureDoor }> {
+  const plan = await resolvePlanEntitlements(auth);
+  if (featureIncluded(plan.plan, feature)) return { plan, door: "plan" };
+  if (
+    options.saleId &&
+    isSaleUnlockFeature(feature) &&
+    (await hasUnlockedSale(auth, options.saleId))
+  ) {
+    return { plan, door: "unlock" };
+  }
+  assertEntitlementIncluded(plan, feature, message);
+  return { plan, door: "plan" };
+}
+
 export async function assertFeatureEntitlement(
   auth: SupabaseAuthContext,
   feature: FeatureKey,
   message = "Fonctionnalité réservée au plan Analyse.",
   options: { saleId?: string } = {},
 ): Promise<PlanEntitlements> {
-  const plan = await resolvePlanEntitlements(auth);
-  if (
-    !featureIncluded(plan.plan, feature) &&
-    options.saleId &&
-    isSaleUnlockFeature(feature) &&
-    (await hasUnlockedSale(auth, options.saleId))
-  ) {
-    return plan;
-  }
-  assertEntitlementIncluded(plan, feature, message);
-  return plan;
+  return (await assertFeatureEntitlementVia(auth, feature, message, options)).plan;
 }

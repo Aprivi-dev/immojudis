@@ -99,16 +99,28 @@ describe("conditions générales", () => {
 describe("conditions générales : 3 déblocages par mois", () => {
   const n = PLAN_LIMITS.decouverte.monthlyUnlocks;
 
-  it("définissent le déblocage : une vente, cinq éléments, ni exports ni rapports", () => {
+  it("définissent le déblocage : une vente, cinq éléments quand elle les comporte, le reste à Analyse", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain("Découverte est gratuite, sans limite de durée et sans carte bancaire.");
     expect(text).toContain(`chaque mois civil, ${n} déblocages`);
     expect(text).toContain(
-      "Un déblocage ouvre, pour une vente de votre choix, cinq éléments de l’offre Analyse : l’enchère plafond chiffrée, la lecture des pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette vente et les pièces officielles du dossier.",
+      "Un déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre Analyse lorsque cette vente les comporte : l’enchère plafond chiffrée, la lecture des pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette vente et les pièces du dossier.",
     );
     expect(text).toContain(
-      "Il n’ouvre ni l’export PDF ou CSV, ni les rapports enregistrés, ni les autres fonctions d’Analyse.",
+      "Les autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports enregistrés, le budget travaux, les alertes avancées et la mise en relation avec un avocat référencé, restent réservées à cette offre.",
     );
+    // Jamais « réservé » pour un élément que le compte reçoit.
+    const reserved = text.slice(text.indexOf("Les autres fonctions de l’offre Analyse"));
+    const reservedSentence = reserved.slice(0, reserved.indexOf("restent réservées"));
+    for (const received of [
+      "enchère plafond",
+      "lecture des pièces",
+      "historique",
+      "statistiques",
+      "pièces du dossier",
+    ]) {
+      expect(reservedSentence).not.toContain(received);
+    }
   });
 
   it("disent quand le déblocage est consommé, non restitué, non reporté, et quand le compteur repart", () => {
@@ -120,7 +132,7 @@ describe("conditions générales : 3 déblocages par mois", () => {
       "il n’est pas consommé en cas d’erreur technique, ni si la vente est déjà débloquée",
     );
     expect(text).toContain(
-      "Il n’est pas restitué si la vente est ensuite retirée, reportée ou adjugée.",
+      "Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la vente pour une raison qui lui est imputable, le déblocage est restitué sur simple demande depuis Mes droits ou à l’adresse de contact.",
     );
     expect(text).toContain("Les déblocages non utilisés ne sont pas reportés.");
     expect(text).toContain(
@@ -138,17 +150,22 @@ describe("conditions générales : 3 déblocages par mois", () => {
     );
   });
 
-  it("prévoient la modification de l’avantage gratuit avec trente jours de préavis", () => {
+  it("limitent la clause de modification aux déblocages, avec trente jours de préavis", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
-      "Immojudis peut modifier ou supprimer les avantages de l’offre Découverte, dont les déblocages, pour l’avenir, en vous prévenant au moins 30 jours à l’avance ; cette modification est sans effet sur les déblocages déjà consommés.",
+      "Immojudis peut modifier ou supprimer les déblocages mensuels pour l’avenir, en vous prévenant au moins 30 jours à l’avance par un message dans l’application ou à l’adresse email de votre compte. Les ventes que vous avez déjà débloquées restent accessibles dans les conditions ci-dessus, et les déblocages déjà consommés ne sont pas affectés. Si la modification ne vous convient pas, vous pouvez fermer votre compte gratuitement depuis Mes droits.",
     );
+    // Les autres avantages de Découverte (favoris, alerte) ne sont plus modifiables par cette clause.
+    expect(text).not.toContain("les avantages de l’offre Découverte");
   });
 
   it("rendent les déblocages personnels (article 9) sans parler d’analyses gratuites", () => {
     const text = pageText(<TermsPage />);
     expect(text).toContain(
       "Les déblocages de ventes sont personnels : ils ne se partagent ni ne se transmettent.",
+    );
+    expect(text).toContain(
+      "le contournement des quotas, notamment la création de plusieurs comptes pour multiplier les déblocages",
     );
     expect(text).not.toMatch(/analyses? (complètes? )?gratuites?|analyse offerte/i);
   });

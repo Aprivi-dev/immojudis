@@ -15,8 +15,8 @@ paths:
       operationId: getSaleOutcomeGraph
       summary: Lire la dernière prévision Outcome Graph admissible
       description: >-
-        Réservé au plan Analyse, ou à un compte Découverte pour une vente qu'il a débloquée
-        (« 3 déblocages par mois »). Le serveur refuse les prédictions sans snapshot
+        Réservé au plan Analyse. Un déblocage de vente (« 3 déblocages par mois ») n'ouvre pas la
+        prévision d'audience. Le serveur refuse les prédictions sans snapshot
         pré-audience validé, cohorte éligible ou provenance complète. Le plafond
         personnel n'est pas envoyé à cette route et se calcule dans le navigateur.
       security:
@@ -356,7 +356,7 @@ paths:
       operationId: getTribunalListingStatistics
       summary: Lire les statistiques des annonces d'un tribunal
       description: >-
-        Réservé au plan Analyse. Un compte Découverte y accède seulement avec `saleId`, pour une vente qu'il a débloquée (« 3 déblocages par mois »), et obtient alors le tribunal de cette vente. Répond 422 `COURT_UNRESOLVED` quand le rattachement exact au tribunal reste à confirmer.
+        Réservé au plan Analyse. Un compte Découverte y accède seulement avec `saleId`, pour une vente qu'il a débloquée (« 3 déblocages par mois »), et obtient alors les statistiques du tribunal de cette vente, sans la liste de ses autres ventes à venir : `activity.upcomingListings` est alors toujours vide (`activity.upcomingSales` reste renseigné). Une requête avec `courtCode` reste réservée à Analyse. Un paramètre répété est refusé (400). Répond 422 `COURT_UNRESOLVED` quand le rattachement exact au tribunal reste à confirmer.
       security:
         - bearerAuth: []
       responses:

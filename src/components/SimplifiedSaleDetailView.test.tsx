@@ -70,6 +70,7 @@ vi.mock("next/dynamic", () => ({
       marketEstimateOverride,
       forecastQuery,
       premium,
+      showUpcomingListings,
       propertyTypeVerified,
     }: {
       images?: unknown[];
@@ -79,6 +80,7 @@ vi.mock("next/dynamic", () => ({
       marketEstimateOverride?: unknown;
       forecastQuery?: unknown;
       premium?: boolean;
+      showUpcomingListings?: boolean;
       propertyTypeVerified?: boolean;
     }) {
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
@@ -89,6 +91,7 @@ vi.mock("next/dynamic", () => ({
             data-sale-id={sale.id}
             data-court-code={sale.tribunal_code}
             data-premium={premium ? "true" : "false"}
+            data-upcoming-listings={showUpcomingListings === false ? "false" : "true"}
             data-property-type-verified={propertyTypeVerified ? "true" : "false"}
           >
             Statistiques du tribunal
@@ -848,9 +851,21 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     mocks.authUser = { id: "free-account" };
     mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
     mocks.fetchFactReliabilities.mockResolvedValue({ facts: {}, source: "legacy" });
+    // An unlock receives the ceiling projection of the estimate, nothing more.
+    const { estimatedValueEur, actionable, qualityLabel, source, sourceUpdatedAt, sampleSize } =
+      EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate;
     mocks.fetchMarket.mockResolvedValue({
       status: "ready",
-      estimate: EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate,
+      estimate: {
+        estimatedValueEur,
+        actionable,
+        qualityLabel,
+        source,
+        sourceUpdatedAt,
+        sampleSize,
+        medianPricePerM2: EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate.medianPricePerM2,
+        p75PricePerM2: EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate.p75PricePerM2,
+      },
       computedAt: "2026-10-12T08:00:00.000Z",
     });
     return render(
@@ -918,6 +933,17 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     const statistics = container.querySelector("#stats-overview");
     expect(statistics?.getAttribute("data-sale-id")).toBe(EXAMPLE_SALE_RECORDS.bordeaux.sale.id);
     expect(statistics?.getAttribute("data-premium")).toBe("true");
+    // The list of the other upcoming sales of the tribunal is not sent to an unlocked account.
+    expect(statistics?.getAttribute("data-upcoming-listings")).toBe("false");
+  });
+
+  it("asks nothing more than the five elements need: no fact reliability, no forecast", () => {
+    renderUnlocked();
+
+    expect(mocks.fetchFactReliabilities).not.toHaveBeenCalled();
+    selectTab("Estimation");
+    expect(screen.queryByText("Perspective d’adjudication")).toBeNull();
+    expect(screen.queryByText("Prévision de l’audience chargée")).toBeNull();
   });
 
   it("keeps the exports, the saved reports and the Analyse-only blocks closed on an unlocked sale", () => {

@@ -69,6 +69,18 @@ describe("offerComparisonRows", () => {
     }
   });
 
+  it("dit pourquoi l'estimation détaillée n'est pas incluse alors que le plafond la lit", () => {
+    // « Non inclus » est exact : un déblocage ne renvoie que la valeur de référence du plafond.
+    expect(row("estimate").decouverte).toEqual({ included: false, text: "Non inclus" });
+    expect(row("estimate").hint).toMatch(/valeur de référence entre dans l’enchère plafond/);
+    // Les pièces officielles restent annoncées comme ouvertes, sans dépendre du droit d'estimation.
+    expect(row("documents").decouverte).toEqual({
+      included: false,
+      limited: true,
+      text: "Pour 3 ventes par mois",
+    });
+  });
+
   it("promet les statistiques des ventes et des tribunaux à l'offre Analyse seulement", () => {
     expect(row("statistics").label).toBe("Statistiques des ventes et des tribunaux");
     expect(row("statistics").analyse.included).toBe(true);

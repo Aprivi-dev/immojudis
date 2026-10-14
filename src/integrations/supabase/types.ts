@@ -12503,6 +12503,93 @@ export type Database = {
           },
         ];
       };
+      v_auction_sales_unlocked: {
+        Row: {
+          about_description: string | null;
+          address: string | null;
+          adjudication_price_eur: number | null;
+          analysis_status: string | null;
+          app_surface_kind: string | null;
+          app_surface_m2: number | null;
+          bathrooms_count: number | null;
+          bedrooms_count: number | null;
+          carrez_surface_m2: number | null;
+          city: string | null;
+          created_at: string | null;
+          dedupe_confidence: string | null;
+          department: string | null;
+          description: string | null;
+          document_count: number | null;
+          documents: Json | null;
+          documents_rich: Json | null;
+          habitable_surface_m2: number | null;
+          has_air_conditioning: boolean | null;
+          has_double_glazing: boolean | null;
+          has_garage: boolean | null;
+          has_garden: boolean | null;
+          has_pool: boolean | null;
+          has_terrace: boolean | null;
+          id: string | null;
+          investment_score: number | null;
+          investment_summary: string | null;
+          land_surface_m2: number | null;
+          latitude: number | null;
+          lawyer_contact: string | null;
+          lawyer_name: string | null;
+          llm_display_description: string | null;
+          longitude: number | null;
+          media: Json | null;
+          occupancy_status: string | null;
+          parking_count: number | null;
+          postal_code: string | null;
+          primary_source: string | null;
+          property_type: string | null;
+          quality_flags: Json | null;
+          risk_notes: string | null;
+          risks: Json | null;
+          rooms_count: number | null;
+          sale_date: string | null;
+          sale_legal_framework: string | null;
+          sale_procedure: Json | null;
+          sale_venue_type: string | null;
+          sale_verification_status: string | null;
+          score_confidence: number | null;
+          score_factors: Json | null;
+          score_version: string | null;
+          source_blocks: Json | null;
+          source_blocks_by_source: Json | null;
+          source_checks: Json | null;
+          source_conflicts: Json | null;
+          source_description: string | null;
+          source_name: string | null;
+          source_presence: Json | null;
+          source_url: string | null;
+          source_urls: Json | null;
+          starting_price_eur: number | null;
+          status: string | null;
+          surface_confidence: number | null;
+          surface_evidence: string | null;
+          surface_m2: number | null;
+          surface_scope: string | null;
+          surface_source: string | null;
+          title: string | null;
+          tribunal: string | null;
+          tribunal_city: string | null;
+          tribunal_code: string | null;
+          tribunal_name: string | null;
+          updated_at: string | null;
+          visit_dates: Json | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_sales_tribunal_code_fkey";
+            columns: ["tribunal_code"];
+            isOneToOne: false;
+            referencedRelation: "tribunals";
+            referencedColumns: ["code"];
+          },
+        ];
+      };
     };
     Functions: {
       _postgis_deprecate: {

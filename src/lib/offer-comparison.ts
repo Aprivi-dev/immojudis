@@ -107,7 +107,11 @@ const SPECS: RowSpec[] = [
     // documents themselves come with the detailed analysis, or with the unlock of the sale.
     id: "documents",
     label: "Pièces du dossier (cahier des conditions, procès-verbal, diagnostics)",
+    // Les pièces officielles sont ouvertes par la base (vue des ventes débloquées), pas par un droit
+    // de `SALE_UNLOCK_FEATURES` : l'indicateur de substitution est l'estimation détaillée, fermée
+    // pour Découverte, d'où le texte explicite.
     features: ["property.valueEstimate"],
+    lockedCustom: { decouverte: UNLOCK_CELL_TEXT },
   },
   {
     id: "document-reading",
@@ -122,6 +126,9 @@ const SPECS: RowSpec[] = [
   {
     id: "estimate",
     label: "Estimation détaillée et ventes comparables",
+    hint: "La valeur de référence entre dans l’enchère plafond d’une vente débloquée ; la fourchette détaillée et les ventes comparables restent avec Analyse",
+    // Un déblocage ne renvoie ni la fourchette, ni les quartiles, ni les ventes comparables : « Non
+    // inclus » est exact (voir ceilingMarketContext).
     features: ["property.valueEstimate", "property.soldComparables"],
   },
   { id: "ceiling", label: "Enchère plafond chiffrée", features: ["property.bidCeiling"] },

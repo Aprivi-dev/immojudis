@@ -73,6 +73,36 @@ Chaque demande reçoit :
    fournie, traiter le remboursement dans Stripe et révoquer l’accès via le cycle de paiement existant.
 7. Clôturer la demande avec un code de résolution et notifier l’utilisateur sur un support durable.
 
+### Restitution d’un déblocage de vente (procédure manuelle)
+
+Les CGV (§ 2) prévoient la restitution d’un déblocage, sur simple demande, lorsqu’Immojudis retire
+elle-même la vente pour une raison qui lui est imputable (mise en quarantaine ou retrait de la
+source décidés par Immojudis, mise en attente de la vente). Il n’y a pas de restitution quand la
+vente est reportée, adjugée ou retirée par la juridiction ou la source. Aucun code automatique : la
+demande arrive par l’adresse de contact ou dans le message d’une demande ouverte depuis Mes droits
+(ce portail n’a pas de type « restitution » : choisir le type le plus proche et préciser dans le
+message).
+
+1. Identifier le compte demandeur et la vente (identifiant ou adresse de la fiche) ; ne traiter que
+   les déblocages du compte qui écrit.
+2. Vérifier la cause : la vente est-elle retirée ou en attente par décision d’Immojudis
+   (interrupteur de retrait d’une source, quarantaine de publication, mise en attente de
+   préparation) ? Si elle est reportée, adjugée ou retirée par la juridiction ou la source, refuser
+   en l’expliquant.
+3. Retrouver la ligne dans `user_sale_unlocks` (colonnes `user_id`, `sale_id`, `unlocked_at`). Une
+   ligne dont la vente a été supprimée a `sale_id` nul : la retrouver par `user_id` et par la date
+   du déblocage donnée par le demandeur.
+4. Supprimer cette seule ligne (`delete from public.user_sale_unlocks where id = '<id de la ligne>'`),
+   avec le rôle de service depuis l’outil SQL de l’administration. Le compteur du mois se calcule sur
+   les lignes du mois : la suppression rend le crédit si le déblocage date du mois civil en cours
+   (heure de Paris). Pour un déblocage d’un mois passé, le compteur du mois courant ne change pas :
+   le dire au demandeur.
+5. La suppression retire aussi l’accès du compte à cette vente. Si le demandeur veut la rouvrir une
+   fois la vente de nouveau en ligne, il la débloque à nouveau (idempotent, un crédit).
+6. Répondre au demandeur sur un support durable, conserver la demande et la date de suppression
+   (notes opérateur de la demande, ou courriel de réponse), puis clôturer la demande avec un code de
+   résolution.
+
 Une demande simple doit recevoir une réponse au plus tard sous un mois. Une prolongation de deux mois
 doit être motivée et annoncée avant la première échéance.
 

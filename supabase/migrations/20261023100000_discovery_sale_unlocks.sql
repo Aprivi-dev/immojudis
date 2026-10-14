@@ -1,12 +1,24 @@
 -- "3 déblocages par mois" for the free Découverte offer.
 --
 -- A Découverte account can unlock ONE sale at a time, three sales per calendar month in the
--- Europe/Paris time zone.  An unlocked sale gives that account, for that sale only, the rows that
--- Analyse reads through RLS (sale, official documents, risks, score factors), and the server routes
--- extend the matching rights (bid ceiling, document reading, sale history, tribunal statistics of the
--- sale).  It never opens PDF/CSV exports or saved reports, which stay on Analyse.
+-- Europe/Paris time zone.  An unlocked sale opens five things for that sale only: the bid ceiling,
+-- the reading of the documents, the history of the sale, the statistics of its tribunal and the
+-- official documents of the case.  Nothing else of Analyse is opened, so the database opens nothing
+-- else either:
+--   * auction_sales is NOT widened (row level security cannot limit columns, and the table carries
+--     the investment score, risk notes, raw payload...).  The sale is served by
+--     public.v_auction_sales_unlocked, a redacted projection of the discovery view that only returns
+--     the sales the caller unlocked, plus the facts the bid ceiling reads (source blocks) and the
+--     official documents;
+--   * no child table is opened to an unlock either: auction_documents, auction_risks,
+--     auction_risk_occurrences, auction_score_factors, auction_features and auction_surfaces keep
+--     their Analyse-only policies (20260710083858); the official documents reach the unlocked page
+--     through the view only, with the projection the page displays;
+--   * the server routes extend the matching rights (bid ceiling, document reading, sale history,
+--     tribunal statistics of the sale) and return only what the unlocked page displays.
+-- It never opens PDF/CSV exports or saved reports, which stay on Analyse.
 --
--- Rules fixed by the owner on 2026-10-13:
+-- Rules fixed by the owner on 2026-10-13 and 2026-10-14:
 --   * the quota lives in one place per layer: PLAN_LIMITS.decouverte.monthlyUnlocks in
 --     src/lib/plans.ts and app_private.monthly_sale_unlock_limit() here (a Vitest test compares them);
 --   * an unlocked sale stays readable while it is online (app_private.auction_sale_is_publicly_visible);
@@ -173,30 +185,7 @@ grant execute on function app_private.current_user_unlocked_sale(uuid)
   to authenticated, service_role;
 
 comment on function app_private.current_user_unlocked_sale(uuid) is
-  'True when the signed-in account unlocked this sale (3 per Paris month for Découverte) and the sale is still online. Used by the RLS policies that gate the Analyse rows.';
-
--- Same test for the child tables of auction_sales, which are keyed by source_url.
-create or replace function app_private.current_user_unlocked_source_url(p_source_url text)
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select coalesce(
-    (
-      select app_private.current_user_unlocked_sale(sale.id)
-      from public.auction_sales sale
-      where sale.source_url = p_source_url
-    ),
-    false
-  );
-$$;
-
-revoke all on function app_private.current_user_unlocked_source_url(text)
-  from public, anon, authenticated;
-grant execute on function app_private.current_user_unlocked_source_url(text)
-  to authenticated, service_role;
+  'True when the signed-in account unlocked this sale (3 per Paris month for Découverte) and the sale is still online. Used by get_sale_unlock_status.';
 
 -- The only writer of user_sale_unlocks.  p_now is a parameter so that tests can move the clock;
 -- the public wrapper always passes now().
@@ -363,164 +352,186 @@ $$;
 revoke all on function public.get_sale_unlock_status(uuid) from public, anon;
 grant execute on function public.get_sale_unlock_status(uuid) to authenticated, service_role;
 
--- Gated reads: an unlocked sale is readable like an Analyse sale, for that sale only.  Admin
--- bypass, readiness, quarantine and publication-marker guards of auction_sales_authenticated_read
--- are kept as they were (supabase/tests 385, 390 and 412 read their text).
-alter policy auction_sales_authenticated_read on public.auction_sales
-using (
-  public.is_admin()
-  or (
-    (
-      public.has_analysis_access()
-      or app_private.current_user_unlocked_sale(id)
+-- The sale an account unlocked, as the unlocked page needs it.  auction_sales_authenticated_read is
+-- left untouched: row level security cannot limit columns, and a policy opened to an unlocked sale
+-- would hand the account every column granted to authenticated (investment score and summary, risk
+-- notes, score factors, adjudication price...).  This view is the discovery projection (same columns,
+-- same redactions: no score, no risks, no source url) for the sales the caller unlocked, with only
+-- what the five unlocked elements read in addition:
+--   * source_blocks and source_blocks_by_source: the facts of the listing (fees, deposit, DPE...) the
+--     bid ceiling reads, so that the ceiling of an unlocked sale equals the one Analyse computes;
+--   * documents and documents_rich: the official documents of the case.
+-- It lists one row per unlock of the caller (at most three a month, 24 months) and checks that the
+-- sale is still unlockable (online and ready), so a sale that left the catalogue disappears from it.
+create or replace view public.v_auction_sales_unlocked
+with (security_invoker = false, security_barrier = true) as
+select
+  s.id,
+  s.title,
+  s.description,
+  nullif(s.raw_payload ->> 'source_description', '') as source_description,
+  null::text as llm_display_description,
+  null::text as about_description,
+  s.city,
+  s.department,
+  s.postal_code,
+  s.address,
+  s.tribunal,
+  s.tribunal_code,
+  t.canonical_name as tribunal_name,
+  t.city as tribunal_city,
+  s.property_type,
+  s.starting_price_eur,
+  s.sale_date,
+  s.visit_dates,
+  s.lawyer_name,
+  s.lawyer_contact,
+  null::numeric as adjudication_price_eur,
+  s.latitude,
+  s.longitude,
+  s.occupancy_status,
+  s.surface_m2,
+  s.habitable_surface_m2,
+  s.carrez_surface_m2,
+  s.land_surface_m2,
+  s.app_surface_m2,
+  s.app_surface_kind,
+  s.surface_scope,
+  s.surface_source,
+  null::double precision as surface_confidence,
+  null::text as surface_evidence,
+  s.rooms_count,
+  s.bedrooms_count,
+  s.bathrooms_count,
+  s.parking_count,
+  s.has_garden,
+  s.has_terrace,
+  s.has_garage,
+  s.has_pool,
+  s.has_air_conditioning,
+  s.has_double_glazing,
+  null::double precision as investment_score,
+  null::text as investment_summary,
+  null::text as score_version,
+  null::double precision as score_confidence,
+  '[]'::jsonb as score_factors,
+  null::text as risk_notes,
+  '[]'::jsonb as risks,
+  null::text as source_name,
+  null::text as primary_source,
+  null::text as source_url,
+  '[]'::jsonb as source_urls,
+  null::text as dedupe_confidence,
+  coalesce(s.documents, '[]'::jsonb) as documents,
+  coalesce(d.documents_rich, '[]'::jsonb) as documents_rich,
+  s.status,
+  '[]'::jsonb as quality_flags,
+  s.created_at,
+  s.updated_at,
+  coalesce(m.media, '[]'::jsonb) as media,
+  s.raw_payload -> 'source_blocks' as source_blocks,
+  coalesce(sb.source_blocks_by_source, '{}'::jsonb) as source_blocks_by_source,
+  s.sale_venue_type,
+  s.sale_legal_framework,
+  s.sale_verification_status,
+  s.sale_procedure,
+  coalesce(c.source_checks, '{}'::jsonb) as source_checks,
+  coalesce(s.raw_payload -> 'source_conflicts', '[]'::jsonb) as source_conflicts,
+  case
+    when (s.raw_payload ->> 'source_content_changed') = 'true' then 'pending'
+    when nullif(s.raw_payload ->> 'llm_display_description', '') is not null then 'complete'
+    else coalesce(s.raw_payload ->> 'llm_display_status', 'pending')
+  end as analysis_status,
+  app_private.auction_sale_source_presence_json(s.id) as source_presence,
+  coalesce(dc.document_count, 0) as document_count
+from public.user_sale_unlocks unlock_row
+join public.auction_sales s on s.id = unlock_row.sale_id
+left join public.tribunals t on t.code = s.tribunal_code
+-- Source checks keyed by an opaque rank: the original keys are listing URLs.
+left join lateral (
+  select jsonb_object_agg('source_' || checks.ordinality, checks.value) as source_checks
+    from jsonb_each(
+      case when jsonb_typeof(s.raw_payload -> 'source_checks') = 'object'
+           then s.raw_payload -> 'source_checks' else '{}'::jsonb end
+    ) with ordinality as checks(key, value, ordinality)
+) c on true
+left join lateral (
+  select count(*)::integer as document_count
+    from public.auction_documents ad
+   where ad.source_url = s.source_url
+) dc on true
+left join lateral (
+  select jsonb_agg(
+           jsonb_build_object('type', 'image', 'url', deduped.image_url)
+           order by deduped.source_rank, deduped.image_url
+         ) as media
+    from (
+      select distinct on (images.image_url) images.image_url, images.source_rank
+        from (
+          select nullif(s.raw_payload ->> 'raw_image_url', '') as image_url, 0 as source_rank
+          union all
+          select nullif(image.value, ''), 1
+            from jsonb_array_elements_text(
+              case when jsonb_typeof(s.raw_payload -> 'source_images') = 'array'
+                   then s.raw_payload -> 'source_images' else '[]'::jsonb end
+            ) as image(value)
+        ) images
+       where images.image_url is not null
+         and images.image_url ~* '^https?://'
+         and images.image_url !~* '\.(pdf|docx?|svg)([?#].*)?$'
+         and images.image_url !~* '(^|[/_.-])(avatar|brand|default|favicon|icon|icone|logo|placeholder|profile|sprite|user)([/_.-]|$)'
+       order by images.image_url, images.source_rank
+    ) deduped
+) m on true
+-- Facts of the other sources of the same listing, as the Analyse view builds them.
+left join lateral (
+  select jsonb_object_agg(source_key, source_blocks) as source_blocks_by_source
+  from (
+    select
+      coalesce(nullif(s.source_name, ''), 'source') || ':primary' as source_key,
+      s.raw_payload -> 'source_blocks' as source_blocks
+    where jsonb_typeof(s.raw_payload -> 'source_blocks') = 'object'
+    union all
+    select
+      coalesce(nullif(observation.value ->> 'source_name', ''), 'source') || ':' || observation.ordinality::text as source_key,
+      observation.value -> 'raw_payload' -> 'source_blocks' as source_blocks
+    from jsonb_array_elements(
+      case
+        when jsonb_typeof(s.observations) = 'array'
+          then s.observations
+        else '[]'::jsonb
+      end
+    ) with ordinality as observation(value, ordinality)
+    where jsonb_typeof(observation.value -> 'raw_payload' -> 'source_blocks') = 'object'
+  ) blocks
+) sb on true
+-- Official documents, with the same projection as v_auction_sales_app.
+left join lateral (
+  select jsonb_agg(
+    jsonb_build_object(
+      'label', ad.label,
+      'url', ad.document_url,
+      'type', ad.document_type,
+      'document_type', ad.document_type,
+      'download_status', ad.download_status,
+      'extraction_status', ad.extraction_status,
+      'docling_status', ad.docling_status,
+      'text_chars', ad.text_chars,
+      'updated_at', ad.updated_at
     )
-    and public.catalogue_readiness_allows_premium(
-      premium_readiness_status,
-      premium_readiness_override,
-      premium_readiness_override_expires_at
-    )
-    and coalesce(status, 'unknown') <> 'quarantined'
-    and coalesce(raw_payload->>'publication_quarantine', '') = ''
-  )
-);
+    order by ad.document_type, ad.label
+  ) as documents_rich
+  from public.auction_documents ad
+  where ad.source_url = s.source_url
+) d on true
+where unlock_row.user_id = (select auth.uid())
+  and app_private.sale_is_unlockable(s.id);
 
-drop policy if exists auction_documents_authenticated_read on public.auction_documents;
-create policy auction_documents_authenticated_read
-on public.auction_documents for select
-to authenticated
-using (
-  public.has_analysis_access()
-  or app_private.current_user_unlocked_source_url(source_url)
-);
+revoke all on table public.v_auction_sales_unlocked from public, anon;
+grant select on table public.v_auction_sales_unlocked to authenticated;
 
-drop policy if exists auction_features_authenticated_read on public.auction_features;
-create policy auction_features_authenticated_read
-on public.auction_features for select
-to authenticated
-using (
-  public.has_analysis_access()
-  or app_private.current_user_unlocked_source_url(source_url)
-);
-
-drop policy if exists auction_surfaces_authenticated_read on public.auction_surfaces;
-create policy auction_surfaces_authenticated_read
-on public.auction_surfaces for select
-to authenticated
-using (
-  public.has_analysis_access()
-  or app_private.current_user_unlocked_source_url(source_url)
-);
-
-drop policy if exists auction_risks_authenticated_read on public.auction_risks;
-create policy auction_risks_authenticated_read
-on public.auction_risks for select
-to authenticated
-using (
-  public.has_analysis_access()
-  or app_private.current_user_unlocked_source_url(source_url)
-);
-
-drop policy if exists auction_risk_occurrences_authenticated_read on public.auction_risk_occurrences;
-create policy auction_risk_occurrences_authenticated_read
-on public.auction_risk_occurrences for select
-to authenticated
-using (
-  public.has_analysis_access()
-  or app_private.current_user_unlocked_source_url(source_url)
-);
-
-drop policy if exists auction_score_factors_authenticated_read on public.auction_score_factors;
-create policy auction_score_factors_authenticated_read
-on public.auction_score_factors for select
-to authenticated
-using (
-  public.has_analysis_access()
-  or app_private.current_user_unlocked_source_url(source_url)
-);
-
--- Opt-in stage 2 of 20261010003000 copies the auction_sales policy predicate into a definer view.
--- Same body, with the unlock added to that predicate so that turning stage 2 on later cannot hide
--- unlocked sales.
-create or replace function app_private.set_catalogue_raw_columns_hidden(p_hidden boolean)
-returns text
-language plpgsql
-security invoker
-set search_path = ''
-as $$
-declare
-  view_definition text;
-  stored_definition text;
-  stored_options text[];
-  matches integer;
-  already_definer boolean;
-  predicate constant text :=
-    '(app_private.current_user_is_admin() OR ((public.has_analysis_access() '
-    || 'OR app_private.current_user_unlocked_sale(s.id)) '
-    || 'AND public.catalogue_readiness_allows_premium(s.premium_readiness_status, '
-    || 's.premium_readiness_override, s.premium_readiness_override_expires_at) '
-    || 'AND COALESCE(s.status, ''unknown''::text) <> ''quarantined''::text '
-    || 'AND COALESCE(s.raw_payload ->> ''publication_quarantine''::text, ''''::text) = ''''::text)) AND ';
-begin
-  select coalesce(c.reloptions @> array['security_invoker=false'], false)
-    into already_definer
-    from pg_catalog.pg_class c
-   where c.oid = 'public.v_auction_sales_app'::regclass;
-
-  if p_hidden then
-    if already_definer then
-      return 'already hidden';
-    end if;
-    view_definition := pg_catalog.pg_get_viewdef('public.v_auction_sales_app'::regclass, true);
-    select count(*) into matches
-      from regexp_matches(view_definition, 'WHERE\s+\(s\.status = ANY', 'g');
-    if matches <> 1 then
-      raise exception 'v_auction_sales_app changed shape: update this function before hiding raw columns';
-    end if;
-
-    insert into app_private.catalogue_view_backups (view_name, definition, reloptions)
-    select 'v_auction_sales_app', view_definition, c.reloptions
-      from pg_catalog.pg_class c
-     where c.oid = 'public.v_auction_sales_app'::regclass
-    on conflict (view_name) do update
-      set definition = excluded.definition,
-          reloptions = excluded.reloptions,
-          saved_at = now();
-
-    view_definition := regexp_replace(
-      view_definition,
-      'WHERE\s+\(s\.status = ANY',
-      'WHERE ' || predicate || '(s.status = ANY'
-    );
-    execute 'create or replace view public.v_auction_sales_app '
-      || 'with (security_invoker = false, security_barrier = true) as '
-      || rtrim(view_definition, E';\n ');
-    revoke select (raw_payload, lawyer_contact, observations)
-      on table public.auction_sales from authenticated;
-    return 'hidden';
-  end if;
-
-  grant select (raw_payload, lawyer_contact, observations)
-    on table public.auction_sales to authenticated;
-  if already_definer then
-    select b.definition, b.reloptions into stored_definition, stored_options
-      from app_private.catalogue_view_backups b
-     where b.view_name = 'v_auction_sales_app';
-    if stored_definition is null then
-      raise exception 'no stored definition for v_auction_sales_app; restore it manually';
-    end if;
-    execute 'create or replace view public.v_auction_sales_app '
-      || 'with (security_invoker = true) as '
-      || rtrim(stored_definition, E';\n ');
-  end if;
-  return 'visible';
-end;
-$$;
-
-revoke all on function app_private.set_catalogue_raw_columns_hidden(boolean)
-  from public, anon, authenticated, service_role;
-
-comment on function app_private.set_catalogue_raw_columns_hidden(boolean) is
-  'Opt-in stage 2 of P4-01, run as the migration role. true: v_auction_sales_app becomes a definer view guarded by the RLS predicate (Analyse access or an unlocked sale) and raw_payload/lawyer_contact/observations are revoked from authenticated. false: restores the stored definition. Run only after measuring the catalogue query.';
+comment on view public.v_auction_sales_unlocked is
+  'SECURITY DEFINER by design (security_barrier): the sales the signed-in account unlocked (3 per Paris month), as the unlocked page needs them: the redacted discovery columns plus the listing facts read by the bid ceiling and the official documents. auction_sales is not opened to an unlock. Listed as an accepted security_definer_view exception (supabase/tests/442).';
 
 -- Retention: a row detached from its (purged) sale is only useful to its month's counter, and no
 -- unlock outlives 24 months, like feature_usage_events.

@@ -7,7 +7,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { errorDetailForLog, isUnauthorizedError } from "@/lib/api-errors";
-import { DETAIL_VIEW } from "@/lib/sale-views";
+import { DETAIL_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
 import {
   AI_REVIEW_FIELD_KEYS,
   type AiReviewCitationStatus,
@@ -386,6 +386,27 @@ export async function GET(request: Request) {
     const visibleSaleIds = new Set(
       visibleSaleRows.map((sale) => sale.id).filter((id): id is string => typeof id === "string"),
     );
+    // A Découverte account does not read the full catalogue view; the sales it unlocked
+    // (« 3 déblocages par mois ») are visible through their own view. The review stays applied to
+    // the figures of the bid ceiling, but the citation links of an unlocked sale are not returned.
+    const unlockedSaleIds = new Set<string>();
+    const hiddenIds = parsedIds.data.filter((id) => !visibleSaleIds.has(id));
+    if (hiddenIds.length > 0) {
+      const { data: unlockedSales, error: unlockedError } = await auth.supabase
+        .from(UNLOCKED_VIEW)
+        .select(CANONICAL_COLUMNS)
+        .in("id", hiddenIds);
+      // A database without the unlock view yet (staggered deployment) has no unlocked sale.
+      if (unlockedError && unlockedError.code !== "PGRST205" && unlockedError.code !== "42P01") {
+        throw unlockedError;
+      }
+      for (const sale of (unlockedSales ?? []) as unknown as CanonicalSaleRow[]) {
+        if (typeof sale.id !== "string") continue;
+        visibleSaleRows.push(sale);
+        visibleSaleIds.add(sale.id);
+        unlockedSaleIds.add(sale.id);
+      }
+    }
     const unavailableRows = unavailableSaleRows(parsedIds.data, visibleSaleIds);
     if (visibleSaleIds.size === 0) return response({ projections: unavailableRows });
 
@@ -428,7 +449,11 @@ export async function GET(request: Request) {
         ...sanitizeProjectionRows(projections, visibleSaleIds, canonicalMismatches),
         ...missingRows,
         ...unavailableRows,
-      ],
+      ].map((projection) =>
+        projection.auction_sale_id && unlockedSaleIds.has(projection.auction_sale_id)
+          ? { ...projection, source_url: null }
+          : projection,
+      ),
     });
   } catch (error) {
     // Only the authentication failure is distinguishable; every other failure is the
