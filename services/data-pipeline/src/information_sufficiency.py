@@ -123,7 +123,7 @@ def contact_emails(sale: AuctionSale) -> set[str]:
     emails: set[str] = set()
     for text in _contact_texts(sale):
         emails |= extract_emails(text)
-    return {email for email in emails if not is_court_registry_email(email)}
+    return {email for email in emails if excluded_contact_reason(email) is None}
 
 
 def _contact_texts(sale: AuctionSale) -> list[object]:
@@ -152,15 +152,41 @@ def contact_phones(sale: AuctionSale) -> set[str]:
 
 
 _COURT_REGISTRY_DOMAIN_RE = re.compile(r"(?:^|\.)justice\.(?:fr|gouv\.fr)$")
+_RPVA_DOMAIN_RE = re.compile(r"(?:^|\.)avocat-conseil\.fr$")
+_BAR_OR_CARPA_DOMAIN_RE = re.compile(r"(?:^|[.-])(?:ordre|barreau|batonnat|batonnier|carpa)")
+_BAR_OR_CARPA_LOCAL_RE = re.compile(r"^(?:ordre|barreau|batonnat|batonnier|carpa)(?:[._+-]|$)")
+_TECHNICAL_LOCAL_RE = re.compile(r"^(?:no[._-]?reply|do[._-]?not[._-]?reply|dpo|rgpd)(?:[._+-]|$)")
+
+
+def excluded_contact_reason(email: str) -> str | None:
+    """Raison pour laquelle l'agent ne sollicite jamais cette adresse, ou ``None``.
+
+    Miroir de ``informationAgentExcludedAddressReason``
+    (``src/lib/information-agent/excluded-addresses.ts``) : juridictions (``court``),
+    messagerie RPVA ``@avocat-conseil.fr`` (``rpva``), Ordre, barreau et CARPA
+    (``bar_or_carpa``), adresses ``noreply``, ``dpo`` et ``rgpd`` (``technical``).
+    """
+    normalized = email.strip().lower()
+    local, separator, domain = normalized.rpartition("@")
+    if not separator:
+        local, domain = normalized, ""
+    if _COURT_REGISTRY_DOMAIN_RE.search(domain):
+        return "court"
+    if _RPVA_DOMAIN_RE.search(domain):
+        return "rpva"
+    if _BAR_OR_CARPA_DOMAIN_RE.search(domain) or _BAR_OR_CARPA_LOCAL_RE.search(local):
+        return "bar_or_carpa"
+    if _TECHNICAL_LOCAL_RE.search(local):
+        return "technical"
+    return None
 
 
 def is_court_registry_email(email: str) -> bool:
     """Adresse d'une juridiction (greffe, accueil du tribunal), jamais sollicitée par l'agent.
 
-    Miroir de ``isCourtRegistryEmail`` (``src/lib/information-agent/contacts.ts``).
+    Miroir de ``isCourtRegistryEmail`` (``src/lib/information-agent/excluded-addresses.ts``).
     """
-    domain = email.rsplit("@", 1)[-1].lower()
-    return bool(_COURT_REGISTRY_DOMAIN_RE.search(domain))
+    return excluded_contact_reason(email) == "court"
 
 
 @dataclass(frozen=True)

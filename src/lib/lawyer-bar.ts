@@ -43,7 +43,7 @@ export function isSameBar(
 const TITLE_WORDS =
   /\b(?:ma[iî]tres?|mes|me|mme|madame|monsieur|mr|m|cabinet|selarl|selas|scp|aarpi|sarl|sas|associ[ée]s?|avocats?|et|&)\b/g;
 
-function normalizeLawyerIdentity(value: string | null | undefined): string {
+export function normalizeLawyerIdentity(value: string | null | undefined): string {
   return (value ?? "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")

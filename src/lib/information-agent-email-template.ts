@@ -63,7 +63,7 @@ export type InformationAgentEmailVariable =
 
 export const INFORMATION_AGENT_EMAIL_BLOCK_DEFINITIONS = [
   { id: "greeting", kind: "dynamic", label: "Formule d’appel" },
-  { id: "identity", kind: "fixed", label: "Présentation Immojudis" },
+  { id: "identity", kind: "fixed", label: "Objet du message" },
   { id: "sale_details", kind: "dynamic", label: "Informations de la vente" },
   { id: "request_intro", kind: "fixed", label: "Introduction de la demande" },
   { id: "questions", kind: "dynamic", label: "Questions adaptées à l’annonce" },
@@ -123,7 +123,7 @@ export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autres ventes ?";
 
-export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 5;
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 6;
 
 export type InformationAgentEmailRenderOptions = {
   /** Environment origin of the site (kept for callers that build absolute links). */
@@ -239,7 +239,7 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 5",
+  name: "Demande de précisions sur une vente — version 6",
   subjectTemplate: "{{sale_subject_title}} — précisions pour Immojudis",
   blocks: [
     {
@@ -251,9 +251,9 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
     {
       id: "identity",
       kind: "fixed",
-      label: "Présentation Immojudis",
+      label: "Objet du message",
       content:
-        "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous vous écrivons au sujet de la vente ci-dessous : nous complétons sa fiche à destination des acquéreurs, et votre connaissance du dossier nous serait précieuse.",
+        "Nous vous écrivons au sujet de la vente ci-dessous, afin de vérifier des informations publiées sur cette vente : votre connaissance du dossier nous serait précieuse.",
     },
     {
       id: "sale_details",
@@ -310,12 +310,12 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Informations RGPD et opposition",
     description:
-      "Le pied du message est ajouté automatiquement : responsable de traitement, origine de l’adresse avec le lien de l’annonce publique (art. 14 RGPD), durée de conservation de l’adresse et des échanges, lien vers la politique de confidentialité et lien d’opposition en un clic.",
+      "Le pied du message est ajouté automatiquement (art. 14 RGPD) : finalité et base, catégories de données, origine de l’adresse (type de source, lien, date), destinataires et prestataires dont l’outil d’IA, durées de conservation, droits, droit d’opposition en un clic et réclamation auprès de la CNIL.",
   },
   {
     title: "Aucune sollicitation commerciale",
     description:
-      "Aucune sollicitation commerciale : toute invitation à créer un compte est retirée du corps du message.",
+      "Aucune sollicitation commerciale : toute invitation à créer un compte est retirée du corps du message, et un contrôle automatique refuse offres, comptes, mise en avant, prix et liens vers les offres ou l’inscription.",
   },
 ] as const;
 

@@ -1,6 +1,6 @@
 # Agent d’information — guide d’exploitation
 
-Mise à jour : 11 octobre 2026. Écran : **Admin › Agent IA** (`/admin/agent-ia`). L’envoi réel reste coupé en production (`INFORMATION_AGENT_OUTBOUND_ENABLED=false`) ; aucune mission n’existe à cette date.
+Mise à jour : 14 octobre 2026. Écran : **Admin › Agent IA** (`/admin/agent-ia`). L’envoi réel reste coupé en production (`INFORMATION_AGENT_OUTBOUND_ENABLED=false`) ; aucune mission n’existe à cette date.
 
 ## Règle d’exploitation
 
@@ -16,12 +16,15 @@ Mise à jour : 11 octobre 2026. Écran : **Admin › Agent IA** (`/admin/agent-i
 
    Une valeur publiée par une source compte comme disponible : elle se vérifie dans la revue des faits, pas auprès du contact. Sont demandées les informations **absentes, contradictoires ou estimées**. Les éléments sans objet ne sont pas demandés (PV descriptif hors vente judiciaire ; surface, pièces et diagnostics d’un parking ; diagnostics d’un terrain). Si le cahier des conditions de vente est consultable, les modalités (consignation, frais, délais) ne sont pas redemandées.
 
-2. **Brouillon.** Le serveur choisit le contact référencé de la fiche (avocat, notaire, gestionnaire) s’il est unique et fiable ; sinon l’administrateur saisit l’adresse. Les adresses de juridiction (`@justice.fr`, `@*.justice.gouv.fr`) sont exclues. Au plus quatre questions, par priorité ; les pièces manquantes sont regroupées en une question qui les nomme (« le cahier des conditions de vente, le procès-verbal descriptif et le dossier de diagnostics techniques »). L’inventaire est enregistré dans la mission (`metadata.inventory`) et affiché dans le panneau : « À obtenir » et « Déjà disponible ».
+2. **Brouillon.** Le serveur choisit le contact référencé de la fiche (avocat, notaire, gestionnaire) s’il est unique et fiable ; sinon l’administrateur saisit l’adresse. Ne sont jamais proposées ni acceptées, quelle que soit leur origine : les adresses de juridiction (`@justice.fr`, `@*.justice.gouv.fr`), la messagerie RPVA des avocats (`@avocat-conseil.fr`), les adresses de l'Ordre, du barreau, du bâtonnier et des CARPA, et les adresses `noreply`, `dpo` et `rgpd` (`src/lib/information-agent/excluded-addresses.ts`, miroir Python `information_sufficiency.py`, cas partagés `information_agent_contact_cases.json`). L'opposition est contrôlée avant de retenir une adresse : un professionnel opposé sous une autre adresse n'est ni proposé ni enregistré. Au plus quatre questions, par priorité ; les pièces manquantes sont regroupées en une question qui les nomme (« le cahier des conditions de vente, le procès-verbal descriptif et le dossier de diagnostics techniques »). L’inventaire est enregistré dans la mission (`metadata.inventory`) et affiché dans le panneau : « À obtenir » et « Déjà disponible ».
 
 3. **Aperçu (obligatoire).** Le bouton « Afficher l’aperçu » (`POST /api/admin/information-agent/missions/preview`) rend l’e-mail exact (HTML et texte) sans rien écrire ni envoyer, et liste les motifs qui bloqueraient l’envoi :
    - contact opposé ou en rebond permanent ;
    - contact déjà sollicité dans les 30 derniers jours (toutes ventes) ;
-   - origine de l’adresse inconnue (adresse absente de l’annonce de cette vente et aucune page publique indiquée) ;
+   - origine de l’adresse inconnue (adresse absente de l’annonce de cette vente et aucune page publique indiquée, ou source d'annuaire, de site ou d'autre annonce sans lien exact) ;
+   - professionnel opposé sous une autre adresse (clé d'identité), adresse exclue (juridiction, RPVA, Ordre, CARPA, `noreply`, `dpo`, `rgpd`) ;
+   - mention commerciale dans l'objet, le texte ou le message rendu (offre, compte, inscription, mise en avant, prix, lien vers `/offres` ou l'inscription) ;
+   - prestataire d'IA configuré (`LLM_PROVIDER`) absent de la liste nommée dans le pied ;
    - envoi désactivé, restriction canari, configuration d’envoi, identité du responsable de traitement ou secret du lien d’opposition manquants.
 
    L’aperçu renvoie une empreinte HMAC du contenu exact et de l’administrateur. Seuls le jeton de l’adresse de réponse et le lien privé de dépôt sont illustratifs : ils sont attribués à l’envoi.
@@ -38,12 +41,19 @@ Mise à jour : 11 octobre 2026. Écran : **Admin › Agent IA** (`/admin/agent-i
 ## Contenu de l’e-mail
 
 - Objet court et formule d’appel nominative ou neutre.
-- Présentation succincte d’Immojudis, référence de la fiche et date annoncée (« Audience annoncée » pour une vente judiciaire, « Date de vente annoncée » sinon), questions, consignes de réponse.
-- En tête, sous la référence de suivi : origine de l’adresse avec le lien de l’annonce publique (« Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor. Voir l’annonce »). Pour une adresse saisie à la main, la page publique indiquée par l’administrateur est citée.
+- Objet du message en une phrase (« afin de vérifier des informations publiées sur cette vente ») : plus de présentation d’Immojudis ni de son service, ni de slogan, ni de lien vers le site (gabarit `information_request_v8`, révision 6 du gabarit éditable). Référence de la fiche et date annoncée (« Audience annoncée » pour une vente judiciaire, « Date de vente annoncée » sinon), questions, consignes de réponse.
+- En tête, sous la référence de suivi : origine de l’adresse selon le **type de source** enregistré, avec le lien exact et la date de consultation. Annonce : « figure dans l’annonce publique de cette vente sur Licitor (lien), consultée le JJ/MM/AAAA » ; autre annonce du professionnel ; fiche de l’annuaire officiel nommé ; site du cabinet ; saisie d’un administrateur (« relevée par un membre de l’équipe Immojudis sur une page publique (lien), le JJ/MM/AAAA »). Une adresse d’annuaire n’est donc jamais présentée comme figurant dans l’annonce.
 - Lien privé de dépôt sans compte.
-- Aucune invitation à créer un compte professionnel ni aucune sollicitation commerciale (décision du 13 octobre 2026, gabarit `information_request_v7`) : le message reste purement informatif. L’ancien bloc « Vous avez d’autres ventes à partager ? » est retiré s’il figure encore dans un modèle éditable.
-- Pied RGPD (art. 14) : responsable de traitement, origine de l’adresse avec le lien, finalité et base légale, politique de confidentialité, lien « Ne plus être contacté ».
+- Aucune invitation à créer un compte professionnel ni aucune sollicitation commerciale (décision du 13 octobre 2026) : le message reste purement informatif. L’ancien bloc « Vous avez d’autres ventes à partager ? » est retiré s’il figure encore dans un modèle éditable. Un contrôle automatique (`src/lib/information-agent-commercial-guard.ts`) refuse offres, comptes, inscription, « mise en avant », prix et tout lien vers le site d’Immojudis hors politique de confidentialité, dépôt privé, opposition et page de l’outil : il s’applique au gabarit par défaut (test), à l’aperçu (motif bloquant) et à l’envoi.
+- Pied RGPD (art. 14) complet : pourquoi ce message (finalité, base, responsable de traitement), catégories de données et origine de l’adresse, mention de la recherche automatique quand l’adresse a été retrouvée par l’outil, destinataires et prestataires (hébergement, envoi des courriels, prestataire d’IA nommé d’après `LLM_PROVIDER`, transferts hors UE), durées de conservation (30 jours si aucun message n’est envoyé, 12 mois sans réponse, 24 mois après le dernier échange), droits, droit d’opposition formulé séparément (« Ne plus être contacté ») et réclamation auprès de la CNIL, lien vers la politique de confidentialité.
 - En-têtes `List-Unsubscribe` et `List-Unsubscribe-Post` (désinscription en un clic de la messagerie, RFC 8058).
+
+### Source des adresses, conservation et opposition par identité
+
+- **Source typée.** Chaque adresse retenue porte dans `information_agent_contacts` : `source_kind` (annonce de la vente, autre annonce du professionnel, site du cabinet, annuaire officiel avec son nom dans `source_directory_name`, saisie d'administrateur), l'URL exacte, `observed_at` (date de relevé) et l'auteur (`observed_by` : agent ou administrateur). Une adresse saisie à la main est enregistrée à l'envoi avec la page publique indiquée et la date de création du brouillon.
+- **Purge** (`purge_information_agent_data`, appelée par `run_data_retention`, cron hebdomadaire) : brouillon, demande annulée ou échec sans envoi, 30 jours ; approuvée ou en cours d'envoi sans suite, 6 mois ; envoyée sans réponse, 12 mois ; avec réponse, 24 mois après le dernier échange. Une adresse du registre qu'aucune demande ne vise est supprimée 30 jours après son relevé. Les lignes d'opposition ou de rebond permanent et la liste d'opposition par identité ne sont jamais purgées.
+- **Opposition par identité.** En plus de l'adresse, une clé d'identité normalisée (rôle, nom, barreau ou ville, ou SIREN quand il est connu) est enregistrée avec l'adresse et la demande. Toute opposition par adresse (lien, réponse, STOP, dépôt, réponse consignée) alimente `information_agent_identity_oppositions` avec les clés connues pour cette adresse. La clé est vérifiée avant de retenir une adresse (création du brouillon), à l'aperçu, avant et pendant l'envoi, et en base (`information_agent_missions_contact_guard`). Limites : sans nom exploitable ni barreau ou ville, seule l'opposition par adresse s'applique ; une opposition reçue après la purge des lignes qui portent l'identité ne peut plus être rattachée à une identité ; un avocat qui postule dans un autre barreau que celui de la vente n'est reconnu que pour Paris, Bobigny, Créteil et Nanterre (multipostulation).
+- **Recherche automatisée d'adresse.** Hors périmètre de ce guide tant qu'elle n'est pas activée. Elle ne pourra démarrer qu'après validation du test de mise en balance et de l'analyse de seuil d'AIPD (`docs/rgpd-mise-en-balance-agent-information.md`) ; l'outil s'identifie par la page publique `/agent-information`.
 
 ### Désinscription
 
@@ -75,7 +85,8 @@ Mise à jour : 11 octobre 2026. Écran : **Admin › Agent IA** (`/admin/agent-i
 
 ## Avant le premier envoi réel
 
-1. Faire valider le gabarit complet (aperçu) par un juriste, y compris l’invitation à créer un compte.
+1. Faire valider le gabarit complet (aperçu) par un juriste : le message ne contient aucune invitation à créer un compte ni aucune mention commerciale, et le pied art. 14 est complet. Si un modèle publié (éditeur de gabarit) contient encore l'ancienne présentation d'Immojudis, le republier à partir de la révision 6.
+   Faire valider le test de mise en balance (`docs/rgpd-mise-en-balance-agent-information.md`) et les durées de conservation annoncées (30 jours, 12 mois, 24 mois).
 2. Configurer le sous-domaine d’envoi (SPF, DKIM, DMARC) et `INFORMATION_AGENT_EMAIL_FROM`.
 3. Vérifier `INFORMATION_AGENT_PORTAL_SECRET` et l’identité légale en production.
 4. Passer `INFORMATION_AGENT_OUTBOUND_ENABLED=true`, puis `INFORMATION_AGENT_OUTBOUND_CANARY_ONLY=false` seulement après un envoi de contrôle à une adresse interne.
