@@ -101,9 +101,9 @@ const processingRows = [
       "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
     data: "Nom, fonction, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation",
     basis:
-      "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. Les oppositions, par adresse et par identité du professionnel, sont conservées pour être respectées.",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     retention:
-      "30 jours si aucun message n’est envoyé, 12 mois sans réponse, 24 mois après le dernier échange ; liste d’opposition conservée tant que le traitement existe",
+      "Un mois au plus si aucun message n’est envoyé, 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle",
   },
   {
     purpose: "Formulaire de contact",
@@ -195,26 +195,19 @@ export function PrivacyPage() {
               Pour obtenir une information sur une vente, Immojudis peut écrire à l’avocat, au
               notaire, au commissaire de justice ou au gestionnaire qui la mène. Nous utilisons son
               nom, sa fonction et son adresse professionnelle, relevés dans l’annonce publique de la
-              vente, dans un annuaire professionnel officiel (annuaire des avocats du CNB, sites des
-              barreaux, annuaire des notaires, annuaire des commissaires de justice) ou sur le site
-              de son cabinet ou de son étude. La source et la date de relevé sont indiquées dans
-              chaque message. Base juridique : intérêt légitime à publier des informations exactes
-              sur les ventes. Les messages ne contiennent aucune offre commerciale. Chaque message
-              est validé par un administrateur. Les données sont conservées 30 jours si aucun
-              message n’est envoyé, 12 mois sans réponse, 24 mois après le dernier échange. Vous
-              pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus être contacté »
-              de chaque message ou à {legalValue(publisher.contactEmail)}. Votre opposition est
-              enregistrée et vaut pour tous nos canaux. Vous pouvez aussi demander l’accès, la
-              rectification ou l’effacement, et saisir la CNIL.
-            </p>
-            <p className="mt-3">
-              Un outil de recherche automatisé consulte ponctuellement, pour une vente précise, une
-              page publique du professionnel concerné. Aucune copie d’annuaire n’est conservée. Une
-              page décrit cet outil et la façon de s’y opposer :{" "}
-              <Link to="/agent-information" className="text-gold underline">
-                outil de recherche d’adresses d’Immojudis
-              </Link>
-              .
+              vente, dans un annuaire professionnel officiel (annuaire des avocats du CNB, annuaires
+              de certains barreaux, annuaire des commissaires de justice) ou sur le site de son
+              cabinet ou de son étude. La source et la date de relevé sont indiquées dans chaque
+              message. Base juridique : intérêt légitime à publier des informations exactes sur les
+              ventes. Les messages ne contiennent aucune offre commerciale. Chaque message est
+              validé par un administrateur. Les données sont conservées un mois au plus si aucun
+              message n’est envoyé, 12 mois si vous ne répondez pas, 24 mois après le dernier
+              échange si vous répondez. Vous pouvez vous opposer à tout moment, sans motif, par le
+              lien « Ne plus être contacté » de chaque message ou à{" "}
+              {legalValue(publisher.contactEmail)}. Votre opposition est enregistrée et vaut pour
+              tous nos canaux. Vous pouvez aussi demander l’accès, la rectification ou l’effacement,
+              et saisir la CNIL. Pour exercer ces droits, écrivez à{" "}
+              {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
             </p>
           </PrivacySection>
 
@@ -242,17 +235,18 @@ export function PrivacyPage() {
             <p>
               Les données sont accessibles aux personnes habilitées d’Immojudis et, selon le besoin,
               à Supabase (authentification et base), Vercel (hébergement, journaux et mesure de
-              performance), Stripe (paiement), Resend (emails), Mapbox (cartes, vignettes et
-              géocodage), l’Institut national de l’information géographique et forestière (IGN :
-              Base Adresse Nationale en repli du géocodage, Géoplateforme pour les cartes
-              cadastrales), le prestataire d’IA utilisé pour lire les annonces et les pièces, ainsi
-              que les réponses des professionnels contactés (Replicate, États-Unis), le service de
-              rapport d’erreurs lorsqu’il est configuré (sans cookie, en-tête, paramètre d’adresse
-              ni contenu de requête), aux avocats référencés uniquement lorsqu’une mise en relation
-              est demandée et à l’intermédiaire professionnel contacté par Immojudis après
-              validation par un administrateur. Dans ce dernier cas, seules les informations
-              nécessaires à l’enrichissement du dossier et au suivi de la réponse sont transmises.
-              Les prestataires agissent dans la limite de leurs missions contractuelles.
+              performance), Stripe (paiement), Resend (envoi et réception des courriels), GitHub
+              (exécution des traitements automatisés), Mapbox (cartes, vignettes et géocodage),
+              l’Institut national de l’information géographique et forestière (IGN : Base Adresse
+              Nationale en repli du géocodage, Géoplateforme pour les cartes cadastrales), le
+              prestataire d’IA utilisé pour lire les annonces et les pièces, ainsi que les réponses
+              des professionnels contactés (Replicate, États-Unis), le service de rapport d’erreurs
+              lorsqu’il est configuré (sans cookie, en-tête, paramètre d’adresse ni contenu de
+              requête), aux avocats référencés uniquement lorsqu’une mise en relation est demandée
+              et à l’intermédiaire professionnel contacté par Immojudis après validation par un
+              administrateur. Dans ce dernier cas, seules les informations nécessaires à
+              l’enrichissement du dossier et au suivi de la réponse sont transmises. Les
+              prestataires agissent dans la limite de leurs missions contractuelles.
             </p>
             <p className="mt-3">
               Mise en relation avec un avocat. Si vous ne choisissez pas d’avocat, Immojudis en
@@ -266,12 +260,10 @@ export function PrivacyPage() {
 
           <PrivacySection title="Transferts hors de l’Espace économique européen">
             <p>
-              Certains fournisseurs peuvent traiter des données aux États-Unis ou dans d’autres
-              pays. Ces transferts reposent, selon le fournisseur et le service, sur une décision
-              d’adéquation telle que le cadre UE–États-Unis applicable, des clauses contractuelles
-              types ou une autre garantie prévue par le RGPD. Les garanties pertinentes peuvent être
-              demandées depuis l’espace Mes droits. C’est notamment le cas du prestataire d’IA
-              (Replicate), établi aux États-Unis.
+              Certains prestataires peuvent traiter des données aux États-Unis ou dans d’autres
+              pays, notamment le prestataire d’IA (Replicate) et GitHub. Pour savoir quelle garantie
+              s’applique à chacun, ou en obtenir une copie, écrivez à{" "}
+              {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
             </p>
           </PrivacySection>
 

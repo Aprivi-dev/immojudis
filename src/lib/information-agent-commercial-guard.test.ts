@@ -95,7 +95,13 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
       },
     });
     for (const output of [email.html, email.text]) {
-      expect(findInformationAgentCommercialMentions(output, { appOrigin: APP_URL })).toEqual([]);
+      expect(
+        findInformationAgentCommercialMentions(output, {
+          appOrigin: APP_URL,
+          allowedUrls: ["https://www.licitor.com/annonce/1"],
+          ignore: ["Appartement T3 à Bordeaux"],
+        }),
+      ).toEqual([]);
     }
     // Plus de présentation du service ni de lien vers le site : l'identité tient au pied du message.
     for (const output of [email.html, email.text]) {
@@ -109,13 +115,23 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
     ["offer", "Découvrez nos offres pour les professionnels."],
     ["offer", "Notre offre Analyse est disponible."],
     ["offer", "Souscrivez un abonnement."],
+    ["offer", "Un essai gratuit est possible."],
+    ["offer", "Nous cherchons un partenaire pour ce secteur."],
+    ["offer", "Proposons un partenariat entre nos structures."],
+    ["offer", "Une mise en relation avec des acquéreurs est possible."],
+    ["offer", "Notre plateforme vous apporte de la clientèle."],
+    ["offer", "Inscrivez-vous à la newsletter."],
+    ["offer", "Nous vous proposons une démonstration."],
     ["account", "Créez un compte professionnel Immojudis."],
     ["account", "Créer un compte gratuit pour nous transmettre vos ventes."],
     ["account", "Inscrivez-vous sur Immojudis."],
+    ["account", "L'inscription gratuite prend une minute."],
     ["promotion", "Bénéficiez d'une mise en avant de vos ventes."],
-    ["promotion", "Gagnez en visibilité auprès des acquéreurs."],
+    ["promotion", "Nous pouvons référencer votre cabinet."],
+    ["promotion", "Ce service sponsorisé est réservé aux avocats."],
     ["price", "À partir de 29 € par mois."],
-    ["price", "Le tarif est de 29 euros HT."],
+    ["price", "Nos tarifs sont publics."],
+    ["price", "Le tarif d'Immojudis est de 29 euros HT."],
     ["price", "Notre prix est attractif."],
   ])("refuse la mention %s : %s", (rule, text) => {
     const mentions = findInformationAgentCommercialMentions(text);
@@ -125,20 +141,79 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
     );
   });
 
+  it("n'écarte pas à tort le vocabulaire de la vente et les termes juridiques courants", () => {
+    for (const text of [
+      "Pouvez-vous confirmer la mise à prix applicable à ce lot ?",
+      "Les mises à prix des lots 1 et 2 sont-elles confirmées ?",
+      "Quel est le prix de départ, et le prix atteint à l'audience précédente ?",
+      "Le prix d'adjudication sera-t-il publié ? Quel est le prix de réserve ?",
+      "Quelle est la date limite de dépôt des offres ?",
+      "Une offre d'achat a-t-elle été déposée ?",
+      "Une inscription hypothécaire ou une inscription au rôle est-elle en cours ?",
+      "La publicité de la vente et la publicité foncière ont-elles été faites ?",
+      "Quels sont les émoluments et les frais annoncés, en HT ou TTC ?",
+      "Quelle est la visibilité du bien depuis la rue ? C'est une promotion immobilière.",
+      "Le forfait de consignation et le pack de diagnostics sont-ils joints ?",
+      "Quel est le tarif du droit de plaidoirie ?",
+      "Le lieu ou la plateforme de vente est-il confirmé ?",
+      "Aucun compte n’est nécessaire.",
+      "Vous pouvez déposer vos pièces sans créer de compte.",
+      "Quelles sont les modalités d'inscription aux visites ?",
+      "Ce message ne contient aucune offre commerciale.",
+      "Référence de suivi : IJ-ABC123",
+    ]) {
+      expect(findInformationAgentCommercialMentions(text), text).toEqual([]);
+    }
+  });
+
+  it("résiste aux contournements simples (caractères invisibles, entités, espaces insécables)", () => {
+    for (const text of [
+      "Une mise\u200b en avant de vos ventes",
+      "Une mise\u00a0en\u00a0avant de vos ventes",
+      "Cr\u00adéez un compte professionnel",
+      "Abonne\u2060ment annuel",
+      "<p>Nos&nbsp;tarifs sont publics</p>",
+    ]) {
+      expect(findInformationAgentCommercialMentions(text).length, text).toBeGreaterThan(0);
+    }
+  });
+
+  it("écarte du contrôle les textes issus de l'annonce, sans affaiblir le reste", () => {
+    const html = "<p>Vente : Résidence Premium, forfait inclus. Créez un compte.</p>";
+    const mentions = findInformationAgentCommercialMentions(html, {
+      ignore: ["Résidence Premium, forfait inclus"],
+    });
+    expect(mentions.map((mention) => mention.excerpt)).toEqual(["Créez un compte"]);
+  });
+
   it.each([
     `${APP_URL}/offres`,
     `${APP_URL}/offres?utm_source=agent`,
     `${APP_URL}/login?mode=professional`,
     `${APP_URL}/inscription`,
     `${APP_URL}/avocats`,
-    "https://www.immojudis.example/offres",
     `${APP_URL}/offres/analyse`,
-  ])("refuse le lien vers le site : %s", (link) => {
-    const mentions = findInformationAgentCommercialMentions(`Voir ${link}`, { appOrigin: APP_URL });
-    expect(mentions.map((mention) => mention.rule)).toContain("link");
-    const html = `<p><a href="${link}">Voir</a></p>`;
+    `${APP_URL}/`,
+    "https://www.immojudis.example/offres",
+    "http://immojudis.example:8080/offres",
+    "https://immojudis.example.evil.test/privacy",
+    "https://annonces-concurrent.example.test/vente",
+    "https://www.licitor.com/autre-page",
+  ])("refuse le lien : %s", (link) => {
+    const options = { appOrigin: APP_URL, allowedUrls: ["https://www.licitor.com/annonce/1"] };
     expect(
-      findInformationAgentCommercialMentions(html, { appOrigin: APP_URL }).map(
+      findInformationAgentCommercialMentions(`Voir ${link}`, options).map(
+        (mention) => mention.rule,
+      ),
+    ).toContain("link");
+    expect(
+      findInformationAgentCommercialMentions(`<p><a href="${link}">Voir</a></p>`, options).map(
+        (mention) => mention.rule,
+      ),
+    ).toContain("link");
+    // Attribut entre apostrophes.
+    expect(
+      findInformationAgentCommercialMentions(`<a href='${link}'>Voir</a>`, options).map(
         (mention) => mention.rule,
       ),
     ).toContain("link");
@@ -146,30 +221,24 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
 
   it.each([
     `${APP_URL}/privacy`,
+    `https://www.immojudis.example/privacy`,
     `${APP_URL}/contribuer/abc123`,
     `${APP_URL}/api/information-agent/opt-out?e=a&t=b`,
-    `${APP_URL}/agent-information`,
-    "https://www.licitor.com/offres-speciales",
     "https://www.cnil.fr/fr/plaintes",
+    "https://www.licitor.com/annonce/1",
+    "https://www.licitor.com/annonce/1/",
   ])("admet le lien utile au destinataire : %s", (link) => {
-    expect(findInformationAgentCommercialMentions(`Voir ${link}`, { appOrigin: APP_URL })).toEqual(
+    const options = { appOrigin: APP_URL, allowedUrls: ["https://www.licitor.com/annonce/1"] };
+    expect(findInformationAgentCommercialMentions(`Voir ${link}`, options)).toEqual([]);
+    expect(findInformationAgentCommercialMentions(`<a href="${link}">Voir</a>`, options)).toEqual(
       [],
     );
   });
 
-  it("admet les formules qui décrivent la vente ou rassurent le destinataire", () => {
-    for (const text of [
-      "Pouvez-vous confirmer la mise à prix applicable à ce lot ?",
-      "Quelle est la date limite de dépôt des offres ?",
-      "Une offre d'achat a-t-elle été déposée ?",
-      "Aucun compte n’est nécessaire.",
-      "Vous pouvez déposer vos pièces sans créer de compte.",
-      "Quelles sont les modalités d'inscription aux visites ?",
-      "Ce message ne contient aucune offre commerciale.",
-      "Le prix d'adjudication sera-t-il publié ?",
-      "Référence de suivi : IJ-ABC123",
-    ]) {
-      expect(findInformationAgentCommercialMentions(text), text).toEqual([]);
-    }
+  it("refuse tout lien quand aucune origine ni source n'est fournie", () => {
+    expect(findInformationAgentCommercialMentions("Voir https://example.test/page")).toHaveLength(
+      1,
+    );
+    expect(findInformationAgentCommercialMentions("Écrire à contact@example.test")).toEqual([]);
   });
 });

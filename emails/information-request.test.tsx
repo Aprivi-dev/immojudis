@@ -3,7 +3,7 @@ import type { InformationAgentLegalFooter } from "../src/lib/information-agent-c
 import { renderInformationRequestEmail } from "./information-request";
 
 const bodyText = [
-  "Bonjour Maître Dupont,",
+  "Bonjour Maître Jean Dupont,",
   "",
   "Je vous contacte pour Immojudis, service indépendant d’information sur les ventes immobilières judiciaires. Nous vérifions la fiche de cette vente :",
   "",
@@ -94,7 +94,7 @@ describe("renderInformationRequestEmail", () => {
       "figure dans l’annonce publique de cette vente sur Licitor",
     );
     expect(origin).toBeGreaterThan(-1);
-    expect(origin).toBeLessThan(message.text.indexOf("Bonjour Maître Dupont"));
+    expect(origin).toBeLessThan(message.text.indexOf("Bonjour Maître Jean Dupont"));
     expect(message.text).toContain(
       "(https://www.licitor.com/annonce/10/99/72/109972.html), consultée le 14/10/2026",
     );
@@ -135,8 +135,8 @@ describe("renderInformationRequestEmail", () => {
       expect(output).toContain("la vente Maison — 33000 Bordeaux");
       expect(output).toContain("votre nom, votre fonction, votre adresse professionnelle");
       expect(output).toContain("Replicate (États-Unis)");
-      expect(output).toContain("30 jours si aucun message");
-      expect(output).toContain("12 mois sans réponse");
+      expect(output).toContain("12 mois si vous ne répondez pas");
+      expect(output).toContain("12 mois si vous ne répondez pas");
       expect(output).toContain("24 mois après le dernier échange");
       expect(output).toContain("accès, rectification, effacement et limitation");
       expect(output).toContain("Vous pouvez vous opposer à tout moment, sans motif");
@@ -158,7 +158,7 @@ describe("renderInformationRequestEmail", () => {
     });
     for (const output of [message.html, message.text]) {
       expect(output).toContain(
-        "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques sans en conserver de copie. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
+        "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
       );
     }
   });

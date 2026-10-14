@@ -153,7 +153,9 @@ def contact_phones(sale: AuctionSale) -> set[str]:
 
 _COURT_REGISTRY_DOMAIN_RE = re.compile(r"(?:^|\.)justice\.(?:fr|gouv\.fr)$")
 _RPVA_DOMAIN_RE = re.compile(r"(?:^|\.)avocat-conseil\.fr$")
-_BAR_OR_CARPA_DOMAIN_RE = re.compile(r"(?:^|[.-])(?:ordre|barreau|batonnat|batonnier|carpa)")
+_BAR_OR_CARPA_DOMAIN_RE = re.compile(
+    r"^(?:www\.)?(?:(?:ordre|barreau|batonnat|batonnier|carpa)(?:[.-]|$)|ordredesavocats)"
+)
 _BAR_OR_CARPA_LOCAL_RE = re.compile(r"^(?:ordre|barreau|batonnat|batonnier|carpa)(?:[._+-]|$)")
 _TECHNICAL_LOCAL_RE = re.compile(r"^(?:no[._-]?reply|do[._-]?not[._-]?reply|dpo|rgpd)(?:[._+-]|$)")
 
