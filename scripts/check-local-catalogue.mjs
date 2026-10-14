@@ -34,6 +34,7 @@ const allowedFields = [
   "latitude",
   "longitude",
   "thumbnail_url",
+  "completeness_tier",
 ].sort();
 
 try {
@@ -70,6 +71,8 @@ try {
     assert.equal(typeof row.app_surface_m2, "number");
     assert.equal(row.city, city);
     assert.equal(row.thumbnail_url, "https://example.test/photo.jpg");
+    // Ventes sans évaluation de complétude: palier bas, jamais de score dans la réponse publique.
+    assert.equal(row.completeness_tier, 0);
   }
   assert.equal(all.body[0].latitude, 44.84);
   assert.equal(all.body[0].longitude, -0.58);
