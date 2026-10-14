@@ -183,12 +183,35 @@ describe("politique de confidentialité", () => {
   it("aligne la base légale de l'enquête dossier sur le registre et ne parle plus de prospection", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Intérêt légitime à fiabiliser le catalogue auprès des professionnels contactés ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les adresses ayant exercé leur opposition sont conservées pour la respecter.",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. Les oppositions, par adresse et par identité du professionnel, sont conservées pour être respectées.",
     );
     // L'email du demandeur n'est jamais communiqué (share_requester_email reste à false).
     expect(text).not.toContain("consentement pour la communication de l’email de réponse");
     expect(text).not.toContain("service professionnel");
     expect(text).toContain("aucune sollicitation commerciale");
+  });
+
+  it("décrit les professionnels contactés : sources, durées, opposition, recherche automatisée (cadrage 8.2)", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).not.toContain("Enrichissement de dossier supervisé par Immojudis");
+    expect(text).toContain(
+      "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
+    );
+    expect(text).toContain(
+      "relevés dans l’annonce publique de la vente, dans un annuaire professionnel officiel (annuaire des avocats du CNB, sites des barreaux, annuaire des notaires, annuaire des commissaires de justice) ou sur le site de son cabinet ou de son étude. La source et la date de relevé sont indiquées dans chaque message.",
+    );
+    expect(text).toContain("Base juridique : intérêt légitime à publier des informations exactes");
+    expect(text).toContain("Les messages ne contiennent aucune offre commerciale.");
+    expect(text).toContain(
+      "Les données sont conservées 30 jours si aucun message n’est envoyé, 12 mois sans réponse, 24 mois après le dernier échange.",
+    );
+    expect(text).toContain(
+      "Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus être contacté » de chaque message ou à contact@immojudis.example. Votre opposition est enregistrée et vaut pour tous nos canaux.",
+    );
+    expect(text).toContain(
+      "Un outil de recherche automatisé consulte ponctuellement, pour une vente précise, une page publique du professionnel concerné. Aucune copie d’annuaire n’est conservée.",
+    );
+    expect(text).toContain("les réponses des professionnels contactés (Replicate, États-Unis)");
   });
 
   it("décrit l'IA du message d'enquête comme le fait le message lui-même", () => {

@@ -89,12 +89,13 @@ const processingRows = [
       "Pas de conservation propre à ce traitement par Immojudis ; durée de conservation de Mapbox et de l’IGN selon leurs conditions",
   },
   {
-    purpose: "Enrichissement de dossier supervisé par Immojudis",
-    data: "Annonce, informations manquantes, coordonnées professionnelles, questions, messages, réponses, pièces et décisions de validation",
+    purpose:
+      "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
+    data: "Nom, fonction, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation",
     basis:
-      "Intérêt légitime à fiabiliser le catalogue auprès des professionnels contactés ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les adresses ayant exercé leur opposition sont conservées pour la respecter.",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. Les oppositions, par adresse et par identité du professionnel, sont conservées pour être respectées.",
     retention:
-      "Pendant le suivi ; sans activité, brouillons purgés après 6 mois et échanges après 24 mois",
+      "30 jours si aucun message n’est envoyé, 12 mois sans réponse, 24 mois après le dernier échange ; liste d’opposition conservée tant que le traitement existe",
   },
   {
     purpose: "Formulaire de contact",
@@ -181,6 +182,34 @@ export function PrivacyPage() {
             </div>
           </PrivacySection>
 
+          <PrivacySection title="Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)">
+            <p>
+              Pour obtenir une information sur une vente, Immojudis peut écrire à l’avocat, au
+              notaire, au commissaire de justice ou au gestionnaire qui la mène. Nous utilisons son
+              nom, sa fonction et son adresse professionnelle, relevés dans l’annonce publique de la
+              vente, dans un annuaire professionnel officiel (annuaire des avocats du CNB, sites des
+              barreaux, annuaire des notaires, annuaire des commissaires de justice) ou sur le site
+              de son cabinet ou de son étude. La source et la date de relevé sont indiquées dans
+              chaque message. Base juridique : intérêt légitime à publier des informations exactes
+              sur les ventes. Les messages ne contiennent aucune offre commerciale. Chaque message
+              est validé par un administrateur. Les données sont conservées 30 jours si aucun
+              message n’est envoyé, 12 mois sans réponse, 24 mois après le dernier échange. Vous
+              pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus être contacté »
+              de chaque message ou à {legalValue(publisher.contactEmail)}. Votre opposition est
+              enregistrée et vaut pour tous nos canaux. Vous pouvez aussi demander l’accès, la
+              rectification ou l’effacement, et saisir la CNIL.
+            </p>
+            <p className="mt-3">
+              Un outil de recherche automatisé consulte ponctuellement, pour une vente précise, une
+              page publique du professionnel concerné. Aucune copie d’annuaire n’est conservée. Une
+              page décrit cet outil et la façon de s’y opposer :{" "}
+              <Link to="/agent-information" className="text-gold underline">
+                outil de recherche d’adresses d’Immojudis
+              </Link>
+              .
+            </p>
+          </PrivacySection>
+
           <PrivacySection title="Personnes citées dans une annonce">
             <p>
               Les annonces de vente et leurs pièces publiques concernent des biens, mais peuvent
@@ -208,13 +237,14 @@ export function PrivacyPage() {
               performance), Stripe (paiement), Resend (emails), Mapbox (cartes, vignettes et
               géocodage), l’Institut national de l’information géographique et forestière (IGN :
               Base Adresse Nationale en repli du géocodage, Géoplateforme pour les cartes
-              cadastrales), le prestataire d’IA utilisé pour lire les annonces et les pièces
-              (Replicate), le service de rapport d’erreurs lorsqu’il est configuré (sans cookie,
-              en-tête, paramètre d’adresse ni contenu de requête), aux avocats référencés uniquement
-              lorsqu’une mise en relation est demandée et à l’intermédiaire professionnel contacté
-              par Immojudis après validation par un administrateur. Dans ce dernier cas, seules les
-              informations nécessaires à l’enrichissement du dossier et au suivi de la réponse sont
-              transmises. Les prestataires agissent dans la limite de leurs missions contractuelles.
+              cadastrales), le prestataire d’IA utilisé pour lire les annonces et les pièces, ainsi
+              que les réponses des professionnels contactés (Replicate, États-Unis), le service de
+              rapport d’erreurs lorsqu’il est configuré (sans cookie, en-tête, paramètre d’adresse
+              ni contenu de requête), aux avocats référencés uniquement lorsqu’une mise en relation
+              est demandée et à l’intermédiaire professionnel contacté par Immojudis après
+              validation par un administrateur. Dans ce dernier cas, seules les informations
+              nécessaires à l’enrichissement du dossier et au suivi de la réponse sont transmises.
+              Les prestataires agissent dans la limite de leurs missions contractuelles.
             </p>
             <p className="mt-3">
               Mise en relation avec un avocat. Si vous ne choisissez pas d’avocat, Immojudis en
@@ -232,7 +262,8 @@ export function PrivacyPage() {
               pays. Ces transferts reposent, selon le fournisseur et le service, sur une décision
               d’adéquation telle que le cadre UE–États-Unis applicable, des clauses contractuelles
               types ou une autre garantie prévue par le RGPD. Les garanties pertinentes peuvent être
-              demandées depuis l’espace Mes droits.
+              demandées depuis l’espace Mes droits. C’est notamment le cas du prestataire d’IA
+              (Replicate), établi aux États-Unis.
             </p>
           </PrivacySection>
 
