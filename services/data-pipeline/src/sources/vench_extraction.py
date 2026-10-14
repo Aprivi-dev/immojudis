@@ -27,12 +27,14 @@ from src.sources.listing_characteristics import (
     item,
     merge_features_tree,
 )
-from src.sources.professional_contact import clear_email, keep_professional
+from src.sources.professional_contact import clear_email, keep_professional, mailto_address
 
 FEATURES_SCHEMA_VERSION = "vench_features_v1"
 _OCCUPANCY = {"bien occupe": "occupied", "bien libre": "vacant", "bien loue": "rented"}
 _TITLED_PERSON = re.compile(r"Ma[iî]tre\b|Me\b")
-_PERSON_LINE = re.compile(r"Ma[iî]tre\b|Me\b|Avocat\s+\S")
+_PERSON_LINE = re.compile(r"Ma[iî]tre\b|Me\b|Avocat\s+(?!(?:au|à|près|du|de|des|inscrit)\b)\S")
+# « Avocat au Barreau de Paris » est un rôle, ni un cabinet ni un nom.
+_ROLE_LINE = re.compile(r"Avocat\s+(?:au|à|près|du|de|des|inscrit)\b")
 _PAYWALL = re.compile(r"vous devez [êe]tre abonn|pour consulter l.int[ée]gralit|s.abonner pour consulter", re.I)
 
 
@@ -124,6 +126,7 @@ def _contact_blocks(soup: BeautifulSoup) -> dict[str, dict[str, str]]:
                 entry["address"] = names[-1]
         else:
             # Le cabinet puis l'avocat, en « Maître Prénom NOM Avocat » ou en « Avocat Prénom NOM ».
+            names = [name for name in names if not _ROLE_LINE.match(name)]
             firm = next((name for name in names if not _PERSON_LINE.match(name)), None)
             person = next((name for name in names if _PERSON_LINE.match(name)), None)
             # Garde-fou : un libellé que le filtre de données personnelles réécrit nomme une personne physique.
@@ -138,13 +141,19 @@ def _contact_blocks(soup: BeautifulSoup) -> dict[str, dict[str, str]]:
             coords = enquiry.select_one(".displayAPcoords")
             if coords is not None:
                 coord_text = coords.get_text("\n", strip=True)
-                coord_lines = [line for line in (clean_text(part) for part in coord_text.splitlines()) if line]
+                # L'adresse postale se lit sans le texte des liens « mailto: » (adresse ou libellé du lien).
+                postal = BeautifulSoup(str(coords), "html.parser")
+                for link in postal.select("a[href^='mailto:']"):
+                    link.decompose()
+                coord_lines = [
+                    line for line in (clean_text(part) for part in postal.get_text("\n", strip=True).splitlines()) if line
+                ]
                 phone = re.search(r"(?:\+33\s?|0)[1-9](?:[\s.]?\d{2}){4}", coord_text)
                 site = coords.select_one("a[href^='http']")
                 # Seule une adresse publiée en clair est lue (« mailto: » ou texte) ; celle que Cloudflare masque
                 # (« [email protected] », ``data-cfemail``) n'est pas décodée.
                 mailto = coords.select_one("a[href^='mailto:']")
-                email = clear_email(str(mailto.get("href"))[len("mailto:"):]) if mailto is not None else None
+                email = mailto_address(mailto.get("href")) if mailto is not None else None
                 email = email or clear_email(coord_text)
                 address = [
                     line for line in coord_lines
@@ -293,6 +302,8 @@ def extract_vench_detail(
             "listing": {"reference": external_id, "published_on": published_on, "journal": journal,
                         "access": "subscribers_only" if is_paywalled(soup) else "public"},
             "coordinates": {"latitude": latitude, "longitude": longitude} if latitude else None,
+            # Canaux séparés (téléphone, email) : le profil d'extraction les projette en ``lawyer_contact``.
+            "contact": {key: value for key in ("phone", "email") if (value := (lawyer or notary or {}).get(key))},
         },
     )
     blocks = {
