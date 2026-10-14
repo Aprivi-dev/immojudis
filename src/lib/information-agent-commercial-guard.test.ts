@@ -6,6 +6,7 @@ import {
 import {
   assertNoInformationAgentCommercialMention,
   findInformationAgentCommercialMentions,
+  normalizeInformationAgentGuardText,
 } from "@/lib/information-agent-commercial-guard";
 import {
   INFORMATION_AGENT_QUESTIONS,
@@ -240,5 +241,15 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
       1,
     );
     expect(findInformationAgentCommercialMentions("Écrire à contact@example.test")).toEqual([]);
+  });
+
+  it("décode les entités une seule fois : &amp;nbsp; et &amp;quot; restent littéraux", () => {
+    expect(normalizeInformationAgentGuardText("a&amp;nbsp;b")).toBe("a&nbsp;b");
+    expect(normalizeInformationAgentGuardText("a&amp;quot;b")).toBe("a&quot;b");
+    expect(normalizeInformationAgentGuardText("a&amp;amp;b")).toBe("a&amp;b");
+    expect(normalizeInformationAgentGuardText("a&nbsp;b&quot;c&#x27;d&amp;e")).toBe("a b\"c'd&e");
+    // Une entité doublement encodée ne fabrique pas un espace qui masquerait « mise en avant ».
+    expect(findInformationAgentCommercialMentions("mise&amp;nbsp;en&amp;nbsp;avant")).toEqual([]);
+    expect(findInformationAgentCommercialMentions("mise&nbsp;en&nbsp;avant")).toHaveLength(1);
   });
 });
