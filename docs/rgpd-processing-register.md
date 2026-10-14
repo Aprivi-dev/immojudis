@@ -29,10 +29,14 @@ minimale : annuelle et avant toute nouvelle finalité, catégorie sensible, four
 
 Sources admises, par niveau (avis juridique du 14/10/2026, à faire valider) :
 
-- **Décodage Cloudflare** des adresses masquées de Licitor : le parseur ne décode pas ces adresses
-  et ne doit jamais le faire. Décodage à la demande uniquement, pour la seule fiche de la vente en
-  préparation, après confirmation écrite de Licitor, sans requête en lot et sans contourner aucun
-  défi ni blocage. Tant que cette confirmation n’est pas obtenue, aucun outil ne décode.
+- **Décodage Cloudflare** des adresses masquées. Licitor : le parseur décode les adresses email
+  masquées (protection Cloudflare) des annonces, avec l’accord oral de Licitor donné au propriétaire
+  (14/10/2026, à formaliser par écrit). Vench : pas de décodage. Le décodage se fait en lot, à la
+  collecte, sur le HTML déjà récupéré, sans requête supplémentaire et sans contourner aucun défi ni
+  blocage ; l’adresse décodée passe par les mêmes filtres qu’une adresse en clair (juridictions,
+  messagerie RPVA, Ordre, barreau et CARPA exclus) et son origine reste l’annonce. Cet accord prime
+  sur l’avis juridique du 14/10/2026 (décodage à la demande, après accord écrit) ; il reste à
+  confirmer par écrit.
 - **Niveau 1 :** annonce publique de la vente ; autre annonce du même professionnel (identité
   vérifiée, adresse relevée il y a moins de 6 mois) ; site du cabinet ou de l'étude cité par
   l'annonce ou un annuaire (trois pages au plus).
