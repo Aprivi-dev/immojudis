@@ -7,8 +7,9 @@ import {
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
 import { PublicApiError } from "@/lib/api-errors";
-import { DETAIL_VIEW } from "@/lib/sale-views";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
+import { assertFeatureEntitlementVia, featureIncludedForSale } from "@/lib/property-reports";
+import { ceilingMarketContext } from "@/lib/market-estimate-ceiling";
 import { refreshSaleValuationOnDemand } from "@/lib/sale-market-estimates";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { z } from "zod";
@@ -26,17 +27,24 @@ export async function POST(request: Request) {
       ...RATE_LIMIT_POLICIES.compute,
     });
     const { saleId } = requestSchema.parse(await request.json());
-    // Analyse, or a Découverte account that unlocked this very sale (« 3 déblocages par mois »).
-    await assertFeatureEntitlement(
-      auth,
-      "property.valueEstimate",
-      "Estimation de marché réservée au plan Analyse.",
-      { saleId },
-    );
+    // Analyse reads the detailed estimate. A Découverte account that unlocked this very sale
+    // (« 3 déblocages par mois ») gets the reference value under the bid-ceiling right, reduced to
+    // what the ceiling reads: the detailed estimate (range, quartiles, comparables) stays with
+    // Analyse.
+    const detailed = await featureIncludedForSale(auth, "property.valueEstimate", saleId);
+    if (!detailed) {
+      await assertFeatureEntitlementVia(
+        auth,
+        "property.bidCeiling",
+        "Estimation de marché réservée au plan Analyse.",
+        { saleId },
+      );
+    }
     // Same visibility rule as the sale page: the sale must be readable by this user in
-    // the catalogue view (published and ready), not merely present in auction_sales.
+    // the catalogue view (published and ready), not merely present in auction_sales. An unlock
+    // reads the redacted catalogue view; its right to the sale was confirmed just above.
     const { data: visibleSale, error: visibilityError } = await auth.supabase
-      .from(DETAIL_VIEW)
+      .from(detailed ? DETAIL_VIEW : DISCOVERY_VIEW)
       .select("id")
       .eq("id", saleId)
       .maybeSingle();
@@ -67,7 +75,7 @@ export async function POST(request: Request) {
         : response.status === "insufficient_data"
           ? 422
           : 503;
-    return NextResponse.json(response, {
+    return NextResponse.json(detailed ? response : ceilingMarketContext(response), {
       status,
       headers: {
         "cache-control": response.estimate

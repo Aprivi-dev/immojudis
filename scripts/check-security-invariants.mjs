@@ -596,14 +596,57 @@ for (const unlockFunction of ["unlock_sale_at", "unlock_sale"]) {
     failures.push(`${unlockFunction} is not SECURITY DEFINER with a fixed search_path`);
   }
 }
+// The unlock opens five things only. auction_sales is never widened (row level security cannot limit
+// columns): the sale is served by a redacted definer view that lists the caller's own unlocks.
 if (
-  !/alter\s+policy\s+auction_sales_authenticated_read\s+on\s+public\.auction_sales[\s\S]*?public\.is_admin\(\)[\s\S]*?public\.has_analysis_access\(\)\s+or\s+app_private\.current_user_unlocked_sale\(id\)[\s\S]*?catalogue_readiness_allows_premium[\s\S]*?<>\s*'quarantined'[\s\S]*?publication_quarantine/i.test(
+  /(?:alter|create)\s+(?:or\s+replace\s+)?policy\s+auction_sales_authenticated_read/i.test(
     saleUnlockMigration,
   )
 ) {
+  failures.push("The sale unlock migration widens auction_sales_authenticated_read");
+}
+if (/set_catalogue_raw_columns_hidden/i.test(saleUnlockMigration)) {
+  failures.push("The sale unlock migration redefines set_catalogue_raw_columns_hidden");
+}
+for (const table of [
+  "auction_documents",
+  "auction_risks",
+  "auction_risk_occurrences",
+  "auction_score_factors",
+  "auction_features",
+  "auction_surfaces",
+]) {
+  if (new RegExp(`on\\s+public\\.${table}\\b`, "i").test(saleUnlockMigration)) {
+    failures.push(`The sale unlock migration opens ${table} to an unlock`);
+  }
+}
+const unlockedView =
+  /create\s+or\s+replace\s+view\s+public\.v_auction_sales_unlocked\s+with\s*\(\s*security_invoker\s*=\s*false\s*,\s*security_barrier\s*=\s*true\s*\)[\s\S]*?;/i.exec(
+    saleUnlockMigration,
+  )?.[0];
+if (
+  !unlockedView ||
+  !/from\s+public\.user_sale_unlocks[\s\S]*?where\s+unlock_row\.user_id\s*=\s*\(select\s+auth\.uid\(\)\)[\s\S]*?app_private\.sale_is_unlockable\(s\.id\)/i.test(
+    unlockedView,
+  )
+) {
+  failures.push("v_auction_sales_unlocked is not limited to the sales the caller unlocked");
+} else if (
+  /null::double precision as investment_score/i.test(unlockedView) === false ||
+  /'\[\]'::jsonb as risks/i.test(unlockedView) === false ||
+  /null::text as source_url/i.test(unlockedView) === false ||
+  /\braw_payload\s*,|\bs\.raw_payload\s+as\b|\bs\.observations\s+as\b/i.test(unlockedView)
+) {
   failures.push(
-    "auction_sales_authenticated_read lets an unlock bypass the readiness or quarantine guards",
+    "v_auction_sales_unlocked leaks the score, the risks, the source url or the raw payload",
   );
+}
+if (
+  !/revoke\s+all\s+on\s+table\s+public\.v_auction_sales_unlocked\s+from\s+public,\s*anon/i.test(
+    saleUnlockMigration,
+  )
+) {
+  failures.push("v_auction_sales_unlocked is not closed to anon");
 }
 if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
   failures.push("The sale unlock migration contains a permissive policy");

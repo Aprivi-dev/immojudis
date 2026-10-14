@@ -42,7 +42,9 @@ async function loadSaleDetailRouteData(
   id: string,
   options: { discovery?: boolean; unlocked?: boolean; authenticated: boolean },
 ): Promise<SaleDetailRouteData> {
-  let sale = options.authenticated ? await getSaleById(id, { discovery: options.discovery }) : null;
+  let sale = options.authenticated
+    ? await getSaleById(id, { discovery: options.discovery, unlocked: options.unlocked })
+    : null;
   // A sale that leaves the catalogue between the unlock check and this read is no longer served
   // by the full view: fall back to the free one rather than to a missing page.
   if (!sale && options.unlocked) sale = await getSaleById(id, { discovery: true });

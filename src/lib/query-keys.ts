@@ -72,8 +72,10 @@ export const queryKeys = {
   streetViewPanorama: (lat: number, lng: number) =>
     ["street-view-panorama", lat.toFixed(6), lng.toFixed(6)] as const,
   saleWorkspace: (saleId: string) => ["sale-workspace", saleId] as const,
-  precomputedMarketEstimate: (saleId: string, userKey?: Id) =>
-    ["precomputed-market-estimate", saleId, userKey ?? "anonymous"] as const,
+  // The mode is part of the key: Analyse gets the detailed estimate, an unlock only the value the
+  // bid ceiling reads, and an account that changes offer must not be served the other one.
+  precomputedMarketEstimate: (saleId: string, userKey?: Id, mode: SaleAccessMode = "analysis") =>
+    ["precomputed-market-estimate", saleId, userKey ?? "anonymous", mode] as const,
   outcomeGraph: (saleId: string) => ["outcome-graph", saleId] as const,
   listingStatistics: (saleId: string, historyMonths: number, mode: "demo" | "live") =>
     ["listing-statistics", saleId, historyMonths, mode] as const,

@@ -43,6 +43,7 @@ import {
   fetchSaleFactReliabilities,
 } from "@/lib/client-api";
 import type { MarketEstimate } from "@/lib/market.server";
+import { isDetailedMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { computeAcquisitionCosts } from "@/lib/profitability";
 import { buildCeilingHypotheses } from "@/lib/bid-ceiling-defaults";
 import { computeCeilingPlan, maxWorksAtBid } from "@/lib/bid-ceiling-engine";
@@ -283,11 +284,13 @@ function SaleDetailWorkspace({
   const factReliabilityQuery = useQuery({
     queryKey: queryKeys.saleFactReliability(sale.id, user?.id ?? "anonymous"),
     queryFn: () => fetchSaleFactReliabilities(sale.id),
-    enabled: Boolean(fullData && user && !publicDemo && !authLoading),
+    // The reliability of the listing facts is an Analyse read: an unlocked sale does not open it.
+    enabled: Boolean(access === "analysis" && user && !publicDemo && !authLoading),
     staleTime: 5 * 60_000,
     retry: false,
   });
-  const factReliabilities = fullData ? (factReliabilityQuery.data?.facts ?? null) : null;
+  const factReliabilities =
+    access === "analysis" ? (factReliabilityQuery.data?.facts ?? null) : null;
   const valuationConflict = listingValuationConflict(sale);
   const priceReview = getAiReviewFieldResult(
     resolvedAiReviewProjections,
@@ -327,7 +330,7 @@ function SaleDetailWorkspace({
   // The market estimate feeds the bid ceiling (judicial sales) and, for Analyse, the market blocks.
   const marketAccess = access === "analysis" || (access === "unlocked" && isTribunalSale);
   const marketQuery = useQuery({
-    queryKey: queryKeys.precomputedMarketEstimate(sale.id, user?.id),
+    queryKey: queryKeys.precomputedMarketEstimate(sale.id, user?.id, access),
     queryFn: () => fetchPrecomputedMarketEstimate({ saleId: sale.id }),
     enabled:
       marketAccess &&
@@ -338,10 +341,14 @@ function SaleDetailWorkspace({
     refetchInterval: (query) =>
       query.state.data?.status === "queued" && !query.state.data.estimate ? 15_000 : false,
   });
+  // What the ceiling reads: the whole estimate (Analyse) or its ceiling projection (unlock).
   const marketEstimate =
     !marketAccess || valuationConflict || criticalAnalysisInputsBlocked
       ? null
       : (marketEstimateOverride ?? marketQuery.data?.estimate ?? null);
+  // The detailed blocks (range, references, comparables) exist for Analyse only.
+  const detailedMarketEstimate =
+    access === "analysis" && isDetailedMarketEstimate(marketEstimate) ? marketEstimate : null;
   const ceilingEnabled =
     fullData && isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked;
   const ceilingHypotheses = useMemo(() => {
@@ -706,7 +713,7 @@ function SaleDetailWorkspace({
                 ) : access === "analysis" ? (
                   <NonJudicialDecisionPanel
                     sale={displaySale}
-                    marketEstimate={marketEstimate}
+                    marketEstimate={detailedMarketEstimate}
                     marketLoading={marketQuery.isLoading && marketEstimate == null}
                   />
                 ) : (
@@ -715,7 +722,7 @@ function SaleDetailWorkspace({
               </section>
               {access === "analysis" ? (
                 <MarketSnapshot
-                  estimate={marketEstimate}
+                  estimate={detailedMarketEstimate}
                   computedAt={marketQuery.data?.computedAt ?? null}
                   loading={marketQuery.isLoading && marketEstimate == null}
                 />
@@ -763,7 +770,7 @@ function SaleDetailWorkspace({
                   </summary>
                   {marketEstimate?.actionable === true || isTribunalSale ? (
                     <MarketEvidence
-                      marketEstimate={marketEstimate}
+                      marketEstimate={detailedMarketEstimate}
                       marketLoading={marketQuery.isLoading && marketEstimate == null}
                     />
                   ) : (
@@ -774,7 +781,7 @@ function SaleDetailWorkspace({
                   )}
                 </details>
               ) : null}
-              {fullData && !publicDemo && hasVerifiedTribunal ? (
+              {access === "analysis" && !publicDemo && hasVerifiedTribunal ? (
                 <TribunalEstimationEvidence
                   sale={displaySale}
                   valuationConflict={Boolean(valuationConflict)}
@@ -798,6 +805,7 @@ function SaleDetailWorkspace({
                 <ListingStatistics
                   sale={sale}
                   premium={fullData && adjudicationStatisticsEnabled}
+                  showUpcomingListings={access === "analysis"}
                   publicDemo={publicDemo}
                   propertyTypeVerified={!valuationConflict && !propertyTypeReview.blocked}
                 />

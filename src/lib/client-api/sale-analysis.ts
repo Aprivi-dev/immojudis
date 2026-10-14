@@ -4,7 +4,7 @@ import type { EnvironmentalContextResponse } from "@/lib/environmental-context";
 import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import type { MarketAnalyticsResponse } from "@/lib/market-analytics";
-import type { MarketContext } from "@/lib/market.server";
+import type { SaleMarketContext } from "@/lib/market-estimate-ceiling";
 import type { ValuePreview } from "@/lib/value-preview";
 import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
 import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
@@ -154,7 +154,7 @@ export async function fetchCourtAuctionSummaries(): Promise<{ courts: CourtAucti
 
 export async function fetchPrecomputedMarketEstimate(args: {
   saleId: string;
-}): Promise<MarketContext> {
+}): Promise<SaleMarketContext> {
   const response = await fetch("/api/market-estimate", {
     method: "POST",
     headers: {
@@ -164,7 +164,7 @@ export async function fetchPrecomputedMarketEstimate(args: {
     body: JSON.stringify({ saleId: args.saleId }),
   });
 
-  const payload = (await response.json().catch(() => null)) as MarketContext | null;
+  const payload = (await response.json().catch(() => null)) as SaleMarketContext | null;
   if (response.status === 401 || response.status === 403 || !payload) {
     throw new Error(payload?.error ?? `Erreur HTTP ${response.status}`);
   }

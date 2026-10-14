@@ -38,6 +38,20 @@ own RLS, populated transactionally from `auction_sales`. Until then, preserve
 the view's explicit column list, redaction assertions, `security_barrier`, and
 `anon` denial.
 
+### Unlocked-sale view
+
+`public.v_auction_sales_unlocked` is the third owner-executed view (security barrier, closed to
+`anon`). It serves a Découverte account the sales it unlocked ("3 déblocages par mois"): the
+discovery columns and redactions (no score, no risks, no source URL), plus the listing facts the
+bid ceiling reads (`source_blocks`, `source_blocks_by_source`) and the official documents. It lists
+one row per unlock of the caller (`auth.uid()`) and only while the sale is still unlockable.
+
+`auction_sales_authenticated_read` is deliberately not widened to an unlock: the policy cannot
+limit columns. Do not add an unlock clause to it, nor to `auction_risks`,
+`auction_risk_occurrences`, `auction_score_factors`, `auction_features`, `auction_surfaces` or `auction_documents` (the official documents reach the page through the view only).
+`supabase/tests/442_auction_sales_column_grants.sql` lists the three definer views;
+`npm run test:security-invariants` checks the migration.
+
 ### Human review RPCs
 
 The following owner-executed functions are intentionally callable only by the

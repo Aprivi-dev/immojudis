@@ -5,7 +5,7 @@ import {
 } from "@/integrations/supabase/auth-middleware";
 import { PublicApiError } from "@/lib/api-errors";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlementVia } from "@/lib/property-reports";
 import {
   TribunalCourtUnresolvedError,
   tribunalListingStatisticsQuerySchema,
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     // par mois »): the tribunal of that sale only. A query by `courtCode` stays on Analyse. The
     // query is validated after the entitlement, as before; the schema then requires exactly one of
     // `courtCode` and `saleId`.
-    await assertFeatureEntitlement(
+    const { door } = await assertFeatureEntitlementVia(
       auth,
       "sales.statistics",
       "Statistiques des annonces judiciaires réservées au plan Analyse.",
@@ -41,6 +41,10 @@ export async function GET(request: Request) {
     const statistics = tribunalListingStatisticsResponseSchema.parse(
       await getTribunalListingStatistics(input),
     );
+    // An unlock opens the statistics of the tribunal, not the list of its other upcoming sales
+    // (title, city, occupation, visit): that list stays with Analyse. The page does not show it
+    // to an unlocked account either.
+    if (door === "unlock") statistics.activity.upcomingListings = [];
     return apiJson(statistics, context, {
       headers: {
         "cache-control": "private, no-store",

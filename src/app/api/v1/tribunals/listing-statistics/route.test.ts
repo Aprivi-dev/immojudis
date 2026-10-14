@@ -15,7 +15,7 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.requireAuth,
 }));
 vi.mock("@/lib/property-reports", () => ({
-  assertFeatureEntitlement: mocks.assertEntitlement,
+  assertFeatureEntitlementVia: mocks.assertEntitlement,
 }));
 
 vi.mock("@/lib/tribunal-listing-statistics-repository", async (importOriginal) => {
@@ -48,7 +48,7 @@ describe("GET /api/v1/tribunals/listing-statistics", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.requireAuth.mockResolvedValue({ userId: "premium-user" });
-    mocks.assertEntitlement.mockResolvedValue(undefined);
+    mocks.assertEntitlement.mockResolvedValue({ plan: {}, door: "plan" });
     mocks.getStatistics.mockResolvedValue(statistics);
   });
 
@@ -63,6 +63,35 @@ describe("GET /api/v1/tribunals/listing-statistics", () => {
       courtCode: "justice_tj_1_112",
       historyMonths: 3,
     });
+  });
+
+  it("n'envoie pas la liste des autres ventes du tribunal à un compte qui a débloqué la vente", async () => {
+    const upcoming = {
+      id: "22222222-2222-4222-8222-222222222222",
+      title: "Maison à vendre",
+      city: "Saint-Étienne",
+      saleAt: "2026-09-10T08:00:00.000Z",
+      startingPriceEur: 90_000,
+      occupationStatus: "vacant",
+      hasVisit: true,
+      sourceNames: ["licitor"],
+    };
+    mocks.getStatistics.mockResolvedValue({
+      ...statistics,
+      activity: { ...statistics.activity, upcomingSales: 1, upcomingListings: [upcoming] },
+    });
+    const saleId = "11111111-1111-4111-8111-111111111111";
+
+    mocks.assertEntitlement.mockResolvedValue({ plan: {}, door: "unlock" });
+    const unlocked = await (await request(`?saleId=${saleId}`)).json();
+    expect(unlocked.activity.upcomingListings).toEqual([]);
+    // The aggregates the page shows stay.
+    expect(unlocked.activity.upcomingSales).toBe(1);
+    expect(unlocked.court.code).toBe("justice_tj_1_112");
+
+    mocks.assertEntitlement.mockResolvedValue({ plan: {}, door: "plan" });
+    const analysis = await (await request(`?saleId=${saleId}`)).json();
+    expect(analysis.activity.upcomingListings).toEqual([upcoming]);
   });
 
   it("refuse les visiteurs avant de lire les statistiques", async () => {

@@ -1,7 +1,7 @@
 -- "3 déblocages par mois": a Découverte account unlocks one sale at a time, three per Paris month.
 begin;
 
-select plan(59);
+select plan(63);
 
 -- Fixtures -------------------------------------------------------------------------------------
 insert into auth.users (
@@ -117,6 +117,11 @@ select is(
   'before any unlock the account reads no official document'
 );
 select is(
+  (select count(*) from public.v_auction_sales_unlocked where title like 'Protected unlock title%'),
+  0::bigint,
+  'before any unlock the unlocked-sale view lists nothing'
+);
+select is(
   (select public.get_sale_unlock_status('c4600000-1000-4000-8000-000000000001') ->> 'remaining')::integer,
   3,
   'three unlocks are available at the start of the month'
@@ -139,27 +144,49 @@ select is(
 );
 
 select is(
-  (select count(*) from public.auction_sales where id = 'c4600000-1000-4000-8000-000000000001'),
-  1::bigint,
-  'the unlocked sale is readable'
+  (select count(*) from public.auction_sales where title like 'Protected unlock title%'),
+  0::bigint,
+  'an unlock does not open the auction_sales table (row level security cannot limit columns)'
 );
 select is(
-  (select count(*) from public.auction_sales where id <> 'c4600000-1000-4000-8000-000000000001'
-     and title like 'Protected unlock title%'),
+  (select count(*) from public.v_auction_sales_unlocked where id = 'c4600000-1000-4000-8000-000000000001'),
+  1::bigint,
+  'the unlocked sale is served by the unlocked-sale view'
+);
+select is(
+  (select count(*) from public.v_auction_sales_unlocked where title like 'Protected unlock title%'),
+  1::bigint,
+  'the unlocked-sale view lists nothing else'
+);
+select is(
+  (select count(*) from public.v_auction_sales_app where title like 'Protected unlock title%'),
   0::bigint,
-  'every other sale stays hidden'
+  'the full catalogue view stays closed to an unlock'
+);
+select ok(
+  (select investment_score is null and investment_summary is null and risk_notes is null
+      and adjudication_price_eur is null and source_url is null
+      and score_factors = '[]'::jsonb and risks = '[]'::jsonb and source_urls = '[]'::jsonb
+    from public.v_auction_sales_unlocked where id = 'c4600000-1000-4000-8000-000000000001'),
+  'the unlocked-sale view keeps the discovery redactions: no score, no risks, no source url'
+);
+select is(
+  (select jsonb_array_length(documents_rich) from public.v_auction_sales_unlocked
+    where id = 'c4600000-1000-4000-8000-000000000001'),
+  1,
+  'the unlocked-sale view carries the official documents'
 );
 select is(
   (select count(*) from public.auction_documents where source_url = 'https://example.test/sale-unlock/1'),
-  1::bigint,
-  'the official documents of the unlocked sale are readable'
+  0::bigint,
+  'the table of official documents stays closed to an unlock: the view carries them'
 );
 select is(
   (select count(*) from public.auction_risks where source_url = 'https://example.test/sale-unlock/1')
   + (select count(*) from public.auction_risk_occurrences where source_url = 'https://example.test/sale-unlock/1')
   + (select count(*) from public.auction_score_factors where source_url = 'https://example.test/sale-unlock/1'),
-  3::bigint,
-  'the risks and the score factors of the unlocked sale are readable'
+  0::bigint,
+  'the risks and the score factors of the unlocked sale stay on Analyse'
 );
 select is(
   (select count(*) from public.auction_documents where source_url = 'https://example.test/sale-unlock/2')
@@ -168,17 +195,6 @@ select is(
   + (select count(*) from public.auction_score_factors where source_url = 'https://example.test/sale-unlock/2'),
   0::bigint,
   'the documents and risks of a sale that was not unlocked stay hidden'
-);
-select is(
-  (select jsonb_array_length(documents_rich) from public.v_auction_sales_app
-    where id = 'c4600000-1000-4000-8000-000000000001'),
-  1,
-  'the catalogue view serves the unlocked sale with its documents'
-);
-select is(
-  (select count(*) from public.v_auction_sales_app where title like 'Protected unlock title%'),
-  1::bigint,
-  'the catalogue view serves nothing else'
 );
 
 select lives_ok(
@@ -197,7 +213,7 @@ select throws_ok(
   'the fourth unlock of the month is refused'
 );
 select is(
-  (select count(*) from public.auction_sales where id = 'c4600000-1000-4000-8000-000000000004'),
+  (select count(*) from public.v_auction_sales_unlocked where id = 'c4600000-1000-4000-8000-000000000004'),
   0::bigint,
   'the refused sale stays hidden'
 );
@@ -231,7 +247,7 @@ select throws_ok(
 -- Another account ------------------------------------------------------------------------------
 set local "request.jwt.claim.sub" = 'c4600000-0000-4000-8000-000000000002';
 select is(
-  (select count(*) from public.auction_sales where title like 'Protected unlock title%'),
+  (select count(*) from public.v_auction_sales_unlocked where title like 'Protected unlock title%'),
   0::bigint,
   'another account does not see the sales unlocked by someone else'
 );
@@ -280,6 +296,12 @@ select throws_ok(
 reset role;
 set local role anon;
 select throws_ok(
+  $$select count(*) from public.v_auction_sales_unlocked$$,
+  '42501',
+  null,
+  'a visitor cannot read the unlocked-sale view'
+);
+select throws_ok(
   $$select public.unlock_sale('c4600000-1000-4000-8000-000000000005')$$,
   '42501',
   'permission denied for function unlock_sale',
@@ -293,9 +315,9 @@ where id = 'c4600000-1000-4000-8000-000000000001';
 set local role authenticated;
 set local "request.jwt.claim.sub" = 'c4600000-0000-4000-8000-000000000001';
 select is(
-  (select count(*) from public.auction_sales where id = 'c4600000-1000-4000-8000-000000000001'),
+  (select count(*) from public.v_auction_sales_unlocked where id = 'c4600000-1000-4000-8000-000000000001'),
   0::bigint,
-  'a sale that is no longer online is no longer readable, unlocked or not'
+  'a sale that is no longer online is no longer served, unlocked or not'
 );
 select is(
   (select public.get_sale_unlock_status() ->> 'used')::integer,
@@ -348,9 +370,9 @@ select is(
 );
 set local role authenticated;
 select is(
-  (select count(*) from public.auction_sales where id = 'c4600000-1000-4000-8000-000000000012'),
+  (select count(*) from public.v_auction_sales_unlocked where id = 'c4600000-1000-4000-8000-000000000012'),
   1::bigint,
-  'the merged sale stays readable for the account that unlocked it'
+  'the merged sale stays served to the account that unlocked it'
 );
 select is(
   (select (public.get_sale_unlock_status() ->> 'used')::integer),

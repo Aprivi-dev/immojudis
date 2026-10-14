@@ -113,7 +113,7 @@ describe("listing access resolution", () => {
     mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
     view.rerender(content());
     await screen.findByText("Analyse premium");
-    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false });
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
   });
 
   it("does not reuse a preview belonging to another listing", async () => {
@@ -250,7 +250,7 @@ describe("listing access resolution", () => {
     expect(mocks.sale).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
     await waitFor(() => expect(screen.getByText("Analyse premium")).toBeTruthy());
-    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false });
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
   });
 });
 
@@ -298,8 +298,8 @@ describe("« 3 déblocages par mois » on the sale page", () => {
 
     await screen.findByText("Offre Découverte");
     expect(screen.getByTestId("remaining").textContent).toBe("3");
-    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: true });
-    expect(mocks.sale).not.toHaveBeenCalledWith("sale", { discovery: false });
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: true, unlocked: false });
+    expect(mocks.sale).not.toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
   });
 
   it("serves the full rows, and the unlocked view, for a sale the account unlocked", async () => {
@@ -310,7 +310,9 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     renderPage();
 
     await screen.findByText("Vente débloquée");
-    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false });
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: true });
+    // The full catalogue view stays closed to an unlock: the sale comes from its own view.
+    expect(mocks.sale).not.toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
     expect(screen.queryByText("Offre Découverte")).toBeNull();
   });
 
@@ -376,6 +378,6 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Simuler le déblocage" }));
 
     await screen.findByText("Vente débloquée");
-    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false });
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: true });
   });
 });

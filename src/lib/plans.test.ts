@@ -55,6 +55,16 @@ describe("plan matrix", () => {
     expect(PLAN_LIMITS.analyse.monthlyUnlocks).toBeNull();
   });
 
+  it("opens exactly the five elements of the unlocked page, and no autonomous estimate", () => {
+    expect([...SALE_UNLOCK_FEATURES].sort()).toEqual([
+      "property.advancedBidScenarios",
+      "property.bidCeiling",
+      "property.documentReading",
+      "property.saleHistory",
+      "sales.statistics",
+    ]);
+  });
+
   it("opens by unlock only the listed rights, which stay locked in the Découverte matrix", () => {
     for (const feature of SALE_UNLOCK_FEATURES) {
       expect(featureIncluded("decouverte", feature)).toBe(false);
@@ -66,6 +76,8 @@ describe("plan matrix", () => {
       "sales.csvExport",
       "property.savedReports",
       "property.reportEditing",
+      "property.valueEstimate",
+      "property.outcomeGraph",
       "property.soldComparables",
       "property.activeComparables",
       "property.urbanPlanning",
