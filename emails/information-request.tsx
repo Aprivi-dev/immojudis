@@ -14,8 +14,8 @@ import {
 } from "react-email";
 import { containsInformationAgentAccountInvitation } from "../src/lib/information-agent-email-template";
 import {
-  INFORMATION_AGENT_PURPOSE_STATEMENT,
-  INFORMATION_AGENT_RETENTION_STATEMENT,
+  INFORMATION_AGENT_CNIL_COMPLAINT_URL,
+  informationAgentLegalFooterSections,
   type InformationAgentLegalFooter,
 } from "../src/lib/information-agent-compliance";
 
@@ -24,13 +24,14 @@ export type InformationRequestEmailProps = {
   bodyText: string;
   replyTo: string;
   caseReference: string;
+  /** Origine du site, pour les liens absolus construits par l'appelant (non affichée dans le message). */
   appUrl?: string;
   contributionUrl?: string;
   /** GDPR art. 14 information and one-click objection link, mandatory for real sends. */
   legalFooter?: InformationAgentLegalFooter;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v7";
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v8";
 
 type BodyBlock =
   | { kind: "paragraph"; lines: string[] }
@@ -52,7 +53,6 @@ export function InformationRequestEmail({
   bodyText,
   replyTo,
   caseReference,
-  appUrl = "https://immojudis.com",
   contributionUrl,
   legalFooter,
 }: InformationRequestEmailProps) {
@@ -67,9 +67,6 @@ export function InformationRequestEmail({
           <Section style={styles.topBar} />
           <Section style={styles.header}>
             <Text style={styles.wordmark}>IMMOJUDIS</Text>
-            <Text style={styles.tagline}>
-              Ventes immobilières aux enchères : tribunal, notaire, État
-            </Text>
           </Section>
 
           <Section style={styles.content}>
@@ -78,17 +75,7 @@ export function InformationRequestEmail({
               Informations sur une vente immobilière
             </Heading>
             <Text style={styles.reference}>Référence de suivi : {caseReference}</Text>
-            {legalFooter ? (
-              <Text style={styles.origin}>
-                {legalFooter.addressOrigin}
-                {legalFooter.addressOriginUrl ? (
-                  <>
-                    {" "}
-                    <Link href={legalFooter.addressOriginUrl}>Voir l’annonce</Link>
-                  </>
-                ) : null}
-              </Text>
-            ) : null}
+            {legalFooter ? <Text style={styles.origin}>{legalFooter.addressOrigin}</Text> : null}
 
             <Hr style={styles.hr} />
 
@@ -113,15 +100,7 @@ export function InformationRequestEmail({
 
           <Section style={styles.footer}>
             <Text style={styles.footerBrand}>Immojudis</Text>
-            <Text style={styles.footerText}>
-              Service indépendant d’aide à l’analyse des ventes immobilières judiciaires
-            </Text>
-            <Text style={styles.footerText}>
-              <Link href={appUrl} style={styles.footerLink}>
-                immojudis.com
-              </Link>
-              {" · "}Référence {caseReference}
-            </Text>
+            <Text style={styles.footerText}>Référence {caseReference}</Text>
             <Text style={styles.footerText}>
               Adresse de réponse : <Link href={replyHref}>{replyTo}</Link>
             </Text>
@@ -234,36 +213,22 @@ function parseBodyBlocks(bodyText: string): BodyBlock[] {
 function LegalFooter({ footer }: { footer: InformationAgentLegalFooter }) {
   return (
     <>
+      {informationAgentLegalFooterSections(footer).map((section) => (
+        <Text key={section.label} style={styles.footerLegal}>
+          <strong>{section.label}</strong> {section.text}
+        </Text>
+      ))}
       <Text style={styles.footerLegal}>
-        <strong>Responsable de traitement :</strong> {footer.controllerName},{" "}
-        {footer.controllerAddress}
-        {footer.contactEmail ? (
-          <>
-            {" — "}
-            <Link href={`mailto:${footer.contactEmail}`}>{footer.contactEmail}</Link>
-          </>
-        ) : null}
-        .
-        <br />
-        {footer.addressOrigin}
-        {footer.addressOriginUrl ? (
-          <>
-            {" "}
-            <Link href={footer.addressOriginUrl}>{footer.addressOriginUrl}</Link>
-          </>
-        ) : null}
-        <br />
-        {INFORMATION_AGENT_PURPOSE_STATEMENT}
-        <br />
-        {INFORMATION_AGENT_RETENTION_STATEMENT}
-      </Text>
-      <Text style={styles.footerLegal}>
+        <Link href={footer.optOutUrl} style={styles.footerLink}>
+          Ne plus être contacté (un clic)
+        </Link>
+        {" · "}
         <Link href={footer.privacyUrl} style={styles.footerLink}>
           Politique de confidentialité et vos droits
         </Link>
         {" · "}
-        <Link href={footer.optOutUrl} style={styles.footerLink}>
-          Ne plus être contacté (un clic)
+        <Link href={INFORMATION_AGENT_CNIL_COMPLAINT_URL} style={styles.footerLink}>
+          Réclamation auprès de la CNIL
         </Link>
       </Text>
     </>
@@ -297,7 +262,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     letterSpacing: "0.08em",
   },
-  tagline: { margin: "3px 0 8px", color: BRAND.muted, fontSize: "12px", lineHeight: "17px" },
   content: { padding: "22px 28px 24px" },
   eyebrow: {
     margin: "0 0 6px",

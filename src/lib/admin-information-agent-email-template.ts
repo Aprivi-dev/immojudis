@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { informationAgentAiProvider } from "@/lib/information-agent-ai-provider";
 import {
   informationAgentAddressOrigin,
   informationAgentControllerIdentity,
@@ -190,6 +191,7 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
   const exampleOrigin = informationAgentAddressOrigin({
     sourceName: "licitor",
     sourceUrl: "https://www.licitor.com/annonce/exemple.html",
+    observedAt: new Date(),
   });
   const renderedContent = renderInformationAgentEmailContent({
     template,
@@ -209,8 +211,11 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
       controllerName: controller?.name ?? "[Responsable de traitement à configurer]",
       controllerAddress: controller?.address ?? "[Adresse à configurer]",
       contactEmail: controller?.contactEmail ?? null,
+      saleReference: "Appartement T3 à Bordeaux — Tribunal judiciaire de Bordeaux",
       addressOrigin: exampleOrigin.text,
       addressOriginUrl: exampleOrigin.url,
+      automatedSearch: exampleOrigin.automated,
+      aiProvider: informationAgentAiProvider(),
       privacyUrl: new URL("/privacy", previewAppUrl).toString(),
       optOutUrl: new URL(
         "/api/information-agent/opt-out?e=exemple&t=exemple",

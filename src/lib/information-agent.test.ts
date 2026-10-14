@@ -228,6 +228,10 @@ describe("supervised information agent", () => {
           return this;
         }
 
+        upsert() {
+          return this;
+        }
+
         async single() {
           return {
             data: this.table === "information_agent_missions" ? { ...mission } : null,
@@ -237,7 +241,7 @@ describe("supervised information agent", () => {
 
         then(onFulfilled: (value: { data: unknown; error: null }) => unknown) {
           const blocked =
-            this.table === "information_agent_contacts" && contactReads++ >= 4 && opposition;
+            this.table === "information_agent_contacts" && contactReads++ >= 6 && opposition;
           const result =
             this.table === "information_agent_contacts"
               ? {
@@ -331,7 +335,9 @@ describe("supervised information agent", () => {
           expect(sent).toContain("https://immojudis.example/privacy");
           expect(sent).toContain("https://immojudis.example/api/information-agent/opt-out?e=");
           // Origine de l'adresse citée avec son lien ; aucune invitation à créer un compte.
-          expect(sent).toContain("relevée sur une page publique (annuaire.example.test)");
+          expect(sent).toContain(
+            "relevée par un membre de l’équipe Immojudis sur une page publique (https://annuaire.example.test/me-dupont)",
+          );
           expect(sent).toContain("https://annuaire.example.test/me-dupont");
           expect(sent).not.toContain("compte professionnel");
           expect(sent).not.toContain("mode=professional");
@@ -344,9 +350,10 @@ describe("supervised information agent", () => {
             recipient_origin_url: "https://annuaire.example.test/me-dupont",
           });
         }
-        // Registry reads: the recipient check before approval (two scopes), the origin lookup, then
-        // the checks after approval and just before sending; an opposition stops at the second one.
-        expect(contactReads).toBe(opposition ? 5 : 7);
+        // Registry reads: the recipient check before approval (two scopes), the origin lookup, the
+        // admin-entry record (read + write), then the checks after approval and just before sending;
+        // an opposition stops at the second one.
+        expect(contactReads).toBe(opposition ? 7 : 9);
         expect(mission.recipient_kind).toBe("manual_professional");
       } finally {
         vi.unstubAllEnvs();
@@ -514,7 +521,8 @@ describe("supervised information agent", () => {
     });
 
     expect(draft.subject).toBe("Appartement T3 à Bordeaux — précisions pour Immojudis");
-    expect(draft.bodyText).toContain("service indépendant");
+    expect(draft.bodyText).toContain("afin de vérifier des informations publiées");
+    expect(draft.bodyText).not.toContain("service indépendant");
     expect(draft.bodyText).toContain("réponse même partielle");
     expect(draft.bodyText).toContain("Audience annoncée : 14 septembre 2026");
     expect(draft.bodyText).toContain("cahier des conditions de vente");

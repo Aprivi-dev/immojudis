@@ -137,6 +137,28 @@
       ]
     },
     {
+      "name": "RPVA, Ordre, CARPA and technical addresses are never contacts",
+      "description": "Avocat : me.exemple@cabinet-exemple.test — RPVA me.exemple@avocat-conseil.fr — Ordre secretariat@ordre-exemple.test et bureau@barreau-exemple.test — CARPA compta@carpa-exemple.test",
+      "source_blocks": {
+        "technique": "noreply@cabinet-exemple.test no-reply@cabinet-exemple.test",
+        "donnees": "dpo@cabinet-exemple.test rgpd@cabinet-exemple.test dpo.cabinet@exemple.test",
+        "bureau": "carpa@cabinet-exemple.test batonnier.exemple@cabinet-exemple.test"
+      },
+      "expected": [
+        "me.exemple@cabinet-exemple.test"
+      ]
+    },
+    {
+      "name": "look-alike local parts and domains stay contacts",
+      "description": "greffe.exemple@cabinet-exemple.test et ordrefacile@cabinet-exemple.test et sandpoint@cabinet-exemple.test et reply.exemple@cabinet-exemple.test",
+      "expected": [
+        "greffe.exemple@cabinet-exemple.test",
+        "ordrefacile@cabinet-exemple.test",
+        "reply.exemple@cabinet-exemple.test",
+        "sandpoint@cabinet-exemple.test"
+      ]
+    },
+    {
       "name": "no contact anywhere",
       "description": "Maison à vendre, visite sur rendez-vous.",
       "source_blocks": {

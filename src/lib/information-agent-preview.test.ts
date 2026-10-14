@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({
   mission: {} as Record<string, unknown>,
   contacts: [] as Array<Record<string, unknown>>,
+  identityOppositions: [] as Array<Record<string, unknown>>,
   writes: [] as Array<[string, string, unknown]>,
 }));
 
@@ -63,7 +64,9 @@ vi.mock("@/integrations/supabase/client.server", () => {
           ? db.contacts.filter((row) =>
               this.filters.every(([column, value]) => (row[column] ?? null) === value),
             )
-          : [];
+          : this.table === "information_agent_identity_oppositions"
+            ? db.identityOppositions
+            : [];
       return Promise.resolve({ data, error: null }).then(onFulfilled);
     }
   }
@@ -100,12 +103,16 @@ const content = {
 
 beforeEach(() => {
   db.writes.length = 0;
+  db.identityOppositions = [];
   db.contacts = [
     {
       normalized_email: "cabinet@example.test",
       scope_sale_id: SALE_ID,
+      source_kind: "sale_listing",
       source_name: "licitor",
       source_url: "https://www.licitor.com/annonce/109972.html",
+      observed_at: "2026-10-12T08:00:00Z",
+      observed_by: "agent",
       opposition_status: "unknown",
       bounce_status: "none",
     },
@@ -118,7 +125,9 @@ beforeEach(() => {
     status: "draft",
     recipient_email: "cabinet@example.test",
     recipient_kind: "source_lawyer",
-    metadata: {},
+    created_at: "2026-10-13T09:30:00Z",
+    sale_snapshot: { title: "Appartement à Bordeaux", tribunal: "Tribunal judiciaire de Bordeaux" },
+    metadata: { contact_identity: { role: "lawyer", bar: "Bordeaux", city: "Bordeaux" } },
   };
   vi.stubEnv(
     "INFORMATION_AGENT_PORTAL_SECRET",
@@ -145,8 +154,9 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     expect(result.blockers).toEqual([]);
     expect(result.fingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(result.addressOrigin).toEqual({
-      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor.",
+      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/109972.html), consultée le 12/10/2026.",
       url: "https://www.licitor.com/annonce/109972.html",
+      automated: false,
       known: true,
     });
     for (const output of [result.preview.html, result.preview.text]) {
@@ -156,6 +166,20 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       expect(output).not.toContain("compte professionnel");
       expect(output).not.toContain("service professionnel");
       expect(output).toContain("https://immojudis.example/api/information-agent/opt-out?e=");
+      // Pied art. 14 complet : catégories de données, destinataires dont l'IA, durées, droits,
+      // opposition et réclamation CNIL.
+      expect(output).toContain("Pourquoi ce message");
+      expect(output).toContain("Appartement à Bordeaux");
+      expect(output).toContain("Ce message ne contient aucune offre commerciale.");
+      expect(output).toContain("votre nom, votre fonction, votre adresse professionnelle");
+      expect(output).toContain("Replicate (États-Unis)");
+      expect(output).toContain("30 jours si aucun message");
+      expect(output).toContain("12 mois sans réponse");
+      expect(output).toContain("24 mois après le dernier échange");
+      expect(output).toContain("accès, rectification, effacement et limitation");
+      expect(output).toContain("vous opposer à tout moment, sans motif");
+      expect(output).toContain("https://www.cnil.fr/fr/plaintes");
+      expect(output).not.toContain("outil de recherche automatisé");
     }
     expect(db.writes).toEqual([]);
     expect(supabaseAdmin.rpc).not.toHaveBeenCalled();
@@ -249,5 +273,150 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     ).rejects.toThrow("opposé");
     expect(db.writes).toEqual([]);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("nomme l'annuaire officiel et signale la recherche automatique quand l'agent a trouvé l'adresse", async () => {
+    db.contacts = [
+      {
+        normalized_email: "cabinet@example.test",
+        scope_sale_id: SALE_ID,
+        source_kind: "official_directory",
+        source_directory_name: "annuaire officiel des commissaires de justice",
+        source_name: null,
+        source_url: "https://annuaire.commissaire-justice.fr/etude-1",
+        observed_at: "2026-10-14T10:00:00Z",
+        observed_by: "agent",
+        opposition_status: "unknown",
+        bounce_status: "none",
+      },
+    ];
+    const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+
+    expect(result.blockers).toEqual([]);
+    expect(result.addressOrigin.text).toBe(
+      "Votre adresse professionnelle figure sur votre fiche publique de l’annuaire officiel des commissaires de justice (https://annuaire.commissaire-justice.fr/etude-1), consultée le 14/10/2026.",
+    );
+    expect(result.addressOrigin.text).not.toContain("figure dans l’annonce");
+    for (const output of [result.preview.html, result.preview.text]) {
+      expect(output).toContain("fiche publique de l’annuaire officiel des commissaires de justice");
+      expect(output).toContain(
+        "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques sans en conserver de copie. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
+      );
+    }
+  });
+
+  it("n'accepte pas pour un annuaire une adresse sans lien exact", async () => {
+    db.contacts = [
+      {
+        normalized_email: "cabinet@example.test",
+        scope_sale_id: SALE_ID,
+        source_kind: "official_directory",
+        source_directory_name: "annuaire du barreau de Lyon",
+        source_url: null,
+        observed_at: "2026-10-14T10:00:00Z",
+        observed_by: "agent",
+        opposition_status: "unknown",
+        bounce_status: "none",
+      },
+    ];
+    const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+    expect(result.addressOrigin.known).toBe(false);
+    expect(result.blockers).toContain(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+  });
+
+  it("date une adresse saisie à la main du brouillon et cite la page indiquée", async () => {
+    db.contacts = [];
+    const result = await previewAdminInformationAgentMission({
+      auth: ADMIN,
+      input: { ...content, recipientOriginUrl: "https://cabinet-dupont.example.test/contact" },
+    });
+    expect(result.blockers).toEqual([]);
+    expect(result.addressOrigin.text).toBe(
+      "Votre adresse professionnelle a été relevée par un membre de l’équipe Immojudis sur une page publique (https://cabinet-dupont.example.test/contact), le 13/10/2026.",
+    );
+    expect(result.addressOrigin.automated).toBe(false);
+    expect(result.preview.text).not.toContain("outil de recherche automatisé");
+  });
+
+  it("bloque l'aperçu quand le texte contient une mention commerciale", async () => {
+    const result = await previewAdminInformationAgentMission({
+      auth: ADMIN,
+      input: {
+        ...content,
+        bodyText: `${content.bodyText}\n\nCréez un compte sur Immojudis pour une mise en avant de vos ventes.`,
+      },
+    });
+    expect(result.blockers.join(" ")).toContain("aucune mention commerciale");
+  });
+
+  it("refuse l'envoi d'un texte commercial même avec un aperçu valide", async () => {
+    const input = {
+      ...content,
+      bodyText: `${content.bodyText}\n\nDécouvrez nos offres : https://immojudis.example/offres`,
+    };
+    const { fingerprint } = await previewAdminInformationAgentMission({ auth: ADMIN, input });
+    await expect(
+      runAdminInformationAgentAction({
+        auth: ADMIN,
+        input: {
+          action: "approve_and_send",
+          approvalConfirmed: true,
+          ...input,
+          previewFingerprint: fingerprint!,
+        },
+      }),
+    ).rejects.toThrow("aucune mention commerciale");
+    expect(db.writes).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("bloque l'aperçu et l'envoi pour un professionnel opposé sous une autre adresse", async () => {
+    db.identityOppositions = [{ identity_key: "lawyer|bordeaux|dupont" }];
+    const result = await previewAdminInformationAgentMission({
+      auth: ADMIN,
+      input: { ...content, recipientEmail: "nouvelle-adresse@example.test" },
+    });
+    expect(result.blockers.join(" ")).toContain("s'est opposé à être contacté");
+
+    const { fingerprint } = await previewAdminInformationAgentMission({
+      auth: ADMIN,
+      input: content,
+    });
+    await expect(
+      runAdminInformationAgentAction({
+        auth: ADMIN,
+        input: {
+          action: "approve_and_send",
+          approvalConfirmed: true,
+          ...content,
+          previewFingerprint: fingerprint!,
+        },
+      }),
+    ).rejects.toThrow("s'est opposé à être contacté");
+    expect(db.writes).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("bloque l'aperçu quand le prestataire d'IA configuré n'est pas nommé dans le pied", async () => {
+    vi.stubEnv("LLM_PROVIDER", "autre-prestataire");
+    const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+    expect(result.blockers.join(" ")).toContain(
+      "Prestataire d’IA « autre-prestataire » non identifié",
+    );
+  });
+
+  it("refuse une adresse de juridiction, de RPVA, de l'Ordre ou technique dans l'aperçu", async () => {
+    for (const recipientEmail of [
+      "greffe@tj-bordeaux.justice.fr",
+      "me@avocat-conseil.fr",
+      "carpa@example.test",
+      "dpo@cabinet.example.test",
+    ]) {
+      const result = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: { ...content, recipientEmail },
+      });
+      expect(result.blockers.join(" ")).toContain("n’est jamais sollicitée par l’agent");
+    }
   });
 });

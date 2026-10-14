@@ -36,19 +36,32 @@ import {
 import {
   informationAgentAddressOrigin,
   informationAgentControllerIdentity,
+  isInformationAgentAddressSourceKind,
+  type InformationAgentAddressObserver,
   type InformationAgentAddressOrigin,
+  type InformationAgentAddressSourceKind,
   INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS,
   type InformationAgentLegalFooter,
 } from "@/lib/information-agent-compliance";
+import {
+  informationAgentAiProvider,
+  type InformationAgentAiProvider,
+} from "@/lib/information-agent-ai-provider";
+import { assertNoInformationAgentCommercialMention } from "@/lib/information-agent-commercial-guard";
 import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-opt-out";
+import { tribunalBarAssociation } from "@/lib/lawyer-bar";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import type { AuctionSale } from "@/lib/types";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
+import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
 import {
   assertInformationAgentContactAllowed,
   contactCandidateSnapshot,
+  INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
+  loadOpposedInformationAgentIdentityKeys,
+  recordInformationAgentAdminAddressEntry,
   discoverInformationAgentContacts,
   type InformationAgentContactCandidate,
   type InformationAgentRecipientKind,
@@ -65,6 +78,12 @@ export {
   loadInformationAgentContactRegistry,
   persistInformationAgentContactObservations,
   assertInformationAgentContactAllowed,
+  assertInformationAgentIdentityAllowed,
+  loadOpposedInformationAgentIdentityKeys,
+  recordInformationAgentAdminAddressEntry,
+  isCourtRegistryEmail,
+  isInformationAgentExcludedAddress,
+  informationAgentExcludedAddressReason,
 } from "@/lib/information-agent/contacts";
 export type {
   InformationAgentRecipientKind,
@@ -517,7 +536,24 @@ export async function createAdminInformationAgentDraft({
       "Aucune lacune n'est identifiée pour cette annonce. Choisissez explicitement une question si une vérification reste nécessaire.",
     );
   }
-  const contactCandidates = discoverInformationAgentContacts(sale);
+  // Opposition par identité, avant d'enregistrer ou de choisir la moindre adresse : un professionnel
+  // opposé n'est plus sollicité sous une autre adresse, et son adresse n'est pas stockée.
+  const identityPlace = saleIdentityPlace(sale);
+  const discovered = discoverInformationAgentContacts(sale).map((candidate) => ({
+    ...candidate,
+    identityKeys: informationAgentIdentityKeys({
+      role: candidate.role,
+      name: candidate.name ?? (candidate.role === "lawyer" ? sale.lawyer_name : null),
+      ...identityPlace,
+    }),
+  }));
+  const opposedKeys = new Set(
+    await loadOpposedInformationAgentIdentityKeys(discovered.flatMap((item) => item.identityKeys)),
+  );
+  const contactCandidates = discovered.filter(
+    (candidate) => !candidate.identityKeys.some((key) => opposedKeys.has(key)),
+  );
+  const candidatesSkippedForOpposition = discovered.length - contactCandidates.length;
   await persistInformationAgentContactObservations({
     saleId: sale.id,
     candidates: contactCandidates,
@@ -527,16 +563,28 @@ export async function createAdminInformationAgentDraft({
   const recipientEmail = explicitRecipientEmail ?? selectedContact?.email;
   if (!recipientEmail) {
     throw new Error(
-      contactCandidates.length > 1
-        ? "Requête invalide : plusieurs contacts sont possibles. Choisissez explicitement l'adresse email du professionnel à contacter."
-        : "Requête invalide : renseignez l'adresse email du professionnel à contacter.",
+      candidatesSkippedForOpposition > 0 && !contactCandidates.length
+        ? INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE
+        : contactCandidates.length > 1
+          ? "Requête invalide : plusieurs contacts sont possibles. Choisissez explicitement l'adresse email du professionnel à contacter."
+          : "Requête invalide : renseignez l'adresse email du professionnel à contacter.",
     );
   }
-  await assertInformationAgentContactAllowed({ saleId: sale.id, email: recipientEmail });
   const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);
   // A manual address or another source contact must not inherit the lawyer's
   // name: it can belong to a different professional entirely.
   const recipientName = input.recipientName ?? selectedByEmail?.name ?? null;
+  const recipientIdentityRole = selectedByEmail?.role ?? null;
+  const recipientIdentityKeys = informationAgentIdentityKeys({
+    role: recipientIdentityRole,
+    name: recipientName,
+    ...identityPlace,
+  });
+  await assertInformationAgentContactAllowed({
+    saleId: sale.id,
+    email: recipientEmail,
+    identityKeys: recipientIdentityKeys,
+  });
   const draft = buildInformationRequestDraft({
     sale,
     recipientName,
@@ -556,6 +604,7 @@ export async function createAdminInformationAgentDraft({
         (explicitRecipientEmail ? "manual_professional" : "source_contact"),
       recipient_name: recipientName || null,
       recipient_email: recipientEmail,
+      recipient_identity_keys: recipientIdentityKeys,
       share_requester_email: false,
       subject: draft.subject,
       body_text: draft.bodyText,
@@ -565,6 +614,13 @@ export async function createAdminInformationAgentDraft({
       privacy_version: LEGAL_DOCUMENTS.privacy.version,
       metadata: {
         draft_source: "admin_source_first_gap_analysis",
+        // Lieu et rôle de l'identité (jamais l'adresse) : l'envoi recalcule les clés d'identité.
+        contact_identity: {
+          role: recipientIdentityRole,
+          bar: identityPlace.bar,
+          city: identityPlace.city,
+        },
+        candidates_skipped_for_opposition: candidatesSkippedForOpposition,
         fact_claims_checked: claimRead.claimsBacked,
         fact_claim_count: claimRead.claims.length,
         contact_discovery: {
@@ -680,14 +736,20 @@ async function approveAndSendMission({
   }
   // Envoi strictement manuel : l'administrateur a affiché l'aperçu de ce contenu exact.
   assertInformationAgentPreviewFingerprint({ adminId, input });
+  // Aucune mention commerciale : le message reste purement informatif.
+  assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`);
+  // Opposition par adresse et par identité (le nom corrigé à l'aperçu compte), avant l'envoi.
+  const identityKeys = missionIdentityKeys(mission, input.recipientName);
   await assertInformationAgentContactAllowed({
     saleId: mission.sale_id,
     email: input.recipientEmail,
+    identityKeys,
   });
   const addressOrigin = await resolveInformationAgentAddressOrigin({
     email: input.recipientEmail,
     saleId: mission.sale_id,
     manualOriginUrl: input.recipientOriginUrl ?? null,
+    fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   assertInformationAgentOutboundEnabled();
@@ -711,10 +773,24 @@ async function approveAndSendMission({
       ? mission.recipient_kind
       : "manual_professional";
 
+  // Adresse saisie par un administrateur : source typée, date de relevé et auteur au registre.
+  if (addressOrigin.kind === "admin_entry" && mission.sale_id) {
+    await recordInformationAgentAdminAddressEntry({
+      saleId: mission.sale_id,
+      email: input.recipientEmail,
+      name: input.recipientName || mission.recipient_name,
+      url: addressOrigin.origin.url,
+      observedAt: mission.created_at,
+      adminId,
+      identityKeys,
+    });
+  }
+
   const { data: edited, error: editError } = await supabaseAdmin
     .from("information_agent_missions")
     .update({
       recipient_email: input.recipientEmail,
+      recipient_identity_keys: identityKeys,
       recipient_kind: recipientKind,
       recipient_name: input.recipientName || null,
       reply_to_email: null,
@@ -754,6 +830,7 @@ async function approveAndSendMission({
     await assertInformationAgentContactAllowed({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
+      identityKeys: edited.recipient_identity_keys,
     });
     // Approval is already recorded: if a concurrent approval for the same recipient is older,
     // this one stands down, so only the earliest request is ever sent within the 30 days.
@@ -767,6 +844,7 @@ async function approveAndSendMission({
       appUrl: config.appUrl,
       email: edited.recipient_email,
       addressOrigin: addressOrigin.origin,
+      saleReference: missionSaleReference(subscribedMission),
     });
     const renderedEmail = await renderInformationRequestEmail({
       subject: edited.subject,
@@ -777,9 +855,13 @@ async function approveAndSendMission({
       contributionUrl,
       legalFooter,
     });
+    assertNoInformationAgentCommercialMention(`${renderedEmail.html}\n${renderedEmail.text}`, {
+      appOrigin: config.appUrl,
+    });
     await assertInformationAgentContactAllowed({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
+      identityKeys: edited.recipient_identity_keys,
     });
     assertInformationAgentCanaryRecipient(edited.recipient_email);
     const delivery = await sendResendEmail({
@@ -818,6 +900,7 @@ async function approveAndSendMission({
         preview_fingerprint: input.previewFingerprint,
         approved_by_admin: adminId,
         address_origin_url: legalFooter.addressOriginUrl ?? null,
+        address_origin_text: legalFooter.addressOrigin,
         email_template_version: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
         email_content_template_id: missionMetadata.email_content_template_id ?? null,
         email_content_template_revision: missionMetadata.email_content_template_revision ?? null,
@@ -923,11 +1006,13 @@ function buildInformationAgentLegalFooter({
   appUrl,
   email,
   addressOrigin,
+  saleReference = null,
   env = process.env,
 }: {
   appUrl: string;
   email: string;
   addressOrigin: InformationAgentAddressOrigin;
+  saleReference?: string | null;
   env?: Readonly<Record<string, string | undefined>>;
 }): InformationAgentLegalFooter {
   const controller = informationAgentControllerIdentity(env);
@@ -940,8 +1025,12 @@ function buildInformationAgentLegalFooter({
     controllerName: controller!.name,
     controllerAddress: controller!.address,
     contactEmail: controller!.contactEmail,
+    saleReference,
     addressOrigin: addressOrigin.text,
     addressOriginUrl: addressOrigin.url,
+    automatedSearch: addressOrigin.automated,
+    // Lève une erreur si la configuration désigne un prestataire d'IA non nommé dans le pied.
+    aiProvider: informationAgentAiProvider(env),
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: buildInformationAgentOptOutUrl({ appUrl, email: normalized, secret }),
   };
@@ -951,46 +1040,79 @@ export const INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE =
   "Origine de l’adresse inconnue : elle ne figure pas dans l’annonce de cette vente. Indiquez la page publique où vous l’avez trouvée avant l’envoi.";
 
 /**
- * Origine de l'adresse pour cette vente (art. 14 RGPD). Seul le registre des contacts observés
- * dans l'annonce de la même vente fait foi ; à défaut, l'administrateur doit citer la page
- * publique où il a relevé l'adresse. Une adresse sans origine connue n'est jamais sollicitée.
+ * Origine de l'adresse pour cette vente (art. 14 RGPD). Le registre des contacts de la même vente
+ * fait foi : il porte le type de la source, l'URL, la date de relevé et l'auteur, et le libellé du
+ * message suit ce type (annonce, autre annonce, annuaire officiel, site du cabinet). À défaut, ou
+ * pour une saisie d'administrateur, la page publique citée par l'administrateur est obligatoire.
+ * Une adresse sans origine connue n'est jamais sollicitée.
  */
 export async function resolveInformationAgentAddressOrigin({
   email,
   saleId,
   manualOriginUrl,
+  fallbackObservedAt = null,
 }: {
   email: string;
   saleId: string | null;
   manualOriginUrl: string | null;
-}): Promise<{ origin: InformationAgentAddressOrigin; known: boolean }> {
+  /** Date de relevé d'une saisie d'administrateur sans ligne de registre : création du brouillon. */
+  fallbackObservedAt?: string | null;
+}): Promise<{
+  origin: InformationAgentAddressOrigin;
+  known: boolean;
+  kind: InformationAgentAddressSourceKind | null;
+}> {
   const normalized = normalizedEmail(email);
   if (!normalized) throw new Error("Adresse email du contact invalide.");
+  const manual = manualOriginUrl?.trim();
+  const manualUrl = manual && /^https?:\/\//i.test(manual) ? manual : null;
+  let observedAt = fallbackObservedAt;
+  let adminEntryUrl: string | null = null;
   if (saleId) {
     const { data, error } = await supabaseAdmin
       .from("information_agent_contacts")
-      .select("source_name,source_url")
+      .select("source_kind,source_directory_name,source_name,source_url,observed_at,observed_by")
       .eq("normalized_email", normalized)
       .eq("scope_sale_id", saleId)
       .limit(1);
     if (error) throw error;
     const row = data?.[0];
-    if (row && (row.source_name || row.source_url)) {
-      return {
-        origin: informationAgentAddressOrigin({
-          sourceName: row.source_name,
-          sourceUrl: row.source_url,
-        }),
-        known: true,
-      };
+    const kind =
+      row && isInformationAgentAddressSourceKind(row.source_kind) ? row.source_kind : null;
+    const observedBy: InformationAgentAddressObserver | null =
+      row?.observed_by === "admin" || row?.observed_by === "agent" ? row.observed_by : null;
+    if (row && kind && kind !== "admin_entry") {
+      const origin = informationAgentAddressOrigin({
+        sourceKind: kind,
+        sourceName: row.source_name,
+        sourceUrl: row.source_url,
+        directoryName: row.source_directory_name,
+        observedAt: row.observed_at,
+        observedBy,
+      });
+      // Un annuaire, un site ou une autre annonce sans lien exact ne prouvent rien.
+      const known =
+        kind === "sale_listing" ? Boolean(row.source_name || row.source_url) : Boolean(origin.url);
+      if (known) return { origin, known, kind };
+    }
+    if (row && kind === "admin_entry") {
+      observedAt = row.observed_at ?? observedAt;
+      adminEntryUrl = row.source_url;
     }
   }
-  const manual = manualOriginUrl?.trim();
-  if (manual && /^https?:\/\//i.test(manual)) {
-    const origin = informationAgentAddressOrigin({ sourceUrl: manual, manual: true });
-    if (origin.url) return { origin, known: true };
-  }
-  return { origin: informationAgentAddressOrigin({}), known: false };
+  const url = manualUrl ?? adminEntryUrl;
+  const origin = informationAgentAddressOrigin({
+    sourceKind: "admin_entry",
+    sourceUrl: url,
+    observedAt,
+    observedBy: "admin",
+  });
+  if (origin.url) return { origin, known: true, kind: "admin_entry" };
+  return {
+    origin: informationAgentAddressOrigin({}),
+    known: false,
+    kind: null,
+  };
 }
 
 const PREVIEW_FINGERPRINT_CONTEXT = "immojudis:information-agent:preview:v1";
@@ -1070,7 +1192,7 @@ export type InformationAgentPreviewResponse = {
   };
   /** Motifs qui empêcheront l'envoi (opposition, délai de 30 jours, configuration…). */
   blockers: string[];
-  addressOrigin: { text: string; url: string | null; known: boolean };
+  addressOrigin: { text: string; url: string | null; automated: boolean; known: boolean };
   /** À renvoyer avec « Valider et envoyer » ; null si l'envoi est impossible. */
   fingerprint: string | null;
 };
@@ -1105,7 +1227,14 @@ export async function previewAdminInformationAgentMission({
     blockers.push("Cette mission n’est plus un brouillon : elle ne peut pas être envoyée.");
   }
   await collect(() =>
-    assertInformationAgentContactAllowed({ saleId: mission.sale_id, email: recipient }),
+    assertInformationAgentContactAllowed({
+      saleId: mission.sale_id,
+      email: recipient,
+      identityKeys: missionIdentityKeys(mission, input.recipientName),
+    }),
+  );
+  await collect(() =>
+    assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`),
   );
   await collect(() =>
     assertInformationAgentRecipientCooldown({ email: recipient, missionId: mission.id }),
@@ -1114,6 +1243,7 @@ export async function previewAdminInformationAgentMission({
     email: recipient,
     saleId: mission.sale_id,
     manualOriginUrl: input.recipientOriginUrl ?? null,
+    fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) blockers.push(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
   await collect(() => assertInformationAgentOutboundEnabled(env));
@@ -1129,8 +1259,11 @@ export async function previewAdminInformationAgentMission({
     controllerName: controller?.name ?? "[Responsable de traitement à configurer]",
     controllerAddress: controller?.address ?? "[Adresse à configurer]",
     contactEmail: controller?.contactEmail ?? null,
+    saleReference: missionSaleReference(mission),
     addressOrigin: addressOrigin.origin.text,
     addressOriginUrl: addressOrigin.origin.url,
+    automatedSearch: addressOrigin.origin.automated,
+    aiProvider: previewAiProvider(env, blockers),
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: secret
       ? buildInformationAgentOptOutUrl({ appUrl, email: recipient, secret })
@@ -1148,6 +1281,11 @@ export async function previewAdminInformationAgentMission({
     contributionUrl: new URL("/contribuer/lien-prive-attribue-a-l-envoi", appUrl).toString(),
     legalFooter,
   });
+  await collect(() =>
+    assertNoInformationAgentCommercialMention(`${rendered.html}\n${rendered.text}`, {
+      appOrigin: appUrl,
+    }),
+  );
   return {
     ok: true,
     preview: {
@@ -1162,6 +1300,19 @@ export async function previewAdminInformationAgentMission({
     addressOrigin: { ...addressOrigin.origin, known: addressOrigin.known },
     fingerprint: informationAgentPreviewFingerprint({ adminId: auth.userId, ...input }, env),
   };
+}
+
+/** Prestataire d'IA du pied ; une configuration inconnue devient un motif de blocage de l'aperçu. */
+function previewAiProvider(
+  env: Readonly<Record<string, string | undefined>>,
+  blockers: string[],
+): InformationAgentAiProvider {
+  try {
+    return informationAgentAiProvider(env);
+  } catch (error) {
+    blockers.push(error instanceof Error ? error.message : "Prestataire d’IA non identifié.");
+    return informationAgentAiProvider({});
+  }
 }
 
 export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = process.env): void {
@@ -1307,6 +1458,43 @@ function inventoryFromMetadata(metadata: Json): InformationAgentInventoryItem[] 
       },
     ];
   });
+}
+
+/** Barreau du tribunal de la vente, à défaut sa ville : le lieu de l'identité du professionnel. */
+function saleIdentityPlace(sale: Pick<AuctionSale, "tribunal" | "city">): {
+  bar: string | null;
+  city: string | null;
+} {
+  return { bar: tribunalBarAssociation(sale.tribunal), city: sale.city?.trim() || null };
+}
+
+function metadataText(value: Json | undefined): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Clés d'identité du destinataire d'une mission, recalculées avec le nom éventuellement corrigé par
+ * l'administrateur. Rôle et lieu viennent du brouillon (`metadata.contact_identity`).
+ */
+function missionIdentityKeys(mission: MissionRow, recipientName?: string | null): string[] {
+  const identity = asObject(asObject(mission.metadata).contact_identity ?? {});
+  return informationAgentIdentityKeys({
+    role:
+      metadataText(identity.role) ?? (mission.recipient_kind === "source_lawyer" ? "lawyer" : null),
+    name: recipientName?.trim() || mission.recipient_name,
+    bar: metadataText(identity.bar),
+    city: metadataText(identity.city),
+    siren: metadataText(identity.siren),
+  });
+}
+
+/** Référence de la vente pour le pied du message : titre, lieu et tribunal du brouillon. */
+function missionSaleReference(mission: MissionRow): string | null {
+  const snapshot = asObject(mission.sale_snapshot);
+  const parts = [snapshot.title, snapshot.city, snapshot.tribunal]
+    .map(metadataText)
+    .filter((part): part is string => Boolean(part));
+  return parts.length ? [...new Set(parts)].join(" — ") : null;
 }
 
 function saleSnapshot(sale: AuctionSale): Json {
