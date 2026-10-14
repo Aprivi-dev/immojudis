@@ -1,6 +1,6 @@
 begin;
 
-select plan(5);
+select plan(6);
 
 select ok(
   position(
@@ -24,6 +24,14 @@ select ok(
       pg_get_functiondef('app_private.evaluate_operational_health(timestamptz)'::regprocedure)
   ) > 0,
   'the inbound worker remains covered by cron freshness monitoring'
+);
+
+select ok(
+  position(
+    'listing-completeness' in
+      pg_get_functiondef('app_private.evaluate_operational_health(timestamptz)'::regprocedure)
+  ) > 0,
+  'the hourly completeness job is covered by cron freshness monitoring'
 );
 
 select ok(
