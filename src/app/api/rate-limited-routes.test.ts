@@ -25,7 +25,11 @@ vi.mock("@/lib/rate-limit", () => ({
   enforceUserRateLimit: mocks.enforceUser,
   enforceIpRateLimit: mocks.enforceIp,
 }));
-vi.mock("@/lib/property-reports", () => ({ assertFeatureEntitlement: mocks.entitlement }));
+vi.mock("@/lib/property-reports", () => ({
+  assertFeatureEntitlement: mocks.entitlement,
+  assertFeatureEntitlementVia: mocks.entitlement,
+  featureIncludedForSale: async () => true,
+}));
 vi.mock("@/lib/sale-market-estimates", () => ({
   refreshSaleValuationOnDemand: mocks.refreshValuation,
 }));

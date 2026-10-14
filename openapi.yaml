@@ -15,7 +15,8 @@ paths:
       operationId: getSaleOutcomeGraph
       summary: Lire la dernière prévision Outcome Graph admissible
       description: >-
-        Réservé au plan Analyse. Le serveur refuse les prédictions sans snapshot
+        Réservé au plan Analyse. Un déblocage de vente (« 3 déblocages par mois ») n'ouvre pas la
+        prévision d'audience. Le serveur refuse les prédictions sans snapshot
         pré-audience validé, cohorte éligible ou provenance complète. Le plafond
         personnel n'est pas envoyé à cette route et se calcule dans le navigateur.
       security:
@@ -224,7 +225,7 @@ paths:
       operationId: getSaleAdjudicationStatistics
       summary: Lire les statistiques de prix d'adjudication d'une vente
       description: >-
-        Réservé au plan Analyse. Référence nationale et tribunal compétent pour la vente, expérimentales et descriptives. Indisponible tant que le drapeau serveur `ADJUDICATION_PRICE_STATISTICS_ENABLED` n'est pas exactement `true`.
+        Réservé au plan Analyse, ou à un compte Découverte pour une vente qu'il a débloquée (« 3 déblocages par mois »). Référence nationale et tribunal compétent pour la vente, expérimentales et descriptives. Indisponible tant que le drapeau serveur `ADJUDICATION_PRICE_STATISTICS_ENABLED` n'est pas exactement `true`.
       security:
         - bearerAuth: []
       parameters:
@@ -355,7 +356,7 @@ paths:
       operationId: getTribunalListingStatistics
       summary: Lire les statistiques des annonces d'un tribunal
       description: >-
-        Réservé au plan Analyse. Répond 422 `COURT_UNRESOLVED` quand le rattachement exact au tribunal reste à confirmer.
+        Réservé au plan Analyse. Un compte Découverte y accède seulement avec `saleId`, pour une vente qu'il a débloquée (« 3 déblocages par mois »), et obtient alors les statistiques du tribunal de cette vente, sans la liste de ses autres ventes à venir : `activity.upcomingListings` est alors toujours vide (`activity.upcomingSales` reste renseigné). Une requête avec `courtCode` reste réservée à Analyse. Un paramètre répété est refusé (400). Répond 422 `COURT_UNRESOLVED` quand le rattachement exact au tribunal reste à confirmer.
       security:
         - bearerAuth: []
       responses:

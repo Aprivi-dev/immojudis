@@ -2,7 +2,7 @@ import { saleDateBoundary } from "./search/sale-date-range";
 import { supabase } from "@/integrations/supabase/client";
 import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
 import type { AuctionSale, SaleFilters, SortKey } from "./types";
-import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "./sale-views";
+import { DETAIL_VIEW, SALE_LIST_COLUMNS, UNLOCKED_VIEW } from "./sale-views";
 import { assertCloudConfigured } from "./query-configuration";
 import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
 import { fetchPublicSaleSummary } from "./public-sale-summary";
@@ -12,6 +12,7 @@ export type { CreateAlertPayload } from "./alert-queries";
 export { DETAIL_VIEW, SALE_LIST_COLUMNS };
 
 const DISCOVERY_VIEW = "v_auction_sales_discovery" as typeof DETAIL_VIEW;
+const UNLOCKED_SALE_VIEW = UNLOCKED_VIEW as typeof DETAIL_VIEW;
 const SEARCH_VIEW = "v_auction_sales_app_search" as typeof DETAIL_VIEW;
 const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAIL_VIEW;
 const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
@@ -429,7 +430,7 @@ export async function getSalesPreviewCount(filters: SaleFilters = {}): Promise<n
 
 export async function getSaleById(
   id: string,
-  options: { discovery?: boolean } = {},
+  options: { discovery?: boolean; unlocked?: boolean } = {},
 ): Promise<AuctionSale | null> {
   if (!assertCloudConfigured()) return null;
   if (typeof window === "undefined") return null;
@@ -437,7 +438,12 @@ export async function getSaleById(
     data: { session },
   } = await supabase.auth.getSession();
   if (!session) return null;
-  const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  // A sale the account unlocked is read through its own redacted view, never through the full one.
+  const catalogView = options.unlocked
+    ? UNLOCKED_SALE_VIEW
+    : options.discovery
+      ? DISCOVERY_VIEW
+      : DETAIL_VIEW;
   const { data, error } = await supabase.from(catalogView).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   return data ? sanitizeAuctionSaleForDisplay(data as AuctionSale) : null;

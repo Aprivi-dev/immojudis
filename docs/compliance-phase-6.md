@@ -23,11 +23,11 @@ de TVA sont publiés lorsqu’ils sont applicables.
 
 Les versions et empreintes sont centralisées dans `src/lib/legal-documents.ts` :
 
-| Document         | Route                   | Version en vigueur (13/10/2026) |
+| Document         | Route                   | Version en vigueur (14/10/2026) |
 | ---------------- | ----------------------- | ------------------------------- |
 | Mentions légales | `/legal`                | `2026-07-29.1`                  |
-| CGVU             | `/conditions-generales` | `2026-10-13.2`                  |
-| Confidentialité  | `/privacy`              | `2026-10-13.1`                  |
+| CGVU             | `/conditions-generales` | `2026-10-13.3`                  |
+| Confidentialité  | `/privacy`              | `2026-10-13.2`                  |
 
 Toute modification substantielle crée une nouvelle version, une nouvelle empreinte et une date
 d’effet. Les empreintes correspondent aux sources des pages publiées et sont contrôlées par un test
@@ -64,12 +64,54 @@ Chaque demande reçoit :
 1. Ouvrir le panneau « Demandes RGPD et rétractations » au moins chaque semaine.
 2. Passer la demande à `in_review`, ou à `identity_verification` si l’identité est réellement douteuse.
 3. Rechercher les données du seul utilisateur concerné ; exclure les données de tiers et secrets.
+   Pour une demande d’accès ou de portabilité, la copie comprend les déblocages de ventes de l’offre
+   Découverte (table `user_sale_unlocks` : vente, date) en plus des favoris, alertes et rapports.
 4. Exécuter le droit demandé ou documenter le motif légal d’une limitation/refus.
 5. Pour un effacement, supprimer d’abord les objets Storage via l’API Storage, puis le compte Auth ;
    les clés étrangères `on delete cascade` retirent les espaces personnels.
 6. Pour une rétractation, vérifier la date et l’usage, calculer le cas échéant la part de service déjà
    fournie, traiter le remboursement dans Stripe et révoquer l’accès via le cycle de paiement existant.
 7. Clôturer la demande avec un code de résolution et notifier l’utilisateur sur un support durable.
+
+### Restitution d’un déblocage de vente (procédure manuelle)
+
+Les CGV (§ 2) prévoient la restitution d’un déblocage, sur simple demande, lorsqu’Immojudis retire
+elle-même la vente ou en suspend la publication pour une raison qui lui est imputable (erreur de
+publication, mise en quarantaine ou retrait de la source décidés par Immojudis, mise en attente de la
+vente). Il n’y a pas de restitution quand la vente est reportée, adjugée ou retirée par la
+juridiction ou la source. Aucun code automatique. La restitution est un engagement contractuel, pas
+un droit RGPD : le même délai d’un mois s’applique par cohérence avec les CGV.
+
+Elle arrive uniquement par l’adresse de contact. Le portail Mes droits n’a pas de type
+« restitution » et ses types sont des droits RGPD ou la rétractation Analyse : ne jamais utiliser
+« Rétractation Analyse » (`contract_withdrawal`), dont le traitement propose l’annulation de
+l’abonnement Stripe et le remboursement. Si une demande de restitution arrive quand même par Mes
+droits, la traiter comme un message de contact et la clôturer avec le code de résolution
+« hors_rgpd_restitution_deblocage ».
+
+1. Identifier le compte demandeur et la vente (identifiant ou adresse de la fiche) ; ne traiter que
+   les déblocages du compte qui écrit. L’identité est établie par l’adresse email du compte : si la
+   demande vient d’une autre adresse, demander au titulaire de la renouveler depuis son compte ou
+   depuis cette adresse.
+2. Vérifier la cause : la vente est-elle retirée ou en attente par décision d’Immojudis
+   (interrupteur de retrait d’une source, quarantaine de publication, mise en attente de
+   préparation, erreur de publication) ? Si elle est reportée, adjugée ou retirée par la juridiction
+   ou la source, refuser en l’expliquant.
+3. Retrouver la ligne dans `user_sale_unlocks` (colonnes `user_id`, `sale_id`, `unlocked_at`). Une
+   ligne dont la vente a été supprimée a `sale_id` nul : la retrouver par `user_id` et par la date
+   du déblocage donnée par le demandeur.
+4. Le compteur du mois se calcule sur les lignes du mois. Si le déblocage date du mois civil en
+   cours (heure de Paris), supprimer cette seule ligne
+   (`delete from public.user_sale_unlocks where id = '<id de la ligne>'`) avec le rôle de service
+   depuis l’éditeur SQL de Supabase (accès restreint), en notant dans la demande la requête
+   exécutée. Pour un déblocage d’un mois passé, ne rien supprimer (aucun crédit n’est rendu et la
+   suppression ferait perdre l’accès à la vente si elle revient en ligne) et le dire au demandeur.
+5. La suppression retire aussi l’accès du compte à cette vente. Si le demandeur veut la rouvrir une
+   fois la vente de nouveau en ligne, il la débloque à nouveau (idempotent, un crédit).
+6. Répondre au demandeur sur un support durable, conserver la demande et la date de suppression
+   (notes opérateur de la demande, ou courriel de réponse), puis clôturer la demande avec un code de
+   résolution. L’échange est conservé 12 mois après le dernier message (ligne « Formulaire de
+   contact » de la politique de confidentialité), puis supprimé.
 
 Une demande simple doit recevoir une réponse au plus tard sous un mois. Une prolongation de deux mois
 doit être motivée et annoncée avant la première échéance.
@@ -79,7 +121,8 @@ doit être motivée et annoncée avant la première échéance.
 - identité et médiateur configurés en production ;
 - revue juridique écrite conservée ;
 - commande Stripe de test et preuve `commercial_acceptances` vérifiées ;
-- demande d’accès, d’effacement et de rétractation testées de bout en bout ;
+- demande d’accès (copie incluant les déblocages de ventes, table `user_sale_unlocks`), d’effacement et de
+  rétractation testées de bout en bout ;
 - procédure de remboursement et suppression Storage/Auth répétée sur un compte de test ;
 - contrats/DPA et mécanismes de transfert des fournisseurs vérifiés ;
 - bouton « Résilier mon abonnement » (page Mon compte) testé de bout en bout, y compris la

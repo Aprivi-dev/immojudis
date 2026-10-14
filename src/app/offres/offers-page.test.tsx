@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PLAN_LIMITS } from "@/lib/plans";
 
 const mocks = vi.hoisted(() => ({
   offer: vi.fn(),
@@ -67,7 +68,7 @@ describe("page Offres", () => {
     expect(answer).toContain("date de fin d’accès est affichée avant confirmation");
   });
 
-  it("répond aux cinq questions attendues", () => {
+  it("répond aux six questions attendues", () => {
     const { container } = render(<OffersPage />);
     const questions = Array.from(container.querySelectorAll("details > summary")).map((node) =>
       node.textContent?.trim(),
@@ -75,6 +76,7 @@ describe("page Offres", () => {
     expect(questions).toEqual([
       "Comment résilier ?",
       "Y a-t-il un essai gratuit ?",
+      "Comment fonctionnent les 3 déblocages par mois ?",
       "Puis-je être remboursé ?",
       "Quelle est la couverture géographique ?",
       "En quoi est-ce différent d’un avocat ?",
@@ -176,6 +178,59 @@ describe("page Offres", () => {
     act(() => props.offerSource.reload());
     expect(await screen.findByText(/Essai gratuit de 7 jours/)).toBeTruthy();
     expect(mocks.offer).toHaveBeenCalledTimes(2);
+  });
+
+  it("annonce les déblocages mensuels avec le chiffre de plans.ts et leur limite", () => {
+    const n = PLAN_LIMITS.decouverte.monthlyUnlocks;
+    const { container } = render(<OffersPage />);
+    const text = container.textContent ?? "";
+
+    expect(
+      screen.getByText(
+        new RegExp(`^${n} déblocages par mois : l’enchère plafond, la lecture des pièces`),
+      ),
+    ).toBeTruthy();
+    expect(text).toContain(
+      `elle comprend ${n} déblocages par mois, chacun ouvrant, pour une vente, l’enchère plafond`,
+    );
+    // Never the names the owner excluded.
+    expect(text).not.toMatch(
+      /analyses? (complètes? )?gratuites?|essai gratuit des? (déblocages|ventes)/i,
+    );
+  });
+
+  it("répond à la question sur les déblocages : périmètre, remise à zéro à Paris, ce qui reste à Analyse", () => {
+    const { container } = render(<OffersPage />);
+    const answer = Array.from(container.querySelectorAll("details")).find((node) =>
+      node.querySelector("summary")?.textContent?.includes("déblocages par mois"),
+    )?.textContent;
+
+    expect(answer).toContain("l’enchère plafond, la lecture des pièces, l’historique de la vente");
+    expect(answer).toContain(
+      "les statistiques du tribunal de cette vente et les pièces du dossier",
+    );
+    expect(answer).toContain("le 1er du mois à 00 h 00, heure de Paris");
+    expect(answer).toContain("ne sont pas reportés");
+    expect(answer).toContain("tant qu’elle est en ligne");
+    expect(answer).toContain("Aucune carte bancaire n’est demandée");
+    expect(answer).toContain("L’export PDF ou CSV, les rapports enregistrés");
+    expect(answer).toContain("lorsque la vente les comporte");
+    expect(answer).toContain("dans la limite de 24 mois après le déblocage");
+    expect(answer).toContain("l’estimation détaillée et les ventes comparables restent réservés");
+  });
+
+  it("montre dans le comparatif « Pour 3 ventes par mois » plutôt que « Non inclus »", () => {
+    render(<OffersPage />);
+    const table = screen.getByRole("table", { name: /Comparaison des offres/ });
+    const ceiling = within(table).getByRole("rowheader", {
+      name: /Enchère plafond chiffrée/,
+    }).parentElement!;
+    expect(ceiling.textContent).toContain("Pour 3 ventes par mois");
+    expect(ceiling.textContent).not.toContain("Non inclus");
+    const pdf = within(table).getByRole("rowheader", {
+      name: /Rapport PDF du scénario/,
+    }).parentElement!;
+    expect(pdf.textContent).toContain("Non inclus");
   });
 
   it("explique la formule de l'enchère plafond aux lecteurs d'écran", () => {

@@ -8,17 +8,16 @@ import { PublicApiError } from "@/lib/api-errors";
 import { apiRouteError } from "@/lib/api-observability";
 import { documentReadingTeaser, type DocumentReadingResponse } from "@/lib/document-reading";
 import { getDocumentReading } from "@/lib/document-reading.server";
-import { featureIncluded } from "@/lib/plans";
-import { resolvePlanEntitlements } from "@/lib/property-reports";
+import { saleFeatureDoor } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { DETAIL_VIEW } from "@/lib/sale-views";
+import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
 
 const saleIdSchema = z.string().uuid();
 
 /**
- * « Lecture des pièces ». Analyse: the points with their verified quotes.
- * Other signed-in accounts: how many points were found, never their content.
+ * « Lecture des pièces ». Analyse, or a sale the account unlocked: the points with their
+ * verified quotes. Other signed-in accounts: how many points were found, never their content.
  * The sale must be visible to the caller first.
  */
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -30,10 +29,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       bucketKey: "document-reading",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    const plan = await resolvePlanEntitlements(auth);
-    const full = featureIncluded(plan.plan, "property.documentReading");
+    // Analyse, or a Découverte account that unlocked this very sale (« 3 déblocages par mois »).
+    const door = await saleFeatureDoor(auth, "property.documentReading", saleId);
+    const full = door !== null;
+    // The full catalogue view is for the offer; an unlock only needs to know the sale is online.
     const { data: sale, error } = await auth.supabase
-      .from(full ? DETAIL_VIEW : "v_auction_sales_discovery")
+      .from(door === "plan" ? DETAIL_VIEW : DISCOVERY_VIEW)
       .select("id")
       .eq("id", saleId)
       .maybeSingle();
