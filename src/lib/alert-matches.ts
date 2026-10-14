@@ -304,7 +304,6 @@ async function loadSalesToEvaluate({
     const page = await getSales(filters, pageSize, "date_asc", offset, {
       client: auth.supabase,
       discovery,
-      stableOrder: true,
     });
     for (const sale of page) {
       if (seen.has(sale.id)) continue;

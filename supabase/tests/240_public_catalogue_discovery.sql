@@ -49,9 +49,10 @@ select is(
   (select array_agg(key order by key) from unnest(array[
     'id','starting_price_eur','total_count','sale_venue_type','sale_verification_status',
     'city','department','property_type','sale_date','app_surface_m2','app_surface_kind',
-    'rooms_count','bedrooms_count','bathrooms_count','latitude','longitude','thumbnail_url'
+    'rooms_count','bedrooms_count','bathrooms_count','latitude','longitude','thumbnail_url',
+    'completeness_tier'
   ]) key),
-  'the RPC returns exactly the approved public fields'
+  'the RPC returns exactly the approved public fields (completeness tier included, never the score)'
 );
 
 select results_eq(

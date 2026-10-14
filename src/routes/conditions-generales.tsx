@@ -245,7 +245,34 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="10. Données personnelles">
+          <TermsSection title="10. Classement, référencement et mise en avant">
+            <p>
+              Par défaut, les annonces dont la position sur la carte est connue passent avant les
+              autres. Elles sont ensuite classées selon la quantité d’informations renseignées dans
+              leur fiche, puis par date de vente la plus proche. Aucune rémunération ne peut
+              améliorer le rang d’une annonce.
+            </p>
+            <p className="mt-3">
+              Dans l’annuaire des avocats, les cabinets qui rémunèrent Immojudis, ou bénéficient
+              d’un essai gratuit de cette offre, sont affichés en premier dans une section
+              distincte, signalés « Publicité · Sponsorisé » ; ils ne sont ni recommandés ni notés.
+              Un encart d’un cabinet d’avocats, signalé de la même façon, peut aussi apparaître dans
+              la liste des ventes pour une zone géographique ; il ne modifie pas l’ordre des
+              annonces et n’est ni une recommandation, ni une notation, ni une garantie de résultat.
+            </p>
+            <p className="mt-3">
+              Les annonces proviennent de sources publiques et d’organisateurs de ventes, ou de
+              professionnels disposant d’un compte validé : Immojudis ne les rédige pas et ne
+              garantit pas leur exactitude. Une vente passée, annulée ou retirée n’est plus affichée
+              dès que cette information est connue d’Immojudis. Le détail figure sur la page{" "}
+              <Link to="/classement-des-annonces" className="text-gold underline">
+                Comment sont classées les annonces ?
+              </Link>
+              .
+            </p>
+          </TermsSection>
+
+          <TermsSection title="11. Données personnelles">
             <p>
               Les traitements nécessaires au compte, à la commande et au service sont décrits dans
               la politique de confidentialité. Les droits d’accès, portabilité, rectification,
@@ -254,7 +281,7 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="11. Réclamations, médiation et droit applicable">
+          <TermsSection title="12. Réclamations, médiation et droit applicable">
             <p>
               Une réclamation préalable peut être adressée à {legalValue(publisher.contactEmail)} ou
               au {legalValue(publisher.contactPhone)}. En cas d’échec, le consommateur peut saisir

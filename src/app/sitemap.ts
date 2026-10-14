@@ -29,8 +29,9 @@ const PUBLIC_ROUTES = [
   ["/simulateur-frais-encheres", "2026-10-13"],
   ["/a-propos", "2026-10-13"],
   ["/contact", "2026-10-08"],
+  ["/classement-des-annonces", "2026-10-14"],
   ["/legal", "2026-10-08"],
-  ["/conditions-generales", "2026-10-08"],
+  ["/conditions-generales", "2026-10-14"],
   ["/privacy", "2026-10-14"],
 ] as const;
 
