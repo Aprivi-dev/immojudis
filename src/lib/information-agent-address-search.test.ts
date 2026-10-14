@@ -82,8 +82,11 @@ vi.mock("@/lib/information-agent/firm-site-search", async (importOriginal) => ({
 }));
 
 import {
+  assertInformationAgentSearchedAddressAllowed,
+  isInformationAgentAddressSearchEnabled,
   RECIPIENT_COOLDOWN_MESSAGE_PREFIX,
   searchInformationAgentAddress,
+  searchInformationAgentAddressForDraft,
   type InformationAgentAddressSearchSale,
 } from "@/lib/information-agent/address-search";
 import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
@@ -135,7 +138,7 @@ function run(overrides: Partial<InformationAgentAddressSearchSale> = {}) {
   return searchInformationAgentAddress({
     sale: sale(overrides),
     identityPlace: PLACE,
-    siteOrigin: "https://immojudis.example",
+    siteOrigin: "https://immojudis.com",
     now: NOW,
   });
 }
@@ -194,7 +197,7 @@ describe("recherche autonome de l'adresse (niveau 1)", () => {
     expect(firm.search.mock.calls[0]![0]).toMatchObject({
       startUrl: "https://www.cabinet-dupont.test/",
       lawyerName: "Maître Jean Dupont",
-      userAgent: "ImmojudisAdresses/1.0 (+https://immojudis.example/contact)",
+      userAgent: "ImmojudisAdresses/1.0 (+https://immojudis.com/contact)",
     });
     expect(outcome.status).toBe("found");
     if (outcome.status !== "found") return;
@@ -390,5 +393,158 @@ describe("recherche autonome de l'adresse (niveau 1)", () => {
     const outcome = await run();
     expect(outcome.status).toBe("none");
     expect(outcome.attempts.at(-1)).toMatchObject({ outcome: "error" });
+  });
+
+  it("sans clé d'identité (nom incomplet ou lieu inconnu) : ni annonces ni site, rien n'est consulté", async () => {
+    reuse.find.mockResolvedValue(reusable);
+    firm.search.mockResolvedValue(found);
+    for (const [name, place] of [
+      ["Me Dupont", PLACE],
+      [null, PLACE],
+      ["Maître Jean Dupont", { bar: null, city: null }],
+    ] as const) {
+      const outcome = await searchInformationAgentAddress({
+        sale: sale({ lawyer_name: name }),
+        identityPlace: place,
+        siteOrigin: "https://immojudis.com",
+        now: NOW,
+      });
+      expect(outcome.status).toBe("none");
+      expect(outcome.attempts).toEqual([
+        { method: "other_listing", outcome: "refused", detail: "no_identity_keys" },
+        { method: "firm_website", outcome: "refused", detail: "no_identity_keys" },
+      ]);
+    }
+    expect(reuse.find).not.toHaveBeenCalled();
+    expect(firm.search).not.toHaveBeenCalled();
+    expect(db.identityLookups).toEqual([]);
+  });
+
+  it("la lecture des annonces est bornée par le budget de la recherche", async () => {
+    await searchInformationAgentAddress({
+      sale: sale(),
+      identityPlace: PLACE,
+      siteOrigin: "https://immojudis.com",
+      now: NOW,
+      budgetMs: 4_000,
+    });
+    expect(reuse.find.mock.calls[0]![0]).toMatchObject({ timeoutMs: 4_000 });
+  });
+});
+
+const ENABLED = { INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED: "true" };
+const draftSearch = (
+  env: Record<string, string | undefined>,
+  overrides: Partial<Parameters<typeof searchInformationAgentAddressForDraft>[0]> = {},
+) =>
+  searchInformationAgentAddressForDraft({
+    sale: sale(),
+    identityPlace: PLACE,
+    siteOrigin: "https://immojudis.com",
+    now: NOW,
+    skip: false,
+    env,
+    ...overrides,
+  });
+
+describe("interrupteur INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", () => {
+  const DISABLED =
+    "La recherche automatique d’adresse est désactivée : indiquez l’adresse et la page publique où vous l’avez relevée.";
+
+  it.each([undefined, "", "false", "TRUE", "True", "1", "yes", " true", "true "])(
+    "coupe la recherche pour les deux sources quand la variable vaut %j",
+    async (value) => {
+      reuse.find.mockResolvedValue(reusable);
+      firm.search.mockResolvedValue(found);
+      const result = await draftSearch({ INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED: value });
+      expect(result.candidate).toBeNull();
+      expect(result.noAddressNote).toBe(` ${DISABLED}`);
+      expect(reuse.find).not.toHaveBeenCalled();
+      expect(firm.search).not.toHaveBeenCalled();
+      expect(db.identityLookups).toEqual([]);
+      expect(
+        isInformationAgentAddressSearchEnabled({ INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED: value }),
+      ).toBe(false);
+    },
+  );
+
+  it("n'active la recherche que pour la valeur exacte `true`", async () => {
+    reuse.find.mockResolvedValue(reusable);
+    const result = await draftSearch(ENABLED);
+    expect(result.candidate).toMatchObject({ email: "cabinet@cabinet-dupont.test" });
+    expect(result.discoveryMethod).toBe("agent_search_other_listing");
+    expect(isInformationAgentAddressSearchEnabled(ENABLED)).toBe(true);
+  });
+
+  it("source B aussi : l'interrupteur actif laisse la recherche du site se faire", async () => {
+    firm.search.mockResolvedValue(found);
+    const result = await draftSearch(ENABLED);
+    expect(result.discoveryMethod).toBe("agent_search_firm_website");
+    expect(firm.search).toHaveBeenCalledOnce();
+  });
+
+  it("refuse la recherche hors de l'origine de production, même interrupteur actif", async () => {
+    reuse.find.mockResolvedValue(reusable);
+    firm.search.mockResolvedValue(found);
+    for (const siteOrigin of [
+      "https://immojudis-dezt.vercel.app",
+      "https://immojudis.example",
+      "http://immojudis.com",
+      "http://localhost:3000",
+      "pas une origine",
+    ]) {
+      const result = await draftSearch(ENABLED, { siteOrigin });
+      expect(result.candidate, siteOrigin).toBeNull();
+      expect(result.noAddressNote, siteOrigin).toContain(
+        "n’est active que sur le site de production",
+      );
+    }
+    expect(reuse.find).not.toHaveBeenCalled();
+    expect(firm.search).not.toHaveBeenCalled();
+  });
+
+  it("ne cherche rien quand l'annonce ou l'administrateur donne déjà l'adresse (`skip`)", async () => {
+    const result = await draftSearch(ENABLED, { skip: true });
+    expect(result).toEqual({
+      candidate: null,
+      discoveryMethod: null,
+      snapshot: null,
+      noAddressNote: "",
+    });
+    expect(reuse.find).not.toHaveBeenCalled();
+  });
+
+  it("dit pourquoi la recherche n'a pas eu lieu (contrôle d'opposition indisponible, identité insuffisante)", async () => {
+    db.failTable = "information_agent_identity_oppositions";
+    expect((await draftSearch(ENABLED)).noAddressNote).toContain(
+      "contrôle d’opposition est indisponible",
+    );
+    db.failTable = null;
+    const result = await draftSearch(ENABLED, { sale: sale({ lawyer_name: "Me Dupont" }) });
+    expect(result.noAddressNote).toContain("manque pour contrôler l’opposition");
+    const nothing = await draftSearch(ENABLED);
+    expect(nothing.noAddressNote).toContain("n’a retrouvé aucune adresse sûre");
+  });
+});
+
+describe("garde d'envoi d'une adresse trouvée par l'agent", () => {
+  it("refuse l'envoi quand la recherche est coupée, l'autorise sinon", () => {
+    const refused =
+      "La recherche automatique d’adresse est désactivée : cette adresse ne peut pas être utilisée pour un envoi.";
+    expect(() => assertInformationAgentSearchedAddressAllowed({ automated: true }, {})).toThrow(
+      refused,
+    );
+    expect(() =>
+      assertInformationAgentSearchedAddressAllowed(
+        { automated: true },
+        { INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED: "TRUE" },
+      ),
+    ).toThrow(refused);
+    expect(() =>
+      assertInformationAgentSearchedAddressAllowed({ automated: true }, ENABLED),
+    ).not.toThrow();
+    expect(() =>
+      assertInformationAgentSearchedAddressAllowed({ automated: false }, {}),
+    ).not.toThrow();
   });
 });

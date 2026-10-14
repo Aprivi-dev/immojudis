@@ -140,6 +140,15 @@ export async function searchInformationAgentAddress({
     ...identityPlace,
   });
 
+  // Sans clé d'identité (nom complet ou lieu manquant), l'opposition par identité ne peut pas être
+  // contrôlée : ni la lecture des annonces ni le site ne sont consultés.
+  if (!recipientKeys.length) {
+    for (const method of ["other_listing", "firm_website"] as const) {
+      attempts.push({ method, outcome: "refused", detail: "no_identity_keys" });
+    }
+    return { status: "none", attempts };
+  }
+
   // Opposition par identité AVANT toute lecture ou requête réseau. Sans rôle sûr, tous les rôles
   // sont contrôlés : mieux vaut un blocage de trop qu'un professionnel opposé recontacté.
   try {
@@ -222,6 +231,7 @@ export async function searchInformationAgentAddress({
       lawyerName,
       lawyerContact: sale.lawyer_contact,
       now,
+      timeoutMs: budgetMs,
     });
     if (reuse.status !== "found") {
       attempts.push({
@@ -346,6 +356,40 @@ export async function searchInformationAgentAddress({
   return { status: "none", attempts };
 }
 
+/**
+ * Interrupteur de la recherche automatique d'adresse : coupée sauf valeur exactement `true`. Elle ne
+ * doit être activée qu'après validation de la mise en balance et de l'analyse de seuil d'AIPD,
+ * publication de `/agent-information` et mise à jour de la politique de confidentialité.
+ */
+export function isInformationAgentAddressSearchEnabled(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  return env.INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED === "true";
+}
+
+/** Seule l'origine de production consulte des sites tiers (jamais un aperçu ou un poste local). */
+export const INFORMATION_AGENT_ADDRESS_SEARCH_ORIGIN = "https://immojudis.com";
+
+export const ADDRESS_SEARCH_DISABLED_NOTE =
+  " La recherche automatique d’adresse est désactivée : indiquez l’adresse et la page publique où vous l’avez relevée.";
+export const ADDRESS_SEARCH_NOT_PRODUCTION_NOTE =
+  " La recherche automatique d’adresse n’est active que sur le site de production : indiquez l’adresse et la page publique où vous l’avez relevée.";
+export const ADDRESS_SEARCH_SEND_REFUSED_MESSAGE =
+  "La recherche automatique d’adresse est désactivée : cette adresse ne peut pas être utilisée pour un envoi.";
+
+/**
+ * Une adresse trouvée par l'agent (source autre que l'annonce de la vente ou une saisie
+ * d'administrateur) ne sert à aucun envoi tant que la recherche automatique est coupée.
+ */
+export function assertInformationAgentSearchedAddressAllowed(
+  origin: { automated: boolean },
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): void {
+  if (origin.automated && !isInformationAgentAddressSearchEnabled(env)) {
+    throw new Error(ADDRESS_SEARCH_SEND_REFUSED_MESSAGE);
+  }
+}
+
 export type InformationAgentDraftAddressSearch = {
   /** Adresse proposée, à relire dans l'aperçu ; null si rien de sûr n'a été retrouvé. */
   candidate: InformationAgentContactCandidate | null;
@@ -357,18 +401,45 @@ export type InformationAgentDraftAddressSearch = {
   noAddressNote: string;
 };
 
+function noAddressNote(outcome: InformationAgentAddressSearchOutcome): string {
+  const details = outcome.attempts.map((attempt) => attempt.detail);
+  if (details.includes("opposition_check")) {
+    return " La recherche automatique n’a pas pu être effectuée : le contrôle d’opposition est indisponible. Réessayez plus tard ou saisissez l’adresse.";
+  }
+  if (details.includes("no_identity_keys")) {
+    return " La recherche automatique n’a pas été effectuée : le nom complet du professionnel ou le lieu de la vente manque pour contrôler l’opposition.";
+  }
+  return " La recherche automatique (autre annonce du même professionnel, site du cabinet cité par l’annonce) n’a retrouvé aucune adresse sûre.";
+}
+
 /**
  * Recherche pour la préparation d'un brouillon. `skip` : l'annonce donne déjà une adresse ou
- * l'administrateur en a saisi une, aucune recherche n'a lieu. Un professionnel opposé ou une adresse
- * déjà sollicitée dans les 30 derniers jours interrompt la préparation du brouillon.
+ * l'administrateur en a saisi une, aucune recherche n'a lieu. L'interrupteur et l'origine de
+ * production sont contrôlés avant toute lecture ou requête, pour les deux sources. Un professionnel
+ * opposé ou une adresse déjà sollicitée dans les 30 derniers jours interrompt la préparation.
  */
 export async function searchInformationAgentAddressForDraft({
   skip,
+  env = process.env,
   ...input
 }: Parameters<typeof searchInformationAgentAddress>[0] & {
   skip: boolean;
+  env?: Readonly<Record<string, string | undefined>>;
 }): Promise<InformationAgentDraftAddressSearch> {
-  if (skip) return { candidate: null, discoveryMethod: null, snapshot: null, noAddressNote: "" };
+  const none = (note: string): InformationAgentDraftAddressSearch => ({
+    candidate: null,
+    discoveryMethod: null,
+    snapshot: null,
+    noAddressNote: note,
+  });
+  if (skip) return none("");
+  if (!isInformationAgentAddressSearchEnabled(env)) return none(ADDRESS_SEARCH_DISABLED_NOTE);
+  if (
+    (URL.canParse(input.siteOrigin) ? new URL(input.siteOrigin).origin : "") !==
+    INFORMATION_AGENT_ADDRESS_SEARCH_ORIGIN
+  ) {
+    return none(ADDRESS_SEARCH_NOT_PRODUCTION_NOTE);
+  }
   const outcome = await searchInformationAgentAddress(input);
   if (outcome.status === "opposed") {
     throw new Error(
@@ -395,9 +466,6 @@ export async function searchInformationAgentAddressForDraft({
         pages: attempt.pages ?? null,
       })),
     },
-    noAddressNote:
-      outcome.status === "found"
-        ? ""
-        : " La recherche automatique (autre annonce du même professionnel, site du cabinet cité par l’annonce) n’a retrouvé aucune adresse sûre.",
+    noAddressNote: outcome.status === "found" ? "" : noAddressNote(outcome),
   };
 }

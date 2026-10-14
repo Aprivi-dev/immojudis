@@ -148,7 +148,13 @@ export function firmSiteStartUrls(sale: FirmSiteSale): string[] {
 
 const SKIPPED_EXTENSIONS =
   /\.(?:pdf|docx?|xlsx?|pptx?|zip|rar|jpe?g|png|gif|webp|svg|ico|mp[34]|avi|mov|css|js|xml|json)(?:$|\?)/i;
-const ANCHOR = /<a\b[^>]*?\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/gi;
+/**
+ * Le contenu des pages vient d'un site tiers : tous les motifs sont bornés (pas de `[^>]*` qui
+ * traverse un `<`, texte de lien limité à 300 caractères) pour rester linéaires sur un document
+ * hostile de 1 Mio.
+ */
+const ANCHOR = /<a\b[^<>]*?\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')[^<>]*>([^]{0,300}?)<\/a>/gi;
+const TAG = /<[^<>]*>/g;
 
 function foldText(value: string): string {
   return value
@@ -208,7 +214,7 @@ export function extractFirmSiteLinks(html: string, pageUrl: string): string[] {
     if (siteHost(target.hostname) !== site) continue;
     if (target.port && target.port !== "443" && target.port !== "80") continue;
     if (SKIPPED_EXTENSIONS.test(target.pathname + target.search)) continue;
-    const label = (match[3] ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+    const label = (match[3] ?? "").replace(TAG, " ").replace(/\s+/g, " ");
     const priority = linkPriority(target.pathname, label);
     if (priority === null) continue;
     target.protocol = "https:";
@@ -253,11 +259,36 @@ const NON_INTERLOCUTOR_LOCAL =
 
 export type PageEmail = { email: string; via: "mailto" | "text" };
 
+/**
+ * Retire commentaires, scripts et styles en un seul passage linéaire. Une balise ouvrante sans
+ * fermeture (document hostile ou tronqué) retire tout ce qui suit, comme le ferait un navigateur ;
+ * la fermeture accepte les espaces, retours à la ligne et attributs (`</script >`, `</SCRIPT\n>`)
+ * et les commentaires fermés par `--!>`.
+ */
 function stripNonContent(html: string): string {
-  return html
-    .replace(/<!--[\s\S]*?--!?>/g, " ")
-    .replace(/<script\b[\s\S]*?<\/script\b[^>]*>/gi, " ")
-    .replace(/<style\b[\s\S]*?<\/style\b[^>]*>/gi, " ");
+  const opener = /<!--|<script\b|<style\b/gi;
+  let output = "";
+  let position = 0;
+  for (;;) {
+    opener.lastIndex = position;
+    const open = opener.exec(html);
+    if (!open) break;
+    output += `${html.slice(position, open.index)} `;
+    const kind = open[0].toLowerCase();
+    const closer =
+      kind === "<!--" ? /--!?>/g : kind === "<script" ? /<\/script\b/gi : /<\/style\b/gi;
+    closer.lastIndex = open.index + open[0].length;
+    const close = closer.exec(html);
+    if (!close) return output;
+    let end = close.index + close[0].length;
+    if (kind !== "<!--") {
+      const tagEnd = html.indexOf(">", end);
+      if (tagEnd < 0) return output;
+      end = tagEnd + 1;
+    }
+    position = end;
+  }
+  return output + html.slice(position);
 }
 
 function cleanEmail(value: string): string | null {
@@ -293,7 +324,7 @@ export function extractPageEmails(html: string): PageEmail[] {
     const target = (match[1] ?? match[2] ?? "").split("?")[0] ?? "";
     for (const part of decodeURIComponentSafe(target).split(/[,;]/)) add(part, "mailto");
   }
-  const text = content.replace(/<[^>]*>/g, " ");
+  const text = content.replace(TAG, " ");
   for (const match of text.matchAll(EMAIL)) add(match[0], "text");
   return [...result.values()];
 }
@@ -306,18 +337,25 @@ const GENERIC_LOCAL =
   /^(?:contact|cabinet|accueil|secretariat|etude|office|avocat|avocats|notaire|notaires|info|infos|reception)$/;
 
 export type FirmAddressChoice =
-  | { status: "retained"; email: string; reason: "single" | "name" | "generic" | "offsite_name" }
+  | { status: "retained"; email: string; reason: "name" | "generic" }
   | { status: "ambiguous" }
   | { status: "none" };
 
-/** Les domaines se recouvrent (`cabinet-dupont.fr` et `mail.cabinet-dupont.fr`), `www.` ôté. */
+/**
+ * L'adresse est sur le domaine exact du site ou sur l'un de ses sous-domaines (`www.` ôté). Le
+ * domaine parent n'est jamais admis : `cabinet.over-blog.com` ne donne pas droit aux adresses de
+ * `over-blog.com`.
+ */
 export function isFirmDomainEmail(email: string, host: string): boolean {
-  const domain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
-  return hostMatches(siteHost(domain), siteHost(host));
+  const domain = siteHost(email.slice(email.lastIndexOf("@") + 1));
+  const site = siteHost(host);
+  return domain === site || domain.endsWith(`.${site}`);
 }
 
-function compactLocal(email: string): string {
-  return foldText(email.slice(0, email.lastIndexOf("@"))).replace(/[^a-z0-9]/g, "");
+function localSegments(email: string): string[] {
+  return foldText(email.slice(0, email.lastIndexOf("@")))
+    .split(/[._+-]+/)
+    .filter(Boolean);
 }
 
 function nameTokens(name: string | null | undefined): string[] {
@@ -326,34 +364,46 @@ function nameTokens(name: string | null | undefined): string[] {
     .filter((token) => token.length >= 3);
 }
 
-/** Le nom et le prénom, ou l'initiale du prénom et le nom, figurent dans l'adresse. */
-function strongNameMatch(local: string, tokens: readonly string[]): boolean {
-  const present = tokens.filter((token) => local.includes(token));
-  if (new Set(present).size >= 2) return true;
-  for (const token of tokens) {
-    if (token.length < 4) continue;
-    const index = local.indexOf(token);
-    if (index < 0) continue;
-    const prefix = local.slice(0, index);
-    const suffix = local.slice(index + token.length);
-    const others = tokens.filter((other) => other !== token);
-    if (prefix.length === 1 && others.some((other) => other.startsWith(prefix))) return true;
-    if (suffix.length === 1 && others.some((other) => other.startsWith(suffix))) return true;
+/**
+ * Le nom ET le prénom figurent dans la partie locale, en segments entiers (séparés par `.`, `-`, `_`
+ * ou `+`), accolés (`jeandupont`) ou avec l'initiale du prénom (`jdupont`, `j.dupont`). Jamais par
+ * simple inclusion : `luc` n'est pas dans `lucie`, `anne` n'est pas dans `jeanne`.
+ */
+function strongNameMatch(segments: readonly string[], tokens: readonly string[]): boolean {
+  const whole = new Set(segments);
+  if (tokens.filter((token) => whole.has(token)).length >= 2) return true;
+  for (const first of tokens) {
+    for (const second of tokens) {
+      if (first === second) continue;
+      if (segments.some((segment) => segment === first + second)) return true;
+      if (first.length < 4) continue;
+      const initial = second.charAt(0);
+      if (segments.some((segment) => segment === initial + first || segment === first + initial)) {
+        return true;
+      }
+      if (whole.has(first) && segments.some((segment) => segment === initial)) return true;
+    }
   }
   return false;
 }
 
-function weakNameMatch(local: string, tokens: readonly string[]): boolean {
-  return tokens.some((token) => token.length >= 4 && local.includes(token));
+/** Vrai quand la partie locale de l'adresse porte le nom et le prénom du professionnel. */
+export function emailRecallsName(email: string, name: string | null | undefined): boolean {
+  return strongNameMatch(localSegments(email), nameTokens(name));
+}
+
+/** `contact@`, `cabinet@`, `secretariat@`… : l'adresse du cabinet ou de l'étude, pas d'une personne. */
+export function isGenericEmailLocal(email: string): boolean {
+  return GENERIC_LOCAL.test(localSegments(email).join(""));
 }
 
 /**
- * Choisit l'adresse du cabinet parmi celles publiées sur ses pages. Les adresses du domaine du
- * cabinet priment. Plusieurs adresses : celle qui porte le nom et le prénom de l'avocat, sinon
- * `contact@`, `cabinet@` et assimilées, à condition qu'une seule convienne. Une adresse unique n'est
- * retenue que si elle est générique ou rappelle le nom de l'avocat (sinon elle peut désigner un
- * autre professionnel). Hors du domaine du cabinet (adresse de messagerie grand public), seule une
- * adresse portant le nom et le prénom de l'avocat, et unique, est retenue.
+ * Choisit l'adresse du cabinet parmi celles publiées sur ses pages. Seules comptent les adresses du
+ * domaine du site ou d'un sous-domaine : une adresse hors de ce domaine (messagerie grand public,
+ * agence web) est écartée, elle peut être personnelle. Plusieurs adresses : celle qui porte le nom et
+ * le prénom de l'avocat, sinon `contact@`, `cabinet@` et assimilées, à condition qu'une seule
+ * convienne. Une adresse unique n'est retenue que si elle est générique ou porte le nom et le prénom
+ * de l'avocat (sinon elle peut désigner un autre professionnel). Tout autre cas est une ambiguïté.
  */
 export function chooseFirmAddress({
   emails,
@@ -364,34 +414,12 @@ export function chooseFirmAddress({
   siteHostname: string;
   lawyerName: string | null | undefined;
 }): FirmAddressChoice {
-  const unique = [...new Set(emails)];
-  if (!unique.length) return { status: "none" };
-  const tokens = nameTokens(lawyerName);
-  const local = (email: string) => compactLocal(email);
-  const genericLocal = (email: string) =>
-    GENERIC_LOCAL.test(foldText(email.slice(0, email.lastIndexOf("@"))).replace(/[._+-]/g, ""));
-
-  const inFirm = unique.filter((email) => isFirmDomainEmail(email, siteHostname));
-  if (!inFirm.length) {
-    const named = unique.filter((email) => strongNameMatch(local(email), tokens));
-    return named.length === 1
-      ? { status: "retained", email: named[0]!, reason: "offsite_name" }
-      : { status: "none" };
-  }
-
-  if (inFirm.length === 1) {
-    const email = inFirm[0]!;
-    return genericLocal(email) ||
-      strongNameMatch(local(email), tokens) ||
-      weakNameMatch(local(email), tokens)
-      ? { status: "retained", email, reason: "single" }
-      : { status: "ambiguous" };
-  }
-
-  const named = inFirm.filter((email) => strongNameMatch(local(email), tokens));
+  const inFirm = [...new Set(emails)].filter((email) => isFirmDomainEmail(email, siteHostname));
+  if (!inFirm.length) return { status: "none" };
+  const named = inFirm.filter((email) => emailRecallsName(email, lawyerName));
   if (named.length === 1) return { status: "retained", email: named[0]!, reason: "name" };
   if (named.length > 1) return { status: "ambiguous" };
-  const generic = inFirm.filter(genericLocal);
+  const generic = inFirm.filter(isGenericEmailLocal);
   if (generic.length === 1) return { status: "retained", email: generic[0]!, reason: "generic" };
   return { status: "ambiguous" };
 }
@@ -407,7 +435,7 @@ export function chooseFirmAddress({
 export function isChallengePage(html: string): boolean {
   const head = html.slice(0, 200_000);
   if (/__cf_chl|cf-chl-|challenge-platform|cf-browser-verification/i.test(head)) return true;
-  const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(head)?.[1] ?? "";
+  const title = /<title[^<>]*>([^<]{0,300})/i.exec(head)?.[1] ?? "";
   if (
     /just a moment|attention required|access denied|verify(?:ing)? you are (?:a )?human|are you a robot|vérification de sécurité|verification de securite/i.test(
       title,
@@ -415,9 +443,6 @@ export function isChallengePage(html: string): boolean {
   ) {
     return true;
   }
-  const visibleText = stripNonContent(head)
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const visibleText = stripNonContent(head).replace(TAG, " ").replace(/\s+/g, " ").trim();
   return /captcha|recaptcha|hcaptcha|turnstile/i.test(head) && visibleText.length < 600;
 }

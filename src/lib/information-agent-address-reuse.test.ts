@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const db = vi.hoisted(() => ({
   rows: [] as Array<Record<string, unknown>>,
   error: null as { message: string } | null,
+  hang: false,
   queries: [] as Array<Array<[string, ...unknown[]]>>,
 }));
 
@@ -34,6 +35,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
     limit(...args: unknown[]) {
       this.record("limit", ...args);
       db.queries.push(this.steps);
+      if (db.hang) return new Promise(() => undefined);
       return Promise.resolve({ data: db.error ? null : db.rows, error: db.error });
     }
   }
@@ -96,7 +98,10 @@ describe("téléphones français normalisés", () => {
 describe("même identité professionnelle (normalisée comme identity.ts)", () => {
   it.each([
     ["Maître Jean Dupont", "Me Jean DUPONT", true],
-    ["Jean Dupont", "DUPONT Jean-Pierre", true],
+    ["Jean Dupont", "DUPONT Jean", true],
+    // Ensembles de jetons égaux exigés : un prénom composé n'est pas le même professionnel.
+    ["Jean Dupont", "DUPONT Jean-Pierre", false],
+    ["Jean Dupont", "Jean-Louis Dupont", false],
     ["Me Frédéric Béranger", "Frederic BERANGER, avocat", true],
     ["SCP Dupont et Associés (Jean Dupont)", "Jean Dupont", true],
     // Un seul jeton de nom : jamais suffisant.
@@ -220,17 +225,42 @@ describe("réemploi d'une adresse publiée sur une autre annonce", () => {
         row(),
         row({
           id: "33333333-3333-4333-8333-333333333333",
-          lawyer_contact: "Tél.: 05 56 00 00 01 | autre@cabinet-dupont.test",
+          lawyer_contact: "Tél.: 05 56 00 00 01 | jean.dupont@cabinet-dupont.test",
         }),
       ]),
     ).toEqual({ status: "ambiguous" });
     expect(
       select([
         row({
-          lawyer_contact: "Tél.: 05 56 00 00 01 | a@cabinet-dupont.test | b@cabinet-dupont.test",
+          lawyer_contact:
+            "Tél.: 05 56 00 00 01 | contact@cabinet-dupont.test | jean.dupont@cabinet-dupont.test",
         }),
       ]),
     ).toEqual({ status: "ambiguous" });
+  });
+
+  it("la partie locale de l'adresse doit rappeler le nom (segments entiers) ou être générique", () => {
+    const withAddress = (address: string) =>
+      select([row({ lawyer_contact: `Tél.: 05 56 00 00 01 | ${address}` })]);
+    for (const accepted of [
+      "contact@cabinet-dupont.test",
+      "secretariat@cabinet-dupont.test",
+      "jean.dupont@cabinet-dupont.test",
+      "j.dupont@cabinet-dupont.test",
+      "dupont-jean@gmail.com",
+    ]) {
+      expect(withAddress(accepted).status, accepted).toBe("found");
+    }
+    for (const refused of [
+      "archives@cabinet-dupont.test",
+      "marie.martin@cabinet-dupont.test",
+      "dupont@cabinet-dupont.test",
+      "jean@cabinet-dupont.test",
+      "jeanne.dupont@cabinet-dupont.test",
+      "comptabilite@cabinet-dupont.test",
+    ]) {
+      expect(withAddress(refused), refused).toEqual({ status: "none", reason: "no_match" });
+    }
   });
 
   it("la même adresse sur plusieurs annonces cite la plus récente", () => {
@@ -257,6 +287,7 @@ describe("lecture en base", () => {
   beforeEach(() => {
     db.rows = [];
     db.error = null;
+    db.hang = false;
     db.queries = [];
   });
 
@@ -280,6 +311,8 @@ describe("lecture en base", () => {
     expect(steps).toContainEqual(["neq", "id", SALE_ID]);
     expect(steps).toContainEqual(["eq", "catalogue_quarantined", false]);
     expect(steps).toContainEqual(["ilike", "lawyer_contact", "%56%00%00%01%"]);
+    // Pas de filtre `%@%` redondant : les adresses sont extraites et contrôlées en code.
+    expect(steps.filter(([name]) => name === "ilike")).toHaveLength(1);
     expect(steps).toContainEqual([
       "or",
       "last_seen_at.gte.2026-04-14T12:00:00.000Z,sale_date.gte.2026-04-14T12:00:00.000Z",
@@ -313,5 +346,40 @@ describe("lecture en base", () => {
         now: NOW,
       }),
     ).rejects.toMatchObject({ message: "base indisponible" });
+  });
+
+  it("signale (journal) et refuse une lecture tronquée à 200 annonces au lieu de la tronquer en silence", async () => {
+    db.rows = Array.from({ length: 200 }, (_, index) => ({
+      ...row(),
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    })) as unknown as Array<Record<string, unknown>>;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const result = await findReusableInformationAgentAddress({
+      saleId: SALE_ID,
+      lawyerName: "Maître Jean Dupont",
+      lawyerContact: "Tél. 05 56 00 00 01",
+      now: NOW,
+    });
+    expect(result).toEqual({ status: "none", reason: "truncated" });
+    expect(warn).toHaveBeenCalledOnce();
+    expect(String(warn.mock.calls[0]?.[0])).toContain("rows_truncated");
+    // Le journal ne contient aucune donnée de personne.
+    expect(String(warn.mock.calls[0]?.[0])).not.toContain("dupont");
+    warn.mockRestore();
+  });
+
+  it("la lecture est bornée par le budget de la recherche", async () => {
+    db.hang = true;
+    const started = Date.now();
+    await expect(
+      findReusableInformationAgentAddress({
+        saleId: SALE_ID,
+        lawyerName: "Maître Jean Dupont",
+        lawyerContact: "Tél. 05 56 00 00 01",
+        now: NOW,
+        timeoutMs: 30,
+      }),
+    ).rejects.toThrow("trop longue");
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 });
