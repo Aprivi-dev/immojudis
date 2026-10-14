@@ -150,6 +150,12 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   expect(reportId).toBe("report-e2e");
 
   await page.goto("/offres");
+  // « 3 déblocages par mois » : la limite est annoncée avec l'offre gratuite, et le comparatif ne
+  // dit pas « Non inclus » pour ce qu'un déblocage ouvre.
+  await expect(page.getByText(/^3 déblocages par mois : l[’']enchère plafond/)).toBeVisible();
+  await expect(
+    page.getByRole("row", { name: /Enchère plafond chiffrée/ }).getByText("Pour 3 ventes par mois"),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Démarrer l’essai Analyse" }).click();
   await expect(page.getByRole("heading", { name: "Récapitulatif avant paiement" })).toBeVisible();
   const consentCheckboxes = page.getByRole("checkbox");

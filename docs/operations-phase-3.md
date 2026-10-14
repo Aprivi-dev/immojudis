@@ -7,7 +7,10 @@ Le contrôle primaire est exécuté toutes les 15 minutes par Supabase Cron. Le 
 `/api/cron/operational-health` avec un Bearer token. Le job distinct
 `immojudis-information-agent-inbound` appelle toutes les deux minutes la route protégée
 `/api/cron/information-agent-inbound` avec les mêmes secrets Vault. Il traite les réponses déjà
-reçues et ne déclenche aucune collecte d'annonces ni aucun envoi sortant.
+reçues et ne déclenche aucune collecte d'annonces ni aucun envoi sortant. Le job
+`immojudis-listing-completeness` appelle toutes les heures `/api/cron/listing-completeness` (calcul
+du palier de complétude des annonces, sans collecte) avec les mêmes secrets Vault ; sa fraîcheur
+est suivie par `cron.stale` (3 h).
 
 Chaque passage :
 

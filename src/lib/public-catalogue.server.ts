@@ -44,17 +44,20 @@ function defaultSearch(search: SalesSearchParams): Promise<PreviewSearchResponse
   return runPreviewSearch(client as unknown as PreviewRpcClient, search);
 }
 
+/**
+ * Clé du cache de la première page. Elle change à chaque modification de l'ordre ou des champs
+ * de cette page (v2 : tri par défaut par complétude, avec le palier de chaque annonce) : sinon
+ * les visiteurs verraient l'ancien ordre jusqu'à cinq minutes après le déploiement.
+ */
+export const FIRST_PAGE_CACHE_KEY = ["public-catalogue", "first-page", "v2"] as const;
+
 // Next 16 without Cache Components: the data cache is `unstable_cache`
 // (`use cache` requires the app-wide `cacheComponents` flag, which is
 // incompatible with the route segment configs used elsewhere in this app).
-const cachedFirstPage = unstable_cache(
-  () => defaultSearch({}),
-  ["public-catalogue", "first-page", "v1"],
-  {
-    revalidate: FIRST_PAGE_REVALIDATE_SECONDS,
-    tags: [PUBLIC_CATALOGUE_CACHE_TAG],
-  },
-);
+const cachedFirstPage = unstable_cache(() => defaultSearch({}), [...FIRST_PAGE_CACHE_KEY], {
+  revalidate: FIRST_PAGE_REVALIDATE_SECONDS,
+  tags: [PUBLIC_CATALOGUE_CACHE_TAG],
+});
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;

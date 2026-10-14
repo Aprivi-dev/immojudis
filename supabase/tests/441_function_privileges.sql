@@ -43,7 +43,8 @@ select is(
     'review_judilibre_match_candidate(uuid,text,text)',
     'review_outcome_evidence(uuid,text,text,jsonb,text)',
     'set_auction_sale_readiness_override(uuid,text,text,timestamp with time zone)',
-    'set_catalogue_readiness_enforcement(boolean)'
+    'set_catalogue_readiness_enforcement(boolean)',
+    'unlock_sale(uuid)'
   ]::text[],
   'authenticated executes only the allowlisted SECURITY DEFINER functions'
 );

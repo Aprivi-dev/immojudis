@@ -12,6 +12,7 @@ import { formatPrice } from "@/lib/format";
 import { publicDossierContents, publicSaleDescription } from "@/lib/public-sale-description";
 import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
 import Link from "next/link";
+import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
@@ -68,11 +69,14 @@ export function SalePublicPreview({
   preview,
   returnTo,
   requestedHash = "",
+  adjudicationStatisticsEnabled = false,
 }: {
   saleId: string;
   preview: AuctionSale;
   returnTo: string;
   requestedHash?: string;
+  /** The statistics of the tribunal are only announced while their flag is open. */
+  adjudicationStatisticsEnabled?: boolean;
 }) {
   const procedure = getSaleProcedure(preview);
   const venueCopy = publicSaleVenueCopy(procedure.venueType);
@@ -136,7 +140,11 @@ export function SalePublicPreview({
       ? { label: "Écart avec la mise à prix", placeholder: "00 %", tier: "Compte gratuit" }
       : null,
     procedure.venueType === "tribunal"
-      ? { label: "Enchère plafond conseillée", placeholder: "000 000 €", tier: "Offre Analyse" }
+      ? {
+          label: "Enchère plafond conseillée",
+          placeholder: "000 000 €",
+          tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
+        }
       : null,
     { label: "Ventes comparables du secteur", placeholder: "00 ventes", tier: "Offre Analyse" },
   ].filter((item): item is { label: string; placeholder: string; tier: string } => item !== null);
@@ -279,7 +287,13 @@ export function SalePublicPreview({
               </h2>
               <p className={styles.accessIntro}>
                 Le compte Découverte est gratuit. Il donne accès à l’adresse, aux photos, aux
-                visites et à la fourchette de valeur estimée de cette vente.
+                visites et à la fourchette de valeur estimée de cette vente. Il permet aussi de
+                débloquer {MONTHLY_SALE_UNLOCKS} ventes par mois (
+                {unlockedItemsText({
+                  ceiling: procedure.venueType === "tribunal",
+                  statistics: procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
+                })}
+                ).
               </p>
             </div>
             <div className={styles.actions}>
@@ -290,7 +304,7 @@ export function SalePublicPreview({
                 })}
                 className={styles.primary}
               >
-                Voir gratuitement le dossier
+                Créer mon compte gratuit
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
               <Link href={returnTo} className={styles.secondary}>
@@ -318,7 +332,13 @@ export function SalePublicPreview({
               </h3>
               <p>
                 Adresse, photos, description, occupation, dates de visite et contact du dossier,
-                fourchette de valeur estimée, Street View, météo et risques de la commune.
+                fourchette de valeur estimée, Street View, météo et risques de la commune. Et chaque
+                mois, {MONTHLY_SALE_UNLOCKS} déblocages de ventes :{" "}
+                {unlockedItemsText({
+                  ceiling: procedure.venueType === "tribunal",
+                  statistics: procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
+                })}
+                .
               </p>
             </div>
             <div className={`${styles.tier} ${styles.tierAnalysis}`}>

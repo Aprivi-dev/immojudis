@@ -23,6 +23,7 @@ export const SITE_LEGAL_LINKS: readonly SiteLink[] = [
   { href: "/legal", label: "Mentions légales" },
   { href: "/conditions-generales", label: "Conditions générales" },
   { href: "/privacy", label: "Confidentialité" },
+  { href: "/classement-des-annonces", label: "Classement des annonces" },
   { href: "/mes-droits", label: "Mes droits" },
 ];
 

@@ -16,6 +16,19 @@ describe("sales search URL state", () => {
     expect(validateSalesSearch({ saleType: "invalid" }).saleType).toBeUndefined();
   });
 
+  it("garde l'ancienne valeur sort=score_desc comme tri explicite par score d'investissement", () => {
+    expect(validateSalesSearch({ sort: "score_desc" }).sort).toBe("score_desc");
+    expect(salesSearchToUrlRecord({ sort: "score_desc" }).sort).toBe("score_desc");
+    expect(validateSalesSearch({ sort: "date_desc" }).sort).toBe("newest");
+    expect(validateSalesSearch({ sort: "surface_desc" }).sort).toBe("sqft_desc");
+  });
+
+  it("ne met pas le tri par défaut « Mieux renseignées d’abord » dans l'URL", () => {
+    expect(salesSearchToUrlRecord({ sort: "relevance" }).sort).toBeUndefined();
+    expect(salesSearchToUrlRecord({}).sort).toBeUndefined();
+    expect(validateSalesSearch({ sort: "inconnu" }).sort).toBeUndefined();
+  });
+
   it("preserves numeric-looking geographic searches parsed by the router", () => {
     expect(validateSalesSearch({ q: 33000, department: 33 })).toMatchObject({
       query: "33000",
