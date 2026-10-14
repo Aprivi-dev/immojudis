@@ -73,7 +73,7 @@ export async function getSalesStatistics({
   const sourceSales = await getSales(
     dataFiltersFromSearch(search),
     SALES_STATISTICS_SOURCE_LIMIT,
-    dataSortFromSearch(search.sort),
+    dataSortFromSearch(search.sort, { allowInvestmentScore: true }),
     0,
     { client: auth.supabase },
   );

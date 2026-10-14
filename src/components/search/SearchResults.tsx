@@ -1,4 +1,5 @@
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { WellInformedBadge } from "@/components/WellInformedBadge";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import type * as React from "react";
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
@@ -365,6 +366,7 @@ export const ListingCard = memo(function ListingCard({
           </span>
           <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
           <SaleProcedureBadge sale={sale} />
+          <WellInformedBadge sale={sale} />
           {!premiumLocked && sale.occupancy_status && (
             <span className="rounded bg-success-tint px-2 py-1">
               <AiReviewField

@@ -1,16 +1,37 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const cacheDeclarations = vi.hoisted(() => [] as Array<{ keyParts: string[]; options: unknown }>);
+
 vi.mock("next/cache", () => ({
-  // The data cache is replaced by a pass-through in unit tests.
-  unstable_cache: (load: (...args: unknown[]) => unknown) => load,
+  // The data cache is replaced by a pass-through in unit tests; its declarations are recorded.
+  unstable_cache: (load: (...args: unknown[]) => unknown, keyParts: string[], options: unknown) => {
+    cacheDeclarations.push({ keyParts, options });
+    return load;
+  },
 }));
 
-import { isDefaultCatalogueSearch, loadInitialCatalogue } from "./public-catalogue.server";
+import {
+  FIRST_PAGE_CACHE_KEY,
+  isDefaultCatalogueSearch,
+  loadInitialCatalogue,
+} from "./public-catalogue.server";
 import { salesSearchSignature } from "./search/search-url-state";
 
 const page = (ids: string[], count = ids.length) => ({
   items: ids.map((id) => ({ id })) as never[],
   count,
+});
+
+describe("cache of the first page", () => {
+  it("passe en v2 : l'ordre par défaut (complétude) et le palier de chaque carte ont changé", () => {
+    expect(FIRST_PAGE_CACHE_KEY).toEqual(["public-catalogue", "first-page", "v2"]);
+    expect(cacheDeclarations).toHaveLength(1);
+    expect(cacheDeclarations[0].keyParts).toEqual(["public-catalogue", "first-page", "v2"]);
+    expect(cacheDeclarations[0].options).toMatchObject({
+      revalidate: 300,
+      tags: ["public-catalogue"],
+    });
+  });
 });
 
 describe("initial catalogue rendered on the server", () => {
