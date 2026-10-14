@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminInformationAgentMissionsPanel } from "./AdminInformationAgentMissionsPanel";
 
@@ -269,6 +269,45 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(screen.getByText(/modifié depuis cet aperçu/)).toBeTruthy();
     fireEvent.click(sendButton());
     expect(mocks.action).not.toHaveBeenCalled();
+  });
+
+  it("flags an address found by the automatic search and links its source page", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValue(
+      previewResponse({
+        addressOrigin: {
+          text: "Votre adresse professionnelle figure sur le site de votre cabinet ou de votre étude (https://www.cabinet-dupont.fr/contact).",
+          url: "https://www.cabinet-dupont.fr/contact",
+          automated: true,
+          known: true,
+        },
+      }),
+    );
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    await showPreview();
+
+    const note = screen.getByRole("note");
+    expect(note.textContent).toContain("Adresse retrouvée automatiquement");
+    const link = within(note).getByRole("link", { name: "Ouvrir la page source" });
+    expect(link.getAttribute("href")).toBe("https://www.cabinet-dupont.fr/contact");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("shows no automatic-search note for an address taken from the listing", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValue(previewResponse());
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    await showPreview();
+
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(screen.queryByText(/retrouvée automatiquement/)).toBeNull();
   });
 
   it("shows the inventory of the fiche with what is missing and what is known", async () => {
@@ -704,7 +743,11 @@ async function showPreview(label = "Afficher l’aperçu") {
 }
 
 function previewResponse(
-  overrides: Partial<{ blockers: string[]; fingerprint: string | null }> = {},
+  overrides: Partial<{
+    blockers: string[];
+    fingerprint: string | null;
+    addressOrigin: { text: string; url: string | null; automated: boolean; known: boolean };
+  }> = {},
 ) {
   return {
     ok: true,

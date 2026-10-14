@@ -45,7 +45,7 @@ describe("libellé d'origine de l'adresse (art. 14 RGPD)", () => {
       observedBy: "agent",
     });
     expect(origin.text).toBe(
-      "Votre adresse professionnelle figure dans une autre annonce publique de vente qui vous mentionne comme interlocuteur, sur Licitor (https://www.licitor.com/annonce/2), consultée le 14/10/2026.",
+      "Votre adresse professionnelle figure dans une autre annonce publique de vente qui vous mentionne comme interlocuteur, sur Licitor (https://www.licitor.com/annonce/2) ; Immojudis l’a reprise de cette annonce le 14/10/2026.",
     );
     expect(origin.text).not.toContain("annonce publique de cette vente");
     expect(origin.automated).toBe(true);
@@ -209,7 +209,7 @@ describe("pied de message art. 14 : version complète", () => {
     );
     expect(text).toContain("https://immojudis.com/privacy");
     expect(text).toContain("Ne plus être contacté (un clic) : https://immojudis.com/api/");
-    expect(text).not.toContain("outil de recherche automatisé");
+    expect(text).not.toContain("retrouvée automatiquement");
   });
 
   it("nomme le prestataire d'IA fourni par la configuration, pas un texte figé", () => {
@@ -222,10 +222,61 @@ describe("pied de message art. 14 : version complète", () => {
   });
 
   it("ajoute la mention de la recherche automatique quand l'adresse a été retrouvée par l'agent", () => {
-    const sections = informationAgentLegalFooterSections({ ...footer, automatedSearch: true });
-    expect(sections.find((section) => section.label === "Recherche de l’adresse :")?.text).toBe(
-      "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
+    const sectionOf = (extra: Partial<InformationAgentLegalFooter>) =>
+      informationAgentLegalFooterSections({ ...footer, automatedSearch: true, ...extra }).find(
+        (section) => section.label === "Recherche de l’adresse :",
+      )?.text;
+    expect(sectionOf({})).toBe(
+      "Cette adresse a été retrouvée automatiquement par un outil d’Immojudis à partir d’une page publique (voir l’origine ci-dessus). L’outil ne conserve aucune copie de la page : seuls l’adresse, le lien de la page, la date de relevé et le critère de rapprochement utilisé sont enregistrés. Ce message a été relu et validé par un membre de l’équipe avant son envoi.",
     );
+    expect(sectionOf({ automatedSearchSource: "firm_website" })).toBe(
+      "Cette adresse a été retrouvée automatiquement par un outil d’Immojudis à partir d’une page publique (voir l’origine ci-dessus). L’outil ne conserve aucune copie de la page : seuls l’adresse, le lien de la page, la date de relevé et le critère de rapprochement utilisé sont enregistrés. Ce message a été relu et validé par un membre de l’équipe avant son envoi.",
+    );
+    // Autre annonce : la source est une annonce déjà enregistrée, pas une page consultée.
+    expect(sectionOf({ automatedSearchSource: "other_listing" })).toBe(
+      "Cette adresse a été retrouvée automatiquement par un outil d’Immojudis à partir d’une annonce publique déjà enregistrée par Immojudis (voir l’origine ci-dessus). L’outil ne conserve aucune copie de la page : seuls l’adresse, le lien de la page, la date de relevé et le critère de rapprochement utilisé sont enregistrés. Ce message a été relu et validé par un membre de l’équipe avant son envoi.",
+    );
+  });
+
+  it("n'ajoute aucune mention quand l'adresse vient de l'annonce de la vente ou d'un administrateur", () => {
+    for (const sourceKind of ["sale_listing", "admin_entry"] as const) {
+      const origin = informationAgentAddressOrigin({
+        sourceKind,
+        sourceUrl: "https://www.licitor.com/annonce/1",
+        observedAt: OBSERVED_AT,
+        observedBy: sourceKind === "admin_entry" ? "admin" : "agent",
+      });
+      expect(origin.automated).toBe(false);
+      expect(origin.searchSource).toBeUndefined();
+    }
+    const found = informationAgentAddressOrigin({
+      sourceKind: "other_listing",
+      sourceUrl: "https://www.licitor.com/annonce/2",
+      observedAt: OBSERVED_AT,
+      observedBy: "agent",
+    });
+    expect(found).toMatchObject({ automated: true, searchSource: "other_listing" });
+  });
+
+  it("site du cabinet : libellé nominatif, ou celui de l'adresse du cabinet pour une adresse générique", () => {
+    const base = {
+      sourceKind: "firm_website" as const,
+      sourceUrl: "https://www.cabinet-dupont.test/contact",
+      observedAt: OBSERVED_AT,
+      observedBy: "agent" as const,
+    };
+    expect(informationAgentAddressOrigin({ ...base, matchRule: "firm_site_name" }).text).toBe(
+      "Votre adresse professionnelle figure sur le site de votre cabinet ou de votre étude (https://www.cabinet-dupont.test/contact), consulté le 14/10/2026.",
+    );
+    expect(informationAgentAddressOrigin(base).text).toBe(
+      "Votre adresse professionnelle figure sur le site de votre cabinet ou de votre étude (https://www.cabinet-dupont.test/contact), consulté le 14/10/2026.",
+    );
+    const generic = informationAgentAddressOrigin({ ...base, matchRule: "firm_site_generic" });
+    expect(generic.text).toBe(
+      "L’adresse de contact de votre cabinet ou de votre étude figure sur son site (https://www.cabinet-dupont.test/contact), consulté le 14/10/2026.",
+    );
+    expect(generic.automated).toBe(true);
+    expect(generic.searchSource).toBe("firm_website");
   });
 
   it("refuse un pied sans adresse de contact : l'identité du responsable l'exige", () => {
