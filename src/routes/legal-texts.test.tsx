@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_ANALYSIS_OFFER_LABEL, ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
-import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
+import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
 import { TermsPage } from "./conditions-generales";
 import { PrivacyPage } from "./privacy";
 
@@ -94,7 +96,129 @@ describe("conditions générales", () => {
   });
 });
 
+describe("conditions générales : 3 déblocages par mois", () => {
+  const n = PLAN_LIMITS.decouverte.monthlyUnlocks;
+
+  it("définissent le déblocage : une vente, cinq éléments quand elle les comporte, le reste à Analyse", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain("Découverte est gratuite, sans limite de durée et sans carte bancaire.");
+    expect(text).toContain(`chaque mois civil, ${n} déblocages`);
+    expect(text).toContain(
+      "Un déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre Analyse lorsque cette vente les comporte : l’enchère plafond chiffrée, la lecture des pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette vente et les pièces du dossier.",
+    );
+    expect(text).toContain(
+      "Les autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les alertes avancées et la mise en relation avec un avocat référencé, restent réservées à cette offre.",
+    );
+    // Jamais « réservé » pour un élément que le compte reçoit.
+    const reserved = text.slice(text.indexOf("Les autres fonctions de l’offre Analyse"));
+    const reservedSentence = reserved.slice(0, reserved.indexOf("restent réservées"));
+    for (const received of [
+      "enchère plafond",
+      "lecture des pièces",
+      "historique",
+      "statistiques",
+      "pièces du dossier",
+    ]) {
+      expect(reservedSentence).not.toContain(received);
+    }
+  });
+
+  it("disent quand le déblocage est consommé, non restitué, non reporté, et quand le compteur repart", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Le déblocage est consommé quand vous le confirmez, après affichage du nombre restant",
+    );
+    expect(text).toContain(
+      "il n’est pas consommé en cas d’erreur technique, ni si la vente est déjà débloquée",
+    );
+    expect(text).toContain(
+      "Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la vente ou en suspend la publication pour une raison qui lui est imputable (par exemple une erreur de publication ou la suspension d’une source décidée par Immojudis), le déblocage est restitué sur simple demande adressée à",
+    );
+    expect(text).toMatch(
+      /adressée à .+, qui reçoit une réponse sous un mois\. Le déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la fin de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés\./,
+    );
+    // Le canal est l'adresse de contact : Mes droits n'a pas de demande de restitution.
+    expect(text).not.toContain("depuis Mes droits ou à l’adresse de contact");
+    expect(text).toContain("Les déblocages non utilisés ne sont pas reportés.");
+    expect(text).toContain(
+      `Le compteur est remis à ${n} le 1er de chaque mois à 00 h 00, heure de Paris.`,
+    );
+    expect(text).toContain(
+      "tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le déblocage, et tant que votre compte existe",
+    );
+  });
+
+  it("disent le sort des ventes débloquées après un abonnement Analyse", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Pendant un abonnement Analyse, essai compris, aucun déblocage n’est consommé. À la fin de l’abonnement, le compte revient à Découverte : les ventes que vous aviez déjà débloquées restent accessibles ; les autres ventes consultées pendant l’abonnement redeviennent soumises aux déblocages.",
+    );
+  });
+
+  it("limitent la clause de modification aux déblocages, avec trente jours de préavis", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Immojudis peut modifier ou supprimer les déblocages mensuels pour l’avenir, en vous prévenant au moins 30 jours à l’avance par un message dans l’application ou à l’adresse email de votre compte. Les ventes que vous avez déjà débloquées restent accessibles dans les conditions ci-dessus, et les déblocages déjà consommés ne sont pas affectés. Si la modification ne vous convient pas, vous pouvez fermer votre compte gratuitement depuis Mes droits.",
+    );
+    // Les autres avantages de Découverte (favoris, alerte) ne sont plus modifiables par cette clause.
+    expect(text).not.toContain("les avantages de l’offre Découverte");
+  });
+
+  it("rendent les déblocages personnels (article 9) sans parler d’analyses gratuites", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Les déblocages de ventes sont personnels : ils ne se partagent ni ne se transmettent.",
+    );
+    expect(text).toContain(
+      "le contournement des quotas, notamment la création de plusieurs comptes pour multiplier les déblocages",
+    );
+    expect(text).not.toMatch(/analyses? (complètes? )?gratuites?|analyse offerte/i);
+  });
+
+  it("ne réécrivent à la main ni le chiffre des déblocages ni leur nom dans les textes publics", () => {
+    for (const file of [
+      "src/routes/conditions-generales.tsx",
+      "src/app/offres/offers-page.tsx",
+      "src/lib/offer-comparison.ts",
+      "src/components/sale-detail/SaleUnlockPanel.tsx",
+      "src/components/SalePublicPreview.tsx",
+      "src/lib/sale-unlocks.ts",
+    ]) {
+      // Comments name the feature in prose; only the strings the page renders matter.
+      const source = readFileSync(resolve(file), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      expect(source, file).not.toMatch(/(?<![\w$])(3|trois) (déblocages|ventes par mois)/i);
+      expect(source, file).not.toMatch(/analyses? (complètes? )?gratuites?|Analyse offerte/i);
+    }
+  });
+});
+
 describe("politique de confidentialité", () => {
+  it("décrit le traitement des déblocages : base contractuelle et conservation de 24 mois au plus", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Déblocages mensuels de ventes (offre Découverte)");
+    expect(text).toContain("Identifiant de compte, vente débloquée, date du déblocage");
+    expect(text).toContain(
+      "Exécution du contrat : appliquer l’avantage et sa limite prévus par les conditions générales",
+    );
+    expect(text).toContain(
+      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, jusqu’à la fin du mois civil du déblocage (effacement lors de la purge hebdomadaire qui suit), pour que le compteur du mois ne soit pas remis à zéro.",
+    );
+  });
+
+  it("dit que le journal d’usage relie un compte à la vente débloquée, pendant 24 mois au plus", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "journal des fonctions utilisées (compte, vente ou tribunal concerné, date), par exemple pour l’historique ou la valeur d’une vente débloquée",
+    );
+    expect(text).toContain("le journal d’usage est conservé 24 mois au plus");
+    // Les mesures agrégées ne sont plus décrites comme « d'usage » sans personne.
+    expect(text).toContain("Événements de parcours agrégés, sans identifiant de personne");
+    expect(text).not.toContain("Événements d’usage et de parcours agrégés");
+    expect(text).toContain("Événements d’usage et journaux applicatifs : 24 mois au plus");
+  });
+
   it("annonce sa version et écrit Immojudis", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(`Version ${LEGAL_DOCUMENTS.privacy.version}`);

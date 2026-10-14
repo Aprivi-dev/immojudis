@@ -131,6 +131,7 @@ describe("erasure execution (P4-10)", () => {
       "sale_workspaces",
       "user_subscriptions",
       "offer_opening_notifications",
+      "user_sale_unlocks",
     ]) {
       expect(tables).toContain(table);
     }
