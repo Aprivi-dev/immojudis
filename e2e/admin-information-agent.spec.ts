@@ -50,7 +50,7 @@ test.describe("admin information agent", () => {
       "contact@example.test",
     );
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).toContainText(
-      "Immojudis est un service indépendant",
+      "afin de vérifier des informations publiées",
     );
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).not.toContainText(
       "compte professionnel",
@@ -435,8 +435,9 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
           },
           blockers: [],
           addressOrigin: {
-            text: "Votre adresse professionnelle a été relevée sur une page publique (annuaire.example.test).",
+            text: "Votre adresse professionnelle a été relevée par un membre de l’équipe Immojudis sur une page publique (https://annuaire.example.test/reviewed-contact), le 14/10/2026.",
             url: "https://annuaire.example.test/reviewed-contact",
+            automated: false,
             known: true,
           },
           fingerprint: "e".repeat(64),

@@ -6103,16 +6103,22 @@ export type Database = {
           display_name: string | null;
           email: string;
           id: string;
+          identity_keys: string[];
           last_seen_at: string | null;
           last_verified_at: string | null;
           metadata: Json;
           normalized_email: string | null;
+          observed_at: string | null;
+          observed_by: string | null;
+          observed_by_user_id: string | null;
           opposed_at: string | null;
           opposition_status: string;
           provenance: Json;
           role: string;
           sale_id: string | null;
           scope_sale_id: string | null;
+          source_directory_name: string | null;
+          source_kind: string | null;
           source_name: string | null;
           source_url: string | null;
           updated_at: string;
@@ -6125,16 +6131,22 @@ export type Database = {
           display_name?: string | null;
           email: string;
           id?: string;
+          identity_keys?: string[];
           last_seen_at?: string | null;
           last_verified_at?: string | null;
           metadata?: Json;
           normalized_email?: string | null;
+          observed_at?: string | null;
+          observed_by?: string | null;
+          observed_by_user_id?: string | null;
           opposed_at?: string | null;
           opposition_status?: string;
           provenance?: Json;
           role?: string;
           sale_id?: string | null;
           scope_sale_id?: string | null;
+          source_directory_name?: string | null;
+          source_kind?: string | null;
           source_name?: string | null;
           source_url?: string | null;
           updated_at?: string;
@@ -6147,16 +6159,22 @@ export type Database = {
           display_name?: string | null;
           email?: string;
           id?: string;
+          identity_keys?: string[];
           last_seen_at?: string | null;
           last_verified_at?: string | null;
           metadata?: Json;
           normalized_email?: string | null;
+          observed_at?: string | null;
+          observed_by?: string | null;
+          observed_by_user_id?: string | null;
           opposed_at?: string | null;
           opposition_status?: string;
           provenance?: Json;
           role?: string;
           sale_id?: string | null;
           scope_sale_id?: string | null;
+          source_directory_name?: string | null;
+          source_kind?: string | null;
           source_name?: string | null;
           source_url?: string | null;
           updated_at?: string;
@@ -6703,6 +6721,24 @@ export type Database = {
           },
         ];
       };
+      information_agent_identity_oppositions: {
+        Row: {
+          created_at: string;
+          identity_key: string;
+          opposed_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          identity_key: string;
+          opposed_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          identity_key?: string;
+          opposed_at?: string;
+        };
+        Relationships: [];
+      };
       information_agent_inbound_jobs: {
         Row: {
           attachment_link_expires_at: string;
@@ -6861,6 +6897,7 @@ export type Database = {
           provider_message_id: string | null;
           question_keys: string[];
           recipient_email: string;
+          recipient_identity_keys: string[];
           recipient_kind: string;
           recipient_name: string | null;
           replied_at: string | null;
@@ -6893,6 +6930,7 @@ export type Database = {
           provider_message_id?: string | null;
           question_keys?: string[];
           recipient_email: string;
+          recipient_identity_keys?: string[];
           recipient_kind?: string;
           recipient_name?: string | null;
           replied_at?: string | null;
@@ -6925,6 +6963,7 @@ export type Database = {
           provider_message_id?: string | null;
           question_keys?: string[];
           recipient_email?: string;
+          recipient_identity_keys?: string[];
           recipient_kind?: string;
           recipient_name?: string | null;
           replied_at?: string | null;

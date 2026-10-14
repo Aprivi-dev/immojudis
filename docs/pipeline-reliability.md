@@ -17,6 +17,15 @@ Les PDF sont revalidés quotidiennement avec `If-None-Match` et `If-Modified-Sin
 
 L'état documentaire contient l'empreinte des liens, l'heure de contrôle et le nombre de documents sélectionnés en échec. Une pièce non extraite ne compte plus comme preuve de couverture.
 
+### Effet d'une extraction de l'avocat poursuivant sur les textes IA (octobre 2026)
+
+Lire l'avocat des fiches Vench (~475 en ligne) et Petites Affiches (~508) change `lawyer_name`, `lawyer_contact` et plusieurs blocs `source_blocks` (`avocat`, `contact_avocat`, `entete_avocat`, `avocat_poursuivant_*`), tous dans `SOURCE_FACT_FIELDS`. `SOURCE_EXTRACTION_VERSION` n'est pas modifié : les fiches sont relues au rythme normal (24 h, 6 h avant une vente) et non toutes d'un coup.
+
+- Texte d'affichage : l'empreinte de contenu (`capture_fingerprints`) ignore les champs avocat. Une fiche dont l'empreinte du même type de capture est déjà enregistrée (cas courant) garde son texte `accepted`. Seule une fiche sans empreinte de ce type (première lecture par le job `source_detail`, ligne antérieure à la règle) est comparée à l'empreinte de preuve : elle passe en `stale` (texte conservé, faits LLM retirés) et revient dans la file ; sans cette extraction, la même première lecture produit déjà le même résultat dès que la page seule diffère de la carte fusionnée (cas usuel).
+- Faits LLM documentaires : l'empreinte de preuve (`evidence_fingerprint`) et le contexte envoyé au modèle (`llm_fact_input_key`, tous les `source_blocks`) changent aussi. Les fiches qui ont des pièces déjà analysées (`documents_extracted > 0`) voient `has_current_fact_analysis` devenir faux et repassent par un job `fact_extraction` puis une synthèse. Les fiches sans pièce (la plupart des Petites Affiches, qui n'en publient pas) ne sont pas concernées.
+- Estimation : au plus ~980 fiches voient leur empreinte de preuve bouger ; seules celles qui ont des pièces analysées, plus les premières lectures `source_detail`, coûtent un passage LLM (faits + synthèse). Le nombre exact se lit en production (`raw_payload.source_checks.*.display_invalidations` et le backlog `fact_extraction` après le premier scan) ; il n'a pas été mesuré.
+- Pour l'éviter une fois pour toutes : sortir les champs avocat de `source_evidence_fingerprint` et des sections `[ANNONCE SOURCE …]` envoyées au modèle. Non appliqué : cela déplace aussi l'empreinte de preuve de toutes les fiches une fois.
+
 ## Couverture et qualité
 
 Les sources paginées Info Enchères, Cessions État, Enchères Immobilières et Notaires parcourent jusqu'à 100 pages par périmètre. Une page répétée, une source vide et un plafond atteint sont signalés comme incomplets. Licitor signale une frontière de pagination non parcourue. Les sources sans preuve d'exhaustivité restent explicitement non vérifiées.

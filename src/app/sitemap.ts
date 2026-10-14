@@ -31,8 +31,8 @@ const PUBLIC_ROUTES = [
   ["/contact", "2026-10-08"],
   ["/classement-des-annonces", "2026-10-14"],
   ["/legal", "2026-10-08"],
-  ["/conditions-generales", "2026-10-08"],
-  ["/privacy", "2026-10-08"],
+  ["/conditions-generales", "2026-10-14"],
+  ["/privacy", "2026-10-14"],
 ] as const;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
