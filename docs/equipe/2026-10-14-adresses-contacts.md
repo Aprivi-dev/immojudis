@@ -91,4 +91,26 @@ Points à faire valider par un avocat :
 
 ## Décisions du propriétaire
 
-À compléter.
+14/10/2026. Objectif du propriétaire : l'agent d'information trouve seul les adresses nécessaires à
+la prise de contact. Les propositions sont réorganisées en trois niveaux de sources, et le
+propriétaire répond oui à quatre décisions :
+
+1. **Niveau 1, recherche autonome sur les sources sûres.** Quand l'agent prépare une demande, il
+   cherche seul :
+   - l'annonce, y compris l'adresse masquée par Cloudflare (Licitor, Vench), décodée pour cette
+     fiche seulement (refonte de la PR #258) ;
+   - la même adresse publiée par le même professionnel sur une autre annonce (même nom et même
+     téléphone) ;
+   - le site du cabinet cité par l'annonce ou par un annuaire.
+
+   Viennent avec ce niveau :
+   - les garde-fous juridiques (n° 4) ;
+   - la correction de l'extraction Vench et Petites Affiches (n° 3).
+
+2. **Niveau 2, annuaires publics interrogés par l'agent fiche par fiche.** Un professionnel à la
+   fois, sans copie de l'annuaire. À construire seulement après un nouvel avis de `juridique-rgpd`
+   sur ce mode ciblé.
+3. **Niveau 3, avec autorisation écrite.** Le chef d'orchestre rédige les demandes d'autorisation :
+   Licitor, et l'Ordre des avocats de Paris.
+4. **Validation de l'envoi.** L'envoi reste validé d'un clic par l'administrateur, après l'aperçu :
+   l'agent trouve et prépare, il n'envoie pas seul.
