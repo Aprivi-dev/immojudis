@@ -349,7 +349,65 @@ function filterDiffLines(text) {
     .trim();
 }
 
+// Waits (seconds) before the 2 extra attempts that follow a transient connection
+// failure of the diff tool: 3 attempts in total.
+const TRANSIENT_RETRY_DELAYS_SECONDS = Object.freeze([20, 40]);
+
+// Signatures of "the tool could not reach the database". They are matched only on
+// the output of a diff run that FAILED (non-zero exit). A diff that completed is
+// never retried, so a real drift cannot be hidden by this list. A bare
+// PGDELTA_SCRIPT_ERROR is deliberately not enough: pg-delta also reports genuine
+// SQL errors under that code, which must fail at once.
+const TRANSIENT_CONNECTION_PATTERNS = Object.freeze([
+  /timeout exceeded when trying to connect/i,
+  /connection terminated due to connection timeout/i,
+  /connection terminated unexpectedly/i,
+  /server closed the connection unexpectedly/i,
+  /unable to check out connection from the pool/i,
+  /connect(?:ion)? (?:to .{0,200} )?timed out/i,
+  /\b(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH)\b/,
+  /failed to connect to .{0,300}(?:timeout|refused|unreachable|reset)/is,
+  /dial tcp .{0,200}(?:i\/o timeout|connection refused|no route to host)/i,
+]);
+
+function isTransientConnectionFailure(output) {
+  const text = String(output ?? "");
+  return TRANSIENT_CONNECTION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+// Runs `attempt()` (resolving to { status, stdout, stderr }) and re-runs it only
+// when it failed AND its output is a transient connection failure, waiting
+// `delaysSeconds[i]` before retry i + 1. Any other outcome, success or failure,
+// is returned immediately. Resolves to { result, attempts, transient }, where
+// `transient` tells that the last failure was a connection failure (the tool
+// never produced a verdict on the schema).
+async function runWithTransientRetry({
+  attempt,
+  delaysSeconds = TRANSIENT_RETRY_DELAYS_SECONDS,
+  sleep = (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000)),
+  log = () => {},
+}) {
+  const maxAttempts = delaysSeconds.length + 1;
+  for (let number = 1; ; number += 1) {
+    const result = await attempt(number);
+    if (result.status === 0) return { result, attempts: number, transient: false };
+    const transient = isTransientConnectionFailure(
+      `${result.stderr ?? ""}\n${result.stdout ?? ""}`,
+    );
+    if (!transient) return { result, attempts: number, transient: false };
+    if (number >= maxAttempts) return { result, attempts: number, transient: true };
+    const delay = delaysSeconds[number - 1];
+    log(
+      `Diff tool could not reach the database (attempt ${number}/${maxAttempts}); retrying in ${delay}s.`,
+    );
+    await sleep(delay);
+  }
+}
+
 export {
+  TRANSIENT_RETRY_DELAYS_SECONDS,
+  isTransientConnectionFailure,
+  runWithTransientRetry,
   RECONCILED_CHECK_CONSTRAINTS,
   canonicalCheckCondition,
   checkBody,

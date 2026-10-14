@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { normalizeDiffWithNotes, verifyConcurrentIndexes } from "./lib/schema-drift.mjs";
+import {
+  normalizeDiffWithNotes,
+  runWithTransientRetry,
+  verifyConcurrentIndexes,
+} from "./lib/schema-drift.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 loadEnvironmentFiles(root);
@@ -44,37 +48,62 @@ const outputPath = join(temporaryDirectory, "drift.sql");
 
 try {
   const executable = process.platform === "win32" ? "npx.cmd" : "npx";
-  const result = spawnSync(
-    executable,
-    [
-      "--yes",
-      "supabase@2.110.0",
-      "db",
-      "diff",
-      "--from",
-      "migrations",
-      "--to",
-      target,
-      "--schema",
-      "public,app_private",
-      `--output=${outputPath}`,
-      "--log-level",
-      "error",
-    ],
-    {
-      cwd: root,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || "600",
+  const runDiffTool = () => {
+    // A failed attempt may leave a partial file behind; each attempt starts clean.
+    rmSync(outputPath, { force: true });
+    return spawnSync(
+      executable,
+      [
+        "--yes",
+        "supabase@2.110.0",
+        "db",
+        "diff",
+        "--from",
+        "migrations",
+        "--to",
+        target,
+        "--schema",
+        "public,app_private",
+        `--output=${outputPath}`,
+        "--log-level",
+        "error",
+      ],
+      {
+        cwd: root,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PGCONNECT_TIMEOUT: process.env.PGCONNECT_TIMEOUT || "600",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
       },
-      stdio: ["ignore", "pipe", "pipe"],
+    );
+  };
+
+  // Only the production run is retried, and only when the diff tool itself failed
+  // to reach the database. A completed diff (real drift included) is never re-run.
+  const { result, attempts, transient } = await runWithTransientRetry({
+    attempt: runDiffTool,
+    delaysSeconds: remote ? undefined : [],
+    log: (message) => {
+      console.warn(`[schema-drift] ${message}`);
+      if (process.env.GITHUB_ACTIONS === "true")
+        console.warn(`::warning title=Schema drift tool unreachable::${message}`);
     },
-  );
+  });
 
   if (result.status !== 0) {
     if (result.stdout) process.stdout.write(result.stdout);
     if (result.stderr) process.stderr.write(result.stderr);
+    if (result.error) console.error(`[schema-drift] ${result.error.message}`);
+    const message = transient
+      ? `TOOL UNREACHABLE: the diff tool could not connect to the database after ${attempts} attempts. The schema was not compared: this is NOT a schema drift. Re-run the workflow, or run "npm run check:schema-drift -- --remote".`
+      : "DIFF TOOL FAILED: the diff tool exited with an error that is not a connection timeout (not retried). The schema was not compared.";
+    console.error(`[schema-drift] ${message}`);
+    if (process.env.GITHUB_ACTIONS === "true")
+      console.error(
+        `::error title=${transient ? "Schema drift tool unreachable" : "Schema drift tool failed"}::${message}`,
+      );
     process.exit(result.status ?? 1);
   }
 
@@ -88,8 +117,12 @@ try {
   }
   if (diff) {
     console.error(
-      `[schema-drift] ${remote ? "Production" : "Local database"} differs from committed migrations.`,
+      `[schema-drift] REAL DRIFT: ${remote ? "Production" : "Local database"} differs from committed migrations.`,
     );
+    if (process.env.GITHUB_ACTIONS === "true")
+      console.error(
+        "::error title=Schema drift::Real drift detected: the schema differs from the committed migrations (not a connectivity problem).",
+      );
     console.error(diff.slice(0, 40_000));
     process.exit(1);
   }

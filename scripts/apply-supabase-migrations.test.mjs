@@ -288,6 +288,17 @@ commit;
     expect(stripOuterTransactionWrappers(source)).toContain("string_only");
   });
 
+  it("refuses --fail-on-pending without --dry-run before any database access", () => {
+    const script = new URL("./apply-supabase-migrations.mjs", import.meta.url).pathname;
+    const result = spawnSync(process.execPath, [script, "--fail-on-pending"], {
+      encoding: "utf8",
+      env: { ...process.env, SUPABASE_DB_URL: "", POSTGRES_URL_NON_POOLING: "", POSTGRES_URL: "" },
+      timeout: 10000,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--fail-on-pending requires --dry-run");
+  }, 15000);
+
   it("bounds repeated SQL comments before and after the trailing notification", () => {
     const moduleUrl = new URL("./apply-supabase-migrations.mjs", import.meta.url).href;
     const result = spawnSync(
