@@ -681,6 +681,76 @@ if (
   failures.push("document reading quotes reach the page without the personal-data filter");
 }
 
+// Classement de /sales par complétude: the numeric score of a listing stays in the database. Browser
+// roles read the tier only (via the search views and the public RPC), the table is written by
+// service_role alone.
+const completenessMigration = await readFile(
+  new URL(
+    "../supabase/migrations/20261024100000_listing_completeness_ranking.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+if (
+  !/alter\s+table\s+public\.auction_sale_listing_completeness\s+enable\s+row\s+level\s+security/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("The listing completeness table does not enable RLS");
+}
+if (
+  !/revoke\s+all\s+on\s+table\s+public\.auction_sale_listing_completeness\s+from\s+public,\s*anon,\s*authenticated/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("The listing completeness table is not closed to anon and authenticated");
+}
+if (
+  completenessMigration
+    .split(";")
+    .some(
+      (statement) =>
+        /^\s*(?:--[^\n]*\n\s*)*grant\s/i.test(statement) &&
+        /\bpublic\.auction_sale_listing_completeness\b/i.test(statement) &&
+        /\bto\s+(?:public|anon|authenticated)\b/i.test(statement),
+    )
+) {
+  failures.push("The listing completeness table is granted to a browser role");
+}
+if (
+  /create\s+policy[^;]*auction_sale_listing_completeness[^;]*\bto\s+(?:public|anon|authenticated)\b/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("The listing completeness table has a policy for a browser role");
+}
+// Every column the search views and the public RPC publish is the tier: the score, its inputs and
+// the policy version never appear in a select list or a RETURNS TABLE.
+if (
+  /returns\s+table\s*\([^)]*\b(?:score|input_fingerprint|policy_version|evaluated_at)\b/i.test(
+    completenessMigration,
+  ) ||
+  /\bcompleteness\.(?:score|input_fingerprint|policy_version|evaluated_at)\b/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("The listing completeness migration publishes more than the tier");
+}
+if (
+  !/create\s+or\s+replace\s+function\s+app_private\.sale_completeness_tier\(p_sale_id\s+uuid\)\s*returns\s+smallint\s+language\s+sql\s+stable\s+security\s+definer\s+set\s+search_path\s*=\s*''/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("sale_completeness_tier is not SECURITY DEFINER with a fixed search_path");
+}
+if (
+  !/create\s+or\s+replace\s+view\s+public\.v_auction_sales_discovery_search\s+with\s*\(\s*security_invoker\s*=\s*false\s*,\s*security_barrier\s*=\s*true\s*\)/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("v_auction_sales_discovery_search lost its security barrier");
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -717,6 +787,7 @@ console.log(
       "personal-data-filter-write-boundary",
       "sale-unlock-rls-and-definer-boundary",
       "document-reading-personal-data-filter",
+      "listing-completeness-score-stays-private",
     ],
   }),
 );

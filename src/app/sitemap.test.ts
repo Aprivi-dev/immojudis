@@ -65,7 +65,14 @@ describe("sitemap.xml", () => {
     const byUrl = new Map(entries.map((entry) => [entry.url, entry]));
     expect(byUrl.has("https://immojudis.com/tribunaux")).toBe(true);
     expect(byUrl.has("https://immojudis.com/annonce-exemple")).toBe(true);
-    for (const path of ["", "/avocats", "/offres", "/tribunaux", "/legal"]) {
+    for (const path of [
+      "",
+      "/avocats",
+      "/offres",
+      "/tribunaux",
+      "/legal",
+      "/classement-des-annonces",
+    ]) {
       expect(byUrl.get(`https://immojudis.com${path}`)?.lastModified).toBeTruthy();
     }
     // The catalogue page changes with its newest sale.

@@ -25,6 +25,7 @@ const row = {
   latitude: 44.84,
   longitude: -0.58,
   thumbnail_url: "https://media.immobilier.notaires.fr/inotr/media/a.jpg",
+  completeness_tier: 1,
 };
 
 describe("public preview search", () => {
@@ -40,8 +41,28 @@ describe("public preview search", () => {
   });
 
   it("falls back to relevance for the bedroom sort, which the public RPC does not know", () => {
-    expect(buildPreviewSearchArgs({ sort: "beds_desc" })).toMatchObject({ p_sort: "score_desc" });
+    expect(buildPreviewSearchArgs({ sort: "beds_desc" })).toMatchObject({
+      p_sort: "completeness_desc",
+    });
     expect(buildPreviewSearchArgs({ sort: "price_asc" })).toMatchObject({ p_sort: "price_asc" });
+  });
+
+  it("classe par complétude par défaut, et jamais par score d'investissement", () => {
+    expect(buildPreviewSearchArgs({})).toMatchObject({ p_sort: "completeness_desc" });
+    expect(buildPreviewSearchArgs({ sort: "relevance" })).toMatchObject({
+      p_sort: "completeness_desc",
+    });
+    expect(buildPreviewSearchArgs({ sort: "distance" })).toMatchObject({
+      p_sort: "completeness_desc",
+    });
+    // Le score d'investissement est réservé à Analyse : un visiteur qui arrive avec cette valeur
+    // dans l'URL retombe sur le tri par défaut.
+    expect(buildPreviewSearchArgs({ sort: "score_desc" })).toMatchObject({
+      p_sort: "completeness_desc",
+    });
+    expect(buildPreviewSearchArgs({ sort: "sale_date_asc" })).toMatchObject({
+      p_sort: "date_asc",
+    });
   });
 
   it("paginates with the requested page and size", () => {
@@ -72,6 +93,12 @@ describe("public preview search", () => {
       city: "Bordeaux",
       media: [{ type: "image", url: row.thumbnail_url }],
     });
+  });
+
+  it("transmet le palier de complétude de chaque carte (badge « bien renseignée »)", () => {
+    const [high, low] = mapPreviewRows([row, { ...row, id: "sale-2", completeness_tier: 0 }]);
+    expect(high.completeness_tier).toBe(1);
+    expect(low.completeness_tier).toBe(0);
   });
 
   it("ignores a thumbnail that is not a property photo", () => {

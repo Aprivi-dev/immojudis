@@ -3260,6 +3260,90 @@ export type Database = {
         };
         Relationships: [];
       };
+      auction_sale_listing_completeness: {
+        Row: {
+          evaluated_at: string;
+          input_fingerprint: string;
+          policy_version: string;
+          sale_id: string;
+          score: number;
+          tier: number;
+        };
+        Insert: {
+          evaluated_at?: string;
+          input_fingerprint: string;
+          policy_version: string;
+          sale_id: string;
+          score: number;
+          tier: number;
+        };
+        Update: {
+          evaluated_at?: string;
+          input_fingerprint?: string;
+          policy_version?: string;
+          sale_id?: string;
+          score?: number;
+          tier?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "auction_sale_listing_completeness_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_listing_completeness_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_listing_completeness_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_listing_completeness_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_listing_completeness_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_listing_completeness_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_listing_completeness_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_listing_completeness_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       auction_sale_market_estimates: {
         Row: {
           actionable: boolean;
@@ -12559,6 +12643,7 @@ export type Database = {
           bedrooms_count: number | null;
           carrez_surface_m2: number | null;
           city: string | null;
+          completeness_tier: number | null;
           coordinates_rank: number | null;
           created_at: string | null;
           dedupe_confidence: string | null;
@@ -12733,6 +12818,7 @@ export type Database = {
           bedrooms_count: number | null;
           carrez_surface_m2: number | null;
           city: string | null;
+          completeness_tier: number | null;
           coordinates_rank: number | null;
           created_at: string | null;
           dedupe_confidence: string | null;
@@ -14306,6 +14392,7 @@ export type Database = {
           bathrooms_count: number;
           bedrooms_count: number;
           city: string;
+          completeness_tier: number;
           department: string;
           id: string;
           latitude: number;
@@ -14354,6 +14441,7 @@ export type Database = {
           bathrooms_count: number;
           bedrooms_count: number;
           city: string;
+          completeness_tier: number;
           department: string;
           id: string;
           latitude: number;
