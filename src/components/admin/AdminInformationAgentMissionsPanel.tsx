@@ -995,6 +995,30 @@ function PreviewPanel({
               <dt className="inline font-medium">Origine de l’adresse : </dt>
               <dd className="inline">{preview.addressOrigin.text}</dd>
             </div>
+            {preview.addressOrigin.automated ? (
+              <div role="note" className="rounded-lg border border-amber-200 bg-amber-50 p-2">
+                <dt className="inline font-medium">Adresse retrouvée automatiquement : </dt>
+                <dd className="inline">
+                  l’outil de recherche l’a lue sur une page publique, personne ne l’a encore
+                  vérifiée.{" "}
+                  {preview.addressOrigin.url ? (
+                    <>
+                      <a
+                        href={preview.addressOrigin.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium underline"
+                      >
+                        Ouvrir la page source
+                      </a>{" "}
+                      et vérifier que l’adresse est bien celle de ce professionnel avant d’envoyer.
+                    </>
+                  ) : (
+                    "Vérifiez l’adresse avant d’envoyer."
+                  )}
+                </dd>
+              </div>
+            ) : null}
           </dl>
           <iframe
             title="Aperçu de l’e-mail envoyé"

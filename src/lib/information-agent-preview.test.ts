@@ -180,7 +180,7 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       expect(output).toContain("accès, rectification, effacement et limitation");
       expect(output).toContain("vous opposer à tout moment, sans motif");
       expect(output).toContain("https://www.cnil.fr/fr/plaintes");
-      expect(output).not.toContain("outil de recherche automatisé");
+      expect(output).not.toContain("retrouvée automatiquement");
     }
     expect(db.writes).toEqual([]);
     expect(supabaseAdmin.rpc).not.toHaveBeenCalled();
@@ -277,6 +277,7 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
   });
 
   it("nomme l'annuaire officiel et signale la recherche automatique quand l'agent a trouvé l'adresse", async () => {
+    vi.stubEnv("INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", "true");
     db.contacts = [
       {
         normalized_email: "cabinet@example.test",
@@ -301,9 +302,313 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     for (const output of [result.preview.html, result.preview.text]) {
       expect(output).toContain("fiche publique de l’annuaire officiel des commissaires de justice");
       expect(output).toContain(
-        "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
+        "Cette adresse a été retrouvée automatiquement par un outil d’Immojudis à partir d’une page publique (voir l’origine ci-dessus). L’outil ne conserve aucune copie de la page : seuls l’adresse, le lien de la page, la date de relevé et le critère de rapprochement utilisé sont enregistrés. Ce message a été relu et validé par un membre de l’équipe avant son envoi.",
       );
     }
+  });
+
+  const AUTOMATED_STATEMENT =
+    "Cette adresse a été retrouvée automatiquement par un outil d’Immojudis à partir d’une page publique (voir l’origine ci-dessus). L’outil ne conserve aucune copie de la page : seuls l’adresse, le lien de la page, la date de relevé et le critère de rapprochement utilisé sont enregistrés. Ce message a été relu et validé par un membre de l’équipe avant son envoi.";
+
+  const LISTING_STATEMENT =
+    "Cette adresse a été retrouvée automatiquement par un outil d’Immojudis à partir d’une annonce publique déjà enregistrée par Immojudis (voir l’origine ci-dessus). L’outil ne conserve aucune copie de la page : seuls l’adresse, le lien de la page, la date de relevé et le critère de rapprochement utilisé sont enregistrés. Ce message a été relu et validé par un membre de l’équipe avant son envoi.";
+
+  it("recherche niveau 1, source A : libellé « autre annonce » et mention de la recherche automatique", async () => {
+    vi.stubEnv("INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", "true");
+    db.contacts = [
+      {
+        normalized_email: "cabinet@example.test",
+        scope_sale_id: SALE_ID,
+        source_kind: "other_listing",
+        source_name: "licitor",
+        source_url: "https://www.licitor.com/annonce/2.html",
+        observed_at: "2026-10-14T10:00:00Z",
+        observed_by: "agent",
+        opposition_status: "unknown",
+        bounce_status: "none",
+      },
+    ];
+    const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+
+    expect(result.blockers).toEqual([]);
+    expect(result.addressOrigin).toEqual({
+      text: "Votre adresse professionnelle figure dans une autre annonce publique de vente qui vous mentionne comme interlocuteur, sur Licitor (https://www.licitor.com/annonce/2.html) ; Immojudis l’a reprise de cette annonce le 14/10/2026.",
+      url: "https://www.licitor.com/annonce/2.html",
+      automated: true,
+      searchSource: "other_listing",
+      known: true,
+    });
+    expect(result.addressOrigin.text).not.toContain("annonce publique de cette vente");
+    for (const output of [result.preview.html, result.preview.text]) {
+      expect(output).toContain("figure dans une autre annonce publique de vente");
+      expect(output).toContain("https://www.licitor.com/annonce/2.html");
+      expect(output).toContain(LISTING_STATEMENT);
+      expect(output).not.toContain("à partir d’une page publique");
+    }
+  });
+
+  it("recherche niveau 1, source B : libellé « site du cabinet » et mention de la recherche automatique", async () => {
+    vi.stubEnv("INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", "true");
+    db.contacts = [
+      {
+        normalized_email: "cabinet@example.test",
+        scope_sale_id: SALE_ID,
+        source_kind: "firm_website",
+        source_name: null,
+        source_url: "https://www.cabinet-dupont.test/contact",
+        observed_at: "2026-10-14T10:00:00Z",
+        observed_by: "agent",
+        opposition_status: "unknown",
+        bounce_status: "none",
+      },
+    ];
+    const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+
+    expect(result.blockers).toEqual([]);
+    expect(result.addressOrigin).toEqual({
+      text: "Votre adresse professionnelle figure sur le site de votre cabinet ou de votre étude (https://www.cabinet-dupont.test/contact), consulté le 14/10/2026.",
+      url: "https://www.cabinet-dupont.test/contact",
+      automated: true,
+      searchSource: "firm_website",
+      known: true,
+    });
+    for (const output of [result.preview.html, result.preview.text]) {
+      expect(output).toContain("figure sur le site de votre cabinet ou de votre étude");
+      expect(output).toContain("https://www.cabinet-dupont.test/contact");
+      expect(output).toContain(AUTOMATED_STATEMENT);
+      expect(output).toContain("Immojudis SAS");
+    }
+  });
+
+  it("une adresse trouvée par l'agent sans lien exact n'est pas acceptée (autre annonce, site)", async () => {
+    vi.stubEnv("INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", "true");
+    for (const source_kind of ["other_listing", "firm_website"]) {
+      db.contacts = [
+        {
+          normalized_email: "cabinet@example.test",
+          scope_sale_id: SALE_ID,
+          source_kind,
+          source_url: null,
+          observed_at: "2026-10-14T10:00:00Z",
+          observed_by: "agent",
+          opposition_status: "unknown",
+          bounce_status: "none",
+        },
+      ];
+      const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+      expect(result.addressOrigin.known, source_kind).toBe(false);
+      expect(result.blockers).toContain(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+    }
+  });
+
+  describe("adresse retrouvée par l'agent : l'origine vient du seul registre", () => {
+    const MISSING =
+      "L’adresse retrouvée par la recherche automatique n’a plus de ligne de registre de l’agent";
+    const asAgentFound = () => {
+      db.mission = {
+        ...db.mission,
+        metadata: {
+          ...(db.mission.metadata as Record<string, unknown>),
+          contact_discovery: { method: "agent_search_firm_website" },
+        },
+      };
+    };
+    const manualUrl = "https://cabinet-dupont.example.test/contact";
+
+    beforeEach(() => {
+      vi.stubEnv("INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", "true");
+      asAgentFound();
+    });
+
+    it("sans ligne de registre, une URL saisie à la main ne remplace pas l'origine", async () => {
+      db.contacts = [];
+      const result = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: { ...content, recipientOriginUrl: manualUrl },
+      });
+      expect(result.addressOrigin.known).toBe(false);
+      expect(result.blockers).toContain(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+      expect(result.blockers.join(" ")).toContain(MISSING);
+    });
+
+    it("une ligne de saisie d'administrateur ne remplace pas non plus la ligne de l'agent", async () => {
+      db.contacts = [
+        {
+          normalized_email: "cabinet@example.test",
+          scope_sale_id: SALE_ID,
+          source_kind: "admin_entry",
+          source_url: manualUrl,
+          observed_at: "2026-10-14T10:00:00Z",
+          observed_by: "admin",
+          opposition_status: "unknown",
+          bounce_status: "none",
+        },
+      ];
+      const result = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: { ...content, recipientOriginUrl: manualUrl },
+      });
+      expect(result.blockers.join(" ")).toContain(MISSING);
+    });
+
+    it("refuse l'envoi dans les deux cas, sans rien écrire", async () => {
+      db.contacts = [];
+      const { fingerprint } = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: { ...content, recipientOriginUrl: manualUrl },
+      });
+      await expect(
+        runAdminInformationAgentAction({
+          auth: ADMIN,
+          input: {
+            action: "approve_and_send",
+            approvalConfirmed: true,
+            ...content,
+            recipientOriginUrl: manualUrl,
+            previewFingerprint: fingerprint!,
+          },
+        }),
+      ).rejects.toThrow(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+      expect(db.writes).toEqual([]);
+      expect(send).not.toHaveBeenCalled();
+
+      db.contacts = [
+        {
+          normalized_email: "cabinet@example.test",
+          scope_sale_id: SALE_ID,
+          source_kind: "admin_entry",
+          source_url: manualUrl,
+          observed_at: "2026-10-14T10:00:00Z",
+          observed_by: "admin",
+          opposition_status: "unknown",
+          bounce_status: "none",
+        },
+      ];
+      await expect(
+        runAdminInformationAgentAction({
+          auth: ADMIN,
+          input: {
+            action: "approve_and_send",
+            approvalConfirmed: true,
+            ...content,
+            recipientOriginUrl: manualUrl,
+            previewFingerprint: fingerprint!,
+          },
+        }),
+      ).rejects.toThrow(MISSING);
+      expect(db.writes).toEqual([]);
+    });
+
+    it("avec sa ligne de registre, l'aperçu est valable (source agent, mention de la recherche)", async () => {
+      db.contacts = [
+        {
+          normalized_email: "cabinet@example.test",
+          scope_sale_id: SALE_ID,
+          source_kind: "firm_website",
+          source_url: "https://www.cabinet-dupont.test/contact",
+          observed_at: "2026-10-14T10:00:00Z",
+          observed_by: "agent",
+          opposition_status: "unknown",
+          bounce_status: "none",
+        },
+      ];
+      const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+      expect(result.blockers).toEqual([]);
+      expect(result.addressOrigin.automated).toBe(true);
+    });
+
+    it("un destinataire modifié par l'administrateur suit la voie ordinaire (page publique saisie)", async () => {
+      db.contacts = [];
+      const result = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: {
+          ...content,
+          recipientEmail: "autre@example.test",
+          recipientOriginUrl: manualUrl,
+        },
+      });
+      expect(result.blockers.join(" ")).not.toContain(MISSING);
+      expect(result.addressOrigin.known).toBe(true);
+    });
+  });
+
+  describe("interrupteur de la recherche automatique d'adresse", () => {
+    const SWITCH_OFF =
+      "La recherche automatique d’adresse est désactivée : cette adresse ne peut pas être utilisée pour un envoi.";
+    const agentRow = (source_kind: string, extra: Record<string, unknown> = {}) => ({
+      normalized_email: "cabinet@example.test",
+      scope_sale_id: SALE_ID,
+      source_kind,
+      source_name: null,
+      source_url: "https://www.cabinet-dupont.test/contact",
+      observed_at: "2026-10-14T10:00:00Z",
+      observed_by: "agent",
+      opposition_status: "unknown",
+      bounce_status: "none",
+      ...extra,
+    });
+
+    it.each([undefined, "", "false", "TRUE", "1", "true "])(
+      "bloque l'aperçu d'une adresse trouvée par l'agent quand la variable vaut %j",
+      async (value) => {
+        if (value !== undefined) vi.stubEnv("INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", value);
+        for (const kind of ["other_listing", "firm_website", "official_directory"]) {
+          db.contacts = [
+            agentRow(
+              kind,
+              kind === "official_directory"
+                ? { source_directory_name: "annuaire du barreau de Lyon" }
+                : {},
+            ),
+          ];
+          const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+          expect(result.blockers, kind).toContain(SWITCH_OFF);
+        }
+      },
+    );
+
+    it("n'affecte ni l'annonce de la vente ni une adresse saisie par un administrateur", async () => {
+      // Interrupteur absent : annonce de la vente (beforeEach) et saisie manuelle restent possibles.
+      const listing = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+      expect(listing.blockers).not.toContain(SWITCH_OFF);
+      db.contacts = [];
+      const manual = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: { ...content, recipientOriginUrl: "https://cabinet-dupont.example.test/contact" },
+      });
+      expect(manual.blockers).not.toContain(SWITCH_OFF);
+      db.contacts = [agentRow("admin_entry", { observed_by: "admin" })];
+      const admin = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+      expect(admin.blockers).not.toContain(SWITCH_OFF);
+    });
+
+    it("n'ajoute aucun motif quand l'interrupteur vaut exactement `true`", async () => {
+      vi.stubEnv("INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", "true");
+      db.contacts = [agentRow("firm_website")];
+      const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+      expect(result.blockers).toEqual([]);
+    });
+
+    it("refuse aussi l'envoi d'une adresse trouvée par l'agent, même avec un aperçu valide", async () => {
+      db.contacts = [agentRow("other_listing", { source_name: "licitor" })];
+      const { fingerprint } = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: content,
+      });
+      await expect(
+        runAdminInformationAgentAction({
+          auth: ADMIN,
+          input: {
+            action: "approve_and_send",
+            approvalConfirmed: true,
+            ...content,
+            previewFingerprint: fingerprint!,
+          },
+        }),
+      ).rejects.toThrow(SWITCH_OFF);
+      expect(db.writes).toEqual([]);
+      expect(send).not.toHaveBeenCalled();
+    });
   });
 
   it("n'accepte pas pour un annuaire une adresse sans lien exact", async () => {
@@ -336,7 +641,7 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
       "Votre adresse professionnelle a été relevée par un membre de l’équipe Immojudis sur une page publique (https://cabinet-dupont.example.test/contact), le 13/10/2026.",
     );
     expect(result.addressOrigin.automated).toBe(false);
-    expect(result.preview.text).not.toContain("outil de recherche automatisé");
+    expect(result.preview.text).not.toContain("retrouvée automatiquement");
   });
 
   it("bloque l'aperçu quand le texte contient une mention commerciale", async () => {

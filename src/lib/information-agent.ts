@@ -21,11 +21,10 @@ import {
 } from "@/lib/fact-reliability";
 import {
   buildInformationAgentInventory,
+  informationAgentInventorySnapshot,
   type InformationAgentInventory,
   type InformationAgentInventoryItem,
-  type InformationAgentInventoryKey,
   type InformationAgentInventorySale,
-  type InformationAgentMissingDocument,
 } from "@/lib/information-agent-inventory";
 import { formatDate, formatStartingPrice } from "@/lib/format";
 import {
@@ -63,6 +62,13 @@ import {
   persistInformationAgentContactObservations,
   selectInformationAgentContact,
 } from "@/lib/information-agent/contacts";
+import {
+  ADDRESS_NOT_RECORDED_MESSAGE,
+  assertAgentFoundOriginIntact,
+  assertInformationAgentSearchedAddressAllowed,
+  isAgentFoundRecipient,
+  searchInformationAgentAddressForDraft,
+} from "@/lib/information-agent/address-search";
 import { recordManualMissionReply } from "@/lib/information-agent/manual-reply";
 import {
   assertInformationAgentSourceAllowed,
@@ -105,68 +111,33 @@ export type {
   InformationAgentContactRegistryBlock,
 } from "@/lib/information-agent/contacts";
 
+import {
+  detectInformationGaps,
+  INFORMATION_AGENT_QUESTIONS,
+  informationAgentQuestionContext,
+  informationAgentQuestionText,
+  selectDefaultInformationAgentQuestionKeys,
+  type InformationAgentGap,
+  type InformationAgentQuestionKey,
+} from "@/lib/information-agent-questions";
+
+// Ré-exports : ces éléments vivaient dans ce module (et ses tests les importent d'ici).
+export {
+  detectInformationGaps,
+  INFORMATION_AGENT_QUESTIONS,
+  informationAgentQuestionContext,
+  informationAgentQuestionText,
+  selectDefaultInformationAgentQuestionKeys,
+} from "@/lib/information-agent-questions";
+export type {
+  InformationAgentGap,
+  InformationAgentQuestionContext,
+  InformationAgentQuestionKey,
+} from "@/lib/information-agent-questions";
+
 type MissionRow = Database["public"]["Tables"]["information_agent_missions"]["Row"];
 type FactRow = Database["public"]["Tables"]["information_agent_fact_candidates"]["Row"];
 
-export const INFORMATION_AGENT_QUESTIONS = {
-  sale_date: {
-    label: "Date de vente",
-    question:
-      "Pouvez-vous confirmer la date, l'heure et le lieu de la vente de ce lot, ainsi que tout report ou changement annoncé ?",
-  },
-  starting_price_eur: {
-    label: "Mise à prix",
-    question:
-      "Pouvez-vous confirmer la mise à prix applicable à ce lot et nous signaler toute correction publiée ?",
-  },
-  documents: {
-    label: "Pièces du dossier",
-    question:
-      "Pourriez-vous transmettre le cahier des conditions de vente et les pièces consultables du dossier, en indiquant leur date ou leur version si elle est connue ?",
-  },
-  photos: {
-    label: "Photos complémentaires",
-    question:
-      "Pourriez-vous transmettre des photos complémentaires que vous êtes autorisé à partager, en précisant leur date approximative et les pièces ou annexes qu’elles montrent ?",
-  },
-  visit: {
-    label: "Visites",
-    question:
-      "Quelles sont les prochaines dates de visite, les modalités d'inscription et le contact à utiliser pour confirmer sa venue ?",
-  },
-  occupancy: {
-    label: "Occupation",
-    question:
-      "Le bien est-il actuellement libre, occupé ou loué ? Si le bien est loué, pouvez-vous préciser le loyer connu et signaler toute évolution récente ?",
-  },
-  surface: {
-    label: "Surface",
-    question:
-      "Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?",
-  },
-  diagnostics: {
-    label: "Diagnostics",
-    question:
-      "Les diagnostics techniques, notamment le DPE, sont-ils disponibles dans une version à jour ? Merci d'indiquer leur date et les classes connues.",
-  },
-  composition: {
-    label: "Composition",
-    question:
-      "Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?",
-  },
-  sale_terms: {
-    label: "Modalités de vente",
-    question:
-      "Pouvez-vous confirmer les modalités d'enchère, le montant et la forme de la consignation, les frais annoncés et les délais applicables ?",
-  },
-  cadastre: {
-    label: "Références cadastrales",
-    question:
-      "Pouvez-vous nous indiquer les références cadastrales du bien (section et numéro de parcelle) ?",
-  },
-} as const;
-
-export type InformationAgentQuestionKey = keyof typeof INFORMATION_AGENT_QUESTIONS;
 const QUESTION_KEYS = Object.keys(INFORMATION_AGENT_QUESTIONS) as [
   InformationAgentQuestionKey,
   ...InformationAgentQuestionKey[],
@@ -241,44 +212,6 @@ export const informationAgentAdminActionSchema = z.discriminatedUnion("action", 
 export type InformationAgentCreateInput = z.input<typeof informationAgentCreateSchema>;
 export type InformationAgentAdminActionPayload = z.output<typeof informationAgentAdminActionSchema>;
 
-export type InformationAgentGap = {
-  key: InformationAgentQuestionKey;
-  label: string;
-  reason: string;
-  /** Higher values are asked first when the admin did not choose questions manually. */
-  priority: number;
-  /** A gap that can change the safety or feasibility of a bid. */
-  blocking: boolean;
-};
-
-const QUESTION_PRIORITY: Record<InformationAgentQuestionKey, { score: number; blocking: boolean }> =
-  {
-    sale_date: { score: 96, blocking: true },
-    starting_price_eur: { score: 92, blocking: true },
-    documents: { score: 100, blocking: true },
-    sale_terms: { score: 94, blocking: true },
-    visit: { score: 88, blocking: true },
-    occupancy: { score: 82, blocking: true },
-    surface: { score: 72, blocking: false },
-    diagnostics: { score: 70, blocking: false },
-    composition: { score: 64, blocking: false },
-    cadastre: { score: 56, blocking: false },
-    photos: { score: 48, blocking: false },
-  };
-
-const MAX_DEFAULT_QUESTION_KEYS = 4;
-
-export function selectDefaultInformationAgentQuestionKeys(
-  gaps: readonly InformationAgentGap[],
-): InformationAgentQuestionKey[] {
-  if (!gaps.length) return [];
-  return [...gaps]
-    .sort((left, right) => right.priority - left.priority)
-    .map((gap) => gap.key)
-    .filter((key, index, keys) => keys.indexOf(key) === index)
-    .slice(0, MAX_DEFAULT_QUESTION_KEYS);
-}
-
 export type InformationAgentMission = {
   id: string;
   caseId: string | null;
@@ -331,126 +264,6 @@ export type InformationAgentAdminListResponse = {
 
 /** Liste paginée des missions (50 par page) : offset / limit demandés, total toutes pages. */
 export type InformationAgentAdminMissionPage = InformationAgentAdminListResponse & AdminPageMeta;
-
-export function detectInformationGaps(
-  sale: InformationAgentInventorySale,
-  facts: FactReliabilityMap = getKeyFactReliabilities(sale),
-  inventory: InformationAgentInventory = buildInformationAgentInventory(sale, facts),
-): InformationAgentGap[] {
-  const gaps: InformationAgentGap[] = [];
-  const byKey = new Map(inventory.items.map((entry) => [entry.key, entry]));
-  const open = (key: InformationAgentInventoryKey) => {
-    const entry = byKey.get(key);
-    return entry && (entry.status === "missing" || entry.status === "to_confirm") ? entry : null;
-  };
-
-  // Date et lieu partagent une question : la date d'audience (ou limite) et, s'il manque, le lieu.
-  const hearing = open("hearing");
-  const venue = open("venue");
-  const dateOrVenue = hearing ?? venue;
-  if (dateOrVenue) {
-    addGap(
-      gaps,
-      "sale_date",
-      [hearing?.detail, venue?.detail].filter(Boolean).join(" "),
-      criticalPriority("sale_date", dateOrVenue),
-    );
-  }
-  const price = open("starting_price");
-  if (price) {
-    addGap(gaps, "starting_price_eur", price.detail, criticalPriority("starting_price_eur", price));
-  }
-
-  if (inventory.missingDocuments.length) {
-    const names = inventory.missingDocuments.map((key) => MISSING_DOCUMENT_NAMES[key]);
-    addGap(
-      gaps,
-      "documents",
-      `Pièces absentes : ${names.join(", ")}.`,
-      inventory.missingDocuments.includes("sale_conditions")
-        ? QUESTION_PRIORITY.documents.score
-        : inventory.missingDocuments.includes("pv_descriptif")
-          ? 84
-          : QUESTION_PRIORITY.diagnostics.score,
-    );
-  }
-  const photos = open("photos");
-  if (photos) {
-    addGap(
-      gaps,
-      "photos",
-      photos.detail,
-      QUESTION_PRIORITY.photos.score + (photos.status === "missing" ? 10 : 0),
-    );
-  }
-  const visits = open("visits");
-  if (visits) addGap(gaps, "visit", visits.detail);
-  const occupancy = open("occupancy");
-  if (occupancy) {
-    addGap(gaps, "occupancy", occupancy.detail, criticalPriority("occupancy", occupancy));
-  }
-  const surface = open("surface");
-  if (surface) addGap(gaps, "surface", surface.detail, criticalPriority("surface", surface));
-  const cadastre = open("cadastre");
-  if (cadastre) addGap(gaps, "cadastre", cadastre.detail);
-  const composition = open("composition");
-  if (composition) addGap(gaps, "composition", composition.detail);
-  const terms = open("sale_terms");
-  if (terms) addGap(gaps, "sale_terms", terms.detail);
-
-  return gaps;
-}
-
-const MISSING_DOCUMENT_NAMES: Record<InformationAgentMissingDocument, string> = {
-  sale_conditions: "le cahier des conditions de vente",
-  pv_descriptif: "le procès-verbal descriptif",
-  diagnostics: "le dossier de diagnostics techniques",
-};
-
-/** Contexte qui précise le libellé de certaines questions (pièces manquantes, type de vente). */
-export type InformationAgentQuestionContext = {
-  judicial: boolean;
-  venueMissing: boolean;
-  missingDocuments: readonly InformationAgentMissingDocument[];
-};
-
-export function informationAgentQuestionContext(
-  inventory: InformationAgentInventory,
-): InformationAgentQuestionContext {
-  return {
-    judicial: inventory.judicial,
-    venueMissing: inventory.items.some(
-      (entry) => entry.key === "venue" && entry.status === "missing",
-    ),
-    missingDocuments: inventory.missingDocuments,
-  };
-}
-
-/** Libellé exact d'une question : les pièces et la date sont nommées selon la fiche. */
-export function informationAgentQuestionText(
-  key: InformationAgentQuestionKey,
-  context?: InformationAgentQuestionContext,
-): string {
-  if (key === "documents" && context?.missingDocuments.length) {
-    const names = context.missingDocuments.map((entry) => MISSING_DOCUMENT_NAMES[entry]);
-    const list =
-      names.length > 1
-        ? `${names.slice(0, -1).join(", ")} et ${names[names.length - 1]}`
-        : names[0];
-    return `Pourriez-vous nous transmettre ${list}, en indiquant leur date ou leur version si elle est connue ?`;
-  }
-  if (key === "sale_date" && context) {
-    if (context.judicial) {
-      return `Pouvez-vous confirmer la date et l'heure de l'audience d'adjudication${
-        context.venueMissing ? ", ainsi que le tribunal où elle se tient," : ""
-      } et nous signaler tout report annoncé ?`;
-    }
-    return `Pouvez-vous confirmer la date de la vente ou la date limite de dépôt des offres${
-      context.venueMissing ? ", ainsi que le lieu ou la plateforme de vente," : ""
-    } et nous signaler tout report annoncé ?`;
-  }
-  return INFORMATION_AGENT_QUESTIONS[key].question;
-}
 
 export function buildInformationRequestDraft({
   sale,
@@ -562,16 +375,26 @@ export async function createAdminInformationAgentDraft({
   const opposedKeys = new Set(
     await loadOpposedInformationAgentIdentityKeys(discovered.flatMap((item) => item.identityKeys)),
   );
-  const contactCandidates = discovered.filter(
+  const listingCandidates = discovered.filter(
     (candidate) => !candidate.identityKeys.some((key) => opposedKeys.has(key)),
   );
-  const candidatesSkippedForOpposition = discovered.length - contactCandidates.length;
+  const candidatesSkippedForOpposition = discovered.length - listingCandidates.length;
+  const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
+
+  // Recherche autonome (niveau 1), sans adresse dans l'annonce ni saisie : elle ne fait que préparer.
+  const search = await searchInformationAgentAddressForDraft({
+    sale,
+    identityPlace,
+    siteOrigin: informationAgentAppOrigin(),
+    skip: Boolean(explicitRecipientEmail) || discovered.length > 0,
+  });
+  const foundContact = search.candidate;
+  const contactCandidates = foundContact ? [foundContact] : listingCandidates;
   await persistInformationAgentContactObservations({
     saleId: sale.id,
-    candidates: contactCandidates,
+    candidates: foundContact ? [] : contactCandidates,
   });
-  const selectedContact = selectInformationAgentContact(contactCandidates);
-  const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
+  const selectedContact = foundContact ?? selectInformationAgentContact(contactCandidates);
   const recipientEmail = explicitRecipientEmail ?? selectedContact?.email;
   if (!recipientEmail) {
     throw new Error(
@@ -579,7 +402,7 @@ export async function createAdminInformationAgentDraft({
         ? INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE
         : contactCandidates.length > 1
           ? "Requête invalide : plusieurs contacts sont possibles. Choisissez explicitement l'adresse email du professionnel à contacter."
-          : "Requête invalide : renseignez l'adresse email du professionnel à contacter.",
+          : `Requête invalide : renseignez l'adresse email du professionnel à contacter.${search.noAddressNote}`,
     );
   }
   const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);
@@ -633,19 +456,18 @@ export async function createAdminInformationAgentDraft({
           city: identityPlace.city,
         },
         candidates_skipped_for_opposition: candidatesSkippedForOpposition,
+        address_search: search.snapshot,
         fact_claims_checked: claimRead.claimsBacked,
         fact_claim_count: claimRead.claims.length,
         contact_discovery: {
           method: explicitRecipientEmail
             ? "admin_override"
-            : selectedByEmail
-              ? "source_data"
-              : "manual_required",
+            : (search.discoveryMethod ?? (selectedByEmail ? "source_data" : "manual_required")),
           selected_email: selectedByEmail?.email ?? explicitRecipientEmail ?? null,
           candidates: contactCandidates.slice(0, 8).map(contactCandidateSnapshot),
         },
         initiated_by_admin: auth.userId,
-        inventory: inventorySnapshot(inventory),
+        inventory: informationAgentInventorySnapshot(inventory),
         email_content_template_id: emailTemplate.id,
         email_content_template_revision: emailTemplate.revision,
       },
@@ -659,6 +481,19 @@ export async function createAdminInformationAgentDraft({
     p_mission_id: data.id,
   });
   if (subscribeError) throw subscribeError;
+  // L'adresse trouvée n'est enregistrée qu'une fois contrôlée et le brouillon créé.
+  if (foundContact) {
+    try {
+      await persistInformationAgentContactObservations({
+        saleId: sale.id,
+        candidates: [foundContact],
+      });
+    } catch {
+      // Sans ligne de registre, l'origine de l'adresse est inconnue : le brouillon est annulé.
+      await cancelMission({ adminId: auth.userId, missionId: data.id }).catch(() => undefined);
+      throw new Error(ADDRESS_NOT_RECORDED_MESSAGE);
+    }
+  }
   const subscribedMission = await loadOwnedMission(auth.userId, data.id);
   return {
     ok: true,
@@ -757,14 +592,18 @@ async function approveAndSendMission({
     email: input.recipientEmail,
     identityKeys,
   });
+  // Adresse retrouvée par l'agent : sa seule origine est la ligne de registre de l'agent.
+  const agentFound = isAgentFoundRecipient(mission, input.recipientEmail);
   const addressOrigin = await resolveInformationAgentAddressOrigin({
     email: input.recipientEmail,
     saleId: mission.sale_id,
-    manualOriginUrl: input.recipientOriginUrl ?? null,
+    manualOriginUrl: agentFound ? null : (input.recipientOriginUrl ?? null),
     fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+  assertAgentFoundOriginIntact(agentFound, addressOrigin);
   assertInformationAgentSourceAllowed(addressOrigin);
+  assertInformationAgentSearchedAddressAllowed(addressOrigin.origin);
   assertInformationAgentOutboundEnabled();
   assertInformationAgentCanaryRecipient(input.recipientEmail);
   // Validate delivery prerequisites before approval reserves the case for sending.
@@ -994,6 +833,7 @@ function buildInformationAgentLegalFooter({
     addressOrigin: addressOrigin.text,
     addressOriginUrl: addressOrigin.url,
     automatedSearch: addressOrigin.automated,
+    automatedSearchSource: addressOrigin.searchSource,
     // Lève une erreur si la configuration désigne un prestataire d'IA non nommé dans le pied.
     aiProvider: informationAgentAiProvider(env),
     privacyUrl: new URL("/privacy", appUrl).toString(),
@@ -1125,14 +965,17 @@ export async function previewAdminInformationAgentMission({
   await collect(() =>
     assertInformationAgentRecipientCooldown({ email: recipient, missionId: mission.id }),
   );
+  const agentFound = isAgentFoundRecipient(mission, recipient);
   const addressOrigin = await resolveInformationAgentAddressOrigin({
     email: recipient,
     saleId: mission.sale_id,
-    manualOriginUrl: input.recipientOriginUrl ?? null,
+    manualOriginUrl: agentFound ? null : (input.recipientOriginUrl ?? null),
     fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) blockers.push(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+  await collect(() => assertAgentFoundOriginIntact(agentFound, addressOrigin));
   await collect(() => assertInformationAgentSourceAllowed(addressOrigin));
+  await collect(() => assertInformationAgentSearchedAddressAllowed(addressOrigin.origin, env));
   await collect(() => assertInformationAgentOutboundEnabled(env));
   await collect(() => assertInformationAgentCanaryRecipient(recipient, env));
   await collect(() => resolveInformationAgentEmailConfig(env));
@@ -1150,6 +993,7 @@ export async function previewAdminInformationAgentMission({
     addressOrigin: addressOrigin.origin.text,
     addressOriginUrl: addressOrigin.origin.url,
     automatedSearch: addressOrigin.origin.automated,
+    automatedSearchSource: addressOrigin.origin.searchSource,
     aiProvider: previewAiProvider(env, blockers),
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: secret
@@ -1310,16 +1154,6 @@ function missionFromRow(row: MissionRow): InformationAgentMission {
   };
 }
 
-function inventorySnapshot(inventory: InformationAgentInventory): Json {
-  return inventory.items.map((entry) => ({
-    key: entry.key,
-    label: entry.label,
-    status: entry.status,
-    detail: entry.detail,
-    origin: entry.origin,
-  }));
-}
-
 const INVENTORY_STATUSES = new Set(["present", "to_confirm", "missing", "not_applicable"]);
 
 function inventoryFromMetadata(metadata: Json): InformationAgentInventoryItem[] {
@@ -1435,21 +1269,6 @@ async function listFactsForCases(caseIds: string[]): Promise<InformationAgentFac
   }));
 }
 
-function addGap(
-  gaps: InformationAgentGap[],
-  key: InformationAgentQuestionKey,
-  reason: string,
-  priority = QUESTION_PRIORITY[key].score,
-) {
-  gaps.push({
-    key,
-    label: INFORMATION_AGENT_QUESTIONS[key].label,
-    reason,
-    priority,
-    blocking: QUESTION_PRIORITY[key].blocking,
-  });
-}
-
 function uniqueQuestionKeys(keys: readonly InformationAgentQuestionKey[]) {
   return [...new Set(keys)].slice(0, 8);
 }
@@ -1460,19 +1279,6 @@ function shortenSubjectTitle(title: string): string {
   const prefix = normalized.slice(0, 69);
   const lastSpace = prefix.lastIndexOf(" ");
   return `${(lastSpace >= 40 ? prefix.slice(0, lastSpace) : prefix).trimEnd()}…`;
-}
-
-/**
- * Priorité d'une question portant sur un fait clé : une contradiction passe devant tout, une
- * valeur absente avant une valeur simplement estimée.
- */
-function criticalPriority(
-  key: InformationAgentQuestionKey,
-  entry: Pick<InformationAgentInventoryItem, "status" | "detail">,
-): number {
-  const base = QUESTION_PRIORITY[key].score;
-  if (entry.status === "missing") return base + 10;
-  return /contredisent/.test(entry.detail) ? base + 40 : base + 5;
 }
 
 function isQuestionKey(value: string): value is InformationAgentQuestionKey {
