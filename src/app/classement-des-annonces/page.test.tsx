@@ -42,6 +42,11 @@ describe("page « Comment sont classées les annonces ? »", () => {
     expect(items[0]).toContain("position sur la carte est connue passent avant les autres");
     expect(items[1]).toContain("deux groupes selon la quantité d’informations");
     expect(items[2]).toContain("la vente la plus proche est affichée en premier");
+    expect(items[1]).toContain("score de complétude d’au moins 40 sur 100");
+    expect(section.textContent).toContain(
+      "Le score de complétude mesure, sur 100, la part des informations utiles renseignées dans la fiche Immojudis, appuyées par une source ; il ne juge ni l’intérêt ni la valeur du bien.",
+    );
+    expect(section.textContent).not.toContain("décision prête");
     expect(section.textContent).toContain("Il ne dépend d’aucune rémunération");
     expect(section.textContent).toContain("évaluée dans les heures qui suivent");
   });
