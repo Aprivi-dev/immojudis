@@ -1,0 +1,69 @@
+name: Check Pending Supabase Migrations
+
+# Daily read-only watchdog. It lists the supabase/migrations/*.sql files of main
+# that are absent from supabase_migrations.schema_migrations in production and
+# fails (GitHub then notifies the owner) when at least one is pending.
+# It never applies anything: the only SQL it runs is a SELECT on the history table
+# (scripts/apply-supabase-migrations.mjs --dry-run --fail-on-pending).
+# It collects no data, so it is outside the collection workflows that
+# scripts/check-manual-data-collection.mjs requires to stay manual.
+
+on:
+  schedule:
+    - cron: "10 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deliberately NOT the "immojudis-supabase-migrations" group of the apply workflow:
+# a pending watchdog run would cancel a queued migration run of that group.
+concurrency:
+  group: immojudis-supabase-migrations-watchdog
+  cancel-in-progress: false
+
+jobs:
+  pending:
+    name: Detect migrations not applied in production
+    runs-on: ubuntu-latest
+    environment: Production
+    timeout-minutes: 15
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_SSL_CA: ${{ secrets.SUPABASE_DB_SSL_CA }}
+      SUPABASE_MIGRATION_RUNNER: postgres-js
+      POSTGRES_SSL: verify-full
+      PGCONNECT_TIMEOUT: "60"
+      SUPABASE_MIGRATION_CONNECT_RETRIES: "5"
+      SUPABASE_MIGRATION_RETRY_DELAY: "30"
+      SUPABASE_MIGRATION_RETRY_BUDGET_SECONDS: "600"
+    steps:
+      - name: Check the revision under inspection is main
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$WORKFLOW_REF" != "refs/heads/main" ]; then
+            echo "The pending-migration check must run on refs/heads/main (got $WORKFLOW_REF)." >&2
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Pin npm
+        run: npm install --global npm@11.18.0
+
+      - name: Install project tooling
+        run: npm ci --ignore-scripts
+
+      - name: Compare main migrations with production history (read-only)
+        run: node scripts/apply-supabase-migrations.mjs --dry-run --fail-on-pending

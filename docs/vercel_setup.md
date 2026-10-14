@@ -143,6 +143,52 @@ Le workflow `Apply Supabase Migrations` exécute automatiquement cette étape, p
 de dérive du schéma distant. Voir [`operations-phase-3.md`](operations-phase-3.md) pour les SLO,
 tableaux de bord et runbooks.
 
+### Workflow `Apply Supabase Migrations` : ordre de publication et diagnostic
+
+**Ordre de publication.** Le code déployé par Vercel suppose que les migrations de la même PR sont
+en production. Dès qu'une PR contenant un fichier `supabase/migrations/*.sql` est fusionnée dans
+`main`, lancer sans attendre le workflow `Apply Supabase Migrations` (Actions, depuis `main`,
+`confirm_target` = `production`). Ne pas attendre le prochain lot : le 14/10/2026, quatre
+migrations (`20261021120000` à `20261023110000`) sont restées en retard sur `main` alors que le code
+correspondant était en ligne, et la fonction de déblocages de l'offre Découverte était cassée en
+production.
+
+**Un échec de l'étape « Detect production schema drift » ne dit pas la même chose selon le message
+du journal** (les migrations, elles, sont déjà appliquées quand cette étape s'exécute) :
+
+| Message du journal                                       | Signification                                                                                                                            | Que faire                                                                                                                                 |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `[schema-drift] REAL DRIFT: Production differs from ...` | Dérive réelle : le schéma de production diffère des migrations. Le diff est affiché. Jamais réessayée automatiquement.                   | Enquêter et corriger (migration de réconciliation ou entrée justifiée dans `scripts/lib/schema-drift.mjs`). Relancer ne servirait à rien. |
+| `[schema-drift] TOOL UNREACHABLE: ... after 3 attempts`  | Outil injoignable : l'outil de diff (Supabase CLI) n'a pas pu se connecter à la base (timeout, `ECONNRESET`, ...). Aucun schéma comparé. | Ce n'est pas une dérive. Relancer le workflow (les migrations déjà appliquées sont ignorées) ou `npm run check:schema-drift -- --remote`. |
+| `[schema-drift] DIFF TOOL FAILED: ... not retried`       | L'outil de diff a échoué pour une autre raison (erreur SQL, authentification, ...). Le schéma n'a pas été comparé.                       | Lire l'erreur affichée au-dessus du message ; ne pas conclure à une dérive.                                                               |
+
+Sur une erreur de connexion transitoire (`timeout exceeded when trying to connect`,
+`PGDELTA_SCRIPT_ERROR` lié à la connexion, `ECONNRESET`, `ETIMEDOUT`, etc.), le contrôle réessaie
+deux fois, après 20 s puis 40 s (3 tentatives en tout), avant de conclure à « outil injoignable ».
+Un diff terminé n'est jamais réessayé : une vraie dérive échoue du premier coup. Cas observé : le run
+#80 (14/10/2026), migrations appliquées mais étape de dérive en échec sur un timeout de connexion de
+pg-delta, run #81 entièrement vert.
+
+### Contrôle quotidien des migrations en attente
+
+Le workflow `Check Pending Supabase Migrations`
+(`.github/workflows/check-pending-supabase-migrations.yml`) s'exécute tous les jours à 07:10 UTC
+(et à la main via `workflow_dispatch`, uniquement depuis `main`). Il compare les fichiers
+`supabase/migrations/*.sql` de `main` avec `supabase_migrations.schema_migrations` en production, avec
+les mêmes secrets que le workflow de migration (environnement `Production` : `SUPABASE_DB_URL`,
+`SUPABASE_DB_SSL_CA`, SSL `verify-full`).
+
+- **Lecture seule** : il exécute `node scripts/apply-supabase-migrations.mjs --dry-run
+--fail-on-pending`, dont le seul accès à la base est un `SELECT` sur l'historique. Il n'applique
+  aucune migration et n'écrit rien.
+- **Vert** : l'historique de production est à jour.
+- **Rouge** : le journal et l'annotation `Pending Supabase migrations` listent les fichiers en attente.
+  GitHub envoie alors un e-mail de workflow en échec. Lancer `Apply Supabase Migrations`. Un échec peut
+  aussi signaler un historique incohérent (« Migration history integrity checks failed ») ou une base
+  injoignable après les reprises du script : le message du journal le précise.
+- Il ne collecte aucune donnée : il n'appartient pas à la liste des workflows de collecte de
+  `scripts/check-manual-data-collection.mjs`, qui reste inchangée.
+
 Le cron `/api/cron/smart-alerts` évalue les alertes avancées des utilisateurs ayant un accès
 Analyse actif, persiste les lignes dans `user_alert_matches`, puis met à jour
 `last_evaluated_at` et `last_match_count` sur chaque alerte.
