@@ -1,5 +1,7 @@
 import "server-only";
 import { z } from "zod";
+import { informationAgentAiProvider } from "@/lib/information-agent-ai-provider";
+import { assertNoInformationAgentCommercialMention } from "@/lib/information-agent-commercial-guard";
 import {
   informationAgentAddressOrigin,
   informationAgentControllerIdentity,
@@ -14,6 +16,7 @@ import {
   INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION,
   INFORMATION_AGENT_EMAIL_VARIABLES,
   INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS,
+  MIN_COMPLIANT_TEMPLATE_REVISION,
   informationAgentEmailTemplateContentSchema,
   parseInformationAgentEmailTemplateContent,
   renderInformationAgentEmailContent,
@@ -61,6 +64,12 @@ export async function getAdminInformationAgentEmailTemplateWorkspace(
 
   return {
     published,
+    publishedIgnored: published.revision < MIN_COMPLIANT_TEMPLATE_REVISION,
+    minCompliantRevision: MIN_COMPLIANT_TEMPLATE_REVISION,
+    fallback: {
+      ...structuredClone(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE),
+      revision: INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION,
+    },
     draft: templates.find((template) => template.status === "draft") ?? null,
     history: templates.filter((template) => template.status !== "draft"),
     variables: INFORMATION_AGENT_EMAIL_VARIABLES,
@@ -106,6 +115,19 @@ export async function getPublishedInformationAgentEmailTemplate(): Promise<{
       `[Information agent] Published email content template unavailable; using code fallback${
         error ? ` (${error.message})` : ""
       }.`,
+    );
+    return {
+      id: null,
+      revision: INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION,
+      content: structuredClone(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE),
+    };
+  }
+  // Un modèle publié avant la mise en conformité (présentation d'Immojudis, invitation à créer un
+  // compte…) n'est jamais utilisé : le modèle du code le remplace, sans écriture en base. Pour
+  // personnaliser le texte, republier un modèle depuis l'éditeur.
+  if (Number(data.revision) < MIN_COMPLIANT_TEMPLATE_REVISION) {
+    console.warn(
+      `[Information agent] Published email content template v${data.revision} predates v${MIN_COMPLIANT_TEMPLATE_REVISION}; using code template.`,
     );
     return {
       id: null,
@@ -165,16 +187,34 @@ async function saveDraft({
 async function publishDraft({ adminId, draftId }: { adminId: string; draftId: string }) {
   const { data: draft, error: draftError } = await supabaseAdmin
     .from("information_agent_email_templates")
-    .select("name,subject_template,blocks,status")
+    .select("name,subject_template,blocks,status,revision")
     .eq("id", draftId)
     .single();
   if (draftError) throw draftError;
   if (draft.status !== "draft") throw new Error("Ce template n’est plus un brouillon.");
-  parseInformationAgentEmailTemplateContent({
+  if (Number(draft.revision) < MIN_COMPLIANT_TEMPLATE_REVISION) {
+    throw new Error(
+      `Ce brouillon est antérieur à la révision ${MIN_COMPLIANT_TEMPLATE_REVISION} : un modèle publié avant elle serait ignoré. Appliquez la migration de mise en conformité des gabarits.`,
+    );
+  }
+  const content = parseInformationAgentEmailTemplateContent({
     name: draft.name,
     subjectTemplate: draft.subject_template,
     blocks: draft.blocks,
   });
+  // Aucune mention commerciale dans un modèle publié (objet et blocs, variables remplacées).
+  assertNoInformationAgentCommercialMention(
+    [
+      content.subjectTemplate,
+      ...content.blocks.map((block) => block.content),
+      renderInformationAgentEmailContent({
+        template: content,
+        values: Object.fromEntries(
+          INFORMATION_AGENT_EMAIL_VARIABLES.map((variable) => [variable.key, variable.example]),
+        ) as Record<(typeof INFORMATION_AGENT_EMAIL_VARIABLES)[number]["key"], string>,
+      }).bodyText,
+    ].join("\n\n"),
+  );
 
   const { error } = await supabaseAdmin.rpc("publish_information_agent_email_template", {
     p_admin_id: adminId,
@@ -190,6 +230,7 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
   const exampleOrigin = informationAgentAddressOrigin({
     sourceName: "licitor",
     sourceUrl: "https://www.licitor.com/annonce/exemple.html",
+    observedAt: new Date(),
   });
   const renderedContent = renderInformationAgentEmailContent({
     template,
@@ -208,9 +249,12 @@ async function previewTemplate(template: InformationAgentEmailTemplateContent) {
     legalFooter: {
       controllerName: controller?.name ?? "[Responsable de traitement à configurer]",
       controllerAddress: controller?.address ?? "[Adresse à configurer]",
-      contactEmail: controller?.contactEmail ?? null,
+      contactEmail: controller?.contactEmail ?? "[Contact à configurer]",
+      saleReference: "Appartement T3 à Bordeaux — Tribunal judiciaire de Bordeaux",
       addressOrigin: exampleOrigin.text,
       addressOriginUrl: exampleOrigin.url,
+      automatedSearch: exampleOrigin.automated,
+      aiProvider: informationAgentAiProvider(),
       privacyUrl: new URL("/privacy", previewAppUrl).toString(),
       optOutUrl: new URL(
         "/api/information-agent/opt-out?e=exemple&t=exemple",
