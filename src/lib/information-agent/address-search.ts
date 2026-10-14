@@ -368,7 +368,10 @@ export function isInformationAgentAddressSearchEnabled(
 }
 
 /** Seule l'origine de production consulte des sites tiers (jamais un aperçu ou un poste local). */
-export const INFORMATION_AGENT_ADDRESS_SEARCH_ORIGIN = "https://immojudis.com";
+export const INFORMATION_AGENT_ADDRESS_SEARCH_ORIGINS: readonly string[] = [
+  "https://immojudis.com",
+  "https://www.immojudis.com",
+];
 
 export const ADDRESS_SEARCH_DISABLED_NOTE =
   " La recherche automatique d’adresse est désactivée : indiquez l’adresse et la page publique où vous l’avez relevée.";
@@ -387,6 +390,43 @@ export function assertInformationAgentSearchedAddressAllowed(
 ): void {
   if (origin.automated && !isInformationAgentAddressSearchEnabled(env)) {
     throw new Error(ADDRESS_SEARCH_SEND_REFUSED_MESSAGE);
+  }
+}
+
+export const ADDRESS_NOT_RECORDED_MESSAGE =
+  "L’adresse retrouvée n’a pas pu être enregistrée : le brouillon a été annulé, réessayez.";
+export const AGENT_FOUND_ORIGIN_MISSING_MESSAGE =
+  "L’adresse retrouvée par la recherche automatique n’a plus de ligne de registre de l’agent : l’origine saisie à la main n’est pas admise, annulez ce brouillon et relancez la préparation.";
+
+/**
+ * Vrai quand le destinataire est celui que la recherche automatique a retrouvé pour ce brouillon
+ * (`metadata.contact_discovery.method` commence par `agent_search_`). Un destinataire modifié par
+ * l'administrateur suit la voie ordinaire (page publique saisie).
+ */
+export function isAgentFoundRecipient(
+  mission: { metadata: unknown; recipient_email: string },
+  recipientEmail: string,
+): boolean {
+  const method = (mission.metadata as { contact_discovery?: { method?: unknown } } | null)
+    ?.contact_discovery?.method;
+  return (
+    typeof method === "string" &&
+    method.startsWith("agent_search_") &&
+    normalizedEmail(mission.recipient_email) === normalizedEmail(recipientEmail)
+  );
+}
+
+/**
+ * Une adresse retrouvée par l'agent exige sa ligne de registre (`observed_by = agent`, autre annonce
+ * ou site du cabinet) : sans elle, ni URL saisie à la main ni saisie d'administrateur ne la
+ * « blanchissent » (libellé, mention de la recherche automatique et interrupteur contournés).
+ */
+export function assertAgentFoundOriginIntact(
+  agentFound: boolean,
+  origin: { kind: string | null; origin: { automated: boolean } },
+): void {
+  if (agentFound && !(origin.origin.automated && origin.kind !== "admin_entry")) {
+    throw new Error(AGENT_FOUND_ORIGIN_MISSING_MESSAGE);
   }
 }
 
@@ -434,10 +474,8 @@ export async function searchInformationAgentAddressForDraft({
   });
   if (skip) return none("");
   if (!isInformationAgentAddressSearchEnabled(env)) return none(ADDRESS_SEARCH_DISABLED_NOTE);
-  if (
-    (URL.canParse(input.siteOrigin) ? new URL(input.siteOrigin).origin : "") !==
-    INFORMATION_AGENT_ADDRESS_SEARCH_ORIGIN
-  ) {
+  const origin = URL.canParse(input.siteOrigin) ? new URL(input.siteOrigin).origin : "";
+  if (!INFORMATION_AGENT_ADDRESS_SEARCH_ORIGINS.includes(origin)) {
     return none(ADDRESS_SEARCH_NOT_PRODUCTION_NOTE);
   }
   const outcome = await searchInformationAgentAddress(input);

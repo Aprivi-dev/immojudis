@@ -401,6 +401,137 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     }
   });
 
+  describe("adresse retrouvée par l'agent : l'origine vient du seul registre", () => {
+    const MISSING =
+      "L’adresse retrouvée par la recherche automatique n’a plus de ligne de registre de l’agent";
+    const asAgentFound = () => {
+      db.mission = {
+        ...db.mission,
+        metadata: {
+          ...(db.mission.metadata as Record<string, unknown>),
+          contact_discovery: { method: "agent_search_firm_website" },
+        },
+      };
+    };
+    const manualUrl = "https://cabinet-dupont.example.test/contact";
+
+    beforeEach(() => {
+      vi.stubEnv("INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", "true");
+      asAgentFound();
+    });
+
+    it("sans ligne de registre, une URL saisie à la main ne remplace pas l'origine", async () => {
+      db.contacts = [];
+      const result = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: { ...content, recipientOriginUrl: manualUrl },
+      });
+      expect(result.addressOrigin.known).toBe(false);
+      expect(result.blockers).toContain(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+      expect(result.blockers.join(" ")).toContain(MISSING);
+    });
+
+    it("une ligne de saisie d'administrateur ne remplace pas non plus la ligne de l'agent", async () => {
+      db.contacts = [
+        {
+          normalized_email: "cabinet@example.test",
+          scope_sale_id: SALE_ID,
+          source_kind: "admin_entry",
+          source_url: manualUrl,
+          observed_at: "2026-10-14T10:00:00Z",
+          observed_by: "admin",
+          opposition_status: "unknown",
+          bounce_status: "none",
+        },
+      ];
+      const result = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: { ...content, recipientOriginUrl: manualUrl },
+      });
+      expect(result.blockers.join(" ")).toContain(MISSING);
+    });
+
+    it("refuse l'envoi dans les deux cas, sans rien écrire", async () => {
+      db.contacts = [];
+      const { fingerprint } = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: { ...content, recipientOriginUrl: manualUrl },
+      });
+      await expect(
+        runAdminInformationAgentAction({
+          auth: ADMIN,
+          input: {
+            action: "approve_and_send",
+            approvalConfirmed: true,
+            ...content,
+            recipientOriginUrl: manualUrl,
+            previewFingerprint: fingerprint!,
+          },
+        }),
+      ).rejects.toThrow(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+      expect(db.writes).toEqual([]);
+      expect(send).not.toHaveBeenCalled();
+
+      db.contacts = [
+        {
+          normalized_email: "cabinet@example.test",
+          scope_sale_id: SALE_ID,
+          source_kind: "admin_entry",
+          source_url: manualUrl,
+          observed_at: "2026-10-14T10:00:00Z",
+          observed_by: "admin",
+          opposition_status: "unknown",
+          bounce_status: "none",
+        },
+      ];
+      await expect(
+        runAdminInformationAgentAction({
+          auth: ADMIN,
+          input: {
+            action: "approve_and_send",
+            approvalConfirmed: true,
+            ...content,
+            recipientOriginUrl: manualUrl,
+            previewFingerprint: fingerprint!,
+          },
+        }),
+      ).rejects.toThrow(MISSING);
+      expect(db.writes).toEqual([]);
+    });
+
+    it("avec sa ligne de registre, l'aperçu est valable (source agent, mention de la recherche)", async () => {
+      db.contacts = [
+        {
+          normalized_email: "cabinet@example.test",
+          scope_sale_id: SALE_ID,
+          source_kind: "firm_website",
+          source_url: "https://www.cabinet-dupont.test/contact",
+          observed_at: "2026-10-14T10:00:00Z",
+          observed_by: "agent",
+          opposition_status: "unknown",
+          bounce_status: "none",
+        },
+      ];
+      const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+      expect(result.blockers).toEqual([]);
+      expect(result.addressOrigin.automated).toBe(true);
+    });
+
+    it("un destinataire modifié par l'administrateur suit la voie ordinaire (page publique saisie)", async () => {
+      db.contacts = [];
+      const result = await previewAdminInformationAgentMission({
+        auth: ADMIN,
+        input: {
+          ...content,
+          recipientEmail: "autre@example.test",
+          recipientOriginUrl: manualUrl,
+        },
+      });
+      expect(result.blockers.join(" ")).not.toContain(MISSING);
+      expect(result.addressOrigin.known).toBe(true);
+    });
+  });
+
   describe("interrupteur de la recherche automatique d'adresse", () => {
     const SWITCH_OFF =
       "La recherche automatique d’adresse est désactivée : cette adresse ne peut pas être utilisée pour un envoi.";

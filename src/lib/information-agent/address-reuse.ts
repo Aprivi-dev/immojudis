@@ -231,6 +231,8 @@ export async function findReusableInformationAgentAddress({
           .neq("id", saleId)
           .eq("catalogue_quarantined", false)
           .ilike("lawyer_contact", phoneLikePattern(phone))
+          // Les annonces sans adresse ne doivent pas consommer les 200 lignes lues.
+          .ilike("lawyer_contact", "%@%")
           .or(`last_seen_at.gte.${since},sale_date.gte.${since}`)
           .order("last_seen_at", { ascending: false, nullsFirst: false })
           .limit(MAX_ROWS),

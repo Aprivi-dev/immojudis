@@ -61,13 +61,37 @@ function parseGroups(text: string): { groups: RobotsGroup[]; oversized: boolean 
 }
 
 /**
+ * Normalisation des pourcentages (RFC 9309, section 2.2.2), des deux côtés : un caractère non-ASCII
+ * devient son codage UTF-8, un octet codé est écrit en majuscules, et un caractère non réservé codé
+ * (`%7E` pour `~`) est décodé. `%2F` reste codé : il ne désigne pas le séparateur de chemin `/`.
+ */
+/** Codage UTF-8 d'un caractère ; un demi-caractère isolé (document hostile) devient U+FFFD. */
+function encodeNonAscii(char: string): string {
+  try {
+    return encodeURIComponent(char);
+  } catch {
+    return "%EF%BF%BD";
+  }
+}
+
+export function normalizeRobotsPercent(value: string): string {
+  return value
+    .replace(/\P{ASCII}/gu, encodeNonAscii)
+    .replace(/%([0-9a-fA-F]{2})/g, (_match, hex: string) => {
+      const char = String.fromCharCode(parseInt(hex, 16));
+      return /[A-Za-z0-9\-._~]/.test(char) ? char : `%${hex.toUpperCase()}`;
+    });
+}
+
+/**
  * Le motif (avec `*` et `$` final éventuel) correspond-il au début du chemin ? Sans `$`, le motif est
  * un préfixe ; avec `$`, il doit couvrir le chemin entier. Appariement glob itératif : en cas
  * d'échec, retour au dernier `*` seulement, sans récursion ni retour sur arbre.
  */
-export function robotsPatternMatches(rawPattern: string, path: string): boolean {
+export function robotsPatternMatches(rawPattern: string, rawPath: string): boolean {
+  const path = normalizeRobotsPercent(rawPath);
   const anchored = rawPattern.endsWith("$");
-  const pattern = anchored ? rawPattern.slice(0, -1) : rawPattern;
+  const pattern = normalizeRobotsPercent(anchored ? rawPattern.slice(0, -1) : rawPattern);
   let p = 0;
   let s = 0;
   let star = -1;

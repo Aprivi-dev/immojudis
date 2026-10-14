@@ -483,6 +483,23 @@ describe("interrupteur INFORMATION_AGENT_ADDRESS_SEARCH_ENABLED", () => {
     expect(firm.search).toHaveBeenCalledOnce();
   });
 
+  it("accepte l'origine de production avec ou sans www", async () => {
+    firm.search.mockResolvedValue(found);
+    for (const siteOrigin of ["https://immojudis.com", "https://www.immojudis.com"]) {
+      const result = await draftSearch(ENABLED, { siteOrigin });
+      expect(result.candidate, siteOrigin).not.toBeNull();
+    }
+    // L'origine est comparée exactement : ni sous-domaine tiers ni autre schéma.
+    for (const siteOrigin of [
+      "https://evil.immojudis.com",
+      "https://immojudis.com.evil.example",
+      "http://www.immojudis.com",
+      "https://immojudis.com:8443",
+    ]) {
+      expect((await draftSearch(ENABLED, { siteOrigin })).candidate, siteOrigin).toBeNull();
+    }
+  });
+
   it("refuse la recherche hors de l'origine de production, même interrupteur actif", async () => {
     reuse.find.mockResolvedValue(reusable);
     firm.search.mockResolvedValue(found);
