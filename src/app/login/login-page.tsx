@@ -32,6 +32,7 @@ import {
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { postAuthDestination } from "@/lib/onboarding";
+import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
 import { userMessage } from "@/lib/user-messages";
 
@@ -107,6 +108,8 @@ const modeCopy: Record<
     submit: "Demander mon accès pro",
   },
 };
+
+const UNLOCKED_ITEMS = unlockedItemsText({ ceiling: true, statistics: true });
 
 export function LoginPage() {
   const { user, profile, loading } = useAuth();
@@ -283,9 +286,10 @@ export function LoginPage() {
               Préparez votre achat aux enchères.
             </p>
             <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
-              Découverte ouvre gratuitement le catalogue. Analyse ajoute le calcul de votre enchère
-              plafond, les comparables et les alertes, sur abonnement résiliable. Les professionnels
-              déposent et suivent leurs annonces dans leur espace.
+              Découverte ouvre gratuitement le catalogue et, chaque mois, {MONTHLY_SALE_UNLOCKS}{" "}
+              ventes en détail ({UNLOCKED_ITEMS}). Analyse ouvre toutes les ventes, avec les
+              comparables, les alertes quotidiennes et les exports, sur abonnement résiliable. Les
+              professionnels déposent et suivent leurs annonces dans leur espace.
             </p>
 
             <div className="mt-10 grid gap-3">

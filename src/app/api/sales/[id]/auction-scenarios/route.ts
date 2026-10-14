@@ -7,10 +7,10 @@ import {
 import { PublicApiError } from "@/lib/api-errors";
 import { apiRouteError } from "@/lib/api-observability";
 import { getAuctionScenarios } from "@/lib/auction-scenarios.server";
-import { assertFeatureEntitlement } from "@/lib/property-reports";
+import { assertFeatureEntitlementVia } from "@/lib/property-reports";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
-import { DETAIL_VIEW } from "@/lib/sale-views";
+import { DETAIL_VIEW, DISCOVERY_VIEW } from "@/lib/sale-views";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 
 const saleIdSchema = z.string().uuid();
@@ -18,16 +18,18 @@ const saleIdSchema = z.string().uuid();
 /**
  * « Scénarios d'enchères » (offre Analyse) : chances de chaque issue et
  * fourchette de prix final, d'après les trois dernières années d'adjudications
- * du tribunal. The sale must be visible to the caller first.
+ * du tribunal. The sale must be visible to the caller first. A Découverte account that unlocked
+ * this sale (« 3 déblocages par mois ») reads it too, for this sale only.
  */
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const saleId = saleIdSchema.parse((await context.params).id);
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
-    await assertFeatureEntitlement(
+    const { door } = await assertFeatureEntitlementVia(
       auth,
       "property.advancedBidScenarios",
       "Les scénarios d’enchères sont réservés à l’offre Analyse.",
+      { saleId },
     );
     await enforceUserRateLimit({
       userId: auth.userId,
@@ -35,7 +37,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       ...RATE_LIMIT_POLICIES.compute,
     });
     const { data: sale, error } = await auth.supabase
-      .from(DETAIL_VIEW)
+      .from(door === "plan" ? DETAIL_VIEW : DISCOVERY_VIEW)
       .select(
         "id, tribunal, tribunal_code, starting_price_eur, property_type, habitable_surface_m2, app_surface_m2",
       )

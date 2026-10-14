@@ -46,7 +46,12 @@ const MAX_CLIENT_CHUNK_BYTES = 1_875_000;
 // total; the home page itself went DOWN to 525,931 bytes once the consent strings were
 // split from the zod schema. The ceiling is raised once, to 5,400,000; every route-level
 // initial-load budget below is unchanged.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_400_000;
+//
+// « 3 déblocages par mois » (PR #243) adds the unlock panel, the unlocked sale detail view
+// and the reduced ceiling estimate to the sale detail chunks. Measured 5,402,556 bytes in
+// total. The ceiling is raised once, to 5,450,000; every route-level initial-load budget
+// below is unchanged and still passes.
+const MAX_TOTAL_CLIENT_JS_BYTES = 5_450_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
