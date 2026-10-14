@@ -29,7 +29,10 @@ describe("RankingExplanation", () => {
     // 1. position sur la carte, 2. quantité d'informations de la fiche, 3. date de vente.
     expect(items[0]).toContain("position sur la carte est connue passent avant les autres");
     expect(items[1]).toContain("deux groupes selon la quantité d’informations");
-    expect(items[1]).toContain("niveau « décision prête » ou plus");
+    expect(items[1]).toContain(
+      "« bien renseignées » (score de complétude d’au moins 40 sur 100) vient en premier",
+    );
+    expect(items[1]).not.toContain("décision prête");
     expect(items[2]).toContain("la vente la plus proche est affichée en premier");
   });
 

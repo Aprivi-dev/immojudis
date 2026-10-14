@@ -19,6 +19,8 @@ describe("WellInformedBadge", () => {
     const note = badge.querySelector(".sr-only");
     expect(note?.textContent).toContain(WELL_INFORMED_BADGE_NOTE);
     expect(WELL_INFORMED_BADGE_NOTE).toContain("Fiche détaillée");
+    expect(WELL_INFORMED_BADGE_NOTE).toContain("score de complétude d’au moins 40 sur 100");
+    expect(WELL_INFORMED_BADGE_NOTE).not.toContain("décision prête");
     expect(WELL_INFORMED_BADGE_NOTE).toContain("pas leur exactitude");
     expect(WELL_INFORMED_BADGE_NOTE).toContain("ni vérification ni garantie sur le bien");
     expect(WELL_INFORMED_BADGE_NOTE).toContain("pièces officielles de la vente");

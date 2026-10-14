@@ -4,7 +4,7 @@ import type { AuctionSale } from "@/lib/types";
 
 /** Portée du repère, lue par les lecteurs d'écran (un `title` serait invisible au clavier et au tactile). */
 export const WELL_INFORMED_BADGE_NOTE =
-  "Fiche détaillée : cette annonce réunit un grand nombre des informations que nous recherchons. Ce repère mesure la quantité d’informations, pas leur exactitude : il ne vaut ni vérification ni garantie sur le bien. Reportez-vous aux pièces officielles de la vente.";
+  "Fiche détaillée : cette annonce a un score de complétude d’au moins 40 sur 100, c’est-à-dire qu’elle réunit une part importante des informations que nous recherchons. Ce repère mesure la quantité d’informations, pas leur exactitude : il ne vaut ni vérification ni garantie sur le bien. Reportez-vous aux pièces officielles de la vente.";
 
 /**
  * Pastille des cartes de résultats : l'annonce est dans le palier haut du classement par

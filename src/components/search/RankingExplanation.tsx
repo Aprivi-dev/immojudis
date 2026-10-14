@@ -9,8 +9,8 @@ export const RANKING_PAGE_PATH = "/classement-des-annonces";
  * priorité :
  *   1. les ventes dont la position sur la carte est connue (latitude ET longitude non nulles,
  *      `coordinates_rank`) passent avant les autres ;
- *   2. le palier de complétude de la fiche (`listing-completeness-ranking.ts`) : palier haut si la
- *      classification publiée de la fiche est « décision prête » ou « riche » ;
+ *   2. le palier de complétude de la fiche (`listing-completeness-ranking.ts`) : palier haut si son
+ *      score de complétude est d'au moins 40 sur 100 (`highTierMinScore`) ;
  *   3. la date de vente, la plus proche d'abord ;
  *   4. l'identifiant, uniquement pour garder un ordre stable d'une page à l'autre (technique,
  *      sans effet visible, non mentionné).
@@ -18,12 +18,16 @@ export const RANKING_PAGE_PATH = "/classement-des-annonces";
  */
 export const RANKING_EXPLANATION_TITLE = "Comment sont classées les annonces ?";
 
+/** Définition du score de complétude, affichée sur la page publique du classement. */
+export const COMPLETENESS_SCORE_DEFINITION =
+  "Le score de complétude mesure, sur 100, la part des informations utiles renseignées dans la fiche Immojudis, appuyées par une source ; il ne juge ni l’intérêt ni la valeur du bien.";
+
 export const RANKING_EXPLANATION_INTRO =
   "Par défaut, les annonces sont classées selon trois critères, dans cet ordre.";
 
 export const RANKING_EXPLANATION_STEPS = [
   "Les annonces dont la position sur la carte est connue passent avant les autres.",
-  "Elles sont réparties en deux groupes selon la quantité d’informations renseignées dans la fiche Immojudis (par exemple photos, surface, performance énergétique, occupation, visites, documents, description, mise à prix, localisation, contact), appréciée selon le type de bien et la procédure. Le groupe des annonces « bien renseignées » vient en premier : ce sont les fiches dont le bilan d’informations atteint le niveau « décision prête » ou plus.",
+  "Elles sont réparties en deux groupes selon la quantité d’informations renseignées dans la fiche Immojudis (par exemple photos, surface, performance énergétique, occupation, visites, documents, description, mise à prix, localisation, contact), appréciée selon le type de bien et la procédure. Le groupe des annonces « bien renseignées » (score de complétude d’au moins 40 sur 100) vient en premier.",
   "Dans chaque groupe, la vente la plus proche est affichée en premier.",
 ] as const;
 
