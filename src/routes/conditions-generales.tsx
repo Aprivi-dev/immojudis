@@ -247,15 +247,24 @@ export function TermsPage() {
 
           <TermsSection title="10. Classement, référencement et mise en avant">
             <p>
-              Par défaut, les annonces sont classées selon la quantité d’informations renseignées
-              dans leur fiche, puis par date de vente, sans qu’aucune rémunération puisse améliorer
-              le rang d’une annonce. Les annonces proviennent de sources publiques et
-              d’organisateurs de ventes : Immojudis ne les rédige pas et ne garantit pas leur
-              exactitude. Une vente passée, annulée ou retirée n’est plus affichée dès que cette
-              information est connue d’Immojudis. Un cabinet d’avocats peut financer un encart
-              signalé « Publicité · Sponsorisé » pour une zone géographique ; cet encart ne modifie
-              pas l’ordre des annonces et n’est ni une recommandation, ni une notation, ni une
-              garantie de résultat. Le détail figure sur la page{" "}
+              Par défaut, les annonces dont la position sur la carte est connue passent avant les
+              autres. Elles sont ensuite classées selon la quantité d’informations renseignées dans
+              leur fiche, puis par date de vente la plus proche. Aucune rémunération ne peut
+              améliorer le rang d’une annonce.
+            </p>
+            <p className="mt-3">
+              Dans l’annuaire des avocats, les cabinets qui rémunèrent Immojudis, ou bénéficient
+              d’un essai gratuit de cette offre, sont affichés en premier dans une section
+              distincte, signalés « Publicité · Sponsorisé » ; ils ne sont ni recommandés ni notés.
+              Un encart d’un cabinet d’avocats, signalé de la même façon, peut aussi apparaître dans
+              la liste des ventes pour une zone géographique ; il ne modifie pas l’ordre des
+              annonces et n’est ni une recommandation, ni une notation, ni une garantie de résultat.
+            </p>
+            <p className="mt-3">
+              Les annonces proviennent de sources publiques et d’organisateurs de ventes, ou de
+              professionnels disposant d’un compte validé : Immojudis ne les rédige pas et ne
+              garantit pas leur exactitude. Une vente passée, annulée ou retirée n’est plus affichée
+              dès que cette information est connue d’Immojudis. Le détail figure sur la page{" "}
               <Link to="/classement-des-annonces" className="text-gold underline">
                 Comment sont classées les annonces ?
               </Link>

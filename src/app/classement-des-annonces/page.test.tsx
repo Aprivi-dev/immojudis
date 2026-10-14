@@ -58,6 +58,41 @@ describe("page « Comment sont classées les annonces ? »", () => {
     expect(text).not.toContain("Quel que soit le tri");
   });
 
+  it("décrit le comportement exact de chaque tri, y compris « chambres » et « distance »", () => {
+    render(<Page />);
+    const text = screen.getByRole("region", { name: "Les autres tris" }).textContent ?? "";
+    expect(text).toContain(
+      "Pour les tris par date, prix, surface et score d’investissement, les annonces dont la position sur la carte est connue sont affichées avant les autres ; le critère choisi les ordonne ensuite, et les annonces auxquelles l’information manque viennent en dernier.",
+    );
+    expect(text).toContain("Nombre de chambres : les pages de résultats sont constituées");
+    expect(text).toContain(
+      "dans chaque page, les annonces sont rangées de celles qui comptent le plus de chambres",
+    );
+    expect(text).toContain("à égalité, l’ordre de la page est conservé");
+    expect(text).toContain(
+      "Distance, à partir d’une adresse que vous saisissez : les annonces les plus proches de cette adresse d’abord ; celles dont la position est inconnue viennent en dernier.",
+    );
+  });
+
+  it("dit que les professionnels validés peuvent transmettre une annonce, contrôlée, sans priorité", () => {
+    render(<Page />);
+    const origin = screen.getByRole("region", { name: "D’où viennent les annonces ?" });
+    expect(origin.textContent).toContain(
+      "Les professionnels (avocats, notaires, commissaires de justice, tribunaux) disposant d’un compte professionnel validé peuvent aussi transmettre une annonce. Elle est contrôlée par l’équipe avant publication. Cette transmission ne donne aucune priorité de classement à l’annonce.",
+    );
+  });
+
+  it("énonce les motifs de retrait réellement appliqués", () => {
+    render(<Page />);
+    const end = screen.getByRole("region", {
+      name: "Quand une annonce n’est-elle plus affichée ?",
+    });
+    expect(end.textContent).toContain("retirée par sa source");
+    expect(end.textContent).toContain(
+      "retirée du catalogue lorsque l’équipe constate une erreur de publication ou une information inexacte",
+    );
+  });
+
   it("explique que le repère « bien renseignée » mesure la quantité, pas l'exactitude", () => {
     render(<Page />);
     const section = screen.getByRole("region", { name: "Le repère « Annonce bien renseignée »" });
@@ -71,7 +106,13 @@ describe("page « Comment sont classées les annonces ? »", () => {
     const text = section.textContent ?? "";
     expect(text).toContain("le cabinet paie Immojudis");
     expect(text).toContain("zone géographique");
-    expect(text).toContain("Les annonces ne sont ni avancées, ni reculées");
+    expect(text).toContain(
+      "C’est une publicité : le cabinet paie Immojudis, ou bénéficie d’un essai gratuit de cette offre payante, pour être présenté dans la zone géographique de votre recherche.",
+    );
+    expect(text).toContain(
+      "Cet encart n’est ni une recommandation, ni une notation, ni une garantie de résultat. Les annonces ne sont ni avancées ni reculées par cet encart.",
+    );
+    expect(text).not.toContain("apparaître ici");
     expect(
       within(section)
         .getByRole("link", { name: "Comment sont classés les avocats ?" })

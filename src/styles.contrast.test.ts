@@ -34,6 +34,16 @@ describe("contraste des jetons dorés (WCAG AA)", () => {
     expect(contrastRatio(token("gold-text"), background)).toBeGreaterThanOrEqual(4.5);
   });
 
+  it.each([
+    ["blanc", "#ffffff"],
+    ["crème", token("surface")],
+    ["gris clair", token("surface-muted")],
+    ["bleu pâle", token("surface-tint")],
+  ])("le texte secondaire (12 px) tient 4,5:1 sur %s", (_name, background) => {
+    expect(contrastRatio(token("ink-soft"), background)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(token("gold-text"), background)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it("le texte marine sur l'or des boutons tient 4,5:1", () => {
     expect(contrastRatio(token("brand-navy"), token("gold"))).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(token("brand-navy"), "#d9a35f")).toBeGreaterThanOrEqual(4.5);

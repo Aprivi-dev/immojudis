@@ -20,7 +20,7 @@ export const LEGAL_DOCUMENTS = {
   },
   terms: {
     version: "2026-10-14.1",
-    sha256: "24d08d2b82550102791f21deef0ccc2f9fe8d6da2dab9924eb1753f8329f2798",
+    sha256: "a3fb38525eabac9d62f0fffb2153a55a92081672d897dbb06fbebbb0c27e2a09",
     effectiveDate: RANKING_TERMS_EFFECTIVE_DATE,
     path: "/conditions-generales",
   },
