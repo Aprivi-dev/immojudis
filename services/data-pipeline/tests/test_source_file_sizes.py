@@ -71,6 +71,7 @@ def test_exceptions_are_ceilings_that_only_shrink(path: str) -> None:
     [
         "column_sets",
         "fact_claim_rows",
+        "internal_contacts",
         "known_sale_projection",
         "pdf_checkpoint_rules",
         "pdf_persistence_rows",

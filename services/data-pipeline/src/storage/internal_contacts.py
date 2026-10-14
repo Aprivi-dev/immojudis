@@ -13,6 +13,11 @@ Règles, identiques pour la transaction Postgres et pour PostgREST :
 * à chaque recollecte, une ligne ``sale_listing`` existante est rafraîchie (``observed_at``, ``source_url``,
   ``last_seen_at``), ce qui repousse la purge de 21 jours ; une adresse non recollectée et non utilisée est
   purgée comme prévu. Une ligne d'un autre type (saisie d'administrateur, annuaire…) n'est jamais réécrite ;
+* ni écriture ni rafraîchissement pour une vente dont l'audience est passée, ou retirée, annulée ou
+  reportée sans nouvelle date (``registers_internal_contacts``) : l'adresse n'est donc plus entretenue
+  après la vente et la purge de 21 jours (hebdomadaire) la supprime au plus tard 28 jours après la
+  dernière consultation de l'annonce ;
+* ``created_at`` n'est jamais réécrit : il garde la date du premier relevé ;
 * aucune adresse n'est journalisée : l'appelant ne consigne que des compteurs et le type de l'erreur.
 """
 
@@ -24,6 +29,7 @@ from typing import Any
 
 import httpx
 
+from src.admission import is_catalogue_expired
 from src.models import AuctionSale
 from src.storage.fact_claim_rows import _sale_ids_for_connection
 from src.storage.postgrest_helpers import _postgrest_in_filter, _rest_headers
@@ -39,7 +45,9 @@ SOURCE_KIND = "sale_listing"
 OBSERVED_BY = "agent"
 OBSERVATION_CHANNEL = "licitor_cloudflare_decoded"
 REST_TIMEOUT = httpx.Timeout(60.0, connect=30.0)
-OPPOSED_LIMIT = 10000
+PAGE_SIZE = 1000  # plafond de lignes d'une réponse PostgREST
+MAX_PAGES = 50
+SALE_ID_CHUNK = 50
 
 _INSERT_SQL = """
 insert into public.information_agent_contacts
@@ -70,6 +78,8 @@ def contact_rows(sales: list[AuctionSale], sale_ids: dict[str, str], now: str) -
             continue
         for contact in sale.internal_contacts:
             email = contact["email"]
+            # La source de l'adresse (Licitor) peut différer de celle de la vente survivante d'une fusion.
+            source_name = contact.get("source_name") or sale.source_name
             source_url = contact.get("source_url") or sale.source_url
             rows.append(
                 {
@@ -77,14 +87,14 @@ def contact_rows(sales: list[AuctionSale], sale_ids: dict[str, str], now: str) -
                     "email": email,
                     "name": (contact.get("name") or "")[:180] or None,
                     "role": contact.get("role") or "lawyer",
-                    "source_name": sale.source_name,
+                    "source_name": source_name,
                     "source_url": source_url,
                     "now": now,
                     "provenance": [
                         {
                             "kind": "source_block",
                             "field": "source_blocks.avocats",
-                            "source_name": sale.source_name,
+                            "source_name": source_name,
                             "source_url": source_url,
                         }
                     ],
@@ -94,28 +104,87 @@ def contact_rows(sales: list[AuctionSale], sale_ids: dict[str, str], now: str) -
     return rows
 
 
+_CLOSED_STATUSES = frozenset({"cancelled", "withdrawn", "past", "adjudicated"})
+
+
+def registers_internal_contacts(sale: AuctionSale) -> bool:
+    """Vente dont l'adresse est encore entretenue : audience à venir, ni retirée ni annulée.
+
+    Une vente reportée sans nouvelle date n'est pas entretenue ; une audience passée non plus
+    (``is_catalogue_expired`` : même règle que le catalogue, heure ou jour de l'audience).
+    """
+    status = (sale.status or "").lower()
+    if status in _CLOSED_STATUSES or (status == "postponed" and sale.sale_date is None):
+        return False
+    return not is_catalogue_expired(sale)
+
+
 def sales_with_internal_contacts(sales: list[AuctionSale]) -> list[AuctionSale]:
-    return [sale for sale in sales if sale.internal_contacts]
+    return [sale for sale in sales if sale.internal_contacts and registers_internal_contacts(sale)]
 
 
 def write_internal_contacts_connection(connection: Any, sales: list[AuctionSale], now: str) -> int:
-    """Écrit dans la transaction de publication, dans un point de sauvegarde (jamais d'échec propagé).
+    """Écrit dans la transaction de publication, un point de sauvegarde par ligne (jamais d'échec propagé).
 
-    Un échec de ce bloc annule seulement ses propres lignes ; la vente et la collecte continuent.
+    La relecture des ids et chaque ligne ont leur propre point de sauvegarde : une erreur annule seulement
+    ce point ; la transaction de publication (la vente et le reste) n'est jamais abandonnée. Les erreurs
+    sont comptées et journalisées par type, sans adresse.
     """
     eligible = sales_with_internal_contacts(sales)
     if not eligible or Jsonb is None:
         return 0
-    rows = contact_rows(eligible, _sale_ids_for_connection(connection, eligible), now)
-    written = 0
-    with connection.transaction():
-        for row in rows:
-            connection.execute(
-                _INSERT_SQL,
-                {**row, "provenance": Jsonb(row["provenance"]), "metadata": Jsonb(row["metadata"])},
-            )
+    try:
+        with connection.transaction():
+            sale_ids = _sale_ids_for_connection(connection, eligible)
+    except Exception as exc:  # noqa: BLE001 - la vente reste publiée
+        LOGGER.warning("Internal contacts registry lookup skipped: error=%s sales=%s", type(exc).__name__, len(eligible))
+        return 0
+    written = failed = 0
+    last_error = ""
+    for row in contact_rows(eligible, sale_ids, now):
+        try:
+            with connection.transaction():
+                connection.execute(
+                    _INSERT_SQL,
+                    {**row, "provenance": Jsonb(row["provenance"]), "metadata": Jsonb(row["metadata"])},
+                )
             written += 1
+        except Exception as exc:  # noqa: BLE001 - une ligne en échec n'arrête ni les autres ni la collecte
+            failed += 1
+            last_error = type(exc).__name__
+    if failed:
+        LOGGER.warning("Internal contacts registry rows skipped: error=%s failed=%s written=%s", last_error, failed, written)
     return written
+
+
+def _read_pages(
+    get: Callable[..., httpx.Response],
+    endpoint: str,
+    params: dict[str, str],
+    api_key: str,
+    check: Callable[[httpx.Response], httpx.Response],
+) -> list[dict[str, Any]]:
+    """Toutes les lignes d'une lecture PostgREST, par pages de ``PAGE_SIZE`` triées par id.
+
+    PostgREST plafonne une réponse : sans pagination une lecture tronquée passerait pour complète. Un
+    nombre de pages au-delà de ``MAX_PAGES`` lève une erreur (rien n'est alors écrit).
+    """
+    rows: list[dict[str, Any]] = []
+    for page in range(MAX_PAGES):
+        batch = check(
+            get(
+                endpoint,
+                params={**params, "order": "id", "limit": str(PAGE_SIZE), "offset": str(page * PAGE_SIZE)},
+                headers=_rest_headers(api_key, prefer="count=none"),
+                timeout=REST_TIMEOUT,
+            )
+        ).json()
+        if not isinstance(batch, list):
+            raise RuntimeError("registre des contacts : réponse inattendue")
+        rows.extend(item for item in batch if isinstance(item, dict))
+        if len(batch) < PAGE_SIZE:
+            return rows
+    raise RuntimeError("registre des contacts : trop de pages, aucune adresse écrite")
 
 
 def write_internal_contacts_rest(
@@ -142,34 +211,27 @@ def write_internal_contacts_rest(
         return response
 
     # Aucune adresse dans une URL : le client HTTP journalise les URL complètes. Les oppositions sont donc
-    # lues en entier (liste courte) et les lignes existantes par vente.
-    opposed_rows = check(
-        get(
-            endpoint,
-            params={"select": "normalized_email", "opposition_status": "eq.opposed", "limit": str(OPPOSED_LIMIT)},
-            headers=_rest_headers(api_key, prefer="count=none"),
-            timeout=REST_TIMEOUT,
+    # lues en entier (pagination) et les lignes existantes par lots de ventes.
+    opposed = {
+        str(item.get("normalized_email"))
+        for item in _read_pages(
+            get, endpoint, {"select": "normalized_email", "opposition_status": "eq.opposed"}, api_key, check
         )
-    ).json()
-    if not isinstance(opposed_rows, list) or len(opposed_rows) >= OPPOSED_LIMIT:
-        raise RuntimeError("liste d'opposition incomplète : aucune adresse écrite")
-    opposed = {str(item.get("normalized_email")) for item in opposed_rows if isinstance(item, dict)}
-    existing_rows = check(
-        get(
-            endpoint,
-            params={
-                "select": "id,scope_sale_id,normalized_email,source_kind,opposition_status",
-                "scope_sale_id": _postgrest_in_filter(sorted({row["sale_id"] for row in rows})),
-            },
-            headers=_rest_headers(api_key, prefer="count=none"),
-            timeout=REST_TIMEOUT,
-        )
-    ).json()
-    existing = {
-        (str(item.get("scope_sale_id")), str(item.get("normalized_email"))): item
-        for item in (existing_rows if isinstance(existing_rows, list) else [])
-        if isinstance(item, dict)
     }
+    sale_ids = sorted({row["sale_id"] for row in rows})
+    existing: dict[tuple[str, str], dict[str, Any]] = {}
+    for start in range(0, len(sale_ids), SALE_ID_CHUNK):
+        for item in _read_pages(
+            get,
+            endpoint,
+            {
+                "select": "id,scope_sale_id,normalized_email,source_kind,opposition_status",
+                "scope_sale_id": _postgrest_in_filter(sale_ids[start : start + SALE_ID_CHUNK]),
+            },
+            api_key,
+            check,
+        ):
+            existing[(str(item.get("scope_sale_id")), str(item.get("normalized_email")))] = item
     inserts: list[dict[str, Any]] = []
     refreshes: list[dict[str, Any]] = []
     for row in rows:

@@ -349,12 +349,21 @@ describe("admin information-agent sale loader", () => {
     expect(JSON.stringify(visible)).not.toContain("maitre@exemple.test");
   });
 
-  it("fails closed when the internal registry cannot be read", async () => {
-    setup({ sale: quarantinedInternalSale, registryError: { code: "42501", message: "denied" } });
-
-    await expect(loadAdminInformationAgentSale({ auth, saleId })).rejects.toMatchObject({
-      code: "42501",
+  it("degrades to no registry address, without leaking anything, when the registry cannot be read", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    setup({
+      sale: quarantinedInternalSale,
+      registryError: { code: "42501", message: "denied for maitre@exemple.test" },
     });
+
+    const sale = await loadAdminInformationAgentSale({ auth, saleId });
+
+    expect(sale.registry_contacts).toEqual([]);
+    expect(sale.id).toBe(saleId);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("maitre@exemple.test");
+    expect(JSON.stringify(warn.mock.calls)).toContain("42501");
+    warn.mockRestore();
   });
 
   it("refuses a non-admin before touching the service-role data", async () => {

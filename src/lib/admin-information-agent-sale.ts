@@ -156,7 +156,8 @@ export async function loadAdminInformationAgentSale({
 /**
  * Adresses que le pipeline relève pour l'agent sans les publier (email Licitor décodé) : lignes du
  * registre interne de cette vente, de type `sale_listing`, ni opposées ni en rebond permanent. Le
- * registre n'est lisible que par le service ; ces adresses ne passent par aucune vue publique.
+ * registre n'est lisible que par le service ; ces adresses ne passent par aucune vue publique. Une
+ * erreur de lecture donne une liste vide (avertissement sans adresse), jamais un échec du brouillon.
  */
 async function loadAdminInformationAgentRegistryContacts(
   saleId: string,
@@ -171,7 +172,12 @@ async function loadAdminInformationAgentRegistryContacts(
     .neq("bounce_status", "permanent")
     .order("observed_at", { ascending: false })
     .limit(20);
-  if (error) throw error;
+  if (error) {
+    // Le registre est un complément : s'il est illisible, l'agent travaille avec les données de l'annonce
+    // et l'administrateur saisit l'adresse. Aucune adresse ni détail de ligne dans le journal.
+    console.warn("Registre des contacts de l'agent illisible", { code: error.code ?? null });
+    return [];
+  }
   return (data ?? []).map((row) => ({
     email: row.email,
     displayName: row.display_name,

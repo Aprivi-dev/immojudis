@@ -327,8 +327,8 @@ export const INFORMATION_AGENT_AUTOMATED_SEARCH_STATEMENT =
 /**
  * Durées de conservation annoncées au destinataire (art. 14(2)(a) RGPD), identiques à la purge
  * (`app_private.purge_information_agent_data`, hebdomadaire) ; les demandes qui n'ont pas été
- * envoyées sont supprimées sous un mois au plus (matrice de conservation,
- * `docs/data-retention-matrix.md`).
+ * envoyées sont supprimées au plus tard 28 jours après leur création (seuil de 21 jours ; matrice de
+ * conservation, `docs/data-retention-matrix.md`).
  */
 export const INFORMATION_AGENT_RETENTION_STATEMENT =
   "12 mois si vous ne répondez pas ; 24 mois après le dernier échange si vous répondez.";

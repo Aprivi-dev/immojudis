@@ -339,7 +339,7 @@ def _internal_lawyer_contacts(soup: BeautifulSoup, trusts: list[Any]) -> list[di
         name = clean_text(heading.get_text(" ", strip=True)) if heading is not None else None
         for email in extract_cloudflare_emails(soup, accept=publishable_licitor_email, within=[trust]):
             if all(email != item["email"] for item in contacts):
-                contacts.append({"email": email, "name": name or "", "role": "lawyer"})
+                contacts.append({"email": email, "name": name or "", "role": "lawyer", "source_name": "licitor"})
     return contacts
 
 
@@ -353,7 +353,11 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     # n'est décodé. Vench ne décode pas (autre parseur).
     trusts = soup.select("div.Trust")
     _log_cloudflare_scope(soup, trusts, source_url)
-    internal_contacts = _internal_lawyer_contacts(soup, trusts)
+    try:
+        internal_contacts = _internal_lawyer_contacts(soup, trusts)
+    except Exception as exc:  # noqa: BLE001 - le décodage ne doit jamais faire échouer la lecture de la fiche
+        LOGGER.warning("Licitor %s : décodage des adresses masquées ignoré (%s)", source_url, type(exc).__name__)
+        internal_contacts = []
     raw_text = _stable_raw_text(soup.get_text("\n", strip=True))
     lines = raw_text.splitlines()
 
