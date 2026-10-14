@@ -19,9 +19,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-10-13.2",
-    sha256: "63c2889e2871fec41092e8fda0a4fdda12c841dd1d07d7b2ba9de4704efcfcbc",
-    effectiveDate: UNLOCKS_VERSIONS_EFFECTIVE_DATE,
+    version: "2026-10-14.1",
+    sha256: "65b93b629a9637b482e3c4b18c28914489aabe407e4a3e8d424b242fc379fe31",
+    effectiveDate: "14 octobre 2026",
     path: "/privacy",
   },
 } as const;

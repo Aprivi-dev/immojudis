@@ -3,6 +3,21 @@ import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { AuctionSale } from "@/lib/types";
+import type {
+  InformationAgentAddressObserver,
+  InformationAgentAddressSourceKind,
+} from "@/lib/information-agent-compliance";
+import {
+  INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE,
+  isInformationAgentExcludedAddress,
+} from "@/lib/information-agent/excluded-addresses";
+
+export {
+  INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE,
+  informationAgentExcludedAddressReason,
+  isCourtRegistryEmail,
+  isInformationAgentExcludedAddress,
+} from "@/lib/information-agent/excluded-addresses";
 
 export type InformationAgentRecipientKind =
   | "source_lawyer"
@@ -18,6 +33,22 @@ export type InformationAgentContactProvenance = {
   sourceUrl: string | null;
 };
 
+/**
+ * Source typée d'une adresse retenue (art. 14(2)(f) RGPD) : nature, URL exacte, date de relevé et
+ * auteur. Une adresse lue dans les données de l'annonce (découverte actuelle) est une
+ * `sale_listing` relevée par l'agent ; une recherche ultérieure fournit les autres types.
+ */
+export type InformationAgentContactSource = {
+  kind: InformationAgentAddressSourceKind;
+  /** Nom de l'annuaire, obligatoire pour `official_directory`. */
+  directoryName?: string | null;
+  url: string | null;
+  observedAt: string;
+  observedBy: InformationAgentAddressObserver;
+  /** Administrateur auteur du relevé (`observedBy: "admin"`). */
+  observedByUserId?: string | null;
+};
+
 export type InformationAgentContactCandidate = {
   email: string;
   name: string | null;
@@ -26,6 +57,10 @@ export type InformationAgentContactCandidate = {
   confidence: "high" | "medium" | "low";
   score: number;
   provenance: InformationAgentContactProvenance[];
+  /** Source typée ; par défaut l'annonce de la vente, relevée par l'agent à l'enregistrement. */
+  source?: InformationAgentContactSource;
+  /** Clés d'identité du professionnel (opposition par identité). */
+  identityKeys?: string[];
 };
 
 type InformationAgentContactRegistryRow =
@@ -40,16 +75,6 @@ export type InformationAgentContactRegistryBlock = Pick<
 export type InformationAgentContactSale = AuctionSale & {
   source_block_urls?: Record<string, string | null> | null;
 };
-
-/**
- * Adresse d'une juridiction (greffe, accueil du tribunal) : elle figure dans les annonces mais
- * n'est jamais l'interlocuteur de l'agent, qui ne sollicite ni tribunal ni greffe. Miroir Python :
- * `services/data-pipeline/src/information_sufficiency.py` (`is_court_registry_email`).
- */
-export function isCourtRegistryEmail(email: string): boolean {
-  const domain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
-  return /(?:^|\.)justice\.(?:fr|gouv\.fr)$/.test(domain);
-}
 
 /**
  * Finds contacts already present in the collected listing payload.
@@ -113,7 +138,7 @@ export function discoverInformationAgentContacts(
   const byEmail = new Map<string, InformationAgentContactCandidate>();
   for (const observation of observations) {
     for (const email of extractEmails(observation.value)) {
-      if (isCourtRegistryEmail(email)) continue;
+      if (isInformationAgentExcludedAddress(email)) continue;
       const role = inferContactRole(`${observation.field} ${observation.value}`);
       const score = observation.score + (role === "source_contact" ? 0 : 4);
       const provenance: InformationAgentContactProvenance = {
@@ -238,30 +263,45 @@ export async function persistInformationAgentContactObservations({
     if (email && !byEmail.has(email)) byEmail.set(email, { ...candidate, email });
   }
   const observedAt = new Date().toISOString();
-  const rows = [...byEmail.values()].map((candidate) => ({
-    sale_id: saleId,
-    scope_sale_id: saleId,
-    email: candidate.email,
-    display_name: candidate.name,
-    role: candidate.role,
-    provenance: candidate.provenance.map((item) => ({
-      kind: item.kind,
-      field: item.field,
-      source_name: item.sourceName,
-      source_url: item.sourceUrl,
-    })),
-    verification_status: "source_observed" as const,
-    opposition_status: "unknown" as const,
-    bounce_status: "none" as const,
-    source_name: candidate.provenance.find((item) => item.sourceName)?.sourceName ?? null,
-    source_url: candidate.provenance.find((item) => item.sourceUrl)?.sourceUrl ?? null,
-    metadata: {
-      observation_channel: "information_agent_draft",
-      confidence: candidate.confidence,
-      score: candidate.score,
-    },
-    last_seen_at: observedAt,
-  }));
+  const rows = [...byEmail.values()].map((candidate) => {
+    const listingUrl = candidate.provenance.find((item) => item.sourceUrl)?.sourceUrl ?? null;
+    const source: InformationAgentContactSource = candidate.source ?? {
+      kind: "sale_listing",
+      url: listingUrl,
+      observedAt,
+      observedBy: "agent",
+    };
+    return {
+      sale_id: saleId,
+      scope_sale_id: saleId,
+      email: candidate.email,
+      display_name: candidate.name,
+      role: candidate.role,
+      provenance: candidate.provenance.map((item) => ({
+        kind: item.kind,
+        field: item.field,
+        source_name: item.sourceName,
+        source_url: item.sourceUrl,
+      })),
+      verification_status: "source_observed" as const,
+      opposition_status: "unknown" as const,
+      bounce_status: "none" as const,
+      source_name: candidate.provenance.find((item) => item.sourceName)?.sourceName ?? null,
+      source_url: source.url,
+      source_kind: source.kind,
+      source_directory_name: source.kind === "official_directory" ? source.directoryName : null,
+      observed_at: source.observedAt,
+      observed_by: source.observedBy,
+      observed_by_user_id: source.observedByUserId ?? null,
+      identity_keys: candidate.identityKeys ?? [],
+      metadata: {
+        observation_channel: "information_agent_draft",
+        confidence: candidate.confidence,
+        score: candidate.score,
+      },
+      last_seen_at: observedAt,
+    };
+  });
   if (!rows.length) return;
   const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(rows, {
     onConflict: "scope_sale_id,normalized_email",
@@ -305,15 +345,123 @@ export async function recordInformationAgentContactOpposition({
 export async function assertInformationAgentContactAllowed({
   email,
   saleId,
+  identityKeys = [],
 }: {
   email: string;
   saleId?: string | null;
+  /** Clés d'identité du professionnel : une opposition vaut sous toute autre adresse. */
+  identityKeys?: readonly string[];
 }): Promise<void> {
+  if (isInformationAgentExcludedAddress(email)) {
+    throw new Error(INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE);
+  }
   const rows = await loadInformationAgentContactRegistry(email, saleId);
   if (rows.some((row) => isInformationAgentContactBlocked(row, saleId))) {
     throw new Error(
       "Le contact est explicitement opposé ou en rebond permanent ; aucune sollicitation n'est autorisée.",
     );
+  }
+  await assertInformationAgentIdentityAllowed(identityKeys);
+}
+
+export const INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE =
+  "Ce professionnel s'est opposé à être contacté (opposition enregistrée sous une autre adresse) ; aucune sollicitation n'est autorisée.";
+
+/**
+ * Clés d'identité qui figurent dans la liste d'opposition. Une erreur de base est propagée : un
+ * contrôle indisponible ne vaut jamais autorisation.
+ */
+export async function loadOpposedInformationAgentIdentityKeys(
+  identityKeys: readonly string[],
+): Promise<string[]> {
+  const keys = [...new Set(identityKeys.filter((key) => key.trim().length > 0))];
+  if (!keys.length) return [];
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_identity_oppositions")
+    .select("identity_key")
+    .in("identity_key", keys);
+  if (error) throw error;
+  if (!data) throw new Error("Liste d'opposition par identité indisponible.");
+  return data.map((row) => row.identity_key);
+}
+
+/**
+ * Contrôle d'opposition par identité, à appeler avant toute recherche d'adresse et avant l'envoi.
+ * Sans clé (identité insuffisante), seule l'opposition par adresse s'applique.
+ */
+export async function assertInformationAgentIdentityAllowed(
+  identityKeys: readonly string[],
+): Promise<void> {
+  if ((await loadOpposedInformationAgentIdentityKeys(identityKeys)).length) {
+    throw new Error(INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE);
+  }
+}
+
+/**
+ * Enregistre l'adresse saisie par un administrateur, d'après une page publique, avec sa date et son
+ * auteur. Une ligne déjà typée (annonce, annuaire…) n'est jamais réécrite ; seule l'URL d'une saisie
+ * d'administrateur peut être complétée ou corrigée, la date de relevé restant celle de la saisie.
+ */
+export async function recordInformationAgentAdminAddressEntry({
+  saleId,
+  email,
+  name,
+  url,
+  observedAt,
+  adminId,
+  identityKeys = [],
+}: {
+  saleId: string;
+  email: string;
+  name: string | null;
+  url: string | null;
+  observedAt: string;
+  adminId: string;
+  identityKeys?: readonly string[];
+}): Promise<void> {
+  const normalized = normalizedEmail(email);
+  if (!normalized) throw new Error("Adresse email du contact invalide.");
+  const { data: existing, error: readError } = await supabaseAdmin
+    .from("information_agent_contacts")
+    .select("source_kind, source_url")
+    .eq("normalized_email", normalized)
+    .eq("scope_sale_id", saleId)
+    .limit(1);
+  if (readError) throw readError;
+  const row = existing?.[0];
+  if (!row) {
+    const { error } = await supabaseAdmin.from("information_agent_contacts").upsert(
+      {
+        sale_id: saleId,
+        scope_sale_id: saleId,
+        email: normalized,
+        display_name: name,
+        role: "manual_professional",
+        provenance: [{ kind: "admin_entry", field: "recipient_email", source_url: url }],
+        verification_status: "unverified" as const,
+        opposition_status: "unknown" as const,
+        bounce_status: "none" as const,
+        source_url: url,
+        source_kind: "admin_entry" as const,
+        observed_at: observedAt,
+        observed_by: "admin" as const,
+        observed_by_user_id: adminId,
+        identity_keys: [...identityKeys],
+        metadata: { observation_channel: "information_agent_admin_entry" },
+        last_seen_at: observedAt,
+      },
+      { onConflict: "scope_sale_id,normalized_email", ignoreDuplicates: true },
+    );
+    if (error) throw error;
+    return;
+  }
+  if (row.source_kind === "admin_entry" && url && row.source_url !== url) {
+    const { error } = await supabaseAdmin
+      .from("information_agent_contacts")
+      .update({ source_url: url, identity_keys: [...identityKeys] })
+      .eq("normalized_email", normalized)
+      .eq("scope_sale_id", saleId);
+    if (error) throw error;
   }
 }
 

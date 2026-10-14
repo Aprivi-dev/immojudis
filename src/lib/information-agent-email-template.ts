@@ -63,7 +63,7 @@ export type InformationAgentEmailVariable =
 
 export const INFORMATION_AGENT_EMAIL_BLOCK_DEFINITIONS = [
   { id: "greeting", kind: "dynamic", label: "Formule d’appel" },
-  { id: "identity", kind: "fixed", label: "Présentation Immojudis" },
+  { id: "identity", kind: "fixed", label: "Objet du message" },
   { id: "sale_details", kind: "dynamic", label: "Informations de la vente" },
   { id: "request_intro", kind: "fixed", label: "Introduction de la demande" },
   { id: "questions", kind: "dynamic", label: "Questions adaptées à l’annonce" },
@@ -99,6 +99,11 @@ export type InformationAgentEmailTemplateSummary = InformationAgentEmailTemplate
 
 export type InformationAgentEmailTemplateWorkspace = {
   published: InformationAgentEmailTemplateSummary;
+  /** Vrai quand le modèle publié est antérieur à `minCompliantRevision` : il est ignoré. */
+  publishedIgnored: boolean;
+  minCompliantRevision: number;
+  /** Modèle du code, utilisé tant que le modèle publié est ignoré. */
+  fallback: InformationAgentEmailTemplateContent & { revision: number };
   draft: InformationAgentEmailTemplateSummary | null;
   history: InformationAgentEmailTemplateSummary[];
   variables: typeof INFORMATION_AGENT_EMAIL_VARIABLES;
@@ -123,7 +128,15 @@ export const INFORMATION_AGENT_ACCOUNT_INVITATION_HEADING =
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_CTA = "Créer un compte professionnel";
 export const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autres ventes ?";
 
-export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 5;
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 7;
+
+/**
+ * Révision minimale d'un modèle publié en base pour qu'il soit utilisé. Un modèle publié avant cette
+ * révision (présentation d'Immojudis, invitation à créer un compte…) est ignoré au profit du modèle
+ * du code, sans rien écrire en base ; un nouveau modèle publié depuis l'éditeur reprend la
+ * numérotation après cette révision (migration `information_agent_legal_safeguards`).
+ */
+export const MIN_COMPLIANT_TEMPLATE_REVISION = INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION;
 
 export type InformationAgentEmailRenderOptions = {
   /** Environment origin of the site (kept for callers that build absolute links). */
@@ -239,7 +252,7 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 5",
+  name: "Demande de précisions sur une vente — version 7",
   subjectTemplate: "{{sale_subject_title}} — précisions pour Immojudis",
   blocks: [
     {
@@ -251,9 +264,9 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
     {
       id: "identity",
       kind: "fixed",
-      label: "Présentation Immojudis",
+      label: "Objet du message",
       content:
-        "Immojudis est un service indépendant qui aide les acquéreurs à mieux préparer les ventes judiciaires. Nous vous écrivons au sujet de la vente ci-dessous : nous complétons sa fiche à destination des acquéreurs, et votre connaissance du dossier nous serait précieuse.",
+        "Nous vous écrivons au sujet de la vente ci-dessous, afin de vérifier des informations publiées sur cette vente, dans la seule mesure où elles sont communicables à tout candidat acquéreur.",
     },
     {
       id: "sale_details",
@@ -279,7 +292,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Consignes de réponse",
       content:
-        "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire. Si ce dossier relève d’un autre interlocuteur, son contact nous serait utile.",
+        "Un simple retour à cet email suffit, avec les documents ou photos que vous êtes autorisé à partager. Aucun compte n’est nécessaire. Si ce dossier relève d’un autre interlocuteur, son contact nous serait utile. Vous n’êtes tenu de répondre à aucune de ces questions. Ne communiquez que ce qui est communicable à tout candidat acquéreur (cahier des conditions de vente, procès-verbal descriptif, diagnostics, dates de visite, mise à prix, consignation, audience) : votre secret professionnel prime sur notre demande.",
     },
     {
       id: "closing",
@@ -310,12 +323,12 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Informations RGPD et opposition",
     description:
-      "Le pied du message est ajouté automatiquement : responsable de traitement, origine de l’adresse avec le lien de l’annonce publique (art. 14 RGPD), durée de conservation de l’adresse et des échanges, lien vers la politique de confidentialité et lien d’opposition en un clic.",
+      "Le pied du message est ajouté automatiquement (art. 14 RGPD) : finalité et base, catégories de données, origine de l’adresse (type de source, lien, date), destinataires et prestataires dont l’outil d’IA, durées de conservation, droits, droit d’opposition en un clic et réclamation auprès de la CNIL.",
   },
   {
     title: "Aucune sollicitation commerciale",
     description:
-      "Aucune sollicitation commerciale : toute invitation à créer un compte est retirée du corps du message.",
+      "Aucune sollicitation commerciale : toute invitation à créer un compte est retirée du corps du message, et un contrôle automatique refuse offres, comptes, mise en avant, prix et liens vers les offres ou l’inscription.",
   },
 ] as const;
 

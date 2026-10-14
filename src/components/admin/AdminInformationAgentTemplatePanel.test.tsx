@@ -61,6 +61,9 @@ function workspace(
 
   return {
     published: source,
+    publishedIgnored: false,
+    minCompliantRevision: 7,
+    fallback: { ...DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE, revision: 7 },
     draft: null,
     history: [source],
     variables: INFORMATION_AGENT_EMAIL_VARIABLES,
@@ -80,6 +83,24 @@ describe("AdminInformationAgentTemplatePanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     state.fetch.mockResolvedValue(workspace("template-a", "2026-08-01T10:00:00.000Z", "Version A"));
+  });
+
+  it("signale qu'un modèle publié antérieur à la mise en conformité est ignoré et édite le modèle du code", async () => {
+    state.fetch.mockResolvedValue({
+      ...workspace("template-old", "2026-10-04T10:00:00.000Z", "Ancien modèle publié"),
+      publishedIgnored: true,
+      fallback: { ...DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE, revision: 7 },
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    renderPanel(client);
+
+    const note = await screen.findByRole("note");
+    expect(note.textContent).toContain("est antérieur à la mise en conformité");
+    expect(note.textContent).toContain("il est ignoré");
+    expect(screen.getByText("Publié · v1 (ignoré)")).toBeTruthy();
+    // L'éditeur repart du modèle du code, jamais de l'ancien texte publié.
+    expect(screen.queryByDisplayValue("Ancien modèle publié")).toBeNull();
+    expect(screen.getByDisplayValue(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE.name)).toBeTruthy();
   });
 
   it("syncs a clean editor when a newer cached workspace arrives", async () => {

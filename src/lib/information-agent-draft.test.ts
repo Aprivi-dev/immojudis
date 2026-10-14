@@ -26,20 +26,25 @@ vi.mock("@/lib/email-alerts", () => ({ sendResendEmail: mocks.send }));
 const saleId = "11111111-1111-4111-8111-111111111111";
 const admin = { isAdmin: true, userId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } as never;
 let inserted: Record<string, unknown> | null;
+let observed: Array<Record<string, unknown>>;
+let opposedIdentityKeys: string[];
 
 beforeEach(() => {
   vi.resetAllMocks();
   inserted = null;
+  observed = [];
+  opposedIdentityKeys = [];
   mocks.sale.mockResolvedValue({
     id: saleId,
     title: "Appartement Bordeaux",
     property_type: "apartment",
     address: "12 rue du Palais",
     city: "Bordeaux",
+    tribunal: "Tribunal judiciaire de Bordeaux",
     postal_code: "33000",
     sale_date: null,
     starting_price_eur: null,
-    lawyer_name: "Maître Dupont",
+    lawyer_name: "Maître Jean Dupont",
     lawyer_contact: "cabinet@example.test",
   } as AuctionSale);
   mocks.template.mockResolvedValue({
@@ -59,14 +64,22 @@ beforeEach(() => {
               case_id: null,
               ...inserted,
             }
-          : [],
+          : table === "information_agent_identity_oppositions"
+            ? opposedIdentityKeys.map((identity_key) => ({ identity_key }))
+            : [],
       error: null,
     });
     const query = {
       select: () => query,
       eq: () => query,
       is: () => query,
-      upsert: () => query,
+      in: () => query,
+      upsert: (values: unknown) => {
+        if (table === "information_agent_contacts") {
+          observed = (Array.isArray(values) ? values : [values]) as Array<Record<string, unknown>>;
+        }
+        return query;
+      },
       insert: (values: Record<string, unknown>) => {
         inserted = values;
         return query;
@@ -84,11 +97,12 @@ describe("manual admin draft preparation", () => {
     const result = await createAdminInformationAgentDraft({ auth: admin, input: { saleId } });
     expect(result.mission).toMatchObject({
       recipientEmail: "cabinet@example.test",
-      recipientName: "Maître Dupont",
+      recipientName: "Maître Jean Dupont",
       status: "draft",
     });
     expect(result.mission.bodyText).toContain("12 rue du Palais");
-    expect(result.mission.bodyText).toContain("Immojudis est un service indépendant");
+    expect(result.mission.bodyText).toContain("afin de vérifier des informations publiées");
+    expect(result.mission.bodyText).not.toContain("service indépendant");
     expect(result.mission.bodyText).not.toContain("compte professionnel");
     expect(result.mission.bodyText).not.toContain("mode=professional");
     expect(result.mission.bodyText).toContain("confirmer la date");
@@ -97,6 +111,17 @@ describe("manual admin draft preparation", () => {
       result.mission.questionKeys.every((key) => result.gaps.some((gap) => gap.key === key)),
     ).toBe(true);
     expect(inserted).toMatchObject({ share_requester_email: false });
+    // L'adresse observée dans l'annonce est enregistrée avec sa source typée et sa date.
+    expect(observed).toHaveLength(1);
+    expect(observed[0]).toMatchObject({
+      email: "cabinet@example.test",
+      source_kind: "sale_listing",
+      observed_by: "agent",
+      identity_keys: ["lawyer|bordeaux|dupont jean"],
+    });
+    expect(observed[0]?.observed_at).toEqual(expect.any(String));
+    // Le brouillon garde les clés d'identité (jamais l'adresse) pour le contrôle avant envoi.
+    expect(inserted).toMatchObject({ recipient_identity_keys: ["lawyer|bordeaux|dupont jean"] });
     expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("subscribe_information_agent_mission", {
       p_user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       p_mission_id: "22222222-2222-4222-8222-222222222222",
@@ -111,7 +136,7 @@ describe("manual admin draft preparation", () => {
     });
     expect(result.mission.recipientName).toBeNull();
     expect(result.mission.bodyText).toContain("Madame, Monsieur,");
-    expect(result.mission.bodyText).not.toContain("Maître Dupont");
+    expect(result.mission.bodyText).not.toContain("Maître Jean Dupont");
   });
 
   it.each([null, "premier@example.test et second@example.test"])(
@@ -127,4 +152,43 @@ describe("manual admin draft preparation", () => {
       expect(mocks.send).not.toHaveBeenCalled();
     },
   );
+
+  it("ne retient ni ne stocke l'adresse d'un professionnel opposé sous une autre adresse", async () => {
+    opposedIdentityKeys = ["lawyer|bordeaux|dupont jean"];
+    await expect(
+      createAdminInformationAgentDraft({ auth: admin, input: { saleId } }),
+    ).rejects.toThrow("s'est opposé à être contacté");
+    expect(observed).toEqual([]);
+    expect(inserted).toBeNull();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("refuse une adresse saisie à la main pour un professionnel opposé", async () => {
+    opposedIdentityKeys = ["lawyer|bordeaux|dupont jean"];
+    await expect(
+      createAdminInformationAgentDraft({
+        auth: admin,
+        input: {
+          saleId,
+          recipientEmail: "autre-adresse@example.test",
+          recipientName: "Me Jean Dupont",
+        },
+      }),
+    ).rejects.toThrow("s'est opposé à être contacté");
+    expect(inserted).toBeNull();
+  });
+
+  it("refuse une adresse de juridiction, de RPVA, de l'Ordre ou technique saisie à la main", async () => {
+    for (const recipientEmail of [
+      "greffe@tj-bordeaux.justice.fr",
+      "me.dupont@avocat-conseil.fr",
+      "contact@ordre-avocats-bordeaux.test",
+      "noreply@cabinet.example.test",
+    ]) {
+      await expect(
+        createAdminInformationAgentDraft({ auth: admin, input: { saleId, recipientEmail } }),
+      ).rejects.toThrow("n’est jamais sollicitée par l’agent");
+    }
+    expect(inserted).toBeNull();
+  });
 });
