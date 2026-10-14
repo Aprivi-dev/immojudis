@@ -288,9 +288,9 @@ export const INFORMATION_AGENT_DATA_CATEGORIES_STATEMENT =
 
 /**
  * Mention de la recherche automatique (avis juridique du 14/10/2026, section 7), ajoutée quand
- * l'adresse a été retrouvée par l'outil de recherche. Dormante tant que l'outil n'existe pas : elle
- * ne peut apparaître que pour une source `other_listing`, `firm_website` ou `official_directory`
- * relevée par l'agent.
+ * l'adresse a été retrouvée par l'outil de recherche (niveau 1 : `src/lib/information-agent/
+ * address-search.ts`). Elle ne peut apparaître que pour une source `other_listing`,
+ * `firm_website` ou `official_directory` relevée par l'agent.
  */
 export const INFORMATION_AGENT_AUTOMATED_SEARCH_STATEMENT =
   "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.";
