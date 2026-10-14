@@ -1,3 +1,8 @@
+import Link from "next/link";
+
+/** Page publique qui détaille le classement, le repère « bien renseignée » et la publicité. */
+export const RANKING_PAGE_PATH = "/classement-des-annonces";
+
 /**
  * Explication du classement par défaut de /sales (« Mieux renseignées d’abord »), affichée à côté
  * des résultats. Le texte décrit TOUS les critères réellement appliqués, dans leur ordre de
@@ -52,6 +57,14 @@ export function RankingExplanation({ investmentScore = false }: { investmentScor
           <p key={note}>{note}</p>
         ))}
         {investmentScore ? <p>{RANKING_EXPLANATION_INVESTMENT_NOTE}</p> : null}
+        <p>
+          <Link
+            href={RANKING_PAGE_PATH}
+            className="font-semibold text-brand-navy underline underline-offset-2 hover:text-gold-text"
+          >
+            En savoir plus
+          </Link>
+        </p>
       </div>
     </details>
   );

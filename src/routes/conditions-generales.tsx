@@ -245,7 +245,25 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="10. Données personnelles">
+          <TermsSection title="10. Classement, référencement et mise en avant">
+            <p>
+              Par défaut, les annonces sont classées selon la quantité d’informations renseignées
+              dans leur fiche, puis par date de vente, sans qu’aucune rémunération puisse améliorer
+              le rang d’une annonce. Les annonces proviennent de sources publiques et
+              d’organisateurs de ventes : Immojudis ne les rédige pas et ne garantit pas leur
+              exactitude. Une vente passée, annulée ou retirée n’est plus affichée dès que cette
+              information est connue d’Immojudis. Un cabinet d’avocats peut financer un encart
+              signalé « Publicité · Sponsorisé » pour une zone géographique ; cet encart ne modifie
+              pas l’ordre des annonces et n’est ni une recommandation, ni une notation, ni une
+              garantie de résultat. Le détail figure sur la page{" "}
+              <Link to="/classement-des-annonces" className="text-gold underline">
+                Comment sont classées les annonces ?
+              </Link>
+              .
+            </p>
+          </TermsSection>
+
+          <TermsSection title="11. Données personnelles">
             <p>
               Les traitements nécessaires au compte, à la commande et au service sont décrits dans
               la politique de confidentialité. Les droits d’accès, portabilité, rectification,
@@ -254,7 +272,7 @@ export function TermsPage() {
             </p>
           </TermsSection>
 
-          <TermsSection title="11. Réclamations, médiation et droit applicable">
+          <TermsSection title="12. Réclamations, médiation et droit applicable">
             <p>
               Une réclamation préalable peut être adressée à {legalValue(publisher.contactEmail)} ou
               au {legalValue(publisher.contactPhone)}. En cas d’échec, le consommateur peut saisir

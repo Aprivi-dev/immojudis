@@ -96,6 +96,31 @@ describe("conditions générales", () => {
   });
 });
 
+describe("conditions générales : classement, référencement et mise en avant", () => {
+  it("résument le classement par défaut, la publicité des avocats et renvoient à la page publique", () => {
+    const { container } = render(<TermsPage />);
+    const text = (container.textContent ?? "").replace(/\s+/g, " ");
+    expect(text).toContain("10. Classement, référencement et mise en avant");
+    expect(text).toContain(
+      "Par défaut, les annonces sont classées selon la quantité d’informations renseignées dans leur fiche, puis par date de vente, sans qu’aucune rémunération puisse améliorer le rang d’une annonce.",
+    );
+    expect(text).toContain(
+      "Un cabinet d’avocats peut financer un encart signalé « Publicité · Sponsorisé » pour une zone géographique ; cet encart ne modifie pas l’ordre des annonces et n’est ni une recommandation, ni une notation, ni une garantie de résultat.",
+    );
+    const link = [...container.querySelectorAll("a")].find(
+      (anchor) => anchor.textContent === "Comment sont classées les annonces ?",
+    );
+    expect(link?.getAttribute("href")).toBe("/classement-des-annonces");
+    // Les sections suivantes sont renumérotées sans trou.
+    expect(text).toContain("11. Données personnelles");
+    expect(text).toContain("12. Réclamations, médiation et droit applicable");
+  });
+
+  it("portent la version 2026-10-14.1, ancrée par l'empreinte de leur source", () => {
+    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-10-14.1");
+  });
+});
+
 describe("conditions générales : 3 déblocages par mois", () => {
   const n = PLAN_LIMITS.decouverte.monthlyUnlocks;
 

@@ -26,7 +26,7 @@ Les versions et empreintes sont centralisées dans `src/lib/legal-documents.ts` 
 | Document         | Route                   | Version en vigueur (14/10/2026) |
 | ---------------- | ----------------------- | ------------------------------- |
 | Mentions légales | `/legal`                | `2026-07-29.1`                  |
-| CGVU             | `/conditions-generales` | `2026-10-13.3`                  |
+| CGVU             | `/conditions-generales` | `2026-10-14.1`                  |
 | Confidentialité  | `/privacy`              | `2026-10-13.2`                  |
 
 Toute modification substantielle crée une nouvelle version, une nouvelle empreinte et une date
