@@ -79,7 +79,7 @@ avant que la personne ait été contactée. Mesures prévues, à faire valider :
 - **Information publique** : politique de confidentialité (version 2026-10-14.2, qui mentionne le
   relevé des adresses des annonces Licitor et la durée) ; future page `/agent-information` nommant
   Licitor (brouillon `docs/agent-information-brouillon.md`, non publiée).
-- **Conservation bornée** : Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que l’annonce est en ligne et recollectée, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).
+- **Conservation bornée** : Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).
 - **Opposition** : par adresse à la collecte (une adresse opposée n’est ni écrite ni rafraîchie), par
   identité avant tout envoi (les lignes du lot ne portent pas de clés d’identité).
 - **Aucun usage hors envoi validé à la main** : pas de prospection, pas de liste exportée, pas de

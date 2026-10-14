@@ -328,15 +328,27 @@ def publishable_licitor_email(email: str) -> bool:
 DECODE_ENV = "LICITOR_DECODE_PROTECTED_EMAILS"
 
 
+_DECODE_OFF = frozenset({"false", "0", "off", "no", "non", "disabled"})
+_DECODE_ON = frozenset({"true", "1", "on", "yes", "oui", "enabled"})
+_warned_values: set[str] = set()
+
+
 def decode_protected_emails_enabled() -> bool:
     """Interrupteur de suspension du décodage (actif par défaut, lu à chaque fiche).
 
-    Désactivé seulement si ``LICITOR_DECODE_PROTECTED_EMAILS`` vaut ``false``, ``0`` ou ``off`` (espaces et
-    casse ignorés, comme ``IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE``) ; toute autre valeur, ou l'absence de la
-    variable, laisse le décodage actif. Coupé, les éléments masqués sont tout de même retirés de la page
-    (jamais publiés) mais aucune adresse n'est décodée ni écrite au registre.
+    Coupé par ``false`` (valeur à utiliser), ``0``, ``off``, ``no``, ``non`` ou ``disabled`` (espaces et casse
+    ignorés). Absent, vide ou vrai (``true``, ``1``, ``on``, ``yes``, ``oui``, ``enabled``) : actif. Une autre
+    valeur est inconnue : le décodage reste actif et un avertissement est journalisé une fois (sans la valeur).
+    Coupé, les éléments masqués sont tout de même retirés de la page (jamais publiés) mais aucune adresse n'est
+    décodée ni écrite au registre.
     """
-    return (os.getenv(DECODE_ENV) or "on").strip().lower() not in {"false", "0", "off"}
+    value = (os.getenv(DECODE_ENV) or "").strip().lower()
+    if value in _DECODE_OFF:
+        return False
+    if value and value not in _DECODE_ON and value not in _warned_values:
+        _warned_values.add(value)
+        LOGGER.warning("%s a une valeur non reconnue : le décodage reste actif (utiliser « false » pour le couper)", DECODE_ENV)
+    return True
 
 
 def _internal_lawyer_contacts(soup: BeautifulSoup, trusts: list[Any]) -> list[dict[str, str]]:

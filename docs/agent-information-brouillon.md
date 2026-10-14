@@ -71,7 +71,7 @@ aucune offre commerciale, et chacun sera relu et validé par un membre de l’é
 - Il ne conservera pas la page lue. Seront enregistrés : l’adresse retenue, l’adresse web de la
   page, la date de relevé, le type de source et le critère de rapprochement utilisé. Aucune liste
   de noms ou d’adresses web n’est conservée.
-- Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que l’annonce est en ligne et recollectée, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).
+- Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).
 - Il s’identifiera à chaque requête : le jeton `ImmojudisAdresses` et l’adresse de cette page
   figureront dans son user-agent.
 
@@ -80,7 +80,7 @@ aucune offre commerciale, et chacun sera relu et validé par un membre de l’é
 Les adresses professionnelles des avocats figurant dans les annonces publiées sur Licitor, que le
 site masque par une protection anti-spam, sont relevées automatiquement lors de la collecte de
 l’annonce. Elles sont conservées en interne, jamais publiées, et ne servent qu’à une demande
-d’information validée par un membre de l’équipe sur la vente concernée. Durée : adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que l’annonce est en ligne et recollectée, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours). Opposition : voir ci-dessous ; elle est contrôlée par adresse à la collecte et par identité avant tout envoi.
+d’information validée par un membre de l’équipe sur la vente concernée. Durée : adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours). Opposition : voir ci-dessous ; elle est contrôlée par adresse à la collecte et par identité avant tout envoi.
 
 #### Comment vous y opposer
 

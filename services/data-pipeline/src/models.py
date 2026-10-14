@@ -111,7 +111,7 @@ class AuctionSale(BaseModel):
     # Adresses décodées (Licitor) à usage interne de l'agent d'information. Jamais sérialisées
     # (``exclude=True`` : ni ``to_storage_dict``, ni ``model_dump``, donc ni colonne, ni prompt, ni
     # export) ; elles ne sont écrites que dans le registre ``information_agent_contacts``.
-    internal_contacts: list[dict[str, str]] = Field(default_factory=list, exclude=True)
+    internal_contacts: list[dict[str, str]] = Field(default_factory=list, exclude=True, repr=False)
     content_hash: str | None = None
     last_run_id: str | None = None
     first_seen_at: datetime | None = None

@@ -366,7 +366,7 @@ describe("politique de confidentialité", () => {
       "Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont l’adresse e-mail est masquée par le site, sont relevées automatiquement lors de la collecte de l’annonce ; elles sont conservées en interne, jamais publiées, et ne servent qu’à une demande d’information validée par un membre de l’équipe.",
     );
     expect(text).toContain(
-      "Une adresse relevée à la collecte de l’annonce et non utilisée pour un envoi est conservée tant que l’annonce est en ligne et recollectée, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).",
+      "Une adresse relevée à la collecte de l’annonce et non utilisée pour un envoi est conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).",
     );
     expect(text).toContain(
       "Les données d’un échange sont conservées 12 mois si vous ne répondez pas, 24 mois après le dernier échange si vous répondez.",

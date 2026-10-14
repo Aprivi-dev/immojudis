@@ -103,7 +103,7 @@ const processingRows = [
     basis:
       "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     retention:
-      "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que l’annonce est en ligne et recollectée, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle",
+      "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle",
   },
   {
     purpose: "Formulaire de contact",
@@ -205,9 +205,9 @@ export function PrivacyPage() {
               automatiquement lors de la collecte de l’annonce ; elles sont conservées en interne,
               jamais publiées, et ne servent qu’à une demande d’information validée par un membre de
               l’équipe. Une adresse relevée à la collecte de l’annonce et non utilisée pour un envoi
-              est conservée tant que l’annonce est en ligne et recollectée, jamais rafraîchie après
-              la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation
-              de l’annonce (purge hebdomadaire, seuil de 21 jours). Les données d’un échange sont
+              est conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la
+              date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de
+              l’annonce (purge hebdomadaire, seuil de 21 jours). Les données d’un échange sont
               conservées 12 mois si vous ne répondez pas, 24 mois après le dernier échange si vous
               répondez. Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus
               être contacté » de chaque message ou à {legalValue(publisher.contactEmail)}. Votre
