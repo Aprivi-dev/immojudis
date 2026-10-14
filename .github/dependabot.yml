@@ -27,6 +27,18 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Dependabot edits requirements*.txt but cannot regenerate the hashed
+    # requirements*.lock (scripts/compile_locks.sh), so every pip PR needs a
+    # manual lock refresh: one grouped PR per week keeps that to one push.
+    # Major upgrades (for example pandas 3) need a dedicated migration PR.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
 
   - package-ecosystem: github-actions
     directory: /
