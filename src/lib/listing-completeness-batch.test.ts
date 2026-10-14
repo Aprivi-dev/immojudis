@@ -240,6 +240,23 @@ describe("evaluateListing", () => {
     );
   });
 
+  it("arrondit le score à une décimale", () => {
+    db.scores.set("round", 82.34);
+    db.scores.set("round-up", 82.36);
+    expect(evaluateListing({ id: "round" } as never, NOW).score).toBe(82.3);
+    expect(evaluateListing({ id: "round-up" } as never, NOW).score).toBe(82.4);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -0.1, 100.1, 250])(
+    "refuse un score invalide (%s)",
+    (score) => {
+      db.scores.set("bad", score);
+      expect(() => evaluateListing({ id: "bad" } as never, NOW)).toThrow(
+        /Score de complétude invalide pour bad/,
+      );
+    },
+  );
+
   it("score 80 mais porte critique en échec: palier bas, le score reste enregistré", () => {
     db.scores.set("gated", 80);
     db.criticalGateFailed.add("gated");
@@ -342,6 +359,29 @@ describe("runListingCompletenessBatch", () => {
     expect(result).toMatchObject({ evaluated: 1, failed: 1, remaining: 1 });
     expect(result.errors).toEqual(["boom broken"]);
     expect(db.upserts.flat().map((row) => row.sale_id)).toEqual(["good"]);
+  });
+
+  it("saute une vente au score invalide sans faire échouer les autres de son paquet", async () => {
+    setOnline([
+      ["good-1", BEFORE, 80],
+      ["nan", BEFORE, Number.NaN],
+      ["too-high", BEFORE, 101],
+      ["good-2", BEFORE, 30.04],
+    ]);
+
+    const result = await runListingCompletenessBatch({ now: NOW });
+
+    expect(result).toMatchObject({ evaluated: 2, failed: 2, remaining: 2 });
+    expect(result.errors.join(" ")).toContain("Score de complétude invalide pour");
+    expect(
+      db.upserts
+        .flat()
+        .map((row) => [row.sale_id, row.score])
+        .sort(),
+    ).toEqual([
+      ["good-1", 80],
+      ["good-2", 30],
+    ]);
   });
 
   it("échoue (tâche en erreur) quand rien ne peut être enregistré", async () => {

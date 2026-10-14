@@ -70,6 +70,8 @@ export async function getSalesStatistics({
   }
 
   const center = search.aroundAddress ? await geocodeAddress(search.aroundAddress) : null;
+  // Le tri de l'URL s'applique aussi aux statistiques: par défaut (« Mieux renseignées d'abord »),
+  // l'échantillon plafonné suit donc l'ordre par complétude puis par date.
   const sourceSales = await getSales(
     dataFiltersFromSearch(search),
     SALES_STATISTICS_SOURCE_LIMIT,

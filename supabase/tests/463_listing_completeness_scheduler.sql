@@ -69,10 +69,20 @@ select ok(
 );
 
 select ok(
-  position('(''information-agent-inbound'', interval ''10 minutes'')' in pg_get_functiondef(
-    'app_private.evaluate_operational_health(timestamptz)'::regprocedure
-  )) > 0,
-  'the other expected jobs of the freshness alert are kept'
+  (
+    select bool_and(
+      position(
+        '(''' || expected_job || ''', interval ''' in pg_get_functiondef(
+          'app_private.evaluate_operational_health(timestamptz)'::regprocedure
+        )
+      ) > 0
+    )
+    from unnest(array[
+      'operational-health', 'smart-alerts', 'alert-notifications', 'sale-change-monitor',
+      'data-retention', 'sale-retention', 'information-agent-inbound'
+    ]) as expected_job
+  ),
+  'every previously expected job is still in the freshness alert'
 );
 
 select * from finish();
