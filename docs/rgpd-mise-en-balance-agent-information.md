@@ -29,7 +29,7 @@ responsable de traitement.
    avec `services/data-pipeline/sql/insufficient_information_report.sql` (à exécuter par le
    propriétaire), pour établir pourquoi les alternatives ne suffisent pas.
 3. **Attentes raisonnables.** L’adresse est publiée par la personne pour être contactée sur cette
-   vente (annonce) ou sur son activité (annuaire officiel, site de son cabinet ou de son étude). Le
+   vente (annonce), sur une autre annonce de ses ventes ou sur son activité (site de son cabinet ou de son étude, cité par l’annonce). Le
    message concerne exactement la vente qu’elle mène et ne contient aucune promotion. La CNIL
    (recommandations pour les réutilisateurs de données publiées sur Internet, 12/06/2024, p. 10 et 48) retient le lien direct avec l’activité professionnelle comme facteur favorable.
 4. **Impact.** Faible : données professionnelles, un message par adresse et par période de 30 jours,
@@ -37,7 +37,7 @@ responsable de traitement.
 5. **Garanties.** Validation humaine de chaque message après aperçu ; une sollicitation par adresse
    et par 30 jours, aucune relance ; opposition en un clic, par adresse et par identité, valable
    pour tous les canaux ; information immédiate (pied art. 14 complet, source typée et datée) ;
-   purge des adresses non utilisées sous un mois au plus ; aucune mention commerciale (contrôle
+   purge des adresses non utilisées sous un mois au plus ; téléphone utilisé uniquement pour rapprocher deux annonces d’un même professionnel, jamais pour le contacter ni conservé par l’outil ; aucune mention commerciale (contrôle
    automatique) ; adresses de juridiction, RPVA, Ordre, CARPA, `noreply`, `dpo` et `rgpd`
    exclues.
 6. **Risques résiduels.** Adresse nominative plutôt que générique ; homonymes ; secret
@@ -55,18 +55,18 @@ avant payante des avocats), collecte massive ou stockage sans besoin.
 La recherche automatisée collecte une adresse avant la validation humaine du message et peut
 confondre deux personnes.
 
-| Risque                                         | Garantie prévue                                                                                                                                       |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Collecte en masse ou parcours d’un annuaire    | Déclenchement par un brouillon, un professionnel à la fois ; fiches ciblées, ni pagination ni formulaire ; plafonds quotidiens ; arrêt sur 403 ou 429 |
-| Copie ou index d’un annuaire                   | Aucune copie de page ; liste temporaire de noms et d’adresses web conservée 24 heures au plus ; pas de rafraîchissement périodique                                  |
-| Erreur d’identité (homonyme, associé, cabinet) | Au moins deux indices concordants ; « ambigu » si deux candidats sont proches ; l’administrateur ouvre la page source avant de valider                |
-| Collecte d’une personne qui s’est opposée      | Contrôle d’opposition par identité et par adresse **avant** toute requête réseau                                                                      |
-| Site qui refuse la collecte                    | `robots.txt` respecté ; illisible ou erreur 5xx : aucune collecte ; revue trimestrielle de chaque source                                              |
-| Provenance fausse dans le message              | Libellé d’origine tiré du type de source du registre (annonce, autre annonce, annuaire nommé, site du cabinet), avec lien et date                     |
-| Décodage des adresses masquées de Licitor | Le parseur ne décode pas ces adresses et ne doit jamais le faire. Décodage à la demande uniquement, pour la seule fiche de la vente en préparation, après confirmation écrite de Licitor, sans requête en lot et sans contourner aucun défi ni blocage. Tant que cette confirmation n’est pas obtenue, aucun outil ne décode |
-| Données de tiers dans les réponses (parties, occupants, pièces) | Pas de collecte recherchée ; réponses lues par l’outil d’IA puis relues par un administrateur avant toute publication ; caviardage vérifié avant publication d’une pièce ou d’une photo |
-| Transfert du contenu des réponses au prestataire d’IA (Replicate, États-Unis) | Mécanisme de transfert et DPA à vérifier avant le premier envoi réel ; information dans le pied du message ; le destinataire peut demander la garantie applicable |
-| Contrôle humain de pure forme                  | Source cliquable, date et score affichés ; l’envoi reste déclenché à la main après aperçu                                                             |
+| Risque                                                                        | Garantie prévue                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Collecte en masse ou parcours d’un annuaire                                   | Déclenchement par un brouillon, un professionnel à la fois ; pages ciblées (trois au plus), ni pagination ni formulaire ; arrêt sur 403 ou 429                                                                                                                                                                               |
+| Copie ou index d’un annuaire                                                  | Aucune copie de page ; aucune liste conservée ; pas de rafraîchissement périodique                                                                                                                                                                                                                                           |
+| Erreur d’identité (homonyme, associé, cabinet)                                | Nom et téléphone pour une autre annonce ; site cité par l’annonce et adresse du domaine du cabinet pour le site ; « ambigu » si deux candidats sont proches ; le lien de la page source est affiché et l’administrateur peut l’ouvrir avant de valider                                                                       |
+| Collecte d’une personne qui s’est opposée                                     | Contrôle d’opposition par identité **avant** toute requête réseau, par adresse dès qu’elle est connue                                                                                                                                                                                                                        |
+| Site qui refuse la collecte                                                   | `robots.txt` respecté ; illisible ou erreur 5xx : aucune collecte ; revue trimestrielle de chaque source                                                                                                                                                                                                                     |
+| Provenance fausse dans le message                                             | Libellé d’origine tiré du type de source du registre (annonce, autre annonce, annuaire nommé, site du cabinet), avec lien et date                                                                                                                                                                                            |
+| Décodage des adresses masquées de Licitor                                     | Le parseur ne décode pas ces adresses et ne doit jamais le faire. Décodage à la demande uniquement, pour la seule fiche de la vente en préparation, après confirmation écrite de Licitor, sans requête en lot et sans contourner aucun défi ni blocage. Tant que cette confirmation n’est pas obtenue, aucun outil ne décode |
+| Données de tiers dans les réponses (parties, occupants, pièces)               | Pas de collecte recherchée ; réponses lues par l’outil d’IA puis relues par un administrateur avant toute publication ; caviardage vérifié avant publication d’une pièce ou d’une photo                                                                                                                                      |
+| Transfert du contenu des réponses au prestataire d’IA (Replicate, États-Unis) | Mécanisme de transfert et DPA à vérifier avant le premier envoi réel ; information dans le pied du message ; le destinataire peut demander la garantie applicable                                                                                                                                                            |
+| Contrôle humain de pure forme                                                 | Le lien de la page source et la date sont affichés, l’administrateur peut l’ouvrir avant de valider ; l’envoi reste déclenché à la main après aperçu                                                                                                                                                                         |
 
 ## 3. Compatibilité de finalité du réemploi d’une adresse (art. 6.4 RGPD)
 
@@ -80,7 +80,7 @@ adresse publiée dans une autre annonce est réutilisée pour lui écrire à pro
   attente raisonnable de l’être sur une autre vente.
 - **Nature des données :** adresse professionnelle, aucune donnée sensible.
 - **Conséquences :** un message de plus, informatif, sans promotion.
-- **Garanties :** identité vérifiée par au moins deux indices, ancienneté de l’adresse limitée à 6
+- **Garanties :** identité vérifiée par le nom et le téléphone, ancienneté de l’adresse limitée à 6
   mois (sinon relecture de la source), sources limitées à la liste admise, origine exacte dans le
   pied du message, opposition contrôlée par identité, aucune réutilisation pour la prospection.
 
