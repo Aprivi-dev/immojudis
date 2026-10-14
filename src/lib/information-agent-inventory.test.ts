@@ -193,6 +193,9 @@ describe("inventaire de la fiche pour l'agent d'information", () => {
     expect(draft.bodyText).toContain("Date de vente annoncée");
     expect(draft.bodyText).not.toContain("Audience annoncée");
     expect(draft.bodyText).toContain("le cahier des conditions de vente");
-    expect(draft.bodyText).not.toContain("procès-verbal descriptif");
+    // Le PV descriptif n'est pas demandé hors vente judiciaire (la réserve de secret professionnel
+    // du message le cite, comme pièce communicable).
+    expect(draft.bodyText).not.toContain("transmettre le procès-verbal descriptif");
+    expect(draft.bodyText).not.toContain("le procès-verbal descriptif et le dossier");
   });
 });
