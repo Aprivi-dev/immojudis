@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
+import { parisMonthWindow } from "@/lib/paris-month";
 import type { PlanLimits } from "@/lib/plans";
 
 export type UsageEventKey =
@@ -47,16 +48,12 @@ type UsagePlanLike = {
   limits: Pick<PlanLimits, "propertyReportsPerMonth" | "pdfExportsPerMonth">;
 };
 
+/** Mois civil de l'heure de Paris : remise à zéro le 1er à 00 h 00 (Europe/Paris), pas en UTC. */
 export function currentMonthUsageWindow(now = new Date()): {
   periodStart: string;
   periodEnd: string;
 } {
-  const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const periodEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-  return {
-    periodStart: periodStart.toISOString(),
-    periodEnd: periodEnd.toISOString(),
-  };
+  return parisMonthWindow(now);
 }
 
 export function buildUsageLimitState({

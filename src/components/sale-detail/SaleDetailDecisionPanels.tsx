@@ -9,6 +9,7 @@ import { UNPROFITABLE_HEADLINE, type CeilingGap } from "@/lib/bid-ceiling-gaps";
 import { fetchValuePreview } from "@/lib/client-api";
 import { formatPrice, formatStartingPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
+import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { saleDetailPath } from "@/lib/navigation";
 import { getMarketValuationSurfaces } from "@/lib/surface";
@@ -27,7 +28,8 @@ export function AnalysisDecisionPanel({
   onEditWorks,
 }: {
   sale: AuctionSale;
-  marketEstimate: MarketEstimate | null;
+  /** The ceiling projection is enough here: this panel is also served to an unlocked sale. */
+  marketEstimate: CeilingMarketEstimate | null;
   marketLoading: boolean;
   /** `null`: not computable yet; `0`: no works retained. */
   worksBudget: number | null;
@@ -210,7 +212,9 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
         </div>
         <div>
           <dt>Enchère plafond</dt>
-          <dd className={panelStyles.textValue}>Avec l’offre Analyse</dd>
+          <dd className={panelStyles.textValue}>
+            Avec l’offre Analyse ou en débloquant cette vente
+          </dd>
         </div>
       </dl>
       {value?.discountPct != null ? (
@@ -225,7 +229,11 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
         </p>
       ) : null}
       <PremiumFeaturePreview
-        title="Votre enchère plafond, les comparables et les travaux avec l’offre Analyse"
+        title={
+          getSaleProcedure(sale).venueType === "tribunal"
+            ? "Les comparables et les travaux avec l’offre Analyse ; l’enchère plafond aussi en débloquant cette vente"
+            : "Les comparables et les travaux avec l’offre Analyse"
+        }
         description="Le calcul complet de la mise à ne pas dépasser : valeur du bien, marge, travaux, libération, portage et tous les frais de la vente, avec les ventes comparables du secteur."
         labels={["Enchère plafond", "Ventes comparables", "Travaux et frais"]}
       />

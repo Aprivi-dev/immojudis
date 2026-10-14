@@ -58,7 +58,7 @@ Le schéma complet est construit par les migrations `supabase/migrations`. Les g
 | `auction_documents` | Métadonnées et extraction des documents d’annonce | Ligne mutable; fichiers gardés dans le cache/disque du worker, pas dans un coffre de preuves objet durable |
 | `auction_extractions` | Résultat d’extraction versionné par provider/hash | N’exprime pas le rapprochement dossier/lot/audience ni une revue indépendante |
 | `auction_sale_history` | Ancienne et nouvelle ligne JSON lors d’un changement | Journalise les updates significatifs, pas les inserts/deletes; sans FK et sans immutabilité stricte |
-| `v_auction_sales_app`, `v_auction_sales_discovery` | Modèles de lecture complet et découverte | Les contrats de lecture restent centrés sur `auction_sales.id` |
+| `v_auction_sales_app`, `v_auction_sales_discovery`, `v_auction_sales_unlocked` | Modèles de lecture complet, découverte et ventes débloquées (« 3 déblocages par mois ») | Les contrats de lecture restent centrés sur `auction_sales.id` |
 
 ### Enrichissement et valorisation
 

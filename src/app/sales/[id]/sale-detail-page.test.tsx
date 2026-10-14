@@ -8,6 +8,7 @@ import { EXAMPLE_SALE } from "@/lib/example-sale";
 const mocks = vi.hoisted(() => ({
   scroll: vi.fn(),
   entitlements: vi.fn(),
+  unlockStatus: vi.fn(),
   sale: vi.fn(),
   preview: vi.fn(),
   authenticated: true,
@@ -22,12 +23,35 @@ vi.mock("@/hooks/use-auth", () => ({
   }),
 }));
 vi.mock("@/hooks/use-viewed-sales", () => ({ markSaleViewed: vi.fn() }));
-vi.mock("@/lib/client-api", () => ({ fetchAccessPlan: mocks.entitlements }));
+vi.mock("@/lib/client-api", () => ({
+  fetchAccessPlan: mocks.entitlements,
+  fetchSaleUnlockStatus: mocks.unlockStatus,
+}));
 vi.mock("@/lib/queries", () => ({ getSaleById: mocks.sale, getSalePreviewById: mocks.preview }));
 vi.mock("@/components/DiscoverySaleDetailView", () => ({
-  DiscoverySaleDetailView: () => <div>Offre Découverte</div>,
+  DiscoverySaleDetailView: ({
+    unlockStatus,
+    onSaleUnlocked,
+  }: {
+    unlockStatus?: { remaining: number | null } | null;
+    onSaleUnlocked?: (result: unknown) => void;
+  }) => (
+    <div>
+      Offre Découverte
+      <span data-testid="remaining">{String(unlockStatus?.remaining ?? "inconnu")}</span>
+      <button
+        type="button"
+        onClick={() =>
+          onSaleUnlocked?.({ unlocked: true, remaining: 2, alreadyUnlocked: false, consumed: true })
+        }
+      >
+        Simuler le déblocage
+      </button>
+    </div>
+  ),
 }));
 vi.mock("@/components/SimplifiedSaleDetailView", () => ({
+  UnlockedSaleDetailView: () => <div>Vente débloquée</div>,
   AnalysisSaleDetailView: () => (
     <div
       id="proofs"
@@ -89,7 +113,7 @@ describe("listing access resolution", () => {
     mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
     view.rerender(content());
     await screen.findByText("Analyse premium");
-    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false });
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
   });
 
   it("does not reuse a preview belonging to another listing", async () => {
@@ -226,7 +250,7 @@ describe("listing access resolution", () => {
     expect(mocks.sale).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
     await waitFor(() => expect(screen.getByText("Analyse premium")).toBeTruthy());
-    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false });
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
   });
 });
 
@@ -243,4 +267,117 @@ it("offers access to the selected listing when its public preview is absent", as
   const link = await screen.findByRole("link", { name: "Se connecter ou créer un compte" });
   expect(link.getAttribute("href")).toBe("/login?redirect=%2Fsales%2Fsale");
   expect(screen.queryByText("Introuvable")).toBeNull();
+});
+
+describe("« 3 déblocages par mois » on the sale page", () => {
+  const status = (unlocked: boolean) => ({
+    saleId: "sale",
+    unlocked,
+    analysisAccess: false,
+    limit: 3,
+    used: unlocked ? 1 : 0,
+    remaining: unlocked ? 2 : 3,
+    periodStart: "2026-09-30T22:00:00.000Z",
+    resetsAt: "2026-10-31T23:00:00.000Z",
+  });
+  const renderPage = () =>
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+
+  it("serves the free view, with the counter, for a sale that is not unlocked", async () => {
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+    mocks.unlockStatus.mockResolvedValue(status(false));
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+    renderPage();
+
+    await screen.findByText("Offre Découverte");
+    expect(screen.getByTestId("remaining").textContent).toBe("3");
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: true, unlocked: false });
+    expect(mocks.sale).not.toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
+  });
+
+  it("serves the full rows, and the unlocked view, for a sale the account unlocked", async () => {
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+    mocks.unlockStatus.mockResolvedValue(status(true));
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+    renderPage();
+
+    await screen.findByText("Vente débloquée");
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: true });
+    // The full catalogue view stays closed to an unlock: the sale comes from its own view.
+    expect(mocks.sale).not.toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
+    expect(screen.queryByText("Offre Découverte")).toBeNull();
+  });
+
+  it("falls back to the free view when the sale leaves the catalogue after the check", async () => {
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+    mocks.unlockStatus.mockResolvedValue(status(true));
+    mocks.sale.mockImplementation(async (_id: string, options: { discovery: boolean }) =>
+      options.discovery ? { ...EXAMPLE_SALE, id: "sale" } : null,
+    );
+
+    renderPage();
+
+    await screen.findByText("Vente débloquée");
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: true });
+  });
+
+  it("retries once, then keeps the free view with a notice and a retry button", async () => {
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+    mocks.unlockStatus.mockRejectedValue(new Error("indisponible"));
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+    renderPage();
+
+    const alert = await screen.findByRole("alert", {}, { timeout: 5000 });
+    expect(alert.textContent).toContain("État de vos déblocages indisponible");
+    expect(mocks.unlockStatus).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Offre Découverte")).toBeTruthy();
+    expect(screen.getByTestId("remaining").textContent).toBe("inconnu");
+  });
+
+  it("shows the unlocked sale once the retry button reads the status", async () => {
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+    mocks.unlockStatus.mockRejectedValueOnce(new Error("indisponible"));
+    mocks.unlockStatus.mockRejectedValueOnce(new Error("indisponible"));
+    mocks.unlockStatus.mockResolvedValue(status(true));
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+    renderPage();
+    await screen.findByRole("alert", {}, { timeout: 5000 });
+    fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+
+    await screen.findByText("Vente débloquée");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("never asks for an unlock status from an Analyse account", async () => {
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+    renderPage();
+
+    await screen.findByText("Analyse premium");
+    expect(mocks.unlockStatus).not.toHaveBeenCalled();
+  });
+
+  it("switches to the unlocked view as soon as the unlock is confirmed", async () => {
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+    mocks.unlockStatus.mockResolvedValue(status(false));
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+    renderPage();
+    await screen.findByText("Offre Découverte");
+    fireEvent.click(screen.getByRole("button", { name: "Simuler le déblocage" }));
+
+    await screen.findByText("Vente débloquée");
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: true });
+  });
 });

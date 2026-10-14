@@ -100,6 +100,7 @@ describe("GET /api/v1/sales/:id/adjudication-statistics", () => {
       auth,
       "sales.statistics",
       expect.stringContaining("Analyse"),
+      { saleId: SALE_ID },
     );
     expect(mocks.getStatistics).not.toHaveBeenCalled();
   });
@@ -109,7 +110,21 @@ describe("GET /api/v1/sales/:id/adjudication-statistics", () => {
 
     expect(response.status).toBe(400);
     expect(mocks.assertEntitlement).toHaveBeenCalledOnce();
+    // An identifier that is not a UUID cannot match an unlock: the check falls back to the offer.
+    expect(mocks.assertEntitlement.mock.calls[0][3]).toEqual({ saleId: undefined });
     expect(mocks.getStatistics).not.toHaveBeenCalled();
+  });
+
+  it("transmet la vente à l’entitlement : un déblocage n’ouvre que cette vente", async () => {
+    const response = await request();
+
+    expect(response.status).toBe(200);
+    expect(mocks.assertEntitlement).toHaveBeenCalledWith(
+      auth,
+      "sales.statistics",
+      expect.any(String),
+      { saleId: SALE_ID },
+    );
   });
 
   it("renvoie une réponse privée et une télémétrie agrégée minimale", async () => {

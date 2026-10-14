@@ -39,16 +39,17 @@ select ok(
 
 select ok(
   (
-    select count(*) = 2
+    select count(*) = 3
     from pg_class view_row
     where view_row.oid in (
       'public.v_auction_sales_discovery'::regclass,
-      'public.v_auction_sales_discovery_search'::regclass
+      'public.v_auction_sales_discovery_search'::regclass,
+      'public.v_auction_sales_unlocked'::regclass
     )
       and view_row.reloptions @> array['security_invoker=false']
       and view_row.reloptions @> array['security_barrier=true']
   ),
-  'the only definer views are the two documented discovery projections'
+  'the only definer views are the two documented discovery projections and the unlocked-sale projection'
 );
 
 select is(
@@ -59,7 +60,9 @@ select is(
       and view_row.relkind = 'v'
       and view_row.reloptions @> array['security_invoker=false']
   ),
-  array['v_auction_sales_discovery', 'v_auction_sales_discovery_search']::name[],
+  array[
+    'v_auction_sales_discovery', 'v_auction_sales_discovery_search', 'v_auction_sales_unlocked'
+  ]::name[],
   'no other public view is SECURITY DEFINER (allowlist for the security_definer_view advisor)'
 );
 

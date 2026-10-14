@@ -8,7 +8,12 @@ import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
 import type { MarketEstimate } from "@/lib/market.server";
 import { AI_REVIEW_FIELD_KEYS, type AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
-import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDetailView";
+import type { SaleUnlockStatus } from "@/lib/sale-unlocks";
+import {
+  AnalysisSaleDetailView,
+  FreeSaleDetailView,
+  UnlockedSaleDetailView,
+} from "./SimplifiedSaleDetailView";
 
 const mocks = vi.hoisted(() => ({
   fetchMarket: vi.fn(),
@@ -65,6 +70,7 @@ vi.mock("next/dynamic", () => ({
       marketEstimateOverride,
       forecastQuery,
       premium,
+      showUpcomingListings,
       propertyTypeVerified,
     }: {
       images?: unknown[];
@@ -74,6 +80,7 @@ vi.mock("next/dynamic", () => ({
       marketEstimateOverride?: unknown;
       forecastQuery?: unknown;
       premium?: boolean;
+      showUpcomingListings?: boolean;
       propertyTypeVerified?: boolean;
     }) {
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
@@ -84,6 +91,7 @@ vi.mock("next/dynamic", () => ({
             data-sale-id={sale.id}
             data-court-code={sale.tribunal_code}
             data-premium={premium ? "true" : "false"}
+            data-upcoming-listings={showUpcomingListings === false ? "false" : "true"}
             data-property-type-verified={propertyTypeVerified ? "true" : "false"}
           >
             Statistiques du tribunal
@@ -667,7 +675,7 @@ describe("integrated listing", () => {
     selectTab("Estimation");
     expect(
       screen.getByRole("heading", {
-        name: "Votre enchère plafond, les comparables et les travaux avec l’offre Analyse",
+        name: "Les comparables et les travaux avec l’offre Analyse ; l’enchère plafond aussi en débloquant cette vente",
       }),
     ).toBeTruthy();
     expect((await screen.findByRole("status")).textContent).toContain(
@@ -680,7 +688,9 @@ describe("integrated listing", () => {
     expect(screen.queryByText("Simulateur d’enchère plafond chargé")).toBeNull();
     selectTab("Statistiques");
     expect(
-      screen.getByRole("heading", { name: "Les statistiques du tribunal avec l’offre Analyse" }),
+      screen.getByRole("heading", {
+        name: "Les statistiques du tribunal avec l’offre Analyse ou en débloquant cette vente",
+      }),
     ).toBeTruthy();
     expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
     expect(mocks.fetchMarket).not.toHaveBeenCalled();
@@ -805,5 +815,173 @@ describe("integrated listing", () => {
     expect(
       result.violations.map((violation) => ({ id: violation.id, help: violation.help })),
     ).toEqual([]);
+  });
+});
+
+describe("« 3 déblocages par mois » on the sale page", () => {
+  const unlockStatus = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => ({
+    saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
+    unlocked: false,
+    analysisAccess: false,
+    limit: 3,
+    used: 1,
+    remaining: 2,
+    periodStart: "2026-09-30T22:00:00.000Z",
+    resetsAt: "2026-10-31T23:00:00.000Z",
+    ...overrides,
+  });
+
+  function renderFree(status: SaleUnlockStatus | null) {
+    mocks.authUser = { id: "free-account" };
+    mocks.fetchValuePreview.mockResolvedValue({ available: false });
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FreeSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
+          adjudicationStatisticsEnabled
+          unlockStatus={status}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  function renderUnlocked(sale: AuctionSale = EXAMPLE_SALE_RECORDS.bordeaux.sale) {
+    mocks.authUser = { id: "free-account" };
+    mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchFactReliabilities.mockResolvedValue({ facts: {}, source: "legacy" });
+    // An unlock receives the ceiling projection of the estimate, nothing more.
+    const { estimatedValueEur, actionable, qualityLabel, source, sourceUpdatedAt, sampleSize } =
+      EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate;
+    mocks.fetchMarket.mockResolvedValue({
+      status: "ready",
+      estimate: {
+        estimatedValueEur,
+        actionable,
+        qualityLabel,
+        source,
+        sourceUpdatedAt,
+        sampleSize,
+        medianPricePerM2: EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate.medianPricePerM2,
+        p75PricePerM2: EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate.p75PricePerM2,
+      },
+      computedAt: "2026-10-12T08:00:00.000Z",
+    });
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <UnlockedSaleDetailView
+          sale={sale}
+          adjudicationStatisticsEnabled
+          unlockStatus={unlockStatus({ unlocked: true })}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("offers the unlock, with the number left, on a locked sale of a Découverte account", () => {
+    renderFree(unlockStatus());
+
+    expect(screen.getByRole("heading", { name: "Débloquer cette vente" })).toBeTruthy();
+    expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Débloquer cette vente" })).toBeTruthy();
+  });
+
+  it("shows nothing about unlocking before the status is known, or to a visitor", () => {
+    const pending = renderFree(null);
+    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    pending.unmount();
+
+    mocks.authUser = null;
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FreeSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
+          unlockStatus={unlockStatus()}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+  });
+
+  it("does not offer the unlock to an Analyse account", () => {
+    mocks.authUser = { id: "analysis-account" };
+    renderDetail("analysis", undefined, false);
+    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    expect(screen.queryByText("Cette vente est débloquée")).toBeNull();
+  });
+
+  it("opens the market estimate, the bid ceiling and the statistics of an unlocked sale", async () => {
+    const { container } = renderUnlocked();
+
+    expect(screen.getByText("Cette vente est débloquée")).toBeTruthy();
+    expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    expect(mocks.fetchMarket).toHaveBeenCalledWith({
+      saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
+    });
+
+    selectTab("Estimation");
+    expect(await screen.findByRole("heading", { name: "Le calcul, étape par étape" })).toBeTruthy();
+    expect(container.querySelector("#calculation")).not.toBeNull();
+
+    selectTab("Statistiques");
+    const statistics = container.querySelector("#stats-overview");
+    expect(statistics?.getAttribute("data-sale-id")).toBe(EXAMPLE_SALE_RECORDS.bordeaux.sale.id);
+    expect(statistics?.getAttribute("data-premium")).toBe("true");
+    // The list of the other upcoming sales of the tribunal is not sent to an unlocked account.
+    expect(statistics?.getAttribute("data-upcoming-listings")).toBe("false");
+  });
+
+  it("asks nothing more than the five elements need: no fact reliability, no forecast", () => {
+    renderUnlocked();
+
+    expect(mocks.fetchFactReliabilities).not.toHaveBeenCalled();
+    selectTab("Estimation");
+    expect(screen.queryByText("Perspective d’adjudication")).toBeNull();
+    expect(screen.queryByText("Prévision de l’audience chargée")).toBeNull();
+  });
+
+  it("keeps the exports, the saved reports and the Analyse-only blocks closed on an unlocked sale", () => {
+    renderUnlocked();
+
+    // Aperçu: no risk evidence panel, only the generic « Points à vérifier » card.
+    expect(screen.queryByText("Voir les sources et actions à confirmer")).toBeNull();
+    // Estimation: no market evidence disclosure.
+    selectTab("Estimation");
+    expect(screen.queryByText("Voir les références de marché")).toBeNull();
+    // Travaux stays a preview of the Analyse offer.
+    selectTab("Travaux");
+    expect(
+      screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),
+    ).toBeTruthy();
+    // Démarches: no report save/export, no work file.
+    selectTab("Démarches");
+    expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
+    expect(screen.queryByText("Conserver votre analyse")).toBeNull();
+    expect(screen.queryByText("Préparer le dossier de travail")).toBeNull();
+  });
+
+  it("states that the unlocked elements are neither legal nor financial advice", () => {
+    renderUnlocked();
+    expect(
+      screen.getByText(/ne constituent ni un conseil juridique ni un conseil financier/),
+    ).toBeTruthy();
+    expect(screen.getByText(/l’enchère plafond est une simulation/)).toBeTruthy();
+  });
+
+  it("does not load the market estimate for an unlocked notary sale: no bid ceiling there", () => {
+    renderUnlocked({
+      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      sale_venue_type: "notary",
+      sale_procedure: null,
+      source_blocks: null,
+    } as AuctionSale);
+    expect(mocks.fetchMarket).not.toHaveBeenCalled();
+    expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
   });
 });

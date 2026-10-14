@@ -57,6 +57,12 @@ export type PlanLimits = {
   savedReports: number | null;
   reportEditing: "limited" | "full";
   favoriteSales: number | null;
+  /**
+   * Ventes qu'un compte peut débloquer par mois civil (heure de Paris). Source unique du
+   * chiffre : les textes (offres, CGV, fiche) et la base de données (`monthly_sale_unlock_limit`)
+   * le reprennent, un test les compare. `null` : pas de déblocage à faire (accès complet).
+   */
+  monthlyUnlocks: number | null;
   watchedZones: number | null;
   saleAnalysisSets: number | null;
   saleAnalysisItems: number | null;
@@ -169,6 +175,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     savedReports: 0,
     reportEditing: "limited",
     favoriteSales: 3,
+    monthlyUnlocks: 3,
     watchedZones: 1,
     saleAnalysisSets: 1,
     saleAnalysisItems: 3,
@@ -181,6 +188,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     savedReports: null,
     reportEditing: "full",
     favoriteSales: null,
+    monthlyUnlocks: null,
     watchedZones: 25,
     saleAnalysisSets: 20,
     saleAnalysisItems: 12,
@@ -188,6 +196,32 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     workspaceCollaborators: 25,
   },
 };
+
+/**
+ * Droits que le déblocage d'UNE vente ouvre à un compte Découverte, pour cette vente seulement, et
+ * rien d'autre : enchère plafond, historique de la vente, lecture des pièces, statistiques du
+ * tribunal de la vente (prix d'adjudication et scénarios d'enchères). Les pièces officielles du
+ * dossier sont ouvertes par la base (vue `v_auction_sales_unlocked`, aucune table d'enfants n'est ouverte).
+ *
+ * Ne figurent pas ici : l'estimation détaillée (`property.valueEstimate`), la prévision d'audience
+ * (`property.outcomeGraph`), les comparables, l'urbanisme, les exports PDF/CSV, les rapports
+ * enregistrés, les alertes, les espaces de travail. Le calcul de l'enchère plafond a besoin d'une
+ * valeur de référence : `/api/market-estimate` la sert sous le droit `property.bidCeiling`, réduite
+ * aux seuls champs que le plafond lit (voir `ceilingMarketContext`).
+ */
+export const SALE_UNLOCK_FEATURES = [
+  "property.bidCeiling",
+  "property.saleHistory",
+  "property.documentReading",
+  "property.advancedBidScenarios",
+  "sales.statistics",
+] as const satisfies readonly FeatureKey[];
+
+export type SaleUnlockFeature = (typeof SALE_UNLOCK_FEATURES)[number];
+
+export function isSaleUnlockFeature(feature: FeatureKey): feature is SaleUnlockFeature {
+  return (SALE_UNLOCK_FEATURES as readonly FeatureKey[]).includes(feature);
+}
 
 export function normalizePlanCode(value: unknown): PlanCode {
   if (value === "analyse" || value === "investisseur") return "analyse";
