@@ -19,11 +19,34 @@ describe("SalePublicPreview", () => {
       />,
     );
     const href = screen
-      .getByRole("link", { name: /Voir gratuitement le dossier/ })
+      .getByRole("link", { name: /Créer mon compte gratuit/ })
       .getAttribute("href")!;
     expect(new URL(href, "https://example.test").searchParams.get("redirect")).toBe(
       "/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs",
     );
+  });
+
+  it("announces the statistics of the tribunal in the unlock only while their flag is open", () => {
+    const tribunal = { id: "sale-1", sale_venue_type: "tribunal" } as AuctionSale;
+    const closed = render(
+      <SalePublicPreview saleId="sale-1" preview={tribunal} returnTo="/sales" />,
+    );
+    const intro = (view: typeof closed) =>
+      view.container.querySelector("#public-access-title")?.parentElement?.textContent ?? "";
+    expect(intro(closed)).toContain("débloquer 3 ventes par mois");
+    expect(intro(closed)).toContain("l’enchère plafond, la lecture des pièces");
+    expect(intro(closed)).not.toContain("statistiques du tribunal");
+    closed.unmount();
+
+    const open = render(
+      <SalePublicPreview
+        saleId="sale-1"
+        preview={tribunal}
+        returnTo="/sales"
+        adjudicationStatisticsEnabled
+      />,
+    );
+    expect(intro(open)).toContain("les statistiques du tribunal");
   });
 
   it.each([
@@ -61,7 +84,7 @@ describe("SalePublicPreview", () => {
     expect(container.textContent).not.toContain("enchère plafond");
     expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
 
-    const cta = screen.getByRole("link", { name: /Voir gratuitement le dossier/ });
+    const cta = screen.getByRole("link", { name: /Créer mon compte gratuit/ });
     expect(cta.getAttribute("href")).toContain("mode=investor");
     expect(cta.getAttribute("href")).toContain(encodeURIComponent("/sales/sale-1?from=%2Fsales"));
   });

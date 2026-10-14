@@ -586,3 +586,35 @@ def test_state_profile_only_uses_explicit_state_facts() -> None:
     assert profile["fields"]["urbanism"]["state"] == "present"
     assert profile["fields"]["deadline"]["state"] == "present"
     assert profile["fields"]["conditions"]["state"] == "present"
+
+
+def test_combined_phone_and_email_scalar_is_split_by_channel_without_conflict() -> None:
+    # ``lawyer_contact`` « téléphone · email · site » (colonne historique) et ``contact.*`` séparés décrivent
+    # les mêmes canaux : ni téléphone perdu, ni conflit sur le canal email.
+    for features in (None, {"contact": {"phone": "01 40 00 00 00", "email": "cabinet@exemple.test"}}):
+        raw_sale = {
+            "source_url": "https://example.test/judicial/combined-contact",
+            "description": "Tribunal judiciaire de Paris. Vente aux enchères.",
+            "lawyer_name": "Maître Jean EXEMPLE",
+            "lawyer_contact": "01 40 00 00 00 · cabinet@exemple.test · https://cabinet.exemple.test",
+        }
+        if features:
+            raw_sale["source_property_features"] = features
+        observation = attach_source_property_features(raw_sale)["source_field_observations"]["lawyer_contact"]
+
+        assert observation["value"] == {"phone": "01 40 00 00 00", "email": "cabinet@exemple.test"}
+        assert observation["state"] == "observed"
+        assert "conflicts" not in observation
+
+
+def test_single_channel_scalar_contact_keeps_its_channel() -> None:
+    for contact, channel in (("01 40 00 00 00", "phone"), ("cabinet@exemple.test", "email")):
+        observation = attach_source_property_features(
+            {
+                "source_url": "https://example.test/judicial/one-channel",
+                "description": "Tribunal judiciaire de Paris. Vente aux enchères.",
+                "lawyer_name": "Maître Jean EXEMPLE",
+                "lawyer_contact": contact,
+            }
+        )["source_field_observations"]["lawyer_contact"]
+        assert observation["value"] == {channel: contact}

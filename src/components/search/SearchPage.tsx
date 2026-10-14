@@ -31,6 +31,7 @@ import {
   countActiveSearchFilters,
   hasCoordinates,
   sortClientSearchResults,
+  visibleSearchSort,
 } from "@/lib/search/search-filters";
 import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
 import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
@@ -57,6 +58,7 @@ import { SearchPagination } from "./SearchPagination";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
 import { ResultsSummary, SearchHeader, SortDropdown, type SaveSearchOptions } from "./SearchHeader";
+import { RankingExplanation } from "./RankingExplanation";
 import { enableAlertEmailRecap } from "./alert-email-consent";
 import { SearchResultsList } from "./SearchResults";
 import { SaleComparisonBar } from "./SaleComparisonBar";
@@ -285,6 +287,8 @@ export function SearchPage({
     staleTime: 5 * 60_000,
   });
   const isDiscovery = Boolean(user) && entitlementsData?.plan.hasAnalysisAccess !== true;
+  // Le tri par score d'investissement n'existe que dans l'offre Analyse.
+  const investmentSortAllowed = !isPreview && !isDiscovery;
   const catalogReady = !authLoading && (isPreview || !entitlementsLoading);
   const comparisonScope = catalogReady
     ? `${user?.id ?? "anonymous"}:${isPreview ? "preview" : isDiscovery ? "discovery" : "analysis"}`
@@ -777,11 +781,15 @@ export function SearchPage({
               <SortDropdown
                 preview={isPreview}
                 hasCenter={Boolean(center)}
-                sort={search.sort ?? "relevance"}
+                investmentScore={investmentSortAllowed}
+                sort={visibleSearchSort(search.sort, {
+                  allowInvestmentScore: investmentSortAllowed,
+                })}
                 onChange={(sort) => updateSearch({ sort })}
               />
             </div>
           </div>
+          <RankingExplanation investmentScore={investmentSortAllowed} />
           <div className="border-b border-line-soft bg-white px-4 py-3 sm:px-5">
             <SaleTypeFilter
               compact

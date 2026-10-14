@@ -3,7 +3,7 @@ import type { InformationAgentLegalFooter } from "../src/lib/information-agent-c
 import { renderInformationRequestEmail } from "./information-request";
 
 const bodyText = [
-  "Bonjour Maître Dupont,",
+  "Bonjour Maître Jean Dupont,",
   "",
   "Je vous contacte pour Immojudis, service indépendant d’information sur les ventes immobilières judiciaires. Nous vérifions la fiche de cette vente :",
   "",
@@ -19,9 +19,11 @@ const legalFooter: InformationAgentLegalFooter = {
   controllerName: "Immojudis SAS",
   controllerAddress: "1 rue de la Paix, 33000 Bordeaux",
   contactEmail: "dpo@immojudis.test",
+  saleReference: "Maison — 33000 Bordeaux",
   addressOrigin:
-    "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor.",
+    "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/10/99/72/109972.html), consultée le 14/10/2026.",
   addressOriginUrl: "https://www.licitor.com/annonce/10/99/72/109972.html",
+  aiProvider: { id: "replicate", name: "Replicate", country: "États-Unis" },
   privacyUrl: "https://immojudis.com/privacy",
   optOutUrl: "https://immojudis.com/api/information-agent/opt-out?e=YUBiLmZy&t=" + "a".repeat(64),
 };
@@ -71,11 +73,12 @@ describe("renderInformationRequestEmail", () => {
       expect(output).not.toContain("service professionnel");
       expect(output).not.toContain("mode=professional");
       expect(output).not.toContain("Vous avez d’autres ventes à partager");
-      expect(output).toContain("Finalité et base légale : vous demander des informations");
-      expect(output).toContain(
-        "Votre adresse et nos échanges sont conservés au plus 24 mois sans activité.",
-      );
+      expect(output).toContain("Ce message ne contient aucune offre commerciale.");
+      expect(output).toContain("intérêt légitime à publier des informations exactes");
+      expect(output).not.toContain("Service indépendant d’aide à l’analyse");
     }
+    // Plus de présentation du service ni de lien vers le site : l'identité tient au pied.
+    expect(message.html).not.toContain('href="https://staging.immojudis.com"');
     expect(message.html).not.toContain("utm_");
   });
 
@@ -91,9 +94,10 @@ describe("renderInformationRequestEmail", () => {
       "figure dans l’annonce publique de cette vente sur Licitor",
     );
     expect(origin).toBeGreaterThan(-1);
-    expect(origin).toBeLessThan(message.text.indexOf("Bonjour Maître Dupont"));
-    expect(message.html).toContain('href="https://www.licitor.com/annonce/10/99/72/109972.html"');
-    expect(message.text).toContain("Voir l’annonce");
+    expect(origin).toBeLessThan(message.text.indexOf("Bonjour Maître Jean Dupont"));
+    expect(message.text).toContain(
+      "(https://www.licitor.com/annonce/10/99/72/109972.html), consultée le 14/10/2026",
+    );
   });
 
   it("supprime l'ancienne invitation même si elle figure encore dans un brouillon", async () => {
@@ -126,10 +130,37 @@ describe("renderInformationRequestEmail", () => {
       expect(output).toContain("figure dans l’annonce publique de cette vente sur Licitor");
       expect(output).toContain("https://immojudis.com/privacy");
       expect(output).toContain("https://immojudis.com/api/information-agent/opt-out?e=YUBiLmZy&");
-      expect(output).toContain("30 jours");
+      // Pied complet : finalité, données, destinataires dont l'IA, durées, droits, CNIL.
+      expect(output).toContain("Pourquoi ce message");
+      expect(output).toContain("la vente Maison — 33000 Bordeaux");
+      expect(output).toContain("votre nom, votre fonction, votre adresse professionnelle");
+      expect(output).toContain("Replicate (États-Unis)");
+      expect(output).toContain("12 mois si vous ne répondez pas");
+      expect(output).toContain("12 mois si vous ne répondez pas");
+      expect(output).toContain("24 mois après le dernier échange");
+      expect(output).toContain("accès, rectification, effacement et limitation");
+      expect(output).toContain("Vous pouvez vous opposer à tout moment, sans motif");
+      expect(output).toContain("https://www.cnil.fr/fr/plaintes");
+      expect(output).not.toContain("outil de recherche automatisé");
     }
     expect(message.html).toContain("Ne plus être contacté (un clic)");
     expect(message.html).toContain("Politique de confidentialité et vos droits");
+    expect(message.html).toContain("Réclamation auprès de la CNIL");
+  });
+
+  it("annonce la recherche automatique seulement quand l'agent a retrouvé l'adresse", async () => {
+    const message = await renderInformationRequestEmail({
+      subject: "Maison à Bordeaux",
+      bodyText,
+      replyTo: "enquete+1234@reponses.immojudis.com",
+      caseReference: "IJ-8F31A290",
+      legalFooter: { ...legalFooter, automatedSearch: true },
+    });
+    for (const output of [message.html, message.text]) {
+      expect(output).toContain(
+        "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.",
+      );
+    }
   });
 
   it("échappe le contenu éditable fourni par l’utilisateur", async () => {

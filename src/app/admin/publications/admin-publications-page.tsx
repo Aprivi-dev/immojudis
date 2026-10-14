@@ -396,7 +396,8 @@ function PublicationStatusPill({ status }: { status: PublicationRequestStatus })
 }
 
 function publicationPromotionLabel(value: string): string {
-  if (value === "featured") return "Mise en avant éditoriale";
+  if (value === "featured")
+    return "Mise en avant éditoriale (sans effet sur l'ordre des résultats)";
   if (value === "seo") return "Préparation SEO";
   if (value === "partners") return "Relais partenaire";
   return value;

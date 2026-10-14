@@ -79,7 +79,7 @@ export function buildPreviewSearchArgs(search: SalesSearchParams) {
 }
 
 function previewSort(sort: SortKey): SortKey {
-  return sort === "beds_desc" ? "score_desc" : sort;
+  return sort === "beds_desc" ? "completeness_desc" : sort;
 }
 
 export function previewSearchRequestKey(search: SalesSearchParams): string {
@@ -96,6 +96,7 @@ export function mapPreviewRows(rows: PreviewSearchRow[]): AuctionSale[] {
     department: row.department,
     property_type: row.property_type,
     sale_date: row.sale_date,
+    completeness_tier: row.completeness_tier,
     app_surface_m2: row.app_surface_m2,
     app_surface_kind: row.app_surface_kind,
     rooms_count: row.rooms_count,

@@ -21,6 +21,9 @@ const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
 ]);
 
 const publicationDocumentTypeSchema = z.string().trim().min(1).max(120);
+// Demandes adressées à l'équipe, simplement enregistrées avec la demande de publication (et copiées
+// dans `raw_payload.promotion_options` de la vente publiée). Aucun code de recherche, de tri ni de
+// classement ne les lit: « featured » (mise en avant éditoriale) ne change jamais l'ordre de /sales.
 const publicationPromotionSchema = z.enum(["featured", "seo", "partners"]);
 const publicationUploadDescriptorSchema = z.object({
   name: z.string().trim().min(1).max(240),
