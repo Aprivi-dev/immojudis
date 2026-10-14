@@ -63,6 +63,7 @@ import {
   persistInformationAgentContactObservations,
   selectInformationAgentContact,
 } from "@/lib/information-agent/contacts";
+import { searchInformationAgentAddressForDraft } from "@/lib/information-agent/address-search";
 import { recordManualMissionReply } from "@/lib/information-agent/manual-reply";
 import {
   assertInformationAgentSourceAllowed,
@@ -562,16 +563,27 @@ export async function createAdminInformationAgentDraft({
   const opposedKeys = new Set(
     await loadOpposedInformationAgentIdentityKeys(discovered.flatMap((item) => item.identityKeys)),
   );
-  const contactCandidates = discovered.filter(
+  const listingCandidates = discovered.filter(
     (candidate) => !candidate.identityKeys.some((key) => opposedKeys.has(key)),
   );
-  const candidatesSkippedForOpposition = discovered.length - contactCandidates.length;
+  const candidatesSkippedForOpposition = discovered.length - listingCandidates.length;
+  const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
+
+  // Recherche autonome (niveau 1), seulement sans adresse dans l'annonce ni saisie : elle prépare,
+  // l'administrateur relit l'origine de l'adresse dans l'aperçu avant de valider l'envoi.
+  const search = await searchInformationAgentAddressForDraft({
+    sale,
+    identityPlace,
+    siteOrigin: informationAgentAppOrigin(),
+    skip: Boolean(explicitRecipientEmail) || discovered.length > 0,
+  });
+  const foundContact = search.candidate;
+  const contactCandidates = foundContact ? [foundContact] : listingCandidates;
   await persistInformationAgentContactObservations({
     saleId: sale.id,
     candidates: contactCandidates,
   });
-  const selectedContact = selectInformationAgentContact(contactCandidates);
-  const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
+  const selectedContact = foundContact ?? selectInformationAgentContact(contactCandidates);
   const recipientEmail = explicitRecipientEmail ?? selectedContact?.email;
   if (!recipientEmail) {
     throw new Error(
@@ -579,7 +591,7 @@ export async function createAdminInformationAgentDraft({
         ? INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE
         : contactCandidates.length > 1
           ? "Requête invalide : plusieurs contacts sont possibles. Choisissez explicitement l'adresse email du professionnel à contacter."
-          : "Requête invalide : renseignez l'adresse email du professionnel à contacter.",
+          : `Requête invalide : renseignez l'adresse email du professionnel à contacter.${search.noAddressNote}`,
     );
   }
   const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);
@@ -633,14 +645,13 @@ export async function createAdminInformationAgentDraft({
           city: identityPlace.city,
         },
         candidates_skipped_for_opposition: candidatesSkippedForOpposition,
+        address_search: search.snapshot,
         fact_claims_checked: claimRead.claimsBacked,
         fact_claim_count: claimRead.claims.length,
         contact_discovery: {
           method: explicitRecipientEmail
             ? "admin_override"
-            : selectedByEmail
-              ? "source_data"
-              : "manual_required",
+            : (search.discoveryMethod ?? (selectedByEmail ? "source_data" : "manual_required")),
           selected_email: selectedByEmail?.email ?? explicitRecipientEmail ?? null,
           candidates: contactCandidates.slice(0, 8).map(contactCandidateSnapshot),
         },

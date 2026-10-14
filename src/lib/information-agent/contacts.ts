@@ -27,7 +27,7 @@ export type InformationAgentRecipientKind =
 export type InformationAgentContactRole = "lawyer" | "notary" | "organizer" | "source_contact";
 
 export type InformationAgentContactProvenance = {
-  kind: "sale_field" | "source_block" | "source_text";
+  kind: "sale_field" | "source_block" | "source_text" | "agent_search";
   field: string;
   sourceName: string | null;
   sourceUrl: string | null;
@@ -61,6 +61,8 @@ export type InformationAgentContactCandidate = {
   source?: InformationAgentContactSource;
   /** Clés d'identité du professionnel (opposition par identité). */
   identityKeys?: string[];
+  /** Règle d'appariement de la recherche automatique (`same_name_and_phone`, `generic`…). */
+  matchRule?: string;
 };
 
 type InformationAgentContactRegistryRow =
@@ -298,6 +300,7 @@ export async function persistInformationAgentContactObservations({
         observation_channel: "information_agent_draft",
         confidence: candidate.confidence,
         score: candidate.score,
+        ...(candidate.matchRule ? { match_rule: candidate.matchRule } : {}),
       },
       last_seen_at: observedAt,
     };
