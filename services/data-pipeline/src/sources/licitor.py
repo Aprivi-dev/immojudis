@@ -292,6 +292,23 @@ def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[d
     return sales
 
 
+def _log_cloudflare_scope(soup: BeautifulSoup, trusts: list[Any], source_url: str) -> None:
+    """Diagnostic seul (aucune erreur) : adresses masquées hors des blocs ``.Trust`` et page sans bloc."""
+    masked = [node for node in soup.find_all(attrs={"data-cfemail": True})]
+    masked += [
+        link for link in soup.find_all("a", href=True) if "/cdn-cgi/l/email-protection#" in str(link.get("href"))
+    ]
+    outside = {id(node) for node in masked if node.find_parent("div", class_="Trust") is None}
+    if outside:
+        LOGGER.info(
+            "Licitor %s : %d élément(s) d'adresse masquée hors des blocs .Trust, non décodé(s)",
+            source_url,
+            len(outside),
+        )
+    if not trusts:
+        LOGGER.debug("Licitor %s : aucun bloc .Trust (aucun professionnel présenté), rien à décoder", source_url)
+
+
 def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     soup = parse_html(html, "html.parser")
     # Cloudflare masque les adresses e-mail des avocats. Licitor ayant donné son accord (14/10/2026,
@@ -299,7 +316,9 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     # professionnels (``.Trust``), avant de lire le texte : la fiche porte l'adresse de l'avocat et non
     # « [email protected] ». Une adresse refusée (juridiction, RPVA, Ordre, CARPA, illisible) est
     # retirée ; ailleurs dans la page, rien n'est décodé. Vench ne décode pas (autre parseur).
-    reveal_cloudflare_emails(soup, accept=publishable_licitor_email, within=soup.select("div.Trust"))
+    trusts = soup.select("div.Trust")
+    _log_cloudflare_scope(soup, trusts, source_url)
+    reveal_cloudflare_emails(soup, accept=publishable_licitor_email, within=trusts)
     raw_text = _stable_raw_text(soup.get_text("\n", strip=True))
     lines = raw_text.splitlines()
 
