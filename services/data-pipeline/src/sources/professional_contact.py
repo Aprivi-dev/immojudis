@@ -8,7 +8,8 @@ ligne : il ne réécrit un nom qu'après une formule (« demeurant », « née l
 reconnaît donc pas à lui seul un « Prénom NOM » isolé.
 
 Les adresses masquées par Cloudflare (« [email protected] », ``data-cfemail``) ne sont ni décodées ni
-reprises : seule une adresse publiée en clair est lue.
+reprises par ces briques (Vench, Petites Affiches) : seule une adresse publiée en clair est lue. Seul
+le parseur Licitor les décode, avec l'accord de Licitor (``reveal_cloudflare_emails``).
 """
 
 from __future__ import annotations

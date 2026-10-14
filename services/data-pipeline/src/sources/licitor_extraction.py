@@ -14,8 +14,9 @@ avocats, la mention du cahier des conditions de vente, les pièces jointes et la
 référence de la régie. Les balises en ligne (``<b>``) coupent le texte en
 fragments : ils sont recollés avant lecture. Les compteurs de vues, l'encart
 partenaire (prix au m² d'un tiers) ne sont jamais repris. Les adresses e-mail masquées par
-Cloudflare sont décodées en amont (``reveal_cloudflare_emails``, dans ``licitor.py``) : le texte
-porte alors l'adresse de l'avocat ; celle d'une juridiction n'est jamais gardée.
+Cloudflare dans le bloc d'un professionnel sont décodées en amont (``reveal_cloudflare_emails``, dans
+``licitor.py``, avec l'accord de Licitor) : le texte porte alors l'adresse de l'avocat ; celle d'une
+juridiction, de la messagerie RPVA, de l'Ordre ou d'une CARPA n'est jamais gardée.
 """
 
 from __future__ import annotations
@@ -33,10 +34,11 @@ from src.department_names import (
     department_from_name,
     departments_named_in_text,
 )
-from src.information_sufficiency import is_court_registry_email
+from src.information_sufficiency import excluded_contact_reason
 from src.normalize import clean_text, extract_department
 from src.pdf_document_types import classify_document_type
 from src.sources.common import is_plausible_email
+from src.sources.professional_contact import clear_email
 
 FEATURES_SCHEMA_VERSION = "licitor_features_v1"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
@@ -488,8 +490,23 @@ _EMAIL_IN_LINE_RE = re.compile(r"[A-Za-z0-9._%+'-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]
 
 
 def publishable_licitor_email(email: str) -> bool:
-    """Adresse plausible qui n'est pas celle d'une juridiction (greffe, accueil du tribunal)."""
-    return is_plausible_email(email) and not is_court_registry_email(email)
+    """Adresse de professionnel gardée : mêmes filtres pour une adresse décodée et une adresse en clair.
+
+    Plausible, lue par ``clear_email`` (la messagerie RPVA ``@avocat-conseil.fr`` est écartée) et
+    jamais celle d'une juridiction, de l'Ordre, d'un barreau ou d'une CARPA (``excluded_contact_reason``).
+    """
+    return (
+        is_plausible_email(email)
+        and clear_email(email) is not None
+        and excluded_contact_reason(email) is None
+    )
+
+
+def _lawyer_channels(lawyer: LicitorLawyer | None) -> dict[str, str]:
+    """Téléphone et email de l'avocat, un canal chacun (l'email a déjà passé les filtres de publication)."""
+    if lawyer is None:
+        return {}
+    return {key: value for key, value in (("phone", lawyer.phone), ("email", lawyer.email)) if value}
 
 
 def _parse_trailer(lines: list[str], page: LicitorPage) -> None:
@@ -966,6 +983,10 @@ def extract_licitor_fields(page_text: str | None, raw_sale: dict[str, Any] | Non
             "document_labels_text": page.document_labels[:12] or None,
         },
         **({"cadastre": cadastre} if cadastre else {}),
+        # Canaux séparés (téléphone, email) de l'avocat poursuivant, comme Vench : le profil d'extraction
+        # les projette en ``lawyer_contact`` sans relire la chaîne « adresse | Tél. | email » (un code
+        # postal y passerait pour un numéro de téléphone).
+        **({"contact": contact} if (contact := _lawyer_channels(lawyer)) else {}),
     }
     return {
         "fields": fields,

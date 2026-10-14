@@ -7,7 +7,7 @@ import signal
 import ssl
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -16,7 +16,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 from src.source_task_deadline import (
     SourceTaskDeadlineExceeded,
@@ -174,25 +174,37 @@ def decode_cloudflare_email(encoded: object) -> str | None:
 
 
 def reveal_cloudflare_emails(
-    soup: BeautifulSoup, *, accept: Callable[[str], bool] | None = None
+    soup: BeautifulSoup,
+    *,
+    accept: Callable[[str], bool] | None = None,
+    within: Iterable[Tag] | None = None,
 ) -> list[str]:
     """Remplace dans ``soup`` les adresses masquées par Cloudflare par l'adresse décodée.
 
     Sont lus les éléments ``data-cfemail`` et les liens ``/cdn-cgi/l/email-protection#<hex>``.
     Une adresse décodée et acceptée (``accept``, tout par défaut) prend la place de l'élément ;
     une donnée invalide ou une adresse refusée est retirée sans erreur, pour que le texte
-    « [email protected] » ne subsiste pas. Un refus n'est jamais conservé. Renvoie les adresses
-    gardées, dans l'ordre de la page, sans doublon.
+    « [email protected] » ne subsiste pas. Un refus n'est jamais conservé. ``within`` limite le
+    décodage à ces éléments (le reste de la page n'est pas touché). Renvoie les adresses gardées,
+    dans l'ordre de la page, sans doublon.
+
+    Aucune requête réseau : seul le HTML déjà récupéré est lu. À n'appeler que pour une source dont
+    le décodage est autorisé (Licitor) ; Vench et Petites Affiches ne décodent pas.
     """
+    scope = list(within) if within is not None else [soup]
     revealed: list[str] = []
-    candidates = [
-        (node, node.get("data-cfemail"))
-        for node in soup.find_all(attrs={"data-cfemail": True})
-    ]
-    for link in soup.find_all("a", href=True):
-        match = _CLOUDFLARE_EMAIL_LINK_RE.search(str(link.get("href")))
-        if match:
-            candidates.append((link, match.group("hex")))
+    candidates: list[tuple[Tag, object]] = []
+    seen: set[int] = set()
+    for root in scope:
+        for node in root.find_all(attrs={"data-cfemail": True}):
+            if id(node) not in seen:
+                seen.add(id(node))
+                candidates.append((node, node.get("data-cfemail")))
+        for link in root.find_all("a", href=True):
+            match = _CLOUDFLARE_EMAIL_LINK_RE.search(str(link.get("href")))
+            if match and id(link) not in seen:
+                seen.add(id(link))
+                candidates.append((link, match.group("hex")))
     # Document order, parents first, so a link wrapping a ``data-cfemail`` span is replaced once.
     order = {id(node): index for index, node in enumerate(soup.find_all(True))}
     candidates.sort(key=lambda item: order.get(id(item[0]), 0))
