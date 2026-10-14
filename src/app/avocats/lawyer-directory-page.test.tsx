@@ -68,7 +68,7 @@ describe("annuaire des avocats", () => {
     expect(document.body.textContent).not.toMatch(/Spécialistes en droit immobilier/i);
   });
 
-  it("affiche « Mise en avant payante » sur les profils sponsorisés seulement", async () => {
+  it("affiche « Publicité · Sponsorisé » sur les profils sponsorisés seulement", async () => {
     renderDirectory([
       profile({
         id: "a",
@@ -82,18 +82,20 @@ describe("annuaire des avocats", () => {
     const standard = screen.getByText("Maître Standard").closest("article");
     expect(sponsored).not.toBeNull();
     expect(standard).not.toBeNull();
-    expect(within(sponsored as HTMLElement).getByText("Mise en avant payante")).toBeTruthy();
-    expect(within(standard as HTMLElement).queryByText("Mise en avant payante")).toBeNull();
+    expect(within(sponsored as HTMLElement).getByText("Publicité · Sponsorisé")).toBeTruthy();
+    expect(within(standard as HTMLElement).queryByText(/Sponsorisé/)).toBeNull();
     expect(document.body.textContent).not.toMatch(/partenaire/i);
   });
 
-  it("n'appelle pas « payante » une mise en avant encore en essai", async () => {
+  it("signale une mise en avant encore en essai comme telle, sans la dire payée", async () => {
     renderDirectory([
       profile({ id: "t", displayName: "Maître Essai", isSponsored: true, placement: "trial" }),
     ]);
     const trial = (await screen.findByText("Maître Essai")).closest("article") as HTMLElement;
-    expect(within(trial).getByText("Mise en avant en période d'essai")).toBeTruthy();
-    expect(within(trial).queryByText("Mise en avant payante")).toBeNull();
+    expect(
+      within(trial).getByText("Publicité · Sponsorisé (période d’essai gratuite)"),
+    ).toBeTruthy();
+    expect(within(trial).queryByText("Publicité · Sponsorisé")).toBeNull();
     expect(screen.getByText("Mise en avant (essai ou payante)")).toBeTruthy();
     expect(document.body.textContent).not.toContain("rémunèrent Immojudis");
   });
