@@ -96,7 +96,9 @@ def _storage_json(sale: AuctionSale) -> str:
 def test_data_cfemail_address_is_kept_apart_and_never_published() -> None:
     raw = parse_licitor_detail_html(_html(_data_cfemail_block(LAWYER_EMAIL)), URL)
 
-    assert raw["internal_contacts"] == [{"email": LAWYER_EMAIL, "name": LAWYER_NAME, "role": "lawyer"}]
+    assert raw["internal_contacts"] == [
+        {"email": LAWYER_EMAIL, "name": LAWYER_NAME, "role": "lawyer", "source_name": "licitor"}
+    ]
     # Aucun champ de la vente brute ne porte l'adresse, hormis la clé interne.
     published = {key: value for key, value in raw.items() if key != "internal_contacts"}
     assert LAWYER_EMAIL not in _published_text(published)
@@ -272,7 +274,7 @@ def test_normalized_sale_keeps_the_address_out_of_every_persisted_field() -> Non
     sale = normalize_sale(raw)
 
     assert sale.internal_contacts == [
-        {"email": LAWYER_EMAIL, "name": LAWYER_NAME, "role": "lawyer", "source_url": URL}
+        {"email": LAWYER_EMAIL, "name": LAWYER_NAME, "role": "lawyer", "source_name": "licitor", "source_url": URL}
     ]
     assert LAWYER_EMAIL not in _storage_json(sale)
     assert "internal_contacts" not in _storage_json(sale)
@@ -313,11 +315,36 @@ def test_merged_duplicates_keep_the_internal_address_once() -> None:
     assert LAWYER_EMAIL not in _storage_json(merged[0])
 
 
-def test_publication_gate_counts_the_internal_address_as_a_contact_but_not_a_court_one() -> None:
-    sale = AuctionSale(source_name="licitor", source_url=URL, internal_contacts=[
-        {"email": LAWYER_EMAIL, "name": "", "role": "lawyer", "source_url": URL},
-        {"email": "greffe@tj-exemple.justice.fr", "name": "", "role": "lawyer", "source_url": URL},
-    ])
+def test_publication_gate_ignores_internal_addresses() -> None:
+    # Verdict stable d'un run à l'autre et identique au miroir TypeScript, qui ne voit que la vente publiée.
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url=URL,
+        internal_contacts=[{"email": LAWYER_EMAIL, "name": "", "role": "lawyer", "source_url": URL}],
+    )
 
-    assert usable_contact_emails(sale) == {LAWYER_EMAIL}
-    assert usable_contact_emails(AuctionSale(source_name="licitor", source_url=URL)) == set()
+    assert usable_contact_emails(sale) == set()
+
+
+def test_merged_duplicate_keeps_licitor_as_the_source_of_the_address() -> None:
+    sale = normalize_sale(parse_licitor_detail_html(_html(_data_cfemail_block(LAWYER_EMAIL)), URL))
+    twin = AuctionSale(source_name="vench", source_url="https://www.vench.fr/vente-170001-un-bien.html")
+
+    merged = merge_duplicate_sales([twin, sale])
+
+    contacts = [item for sale_ in merged for item in sale_.internal_contacts]
+    assert [item["source_name"] for item in contacts] == ["licitor"]
+
+
+def test_a_failing_decoder_never_fails_the_page(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    from src.sources import licitor
+
+    def boom(*_args: object) -> list[dict[str, str]]:
+        raise ValueError(f"cannot decode {LAWYER_EMAIL}")
+
+    monkeypatch.setattr(licitor, "_internal_lawyer_contacts", boom)
+    raw = parse_licitor_detail_html(_html(_data_cfemail_block(LAWYER_EMAIL)), URL)
+
+    assert "internal_contacts" not in raw
+    assert raw["lawyer_name"] == LAWYER_NAME
+    assert "ValueError" in caplog.text and LAWYER_EMAIL not in caplog.text

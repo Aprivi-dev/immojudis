@@ -13,7 +13,7 @@ from dateutil import parser
 from src.admission import is_date_only, sale_date_has_passed
 from src.department_inference import department_from_geocode_evidence
 from src.listing_location import recover_listing_address, reject_monetary_address
-from src.models import AuctionSale
+from src.models import INTERNAL_CONTACTS_KEY, AuctionSale
 from src.null_text import clean_text
 from src.room_counts import (
     _parse_count_token,
@@ -1204,8 +1204,6 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     )
 
 
-INTERNAL_CONTACTS_KEY = "internal_contacts"
-
 
 def normalize_internal_contacts(value: object | None, source_url: str) -> list[dict[str, str]]:
     """Adresses internes d'une vente brute : e-mail, nom et rôle, avec la page où elles ont été relevées.
@@ -1226,6 +1224,7 @@ def normalize_internal_contacts(value: object | None, source_url: str) -> list[d
                 "email": email.lower(),
                 "name": clean_text(item.get("name")) or "",
                 "role": clean_text(item.get("role")) or "lawyer",
+                "source_name": clean_text(item.get("source_name")) or "",
                 "source_url": clean_text(item.get("source_url")) or source_url,
             }
         )

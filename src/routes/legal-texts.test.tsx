@@ -125,6 +125,10 @@ describe("conditions générales : classement, référencement et mise en avant"
   it("portent la version 2026-10-14.1, ancrée par l'empreinte de leur source", () => {
     expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-10-14.1");
   });
+
+  it("la politique de confidentialité est en version 2026-10-14.2 (relevé des adresses Licitor)", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-14.2");
+  });
 });
 
 describe("conditions générales : 3 déblocages par mois", () => {
@@ -359,8 +363,15 @@ describe("politique de confidentialité", () => {
     expect(text).toContain("Base juridique : intérêt légitime à publier des informations exactes");
     expect(text).toContain("Les messages ne contiennent aucune offre commerciale.");
     expect(text).toContain(
-      "Les données sont conservées un mois au plus si aucun message n’est envoyé, 12 mois si vous ne répondez pas, 24 mois après le dernier échange si vous répondez.",
+      "Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont l’adresse e-mail est masquée par le site, sont relevées automatiquement lors de la collecte de l’annonce ; elles sont conservées en interne, jamais publiées, et ne servent qu’à une demande d’information validée par un membre de l’équipe.",
     );
+    expect(text).toContain(
+      "Une adresse relevée à la collecte de l’annonce et non utilisée pour un envoi est conservée tant que l’annonce est en ligne et recollectée, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).",
+    );
+    expect(text).toContain(
+      "Les données d’un échange sont conservées 12 mois si vous ne répondez pas, 24 mois après le dernier échange si vous répondez.",
+    );
+    expect(text).not.toContain("conservées un mois au plus si aucun message n’est envoyé");
     expect(text).toContain(
       "Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus être contacté » de chaque message ou à contact@immojudis.example. Votre opposition est enregistrée et vaut pour tous nos canaux.",
     );

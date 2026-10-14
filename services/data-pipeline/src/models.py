@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 from src.null_text import is_null_text, null_if_placeholder
 
+# Clé de la vente brute qui porte les adresses internes (jamais publiées, jamais sérialisées).
+INTERNAL_CONTACTS_KEY = "internal_contacts"
+
 # Free-text columns: a literal « nan » or « None » means "missing", never a value.
 NULLABLE_TEXT_FIELDS = (
     "external_id",

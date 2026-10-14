@@ -16,6 +16,7 @@ import json
 import logging
 import math
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -35,6 +36,23 @@ WORKER_EVENT_PREFIX = "__IMMOJUDIS_SOURCE_EVENT__"
 
 class SourceScrapeTimeout(TimeoutError):
     """Raised when an isolated collector exceeds its wall-clock budget."""
+
+
+_EMAIL_RE = re.compile(r"[\w.+'-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def _worker_detail(text: str | None, fallback: str) -> str:
+    """Fin d'une sortie de worker pour un message d'erreur, sans adresse e-mail.
+
+    Une réponse JSON complète du worker (``{"ok"…``) porte les ventes brutes : elle n'est jamais citée.
+    Les adresses e-mail des autres sorties sont masquées.
+    """
+    detail = (text or "").strip()
+    if not detail:
+        return fallback
+    if detail.startswith('{"ok"'):
+        return "worker JSON response omitted"
+    return _EMAIL_RE.sub("[email]", detail)[-1200:]
 
 
 class SourceScrapeWorkerError(RuntimeError):
@@ -98,21 +116,17 @@ def run_source_in_subprocess(
         on_batch=on_batch,
     )
     if returncode != 0:
-        detail = (stderr or stdout or "worker exited without a diagnostic").strip()
-        raise SourceScrapeWorkerError(
-            f"{source} collector worker exited {returncode}: {detail[-1200:]}"
-        )
+        detail = _worker_detail(stderr or stdout, "worker exited without a diagnostic")
+        raise SourceScrapeWorkerError(f"{source} collector worker exited {returncode}: {detail}")
 
     try:
         message = json.loads((stdout or "").strip())
     except json.JSONDecodeError as exc:
-        detail = (stderr or stdout or "empty worker response").strip()
-        raise SourceScrapeWorkerError(
-            f"{source} collector returned invalid JSON: {detail[-1200:]}"
-        ) from exc
+        detail = _worker_detail(stderr or stdout, "empty worker response")
+        raise SourceScrapeWorkerError(f"{source} collector returned invalid JSON: {detail}") from exc
     if not isinstance(message, dict) or message.get("ok") is not True:
         detail = message.get("error") if isinstance(message, dict) else message
-        raise SourceScrapeWorkerError(f"{source} collector failed: {str(detail)[:1200]}")
+        raise SourceScrapeWorkerError(f"{source} collector failed: {_EMAIL_RE.sub('[email]', str(detail))[:1200]}")
     result = message.get("result")
     if not isinstance(result, dict):
         raise SourceScrapeWorkerError(f"{source} collector returned no result")
@@ -219,7 +233,9 @@ def _communicate_with_timeout(
         _kill_process_tree(process)
         raise SourceScrapeWorkerError(f"{label} collector output reader did not terminate")
     if event_errors:
-        raise SourceScrapeWorkerError(f"{label} source batch callback failed: {event_errors[0]}")
+        raise SourceScrapeWorkerError(
+            f"{label} source batch callback failed: {_EMAIL_RE.sub('[email]', str(event_errors[0]))}"
+        )
     return "".join(stdout_chunks), "".join(stderr_chunks), int(process.returncode or 0), round(elapsed, 2)
 
 

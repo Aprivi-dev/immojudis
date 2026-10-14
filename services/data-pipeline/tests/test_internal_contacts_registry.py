@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import re
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -63,7 +65,7 @@ def test_connection_path_inserts_a_sale_listing_row_with_the_listing_as_origin()
     assert registry.write_internal_contacts_connection(connection, [_sale(EMAIL)], NOW) == 1
 
     insert, params = next(item for item in connection.statements if "insert into" in item[0])
-    assert connection.savepoints == 1
+    assert connection.savepoints == 2  # relecture des ids, puis la ligne
     assert "'sale_listing'" in insert and "'agent'" in insert and "'source_observed'" in insert
     assert params["sale_id"] == SALE_ID and params["email"] == EMAIL and params["now"] == NOW
     assert params["source_url"] == URL and params["source_name"] == "licitor"
@@ -223,3 +225,182 @@ def test_the_publication_write_calls_the_registry_after_the_sale_write() -> None
 
     assert "internal_contacts.write_safely(" in source
     assert source.index("_upsert_asset_tables_with_rest") < source.index("internal_contacts.write_safely(")
+
+
+# --- Points de sauvegarde, pagination, source et fenêtre de conservation ------------------------------------
+
+
+def test_a_failing_id_lookup_is_isolated_in_its_savepoint_and_leaves_the_publication_intact() -> None:
+    class _LookupFails(_Connection):
+        def execute(self, statement: Any, params: Any = None) -> _Result:
+            self.statements.append((str(statement), params))
+            if "from public.auction_sales" in str(statement):
+                raise RuntimeError("lookup failed")
+            return _Result([])
+
+    connection = _LookupFails()
+
+    assert registry.write_internal_contacts_connection(connection, [_sale(EMAIL)], NOW) == 0
+    assert connection.savepoints == 1
+    assert all("insert into public.information_agent_contacts" not in text for text, _ in connection.statements)
+
+
+def test_each_row_has_its_own_savepoint_and_one_failure_does_not_stop_the_others(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _FirstInsertFails(_Connection):
+        inserts = 0
+
+        def execute(self, statement: Any, params: Any = None) -> _Result:
+            if "insert into public.information_agent_contacts" in str(statement):
+                type(self).inserts += 1
+                if type(self).inserts == 1:
+                    raise RuntimeError(f"boom {params['email']}")
+            return super().execute(statement, params)
+
+    connection = _FirstInsertFails()
+    with caplog.at_level(logging.WARNING):
+        written = registry.write_internal_contacts_connection(connection, [_sale(EMAIL, "autre@exemple.test")], NOW)
+
+    assert written == 1
+    assert connection.savepoints == 3  # ids + deux lignes
+    assert "RuntimeError" in caplog.text and "failed=1" in caplog.text
+    assert EMAIL not in caplog.text and "autre@exemple.test" not in caplog.text
+
+
+def test_the_address_keeps_licitor_as_its_source_after_a_merge_under_another_source() -> None:
+    sale = AuctionSale(
+        source_name="vench",
+        source_url=URL,
+        internal_contacts=[
+            {"email": EMAIL, "name": "Maître Exemple", "role": "lawyer", "source_name": "licitor", "source_url": "https://www.licitor.com/annonce/1.html"}
+        ],
+    )
+
+    [row] = registry.contact_rows([sale], {URL: SALE_ID}, NOW)
+
+    assert row["source_name"] == "licitor"
+    assert row["provenance"][0]["source_name"] == "licitor"
+    assert row["source_url"] == "https://www.licitor.com/annonce/1.html"
+
+
+def test_the_first_observation_date_is_never_rewritten() -> None:
+    insert = registry._INSERT_SQL
+    update = insert[insert.index("do update") :]
+
+    assert "created_at" not in insert
+    assert set(re.findall(r"(\w+) = excluded", update)) == {"observed_at", "source_url", "last_seen_at"}
+
+    rest = _Rest(
+        existing=[
+            {"id": "row-1", "scope_sale_id": SALE_ID, "normalized_email": EMAIL, "source_kind": "sale_listing",
+             "opposition_status": "none"}
+        ]
+    )
+    rest.run([_sale(EMAIL)])
+    assert "created_at" not in _writes(rest)[0][2]["json"]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"status": "cancelled"},
+        {"status": "withdrawn"},
+        {"status": "past"},
+        {"status": "adjudicated"},
+        {"status": "postponed"},  # reportée sans nouvelle date
+        {"sale_date": datetime(2020, 1, 1, 10, 0, tzinfo=UTC)},  # audience passée
+    ],
+)
+def test_no_write_nor_refresh_after_the_sale_is_over_or_withdrawn(overrides: dict[str, Any]) -> None:
+    sale = _sale(EMAIL)
+    for key, value in overrides.items():
+        setattr(sale, key, value)
+
+    connection = _Connection()
+    assert registry.write_internal_contacts_connection(connection, [sale], NOW) == 0
+    assert connection.statements == []
+    rest = _Rest(
+        existing=[
+            {"id": "row-1", "scope_sale_id": SALE_ID, "normalized_email": EMAIL, "source_kind": "sale_listing",
+             "opposition_status": "none"}
+        ]
+    )
+    assert rest.run([sale]) == 0
+    assert rest.calls == []
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"status": "upcoming"},
+        {"status": "active", "sale_date": datetime.now(UTC) + timedelta(days=20)},
+        {"status": "postponed", "sale_date": datetime.now(UTC) + timedelta(days=40)},  # nouvelle date connue
+        {"status": "unknown"},
+    ],
+)
+def test_an_upcoming_sale_keeps_its_address_refreshed(overrides: dict[str, Any]) -> None:
+    sale = _sale(EMAIL)
+    for key, value in overrides.items():
+        setattr(sale, key, value)
+
+    assert registry.registers_internal_contacts(sale) is True
+
+
+def test_rest_opposition_list_is_read_page_by_page_and_an_address_on_a_later_page_is_honoured() -> None:
+    pages: list[str] = []
+
+    class _Paged(_Rest):
+        def get(self, url: str, **kwargs: Any) -> _Response:
+            params = kwargs["params"]
+            self.calls.append(("GET", url, kwargs))
+            if params.get("opposition_status") == "eq.opposed":
+                offset = int(params["offset"])
+                pages.append(params["offset"])
+                assert params["order"] == "id" and params["limit"] == "1000"
+                if offset == 0:
+                    return _Response([{"normalized_email": f"x{index}@exemple.test"} for index in range(1000)])
+                return _Response([{"normalized_email": EMAIL}])
+            return _Response([])
+
+    rest = _Paged()
+
+    assert rest.run([_sale(EMAIL)]) == 0
+    assert pages == ["0", "1000"]
+    assert _writes(rest) == []
+
+
+def test_rest_reading_fails_closed_after_the_page_cap_and_writes_nothing() -> None:
+    class _Endless(_Rest):
+        def get(self, url: str, **kwargs: Any) -> _Response:
+            self.calls.append(("GET", url, kwargs))
+            return _Response([{"normalized_email": f"x{index}@exemple.test"} for index in range(1000)])
+
+    rest = _Endless()
+    with pytest.raises(RuntimeError, match="trop de pages"):
+        rest.run([_sale(EMAIL)])
+    assert _writes(rest) == []
+    assert len([call for call in rest.calls if call[0] == "GET"]) == registry.MAX_PAGES
+
+
+def test_rest_existing_rows_are_read_by_chunks_of_sale_ids() -> None:
+    sales = []
+    ids: dict[str, str] = {}
+    for index in range(120):
+        url = f"{URL}?n={index}"
+        sale = AuctionSale(
+            source_name="licitor",
+            source_url=url,
+            internal_contacts=[{"email": f"a{index}@exemple.test", "name": "", "role": "lawyer", "source_url": url}],
+        )
+        sales.append(sale)
+        ids[url] = f"00000000-0000-4000-8000-{index:012d}"
+    rest = _Rest()
+
+    written = registry.write_internal_contacts_rest(
+        "https://example.test", "key", sales, ids, NOW, get=rest.get, post=rest.post, patch=rest.patch
+    )
+
+    existing_reads = [c for c in rest.calls if c[0] == "GET" and "scope_sale_id" in c[2]["params"]]
+    assert written == 120 and len(existing_reads) == 3  # 50 + 50 + 20
+    assert all(c[2]["params"]["scope_sale_id"].count(",") < registry.SALE_ID_CHUNK for c in existing_reads)
