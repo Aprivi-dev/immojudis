@@ -231,6 +231,13 @@ async function main() {
   const runOnlyIfEnabled = process.argv.includes("--if-enabled");
   const dryRun = process.argv.includes("--dry-run");
   const checkOnly = process.argv.includes("--check");
+  // Read-only watchdog mode (with --dry-run): exit non-zero when migrations are pending.
+  const failOnPending = process.argv.includes("--fail-on-pending");
+
+  if (failOnPending && !dryRun) {
+    console.error("[supabase-migrations] --fail-on-pending requires --dry-run.");
+    process.exit(1);
+  }
 
   if (runOnlyIfEnabled && !isTruthy(process.env.RUN_SUPABASE_MIGRATIONS_ON_BUILD)) {
     console.log("[supabase-migrations] Skipped; RUN_SUPABASE_MIGRATIONS_ON_BUILD is not enabled.");
@@ -331,6 +338,13 @@ async function main() {
     );
     if (dryRun) {
       console.log("[supabase-migrations] Dry run complete; no SQL was applied.");
+      if (failOnPending) {
+        const summary = `${pending.length} migration(s) committed on main are not applied in the target database: ${pending.map((m) => m.file).join(", ")}`;
+        console.error(`[supabase-migrations] ${summary}`);
+        if (process.env.GITHUB_ACTIONS === "true")
+          console.error(`::error title=Pending Supabase migrations::${summary}`);
+        process.exitCode = 1;
+      }
       return;
     }
 
