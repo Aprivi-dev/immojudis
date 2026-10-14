@@ -205,7 +205,7 @@ describe("pied de message art. 14 : version complète", () => {
     );
     expect(text).toContain("saisir la CNIL d’une réclamation (cnil.fr/plaintes)");
     expect(text).toContain(
-      "Opposition : Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Nous supprimons alors vos données, sauf l’information strictement nécessaire pour ne plus vous solliciter (adresse, identité professionnelle, date de l’opposition), conservée uniquement à cette fin. Votre opposition vaut pour tous nos canaux.",
+      "Opposition : Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Nous ne vous solliciterons plus, sur aucun de nos canaux. Les données qui ne servent qu’à vous contacter sont supprimées ; les échanges déjà intervenus sont conservés jusqu’à la fin de leur durée normale (12 ou 24 mois), puis supprimés. Seule l’information strictement nécessaire pour ne plus vous solliciter (adresse, identité professionnelle, date de l’opposition) est conservée au-delà, à cette seule fin.",
     );
     expect(text).toContain("https://immojudis.com/privacy");
     expect(text).toContain("Ne plus être contacté (un clic) : https://immojudis.com/api/");
