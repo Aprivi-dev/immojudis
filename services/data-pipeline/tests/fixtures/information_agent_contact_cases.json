@@ -161,6 +161,11 @@
       ]
     },
     {
+      "name": "Licitor lawyer_contact with a decoded Cloudflare address between phone and website",
+      "lawyer_contact": "14, bd Exemple - CS 60062 - 86002 Exempleville Cedex | Tél.: 01 00 00 00 01 | maitre@cabinet-exemple.test | www.cabinet-exemple.test",
+      "expected": ["maitre@cabinet-exemple.test"]
+    },
+    {
       "name": "no contact anywhere",
       "description": "Maison à vendre, visite sur rendez-vous.",
       "source_blocks": {

@@ -18,8 +18,8 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-10-14.1",
-    sha256: "65b93b629a9637b482e3c4b18c28914489aabe407e4a3e8d424b242fc379fe31",
+    version: "2026-10-14.2",
+    sha256: "1a915c7252f38e8aaf99520d1e62682fc93cf294454c652540c6dbd8a72d0729",
     effectiveDate: "14 octobre 2026",
     path: "/privacy",
   },
