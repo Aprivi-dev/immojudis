@@ -83,6 +83,6 @@ Mise à jour : 11 octobre 2026. Écran : **Admin › Agent IA** (`/admin/agent-i
 
 ## Limites connues
 
-- Licitor masque les adresses e-mail des avocats derrière la protection de Cloudflare (« [email protected] » dans 105 fiches actives le 11 octobre) : aucun contact n’est trouvé automatiquement ; l’administrateur saisit l’adresse et la page publique où il l’a relevée. Le décodage relève du parseur Licitor.
+- Licitor masque les adresses e-mail des avocats derrière la protection de Cloudflare (« [email protected] » dans 105 fiches actives le 11 octobre). Le parseur Licitor les décode désormais (`data-cfemail` et liens `/cdn-cgi/l/email-protection#…`) et place l’adresse dans `lawyer_contact`, comme les autres sources ; une adresse de juridiction (`@justice.fr`, `@*.justice.gouv.fr`) n’est ni décodée ni conservée, et une donnée illisible est ignorée. Une fiche déjà en base ne change qu’à sa prochaine collecte : le texte stocké (`page_text`) contient encore « [email protected] », et la relecture sans réseau ne peut pas le décoder. Tant que la fiche n’est pas recollectée, l’administrateur saisit l’adresse et la page publique où il l’a relevée.
 - Une seule sollicitation par adresse et par période de 30 jours, toutes ventes confondues : un avocat chargé de plusieurs ventes ne reçoit qu’une demande par mois.
 - Les pièces ne sont reconnues que par leur libellé ou leur type ; un PDF au nom neutre (« 3742_001.pdf ») n’est pas compté.

@@ -26,6 +26,7 @@ from src.sources.common import (
     is_allowed_origin_url,
     normalize_surface_number,
     parse_html,
+    reveal_cloudflare_emails,
 )
 from src.sources.image_candidates import html_image_candidates
 from src.sources.licitor_extraction import (
@@ -33,6 +34,7 @@ from src.sources.licitor_extraction import (
     dedupe_licitor_images,
     extract_licitor_fields,
     licitor_department,
+    publishable_licitor_email,
 )
 from src.sources.source_features import cadastral_to_m2 as _cadastral_to_m2
 from src.sources.source_features import extract_parking_count as _extract_parking_count
@@ -292,6 +294,9 @@ def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[d
 
 def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     soup = parse_html(html, "html.parser")
+    # Cloudflare masque les adresses e-mail des avocats : on les décode avant de lire le texte, pour
+    # que la fiche porte l'adresse (jamais celle d'une juridiction) et non « [email protected] ».
+    reveal_cloudflare_emails(soup, accept=publishable_licitor_email)
     raw_text = _stable_raw_text(soup.get_text("\n", strip=True))
     lines = raw_text.splitlines()
 

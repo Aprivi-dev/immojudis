@@ -13,8 +13,9 @@ type de vente, date d'audience, puis un ou plusieurs lots (titre, désignation,
 avocats, la mention du cahier des conditions de vente, les pièces jointes et la
 référence de la régie. Les balises en ligne (``<b>``) coupent le texte en
 fragments : ils sont recollés avant lecture. Les compteurs de vues, l'encart
-partenaire (prix au m² d'un tiers) et les adresses e-mail masquées par le site
-ne sont jamais repris.
+partenaire (prix au m² d'un tiers) ne sont jamais repris. Les adresses e-mail masquées par
+Cloudflare sont décodées en amont (``reveal_cloudflare_emails``, dans ``licitor.py``) : le texte
+porte alors l'adresse de l'avocat ; celle d'une juridiction n'est jamais gardée.
 """
 
 from __future__ import annotations
@@ -32,8 +33,10 @@ from src.department_names import (
     department_from_name,
     departments_named_in_text,
 )
+from src.information_sufficiency import is_court_registry_email
 from src.normalize import clean_text, extract_department
 from src.pdf_document_types import classify_document_type
+from src.sources.common import is_plausible_email
 
 FEATURES_SCHEMA_VERSION = "licitor_features_v1"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
@@ -241,6 +244,7 @@ class LicitorLawyer:
     phone: str | None = None
     fax: str | None = None
     website: str | None = None
+    email: str | None = None
     email_published: bool = False
     extra: list[str] = field(default_factory=list)
 
@@ -250,6 +254,7 @@ class LicitorLawyer:
             parts.append(f"Tél.: {self.phone}")
         if self.fax:
             parts.append(f"Fax : {self.fax}")
+        parts.append(self.email)
         parts.append(self.website)
         return " | ".join(part for part in parts if part) or None
 
@@ -258,7 +263,7 @@ class LicitorLawyer:
             key: value
             for key, value in {
                 "name": self.name, "role": self.role, "address": self.address, "phone": self.phone, "fax": self.fax,
-                "website": self.website, "email_published": self.email_published or None,
+                "website": self.website, "email": self.email, "email_published": self.email_published or None,
                 "notes": self.extra or None,
             }.items()
             if value not in (None, "", [])
@@ -479,6 +484,14 @@ def _parse_lot(number: int, label: str | None, body: list[str], cities: list[str
     return lot
 
 
+_EMAIL_IN_LINE_RE = re.compile(r"[A-Za-z0-9._%+'-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}", re.ASCII)
+
+
+def publishable_licitor_email(email: str) -> bool:
+    """Adresse plausible qui n'est pas celle d'une juridiction (greffe, accueil du tribunal)."""
+    return is_plausible_email(email) and not is_court_registry_email(email)
+
+
 def _parse_trailer(lines: list[str], page: LicitorPage) -> None:
     current: LicitorLawyer | None = None
     index = 0
@@ -522,8 +535,14 @@ def _parse_trailer(lines: list[str], page: LicitorPage) -> None:
             if re.match(r"^Fax\b", line, re.I):
                 current.fax = clean_text(re.sub(r"^Fax\s*:?\s*", "", line, flags=re.I))
                 continue
-            if "email protected" in line.lower() or re.search(r"[\w.+-]+@[\w-]+\.\w", line):
-                current.email_published = True  # adresse masquée par le site : jamais décodée
+            if "email protected" in line.lower() or _EMAIL_IN_LINE_RE.search(line):
+                # « [email protected] » : ancien texte stocké, adresse non décodée. Sinon l'adresse
+                # de l'avocat, sauf celle d'une juridiction qui n'est jamais gardée.
+                current.email_published = True
+                current.email = current.email or next(
+                    (email for email in map(str.lower, _EMAIL_IN_LINE_RE.findall(line)) if publishable_licitor_email(email)),
+                    None,
+                )
                 continue
             if re.match(r"^(?:https?://)?www\.|^https?://", line, re.I):
                 current.website = current.website or line
@@ -1057,5 +1076,6 @@ __all__ = [
     "extract_licitor_fields",
     "licitor_department",
     "parse_licitor_page",
+    "publishable_licitor_email",
     "refresh_licitor_raw_sale",
 ]
