@@ -400,31 +400,6 @@ def scrape_licitor_historical_result(
     )
 
 
-def _without_decoded_emails(features: object) -> object:
-    """Copie des features sans l'adresse email décodée de l'avocat (``contact.email``, ``lawyers[].email``).
-
-    L'historique reste un résultat tiers dont les droits de réutilisation commerciale sont en attente :
-    il ne reprend pas l'adresse que le parseur décode sur les annonces en cours. Le reste est inchangé.
-    """
-    if not isinstance(features, dict):
-        return features
-    cleaned = dict(features)
-    contact = cleaned.get("contact")
-    if isinstance(contact, dict):
-        contact = {key: value for key, value in contact.items() if key != "email"}
-        if contact:
-            cleaned["contact"] = contact
-        else:
-            cleaned.pop("contact")
-    lawyers = cleaned.get("lawyers")
-    if isinstance(lawyers, list):
-        cleaned["lawyers"] = [
-            {key: value for key, value in lawyer.items() if key != "email"} if isinstance(lawyer, dict) else lawyer
-            for lawyer in lawyers
-        ]
-    return cleaned
-
-
 def _historical_raw_sale(
     *,
     base: dict[str, Any],
@@ -494,6 +469,8 @@ def _historical_raw_sale(
         "surface_m2",
         "lawyer_name",
         "lawyer_contact",
+        # Adresse décodée de l'avocat : interne aux annonces en cours, jamais reprise d'un résultat tiers.
+        "internal_contacts",
         "visit_dates",
         "occupancy_status",
         "latitude",
@@ -504,7 +481,6 @@ def _historical_raw_sale(
     ):
         row.pop(key, None)
     row["documents"] = []
-    row["source_property_features"] = _without_decoded_emails(row.get("source_property_features"))
     if hammer_price is None:
         row.pop("adjudication_price_eur", None)
     if starting_price is None:

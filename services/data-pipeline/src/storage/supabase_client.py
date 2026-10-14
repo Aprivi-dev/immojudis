@@ -61,6 +61,7 @@ from src.reviewed_aliases import (
     load_reviewed_aliases,
     registry_from_rows,
 )
+from src.storage import internal_contacts
 from src.storage.column_sets import (
     DEDUPLICATION_SALE_SELECT,
     JUDICIAL_SALE_COLUMNS,  # noqa: F401  (re-exported)
@@ -607,6 +608,7 @@ def _write_sale_revisions(
     )
     _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
     _enqueue_due_enrichment(sales, str(url), str(key))
+    _write_internal_contacts(sales, str(url), str(key), now)
     if refresh_last_seen and _PUBLICATION_CONNECTION.get() is not None:
         from src.collection_evidence import record_sale_decisions
         for run_id in {sale.last_run_id for sale in sales if sale.last_run_id}:
@@ -617,6 +619,30 @@ def _write_sale_revisions(
                 record_sale_decisions(str(run_id), [sale], decision="quarantined",
                                       reason=quarantine_reason(sale), connection=_PUBLICATION_CONNECTION.get())
     return sum(not quarantine_reason(sale) for sale in sales)
+
+
+def _write_internal_contacts(sales: list[AuctionSale], supabase_url: str, api_key: str, now: str) -> int:
+    """Adresses internes des ventes (Licitor) vers le registre de l'agent, jamais vers la vente.
+
+    Écrit après l'écriture de la vente, dans la même transaction quand il y en a une (point de
+    sauvegarde) ou par PostgREST sinon, une fois l'id de la vente relu. Un échec n'interrompt jamais la
+    collecte : il est journalisé sans adresse (type de l'erreur et compteur seulement).
+    """
+    eligible = internal_contacts.sales_with_internal_contacts(sales)
+    if not eligible:
+        return 0
+    try:
+        connection = _PUBLICATION_CONNECTION.get()
+        if connection is not None:
+            return internal_contacts.write_internal_contacts_connection(connection, eligible, now)
+        return internal_contacts.write_internal_contacts_rest(
+            supabase_url, api_key, eligible, _sale_ids_for_rest(supabase_url, api_key, eligible), now
+        )
+    except Exception as exc:  # noqa: BLE001 - jamais d'échec de collecte pour un registre interne
+        LOGGER.warning(
+            "Internal contacts registry write skipped: error=%s sales=%s", type(exc).__name__, len(eligible)
+        )
+        return 0
 
 
 def _write_fact_claims_postgres(sales: list[AuctionSale], connection: Any) -> int:

@@ -16,7 +16,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup, Tag
 
 from src.source_task_deadline import (
     SourceTaskDeadlineExceeded,
@@ -173,26 +173,27 @@ def decode_cloudflare_email(encoded: object) -> str | None:
     return decoded if is_plausible_email(decoded) else None
 
 
-def reveal_cloudflare_emails(
+def extract_cloudflare_emails(
     soup: BeautifulSoup,
     *,
     accept: Callable[[str], bool] | None = None,
     within: Iterable[Tag] | None = None,
 ) -> list[str]:
-    """Remplace dans ``soup`` les adresses masquées par Cloudflare par l'adresse décodée.
+    """Retire de ``soup`` les adresses masquées par Cloudflare et renvoie celles qui se décodent.
 
     Sont lus les éléments ``data-cfemail`` et les liens ``/cdn-cgi/l/email-protection#<hex>``.
-    Une adresse décodée et acceptée (``accept``, tout par défaut) prend la place de l'élément ;
-    une donnée invalide ou une adresse refusée est retirée sans erreur, pour que le texte
-    « [email protected] » ne subsiste pas. Un refus n'est jamais conservé. ``within`` limite le
-    décodage à ces éléments (le reste de la page n'est pas touché). Renvoie les adresses gardées,
+    Chaque élément est retiré de la page (le texte « [email protected] » ne subsiste pas) et
+    l'adresse décodée n'est JAMAIS remise dans la page : l'appelant la garde à part (stockage
+    interne), elle ne doit apparaître dans aucun champ publié. Une donnée invalide ou une adresse
+    refusée (``accept`` faux) est retirée sans erreur et n'est pas renvoyée. ``within`` limite la
+    lecture à ces éléments (le reste de la page n'est pas touché). Renvoie les adresses gardées,
     dans l'ordre de la page, sans doublon.
 
     Aucune requête réseau : seul le HTML déjà récupéré est lu. À n'appeler que pour une source dont
     le décodage est autorisé (Licitor) ; Vench et Petites Affiches ne décodent pas.
     """
     scope = list(within) if within is not None else [soup]
-    revealed: list[str] = []
+    found: list[str] = []
     candidates: list[tuple[Tag, object]] = []
     seen: set[int] = set()
     for root in scope:
@@ -205,20 +206,17 @@ def reveal_cloudflare_emails(
             if match and id(link) not in seen:
                 seen.add(id(link))
                 candidates.append((link, match.group("hex")))
-    # Document order, parents first, so a link wrapping a ``data-cfemail`` span is replaced once.
+    # Document order, parents first, so a link wrapping a ``data-cfemail`` span is read once.
     order = {id(node): index for index, node in enumerate(soup.find_all(True))}
     candidates.sort(key=lambda item: order.get(id(item[0]), 0))
     for node, encoded in candidates:
-        if node.parent is None:  # déjà remplacé ou retiré avec son parent
+        if node.parent is None:  # déjà retiré avec son parent
             continue
         email = decode_cloudflare_email(encoded)
-        if email and (accept is None or accept(email)):
-            node.replace_with(NavigableString(email))
-            if email not in revealed:
-                revealed.append(email)
-        else:
-            node.decompose()
-    return revealed
+        node.decompose()
+        if email and (accept is None or accept(email)) and email not in found:
+            found.append(email)
+    return found
 
 
 def _source_task_sleep(seconds: float, operation: str) -> None:

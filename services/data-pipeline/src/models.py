@@ -105,6 +105,10 @@ class AuctionSale(BaseModel):
     raw_text: str | None = None
     raw_payload: dict[str, Any] = Field(default_factory=dict)
     observations: list[dict[str, Any]] = Field(default_factory=list)
+    # Adresses décodées (Licitor) à usage interne de l'agent d'information. Jamais sérialisées
+    # (``exclude=True`` : ni ``to_storage_dict``, ni ``model_dump``, donc ni colonne, ni prompt, ni
+    # export) ; elles ne sont écrites que dans le registre ``information_agent_contacts``.
+    internal_contacts: list[dict[str, str]] = Field(default_factory=list, exclude=True)
     content_hash: str | None = None
     last_run_id: str | None = None
     first_seen_at: datetime | None = None

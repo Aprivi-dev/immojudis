@@ -118,11 +118,16 @@ def contact_emails(sale: AuctionSale) -> set[str]:
 
     Même périmètre que le module TypeScript : ``lawyer_contact``, les blocs
     ``source_blocks`` de la vente et de chaque observation, la description
-    source (``raw_payload.source_description``) et la description.
+    source (``raw_payload.source_description``) et la description. S'y ajoutent les adresses
+    internes de la vente (``internal_contacts``, décodées de Licitor) : l'agent les retrouve dans le
+    registre ``information_agent_contacts``, jamais dans la vente publiée, mais elles comptent comme
+    contact pour la porte de publication.
     """
     emails: set[str] = set()
     for text in _contact_texts(sale):
         emails |= extract_emails(text)
+    for contact in sale.internal_contacts:
+        emails |= extract_emails(contact.get("email"))
     return {email for email in emails if excluded_contact_reason(email) is None}
 
 

@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
+from src.information_sufficiency import excluded_contact_reason
 from src.normalize import (
     clean_text,
     extract_department,
@@ -22,11 +23,12 @@ from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
     PoliteHttpClient,
     ScrapeResult,
+    extract_cloudflare_emails,
     extract_surface,
     is_allowed_origin_url,
+    is_plausible_email,
     normalize_surface_number,
     parse_html,
-    reveal_cloudflare_emails,
 )
 from src.sources.image_candidates import html_image_candidates
 from src.sources.licitor_extraction import (
@@ -34,8 +36,8 @@ from src.sources.licitor_extraction import (
     dedupe_licitor_images,
     extract_licitor_fields,
     licitor_department,
-    publishable_licitor_email,
 )
+from src.sources.professional_contact import clear_email
 from src.sources.source_features import cadastral_to_m2 as _cadastral_to_m2
 from src.sources.source_features import extract_parking_count as _extract_parking_count
 from src.sources.source_features import extract_qualified_surface as _extract_qualified_surface_impl
@@ -309,16 +311,49 @@ def _log_cloudflare_scope(soup: BeautifulSoup, trusts: list[Any], source_url: st
         LOGGER.debug("Licitor %s : aucun bloc .Trust (aucun professionnel présenté), rien à décoder", source_url)
 
 
+def publishable_licitor_email(email: str) -> bool:
+    """Adresse de professionnel gardée : mêmes filtres pour une adresse décodée et une adresse en clair.
+
+    Plausible, lue par ``clear_email`` (la messagerie RPVA ``@avocat-conseil.fr`` est écartée) et
+    jamais celle d'une juridiction, de l'Ordre, d'un barreau ou d'une CARPA (``excluded_contact_reason``).
+    """
+    return (
+        is_plausible_email(email)
+        and clear_email(email) is not None
+        and excluded_contact_reason(email) is None
+    )
+
+
+def _internal_lawyer_contacts(soup: BeautifulSoup, trusts: list[Any]) -> list[dict[str, str]]:
+    """Adresses masquées des blocs avocats, décodées pour un usage INTERNE seulement.
+
+    Décision du propriétaire (14/10/2026) : l'adresse décodée n'est jamais publiée. Les éléments
+    masqués sont retirés de la page, donc elle n'entre ni dans le texte, ni dans les blocs, ni dans
+    ``lawyer_contact``, ni dans les caractéristiques : elle ne part que dans ``internal_contacts``,
+    clé que ``normalize_sale`` extrait de la vente avant ``raw_payload`` et qui n'est écrite que
+    dans le registre des contacts de l'agent d'information (service_role).
+    """
+    contacts: list[dict[str, str]] = []
+    for trust in trusts:
+        heading = trust.find("h3")
+        name = clean_text(heading.get_text(" ", strip=True)) if heading is not None else None
+        for email in extract_cloudflare_emails(soup, accept=publishable_licitor_email, within=[trust]):
+            if all(email != item["email"] for item in contacts):
+                contacts.append({"email": email, "name": name or "", "role": "lawyer"})
+    return contacts
+
+
 def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     soup = parse_html(html, "html.parser")
     # Cloudflare masque les adresses e-mail des avocats. Licitor ayant donné son accord (14/10/2026,
-    # oral, à formaliser par écrit), on décode, dans le HTML déjà récupéré et dans les seuls blocs des
-    # professionnels (``.Trust``), avant de lire le texte : la fiche porte l'adresse de l'avocat et non
-    # « [email protected] ». Une adresse refusée (juridiction, RPVA, Ordre, CARPA, illisible) est
-    # retirée ; ailleurs dans la page, rien n'est décodé. Vench ne décode pas (autre parseur).
+    # oral, à formaliser par écrit), on les décode dans le HTML déjà récupéré et dans les seuls blocs
+    # des professionnels (``.Trust``) ; chaque élément masqué est retiré de la page (plus de
+    # « [email protected] ») et l'adresse est mise à part, pour l'usage interne de l'agent. Une adresse
+    # refusée (juridiction, RPVA, Ordre, CARPA, illisible) est retirée ; ailleurs dans la page, rien
+    # n'est décodé. Vench ne décode pas (autre parseur).
     trusts = soup.select("div.Trust")
     _log_cloudflare_scope(soup, trusts, source_url)
-    reveal_cloudflare_emails(soup, accept=publishable_licitor_email, within=trusts)
+    internal_contacts = _internal_lawyer_contacts(soup, trusts)
     raw_text = _stable_raw_text(soup.get_text("\n", strip=True))
     lines = raw_text.splitlines()
 
@@ -429,6 +464,9 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     extracted = extract_licitor_fields(raw_text, sale)
     if extracted is not None:
         apply_licitor_fields(sale, extracted)
+    if internal_contacts:
+        # Hors de tout champ publié : extrait par ``normalize_sale``, écrit dans le registre interne.
+        sale["internal_contacts"] = internal_contacts
     return sale
 
 
