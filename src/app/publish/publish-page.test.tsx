@@ -47,6 +47,9 @@ describe("page de publication professionnelle", () => {
     expect(text).toContain("sélections et contenus éditoriaux d'Immojudis");
     expect(text).toContain("aucun effet sur l'ordre des résultats de recherche");
     expect(text).not.toMatch(/pages de recherche/);
+    expect(text).toContain(
+      "Si une contrepartie est convenue, le contenu concerné est signalé comme publicité.",
+    );
   });
 
   it("ne coche aucune option de promotion d'office", () => {

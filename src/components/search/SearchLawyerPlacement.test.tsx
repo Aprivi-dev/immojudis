@@ -172,6 +172,15 @@ describe("SearchLawyerPlacement", () => {
     expect(screen.queryByText("Espace partenaire")).toBeNull();
     expect(screen.queryByText("Maître Claire Bernard")).toBeNull();
     expect(screen.queryByText(/Sponsorisé/)).toBeNull();
+    // Libellé propre à l'invitation, au même style que le libellé sponsorisé, annoncé avant le titre.
+    const label = screen.getByText("Pour les avocats · Immojudis");
+    expect(label.id).toBe("search-lawyer-placement-label");
+    expect(label.className).toContain("text-xs");
+    expect(
+      screen.getByRole("region", {
+        name: "Pour les avocats · Immojudis Vous êtes avocat ? Présentez votre cabinet ici",
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByText(
         "Présentez votre cabinet aux acquéreurs qui recherchent un bien dans ce secteur.",

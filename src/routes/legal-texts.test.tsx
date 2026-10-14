@@ -102,10 +102,16 @@ describe("conditions générales : classement, référencement et mise en avant"
     const text = (container.textContent ?? "").replace(/\s+/g, " ");
     expect(text).toContain("10. Classement, référencement et mise en avant");
     expect(text).toContain(
-      "Par défaut, les annonces sont classées selon la quantité d’informations renseignées dans leur fiche, puis par date de vente, sans qu’aucune rémunération puisse améliorer le rang d’une annonce.",
+      "Par défaut, les annonces dont la position sur la carte est connue passent avant les autres. Elles sont ensuite classées selon la quantité d’informations renseignées dans leur fiche, puis par date de vente la plus proche. Aucune rémunération ne peut améliorer le rang d’une annonce.",
     );
     expect(text).toContain(
-      "Un cabinet d’avocats peut financer un encart signalé « Publicité · Sponsorisé » pour une zone géographique ; cet encart ne modifie pas l’ordre des annonces et n’est ni une recommandation, ni une notation, ni une garantie de résultat.",
+      "Dans l’annuaire des avocats, les cabinets qui rémunèrent Immojudis, ou bénéficient d’un essai gratuit de cette offre, sont affichés en premier dans une section distincte, signalés « Publicité · Sponsorisé » ; ils ne sont ni recommandés ni notés.",
+    );
+    expect(text).toContain(
+      "Un encart d’un cabinet d’avocats, signalé de la même façon, peut aussi apparaître dans la liste des ventes pour une zone géographique ; il ne modifie pas l’ordre des annonces et n’est ni une recommandation, ni une notation, ni une garantie de résultat.",
+    );
+    expect(text).toContain(
+      "Une vente passée, annulée ou retirée n’est plus affichée dès que cette information est connue d’Immojudis.",
     );
     const link = [...container.querySelectorAll("a")].find(
       (anchor) => anchor.textContent === "Comment sont classées les annonces ?",

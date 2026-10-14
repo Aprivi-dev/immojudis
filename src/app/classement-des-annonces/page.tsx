@@ -14,7 +14,6 @@ import {
   LAWYER_RANKING_LINK_LABEL,
   SPONSORED_LABEL,
   SPONSORED_TRIAL_LABEL,
-  sponsoredPlacementDisclosure,
 } from "@/lib/lawyer-placement-label";
 
 export const metadata: Metadata = {
@@ -24,14 +23,24 @@ export const metadata: Metadata = {
     "Comment Immojudis classe les annonces : ordre par défaut, autres tris, repère « bien renseignée », publicité des avocats, origine et retrait des ventes.",
 };
 
-/** Tris proposés dans la liste de résultats de /sales (voir `SORT_OPTIONS`). */
-const OTHER_SORTS = [
-  "Date de vente croissante ou décroissante.",
-  "Prix croissant ou décroissant.",
-  "Surface.",
-  "Nombre de chambres.",
-  "Distance : classe les annonces autour d’une adresse que vous saisissez.",
+/**
+ * Tris proposés dans la liste de résultats de /sales (voir `SORT_OPTIONS`). Le comportement décrit
+ * est celui du code: `applySearchOrder` (queries.ts) place toujours les annonces localisées avant
+ * les autres côté serveur ; « Nombre de chambres » est ensuite retrié dans chaque page par
+ * `sortClientSearchResults` (chambres, à défaut pièces, ordre stable) ; « Distance » est trié côté
+ * navigateur à partir de l'adresse saisie, les annonces sans position en dernier.
+ */
+const SERVER_SORTS = [
+  "Date de vente, croissante ou décroissante.",
+  "Prix, croissant ou décroissant.",
+  "Surface, de la plus grande à la plus petite.",
 ] as const;
+
+const BEDROOMS_SORT =
+  "Nombre de chambres : les pages de résultats sont constituées en affichant d’abord les annonces dont la position sur la carte est connue, puis, dans chaque page, les annonces sont rangées de celles qui comptent le plus de chambres (à défaut, de pièces) à celles qui en comptent le moins, celles sans cette information venant en dernier ; à égalité, l’ordre de la page est conservé.";
+
+const DISTANCE_SORT =
+  "Distance, à partir d’une adresse que vous saisissez : les annonces les plus proches de cette adresse d’abord ; celles dont la position est inconnue viennent en dernier.";
 
 export default function Page() {
   const contactEmail = publicLegalPublisher().contactEmail;
@@ -68,13 +77,17 @@ export default function Page() {
           <div className="mt-3 space-y-3 text-ink-soft">
             <p>
               Depuis la liste de résultats, vous pouvez trier à tout moment par l’un de ces
-              critères. Chaque tri applique d’abord le critère choisi ; les annonces dont la
-              position sur la carte est inconnue sont en général affichées après les autres.
+              critères. Pour les tris par date, prix, surface et score d’investissement, les
+              annonces dont la position sur la carte est connue sont affichées avant les autres ; le
+              critère choisi les ordonne ensuite, et les annonces auxquelles l’information manque
+              viennent en dernier.
             </p>
             <ul className="list-disc space-y-1 pl-5">
-              {OTHER_SORTS.map((sort) => (
+              {SERVER_SORTS.map((sort) => (
                 <li key={sort}>{sort}</li>
               ))}
+              <li>{BEDROOMS_SORT}</li>
+              <li>{DISTANCE_SORT}</li>
               <li>
                 Score d’investissement, pour l’offre Analyse seulement.{" "}
                 {RANKING_EXPLANATION_INVESTMENT_NOTE}
@@ -98,12 +111,13 @@ export default function Page() {
             <p>
               Parmi les résultats peut apparaître l’encart d’un cabinet d’avocats, annoncé par la
               mention « {SPONSORED_LABEL} » (ou « {SPONSORED_TRIAL_LABEL} » pendant une période
-              d’essai de cette offre). C’est une publicité : le cabinet paie Immojudis pour être
-              présenté dans une zone géographique choisie, celle de votre recherche.
+              d’essai de cette offre). C’est une publicité : le cabinet paie Immojudis, ou bénéficie
+              d’un essai gratuit de cette offre payante, pour être présenté dans la zone
+              géographique de votre recherche.
             </p>
             <p>
-              {sponsoredPlacementDisclosure("active")} Les annonces ne sont ni avancées, ni reculées
-              par cet encart.
+              Cet encart n’est ni une recommandation, ni une notation, ni une garantie de résultat.
+              Les annonces ne sont ni avancées ni reculées par cet encart.
             </p>
             <p>
               <Link href={LAWYER_RANKING_HREF} className="font-semibold text-gold-text underline">
@@ -129,6 +143,12 @@ export default function Page() {
               reportez-vous toujours aux pièces officielles de la vente. La couverture varie selon
               les sources.
             </p>
+            <p>
+              Les professionnels (avocats, notaires, commissaires de justice, tribunaux) disposant
+              d’un compte professionnel validé peuvent aussi transmettre une annonce. Elle est
+              contrôlée par l’équipe avant publication. Cette transmission ne donne aucune priorité
+              de classement à l’annonce.
+            </p>
           </div>
         </Card>
 
@@ -148,6 +168,11 @@ export default function Page() {
               Une vente reportée reste affichée tant que sa date n’est pas dépassée ; sa nouvelle
               date est mise à jour lorsque la source la publie. Ces mises à jour dépendent des
               publications des sources et de nos contrôles réguliers : un délai est possible.
+            </p>
+            <p>
+              Une annonce peut aussi être retirée du catalogue lorsque l’équipe constate une erreur
+              de publication ou une information inexacte ; vous pouvez nous la signaler depuis la
+              page Contact (voir ci-dessous).
             </p>
           </div>
         </Card>

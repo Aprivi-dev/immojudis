@@ -7,6 +7,7 @@ import type { LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import { queryKeys } from "@/lib/query-keys";
 import {
+  LAWYER_INVITATION_LABEL,
   LAWYER_RANKING_HREF,
   LAWYER_RANKING_LINK_LABEL,
   sponsoredPlacementDisclosure,
@@ -134,11 +135,17 @@ function SponsoredLawyerCard({
 function OpenLawyerPlacement({ loading, className }: { loading: boolean; className: string }) {
   return (
     <section
-      aria-labelledby="search-lawyer-placement-title"
+      aria-labelledby="search-lawyer-placement-label search-lawyer-placement-title"
       aria-busy={loading}
       className={`flex min-h-[320px] flex-col rounded-lg border border-gold-light bg-surface p-4 shadow-sm ${className}`.trim()}
     >
-      <Megaphone className="h-4 w-4 text-ink-soft" aria-hidden />
+      <p
+        id="search-lawyer-placement-label"
+        className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.1em] text-gold-text"
+      >
+        <Megaphone className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        {LAWYER_INVITATION_LABEL}
+      </p>
       <h2
         id="search-lawyer-placement-title"
         className="mt-2 font-display text-lg font-semibold leading-tight text-brand-navy"

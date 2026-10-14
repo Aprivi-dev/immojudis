@@ -69,7 +69,7 @@ const PROMOTION_OPTIONS = [
   {
     id: "featured",
     label: "Demander une mise en avant éditoriale (sélections et contenus Immojudis)",
-    desc: "L'équipe étudie une présentation dans les sélections et contenus éditoriaux d'Immojudis. Cette option n'a aucun effet sur l'ordre des résultats de recherche : le classement ne dépend d'aucune rémunération ni demande.",
+    desc: "L'équipe étudie une présentation dans les sélections et contenus éditoriaux d'Immojudis. Cette option n'a aucun effet sur l'ordre des résultats de recherche : le classement ne dépend d'aucune rémunération ni demande. Si une contrepartie est convenue, le contenu concerné est signalé comme publicité.",
   },
   {
     id: "seo",
