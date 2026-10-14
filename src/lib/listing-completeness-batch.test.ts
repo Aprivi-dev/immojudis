@@ -7,7 +7,6 @@ const db = vi.hoisted(() => ({
   stored: [] as Row[],
   fullRows: new Map<string, Row>(),
   scores: new Map<string, number>(),
-  criticalGateFailed: new Set<string>(),
   upserts: [] as Row[][],
   upsertError: null as { message: string } | null,
   readError: null as { message: string } | null,
@@ -23,18 +22,9 @@ vi.mock("@/lib/listing-completeness", () => ({
   getListingCompleteness: (sale: { id: string }) => {
     const score = db.scores.get(sale.id);
     if (score === undefined) throw new Error(`boom ${sale.id}`);
-    // Classification publiée: un échec de porte critique plafonne à « à enrichir ».
-    const raw =
-      score < 55
-        ? "incomplet"
-        : score < 75
-          ? "a_enrichir"
-          : score < 90
-            ? "decision_prete"
-            : "riche";
-    const classification =
-      db.criticalGateFailed.has(sale.id) && raw !== "incomplet" ? "a_enrichir" : raw;
-    return { score, classification };
+    // La classification publiée n'intervient plus dans le palier: elle est rendue pour prouver
+    // que le palier ne la lit pas (ici toujours « incomplet », même avec un score élevé).
+    return { score, classification: "incomplet" };
   },
 }));
 vi.mock("@/lib/listing-data-cleanup", () => ({
@@ -127,7 +117,6 @@ beforeEach(() => {
   db.stored = [];
   db.fullRows = new Map();
   db.scores = new Map();
-  db.criticalGateFailed = new Set();
   db.upserts = [];
   db.upsertError = null;
   db.readError = null;
@@ -185,7 +174,14 @@ describe("pickPendingSales", () => {
     ];
     const rows = [evaluation("a"), evaluation("b")];
     expect(pickPendingSales(sales, rows, V1, NOW)).toEqual([]);
-    expect(pickPendingSales(sales, rows, "completeness-tier-v2", NOW)).toEqual(["a", "b"]);
+    // Les ventes notées avec la règle v1 (classification « décision prête ») sont toutes refaites.
+    const v1Rows = [
+      evaluation("a", EVALUATED, "completeness-tier-v1"),
+      evaluation("b", EVALUATED, "completeness-tier-v1"),
+    ];
+    expect(pickPendingSales(sales, v1Rows, V1, NOW)).toEqual(["a", "b"]);
+    expect(pickPendingSales(sales, rows, "completeness-tier-v1", NOW)).toEqual(["a", "b"]);
+    expect(pickPendingSales(sales, rows, "completeness-tier-v3", NOW)).toEqual(["a", "b"]);
   });
 
   it("réévalue au bout de 24 h une vente inchangée (tables liées), les plus anciennes d'abord", () => {
@@ -218,26 +214,39 @@ describe("pickPendingSales", () => {
 });
 
 describe("evaluateListing", () => {
-  it("tire le palier de la classification publiée, avec version de la règle et empreinte", () => {
-    db.scores.set("ready", 75);
-    db.scores.set("rich", 95);
-    db.scores.set("enrich", 74.9);
+  it("tire le palier du score (seuil 40), avec version de la règle et empreinte", () => {
+    db.scores.set("high", 71);
+    db.scores.set("threshold", 40);
+    db.scores.set("just-under", 39.9);
     db.scores.set("low", 20);
-    const ready = evaluateListing({ id: "ready" } as never, NOW);
-    expect(ready).toMatchObject({
-      sale_id: "ready",
-      score: 75,
+    const high = evaluateListing({ id: "high" } as never, NOW);
+    expect(high).toMatchObject({
+      sale_id: "high",
+      score: 71,
       tier: 1,
-      policy_version: "completeness-tier-v1",
+      policy_version: "completeness-tier-v2",
       evaluated_at: NOW.toISOString(),
     });
-    expect(ready.input_fingerprint).toMatch(/^[0-9a-f]{64}$/);
-    expect(evaluateListing({ id: "rich" } as never, NOW).tier).toBe(1);
-    expect(evaluateListing({ id: "enrich" } as never, NOW).tier).toBe(0);
+    expect(high.input_fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(evaluateListing({ id: "threshold" } as never, NOW).tier).toBe(1);
+    expect(evaluateListing({ id: "just-under" } as never, NOW).tier).toBe(0);
     expect(evaluateListing({ id: "low" } as never, NOW).tier).toBe(0);
-    expect(evaluateListing({ id: "ready", extra: 1 } as never, NOW).input_fingerprint).not.toBe(
-      ready.input_fingerprint,
+    expect(evaluateListing({ id: "high", extra: 1 } as never, NOW).input_fingerprint).not.toBe(
+      high.input_fingerprint,
     );
+  });
+
+  it("décide sur le score arrondi à une décimale, celui qui est stocké", () => {
+    db.scores.set("rounds-up", 39.96);
+    db.scores.set("rounds-down", 39.94);
+    expect(evaluateListing({ id: "rounds-up" } as never, NOW)).toMatchObject({
+      score: 40,
+      tier: 1,
+    });
+    expect(evaluateListing({ id: "rounds-down" } as never, NOW)).toMatchObject({
+      score: 39.9,
+      tier: 0,
+    });
   });
 
   it("arrondit le score à une décimale", () => {
@@ -256,22 +265,13 @@ describe("evaluateListing", () => {
       );
     },
   );
-
-  it("score 80 mais porte critique en échec: palier bas, le score reste enregistré", () => {
-    db.scores.set("gated", 80);
-    db.criticalGateFailed.add("gated");
-    expect(evaluateListing({ id: "gated" } as never, NOW)).toMatchObject({
-      score: 80,
-      tier: 0,
-    });
-  });
 });
 
 describe("runListingCompletenessBatch", () => {
   it("évalue les ventes en attente et enregistre le palier sans toucher aux autres", async () => {
     setOnline([
       ["new-high", BEFORE, 82],
-      ["new-low", BEFORE, 40],
+      ["new-low", BEFORE, 39.9],
       ["modified", AFTER, 91.5],
       ["up-to-date", BEFORE, 99],
     ]);
@@ -293,17 +293,16 @@ describe("runListingCompletenessBatch", () => {
     expect(rows.map((row) => [row.sale_id, row.tier, row.score]).sort()).toEqual([
       ["modified", 1, 91.5],
       ["new-high", 1, 82],
-      ["new-low", 0, 40],
+      ["new-low", 0, 39.9],
     ]);
     expect(db.fullReads.flat()).not.toContain("up-to-date");
   });
 
-  it("n'enregistre pas le palier haut d'une fiche dont une porte critique échoue", async () => {
+  it("ne tient pas compte des portes critiques: le score seul décide du palier", async () => {
     setOnline([
-      ["gated", BEFORE, 80],
-      ["ready", BEFORE, 80],
+      ["at-threshold", BEFORE, 40],
+      ["under-threshold", BEFORE, 39.9],
     ]);
-    db.criticalGateFailed.add("gated");
 
     const result = await runListingCompletenessBatch({ now: NOW });
 
@@ -314,8 +313,8 @@ describe("runListingCompletenessBatch", () => {
         .map((row) => [row.sale_id, row.tier, row.score])
         .sort(),
     ).toEqual([
-      ["gated", 0, 80],
-      ["ready", 1, 80],
+      ["at-threshold", 1, 40],
+      ["under-threshold", 0, 39.9],
     ]);
   });
 

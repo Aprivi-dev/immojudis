@@ -5,7 +5,7 @@ import { getListingCompleteness } from "@/lib/listing-completeness";
 import {
   COMPLETENESS_TIER_HIGH,
   LISTING_COMPLETENESS_POLICY,
-  completenessTierForClassification,
+  completenessTierForScore,
 } from "@/lib/listing-completeness-ranking";
 import { sanitizeAuctionSaleForDisplay } from "@/lib/listing-data-cleanup";
 import type { AuctionSale } from "@/lib/types";
@@ -121,12 +121,13 @@ export function pickPendingSales(
 }
 
 /**
- * Évaluation d'une annonce : score de la fiche (stocké pour la mesure), palier tiré de la
- * classification publiée de la fiche, et empreinte des données lues.
+ * Évaluation d'une annonce : score de la fiche (stocké pour la mesure), palier tiré de ce score
+ * arrondi au dixième (celui qui est stocké: un 39,96 stocké 40,0 est au palier haut), et empreinte
+ * des données lues.
  */
 export function evaluateListing(sale: AuctionSale, evaluatedAt: Date) {
   const readable = sanitizeAuctionSaleForDisplay(sale);
-  const { score: rawScore, classification } = getListingCompleteness(readable);
+  const { score: rawScore } = getListingCompleteness(readable);
   // La colonne est numeric(4,1) avec un contrôle 0-100 : un score invalide ferait échouer tout
   // l'upsert du paquet. Il est refusé ici (la vente est sautée et comptée en erreur).
   if (
@@ -141,7 +142,7 @@ export function evaluateListing(sale: AuctionSale, evaluatedAt: Date) {
   return {
     sale_id: sale.id,
     score,
-    tier: completenessTierForClassification(classification),
+    tier: completenessTierForScore(score),
     policy_version: LISTING_COMPLETENESS_POLICY.version,
     // Empreinte des données lues: sert à la mesure et au diagnostic (savoir si une réévaluation a
     // vu des données différentes). Elle ne pilote pas la sélection: `evaluated_at` doit avancer à

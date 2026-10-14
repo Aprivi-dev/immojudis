@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Card, PageShell } from "@/components/ui/primitives";
 import { WELL_INFORMED_BADGE_NOTE } from "@/components/WellInformedBadge";
 import {
+  COMPLETENESS_SCORE_DEFINITION,
   RANKING_EXPLANATION_INTRO,
   RANKING_EXPLANATION_INVESTMENT_NOTE,
   RANKING_EXPLANATION_NOTES,
@@ -64,6 +65,7 @@ export default function Page() {
                 <li key={step}>{step}</li>
               ))}
             </ol>
+            <p>{COMPLETENESS_SCORE_DEFINITION}</p>
             {RANKING_EXPLANATION_NOTES.map((note) => (
               <p key={note}>{note}</p>
             ))}
