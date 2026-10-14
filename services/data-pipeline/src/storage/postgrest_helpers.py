@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import math
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 from uuid import UUID
+
+import httpx
 
 from src.freshness import timestamp_is_fresh
 
@@ -108,3 +113,43 @@ def _rest_headers(api_key: str, prefer: str) -> dict[str, str]:
 def _timestamped(row: dict[str, object], now: str) -> dict[str, object]:
     row["updated_at"] = now
     return row
+
+
+def _claim_error_diagnostic(response: httpx.Response, max_chars: int = 256) -> str:
+    """Log only bounded PostgREST code/message fields, never raw response data."""
+    try:
+        payload = response.json()
+    except Exception:  # pragma: no cover - defensive for test doubles.
+        return f"http_{response.status_code}"
+    if isinstance(payload, dict):
+        fields = [
+            str(payload[key]).replace("\x00", " ")
+            for key in ("code", "message")
+            if payload.get(key) not in (None, "")
+        ]
+        sanitized = " ".join(" ".join(fields).split())
+    else:
+        sanitized = f"http_{response.status_code}"
+    if not sanitized:
+        sanitized = f"http_{response.status_code}"
+    return sanitized[:max_chars]
+
+
+def _claim_retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        try:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=UTC)
+            seconds = (retry_at - datetime.now(UTC)).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return None
+    if not math.isfinite(seconds):
+        return None
+    if seconds < 0:
+        return 0.0
+    return seconds
