@@ -25,7 +25,11 @@ function setup({
   caseStatuses = [] as unknown[],
   publishableRows = [] as unknown[],
   canonicalRows,
+  unlockedRows = [] as unknown[],
+  unlockedError = null as { code: string } | null,
 }: {
+  unlockedRows?: unknown[];
+  unlockedError?: { code: string } | null;
   visibleIds?: string[];
   projections?: unknown[];
   caseStatuses?: unknown[];
@@ -63,9 +67,17 @@ function setup({
   publishableQuery.select.mockReturnValue(publishableQuery);
   publishableQuery.in.mockResolvedValue({ data: publishableRows, error: null });
 
-  mocks.auth.mockResolvedValue({
-    supabase: { from: vi.fn().mockReturnValue(saleQuery) },
+  // The sales the account unlocked, through their own view (a Découverte account).
+  const unlockedQuery = { select: vi.fn(), in: vi.fn() };
+  unlockedQuery.select.mockReturnValue(unlockedQuery);
+  unlockedQuery.in.mockResolvedValue({
+    data: unlockedError ? null : unlockedRows,
+    error: unlockedError,
   });
+  const userFrom = vi.fn((table: string) =>
+    table === "v_auction_sales_unlocked" ? unlockedQuery : saleQuery,
+  );
+  mocks.auth.mockResolvedValue({ supabase: { from: userFrom } });
   mocks.adminFrom.mockImplementation((table: string) =>
     table === "v_auction_ai_review_publishable"
       ? publishableQuery
@@ -73,7 +85,7 @@ function setup({
         ? caseStatusQuery
         : projectionQuery,
   );
-  return { saleQuery, projectionQuery, caseStatusQuery, publishableQuery };
+  return { saleQuery, unlockedQuery, userFrom, projectionQuery, caseStatusQuery, publishableQuery };
 }
 
 function request(ids: string[] = [saleId]) {
@@ -159,6 +171,53 @@ describe("GET /api/sales/ai-review", () => {
       ]),
     );
     expect(mocks.adminFrom).not.toHaveBeenCalled();
+  });
+
+  it("keeps the review on a sale the account unlocked, without its citation links or source names", async () => {
+    const { userFrom, unlockedQuery } = setup({
+      visibleIds: [],
+      unlockedRows: [{ id: saleId }],
+      projections: [
+        {
+          auction_sale_id: saleId,
+          field_key: "property.property_type",
+          review_state: "unverified",
+          citation_status: "unverified",
+          is_publishable: false,
+          source_name: "AGRASC",
+          source_url: "https://example.test/source/1",
+        },
+      ],
+    });
+
+    const payload = await (await request()).json();
+
+    expect(userFrom).toHaveBeenCalledWith("v_auction_sales_app");
+    expect(userFrom).toHaveBeenCalledWith("v_auction_sales_unlocked");
+    expect(unlockedQuery.in).toHaveBeenCalledWith("id", [saleId]);
+    expect(payload.projections).toEqual([
+      expect.objectContaining({
+        auction_sale_id: saleId,
+        field_key: "property.property_type",
+        is_publishable: false,
+        source_name: null,
+        source_url: null,
+      }),
+    ]);
+    expect(JSON.stringify(payload)).not.toContain("sale_unavailable");
+  });
+
+  it("does not read the unlocked view for sales the full view already shows", async () => {
+    const { userFrom } = setup({ visibleIds: [saleId] });
+    await request();
+    expect(userFrom).not.toHaveBeenCalledWith("v_auction_sales_unlocked");
+  });
+
+  it("treats a database without the unlocked view as having no unlocked sale", async () => {
+    setup({ visibleIds: [], unlockedError: { code: "PGRST205" } });
+    const response = await request();
+    expect(response.status).toBe(200);
+    expect((await response.json()).projections[0]).toMatchObject({ sale_unavailable: true });
   });
 
   it("blocks every field when a sampled visible sale has no AI projection row", async () => {

@@ -555,6 +555,132 @@ if (!/export function redactSaleTexts/.test(personalDataFilter)) {
   failures.push("the TypeScript personal-data filter is missing");
 }
 
+// « 3 déblocages par mois » (Découverte): an account unlocks one online sale at a time, the quota is
+// enforced in the database, and the unlock opens that sale's rows only.
+const [saleUnlockMigration, documentReadingServer, documentReadingRedaction] = await Promise.all([
+  readFile(
+    new URL("../supabase/migrations/20261023100000_discovery_sale_unlocks.sql", import.meta.url),
+    "utf8",
+  ),
+  readFile(new URL("../src/lib/document-reading.server.ts", import.meta.url), "utf8"),
+  readFile(new URL("../src/lib/document-reading-redaction.ts", import.meta.url), "utf8"),
+]);
+if (
+  !/alter\s+table\s+public\.user_sale_unlocks\s+enable\s+row\s+level\s+security/i.test(
+    saleUnlockMigration,
+  )
+) {
+  failures.push("Sale unlocks do not enable RLS");
+}
+const saleUnlockStatements = saleUnlockMigration
+  .split(";")
+  .map((statement) => statement.trim())
+  .filter(Boolean);
+if (
+  saleUnlockStatements.some(
+    (statement) =>
+      /^grant\s/i.test(statement) &&
+      /\bpublic\.user_sale_unlocks\b/i.test(statement) &&
+      /\bto\s+(?:public|anon|authenticated)\b/i.test(statement) &&
+      /\b(?:insert|update|delete|all)\b/i.test(statement.split(/\bon\b/i)[0] ?? ""),
+  )
+) {
+  failures.push("Sale unlocks can be written directly by a browser role");
+}
+for (const unlockFunction of ["unlock_sale_at", "unlock_sale"]) {
+  const definition = new RegExp(
+    `create\\s+or\\s+replace\\s+function\\s+(?:public|app_private)\\.${unlockFunction}\\([^)]*\\)\\s*returns\\s+\\w+\\s+language\\s+\\w+\\s+security\\s+definer\\s+set\\s+search_path\\s*=\\s*''\\s*as`,
+    "i",
+  );
+  if (!definition.test(saleUnlockMigration)) {
+    failures.push(`${unlockFunction} is not SECURITY DEFINER with a fixed search_path`);
+  }
+}
+// The unlock opens five things only. auction_sales is never widened (row level security cannot limit
+// columns): the sale is served by a redacted definer view that lists the caller's own unlocks.
+if (
+  /(?:alter|create)\s+(?:or\s+replace\s+)?policy\s+auction_sales_authenticated_read/i.test(
+    saleUnlockMigration,
+  )
+) {
+  failures.push("The sale unlock migration widens auction_sales_authenticated_read");
+}
+if (/set_catalogue_raw_columns_hidden/i.test(saleUnlockMigration)) {
+  failures.push("The sale unlock migration redefines set_catalogue_raw_columns_hidden");
+}
+for (const table of [
+  "auction_documents",
+  "auction_risks",
+  "auction_risk_occurrences",
+  "auction_score_factors",
+  "auction_features",
+  "auction_surfaces",
+]) {
+  if (new RegExp(`on\\s+public\\.${table}\\b`, "i").test(saleUnlockMigration)) {
+    failures.push(`The sale unlock migration opens ${table} to an unlock`);
+  }
+}
+const unlockedView =
+  /create\s+or\s+replace\s+view\s+public\.v_auction_sales_unlocked\s+with\s*\(\s*security_invoker\s*=\s*false\s*,\s*security_barrier\s*=\s*true\s*\)[\s\S]*?;/i.exec(
+    saleUnlockMigration,
+  )?.[0];
+if (
+  !unlockedView ||
+  !/from\s+public\.user_sale_unlocks[\s\S]*?where\s+unlock_row\.user_id\s*=\s*\(select\s+auth\.uid\(\)\)[\s\S]*?app_private\.current_user_unlocked_sale\(s\.id\)/i.test(
+    unlockedView,
+  )
+) {
+  failures.push("v_auction_sales_unlocked is not limited to the sales the caller unlocked");
+} else if (
+  /null::double precision as investment_score/i.test(unlockedView) === false ||
+  /'\[\]'::jsonb as risks/i.test(unlockedView) === false ||
+  /null::text as source_url/i.test(unlockedView) === false ||
+  /\braw_payload\s*,|\bs\.raw_payload\s+as\b|\bs\.observations\s+as\b/i.test(unlockedView)
+) {
+  failures.push(
+    "v_auction_sales_unlocked leaks the score, the risks, the source url or the raw payload",
+  );
+}
+// The source blocks carry the page text, the listing urls (completeness evidence) and, as keys, the
+// names of the source platforms: the unlocked view may only serve their ceiling projection.
+if (
+  unlockedView &&
+  (/raw_payload\s*->\s*'source_blocks'\s+as\b/i.test(unlockedView) ||
+    /\bobservations\s+as\b/i.test(unlockedView) ||
+    !/app_private\.unlocked_ceiling_blocks\(\s*s\.raw_payload\s*->\s*'source_blocks'\s*\)\s+as\s+source_blocks\b/i.test(
+      unlockedView,
+    ) ||
+    !/app_private\.unlocked_ceiling_blocks_by_source\(/i.test(unlockedView))
+) {
+  failures.push("v_auction_sales_unlocked serves raw source blocks instead of their projection");
+}
+// A definer view runs the functions it calls as the caller: sale_is_unlockable is granted to
+// service_role only, so the view must go through the granted definer helper.
+if (unlockedView && /sale_is_unlockable\(/i.test(unlockedView)) {
+  failures.push(
+    "v_auction_sales_unlocked calls a function authenticated cannot execute (sale_is_unlockable)",
+  );
+}
+if (
+  !/revoke\s+all\s+on\s+table\s+public\.v_auction_sales_unlocked\s+from\s+public,\s*anon/i.test(
+    saleUnlockMigration,
+  )
+) {
+  failures.push("v_auction_sales_unlocked is not closed to anon");
+}
+if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
+  failures.push("The sale unlock migration contains a permissive policy");
+}
+if (
+  !/redactReadingTexts\(\s*mapDocumentReading\(/.test(documentReadingServer) ||
+  !/import\s*\{\s*redactPersonalText\s*\}\s*from\s*"@\/lib\/personal-data-filter"/.test(
+    documentReadingRedaction,
+  ) ||
+  (documentReadingRedaction.match(/redactPersonalText\(point\./g) ?? []).length !== 3
+) {
+  failures.push("document reading quotes reach the page without the personal-data filter");
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -589,6 +715,8 @@ console.log(
       "approved-evidence-private-bucket",
       "raw-columns-not-revoked-without-definer-view",
       "personal-data-filter-write-boundary",
+      "sale-unlock-rls-and-definer-boundary",
+      "document-reading-personal-data-filter",
     ],
   }),
 );

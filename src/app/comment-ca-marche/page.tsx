@@ -24,7 +24,7 @@ const STEPS = [
   {
     icon: FileSearch,
     title: "Étudier et visiter",
-    text: "Avec un compte gratuit, la fiche réunit l’adresse, les photos, la description, l’occupation, les visites, les risques de la commune et une fourchette de valeur. L’offre Analyse ajoute les pièces du dossier et les ventes comparables. Lisez le cahier des conditions de vente (le document qui fixe les règles de la vente), visitez le bien et comparez jusqu’à trois biens côte à côte.",
+    text: "Avec un compte gratuit, la fiche réunit l’adresse, les photos, la description, l’occupation, les visites, les risques de la commune et une fourchette de valeur. Les pièces du dossier s’ouvrent vente par vente avec les déblocages mensuels du compte gratuit, et pour toutes les ventes avec l’offre Analyse, qui ajoute aussi les ventes comparables. Lisez le cahier des conditions de vente (le document qui fixe les règles de la vente), visitez le bien et comparez jusqu’à trois biens côte à côte.",
     links: [
       { href: "/annonce-exemple", label: "Voir une fiche exemple" },
       {
