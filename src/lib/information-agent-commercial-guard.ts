@@ -86,7 +86,7 @@ export type InformationAgentCommercialGuardOptions = {
 };
 
 /** Entités courantes décodées, caractères invisibles et espaces insécables normalisés. */
-function normalizeText(text: string): string {
+export function normalizeInformationAgentGuardText(text: string): string {
   return (
     text
       .replace(INVISIBLE, "")
@@ -95,8 +95,9 @@ function normalizeText(text: string): string {
       .replace(/\sxmlns(?::\w+)?\s*=\s*(?:"[^"]*"|'[^']*')/gi, "")
       .replace(/&#x27;|&#39;|&apos;/g, "'")
       .replace(/&quot;/g, '"')
-      .replace(/&amp;/g, "&")
       .replace(/&nbsp;|[\u00a0\u202f]/g, " ")
+      // `&amp;` en dernier : décodé plus tôt, `&amp;nbsp;` serait décodé deux fois (CodeQL).
+      .replace(/&amp;/g, "&")
   );
 }
 
@@ -168,9 +169,9 @@ export function findInformationAgentCommercialMentions(
   text: string,
   options: InformationAgentCommercialGuardOptions = {},
 ): InformationAgentCommercialMention[] {
-  let normalized = normalizeText(text);
+  let normalized = normalizeInformationAgentGuardText(text);
   for (const ignored of options.ignore ?? []) {
-    const cleaned = ignored ? normalizeText(ignored).trim() : "";
+    const cleaned = ignored ? normalizeInformationAgentGuardText(ignored).trim() : "";
     if (cleaned) normalized = normalized.split(cleaned).join(" ");
   }
   // Les liens sont contrôlés sur le texte entier (attributs compris), les mots sur le texte visible.

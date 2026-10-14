@@ -34,13 +34,8 @@ import {
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
 import {
-  informationAgentAddressOrigin,
   informationAgentControllerIdentity,
-  isInformationAgentAddressSourceKind,
-  type InformationAgentAddressObserver,
   type InformationAgentAddressOrigin,
-  type InformationAgentAddressSourceKind,
-  INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS,
   type InformationAgentLegalFooter,
 } from "@/lib/information-agent-compliance";
 import {
@@ -49,16 +44,11 @@ import {
 } from "@/lib/information-agent-ai-provider";
 import { assertNoInformationAgentCommercialMention } from "@/lib/information-agent-commercial-guard";
 import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-opt-out";
-import { tribunalBarAssociation } from "@/lib/lawyer-bar";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import type { AuctionSale } from "@/lib/types";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
-import {
-  INFORMATION_AGENT_EXCLUDED_SOURCE_MESSAGE,
-  isInformationAgentExcludedSourceUrl,
-} from "@/lib/information-agent/excluded-addresses";
 import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
 import {
   assertInformationAgentContactAllowed,
@@ -74,6 +64,24 @@ import {
   selectInformationAgentContact,
 } from "@/lib/information-agent/contacts";
 import { recordManualMissionReply } from "@/lib/information-agent/manual-reply";
+import {
+  assertInformationAgentSourceAllowed,
+  INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
+  resolveInformationAgentAddressOrigin,
+} from "@/lib/information-agent/address-origin";
+import {
+  missionIdentityKeys,
+  missionSaleReference,
+  saleIdentityPlace,
+} from "@/lib/information-agent/mission-identity";
+import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
+
+// Ré-exports : ces fonctions vivaient dans ce module (et ses tests les importent d'ici).
+export {
+  INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
+  resolveInformationAgentAddressOrigin,
+} from "@/lib/information-agent/address-origin";
+export { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 
 export {
   discoverInformationAgentContacts,
@@ -954,57 +962,6 @@ export function assertInformationAgentControllerIdentity(
   }
 }
 
-const COOLDOWN_BLOCKING_MISSION_STATUSES = [
-  "approved",
-  "sending",
-  "sent",
-  "replied",
-  "completed",
-] as const;
-
-function escapeIlike(value: string): string {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
-}
-
-/**
- * One email per recipient and per 30 days, all sales combined (plan P4-12). Counts every other
- * mission to the same address that was approved in the window and not failed. With `approvedAt`
- * (post-approval check) only strictly older approvals count, which makes concurrent approvals
- * deterministic: the earliest one proceeds, the others stand down.
- */
-export async function assertInformationAgentRecipientCooldown({
-  email,
-  missionId,
-  approvedAt,
-  now = new Date(),
-}: {
-  email: string;
-  missionId: string;
-  approvedAt?: string | null;
-  now?: Date;
-}): Promise<void> {
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
-  const since = new Date(
-    now.getTime() - INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  let query = supabaseAdmin
-    .from("information_agent_missions")
-    .select("id,approved_at")
-    .ilike("recipient_email", escapeIlike(normalized))
-    .in("status", [...COOLDOWN_BLOCKING_MISSION_STATUSES])
-    .neq("id", missionId)
-    .gte("approved_at", since);
-  if (approvedAt) query = query.lte("approved_at", approvedAt);
-  const { data, error } = await query.limit(1);
-  if (error) throw error;
-  if (data?.length) {
-    throw new Error(
-      `Ce destinataire a déjà été sollicité au cours des ${INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS} derniers jours : un seul email est autorisé par période.`,
-    );
-  }
-}
-
 function informationAgentPortalSecret(env: Readonly<Record<string, string | undefined>>) {
   const secret = env.INFORMATION_AGENT_PORTAL_SECRET?.trim();
   return secret && Buffer.byteLength(secret, "utf8") >= 32 ? secret : null;
@@ -1041,102 +998,6 @@ function buildInformationAgentLegalFooter({
     aiProvider: informationAgentAiProvider(env),
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: buildInformationAgentOptOutUrl({ appUrl, email: normalized, secret }),
-  };
-}
-
-/**
- * Une adresse saisie par un administrateur ne peut venir ni d'un réseau social, ni d'un moteur de
- * recherche, ni d'un annuaire exclu (notaires.fr, barreaux de Paris et de Marseille…).
- */
-function assertInformationAgentSourceAllowed(addressOrigin: {
-  origin: InformationAgentAddressOrigin;
-  kind: InformationAgentAddressSourceKind | null;
-}): void {
-  if (
-    addressOrigin.kind === "admin_entry" &&
-    addressOrigin.origin.url &&
-    isInformationAgentExcludedSourceUrl(addressOrigin.origin.url)
-  ) {
-    throw new Error(INFORMATION_AGENT_EXCLUDED_SOURCE_MESSAGE);
-  }
-}
-
-export const INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE =
-  "Origine de l’adresse inconnue : elle ne figure pas dans l’annonce de cette vente. Indiquez la page publique où vous l’avez trouvée avant l’envoi.";
-
-/**
- * Origine de l'adresse pour cette vente (art. 14 RGPD). Le registre des contacts de la même vente
- * fait foi : il porte le type de la source, l'URL, la date de relevé et l'auteur, et le libellé du
- * message suit ce type (annonce, autre annonce, annuaire officiel, site du cabinet). À défaut, ou
- * pour une saisie d'administrateur, la page publique citée par l'administrateur est obligatoire.
- * Une adresse sans origine connue n'est jamais sollicitée.
- */
-export async function resolveInformationAgentAddressOrigin({
-  email,
-  saleId,
-  manualOriginUrl,
-  fallbackObservedAt = null,
-}: {
-  email: string;
-  saleId: string | null;
-  manualOriginUrl: string | null;
-  /** Date de relevé d'une saisie d'administrateur sans ligne de registre : création du brouillon. */
-  fallbackObservedAt?: string | null;
-}): Promise<{
-  origin: InformationAgentAddressOrigin;
-  known: boolean;
-  kind: InformationAgentAddressSourceKind | null;
-}> {
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
-  const manual = manualOriginUrl?.trim();
-  const manualUrl = manual && /^https?:\/\//i.test(manual) ? manual : null;
-  let observedAt = fallbackObservedAt;
-  let adminEntryUrl: string | null = null;
-  if (saleId) {
-    const { data, error } = await supabaseAdmin
-      .from("information_agent_contacts")
-      .select("source_kind,source_directory_name,source_name,source_url,observed_at,observed_by")
-      .eq("normalized_email", normalized)
-      .eq("scope_sale_id", saleId)
-      .limit(1);
-    if (error) throw error;
-    const row = data?.[0];
-    const kind =
-      row && isInformationAgentAddressSourceKind(row.source_kind) ? row.source_kind : null;
-    const observedBy: InformationAgentAddressObserver | null =
-      row?.observed_by === "admin" || row?.observed_by === "agent" ? row.observed_by : null;
-    if (row && kind && kind !== "admin_entry") {
-      const origin = informationAgentAddressOrigin({
-        sourceKind: kind,
-        sourceName: row.source_name,
-        sourceUrl: row.source_url,
-        directoryName: row.source_directory_name,
-        observedAt: row.observed_at,
-        observedBy,
-      });
-      // Un annuaire, un site ou une autre annonce sans lien exact ne prouvent rien.
-      const known =
-        kind === "sale_listing" ? Boolean(row.source_name || row.source_url) : Boolean(origin.url);
-      if (known) return { origin, known, kind };
-    }
-    if (row && kind === "admin_entry") {
-      observedAt = row.observed_at ?? observedAt;
-      adminEntryUrl = row.source_url;
-    }
-  }
-  const url = manualUrl ?? adminEntryUrl;
-  const origin = informationAgentAddressOrigin({
-    sourceKind: "admin_entry",
-    sourceUrl: url,
-    observedAt,
-    observedBy: "admin",
-  });
-  if (origin.url) return { origin, known: true, kind: "admin_entry" };
-  return {
-    origin: informationAgentAddressOrigin({}),
-    known: false,
-    kind: null,
   };
 }
 
@@ -1486,43 +1347,6 @@ function inventoryFromMetadata(metadata: Json): InformationAgentInventoryItem[] 
       },
     ];
   });
-}
-
-/** Barreau du tribunal de la vente, à défaut sa ville : le lieu de l'identité du professionnel. */
-function saleIdentityPlace(sale: Pick<AuctionSale, "tribunal" | "city">): {
-  bar: string | null;
-  city: string | null;
-} {
-  return { bar: tribunalBarAssociation(sale.tribunal), city: sale.city?.trim() || null };
-}
-
-function metadataText(value: Json | undefined): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-/**
- * Clés d'identité du destinataire d'une mission, recalculées avec le nom éventuellement corrigé par
- * l'administrateur. Rôle et lieu viennent du brouillon (`metadata.contact_identity`).
- */
-function missionIdentityKeys(mission: MissionRow, recipientName?: string | null): string[] {
-  const identity = asObject(asObject(mission.metadata).contact_identity ?? {});
-  return informationAgentIdentityKeys({
-    role:
-      metadataText(identity.role) ?? (mission.recipient_kind === "source_lawyer" ? "lawyer" : null),
-    name: recipientName?.trim() || mission.recipient_name,
-    bar: metadataText(identity.bar),
-    city: metadataText(identity.city),
-    siren: metadataText(identity.siren),
-  });
-}
-
-/** Référence de la vente pour le pied du message : titre, lieu et tribunal du brouillon. */
-function missionSaleReference(mission: MissionRow): string | null {
-  const snapshot = asObject(mission.sale_snapshot);
-  const parts = [snapshot.title, snapshot.city, snapshot.tribunal]
-    .map(metadataText)
-    .filter((part): part is string => Boolean(part));
-  return parts.length ? [...new Set(parts)].join(" — ") : null;
 }
 
 function saleSnapshot(sale: AuctionSale): Json {
