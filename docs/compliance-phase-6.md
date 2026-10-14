@@ -23,7 +23,7 @@ de TVA sont publiés lorsqu’ils sont applicables.
 
 Les versions et empreintes sont centralisées dans `src/lib/legal-documents.ts` :
 
-| Document         | Route                   | Version en vigueur (13/10/2026) |
+| Document         | Route                   | Version en vigueur (14/10/2026) |
 | ---------------- | ----------------------- | ------------------------------- |
 | Mentions légales | `/legal`                | `2026-07-29.1`                  |
 | CGVU             | `/conditions-generales` | `2026-10-13.3`                  |
