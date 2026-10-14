@@ -490,7 +490,7 @@ elle devient `sale_date` si elle est unique et à venir.
 
 ### Vider le stock de pièces jointes
 
-Le mode manuel « documents_backlog » du workflow *Immojudis Data Pipeline*
+Le mode manuel « documents_backlog » du workflow _Immojudis Data Pipeline_
 (`workflow_dispatch`) ne fait que la lecture des pièces jointes :
 
 ```bash
@@ -641,6 +641,12 @@ contexte consolidé plus court. Les métriques `llm_fact_context_coverage` et
 Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiable. Il complète surtout les champs absents : `surface_m2`, `rooms_count`, `bedrooms_count`, `occupancy_status`, certains risques, `summary` et `raw_payload.llm_extraction`.
 
 ## Source Licitor
+
+> **Décodage des adresses email masquées par Cloudflare (usage interne).** `LICITOR_DECODE_PROTECTED_EMAILS` est actif
+> par défaut ; il n'est coupé que par `false`, `0` ou `off` (casse et espaces ignorés, comme
+> `IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE`). Coupé, les éléments masqués sont toujours retirés de la page (jamais publiés)
+> mais aucune adresse n'est décodée ni écrite au registre de l'agent. En production : variable de dépôt GitHub
+> `LICITOR_DECODE_PROTECTED_EMAILS` (absente = actif). Procédure complète : `docs/runbooks/information-agent.md`.
 
 > **Licitor est collecté et affiché normalement.** Aucune source n'est retirée du catalogue à ce jour. Le dépôt
 > garde toutefois un **interrupteur de retrait** pour un usage futur (par exemple si une source devait être

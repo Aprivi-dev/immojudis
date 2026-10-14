@@ -178,6 +178,7 @@ def extract_cloudflare_emails(
     *,
     accept: Callable[[str], bool] | None = None,
     within: Iterable[Tag] | None = None,
+    decode: bool = True,
 ) -> list[str]:
     """Retire de ``soup`` les adresses masquées par Cloudflare et renvoie celles qui se décodent.
 
@@ -186,7 +187,8 @@ def extract_cloudflare_emails(
     l'adresse décodée n'est JAMAIS remise dans la page : l'appelant la garde à part (stockage
     interne), elle ne doit apparaître dans aucun champ publié. Une donnée invalide ou une adresse
     refusée (``accept`` faux) est retirée sans erreur et n'est pas renvoyée. ``within`` limite la
-    lecture à ces éléments (le reste de la page n'est pas touché). Renvoie les adresses gardées,
+    lecture à ces éléments (le reste de la page n'est pas touché). Avec ``decode=False`` les éléments
+    sont retirés de la même façon mais aucune adresse n'est décodée (interrupteur de suspension). Renvoie les adresses gardées,
     dans l'ordre de la page, sans doublon.
 
     Aucune requête réseau : seul le HTML déjà récupéré est lu. À n'appeler que pour une source dont
@@ -212,7 +214,7 @@ def extract_cloudflare_emails(
     for node, encoded in candidates:
         if node.parent is None:  # déjà retiré avec son parent
             continue
-        email = decode_cloudflare_email(encoded)
+        email = decode_cloudflare_email(encoded) if decode else None
         node.decompose()
         if email and (accept is None or accept(email)) and email not in found:
             found.append(email)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections import deque
 from dataclasses import dataclass
@@ -324,6 +325,20 @@ def publishable_licitor_email(email: str) -> bool:
     )
 
 
+DECODE_ENV = "LICITOR_DECODE_PROTECTED_EMAILS"
+
+
+def decode_protected_emails_enabled() -> bool:
+    """Interrupteur de suspension du décodage (actif par défaut, lu à chaque fiche).
+
+    Désactivé seulement si ``LICITOR_DECODE_PROTECTED_EMAILS`` vaut ``false``, ``0`` ou ``off`` (espaces et
+    casse ignorés, comme ``IMMOJUDIS_INFORMATION_SUFFICIENCY_GATE``) ; toute autre valeur, ou l'absence de la
+    variable, laisse le décodage actif. Coupé, les éléments masqués sont tout de même retirés de la page
+    (jamais publiés) mais aucune adresse n'est décodée ni écrite au registre.
+    """
+    return (os.getenv(DECODE_ENV) or "on").strip().lower() not in {"false", "0", "off"}
+
+
 def _internal_lawyer_contacts(soup: BeautifulSoup, trusts: list[Any]) -> list[dict[str, str]]:
     """Adresses masquées des blocs avocats, décodées pour un usage INTERNE seulement.
 
@@ -334,10 +349,13 @@ def _internal_lawyer_contacts(soup: BeautifulSoup, trusts: list[Any]) -> list[di
     dans le registre des contacts de l'agent d'information (service_role).
     """
     contacts: list[dict[str, str]] = []
+    decode = decode_protected_emails_enabled()
     for trust in trusts:
         heading = trust.find("h3")
         name = clean_text(heading.get_text(" ", strip=True)) if heading is not None else None
-        for email in extract_cloudflare_emails(soup, accept=publishable_licitor_email, within=[trust]):
+        for email in extract_cloudflare_emails(
+            soup, accept=publishable_licitor_email, within=[trust], decode=decode
+        ):
             if all(email != item["email"] for item in contacts):
                 contacts.append({"email": email, "name": name or "", "role": "lawyer", "source_name": "licitor"})
     return contacts
