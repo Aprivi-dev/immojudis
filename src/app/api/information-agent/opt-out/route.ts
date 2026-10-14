@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     if (error) throw error;
     return page(
       "Opposition enregistrée",
-      "Votre adresse ne sera plus contactée par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité.",
+      "Votre adresse et votre identité professionnelle ne seront plus contactées par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité.",
       200,
     );
   } catch (error) {

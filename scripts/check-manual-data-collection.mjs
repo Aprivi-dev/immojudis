@@ -19,6 +19,8 @@ const allowedVercelCronPaths = new Set([
   "/api/cron/alert-notifications",
   "/api/cron/sale-change-monitor",
   "/api/cron/data-retention",
+  // Calcul dérivé (palier de complétude des annonces déjà en base) : ne collecte aucune donnée.
+  "/api/cron/listing-completeness",
   "/api/cron/sale-retention",
   "/api/cron/operational-health",
 ]);
@@ -27,6 +29,7 @@ const allowedDatabaseCronJobs = new Set([
   "immojudis-operational-history-retention",
   "immojudis-sale-retention",
   "immojudis-information-agent-inbound",
+  "immojudis-listing-completeness",
 ]);
 // Keep immutable migration history, but forbid reintroducing these schedules.
 // The terminal migration disables both; pgTAP checks the resulting database state.

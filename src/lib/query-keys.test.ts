@@ -26,6 +26,12 @@ describe("queryKeys", () => {
       "u1",
       "analysis",
     ]);
+    expect(queryKeys.saleDetail("s1", "u1", "unlocked")).toEqual([
+      "sale-detail",
+      "s1",
+      "u1",
+      "unlocked",
+    ]);
     expect(queryKeys.saleAiReview("s1", "anonymous")).toEqual([
       "sale-ai-review",
       "s1",
@@ -54,6 +60,46 @@ describe("queryKeys", () => {
       "publication-requests",
       "workspace",
       "u1",
+    ]);
+  });
+
+  it("keys the data that differs between the free, unlocked and Analyse views by access", () => {
+    expect(queryKeys.saleUnlock("s1", "u1")).toEqual(["sale-unlock", "s1", "u1"]);
+    for (const access of ["discovery", "unlocked", "analysis"] as const) {
+      expect(queryKeys.documentReading("s1", access, "u1")).toEqual([
+        "document-reading",
+        "s1",
+        access,
+        "u1",
+      ]);
+      expect(queryKeys.salePassages("s1", access, "u1")).toEqual([
+        "sale-passages",
+        "s1",
+        access,
+        "u1",
+      ]);
+      expect(queryKeys.auctionScenarios("s1", access, "u1")).toEqual([
+        "auction-scenarios",
+        "s1",
+        access,
+        "u1",
+      ]);
+    }
+    // The teaser of a locked sale and the reading of the same sale once unlocked never share an entry.
+    expect(queryKeys.documentReading("s1", "discovery", "u1")).not.toEqual(
+      queryKeys.documentReading("s1", "unlocked", "u1"),
+    );
+    // Nor do two accounts share an entry.
+    expect(queryKeys.documentReading("s1", "unlocked", "u1")).not.toEqual(
+      queryKeys.documentReading("s1", "unlocked", "u2"),
+    );
+    expect(queryKeys.precomputedMarketEstimate("s1", "u1")).not.toEqual(
+      queryKeys.precomputedMarketEstimate("s1", "u2"),
+    );
+    // The first two elements stay the historical prefix, so a prefix invalidation still matches.
+    expect(queryKeys.documentReading("s1", "unlocked", "u1").slice(0, 2)).toEqual([
+      "document-reading",
+      "s1",
     ]);
   });
 

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  ANALYSIS_ONLY_SORT_KEYS,
+  SORT_OPTIONS,
   applyClientSearchFilters,
   dataFiltersFromSearch,
   countActiveSearchFilters,
@@ -7,6 +9,7 @@ import {
   hasClientOnlyFilters,
   saleIsInViewport,
   sortClientSearchResults,
+  visibleSearchSort,
 } from "./search-filters";
 import type { ViewportBounds } from "./search-url-state";
 import type { AuctionSale } from "@/lib/types";
@@ -82,6 +85,40 @@ describe("sales search filters", () => {
     expect(dataSortFromSearch("beds_desc")).toBe("beds_desc");
     expect(hasClientOnlyFilters({ sort: "beds_desc" })).toBe(false);
     expect(hasClientOnlyFilters({ sort: "beds_desc", dpeClasses: ["A"] })).toBe(true);
+  });
+
+  it("« Mieux renseignées d’abord » classe par complétude, pour tous les publics", () => {
+    for (const sort of [undefined, "relevance", "distance"] as const) {
+      expect(dataSortFromSearch(sort)).toBe("completeness_desc");
+      expect(dataSortFromSearch(sort, { allowInvestmentScore: true })).toBe("completeness_desc");
+    }
+  });
+
+  it("réserve le score d'investissement à l'offre Analyse", () => {
+    expect(dataSortFromSearch("score_desc", { allowInvestmentScore: true })).toBe("score_desc");
+    // Visiteur ou Découverte arrivé avec cette valeur dans l'URL : tri par défaut.
+    expect(dataSortFromSearch("score_desc")).toBe("completeness_desc");
+    expect(dataSortFromSearch("score_desc", { allowInvestmentScore: false })).toBe(
+      "completeness_desc",
+    );
+    expect(visibleSearchSort("score_desc")).toBe("relevance");
+    expect(visibleSearchSort("score_desc", { allowInvestmentScore: true })).toBe("score_desc");
+    expect(visibleSearchSort(undefined)).toBe("relevance");
+    expect(visibleSearchSort("price_asc")).toBe("price_asc");
+  });
+
+  it("traduit chaque option de tri explicite", () => {
+    expect(dataSortFromSearch("sale_date_asc")).toBe("date_asc");
+    expect(dataSortFromSearch("newest")).toBe("date_desc");
+    expect(dataSortFromSearch("price_asc")).toBe("price_asc");
+    expect(dataSortFromSearch("price_desc")).toBe("price_desc");
+    expect(dataSortFromSearch("sqft_desc")).toBe("surface_desc");
+  });
+
+  it("propose « Mieux renseignées d’abord » et un tri « Score d’investissement » réservé à Analyse", () => {
+    expect(SORT_OPTIONS[0]).toEqual({ label: "Mieux renseignées d’abord", value: "relevance" });
+    expect(SORT_OPTIONS).toContainEqual({ label: "Score d’investissement", value: "score_desc" });
+    expect(ANALYSIS_ONLY_SORT_KEYS).toEqual(["score_desc"]);
   });
 
   it("filters visible sales when the map viewport changes", () => {

@@ -11,7 +11,7 @@ import {
   type OccupationCase,
   type ValueReliability,
 } from "@/lib/bid-ceiling-engine";
-import type { MarketEstimate } from "@/lib/market.server";
+import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { DEFAULTS, registrationRateForDepartment } from "@/lib/profitability";
 import { defaultRentPerM2 } from "@/lib/rent-reference";
 import { getMarketValuationSurfaces } from "@/lib/surface";
@@ -65,7 +65,7 @@ export function occupationCaseForStatus(status: string | null | undefined): Occu
 
 export function buildCeilingHypotheses(
   sale: AuctionSale,
-  estimate: MarketEstimate | null,
+  estimate: CeilingMarketEstimate | null,
   choices: CeilingUserChoices = {},
 ): CeilingHypotheses {
   const surfaces = getMarketValuationSurfaces(sale);
@@ -140,7 +140,7 @@ export function buildCeilingHypotheses(
 }
 
 function valueHypothesis(
-  estimate: MarketEstimate | null,
+  estimate: CeilingMarketEstimate | null,
   surface: number | null,
   surfaceEstimated: boolean,
   choices: CeilingUserChoices,

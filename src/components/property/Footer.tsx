@@ -15,6 +15,9 @@ export function Footer() {
           <Link href="/privacy" className="transition-colors hover:text-gold-text">
             Confidentialite
           </Link>
+          <Link href="/classement-des-annonces" className="transition-colors hover:text-gold-text">
+            Classement des annonces
+          </Link>
           <Link href="/mes-droits" className="transition-colors hover:text-gold-text">
             Mes droits
           </Link>

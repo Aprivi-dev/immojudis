@@ -230,6 +230,35 @@ describe("useful public discovery", () => {
     expect(screen.getByText(/Fiche complète avec un compte gratuit/)).toBeTruthy();
   });
 
+  it("signale « Annonce bien renseignée » sur les seules cartes du palier haut", () => {
+    const renderCard = (completeness_tier: number | null | undefined, locked: boolean) =>
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={{ ...sale("tier-card"), completeness_tier } as AuctionSale}
+            returnTo="/sales"
+            locked={locked}
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+          />
+        </QueryClientProvider>,
+      );
+
+    renderCard(1, true);
+    expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
+    cleanup();
+    renderCard(1, false);
+    expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
+    cleanup();
+    for (const tier of [0, null, undefined]) {
+      renderCard(tier, false);
+      expect(screen.queryByText("Annonce bien renseignée")).toBeNull();
+      cleanup();
+    }
+  });
+
   it("shows a starting price of 0 as not communicated on the listing card", () => {
     const sale = {
       id: "sale-zero",

@@ -10,6 +10,13 @@
 
 type Id = string | null | undefined;
 
+/**
+ * What the account reads on a sale page: the free view, a sale unlocked with « 3 déblocages par
+ * mois », or the full Analyse view. Keys of the data that differs between these views carry it, so
+ * unlocking a sale never leaves the free teaser in the cache.
+ */
+export type SaleAccessMode = "discovery" | "unlocked" | "analysis";
+
 export const queryKeys = {
   // Account, alerts and notifications
   featureEntitlementsPlan: (userKey: Id) => ["feature-entitlements", userKey, "plan"] as const,
@@ -46,8 +53,15 @@ export const queryKeys = {
     ["search-lawyer-placement", city, department] as const,
 
   // Sale detail
-  saleDetail: (saleId: string, sessionKey: Id, mode: "discovery" | "analysis") =>
+  saleDetail: (saleId: string, sessionKey: Id, mode: SaleAccessMode) =>
     ["sale-detail", saleId, sessionKey, mode] as const,
+  saleUnlock: (saleId: string, userKey: Id) => ["sale-unlock", saleId, userKey] as const,
+  documentReading: (saleId: string, access: SaleAccessMode, userKey?: Id) =>
+    ["document-reading", saleId, access, userKey ?? "anonymous"] as const,
+  salePassages: (saleId: string, access: SaleAccessMode, userKey?: Id) =>
+    ["sale-passages", saleId, access, userKey ?? "anonymous"] as const,
+  auctionScenarios: (saleId: string, access: SaleAccessMode, userKey?: Id) =>
+    ["auction-scenarios", saleId, access, userKey ?? "anonymous"] as const,
   saleAiReview: (saleId: string, userKey: Id) => ["sale-ai-review", saleId, userKey] as const,
   saleFactReliability: (saleId: string, userKey: Id) =>
     ["sale-fact-reliability", saleId, userKey] as const,
@@ -58,7 +72,10 @@ export const queryKeys = {
   streetViewPanorama: (lat: number, lng: number) =>
     ["street-view-panorama", lat.toFixed(6), lng.toFixed(6)] as const,
   saleWorkspace: (saleId: string) => ["sale-workspace", saleId] as const,
-  precomputedMarketEstimate: (saleId: string) => ["precomputed-market-estimate", saleId] as const,
+  // The mode is part of the key: Analyse gets the detailed estimate, an unlock only the value the
+  // bid ceiling reads, and an account that changes offer must not be served the other one.
+  precomputedMarketEstimate: (saleId: string, userKey?: Id, mode: SaleAccessMode = "analysis") =>
+    ["precomputed-market-estimate", saleId, userKey ?? "anonymous", mode] as const,
   outcomeGraph: (saleId: string) => ["outcome-graph", saleId] as const,
   listingStatistics: (saleId: string, historyMonths: number, mode: "demo" | "live") =>
     ["listing-statistics", saleId, historyMonths, mode] as const,

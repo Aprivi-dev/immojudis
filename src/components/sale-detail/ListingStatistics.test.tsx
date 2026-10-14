@@ -266,6 +266,18 @@ describe("ListingStatistics", () => {
     expect(screen.queryByRole("link", { name: "Appartement avec balcon" })).toBeNull();
   });
 
+  it("masque la liste des autres ventes du tribunal pour une vente débloquée, sans toucher aux chiffres", async () => {
+    const { container } = renderStatistics({ premium: true, showUpcomingListings: false });
+
+    expect(await screen.findByText("Prix d’adjudication publiés")).toBeTruthy();
+    expect(container.querySelector("#stats-ventes")).toBeNull();
+    expect(screen.queryByText("Les prochaines annonces du tribunal")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Ventes à venir" })).toBeNull();
+    // Les statistiques du tribunal restent affichées.
+    expect(container.querySelector("#stats-chiffres")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Adjudications" })).toBeTruthy();
+  });
+
   it("déplie les annonces disponibles, permet de réduire et replie sur changement de période", async () => {
     const upcomingListings = Array.from({ length: 100 }, (_, index) => ({
       ...activityResponse.activity.upcomingListings[0]!,
