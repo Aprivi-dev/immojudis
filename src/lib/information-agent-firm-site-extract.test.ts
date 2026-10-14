@@ -163,6 +163,18 @@ describe("adresses publiées en clair", () => {
     expect(extractPageEmails(html)).toEqual([]);
   });
 
+  it("ignore le contenu des scripts, styles et commentaires, balises fermantes atypiques comprises", () => {
+    const html = [
+      '<script>var a = "script1@cabinet-dupont.fr";</script >',
+      '<SCRIPT type="text/javascript">var b = "script2@cabinet-dupont.fr";</SCRIPT\n>',
+      "<style>/* style@cabinet-dupont.fr */</style\t>",
+      "<!-- commentaire@cabinet-dupont.fr --!>",
+      "<!-- autre@cabinet-dupont.fr -->",
+      "<p>contact@cabinet-dupont.fr</p>",
+    ].join("\n");
+    expect(extractPageEmails(html)).toEqual([{ email: "contact@cabinet-dupont.fr", via: "text" }]);
+  });
+
   it.each([
     "greffe@tj-bordeaux.justice.fr",
     "me.dupont@avocat-conseil.fr",
