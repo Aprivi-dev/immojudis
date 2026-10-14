@@ -30,6 +30,11 @@ export function assertInformationAgentSourceAllowed(addressOrigin: {
   }
 }
 
+function matchRuleOf(metadata: unknown): string | null {
+  const rule = (metadata as { match_rule?: unknown } | null)?.match_rule;
+  return typeof rule === "string" ? rule : null;
+}
+
 export const INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE =
   "Origine de l’adresse inconnue : elle ne figure pas dans l’annonce de cette vente. Indiquez la page publique où vous l’avez trouvée avant l’envoi.";
 
@@ -65,7 +70,9 @@ export async function resolveInformationAgentAddressOrigin({
   if (saleId) {
     const { data, error } = await supabaseAdmin
       .from("information_agent_contacts")
-      .select("source_kind,source_directory_name,source_name,source_url,observed_at,observed_by")
+      .select(
+        "source_kind,source_directory_name,source_name,source_url,observed_at,observed_by,metadata",
+      )
       .eq("normalized_email", normalized)
       .eq("scope_sale_id", saleId)
       .limit(1);
@@ -83,6 +90,7 @@ export async function resolveInformationAgentAddressOrigin({
         directoryName: row.source_directory_name,
         observedAt: row.observed_at,
         observedBy,
+        matchRule: matchRuleOf(row.metadata),
       });
       // Un annuaire, un site ou une autre annonce sans lien exact ne prouvent rien.
       const known =

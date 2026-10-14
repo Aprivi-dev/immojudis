@@ -13,15 +13,14 @@ du même jour ; à faire valider.
    `ImmojudisAdresses/1.0 (+https://<domaine>/agent-information)`. Le jeton et l’adresse de la page
    doivent être repris tels quels dans la page publique, afin que les éditeurs puissent
    l’interdire dans leur `robots.txt`.
-2. **Cache.** Ne parler que d’une liste de noms et d’adresses web « conservée temporairement
-   (24 heures au plus) », jamais « en mémoire » : le support réel (mémoire du worker, disque
-   temporaire) doit correspondre à ce qui est écrit. Jamais en base ni dans un index partagé.
-3. **Journal de consultation de 6 mois.** Avant de l’annoncer : créer la table (site, page,
-   résultat, date, vente, sans contenu), la purge à 6 mois dans `run_data_retention`, la ligne de
-   la matrice de conservation et la mention dans la politique de confidentialité.
+2. **Aucune liste ni cache.** L’outil ne conserve aucune liste de noms ou d’adresses web : n’en
+   annoncer aucune.
+3. **Pas de journal de consultation distinct.** La trace des tentatives (source essayée, résultat,
+   domaine, nombre de pages lues, sans contenu) est conservée avec la demande, pas ailleurs : ne
+   rien annoncer de plus.
 4. **Liste exacte de ce qui sera stocké.** Seuls : l’adresse retenue, l’adresse web de la page, la
    date de consultation, le type de source, la règle et le score d’appariement, l’administrateur
-   qui valide. Aucun contenu de page, aucun extrait, aucune copie d’annuaire. À confirmer avec
+   qui valide. Aucun contenu de page, aucun extrait. À confirmer avec
    l’implémentation (l’avis prévoyait un hash et un extrait de 240 caractères facultatifs : ils ne
    figurent pas dans ce texte).
 5. **Sources.** La liste annoncée doit être celle des sources activées (registre des sources avec
@@ -29,7 +28,7 @@ du même jour ; à faire valider.
    autorisation écrite.
 6. **Politique de confidentialité.** Ajouter la phrase « Un outil de recherche automatisé consulte
    ponctuellement, pour une vente précise, une page publique du professionnel concerné. Aucune copie
-   d’annuaire n’est conservée. » et le lien vers la page, au moment de l’activation, avec une
+   de page n’est conservée. » et le lien vers la page, au moment de l’activation, avec une
    nouvelle version du document. Le pied du message contient déjà la mention de la recherche
    automatique, qui n’apparaît que pour une adresse trouvée par l’agent hors de l’annonce.
 7. **AIPD.** L’analyse de seuil de `docs/rgpd-mise-en-balance-agent-information.md` doit être
@@ -52,23 +51,22 @@ L’outil sera exploité par Immojudis, {entité}, situé à {adresse}. Contact 
 
 Lorsqu’un administrateur d’Immojudis préparera une demande d’information sur une vente précise,
 l’outil pourra consulter ponctuellement une page publique du professionnel qui mène cette vente pour
-retrouver son adresse professionnelle : l’annonce de la vente, sa fiche dans un annuaire
-professionnel officiel ou le site de son cabinet ou de son étude. Cette adresse ne servira qu’à lui
+retrouver son adresse professionnelle : une autre annonce publique du même professionnel
+enregistrée par Immojudis, ou le site de son cabinet ou de son étude cité dans l’annonce de la vente.
+Cette adresse ne servira qu’à lui
 écrire au sujet de cette vente. L’outil ne fera aucune prospection : les messages ne contiendront
 aucune offre commerciale, et chacun sera relu et validé par un membre de l’équipe avant envoi.
 
 #### Ce qu’il fera, et ce qu’il ne fera pas
 
 - Il cherchera un seul professionnel à la fois, pour une vente précise.
-- Il lira des pages précises (une fiche, une page de contact ou de mentions légales), jamais un
-  annuaire entier : aucune pagination, aucun formulaire de recherche, aucune copie d’annuaire.
+- Il lira trois pages au plus du site d’un cabinet (accueil, contact, mentions légales ou
+  présentation), jamais un site entier : aucune pagination, aucun formulaire.
 - Il respectera le fichier `robots.txt` de chaque site (jeton `ImmojudisAdresses`), avancera à un
   rythme lent et s’arrêtera dès qu’un site le lui refusera ; il ne contournera aucun blocage.
-- Il ne conservera ni la page lue ni une copie d’annuaire. Seront enregistrés : l’adresse retenue,
-  l’adresse web de la page, la date de consultation, le type de source et le nom de la personne qui
-  a validé. Une liste de noms et d’adresses web pourra être conservée temporairement (24 heures au
-  plus). Le journal des consultations (site, page, résultat, date), sans contenu, sera conservé
-  6 mois au plus.
+- Il ne conservera pas la page lue. Seront enregistrés : l’adresse retenue, l’adresse web de la
+  page, la date de relevé, le type de source et le critère de rapprochement utilisé. Aucune liste
+  de noms ou d’adresses web n’est conservée.
 - Une adresse qui ne serait finalement pas utilisée pour un envoi sera supprimée sous un mois.
 - Il s’identifiera à chaque requête : le jeton `ImmojudisAdresses` et l’adresse de cette page
   figureront dans son user-agent.

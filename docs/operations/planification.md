@@ -71,3 +71,4 @@ relus) est créée au premier tick du mois. Son code de sortie est noté dans `a
 | Immojudis Operational Alert               | déclenché par l'application              | échec = incident ouvert ; avertissement = rappel ; vert = résolution |
 | Entraînement du modèle de valorisation    | manuel                                   | rapport JSON + tableau de synthèse                                   |
 | Apply Supabase Migrations                 | manuel depuis `main`                     | contrôle de dérive du schéma                                         |
+| Check Pending Supabase Migrations         | planifié (tous les jours 07:10 UTC)      | échec = migrations de `main` non appliquées en production            |
