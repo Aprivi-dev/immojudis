@@ -255,9 +255,9 @@ export type PageEmail = { email: string; via: "mailto" | "text" };
 
 function stripNonContent(html: string): string {
   return html
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[\s\S]*?<\/style>/gi, " ");
+    .replace(/<!--[\s\S]*?--!?>/g, " ")
+    .replace(/<script\b[\s\S]*?<\/script\b[^>]*>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style\b[^>]*>/gi, " ");
 }
 
 function cleanEmail(value: string): string | null {
