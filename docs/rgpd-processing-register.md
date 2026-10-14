@@ -34,7 +34,9 @@ Sources admises, par niveau (avis juridique du 14/10/2026, à faire valider) :
   (14/10/2026, à formaliser par écrit). Vench : pas de décodage. Le décodage se fait en lot, à la
   collecte, sur le HTML déjà récupéré, sans requête supplémentaire et sans contourner aucun défi ni
   blocage ; l’adresse décodée passe par les mêmes filtres qu’une adresse en clair (juridictions,
-  messagerie RPVA, Ordre, barreau et CARPA exclus) et son origine reste l’annonce. Cet accord prime
+  messagerie RPVA, Ordre, barreau et CARPA exclus), n’est que l’adresse publiée par le professionnel
+  dans le bloc de l’annonce qui le présente comme interlocuteur de la vente (aucune adresse d’une
+  partie à la procédure), et son origine reste l’annonce. Cet accord prime
   sur l’avis juridique du 14/10/2026 (décodage à la demande, après accord écrit) ; il reste à
   confirmer par écrit.
 - **Niveau 1 :** annonce publique de la vente ; autre annonce du même professionnel (identité

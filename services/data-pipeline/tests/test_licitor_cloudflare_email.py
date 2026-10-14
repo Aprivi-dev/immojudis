@@ -272,3 +272,20 @@ def test_decoded_address_is_a_channel_of_the_lawyer_not_of_a_private_person() ->
     assert lawyers[0]["name"].startswith("Maître Jeanne Exemple") and lawyers[0]["role"] == "avocat"
     assert lawyers[0]["email"] == "maitre@exemple.test"
     assert "email" not in lawyers[1]
+
+
+def test_masked_address_outside_trust_blocks_is_logged_not_failed(caplog: pytest.LogCaptureFixture) -> None:
+    import logging
+
+    outside = _data_cfemail_block("particulier@exemple.test")
+    html = _html(_data_cfemail_block("maitre@exemple.test")).replace('<div class="Trusts">', outside + '<div class="Trusts">')
+    with caplog.at_level(logging.DEBUG, logger="src.sources.licitor"):
+        raw = parse_licitor_detail_html(html, URL)
+    assert raw["lawyer_contact"]
+    assert any("hors des blocs .Trust" in record.getMessage() for record in caplog.records)
+
+    caplog.clear()
+    no_trust = _html("").replace('class="Trust"', 'class="Autre"')
+    with caplog.at_level(logging.DEBUG, logger="src.sources.licitor"):
+        parse_licitor_detail_html(no_trust, URL)
+    assert any("aucun bloc .Trust" in record.getMessage() for record in caplog.records)
