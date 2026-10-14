@@ -44,14 +44,22 @@ _EMAIL_RE = re.compile(r"[\w.+'-]+@[\w-]+(?:\.[\w-]+)+")
 def _worker_detail(text: str | None, fallback: str) -> str:
     """Fin d'une sortie de worker pour un message d'erreur, sans adresse e-mail.
 
-    Une réponse JSON complète du worker (``{"ok"…``) porte les ventes brutes : elle n'est jamais citée.
-    Les adresses e-mail des autres sorties sont masquées.
+    Une réponse JSON de succès (``ok`` vrai ou clé ``result``) porte les ventes brutes : elle n'est jamais
+    citée. Un échec ``{"ok": false, "error": "…"}`` garde son message d'erreur, adresses masquées. Toute
+    autre sortie est citée avec ses adresses e-mail masquées.
     """
     detail = (text or "").strip()
     if not detail:
         return fallback
-    if detail.startswith('{"ok"'):
-        return "worker JSON response omitted"
+    try:
+        message = json.loads(detail)
+    except ValueError:
+        message = None
+    if isinstance(message, dict):
+        if message.get("ok") is False and "result" not in message:
+            detail = str(message.get("error") or fallback)
+        else:
+            return "worker JSON response omitted"
     return _EMAIL_RE.sub("[email]", detail)[-1200:]
 
 

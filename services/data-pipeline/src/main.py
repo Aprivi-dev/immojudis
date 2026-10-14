@@ -1673,8 +1673,8 @@ def _enabled_scrapers(
     """Map of enabled source name → zero-arg scraper callable, honouring the
     requested source and the per-source benchmark toggles. `known` (source_url →
     change-signature) lets list-based scrapers skip detail pages of unchanged
-    listings; licitor exposes price/date only on detail pages, so it always
-    fetches."""
+    listings; licitor skips it too when its list-card signature is unchanged
+    (should_fetch_detail), and its internal contacts are then not refreshed."""
     ep_benchmark_enabled = bool(settings.get("enable_encheres_publiques_benchmark"))
     if source == "encheres_publiques" or (source == "all" and ep_benchmark_enabled):
         require_encheres_publiques_access(settings)

@@ -13,8 +13,8 @@ Règles, identiques pour la transaction Postgres et pour PostgREST :
 * à chaque recollecte, une ligne ``sale_listing`` existante est rafraîchie (``observed_at``, ``source_url``,
   ``last_seen_at``), ce qui repousse la purge de 21 jours ; une adresse non recollectée et non utilisée est
   purgée comme prévu. Une ligne d'un autre type (saisie d'administrateur, annuaire…) n'est jamais réécrite ;
-* ni écriture ni rafraîchissement pour une vente dont l'audience est passée, ou retirée, annulée ou
-  reportée sans nouvelle date (``registers_internal_contacts``) : l'adresse n'est donc plus entretenue
+* ni écriture ni rafraîchissement pour une vente sans date d'audience, dont l'audience est passée, ou
+  retirée, annulée ou reportée sans nouvelle date (``registers_internal_contacts``) : l'adresse n'est donc plus entretenue
   après la vente et la purge de 21 jours (hebdomadaire) la supprime au plus tard 28 jours après la
   dernière consultation de l'annonce ;
 * ``created_at`` n'est jamais réécrit : il garde la date du premier relevé ;
@@ -24,6 +24,7 @@ Règles, identiques pour la transaction Postgres et pour PostgREST :
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -108,13 +109,14 @@ _CLOSED_STATUSES = frozenset({"cancelled", "withdrawn", "past", "adjudicated"})
 
 
 def registers_internal_contacts(sale: AuctionSale) -> bool:
-    """Vente dont l'adresse est encore entretenue : audience à venir, ni retirée ni annulée.
+    """Vente dont l'adresse est encore entretenue : audience datée et à venir, ni retirée ni annulée.
 
-    Une vente reportée sans nouvelle date n'est pas entretenue ; une audience passée non plus
-    (``is_catalogue_expired`` : même règle que le catalogue, heure ou jour de l'audience).
+    Sans date d'audience, ou reportée sans nouvelle date, rien n'est écrit ni rafraîchi (strict minimum) ;
+    une audience passée non plus (``is_catalogue_expired`` : même règle que le catalogue, heure ou jour de
+    l'audience).
     """
     status = (sale.status or "").lower()
-    if status in _CLOSED_STATUSES or (status == "postponed" and sale.sale_date is None):
+    if sale.sale_date is None or status in _CLOSED_STATUSES:
         return False
     return not is_catalogue_expired(sale)
 
@@ -157,6 +159,9 @@ def write_internal_contacts_connection(connection: Any, sales: list[AuctionSale]
     return written
 
 
+_CONTENT_RANGE_TOTAL_RE = re.compile(r"/(\d+)\s*$")
+
+
 def _read_pages(
     get: Callable[..., httpx.Response],
     endpoint: str,
@@ -164,25 +169,34 @@ def _read_pages(
     api_key: str,
     check: Callable[[httpx.Response], httpx.Response],
 ) -> list[dict[str, Any]]:
-    """Toutes les lignes d'une lecture PostgREST, par pages de ``PAGE_SIZE`` triées par id.
+    """Toutes les lignes d'une lecture PostgREST, triées par id, quel que soit le plafond du serveur.
 
-    PostgREST plafonne une réponse : sans pagination une lecture tronquée passerait pour complète. Un
-    nombre de pages au-delà de ``MAX_PAGES`` lève une erreur (rien n'est alors écrit).
+    Le décalage suit le nombre de lignes réellement reçues (un ``max_rows`` inférieur à ``PAGE_SIZE`` ne fait
+    rien sauter). ``Prefer: count=exact`` donne le total dans ``Content-Range`` : la lecture s'arrête à une
+    page vide ou au total annoncé, et lève une erreur si le nombre de lignes lues diffère du total (rien
+    n'est alors écrit). Un nombre de pages au-delà de ``MAX_PAGES`` lève aussi une erreur.
     """
     rows: list[dict[str, Any]] = []
-    for page in range(MAX_PAGES):
-        batch = check(
+    total: int | None = None
+    for _page in range(MAX_PAGES):
+        response = check(
             get(
                 endpoint,
-                params={**params, "order": "id", "limit": str(PAGE_SIZE), "offset": str(page * PAGE_SIZE)},
-                headers=_rest_headers(api_key, prefer="count=none"),
+                params={**params, "order": "id", "limit": str(PAGE_SIZE), "offset": str(len(rows))},
+                headers=_rest_headers(api_key, prefer="count=exact"),
                 timeout=REST_TIMEOUT,
             )
-        ).json()
+        )
+        batch = response.json()
         if not isinstance(batch, list):
             raise RuntimeError("registre des contacts : réponse inattendue")
+        match = _CONTENT_RANGE_TOTAL_RE.search(str((getattr(response, "headers", None) or {}).get("Content-Range") or ""))
+        if match:
+            total = int(match.group(1))
         rows.extend(item for item in batch if isinstance(item, dict))
-        if len(batch) < PAGE_SIZE:
+        if not batch or (total is not None and len(rows) >= total):
+            if total is not None and len(rows) != total:
+                raise RuntimeError("registre des contacts : lecture incomplète, aucune adresse écrite")
             return rows
     raise RuntimeError("registre des contacts : trop de pages, aucune adresse écrite")
 

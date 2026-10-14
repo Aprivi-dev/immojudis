@@ -353,7 +353,7 @@ def test_a_failing_decoder_never_fails_the_page(monkeypatch: pytest.MonkeyPatch,
 # --- Interrupteur de suspension : LICITOR_DECODE_PROTECTED_EMAILS -----------------------------------------
 
 
-@pytest.mark.parametrize("value", ["false", "0", "off", "FALSE", "Off", " false "])
+@pytest.mark.parametrize("value", ["false", "0", "off", "no", "non", "disabled", "FALSE", "Off", " false "])
 def test_switch_off_removes_the_masked_nodes_but_decodes_and_keeps_nothing(
     monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
@@ -374,7 +374,7 @@ def test_switch_off_removes_the_masked_nodes_but_decodes_and_keeps_nothing(
     assert normalize_sale(raw).internal_contacts == []
 
 
-@pytest.mark.parametrize("value", [None, "", "true", "1", "on", "yes", "no", "garbage"])
+@pytest.mark.parametrize("value", [None, "", "true", "1", "on", "yes", "oui", "enabled", "garbage"])
 def test_switch_is_active_by_default_and_for_any_other_value(
     monkeypatch: pytest.MonkeyPatch, value: str | None
 ) -> None:
@@ -394,3 +394,40 @@ def test_extract_without_decoding_still_removes_every_element() -> None:
 
     assert extract_cloudflare_emails(soup, decode=False) == []
     assert soup.get_text("|") == "reste"
+
+
+def test_an_unrecognised_switch_value_keeps_decoding_and_warns_once_without_the_value(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from src.sources import licitor
+
+    monkeypatch.setattr(licitor, "_warned_values", set())
+    monkeypatch.setenv("LICITOR_DECODE_PROTECTED_EMAILS", "peut-etre")
+
+    with caplog.at_level("WARNING"):
+        assert licitor.decode_protected_emails_enabled() is True
+        assert licitor.decode_protected_emails_enabled() is True
+
+    messages = [record.getMessage() for record in caplog.records if "LICITOR_DECODE_PROTECTED_EMAILS" in record.getMessage()]
+    assert len(messages) == 1 and "peut-etre" not in messages[0] and "false" in messages[0]
+
+
+def test_recognised_switch_values_never_warn(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    from src.sources import licitor
+
+    monkeypatch.setattr(licitor, "_warned_values", set())
+    with caplog.at_level("WARNING"):
+        for value in ("", "true", "false", "0", "off", "no", "non", "disabled", "oui", "enabled"):
+            monkeypatch.setenv("LICITOR_DECODE_PROTECTED_EMAILS", value)
+            licitor.decode_protected_emails_enabled()
+    assert not [r for r in caplog.records if "LICITOR_DECODE_PROTECTED_EMAILS" in r.getMessage()]
+
+
+def test_the_internal_contacts_never_appear_in_the_repr_of_a_sale() -> None:
+    sale = AuctionSale(
+        source_name="licitor",
+        source_url=URL,
+        internal_contacts=[{"email": LAWYER_EMAIL, "name": "", "role": "lawyer", "source_url": URL}],
+    )
+
+    assert LAWYER_EMAIL not in repr(sale) and LAWYER_EMAIL not in str(sale)

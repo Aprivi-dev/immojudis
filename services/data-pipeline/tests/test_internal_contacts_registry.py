@@ -24,6 +24,7 @@ def _sale(*emails: str) -> AuctionSale:
     return AuctionSale(
         source_name="licitor",
         source_url=URL,
+        sale_date=datetime.now(UTC) + timedelta(days=30),
         internal_contacts=[
             {"email": email, "name": "Maître Exemple, Avocat", "role": "lawyer", "source_url": URL} for email in emails
         ],
@@ -86,8 +87,9 @@ def test_connection_path_without_internal_contacts_does_nothing() -> None:
 
 
 class _Response:
-    def __init__(self, payload: Any = None, status_code: int = 200) -> None:
+    def __init__(self, payload: Any = None, status_code: int = 200, headers: dict[str, str] | None = None) -> None:
         self._payload = payload if payload is not None else []
+        self.headers = headers or {}
         self.status_code = status_code
         self.is_error = status_code >= 400
         self.text = f"detail with {EMAIL}"
@@ -104,6 +106,8 @@ class _Rest:
 
     def get(self, url: str, **kwargs: Any) -> _Response:
         self.calls.append(("GET", url, kwargs))
+        if int(kwargs["params"].get("offset", "0")) > 0:  # une seule page de résultats, puis une page vide
+            return _Response([])
         if kwargs["params"].get("opposition_status") == "eq.opposed":
             return _Response([{"normalized_email": email} for email in self.opposed])
         return _Response(self.existing)
@@ -308,7 +312,8 @@ def test_the_first_observation_date_is_never_rewritten() -> None:
         {"status": "withdrawn"},
         {"status": "past"},
         {"status": "adjudicated"},
-        {"status": "postponed"},  # reportée sans nouvelle date
+        {"status": "postponed", "sale_date": None},  # reportée sans nouvelle date
+        {"status": "upcoming", "sale_date": None},  # sans date d'audience : strict minimum
         {"sale_date": datetime(2020, 1, 1, 10, 0, tzinfo=UTC)},  # audience passée
     ],
 )
@@ -333,10 +338,10 @@ def test_no_write_nor_refresh_after_the_sale_is_over_or_withdrawn(overrides: dic
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"status": "upcoming"},
+        {"status": "upcoming", "sale_date": datetime.now(UTC) + timedelta(days=3)},
         {"status": "active", "sale_date": datetime.now(UTC) + timedelta(days=20)},
         {"status": "postponed", "sale_date": datetime.now(UTC) + timedelta(days=40)},  # nouvelle date connue
-        {"status": "unknown"},
+        {"status": "unknown", "sale_date": datetime.now(UTC) + timedelta(days=3)},
     ],
 )
 def test_an_upcoming_sale_keeps_its_address_refreshed(overrides: dict[str, Any]) -> None:
@@ -347,27 +352,68 @@ def test_an_upcoming_sale_keeps_its_address_refreshed(overrides: dict[str, Any])
     assert registry.registers_internal_contacts(sale) is True
 
 
+class _Server(_Rest):
+    """Serveur PostgREST factice : ``max_rows`` plafonne une réponse, ``Content-Range`` annonce le total."""
+
+    def __init__(self, opposed: list[str], *, max_rows: int, lie_about_total: int | None = None) -> None:
+        super().__init__()
+        self.all_opposed = opposed
+        self.max_rows = max_rows
+        self.lie_about_total = lie_about_total
+        self.offsets: list[int] = []
+
+    def get(self, url: str, **kwargs: Any) -> _Response:
+        params = kwargs["params"]
+        self.calls.append(("GET", url, kwargs))
+        assert kwargs["headers"]["Prefer"] == "count=exact" and params["order"] == "id"
+        if params.get("opposition_status") != "eq.opposed":
+            return _Response([], headers={"Content-Range": "*/0"})
+        offset, limit = int(params["offset"]), min(int(params["limit"]), self.max_rows)
+        self.offsets.append(offset)
+        page = [{"normalized_email": email} for email in self.all_opposed[offset : offset + limit]]
+        total = self.lie_about_total if self.lie_about_total is not None else len(self.all_opposed)
+        span = f"{offset}-{offset + len(page) - 1}" if page else "*"
+        return _Response(page, headers={"Content-Range": f"{span}/{total}"})
+
+
 def test_rest_opposition_list_is_read_page_by_page_and_an_address_on_a_later_page_is_honoured() -> None:
-    pages: list[str] = []
-
-    class _Paged(_Rest):
-        def get(self, url: str, **kwargs: Any) -> _Response:
-            params = kwargs["params"]
-            self.calls.append(("GET", url, kwargs))
-            if params.get("opposition_status") == "eq.opposed":
-                offset = int(params["offset"])
-                pages.append(params["offset"])
-                assert params["order"] == "id" and params["limit"] == "1000"
-                if offset == 0:
-                    return _Response([{"normalized_email": f"x{index}@exemple.test"} for index in range(1000)])
-                return _Response([{"normalized_email": EMAIL}])
-            return _Response([])
-
-    rest = _Paged()
+    opposed = [f"x{index}@exemple.test" for index in range(1000)] + [EMAIL]
+    rest = _Server(opposed, max_rows=1000)
 
     assert rest.run([_sale(EMAIL)]) == 0
-    assert pages == ["0", "1000"]
+    assert rest.offsets == [0, 1000]
     assert _writes(rest) == []
+
+
+def test_rest_pagination_survives_a_server_cap_below_the_page_size() -> None:
+    # max_rows = 400 : le décalage suit les lignes reçues, aucune ligne n'est sautée.
+    opposed = [f"x{index}@exemple.test" for index in range(1100)] + [EMAIL]
+    rest = _Server(opposed, max_rows=400)
+
+    assert rest.run([_sale(EMAIL)]) == 0
+    assert rest.offsets == [0, 400, 800]
+    assert _writes(rest) == []
+
+
+def test_rest_reading_fails_closed_when_the_rows_read_differ_from_the_announced_total() -> None:
+    rest = _Server([f"x{index}@exemple.test" for index in range(10)], max_rows=1000, lie_about_total=42)
+
+    with pytest.raises(RuntimeError, match="lecture incomplète"):
+        rest.run([_sale(EMAIL)])
+    assert _writes(rest) == []
+
+
+def test_rest_reading_without_a_total_stops_on_an_empty_page() -> None:
+    class _NoTotal(_Server):
+        def get(self, url: str, **kwargs: Any) -> _Response:
+            response = super().get(url, **kwargs)
+            response.headers = {}
+            return response
+
+    rest = _NoTotal([f"x{index}@exemple.test" for index in range(1500)] + [EMAIL], max_rows=1000)
+
+    assert rest.run([_sale(EMAIL)]) == 0
+    assert rest.offsets == [0, 1000, 1501]
 
 
 def test_rest_reading_fails_closed_after_the_page_cap_and_writes_nothing() -> None:
@@ -391,6 +437,7 @@ def test_rest_existing_rows_are_read_by_chunks_of_sale_ids() -> None:
         sale = AuctionSale(
             source_name="licitor",
             source_url=url,
+            sale_date=datetime.now(UTC) + timedelta(days=30),
             internal_contacts=[{"email": f"a{index}@exemple.test", "name": "", "role": "lawyer", "source_url": url}],
         )
         sales.append(sale)

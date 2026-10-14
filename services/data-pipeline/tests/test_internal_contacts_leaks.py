@@ -87,3 +87,25 @@ def test_worker_failure_messages_never_cite_a_sale_payload_or_an_address(output:
 
 def test_worker_diagnostics_without_address_stay_readable() -> None:
     assert source_process._worker_detail("timeout while reading page 3", "x") == "timeout while reading page 3"
+
+
+def test_a_failed_worker_response_keeps_its_error_message_with_addresses_masked() -> None:
+    failure = json.dumps({"ok": False, "error": f"ValueError: cannot read the page for {EMAIL} (timeout)"})
+
+    detail = source_process._worker_detail(failure, "fallback")
+
+    assert detail == "ValueError: cannot read the page for [email] (timeout)"
+    assert EMAIL not in detail
+
+
+def test_a_successful_or_result_bearing_worker_response_is_never_cited() -> None:
+    for message in (
+        {"ok": True, "result": {"sales": [{"internal_contacts": [{"email": EMAIL}]}]}},
+        {"ok": False, "result": {"sales": [{"internal_contacts": [{"email": EMAIL}]}]}},
+        {"result": {"sales": []}},
+    ):
+        assert source_process._worker_detail(json.dumps(message), "fallback") == "worker JSON response omitted"
+
+
+def test_a_failed_response_without_an_error_message_uses_the_fallback() -> None:
+    assert source_process._worker_detail(json.dumps({"ok": False}), "worker failed") == "worker failed"
