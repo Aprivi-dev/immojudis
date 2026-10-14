@@ -167,6 +167,31 @@ def test_non_textual_fields_and_countdown_do_not_invalidate():
     assert result["llm_display_status"] == "accepted"
 
 
+def test_newly_extracted_lawyer_does_not_requeue_the_display_text():
+    # Extraction de l'avocat poursuivant (Vench, Petites Affiches) : nom, contact et blocs source « avocat »
+    # apparaissent sur des fiches déjà publiées. Leur capture de même nature est déjà connue : le texte reste courant.
+    stored = _with_synthesis(_capture(_collection_capture(), {}))
+    raw = _collection_capture()
+    raw.update(
+        lawyer_name="SCP TESTARD ET ASSOCIES (Maître Camille TESTARD)",
+        lawyer_contact="01 00 00 00 01 · cabinet@testard.example",
+        source_blocks={
+            "avocat": "SCP TESTARD ET ASSOCIES (Maître Camille TESTARD)",
+            "contact_avocat": "01 00 00 00 01 · cabinet@testard.example",
+        },
+    )
+    result = _capture(raw, stored)
+    before, after = stored["source_checks"][URL], result["source_checks"][URL]
+
+    assert "source_content_changed" not in result
+    assert result["llm_display_status"] == "accepted"
+    assert has_current_display(result)
+    assert after["display_invalidations"] == before["display_invalidations"]
+    # L'empreinte de preuve, elle, change : elle pilote le manifeste des faits LLM (voir docs/pipeline-reliability.md).
+    assert after["evidence_fingerprint"] != before["evidence_fingerprint"]
+    assert after["capture_fingerprints"] == before["capture_fingerprints"]
+
+
 def test_ordinary_text_change_keeps_the_old_text_as_stale_and_requeues():
     stored = _with_synthesis(_capture(_collection_capture(), {}))
     before = stored["source_checks"][URL]["display_invalidations"]["count"]
