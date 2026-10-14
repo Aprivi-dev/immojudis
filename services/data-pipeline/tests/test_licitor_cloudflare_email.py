@@ -172,3 +172,103 @@ def test_stored_page_text_with_a_decoded_address_replays_it_but_never_a_court_on
     assert refresh_licitor_raw_sale(raw) is True
     assert "justice.fr" not in raw["lawyer_contact"]
     assert "email" not in raw["source_property_features"]["lawyers"][0]
+
+
+# --- Décision du propriétaire (14/10/2026) : décodage en lot pour Licitor seulement -------------------------
+
+
+@pytest.mark.parametrize(
+    "excluded",
+    [
+        "maitre@avocat-conseil.fr",  # messagerie RPVA : réservée à la procédure
+        "maitre@Avocat-Conseil.FR",
+        "contact@ordre-avocats-exemple.test",
+        "carpa@cabinet-exemple.test",
+        "noreply@cabinet-exemple.test",
+    ],
+)
+def test_decoded_address_filtered_like_a_clear_one_is_dropped(excluded: str) -> None:
+    raw = parse_licitor_detail_html(_html(_data_cfemail_block(excluded)), URL)
+
+    assert raw["lawyer_contact"] == CONTACT_WITHOUT_EMAIL
+    assert "email" not in raw["source_property_features"]["lawyers"][0]
+    assert "email" not in raw["source_property_features"].get("contact", {})
+    assert excluded.lower() not in _published_text(raw).lower()
+    assert "protected" not in _published_text(raw)
+
+
+def test_clear_and_decoded_addresses_go_through_the_same_filter() -> None:
+    for email in ("maitre@avocat-conseil.fr", "greffe@tj-exemple.justice.fr", "maitre@exemple.test"):
+        clear = _html(f"<p>{email}</p>")
+        decoded = _html(_data_cfemail_block(email))
+        kept_clear = parse_licitor_detail_html(clear, URL)["source_property_features"]["lawyers"][0].get("email")
+        kept_decoded = parse_licitor_detail_html(decoded, URL)["source_property_features"]["lawyers"][0].get("email")
+        assert kept_clear == kept_decoded
+
+
+def test_only_the_professional_blocks_are_decoded() -> None:
+    # Une adresse masquée hors du bloc d'un professionnel (texte de l'annonce, pied de page) n'est pas décodée.
+    outside = _data_cfemail_block("particulier@exemple.test")
+    html = _html(_data_cfemail_block("maitre@exemple.test")).replace('<div class="Trusts">', outside + '<div class="Trusts">')
+    raw = parse_licitor_detail_html(html, URL)
+
+    assert "particulier@exemple.test" not in _published_text(raw)
+    assert extract_emails(raw["lawyer_contact"]) == {"maitre@exemple.test"}
+
+
+def test_corrupt_strings_never_raise_and_never_leave_an_address() -> None:
+    corrupt = ["", "0", "zz", "2a4", "ffffffff", "2ad4d4d4d4d4d4", "00" * 400, "é" * 6]
+    block = "".join(
+        f'<p><a href="/cdn-cgi/l/email-protection#{value}"><span data-cfemail="{value}">'
+        "[email&#160;protected]</span></a></p>"
+        for value in corrupt
+    )
+    raw = parse_licitor_detail_html(_html(block), URL)
+
+    assert raw["lawyer_contact"] == CONTACT_WITHOUT_EMAIL
+    assert "@" not in raw["lawyer_contact"]
+    assert "protected" not in _published_text(raw)
+
+
+def test_vench_pages_are_never_decoded() -> None:
+    from pathlib import Path
+
+    from src.sources.vench import parse_vench_detail_html
+
+    html = (Path(__file__).parent / "fixtures" / "vench_fiche_avocat_cabinet.html").read_text(encoding="utf-8")
+    # La fiche porte bien des adresses décodables : c'est le parseur Vench qui ne les décode pas.
+    soup = BeautifulSoup(html, "html.parser")
+    decodable = {decode_cloudflare_email(node["data-cfemail"]) for node in soup.find_all(attrs={"data-cfemail": True})}
+    assert decodable and None not in decodable
+
+    sale = parse_vench_detail_html(html, "https://www.vench.fr/vente-170001-un-bien-exempleville.html")
+
+    published = _published_text(sale)
+    assert all(address not in published for address in decodable)
+    assert "[email protected]" in sale["source_blocks"]["page_text"]
+
+
+def test_contact_stays_in_channel_format_with_a_postal_address_full_of_digits() -> None:
+    from src.extraction_profiles import attach_source_property_features
+
+    html = _html(_data_cfemail_block("maitre@exemple.test")).replace(
+        "1, rue du Palais - 75001 Paris", "14, bd Chasseigne - CS 60062 - 86002 Poitiers Cedex"
+    )
+    raw = parse_licitor_detail_html(html, URL)
+    assert raw["source_property_features"]["contact"] == {"phone": "01 00 00 00 01", "email": "maitre@exemple.test"}
+
+    observation = attach_source_property_features(raw)["source_field_observations"]["lawyer_contact"]
+
+    assert observation["value"] == {"phone": "01 00 00 00 01", "email": "maitre@exemple.test"}
+    assert set(observation["channels"]) == {"phone", "email"}
+    assert observation["state"] == "observed"
+    assert "conflicts" not in observation
+
+
+def test_decoded_address_is_a_channel_of_the_lawyer_not_of_a_private_person() -> None:
+    raw = parse_licitor_detail_html(_html(_data_cfemail_block("maitre@exemple.test")), URL)
+    lawyers = raw["source_property_features"]["lawyers"]
+
+    assert lawyers[0]["name"].startswith("Maître Jeanne Exemple") and lawyers[0]["role"] == "avocat"
+    assert lawyers[0]["email"] == "maitre@exemple.test"
+    assert "email" not in lawyers[1]

@@ -294,9 +294,12 @@ def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[d
 
 def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     soup = parse_html(html, "html.parser")
-    # Cloudflare masque les adresses e-mail des avocats : on les décode avant de lire le texte, pour
-    # que la fiche porte l'adresse (jamais celle d'une juridiction) et non « [email protected] ».
-    reveal_cloudflare_emails(soup, accept=publishable_licitor_email)
+    # Cloudflare masque les adresses e-mail des avocats. Licitor ayant donné son accord (14/10/2026,
+    # oral, à formaliser par écrit), on décode, dans le HTML déjà récupéré et dans les seuls blocs des
+    # professionnels (``.Trust``), avant de lire le texte : la fiche porte l'adresse de l'avocat et non
+    # « [email protected] ». Une adresse refusée (juridiction, RPVA, Ordre, CARPA, illisible) est
+    # retirée ; ailleurs dans la page, rien n'est décodé. Vench ne décode pas (autre parseur).
+    reveal_cloudflare_emails(soup, accept=publishable_licitor_email, within=soup.select("div.Trust"))
     raw_text = _stable_raw_text(soup.get_text("\n", strip=True))
     lines = raw_text.splitlines()
 

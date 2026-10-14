@@ -151,7 +151,7 @@ def _contact_blocks(soup: BeautifulSoup) -> dict[str, dict[str, str]]:
                 phone = re.search(r"(?:\+33\s?|0)[1-9](?:[\s.]?\d{2}){4}", coord_text)
                 site = coords.select_one("a[href^='http']")
                 # Seule une adresse publiée en clair est lue (« mailto: » ou texte) ; celle que Cloudflare masque
-                # (« [email protected] », ``data-cfemail``) n'est pas décodée.
+                # (« [email protected] », ``data-cfemail``) n'est pas décodée (pas d'accord de Vench).
                 mailto = coords.select_one("a[href^='mailto:']")
                 email = mailto_address(mailto.get("href")) if mailto is not None else None
                 email = email or clear_email(coord_text)
