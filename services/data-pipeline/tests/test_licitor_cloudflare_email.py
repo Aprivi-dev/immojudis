@@ -348,3 +348,49 @@ def test_a_failing_decoder_never_fails_the_page(monkeypatch: pytest.MonkeyPatch,
     assert "internal_contacts" not in raw
     assert raw["lawyer_name"] == LAWYER_NAME
     assert "ValueError" in caplog.text and LAWYER_EMAIL not in caplog.text
+
+
+# --- Interrupteur de suspension : LICITOR_DECODE_PROTECTED_EMAILS -----------------------------------------
+
+
+@pytest.mark.parametrize("value", ["false", "0", "off", "FALSE", "Off", " false "])
+def test_switch_off_removes_the_masked_nodes_but_decodes_and_keeps_nothing(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    from src.sources import common
+
+    monkeypatch.setenv("LICITOR_DECODE_PROTECTED_EMAILS", value)
+
+    def never(_encoded: object) -> str:
+        raise AssertionError("aucune adresse ne doit être décodée quand l'interrupteur est coupé")
+
+    monkeypatch.setattr(common, "decode_cloudflare_email", never)
+    raw = parse_licitor_detail_html(_html(_data_cfemail_block(LAWYER_EMAIL)), URL)
+
+    assert "internal_contacts" not in raw
+    assert LAWYER_EMAIL not in _published_text(raw)
+    assert "protected" not in _published_text(raw)
+    assert raw["lawyer_contact"] == CONTACT_WITHOUT_EMAIL
+    assert normalize_sale(raw).internal_contacts == []
+
+
+@pytest.mark.parametrize("value", [None, "", "true", "1", "on", "yes", "no", "garbage"])
+def test_switch_is_active_by_default_and_for_any_other_value(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    if value is None:
+        monkeypatch.delenv("LICITOR_DECODE_PROTECTED_EMAILS", raising=False)
+    else:
+        monkeypatch.setenv("LICITOR_DECODE_PROTECTED_EMAILS", value)
+
+    raw = parse_licitor_detail_html(_html(_data_cfemail_block(LAWYER_EMAIL)), URL)
+
+    assert [item["email"] for item in raw["internal_contacts"]] == [LAWYER_EMAIL]
+
+
+def test_extract_without_decoding_still_removes_every_element() -> None:
+    encoded = cloudflare_encode("a@exemple.test")
+    soup = BeautifulSoup(f'<p><span data-cfemail="{encoded}">x</span><b>reste</b></p>', "html.parser")
+
+    assert extract_cloudflare_emails(soup, decode=False) == []
+    assert soup.get_text("|") == "reste"

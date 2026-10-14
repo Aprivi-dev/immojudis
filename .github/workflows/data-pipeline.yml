@@ -151,6 +151,8 @@ jobs:
       # Crawl-delay raises it).
       PDF_HOST_MIN_DELAY_SECONDS: 2
       ENABLE_LICITOR_BENCHMARK: true
+      # Interrupteur de suspension du decodage des adresses masquees (actif si la variable de depot est absente).
+      LICITOR_DECODE_PROTECTED_EMAILS: ${{ vars.LICITOR_DECODE_PROTECTED_EMAILS || 'true' }}
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
       # A repository variable is required for each half of the future source

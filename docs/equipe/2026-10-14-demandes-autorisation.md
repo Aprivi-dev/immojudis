@@ -21,11 +21,11 @@ envoie lui-même. Rien n'a été envoyé et personne n'a été contacté.
   - adresse conservée en interne seulement, jamais publiée (livré) ;
   - suppression d'une adresse relevée mais jamais utilisée, au plus tard 28 jours après la dernière
     consultation de l'annonce (livré : purge hebdomadaire, seuil de 21 jours) ;
-  - **suspension du décodage et suppression des adresses déjà relevées si Licitor refuse ou ne
-    confirme pas** : il n'existe pas d'interrupteur propre au décodage (seul le retrait de la
-    source Licitor, `set_catalogue_source_withdrawal`, arrête la collecte, et il retire Licitor du
-    catalogue) et la suppression ciblée des adresses n'est pas outillée ; retirez cette phrase ou
-    décidez de l'outiller ;
+  - **suspension du décodage si Licitor refuse ou ne confirme pas** : livrée. L'interrupteur
+    `LICITOR_DECODE_PROTECTED_EMAILS` (actif par défaut) coupe le décodage sans arrêter la collecte ;
+    les adresses déjà relevées disparaissent par la purge (28 jours au plus après la dernière
+    consultation de l'annonce, rien n'étant rafraîchi une fois le décodage coupé). Il n'y a pas de
+    suppression immédiate outillée ; une requête manuelle est décrite au runbook, sans être exécutée ;
   - opposition qui suit la personne (nom et barreau), pas seulement l'adresse ;
   - test automatique qui refuse toute mention commerciale dans le message ;
   - respect de `robots.txt`, rythme humain, identification de l'agent lors des consultations ;
@@ -156,8 +156,9 @@ après coup. Nous le faisons ainsi :
   envoi.
 
 Confirmez que vous l'acceptez, ou précisez ce que vous refusez. **Si vous refusez ou ne confirmez
-pas, nous suspendons le décodage** [et supprimons les adresses déjà relevées : à confirmer avant
-envoi, voir la note].
+pas, nous suspendons le décodage** : un interrupteur le permet immédiatement, sans arrêter notre
+collecte. Les adresses déjà relevées ne sont plus rafraîchies et sont supprimées au plus tard 28
+jours après la dernière consultation de l'annonce.
 
 **(c) Le périmètre.**
 
