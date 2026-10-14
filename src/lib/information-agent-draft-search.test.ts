@@ -22,6 +22,8 @@ const db = vi.hoisted(() => ({
   recentMissions: [] as Array<Record<string, unknown>>,
   inserted: null as Record<string, unknown> | null,
   insertError: null as { message: string } | null,
+  upsertError: null as { message: string } | null,
+  updates: [] as Array<Record<string, unknown>>,
   observed: [] as Array<Record<string, unknown>>,
   tables: [] as string[],
   order: [] as string[],
@@ -31,6 +33,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
   class Query {
     private inValues: unknown[] = [];
     private isInsert = false;
+    private isContactUpsert = false;
     constructor(private readonly table: string) {
       db.tables.push(table);
     }
@@ -70,9 +73,14 @@ vi.mock("@/integrations/supabase/client.server", () => {
     }
     upsert(values: unknown) {
       if (this.table === "information_agent_contacts") {
+        this.isContactUpsert = true;
         db.order.push("contact_upsert");
         db.observed = (Array.isArray(values) ? values : [values]) as Array<Record<string, unknown>>;
       }
+      return this;
+    }
+    update(values: Record<string, unknown>) {
+      db.updates.push(values);
       return this;
     }
     insert(values: Record<string, unknown>) {
@@ -93,7 +101,10 @@ vi.mock("@/integrations/supabase/client.server", () => {
         error: null,
       };
     }
-    then(onFulfilled: (value: { data: unknown; error: null }) => unknown) {
+    then(onFulfilled: (value: { data: unknown; error: unknown }) => unknown) {
+      if (this.isContactUpsert && db.upsertError) {
+        return Promise.resolve({ data: null, error: db.upsertError }).then(onFulfilled);
+      }
       const data =
         this.table === "auction_sales"
           ? db.otherSales
@@ -177,6 +188,8 @@ beforeEach(() => {
   db.recentMissions = [];
   db.inserted = null;
   db.insertError = null;
+  db.upsertError = null;
+  db.updates = [];
   db.observed = [];
   db.tables = [];
   db.order = [];
@@ -393,6 +406,16 @@ describe("enregistrement de l'adresse trouvée", () => {
     await expect(draft()).rejects.toMatchObject({ message: "insertion refusée" });
     expect(db.observed).toEqual([]);
     expect(db.order).toEqual(["mission_insert"]);
+  });
+
+  it("si l'écriture tardive échoue, le brouillon créé est annulé avec une erreur explicite", async () => {
+    db.otherSales = [otherListing];
+    db.upsertError = { message: "écriture refusée" };
+    await expect(draft()).rejects.toThrow(
+      "L’adresse retrouvée n’a pas pu être enregistrée : le brouillon a été annulé, réessayez.",
+    );
+    expect(db.order).toEqual(["mission_insert", "contact_upsert"]);
+    expect(db.updates).toEqual([expect.objectContaining({ status: "cancelled" })]);
   });
 
   it("n'est jamais écrite si l'abonnement du brouillon échoue avant l'enregistrement", async () => {

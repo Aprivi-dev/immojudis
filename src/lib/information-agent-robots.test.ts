@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   evaluateRobots,
+  normalizeRobotsPercent,
   ROBOTS_MAX_PATTERN_LENGTH,
   ROBOTS_MAX_RULES,
   robotsPatternMatches,
@@ -71,6 +72,33 @@ describe("lecture de robots.txt", () => {
     expect(evaluateRobots(robots, "/contact", TOKEN)).toEqual({
       allowed: true,
       crawlDelaySeconds: 4,
+    });
+  });
+
+  describe("normalisation des pourcentages (RFC 9309, section 2.2.2)", () => {
+    it("un motif codé interdit le chemin décodé, et inversement", () => {
+      expect(allowed("User-agent: *\nDisallow: /%7Euser", "/~user")).toBe(false);
+      expect(allowed("User-agent: *\nDisallow: /~user", "/%7Euser")).toBe(false);
+      expect(allowed("User-agent: *\nDisallow: /%7euser", "/%7Euser/page")).toBe(false);
+      expect(allowed("User-agent: *\nDisallow: /%61dmin", "/admin")).toBe(false);
+      expect(allowed("User-agent: *\nDisallow: /admin", "/%61dmin")).toBe(false);
+      expect(allowed("User-agent: *\nDisallow: /%7Euser", "/autre")).toBe(true);
+    });
+
+    it("%2F n'est pas le séparateur de chemin et les caractères réservés restent codés", () => {
+      expect(allowed("User-agent: *\nDisallow: /a%2Fb", "/a/b")).toBe(true);
+      expect(allowed("User-agent: *\nDisallow: /a%2Fb", "/a%2fb")).toBe(false);
+      expect(allowed("User-agent: *\nDisallow: /a/b", "/a%2Fb")).toBe(true);
+      expect(normalizeRobotsPercent("/%7e%2f%3a")).toBe("/~%2F%3A");
+    });
+
+    it("un demi-caractère isolé ne fait pas échouer l'analyse", () => {
+      expect(() => allowed("User-agent: *\nDisallow: /a\ud800b", "/a\udc00b")).not.toThrow();
+    });
+
+    it("les caractères non ASCII sont comparés sous leur codage UTF-8", () => {
+      expect(allowed("User-agent: *\nDisallow: /cabinet-é", "/cabinet-%C3%A9")).toBe(false);
+      expect(allowed("User-agent: *\nDisallow: /cabinet-%c3%a9", "/cabinet-é")).toBe(false);
     });
   });
 

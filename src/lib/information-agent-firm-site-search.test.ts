@@ -543,16 +543,33 @@ describe("recherche de l'adresse sur le site du cabinet", () => {
       "2001:db8::1",
       "2001:0:4136:e378:8000:63bf:3fff:fdd2",
       "64:ff9b::7f00:1",
+      "192.0.2.1",
+      "192.0.0.8",
+      "198.51.100.7",
+      "203.0.113.9",
+      "192.88.99.1",
+      "3fff::1",
+      "3fff:fff:ffff::1",
+      "2001:2::1",
+      "2001:10::1",
+      "2001:1ff:ffff::1",
     ])("%s n'est pas une adresse publique", (address) => {
       expect(isPrivateNetworkAddress(address)).toBe(true);
     });
 
-    it.each(["93.184.216.34", "8.8.8.8", "2606:4700:4700::1111", "2a00:1450:4007:80f::200e"])(
-      "%s est une adresse publique",
-      (address) => {
-        expect(isPrivateNetworkAddress(address)).toBe(false);
-      },
-    );
+    it.each([
+      "93.184.216.34",
+      "8.8.8.8",
+      "192.0.3.1",
+      "198.51.101.1",
+      "203.0.114.1",
+      "2606:4700:4700::1111",
+      "2a00:1450:4007:80f::200e",
+      "2001:200::1",
+      "3fff:1000::1",
+    ])("%s est une adresse publique", (address) => {
+      expect(isPrivateNetworkAddress(address)).toBe(false);
+    });
 
     it("la résolution DNS est contrôlée à chaque connexion : une IP privée rendue après coup est refusée", async () => {
       // Premier appel : adresse publique ; second appel (la connexion) : réécriture vers 127.0.0.1.
@@ -600,6 +617,76 @@ describe("recherche de l'adresse sur le site du cabinet", () => {
           { address: "2606:4700:4700::1111", family: 6 },
         ],
       ]);
+    });
+
+    it("le lookup respecte la famille demandée, après contrôle de toutes les adresses", async () => {
+      const lookupImpl = async () => [
+        { address: "93.184.216.34" },
+        { address: "2606:4700:4700::1111" },
+      ];
+      const ask = (options: unknown) =>
+        new Promise<unknown[]>((done) =>
+          createPublicOnlyLookup(lookupImpl)(
+            "a.fr",
+            options as never,
+            ((...args: unknown[]) => done(args)) as never,
+          ),
+        );
+      expect(await ask({ family: 4, all: true })).toEqual([
+        null,
+        [{ address: "93.184.216.34", family: 4 }],
+      ]);
+      expect(await ask({ family: 6, all: true })).toEqual([
+        null,
+        [{ address: "2606:4700:4700::1111", family: 6 }],
+      ]);
+      expect(await ask({ family: "IPv6" })).toEqual([null, "2606:4700:4700::1111", 6]);
+      expect(await ask({ family: 0, all: true })).toEqual([
+        null,
+        [
+          { address: "93.184.216.34", family: 4 },
+          { address: "2606:4700:4700::1111", family: 6 },
+        ],
+      ]);
+      expect(await ask(4)).toEqual([null, "93.184.216.34", 4]);
+
+      // Aucune adresse de la famille demandée : refus, sans repli sur l'autre famille.
+      const onlyV4 = createPublicOnlyLookup(async () => [{ address: "93.184.216.34" }]);
+      const [error] = await new Promise<unknown[]>((done) =>
+        onlyV4("a.fr", { family: 6 } as never, ((...args: unknown[]) => done(args)) as never),
+      );
+      expect(error).toMatchObject({ code: "ENOTFOUND" });
+
+      // Une adresse privée de l'autre famille refuse tout, même si la famille demandée est publique.
+      const mixed = createPublicOnlyLookup(async () => [
+        { address: "93.184.216.34" },
+        { address: "fd00::1" },
+      ]);
+      const [privateError] = await new Promise<unknown[]>((done) =>
+        mixed("a.fr", { family: 4 } as never, ((...args: unknown[]) => done(args)) as never),
+      );
+      expect(privateError).toMatchObject({ code: "EPRIVATEADDRESS" });
+    });
+
+    it("le transport réel refuse toute adresse IP littérale, IPv4 ou IPv6", async () => {
+      const lookupImpl = vi.fn(async () => [{ address: "93.184.216.34" }]);
+      const transport = createHttpsTransport({ lookupImpl });
+      for (const url of [
+        "https://93.184.216.34/robots.txt",
+        "https://[2606:4700:4700::1111]/robots.txt",
+        "https://127.0.0.1/",
+      ]) {
+        await expect(
+          transport({
+            url: new URL(url),
+            headers: {},
+            signal: AbortSignal.timeout(2000),
+            maxBytes: 1024,
+            dnsTimeoutMs: 1000,
+          }),
+        ).rejects.toThrow("IP littérale");
+      }
+      expect(lookupImpl).not.toHaveBeenCalled();
     });
 
     it("la résolution DNS est bornée dans le temps", async () => {
@@ -689,6 +776,28 @@ describe("recherche de l'adresse sur le site du cabinet", () => {
       const result = await pending;
       expect(Date.now() - started).toBeLessThan(1_000);
       expect(["budget", "robots_unreadable"]).toContain(result.status);
+    });
+
+    it("une requête qui échoue après son abandon ne laisse aucun rejet non traité", async () => {
+      const unhandled = vi.fn();
+      process.on("unhandledRejection", unhandled);
+      try {
+        const transport = vi.fn(
+          () =>
+            new Promise<FirmSiteTransportResponse>((_, reject) =>
+              setTimeout(() => reject(new Error("échec tardif")), 80),
+            ),
+        );
+        const result = await search(
+          { transport, sleep: async () => undefined },
+          { budgetMs: 2_000, requestTimeoutMs: 20 },
+        );
+        expect(result.status).toBe("robots_unreadable");
+        await new Promise((done) => setTimeout(done, 200));
+        expect(unhandled).not.toHaveBeenCalled();
+      } finally {
+        process.off("unhandledRejection", unhandled);
+      }
     });
 
     it("espace les requêtes d'une pause (sans dépasser le budget)", async () => {

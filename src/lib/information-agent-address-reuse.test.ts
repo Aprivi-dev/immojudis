@@ -311,8 +311,8 @@ describe("lecture en base", () => {
     expect(steps).toContainEqual(["neq", "id", SALE_ID]);
     expect(steps).toContainEqual(["eq", "catalogue_quarantined", false]);
     expect(steps).toContainEqual(["ilike", "lawyer_contact", "%56%00%00%01%"]);
-    // Pas de filtre `%@%` redondant : les adresses sont extraites et contrôlées en code.
-    expect(steps.filter(([name]) => name === "ilike")).toHaveLength(1);
+    // Les annonces sans adresse ne consomment pas les 200 lignes lues.
+    expect(steps).toContainEqual(["ilike", "lawyer_contact", "%@%"]);
     expect(steps).toContainEqual([
       "or",
       "last_seen_at.gte.2026-04-14T12:00:00.000Z,sale_date.gte.2026-04-14T12:00:00.000Z",

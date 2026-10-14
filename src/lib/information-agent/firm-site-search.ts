@@ -157,9 +157,12 @@ export function isPrivateNetworkAddress(address: string): boolean {
       (a === 100 && b >= 64 && b <= 127) ||
       (a === 169 && b === 254) ||
       (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 0 && c === 0) ||
+      (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+      (a === 192 && b === 88 && c === 99) ||
       (a === 192 && b === 168) ||
       (a === 198 && (b === 18 || b === 19)) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113) ||
       a >= 224
     );
   }
@@ -173,8 +176,10 @@ export function isPrivateNetworkAddress(address: string): boolean {
   }
   const first = groups[0]!;
   if ((first & 0xe000) !== 0x2000) return true;
-  if (first === 0x2001 && (groups[1] === 0 || groups[1] === 0x0db8)) return true;
-  return first === 0x2002;
+  // 2001::/23 (Teredo, protocole IETF, benchmarking, ORCHID…), 2001:db8::/32, 6to4, 3fff::/20.
+  const second = groups[1]!;
+  if (first === 0x2001 && (second < 0x0200 || second === 0x0db8)) return true;
+  return first === 0x2002 || (first === 0x3fff && second < 0x1000);
 }
 
 async function defaultLookup(hostname: string): Promise<Array<{ address: string }>> {
@@ -216,7 +221,23 @@ export function createPublicOnlyLookup(
           );
           return;
         }
-        const resolved = addresses.map(({ address }) => ({ address, family: isIP(address) }));
+        // La famille demandée par la connexion est respectée (après contrôle de TOUTES les adresses).
+        const wanted = typeof options === "object" && options !== null ? options.family : options;
+        const family =
+          wanted === 4 || wanted === "IPv4" ? 4 : wanted === 6 || wanted === "IPv6" ? 6 : 0;
+        const resolved = addresses
+          .map(({ address }) => ({ address, family: isIP(address) }))
+          .filter((entry) => !family || entry.family === family);
+        if (!resolved.length) {
+          callback(
+            Object.assign(new Error("Aucune adresse de la famille demandée."), {
+              code: "ENOTFOUND",
+            }) as NodeJS.ErrnoException,
+            "",
+            0,
+          );
+          return;
+        }
         if (wantsAll) callback(null, resolved);
         else callback(null, resolved[0]!.address, resolved[0]!.family);
       },
@@ -248,6 +269,12 @@ export function createHttpsTransport({
 }: { lookupImpl?: FirmSiteLookup } = {}): FirmSiteTransport {
   return (request) =>
     new Promise<FirmSiteTransportResponse>((resolve, reject) => {
+      // Défense en profondeur : le contrôle des adresses passe par la résolution d'un NOM d'hôte ;
+      // une adresse IP littérale (sans crochets pour IPv6) n'est jamais jointe.
+      if (isIP(request.url.hostname.replace(/^\[|\]$/g, "")) !== 0) {
+        reject(new Error("Adresse IP littérale refusée."));
+        return;
+      }
       let settled = false;
       const settle = (action: () => void) => {
         if (settled) return;
@@ -333,6 +360,8 @@ type FetchOutcome =
 /** Rejette dès que `signal` est abandonné, même si le transport ne l'écoute pas. */
 function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
+    // Évite un rejet non traité si la requête échoue après l'abandon.
+    promise.catch(() => undefined);
     const onAbort = () => reject(signal.reason ?? new Error("Requête abandonnée."));
     if (signal.aborted) return onAbort();
     signal.addEventListener("abort", onAbort, { once: true });
