@@ -7,6 +7,10 @@ occupation), le descriptif publié, le bloc « Informations sur la vente »
 lieu de consultation du cahier des conditions), les visites, l'adresse du bien,
 puis les encadrés « Avocat Poursuivant » et « Lieu de Vente ».
 
+L'avocat poursuivant est lu dans l'encadré « Avocat Poursuivant » ; si l'encadré est vide, dans
+l'en-tête de l'annonce, puis dans la clause du poursuivant (jamais la partie saisie ni son avocat) :
+nom, téléphone, barreau et email publié en clair (``src/sources/professional_contact.py``).
+
 Une fiche réservée aux abonnés ne garde que la référence, la mise à prix,
 la commune et l'avocat poursuivant : rien n'est inventé pour les autres champs.
 Le site ne publie aucune pièce jointe (le cahier des conditions se consulte au
@@ -27,6 +31,15 @@ from typing import Any
 
 from src.cadastre_references import designation, parse_cadastral_references, ref_label, references_signature
 from src.normalize import clean_text
+from src.sources.professional_contact import (
+    PROFESSIONAL_PREFIX_RE,
+    bar_name,
+    clear_email,
+    french_phone,
+    keep_professional,
+    labelled_phone,
+    same_professional,
+)
 
 FEATURES_SCHEMA_VERSION = "petites_affiches_features_v1"
 DISPLAY_SCHEMA_VERSION = "property_characteristics_v1"
@@ -130,6 +143,9 @@ class PetitesAffichesPage:
     lawyer_name: str | None = None
     lawyer_address: str | None = None
     lawyer_phone: str | None = None
+    lawyer_email: str | None = None
+    lawyer_bar: str | None = None
+    lawyer_origin: str | None = None
     venue_name: str | None = None
     venue_address: str | None = None
     venue_phone: str | None = None
@@ -177,6 +193,116 @@ def _split_announcement(text: str | None, title: str | None) -> tuple[str | None
     return body, header
 
 
+# --- Avocat poursuivant lu dans le texte de l'annonce -------------------------------------------------
+# Le professionnel est cherché à deux endroits seulement : l'en-tête qui précède « Vente aux enchères »
+# et la clause du poursuivant (« À la requête de … ayant pour avocat Maître X »), arrêtée dès que le texte
+# passe à la partie adverse (contre, débiteur, saisi, au préjudice de…). Jamais ailleurs : l'avocat d'une
+# partie saisie n'est pas un interlocuteur de la vente.
+_ROLE_CUT_RE = re.compile(r"\bavocats?\b(?:\s+associ[ée]s?)?\s+(?:au|à|a|près|inscrits?)\b", re.I)
+_HEADER_END_RE = re.compile(r"\b(?:T[ée]l(?:[ée]phone)?|Fax|E-?mail|Mail|Adresse|Barreau)\b\.?|\d", re.I)
+_NAME_WORD = r"[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÿ'’&.-]*"
+_LAWYER_NAME_RE = re.compile(
+    rf"(?:Ma[îi]tre|Me|M[eE]\.|SCP|SELARL|SELAS|SELURL|SELAFA|AARPI|Cabinet)\s+{_NAME_WORD}"
+    rf"(?:\s+(?:(?:de|du|des|d['’]|le|la)\s*)?{_NAME_WORD}){{0,5}}"
+)
+_OWN_LAWYER_RE = re.compile(
+    r"\bayants?\s+pour\s+avocats?(?:\s+constitu[ée]s?)?\s*(?:est|:|,)?\s*(?:la\s+|le\s+)?", re.I
+)
+_OPPOSING_PARTY_RE = re.compile(
+    r"\b(?:contre|[àa]\s+l['’]encontre|au\s+pr[ée]judice|en\s+pr[ée]sence|d[ée]biteurs?|d[ée]fendeurs?|"
+    r"saisi(?:e|s|es)?|partie\s+saisie|poursuivi(?:e|s|es)?)\b",
+    re.I,
+)
+_TRAILING_ROLE_WORDS = ("Avocat", "Avocats", "Associés", "Associes", "Membre")
+
+
+def _lawyer_name(text: str) -> str | None:
+    """Nom d'un professionnel en tête de ``text`` (Maître, cabinet, société d'avocats) ; jamais « Monsieur X »."""
+    match = _LAWYER_NAME_RE.match(text.strip())
+    if not match:
+        return None
+    words = match.group(0).split()
+    while len(words) > 1 and words[-1].strip(".,;") in _TRAILING_ROLE_WORDS:
+        words.pop()
+    name = keep_professional(" ".join(words).strip(" ,;:-–"))
+    return name if name and PROFESSIONAL_PREFIX_RE.match(name) else None
+
+
+def _header_lawyer(header: str | None) -> dict[str, str] | None:
+    """Avocat de l'en-tête (« Maître X SELARL Y Avocat au barreau de Z 1 rue… Tél : … Mail : … »)."""
+    if not header:
+        return None
+    role = _ROLE_CUT_RE.search(header)
+    lead = header[: role.start()] if role else header
+    end = _HEADER_END_RE.search(lead)
+    name = _lawyer_name((lead[: end.start()] if end else lead)[:140])
+    if not name:
+        return None
+    found = {
+        "name": name,
+        "phone": labelled_phone(header) or french_phone(header),
+        "email": clear_email(header),
+        "bar": bar_name(header),
+    }
+    return {key: value for key, value in found.items() if value}
+
+
+def _poursuivant_clause(announcement: str | None) -> str | None:
+    """Clause du créancier poursuivant, sans la partie adverse."""
+    if not announcement:
+        return None
+    start = _PARTIES_RE.search(announcement)
+    if not start:
+        return None
+    clause = announcement[start.start() :]
+    opposing = _OPPOSING_PARTY_RE.search(clause, start.end() - start.start())
+    return clause[: opposing.start()] if opposing else clause
+
+
+def _announcement_lawyer(announcement: str | None) -> dict[str, str] | None:
+    """Avocat cité dans la clause du poursuivant (« ayant pour avocat Maître X, avocat au barreau de Y »)."""
+    clause = _poursuivant_clause(announcement)
+    if not clause:
+        return None
+    cited = _OWN_LAWYER_RE.search(clause)
+    if not cited:
+        return None
+    name = _lawyer_name(clause[cited.end() :])
+    if not name:
+        return None
+    after = clause[cited.end() :][:260]
+    found = {"name": name, "phone": labelled_phone(after), "email": clear_email(after), "bar": bar_name(after)}
+    return {key: value for key, value in found.items() if value}
+
+
+def _poursuivant(page: PetitesAffichesPage, header: str | None) -> None:
+    """Fixe sur ``page`` l'avocat poursuivant : encadré de la fiche, puis en-tête, puis clause du poursuivant.
+
+    L'encadré « Avocat Poursuivant » fait foi. Les autres sources ne complètent (téléphone, email, barreau)
+    que le même professionnel, reconnu à un mot distinctif commun ; sans nom d'encadré, le premier
+    professionnel trouvé est retenu.
+    """
+    name = keep_professional(page.lawyer_name)
+    origin = "encadre" if name else None
+    found: dict[str, str | None] = {
+        "phone": page.lawyer_phone,
+        "email": page.lawyer_email,
+        "bar": None,
+    }
+    for source, lawyer in (("entete", _header_lawyer(header)), ("annonce", _announcement_lawyer(page.announcement_text))):
+        if not lawyer:
+            continue
+        if name is None:
+            name, origin = lawyer["name"], source
+        elif not same_professional(name, lawyer["name"]):
+            continue
+        for key in ("phone", "email", "bar"):
+            found[key] = found[key] or lawyer.get(key)
+    page.lawyer_name = name
+    page.lawyer_origin = origin
+    page.lawyer_phone, page.lawyer_email, page.lawyer_bar = found["phone"], found["email"], found["bar"]
+
+
 def _visits(lines: list[str]) -> tuple[list[dict[str, str]], str | None]:
     visits: list[dict[str, str]] = []
     contact: list[str] = []
@@ -219,17 +345,22 @@ def _visits(lines: list[str]) -> tuple[list[dict[str, str]], str | None]:
     return visits, clean_text(" ".join(contact))
 
 
-def _contact_box(lines: list[str]) -> tuple[str | None, str | None, str | None]:
-    name = address = phone = None
+def _contact_box(lines: list[str]) -> tuple[str | None, str | None, str | None, str | None]:
+    """(nom, adresse, téléphone, adresse email publiée en clair) d'un encadré de contact."""
+    name = address = phone = email = None
     for line in lines:
         compact = re.sub(r"[\s.]", "", line)
         if phone is None and (_PHONE_RE.match(line.strip()) or re.fullmatch(r"(?:\+33|0)[1-9]\d{8}", compact)):
             phone = line.strip()
+        elif _EMAIL_PLACEHOLDER_RE.match(line):
+            continue  # adresse masquée par Cloudflare : ni décodée, ni prise pour un nom ou une adresse postale
+        elif email is None and clear_email(line) and clear_email(line) == line.strip(" :"):
+            email = clear_email(line)
         elif name is None:
             name = line
         elif address is None:
             address = line
-    return name, address, phone
+    return name, address, phone, email
 
 
 def _address_after(lines: list[str], position: int, end: int) -> str | None:
@@ -351,11 +482,13 @@ def parse_petites_affiches_page(page_text: str | None) -> PetitesAffichesPage:
     lawyer_at = _index(lines, lambda text: text == "avocat poursuivant")
     if lawyer_at is not None:
         end = _index(lines, lambda text: text.startswith(box_stops), lawyer_at + 1) or min(len(lines), lawyer_at + 5)
-        page.lawyer_name, page.lawyer_address, page.lawyer_phone = _contact_box(lines[lawyer_at + 1 : min(end, lawyer_at + 5)])
+        page.lawyer_name, page.lawyer_address, page.lawyer_phone, page.lawyer_email = _contact_box(
+            lines[lawyer_at + 1 : min(end, lawyer_at + 6)]
+        )
     venue_at = _index(lines, lambda text: text == "lieu de vente", (lawyer_at or 0))
     if venue_at is not None:
         end = _index(lines, lambda text: text.startswith(box_stops), venue_at + 1) or min(len(lines), venue_at + 5)
-        page.venue_name, page.venue_address, page.venue_phone = _contact_box(lines[venue_at + 1 : min(end, venue_at + 5)])
+        page.venue_name, page.venue_address, page.venue_phone, _ = _contact_box(lines[venue_at + 1 : min(end, venue_at + 5)])
     return page
 
 
@@ -470,6 +603,8 @@ def extract_petites_affiches_fields(
         return None
     description, lawyer_header = _split_announcement(page.announcement_text, title)
     page.description, page.lawyer_header = description, lawyer_header
+    _poursuivant(page, lawyer_header)
+    lawyer_contact = " · ".join(part for part in (page.lawyer_phone, page.lawyer_email) if part) or None
     cadastre = _cadastre(description, city)
     land_surface = land_surface_from_contenance(description)
     sale_date = page.sale_day and (f"{page.sale_day} {page.sale_time}" if page.sale_time else page.sale_day)
@@ -485,7 +620,7 @@ def extract_petites_affiches_fields(
         "visit_dates": visit_labels,
         "tribunal": tribunal,
         "lawyer_name": page.lawyer_name,
-        "lawyer_contact": page.lawyer_phone,
+        "lawyer_contact": lawyer_contact,
         "address": page.address if page.address and re.search(r"\d|,", page.address) else None,
         "land_surface_m2": land_surface,
     }
@@ -539,6 +674,9 @@ def extract_petites_affiches_fields(
         "numero_cahier_conditions": page.conditions_number,
         "visites": " | ".join(visit_labels) or None,
         "contact_visites": page.visit_contact,
+        "avocat": page.lawyer_name,
+        "contact_avocat": lawyer_contact,
+        "avocat_poursuivant_barreau": page.lawyer_bar,
         "avocat_poursuivant_adresse": page.lawyer_address,
         "lieu_vente_adresse": page.venue_address,
         "designation_cadastrale": cadastre.get("designation") if cadastre else None,
@@ -572,7 +710,14 @@ def extract_petites_affiches_fields(
             "number": page.conditions_number,
             "attachments_published": False,
         },
-        "lawyer": {"name": page.lawyer_name, "address": page.lawyer_address, "phone": page.lawyer_phone},
+        "lawyer": {
+            "name": page.lawyer_name,
+            "address": page.lawyer_address,
+            "phone": page.lawyer_phone,
+            "email": page.lawyer_email,
+            "bar": page.lawyer_bar,
+            "origin": page.lawyer_origin,
+        },
         "visits": page.visits,
         "visit_contact": page.visit_contact,
         "surface": surfaces,

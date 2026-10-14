@@ -27,9 +27,12 @@ from src.sources.listing_characteristics import (
     item,
     merge_features_tree,
 )
+from src.sources.professional_contact import clear_email, keep_professional
 
 FEATURES_SCHEMA_VERSION = "vench_features_v1"
 _OCCUPANCY = {"bien occupe": "occupied", "bien libre": "vacant", "bien loue": "rented"}
+_TITLED_PERSON = re.compile(r"Ma[iî]tre\b|Me\b")
+_PERSON_LINE = re.compile(r"Ma[iî]tre\b|Me\b|Avocat\s+\S")
 _PAYWALL = re.compile(r"vous devez [êe]tre abonn|pour consulter l.int[ée]gralit|s.abonner pour consulter", re.I)
 
 
@@ -120,11 +123,17 @@ def _contact_blocks(soup: BeautifulSoup) -> dict[str, dict[str, str]]:
             if len(names) > 1:
                 entry["address"] = names[-1]
         else:
-            firm = next((name for name in names if not re.match(r"Ma[iî]tre\b|Me\b", name)), None)
-            person = next((name for name in names if re.match(r"Ma[iî]tre\b|Me\b", name)), None)
+            # Le cabinet puis l'avocat, en « Maître Prénom NOM Avocat » ou en « Avocat Prénom NOM ».
+            firm = next((name for name in names if not _PERSON_LINE.match(name)), None)
+            person = next((name for name in names if _PERSON_LINE.match(name)), None)
+            # Garde-fou : un libellé que le filtre de données personnelles réécrit nomme une personne physique.
+            firm = keep_professional(firm)
+            person = keep_professional(person)
             if firm:
                 entry["firm"] = firm
             if person:
+                if not _TITLED_PERSON.match(person):
+                    person = re.sub(r"^Avocat\s+", "", person)  # « Avocat Prénom NOM » : le titre n'est pas le nom
                 entry["person"] = clean_text(re.sub(r"\s+Avocat$", "", person)) or person
             coords = enquiry.select_one(".displayAPcoords")
             if coords is not None:
@@ -132,9 +141,20 @@ def _contact_blocks(soup: BeautifulSoup) -> dict[str, dict[str, str]]:
                 coord_lines = [line for line in (clean_text(part) for part in coord_text.splitlines()) if line]
                 phone = re.search(r"(?:\+33\s?|0)[1-9](?:[\s.]?\d{2}){4}", coord_text)
                 site = coords.select_one("a[href^='http']")
-                address = [line for line in coord_lines if not re.search(r"(?:\+33|0)[1-9](?:[\s.]?\d{2}){4}|https?://", line)]
+                # Seule une adresse publiée en clair est lue (« mailto: » ou texte) ; celle que Cloudflare masque
+                # (« [email protected] », ``data-cfemail``) n'est pas décodée.
+                mailto = coords.select_one("a[href^='mailto:']")
+                email = clear_email(str(mailto.get("href"))[len("mailto:"):]) if mailto is not None else None
+                email = email or clear_email(coord_text)
+                address = [
+                    line for line in coord_lines
+                    if not re.search(r"(?:\+33|0)[1-9](?:[\s.]?\d{2}){4}|https?://|\[email.{0,8}protected\]", line, re.I)
+                    and not clear_email(line)
+                ]
                 if phone:
                     entry["phone"] = clean_text(phone.group(0)) or ""
+                if email:
+                    entry["email"] = email
                 if site is not None:
                     entry["website"] = str(site.get("href")).strip()
                 if address:
@@ -208,7 +228,13 @@ def extract_vench_detail(
         "occupancy_status": occupancy,
         "visit_dates": visits,
         "lawyer_name": lawyer_label(lawyer) or lawyer_label(notary),
-        "lawyer_contact": " · ".join(part for part in ((lawyer or notary or {}).get("phone"), (lawyer or notary or {}).get("website")) if part) or None,
+        "lawyer_contact": " · ".join(
+            part for part in (
+                (lawyer or notary or {}).get("phone"),
+                (lawyer or notary or {}).get("email"),
+                (lawyer or notary or {}).get("website"),
+            ) if part
+        ) or None,
         "latitude": latitude,
         "longitude": longitude,
         "street_address": street_address,
