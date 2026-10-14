@@ -43,7 +43,7 @@ const USER_ID = "11111111-1111-4111-8111-111111111111";
 const CUSTOMER_ID = "cus_shared";
 const consent = {
   termsAccepted: true,
-  termsVersion: "2026-10-13.3",
+  termsVersion: "2026-10-14.1",
   privacyVersion: "2026-10-13.2",
   paymentObligationAcknowledged: true,
   immediatePerformanceRequested: true,

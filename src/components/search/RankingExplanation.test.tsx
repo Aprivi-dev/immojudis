@@ -45,6 +45,13 @@ describe("RankingExplanation", () => {
     for (const note of RANKING_EXPLANATION_NOTES) expect(screen.getByText(note)).toBeTruthy();
   });
 
+  it("renvoie vers la page publique du classement avec « En savoir plus »", () => {
+    render(<RankingExplanation />);
+    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
+      "/classement-des-annonces",
+    );
+  });
+
   it("n'ajoute la mention du score d'investissement que pour l'offre Analyse", () => {
     render(<RankingExplanation />);
     expect(screen.queryByText(RANKING_EXPLANATION_INVESTMENT_NOTE)).toBeNull();
