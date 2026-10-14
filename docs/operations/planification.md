@@ -1,6 +1,6 @@
 # Inventaire des tâches planifiées
 
-Mis à jour le 9 octobre 2026. Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
+Mis à jour le 14 octobre 2026. Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
 ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le vérifie.
 
 ## Tâches applicatives (routes `/api/cron/*`)
@@ -11,10 +11,21 @@ ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le v�
 | Envoi des alertes                                          | Vercel Cron        | 06:30, rattrapage 08:30 | `/api/cron/alert-notifications`       | oui                                                  | 30 h                          |
 | Suivi des changements                                      | Vercel Cron        | 06:45, rattrapage 08:45 | `/api/cron/sale-change-monitor`       | oui                                                  | 30 h                          |
 | Rétention des données                                      | Vercel Cron        | dimanche 04:15          | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
+| Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20 | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
+| Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:20 tous les jours    | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
 | Santé opérationnelle                                       | Supabase `pg_cron` | toutes les 15 min       | `/api/cron/operational-health`        | oui                                                  | 45 min                        |
 | Purge des ventes                                           | Supabase `pg_cron` | toutes les 5 min        | `/api/cron/sale-retention`            | oui                                                  | 20 min                        |
 | Pré-calcul des valorisations                               | Supabase `pg_cron` | toutes les 5 min        | `/api/cron/precompute-valuations`     | non (déclenchement géré par la file de valorisation) | —                             |
 | Réponses de l'agent (lecture seule, n'envoie aucun e-mail) | Supabase `pg_cron` | toutes les 2 min        | `/api/cron/information-agent-inbound` | oui                                                  | 10 min                        |
+
+La complétude des annonces est recalculée par lots de 300 ventes (variable
+`LISTING_COMPLETENESS_BATCH_LIMIT`) : 24 passages par jour couvrent 7 200 évaluations pour environ
+1 950 ventes en ligne, soit une réévaluation quotidienne de chacune (les ventes jamais évaluées,
+modifiées ou évaluées avec une autre version de la règle passent en premier). Le job
+`immojudis-listing-completeness` réutilise l'origine et le Bearer déjà dans Supabase Vault
+(`npm run ops:health-scheduler:configure`), sans nouveau secret. Tant qu'il n'a jamais réussi,
+`cron.stale` signale la tâche : une alerte transitoire est attendue jusqu'au premier succès après
+le déploiement.
 
 Les trois tâches Vercel quotidiennes ont un second passage deux heures plus tard : il ne fait rien
 si la tâche a déjà réussi dans les 20 dernières heures (`catchUpSchedule` de `runMonitoredCron`).

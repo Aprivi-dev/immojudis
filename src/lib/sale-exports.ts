@@ -294,7 +294,7 @@ async function resolveFilteredSales({
   const sourceSales = await getSales(
     dataFiltersFromSearch(search),
     sourceLimit,
-    dataSortFromSearch(search.sort),
+    dataSortFromSearch(search.sort, { allowInvestmentScore: true }),
     0,
     { client: auth.supabase },
   );

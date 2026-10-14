@@ -107,6 +107,32 @@ describe("SortDropdown", () => {
   });
 });
 
+describe("SortDropdown : options selon l'offre", () => {
+  const labels = () => screen.getAllByRole("option").map((option) => option.textContent);
+
+  it("n'affiche pas le tri par score d'investissement aux visiteurs ni à l'offre Découverte", () => {
+    render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
+    expect(labels()).toContain("Mieux renseignées d’abord");
+    expect(labels()).not.toContain("Score d’investissement");
+    cleanup();
+    render(<SortDropdown preview sort="relevance" onChange={vi.fn()} />);
+    expect(labels()).not.toContain("Score d’investissement");
+  });
+
+  it("propose le tri par score d'investissement à l'offre Analyse", () => {
+    render(<SortDropdown investmentScore sort="score_desc" onChange={vi.fn()} />);
+    expect(labels()).toContain("Mieux renseignées d’abord");
+    expect(labels()).toContain("Score d’investissement");
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("score_desc");
+  });
+
+  it("garde « Mieux renseignées d’abord » en première option, tri par défaut", () => {
+    render(<SortDropdown investmentScore sort="relevance" onChange={vi.fn()} />);
+    expect(labels()[0]).toBe("Mieux renseignées d’abord");
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("relevance");
+  });
+});
+
 describe("ResultsSummary", () => {
   it("n'annonce que le compteur aux lecteurs d'écran", () => {
     const { container } = render(

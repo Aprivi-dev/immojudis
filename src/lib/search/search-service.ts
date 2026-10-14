@@ -45,7 +45,7 @@ export async function fetchSearchResults({
     await getSalesForSearch(
       dataFiltersFromSearch(search),
       perPage,
-      dataSortFromSearch(search.sort),
+      dataSortFromSearch(search.sort, { allowInvestmentScore: !discovery }),
       offset,
       { discovery },
     ),
@@ -123,9 +123,9 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
       const batch = await getSales(
         dataFiltersFromSearch(criteria),
         batchSize,
-        dataSortFromSearch(search.sort),
+        dataSortFromSearch(search.sort, { allowInvestmentScore: !discovery }),
         offset,
-        { discovery },
+        { discovery, completenessTier: true },
       );
       rows.push(...batch);
       if (batch.length < batchSize)
