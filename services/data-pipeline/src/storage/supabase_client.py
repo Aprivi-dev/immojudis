@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import math
 import os
 import threading
 import time
@@ -11,7 +10,6 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -116,6 +114,8 @@ from src.storage.pdf_persistence_rows import (
     _rekey_pdf_job_after_checkpoint_with_connection,
 )
 from src.storage.postgrest_helpers import (
+    _claim_error_diagnostic,
+    _claim_retry_after_seconds,
     _has_current_document_analysis,
     _is_uuid,
     _known_source_urls,
@@ -608,7 +608,7 @@ def _write_sale_revisions(
     )
     _upsert_asset_tables_with_rest(str(url), str(key), sales, now)
     _enqueue_due_enrichment(sales, str(url), str(key))
-    _write_internal_contacts(sales, str(url), str(key), now)
+    internal_contacts.write_safely(sales, str(url), str(key), now, _PUBLICATION_CONNECTION.get(), _sale_ids_for_rest)
     if refresh_last_seen and _PUBLICATION_CONNECTION.get() is not None:
         from src.collection_evidence import record_sale_decisions
         for run_id in {sale.last_run_id for sale in sales if sale.last_run_id}:
@@ -619,30 +619,6 @@ def _write_sale_revisions(
                 record_sale_decisions(str(run_id), [sale], decision="quarantined",
                                       reason=quarantine_reason(sale), connection=_PUBLICATION_CONNECTION.get())
     return sum(not quarantine_reason(sale) for sale in sales)
-
-
-def _write_internal_contacts(sales: list[AuctionSale], supabase_url: str, api_key: str, now: str) -> int:
-    """Adresses internes des ventes (Licitor) vers le registre de l'agent, jamais vers la vente.
-
-    Écrit après l'écriture de la vente, dans la même transaction quand il y en a une (point de
-    sauvegarde) ou par PostgREST sinon, une fois l'id de la vente relu. Un échec n'interrompt jamais la
-    collecte : il est journalisé sans adresse (type de l'erreur et compteur seulement).
-    """
-    eligible = internal_contacts.sales_with_internal_contacts(sales)
-    if not eligible:
-        return 0
-    try:
-        connection = _PUBLICATION_CONNECTION.get()
-        if connection is not None:
-            return internal_contacts.write_internal_contacts_connection(connection, eligible, now)
-        return internal_contacts.write_internal_contacts_rest(
-            supabase_url, api_key, eligible, _sale_ids_for_rest(supabase_url, api_key, eligible), now
-        )
-    except Exception as exc:  # noqa: BLE001 - jamais d'échec de collecte pour un registre interne
-        LOGGER.warning(
-            "Internal contacts registry write skipped: error=%s sales=%s", type(exc).__name__, len(eligible)
-        )
-        return 0
 
 
 def _write_fact_claims_postgres(sales: list[AuctionSale], connection: Any) -> int:
@@ -1394,46 +1370,6 @@ def _persist_queue_claim_backoff(
         if not row:
             raise RuntimeError("auction_pipeline_control singleton is missing")
         return row[0]
-
-
-def _claim_error_diagnostic(response: httpx.Response, max_chars: int = 256) -> str:
-    """Log only bounded PostgREST code/message fields, never raw response data."""
-    try:
-        payload = response.json()
-    except Exception:  # pragma: no cover - defensive for test doubles.
-        return f"http_{response.status_code}"
-    if isinstance(payload, dict):
-        fields = [
-            str(payload[key]).replace("\x00", " ")
-            for key in ("code", "message")
-            if payload.get(key) not in (None, "")
-        ]
-        sanitized = " ".join(" ".join(fields).split())
-    else:
-        sanitized = f"http_{response.status_code}"
-    if not sanitized:
-        sanitized = f"http_{response.status_code}"
-    return sanitized[:max_chars]
-
-
-def _claim_retry_after_seconds(value: str | None) -> float | None:
-    if not value:
-        return None
-    try:
-        seconds = float(value)
-    except (TypeError, ValueError):
-        try:
-            retry_at = parsedate_to_datetime(value)
-            if retry_at.tzinfo is None:
-                retry_at = retry_at.replace(tzinfo=UTC)
-            seconds = (retry_at - datetime.now(UTC)).total_seconds()
-        except (TypeError, ValueError, OverflowError):
-            return None
-    if not math.isfinite(seconds):
-        return None
-    if seconds < 0:
-        return 0.0
-    return seconds
 
 
 def record_llm_usage_event(event: dict[str, Any]) -> None:

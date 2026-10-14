@@ -181,16 +181,17 @@ def test_rest_path_fails_closed_without_leaking_the_address_when_the_registry_er
     assert EMAIL not in str(error.value)
 
 
+def _ids(url: str, key: str, sales: list[AuctionSale]) -> dict[str, str]:
+    return {URL: SALE_ID}
+
+
 def test_a_registry_failure_never_fails_the_collection_nor_logs_the_address(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     connection = _Connection(fail_insert=True)
-    token = supabase_client._PUBLICATION_CONNECTION.set(connection)
-    try:
-        with caplog.at_level(logging.DEBUG):
-            written = supabase_client._write_internal_contacts([_sale(EMAIL)], "https://example.test", "key", NOW)
-    finally:
-        supabase_client._PUBLICATION_CONNECTION.reset(token)
+
+    with caplog.at_level(logging.DEBUG):
+        written = registry.write_safely([_sale(EMAIL)], "https://example.test", "key", NOW, connection, _ids)
 
     assert written == 0
     assert "RuntimeError" in caplog.text
@@ -207,14 +208,18 @@ def test_write_goes_through_the_transaction_when_there_is_one_and_through_rest_o
     monkeypatch.setattr(
         registry, "write_internal_contacts_rest", lambda url, key, sales, ids, now: calls.append("rest") or 1
     )
-    monkeypatch.setattr(supabase_client, "_sale_ids_for_rest", lambda url, key, sales: {URL: SALE_ID})
 
-    assert supabase_client._write_internal_contacts([_sale(EMAIL)], "https://example.test", "key", NOW) == 1
-    token = supabase_client._PUBLICATION_CONNECTION.set(object())
-    try:
-        assert supabase_client._write_internal_contacts([_sale(EMAIL)], "https://example.test", "key", NOW) == 1
-        assert supabase_client._write_internal_contacts([_sale()], "https://example.test", "key", NOW) == 0
-    finally:
-        supabase_client._PUBLICATION_CONNECTION.reset(token)
+    assert registry.write_safely([_sale(EMAIL)], "https://example.test", "key", NOW, None, _ids) == 1
+    assert registry.write_safely([_sale(EMAIL)], "https://example.test", "key", NOW, object(), _ids) == 1
+    assert registry.write_safely([_sale()], "https://example.test", "key", NOW, object(), _ids) == 0
 
     assert calls == ["rest", "connection"]
+
+
+def test_the_publication_write_calls_the_registry_after_the_sale_write() -> None:
+    import inspect
+
+    source = inspect.getsource(supabase_client._write_sale_revisions)
+
+    assert "internal_contacts.write_safely(" in source
+    assert source.index("_upsert_asset_tables_with_rest") < source.index("internal_contacts.write_safely(")

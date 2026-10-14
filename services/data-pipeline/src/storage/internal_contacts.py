@@ -18,6 +18,7 @@ Règles, identiques pour la transaction Postgres et pour PostgREST :
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -32,6 +33,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - psycopg est absent des environnements REST seuls.
     Jsonb = None
 
+LOGGER = logging.getLogger(__name__)
 TABLE = "information_agent_contacts"
 SOURCE_KIND = "sale_listing"
 OBSERVED_BY = "agent"
@@ -216,3 +218,31 @@ def write_internal_contacts_rest(
             )
         )
     return len(inserts) + len(refreshes)
+
+
+def write_safely(
+    sales: list[AuctionSale],
+    supabase_url: str,
+    api_key: str,
+    now: str,
+    connection: Any,
+    sale_ids_for_rest: Callable[[str, str, list[AuctionSale]], dict[str, str]],
+) -> int:
+    """Adresses internes des ventes vers le registre de l'agent, jamais vers la vente.
+
+    Écrit après l'écriture de la vente : dans la transaction de publication quand il y en a une (point de
+    sauvegarde), sinon par PostgREST une fois l'id de la vente relu. Un échec n'interrompt jamais la
+    collecte : il est journalisé sans adresse (type de l'erreur et compteur seulement).
+    """
+    eligible = sales_with_internal_contacts(sales)
+    if not eligible:
+        return 0
+    try:
+        if connection is not None:
+            return write_internal_contacts_connection(connection, eligible, now)
+        return write_internal_contacts_rest(
+            supabase_url, api_key, eligible, sale_ids_for_rest(supabase_url, api_key, eligible), now
+        )
+    except Exception as exc:  # noqa: BLE001 - jamais d'échec de collecte pour un registre interne
+        LOGGER.warning("Internal contacts registry write skipped: error=%s sales=%s", type(exc).__name__, len(eligible))
+        return 0

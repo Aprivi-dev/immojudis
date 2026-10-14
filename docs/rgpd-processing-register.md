@@ -38,7 +38,11 @@ Sources admises, par niveau (avis juridique du 14/10/2026, à faire valider) :
   dans le bloc de l’annonce qui le présente comme interlocuteur de la vente (aucune adresse d’une
   partie à la procédure), et son origine reste l’annonce. Cet accord prime
   sur l’avis juridique du 14/10/2026 (décodage à la demande, après accord écrit) ; il reste à
-  confirmer par écrit.
+  confirmer par écrit. **Email Licitor décodé conservé uniquement dans le registre interne de l’agent
+  d’information (`information_agent_contacts`, service_role), jamais publié** : il n’entre dans
+  aucune colonne ni aucun bloc de `auction_sales`, donc dans aucune vue ou fonction lisible par un
+  visiteur ou un utilisateur connecté. Contrôle d’opposition par adresse à la collecte, par identité
+  avant tout envoi ; conservation : 21 jours après le dernier relevé si aucune demande ne le vise.
 - **Niveau 1 :** annonce publique de la vente ; autre annonce du même professionnel (identité
   vérifiée, adresse relevée il y a moins de 6 mois) ; site du cabinet ou de l'étude cité par
   l'annonce (trois pages au plus).

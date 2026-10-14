@@ -50,31 +50,53 @@ function sourcePresenceQuery(data: unknown[], error: unknown = null) {
   return query;
 }
 
+function registryQuery(data: unknown[], error: unknown = null) {
+  const query = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    neq: vi.fn(),
+    order: vi.fn(),
+    limit: vi.fn(),
+  };
+  query.select.mockReturnValue(query);
+  query.eq.mockReturnValue(query);
+  query.neq.mockReturnValue(query);
+  query.order.mockReturnValue(query);
+  query.limit.mockResolvedValue({ data, error });
+  return query;
+}
+
 function setup({
   sale,
   documents = [],
   sourcePresence = [],
+  registryContacts = [],
   saleError = null,
   documentsError = null,
   sourcePresenceError = null,
+  registryError = null,
 }: {
   sale: unknown;
   documents?: unknown[];
   sourcePresence?: unknown[];
+  registryContacts?: unknown[];
   saleError?: unknown;
   documentsError?: unknown;
   sourcePresenceError?: unknown;
+  registryError?: unknown;
 }) {
   const saleQuery = baseQuery(sale, saleError);
   const docsQuery = documentsQuery(documents, documentsError);
   const sourcePresenceQueryInstance = sourcePresenceQuery(sourcePresence, sourcePresenceError);
+  const registry = registryQuery(registryContacts, registryError);
   mocks.from.mockImplementation((table: string) => {
     if (table === "auction_sales") return saleQuery;
     if (table === "auction_documents") return docsQuery;
     if (table === "auction_sale_source_presence") return sourcePresenceQueryInstance;
+    if (table === "information_agent_contacts") return registry;
     throw new Error(`unexpected table ${table}`);
   });
-  return { saleQuery, docsQuery, sourcePresenceQuery: sourcePresenceQueryInstance };
+  return { saleQuery, docsQuery, sourcePresenceQuery: sourcePresenceQueryInstance, registry };
 }
 
 const quarantinedInternalSale = {
@@ -285,6 +307,54 @@ describe("admin information-agent sale loader", () => {
       "source_name,availability,state,attempted_at,checked_at,run_id,extras",
     );
     expect(sourcePresenceQuery.eq).toHaveBeenCalledWith("sale_id", saleId);
+  });
+
+  it("reads the internal registry addresses of this sale only, never the public projection", async () => {
+    const { registry } = setup({
+      sale: quarantinedInternalSale,
+      registryContacts: [
+        {
+          email: "maitre@exemple.test",
+          display_name: "Maître Exemple, Avocat",
+          role: "lawyer",
+          source_name: "licitor",
+          source_url: "https://www.licitor.com/annonce/10/99/99/x/109999.html",
+          observed_at: "2026-10-14T10:00:00Z",
+        },
+      ],
+    });
+
+    const sale = await loadAdminInformationAgentSale({ auth, saleId });
+
+    expect(sale.registry_contacts).toEqual([
+      {
+        email: "maitre@exemple.test",
+        displayName: "Maître Exemple, Avocat",
+        role: "lawyer",
+        sourceName: "licitor",
+        sourceUrl: "https://www.licitor.com/annonce/10/99/99/x/109999.html",
+        observedAt: "2026-10-14T10:00:00Z",
+      },
+    ]);
+    expect(registry.eq).toHaveBeenCalledWith("scope_sale_id", saleId);
+    expect(registry.eq).toHaveBeenCalledWith("source_kind", "sale_listing");
+    expect(registry.eq).toHaveBeenCalledWith(
+      "metadata->>observation_channel",
+      "licitor_cloudflare_decoded",
+    );
+    expect(registry.neq).toHaveBeenCalledWith("opposition_status", "opposed");
+    expect(registry.neq).toHaveBeenCalledWith("bounce_status", "permanent");
+    // L'adresse du registre n'est recopiée dans aucun champ de la vente.
+    const { registry_contacts: _internal, ...visible } = sale;
+    expect(JSON.stringify(visible)).not.toContain("maitre@exemple.test");
+  });
+
+  it("fails closed when the internal registry cannot be read", async () => {
+    setup({ sale: quarantinedInternalSale, registryError: { code: "42501", message: "denied" } });
+
+    await expect(loadAdminInformationAgentSale({ auth, saleId })).rejects.toMatchObject({
+      code: "42501",
+    });
   });
 
   it("refuses a non-admin before touching the service-role data", async () => {
