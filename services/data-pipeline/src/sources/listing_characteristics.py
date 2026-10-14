@@ -213,7 +213,7 @@ def known_detail_lacks_characteristics(
 
 
 _TREE_KEYS = ("schema_version", "characteristics", "characteristics_raw", "procedure", "lawyer", "media",
-              "cadastre_location", "listing", "coordinates", "complement")
+              "cadastre_location", "listing", "coordinates", "complement", "contact")
 
 
 def restore_known_detail_blocks(
