@@ -75,25 +75,26 @@ export function TermsPage() {
               : l’enchère plafond chiffrée, la lecture des pièces, l’historique de la vente, les
               statistiques du tribunal compétent pour cette vente et les pièces du dossier. Les
               autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports
-              enregistrés, le budget travaux, les alertes avancées et la mise en relation avec un
-              avocat référencé, restent réservées à cette offre. Le déblocage est consommé quand
-              vous le confirmez, après affichage du nombre restant ; il n’est pas consommé en cas
-              d’erreur technique, ni si la vente est déjà débloquée. Il n’est pas restitué si la
-              vente est ensuite reportée ou adjugée, ni si elle est retirée par la juridiction ou la
-              source. Si Immojudis retire elle-même la vente pour une raison qui lui est imputable,
-              le déblocage est restitué sur simple demande depuis{" "}
-              <Link to="/mes-droits" className="text-gold underline">
-                Mes droits
-              </Link>{" "}
-              ou à l’adresse de contact. Les déblocages non utilisés ne sont pas reportés. Le
-              compteur est remis à {MONTHLY_SALE_UNLOCKS} le 1er de chaque mois à 00 h 00, heure de
-              Paris. Une vente débloquée reste consultable avec ces éléments tant qu’elle est en
-              ligne sur Immojudis, dans la limite de 24 mois après le déblocage, et tant que votre
-              compte existe. Les déblocages sont personnels (article 9). Pendant un abonnement
-              Analyse, essai compris, aucun déblocage n’est consommé. À la fin de l’abonnement, le
-              compte revient à Découverte : les ventes que vous aviez déjà débloquées restent
-              accessibles ; les autres ventes consultées pendant l’abonnement redeviennent soumises
-              aux déblocages.
+              enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les
+              alertes avancées et la mise en relation avec un avocat référencé, restent réservées à
+              cette offre. Le déblocage est consommé quand vous le confirmez, après affichage du
+              nombre restant ; il n’est pas consommé en cas d’erreur technique, ni si la vente est
+              déjà débloquée. Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni
+              si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la
+              vente ou en suspend la publication pour une raison qui lui est imputable (par exemple
+              une erreur de publication ou la suspension d’une source décidée par Immojudis), le
+              déblocage est restitué sur simple demande adressée à{" "}
+              {legalValue(publisher.contactEmail)}, qui reçoit une réponse sous un mois. Le
+              déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la fin
+              de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés. Les
+              déblocages non utilisés ne sont pas reportés. Le compteur est remis à{" "}
+              {MONTHLY_SALE_UNLOCKS} le 1er de chaque mois à 00 h 00, heure de Paris. Une vente
+              débloquée reste consultable avec ces éléments tant qu’elle est en ligne sur Immojudis,
+              dans la limite de 24 mois après le déblocage, et tant que votre compte existe. Les
+              déblocages sont personnels (article 9). Pendant un abonnement Analyse, essai compris,
+              aucun déblocage n’est consommé. À la fin de l’abonnement, le compte revient à
+              Découverte : les ventes que vous aviez déjà débloquées restent accessibles ; les
+              autres ventes consultées pendant l’abonnement redeviennent soumises aux déblocages.
             </p>
             <p className="mt-3">
               Immojudis peut modifier ou supprimer les déblocages mensuels pour l’avenir, en vous

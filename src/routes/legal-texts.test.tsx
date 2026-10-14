@@ -107,7 +107,7 @@ describe("conditions générales : 3 déblocages par mois", () => {
       "Un déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre Analyse lorsque cette vente les comporte : l’enchère plafond chiffrée, la lecture des pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette vente et les pièces du dossier.",
     );
     expect(text).toContain(
-      "Les autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports enregistrés, le budget travaux, les alertes avancées et la mise en relation avec un avocat référencé, restent réservées à cette offre.",
+      "Les autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les alertes avancées et la mise en relation avec un avocat référencé, restent réservées à cette offre.",
     );
     // Jamais « réservé » pour un élément que le compte reçoit.
     const reserved = text.slice(text.indexOf("Les autres fonctions de l’offre Analyse"));
@@ -132,8 +132,13 @@ describe("conditions générales : 3 déblocages par mois", () => {
       "il n’est pas consommé en cas d’erreur technique, ni si la vente est déjà débloquée",
     );
     expect(text).toContain(
-      "Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la vente pour une raison qui lui est imputable, le déblocage est restitué sur simple demande depuis Mes droits ou à l’adresse de contact.",
+      "Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la vente ou en suspend la publication pour une raison qui lui est imputable (par exemple une erreur de publication ou la suspension d’une source décidée par Immojudis), le déblocage est restitué sur simple demande adressée à",
     );
+    expect(text).toMatch(
+      /adressée à .+, qui reçoit une réponse sous un mois\. Le déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la fin de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés\./,
+    );
+    // Le canal est l'adresse de contact : Mes droits n'a pas de demande de restitution.
+    expect(text).not.toContain("depuis Mes droits ou à l’adresse de contact");
     expect(text).toContain("Les déblocages non utilisés ne sont pas reportés.");
     expect(text).toContain(
       `Le compteur est remis à ${n} le 1er de chaque mois à 00 h 00, heure de Paris.`,
@@ -198,8 +203,20 @@ describe("politique de confidentialité", () => {
       "Exécution du contrat : appliquer l’avantage et sa limite prévus par les conditions générales",
     );
     expect(text).toContain(
-      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, jusqu’à la fin du mois civil en cours (effacement lors de la purge hebdomadaire qui suit), pour que le compteur du mois ne soit pas remis à zéro.",
+      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, jusqu’à la fin du mois civil du déblocage (effacement lors de la purge hebdomadaire qui suit), pour que le compteur du mois ne soit pas remis à zéro.",
     );
+  });
+
+  it("dit que le journal d’usage relie un compte à la vente débloquée, pendant 24 mois au plus", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "journal des fonctions utilisées (compte, vente ou tribunal concerné, date), par exemple pour l’historique ou la valeur d’une vente débloquée",
+    );
+    expect(text).toContain("le journal d’usage est conservé 24 mois au plus");
+    // Les mesures agrégées ne sont plus décrites comme « d'usage » sans personne.
+    expect(text).toContain("Événements de parcours agrégés, sans identifiant de personne");
+    expect(text).not.toContain("Événements d’usage et de parcours agrégés");
+    expect(text).toContain("Événements d’usage et journaux applicatifs : 24 mois au plus");
   });
 
   it("annonce sa version et écrit Immojudis", () => {

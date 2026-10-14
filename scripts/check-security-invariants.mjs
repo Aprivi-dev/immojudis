@@ -626,7 +626,7 @@ const unlockedView =
   )?.[0];
 if (
   !unlockedView ||
-  !/from\s+public\.user_sale_unlocks[\s\S]*?where\s+unlock_row\.user_id\s*=\s*\(select\s+auth\.uid\(\)\)[\s\S]*?app_private\.sale_is_unlockable\(s\.id\)/i.test(
+  !/from\s+public\.user_sale_unlocks[\s\S]*?where\s+unlock_row\.user_id\s*=\s*\(select\s+auth\.uid\(\)\)[\s\S]*?app_private\.current_user_unlocked_sale\(s\.id\)/i.test(
     unlockedView,
   )
 ) {
@@ -639,6 +639,26 @@ if (
 ) {
   failures.push(
     "v_auction_sales_unlocked leaks the score, the risks, the source url or the raw payload",
+  );
+}
+// The source blocks carry the page text, the listing urls (completeness evidence) and, as keys, the
+// names of the source platforms: the unlocked view may only serve their ceiling projection.
+if (
+  unlockedView &&
+  (/raw_payload\s*->\s*'source_blocks'\s+as\b/i.test(unlockedView) ||
+    /\bobservations\s+as\b/i.test(unlockedView) ||
+    !/app_private\.unlocked_ceiling_blocks\(\s*s\.raw_payload\s*->\s*'source_blocks'\s*\)\s+as\s+source_blocks\b/i.test(
+      unlockedView,
+    ) ||
+    !/app_private\.unlocked_ceiling_blocks_by_source\(/i.test(unlockedView))
+) {
+  failures.push("v_auction_sales_unlocked serves raw source blocks instead of their projection");
+}
+// A definer view runs the functions it calls as the caller: sale_is_unlockable is granted to
+// service_role only, so the view must go through the granted definer helper.
+if (unlockedView && /sale_is_unlockable\(/i.test(unlockedView)) {
+  failures.push(
+    "v_auction_sales_unlocked calls a function authenticated cannot execute (sale_is_unlockable)",
   );
 }
 if (

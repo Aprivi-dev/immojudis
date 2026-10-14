@@ -25,10 +25,10 @@ const processingRows = [
   },
   {
     purpose: "Fonctions Découverte et Analyse",
-    data: "Favoris, alertes, zones, rapports, notes, simulations, exports et espaces collaboratifs",
+    data: "Favoris, alertes, zones, rapports, notes, simulations, exports et espaces collaboratifs ; journal des fonctions utilisées (compte, vente ou tribunal concerné, date), par exemple pour l’historique ou la valeur d’une vente débloquée",
     basis: "Exécution du contrat ou mesures précontractuelles",
     retention:
-      "Pendant le compte ; les données d’usage expirées sont purgées selon la matrice de conservation",
+      "Pendant le compte ; le journal d’usage est conservé 24 mois au plus ; les autres données d’usage expirées sont purgées selon la matrice de conservation",
   },
   {
     purpose: "Commande et accès payant",
@@ -43,7 +43,7 @@ const processingRows = [
     basis:
       "Exécution du contrat : appliquer l’avantage et sa limite prévus par les conditions générales",
     retention:
-      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, jusqu’à la fin du mois civil en cours (effacement lors de la purge hebdomadaire qui suit), pour que le compteur du mois ne soit pas remis à zéro.",
+      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, jusqu’à la fin du mois civil du déblocage (effacement lors de la purge hebdomadaire qui suit), pour que le compteur du mois ne soit pas remis à zéro.",
   },
   {
     purpose: "Alertes email",
@@ -113,7 +113,7 @@ const processingRows = [
   },
   {
     purpose: "Mesure, qualité et exploitation",
-    data: "Événements d’usage et de parcours agrégés, sans identifiant de personne, performances, identifiants techniques, erreurs et état des traitements",
+    data: "Événements de parcours agrégés, sans identifiant de personne, performances, identifiants techniques, erreurs et état des traitements",
     basis: "Intérêt légitime à améliorer, sécuriser et maintenir Immojudis",
     retention:
       "Événements d’usage et journaux applicatifs : 24 mois au plus, conformément à la matrice de conservation ; données de mesure conservées par Vercel selon sa propre durée",

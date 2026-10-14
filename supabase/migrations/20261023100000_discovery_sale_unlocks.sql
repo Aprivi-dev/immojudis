@@ -8,8 +8,8 @@
 --   * auction_sales is NOT widened (row level security cannot limit columns, and the table carries
 --     the investment score, risk notes, raw payload...).  The sale is served by
 --     public.v_auction_sales_unlocked, a redacted projection of the discovery view that only returns
---     the sales the caller unlocked, plus the facts the bid ceiling reads (source blocks) and the
---     official documents;
+--     the sales the caller unlocked, plus the facts the bid ceiling reads (a projection of the source
+--     blocks, never the raw ones) and the official documents;
 --   * no child table is opened to an unlock either: auction_documents, auction_risks,
 --     auction_risk_occurrences, auction_score_factors, auction_features and auction_surfaces keep
 --     their Analyse-only policies (20260710083858); the official documents reach the unlocked page
@@ -352,17 +352,193 @@ $$;
 revoke all on function public.get_sale_unlock_status(uuid) from public, anon;
 grant execute on function public.get_sale_unlock_status(uuid) to authenticated, service_role;
 
+-- Source blocks of an unlocked sale.  The raw blocks carry the whole page text of each source, the
+-- completeness evidence with the listing urls, contacts and, as keys, the names of the source
+-- platforms: exactly what the discovery view hides.  The bid ceiling only reads (a) the leaves whose
+-- path names a cost or a payment condition (findConsignation), (b) the first « frais préalables »
+-- passage of the blocks, page text included (preliminaryFeesFromSale, which reads the first match of
+-- JSON.stringify(blocks)), and (c) titre_detail (listingValuationConflict).  These functions keep
+-- exactly that; src/lib/bid-ceiling-projected-blocks.test.ts checks the ceiling is unchanged.
+-- Scalar leaves of a source-blocks object, in the order JSON.stringify writes them, with the path
+-- the TypeScript flattenKeyValues gives them ("a.b[0].c").
+create or replace function app_private.unlocked_blocks_leaves(p_blocks jsonb)
+returns table (path text, value jsonb, pos integer[])
+language sql
+immutable
+parallel safe
+security invoker
+set search_path = ''
+as $$
+  with recursive walk(path, value, pos) as (
+    select ''::text, p_blocks, array[]::integer[]
+    where pg_catalog.jsonb_typeof(p_blocks) = 'object'
+    union all
+    select
+      case
+        when pg_catalog.jsonb_typeof(w.value) = 'object'
+          then case when w.path = '' then child.key else w.path || '.' || child.key end
+        else w.path || '[' || (child.idx - 1)::text || ']'
+      end,
+      child.value,
+      w.pos || child.idx::integer
+    from walk w
+    cross join lateral (
+      select e.key, e.value, e.idx
+      from pg_catalog.jsonb_each(
+        case when pg_catalog.jsonb_typeof(w.value) = 'object' then w.value else '{}'::jsonb end
+      ) with ordinality as e(key, value, idx)
+      union all
+      select null::text, a.value, a.idx
+      from pg_catalog.jsonb_array_elements(
+        case when pg_catalog.jsonb_typeof(w.value) = 'array' then w.value else '[]'::jsonb end
+      ) with ordinality as a(value, idx)
+    ) child
+    where pg_catalog.jsonb_typeof(w.value) in ('object', 'array')
+  )
+  select leaf.path, leaf.value, leaf.pos
+  from walk leaf
+  where pg_catalog.jsonb_typeof(leaf.value) not in ('object', 'array');
+$$;
+
+-- The leaves the bid ceiling reads for the deposit (findConsignation / dedicatedFeeSources): a path
+-- that names a cost or a payment condition and is not a page text, description or title.
+create or replace function app_private.unlocked_ceiling_flat(p_blocks jsonb)
+returns jsonb
+language sql
+immutable
+parallel safe
+security invoker
+set search_path = ''
+as $$
+  select pg_catalog.jsonb_object_agg(leaf.path, leaf.value)
+  from app_private.unlocked_blocks_leaves(p_blocks) leaf
+  where leaf.path !~* '(^|\.)(page_text|description|titre|titre_detail|related|similar|autres_annonces)($|\.|\[)'
+    and (
+      leaf.path ~* '(frais|consignation|caution|garantie|ch[eèÈ]que|s[eéÉ]questre|paiement|surench[eèÈ]re|[eéÉ]molument|taxe|droit)'
+      or leaf.path ~* '(conditions|payment_terms)'
+    );
+$$;
+
+-- What the unlocked page may read of the primary source blocks, and what the bid ceiling needs:
+--   * the cost leaves (see above), keyed by path;
+--   * titre_detail, which suspends the estimate when it contradicts the property type;
+--   * under the key "_" (sorted first, as preliminaryFeesFromSale reads the first match of
+--     JSON.stringify(blocks)), the first « frais préalables ... € » passage of the whole blocks,
+--     page text included.
+-- Everything else (page text, completeness evidence with its source urls, contacts...) is dropped.
+create or replace function app_private.unlocked_ceiling_blocks(p_blocks jsonb)
+returns jsonb
+language sql
+immutable
+parallel safe
+security invoker
+set search_path = ''
+as $$
+  select case
+    when pg_catalog.jsonb_typeof(p_blocks) <> 'object' then null
+    else
+      coalesce(app_private.unlocked_ceiling_flat(p_blocks), '{}'::jsonb)
+      || case
+           when pg_catalog.jsonb_typeof(p_blocks -> 'titre_detail') = 'string'
+             then pg_catalog.jsonb_build_object('titre_detail', p_blocks -> 'titre_detail')
+           else '{}'::jsonb
+         end
+      || coalesce(
+           (
+             select pg_catalog.jsonb_build_object('_', pg_catalog.to_jsonb(found.excerpt))
+             from (
+               select (
+                 pg_catalog.regexp_match(
+                   leaf.value::text,
+                   '(frais[[:space:]   -     　﻿]+pr[éÉeE]alables'
+                   || '(?:[[:space:]   -     　﻿]+'
+                   || '(?:tax[éÉeE]s|de[[:space:]   -     　﻿]+(?:la[[:space:]   -     　﻿]+)?(?:vente|poursuite)'
+                   || '|s[''’]?[éÉeE]l[èÈeE]vent|estim[éÉeE]s|d[''’]un[[:space:]   -     　﻿]+montant|[àÀaA]|de|au[[:space:]   -     　﻿]+titre|:|environ)){0,6}'
+                   || '[[:space:]   -     　﻿]*:?[[:space:]   -     　﻿]*'
+                   || '[0-9][0-9[:space:]   -     　﻿.,]*'
+                   || '[[:space:]   -     　﻿]*(?:€|euros?|EUR))',
+                   'i'
+                 )
+               )[1] as excerpt, leaf.pos
+               from app_private.unlocked_blocks_leaves(p_blocks) leaf
+               where pg_catalog.jsonb_typeof(leaf.value) = 'string'
+             ) found
+             where found.excerpt is not null
+             order by found.pos
+             limit 1
+           ),
+           '{}'::jsonb
+         )
+  end;
+$$;
+
+-- source_blocks_by_source for the unlocked page: the cost leaves of each source, re-keyed
+-- source_1, source_2... (the original keys name the source platforms).
+create or replace function app_private.unlocked_ceiling_blocks_by_source(
+  p_primary jsonb,
+  p_observations jsonb
+)
+returns jsonb
+language sql
+immutable
+parallel safe
+security invoker
+set search_path = ''
+as $$
+  select coalesce(
+    pg_catalog.jsonb_object_agg('source_' || ranked.rank::text, ranked.blocks),
+    '{}'::jsonb
+  )
+  from (
+    select
+      pg_catalog.row_number() over (order by candidates.grp, candidates.ord) as rank,
+      candidates.blocks
+    from (
+      select 0 as grp, 0::bigint as ord, app_private.unlocked_ceiling_flat(p_primary) as blocks
+      where pg_catalog.jsonb_typeof(p_primary) = 'object'
+      union all
+      select
+        1,
+        observation.ordinality,
+        app_private.unlocked_ceiling_flat(observation.value -> 'raw_payload' -> 'source_blocks')
+      from pg_catalog.jsonb_array_elements(
+        case when pg_catalog.jsonb_typeof(p_observations) = 'array' then p_observations else '[]'::jsonb end
+      ) with ordinality as observation(value, ordinality)
+      where pg_catalog.jsonb_typeof(observation.value -> 'raw_payload' -> 'source_blocks') = 'object'
+    ) candidates
+    where candidates.blocks is not null
+  ) ranked;
+$$;
+
+revoke all on function app_private.unlocked_blocks_leaves(jsonb) from public, anon;
+revoke all on function app_private.unlocked_ceiling_flat(jsonb) from public, anon;
+revoke all on function app_private.unlocked_ceiling_blocks(jsonb) from public, anon;
+revoke all on function app_private.unlocked_ceiling_blocks_by_source(jsonb, jsonb) from public, anon;
+-- Executed as the caller by the definer view below, so granted to authenticated.
+grant execute on function app_private.unlocked_blocks_leaves(jsonb) to authenticated, service_role;
+grant execute on function app_private.unlocked_ceiling_flat(jsonb) to authenticated, service_role;
+grant execute on function app_private.unlocked_ceiling_blocks(jsonb) to authenticated, service_role;
+grant execute on function app_private.unlocked_ceiling_blocks_by_source(jsonb, jsonb)
+  to authenticated, service_role;
+
 -- The sale an account unlocked, as the unlocked page needs it.  auction_sales_authenticated_read is
 -- left untouched: row level security cannot limit columns, and a policy opened to an unlocked sale
 -- would hand the account every column granted to authenticated (investment score and summary, risk
 -- notes, score factors, adjudication price...).  This view is the discovery projection (same columns,
 -- same redactions: no score, no risks, no source url) for the sales the caller unlocked, with only
 -- what the five unlocked elements read in addition:
---   * source_blocks and source_blocks_by_source: the facts of the listing (fees, deposit, DPE...) the
---     bid ceiling reads, so that the ceiling of an unlocked sale equals the one Analyse computes;
+--   * source_blocks and source_blocks_by_source, projected by app_private.unlocked_ceiling_blocks*
+--     to what the bid ceiling reads (cost and payment leaves, the « frais préalables » passage,
+--     titre_detail), so that the ceiling of an unlocked sale equals the one Analyse computes.  No
+--     page text, no completeness evidence (listing urls), no contacts, and the sources are re-keyed
+--     source_1, source_2... instead of naming the platforms;
 --   * documents and documents_rich: the official documents of the case.
 -- It lists one row per unlock of the caller (at most three a month, 24 months) and checks that the
 -- sale is still unlockable (online and ready), so a sale that left the catalogue disappears from it.
+-- A definer view checks its tables as the owner but runs the functions it calls as the caller: it
+-- only calls functions granted to authenticated (auth.uid, current_user_unlocked_sale, which is
+-- itself a definer helper that calls sale_is_unlockable, auction_sale_source_presence_json and the
+-- unlocked_ceiling_blocks* functions above).
 create or replace view public.v_auction_sales_unlocked
 with (security_invoker = false, security_barrier = true) as
 select
@@ -429,8 +605,9 @@ select
   s.created_at,
   s.updated_at,
   coalesce(m.media, '[]'::jsonb) as media,
-  s.raw_payload -> 'source_blocks' as source_blocks,
-  coalesce(sb.source_blocks_by_source, '{}'::jsonb) as source_blocks_by_source,
+  app_private.unlocked_ceiling_blocks(s.raw_payload -> 'source_blocks') as source_blocks,
+  app_private.unlocked_ceiling_blocks_by_source(s.raw_payload -> 'source_blocks', s.observations)
+    as source_blocks_by_source,
   s.sale_venue_type,
   s.sale_legal_framework,
   s.sale_verification_status,
@@ -483,28 +660,6 @@ left join lateral (
        order by images.image_url, images.source_rank
     ) deduped
 ) m on true
--- Facts of the other sources of the same listing, as the Analyse view builds them.
-left join lateral (
-  select jsonb_object_agg(source_key, source_blocks) as source_blocks_by_source
-  from (
-    select
-      coalesce(nullif(s.source_name, ''), 'source') || ':primary' as source_key,
-      s.raw_payload -> 'source_blocks' as source_blocks
-    where jsonb_typeof(s.raw_payload -> 'source_blocks') = 'object'
-    union all
-    select
-      coalesce(nullif(observation.value ->> 'source_name', ''), 'source') || ':' || observation.ordinality::text as source_key,
-      observation.value -> 'raw_payload' -> 'source_blocks' as source_blocks
-    from jsonb_array_elements(
-      case
-        when jsonb_typeof(s.observations) = 'array'
-          then s.observations
-        else '[]'::jsonb
-      end
-    ) with ordinality as observation(value, ordinality)
-    where jsonb_typeof(observation.value -> 'raw_payload' -> 'source_blocks') = 'object'
-  ) blocks
-) sb on true
 -- Official documents, with the same projection as v_auction_sales_app.
 left join lateral (
   select jsonb_agg(
@@ -525,7 +680,7 @@ left join lateral (
   where ad.source_url = s.source_url
 ) d on true
 where unlock_row.user_id = (select auth.uid())
-  and app_private.sale_is_unlockable(s.id);
+  and app_private.current_user_unlocked_sale(s.id);
 
 revoke all on table public.v_auction_sales_unlocked from public, anon;
 grant select on table public.v_auction_sales_unlocked to authenticated;

@@ -444,6 +444,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "auction_ai_review_case_status_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       auction_ai_review_projections: {
@@ -555,6 +562,13 @@ export type Database = {
             columns: ["auction_sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_ai_review_projections_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -891,6 +905,13 @@ export type Database = {
             columns: ["sale_id"];
             isOneToOne: true;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_document_readings_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -1630,6 +1651,13 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "auction_fact_claims_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "auction_fact_claims_lot_id_fkey";
             columns: ["lot_id"];
             isOneToOne: false;
@@ -2003,6 +2031,13 @@ export type Database = {
             columns: ["auction_sale_id"];
             isOneToOne: true;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_lots_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -2947,6 +2982,13 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "auction_sale_competent_court_assignments_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "auction_sale_competent_court_assignments_court_id_fkey";
             columns: ["court_id"];
             isOneToOne: false;
@@ -3067,6 +3109,13 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "auction_sale_court_document_assignments_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "auction_sale_court_document_assignments_court_id_fkey";
             columns: ["court_id"];
             isOneToOne: false;
@@ -3172,6 +3221,13 @@ export type Database = {
             columns: ["auction_sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_court_label_assignments_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
           {
@@ -3346,6 +3402,13 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "auction_sale_market_estimates_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "auction_sale_market_estimates_model_version_id_fkey";
             columns: ["model_version_id"];
             isOneToOne: false;
@@ -3479,6 +3542,13 @@ export type Database = {
             columns: ["auction_sale_id"];
             isOneToOne: true;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_outcome_bridges_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: true;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
           {
@@ -3625,6 +3695,13 @@ export type Database = {
             columns: ["sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_sale_readiness_history_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -4650,6 +4727,13 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "catalogue_court_reconciliation_events_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "catalogue_court_reconciliation_events_bridge_id_fkey";
             columns: ["bridge_id"];
             isOneToOne: false;
@@ -5284,6 +5368,13 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "data_refresh_requests_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "data_refresh_requests_source_url_fkey";
             columns: ["source_url"];
             isOneToOne: false;
@@ -5911,6 +6002,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "information_agent_cases_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       information_agent_contacts: {
@@ -6028,6 +6126,13 @@ export type Database = {
             columns: ["sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_contacts_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -6193,6 +6298,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "information_agent_evidence_assets_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       information_agent_evidence_extractions: {
@@ -6351,6 +6463,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "information_agent_evidence_extractions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       information_agent_fact_candidates: {
@@ -6489,6 +6608,13 @@ export type Database = {
             columns: ["sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_fact_candidates_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -6783,6 +6909,13 @@ export type Database = {
             columns: ["sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_missions_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -7397,6 +7530,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "lawyer_placement_events_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       lawyer_referral_requests: {
@@ -7521,6 +7661,13 @@ export type Database = {
             columns: ["sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "lawyer_referral_requests_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -7649,6 +7796,13 @@ export type Database = {
             columns: ["published_sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "listing_publication_requests_published_sale_id_fkey";
+            columns: ["published_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -8903,6 +9057,13 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "sale_workspace_annotations_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "sale_workspace_annotations_workspace_id_fkey";
             columns: ["workspace_id"];
             isOneToOne: false;
@@ -9069,6 +9230,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "sale_workspaces_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       saved_property_reports: {
@@ -9186,6 +9354,13 @@ export type Database = {
             columns: ["sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "saved_property_reports_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -10060,6 +10235,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "user_alert_matches_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       user_alert_notifications: {
@@ -10176,6 +10358,13 @@ export type Database = {
             columns: ["sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_alert_notifications_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -10377,6 +10566,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "user_favorites_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       user_notification_preferences: {
@@ -10545,6 +10741,13 @@ export type Database = {
             referencedColumns: ["id"];
           },
           {
+            foreignKeyName: "user_sale_analysis_items_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+          {
             foreignKeyName: "user_sale_analysis_items_user_id_analysis_set_id_fkey";
             columns: ["user_id", "analysis_set_id"];
             isOneToOne: false;
@@ -10709,6 +10912,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "user_sale_change_events_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       user_sale_unlocks: {
@@ -10778,6 +10988,13 @@ export type Database = {
             columns: ["sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_sale_unlocks_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -10867,6 +11084,13 @@ export type Database = {
             columns: ["sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "user_sale_watch_snapshots_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -11066,6 +11290,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "valuation_estimate_attempts_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       valuation_estimates: {
@@ -11180,6 +11411,13 @@ export type Database = {
             columns: ["auction_sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "valuation_estimates_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
           {
@@ -11776,6 +12014,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "auction_ai_review_projections_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       v_auction_ai_review_projection_reconciliation: {
@@ -11848,6 +12093,13 @@ export type Database = {
             referencedRelation: "v_auction_sales_discovery_search";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "auction_ai_review_projections_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
         ];
       };
       v_auction_ai_review_publishable: {
@@ -11913,6 +12165,13 @@ export type Database = {
             columns: ["auction_sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_ai_review_projections_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
         ];
@@ -12042,6 +12301,13 @@ export type Database = {
             columns: ["auction_sale_id"];
             isOneToOne: false;
             referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "auction_fact_claims_auction_sale_id_fkey";
+            columns: ["auction_sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
             referencedColumns: ["id"];
           },
           {

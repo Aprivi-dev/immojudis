@@ -173,7 +173,7 @@ describe("GET /api/sales/ai-review", () => {
     expect(mocks.adminFrom).not.toHaveBeenCalled();
   });
 
-  it("keeps the review on a sale the account unlocked, without its citation links", async () => {
+  it("keeps the review on a sale the account unlocked, without its citation links or source names", async () => {
     const { userFrom, unlockedQuery } = setup({
       visibleIds: [],
       unlockedRows: [{ id: saleId }],
@@ -200,7 +200,7 @@ describe("GET /api/sales/ai-review", () => {
         auction_sale_id: saleId,
         field_key: "property.property_type",
         is_publishable: false,
-        source_name: "AGRASC",
+        source_name: null,
         source_url: null,
       }),
     ]);

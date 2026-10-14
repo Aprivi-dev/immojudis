@@ -332,7 +332,13 @@ export function SalePublicPreview({
               </h3>
               <p>
                 Adresse, photos, description, occupation, dates de visite et contact du dossier,
-                fourchette de valeur estimée, Street View, météo et risques de la commune.
+                fourchette de valeur estimée, Street View, météo et risques de la commune. Et chaque
+                mois, {MONTHLY_SALE_UNLOCKS} déblocages de ventes :{" "}
+                {unlockedItemsText({
+                  ceiling: procedure.venueType === "tribunal",
+                  statistics: procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
+                })}
+                .
               </p>
             </div>
             <div className={`${styles.tier} ${styles.tierAnalysis}`}>

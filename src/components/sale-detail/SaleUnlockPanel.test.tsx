@@ -90,7 +90,7 @@ describe("SaleUnlockPanel", () => {
 
     expect(
       screen.getByText(
-        "Ce déblocage est définitif et ne sera pas restitué. Le compteur est remis à 3 le 1er novembre.",
+        "Ce déblocage est définitif : il n’est restitué que si Immojudis retire elle-même la vente (conditions générales, article 2). Le compteur est remis à 3 le 1er novembre.",
       ),
     ).toBeTruthy();
     expect(mocks.unlock).not.toHaveBeenCalled();
@@ -316,9 +316,13 @@ describe("SaleUnlockPanel", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Cette vente est débloquée" })).toBeTruthy();
-    expect(screen.getByText(/tant qu’elle est en ligne/)).toBeTruthy();
     expect(
-      screen.getByText(/exports PDF et CSV et les rapports enregistrés restent réservés/),
+      screen.getByText(/tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        /exports PDF et CSV, les rapports enregistrés, l’estimation détaillée et les ventes comparables restent réservés/,
+      ),
     ).toBeTruthy();
     expect(screen.getByText("Il vous reste 1 déblocage sur 3 ce mois-ci.")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();

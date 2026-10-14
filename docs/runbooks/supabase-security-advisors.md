@@ -42,8 +42,13 @@ the view's explicit column list, redaction assertions, `security_barrier`, and
 
 `public.v_auction_sales_unlocked` is the third owner-executed view (security barrier, closed to
 `anon`). It serves a Découverte account the sales it unlocked ("3 déblocages par mois"): the
-discovery columns and redactions (no score, no risks, no source URL), plus the listing facts the
-bid ceiling reads (`source_blocks`, `source_blocks_by_source`) and the official documents. It lists
+discovery columns and redactions (no score, no risks, no source URL), plus the official documents and
+a projection of the source blocks: only the cost and payment leaves, the "frais préalables"
+passage and `titre_detail` that the bid ceiling reads (`app_private.unlocked_ceiling_blocks*`), with
+the sources re-keyed `source_1`, `source_2`. The raw blocks (page text, completeness evidence with
+listing URLs, contacts, source platform names) are never served; a Vitest test checks that the
+bid ceiling is unchanged by the projection, and the security invariants reject a raw
+`raw_payload -> 'source_blocks'` in the view. It lists
 one row per unlock of the caller (`auth.uid()`) and only while the sale is still unlockable.
 
 `auction_sales_authenticated_read` is deliberately not widened to an unlock: the policy cannot

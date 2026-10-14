@@ -93,8 +93,9 @@ export function SaleUnlockPanel({
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-ink-soft">
             Pour cette vente seulement : {items}. Elle reste accessible tant qu’elle est en ligne
-            sur Immojudis. Les exports PDF et CSV et les rapports enregistrés restent réservés à
-            l’offre Analyse.
+            sur Immojudis, dans la limite de 24 mois. Les exports PDF et CSV, les rapports
+            enregistrés, l’estimation détaillée et les ventes comparables restent réservés à l’offre
+            Analyse.
           </p>
           <p className="mt-2 text-xs leading-relaxed text-ink-soft">
             Ces éléments sont une aide à la décision : ils ne constituent ni un conseil juridique ni
@@ -167,7 +168,7 @@ export function SaleUnlockPanel({
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-ink-soft">
           Ouvre, pour cette vente seulement : {items}. Elle reste accessible tant qu’elle est en
-          ligne. Compris dans le compte Découverte, sans carte bancaire.
+          ligne, dans la limite de 24 mois. Compris dans le compte Découverte, sans carte bancaire.
         </p>
         <p className="mt-2 text-sm font-medium text-brand-navy">{remainingUnlocksLine(current)}</p>
         {step === "idle" ? (
