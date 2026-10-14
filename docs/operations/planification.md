@@ -12,7 +12,7 @@ ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le v�
 | Suivi des changements                                      | Vercel Cron        | 06:45, rattrapage 08:45 | `/api/cron/sale-change-monitor`       | oui                                                  | 30 h                          |
 | Rétention des données                                      | Vercel Cron        | dimanche 04:15          | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
 | Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20 | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
-| Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:20 tous les jours    | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
+| Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:50 tous les jours    | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
 | Santé opérationnelle                                       | Supabase `pg_cron` | toutes les 15 min       | `/api/cron/operational-health`        | oui                                                  | 45 min                        |
 | Purge des ventes                                           | Supabase `pg_cron` | toutes les 5 min        | `/api/cron/sale-retention`            | oui                                                  | 20 min                        |
 | Pré-calcul des valorisations                               | Supabase `pg_cron` | toutes les 5 min        | `/api/cron/precompute-valuations`     | non (déclenchement géré par la file de valorisation) | —                             |
@@ -26,6 +26,11 @@ modifiées ou évaluées avec une autre version de la règle passent en premier)
 (`npm run ops:health-scheduler:configure`), sans nouveau secret. Tant qu'il n'a jamais réussi,
 `cron.stale` signale la tâche : une alerte transitoire est attendue jusqu'au premier succès après
 le déploiement.
+
+Si plus de 3 h séparent l'application de la migration `20261024100100` et le déploiement du code
+(qui porte la route), `cron.stale` ouvre une alerte critique : le job Supabase appelle une route
+qui n'existe pas encore. Il suffit alors d'appeler la route une fois, avec `CRON_SECRET`
+(`Authorization: Bearer $CRON_SECRET` sur `/api/cron/listing-completeness`), pour la refermer.
 
 Les trois tâches Vercel quotidiennes ont un second passage deux heures plus tard : il ne fait rien
 si la tâche a déjà réussi dans les 20 dernières heures (`catchUpSchedule` de `runMonitoredCron`).

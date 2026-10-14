@@ -291,6 +291,8 @@ async function resolveFilteredSales({
   sourceLimit: number;
 }): Promise<AuctionSale[]> {
   const center = search.aroundAddress ? await geocodeAddress(search.aroundAddress) : null;
+  // Le tri de l'URL s'applique aussi aux exports: par défaut (« Mieux renseignées d'abord »),
+  // l'échantillon plafonné par `sourceLimit` suit donc l'ordre par complétude puis par date.
   const sourceSales = await getSales(
     dataFiltersFromSearch(search),
     sourceLimit,

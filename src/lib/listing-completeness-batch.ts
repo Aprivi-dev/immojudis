@@ -15,8 +15,14 @@ import type { AuctionSale } from "@/lib/types";
  * (table `auction_sale_listing_completeness`, voir la migration 20261024100000).
  *
  * Le calcul reste en TypeScript : c'est `getListingCompleteness`, le même code que la fiche. La
- * ligne complète est lue avec le rôle de service sur `v_auction_sales_app` (la vue Découverte
- * masque des champs et donnerait un score plus bas), puis nettoyée comme la fiche.
+ * ligne complète est lue avec le rôle de service sur `v_auction_sales_app`, puis nettoyée comme la
+ * fiche.
+ *
+ * Le palier mesure l'information dont Immojudis dispose pour la vente, indépendamment de l'offre
+ * de l'utilisateur qui consulte. Une fiche Découverte peut donc en afficher moins que ce que le
+ * palier suppose, car une partie (documents, analyse…) est réservée à l'offre Analyse : calculer
+ * sur la vue Découverte, qui masque ces champs, donnerait un palier différent selon l'offre et un
+ * classement incohérent entre les publics.
  */
 
 const PAGE_SIZE = 1000;
@@ -120,12 +126,26 @@ export function pickPendingSales(
  */
 export function evaluateListing(sale: AuctionSale, evaluatedAt: Date) {
   const readable = sanitizeAuctionSaleForDisplay(sale);
-  const { score, classification } = getListingCompleteness(readable);
+  const { score: rawScore, classification } = getListingCompleteness(readable);
+  // La colonne est numeric(4,1) avec un contrôle 0-100 : un score invalide ferait échouer tout
+  // l'upsert du paquet. Il est refusé ici (la vente est sautée et comptée en erreur).
+  if (
+    typeof rawScore !== "number" ||
+    !Number.isFinite(rawScore) ||
+    rawScore < 0 ||
+    rawScore > 100
+  ) {
+    throw new Error(`Score de complétude invalide pour ${sale.id} : ${String(rawScore)}`);
+  }
+  const score = Math.round(rawScore * 10) / 10;
   return {
     sale_id: sale.id,
     score,
     tier: completenessTierForClassification(classification),
     policy_version: LISTING_COMPLETENESS_POLICY.version,
+    // Empreinte des données lues: sert à la mesure et au diagnostic (savoir si une réévaluation a
+    // vu des données différentes). Elle ne pilote pas la sélection: `evaluated_at` doit avancer à
+    // chaque passage pour que la réévaluation quotidienne ne reprenne pas toujours les mêmes ventes.
     input_fingerprint: createHash("sha256").update(JSON.stringify(readable)).digest("hex"),
     evaluated_at: evaluatedAt.toISOString(),
   };

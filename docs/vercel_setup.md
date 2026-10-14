@@ -136,7 +136,7 @@ npm run ops:health-scheduler:configure
 Le calcul du palier de complétude des annonces (classement de `/sales`, route
 `/api/cron/listing-completeness`) suit le même mécanisme : le job Supabase Cron
 `immojudis-listing-completeness` l'appelle toutes les heures (à :20) avec les mêmes secrets Vault,
-sans nouvelle configuration. `vercel.json` ne garde qu'un filet quotidien (05:20 UTC), compatible
+sans nouvelle configuration. `vercel.json` ne garde qu'un filet quotidien (05:50 UTC, décalé du job horaire pour ne pas se chevaucher), compatible
 avec Vercel Hobby. La tâche figure dans la liste de fraîcheur `cron.stale` (3 h).
 
 Le workflow `Apply Supabase Migrations` exécute automatiquement cette étape, puis vérifie l'absence
