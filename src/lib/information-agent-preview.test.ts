@@ -306,6 +306,91 @@ describe("aperçu obligatoire avant tout envoi manuel", () => {
     }
   });
 
+  const AUTOMATED_STATEMENT =
+    "Cette adresse a été retrouvée par un outil de recherche automatisé d’Immojudis, qui consulte ponctuellement des pages publiques ; seuls l’adresse retenue, le lien de la page et la date de consultation sont conservés. Ce message a été relu et validé par un membre de l’équipe avant envoi.";
+
+  it("recherche niveau 1, source A : libellé « autre annonce » et mention de la recherche automatique", async () => {
+    db.contacts = [
+      {
+        normalized_email: "cabinet@example.test",
+        scope_sale_id: SALE_ID,
+        source_kind: "other_listing",
+        source_name: "licitor",
+        source_url: "https://www.licitor.com/annonce/2.html",
+        observed_at: "2026-10-14T10:00:00Z",
+        observed_by: "agent",
+        opposition_status: "unknown",
+        bounce_status: "none",
+      },
+    ];
+    const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+
+    expect(result.blockers).toEqual([]);
+    expect(result.addressOrigin).toEqual({
+      text: "Votre adresse professionnelle figure dans une autre annonce publique de vente qui vous mentionne comme interlocuteur, sur Licitor (https://www.licitor.com/annonce/2.html), consultée le 14/10/2026.",
+      url: "https://www.licitor.com/annonce/2.html",
+      automated: true,
+      known: true,
+    });
+    expect(result.addressOrigin.text).not.toContain("annonce publique de cette vente");
+    for (const output of [result.preview.html, result.preview.text]) {
+      expect(output).toContain("figure dans une autre annonce publique de vente");
+      expect(output).toContain("https://www.licitor.com/annonce/2.html");
+      expect(output).toContain(AUTOMATED_STATEMENT);
+    }
+  });
+
+  it("recherche niveau 1, source B : libellé « site du cabinet » et mention de la recherche automatique", async () => {
+    db.contacts = [
+      {
+        normalized_email: "cabinet@example.test",
+        scope_sale_id: SALE_ID,
+        source_kind: "firm_website",
+        source_name: null,
+        source_url: "https://www.cabinet-dupont.test/contact",
+        observed_at: "2026-10-14T10:00:00Z",
+        observed_by: "agent",
+        opposition_status: "unknown",
+        bounce_status: "none",
+      },
+    ];
+    const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+
+    expect(result.blockers).toEqual([]);
+    expect(result.addressOrigin).toEqual({
+      text: "Votre adresse professionnelle figure sur le site de votre cabinet ou de votre étude (https://www.cabinet-dupont.test/contact), consulté le 14/10/2026.",
+      url: "https://www.cabinet-dupont.test/contact",
+      automated: true,
+      known: true,
+    });
+    for (const output of [result.preview.html, result.preview.text]) {
+      expect(output).toContain("figure sur le site de votre cabinet ou de votre étude");
+      expect(output).toContain("https://www.cabinet-dupont.test/contact");
+      expect(output).toContain(AUTOMATED_STATEMENT);
+      expect(output).toContain("Immojudis SAS");
+    }
+  });
+
+  it("une adresse trouvée par l'agent sans lien exact n'est pas acceptée (autre annonce, site)", async () => {
+    for (const source_kind of ["other_listing", "firm_website"]) {
+      db.contacts = [
+        {
+          normalized_email: "cabinet@example.test",
+          scope_sale_id: SALE_ID,
+          source_kind,
+          source_url: null,
+          observed_at: "2026-10-14T10:00:00Z",
+          observed_by: "agent",
+          opposition_status: "unknown",
+          bounce_status: "none",
+        },
+      ];
+      const result = await previewAdminInformationAgentMission({ auth: ADMIN, input: content });
+      expect(result.addressOrigin.known, source_kind).toBe(false);
+      expect(result.blockers).toContain(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+    }
+  });
+
   it("n'accepte pas pour un annuaire une adresse sans lien exact", async () => {
     db.contacts = [
       {
