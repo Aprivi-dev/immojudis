@@ -32,6 +32,29 @@ describe("sale unlock server helpers", () => {
     expect(status).toMatchObject({ unlocked: true, remaining: 0, limit: 3 });
   });
 
+  it.each(["PGRST202", "42883"])(
+    "answers « nothing to unlock » instead of an error when the function is missing (%s)",
+    async (code) => {
+      const rpc = vi.fn().mockResolvedValue({ data: null, error: { code, message: "not found" } });
+      const status = await getSaleUnlockStatus(authWith(rpc), saleId);
+      expect(status).toMatchObject({
+        saleId,
+        unlocked: false,
+        unlockable: false,
+        analysisAccess: false,
+        limit: null,
+        remaining: null,
+      });
+      expect(Date.parse(status.resetsAt)).toBeGreaterThan(Date.parse(status.periodStart));
+    },
+  );
+
+  it("does not hide a real database failure behind the missing-function fallback", async () => {
+    const failure = { code: "XX000", message: "boom" };
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: failure });
+    await expect(getSaleUnlockStatus(authWith(rpc), saleId)).rejects.toBe(failure);
+  });
+
   it("answers yes only when the database confirms the unlock", async () => {
     const yes = vi.fn().mockResolvedValue({ data: rpcStatus, error: null });
     const no = vi.fn().mockResolvedValue({ data: { ...rpcStatus, unlocked: false }, error: null });
