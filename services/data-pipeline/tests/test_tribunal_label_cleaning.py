@@ -122,7 +122,39 @@ def test_canonical_short_names_never_repeat_the_court_prefix(official: str, shor
 def test_a_notary_office_is_not_a_court() -> None:
     assert tribunal_label_is_notarial_venue("TJ En L'Étude Du Notaire")
     assert tribunal_label_is_notarial_venue("Tribunal judiciaire de En l'étude du Notaire")
+    assert tribunal_label_is_notarial_venue("TJ Office Notarial de Nancy")
     assert not tribunal_label_is_notarial_venue("TJ Nancy")
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "TJ Nancy, Me Dupont, avocat, notaire",
+        "Tribunal judiciaire de Nancy - notaires associés",
+        "TJ Nancy (notariale)",
+    ],
+)
+def test_a_court_label_that_merely_mentions_a_notary_is_not_a_notarial_venue(label: str) -> None:
+    assert not tribunal_label_is_notarial_venue(label)
+
+
+def test_a_court_label_mentioning_a_notary_keeps_its_insee_court() -> None:
+    sale = normalize_sale(
+        {
+            "source_name": "vench",
+            "source_url": "https://www.vench.fr/vente-170003-une-maison-nancy.html",
+            "tribunal": "TJ Nancy, Me Dupont, avocat, notaire",
+            "city": "Nancy",
+            "postal_code": "54000",
+            "department": "54",
+            "raw_text": "Tribunal judiciaire de Nancy. Mise à prix 50 000 €",
+        }
+    )
+
+    fill_tribunal(sale)
+
+    assert sale.tribunal == "TJ Nancy"
+    assert "tribunal_label_rejected" not in sale.raw_payload
 
 
 @pytest.mark.parametrize("label", ["TJ En L'Étude Du Notaire", "Tribunal judiciaire de En l'étude du Notaire"])
