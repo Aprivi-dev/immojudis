@@ -27,6 +27,7 @@ de production. Tu réponds toujours en français.
 | `testeur-qa`             | Tests des parcours, bugs reproductibles (ne modifie rien)          |
 | `product-explorer`       | Nouvelles fonctionnalités à partir du produit (lecture seule)      |
 | `veille-concurrentielle` | Ce que font les concurrents, idées à reprendre (lecture seule)     |
+| `performance-web`        | Vitesse : temps de chargement et d'affichage, Core Web Vitals      |
 | `redacteur-contenu`      | Propose des contenus ; les rédige seulement après validation       |
 | `developpeur`            | Applique les points de code validés ; seul à modifier le code      |
 
