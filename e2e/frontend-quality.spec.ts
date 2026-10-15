@@ -10,6 +10,8 @@ const PUBLIC_ROUTES = [
   "/offres",
   "/ventes-immobilieres-judiciaires",
   "/annonce-exemple",
+  "/classement-des-annonces",
+  "/sales",
   "/login",
 ] as const;
 
