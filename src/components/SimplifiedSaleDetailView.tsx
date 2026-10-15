@@ -32,6 +32,7 @@ import {
 import { ListingBudget } from "@/components/sale-detail/ListingBudget";
 import { ListingCharacteristics } from "@/components/sale-detail/ListingCharacteristics";
 import { ListingPreparation } from "@/components/sale-detail/ListingPreparation";
+import { SaleKeyFactsBand } from "@/components/sale-detail/SaleKeyFactsBand";
 import type { ListingWorksDraft } from "@/components/sale-detail/ListingWorks";
 import type { FinancingDraft, FinancingResult } from "@/components/sale-detail/FinancingSimulator";
 import type { ListingRentalDraft } from "@/components/sale-detail/ListingRental";
@@ -561,6 +562,11 @@ function SaleDetailWorkspace({
               />
             </div>
           </div>
+          <SaleKeyFactsBand
+            sale={displaySale}
+            aiReviewProjections={resolvedAiReviewProjections}
+            aiReviewStatus={aiReviewStatus}
+          />
           <ListingPreparation
             key={`${user?.id ?? "guest-demo"}:${sale.id}`}
             sale={displaySale}
