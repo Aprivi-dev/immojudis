@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CsvExportButton,
+  HomeTypeFilter,
   ResultsSummary,
   SaveSearchButton,
   SearchHeader,
@@ -159,6 +160,12 @@ describe("SortByDateShortcut", () => {
 
   it("donne aux listes Type de bien et Tri une hauteur tactile d'au moins 44 px", () => {
     const { container } = render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
+    expect(container.querySelector("label")?.className).toContain("min-h-11");
+    expect(container.querySelector("label")?.className).not.toContain("h-10");
+  });
+
+  it("donne aussi au filtre Type de bien une hauteur tactile d'au moins 44 px", () => {
+    const { container } = render(<HomeTypeFilter draft={emptySearchDraft()} setDraft={vi.fn()} />);
     expect(container.querySelector("label")?.className).toContain("min-h-11");
     expect(container.querySelector("label")?.className).not.toContain("h-10");
   });

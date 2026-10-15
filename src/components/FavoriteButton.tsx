@@ -112,7 +112,7 @@ export function FavoriteButton({
       aria-pressed={isFav}
       aria-label={label}
       title={title}
-      className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-text disabled:opacity-50 ${className}`}
+      className={`${compact ? "inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-brand-navy" : "liquid-panel-soft inline-flex min-h-11 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-foreground"} transition hover:border-gold hover:text-gold-text disabled:opacity-50 ${className}`}
     >
       <Heart
         aria-hidden

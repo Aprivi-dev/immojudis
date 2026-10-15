@@ -168,7 +168,7 @@ export function SaleDetailPage({
           <p className="mt-3 text-sm text-muted-foreground">{authError}</p>
           <a
             href={`/login?redirect=${encodeURIComponent(loginReturnTo)}`}
-            className="mt-5 inline-flex rounded-md bg-brand-navy px-4 py-2 text-white"
+            className="mt-5 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-4 py-2 text-white"
           >
             Se reconnecter
           </a>
