@@ -266,11 +266,11 @@ Le site est **fermé aux moteurs de recherche par défaut**. Il ne s'ouvre que s
 `SEO_INDEXING_ENABLED` vaut exactement `true` (espaces autour ignorés ; `TRUE`, `1`, `yes`,
 vide ou absente ferment).
 
-| État                                    | `X-Robots-Tag`               | `robots.txt`                                                   |
-| --------------------------------------- | ---------------------------- | -------------------------------------------------------------- |
-| Fermé (variable absente ou ≠ `true`)    | `noindex, nofollow`, partout | `Allow: /` + zones privées en `Disallow`, **aucun** `Sitemap:` |
-| Ouvert (`true`, déploiement production) | aucun                        | idem + les `Sitemap:` (pages, ressources, fiches)              |
-| Aperçu ou développement Vercel          | `noindex, nofollow`, partout | `Disallow: /`, aucun `Sitemap:` (même avec `true`)             |
+| État                                    | `X-Robots-Tag`                             | `robots.txt`                                                   |
+| --------------------------------------- | ------------------------------------------ | -------------------------------------------------------------- |
+| Fermé (variable absente ou ≠ `true`)    | `noindex, nofollow` (pages, API, sitemaps) | `Allow: /` + zones privées en `Disallow`, **aucun** `Sitemap:` |
+| Ouvert (`true`, déploiement production) | aucun                                      | idem + les `Sitemap:` (pages, ressources, fiches)              |
+| Aperçu ou développement Vercel          | `noindex, nofollow` (pages, API, sitemaps) | `Disallow: /`, aucun `Sitemap:` (même avec `true`)             |
 
 - **Pourquoi `noindex` en en-tête plutôt que `Disallow: /`.** Un robot qui n'a pas le droit de
   charger une page ne lit jamais son `noindex` : une adresse déjà connue (lien externe, passage
@@ -284,10 +284,16 @@ vide ou absente ferment).
   variables avec lesquelles il a été créé.
 - **Absente en production = fermé.** Un déploiement de production sans `SEO_INDEXING_ENABLED`
   envoie `noindex, nofollow` et un `robots.txt` sans sitemap. Rien ne s'indexe par oubli.
-- **Limite.** Le proxy ne passe pas sur les fichiers statiques (`/_next/static`, `/_next/image`,
-  `/media/`, `/brand/`, icônes) ni sur `robots.txt` et `sitemap.xml` : ils n'ont pas l'en-tête.
-  Les pages, les routes d'API et les sitemaps secondaires (`/ressources/sitemap.xml`,
-  `/sales/sitemap/N.xml`) l'ont.
+- **Limite.** Le proxy ne passe pas sur les fichiers statiques (`/_next/static`, `/media/`,
+  `/brand/`, icônes), sur `robots.txt` ni sur l'optimiseur d'images `/_next/image` : ces réponses
+  n'ont **pas** l'en-tête, donc « partout » du tableau ci-dessus s'entend « sur les pages, les
+  routes d'API et les sitemaps » (`/sitemap.xml`, `/ressources/sitemap.xml`,
+  `/sales/sitemap/N.xml`). `/_next/image` est exclu volontairement : Next.js recommande de ne pas
+  y exécuter le proxy, qui tournerait à chaque variante d'image uniquement pour poser cet en-tête.
+  Conséquence : tant que l'indexation est fermée, une image de fiche reste techniquement
+  indexable par un moteur d'images, même si la page qui l'affiche est en `noindex`. Si cet écart
+  devient gênant, il faudra poser l'en-tête sur ces chemins par `headers()` dans `next.config.ts`
+  (valeur figée au build, donc à réserver à un déploiement dont l'état d'indexation est connu).
 - **Test de fumée.** `scripts/check-production-smoke.mjs` lit la même variable
   `SEO_INDEXING_ENABLED` pour savoir quel état vérifier. La variable de **dépôt GitHub** du même
   nom (Settings → Secrets and variables → Actions → Variables) doit donc suivre celle de Vercel.
