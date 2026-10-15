@@ -2,6 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import type { ReactNode } from "react";
+import { Terme } from "@/components/ceiling/Terme";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
@@ -78,7 +80,7 @@ export function AnalysisDecisionPanel({
           const missing = marker.value == null ? missingMarker(marker.label) : null;
           return (
             <div key={marker.label}>
-              <dt>{marker.label}</dt>
+              <dt>{markerLabel(marker.label)}</dt>
               <dd className={missing?.compact ? panelStyles.textValue : undefined}>
                 {marker.value != null ? formatPrice(marker.value) : missing?.main}
                 {missing?.note ? (
@@ -91,14 +93,7 @@ export function AnalysisDecisionPanel({
       </dl>
       <div className={panelStyles.estimationFoot}>
         <p>
-          <strong>
-            Travaux inclus :{" "}
-            {worksBudget == null
-              ? "à chiffrer"
-              : worksBudget > 0
-                ? formatPrice(worksBudget)
-                : "aucun (bien repris en l’état)"}
-          </strong>
+          <strong>{worksLine(worksBudget)}</strong>
           <span>
             Enchère plafond (simulation), selon vos hypothèses de marché, de frais et de travaux.
           </span>
@@ -149,7 +144,7 @@ export function NonJudicialDecisionPanel({
     <aside className={panelStyles.estimationCard} aria-label="Repères de prix">
       <dl className={panelStyles.priceGrid}>
         <div>
-          <dt>{venue === "state" ? "Prix publié" : "Mise à prix"}</dt>
+          <dt>{venue === "state" ? "Prix publié" : markerLabel("Mise à prix")}</dt>
           <dd>{startingPriceOrConfirm(sale.starting_price_eur)}</dd>
         </div>
         <div>
@@ -187,7 +182,7 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
     <aside className={panelStyles.estimationCard} aria-label="Aperçu des repères de prix">
       <dl className={panelStyles.priceGrid}>
         <div>
-          <dt>Mise à prix</dt>
+          <dt>{markerLabel("Mise à prix")}</dt>
           <dd>{startingPriceOrConfirm(sale.starting_price_eur)}</dd>
         </div>
         <div>
@@ -214,7 +209,7 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
           </dd>
         </div>
         <div>
-          <dt>Enchère plafond (simulation)</dt>
+          <dt>{markerLabel("Enchère plafond (simulation)")}</dt>
           <dd className={panelStyles.textValue}>
             Avec l’offre Analyse ou en débloquant cette vente
             <div className={panelStyles.valueNote}>
@@ -250,6 +245,28 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
       />
     </aside>
   );
+}
+
+/**
+ * What the ceiling rests on as far as works go. Without a works budget the ceiling is NOT after
+ * works: say so, rather than « Travaux inclus : à chiffrer » which read as if works were counted.
+ */
+function worksLine(worksBudget: number | null): string {
+  if (worksBudget == null) {
+    return "Plafond hors travaux : ajoutez votre budget travaux pour l’affiner";
+  }
+  return worksBudget > 0
+    ? `Plafond après ${formatPrice(worksBudget)} de travaux`
+    : "Travaux inclus : aucun (bien repris en l’état)";
+}
+
+/** The two terms a reader may not know get a « ? » definition; the others stay plain text. */
+function markerLabel(label: string): ReactNode {
+  if (label === "Mise à prix") return <Terme terme="mise-a-prix">{label}</Terme>;
+  if (label === "Enchère plafond (simulation)") {
+    return <Terme terme="enchere-plafond">{label}</Terme>;
+  }
+  return label;
 }
 
 /** « À confirmer » for an absent or zero starting price, the amount otherwise. */

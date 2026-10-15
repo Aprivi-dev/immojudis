@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import { SaleUnlockOfferProvider } from "./UnlockCallToAction";
@@ -210,6 +210,54 @@ describe("AnalysisDecisionPanel", () => {
     );
 
     expect(screen.getByText("À confirmer")).toBeTruthy();
+  });
+
+  it("says the ceiling is before works until a works budget is entered", () => {
+    const { container } = renderWithQuery(<AnalysisDecisionPanel {...base} worksBudget={null} />);
+
+    expect(
+      screen.getByText("Plafond hors travaux : ajoutez votre budget travaux pour l’affiner"),
+    ).toBeTruthy();
+    expect(container.textContent).not.toContain("Travaux inclus");
+    expect(container.textContent).not.toContain("à chiffrer");
+  });
+
+  it("names the works budget the ceiling is computed after", () => {
+    renderWithQuery(<AnalysisDecisionPanel {...base} worksBudget={34_080} />);
+
+    expect(screen.getByText(/^Plafond après 34\s080\s€ de travaux$/)).toBeTruthy();
+  });
+
+  it("keeps « aucun (bien repris en l’état) » for a zero works budget", () => {
+    renderWithQuery(<AnalysisDecisionPanel {...base} worksBudget={0} />);
+
+    expect(screen.getByText("Travaux inclus : aucun (bien repris en l’état)")).toBeTruthy();
+  });
+
+  it("keeps « Chiffrer les travaux » as the action of the panel", () => {
+    const onEditWorks = vi.fn();
+    renderWithQuery(
+      <AnalysisDecisionPanel {...base} worksBudget={null} onEditWorks={onEditWorks} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Chiffrer les travaux" }));
+    expect(onEditWorks).toHaveBeenCalledOnce();
+  });
+
+  it("explains « Mise à prix » and « Enchère plafond » with a definition bubble", () => {
+    renderWithQuery(<AnalysisDecisionPanel {...base} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Définition : mise à prix" }));
+    expect(screen.getByRole("note").textContent).toContain("Prix de départ de la vente");
+    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
+      "/ventes-immobilieres-judiciaires#lexique-mise-a-prix",
+    );
+    const ceiling = screen.getByRole("button", { name: "Définition : enchère plafond" });
+    fireEvent.pointerDown(ceiling); // a real press first closes the other bubble
+    fireEvent.click(ceiling);
+    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
+      "/ventes-immobilieres-judiciaires#lexique-enchere-plafond",
+    );
   });
 });
 

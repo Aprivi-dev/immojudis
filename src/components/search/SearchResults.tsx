@@ -32,7 +32,7 @@ import {
   fetchSaleUnlocksOverview,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { formatDate, formatStartingPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { trackProductEvent } from "@/lib/product-events";
@@ -44,6 +44,7 @@ import { ErrorState, NoResultsState } from "./SearchFilters";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
 import styles from "./SearchResults.module.css";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
+import { Terme } from "@/components/ceiling/Terme";
 import {
   AI_REVIEW_SURFACE_FIELD_KEYS,
   firstBlockedAiReviewField,
@@ -188,6 +189,30 @@ export function SearchResultsList({
     </div>
   );
 }
+/** Titre de carte : « Appartement », « Maison »… ; « Bien » quand le type n'est pas qualifié. */
+function cardTypeLabel(propertyType: string | null | undefined): string {
+  const label = propertyTypeLabel(propertyType);
+  return label === "Bien à qualifier" ? "Bien" : label;
+}
+
+/** « Département 33 » pour un code, le nom tel quel sinon (« Gironde »). */
+function departmentLabel(department: string | null | undefined): string | null {
+  const value = department?.trim();
+  if (!value) return null;
+  return /^(\d{2,3}|2[AB])$/i.test(value) ? `Département ${value}` : value;
+}
+
+/** Assemble les éléments présents, séparés par « · » : aucun séparateur ne reste seul. */
+function withSeparators(parts: React.ReactNode[]): React.ReactNode {
+  const kept = parts.filter((part) => part != null && part !== false && part !== "");
+  return kept.map((part, index) => (
+    <Fragment key={index}>
+      {index > 0 ? " · " : null}
+      {part}
+    </Fragment>
+  ));
+}
+
 export const ListingCard = memo(function ListingCard({
   sale,
   returnTo,
@@ -258,6 +283,9 @@ export const ListingCard = memo(function ListingCard({
       : saleDisplayTitle(sale);
   // Cession de l'État en ligne sans échéance publiée : « Procédure à venir » plutôt que « Date à confirmer ».
   const stateListing = stateListingStatus(sale);
+  // Titre « Type de bien · Ville » ; sans ville, le département prend le relais sous le titre.
+  const showCity = cityReview.blocked || Boolean(sale.city?.trim());
+  const departmentLine = departmentLabel(sale.department);
   const roomSummary = roomsReview.blocked
     ? null
     : sale.rooms_count != null
@@ -311,48 +339,56 @@ export const ListingCard = memo(function ListingCard({
           <div className="min-w-0">
             <h3 className="font-display text-lg font-semibold leading-tight sm:text-xl">
               <AiReviewField
-                fieldKey="property.city"
-                projections={aiReviewProjections}
-                reviewStatus={aiReviewStatus}
-                fallback="Localisation à préciser"
-                sourceName={sale.source_name}
-                sourceUrl={sale.source_url}
-                showSourceLink={false}
-              >
-                {[sale.city, sale.department].filter(Boolean).join(" · ") ||
-                  "Localisation à préciser"}
-              </AiReviewField>
-            </h3>
-            <p className="mt-1 text-sm leading-5 text-ink-soft">
-              <AiReviewField
                 fieldKey="property.property_type"
                 projections={aiReviewProjections}
                 reviewStatus={aiReviewStatus}
+                fallback="Type de bien à confirmer"
                 sourceName={sale.source_name}
                 sourceUrl={sale.source_url}
                 showSourceLink={false}
               >
-                {propertyTypeLabel(sale.property_type)}
-              </AiReviewField>{" "}
-              ·{" "}
-              {surfaceReviewField ? (
-                <AiReviewField
-                  fieldKey={surfaceReviewField}
-                  projections={aiReviewProjections}
-                  reviewStatus={aiReviewStatus}
-                  fallback="Surface à confirmer"
-                  sourceName={sale.source_name}
-                  sourceUrl={sale.source_url}
-                  showSourceLink={false}
-                >
-                  {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
-                </AiReviewField>
-              ) : displaySurface.value != null ? (
-                displaySurface.label
-              ) : (
-                "Surface n.c."
-              )}
-              {roomSummary ? ` · ${roomSummary}` : ""}
+                {cardTypeLabel(sale.property_type)}
+              </AiReviewField>
+              {showCity ? (
+                <>
+                  {" · "}
+                  <AiReviewField
+                    fieldKey="property.city"
+                    projections={aiReviewProjections}
+                    reviewStatus={aiReviewStatus}
+                    fallback="Localisation à préciser"
+                    sourceName={sale.source_name}
+                    sourceUrl={sale.source_url}
+                    showSourceLink={false}
+                  >
+                    {sale.city}
+                  </AiReviewField>
+                </>
+              ) : null}
+            </h3>
+            <p className="mt-1 text-sm leading-5 text-ink-soft">
+              {withSeparators([
+                !showCity && !departmentLine ? "Localisation à préciser" : null,
+                departmentLine,
+                surfaceReviewField ? (
+                  <AiReviewField
+                    fieldKey={surfaceReviewField}
+                    projections={aiReviewProjections}
+                    reviewStatus={aiReviewStatus}
+                    fallback="Surface à confirmer"
+                    sourceName={sale.source_name}
+                    sourceUrl={sale.source_url}
+                    showSourceLink={false}
+                  >
+                    {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
+                  </AiReviewField>
+                ) : displaySurface.value != null ? (
+                  displaySurface.label
+                ) : (
+                  "Surface n.c."
+                ),
+                roomSummary,
+              ])}
             </p>
           </div>
           <CompactFavoriteButton
@@ -378,7 +414,11 @@ export const ListingCard = memo(function ListingCard({
             {formatStartingPrice(sale.starting_price_eur)}
           </AiReviewField>
         </p>
-        <p className="text-xs text-ink-soft">Mise à prix</p>
+        <p className="text-[13px] font-medium leading-5 text-ink-soft sm:text-sm">
+          <Terme terme="mise-a-prix" placement="top">
+            Mise à prix
+          </Terme>
+        </p>
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-soft">
           <span className="inline-flex items-center gap-1">
             <CalendarDays className="h-3.5 w-3.5" />
@@ -412,12 +452,14 @@ export const ListingCard = memo(function ListingCard({
           )}
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-surface-tint pt-3">
-          <span className="text-xs text-ink-soft">
+          <span className="text-sm text-ink-soft">
             {locked
-              ? "Fiche complète avec un compte gratuit"
+              ? saleIsTribunalVenue(sale)
+                ? FREE_ACCESS_LINE
+                : "Fiche complète avec un compte gratuit"
               : analysisLocked && !unlocked && saleIsTribunalVenue(sale)
                 ? // The unlock is offered for the sales held at a court only.
-                  `${MONTHLY_SALE_UNLOCKS} ventes à débloquer par mois, gratuit`
+                  FREE_ACCESS_LINE
                 : "Voir le détail"}
           </span>
           <div className="flex items-center">
