@@ -166,6 +166,16 @@
       "expected": ["maitre@cabinet-exemple.test"]
     },
     {
+      "name": "address glued to the next word does not absorb its capital letter",
+      "lawyer_contact": "maitre@cabinet-exemple.testTél : 01 00 00 00 01",
+      "expected": ["maitre@cabinet-exemple.test"]
+    },
+    {
+      "name": "upper-case address glued to a capitalised word keeps only its extension",
+      "lawyer_contact": "MAITRE@CABINET-EXEMPLE.TESTTél 0100000001",
+      "expected": ["maitre@cabinet-exemple.test"]
+    },
+    {
       "name": "no contact anywhere",
       "description": "Maison à vendre, visite sur rendez-vous.",
       "source_blocks": {
