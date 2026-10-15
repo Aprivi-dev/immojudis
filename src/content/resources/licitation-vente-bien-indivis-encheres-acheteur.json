@@ -1,0 +1,232 @@
+{
+  "slug": "licitation-vente-bien-indivis-encheres-acheteur",
+  "publishedAt": "2026-10-15",
+  "updatedAt": "2026-10-15",
+  "title": "La licitation : un bien en indivision vendu aux enchères, ce que cela change pour l’acheteur",
+  "seoTitle": "Licitation : ce que cela change pour l’acheteur",
+  "category": "Les fondamentaux",
+  "description": "Succession, divorce, indivision : la licitation est la vente aux enchères d’un bien détenu à plusieurs. Différences avec la saisie immobilière, occupation, frais, surenchère.",
+  "intro": [
+    "La licitation est la vente aux enchères d’un bien qui appartient à plusieurs personnes, afin de partager le prix entre elles. On parle d’indivision lorsque plusieurs personnes possèdent ensemble un même bien, chacune pour une part, sans que le bien soit divisé. C’est le cas, par exemple, d’héritiers qui reçoivent une maison ensemble, ou d’anciens époux qui détiennent un logement en commun.",
+    "Pour un acheteur, la salle d’audience ressemble à celle d’une saisie immobilière. L’origine de la vente est pourtant différente : il n’y a ni créancier impayé ni débiteur saisi. Cet article décrit la licitation ordonnée par le tribunal. Les règles qui changent pour vous sont signalées, mais le cahier des charges de la vente et votre avocat restent la référence pour votre dossier."
+  ],
+  "takeaways": [
+    "La licitation est la vente aux enchères d’un bien détenu à plusieurs lorsqu’il ne peut pas être partagé commodément ; le prix est ensuite réparti entre les copropriétaires (art. 1686 du Code civil).",
+    "C’est le tribunal qui ordonne la vente (art. 1377 du Code de procédure civile) et qui détermine la mise à prix (art. 1273), alors qu’en saisie immobilière elle est fixée par le créancier.",
+    "À l’audience, les enchères suivent en grande partie les règles de la saisie immobilière, avec un avocat obligatoire ; devant un notaire commis, elles peuvent être faites sans avocat (art. 1278).",
+    "La surenchère d’un dixième dans les dix jours existe aussi en licitation (art. 1279 et 1280).",
+    "Occupation, frais et délais de paiement se lisent dans le cahier des charges : ne les déduisez pas des règles de la saisie."
+  ],
+  "sections": [
+    {
+      "id": "definition",
+      "title": "Ce qu’est une licitation, et d’où elle vient",
+      "paragraphs": [
+        "Le point de départ est un principe du Code civil : nul ne peut être contraint de rester dans l’indivision, et le partage peut toujours être demandé (art. 815). Si le bien ne peut pas être partagé commodément et sans perte, ou si aucun des copropriétaires ne veut ou ne peut le prendre, il est vendu aux enchères et le prix est partagé entre eux (art. 1686). Cette vente s’appelle la licitation.",
+        "Les situations les plus fréquentes sont une succession entre héritiers et un divorce : le Code civil renvoie aux règles des successions pour la licitation des biens de la communauté ou des biens indivis des ex-époux (art. 1476 et 1542). Le tribunal ordonne alors la vente par adjudication des biens qui ne peuvent pas être facilement partagés ou attribués (art. 1377 du Code de procédure civile). Les indivisaires qui détiennent au moins deux tiers des droits peuvent aussi demander au tribunal d’autoriser la vente du bien, qui s’effectue par licitation (art. 815-5-1 du Code civil).",
+        "Les règles de sortie de l’indivision ont été modifiées par la loi n° 2026-248 du 7 avril 2026. Ces changements concernent d’abord les indivisaires, mais votre avocat doit vous confirmer les textes applicables à la vente que vous visez."
+      ]
+    },
+    {
+      "id": "difference-saisie",
+      "title": "Licitation et saisie immobilière : ce qui change",
+      "paragraphs": [
+        "Dans une saisie immobilière, un créancier muni d’un titre exécutoire fait vendre le bien de son débiteur pour être payé (art. L. 311-2 du Code des procédures civiles d’exécution, ou CPCE). En licitation, personne n’est poursuivi pour une dette : la vente organise un partage. Le tableau compare les points qui comptent pour un acheteur."
+      ],
+      "table": {
+        "headers": ["Point", "Saisie immobilière", "Licitation judiciaire"],
+        "rows": [
+          [
+            "Mise à prix (prix de départ)",
+            "Fixée par le créancier poursuivant (art. L. 322-6)",
+            "Déterminée par le tribunal (art. 1273 du CPC)"
+          ],
+          [
+            "Document de la vente",
+            "Cahier des conditions de vente (art. R. 322-10)",
+            "Cahier des charges, établi par le notaire commis ou par un avocat (art. 1275)"
+          ],
+          [
+            "Aucune enchère",
+            "Le créancier est déclaré adjudicataire d’office à la mise à prix (art. L. 322-6)",
+            "Le juge ou le notaire peut adjuger à titre provisoire à l’offre la plus élevée ; le tribunal décide ensuite d’une adjudication définitive ou d’une nouvelle vente (art. 1277)"
+          ],
+          [
+            "Avocat pour enchérir",
+            "Obligatoire (art. R. 322-40)",
+            "Mêmes règles à l’audience ; enchères possibles sans avocat si elles sont reçues par un notaire (art. 1278)"
+          ],
+          [
+            "Surenchère",
+            "Un dixième du prix, dans les dix jours (art. R. 322-50 et R. 322-51)",
+            "Même règle (art. 1279) ; devant notaire, par requête au greffe (art. 1280)"
+          ]
+        ]
+      },
+      "callout": {
+        "title": "Un vocabulaire à ne pas transposer",
+        "text": "En licitation, il n’y a pas de dette à recouvrer : les vendeurs sont les indivisaires. Les mots de la saisie (débiteur saisi, adjudication d’office au créancier, frais de poursuite du créancier) ne s’appliquent donc pas tels quels. Le lexique du guide « Ventes immobilières judiciaires » (ancre #lexique) définit la saisie immobilière pour comparer."
+      }
+    },
+    {
+      "id": "ce-que-ca-change",
+      "title": "Ce que cela change pour l’acheteur",
+      "paragraphs": [
+        "Les enchères sont reçues à l’audience par un juge, ou par un notaire commis par le tribunal (art. 1272). L’article 1278 du CPC rend communes à la licitation une partie des règles d’enchères de la saisie : personnes qui ne peuvent pas enchérir, avocat porteur d’un seul mandat, garantie de 10 % de la mise à prix (minimum 3 000 €), arrêt des enchères après quatre-vingt-dix secondes, jugement d’adjudication, titre de vente, remise en vente si l’acquéreur ne paie pas (art. R. 322-39 à R. 322-49, R. 322-59, R. 322-61, R. 322-62 et R. 322-66 à R. 322-72).",
+        "Cette liste ne reprend pas tout. Elle ne cite pas, par exemple, l’article R. 322-56 sur le délai de deux mois pour payer, ni l’article R. 322-64 sur la mise en œuvre du titre d’expulsion. Ne supposez donc pas que le calendrier de paiement ou la libération du bien suivent les règles de la saisie : lisez le cahier des charges."
+      ],
+      "bullets": [
+        "Occupation : le bien peut être libre, loué ou occupé par l’un des indivisaires. Vérifiez ce que le cahier des charges indique et demandez à l’avocat comment une libération serait obtenue. L’article « Acheter un bien occupé aux enchères » donne une méthode pour qualifier l’occupation.",
+        "Frais : les émoluments des avocats en matière de licitation par adjudication judiciaire sont tarifés comme en saisie immobilière, trois quarts pour l’avocat qui poursuit et un quart pour l’avocat de l’adjudicataire (art. A. 444-191 du Code de commerce). Les autres frais et taxes dépendent du cahier des charges et de la qualité de l’acquéreur : faites établir un décompte écrit avant d’enchérir. L’article « Frais d’une vente aux enchères judiciaire » détaille les postes de la saisie.",
+        "Surenchère : l’adjudication peut être remise en jeu pendant dix jours. Ne planifiez ni travaux ni location avant la fin de ce délai ; l’article « Après l’adjudication » décrit le mécanisme.",
+        "Participants : les tiers sont admis aux enchères, sauf si tous les indivisaires, capables et présents ou représentés, décident à l’unanimité qu’elles se dérouleront entre eux (art. 1378 du CPC). Un copropriétaire peut demander que des tiers soient appelés, et ils le sont nécessairement si l’un des copropriétaires est mineur (art. 1687 du Code civil)."
+      ]
+    },
+    {
+      "id": "licitation-amiable",
+      "title": "Ne pas confondre avec la licitation amiable",
+      "paragraphs": [
+        "Le mot « licitation » recouvre aussi, chez les notaires, une opération conclue entre les indivisaires eux-mêmes, par exemple l’un d’eux rachète la part des autres. Notaires de France donne les deux sens dans son lexique. Cet article ne traite que de la vente aux enchères publiques ordonnée par le tribunal.",
+        "Les ventes notariales volontaires obéissent à d’autres règles, comme l’explique l’article « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal »."
+      ]
+    },
+    {
+      "id": "questions",
+      "title": "Questions à poser avant de s’y intéresser",
+      "paragraphs": [
+        "Ces questions s’adressent à l’avocat ou au notaire chargé de la vente. Elles ne remplacent pas la lecture du cahier des charges."
+      ],
+      "bullets": [
+        "Qui reçoit les enchères : un juge à l’audience ou un notaire commis ? Un avocat est-il nécessaire ?",
+        "Le jugement qui ordonne la vente est-il définitif ? Un recours est-il en cours ?",
+        "Quelle est la mise à prix, et que se passe-t-il si personne n’enchérit ?",
+        "Quelle est la situation d’occupation du bien et que prévoit le cahier des charges pour la libération ?",
+        "Dans quel délai le prix doit-il être payé, et à qui ?",
+        "Quels frais s’ajoutent au prix, et quels droits seront dus selon que l’acquéreur est un tiers ou un indivisaire ?",
+        "Une surenchère est-elle possible, et sous quelle forme ?"
+      ]
+    },
+    {
+      "id": "reperer-dans-immojudis",
+      "title": "Aborder ces ventes avec prudence",
+      "paragraphs": [
+        "Une licitation n’est ni plus risquée ni plus avantageuse qu’une saisie : la mise à prix et le prix final dépendent du bien, du marché et de la concurrence dans la salle. Aucun résultat n’est garanti.",
+        "Appliquez la même méthode que pour toute vente : lire les pièces, visiter si c’est possible, chiffrer le coût complet et fixer une enchère plafond avant l’audience, comme dans l’article « Analyser une opportunité aux enchères : la méthode Immojudis en sept contrôles »."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code civil, article 815 (droit de provoquer le partage)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006432351"
+    },
+    {
+      "label": "Légifrance — Code civil, article 815-5-1 (aliénation d’un bien indivis par licitation, deux tiers des droits)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039367468"
+    },
+    {
+      "label": "Légifrance — Code civil, article 1686 (licitation d’une chose commune)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006442435"
+    },
+    {
+      "label": "Légifrance — Code civil, article 1687 (appel des tiers à la licitation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006442452"
+    },
+    {
+      "label": "Légifrance — Code civil, article 1476 (licitation des biens de la communauté, renvoi aux règles des successions)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006439867"
+    },
+    {
+      "label": "Légifrance — Code civil, article 1542 (licitation entre époux séparés de biens, après décès ou divorce)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006440789"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1272 (enchères reçues par un notaire commis ou un juge)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039380910"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1273 (mise à prix fixée par le tribunal)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006412319"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1275 (cahier des charges)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006412322"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1277 (absence d’enchère)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006412324"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1278 (règles d’enchères du CPCE applicables, enchères devant notaire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026459902"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1279 (surenchère du dixième en licitation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026460004"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1280 (surenchère devant notaire en licitation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039624733"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1377 (licitation ordonnée par le tribunal)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026459769"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1378 (participation des tiers)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006412547"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 311-2 (saisie immobilière)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025928"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-6 (mise à prix, adjudication d’office)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025977"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-10 (cahier des conditions de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939072"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-40 (avocat, un seul mandat)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343491"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-50 (surenchère du dixième)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939179"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-51 (forme et délai de la surenchère)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939181"
+    },
+    {
+      "label": "Légifrance — Code de commerce, article A. 444-191 (émoluments en saisie immobilière et en licitation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039000802"
+    },
+    {
+      "label": "Service-Public — Loi du 7 avril 2026 visant à simplifier la sortie de l’indivision",
+      "url": "https://www.service-public.gouv.fr/particuliers/actualites/A18909"
+    },
+    {
+      "label": "Service-Public — Indivision successorale : vente du bien et sortie de l’indivision",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F1296"
+    },
+    {
+      "label": "Notaires de France — Lexique : licitation",
+      "url": "https://www.notaires.fr/fr/lexique/licitation"
+    },
+    {
+      "label": "Immojudis — Guide des ventes immobilières judiciaires : lexique (saisie immobilière)",
+      "url": "/ventes-immobilieres-judiciaires#lexique-saisie-immobiliere"
+    },
+    {
+      "label": "Immojudis — Guide des ventes immobilières judiciaires : déroulement d’une vente",
+      "url": "/ventes-immobilieres-judiciaires#deroulement"
+    },
+    {
+      "label": "Immojudis — Guide des ventes immobilières judiciaires : lexique (surenchère)",
+      "url": "/ventes-immobilieres-judiciaires#lexique-surenchere"
+    }
+  ]
+}
