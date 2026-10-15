@@ -138,9 +138,9 @@ coupée par défaut (`DEDUPE_RECONCILE_ENABLED=false`) ; garde-fou d'écriture :
 `DEDUPE_RECONCILE_MAX_MERGES` lignes supprimées par passage, par groupes entiers.
 
 Mode candidats, sans aucune écriture, à lancer avant d'activer la passe :
-`python -m src.dedupe_candidates [--output rapport.json]` (ou l'entrée `dedupe_candidates` du workflow
-« Immojudis Data Pipeline », ou `DEDUPE_RECONCILE_MODE=candidates` pendant une collecte complète).
-Il journalise chaque paire conservée / supprimée (identifiant, source, commune, date, mise à prix, raison)
+`python -m src.dedupe_candidates [--output rapport.json]`, ou le workflow GitHub « Dedupe candidates
+report » (lecture seule), ou la variable de dépôt `DEDUPE_RECONCILE_MODE=candidates` pendant une collecte
+complète. Il journalise chaque paire conservée / supprimée (identifiant, source, commune, date, mise à prix, raison)
 et écrit le même tableau dans le résumé du job.
 
 Pour résorber progressivement les annonces déjà en base sans synthèse IA

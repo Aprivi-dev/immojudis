@@ -125,8 +125,8 @@ select count(*) filter (where department is null or department = '') as sans_dep
   `DEDUPE_RECONCILE_MAX_ROWS` = 20 000 lignes et supprime au plus `DEDUPE_RECONCILE_MAX_MERGES` = 100
   lignes par passage), fusionne les deux lignes puis supprime la ligne
   secondaire ; il n'applique pas la clé de repli stricte (`strict_fallback=False`).
-  Relecture avant activation, sans écriture : lancer le workflow « Immojudis Data Pipeline » avec
-  `dedupe_candidates` coché (ou `python -m src.dedupe_candidates`) ; le journal et le résumé du job
+  Relecture avant activation, sans écriture : lancer le workflow « Dedupe candidates report »
+  (ou `python -m src.dedupe_candidates`) ; le journal et le résumé du job
   listent chaque paire (conservée / supprimée : id, source, commune, date, prix, raison).
   Le workflow `data-pipeline.yml` le laisse coupé tant que la variable de dépôt GitHub
   `DEDUPE_RECONCILE_ENABLED` (Settings → Secrets and variables → Actions → Variables) ne vaut pas

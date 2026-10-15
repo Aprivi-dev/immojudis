@@ -244,6 +244,7 @@ def test_candidates_report_lists_each_pair_and_never_writes(monkeypatch, tmp_pat
     import json
 
     from src import dedupe_candidates
+    from src.storage import duplicate_sweep
 
     sales = [*_id_pair(166526), *_id_pair(777, "Dax")]
     _configure(monkeypatch, _rows(sales))
@@ -267,7 +268,7 @@ def test_candidates_report_lists_each_pair_and_never_writes(monkeypatch, tmp_pat
     plan = dedupe_candidates.report_duplicate_candidates(output=output)
 
     assert plan is not None and len(plan.groups) == 2
-    lines = dedupe_candidates.candidate_lines(plan)
+    lines = duplicate_sweep.candidate_lines(plan)
     assert len(lines) == 2
     for line in lines:
         assert "CONSERVEE" in line and "SUPPRIMEE" in line
@@ -301,3 +302,27 @@ def test_dedupe_settings_default_to_off_and_unknown_modes_do_not_write(monkeypat
     assert load_settings()["dedupe_reconcile_mode"] == "candidates"
     monkeypatch.setenv("DEDUPE_RECONCILE_MODE", "Candidates")
     assert load_settings()["dedupe_reconcile_mode"] == "candidates"
+
+
+def test_reconcile_in_candidates_mode_reports_the_pairs_and_writes_nothing(monkeypatch, tmp_path, caplog) -> None:
+    import logging
+
+    _configure(monkeypatch, _rows(_id_pair(166526)), dedupe_reconcile_mode="candidates")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("le mode candidats ne doit rien écrire")
+
+    for name in (
+        "_upsert_with_rest",
+        "_postgres_upsert",
+        "_delete_secondary_sale_rows",
+        "_delete_secondary_sale_rows_with_postgres",
+    ):
+        monkeypatch.setattr(supabase_client, name, forbidden)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
+    with caplog.at_level(logging.INFO):
+        deleted = supabase_client.reconcile_duplicate_sales_in_supabase()
+
+    assert deleted == 0
+    assert any("DUPLICATE_CANDIDATE" in record.getMessage() for record in caplog.records)
