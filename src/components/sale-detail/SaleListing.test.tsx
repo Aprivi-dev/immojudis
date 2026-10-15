@@ -80,6 +80,51 @@ describe("readable listing sections", () => {
     },
   );
 
+  describe("« Ajouter à mon agenda »", () => {
+    const AGENDA = "Ajouter à mon agenda";
+
+    it("is offered for an announced tribunal hearing", () => {
+      render(
+        <ListingPracticalDetails
+          sale={item({ status: "upcoming", sale_date: "2099-01-20T08:30:00Z" })}
+        />,
+      );
+      expect(screen.getByRole("button", { name: AGENDA })).toBeTruthy();
+    });
+
+    it.each(["cancelled", "postponed"])("is not offered for a %s sale", (status) => {
+      render(
+        <ListingPracticalDetails sale={item({ status, sale_date: "2099-01-20T08:30:00Z" })} />,
+      );
+      expect(screen.queryByRole("button", { name: AGENDA })).toBeNull();
+    });
+
+    it("is not offered without a date, for another venue, or for an online bidding window", () => {
+      const { unmount } = render(
+        <ListingPracticalDetails sale={item({ status: "upcoming", sale_date: null })} />,
+      );
+      expect(screen.queryByRole("button", { name: AGENDA })).toBeNull();
+      unmount();
+
+      const other = render(<ListingPracticalDetails sale={notary()} />);
+      expect(screen.queryByRole("button", { name: AGENDA })).toBeNull();
+      other.unmount();
+
+      render(
+        <ListingPracticalDetails
+          sale={item({
+            status: "upcoming",
+            sale_date: "2099-01-20T08:30:00Z",
+            sale_procedure: {
+              sale_window: { opens_at: "2099-01-20T08:30:00Z", closes_at: "2099-01-21T08:30:00Z" },
+            },
+          })}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: AGENDA })).toBeNull();
+    });
+  });
+
   it("shows both boundaries of a multi-day bidding window in Paris time", () => {
     render(
       <ListingPracticalDetails
@@ -343,6 +388,7 @@ describe("readable listing sections", () => {
       <ListingOverview sale={item()} premiumCeiling={120_000} ceilingContext={context} />,
     );
 
+    expect(screen.getByText("Enchère plafond (simulation)")).toBeTruthy();
     const line = screen.getByText(/Travaux : .*\(à chiffrer\)/);
     expect(line.textContent).toMatch(/Marge : 13 %/);
     expect(line.textContent).toMatch(/Valeur : 200\s000\s€ \(DVF normalisé, 01 octobre 2026\)/);
@@ -361,6 +407,12 @@ describe("readable listing sections", () => {
 
     rerender(<ListingOverview sale={item()} premiumCeiling={120_000} />);
     expect(screen.queryByText(/Marge : /)).toBeNull();
+  });
+  it("names the ceiling a simulation in the premium teaser too", () => {
+    render(<ListingOverview sale={item()} showPremiumTeaser />);
+
+    expect(screen.getByText("Enchère plafond (simulation)")).toBeTruthy();
+    expect(screen.queryByText("Enchère plafond")).toBeNull();
   });
   it("does not expose premium or scenario values while a pricing input is protected", () => {
     const projection: AiReviewProjectionReadModel = {
@@ -388,7 +440,7 @@ describe("readable listing sections", () => {
       />,
     );
 
-    expect(screen.queryByText("Enchère plafond indicative")).toBeNull();
+    expect(screen.queryByText("Enchère plafond (simulation)")).toBeNull();
     expect(screen.queryByText("Voir le scénario de prix")).toBeNull();
   });
   it("does not show zero or invalid amounts as known property facts", () => {
@@ -458,8 +510,8 @@ describe("readable listing sections", () => {
     expect(screen.getByText("2 octobre 2026 · 14:00")).toBeTruthy();
     expect(screen.getByText("7 octobre 2026 · 10:30")).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "contact-demo@immojudis.fr" }).getAttribute("href"),
-    ).toBe("mailto:contact-demo@immojudis.fr");
+      screen.getByRole("link", { name: "contact-demo@immojudis.com" }).getAttribute("href"),
+    ).toBe("mailto:contact-demo@immojudis.com");
     expect(screen.getByText(/n’est pas automatiquement votre représentant/)).toBeTruthy();
   });
   it("does not call a notarial event a court hearing", () => {

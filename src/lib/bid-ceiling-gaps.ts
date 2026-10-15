@@ -10,7 +10,7 @@ export type CeilingGap = {
   reason: string;
 };
 
-export const UNPROFITABLE_HEADLINE = "Pas d’enchère rentable avec ces hypothèses";
+export const UNPROFITABLE_HEADLINE = "Marge de sécurité non tenue avec ces hypothèses";
 
 /** Motif pour lequel la valeur de marché manque, d'après la surface et l'état du calcul. */
 export function valueGapReason({

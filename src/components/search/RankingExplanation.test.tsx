@@ -30,7 +30,7 @@ describe("RankingExplanation", () => {
     expect(items[0]).toContain("position sur la carte est connue passent avant les autres");
     expect(items[1]).toContain("deux groupes selon la quantité d’informations");
     expect(items[1]).toContain(
-      "« bien renseignées » (score de complétude d’au moins 40 sur 100) vient en premier",
+      "« Annonce bien renseignée » (score de complétude d’au moins 40 sur 100) vient en premier",
     );
     expect(items[1]).not.toContain("décision prête");
     expect(items[2]).toContain("la vente la plus proche est affichée en premier");
@@ -44,6 +44,8 @@ describe("RankingExplanation", () => {
     expect(notes).toContain("mise en avant payante");
     expect(notes).toContain("ne garantit ni l’exactitude des informations ni l’état du bien");
     expect(notes).toContain("trier par date, prix ou surface");
+    expect(notes).toContain("Le repère « Annonce bien renseignée » signale une annonce");
+    expect(notes).not.toContain("fiche détaillée");
     expect(notes).not.toContain("Quel que soit le tri");
     for (const note of RANKING_EXPLANATION_NOTES) expect(screen.getByText(note)).toBeTruthy();
   });

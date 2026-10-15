@@ -374,6 +374,127 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(screen.getByRole("button", { name: "Annuler la mission" })).toBeTruthy();
   });
 
+  it("shows the sale title as a link to the fiche on every history row", async () => {
+    mocks.list.mockResolvedValue({
+      ok: true,
+      missions: [
+        { ...mission("sent"), saleTitle: "Appartement à Bordeaux" },
+        {
+          ...mission("draft", "55555555-5555-4555-8555-555555555555", "autre@example.test"),
+          id: "66666666-6666-4666-8666-666666666666",
+          saleTitle: null,
+        },
+      ],
+      facts: [],
+    });
+
+    renderPanel(null);
+
+    const titled = await screen.findByRole("link", { name: "Appartement à Bordeaux" });
+    expect(titled.getAttribute("href")).toBe("/sales/11111111-1111-4111-8111-111111111111");
+    const untitled = screen.getByRole("link", { name: "Annonce sans titre" });
+    expect(untitled.getAttribute("href")).toBe("/sales/55555555-5555-4555-8555-555555555555");
+    expect(screen.getByText("cabinet@example.test")).toBeTruthy();
+    expect(screen.getByText("autre@example.test")).toBeTruthy();
+  });
+
+  it("offers Ouvrir for every status and opens a sent mission read-only", async () => {
+    mocks.list.mockResolvedValue({
+      ok: true,
+      missions: [mission("sent")],
+      facts: [],
+    });
+    mocks.action.mockResolvedValue({ ok: true, missions: [mission("sent")], facts: [] });
+
+    renderPanel(null);
+
+    expect(screen.queryByRole("button", { name: "Reprendre" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Ouvrir" }));
+
+    expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).readOnly).toBe(
+      true,
+    );
+    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).readOnly).toBe(
+      true,
+    );
+    expect(screen.queryByRole("button", { name: "Valider et envoyer" })).toBeNull();
+    // Le formulaire de réponse consignée reste accessible pour une mission envoyée.
+    fireEvent.change(
+      screen.getByRole("textbox", {
+        name: /Consigner une réponse reçue hors de l’adresse du dossier/,
+      }),
+      { target: { value: "Réponse reçue par téléphone : le bien est libre." } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Rattacher la réponse au dossier" }));
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    expect(mocks.action.mock.calls[0][0]).toMatchObject({
+      action: "record_reply",
+      missionId: "22222222-2222-4222-8222-222222222222",
+    });
+  });
+
+  it("keeps Reprendre for a draft and Ouvrir for the other statuses", async () => {
+    mocks.list.mockResolvedValue({
+      ok: true,
+      missions: [
+        mission("draft"),
+        {
+          ...mission("sent", "11111111-1111-4111-8111-111111111111", "b@example.test"),
+          id: "77777777-7777-4777-8777-777777777777",
+          status: "replied",
+        },
+      ],
+      facts: [],
+    });
+
+    renderPanel(null);
+
+    expect(await screen.findAllByRole("button", { name: "Reprendre" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Ouvrir" })).toHaveLength(1);
+  });
+
+  it("explains next to the button why sending is not available yet", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValueOnce(previewResponse());
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+
+    const reason = screen.getByText("Affichez l’aperçu pour activer l’envoi.");
+    expect(sendButton().getAttribute("title")).toBeNull();
+    expect(sendButton().getAttribute("aria-describedby")).toBe(reason.id);
+
+    await showPreview();
+    expect(screen.queryByText("Affichez l’aperçu pour activer l’envoi.")).toBeNull();
+    expect(sendButton().getAttribute("aria-describedby")).toBeNull();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Message modifié après l’aperçu, à revoir avant tout envoi." },
+    });
+    expect(screen.getByText(/Le message a changé depuis l’aperçu/)).toBeTruthy();
+  });
+
+  it("explains a blocked preview and an invalid recipient next to the send button", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValueOnce(
+      previewResponse({ blockers: ["Le contact est explicitement opposé."], fingerprint: null }),
+    );
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    await showPreview();
+    expect(screen.getByText(/L’aperçu signale un blocage/)).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Email" }), {
+      target: { value: "pas-un-email" },
+    });
+    expect(
+      screen.getByText("Renseignez une adresse email valide pour activer l’envoi."),
+    ).toBeTruthy();
+  });
+
   it("keeps a resumed history mission when a previous queue request finishes late", async () => {
     const firstSaleId = "11111111-1111-4111-8111-111111111111";
     const historyMission = mission(

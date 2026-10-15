@@ -21,7 +21,7 @@ Le modèle historique reste toutefois centré sur une ligne mutable par annonce 
 ### Pipeline de données
 
 - `services/data-pipeline` est un service Python séparé, mais pas encore un package de monorepo orchestré depuis la racine.
-- Son installation actuelle utilise **pip** et des fichiers `requirements*.txt`, pas encore `uv`. `pyproject.toml` borne Python à `>=3.11,<3.13`; la CI teste Python 3.11 et 3.12.
+- Son installation actuelle utilise **pip** et des fichiers `requirements*.txt`, pas encore `uv`. `pyproject.toml` borne Python à `>=3.12,<3.13` (les verrous hachés sont générés pour CPython 3.12) ; la CI teste Python 3.12.
 - Le pipeline utilise notamment Pydantic, psycopg, le client Supabase, httpx, pytest et Ruff. Les dépendances de valorisation et Docling sont optionnelles.
 - Le worker est lancé par GitHub Actions, sur planification ou à la demande. Ce n’est pas encore le conteneur long-running et la file générique `FOR UPDATE SKIP LOCKED` demandés par la cible.
 - La CI sépare les jobs web npm, pipeline pip, migrations/pgTAP et E2E Playwright.

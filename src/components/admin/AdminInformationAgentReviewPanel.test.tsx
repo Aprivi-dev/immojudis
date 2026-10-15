@@ -491,6 +491,54 @@ describe("AdminInformationAgentReviewPanel", () => {
     );
   });
 
+  it("sends the optional rejection reason as notes, and null when it is left empty", async () => {
+    const factFor = (id: string) => ({
+      id,
+      case_id: "33333333-3333-4333-8333-333333333333",
+      sale_id: "11111111-1111-4111-8111-111111111111",
+      fact_key: "surface_m2",
+      display_value: "70 m²",
+      confidence: 0.9,
+      evidence_asset_id: null,
+      evidence_excerpt: null,
+    });
+    mocks.fetchReview.mockResolvedValue({
+      facts: [factFor("fact-a"), factFor("fact-b")],
+      cases: [{ id: "33333333-3333-4333-8333-333333333333", status: "replied" }],
+      assets: [],
+      extractions: [],
+      messages: [],
+    });
+    mocks.reviewFact.mockResolvedValue({ ok: true });
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+
+    const reasons = await screen.findAllByLabelText("Motif du rejet (facultatif)");
+    expect(reasons).toHaveLength(2);
+    fireEvent.change(reasons[0], { target: { value: "  Surface déjà connue  " } });
+    const reject = screen.getAllByRole("button", { name: "Rejeter" });
+    fireEvent.click(reject[0]);
+    await waitFor(() => expect(mocks.reviewFact).toHaveBeenCalledTimes(1));
+    expect(mocks.reviewFact.mock.calls[0][0]).toEqual({
+      factId: "fact-a",
+      decision: "rejected",
+      notes: "Surface déjà connue",
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Rejeter" })[1]);
+    await waitFor(() => expect(mocks.reviewFact).toHaveBeenCalledTimes(2));
+    expect(mocks.reviewFact.mock.calls[1][0]).toEqual({
+      factId: "fact-b",
+      decision: "rejected",
+      notes: null,
+    });
+  });
+
   it("disables acceptance when the case is already completed", async () => {
     mocks.fetchReview.mockResolvedValue({
       facts: [

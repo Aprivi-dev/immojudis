@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { lookupPublicSale } from "@/lib/public-sale.server";
 import {
   GENERIC_SALE_SEO_TITLE,
+  isIndexablePublicSale,
   saleSeoDescription,
   saleSeoTitle,
   saleStructuredData,
@@ -16,6 +17,8 @@ type PageProps = {
 };
 
 const NOT_INDEXED = { index: false, follow: false } as const;
+/** A thin page stays out of the index, but its links (to the catalogue, courts…) are followed. */
+const THIN_PAGE = { index: false, follow: true } as const;
 
 function salePath(saleId: string): string {
   return `/sales/${saleId.toLowerCase()}`;
@@ -59,7 +62,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   // The identifier of the URL is case-insensitive: the address announced to search engines is
   // always the lower-case one of the sale itself.
   const path = salePath(lookup.sale.id);
+  // The database verdict (same predicate as the sitemap) wins; the TypeScript copy only decides
+  // while that function is not deployed.
+  const indexable = lookup.indexable ?? isIndexablePublicSale(lookup.sale);
   return {
+    ...(indexable ? {} : { robots: THIN_PAGE }),
     title,
     description,
     openGraph: {

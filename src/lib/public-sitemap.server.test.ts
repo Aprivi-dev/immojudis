@@ -8,8 +8,7 @@ import {
   fetchSitemapSalePage,
   loadSitemapSales,
   loadSitemapSaleTotal,
-  overflowSitemapCount,
-  ROOT_SITEMAP_SALE_CAPACITY,
+  salesSitemapCount,
   SITEMAP_URL_LIMIT,
   type SitemapSalePage,
 } from "./public-sitemap.server";
@@ -92,12 +91,12 @@ describe("sitemap pagination", () => {
     expect(await loadSitemapSaleTotal(loader(2276))).toBe(2276);
   });
 
-  it("keeps every sitemap file under 5 000 URLs", () => {
-    expect(ROOT_SITEMAP_SALE_CAPACITY).toBeLessThan(SITEMAP_URL_LIMIT);
-    expect(overflowSitemapCount(2276)).toBe(0);
-    expect(overflowSitemapCount(ROOT_SITEMAP_SALE_CAPACITY)).toBe(0);
-    expect(overflowSitemapCount(ROOT_SITEMAP_SALE_CAPACITY + 1)).toBe(1);
-    expect(overflowSitemapCount(ROOT_SITEMAP_SALE_CAPACITY + SITEMAP_URL_LIMIT)).toBe(1);
-    expect(overflowSitemapCount(ROOT_SITEMAP_SALE_CAPACITY + SITEMAP_URL_LIMIT + 1)).toBe(2);
+  it("splits the sales in files of at most 5 000 URLs, none when there is no sale", () => {
+    expect(SITEMAP_URL_LIMIT).toBe(5_000);
+    expect(salesSitemapCount(0)).toBe(0);
+    expect(salesSitemapCount(1_885)).toBe(1);
+    expect(salesSitemapCount(SITEMAP_URL_LIMIT)).toBe(1);
+    expect(salesSitemapCount(SITEMAP_URL_LIMIT + 1)).toBe(2);
+    expect(salesSitemapCount(2 * SITEMAP_URL_LIMIT + 1)).toBe(3);
   });
 });

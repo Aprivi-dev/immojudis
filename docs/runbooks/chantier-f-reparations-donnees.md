@@ -121,8 +121,13 @@ select count(*) filter (where department is null or department = '') as sans_dep
   au lieu de mettre les trois lignes en quarantaine ; l'autre ligne reste visible jusqu'au balayage.
 - Réparation de l'existant : uniquement par identifiant commun. Le balayage
   `reconcile_duplicate_sales_in_supabase`, déjà exécuté à chaque collecte
-  (`DEDUPE_RECONCILE_ENABLED`, 2 000 lignes), fusionne les deux lignes puis supprime la ligne
+  (`DEDUPE_RECONCILE_ENABLED`, coupé par défaut ; il lit toutes les pages jusqu'à
+  `DEDUPE_RECONCILE_MAX_ROWS` = 20 000 lignes et supprime au plus `DEDUPE_RECONCILE_MAX_MERGES` = 100
+  lignes par passage), fusionne les deux lignes puis supprime la ligne
   secondaire ; il n'applique pas la clé de repli stricte (`strict_fallback=False`).
+  Relecture avant activation, sans écriture : lancer le workflow « Dedupe candidates report »
+  (ou `python -m src.dedupe_candidates`) ; le journal et le résumé du job
+  listent chaque paire (conservée / supprimée : id, source, commune, date, prix, raison).
   Le workflow `data-pipeline.yml` le laisse coupé tant que la variable de dépôt GitHub
   `DEDUPE_RECONCILE_ENABLED` (Settings → Secrets and variables → Actions → Variables) ne vaut pas
   `true` : la créer avec `true` après avoir relu la liste ci-dessous.
@@ -225,3 +230,40 @@ select count(*) from public.auction_sales
   est coupée avant « à » quand le préfixe est un descriptif de bien ; un descriptif seul n'est pas une ville.
 - Réparation : recalcul `source=all`. Le référentiel des tribunaux doit être disponible (le workflow
   le synchronise avant le recalcul).
+
+## Session du 2026-10-15 (données, branche `equipe/2026-10-15-p1-donnees`)
+
+Rien de ce qui suit n'est appliqué : le code est livré, la production n'est pas touchée.
+
+### 23. Doublons : activer le balayage après relecture
+
+1. Lancer le workflow « Dedupe candidates report » (lecture seule) et relire la liste des paires.
+2. Si elle convient, créer la variable de dépôt `DEDUPE_RECONCILE_ENABLED=true` (au plus
+   `DEDUPE_RECONCILE_MAX_MERGES` = 100 lignes supprimées par collecte complète : il en faudra
+   plusieurs pour les ~439 paires Vench / Petites Affiches).
+
+### 24. Licitor multi-lots
+
+Quarantaine automatique (`publication_quarantine = licitor_multi_lot_first_lot_values`) à la
+prochaine collecte ou au recalcul `source=licitor`. Elle se lève d'elle-même si la source ne montre
+plus qu'un lot. Le fichier `20261020130003_…` reste utile pour les 9 annonces déjà identifiées.
+
+### 25. Surfaces aberrantes
+
+Recalcul `source=all` : les surfaces d'appartement au-dessus de 500 m² et de maison au-dessus de
+1 000 m² quittent la surface affichée (trace : `raw_payload.implausible_surface_reconciliation`) ; un
+immeuble de plusieurs logements ou une annonce multi-lots sans surface totale explicite n'affiche
+plus la surface d'un lot.
+
+### 26. Tribunaux
+
+1. `supabase/repairs/20261025100001_repair_doubled_tribunal_names.sql` (comptage, puis `-v apply=1`)
+   pour les noms canoniques au préfixe double ;
+2. recalcul `source=all` pour rattacher les libellés (« (Département) », « St Gaudens », « Briey »,
+   « Les Sables D Olonne ») et vider le tribunal des ventes notariales Vench (« En l'étude du Notaire »).
+
+### 28. Heure Petites Affiches
+
+Le marqueur `date_precision = "day"` est posé par la normalisation depuis le 2026-10-10 ; les lignes
+plus anciennes sont lues comme « date seule » d'après `raw_payload.sale_date`. Recalcul
+`source=petites_affiches` pour poser le marqueur partout.

@@ -106,6 +106,10 @@
   font-size: 14px;
 }
 
+.ctaSecondary {
+  margin-left: 16px;
+}
+
 .note {
   margin-top: 16px;
   color: var(--ink-soft);

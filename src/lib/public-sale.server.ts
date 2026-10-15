@@ -7,7 +7,12 @@ import type { AuctionSale } from "@/lib/types";
 
 export type PublicSaleLookup =
   /** The sale is in the public catalogue: render its page. */
-  | { status: "found"; sale: AuctionSale }
+  | {
+      status: "found";
+      sale: AuctionSale;
+      /** Database verdict on indexing; absent while the function is not deployed. */
+      indexable?: boolean;
+    }
   /** No such public sale: answer 404. */
   | { status: "missing" }
   /** The server cannot reach the database (not configured): let the browser decide. */
@@ -54,8 +59,14 @@ async function readPublicSale(
 ): Promise<PublicSaleLookup> {
   // Le contenu d'une source retirée (photo d'une vente fusionnée) ne sort pas, y compris côté serveur.
   await loadWithdrawnSources(client);
-  const summary = await fetchPublicSaleSummary(client, id);
-  if (summary.kind === "found") return { status: "found", sale: summary.sale };
+  const summary = await fetchPublicSaleSummary(client, id, { withIndexability: true });
+  if (summary.kind === "found") {
+    return {
+      status: "found",
+      sale: summary.sale,
+      ...(summary.indexable === undefined ? {} : { indexable: summary.indexable }),
+    };
+  }
   if (summary.kind === "missing") return { status: "missing" };
 
   const sale = await legacyPreview(client, id);

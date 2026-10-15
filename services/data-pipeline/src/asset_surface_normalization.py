@@ -16,6 +16,7 @@ from src.asset_normalization_helpers import (
     _extract_count,
     _flag_ambiguous_surface,
     _infer_rooms_count,
+    _is_unestablished_multi_unit_surface,
     _land_surface_false_positive,
     _living_surface_false_positive,
     _parse_surface_decimal,
@@ -47,7 +48,9 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         value = getattr(sale, field, None)
         if value is not None and not isinstance(value, Decimal):
             setattr(sale, field, _decimal_value(value))
-    ambiguous_mixed_lot_surface = _is_ambiguous_mixed_lot_surface(sale.property_type or "", text)
+    ambiguous_mixed_lot_surface = _is_ambiguous_mixed_lot_surface(
+        sale.property_type or "", text
+    ) or _is_unestablished_multi_unit_surface(sale, text)
     if ambiguous_mixed_lot_surface:
         # A generic structured value can be the first lot's area. Keep the
         # typed measurements for audit, but do not expose one as the sale-wide

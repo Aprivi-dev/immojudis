@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionScenariosResponse } from "@/lib/auction-scenarios";
 
@@ -85,12 +85,25 @@ describe("AuctionScenariosSection", () => {
     renderSection();
 
     expect(await screen.findByText(/D’après 165 adjudications du TJ Bobigny/)).toBeTruthy();
-    expect(screen.getByText(/Prix final le plus fréquent/)).toBeTruthy();
-    expect(screen.getByText(/92\s000\s€ à 208\s000\s€/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Fourchette centrale des prix finaux (estimation à partir des ventes passées)",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Prix final le plus fréquent/)).toBeNull();
+    const range = screen.getByText(
+      /Dans la moitié centrale des ventes comparables du TJ Bobigny, le prix final a été compris/,
+    ).textContent;
+    expect(range).toMatch(/entre ×\S+ et ×\S+ la mise à prix\. Appliqué à cette vente/);
+    expect(range).toMatch(
+      /cela donne environ 92\s000\s€ à 208\s000\s€, avec un prix médian d’environ/,
+    );
+    expect(range).toMatch(/\(×\S+\)\. Ce n’est pas une prévision\.$/);
+    expect(screen.getByText(/^92\s000\s€ à 208\s000\s€$/)).toBeTruthy();
     expect(screen.getByText("Plus de 3 fois la mise à prix")).toBeTruthy();
     expect(screen.getByText(/^52\s%$/)).toBeTruthy();
     expect(screen.getByLabelText("Répartition observée des issues")).toBeTruthy();
-    expect(screen.getByText(/adjugées au moins au double de la mise à prix/).textContent).toMatch(
+    expect(screen.getByText(/adjugées à au moins 2 fois la mise à prix :/).textContent).toMatch(
       /Part des ventes comparables.*76\s%/,
     );
     expect(screen.queryByText(/Chance/)).toBeNull();
@@ -107,6 +120,20 @@ describe("AuctionScenariosSection", () => {
     fetchAuctionScenarios.mockResolvedValue({ ...RESPONSE, scenarios: null });
     renderSection();
     expect(await screen.findByText(/Pas assez d’adjudications comparables/)).toBeTruthy();
+  });
+
+  it("dit que les statistiques n'ont pas pu être chargées et permet de réessayer", async () => {
+    fetchAuctionScenarios.mockRejectedValueOnce(new Error("HTTP 500"));
+    renderSection();
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Les statistiques du tribunal n’ont pas pu être chargées.");
+    expect(screen.queryByText(/Pas assez d’adjudications comparables/)).toBeNull();
+
+    fetchAuctionScenarios.mockResolvedValue(RESPONSE);
+    fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+    expect(await screen.findByText(/D’après 165 adjudications du TJ Bobigny/)).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fetchAuctionScenarios).toHaveBeenCalledTimes(2);
   });
 
   it("reads nothing when the member has no access", () => {

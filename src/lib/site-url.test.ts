@@ -71,24 +71,12 @@ describe("X-Robots-Tag header of next.config.ts", () => {
     vi.resetModules();
   });
 
-  async function robotsHeader(vercelEnv: string | undefined) {
+  it("is no longer baked in at build time (src/proxy.ts sends it on each request)", async () => {
     vi.resetModules();
-    if (vercelEnv === undefined) vi.stubEnv("VERCEL_ENV", "");
-    else vi.stubEnv("VERCEL_ENV", vercelEnv);
+    vi.stubEnv("VERCEL_ENV", "preview");
     const { default: config } = await import("../../next.config");
-    const [rule] = await config.headers!();
-    return rule.headers.find((header) => header.key === "X-Robots-Tag");
-  }
-
-  it("noindexes preview deployments", async () => {
-    expect(await robotsHeader("preview")).toEqual({
-      key: "X-Robots-Tag",
-      value: "noindex, nofollow",
-    });
-  });
-
-  it("leaves production and local runs indexable", async () => {
-    expect(await robotsHeader("production")).toBeUndefined();
-    expect(await robotsHeader(undefined)).toBeUndefined();
+    const rules = await config.headers!();
+    const keys = rules.flatMap((rule) => rule.headers.map((header) => header.key.toLowerCase()));
+    expect(keys).not.toContain("x-robots-tag");
   });
 });

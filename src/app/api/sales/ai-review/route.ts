@@ -9,6 +9,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { errorDetailForLog, isUnauthorizedError } from "@/lib/api-errors";
 import { DETAIL_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
 import {
+  AI_REVIEW_CEILING_FIELD_KEYS,
   AI_REVIEW_FIELD_KEYS,
   type AiReviewCitationStatus,
   type AiReviewProjectionReadModel,
@@ -37,6 +38,8 @@ const citationStatuses = new Set<AiReviewCitationStatus>([
   "unverified",
   "not_required",
 ]);
+
+const ceilingFieldKeys = new Set<string>(AI_REVIEW_CEILING_FIELD_KEYS);
 
 const projectionReader = supabaseAdmin;
 
@@ -98,6 +101,20 @@ function sanitizeProjectionRows(
       },
     ];
   });
+}
+
+/**
+ * A row that must keep masking its value on the client (same rule as `getAiReviewFieldResult`):
+ * not publishable, unresolved/unverified review, unverified citation or canonical drift.
+ */
+function isBlockingRow(projection: AiReviewProjectionReadModel): boolean {
+  return (
+    !projection.is_publishable ||
+    projection.canonical_value_matches === false ||
+    projection.review_state === "unresolved" ||
+    projection.review_state === "unverified" ||
+    projection.citation_status === "unverified"
+  );
 }
 
 function unavailableSaleRows(
@@ -388,7 +405,11 @@ export async function GET(request: Request) {
     );
     // A Découverte account does not read the full catalogue view; the sales it unlocked
     // (« 3 déblocages par mois ») are visible through their own view. The review stays applied to
-    // the figures of the bid ceiling, but neither the citation links nor the source names of an unlocked sale are returned.
+    // the figures of the bid ceiling (AI_REVIEW_CEILING_FIELD_KEYS). For the other fields (city,
+    // address, date, parking, energy) the unlocked view exposes the value itself, so the blocking
+    // rows stay: the client must keep masking a value the review blocked. Only the publishable
+    // rows are dropped there. Neither the citation links nor the source names of an unlocked sale
+    // come back.
     const unlockedSaleIds = new Set<string>();
     const hiddenIds = parsedIds.data.filter((id) => !visibleSaleIds.has(id));
     if (hiddenIds.length > 0) {
@@ -449,11 +470,19 @@ export async function GET(request: Request) {
         ...sanitizeProjectionRows(projections, visibleSaleIds, canonicalMismatches),
         ...missingRows,
         ...unavailableRows,
-      ].map((projection) =>
-        projection.auction_sale_id && unlockedSaleIds.has(projection.auction_sale_id)
-          ? { ...projection, source_name: null, source_url: null }
-          : projection,
-      ),
+      ]
+        .filter(
+          (projection) =>
+            !projection.auction_sale_id ||
+            !unlockedSaleIds.has(projection.auction_sale_id) ||
+            ceilingFieldKeys.has(projection.field_key) ||
+            isBlockingRow(projection),
+        )
+        .map((projection) =>
+          projection.auction_sale_id && unlockedSaleIds.has(projection.auction_sale_id)
+            ? { ...projection, source_name: null, source_url: null }
+            : projection,
+        ),
     });
   } catch (error) {
     // Only the authentication failure is distinguishable; every other failure is the

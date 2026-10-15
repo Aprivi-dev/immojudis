@@ -114,6 +114,74 @@ describe("Supabase sale search query", () => {
     expect(selected(without).split(",")).not.toContain("completeness_tier");
   });
 
+  describe("base sans la colonne completeness_tier (migration pas encore appliquée)", () => {
+    const missingTier = {
+      code: "42703",
+      message: "column v_auction_sales_discovery_search.completeness_tier does not exist",
+    };
+    const selected = (builder: QueryRecorder) =>
+      String(builder.calls.find((call) => call[0] === "select")?.[1]).split(",");
+
+    it("relance la recherche sans la colonne ni ce tri (offre Découverte)", async () => {
+      const client = new QueryClient([[], [{ id: "d" }]], [missingTier]);
+      const rows = await getSalesForSearch({}, 24, "completeness_desc", 0, {
+        discovery: true,
+        client: client as never,
+      });
+      expect(rows.map((row) => row.id)).toEqual(["d"]);
+      expect(client.builders).toHaveLength(2);
+      expect(selected(client.builders[0])).toContain("completeness_tier");
+      expect(selected(client.builders[1])).not.toContain("completeness_tier");
+      expect(orderCalls(client.builders[1])).toEqual([
+        ["coordinates_rank", { ascending: true }],
+        ["sale_date", { ascending: true, nullsFirst: false }],
+        ["id", { ascending: true }],
+      ]);
+    });
+
+    it("relance les deux phases de l'offre Analyse sans la colonne", async () => {
+      const client = new QueryClient(
+        [[], [{ id: "a" }], [{ id: "a" }]],
+        [{ code: "PGRST204", message: "Could not find the 'completeness_tier' column" }],
+      );
+      const rows = await getSalesForSearch({}, 24, "completeness_desc", 0, {
+        client: client as never,
+      });
+      expect(rows.map((row) => row.id)).toEqual(["a"]);
+      expect(client.builders).toHaveLength(3);
+      expect(orderCalls(client.builders[1]).flat().join()).not.toContain("completeness_tier");
+      expect(selected(client.builders[2])).not.toContain("completeness_tier");
+    });
+
+    it("relance une recherche complète qui lisait le palier", async () => {
+      const client = new QueryClient([[], [{ id: "s" }]], [missingTier]);
+      await getSales({}, 24, "date_asc", 0, {
+        client: client as never,
+        completenessTier: true,
+      });
+      expect(client.builders).toHaveLength(2);
+      expect(selected(client.builders[0])).toContain("completeness_tier");
+      expect(selected(client.builders[1])).not.toContain("completeness_tier");
+    });
+
+    it("ne masque ni une autre colonne absente ni une autre erreur", async () => {
+      const otherColumn = { code: "42703", message: "column foo.bar does not exist" };
+      for (const failure of [
+        otherColumn,
+        { code: "57014", message: "completeness_tier timeout" },
+      ]) {
+        const client = new QueryClient([[]], [failure]);
+        await expect(
+          getSalesForSearch({}, 24, "completeness_desc", 0, {
+            discovery: true,
+            client: client as never,
+          }),
+        ).rejects.toEqual(failure);
+        expect(client.builders).toHaveLength(1);
+      }
+    });
+  });
+
   it("matches canonical vacant occupancy before pagination", async () => {
     const builder = new QueryRecorder();
     await getSales({ occupancy_status: "free" }, 24, "price_asc", 24, {
@@ -218,19 +286,29 @@ describe("Supabase sale search query", () => {
 class QueryClient {
   builders: QueryRecorder[] = [];
 
-  constructor(private readonly responses: unknown[][]) {}
+  /** `failures[i]` : erreur renvoyée par la i-ème requête (aucune par défaut). */
+  constructor(
+    private readonly responses: unknown[][],
+    private readonly failures: unknown[] = [],
+  ) {}
 
   from() {
-    const builder = new QueryRecorder(this.responses[this.builders.length] ?? []);
+    const builder = new QueryRecorder(
+      this.responses[this.builders.length] ?? [],
+      this.failures[this.builders.length] ?? null,
+    );
     this.builders.push(builder);
     return builder;
   }
 }
 
-class QueryRecorder implements PromiseLike<{ data: unknown[]; error: null }> {
+class QueryRecorder implements PromiseLike<{ data: unknown[]; error: unknown }> {
   calls: unknown[][] = [];
 
-  constructor(private readonly response: unknown[] = []) {}
+  constructor(
+    private readonly response: unknown[] = [],
+    private readonly failure: unknown = null,
+  ) {}
 
   select(...args: unknown[]) {
     return this.record("select", ...args);
@@ -276,13 +354,16 @@ class QueryRecorder implements PromiseLike<{ data: unknown[]; error: null }> {
     return this.record("or", ...args);
   }
 
-  then<TResult1 = { data: unknown[]; error: null }, TResult2 = never>(
+  then<TResult1 = { data: unknown[]; error: unknown }, TResult2 = never>(
     onfulfilled?:
-      | ((value: { data: unknown[]; error: null }) => TResult1 | PromiseLike<TResult1>)
+      | ((value: { data: unknown[]; error: unknown }) => TResult1 | PromiseLike<TResult1>)
       | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): PromiseLike<TResult1 | TResult2> {
-    return Promise.resolve({ data: this.response, error: null }).then(onfulfilled, onrejected);
+    return Promise.resolve({
+      data: this.failure ? null : this.response,
+      error: this.failure,
+    } as { data: unknown[]; error: unknown }).then(onfulfilled, onrejected);
   }
 
   private record(method: string, ...args: unknown[]) {

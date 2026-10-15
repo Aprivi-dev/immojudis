@@ -14,7 +14,7 @@ from typing import Any
 
 if sys.version_info >= (3, 14):
     raise RuntimeError(
-        "The valuation training pipeline requires Python 3.11 or 3.12; "
+        "The valuation training pipeline requires Python 3.12; "
         "the pinned pandas/LightGBM stack is not supported on Python 3.14."
     )
 

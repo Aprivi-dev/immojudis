@@ -30,6 +30,8 @@ export const queryKeys = {
   favorites: (userId: Id) => ["favorites", userId] as const,
   favoritesAiReview: (userId: Id, saleIds: readonly string[]) =>
     ["favorites-ai-review", userId, saleIds] as const,
+  /** Changes detected on the sales the account follows (« Mes favoris »). */
+  saleChangeEvents: (userId: Id) => ["sale-change-events", userId] as const,
   favoriteStatus: (userId: Id, saleId: string) => ["favorite-status", userId, saleId] as const,
   searchFavoriteStatus: (userId: Id, saleIds: readonly string[]) =>
     ["search-favorite-status", userId, saleIds] as const,
@@ -56,6 +58,8 @@ export const queryKeys = {
   saleDetail: (saleId: string, sessionKey: Id, mode: SaleAccessMode) =>
     ["sale-detail", saleId, sessionKey, mode] as const,
   saleUnlock: (saleId: string, userKey: Id) => ["sale-unlock", saleId, userKey] as const,
+  /** Compteur du mois et ventes débloquées du compte (Mon compte, résultats de recherche). */
+  saleUnlocksOverview: (userKey: Id) => ["sale-unlocks-overview", userKey] as const,
   documentReading: (saleId: string, access: SaleAccessMode, userKey?: Id) =>
     ["document-reading", saleId, access, userKey ?? "anonymous"] as const,
   salePassages: (saleId: string, access: SaleAccessMode, userKey?: Id) =>

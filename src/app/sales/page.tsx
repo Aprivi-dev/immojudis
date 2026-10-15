@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { dehydrate, HydrationBoundary, QueryClient } from "@tanstack/react-query";
+import { pageMetadata } from "@/lib/page-metadata";
 import { loadInitialCatalogue } from "@/lib/public-catalogue.server";
 import {
   ANONYMOUS_PREVIEW_SCOPE,
@@ -9,12 +10,13 @@ import {
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { SalesPage } from "./sales-page";
 
-export const metadata: Metadata = {
+// The canonical stays `/sales` for every filtered or paginated address of the catalogue.
+export const metadata: Metadata = pageMetadata({
+  path: "/sales",
   title: "Ventes immobilières aux enchères en France",
   description:
     "Consultez les ventes immobilières aux enchères : tribunal, notaire et État. Filtrez par lieu, type de bien, budget et date de vente.",
-  alternates: { canonical: "/sales" },
-};
+});
 
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

@@ -21,9 +21,11 @@ describe("SalePublicPreview", () => {
     const href = screen
       .getByRole("link", { name: /Créer mon compte gratuit/ })
       .getAttribute("href")!;
-    expect(new URL(href, "https://example.test").searchParams.get("redirect")).toBe(
-      "/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs",
-    );
+    const params = new URL(href, "https://example.test").searchParams;
+    expect(params.get("redirect")).toBe("/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs");
+    // Le bandeau de la page de connexion explique ce que le compte gratuit ouvre sur cette fiche.
+    expect(params.get("mode")).toBe("investor");
+    expect(params.get("reason")).toBe("fiche");
   });
 
   it("announces the statistics of the tribunal in the unlock only while their flag is open", () => {
@@ -86,7 +88,32 @@ describe("SalePublicPreview", () => {
 
     const cta = screen.getByRole("link", { name: /Créer mon compte gratuit/ });
     expect(cta.getAttribute("href")).toContain("mode=investor");
-    expect(cta.getAttribute("href")).toContain(encodeURIComponent("/sales/sale-1?from=%2Fsales"));
+    // The unfiltered catalogue is the default way back: no `?from=/sales` in the destination.
+    const redirect = new URL(cta.getAttribute("href")!, "https://example.test").searchParams.get(
+      "redirect",
+    );
+    expect(redirect).toBe("/sales/sale-1");
+  });
+
+  it("links to the guide, the costs article, the courts and the fees simulator", () => {
+    render(
+      <SalePublicPreview
+        saleId="sale-1"
+        preview={{ id: "sale-1" } as AuctionSale}
+        returnTo="/sales"
+      />,
+    );
+    const section = screen.getByRole("region", { name: "Pour aller plus loin" });
+    expect(section.querySelector("h2")?.textContent).toBe("Pour aller plus loin");
+    const hrefs = Array.from(section.querySelectorAll("a")).map((link) =>
+      link.getAttribute("href"),
+    );
+    expect(hrefs).toEqual([
+      "/ventes-immobilieres-judiciaires",
+      "/ressources/frais-vente-encheres-judiciaire",
+      "/tribunaux",
+      "/simulateur-frais-encheres",
+    ]);
   });
 
   it("keeps court-specific guidance without exposing court statistics in the public teaser", () => {
@@ -221,7 +248,7 @@ describe("SalePublicPreview", () => {
     );
     expect(description.textContent).toContain("Jardin");
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
-    expect(teaser.textContent).toContain("Enchère plafond conseillée");
+    expect(teaser.textContent).toContain("Enchère plafond (simulation)");
     expect(teaser.textContent).toContain("000 000 €");
     expect(teaser.textContent).not.toMatch(/[1-9]\d* ?\d* €/);
   });
@@ -231,6 +258,26 @@ describe("SalePublicPreview", () => {
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
     expect(teaser.textContent).not.toContain("plafond");
     expect(teaser.textContent).toContain("Ventes comparables");
+  });
+
+  it("offers « Ajouter à mon agenda » on a tribunal hearing, never on another venue or without date", () => {
+    const tribunal = renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2099-01-20T08:30:00+00:00",
+    });
+    expect(screen.getByRole("button", { name: "Ajouter à mon agenda" })).toBeTruthy();
+    expect(screen.getByText(/à vérifier auprès de l’avocat poursuivant/)).toBeTruthy();
+    tribunal.unmount();
+
+    const notary = renderPreview({
+      sale_venue_type: "notary",
+      sale_date: "2099-01-20T08:30:00+00:00",
+    });
+    expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
+    notary.unmount();
+
+    renderPreview({ sale_venue_type: "tribunal", sale_date: null });
+    expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
   });
 
   it("has no structural accessibility violations", async () => {

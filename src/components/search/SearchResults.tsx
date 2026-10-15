@@ -20,7 +20,7 @@ import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { supabase } from "@/integrations/supabase/client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { loginPathWithRedirect, pathWithSearch, saleDetailPath } from "@/lib/navigation";
+import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import {
   FAVORITE_ADD_LABEL,
   FAVORITE_ANONYMOUS_TITLE,
@@ -29,8 +29,11 @@ import {
 } from "@/components/favorite-feedback";
 import {
   addFavoriteSale as addFavoriteSaleRequest,
+  fetchSaleUnlocksOverview,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
+import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { formatDate, formatStartingPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
@@ -118,6 +121,19 @@ export function SearchResultsList({
     retry: false,
   });
   const favoriteIds = useMemo(() => new Set(favoriteQuery.data ?? []), [favoriteQuery.data]);
+  // « 3 déblocages par mois » : un compte Découverte voit lesquelles de ces ventes il a débloquées.
+  // Sans réponse (erreur, base sans le déblocage), aucune pastille : la carte reste celle d'avant.
+  const unlocksQuery = useQuery({
+    queryKey: queryKeys.saleUnlocksOverview(user?.id ?? null),
+    queryFn: fetchSaleUnlocksOverview,
+    enabled: Boolean(user && !authLoading && !isLoading && !locked && analysisLocked),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const unlockedIds = useMemo(
+    () => new Set((unlocksQuery.data?.sales ?? []).map(({ id }) => id)),
+    [unlocksQuery.data],
+  );
   const favoriteScope = user?.id ?? null;
 
   return (
@@ -161,6 +177,7 @@ export function SearchResultsList({
                   aiReviewStatus={aiReviewStatus}
                   favoriteScope={favoriteScope}
                   initialFavorite={favoriteIds.has(sale.id)}
+                  unlocked={unlockedIds.has(sale.id)}
                 />
               </Fragment>
             ))}
@@ -187,6 +204,7 @@ export const ListingCard = memo(function ListingCard({
   aiReviewStatus = "ready",
   favoriteScope = null,
   initialFavorite = false,
+  unlocked = false,
   onFavoriteChange,
 }: {
   sale: AuctionSale;
@@ -204,6 +222,8 @@ export const ListingCard = memo(function ListingCard({
   aiReviewStatus?: AiReviewRequestStatus;
   favoriteScope?: string | null;
   initialFavorite?: boolean;
+  /** Le compte a débloqué cette vente (« 3 déblocages par mois ») : pastille « Débloquée ». */
+  unlocked?: boolean;
   /** Appelé après l'ajout ou le retrait réussi d'un favori depuis la carte. */
   onFavoriteChange?: (saleId: string, isFavorite: boolean) => void;
 }) {
@@ -256,7 +276,7 @@ export const ListingCard = memo(function ListingCard({
     >
       <Link
         id={`sale-card-${sale.id}`}
-        href={pathWithSearch(saleDetailPath(sale.id), { from: returnTo })}
+        href={saleDetailPath(sale.id, returnTo)}
         prefetch={false}
         onClick={() => onSelect(sale.id)}
         aria-label={`Voir ${title}`}
@@ -271,10 +291,19 @@ export const ListingCard = memo(function ListingCard({
           returnTo={returnTo}
           onSelect={onSelect}
         />
-        {viewed && (
-          <span className="absolute left-3 top-3 z-20 rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
-            Vu
-          </span>
+        {(unlocked || viewed) && (
+          <div className="absolute left-3 top-3 z-20 flex flex-wrap gap-1">
+            {unlocked && (
+              <span className="rounded-md bg-gold px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
+                Débloquée
+              </span>
+            )}
+            {viewed && (
+              <span className="rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
+                Vu
+              </span>
+            )}
+          </div>
         )}
       </div>
       <div className="relative min-w-0 p-4">
@@ -386,8 +415,9 @@ export const ListingCard = memo(function ListingCard({
           <span className="text-xs text-ink-soft">
             {locked
               ? "Fiche complète avec un compte gratuit"
-              : analysisLocked
-                ? "Analyse détaillée avec l’offre Analyse"
+              : analysisLocked && !unlocked && saleIsTribunalVenue(sale)
+                ? // The unlock is offered for the sales held at a court only.
+                  `${MONTHLY_SALE_UNLOCKS} ventes à débloquer par mois, gratuit`
                 : "Voir le détail"}
           </span>
           <div className="flex items-center">
@@ -579,7 +609,7 @@ export function ListingMediaCarousel({
       }}
     >
       <Link
-        href={pathWithSearch(saleDetailPath(sale.id), { from: returnTo })}
+        href={saleDetailPath(sale.id, returnTo)}
         prefetch={false}
         aria-label={`Voir ${title}`}
         onClick={(event) => {
@@ -675,7 +705,7 @@ export function ListingBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-extrabold uppercase tracking-normal shadow-sm ${toneClass}`}
+      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-extrabold shadow-sm ${toneClass}`}
     >
       {Icon ? <Icon className="h-3 w-3" /> : null}
       {children}
@@ -709,9 +739,7 @@ export function ListingSignal({
 }) {
   return (
     <span className="min-w-0 border-r border-line-soft px-2 py-2 last:border-r-0">
-      <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-ink-soft">
-        {label}
-      </span>
+      <span className="block text-xs font-bold text-ink-soft">{label}</span>
       <span className={`mt-0.5 block truncate font-extrabold ${tone}`}>{value}</span>
     </span>
   );

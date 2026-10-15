@@ -232,6 +232,8 @@ export type InformationAgentMission = {
   repliedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Titre de la vente, renseigné par la liste admin seulement (jamais par l'e-mail ni le dépôt). */
+  saleTitle?: string | null;
 };
 
 export type InformationAgentFact = {
@@ -530,14 +532,43 @@ export async function listAdminInformationAgentMissions({
   const { data, error, count } = await query;
   if (error) throw error;
   const rows = data ?? [];
+  const saleTitles = await loadSaleTitles(
+    rows.flatMap((mission) => (mission.sale_id ? [mission.sale_id] : [])),
+  );
   return {
     ok: true,
-    missions: rows.map(missionFromRow),
+    missions: rows.map((row) => ({
+      ...missionFromRow(row),
+      saleTitle: row.sale_id ? (saleTitles.get(row.sale_id) ?? null) : null,
+    })),
     facts: await listFactsForCases(
       rows.flatMap((mission) => (mission.case_id ? [mission.case_id] : [])),
     ),
     ...adminPageMeta({ offset, limit, total: count ?? offset + rows.length }),
   };
+}
+
+/**
+ * Titres des ventes de la page de missions, pour que l'administrateur reconnaisse la vente sans
+ * ouvrir chaque ligne. Réservé à la liste admin ; une lecture en échec laisse simplement les lignes
+ * sans titre (jamais un échec de la liste).
+ */
+async function loadSaleTitles(saleIds: string[]): Promise<Map<string, string>> {
+  const titles = new Map<string, string>();
+  const uniqueIds = [...new Set(saleIds)];
+  if (!uniqueIds.length) return titles;
+  const { data, error } = await supabaseAdmin
+    .from("auction_sales")
+    .select("id,title")
+    .in("id", uniqueIds);
+  if (error) {
+    console.warn("Titres des ventes de l'agent illisibles", { code: error.code ?? null });
+    return titles;
+  }
+  for (const row of data ?? []) {
+    if (typeof row.title === "string" && row.title.trim()) titles.set(row.id, row.title.trim());
+  }
+  return titles;
 }
 
 export async function runAdminInformationAgentAction({

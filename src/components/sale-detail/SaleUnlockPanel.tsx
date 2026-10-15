@@ -5,12 +5,15 @@ import Link from "next/link";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import { Button, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
+import { OfferOpeningRequest } from "@/components/OfferOpeningRequest";
+import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { SaleUnlockQuotaReachedError, unlockSaleRequest } from "@/lib/client-api";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import {
   MONTHLY_SALE_UNLOCKS,
   remainingUnlocksLine,
+  SALE_NOT_UNLOCKABLE_TEXT,
   unlockConfirmationText,
   unlockedItemsText,
   unlockQuotaReachedText,
@@ -79,7 +82,12 @@ export function SaleUnlockPanel({
     return (
       <>
         {liveRegion}
-        <Card as="section" aria-labelledby="sale-unlock-title" className="mt-4 border-gold/40">
+        <Card
+          as="section"
+          id={UNLOCK_PANEL_ID}
+          aria-labelledby="sale-unlock-title"
+          className="mt-4 scroll-mt-36 border-gold/40"
+        >
           <Eyebrow className="flex items-center gap-2">
             <LockKeyholeOpen className="size-4" aria-hidden /> Vente débloquée
           </Eyebrow>
@@ -112,6 +120,22 @@ export function SaleUnlockPanel({
     );
   }
 
+  // The free sheet is online but the database would refuse the unlock (« Vente introuvable »):
+  // say so instead of offering a button that ends on an error.
+  if (!current.unlockable) {
+    return (
+      <Card as="section" aria-labelledby="sale-unlock-title" className="mt-4">
+        <Eyebrow className="flex items-center gap-2">
+          <LockKeyhole className="size-4" aria-hidden /> {MONTHLY_SALE_UNLOCKS} déblocages par mois
+        </Eyebrow>
+        <h2 id="sale-unlock-title" className="mt-2 font-display text-2xl text-brand-navy">
+          Débloquer cette vente
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-ink-soft">{SALE_NOT_UNLOCKABLE_TEXT}</p>
+      </Card>
+    );
+  }
+
   const exhausted = (current.remaining ?? 0) <= 0;
 
   async function confirmUnlock() {
@@ -139,7 +163,12 @@ export function SaleUnlockPanel({
     return (
       <>
         {liveRegion}
-        <Card as="section" aria-labelledby="sale-unlock-title" className="mt-4">
+        <Card
+          as="section"
+          id={UNLOCK_PANEL_ID}
+          aria-labelledby="sale-unlock-title"
+          className="mt-4 scroll-mt-36"
+        >
           <Eyebrow className="flex items-center gap-2">
             <LockKeyhole className="size-4" aria-hidden /> {MONTHLY_SALE_UNLOCKS} déblocages par
             mois
@@ -148,9 +177,6 @@ export function SaleUnlockPanel({
             Vous avez utilisé vos déblocages
           </h2>
           <ExhaustedNotice status={current} />
-          <Link href="/offres" className={buttonClasses({ variant: "primary", className: "mt-4" })}>
-            Découvrir l’offre Analyse
-          </Link>
         </Card>
       </>
     );
@@ -159,7 +185,12 @@ export function SaleUnlockPanel({
   return (
     <>
       {liveRegion}
-      <Card as="section" aria-labelledby="sale-unlock-title" className="mt-4">
+      <Card
+        as="section"
+        id={UNLOCK_PANEL_ID}
+        aria-labelledby="sale-unlock-title"
+        className="mt-4 scroll-mt-36"
+      >
         <Eyebrow className="flex items-center gap-2">
           <LockKeyhole className="size-4" aria-hidden /> {MONTHLY_SALE_UNLOCKS} déblocages par mois
         </Eyebrow>
@@ -227,19 +258,31 @@ export function SaleUnlockPanel({
 }
 
 /**
- * Spent quota: the reset date, and a subscription is suggested only when it can really be bought
- * (the legal identity is published and the approved price is configured), never before.
+ * Spent quota: the reset date, and the way to the subscription only when it can really be bought
+ * (the legal identity is published and the approved price is configured). While the offer is
+ * closed, the primary action is the opening request, never a link to a page that cannot sell it.
  */
 function ExhaustedNotice({ status }: { status: SaleUnlockStatus }) {
   const checkoutOpen = useAnalysisCheckoutOpen();
   return (
-    <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-      {unlockQuotaReachedText(status)}{" "}
-      {checkoutOpen === true
-        ? `Analyse ouvre toutes les ventes sans limite : ${resolveAnalysisOfferLabel()}, résiliable à tout moment.`
-        : checkoutOpen === false
-          ? "L’offre Analyse n’est pas encore ouverte à la souscription."
-          : null}
-    </p>
+    <>
+      <p className="mt-2 text-sm leading-relaxed text-ink-soft">
+        {unlockQuotaReachedText(status)}{" "}
+        {checkoutOpen === true
+          ? `Analyse ouvre toutes les ventes sans limite : ${resolveAnalysisOfferLabel()}, résiliable à tout moment.`
+          : checkoutOpen === false
+            ? "L’offre Analyse n’est pas encore ouverte à la souscription."
+            : null}
+      </p>
+      {checkoutOpen === false ? (
+        <div className="mt-4 max-w-sm">
+          <OfferOpeningRequest className="mt-0" />
+        </div>
+      ) : (
+        <Link href="/offres" className={buttonClasses({ variant: "primary", className: "mt-4" })}>
+          Voir l’offre Analyse
+        </Link>
+      )}
+    </>
   );
 }
