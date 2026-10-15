@@ -114,6 +114,12 @@ def test_python_version_is_3_12_everywhere_it_is_pinned() -> None:
     assert {name: found for name, found in versions.items() if found != {"3.12"}} == {}
 
 
+def test_pyproject_requires_the_python_the_locks_are_resolved_for() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert re.search(r'^requires-python = ">=3\.12,<3\.13"$', pyproject, re.M)
+    assert re.search(r'^target-version = "py312"$', pyproject, re.M)
+
+
 def test_workflows_install_python_dependencies_only_from_hashed_lockfiles() -> None:
     offenders: list[str] = []
     for workflow in sorted((REPOSITORY / ".github" / "workflows").glob("*.yml")):

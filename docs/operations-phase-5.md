@@ -85,7 +85,7 @@ Rollback : remettre `CSP_REPORT_ONLY=true` (ou retirer la variable) et redéploy
 ## Validation de livraison
 
 - Node `24.15.0` et npm `11.18.0` sont épinglés, conformément au runtime Node 24.x actuellement fourni par Vercel.
-- Python est limité à `>=3.11,<3.13` et testé en 3.11/3.12.
+- Python est limité à `>=3.12,<3.13` (verrous hachés générés pour CPython 3.12) et testé en 3.12.
 - La CI exécute typecheck, lint, tests unitaires et accessibilité, build/budgets, audit npm/pip,
   migrations pgTAP, test de quota concurrent et parcours Playwright inscription-vers-partage.
 - Le workflow `production-smoke.yml` surveille le déploiement indépendamment du scheduler interne.

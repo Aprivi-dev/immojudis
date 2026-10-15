@@ -359,3 +359,74 @@ def test_reused_url_for_different_lot_holds_existing_identity(monkeypatch):
     assert revised.starting_price_eur == existing.starting_price_eur
     assert revised.raw_payload['lot_number'] == '1'
     assert revised.raw_payload['publication_identity_conflict']['incoming_lot'] == '2'
+
+
+_REGISTRY_URL = 'https://www.licitor.com/annonce/1'
+_REGISTRY_CONTACT = {'email': 'maitre@exemple.test', 'name': 'Maître Exemple, Avocat', 'role': 'lawyer',
+                     'source_name': '', 'source_url': _REGISTRY_URL}
+
+
+def _registry_raw(**changes):
+    return {'source_name': 'licitor', 'source_url': _REGISTRY_URL, 'raw_text': 'Appartement 50 m²',
+            'status': 'upcoming', 'starting_price_eur': 10000, 'habitable_surface_m2': 50,
+            'source_detail_status': 'complete', 'internal_contacts': [dict(_REGISTRY_CONTACT)], **changes}
+
+
+def _registry_existing():
+    """Vente telle que relue depuis la base : le registre interne n'y est jamais stocké."""
+    from copy import deepcopy
+
+    from src.freshness import record_source_checks
+    from src.normalize import normalize_sale
+
+    first = _registry_raw()
+    record_source_checks([first], {})
+    existing = normalize_sale(deepcopy(first))
+    existing.internal_contacts = []
+    return existing
+
+
+def test_unchanged_detail_refreshes_the_registry(monkeypatch):
+    """Détail inchangé : le registre est rafraîchi (les adresses décodées de la relecture sont conservées)."""
+    from src import main, publication_identity
+
+    def no_merge(*args, **kwargs):
+        raise AssertionError('un détail inchangé ne doit pas passer par la fusion')
+
+    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    monkeypatch.setattr(publication_identity, 'merge_revision', no_merge)
+    existing = _registry_existing()
+    revised = source_detail.prepare_source_revision(existing, _registry_raw())
+    # Branche « inchangé » : la copie profonde de la ligne en base ne doit pas perdre les adresses.
+    assert revised.internal_contacts == [_REGISTRY_CONTACT]
+    assert existing.internal_contacts == []
+
+
+def test_changed_detail_refreshes_the_registry(monkeypatch):
+    from src import main
+
+    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    existing = _registry_existing()
+    revised = source_detail.prepare_source_revision(existing, _registry_raw(habitable_surface_m2=70))
+    assert revised.raw_payload['source_content_changed'] is True
+    assert revised.internal_contacts == [_REGISTRY_CONTACT]
+
+
+def test_detail_without_address_gives_an_empty_registry_refresh(monkeypatch):
+    from src import main
+
+    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    existing = _registry_existing()
+    revised = source_detail.prepare_source_revision(existing, _registry_raw(internal_contacts=[]))
+    assert revised.internal_contacts == []
+
+
+def test_identity_conflict_does_not_write_the_registry(monkeypatch):
+    from src import main
+
+    monkeypatch.setattr(main, '_finalize_sale_for_app', lambda sale, **kwargs: None)
+    existing = _registry_existing()
+    existing.raw_payload['lot_number'] = '1'
+    revised = source_detail.prepare_source_revision(existing, _registry_raw(lot_number='2'))
+    assert revised.status == 'quarantined'
+    assert revised.internal_contacts == []

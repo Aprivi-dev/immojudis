@@ -135,16 +135,16 @@ jobs:
       - run: echo "Typecheck, lint, tests, audit and build passed."
 
   pipeline-py311:
-    # pyproject.toml supports CPython >=3.11,<3.13 and branch protection still requires this
-    # check name: the source must keep compiling on 3.11 (syntax only, nothing is installed).
+    # pyproject.toml now requires CPython 3.12 (the hashed lockfiles, numpy 2.5.3 among them, are
+    # resolved for 3.12 only), so a 3.11 compile check no longer proves anything. Branch protection
+    # still requires the historical check name "Data pipeline (Python 3.11)": keep it as an aggregate
+    # gate on the real pipeline job (as `web` does above) until it is removed from the required
+    # checks in the repository settings, then delete this job.
     name: Data pipeline (Python 3.11)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    container: python:3.11-slim
+    needs: [pipeline]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Byte-compile the pipeline on CPython 3.11
-        run: python -m compileall -q services/data-pipeline/src services/data-pipeline/scripts
+      - run: echo "Data pipeline (Python 3.12) passed; Python 3.11 is no longer supported."
 
   pipeline:
     name: Data pipeline (Python ${{ matrix.python-version }})
@@ -228,7 +228,15 @@ jobs:
       - name: Pin npm
         run: npm install --global npm@11.18.0
       - run: npm ci
+      - name: Fetch the base branch for the migration order check
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags --depth=1 origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}"
       - name: Validate migration versions
+        env:
+          # A migration added by a pull request must be newer than the latest one on its base.
+          MIGRATIONS_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
         run: npm run check:migrations
       - name: Start local Supabase
         run: npx --yes supabase@2.110.0 start

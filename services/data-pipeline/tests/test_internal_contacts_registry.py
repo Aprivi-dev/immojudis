@@ -212,7 +212,9 @@ def test_write_goes_through_the_transaction_when_there_is_one_and_through_rest_o
         registry, "write_internal_contacts_connection", lambda connection, sales, now: calls.append("connection") or 1
     )
     monkeypatch.setattr(
-        registry, "write_internal_contacts_rest", lambda url, key, sales, ids, now: calls.append("rest") or 1
+        registry,
+        "write_internal_contacts_rest",
+        lambda url, key, sales, ids, now, **kwargs: calls.append("rest") or 1,
     )
 
     assert registry.write_safely([_sale(EMAIL)], "https://example.test", "key", NOW, None, _ids) == 1
@@ -451,3 +453,138 @@ def test_rest_existing_rows_are_read_by_chunks_of_sale_ids() -> None:
     existing_reads = [c for c in rest.calls if c[0] == "GET" and "scope_sale_id" in c[2]["params"]]
     assert written == 120 and len(existing_reads) == 3  # 50 + 50 + 20
     assert all(c[2]["params"]["scope_sale_id"].count(",") < registry.SALE_ID_CHUNK for c in existing_reads)
+
+
+def _opposition_reads(rest: _Rest) -> list[tuple[str, str, dict[str, Any]]]:
+    return [c for c in rest.calls if c[0] == "GET" and c[2]["params"].get("opposition_status") == "eq.opposed"]
+
+
+def _run_with_cache(rest: _Rest, cache: registry.OpposedAddressCache, sales: list[AuctionSale]) -> int:
+    return registry.write_internal_contacts_rest(
+        "https://example.test",
+        "key",
+        sales,
+        {URL: SALE_ID},
+        NOW,
+        get=rest.get,
+        post=rest.post,
+        patch=rest.patch,
+        opposed_cache=cache,
+    )
+
+
+def _sale_in_run(run_id: str | None, *emails: str) -> AuctionSale:
+    sale = _sale(*emails)
+    sale.last_run_id = run_id
+    return sale
+
+
+def test_the_opposition_list_is_read_once_per_run_and_not_for_every_batch() -> None:
+    rest = _Rest(opposed=["opposee@exemple.test"])
+    cache = registry.OpposedAddressCache()
+
+    for _batch in range(3):
+        assert _run_with_cache(rest, cache, [_sale_in_run("run-1", EMAIL)]) == 1
+    assert len(_opposition_reads(rest)) == 2  # une page de résultats puis la page vide, une seule fois
+
+    # Une adresse opposée reste refusée à partir du cache.
+    assert _run_with_cache(rest, cache, [_sale_in_run("run-1", "opposee@exemple.test")]) == 0
+    assert len(_opposition_reads(rest)) == 2
+
+
+def test_the_opposition_list_is_read_again_for_a_new_run_or_after_the_delay() -> None:
+    clock = [1000.0]
+    rest = _Rest()
+    cache = registry.OpposedAddressCache(ttl=60.0, clock=lambda: clock[0])
+
+    _run_with_cache(rest, cache, [_sale_in_run("run-1", EMAIL)])
+    _run_with_cache(rest, cache, [_sale_in_run("run-2", EMAIL)])
+    assert len(_opposition_reads(rest)) == 2  # une lecture complète par run (liste vide : une seule page)
+
+    clock[0] += 59.0
+    _run_with_cache(rest, cache, [_sale_in_run("run-2", EMAIL)])
+    assert len(_opposition_reads(rest)) == 2
+    clock[0] += 2.0
+    _run_with_cache(rest, cache, [_sale_in_run("run-2", EMAIL)])
+    assert len(_opposition_reads(rest)) == 3
+
+
+def test_a_new_opposition_is_honoured_as_soon_as_the_list_is_read_again() -> None:
+    clock = [0.0]
+    rest = _Rest()
+    cache = registry.OpposedAddressCache(ttl=60.0, clock=lambda: clock[0])
+    assert _run_with_cache(rest, cache, [_sale_in_run("run-1", EMAIL)]) == 1
+
+    rest.opposed = [EMAIL]
+    clock[0] = 61.0
+    assert _run_with_cache(rest, cache, [_sale_in_run("run-1", EMAIL)]) == 0
+
+
+def test_a_failed_opposition_read_leaves_nothing_in_the_cache_and_writes_nothing() -> None:
+    class _Flaky(_Rest):
+        fail = True
+
+        def get(self, url: str, **kwargs: Any) -> _Response:
+            if self.fail:
+                return _Response(status_code=500)
+            return super().get(url, **kwargs)
+
+    rest = _Flaky()
+    cache = registry.OpposedAddressCache()
+    with pytest.raises(RuntimeError):
+        _run_with_cache(rest, cache, [_sale_in_run("run-1", EMAIL)])
+    assert cache.get("https://example.test/rest/v1/information_agent_contacts", frozenset({"run-1"})) is None
+    assert _writes(rest) == []
+
+    rest.fail = False
+    assert _run_with_cache(rest, cache, [_sale_in_run("run-1", EMAIL)]) == 1
+
+
+@pytest.fixture
+def process_cache_with(monkeypatch: pytest.MonkeyPatch):
+    """Branche un faux PostgREST sous write_safely (cache du processus vidé avant et après)."""
+
+    def install(rest: _Rest) -> None:
+        original = registry.write_internal_contacts_rest
+        monkeypatch.setattr(
+            registry,
+            "write_internal_contacts_rest",
+            lambda *args, **kwargs: original(*args, get=rest.get, post=rest.post, patch=rest.patch, **kwargs),
+        )
+
+    registry._OPPOSED_CACHE.clear()
+    yield install
+    registry._OPPOSED_CACHE.clear()
+
+
+def test_write_safely_shares_one_opposition_read_between_batches(process_cache_with) -> None:
+    rest = _Rest(opposed=["opposee@exemple.test"])
+    process_cache_with(rest)
+
+    for _batch in range(3):
+        assert registry.write_safely(
+            [_sale_in_run("run-1", EMAIL)], "https://example.test", "key", NOW, None, _ids
+        ) == 1
+    assert len(_opposition_reads(rest)) == 2
+
+
+def test_stopping_at_the_page_limit_is_visible_in_the_log_without_any_address(
+    caplog: pytest.LogCaptureFixture, process_cache_with
+) -> None:
+    class _Endless(_Rest):
+        def get(self, url: str, **kwargs: Any) -> _Response:
+            self.calls.append(("GET", url, kwargs))
+            return _Response([{"normalized_email": f"x{index}@exemple.test"} for index in range(1000)])
+
+    rest = _Endless()
+    process_cache_with(rest)
+
+    with caplog.at_level(logging.DEBUG):
+        written = registry.write_safely([_sale(EMAIL)], "https://example.test", "key", NOW, None, _ids)
+
+    assert written == 0 and _writes(rest) == []
+    limit_logs = [record for record in caplog.records if "page limit" in record.getMessage()]
+    assert limit_logs and limit_logs[0].levelno == logging.ERROR
+    assert f"pages={registry.MAX_PAGES}" in limit_logs[0].getMessage()
+    assert any("RegistryReadError" in record.getMessage() for record in caplog.records)
+    assert "@" not in caplog.text
