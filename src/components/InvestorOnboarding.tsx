@@ -7,7 +7,7 @@ import { pathWithSearch } from "@/lib/navigation";
 import { firstSearchToUrl, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS } from "@/lib/search/search-filters";
 import { formatPrice } from "@/lib/format";
-import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_TEXT } from "@/lib/sale-unlocks";
+import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 
 const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
 const inputClass =
@@ -165,7 +165,7 @@ export function InvestorOnboarding() {
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Ouvrez une fiche pour vérifier la date, la localisation et les caractéristiques du
                 bien. Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail (
-                {UNLOCK_HIGHLIGHTS_TEXT}). L’offre Analyse les ouvre toutes.
+                {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). L’offre Analyse les ouvre toutes.
               </p>
               <Link
                 href="/annonce-exemple"

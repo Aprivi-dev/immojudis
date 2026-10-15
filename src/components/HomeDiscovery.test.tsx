@@ -15,7 +15,7 @@ describe("HomeDiscovery free offer card", () => {
     const card = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
     expect(
       within(card).getByText(
-        "3 ventes débloquées par mois : enchère plafond, lecture des pièces, historique",
+        "3 ventes débloquées par mois : enchère plafond (ventes au tribunal), lecture des pièces, historique, selon la vente",
       ),
     ).toBeTruthy();
     const cta = within(card).getByRole("link", { name: /Créer mon compte gratuit/ });

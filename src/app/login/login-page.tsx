@@ -78,7 +78,7 @@ const reasonCopy: Record<LoginReason, { signup: string; login: string }> = {
     login: "Connectez-vous pour découvrir l'offre Analyse.",
   },
   fiche: {
-    signup: `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois.`,
+    signup: `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
     login: "Connectez-vous pour consulter cette vente.",
   },
 };
@@ -403,7 +403,8 @@ export function LoginPage() {
                   data-testid="login-free-promise"
                   className="mt-2 text-sm font-medium leading-relaxed text-foreground lg:hidden"
                 >
-                  Gratuit : {MONTHLY_SALE_UNLOCKS} ventes en détail par mois, sans carte bancaire
+                  Gratuit : {MONTHLY_SALE_UNLOCKS} ventes en détail par mois (selon la vente), sans
+                  carte bancaire
                 </p>
               ) : null}
 

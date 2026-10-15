@@ -50,7 +50,7 @@ describe("investor welcome flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
     const text = document.body.textContent ?? "";
     expect(text).toContain(
-      "Chaque mois, vous pouvez débloquer 3 ventes en détail (enchère plafond, lecture des pièces, historique). L’offre Analyse les ouvre toutes.",
+      "Chaque mois, vous pouvez débloquer 3 ventes en détail (enchère plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
     );
     expect(text).not.toContain("nécessitent un accès Analyse");
   });
