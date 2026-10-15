@@ -10,6 +10,8 @@ import {
   RANKING_EXPLANATION_STEPS,
 } from "@/components/search/RankingExplanation";
 import { publicLegalPublisher } from "@/lib/legal-documents";
+import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
+import { pageMetadata } from "@/lib/page-metadata";
 import {
   LAWYER_RANKING_HREF,
   LAWYER_RANKING_LINK_LABEL,
@@ -17,12 +19,12 @@ import {
   SPONSORED_TRIAL_LABEL,
 } from "@/lib/lawyer-placement-label";
 
-export const metadata: Metadata = {
-  alternates: { canonical: "/classement-des-annonces" },
+export const metadata: Metadata = pageMetadata({
+  path: "/classement-des-annonces",
   title: "Classement des annonces",
   description:
     "Comment Immojudis classe les annonces : ordre par défaut, autres tris, repère « bien renseignée », publicité des avocats, origine et retrait des ventes.",
-};
+});
 
 /**
  * Tris proposés dans la liste de résultats de /sales (voir `SORT_OPTIONS`). Le comportement décrit
@@ -44,6 +46,17 @@ const DISTANCE_SORT =
   "Distance, à partir d’une adresse que vous saisissez : les annonces les plus proches de cette adresse d’abord ; celles dont la position est inconnue viennent en dernier.";
 
 export default function Page() {
+  return (
+    <>
+      <BreadcrumbJsonLd
+        trail={[{ name: "Classement des annonces", path: "/classement-des-annonces" }]}
+      />
+      <PageContent />
+    </>
+  );
+}
+
+function PageContent() {
   const contactEmail = publicLegalPublisher().contactEmail;
 
   return (

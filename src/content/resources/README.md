@@ -10,6 +10,11 @@ Pour ajouter un article :
    `sections[].id` uniques dans l’article pour le sommaire.
 3. Importer le fichier dans `src/lib/resource-articles.ts` et ajouter une entrée `defineArticle`
    à `RESOURCE_ARTICLES`, avec une image locale disponible dans `public`.
+   Champs facultatifs : `seoTitle` (titre de l’onglet, du résultat de recherche et des partages,
+   à renseigner quand `title` dépasse 60 caractères avec le suffixe « - Immojudis » ; le `h1` et
+   les cartes gardent `title`) et `updatedAt` (`AAAA-MM-JJ`, à poser quand le contenu change
+   vraiment après la publication : il devient `dateModified` de l’article et `lastmod` du
+   sitemap).
 4. Vérifier les affirmations et renseigner les sources officielles dans `sources`.
 5. Lancer `npm run build` et vérifier l’article et son filtre dans le navigateur.
 

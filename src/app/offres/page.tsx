@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { offersPageDescription } from "@/lib/analysis-offer";
 import { legalPublisherConfigurationStatus } from "@/lib/legal-documents";
+import { pageMetadata } from "@/lib/page-metadata";
 import { OffersPage } from "./offers-page";
 
 /**
@@ -11,13 +13,18 @@ export function generateMetadata(): Metadata {
   const open =
     Boolean(process.env.STRIPE_ANALYSIS_PRICE_ID?.trim()) &&
     legalPublisherConfigurationStatus().ready;
-  return {
-    alternates: { canonical: "/offres" },
+  return pageMetadata({
+    path: "/offres",
     title: "Offres Découverte et Analyse",
     description: offersPageDescription({ open }),
-  };
+  });
 }
 
 export default function Page() {
-  return <OffersPage />;
+  return (
+    <>
+      <BreadcrumbJsonLd trail={[{ name: "Offres", path: "/offres" }]} />
+      <OffersPage />
+    </>
+  );
 }

@@ -971,10 +971,12 @@ export function ResourcesPage() {
 
 function IntroCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="liquid-panel-soft rounded-lg p-5">
-      <h3 className="text-base font-semibold text-foreground">{title}</h3>
+    // Not a heading: these three cards sit between the h1 and the first h2 ("Sommaire"), and an
+    // h3 there would skip a level in the outline of the page.
+    <div className="liquid-panel-soft rounded-lg p-5">
+      <p className="text-base font-semibold text-foreground">{title}</p>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{children}</p>
-    </section>
+    </div>
   );
 }
 

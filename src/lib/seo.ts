@@ -463,6 +463,14 @@ export function saleStructuredData(
     });
   }
 
+  // Last, so the listing stays first and the hearing event second (consumers index the graph).
+  graph.push(
+    breadcrumbStructuredData(origin, [
+      { name: "Ventes", path: "/sales" },
+      { name: headline, path: `/sales/${encodeURIComponent(sale.id)}` },
+    ]),
+  );
+
   return { "@context": "https://schema.org", "@graph": graph };
 }
 
@@ -470,6 +478,33 @@ export function saleStructuredData(
  * Site-level JSON-LD: the organization that publishes the site (with its logo)
  * and the website with its search action. All URLs are absolute.
  */
+export type BreadcrumbItem = { name: string; path: string };
+
+/**
+ * schema.org `BreadcrumbList` of a page, from the trail that leads to it. The home page is always
+ * the first item; `trail` lists the following ones, the page itself last. Absolute URLs.
+ */
+export function breadcrumbStructuredData(
+  origin: string,
+  trail: readonly BreadcrumbItem[],
+): Record<string, unknown> {
+  const items: BreadcrumbItem[] = [{ name: "Accueil", path: "" }, ...trail];
+  return {
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.name,
+      item: `${origin}${item.path}`,
+    })),
+  };
+}
+
+/** Absolute address of the site logo (publisher logo of the articles, organization logo). */
+export function siteLogoUrl(origin: string): string {
+  return `${origin}/brand/immojudis-mark-transparent.png`;
+}
+
 export function organizationStructuredData(origin: string): Record<string, unknown> {
   return {
     "@context": "https://schema.org",
@@ -481,7 +516,7 @@ export function organizationStructuredData(origin: string): Record<string, unkno
         url: origin,
         logo: {
           "@type": "ImageObject",
-          url: `${origin}/brand/immojudis-mark-transparent.png`,
+          url: siteLogoUrl(origin),
         },
       },
       {

@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { loadSitemapSales, ROOT_SITEMAP_SALE_CAPACITY } from "@/lib/public-sitemap.server";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
-import { RESOURCE_ARTICLES } from "@/lib/resource-articles";
+import { RESOURCE_ARTICLES, resourceLastModified } from "@/lib/resource-articles";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
 // Rebuilt on request from the data cache (refreshed every hour), never frozen at
@@ -20,11 +20,11 @@ const PUBLIC_ROUTES = [
   ["", "2026-10-08"],
   ["/sales", null], // the catalogue changes with the newest sale
   ["/avocats", "2026-10-08"],
-  ["/offres", "2026-10-08"],
+  ["/offres", "2026-10-14"],
   ["/comment-ca-marche", "2026-10-13"],
-  ["/ressources", "2026-10-08"],
-  ["/tribunaux", "2026-10-08"],
-  ["/annonce-exemple", "2026-10-09"],
+  ["/ressources", "2026-10-13"],
+  ["/tribunaux", "2026-10-13"],
+  ["/annonce-exemple", "2026-10-15"],
   ["/ventes-immobilieres-judiciaires", "2026-10-13"],
   ["/simulateur-frais-encheres", "2026-10-13"],
   ["/a-propos", "2026-10-13"],
@@ -68,7 +68,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       }),
     ...RESOURCE_ARTICLES.map((article) => ({
       url: `${origin}${article.href}`,
-      lastModified: article.publishedAt,
+      lastModified: resourceLastModified(article),
     })),
     ...sales.map((sale) => ({
       url: `${origin}/sales/${sale.id}`,

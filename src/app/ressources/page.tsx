@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
+import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { ResourceLibrary } from "@/components/resources/ResourceLibrary";
 import { ResourcesNextStep } from "@/components/resources/ResourcesNextStep";
 import { EXISTING_GUIDE, RESOURCE_SUMMARIES } from "@/lib/resource-articles";
@@ -52,6 +53,7 @@ export default function Page() {
 
   return (
     <main id="contenu" className={styles.root}>
+      <BreadcrumbJsonLd trail={[{ name: "Ressources", path: "/ressources" }]} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{

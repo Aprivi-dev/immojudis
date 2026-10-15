@@ -79,6 +79,20 @@ describe("sitemap.xml", () => {
     expect(byUrl.get("https://immojudis.com/sales")?.lastModified).toBe(manySales[0].lastModified);
   });
 
+  it("dates an article by its last change (updatedAt), else by its publication", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([]);
+    const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry]));
+    // Published on 05/10, corrected on 13/10.
+    expect(
+      byUrl.get("https://immojudis.com/ressources/prix-plafond-encheres-immobilieres")
+        ?.lastModified,
+    ).toBe("2026-10-13");
+    // Published on 13/10, never changed since.
+    expect(
+      byUrl.get("https://immojudis.com/ressources/frais-vente-encheres-judiciaire")?.lastModified,
+    ).toBe("2026-10-13");
+  });
+
   it("answers an error instead of a reduced sitemap when the database cannot be read", async () => {
     mocks.loadSitemapSales.mockRejectedValue(new Error("down"));
     await expect(sitemap()).rejects.toThrow("down");

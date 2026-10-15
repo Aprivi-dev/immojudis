@@ -1,15 +1,18 @@
 import type { Metadata } from "next";
 import { getExampleSaleRecords, isExampleSaleKey } from "@/lib/example-sale";
+import { pageMetadata } from "@/lib/page-metadata";
 import { ExampleSalePage } from "./example-sale-page";
 
 // Indexed on purpose: it is the public illustration of what the offers add. The
 // "Exemple fictif" banner and the absence of structured data keep it from being
 // mistaken for a real listing.
 export const metadata: Metadata = {
-  title: "Annonce exemple : analyse d’une vente",
-  description:
-    "Exemple fictif d’analyse Immojudis pour un appartement vendu au tribunal : mise à prix, valeur estimée, frais, travaux, risques et enchère plafond.",
-  alternates: { canonical: "/annonce-exemple" },
+  ...pageMetadata({
+    path: "/annonce-exemple",
+    title: "Annonce exemple : analyse d’une vente",
+    description:
+      "Exemple fictif d’analyse Immojudis pour un appartement vendu au tribunal : mise à prix, valeur estimée, frais, travaux, risques et enchère plafond.",
+  }),
   robots: { index: true, follow: true },
 };
 
