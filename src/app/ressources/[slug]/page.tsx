@@ -9,7 +9,10 @@ import {
   RESOURCE_SUMMARIES,
   getResourceArticle,
   formatResourceDate,
+  resourceDocumentTitle,
+  resourceLastModified,
 } from "@/lib/resource-articles";
+import { siteLogoUrl } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import styles from "@/components/resources/Resources.module.css";
 import { jsonLdString } from "@/lib/json-ld";
@@ -27,22 +30,26 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const article = getResourceArticle(slug);
   if (!article) notFound();
 
+  // `seoTitle` (when the editor set one) is the title of the tab, of the search result and of the
+  // shares; the h1 of the page keeps `title`.
+  const title = resourceDocumentTitle(article);
   return {
-    title: article.title,
+    title,
     description: article.description,
     alternates: { canonical: article.href },
     openGraph: {
       type: "article",
-      title: article.title,
+      title,
       description: article.description,
       url: article.href,
       publishedTime: article.publishedAt,
+      ...(article.updatedAt ? { modifiedTime: article.updatedAt } : {}),
       authors: ["Immojudis"],
       images: [{ url: article.image }],
     },
     twitter: {
       card: "summary_large_image",
-      title: article.title,
+      title,
       description: article.description,
       images: [article.image],
     },
@@ -63,8 +70,14 @@ export default async function Page({ params }: Props) {
         headline: article.title,
         description: article.description,
         datePublished: article.publishedAt,
+        dateModified: resourceLastModified(article),
         author: { "@type": "Organization", name: "Immojudis", url: origin },
-        publisher: { "@type": "Organization", name: "Immojudis", url: origin },
+        publisher: {
+          "@type": "Organization",
+          name: "Immojudis",
+          url: origin,
+          logo: { "@type": "ImageObject", url: siteLogoUrl(origin) },
+        },
         image: `${origin}${article.image}`,
         mainEntityOfPage: `${origin}${article.href}`,
         inLanguage: "fr-FR",

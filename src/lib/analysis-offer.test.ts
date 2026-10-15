@@ -7,8 +7,30 @@ import {
   DEFAULT_ANALYSIS_OFFER_LABEL,
   analysisOfferLabelAmountsCents,
   analysisOfferLabelMatchesPrice,
+  offersPageDescription,
+  OFFERS_DESCRIPTION_MAX_LENGTH,
   resolveAnalysisOfferLabel,
 } from "./analysis-offer";
+
+describe("offersPageDescription", () => {
+  it("states no price while the offer is closed", () => {
+    const text = offersPageDescription({ open: false, label: "29 € TTC / mois" });
+    expect(text).toContain("ouvrira prochainement");
+    expect(text).not.toContain("29");
+  });
+
+  it("quotes the label once open and stays within 160 characters", () => {
+    const text = offersPageDescription({ open: true, label: "29 € TTC / mois" });
+    expect(text).toContain("29 € TTC / mois");
+    expect(text.length).toBeLessThanOrEqual(OFFERS_DESCRIPTION_MAX_LENGTH);
+  });
+
+  it("drops an over-long label instead of overflowing", () => {
+    const text = offersPageDescription({ open: true, label: "x".repeat(200) });
+    expect(text.length).toBeLessThanOrEqual(OFFERS_DESCRIPTION_MAX_LENGTH);
+    expect(text).not.toContain("xxx");
+  });
+});
 
 describe("approved Analyse offer", () => {
   it("keeps the local recurring contract at 29 EUR per month", () => {

@@ -12,6 +12,14 @@ import { buildCeilingHypotheses } from "./bid-ceiling-defaults";
 import { computeCeilingPlan } from "./bid-ceiling-engine";
 import { estimateWorksBudget } from "./profitability";
 
+describe("example sale demonstration address", () => {
+  it("uses the canonical .com domain, never .fr", () => {
+    const json = JSON.stringify(getExampleSaleRecords());
+    expect(json).toContain("contact-demo@immojudis.com");
+    expect(json).not.toMatch(/@immojudis\.fr/);
+  });
+});
+
 describe("example hearing date", () => {
   it("is always 21 days after the day the page is generated", () => {
     const now = new Date("2026-10-09T14:12:00+02:00");

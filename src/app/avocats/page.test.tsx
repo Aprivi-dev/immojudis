@@ -9,7 +9,11 @@ describe("/avocats server page", () => {
     const element = await Page({
       searchParams: Promise.resolve({ bar: "Bordeaux", saleId: ["x", "abc"], other: "ignored" }),
     });
-    expect(element.props.search).toEqual({
+    // The page is a fragment: the breadcrumb data, then the directory.
+    const directory = element.props.children.find(
+      (child: { props?: { search?: unknown } }) => child.props?.search !== undefined,
+    );
+    expect(directory.props.search).toEqual({
       bar: "Bordeaux",
       saleId: "abc",
       city: undefined,

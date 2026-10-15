@@ -34,6 +34,69 @@ describe("SearchPagination", () => {
     expect(onNext).toHaveBeenCalledOnce();
   });
 
+  describe("with page addresses", () => {
+    const renderLinks = (props: { isFetching?: boolean } = {}) => {
+      const onNext = vi.fn();
+      const onPrevious = vi.fn();
+      render(
+        <SearchPagination
+          hasMore
+          hasPrevious
+          isFetching={props.isFetching ?? false}
+          loadedCount={24}
+          totalCount={73}
+          mapListFollowsViewport={false}
+          page={2}
+          pageSize={24}
+          onNext={onNext}
+          onPrevious={onPrevious}
+          nextHref="/sales?city=Pau&page=3"
+          previousHref="/sales?city=Pau"
+        />,
+      );
+      return { onNext, onPrevious };
+    };
+
+    it("renders real links to the neighbouring pages", () => {
+      renderLinks();
+      const next = screen.getByRole("link", { name: "Page suivante" });
+      const previous = screen.getByRole("link", { name: "Page précédente" });
+      expect(next.getAttribute("href")).toBe("/sales?city=Pau&page=3");
+      expect(next.getAttribute("rel")).toBe("next");
+      expect(previous.getAttribute("href")).toBe("/sales?city=Pau");
+      expect(previous.getAttribute("rel")).toBe("prev");
+      expect(screen.queryByRole("button", { name: "Page suivante" })).toBeNull();
+    });
+
+    it("keeps the client behaviour on a plain click", () => {
+      const { onNext, onPrevious } = renderLinks();
+      const next = screen.getByRole("link", { name: "Page suivante" });
+      // fireEvent returns false when the default action (following the link) was prevented.
+      expect(fireEvent.click(next)).toBe(false);
+      expect(fireEvent.click(screen.getByRole("link", { name: "Page précédente" }))).toBe(false);
+      expect(onNext).toHaveBeenCalledOnce();
+      expect(onPrevious).toHaveBeenCalledOnce();
+    });
+
+    it("lets the browser open the link with a modifier key", () => {
+      const { onNext } = renderLinks();
+      const next = screen.getByRole("link", { name: "Page suivante" });
+      expect(fireEvent.click(next, { ctrlKey: true })).toBe(true);
+      expect(fireEvent.click(next, { metaKey: true })).toBe(true);
+      expect(onNext).not.toHaveBeenCalled();
+    });
+
+    it("does nothing while the list is loading", () => {
+      const { onNext, onPrevious } = renderLinks({ isFetching: true });
+      const loading = screen.getByRole("link", { name: "Chargement..." });
+      expect(loading.getAttribute("aria-disabled")).toBe("true");
+      expect(fireEvent.click(loading)).toBe(false);
+      fireEvent.click(screen.getByRole("link", { name: "Page précédente" }));
+      expect(onNext).not.toHaveBeenCalled();
+      expect(onPrevious).not.toHaveBeenCalled();
+    });
+  });
+
   it("says so and offers page 1 when the page is past the last one", () => {
     const onFirstPage = vi.fn();
     render(
