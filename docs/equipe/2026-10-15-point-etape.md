@@ -255,3 +255,100 @@ Priorités : Critique / Haute / Moyenne / Basse. Effort : S < 1 h, M < 1 jour, L
      mise en balance et AIPD de l'agent.
    - Courrier à Licitor.
    - Redirections `www` et `.fr` vers le domaine canonique.
+
+## Exécution
+
+**Validation du propriétaire (15/10)** : tous les « garder » des parties B (référencement), C
+(données et pipeline), D (parcours et interface) et E (produit). Les « discutables » (16, 22, 27,
+31, 54, 57, 58) et toute la partie A sont mis de côté. Pour le point 41, seuls la réserve visible,
+le libellé unique, les pastilles et le raccourci de tri sont faits : ni le libellé ni le seuil ne
+changent.
+
+Branche : `claude/happy-euler-eu3bmd` (pull request #266), 266 fichiers, environ 14 900 lignes
+ajoutées et 1 400 retirées.
+
+### Chantiers
+
+| Chantier                          | Points                                 | Résultat                                                                                                                                                               |
+| --------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1. Données du pipeline           | 23, 24, 25, 26, 28                     | Fait. 28 : le marquage « date seule » existait déjà, seule la fuite de l'export JSON est corrigée                                                                      |
+| P2. Registre et surveillance      | 29, 30, 32, 33, 51, 52                 | Fait                                                                                                                                                                   |
+| S. Référencement                  | 14, 15, 17, 18, 19, 20, 21             | Fait. 17 avec le seuil ajusté après comptage (≈ 21 fiches exclues sur 1 885, voir ci-dessous). 21 : `lastmod` des fiches non résolu (le pipeline réécrit `updated_at`) |
+| U1. Déblocages et fiche           | 34, 35, 36, 37, 44, 47, 48, 49, 50, 53 | Fait                                                                                                                                                                   |
+| U2. Agent d'information           | 38, 39, 40, 45 (opposition), 46        | Fait                                                                                                                                                                   |
+| U3. Plafond, repère, statistiques | 41 (partie validée), 42, 43, 45        | Fait                                                                                                                                                                   |
+| E. Produit                        | 55, 56                                 | Fait                                                                                                                                                                   |
+| Rédacteur                         | 20 (titres SEO)                        | 9 articles et le guide pilier ramenés à 60 caractères au plus                                                                                                          |
+
+**Comptage du point 17** (production, 15/10, 08:40 UTC) : le prédicat initial excluait 67 fiches
+(3,6 %), dont 46 cessions de l'État riches mais sans date. Variante appliquée : date non exigée pour
+les cessions de l'État, type « autre » toléré si la fiche a des pièces ou une description longue,
+le prix seul suffit. Le vrai sujet de contenu pauvre reste les doublons (≈ 920 fiches en surplus),
+traité par le point 23.
+
+### Relectures
+
+- **`code-reviewer`** : aucun point critique. Corrigés ensuite :
+  - vente débloquée : les lignes de relecture IA bloquantes hors plafond sont conservées, l'adresse
+    reste masquée quand la ville est « à confirmer » ;
+  - portes CI agrégées (`web`, `Data pipeline (Python 3.11)`) : elles échouent si une dépendance
+    échoue, au lieu d'être sautées ;
+  - `unlock_sale_at` applique la limite de 24 mois (migration `20261025160000`) ;
+  - surface de maison > 1 000 m² : passe en terrain seulement si la source la qualifie ainsi ;
+  - libellé contenant « notaire » : n'efface plus le tribunal (seuls « en l'étude » et « office
+    notarial » désignent une vente notariale) ;
+  - balayage des doublons interrompu : signalé « partiel » dans le rapport ;
+  - cache des oppositions ramené à 60 s ; workflow `dedupe-candidates` rattaché à l'environnement
+    Production ; `/sitemap.xml` reçoit l'en-tête noindex ; pied de carte « 3 ventes à débloquer »
+    limité aux ventes au tribunal ; réparation SQL alignée sur le Python ; jeton du formulaire
+    effacé avant l'opposition.
+- **`juridique-rgpd`** : aucun point critique. Formulations corrigées : fourchette des statistiques
+  présentée comme une estimation et réserves sous la table ; verdict du plafond sans promesse de
+  rentabilité ; glossaire (garantie « irrévocable », frais taxés, préemption « 30 jours »,
+  « selon la situation du bien ») ; « selon la vente » sur les promesses du compte gratuit ; suivi
+  des changements des favoris cité sur `/offres` ; état vide sans promesse ; export agenda (« le
+  fichier ne se met pas à jour ») ; information RGPD lisible avant l'envoi du formulaire des
+  professionnels ; méta `/offres` sans « prochainement » ; runbook de restitution sur la date de
+  réception.
+- **Corrections CI** : test pgTAP 465 (ventes de rattachement, origine typée des adresses), deux
+  alertes CodeQL dans des tests, deux tests pgTAP renumérotés (467, 468).
+
+### Vérifications finales (branche fusionnée)
+
+| Vérification                       | Résultat                                  |
+| ---------------------------------- | ----------------------------------------- |
+| `npx tsc --noEmit`                 | OK                                        |
+| `npm run lint`                     | OK                                        |
+| `npm test` (Vitest)                | 4 361 OK, 8 ignorés                       |
+| `npm run test:security-invariants` | OK (28 contrôles)                         |
+| `npm run check:migrations`         | OK                                        |
+| Pipeline `ruff` + `pytest`         | OK, 4 054 tests, 153 ignorés (PostgreSQL) |
+| pgTAP, Playwright                  | en CI sur la pull request                 |
+
+### À faire par le propriétaire
+
+1. **Indexation** : sans `SEO_INDEXING_ENABLED=true` (Vercel, Production) le site passe en
+   `noindex` au déploiement. Poser la même valeur en variable de dépôt GitHub pour le test de
+   fumée, puis Redeploy. À décider avant de fusionner.
+2. **Migrations, avant le déploiement** : `20261025110000`, `20261025110100`, `20261025120000`,
+   `20261025130000`, `20261025130100`, `20261025150000`, `20261025160000`, puis `db:types`.
+3. **Données** : réparation `20261025100001` (noms de tribunaux) en comptage puis `-v apply=1` ;
+   `recompute-existing-sales` (`source=all`, d'abord `dry_run=true`) ; lancer « Dedupe candidates
+   report », relire, puis `DEDUPE_RECONCILE_ENABLED=true` (100 suppressions par passage).
+4. **CI** : retirer « Data pipeline (Python 3.11) » des contrôles requis, puis supprimer le job.
+5. **Seuils à confirmer** : surfaces (500 m² appartement, 1 000 m² maison), alerte des jobs épuisés
+   (3 en 24 h ou 50 en attente), 100 suppressions de doublons par passage.
+
+### Restent ouverts (non validés ou hors périmètre)
+
+- CGV : « statistiques du tribunal » promises alors que le drapeau est fermé ; restitution d'un
+  déblocage retiré après la fin du mois ; suivi des changements des favoris à citer à l'art. 2.
+- Repère « Annonce bien renseignée » : libellé ou seuil (le juridique préfère « Fiche détaillée »).
+- `/classement-des-annonces` : lister tous les paramètres du score et du score d'investissement.
+- `/offres` : « Enchère plafond chiffrée pour toutes les ventes » (le plafond ne concerne que les
+  ventes au tribunal).
+- Confidentialité : citer l'outil d'IA (États-Unis) et la durée des contributions des
+  professionnels, annoncés par le nouveau bloc du formulaire.
+- Petits restes de formulation : `RankingExplanation.tsx:36`, colonne desktop de `/login`, en-tête
+  « Enchère plafond · {profil} » sans « (simulation) ».
+- Message serveur « plan Investisseur » sur `/api/sale-change-events` (ancien nom d'offre).
