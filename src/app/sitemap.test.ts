@@ -27,6 +27,7 @@ import resourcesSitemap from "./ressources/sitemap";
 import salesSitemap, { generateSitemaps as generateSalesSitemaps } from "./sales/sitemap";
 import nextConfig from "../../next.config";
 import { SITEMAP_URL_LIMIT } from "@/lib/public-sitemap.server";
+import { GUIDE_LAST_UPDATED } from "@/lib/guide-dates";
 
 const manySales = Array.from({ length: 2276 }, (_, index) => ({
   id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
@@ -90,6 +91,17 @@ describe("sitemap.xml (static pages)", () => {
     expect(byUrl.get("https://immojudis.com/ressources")).toBe("2026-10-13");
     expect(byUrl.get("https://immojudis.com/tribunaux")).toBe("2026-10-13");
     expect(byUrl.get("https://immojudis.com/annonce-exemple")).toBe("2026-10-15");
+  });
+
+  it("dates the guide with the date it displays (GUIDE_LAST_UPDATED), not its own copy", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([]);
+    const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
+    expect(byUrl.get("https://immojudis.com/ventes-immobilieres-judiciaires")).toBe(
+      GUIDE_LAST_UPDATED,
+    );
+    // The guide re-exports the same constant its page displays.
+    const guide = await import("./ventes-immobilieres-judiciaires/resources-guide");
+    expect(guide.GUIDE_LAST_UPDATED).toBe(GUIDE_LAST_UPDATED);
   });
 
   it("stays available when the catalogue cannot be read: /sales just has no date", async () => {

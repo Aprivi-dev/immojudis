@@ -4,15 +4,15 @@ import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
 import { SaleTypesOverview } from "@/components/SaleTypesOverview";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import { jsonLdString } from "@/lib/json-ld";
+import { GUIDE_LAST_UPDATED } from "@/lib/guide-dates";
 import { getResourceArticle } from "@/lib/resource-articles";
 
 /**
- * Date de la dernière révision éditoriale du guide (AAAA-MM-JJ). Source unique : elle alimente la
- * mention « Mis à jour le » de la page et le `dateModified` de ses données structurées. À changer
- * à la main, et seulement quand le contenu du guide change sur le fond (ni la date du build, ni
- * celle du jour). Le sitemap (`src/app/sitemap.ts`) garde sa propre date pour cette page.
+ * Date de la dernière révision éditoriale du guide : elle est définie dans `@/lib/guide-dates`
+ * (source unique) et alimente la mention « Mis à jour le » de la page, le `dateModified` de ses
+ * données structurées et l'entrée du guide dans le sitemap (`src/app/sitemap.ts`).
  */
-export const GUIDE_LAST_UPDATED = "2026-10-13";
+export { GUIDE_LAST_UPDATED };
 
 /** « 2026-10-13 » devient « 13/10/2026 ». */
 export function formatGuideDate(isoDate: string): string {
@@ -271,7 +271,10 @@ const INSTITUTIONAL_LINKS: Array<{ href: string; label: string }> = [
 
 const RELATED_SLUGS = [
   "ventes-notariales-domaniales-differences-tribunal",
+  "saisie-immobiliere-etapes-vente-forcee-acheteur",
+  "licitation-vente-bien-indivis-encheres-acheteur",
   "lire-cahier-conditions-vente-preparer-visite",
+  "avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
   "jour-audience-encheres-role-avocat",
   "apres-adjudication-surenchere-paiement-titre-vente",
   "frais-vente-encheres-judiciaire",
@@ -283,8 +286,9 @@ const RELATED_SLUGS = [
 /**
  * Frise de la procédure. Les descriptions reprennent ce que le guide dit plus bas (sections
  * « Comment se déroule une vente… » et « Quels frais prévoir… »), sans règle nouvelle.
- * « Consigner » désigne ici la garantie remise à l'avocat avant les enchères, pas la
- * consignation du prix, qui se fait après la vente (voir le lexique).
+ * « Remettre la garantie » désigne la garantie remise à l'avocat avant les enchères (art.
+ * R. 322-41), pas la consignation du prix, qui se fait après la vente (voir le lexique) : le
+ * titre évite le verbe « consigner » pour ne pas confondre les deux.
  */
 const PROCEDURE_STEPS: Array<{ title: string; text: string; href: string }> = [
   {
@@ -293,8 +297,8 @@ const PROCEDURE_STEPS: Array<{ title: string; text: string; href: string }> = [
     href: "#visite",
   },
   {
-    title: "Consigner",
-    text: "Remettre à l’avocat, avant les enchères, la garantie : 10 % de la mise à prix, avec un minimum de 3 000 € (art. R. 322-41).",
+    title: "Remettre la garantie",
+    text: "Remettre à l’avocat, avant les enchères, la garantie (chèque de banque ou caution bancaire irrévocable) : 10 % de la mise à prix, avec un minimum de 3 000 € en saisie immobilière (art. R. 322-41). Elle est restituée si vous ne gagnez pas.",
     href: "#garanties",
   },
   {
@@ -310,7 +314,7 @@ const PROCEDURE_STEPS: Array<{ title: string; text: string; href: string }> = [
   {
     title: "Payer",
     text: "Le prix est versé ou consigné, et les frais payés, dans les deux mois qui suivent l’adjudication définitive.",
-    href: "#frais",
+    href: "#apres-adjudication",
   },
 ];
 
@@ -323,7 +327,7 @@ const KEY_POINTS = {
     "La vente se déroule en trois temps : l’analyse avant la vente, l’audience d’adjudication, puis les formalités après l’enchère.",
     "Pour enchérir, il faut être représenté par un avocat inscrit au barreau du tribunal compétent : l’acheteur ne porte pas lui-même les enchères.",
     "Le Code impose de remettre à l’avocat, avant les enchères, une garantie de 10 % de la mise à prix, avec un minimum de 3 000 €.",
-    "En saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’achat n’est définitif qu’à l’expiration de ce délai.",
+    "En saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’adjudication n’est définitive qu’à l’expiration de ce délai.",
   ],
   frais: [
     "Le budget d’une vente judiciaire ne doit jamais être limité au prix d’adjudication.",
@@ -419,8 +423,19 @@ export function ResourcesPage() {
           className="liquid-panel mt-6 rounded-lg p-5 sm:p-6"
         >
           <h2 id="frise-procedure" className="font-display text-xl text-foreground">
-            La procédure en 5 étapes
+            La vente à la barre du tribunal en 5 étapes
           </h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Cette frise décrit une saisie immobilière jugée au tribunal. Chez un notaire ou pour une
+            vente de l’État, les règles diffèrent : voir{" "}
+            <a
+              href="#differences"
+              className="text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
+            >
+              «&nbsp;Tribunal, notaire ou État : quelle différence&nbsp;?&nbsp;»
+            </a>
+            .
+          </p>
           <ol className="mt-4 grid list-none gap-3 p-0 lg:grid-cols-5 lg:gap-4">
             {PROCEDURE_STEPS.map((step, index) => (
               <li
@@ -905,7 +920,7 @@ export function ResourcesPage() {
             </P>
             <Checklist
               items={[
-                "en saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’achat n’est définitif qu’à l’expiration de ce délai ;",
+                "en saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’adjudication n’est définitive qu’à l’expiration de ce délai ;",
                 "le Code impose de remettre à l’avocat, avant les enchères, une garantie de 10\u00a0% de la mise à prix, avec un minimum de 3\u202f000\u00a0€, sous forme de chèque de banque ou de caution bancaire irrévocable (art. R. 322-41) ;",
                 "le prix doit être versé ou consigné dans les deux mois qui suivent l’adjudication définitive ; au-delà, des intérêts sont dus (art. R. 322-56) ;",
                 "les frais de poursuite taxés et les droits de mutation se paient en plus du prix, dans le même délai fixé par le Code : le justificatif doit être remis au greffe avant l’expiration de deux mois à compter de l’adjudication définitive (art. R. 322-58) ;",

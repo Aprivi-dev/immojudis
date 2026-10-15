@@ -5,6 +5,7 @@ import {
   PUBLIC_ADJUDICATION_PRICES_PATH,
 } from "@/lib/public-adjudication-prices";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
+import { GUIDE_LAST_UPDATED } from "@/lib/guide-dates";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
 // `/sitemap.xml` lists the static pages only. The articles have `/ressources/sitemap.xml`
@@ -30,7 +31,7 @@ const PUBLIC_ROUTES = [
   ["/ressources", "2026-10-13"],
   ["/tribunaux", "2026-10-13"],
   ["/annonce-exemple", "2026-10-15"],
-  ["/ventes-immobilieres-judiciaires", "2026-10-13"],
+  ["/ventes-immobilieres-judiciaires", GUIDE_LAST_UPDATED], // same date as the guide page
   ["/simulateur-frais-encheres", "2026-10-13"],
   [PUBLIC_ADJUDICATION_PRICES_PATH, null], // listed only while PUBLIC_ADJUDICATION_PRICES_ENABLED is "true"
   ["/a-propos", "2026-10-13"],
