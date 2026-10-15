@@ -2896,7 +2896,13 @@ def plan_duplicate_reconciliation(
     sales = _fetch_dedupe_candidate_sales(
         str(url), str(key), statuses=statuses, limit=max_rows, reviewed_aliases=reviewed_aliases, scan=scan
     )
-    return build_plan(sales, reviewed_aliases, max_merges=max_merges, truncated=scan.truncated)
+    return build_plan(
+        sales,
+        reviewed_aliases,
+        max_merges=max_merges,
+        truncated=scan.truncated,
+        truncation_reason=scan.truncation_reason,
+    )
 
 
 def reconcile_duplicate_sales_in_supabase(
