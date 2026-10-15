@@ -4,15 +4,26 @@ import ArrowUpRight from "lucide-react/dist/esm/icons/arrow-up-right.js";
 import { ContactForm } from "@/components/ContactForm";
 import { Card, PageShell } from "@/components/ui/primitives";
 import { publicLegalPublisher } from "@/lib/legal-documents";
+import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata: Metadata = {
-  alternates: { canonical: "/contact" },
+export const metadata: Metadata = pageMetadata({
+  path: "/contact",
   title: "Contact",
   description:
     "Contacter l’équipe Immojudis : question sur une vente, un accès à votre compte ou vos données personnelles.",
-};
+});
 
 export default function Page() {
+  return (
+    <>
+      <BreadcrumbJsonLd trail={[{ name: "Contact", path: "/contact" }]} />
+      <PageContent />
+    </>
+  );
+}
+
+function PageContent() {
   const publisher = publicLegalPublisher();
   return (
     <PageShell

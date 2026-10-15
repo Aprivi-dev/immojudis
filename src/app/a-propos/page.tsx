@@ -9,15 +9,26 @@ import Scale from "lucide-react/dist/esm/icons/scale.js";
 import SearchCheck from "lucide-react/dist/esm/icons/search-check.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { RESOURCES_PATH } from "@/lib/navigation";
+import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata: Metadata = {
-  alternates: { canonical: "/a-propos" },
+export const metadata: Metadata = pageMetadata({
+  path: "/a-propos",
   title: "À propos",
   description:
     "Immojudis centralise les annonces de ventes aux enchères immobilières, les qualifie et aide à préparer sa décision avant d’enchérir.",
-};
+});
 
 export default function Page() {
+  return (
+    <>
+      <BreadcrumbJsonLd trail={[{ name: "À propos", path: "/a-propos" }]} />
+      <PageContent />
+    </>
+  );
+}
+
+function PageContent() {
   return (
     <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
       <div className="mx-auto max-w-6xl">
