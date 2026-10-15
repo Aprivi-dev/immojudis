@@ -80,6 +80,51 @@ describe("readable listing sections", () => {
     },
   );
 
+  describe("« Ajouter à mon agenda »", () => {
+    const AGENDA = "Ajouter à mon agenda";
+
+    it("is offered for an announced tribunal hearing", () => {
+      render(
+        <ListingPracticalDetails
+          sale={item({ status: "upcoming", sale_date: "2099-01-20T08:30:00Z" })}
+        />,
+      );
+      expect(screen.getByRole("button", { name: AGENDA })).toBeTruthy();
+    });
+
+    it.each(["cancelled", "postponed"])("is not offered for a %s sale", (status) => {
+      render(
+        <ListingPracticalDetails sale={item({ status, sale_date: "2099-01-20T08:30:00Z" })} />,
+      );
+      expect(screen.queryByRole("button", { name: AGENDA })).toBeNull();
+    });
+
+    it("is not offered without a date, for another venue, or for an online bidding window", () => {
+      const { unmount } = render(
+        <ListingPracticalDetails sale={item({ status: "upcoming", sale_date: null })} />,
+      );
+      expect(screen.queryByRole("button", { name: AGENDA })).toBeNull();
+      unmount();
+
+      const other = render(<ListingPracticalDetails sale={notary()} />);
+      expect(screen.queryByRole("button", { name: AGENDA })).toBeNull();
+      other.unmount();
+
+      render(
+        <ListingPracticalDetails
+          sale={item({
+            status: "upcoming",
+            sale_date: "2099-01-20T08:30:00Z",
+            sale_procedure: {
+              sale_window: { opens_at: "2099-01-20T08:30:00Z", closes_at: "2099-01-21T08:30:00Z" },
+            },
+          })}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: AGENDA })).toBeNull();
+    });
+  });
+
   it("shows both boundaries of a multi-day bidding window in Paris time", () => {
     render(
       <ListingPracticalDetails
