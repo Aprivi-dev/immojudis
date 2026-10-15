@@ -8,6 +8,7 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UploadCloud from "lucide-react/dist/esm/icons/upload-cloud.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import { legalValue, publicLegalPublisher } from "@/lib/legal-documents";
 import { userMessage } from "@/lib/user-messages";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -136,6 +137,7 @@ function isLinkRejectedByServer(error: unknown): boolean {
 }
 
 export function InformationAgentContributionForm({ missionId }: { missionId: string }) {
+  const publisher = publicLegalPublisher();
   const initializedMission = useRef<string | null>(null);
   const requestVersion = useRef(0);
   const [state, setState] = useState<ContributionState>("reading");
@@ -205,8 +207,10 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     const version = ++requestVersion.current;
     const fragment = window.location.hash.slice(1);
 
-    // The token is intentionally read from memory only, then removed before
-    // any network request so it cannot remain in browser history or referrers.
+    // The token is read from the address fragment, which is removed before any network request so
+    // it cannot remain in browser history or referrers. A copy is kept in sessionStorage (this tab
+    // only, see storeToken) so that a reload does not lose it; it is erased once the link is
+    // rejected, the contribution is sent or the contributor leaves through the opposition link.
     window.history.replaceState(
       window.history.state,
       "",
@@ -660,7 +664,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                         Choisir des fichiers
                       </span>
                       <span className="mt-1 text-xs text-muted-foreground">
-                        Ils seront déposés dans un espace privé.
+                        Ils sont stockés dans un espace privé, accessible à l’équipe Immojudis.
                       </span>
                       <input
                         id="contribution-files"
@@ -735,6 +739,27 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     </span>
                   </label>
 
+                  <p
+                    id="contribution-privacy-notice"
+                    className="rounded-lg border border-border bg-background/60 p-4 text-sm leading-relaxed text-foreground"
+                  >
+                    Immojudis ({legalValue(publisher.entityName)}) utilise ces informations pour
+                    répondre à votre demande et vérifier les informations d’une vente, sur la base
+                    de son intérêt légitime. Elles sont lues par l’équipe, avec l’aide d’un outil
+                    d’IA (prestataire établi aux États-Unis), puis vérifiées avant toute utilisation
+                    sur une fiche. Conservation : 12 à 24 mois. Vous pouvez vous opposer, demander
+                    l’accès, la rectification ou l’effacement et saisir la CNIL :{" "}
+                    <Link
+                      href="/privacy"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-semibold underline underline-offset-2 hover:text-gold-text"
+                    >
+                      Politique de confidentialité
+                    </Link>
+                    .
+                  </p>
+
                   <button
                     type="submit"
                     className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:bg-gold-soft hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-50"
@@ -752,8 +777,8 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
         ) : null}
 
         <p className="mx-auto mt-5 max-w-2xl text-center text-xs leading-relaxed text-muted-foreground">
-          Les pièces sont reçues dans un espace privé et restent soumises à une revue avant toute
-          utilisation sur une fiche.
+          Les pièces sont stockées dans un espace privé, accessible à l’équipe Immojudis, et restent
+          soumises à une revue avant toute utilisation sur une fiche.
         </p>
         <nav
           aria-label="Vie privée"
@@ -774,13 +799,39 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                   never written into the markup as a persistent href. */}
               <button
                 type="button"
-                onClick={() => window.location.assign(session.optOutPath ?? "")}
+                onClick={() => {
+                  // The page is left for the opposition one: forget the token kept for this tab.
+                  clearStoredToken(missionId);
+                  window.location.assign(session.optOutPath ?? "");
+                }}
                 className="inline-flex min-h-11 items-center px-2 underline underline-offset-2 hover:text-foreground"
               >
-                Ne plus être contacté
+                Ne plus être contacté par Immojudis
               </button>
             </>
-          ) : null}
+          ) : (
+            <>
+              <span aria-hidden="true">·</span>
+              {/* No signed opposition link (expired or invalid link): the published contact
+                  address takes the opposition and the exercise of the rights. */}
+              <span
+                id="contribution-rights-contact"
+                className="inline-flex min-h-11 items-center px-2"
+              >
+                Pour vous opposer ou exercer vos droits :{" "}
+                {publisher.contactEmail ? (
+                  <a
+                    href={`mailto:${publisher.contactEmail}`}
+                    className="ml-1 underline underline-offset-2 hover:text-foreground"
+                  >
+                    {publisher.contactEmail}
+                  </a>
+                ) : (
+                  <span className="ml-1">{legalValue(publisher.contactEmail)}</span>
+                )}
+              </span>
+            </>
+          )}
         </nav>
       </div>
     </main>
