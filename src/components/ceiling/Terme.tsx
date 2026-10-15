@@ -5,9 +5,9 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import CircleHelp from "lucide-react/dist/esm/icons/circle-help.js";
 
 /**
- * Définitions courtes et neutres, alignées sur le lexique du guide. Elles n'énoncent aucune règle
- * de procédure : les montants, délais et conditions exacts relèvent du cahier des conditions de
- * vente et de l'avocat.
+ * Définitions courtes et neutres, alignées sur le lexique du guide. Elles n'énoncent pas de règle
+ * de procédure, sauf le montant de la garantie pour enchérir en saisie immobilière : les autres
+ * montants, délais et conditions exacts relèvent du cahier des conditions de vente et de l'avocat.
  */
 const TERMES = {
   "mise-a-prix": {
@@ -42,12 +42,12 @@ const TERMES = {
   "garantie-encherir": {
     label: "garantie pour enchérir",
     definition:
-      "Chèque de banque ou caution bancaire remis à l’avocat avant les enchères, restitué à l’enchérisseur qui ne l’emporte pas. Le plan de trésorerie l’appelle aussi « consignation » ; ne la confondez pas avec la consignation du prix, versée après la vente.",
+      "Chèque de banque ou caution bancaire irrévocable remis à l’avocat avant les enchères (en saisie immobilière : 10 % de la mise à prix, 3 000 € au minimum). Elle est restituée à l’enchérisseur qui ne l’emporte pas. Le plan de trésorerie l’appelle aussi « consignation » ; ne la confondez pas avec la consignation du prix, versée après la vente.",
   },
   "frais-prealables": {
     label: "frais préalables",
     definition:
-      "Frais de la procédure dont le juge a fixé le montant (aussi appelés frais taxés). Ils sont annoncés avant l’ouverture des enchères et payés en plus du prix.",
+      "Frais de la procédure de saisie dont le montant a été fixé (taxé) par le juge. Ils sont à la charge de l’adjudicataire, en plus du prix. Leur montant est indiqué dans le cahier des conditions de vente ou annoncé avant les enchères : demandez-le à l’avocat poursuivant.",
   },
   "proces-verbal-descriptif": {
     label: "procès-verbal descriptif",
@@ -57,7 +57,7 @@ const TERMES = {
   "cahier-conditions-vente": {
     label: "cahier des conditions de vente",
     definition:
-      "Document juridique décrivant le bien, les règles de la vente, l’occupation, les diagnostics, les servitudes et les frais. Il se consulte au greffe ou auprès de l’avocat poursuivant.",
+      "Document juridique rédigé par l’avocat du créancier poursuivant, qui décrit le bien, les règles de la vente, l’occupation, les diagnostics, les servitudes et les frais. Il se consulte au greffe ou auprès de l’avocat poursuivant.",
   },
   "droit-preemption": {
     label: "droit de préemption",

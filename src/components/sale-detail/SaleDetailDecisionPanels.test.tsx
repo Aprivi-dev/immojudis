@@ -191,8 +191,17 @@ describe("AnalysisDecisionPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Pas d’enchère rentable avec ces hypothèses")).toBeTruthy();
+    expect(screen.getByText("Marge de sécurité non tenue avec ces hypothèses")).toBeTruthy();
     expect(screen.queryByText("À compléter")).toBeNull();
+  });
+
+  it("calls the ceiling a simulation everywhere it is named", () => {
+    const { container } = renderWithQuery(<AnalysisDecisionPanel {...base} />);
+
+    expect(screen.getByText("Enchère plafond (simulation)")).toBeTruthy();
+    expect(container.textContent).not.toContain("Plafond indicatif");
+    expect(container.textContent).toContain("Enchère plafond (simulation), selon vos hypothèses");
+    expect(container.textContent).not.toMatch(/Enchère plafond(?! \(simulation\))/);
   });
 
   it("shows a zero starting price as to be confirmed", () => {

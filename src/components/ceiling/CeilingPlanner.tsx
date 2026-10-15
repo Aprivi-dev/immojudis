@@ -264,16 +264,17 @@ function Verdict({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: Ce
         {!plan.available ? (
           `${plan.reason}. Complétez-la dans les hypothèses ci-dessous pour obtenir votre plafond.`
         ) : !plan.reachable ? (
-          "À ces hypothèses, aucune enchère n’est rentable : travaux, libération et frais dépassent déjà le coût total maximal."
+          "À ces hypothèses, aucun prix d’enchère ne respecte la marge choisie : travaux, libération et frais dépassent déjà le coût total maximal."
         ) : start && plan.maxBid < start ? (
           <>
             À ces hypothèses, votre plafond ({formatPrice(plan.maxBid)}) est inférieur à la{" "}
-            {startingPrice} ({formatPrice(start)}) : l’enchère ne serait pas rentable.
+            {startingPrice} ({formatPrice(start)}) : une enchère à la mise à prix ne respecterait
+            pas la marge de sécurité choisie.
           </>
         ) : start ? (
           <>
-            La {startingPrice} ({formatPrice(start)}) vous laisse {formatPrice(plan.maxBid - start)}{" "}
-            de marge d’enchère.
+            La {startingPrice} ({formatPrice(start)}) est inférieure à votre plafond de{" "}
+            {formatPrice(plan.maxBid)} (simulation, hors aléas).
           </>
         ) : (
           <>
@@ -602,7 +603,7 @@ function Checklist({
           <Terme terme="frais-prealables" placement="top">
             frais préalables
           </Terme>{" "}
-          : ils sont annoncés en début d’audience et s’ajoutent au prix.
+          : ils s’ajoutent au prix.
         </>
       ),
     });
@@ -619,7 +620,12 @@ function Checklist({
   if (hypotheses.value.surfaceEstimated)
     items.push({
       key: "surface",
-      content: <>Confirmez la surface (loi Carrez ou habitable) dans le {procesVerbal}.</>,
+      content: (
+        <>
+          Confirmez la surface (loi Carrez ou habitable) dans le {procesVerbal} et les diagnostics
+          annexés au cahier des conditions de vente.
+        </>
+      ),
     });
   const dpe = dpeRentalNote(dpeClass);
   if (dpe && hypotheses.project === "louer") items.push({ key: "dpe", content: dpe.text });
@@ -633,11 +639,13 @@ function Checklist({
       key: "preemption",
       content: (
         <>
-          La commune peut exercer son{" "}
+          Selon la situation du bien, la commune (ou un autre titulaire prévu par la loi) peut
+          exercer un{" "}
           <Terme terme="droit-preemption" placement="top">
             droit de préemption
           </Terme>{" "}
-          dans le mois qui suit l’adjudication.
+          et se substituer à l’adjudicataire dans les 30 jours de l’adjudication. Demandez à votre
+          avocat si le bien est concerné.
         </>
       ),
     },

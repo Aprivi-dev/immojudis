@@ -408,6 +408,12 @@ describe("readable listing sections", () => {
     rerender(<ListingOverview sale={item()} premiumCeiling={120_000} />);
     expect(screen.queryByText(/Marge : /)).toBeNull();
   });
+  it("names the ceiling a simulation in the premium teaser too", () => {
+    render(<ListingOverview sale={item()} showPremiumTeaser />);
+
+    expect(screen.getByText("Enchère plafond (simulation)")).toBeTruthy();
+    expect(screen.queryByText("Enchère plafond")).toBeNull();
+  });
   it("does not expose premium or scenario values while a pricing input is protected", () => {
     const projection: AiReviewProjectionReadModel = {
       auction_sale_id: "sale-1",

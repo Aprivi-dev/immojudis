@@ -96,17 +96,30 @@ describe("CeilingPlanner headline", () => {
     renderPlanner();
 
     expect(screen.queryByText(/À compléter/)).toBeNull();
-    expect(screen.queryByText(/Pas d’enchère rentable/)).toBeNull();
+    expect(screen.queryByText(/Marge de sécurité non tenue/)).toBeNull();
   });
 
-  it("says that no bid is profitable instead of showing « Aucune »", () => {
+  it("says that the chosen margin cannot be kept instead of showing « Aucune »", () => {
     renderPlanner({ choices: { works: { key: "devis", amount: 400_000 } } });
 
-    expect(screen.getByText("Pas d’enchère rentable avec ces hypothèses")).toBeTruthy();
+    expect(screen.getByText("Marge de sécurité non tenue avec ces hypothèses")).toBeTruthy();
     expect(screen.queryByText("Aucune")).toBeNull();
     expect(
-      screen.getByText(/aucune enchère n’est rentable : .* le coût total maximal\./),
+      screen.getByText(
+        /À ces hypothèses, aucun prix d’enchère ne respecte la marge choisie : .* le coût total maximal\./,
+      ),
     ).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/rentable/);
+  });
+
+  it("says that the starting price is below the ceiling, as a simulation", () => {
+    renderPlanner({
+      saleOverride: { ...sale, starting_price_eur: 1_000 } as unknown as AuctionSale,
+    });
+    const verdict = screen.getByText(/est inférieure à votre plafond de/);
+    expect(verdict.textContent).toMatch(
+      /^La mise à prix \(1\s000\s€\) est inférieure à votre plafond de .+€ \(simulation, hors aléas\)\./,
+    );
   });
 
   it("gives the reason when the ceiling cannot be computed", () => {
@@ -171,13 +184,13 @@ describe("CeilingPlanner readability", () => {
 });
 
 describe("CeilingPlanner : vocabulaire du plafond", () => {
-  it("dit que l'enchère ne serait pas rentable quand le plafond est sous la mise à prix, sans conseiller", () => {
+  it("dit que la marge de sécurité ne serait pas tenue quand le plafond est sous la mise à prix, sans conseiller", () => {
     const { container } = renderPlanner({
       saleOverride: { ...sale, starting_price_eur: 300_000 } as unknown as AuctionSale,
     });
     const verdict = screen.getByText(/À ces hypothèses, votre plafond \(/);
     expect(verdict.textContent).toMatch(
-      /votre plafond \(.+€\) est inférieur à la mise à prix \(300\s000\s€\) : l’enchère ne serait pas rentable\./,
+      /votre plafond \(.+€\) est inférieur à la mise à prix \(300\s000\s€\) : une enchère à la mise à prix ne respecterait pas la marge de sécurité choisie\./,
     );
     expect(container.textContent).not.toContain("mieux vaut");
     expect(container.textContent).not.toMatch(/conseillée/);
@@ -204,8 +217,9 @@ describe("CeilingPlanner : vocabulaire du plafond", () => {
       within(simulator).getByRole("button", { name: "Définition : frais préalables" }),
     ).toBeTruthy();
     expect(checklist.textContent).toContain(
-      "La commune peut exercer son droit de préemption dans le mois qui suit l’adjudication.",
+      "Selon la situation du bien, la commune (ou un autre titulaire prévu par la loi) peut exercer un droit de préemption et se substituer à l’adjudicataire dans les 30 jours de l’adjudication. Demandez à votre avocat si le bien est concerné.",
     );
+    expect(checklist.textContent).not.toContain("dans le mois");
   });
 
   it("définit le procès-verbal descriptif quand l'occupation est inconnue", () => {
