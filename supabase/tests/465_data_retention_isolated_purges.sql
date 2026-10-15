@@ -33,11 +33,11 @@ values
 -- Registry rows: two old sale-scoped addresses never used for a mission (purged 21 days after
 -- their observation) and one global address that no purge touches.
 insert into public.information_agent_contacts (
-  sale_id, scope_sale_id, email, opposition_status, observed_at
+  sale_id, scope_sale_id, email, opposition_status, observed_at, source_kind, observed_by
 )
 values
-  ('46500000-0000-4000-8000-000000000001', '46500000-0000-4000-8000-000000000001', 'purge-a@example.test', 'none', '2026-09-01T00:00:00Z'),
-  ('46500000-0000-4000-8000-000000000002', '46500000-0000-4000-8000-000000000002', 'purge-b@example.test', 'none', '2026-09-01T00:00:00Z');
+  ('46500000-0000-4000-8000-000000000001', '46500000-0000-4000-8000-000000000001', 'purge-a@example.test', 'none', '2026-09-01T00:00:00Z', 'sale_listing', 'agent'),
+  ('46500000-0000-4000-8000-000000000002', '46500000-0000-4000-8000-000000000002', 'purge-b@example.test', 'none', '2026-09-01T00:00:00Z', 'sale_listing', 'agent');
 insert into public.information_agent_contacts (email, opposition_status)
 values ('rollback@example.test', 'none');
 
@@ -71,9 +71,9 @@ select ok(
 
 -- Forced failures: the first purge raises at once; the last one deletes a row and then raises.
 insert into public.information_agent_contacts (
-  sale_id, scope_sale_id, email, opposition_status, observed_at
+  sale_id, scope_sale_id, email, opposition_status, observed_at, source_kind, observed_by
 )
-values ('46500000-0000-4000-8000-000000000003', '46500000-0000-4000-8000-000000000003', 'purge-c@example.test', 'none', '2026-09-01T00:00:00Z');
+values ('46500000-0000-4000-8000-000000000003', '46500000-0000-4000-8000-000000000003', 'purge-c@example.test', 'none', '2026-09-01T00:00:00Z', 'sale_listing', 'agent');
 
 create or replace function app_private.purge_expired_operational_data(
   p_now timestamptz default statement_timestamp()
