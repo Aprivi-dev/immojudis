@@ -56,10 +56,23 @@ primaire pour corréler une erreur serveur à son `x-request-id`.
 Le workflow GitHub **Production smoke** appelle toutes les 30 minutes cinq surfaces publiques :
 accueil, liste des ventes, annonce exemple, mentions légales et annuaire d'avocats. Il vérifie le
 statut HTTP, le type de contenu, le contrat JSON, les URL canoniques et la conservation du
-`x-request-id`. Exécution locale ou manuelle :
+`x-request-id`. Il contrôle aussi `/login` (balise `noindex`), un 404 réel pour une vente inconnue et
+les signaux de référencement, selon l'état d'indexation **attendu**, donné par la variable
+`SEO_INDEXING_ENABLED` (variable de dépôt GitHub, à garder égale à celle de Vercel ; l'option
+`--indexing open|closed` la remplace en local) :
+
+- **ouvert** (`true`) : `robots.txt` avec `Sitemap:` et sans `Disallow: /`, `/sitemap.xml` (au
+  moins 10 URL) et le premier `sales/sitemap/N.xml` (au moins 100 URL, option `--min-sale-urls`),
+  absence d'`X-Robots-Tag` sur `/`, et une fiche prise dans le sitemap (200, canonical égal à son
+  adresse, JSON-LD valide avec `RealEstateListing`, pas de `noindex`) ;
+- **fermé** (variable absente ou autre valeur) : `X-Robots-Tag: noindex` sur `/` et `robots.txt`
+  sans `Sitemap:`.
+
+Exécution locale ou manuelle :
 
 ```bash
 npm run ops:smoke -- --origin https://immojudis.com
+SEO_INDEXING_ENABLED=true npm run ops:smoke -- --origin https://immojudis.com
 ```
 
 ## Politique navigateur
