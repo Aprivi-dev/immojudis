@@ -9,6 +9,13 @@ import { PLAN_LIMITS } from "@/lib/plans";
 
 export const MONTHLY_SALE_UNLOCKS = PLAN_LIMITS.decouverte.monthlyUnlocks;
 
+/**
+ * Ce que le compte gratuit coûte et donne, en une ligne (accueil, cartes de résultats). Une
+ * « fiche détaillée » est une vente débloquée : le nombre vient de `MONTHLY_SALE_UNLOCKS`, jamais
+ * écrit en dur. Les offres expliquent ce que chaque déblocage ouvre.
+ */
+export const FREE_ACCESS_LINE = `Gratuit, sans carte bancaire · ${MONTHLY_SALE_UNLOCKS} fiches détaillées par mois`;
+
 export type SaleUnlockStatus = {
   saleId: string | null;
   /** La vente est débloquée pour ce compte et toujours en ligne. */

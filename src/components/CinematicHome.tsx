@@ -6,14 +6,32 @@ import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import { exampleHeadlineFigures } from "@/lib/example-sale";
-import { formatPrice } from "@/lib/format";
+import { formatNumber, formatPrice } from "@/lib/format";
+import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
+import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { DOSSIER_APARTMENT_QUALITY, DOSSIER_APARTMENT_SIZES } from "./home-images";
 import styles from "./CinematicHome.module.css";
 
 // Same figures as /annonce-exemple: computed once from the example, not typed here.
 const EXAMPLE_FIGURES = exampleHeadlineFigures();
 
-export function CinematicHero() {
+const UPDATE_DATE_FORMAT = new Intl.DateTimeFormat("fr-FR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "Europe/Paris",
+});
+
+/** « 1 753 ventes à venir · mises à jour le 15/10/2026 » ; la date seule peut manquer. */
+export function catalogueSummaryLine({ count, updatedAt }: HomeCatalogueSummary): string {
+  const sales = `${formatNumber(count)} vente${count > 1 ? "s" : ""} à venir`;
+  const date = updatedAt ? new Date(updatedAt) : null;
+  return date && Number.isFinite(date.getTime())
+    ? `${sales} · mises à jour le ${UPDATE_DATE_FORMAT.format(date)}`
+    : sales;
+}
+
+export function CinematicHero({ summary = null }: { summary?: HomeCatalogueSummary | null }) {
   return (
     <section className={styles.hero} aria-labelledby="home-title">
       <Image
@@ -54,6 +72,16 @@ export function CinematicHero() {
               Explorer les ventes <ArrowRight size={19} aria-hidden="true" />
             </button>
           </Form>
+          <div className={styles.facts}>
+            {summary ? (
+              <p>
+                <Link href="/sales">{catalogueSummaryLine(summary)}</Link>
+              </p>
+            ) : null}
+            <p>
+              <Link href="/offres">{FREE_ACCESS_LINE}</Link>
+            </p>
+          </div>
           <Link className={styles.exampleLink} href="/annonce-exemple">
             Voir une analyse exemple <ArrowRight size={18} aria-hidden="true" />
           </Link>
