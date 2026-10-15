@@ -4,8 +4,13 @@
  * The E2E build points NEXT_PUBLIC_SUPABASE_URL at https://ci.supabase.co, which does not exist.
  * Playwright's `page.route` only intercepts what the browser sends: the server-side calls of
  * `/sales/<id>` (public summary of the sale, withdrawn sources…) reach the network and fail, and
- * the page answers 500. This preload answers only the two reads of a sale page with canned data,
- * inside the Node process of `next start`, and lets every other request through untouched.
+ * the page answers 500. This preload answers only the reads of a sale page with canned data (the
+ * public summary and details, the database verdict on indexing, the withdrawn sources), inside the
+ * Node process of `next start`, and lets every other request through untouched.
+ *
+ * Keep it in step with `readPublicSale` (src/lib/public-sale.server.ts): a read added there and not
+ * answered here makes every sale page answer 500 in the E2E build. A Vitest test
+ * (src/lib/e2e-server-fetch-mock.test.ts) runs that read against this file and fails if it drifts.
  *
  * Nothing here is bundled: it is never loaded by `next build`, `next dev` or production.
  */
@@ -51,7 +56,12 @@ globalThis.fetch = async function e2eFetch(input, init) {
     return json(body.p_sale_id === SALE.id ? [SALE] : []);
   }
   if (pathname.endsWith("/rpc/get_public_sale_details")) return json([]);
-  // Everything else (the catalogue search, the withdrawn sources…) keeps failing as it did before
+  // The database verdict on indexing (the page reads it for its robots meta): a verified court
+  // sale in the future is indexable. A failure here is thrown, not swallowed: it would be a 500.
+  if (pathname.endsWith("/rpc/get_public_sale_indexability")) return json(true);
+  // No source withdrawn (the default state): without this answer the lookup waits for a DNS error.
+  if (pathname.endsWith("/rpc/get_withdrawn_catalogue_sources")) return json([]);
+  // Everything else (the catalogue search…) keeps failing as it did before
   // this preload: a server that gets an empty answer would render and hydrate an empty catalogue
   // that the specs, which serve their own results to the browser with page.route, never expect.
   return originalFetch(input, init);
