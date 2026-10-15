@@ -22,6 +22,8 @@ describe("buildValuePreview", () => {
       lowEur: 179_000,
       highEur: 224_000,
       discountPct: 30,
+      discountNotSignificant: false,
+      startingPricePerM2: null,
       reliability: "correcte",
     });
   });
@@ -40,5 +42,58 @@ describe("buildValuePreview", () => {
         .available,
     ).toBe(false);
     expect(buildValuePreview(null, 50_000).available).toBe(false);
+  });
+
+  it("ne donne pas de pourcentage pour une mise à prix à moins de 30 % de la valeur", () => {
+    const preview = buildValuePreview(
+      estimate({ actionable: true, estimatedValueEur: 200_000, subjectSurfaceM2: 50 }),
+      50_000,
+    );
+    expect(preview).toMatchObject({
+      available: true,
+      discountPct: null,
+      discountNotSignificant: true,
+      startingPricePerM2: 1_000,
+    });
+    // La fourchette de valeur reste affichée : seul le pourcentage est retenu.
+    expect(preview.lowEur).toBe(170_000);
+    expect(preview.highEur).toBe(230_000);
+  });
+
+  it("ne donne pas de pourcentage pour une mise à prix à plus de 150 % de la valeur", () => {
+    const preview = buildValuePreview(
+      estimate({ actionable: true, estimatedValueEur: 100_000, subjectSurfaceM2: 40 }),
+      160_000,
+    );
+    expect(preview).toMatchObject({
+      discountPct: null,
+      discountNotSignificant: true,
+      startingPricePerM2: 4_000,
+    });
+  });
+
+  it("garde le pourcentage aux bornes exactes des seuils", () => {
+    expect(
+      buildValuePreview(estimate({ actionable: true, estimatedValueEur: 100_000 }), 30_000),
+    ).toMatchObject({ discountPct: 70, discountNotSignificant: false });
+    expect(
+      buildValuePreview(estimate({ actionable: true, estimatedValueEur: 100_000 }), 150_000),
+    ).toMatchObject({ discountPct: -50, discountNotSignificant: false });
+  });
+
+  it("signale l'écart non significatif sans prix au m² quand la surface manque", () => {
+    expect(
+      buildValuePreview(estimate({ actionable: true, estimatedValueEur: 100_000 }), 10_000),
+    ).toMatchObject({
+      discountPct: null,
+      discountNotSignificant: true,
+      startingPricePerM2: null,
+    });
+  });
+
+  it("n'affiche pas d'écart sans mise à prix", () => {
+    expect(
+      buildValuePreview(estimate({ actionable: true, estimatedValueEur: 100_000 }), null),
+    ).toMatchObject({ available: true, discountPct: null, discountNotSignificant: false });
   });
 });
