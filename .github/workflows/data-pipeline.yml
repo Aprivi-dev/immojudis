@@ -95,6 +95,8 @@ jobs:
       # Merging duplicates already in the database stays off until the repository variable
       # DEDUPE_RECONCILE_ENABLED is set to true (docs/runbooks/chantier-f-reparations-donnees.md).
       DEDUPE_RECONCILE_ENABLED: ${{ vars.DEDUPE_RECONCILE_ENABLED || 'false' }}
+      # Repository variable DEDUPE_RECONCILE_MODE=candidates: the sweep only lists the pairs it would merge.
+      DEDUPE_RECONCILE_MODE: ${{ vars.DEDUPE_RECONCILE_MODE || 'apply' }}
       REPLICATE_MODEL: qwen/qwen3-7-plus
       PIPELINE_ENRICH_WORKERS: 2
       PIPELINE_LLM_WORKERS: 1

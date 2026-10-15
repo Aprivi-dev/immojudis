@@ -32,6 +32,14 @@ _COURT_LABEL_PREFIX_RE = re.compile(
     r"^(?:tribunal judiciaire|tribunal de grande instance|tgi|tj)(?: (?:de|du|des|d))? (.+)$"
 )
 
+# Suffixe « (Département) » que Licitor ajoute au tribunal : « Tribunal Judiciaire d'Arras (Pas de Calais) ».
+_TRAILING_PARENTHESES_RE = re.compile(r"(?:\s*\([^()]*\))+\s*$")
+_COURT_PREFIX = r"(?:tribunal judiciaire|tribunal de grande instance|tgi|tj)"
+_REPEATED_COURT_PREFIX_RE = re.compile(rf"^({_COURT_PREFIX})(?: {_COURT_PREFIX})+\b")
+_ABBREVIATED_SAINT = {"st": "saint", "ste": "sainte"}
+# Variante usuelle d'un tribunal -> clé du référentiel (« Briey » est le TJ de Val-de-Briey).
+COURT_LABEL_KEY_ALIASES = {"briey": "val de briey"}
+
 _DEFAULT_COMPETENCES_PATH = (
     RAW_DIR / "outcome_sources" / "justice_courts" / "resource-e2a1941b-observed-competences.csv"
 )
@@ -163,11 +171,13 @@ class OfficialCourtLabelIndex:
         self._code_by_key = {key: next(iter(codes)) for key, codes in codes_by_key.items() if len(codes) == 1}
 
     def resolve(self, label: object) -> OfficialCourt | None:
-        key = tribunal_label_court_key(label)
-        if key is None:
-            return None
-        code = self._code_by_key.get(key)
-        return self._courts.get(code) if code else None
+        # Le libellé tel quel d'abord, puis nettoyé (« (Département) », préfixe répété, St, alias).
+        for variant in court_label_variants(label):
+            key = tribunal_label_court_key(variant)
+            code = self._code_by_key.get(key) if key else None
+            if code:
+                return self._courts.get(code)
+        return None
 
 
 def tribunal_label_court_key(label: object) -> str | None:
@@ -181,6 +191,26 @@ def tribunal_label_court_key(label: object) -> str | None:
     fingerprint = _fingerprint(label)
     match = _COURT_LABEL_PREFIX_RE.fullmatch(fingerprint)
     return match.group(1) if match else None
+
+
+def court_label_variants(label: object) -> list[str]:
+    """Le libellé, puis sa forme nettoyée si elle diffère.
+
+    Retire le suffixe « (Département) », les préfixes répétés (« TJ Tribunal judiciaire du Mans »), les
+    abréviations « St » / « Ste » et applique les variantes connues (``COURT_LABEL_KEY_ALIASES``). Un libellé
+    sans préfixe de tribunal (« Marseille ») n'a pas de forme nettoyée : une commune n'est jamais un tribunal.
+    """
+
+    variants = [label]
+    text = _TRAILING_PARENTHESES_RE.sub("", str(label or ""))
+    fingerprint = _REPEATED_COURT_PREFIX_RE.sub(r"\1", _fingerprint(text))
+    fingerprint = " ".join(_ABBREVIATED_SAINT.get(word, word) for word in fingerprint.split())
+    match = _COURT_LABEL_PREFIX_RE.fullmatch(fingerprint)
+    if match:
+        cleaned = f"tj {COURT_LABEL_KEY_ALIASES.get(match.group(1), match.group(1))}"
+        if cleaned != _fingerprint(label):
+            variants.append(cleaned)
+    return variants
 
 
 class CourtCompetenceReference:
@@ -260,8 +290,6 @@ def resolve_court_by_label(label: object) -> OfficialCourt | None:
     caller keeps the verified INSEE competence as the higher-priority signal.
     """
 
-    if tribunal_label_court_key(label) is None:
-        return None
     reference = _configured_reference()
     return reference.resolve_label(label) if reference is not None else None
 
@@ -382,7 +410,15 @@ def _load_reference(competences_path: str, structures_path: str) -> CourtCompete
     return CourtCompetenceReference(competences_path, structures_path)
 
 
+_SHORT_NAME_ARTICLES = {"du": "Le ", "des": "Les "}
+
+
 def _short_court_name(official_name: str) -> str:
+    """« Tribunal judiciaire de Pau » -> « TJ Pau » ; « … du Mans » -> « TJ Le Mans » ; « … des Sables-d'Olonne »
+    -> « TJ Les Sables-d'Olonne » (l'article contracté « du » / « des » redevient « Le » / « Les »)."""
+    contracted = re.match(r"^tribunal\s+judiciaire\s+(du|des)\s+(.+)$", official_name.strip(), flags=re.IGNORECASE)
+    if contracted:
+        return f"TJ {_SHORT_NAME_ARTICLES[contracted.group(1).lower()]}{contracted.group(2).strip()}"
     suffix = re.sub(
         r"^tribunal\s+judiciaire\s+(?:de\s+|d['’])",
         "",
