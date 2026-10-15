@@ -49,3 +49,35 @@ describe("proxy CSP", () => {
     expect(response.headers.get("x-request-id")).toBe("client-12345678");
   });
 });
+
+describe("proxy X-Robots-Tag", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("sends noindex on every response while SEO_INDEXING_ENABLED is not true (default)", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "");
+    expect(run().headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "false");
+    expect(run().headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it("sends nothing once the production site is open", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "true");
+    expect(run().headers.get("x-robots-tag")).toBeNull();
+  });
+
+  it("reads the switch at request time, not at import time", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "true");
+    expect(run().headers.get("x-robots-tag")).toBeNull();
+    vi.stubEnv("SEO_INDEXING_ENABLED", "false");
+    expect(run().headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it("keeps noindex on a preview even with the switch open", () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "true");
+    expect(run().headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+});
