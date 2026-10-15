@@ -18,6 +18,12 @@ import { pageMetadata } from "@/lib/page-metadata";
 // `/tribunaux` ; les chiffres restent en cache de données une heure.
 export const revalidate = 300;
 
+// Une lecture complète du catalogue (jusqu'à 100 appels à la base) peut tomber sur ce rendu quand le
+// cache de données est vide : la durée est relevée (60 s), sans aller jusqu'au maximum de la
+// plateforme. Next.js veut un littéral ici ; il doit rester égal à DEPARTMENT_PAGES_MAX_DURATION_SECONDS
+// (un test le vérifie).
+export const maxDuration = 60;
+
 const count = new Intl.NumberFormat("fr-FR");
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -27,7 +33,7 @@ export async function generateMetadata(): Promise<Metadata> {
       path: DEPARTMENT_PAGES_PATH,
       title: DEPARTMENT_INDEX_TITLE,
       description:
-        "Les ventes immobilières aux enchères à venir département par département : nombre de ventes, prochaine audience et mise à prix médiane, au tribunal, chez le notaire ou par l’État.",
+        "Les ventes immobilières aux enchères à venir département par département : nombre de ventes, prochaine date de vente et mise à prix médiane des ventes au tribunal, chez le notaire ou par l’État.",
     }),
     // Sans aucune page de département indexable, l'index n'a rien à offrir de propre. Une erreur de
     // lecture ne dit rien des départements : la page reste indexable.
@@ -61,8 +67,8 @@ export default async function Page() {
         title="Ventes aux enchères immobilières par département"
         description={
           total != null
-            ? `${count.format(total)} ${total > 1 ? "ventes à venir" : "vente à venir"} dans le catalogue public d’Immojudis. Choisissez un département pour voir ses ventes, sa prochaine audience et la mise à prix médiane.`
-            : "Choisissez un département pour voir ses ventes à venir, sa prochaine audience et la mise à prix médiane."
+            ? `${count.format(total)} ${total > 1 ? "ventes à venir" : "vente à venir"} dans le catalogue public d’Immojudis. Choisissez un département pour voir ses ventes, sa prochaine date de vente et la mise à prix médiane des ventes au tribunal.`
+            : "Choisissez un département pour voir ses ventes à venir, sa prochaine date de vente et la mise à prix médiane des ventes au tribunal."
         }
       >
         {catalogue == null ? (

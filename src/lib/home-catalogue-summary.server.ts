@@ -1,3 +1,4 @@
+import "server-only";
 import { loadInitialCatalogue, type InitialCatalogue } from "@/lib/public-catalogue.server";
 import {
   loadSitemapSaleTotal,

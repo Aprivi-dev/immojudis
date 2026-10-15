@@ -16,6 +16,10 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 // frozen at build time.
 export const dynamic = "force-dynamic";
 
+// The departments are read in full when the data cache is empty (up to 100 database calls): same
+// duration as the department pages (DEPARTMENT_PAGES_MAX_DURATION_SECONDS, a test checks it).
+export const maxDuration = 60;
+
 /**
  * Last real content change of each static page (not "now": a date that moves on
  * every request teaches crawlers to ignore it). Update the date when the page's

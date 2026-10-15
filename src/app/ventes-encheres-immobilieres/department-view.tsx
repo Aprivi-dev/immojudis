@@ -2,6 +2,9 @@ import Link from "next/link";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import {
   DEPARTMENT_PAGES_PATH,
+  departmentNextDateLabel,
+  departmentPriceLabel,
+  departmentSaleDateText,
   departmentSearchPath,
   type DepartmentRef,
   type DepartmentStats,
@@ -33,6 +36,7 @@ export function DepartmentView({
   generatedAt: string;
 }) {
   const total = stats?.upcomingCount ?? 0;
+  const now = new Date();
   const nextDate = seoLongDate(stats?.nextSaleDate);
   const updated = seoLongDate(generatedAt);
   const searchHref = departmentSearchPath(department);
@@ -81,16 +85,28 @@ export function DepartmentView({
                 <dd className="mt-1 text-2xl font-semibold tabular-nums">{count.format(total)}</dd>
               </div>
               <div>
-                <dt className="text-sm text-ink-soft">Prochaine audience</dt>
+                <dt className="text-sm text-ink-soft">
+                  {departmentNextDateLabel(stats?.nextSaleVenueType ?? null)}
+                </dt>
                 <dd className="mt-1 text-lg font-semibold">{nextDate ?? "Date à confirmer"}</dd>
               </div>
               <div>
-                <dt className="text-sm text-ink-soft">Mise à prix médiane</dt>
+                <dt className="text-sm text-ink-soft">Mise à prix médiane (ventes au tribunal)</dt>
                 <dd className="mt-1 text-lg font-semibold tabular-nums">
                   {stats?.medianStartingPriceEur != null
                     ? formatStartingPrice(stats.medianStartingPriceEur)
                     : "Non communiquée"}
                 </dd>
+                {stats?.medianStartingPriceEur != null ? (
+                  <dd className="mt-1 text-xs text-ink-soft">
+                    sur {count.format(stats.medianSampleSize)} {saleWord(stats.medianSampleSize)} au
+                    tribunal ; les autres ventes ne sont pas comptées
+                  </dd>
+                ) : (
+                  <dd className="mt-1 text-xs text-ink-soft">
+                    aucune vente au tribunal chiffrée dans ce département
+                  </dd>
+                )}
               </div>
             </dl>
           ) : (
@@ -139,8 +155,11 @@ export function DepartmentView({
             </h2>
             <ul className="mt-3 divide-y divide-line">
               {stats.sales.map((sale) => {
-                const date = seoLongDate(sale.saleDate);
-                const time = saleHearingTime(sale.saleDate);
+                const dateText = departmentSaleDateText(
+                  sale,
+                  { date: seoLongDate(sale.saleDate), time: saleHearingTime(sale.saleDate) },
+                  now,
+                );
                 const surface = seoSurface(sale.surfaceM2);
                 return (
                   <li key={sale.id} className="py-3">
@@ -153,17 +172,13 @@ export function DepartmentView({
                           {sale.city || "Commune à confirmer"}
                         </span>
                         <span className="block text-sm text-ink-soft">
-                          {[
-                            propertyTypeLabel(sale.propertyType),
-                            surface,
-                            date ? `audience le ${date}${time ? ` à ${time}` : ""}` : null,
-                          ]
+                          {[propertyTypeLabel(sale.propertyType), surface, dateText]
                             .filter(Boolean)
                             .join(" · ")}
                         </span>
                       </span>
                       <span className="text-sm tabular-nums">
-                        <span className="text-ink-soft">Mise à prix </span>
+                        <span className="text-ink-soft">{departmentPriceLabel(sale)} </span>
                         <span className="font-semibold">
                           {formatStartingPrice(sale.startingPriceEur)}
                         </span>

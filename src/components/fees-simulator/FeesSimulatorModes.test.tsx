@@ -5,9 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ track: vi.fn() }));
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
-import { maxPriceForBudget } from "@/lib/bid-budget";
+import { MAX_BID_BUDGET_EUR, maxPriceForBudget } from "@/lib/bid-budget";
 import { CONSIGNATION_MINIMUM } from "@/lib/bid-ceiling-engine";
 import { computeAcquisitionCosts, DEFAULTS } from "@/lib/profitability";
+import { MAX_SURENCHERE_PRICE_EUR } from "@/lib/surenchere";
 import { getSurenchereReminder } from "@/lib/surenchere-reminder";
 import { DEFAULT_SIMULATOR_BUDGET } from "./BudgetMode";
 import { FeesSimulator } from "./FeesSimulator";
@@ -34,8 +35,9 @@ const euroWhole = new Intl.NumberFormat("fr-FR", {
 const plain = (text: string) => text.replace(/\s/g, " ");
 
 function live() {
-  return screen.getByText(/€|Saisissez|Budget insuffisant/, { selector: "[aria-live='polite']" })
-    .textContent;
+  return screen.getByText(/€|Saisissez|Budget insuffisant|trop élevé/, {
+    selector: "[aria-live='polite']",
+  }).textContent;
 }
 
 function field(name: string) {
@@ -201,6 +203,22 @@ describe("mode inverse : budget vers prix maximal", () => {
     expect(live()).toBe("Saisissez un budget");
   });
 
+  it("répond proprement à un budget démesuré, sans calcul ni blocage, et plafonne l'input", () => {
+    render(<FeesSimulator />);
+    choose(/Budget vers prix maximal/);
+    expect(field("Budget total").max).toBe(String(MAX_BID_BUDGET_EUR));
+    for (const value of ["1e16", "1e300", String(MAX_BID_BUDGET_EUR * 2)]) {
+      fireEvent.change(field("Budget total"), { target: { value } });
+      expect(live()).toBe("Budget trop élevé");
+      expect(screen.queryByRole("definition")).toBeNull();
+    }
+    const result = screen.getByRole("region", { name: "Jusqu’où enchérir" });
+    expect(plain(result.textContent ?? "")).toContain(plain(euroWhole.format(MAX_BID_BUDGET_EUR)));
+    // Revenir sous le plafond rétablit le calcul.
+    fireEvent.change(field("Budget total"), { target: { value: "180000" } });
+    expect(live()).toContain("€");
+  });
+
   it("rappelle la consignation du moteur, et la chiffre quand la mise à prix est saisie", () => {
     render(<FeesSimulator />);
     choose(/Budget vers prix maximal/);
@@ -277,6 +295,18 @@ describe("surenchère du dixième", () => {
     choose(/Surenchère du dixième/);
     fireEvent.change(field("Prix d’adjudication"), { target: { value: "" } });
     expect(live()).toBe("Saisissez un prix");
+  });
+
+  it("répond proprement à un prix démesuré et plafonne l'input", () => {
+    render(<FeesSimulator />);
+    choose(/Surenchère du dixième/);
+    expect(field("Prix d’adjudication").max).toBe(String(MAX_SURENCHERE_PRICE_EUR));
+    for (const value of ["1e16", "1e300", String(MAX_SURENCHERE_PRICE_EUR * 2)]) {
+      fireEvent.change(field("Prix d’adjudication"), { target: { value } });
+      expect(live()).toBe("Prix trop élevé");
+    }
+    fireEvent.change(field("Prix d’adjudication"), { target: { value: "85000" } });
+    expect(live()).toBe(euro.format(93_500));
   });
 
   it("rappelle le délai tel que l'article le formule, avec un lien vers l'article", () => {

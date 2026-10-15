@@ -5,7 +5,12 @@
  * vente) est celle de l'article `apres-adjudication-surenchere-paiement-titre-vente` : voir
  * `surenchere-reminder.ts`, qui la lit sans la réécrire.
  */
+import { MAX_SIMULATOR_AMOUNT_EUR } from "@/lib/simulator-limits";
+
 const SURENCHERE_RATE_DIVISOR = 10;
+
+/** Plafond du prix accepté (voir `simulator-limits.ts`) : au-delà, `minimumSurenchere` rend `null`. */
+export const MAX_SURENCHERE_PRICE_EUR = MAX_SIMULATOR_AMOUNT_EUR;
 
 export type SurenchereAmounts = {
   /** Prix principal de la vente, en euros. */
@@ -21,7 +26,7 @@ export type SurenchereAmounts = {
  * ce qui ferait arrondir le dixième à l'euro supérieur sans raison.
  */
 export function minimumSurenchere(price: number): SurenchereAmounts | null {
-  if (!Number.isFinite(price) || price <= 0) return null;
+  if (!Number.isFinite(price) || price <= 0 || price > MAX_SURENCHERE_PRICE_EUR) return null;
   const principalCents = Math.round(price * 100);
   const tenthCents = Math.ceil(principalCents / SURENCHERE_RATE_DIVISOR);
   return {

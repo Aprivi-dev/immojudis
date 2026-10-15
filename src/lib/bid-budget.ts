@@ -3,6 +3,16 @@ import {
   type AcquisitionCostOptions,
   type AcquisitionCostResult,
 } from "@/lib/profitability";
+import { MAX_SIMULATOR_AMOUNT_EUR } from "@/lib/simulator-limits";
+
+/** Plafond du budget accepté (voir `simulator-limits.ts`). */
+export const MAX_BID_BUDGET_EUR = MAX_SIMULATOR_AMOUNT_EUR;
+
+/**
+ * Nombre maximal de tours de dichotomie. Sous le plafond, 34 tours suffisent (2^34 > 1e10) ; la
+ * borne est une sécurité : la boucle ne peut jamais tourner sans fin, quelle que soit l'entrée.
+ */
+const MAX_BISECTION_STEPS = 64;
 
 /**
  * Mode inverse du simulateur de frais : « j'ai un budget total de X € : jusqu'à combien
@@ -19,6 +29,8 @@ import {
 export type BudgetInversion =
   /** Budget absent, nul, négatif ou non numérique. */
   | { status: "invalid" }
+  /** Budget au-dessus de `MAX_BID_BUDGET_EUR` : aucun calcul n'est tenté. */
+  | { status: "too_high"; budget: number; maximumBudget: number }
   /** Le budget ne couvre pas les frais fixes (honoraires, frais préalables, travaux…) à prix nul. */
   | { status: "too_low"; budget: number; minimumBudget: number }
   | {
@@ -39,6 +51,9 @@ export function maxPriceForBudget(
   options: BudgetInversionOptions = {},
 ): BudgetInversion {
   if (!Number.isFinite(budget) || budget <= 0) return { status: "invalid" };
+  if (budget > MAX_BID_BUDGET_EUR) {
+    return { status: "too_high", budget, maximumBudget: MAX_BID_BUDGET_EUR };
+  }
 
   const costAt = (price: number) => computeAcquisitionCosts({ ...options, price });
   const fits = (price: number) => costAt(price).totalCost <= budget;
@@ -54,7 +69,7 @@ export function maxPriceForBudget(
   if (fits(high)) {
     low = high;
   } else {
-    while (high - low > 1) {
+    for (let step = 0; high - low > 1 && step < MAX_BISECTION_STEPS; step += 1) {
       const middle = Math.floor((low + high) / 2);
       if (fits(middle)) low = middle;
       else high = middle;

@@ -48,6 +48,12 @@ const LLMS_TXT_METHOD_PAGES: readonly LlmsTxtPage[] = [
   },
 ];
 
+// `/tribunaux` est listé sans condition, alors que le sitemap le retire quand aucun tribunal n'a de
+// vente à venir (`src/app/sitemap.ts`). Le choix est voulu : savoir si un tribunal est listé exige
+// une lecture en base (`loadPublicTribunalActivity`), et cette route doit rester légère, sans
+// dépendre de la base. Conséquence connue : pendant un catalogue sans aucun tribunal,
+// ce fichier peut mentionner une page qui répond 200 mais n'est pas indexée (elle porte alors
+// `noindex`) ; elle n'en reste pas moins une page éditoriale valide, avec ses explications.
 const LLMS_TXT_TOOL_PAGES: readonly LlmsTxtPage[] = [
   {
     title: "Tribunaux",

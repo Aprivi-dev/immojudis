@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { Card, buttonClasses } from "@/components/ui/primitives";
-import { minimumSurenchere } from "@/lib/surenchere";
+import { MAX_SURENCHERE_PRICE_EUR, minimumSurenchere } from "@/lib/surenchere";
 import type { SurenchereReminder } from "@/lib/surenchere-reminder";
-import { AmountField, euro, toAmount } from "./fields";
+import { AmountField, euro, euroWhole, toAmount } from "./fields";
 import { SimulatorDisclaimer } from "./SimulatorDisclaimer";
 
 export const DEFAULT_SURENCHERE_PRICE = 100_000;
@@ -24,7 +24,9 @@ export function SurenchereMode({
   onPriceChange: (value: string) => void;
   reminder: SurenchereReminder | null;
 }) {
-  const amounts = useMemo(() => minimumSurenchere(toAmount(price)), [price]);
+  const priceValue = toAmount(price);
+  const amounts = useMemo(() => minimumSurenchere(priceValue), [priceValue]);
+  const tooHigh = priceValue > MAX_SURENCHERE_PRICE_EUR;
 
   return (
     <div className="grid min-w-0 gap-6 md:grid-cols-2">
@@ -42,6 +44,7 @@ export function SurenchereMode({
             hint="Le prix principal de la vente, tel qu’il figure au jugement d’adjudication."
             value={price}
             onChange={onPriceChange}
+            max={MAX_SURENCHERE_PRICE_EUR}
           />
         </form>
       </Card>
@@ -61,12 +64,21 @@ export function SurenchereMode({
             aria-atomic="true"
             className="mt-1 break-words font-display text-3xl font-semibold tabular-nums"
           >
-            {amounts ? euro.format(amounts.minimumBid) : "Saisissez un prix"}
+            {amounts
+              ? euro.format(amounts.minimumBid)
+              : tooHigh
+                ? "Prix trop élevé"
+                : "Saisissez un prix"}
           </p>
           {amounts ? (
             <p className="mt-1 text-sm text-ink-soft">
               Le prix principal de {euro.format(amounts.principalPrice)} augmenté de 10 %, soit un
               dixième de {euro.format(amounts.tenth)}, arrondi au centime supérieur.
+            </p>
+          ) : tooHigh ? (
+            <p className="mt-1 text-sm text-ink-soft">
+              Ce calcul va jusqu’à {euroWhole.format(MAX_SURENCHERE_PRICE_EUR)}. Saisissez le prix
+              d’adjudication tel qu’il figure au jugement.
             </p>
           ) : (
             <p className="mt-1 text-sm text-ink-soft">

@@ -68,11 +68,14 @@ export function AmountField({
   hint,
   value,
   onChange,
+  max,
 }: {
   label: string;
   hint?: string;
   value: string;
   onChange: (value: string) => void;
+  /** Plafond du montant, relayé à l'attribut `max` de l'input. */
+  max?: number;
 }) {
   const id = useId();
   const hintId = `${id}-hint`;
@@ -84,6 +87,7 @@ export function AmountField({
           type="number"
           inputMode="decimal"
           min={0}
+          max={max}
           step="any"
           value={value}
           onChange={(event) => onChange(event.target.value)}

@@ -274,11 +274,14 @@ export function getListingDataCoverage(
   };
 }
 
+/** What `factValue` shows for a fact with no value: `isNotCommunicated` compares to this same text. */
+const MISSING_INFORMATION_LABEL = "Information manquante";
+
 const STATUS_LABELS: Record<PublicListingFact["status"], string> = {
   sourced: "Source à préciser",
   reported: "Source à préciser",
   estimated: "Estimation",
-  missing: "Information manquante",
+  missing: MISSING_INFORMATION_LABEL,
   conflict: "Sources à départager",
 };
 
@@ -310,12 +313,12 @@ function sourceButtonLabel(fact: PublicListingFact): string {
 }
 
 function factValue(fact: PublicListingFact): string {
-  if (fact.status === "missing") return "Information manquante";
+  if (fact.status === "missing") return MISSING_INFORMATION_LABEL;
   if (fact.value?.trim()) return fact.value.trim();
   if (fact.status === "reported") return "À confirmer";
   if (fact.status === "conflict") return "Valeur non tranchée";
   if (fact.status === "estimated") return "Estimation indisponible";
-  return "Information manquante";
+  return MISSING_INFORMATION_LABEL;
 }
 
 function statusBadgeLabel(fact: PublicListingFact): string | null {
@@ -526,7 +529,7 @@ function PublicInformationSection({ section, defaultOpen }: PublicInformationSec
 
 /** A line that would read « Information manquante » : it goes to the single grouped block. */
 function isNotCommunicated(fact: PublicListingFact): boolean {
-  return factValue(fact) === "Information manquante";
+  return factValue(fact) === MISSING_INFORMATION_LABEL;
 }
 
 type NotCommunicatedItem = { fact: PublicListingFact; sectionTitle: string };

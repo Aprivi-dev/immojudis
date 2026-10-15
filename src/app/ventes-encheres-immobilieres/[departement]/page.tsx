@@ -26,6 +26,12 @@ type PageProps = { params: Promise<{ departement: string }> };
 // réponse n'est pas mise en cache, et une version déjà produite reste servie.
 export const revalidate = 3600;
 
+// Une lecture complète du catalogue (jusqu'à 100 appels à la base) peut tomber sur ce rendu quand le
+// cache de données est vide : la durée est relevée (60 s), sans aller jusqu'au maximum de la
+// plateforme. Next.js veut un littéral ici ; il doit rester égal à DEPARTMENT_PAGES_MAX_DURATION_SECONDS
+// (un test le vérifie).
+export const maxDuration = 60;
+
 export async function generateStaticParams() {
   return [];
 }

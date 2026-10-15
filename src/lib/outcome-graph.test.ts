@@ -94,6 +94,36 @@ describe("buildBaselineOutcomeGraph", () => {
     expect(forecast.confidence?.label ?? null).toBe(confidence);
   });
 
+  describe("facteur « Décote de départ »", () => {
+    const factorOf = (marketValueCents: number | null, startingPriceCents = 9_000_000) =>
+      buildBaselineOutcomeGraph(
+        { ...context, marketValueCents, startingPriceCents },
+        cohort(),
+      ).explanationFactors.find((factor) => factor.label === "Décote de départ");
+
+    it("chiffre une décote plausible", () => {
+      expect(factorOf(17_200_000)).toEqual({
+        label: "Décote de départ",
+        detail: "48 % sous la valeur de marché estimée",
+        direction: "up",
+      });
+      expect(factorOf(6_000_000)?.detail).toBe("50 % au-dessus de la valeur de marché estimée");
+    });
+
+    it("n’affiche aucun pourcentage pour un écart de 85 % ou de -100 %, comme la fiche", () => {
+      for (const marketValueCents of [60_000_000, 4_500_000]) {
+        const factor = factorOf(marketValueCents);
+        expect(factor?.detail).toBe("écart non significatif avec la valeur de marché estimée");
+        expect(factor?.detail).not.toMatch(/\d/);
+        expect(factor?.direction).toBe("neutral");
+      }
+    });
+
+    it("n’ajoute pas le facteur sans valeur de marché", () => {
+      expect(factorOf(null)).toBeUndefined();
+    });
+  });
+
   it("refuse une probabilité inconnue au lieu de la transformer en zéro", () => {
     const forecast = buildBaselineOutcomeGraph(
       context,

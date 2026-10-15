@@ -20,9 +20,18 @@ export const metadata: Metadata = pageMetadata({
 /**
  * Cette page décrit le code, pas une intention : `buildValuePreview` (src/lib/value-preview.ts),
  * `analyzeMarketCandidates` (market-estimation-engine.ts), `buildEstimate` (market.server.ts),
- * `getDvfMarketStatisticsFallback` (dvf-market-statistics.ts) et le garde-fou de
- * `src/lib/market-gap.ts`. Tout chiffre cité ici vient d'une constante de ces fichiers ; quand
- * l'un change, cette page doit changer avec lui.
+ * `getDvfMarketStatisticsFallback` (dvf-market-statistics.ts), `estimateMarketDiscountPct`
+ * (alert-matches.ts) et le garde-fou de `src/lib/market-gap.ts`.
+ *
+ * Les chiffres ne viennent pas tous d'une constante importée. Seuls ceux qui existent sous forme
+ * de constante exportée ou de fonction exportée du moteur sont lus ou vérifiés par
+ * `page.test.tsx` : les seuils du garde-fou (importés ici), le seuil urbain de 10 000 habitants
+ * (`URBAN_POPULATION_THRESHOLD`) et les seuils de 5 et 12 ventes du repli
+ * (`selectStatisticScope`). Le seuil de 30 ventes du département n'est pas observable : à défaut,
+ * l'échelle la mieux fournie est retenue.
+ * Les autres (4 ventes, 60 mois, rayons, tolérances de surface, plage 300 à 50 000 €/m², 24 mois,
+ * 12 % par an…) sont recopiés à la main depuis des constantes privées du moteur : quand l'une
+ * change, cette page doit changer avec elle.
  */
 const FORMULA = "écart = (valeur estimée − mise à prix) ÷ valeur estimée × 100";
 
@@ -156,8 +165,8 @@ function PageContent() {
             Immojudis se replie sur des statistiques DVF agrégées : celles de la commune si elles
             reposent sur au moins 5 ventes, sinon celles de l’intercommunalité (au moins 12 ventes),
             sinon celles du département (au moins 30 ventes). À défaut, l’échelle la mieux fournie
-            est retenue, dès une vente. Ces statistiques doivent avoir été mises à jour il y a moins
-            de 24 mois. Il n’y a pas de repli pour un terrain.
+            est retenue, dès une vente. Ces statistiques doivent avoir été mises à jour il y a 24
+            mois au plus. Il n’y a pas de repli pour un terrain.
           </p>
           <p>
             Cette valeur de repli est présentée comme <strong>indicative et fragile</strong>, avec
@@ -189,6 +198,13 @@ function PageContent() {
           <p>
             La fourchette de valeur reste affichée. Le prix au m² n’est donné que si la surface de
             référence de l’estimation est connue.
+          </p>
+          <p>
+            La même plage s’applique dans les <strong>alertes</strong> : une vente dont l’écart la
+            dépasse ne remplit jamais un critère de décote minimale et son résumé n’affiche aucun
+            pourcentage. Elle s’applique aussi au facteur « Décote de départ » de la prévision de
+            résultat de la fiche, qui indique alors seulement « {MARKET_GAP_NOT_SIGNIFICANT_LABEL}{" "}
+            ».
           </p>
         </Section>
 
