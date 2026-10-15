@@ -37,7 +37,7 @@ test("l'enchère plafond de l'exemple est chiffrée, avec ses lignes dépliables
   await expect(definition).toContainText("Attribution du bien au meilleur enchérisseur");
   await expect(definition.getByRole("link", { name: "En savoir plus" })).toHaveAttribute(
     "href",
-    "/ventes-immobilieres-judiciaires#lexique",
+    "/ventes-immobilieres-judiciaires#lexique-adjudication",
   );
   await page.keyboard.press("Escape");
   await expect(definition).toHaveCount(0);

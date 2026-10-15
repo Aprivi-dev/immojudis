@@ -22,8 +22,12 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
+import { DEPARTMENT_PAGES_MAX_DURATION_SECONDS } from "@/lib/department-pages";
 import { DEPARTMENT_CATALOGUE_REVALIDATE_SECONDS } from "@/lib/department-pages.server";
-import Page, { generateMetadata, generateStaticParams, revalidate } from "./page";
+import Page, { generateMetadata, generateStaticParams, maxDuration, revalidate } from "./page";
+
+/** Horloge fixe : les ventes ci-dessous sont à venir à cette date, quel que soit le jour réel. */
+const NOW = new Date("2026-10-15T08:00:00Z");
 
 function sale(id: string, overrides: Partial<DepartmentSaleInput> = {}): DepartmentSaleInput {
   return {
@@ -34,6 +38,8 @@ function sale(id: string, overrides: Partial<DepartmentSaleInput> = {}): Departm
     saleDate: "2026-11-10T13:00:00Z",
     startingPriceEur: 80_000,
     surfaceM2: 45,
+    venueType: "tribunal",
+    status: "scheduled",
     ...overrides,
   };
 }
@@ -45,6 +51,8 @@ function params(slug: string) {
 const THREE = [sale("a"), sale("b", { propertyType: "house" }), sale("c", { city: "Mérignac" })];
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
   process.env.SITE_URL = "https://immojudis.com";
   mocks.catalogue.mockReset();
   mocks.tribunals.mockReset();
@@ -81,6 +89,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   delete process.env.SITE_URL;
 });
@@ -90,6 +99,11 @@ describe("page d'un département : génération", () => {
     expect(await generateStaticParams()).toEqual([]);
     expect(revalidate).toBe(3600);
     expect(revalidate).toBe(DEPARTMENT_CATALOGUE_REVALIDATE_SECONDS);
+  });
+
+  it("relève la durée maximale du rendu, qui peut lire tout le catalogue", () => {
+    expect(maxDuration).toBe(60);
+    expect(maxDuration).toBe(DEPARTMENT_PAGES_MAX_DURATION_SECONDS);
   });
 
   it("répond 404 pour une adresse qui n'est pas un département", async () => {
@@ -117,7 +131,7 @@ describe("page d'un département : génération", () => {
 
 describe("page d'un département : indexation", () => {
   it("est indexable à partir de 3 ventes à venir, avec canonical et Open Graph", async () => {
-    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE));
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     const metadata = await generateMetadata(params("gironde"));
     expect(metadata.robots).toBeUndefined();
     expect(metadata.title).toBe("Enchères immobilières : Gironde");
@@ -131,7 +145,7 @@ describe("page d'un département : indexation", () => {
   });
 
   it("passe en noindex, follow sous le seuil de 3 ventes", async () => {
-    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE.slice(0, 2)));
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE.slice(0, 2), NOW));
     const metadata = await generateMetadata(params("gironde"));
     expect(metadata.robots).toEqual({ index: false, follow: true });
     // La page reste adressable : titre et canonical sont posés.
@@ -139,7 +153,7 @@ describe("page d'un département : indexation", () => {
   });
 
   it("passe en noindex pour un département sans aucune vente, et reste servie", async () => {
-    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE));
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     const metadata = await generateMetadata(params("ain"));
     expect(metadata.robots).toEqual({ index: false, follow: true });
     expect(String(metadata.description)).toContain("Aucune vente");
@@ -150,7 +164,7 @@ describe("page d'un département : indexation", () => {
 
 describe("page d'un département : contenu", () => {
   it("montre les chiffres calculés sur nos ventes, la répartition et la liste", async () => {
-    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE));
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     const { container } = render(await Page(params("gironde")));
 
     expect(screen.getAllByRole("heading", { level: 1 }).map((h) => h.textContent)).toEqual([
@@ -178,8 +192,68 @@ describe("page d'un département : contenu", () => {
     expect(container.textContent).toContain("Mérignac");
   });
 
+  it("dit « audience » et « mise à prix » pour le tribunal, avec la médiane des ventes au tribunal", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    const figures = screen.getByRole("region", { name: "Les chiffres du département" });
+    expect(figures.textContent).toContain("Prochaine audience");
+    expect(figures.textContent).toContain("Mise à prix médiane (ventes au tribunal)");
+    expect(figures.textContent).toContain("sur 3 ventes au tribunal");
+    const list = screen.getByRole("region", { name: "Les ventes à venir" });
+    expect(list.textContent).toContain("audience le 10 novembre 2026");
+    expect(list.textContent).toContain("Mise à prix");
+    expect(list.textContent).not.toContain("Prix publié");
+  });
+
+  it("n'emploie ni « audience » ni « mise à prix » pour les ventes hors tribunal", async () => {
+    mocks.catalogue.mockResolvedValue(
+      aggregateDepartments(
+        [
+          sale("n", { venueType: "notary", saleDate: "2026-11-02T10:00:00Z" }),
+          sale("s", { venueType: "state", saleDate: "2026-11-03T10:00:00Z" }),
+          sale("u", { venueType: null, saleDate: "2026-11-04T10:00:00Z" }),
+        ],
+        NOW,
+      ),
+    );
+    render(await Page(params("gironde")));
+    const figures = screen.getByRole("region", { name: "Les chiffres du département" });
+    expect(figures.textContent).toContain("Prochaine date de vente");
+    expect(figures.textContent).not.toContain("Prochaine audience");
+    // Aucune vente au tribunal : pas de médiane inventée à partir des prix publiés.
+    expect(figures.textContent).toContain("Non communiquée");
+    expect(figures.textContent).toContain("aucune vente au tribunal chiffrée");
+    const list = screen.getByRole("region", { name: "Les ventes à venir" });
+    const text = list.textContent ?? "";
+    expect(text).toContain("séance le 2 novembre 2026");
+    expect(text).toContain("échéance le 3 novembre 2026");
+    expect(text).toContain("vente le 4 novembre 2026");
+    expect(text).not.toContain("audience");
+    expect(text).not.toContain("Mise à prix");
+    expect(text.match(/Prix publié/g)).toHaveLength(3);
+  });
+
+  it("ne présente pas une vente reportée comme la prochaine audience", async () => {
+    mocks.catalogue.mockResolvedValue(
+      aggregateDepartments(
+        [
+          sale("r", { status: "postponed", saleDate: "2026-10-20T10:00:00Z" }),
+          sale("a", { saleDate: "2026-12-01T10:00:00Z" }),
+        ],
+        NOW,
+      ),
+    );
+    render(await Page(params("gironde")));
+    const figures = screen.getByRole("region", { name: "Les chiffres du département" });
+    expect(figures.textContent).toContain("1 décembre 2026");
+    expect(figures.textContent).not.toContain("20 octobre 2026");
+    const list = screen.getByRole("region", { name: "Les ventes à venir" });
+    expect(list.textContent).toContain("Vente reportée · nouvelle date à confirmer");
+    expect(list.textContent).not.toContain("audience le 20 octobre 2026");
+  });
+
   it("renvoie vers la recherche du département et vers les tribunaux concernés", async () => {
-    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE));
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     render(await Page(params("gironde")));
     expect(
       screen.getByRole("link", { name: /Voir les 3 ventes en Gironde/ }).getAttribute("href"),
@@ -196,7 +270,7 @@ describe("page d'un département : contenu", () => {
   });
 
   it("garde la page quand l'activité des tribunaux est indisponible", async () => {
-    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE));
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     mocks.tribunals.mockResolvedValue({ status: "error" });
     render(await Page(params("gironde")));
     const tribunals = screen.getByRole("region", { name: "Tribunaux et ventes" });
@@ -207,7 +281,7 @@ describe("page d'un département : contenu", () => {
     const many = Array.from({ length: 45 }, (_, index) =>
       sale(`s-${String(index).padStart(2, "0")}`),
     );
-    mocks.catalogue.mockResolvedValue(aggregateDepartments(many));
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(many, NOW));
     render(await Page(params("gironde")));
     const list = screen.getByRole("region", { name: "Les 30 prochaines ventes" });
     expect(within(list).getAllByRole("listitem")).toHaveLength(30);
@@ -217,7 +291,7 @@ describe("page d'un département : contenu", () => {
   });
 
   it("garde un texte d'introduction générique, sans conseil", async () => {
-    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE));
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     const { container } = render(await Page(params("gironde")));
     const intro = container.querySelector("header")?.textContent ?? "";
     expect(intro).toContain("catalogue public");
@@ -228,7 +302,7 @@ describe("page d'un département : contenu", () => {
 
 describe("page d'un département : données structurées", () => {
   it("émet un fil d'Ariane et la liste des ventes en adresses absolues", async () => {
-    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE));
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     const { container } = render(await Page(params("gironde")));
     const blocks = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
       (script) => JSON.parse(script.textContent ?? "{}"),
@@ -251,7 +325,7 @@ describe("page d'un département : données structurées", () => {
   });
 
   it("n'émet pas de liste vide pour un département sans vente", async () => {
-    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE));
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     const { container } = render(await Page(params("ain")));
     const types = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
       (script) => JSON.parse(script.textContent ?? "{}")["@type"],

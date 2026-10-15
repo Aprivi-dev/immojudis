@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Card, buttonClasses } from "@/components/ui/primitives";
-import { maxPriceForBudget } from "@/lib/bid-budget";
+import { MAX_BID_BUDGET_EUR, maxPriceForBudget } from "@/lib/bid-budget";
 import {
   CONSIGNATION_MINIMUM,
   CONSIGNATION_RATE,
@@ -69,6 +69,7 @@ export function BudgetMode({
                 hint="Tout compris : prix d’adjudication, frais d’acquisition et travaux. Le simulateur cherche le prix maximal qui tient dans cette somme."
                 value={budget}
                 onChange={onBudgetChange}
+                max={MAX_BID_BUDGET_EUR}
               />
             }
           />
@@ -101,7 +102,9 @@ export function BudgetMode({
               ? euroWhole.format(inversion.maxPrice)
               : inversion.status === "too_low"
                 ? "Budget insuffisant"
-                : "Saisissez un budget"}
+                : inversion.status === "too_high"
+                  ? "Budget trop élevé"
+                  : "Saisissez un budget"}
           </p>
           {inversion.status === "ok" ? (
             <p className="mt-1 text-sm text-ink-soft">
@@ -115,6 +118,12 @@ export function BudgetMode({
               Avant même d’enchérir, les frais préalables, les honoraires, les travaux et les droits
               qui s’y rattachent coûtent déjà {euro.format(inversion.minimumBudget)} : ce budget ne
               laisse rien pour le prix.
+            </p>
+          ) : null}
+          {inversion.status === "too_high" ? (
+            <p className="mt-1 text-sm text-ink-soft">
+              Ce simulateur calcule jusqu’à {euroWhole.format(inversion.maximumBudget)} de budget.
+              Saisissez un montant plus réaliste pour connaître le prix d’adjudication maximal.
             </p>
           ) : null}
           {inversion.status === "invalid" ? (

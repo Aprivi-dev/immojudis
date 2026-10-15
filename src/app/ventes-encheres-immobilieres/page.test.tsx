@@ -3,6 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   aggregateDepartments,
+  DEPARTMENT_PAGES_MAX_DURATION_SECONDS,
   DEPARTMENTS,
   type DepartmentSaleInput,
 } from "@/lib/department-pages";
@@ -11,7 +12,7 @@ const mocks = vi.hoisted(() => ({ load: vi.fn() }));
 
 vi.mock("@/lib/department-pages.server", () => ({ tryLoadDepartmentCatalogue: mocks.load }));
 
-import Page, { generateMetadata, revalidate } from "./page";
+import Page, { generateMetadata, maxDuration, revalidate } from "./page";
 
 function sale(id: string, department: string): DepartmentSaleInput {
   return {
@@ -22,6 +23,8 @@ function sale(id: string, department: string): DepartmentSaleInput {
     saleDate: "2026-11-10T13:00:00Z",
     startingPriceEur: 70_000,
     surfaceM2: 80,
+    venueType: "tribunal",
+    status: "scheduled",
   };
 }
 
@@ -44,6 +47,11 @@ afterEach(() => {
 describe("index des ventes par département", () => {
   it("est rafraîchi toutes les 5 minutes, comme /tribunaux", () => {
     expect(revalidate).toBe(300);
+  });
+
+  it("relève la durée maximale du rendu, qui peut lire tout le catalogue", () => {
+    expect(maxDuration).toBe(60);
+    expect(maxDuration).toBe(DEPARTMENT_PAGES_MAX_DURATION_SECONDS);
   });
 
   it("liste les 101 départements avec leurs comptes, un lien chacun", async () => {

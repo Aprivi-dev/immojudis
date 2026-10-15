@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { minimumSurenchere } from "./surenchere";
+import { MAX_SURENCHERE_PRICE_EUR, minimumSurenchere } from "./surenchere";
 import { getSurenchereReminder } from "./surenchere-reminder";
 import afterAward from "@/content/resources/apres-adjudication-surenchere-paiement-titre-vente.json";
 
@@ -42,6 +42,18 @@ describe("minimumSurenchere", () => {
 
   it.each([0, -5, Number.NaN, Number.POSITIVE_INFINITY])("ne calcule rien pour %s", (price) => {
     expect(minimumSurenchere(price)).toBeNull();
+  });
+
+  it("calcule jusqu'au plafond de dix milliards d'euros, et rien au-delà", () => {
+    expect(MAX_SURENCHERE_PRICE_EUR).toBe(1e10);
+    expect(minimumSurenchere(MAX_SURENCHERE_PRICE_EUR)).toEqual({
+      principalPrice: 1e10,
+      tenth: 1e9,
+      minimumBid: 1.1e10,
+    });
+    for (const price of [MAX_SURENCHERE_PRICE_EUR + 1, 1e16, 1e300, Number.MAX_VALUE]) {
+      expect(minimumSurenchere(price)).toBeNull();
+    }
   });
 });
 

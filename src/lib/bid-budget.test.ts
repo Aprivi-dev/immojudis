@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maxPriceForBudget } from "./bid-budget";
+import { MAX_BID_BUDGET_EUR, maxPriceForBudget } from "./bid-budget";
 import { computeAcquisitionCosts, DEFAULTS, type AcquisitionCostOptions } from "./profitability";
 
 const HYPOTHESES: AcquisitionCostOptions[] = [
@@ -162,5 +162,36 @@ describe("maxPriceForBudget : budget trop faible ou invalide", () => {
     const result = expectOk(maxPriceForBudget(5e9, { department: "75" }));
     expect(total(result.maxPrice, { department: "75" })).toBeLessThanOrEqual(5e9);
     expect(total(result.maxPrice + 1, { department: "75" })).toBeGreaterThan(5e9);
+  });
+});
+
+describe("maxPriceForBudget : plafond de budget", () => {
+  it("fixe le plafond à dix milliards d'euros, très en deçà de la limite des entiers flottants", () => {
+    expect(MAX_BID_BUDGET_EUR).toBe(1e10);
+    expect(MAX_BID_BUDGET_EUR).toBeLessThan(Number.MAX_SAFE_INTEGER);
+  });
+
+  it.each([1e16, 1e300, Number.MAX_VALUE, MAX_BID_BUDGET_EUR + 1])(
+    "rend « trop élevé » sans boucler pour un budget de %d €",
+    (budget) => {
+      expect(maxPriceForBudget(budget)).toEqual({
+        status: "too_high",
+        budget,
+        maximumBudget: MAX_BID_BUDGET_EUR,
+      });
+    },
+  );
+
+  it("ne rappelle pas le moteur de frais au-delà du plafond", () => {
+    const started = Date.now();
+    for (let i = 0; i < 1_000; i += 1) maxPriceForBudget(1e16 + i);
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("calcule encore exactement au plafond", () => {
+    const options = { department: "75" };
+    const result = expectOk(maxPriceForBudget(MAX_BID_BUDGET_EUR, options));
+    expect(total(result.maxPrice, options)).toBeLessThanOrEqual(MAX_BID_BUDGET_EUR);
+    expect(total(result.maxPrice + 1, options)).toBeGreaterThan(MAX_BID_BUDGET_EUR);
   });
 });

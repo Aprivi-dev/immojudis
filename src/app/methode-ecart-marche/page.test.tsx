@@ -7,7 +7,54 @@ import {
   MARKET_GAP_MIN_DISCOUNT_PCT,
   MARKET_GAP_NOT_SIGNIFICANT_LABEL,
 } from "@/lib/market-gap";
+import { selectStatisticScope } from "@/lib/dvf-market-statistics";
+import { URBAN_POPULATION_THRESHOLD } from "@/lib/market-server/constants";
+import type { Database } from "@/integrations/supabase/types";
 import Page, { metadata } from "./page";
+
+type StatisticRow = Database["public"]["Tables"]["dvf_market_statistics"]["Row"];
+
+function statisticRow(level: StatisticRow["geography_level"], salesCount: number): StatisticRow {
+  return {
+    geography_level: level,
+    geography_code: level,
+    geography_label: level,
+    parent_code: null,
+    segment: "house",
+    sales_count: salesCount,
+    mean_price_per_m2: 2_000,
+    median_price_per_m2: 2_000,
+    source_url: "https://example.test",
+    source_updated_at: null,
+    imported_at: "2026-07-13T16:00:00Z",
+  };
+}
+
+/**
+ * Plus petit nombre de ventes pour lequel `selectStatisticScope` retient la commune, puis
+ * l'intercommunalité. Les échelles plus larges, fournies en grand nombre, ne servent que de
+ * repli : l'échelle testée n'est retenue que si elle atteint son propre seuil. (Le seuil du
+ * département ne s'observe pas : s'il n'est pas atteint, le repli « échelle la mieux fournie » le
+ * retient de toute façon.)
+ */
+function scopeThreshold(level: "commune" | "epci"): number {
+  for (let count = 2; count <= 100; count += 1) {
+    const rows =
+      level === "commune"
+        ? {
+            commune: statisticRow("commune", count),
+            epci: statisticRow("epci", 500),
+            department: statisticRow("department", 500),
+          }
+        : {
+            commune: statisticRow("commune", 1),
+            epci: statisticRow("epci", count),
+            department: statisticRow("department", 500),
+          };
+    if (selectStatisticScope(rows)?.geography_level === level) return count;
+  }
+  throw new Error(`aucun seuil pour ${level}`);
+}
 
 afterEach(cleanup);
 
@@ -68,7 +115,7 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
     expect(text).toContain("au moins 5 ventes");
     expect(text).toContain("au moins 12 ventes");
     expect(text).toContain("au moins 30 ventes");
-    expect(text).toContain("moins de 24 mois");
+    expect(text).toContain("24 mois au plus");
     expect(text).toContain("aucun écart en pourcentage");
   });
 
@@ -82,6 +129,32 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
     expect(text).toContain(`de plus de ${-MARKET_GAP_MIN_DISCOUNT_PCT} %`);
     expect(text).toContain(`moins de ${100 - MARKET_GAP_MAX_DISCOUNT_PCT} %`);
     expect(text).toContain(`plus de ${100 - MARKET_GAP_MIN_DISCOUNT_PCT} %`);
+  });
+
+  it("cite les seuils du moteur, lus dans ses constantes et ses fonctions exportées", () => {
+    render(<Page />);
+    const comparables = section("Les ventes comparables : périmètre et période").textContent ?? "";
+    expect(comparables).toContain(
+      `${URBAN_POPULATION_THRESHOLD.toLocaleString("fr-FR").replace(/\s/g, " ")} habitants`,
+    );
+    const repli = (section("Quand il y a trop peu de ventes").textContent ?? "").replace(
+      /\s/g,
+      " ",
+    );
+    // « celles de la commune si elles reposent sur au moins 5 ventes, sinon … l'intercommunalité
+    // (au moins 12 ventes) ».
+    for (const level of ["commune", "epci"] as const) {
+      expect(repli).toContain(`au moins ${scopeThreshold(level)} ventes`);
+    }
+  });
+
+  it("étend le garde-fou aux alertes et à la prévision, sans le promettre ailleurs", () => {
+    render(<Page />);
+    const text = (section("Quand l’écart n’est pas affiché").textContent ?? "").replace(/\s/g, " ");
+    expect(text).toContain("alertes");
+    expect(text).toContain("critère de décote minimale");
+    expect(text).toContain("Décote de départ");
+    expect(text).toContain(MARKET_GAP_NOT_SIGNIFICANT_LABEL);
   });
 
   it("énonce les limites sans promettre de conseil", () => {

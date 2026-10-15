@@ -1,3 +1,4 @@
+import "server-only";
 import { unstable_cache } from "next/cache";
 import {
   aggregateDepartments,
@@ -5,7 +6,14 @@ import {
   type DepartmentSaleInput,
 } from "@/lib/department-pages";
 import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
-import { runPreviewSearch, type PreviewRpcClient } from "@/lib/search/preview-search";
+import { getSaleProcedure } from "@/lib/sale-procedure";
+import {
+  buildPreviewSearchArgs,
+  mapPreviewRows,
+  runPreviewSearch,
+  type PreviewRpcClient,
+  type PreviewSearchRow,
+} from "@/lib/search/preview-search";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 
 /**
@@ -24,10 +32,16 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 100;
 const PARALLEL_PAGES = 5;
 
-type Reader = (page: number) => Promise<{ items: DepartmentSaleInput[]; count: number }>;
+/** `fetched` : lignes brutes de la page, avant écart de l'annonce de démonstration. */
+type Reader = (
+  page: number,
+) => Promise<{ items: DepartmentSaleInput[]; count: number; fetched?: number }>;
+
+type PublicSaleItems = Awaited<ReturnType<typeof runPreviewSearch>>["items"];
 
 function saleRows(
-  items: Awaited<ReturnType<typeof runPreviewSearch>>["items"],
+  items: PublicSaleItems,
+  postponedIds: ReadonlySet<string>,
 ): DepartmentSaleInput[] {
   return excludeHomepageExampleSales(items).map((sale) => ({
     id: sale.id,
@@ -37,34 +51,87 @@ function saleRows(
     saleDate: sale.sale_date ?? null,
     startingPriceEur: sale.starting_price_eur ?? null,
     surfaceM2: sale.app_surface_m2 ?? null,
+    venueType: getSaleProcedure(sale).venueType,
+    status: postponedIds.has(sale.id) ? "postponed" : "scheduled",
   }));
 }
 
-/** Lit toutes les pages de la liste publique, de la plus proche audience à la plus lointaine. */
-export async function readAllPublicSales(read: Reader): Promise<DepartmentSaleInput[]> {
+/**
+ * Lit toutes les pages de la liste publique, de la plus proche audience à la plus lointaine. Quand
+ * le total annoncé par la fonction publique dépasse ce qui a pu être lu (au plus MAX_PAGES pages),
+ * le catalogue est tronqué : l'écart est journalisé, sans bloquer la page.
+ */
+export async function readAllPublicSales(
+  read: Reader,
+  scope: string = "catalogue",
+): Promise<DepartmentSaleInput[]> {
   const first = await read(1);
   const pages = Math.min(MAX_PAGES, Math.ceil(first.count / PAGE_SIZE));
   const rows = [...first.items];
+  let fetched = first.fetched ?? first.items.length;
   for (let start = 2; start <= pages; start += PARALLEL_PAGES) {
     const batch = Array.from(
       { length: Math.min(PARALLEL_PAGES, pages - start + 1) },
       (_, index) => start + index,
     );
-    for (const page of await Promise.all(batch.map(read))) rows.push(...page.items);
+    for (const page of await Promise.all(batch.map(read))) {
+      rows.push(...page.items);
+      fetched += page.fetched ?? page.items.length;
+    }
+  }
+  if (first.count > fetched) {
+    console.warn(
+      JSON.stringify({
+        scope: "department-pages",
+        event: "catalogue_truncated",
+        source: scope,
+        announcedCount: first.count,
+        readCount: fetched,
+        pagesRead: pages,
+        maxPages: MAX_PAGES,
+        pageSize: PAGE_SIZE,
+      }),
+    );
   }
   return rows;
+}
+
+/**
+ * Identifiants des ventes reportées. La fonction publique ne renvoie pas le statut d'une vente : un
+ * second appel, filtré sur `postponed` (même fonction, mêmes règles de visibilité), les repère. Une
+ * vente reportée n'a plus de date valable : la page ne l'annonce pas comme prochaine audience.
+ */
+async function readPostponedSaleIds(client: PreviewRpcClient): Promise<Set<string>> {
+  const ids = new Set<string>();
+  await readAllPublicSales(async (page) => {
+    const { data, error } = await client.rpc("search_auction_sales_preview_v3", {
+      ...buildPreviewSearchArgs({ sort: "sale_date_asc", limit: PAGE_SIZE, page }),
+      p_statuses: ["postponed"],
+    });
+    if (error) throw error;
+    const rows = (data ?? []) as PreviewSearchRow[];
+    for (const sale of mapPreviewRows(rows)) ids.add(sale.id);
+    return { items: [], count: Number(rows[0]?.total_count ?? 0), fetched: rows.length };
+  }, "postponed");
+  return ids;
 }
 
 async function readDepartmentCatalogue(): Promise<DepartmentCatalogue> {
   const client = createPublicSupabaseClient();
   if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  const rpcClient = client as unknown as PreviewRpcClient;
+  const postponedIds = await readPostponedSaleIds(rpcClient);
   const rows = await readAllPublicSales(async (page) => {
-    const response = await runPreviewSearch(client as unknown as PreviewRpcClient, {
+    const response = await runPreviewSearch(rpcClient, {
       sort: "sale_date_asc",
       limit: PAGE_SIZE,
       page,
     });
-    return { items: saleRows(response.items), count: response.count };
+    return {
+      items: saleRows(response.items, postponedIds),
+      count: response.count,
+      fetched: response.items.length,
+    };
   });
   return aggregateDepartments(rows);
 }
@@ -80,9 +147,22 @@ const cachedDepartmentCatalogue = unstable_cache(
   },
 );
 
+// Lecture en vol, partagée au niveau du module : `generateMetadata`, la page et le sitemap d'un même
+// processus qui arrivent pendant une lecture complète (jusqu'à 100 appels à la base) attendent la
+// même promesse au lieu d'en lancer chacun une. Elle est libérée dès qu'elle se termine, succès ou
+// échec : un échec n'est donc jamais rejoué par les appels suivants. Le cache de données prend le
+// relais ensuite.
+let inFlight: Promise<DepartmentCatalogue> | null = null;
+
 /** Lève une erreur si la base est indisponible : l'appelant décide de ce qu'il en fait. */
 export function loadDepartmentCatalogue(): Promise<DepartmentCatalogue> {
-  return cachedDepartmentCatalogue();
+  if (!inFlight) {
+    const reading = cachedDepartmentCatalogue().finally(() => {
+      if (inFlight === reading) inFlight = null;
+    });
+    inFlight = reading;
+  }
+  return inFlight;
 }
 
 export type DepartmentCatalogueResult =

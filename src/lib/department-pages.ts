@@ -2,6 +2,7 @@ import { FEES_SIMULATOR_DEPARTMENTS } from "@/components/fees-simulator/departme
 import { departmentCode } from "@/lib/department-code";
 import { propertyTypeLabel } from "@/lib/format/property-labels";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
+import type { SaleVenueType } from "@/lib/types";
 
 /**
  * Pages « Ventes aux enchères immobilières par département » : une page par département, qui
@@ -10,6 +11,13 @@ import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
  * est dans `department-pages.server.ts`.
  */
 export const DEPARTMENT_PAGES_PATH = "/ventes-encheres-immobilieres";
+
+/**
+ * Durée maximale (secondes) des rendus qui peuvent déclencher la lecture complète : pages de
+ * département, index et sitemap. Next.js exige un littéral dans chaque fichier ; les tests
+ * vérifient qu'ils valent tous cette constante.
+ */
+export const DEPARTMENT_PAGES_MAX_DURATION_SECONDS = 60;
 
 /**
  * Nombre minimal de ventes à venir distinctes pour qu'une page soit indexable et listée dans le
@@ -53,6 +61,14 @@ export function departmentSearchPath(department: Pick<DepartmentRef, "code">): s
   return `/sales?department=${encodeURIComponent(department.code)}`;
 }
 
+/**
+ * Statut d'une vente à venir. La fonction publique de recherche ne renvoie pas la colonne
+ * `status` : le lecteur (`department-pages.server.ts`) repère les ventes reportées avec un second
+ * appel filtré sur ce statut. Toute autre vente à venir (« upcoming » ou statut inconnu) est
+ * `scheduled`.
+ */
+export type DepartmentSaleStatus = "scheduled" | "postponed";
+
 /** Une vente à venir du catalogue public, réduite à ce que la page affiche. */
 export type DepartmentSale = {
   id: string;
@@ -61,6 +77,9 @@ export type DepartmentSale = {
   saleDate: string | null;
   startingPriceEur: number | null;
   surfaceM2: number | null;
+  /** Type de vente (tribunal, notaire, État…) : il décide des mots et des prix affichés. */
+  venueType: SaleVenueType | null;
+  status: DepartmentSaleStatus;
 };
 
 export type DepartmentSaleInput = DepartmentSale & { department: string | null };
@@ -71,8 +90,22 @@ export type DepartmentStats = {
   code: string;
   /** Ventes à venir distinctes (un identifiant compte une fois). */
   upcomingCount: number;
+  /**
+   * Prochaine date de vente à venir : une date future, hors vente reportée (sa date n'est plus
+   * valable). `null` sans date de ce genre.
+   */
   nextSaleDate: string | null;
+  /** Type de la vente qui porte `nextSaleDate` : il décide du mot (audience, échéance…). */
+  nextSaleVenueType: SaleVenueType | null;
+  /**
+   * Médiane des mises à prix des seules ventes au tribunal. Une « mise à prix » est le prix de
+   * départ d'une vente judiciaire ; chez un notaire le prix publié n'a pas le même statut et, pour
+   * l'État, ce peut être un prix de cession : les mélanger donnerait un chiffre qui ne désigne
+   * rien. `null` sans vente au tribunal chiffrée.
+   */
   medianStartingPriceEur: number | null;
+  /** Nombre de ventes au tribunal chiffrées sur lesquelles repose la médiane. */
+  medianSampleSize: number;
   /** Répartition par type de bien, la plus nombreuse d'abord. */
   types: DepartmentTypeCount[];
   /** Les prochaines ventes, par date d'audience croissante. */
@@ -96,6 +129,47 @@ export function medianOf(values: number[]): number | null {
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+export function isTribunalSale(sale: Pick<DepartmentSale, "venueType">): boolean {
+  return sale.venueType === "tribunal";
+}
+
+/** « Prochaine audience » seulement pour une vente au tribunal ; le mot suit `sale-key-facts.ts`. */
+export function departmentNextDateLabel(venueType: SaleVenueType | null): string {
+  if (venueType === "tribunal") return "Prochaine audience";
+  if (venueType === "state") return "Prochaine échéance";
+  return "Prochaine date de vente";
+}
+
+/** Libellé du prix d'une vente : « Mise à prix » seulement au tribunal, « Prix publié » sinon. */
+export function departmentPriceLabel(sale: Pick<DepartmentSale, "venueType">): string {
+  return isTribunalSale(sale) ? "Mise à prix" : "Prix publié";
+}
+
+/** Le mot de la date d'une vente, comme `sale-key-facts.ts` (audience, séance, échéance). */
+function saleDateWord(venueType: SaleVenueType | null): string {
+  if (venueType === "tribunal") return "audience";
+  if (venueType === "notary") return "séance";
+  if (venueType === "state") return "échéance";
+  return "vente";
+}
+
+/**
+ * Date d'une vente pour une ligne de liste, ou `null` sans date. « audience le … » seulement au
+ * tribunal ; une vente reportée n'a plus de date valable, une date passée n'est pas annoncée
+ * comme à venir (mêmes mots que `listingSaleStatus`).
+ */
+export function departmentSaleDateText(
+  sale: Pick<DepartmentSale, "venueType" | "status" | "saleDate">,
+  formatted: { date: string | null; time: string | null },
+  now: Date = new Date(),
+): string | null {
+  if (sale.status === "postponed") return "Vente reportée · nouvelle date à confirmer";
+  if (!formatted.date) return null;
+  const time = timestamp(sale.saleDate);
+  if (time != null && time < now.getTime()) return "Date de vente passée";
+  return `${saleDateWord(sale.venueType)} le ${formatted.date}${formatted.time ? ` à ${formatted.time}` : ""}`;
 }
 
 function positivePrice(value: number | null): value is number {
@@ -137,14 +211,21 @@ export function aggregateDepartments(
       const label = propertyTypeLabel(sale.propertyType);
       typeCounts.set(label, (typeCounts.get(label) ?? 0) + 1);
     }
-    const nextSale = sorted.find((sale) => timestamp(sale.saleDate) != null);
+    const nextSale = sorted.find((sale) => {
+      const time = timestamp(sale.saleDate);
+      return sale.status !== "postponed" && time != null && time > now.getTime();
+    });
+    const tribunalPrices = sorted
+      .filter(isTribunalSale)
+      .map((sale) => sale.startingPriceEur)
+      .filter(positivePrice);
     departments[code] = {
       code,
       upcomingCount: sorted.length,
       nextSaleDate: nextSale?.saleDate ?? null,
-      medianStartingPriceEur: medianOf(
-        sorted.map((sale) => sale.startingPriceEur).filter(positivePrice),
-      ),
+      nextSaleVenueType: nextSale?.venueType ?? null,
+      medianStartingPriceEur: medianOf(tribunalPrices),
+      medianSampleSize: tribunalPrices.length,
       types: [...typeCounts]
         .map(([label, count]) => ({ label, count }))
         .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "fr")),
@@ -219,12 +300,15 @@ function priceLabel(value: number): string {
 
 /**
  * Description d'une page de département, calculée sur les chiffres de la page. Elle tient en 158
- * caractères : si la prochaine audience et la médiane n'y rentrent pas, la médiane puis la date
+ * caractères : si tout n'y rentre pas, la mention des types de vente, puis la médiane, puis la date
  * sont retirées plutôt que de couper la phrase.
  */
 export function departmentPageDescription(
   department: Pick<DepartmentRef, "code" | "name">,
-  stats: Pick<DepartmentStats, "upcomingCount" | "nextSaleDate" | "medianStartingPriceEur"> | null,
+  stats: Pick<
+    DepartmentStats,
+    "upcomingCount" | "nextSaleDate" | "nextSaleVenueType" | "medianStartingPriceEur"
+  > | null,
 ): string {
   const place = `${department.name}, ${department.code}`;
   const count = stats?.upcomingCount ?? 0;
@@ -233,15 +317,24 @@ export function departmentPageDescription(
   }
   const head = `${count} ${count > 1 ? "ventes aux enchères immobilières" : "vente aux enchères immobilière"} à venir (${place})`;
   const next = longDate(stats.nextSaleDate);
-  const nextText = next ? `prochaine audience le ${next}` : null;
+  const nextWord =
+    stats.nextSaleVenueType === "tribunal"
+      ? "prochaine audience"
+      : stats.nextSaleVenueType === "state"
+        ? "prochaine échéance"
+        : "prochaine vente";
+  const nextText = next ? `${nextWord} le ${next}` : null;
   const median =
     stats.medianStartingPriceEur != null
-      ? `mise à prix médiane ${priceLabel(stats.medianStartingPriceEur)}`
+      ? `mise à prix médiane au tribunal ${priceLabel(stats.medianStartingPriceEur)}`
       : null;
+  // Les chiffres passent avant la mention générique des types de vente.
   for (const details of [[nextText, median], [nextText], []]) {
     const text = [head, details.filter(Boolean).join(", ")].filter(Boolean).join(" : ");
-    const sentence = `${text}. Tribunal, notaire ou État.`;
-    if (sentence.length <= DESCRIPTION_MAX_LENGTH) return sentence;
+    for (const tail of [" Tribunal, notaire ou État.", ""]) {
+      const sentence = `${text}.${tail}`;
+      if (sentence.length <= DESCRIPTION_MAX_LENGTH) return sentence;
+    }
   }
   return `${head}.`;
 }

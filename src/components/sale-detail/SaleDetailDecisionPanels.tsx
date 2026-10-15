@@ -12,6 +12,7 @@ import { UNPROFITABLE_HEADLINE, type CeilingGap } from "@/lib/bid-ceiling-gaps";
 import { fetchValuePreview } from "@/lib/client-api";
 import { formatPrice, formatStartingPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
+import { describeMarketGap } from "@/lib/market-gap";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { getSaleProcedure } from "@/lib/sale-procedure";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
@@ -178,6 +179,8 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
   });
   const value = user && preview.data?.available ? preview.data : null;
   const salePath = saleDetailPath(sale.id);
+  // `describeMarketGap` is also the guard: an implausible gap never reaches the page as a %.
+  const gapSentence = value ? describeMarketGap(value) : null;
   return (
     <aside className={panelStyles.estimationCard} aria-label="Aperçu des repères de prix">
       <dl className={panelStyles.priceGrid}>
@@ -222,15 +225,10 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
           </dd>
         </div>
       </dl>
-      {value?.discountPct != null ? (
+      {gapSentence ? (
         <p className={panelStyles.surfaceCaution} role="status">
-          {value.discountPct > 0
-            ? `La mise à prix est environ ${value.discountPct} % sous la valeur estimée du bien.`
-            : value.discountPct < 0
-              ? `La mise à prix est environ ${-value.discountPct} % au-dessus de la valeur estimée du bien.`
-              : "La mise à prix est proche de la valeur estimée du bien."}{" "}
-          Reste à savoir jusqu’où enchérir une fois les frais, les travaux et la libération du bien
-          comptés : c’est le calcul de l’enchère plafond.
+          {gapSentence} Reste à savoir jusqu’où enchérir une fois les frais, les travaux et la
+          libération du bien comptés : c’est le calcul de l’enchère plafond.
         </p>
       ) : null}
       <PremiumFeaturePreview

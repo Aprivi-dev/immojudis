@@ -26,14 +26,18 @@ vi.mock("@/lib/public-sitemap.server", async () => {
   };
 });
 
-import sitemap from "./sitemap";
+import sitemap, { maxDuration } from "./sitemap";
 import robots from "./robots";
 import resourcesSitemap from "./ressources/sitemap";
 import salesSitemap, { generateSitemaps as generateSalesSitemaps } from "./sales/sitemap";
 import nextConfig from "../../next.config";
 import { SITEMAP_URL_LIMIT } from "@/lib/public-sitemap.server";
 import { GUIDE_LAST_UPDATED } from "@/lib/guide-dates";
-import { aggregateDepartments, type DepartmentSaleInput } from "@/lib/department-pages";
+import {
+  aggregateDepartments,
+  DEPARTMENT_PAGES_MAX_DURATION_SECONDS,
+  type DepartmentSaleInput,
+} from "@/lib/department-pages";
 
 function departmentSales(department: string, count: number): DepartmentSaleInput[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -44,6 +48,8 @@ function departmentSales(department: string, count: number): DepartmentSaleInput
     saleDate: "2026-11-10T13:00:00Z",
     startingPriceEur: 60_000,
     surfaceM2: 70,
+    venueType: "tribunal",
+    status: "scheduled",
   }));
 }
 
@@ -65,6 +71,11 @@ describe("sitemap.xml (static pages)", () => {
   afterEach(() => {
     delete process.env.SITE_URL;
     vi.restoreAllMocks();
+  });
+
+  it("allows the render the duration of a full catalogue read", () => {
+    expect(maxDuration).toBe(60);
+    expect(maxDuration).toBe(DEPARTMENT_PAGES_MAX_DURATION_SECONDS);
   });
 
   it("lists the pages only: no sale and no article", async () => {
