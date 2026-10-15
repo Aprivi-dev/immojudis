@@ -198,6 +198,20 @@ function PageContent() {
           </div>
         </Card>
 
+        <Card as="section" aria-labelledby="ecart-marche">
+          <h2 id="ecart-marche" className="font-display text-2xl font-semibold">
+            L’écart avec le marché
+          </h2>
+          <p className="mt-3 text-ink-soft">
+            Sur une fiche, la mise à prix peut être comparée à la valeur de marché estimée du bien.
+            Cet écart n’entre pas dans le classement par défaut.{" "}
+            <Link href="/methode-ecart-marche" className="font-semibold text-gold-text underline">
+              Comment est calculé l’écart avec le marché
+            </Link>
+            .
+          </p>
+        </Card>
+
         <Card as="section" aria-labelledby="signaler-erreur" className="bg-surface-muted">
           <h2 id="signaler-erreur" className="font-display text-2xl font-semibold">
             Signaler une erreur
