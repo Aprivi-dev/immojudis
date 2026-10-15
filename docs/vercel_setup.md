@@ -44,6 +44,7 @@ npm run dev        # http://localhost:3000
 | `ALERT_EMAIL_FROM`                   | ✅ prod  | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`.                                                                                          |
 | `NEXT_PUBLIC_LEGAL_*`                | ✅ vente | Identité publique, contact, directeur de publication et médiateur ; le checkout reste bloqué et le build de production échoue si une valeur requise manque.         |
 | `SITE_URL`                           | ✅ prod  | Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`. `VERCEL_URL` ne suffit plus en production. |
+| `SEO_INDEXING_ENABLED`               | ❌       | Interrupteur d'indexation, **fermé par défaut** : seule la valeur `true` ouvre le site aux moteurs de recherche (voir « Indexation et référencement »).             |
 | `ADMIN_MFA_REQUIRED`                 | ✅ prod  | Doit valoir `true` : second facteur obligatoire pour l'administration.                                                                                              |
 | `ALLOW_INCOMPLETE_LAUNCH_CONFIG`     | ❌       | Échappatoire temporaire du build de production (voir ci-dessous).                                                                                                   |
 
@@ -256,6 +257,40 @@ elle, les adresses canoniques, `robots.txt` et le sitemap de production pointera
 `localhost`.
 
 `npm run env:check:prod` n'accepte plus `VERCEL_URL` comme origine canonique.
+
+### Indexation et référencement
+
+#### Interrupteur `SEO_INDEXING_ENABLED`
+
+Le site est **fermé aux moteurs de recherche par défaut**. Il ne s'ouvre que si la variable
+`SEO_INDEXING_ENABLED` vaut exactement `true` (espaces autour ignorés ; `TRUE`, `1`, `yes`,
+vide ou absente ferment).
+
+| État                                    | `X-Robots-Tag`               | `robots.txt`                                                   |
+| --------------------------------------- | ---------------------------- | -------------------------------------------------------------- |
+| Fermé (variable absente ou ≠ `true`)    | `noindex, nofollow`, partout | `Allow: /` + zones privées en `Disallow`, **aucun** `Sitemap:` |
+| Ouvert (`true`, déploiement production) | aucun                        | idem + les `Sitemap:` (pages, ressources, fiches)              |
+| Aperçu ou développement Vercel          | `noindex, nofollow`, partout | `Disallow: /`, aucun `Sitemap:` (même avec `true`)             |
+
+- **Pourquoi `noindex` en en-tête plutôt que `Disallow: /`.** Un robot qui n'a pas le droit de
+  charger une page ne lit jamais son `noindex` : une adresse déjà connue (lien externe, passage
+  antérieur) peut rester listée sans extrait. Garder `Allow: /` laisse le robot lire l'en-tête et
+  retirer l'adresse. L'aperçu Vercel garde `Disallow: /` (aucune adresse n'y est à retirer).
+- **Lecture à l'exécution.** L'en-tête est posé par `src/proxy.ts` et `robots.txt` est généré à
+  chaque requête : ni l'un ni l'autre n'est figé dans le build. (L'ancien en-tête de
+  `next.config.ts`, calculé au build, aurait suivi un build promu d'un environnement à l'autre.)
+  La variable reste celle du **déploiement** : Vercel n'applique un changement de variable qu'à un
+  nouveau déploiement (Redeploy), et un déploiement restauré (rollback, promotion) garde les
+  variables avec lesquelles il a été créé.
+- **Absente en production = fermé.** Un déploiement de production sans `SEO_INDEXING_ENABLED`
+  envoie `noindex, nofollow` et un `robots.txt` sans sitemap. Rien ne s'indexe par oubli.
+- **Limite.** Le proxy ne passe pas sur les fichiers statiques (`/_next/static`, `/_next/image`,
+  `/media/`, `/brand/`, icônes) ni sur `robots.txt` et `sitemap.xml` : ils n'ont pas l'en-tête.
+  Les pages, les routes d'API et les sitemaps secondaires (`/ressources/sitemap.xml`,
+  `/sales/sitemap/N.xml`) l'ont.
+- **Test de fumée.** `scripts/check-production-smoke.mjs` lit la même variable
+  `SEO_INDEXING_ENABLED` pour savoir quel état vérifier. La variable de **dépôt GitHub** du même
+  nom (Settings → Secrets and variables → Actions → Variables) doit donc suivre celle de Vercel.
 
 ## 4. Build
 

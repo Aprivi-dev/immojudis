@@ -142,10 +142,13 @@ describe("sitemap.xml", () => {
 describe("robots.txt", () => {
   beforeEach(() => {
     process.env.SITE_URL = "https://immojudis.com";
+    // The indexing switch is closed by default: these tests describe the open site.
+    vi.stubEnv("SEO_INDEXING_ENABLED", "true");
     mocks.loadSitemapSaleTotal.mockReset();
   });
   afterEach(() => {
     delete process.env.SITE_URL;
+    vi.unstubAllEnvs();
   });
 
   it("points to the sitemap and adds the extra files once the catalogue outgrows it", async () => {
@@ -185,6 +188,34 @@ describe("robots.txt", () => {
       }
     },
   );
+
+  it.each(["", "false", "TRUE", "1", "yes"])(
+    "advertises no sitemap and keeps the pages crawlable while SEO_INDEXING_ENABLED is %j",
+    async (value) => {
+      vi.stubEnv("SEO_INDEXING_ENABLED", value);
+      vi.stubEnv("VERCEL_ENV", "production");
+      mocks.loadSitemapSaleTotal.mockResolvedValue(10);
+      const result = await robots();
+      expect(result.sitemap).toBeUndefined();
+      expect(mocks.loadSitemapSaleTotal).not.toHaveBeenCalled();
+      const rules = Array.isArray(result.rules) ? result.rules[0] : result.rules;
+      // `allow` stays: a crawler blocked by `Disallow: /` would never read the noindex header.
+      expect(rules.allow).toBe("/");
+      expect(rules.disallow).not.toContain("/");
+    },
+  );
+
+  it("is closed by default: no sitemap when SEO_INDEXING_ENABLED is absent", async () => {
+    vi.unstubAllEnvs();
+    delete process.env.SEO_INDEXING_ENABLED;
+    vi.stubEnv("VERCEL_ENV", "production");
+    expect((await robots()).sitemap).toBeUndefined();
+  });
+
+  it("stays closed on a Vercel preview even when the switch is open", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    expect(await robots()).toEqual({ rules: { userAgent: "*", disallow: "/" } });
+  });
 
   it("stays open on the Vercel production deployment", async () => {
     vi.stubEnv("VERCEL_ENV", "production");
