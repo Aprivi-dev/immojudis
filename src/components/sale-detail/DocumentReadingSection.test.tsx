@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DocumentReadingSection } from "./DocumentReadingSection";
+import { SaleUnlockOfferProvider } from "./UnlockCallToAction";
 
 const mocks = vi.hoisted(() => ({ fetchDocumentReading: vi.fn() }));
 vi.mock("@/lib/client-api", () => ({ fetchDocumentReading: mocks.fetchDocumentReading }));
@@ -70,6 +71,41 @@ describe("DocumentReadingSection", () => {
     );
     expect(section.textContent).toContain("avec l’offre Analyse ou en débloquant cette vente");
     expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
+  });
+
+  it("makes « Débloquer cette vente » the main link of the teaser when the page has the unlock card", async () => {
+    mocks.fetchDocumentReading.mockResolvedValue({
+      access: "teaser",
+      pointCount: 2,
+      alertCount: 0,
+      themes: ["occupation"],
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleUnlockOfferProvider
+          status={{
+            saleId: "sale-1",
+            unlocked: false,
+            unlockable: true,
+            analysisAccess: false,
+            limit: 3,
+            used: 3,
+            remaining: 0,
+            periodStart: "2026-09-30T22:00:00.000Z",
+            resetsAt: "2026-10-31T23:00:00.000Z",
+          }}
+        >
+          <DocumentReadingSection saleId="sale-1" enabled />
+        </SaleUnlockOfferProvider>
+      </QueryClientProvider>,
+    );
+    const section = await screen.findByRole("region", { name: "Lecture des pièces du dossier" });
+    expect(section.textContent).toContain("Vos 3 déblocages d’octobre reviennent le 1er novembre.");
+    expect(screen.getByRole("link", { name: "Voir l’offre Analyse" }).getAttribute("href")).toBe(
+      "/offres",
+    );
+    expect(screen.queryByRole("link", { name: /Débloquer cette vente/ })).toBeNull();
   });
 
   it("reads the full reading again once the sale is unlocked, never serving the cached teaser", async () => {

@@ -12,7 +12,7 @@ import {
 } from "@/lib/client-api";
 import { formatDate } from "@/lib/format";
 import Link from "next/link";
-import { pathWithSearch } from "@/lib/navigation";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import type {
   SaleAnalysisSet,
   SaleAnalysisSetListResponse,
@@ -45,7 +45,7 @@ export function SavedSaleComparisons({
           Créez un compte gratuit pour enregistrer une comparaison de trois biens et la partager.
         </p>
         <Link
-          href={pathWithSearch("/login", { redirect: localRedirect(returnTo) })}
+          href={loginPathWithRedirect(localRedirect(returnTo))}
           className="mt-2 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-3 font-bold text-white"
         >
           Se connecter ou créer un compte

@@ -5,7 +5,7 @@ import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useRouter } from "next/navigation";
-import { pathWithSearch } from "@/lib/navigation";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import {
   fetchAccessPlan,
   fetchLawyerReferralPreview,
@@ -77,7 +77,7 @@ export function LawyerReferralButton({
         typeof window !== "undefined"
           ? `${window.location.pathname}${window.location.search}#lawyer`
           : `/sales/${saleId}`;
-      router.push(pathWithSearch("/login", { redirect }));
+      router.push(loginPathWithRedirect(redirect, { reason: "offre" }));
       return;
     }
 

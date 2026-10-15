@@ -160,6 +160,35 @@ describe("login page", () => {
     );
   });
 
+  it("explique le détour depuis une fiche : ce que le compte gratuit ouvre, ou la simple connexion", () => {
+    mocks.search = { mode: "investor", reason: "fiche" };
+    const { unmount } = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer 3 en détail chaque mois.",
+    );
+    unmount();
+
+    mocks.search = { reason: "fiche" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Connectez-vous pour consulter cette vente.",
+    );
+  });
+
+  it("répète la promesse du compte gratuit là où la colonne d'explication est masquée (mobile)", () => {
+    mocks.search = { mode: "investor" };
+    const { unmount } = render(<LoginPage />);
+    const promise = screen.getByTestId("login-free-promise");
+    expect(promise.textContent).toBe("Gratuit : 3 ventes en détail par mois, sans carte bancaire");
+    // Visible sous le point de rupture « lg », où la colonne d'explication prend le relais.
+    expect(promise.className).toContain("lg:hidden");
+    unmount();
+
+    mocks.search = {};
+    render(<LoginPage />);
+    expect(screen.queryByTestId("login-free-promise")).toBeNull();
+  });
+
   it("n'affiche aucun bandeau pour un motif inconnu", () => {
     mocks.search = { mode: "investor", reason: "inconnu" };
     render(<LoginPage />);

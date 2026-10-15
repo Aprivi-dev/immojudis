@@ -5,7 +5,8 @@ import Link from "next/link";
 export function SaleDetailSkeleton() {
   return (
     <main id="contenu" className="min-h-screen bg-white px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-7xl">
+      {/* The status role goes on a child so that the page keeps its « main » landmark. */}
+      <div role="status" aria-label="Chargement de la fiche" className="mx-auto max-w-7xl">
         <Skeleton className="h-4 w-20 bg-muted" />
         <Skeleton className="mt-4 h-8 w-2/3 bg-muted" />
         <Skeleton className="mt-2 h-4 w-1/2 bg-muted" />

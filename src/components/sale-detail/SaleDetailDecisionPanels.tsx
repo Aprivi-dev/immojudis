@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
+import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import { useAuth } from "@/hooks/use-auth";
 import { UNPROFITABLE_HEADLINE, type CeilingGap } from "@/lib/bid-ceiling-gaps";
@@ -11,7 +12,7 @@ import { formatPrice, formatStartingPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { getSaleProcedure } from "@/lib/sale-procedure";
-import { saleDetailPath } from "@/lib/navigation";
+import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
@@ -197,7 +198,7 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
                 "Calcul…"
               ) : (
                 <Link
-                  href={`/login?mode=investor&redirect=${encodeURIComponent(salePath)}`}
+                  href={loginPathWithRedirect(salePath, { reason: "fiche" })}
                   className={panelStyles.valueLink}
                 >
                   Créez un compte gratuit pour voir la fourchette de valeur
@@ -214,6 +215,13 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
           <dt>Enchère plafond</dt>
           <dd className={panelStyles.textValue}>
             Avec l’offre Analyse ou en débloquant cette vente
+            <div className={panelStyles.valueNote}>
+              <UnlockCallToAction
+                onlyWithUnlockCard
+                primaryClassName={panelStyles.valueLink}
+                secondaryClassName={panelStyles.valueLink}
+              />
+            </div>
           </dd>
         </div>
       </dl>
@@ -236,6 +244,7 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
         }
         description="Le calcul complet de la mise à ne pas dépasser : valeur du bien, marge, travaux, libération, portage et tous les frais de la vente, avec les ventes comparables du secteur."
         labels={["Enchère plafond", "Ventes comparables", "Travaux et frais"]}
+        unlockOffer={getSaleProcedure(sale).venueType === "tribunal"}
       />
     </aside>
   );
