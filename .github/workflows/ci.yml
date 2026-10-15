@@ -228,7 +228,15 @@ jobs:
       - name: Pin npm
         run: npm install --global npm@11.18.0
       - run: npm ci
+      - name: Fetch the base branch for the migration order check
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --no-tags --depth=1 origin "${BASE_REF}:refs/remotes/origin/${BASE_REF}"
       - name: Validate migration versions
+        env:
+          # A migration added by a pull request must be newer than the latest one on its base.
+          MIGRATIONS_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
         run: npm run check:migrations
       - name: Start local Supabase
         run: npx --yes supabase@2.110.0 start
