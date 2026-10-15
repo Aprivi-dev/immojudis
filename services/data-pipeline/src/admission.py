@@ -182,6 +182,47 @@ def is_expired(sale: AuctionSale, now=None) -> bool:
     return deadline is not None and deadline <= (now or datetime.now(UTC))
 
 
+LICITOR_MULTI_LOT_QUARANTINE = "licitor_multi_lot_first_lot_values"
+
+
+def licitor_lot_count(payload: object) -> int:
+    """Nombre de lots que porte une annonce Licitor, d'après les preuves structurées de la source.
+
+    Plus grand de : lots de la liste publique (``source_lots``), lots lus sur la fiche
+    (``source_property_features``: ``lot_count`` / ``lots``) et nombre de lots annoncé par la procédure.
+    """
+    if not isinstance(payload, dict):
+        return 0
+    counts: list[int] = []
+    lots = payload.get("source_lots")
+    if isinstance(lots, list):
+        counts.append(len(lots))
+    features = payload.get("source_property_features")
+    if isinstance(features, dict):
+        if isinstance(features.get("lot_count"), int):
+            counts.append(features["lot_count"])
+        if isinstance(features.get("lots"), list):
+            counts.append(len(features["lots"]))
+        procedure = features.get("procedure")
+        if isinstance(procedure, dict) and isinstance(procedure.get("announced_lots"), int):
+            counts.append(procedure["announced_lots"])
+    return max(counts, default=0)
+
+
+def is_licitor_multi_lot_with_first_lot_values(sale: AuctionSale) -> bool:
+    """Annonce Licitor en plusieurs lots dont la fiche n'expose que les valeurs du premier lot.
+
+    ``parse_licitor_detail_html`` produit une seule ligne (adresse, mise à prix, surface, point du
+    premier lot). Tant que le catalogue ne sait pas représenter un lot à part, publier cette ligne
+    afficherait comme valeurs du bien celles d'un seul lot.
+    """
+    return (
+        sale.source_name == "licitor"
+        and "multi_lot_sale" in sale.quality_flags
+        and licitor_lot_count(sale.raw_payload) > 1
+    )
+
+
 def quarantine_reason(sale: AuctionSale) -> str | None:
     """Only positive evidence of inconsistency blocks publication, never a missing secondary fact."""
     import re
@@ -193,6 +234,8 @@ def quarantine_reason(sale: AuctionSale) -> str | None:
     for flag in ("property_identity_conflict", "lot_identity_conflict", "source_identity_mismatch"):
         if flag in sale.quality_flags:
             return flag
+    if is_licitor_multi_lot_with_first_lot_values(sale):
+        return LICITOR_MULTI_LOT_QUARANTINE
     return None
 
 
