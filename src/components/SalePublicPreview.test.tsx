@@ -86,7 +86,32 @@ describe("SalePublicPreview", () => {
 
     const cta = screen.getByRole("link", { name: /Créer mon compte gratuit/ });
     expect(cta.getAttribute("href")).toContain("mode=investor");
-    expect(cta.getAttribute("href")).toContain(encodeURIComponent("/sales/sale-1?from=%2Fsales"));
+    // The unfiltered catalogue is the default way back: no `?from=/sales` in the destination.
+    const redirect = new URL(cta.getAttribute("href")!, "https://example.test").searchParams.get(
+      "redirect",
+    );
+    expect(redirect).toBe("/sales/sale-1");
+  });
+
+  it("links to the guide, the costs article, the courts and the fees simulator", () => {
+    render(
+      <SalePublicPreview
+        saleId="sale-1"
+        preview={{ id: "sale-1" } as AuctionSale}
+        returnTo="/sales"
+      />,
+    );
+    const section = screen.getByRole("region", { name: "Pour aller plus loin" });
+    expect(section.querySelector("h2")?.textContent).toBe("Pour aller plus loin");
+    const hrefs = Array.from(section.querySelectorAll("a")).map((link) =>
+      link.getAttribute("href"),
+    );
+    expect(hrefs).toEqual([
+      "/ventes-immobilieres-judiciaires",
+      "/ressources/frais-vente-encheres-judiciaire",
+      "/tribunaux",
+      "/simulateur-frais-encheres",
+    ]);
   });
 
   it("keeps court-specific guidance without exposing court statistics in the public teaser", () => {

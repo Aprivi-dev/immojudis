@@ -4,7 +4,7 @@ import { useRef } from "react";
 import { formatDate, formatPricePerM2, formatStartingPrice, occupancyLabel } from "@/lib/format";
 import { pricePerM2 } from "@/lib/geo";
 import Link from "next/link";
-import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
+import { saleDetailPath } from "@/lib/navigation";
 import {
   comparedSaleTitle,
   comparisonSurfaceKind,
@@ -92,7 +92,7 @@ export function SaleComparisonTable({
                 <p className="mt-1 break-words font-extrabold">{comparedSaleTitle(sale)}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3">
                   <Link
-                    href={pathWithSearch(saleDetailPath(sale.id), { from: returnTo })}
+                    href={saleDetailPath(sale.id, returnTo)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex min-h-11 items-center text-xs font-bold text-brand-navy underline underline-offset-2"
