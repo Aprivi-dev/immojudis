@@ -152,8 +152,14 @@ def prepare_source_revision(existing, raw: dict):
         result.raw_payload['source_checks'] = raw['source_checks']
         if raw.get('source_detail_status') in {'complete', 'restricted'}:
             result.raw_payload['source_detail_status'] = raw['source_detail_status']
+        # `existing` comes from the database, where the internal registry is not
+        # stored (excluded from the model dump): only the re-read detail carries
+        # the decoded addresses, and the registry refresh needs them.
+        result.internal_contacts = list(incoming.internal_contacts)
     else:
         result = merge_revision(existing, incoming)
+        # The registry follows the freshly read detail, whichever merge branch ran.
+        result.internal_contacts = list(incoming.internal_contacts)
     # This version is compared under the existing publication row lock.
     result.updated_at = existing.updated_at
     for key, value in existing.raw_payload.items():
