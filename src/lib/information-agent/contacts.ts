@@ -7,6 +7,7 @@ import type {
   InformationAgentAddressObserver,
   InformationAgentAddressSourceKind,
 } from "@/lib/information-agent-compliance";
+import { findEmailsInText, replaceEmailsInText } from "@/lib/information-agent/email-in-text";
 import {
   INFORMATION_AGENT_EXCLUDED_ADDRESS_MESSAGE,
   isInformationAgentExcludedAddress,
@@ -617,7 +618,7 @@ function extractEmails(value: unknown): string[] {
   if (typeof value !== "string") return [];
   return [
     ...new Set(
-      (value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [])
+      findEmailsInText(value)
         .map(normalizedEmail)
         .filter((email): email is string => Boolean(email)),
     ),
@@ -634,7 +635,7 @@ function inferContactRole(value: string): InformationAgentContactRole {
 
 function inferNameFromSourceBlock(value: string, field: string): string | null {
   if (!/(?:nom|name|avocat|notaire|notary|organisateur|organizer)/i.test(field)) return null;
-  const withoutEmail = value.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, " ");
+  const withoutEmail = replaceEmailsInText(value, " ");
   const candidate = withoutEmail
     .replace(/[|,:;()[\]]/g, " ")
     .replace(/\s+/g, " ")

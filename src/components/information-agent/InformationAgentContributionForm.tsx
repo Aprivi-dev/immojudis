@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import Link2 from "lucide-react/dist/esm/icons/link-2.js";
 import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
@@ -39,6 +40,7 @@ type ContributionSession = {
   maxSubmissionBytes: number;
   maxPortalBytes: number;
   maxPortalFiles: number;
+  optOutPath: string | null;
 };
 
 type SelectedFile = {
@@ -72,6 +74,67 @@ type UploadedFile = {
 
 type ContributionState = "reading" | "loading" | "ready" | "invalid" | "error";
 
+type FieldName =
+  | "senderName"
+  | "senderEmail"
+  | "note"
+  | "externalLinks"
+  | "files"
+  | "authorizedToTransmit";
+
+const INCOMPLETE_LINK_MESSAGE =
+  "Ce lien semble incomplet. Rouvrez-le depuis l’email que vous avez reçu, ou répondez simplement à cet email.";
+const UNAVAILABLE_MESSAGE = "Service momentanément indisponible.";
+const EXPIRED_LINK_HINT = "Répondez simplement à l’email que vous avez reçu pour nous en informer.";
+const OPT_OUT_PATH_PREFIX = "/api/information-agent/opt-out?";
+const ERROR_ALERT_ID = "contribution-error";
+
+// The token lives in sessionStorage (scoped to the tab, never sent in a URL or logged) so that a
+// reload or a back navigation does not lose it once it has been removed from the address bar.
+function tokenStorageKey(missionId: string): string {
+  return `immojudis:contribution-token:${missionId}`;
+}
+
+function readStoredToken(missionId: string): string | null {
+  try {
+    const value = window.sessionStorage.getItem(tokenStorageKey(missionId));
+    return value && TOKEN_PATTERN.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeToken(missionId: string, token: string): void {
+  try {
+    window.sessionStorage.setItem(tokenStorageKey(missionId), token);
+  } catch {
+    // Storage can be unavailable (private mode, blocked cookies): the token stays in memory.
+  }
+}
+
+function clearStoredToken(missionId: string): void {
+  try {
+    window.sessionStorage.removeItem(tokenStorageKey(missionId));
+  } catch {
+    // Nothing to clear.
+  }
+}
+
+class ContributionHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ContributionHttpError";
+  }
+}
+
+// The server answers 404 (unknown / expired link) or 410 (case closed) once it has checked the token.
+function isLinkRejectedByServer(error: unknown): boolean {
+  return error instanceof ContributionHttpError && (error.status === 404 || error.status === 410);
+}
+
 export function InformationAgentContributionForm({ missionId }: { missionId: string }) {
   const initializedMission = useRef<string | null>(null);
   const requestVersion = useRef(0);
@@ -91,6 +154,50 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [portalQuota, setPortalQuota] = useState<PortalQuota | null>(null);
+  const [errorField, setErrorField] = useState<FieldName | null>(null);
+  const [errorNonce, setErrorNonce] = useState(0);
+  const errorRef = useRef<HTMLParagraphElement | null>(null);
+  const successTitleRef = useRef<HTMLHeadingElement | null>(null);
+
+  const loadSession = useCallback(
+    (activeToken: string, version: number) => {
+      setState("loading");
+      setError(null);
+      void postJson<ContributionSession>(
+        `/api/information-agent/contributions/${encodeURIComponent(missionId)}`,
+        { token: activeToken },
+      )
+        .then((data) => {
+          if (version !== requestVersion.current) return;
+          setSession({
+            caseReference: data.caseReference,
+            subject: data.subject,
+            maxFileBytes: data.maxFileBytes || DEFAULT_MAX_FILE_BYTES,
+            maxSubmissionBytes: data.maxSubmissionBytes || DEFAULT_MAX_SUBMISSION_BYTES,
+            maxPortalBytes: data.maxPortalBytes || DEFAULT_MAX_PORTAL_BYTES,
+            maxPortalFiles: data.maxPortalFiles || DEFAULT_MAX_PORTAL_FILES,
+            optOutPath: safeOptOutPath(data.optOutPath),
+          });
+          setState("ready");
+        })
+        .catch((cause: unknown) => {
+          if (version !== requestVersion.current) return;
+          if (isLinkRejectedByServer(cause)) {
+            // Expiry confirmed by the server: the stored token is useless, forget it.
+            clearStoredToken(missionId);
+            setToken(null);
+            setState("invalid");
+            setError(
+              `${errorMessage(cause, "Ce lien de dépôt n’est plus valide.")} ${EXPIRED_LINK_HINT}`,
+            );
+            return;
+          }
+          setState("error");
+          setError(UNAVAILABLE_MESSAGE);
+        });
+    },
+    [missionId],
+  );
 
   useEffect(() => {
     if (initializedMission.current === missionId) return;
@@ -116,36 +223,46 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     setPortalQuota(null);
     setFiles([]);
 
-    if (!TOKEN_PATTERN.test(fragment)) {
+    // A reload, a back navigation or a reopened tab no longer carries the fragment: fall back to
+    // the token kept for this tab.
+    const activeToken = TOKEN_PATTERN.test(fragment) ? fragment : readStoredToken(missionId);
+    if (!activeToken) {
       setState("invalid");
-      setError("Ce lien de dépôt est invalide ou incomplet.");
+      setError(INCOMPLETE_LINK_MESSAGE);
       return;
     }
 
-    setToken(fragment);
-    setState("loading");
-    void postJson<ContributionSession>(
-      `/api/information-agent/contributions/${encodeURIComponent(missionId)}`,
-      { token: fragment },
-    )
-      .then((data) => {
-        if (version !== requestVersion.current) return;
-        setSession({
-          caseReference: data.caseReference,
-          subject: data.subject,
-          maxFileBytes: data.maxFileBytes || DEFAULT_MAX_FILE_BYTES,
-          maxSubmissionBytes: data.maxSubmissionBytes || DEFAULT_MAX_SUBMISSION_BYTES,
-          maxPortalBytes: data.maxPortalBytes || DEFAULT_MAX_PORTAL_BYTES,
-          maxPortalFiles: data.maxPortalFiles || DEFAULT_MAX_PORTAL_FILES,
-        });
-        setState("ready");
-      })
-      .catch((cause: unknown) => {
-        if (version !== requestVersion.current) return;
-        setState("error");
-        setError(errorMessage(cause, "Ce lien est invalide ou temporairement indisponible."));
-      });
-  }, [missionId]);
+    storeToken(missionId, activeToken);
+    setToken(activeToken);
+    loadSession(activeToken, version);
+  }, [missionId, loadSession]);
+
+  useEffect(() => {
+    if (errorNonce === 0) return;
+    const alert = errorRef.current;
+    if (!alert) return;
+    if (typeof alert.scrollIntoView === "function") alert.scrollIntoView({ block: "center" });
+    alert.focus({ preventScroll: true });
+  }, [errorNonce]);
+
+  useEffect(() => {
+    if (!submitted) return;
+    window.scrollTo({ top: 0 });
+    successTitleRef.current?.focus({ preventScroll: true });
+  }, [submitted]);
+
+  const retryLoad = () => {
+    if (!token) return;
+    loadSession(token, ++requestVersion.current);
+  };
+
+  // Reports a validation error next to a focus move to the alert, so that it is announced and
+  // visible even though the submit button sits far below it.
+  const fail = (message: string, field: FieldName | null = null) => {
+    setError(message);
+    setErrorField(field);
+    setErrorNonce((value) => value + 1);
+  };
 
   const resetSubmissionProgress = () => {
     setSubmissionId(null);
@@ -161,33 +278,33 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     }));
     const invalidName = normalized.find((item) => item.file.name.length > 180);
     if (invalidName) {
-      setError(`Le nom du fichier ${invalidName.file.name} dépasse 180 caractères.`);
+      fail(`Le nom du fichier ${invalidName.file.name} dépasse 180 caractères.`, "files");
       return;
     }
     const emptyFile = normalized.find((item) => item.file.size === 0);
     if (emptyFile) {
-      setError(`Le fichier ${emptyFile.file.name} est vide.`);
+      fail(`Le fichier ${emptyFile.file.name} est vide.`, "files");
       return;
     }
     const invalidType = normalized.find((item) => !isAllowedMimeType(item.mimeType));
     if (invalidType) {
-      setError(`Format non pris en charge : ${invalidType.file.name}.`);
+      fail(`Format non pris en charge : ${invalidType.file.name}.`, "files");
       return;
     }
     const tooLarge = normalized.find(
       (item) => item.file.size > (session?.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES),
     );
     if (tooLarge) {
-      setError(`Le fichier ${tooLarge.file.name} dépasse la limite de 20 Mo.`);
+      fail(`Le fichier ${tooLarge.file.name} dépasse la limite de 20 Mo.`, "files");
       return;
     }
     if (files.length + normalized.length > MAX_FILES) {
-      setError(`Vous pouvez joindre au maximum ${MAX_FILES} fichiers.`);
+      fail(`Vous pouvez joindre au maximum ${MAX_FILES} fichiers.`, "files");
       return;
     }
     const totalBytes = [...files, ...normalized].reduce((total, item) => total + item.file.size, 0);
     if (totalBytes > (session?.maxSubmissionBytes ?? DEFAULT_MAX_SUBMISSION_BYTES)) {
-      setError("Le dépôt dépasse la limite totale de 40 Mo.");
+      fail("Le dépôt dépasse la limite totale de 40 Mo.", "files");
       return;
     }
     resetSubmissionProgress();
@@ -212,27 +329,30 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
     setError(null);
     setStatus(null);
     if (cleanName.length < 2) {
-      setError("Indiquez votre nom ou votre cabinet.");
+      fail("Indiquez votre nom ou votre cabinet.", "senderName");
       return;
     }
     if (!isEmail(cleanEmail)) {
-      setError("Indiquez une adresse e-mail valide.");
+      fail("Indiquez une adresse e-mail valide.", "senderEmail");
       return;
     }
     if (links.length > MAX_EXTERNAL_LINKS) {
-      setError(`Ajoutez au maximum ${MAX_EXTERNAL_LINKS} liens, un par ligne.`);
+      fail(`Ajoutez au maximum ${MAX_EXTERNAL_LINKS} liens, un par ligne.`, "externalLinks");
       return;
     }
     if (links.some((value) => !isHttpUrl(value))) {
-      setError("Chaque lien doit commencer par http:// ou https://.");
+      fail("Chaque lien doit commencer par http:// ou https://.", "externalLinks");
       return;
     }
     if (!cleanNote && !links.length && !files.length) {
-      setError("Ajoutez une réponse, un lien ou au moins une pièce jointe.");
+      fail("Ajoutez une réponse, un lien ou au moins une pièce jointe.", "note");
       return;
     }
     if (!authorizedToTransmit) {
-      setError("Confirmez que vous êtes autorisé à transmettre ces informations.");
+      fail(
+        "Confirmez que vous êtes autorisé à transmettre ces informations.",
+        "authorizedToTransmit",
+      );
       return;
     }
 
@@ -294,6 +414,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
           })),
         },
       );
+      clearStoredToken(missionId);
       setSubmitted(true);
       setToken(null);
       setStatus("Votre contribution a bien été transmise.");
@@ -303,12 +424,21 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
       setNote("");
       setLinksText("");
     } catch (cause: unknown) {
-      setError(errorMessage(cause, "Impossible de transmettre votre contribution."));
+      if (isLinkRejectedByServer(cause)) clearStoredToken(missionId);
+      fail(errorMessage(cause, "Impossible de transmettre votre contribution."));
       setStatus(null);
     } finally {
       setSubmitting(false);
     }
   };
+
+  const invalidField = error ? errorField : null;
+  const fieldA11y = (field: FieldName, hintId?: string) => ({
+    "aria-invalid": invalidField === field ? true : undefined,
+    "aria-describedby":
+      [hintId, invalidField === field ? ERROR_ALERT_ID : null].filter(Boolean).join(" ") ||
+      undefined,
+  });
 
   return (
     <main
@@ -335,7 +465,21 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
             Vérification du lien sécurisé…
           </StatusCard>
         ) : state === "invalid" || state === "error" ? (
-          <StatusCard tone="error" role="alert">
+          <StatusCard
+            tone="error"
+            role="alert"
+            action={
+              state === "error" && token ? (
+                <button
+                  type="button"
+                  onClick={retryLoad}
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md bg-gold px-4 py-2 text-sm font-semibold text-brand-navy transition hover:bg-gold-soft"
+                >
+                  Réessayer
+                </button>
+              ) : null
+            }
+          >
             {error ?? "Ce lien de dépôt est indisponible."}
           </StatusCard>
         ) : session ? (
@@ -348,7 +492,13 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
             </h2>
             {submitted ? (
               <div className="rounded-lg border border-emerald-700/20 bg-emerald-50 p-5 text-emerald-950">
-                <h2 className="text-lg font-semibold">Contribution reçue</h2>
+                <h2
+                  ref={successTitleRef}
+                  tabIndex={-1}
+                  className="text-lg font-semibold outline-none"
+                >
+                  Contribution reçue
+                </h2>
                 <p role="status" aria-live="polite" className="mt-2 text-sm leading-relaxed">
                   {status ?? "Votre réponse a bien été transmise."} Vous pouvez fermer cette page.
                 </p>
@@ -368,8 +518,11 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                 <form className="mt-7 space-y-6" onSubmit={submit} noValidate>
                   {error ? (
                     <p
+                      ref={errorRef}
+                      id={ERROR_ALERT_ID}
+                      tabIndex={-1}
                       role="alert"
-                      className="rounded-md border border-red-700/20 bg-red-50 p-3 text-sm text-red-900"
+                      className="rounded-md border border-red-700/20 bg-red-50 p-3 text-sm text-red-900 outline-none focus-visible:ring-2 focus-visible:ring-red-700/40"
                     >
                       {error}
                     </p>
@@ -391,6 +544,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                         name="senderName"
                         autoComplete="name"
                         required
+                        {...fieldA11y("senderName")}
                         value={senderName}
                         onChange={(event) => {
                           resetSubmissionProgress();
@@ -403,7 +557,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                       label="Adresse e-mail"
                       htmlFor="sender-email"
                       required
-                      hint="Cette adresse est déclarative : elle identifie la réponse et peut être comparée au contact attendu."
+                      hint="Indiquez l’adresse à laquelle vous souhaitez être recontacté. Nous la comparons à celle à laquelle nous avons écrit."
                     >
                       <input
                         id="sender-email"
@@ -411,6 +565,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                         type="email"
                         autoComplete="email"
                         required
+                        {...fieldA11y("senderEmail", "sender-email-hint")}
                         value={senderEmail}
                         onChange={(event) => {
                           resetSubmissionProgress();
@@ -430,6 +585,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                       id="contribution-note"
                       name="note"
                       rows={6}
+                      {...fieldA11y("note", "contribution-note-hint")}
                       value={note}
                       onChange={(event) => {
                         resetSubmissionProgress();
@@ -454,6 +610,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                         id="external-links"
                         name="externalLinks"
                         rows={3}
+                        {...fieldA11y("externalLinks", "external-links-hint")}
                         value={linksText}
                         onChange={(event) => {
                           resetSubmissionProgress();
@@ -496,7 +653,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                     ) : null}
                     <label
                       htmlFor="contribution-files"
-                      className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gold/50 bg-cream/40 px-4 py-5 text-center transition hover:border-gold hover:bg-cream"
+                      className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gold/50 bg-cream/40 px-4 py-5 text-center transition hover:border-gold hover:bg-cream has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-gold has-[:focus-visible]:ring-offset-2"
                     >
                       <UploadCloud className="size-6 text-gold-text" aria-hidden="true" />
                       <span className="mt-2 text-sm font-semibold text-foreground">
@@ -505,20 +662,20 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                       <span className="mt-1 text-xs text-muted-foreground">
                         Ils seront déposés dans un espace privé.
                       </span>
+                      <input
+                        id="contribution-files"
+                        name="files"
+                        type="file"
+                        multiple
+                        accept={ACCEPTED_FILE_TYPES}
+                        {...fieldA11y("files", "files-help")}
+                        className="sr-only"
+                        onChange={(event) => {
+                          addFiles(Array.from(event.currentTarget.files ?? []));
+                          event.currentTarget.value = "";
+                        }}
+                      />
                     </label>
-                    <input
-                      id="contribution-files"
-                      name="files"
-                      type="file"
-                      multiple
-                      accept={ACCEPTED_FILE_TYPES}
-                      aria-describedby="files-help"
-                      className="sr-only"
-                      onChange={(event) => {
-                        addFiles(Array.from(event.currentTarget.files ?? []));
-                        event.currentTarget.value = "";
-                      }}
-                    />
                     {files.length ? (
                       <ul
                         className="mt-3 divide-y divide-border rounded-lg border border-border bg-white/60"
@@ -542,7 +699,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                             <button
                               type="button"
                               onClick={() => removeFile(selected.key)}
-                              className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                               aria-label={`Retirer ${selected.file.name}`}
                             >
                               <X className="size-4" aria-hidden="true" />
@@ -561,6 +718,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                       id="authorized-to-transmit"
                       name="authorizedToTransmit"
                       type="checkbox"
+                      {...fieldA11y("authorizedToTransmit")}
                       checked={authorizedToTransmit}
                       onChange={(event) => {
                         resetSubmissionProgress();
@@ -597,6 +755,33 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
           Les pièces sont reçues dans un espace privé et restent soumises à une revue avant toute
           utilisation sur une fiche.
         </p>
+        <nav
+          aria-label="Vie privée"
+          className="mx-auto mt-2 flex max-w-2xl flex-wrap items-center justify-center gap-x-2 text-xs text-muted-foreground"
+        >
+          <Link
+            href="/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center px-2 underline underline-offset-2 hover:text-foreground"
+          >
+            Politique de confidentialité
+          </Link>
+          {session?.optOutPath ? (
+            <>
+              <span aria-hidden="true">·</span>
+              {/* A button rather than a link: the signed opposition address stays in memory and is
+                  never written into the markup as a persistent href. */}
+              <button
+                type="button"
+                onClick={() => window.location.assign(session.optOutPath ?? "")}
+                className="inline-flex min-h-11 items-center px-2 underline underline-offset-2 hover:text-foreground"
+              >
+                Ne plus être contacté
+              </button>
+            </>
+          ) : null}
+        </nav>
       </div>
     </main>
   );
@@ -625,7 +810,11 @@ function Field({
           </span>
         ) : null}
       </label>
-      {hint ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p> : null}
+      {hint ? (
+        <p id={`${htmlFor}-hint`} className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          {hint}
+        </p>
+      ) : null}
       <div className="mt-2">{children}</div>
     </div>
   );
@@ -636,11 +825,13 @@ function StatusCard({
   tone = "neutral",
   role,
   icon,
+  action,
 }: {
   children: React.ReactNode;
   tone?: "neutral" | "error";
   role?: "alert" | "status";
   icon?: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
     <div
@@ -651,7 +842,8 @@ function StatusCard({
       aria-live={role === "status" ? "polite" : undefined}
     >
       {icon}
-      <span>{children}</span>
+      <span className="min-w-0 flex-1">{children}</span>
+      {action}
     </div>
   );
 }
@@ -678,9 +870,17 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
       payload && typeof payload === "object" && !Array.isArray(payload) && "error" in payload
         ? (payload as { error?: unknown }).error
         : null;
-    throw new Error(typeof message === "string" ? message : "La demande n’a pas abouti.");
+    throw new ContributionHttpError(
+      typeof message === "string" ? message : "La demande n’a pas abouti.",
+      response.status,
+    );
   }
   return payload as T;
+}
+
+// Only same-origin opposition paths are followed; anything else coming back is ignored.
+function safeOptOutPath(value: unknown): string | null {
+  return typeof value === "string" && value.startsWith(OPT_OUT_PATH_PREFIX) ? value : null;
 }
 
 function mimeTypeForFile(file: File): string {
