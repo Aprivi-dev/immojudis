@@ -105,6 +105,15 @@ describe("page Offres", () => {
     expect(note.textContent).toMatch(/informations et des pièces disponibles/);
   });
 
+  it("annonce le suivi des changements des favoris dans les fonctionnalités d'Analyse", () => {
+    render(<OffersPage />);
+    expect(
+      screen.getByText(
+        "Suivi des changements de vos favoris (date, mise à prix, statut, documents), consultable dans Mes favoris",
+      ),
+    ).toBeTruthy();
+  });
+
   it("promet l'essai seulement quand la souscription est ouverte", async () => {
     render(<OffersPage />);
     expect(await screen.findByText(/Essai gratuit de 7 jours avec carte bancaire/)).toBeTruthy();

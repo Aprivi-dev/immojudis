@@ -154,8 +154,10 @@ function AnalysisChanges({
         <Card className="mt-4">
           <p className="font-semibold">Aucun changement détecté</p>
           <p className="mt-1 text-sm text-ink-soft">
-            Vos favoris sont contrôlés automatiquement : un changement apparaît ici dès qu’il est
-            détecté.
+            Aucun changement détecté sur vos favoris ces {RECENT_SALE_CHANGE_DAYS} derniers jours
+            dans les annonces que nous collectons. L’absence de changement affiché n’est pas une
+            garantie : vérifiez la date et le statut auprès de l’avocat poursuivant avant de vous
+            déplacer.
           </p>
         </Card>
       ) : null}

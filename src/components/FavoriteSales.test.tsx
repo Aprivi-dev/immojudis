@@ -245,6 +245,11 @@ describe("FavoriteSales : changements des ventes suivies", () => {
     setup([]);
     renderPage();
     expect(await screen.findByText("Aucun changement détecté")).toBeTruthy();
+    const body = screen.getByText(/Aucun changement détecté sur vos favoris ces 30 derniers jours/);
+    expect(body.textContent).toContain("dans les annonces que nous collectons");
+    expect(body.textContent).toContain("n’est pas une garantie");
+    expect(body.textContent).toContain("auprès de l’avocat poursuivant avant de vous déplacer");
+    expect(document.body.textContent).not.toContain("dès qu’il est détecté");
   });
 
   it("annonce le chargement", async () => {
