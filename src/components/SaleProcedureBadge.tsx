@@ -13,7 +13,7 @@ export function SaleProcedureBadge({ sale }: { sale: AuctionSale }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] backdrop-blur ${
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold backdrop-blur ${
         verified
           ? "border-emerald-200 bg-emerald-50/95 text-emerald-900"
           : procedure.verificationStatus === "conflict"

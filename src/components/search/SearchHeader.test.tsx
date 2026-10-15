@@ -6,6 +6,7 @@ import {
   ResultsSummary,
   SaveSearchButton,
   SearchHeader,
+  SortByDateShortcut,
   SortDropdown,
 } from "./SearchHeader";
 import { emptySearchDraft } from "./search-page-state";
@@ -130,6 +131,36 @@ describe("SortDropdown : options selon l'offre", () => {
     render(<SortDropdown investmentScore sort="relevance" onChange={vi.fn()} />);
     expect(labels()[0]).toBe("Mieux renseignées d’abord");
     expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("relevance");
+  });
+});
+
+describe("SortByDateShortcut", () => {
+  it("propose « Trier par date de vente » à côté du tri par défaut, sans le changer", () => {
+    const onChange = vi.fn();
+    render(<SortByDateShortcut sort="relevance" onChange={onChange} />);
+    const button = screen.getByRole("button", { name: "Trier par date de vente" });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(button.className).toContain("min-h-11");
+    fireEvent.click(button);
+    expect(onChange).toHaveBeenCalledWith("sale_date_asc");
+    cleanup();
+    render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("relevance");
+  });
+
+  it("revient au classement par défaut au second appui", () => {
+    const onChange = vi.fn();
+    render(<SortByDateShortcut sort="sale_date_asc" onChange={onChange} />);
+    const button = screen.getByRole("button", { name: "Trier par date de vente" });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(button);
+    expect(onChange).toHaveBeenCalledWith("relevance");
+  });
+
+  it("donne aux listes Type de bien et Tri une hauteur tactile d'au moins 44 px", () => {
+    const { container } = render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
+    expect(container.querySelector("label")?.className).toContain("min-h-11");
+    expect(container.querySelector("label")?.className).not.toContain("h-10");
   });
 });
 
