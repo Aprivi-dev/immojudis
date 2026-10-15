@@ -7,6 +7,7 @@ import { publicLegalPublisher } from "@/lib/legal-documents";
 const MAIN_LINKS = [
   { href: "/sales", label: "Ventes" },
   { href: "/tribunaux", label: "Tribunaux" },
+  { href: "/ventes-encheres-immobilieres", label: "Par département" },
   { href: "/avocats", label: "Avocats" },
   { href: "/ressources", label: "Ressources" },
   { href: "/comment-ca-marche", label: "Comment ça marche" },
