@@ -125,3 +125,48 @@ besoin de l'accord écrit de Licitor avant toute publication d'agrégats ouverts
 - La liste des résultats d'adjudication, chargée en JavaScript.
 - Côté Immojudis, les pages derrière un compte : analyse faite sur le code et la fiche
   d'exemple publique.
+
+## Exécution (15/10/2026)
+
+Le propriétaire a validé les 17 propositions. Travail réparti entre quatre `developpeur`
+et un `redacteur-contenu`, relu par `juridique-rgpd` (articles et guide) et `code-reviewer`
+(code), corrections appliquées après chaque relecture. PR Aprivi-dev/immojudis#268.
+
+| N°  | Statut        | Ce qui a été fait                                                                                                                                                                                                                                                                      |
+| --- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | fait          | Ligne « N ventes à venir · mises à jour le … » sous la recherche de l'accueil (`src/lib/home-catalogue-summary.server.ts`), rien si la donnée manque ; accueil en ISR 5 min                                                                                                            |
+| 2   | fait          | « Gratuit, sans carte bancaire · 3 fiches détaillées par mois » sur l'accueil (lien `/offres`) et les cartes de ventes au tribunal (`FREE_ACCESS_LINE`)                                                                                                                                |
+| 3   | fait          | Composant existant `Terme` étendu (consignation, enchère plafond, lien vers l'ancre précise du lexique) et intégré aux cartes, au panneau du plafond et à `/offres` ; lexique du guide avec une ancre par terme et index A–Z                                                           |
+| 4   | fait          | « Plafond hors travaux : ajoutez votre budget travaux pour l'affiner » / « Plafond après X € de travaux »                                                                                                                                                                              |
+| 5   | fait          | Titre de carte « Type · Ville », « Mise à prix » lisible                                                                                                                                                                                                                               |
+| 6   | fait          | Simulateur : mode « budget → enchère maximale » (mêmes barèmes, dichotomie bornée, plafond de 10 Md€) et calcul de surenchère du dixième                                                                                                                                               |
+| 7   | fait          | Page `/methode-ecart-marche` ; garde-fou (décote > 70 % ou surcote > 50 % → « écart non significatif ») appliqué à la fiche, aux alertes et à la prévision                                                                                                                             |
+| 8   | fait          | Date du guide unique (`src/lib/guide-dates.ts`), reprise par les données structurées et le sitemap                                                                                                                                                                                     |
+| 9   | fait          | Frise « La vente à la barre du tribunal en 5 étapes », temps de lecture, encadrés « À retenir »                                                                                                                                                                                        |
+| 10  | fait          | Trois articles : licitation, saisie immobilière, avocat obligatoire ; corrigés après relecture juridique                                                                                                                                                                               |
+| 11  | fait          | `/ventes-encheres-immobilieres` et une page par département (seuil de 3 ventes pour l'indexation, ISR 1 h, libellés selon le type de vente)                                                                                                                                            |
+| 12  | non fait      | Le prix médian DVF de la commune est dans une table privée (`dvf_market_statistics`) ; l'afficher sans compte demande une RPC publique (migration) : décision de sécurité à prendre                                                                                                    |
+| 13  | fait          | Bandeau des informations clés sous l'en-tête de la fiche ; informations manquantes regroupées dans un bloc repliable                                                                                                                                                                   |
+| 14  | fait          | `/llms.txt` (pages éditoriales seulement, 404 tant que l'indexation est fermée)                                                                                                                                                                                                        |
+| 15  | fait, fermé   | `/prix-encheres-immobilieres` derrière `PUBLIC_ADJUDICATION_PRICES_ENABLED` et `ADJUDICATION_PRICE_STATISTICS_ENABLED` (404 par défaut) ; à ouvrir après l'accord écrit de Licitor et la relecture juridique                                                                           |
+| 16  | —             | Vue tableau : non confiée dans ce lot (effort L, aucune équipe disponible sur `/sales` sans conflit)                                                                                                                                                                                   |
+| 17  | analyse seule | La fiche est supprimée à l'audience et son identifiant perdu ; l'archive interne contient adresse et avocat ; le prix par vente n'y est pas rattaché. Il faudrait une migration (identifiant conservé, RPC publique, durée de conservation) et une relecture juridique avant tout code |
+
+### Restent ouverts
+
+- N° 12 et 17 : décisions (sécurité de la base, conservation des données, RGPD).
+- N° 16 : à planifier.
+- Doublons : les pages par département et `/sales` comptent les doublons tant que
+  `DEDUPE_RECONCILE_ENABLED` n'est pas activé.
+- Seuils du garde-fou d'écart à calibrer sur les données de production (requête en
+  lecture seule) ; rapports payants (`property-report/analysis.ts`,
+  `dvf-comparable-engine.ts`) encore sans garde-fou.
+- Statut « reporté » absent du retour de la RPC publique : les pages département font une
+  seconde lecture ; une migration le rendrait direct.
+- Juridique, à faire valider par un avocat : avocat poursuivant et enchères pour un tiers,
+  titre d'expulsion après licitation, loi n° 2026-248, honoraires en saisie et licitation,
+  qui supporte les émoluments, renvoi des art. 1271 à 1281 CPC, articles du Code civil non
+  relus en texte intégral, droit de substitution des indivisaires, déclaration de command
+  en licitation, conformité de l'annuaire d'avocats avec mise en avant payante.
+- À confirmer par le propriétaire : l'inscription ne demande jamais de carte bancaire
+  (mention « Gratuit, sans carte bancaire »).
