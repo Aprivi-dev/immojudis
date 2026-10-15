@@ -509,6 +509,16 @@ export function SearchPage({
     results?.focus({ preventScroll: true });
   }, [page, isFetching, isInitialLoading]);
 
+  // Address of another page of the same search (`/sales?…&page=N`, page 1 without `page`): the
+  // pagination renders real links with it. The canonical stays `/sales` (see sales/page.tsx).
+  const pageHref = (targetPage: number): string | undefined =>
+    targetPage < 1
+      ? undefined
+      : pathWithSearch(
+          pathname,
+          salesSearchToUrlRecord(mergeSalesSearch(search, { page: targetPage })),
+        );
+
   const loadNextPage = useCallback(() => {
     if (!hasMore || isFetching) return;
     updateSearch({ page: page + 1 });
@@ -863,6 +873,8 @@ export function SearchPage({
             pageSize={pageSize}
             onNext={loadNextPage}
             onPrevious={loadPreviousPage}
+            nextHref={pageHref(page + 1)}
+            previousHref={pageHref(page - 1)}
             onFirstPage={() => updateSearch({ page: 1 })}
           />
 

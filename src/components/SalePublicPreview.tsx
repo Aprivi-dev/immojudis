@@ -32,6 +32,33 @@ import {
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
 
+/**
+ * Internal links of the public page: they carry the visitor from one sale to the pages that
+ * explain how a sale works, and give crawlers a path from every sale to the guides.
+ */
+const FURTHER_READING_LINKS = [
+  {
+    href: "/ventes-immobilieres-judiciaires",
+    label: "Le guide des ventes immobilières judiciaires",
+    hint: "comprendre le déroulement d’une vente",
+  },
+  {
+    href: "/ressources/frais-vente-encheres-judiciaire",
+    label: "Les frais d’une vente aux enchères",
+    hint: "ce qui s’ajoute au prix d’adjudication",
+  },
+  {
+    href: "/tribunaux",
+    label: "Les tribunaux",
+    hint: "l’activité des tribunaux qui organisent des ventes",
+  },
+  {
+    href: "/simulateur-frais-encheres",
+    label: "Le simulateur de frais",
+    hint: "estimer les frais d’une enchère",
+  },
+] as const;
+
 const VENUE_COPY: Record<SaleVenueType, { title: string; explanation: string }> = {
   tribunal: {
     title: "Bien immobilier vendu au tribunal",
@@ -353,6 +380,21 @@ export function SalePublicPreview({
               </p>
             </div>
           </div>
+        </section>
+        <section className="mt-8" aria-labelledby="public-further-title">
+          <h2 id="public-further-title" className={styles.sectionTitle}>
+            Pour aller plus loin
+          </h2>
+          <ul className="mt-3 grid gap-2 text-sm leading-relaxed text-slate-700 sm:grid-cols-2">
+            {FURTHER_READING_LINKS.map((link) => (
+              <li key={link.href}>
+                <Link href={link.href} className="font-medium underline underline-offset-4">
+                  {link.label}
+                </Link>
+                <span className="text-slate-600"> : {link.hint}</span>
+              </li>
+            ))}
+          </ul>
         </section>
         <p className="mt-6 text-sm leading-relaxed text-slate-600">
           Les sources officielles restent consultables librement :{" "}
