@@ -34,7 +34,7 @@ describe("WellInformedBadge", () => {
     expect(button.getAttribute("aria-controls")).toBe(note.id);
     expect(note.textContent).toContain(WELL_INFORMED_BADGE_NOTE);
     expect(WELL_INFORMED_BADGE_NOTE).toBe(
-      "Cette annonce réunit une part importante des informations que nous recherchons. Ce n’est ni une vérification ni une garantie.",
+      "Cette annonce renseigne une part importante des informations que nous relevons (photos, surface, occupation, documents, etc.). Ce n’est ni une vérification ni une garantie d’exactitude.",
     );
     expect(note.textContent).not.toContain("Fiche détaillée");
     expect(screen.getByRole("link", { name: "Comment ça marche ?" }).getAttribute("href")).toBe(

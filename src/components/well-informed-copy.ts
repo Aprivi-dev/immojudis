@@ -3,7 +3,7 @@ export const WELL_INFORMED_BADGE_LABEL = "Annonce bien renseignée";
 
 /** Portée du repère, affichée à la demande sous la pastille (clavier, tactile, lecteurs d'écran). */
 export const WELL_INFORMED_BADGE_NOTE =
-  "Cette annonce réunit une part importante des informations que nous recherchons. Ce n’est ni une vérification ni une garantie.";
+  "Cette annonce renseigne une part importante des informations que nous relevons (photos, surface, occupation, documents, etc.). Ce n’est ni une vérification ni une garantie d’exactitude.";
 
 /** Précision réservée à la page publique du classement (seuil et limites du repère). */
 export const WELL_INFORMED_BADGE_DETAIL =
