@@ -203,6 +203,8 @@ describe("one-click objection link (P4-12)", () => {
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain('method="post"');
+    // 15 px of text + 2 x 14 px of padding: a touch target of at least 44 px.
+    expect(html).toContain("padding:14px 18px");
     expect(html).toContain("cabinet@example.test");
     expect(mocks.upsert).not.toHaveBeenCalled();
   });
