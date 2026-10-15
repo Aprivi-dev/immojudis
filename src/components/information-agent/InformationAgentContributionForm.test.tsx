@@ -395,10 +395,17 @@ describe("InformationAgentContributionForm", () => {
       renderContribution();
       await screen.findByText("CASE-1234");
 
-      const privacy = screen.getByRole("link", { name: "Politique de confidentialité" });
-      expect(privacy.getAttribute("href")).toBe("/privacy");
-      expect(privacy.getAttribute("rel")).toContain("noopener");
-      expect(screen.getByRole("button", { name: "Ne plus être contacté" })).toBeTruthy();
+      // One link in the information notice above the button, one in the footer.
+      const privacyLinks = screen.getAllByRole("link", { name: "Politique de confidentialité" });
+      expect(privacyLinks).toHaveLength(2);
+      for (const privacy of privacyLinks) {
+        expect(privacy.getAttribute("href")).toBe("/privacy");
+        expect(privacy.getAttribute("rel")).toContain("noopener");
+      }
+      expect(
+        screen.getByRole("button", { name: "Ne plus être contacté par Immojudis" }),
+      ).toBeTruthy();
+      expect(screen.queryByText(/Pour vous opposer ou exercer vos droits/)).toBeNull();
       expect(document.body.innerHTML).not.toContain("opt-out");
     });
 
@@ -409,9 +416,13 @@ describe("InformationAgentContributionForm", () => {
       await screen.findByText("CASE-1234");
       vi.stubGlobal("location", { assign });
 
-      fireEvent.click(screen.getByRole("button", { name: "Ne plus être contacté" }));
+      expect(window.sessionStorage.getItem(STORAGE_KEY)).toBe(TOKEN);
+
+      fireEvent.click(screen.getByRole("button", { name: "Ne plus être contacté par Immojudis" }));
 
       expect(assign).toHaveBeenCalledWith(OPT_OUT_PATH);
+      // The stored token is forgotten before the navigation.
+      expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
     });
 
     it("n'affiche pas l'opposition avec une adresse externe", async () => {
@@ -425,8 +436,51 @@ describe("InformationAgentContributionForm", () => {
       renderContribution();
       await screen.findByText("CASE-1234");
 
-      expect(screen.queryByRole("button", { name: "Ne plus être contacté" })).toBeNull();
-      expect(screen.getByRole("link", { name: "Politique de confidentialité" })).toBeTruthy();
+      expect(
+        screen.queryByRole("button", { name: "Ne plus être contacté par Immojudis" }),
+      ).toBeNull();
+      expect(screen.getAllByRole("link", { name: "Politique de confidentialité" })).toHaveLength(2);
+      expect(screen.getByText(/Pour vous opposer ou exercer vos droits/)).toBeTruthy();
+    });
+
+    it("publie l'adresse de contact quand le lien est expiré ou invalide", async () => {
+      vi.stubEnv("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL", "contact@immojudis.example");
+      mocks.fetch.mockResolvedValueOnce(jsonResponse({ error: "Lien expiré." }, 410));
+      renderContribution();
+      await screen.findByRole("alert");
+
+      expect(screen.queryByRole("button", { name: /Ne plus être contacté/ })).toBeNull();
+      const contact = screen.getByRole("link", { name: "contact@immojudis.example" });
+      expect(contact.getAttribute("href")).toBe("mailto:contact@immojudis.example");
+      vi.unstubAllEnvs();
+    });
+  });
+
+  describe("information des personnes", () => {
+    it("informe lisiblement, au-dessus du bouton d'envoi, de l'usage, de l'IA et des droits", async () => {
+      vi.stubEnv("NEXT_PUBLIC_LEGAL_ENTITY_NAME", "Immojudis SAS");
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+
+      const notice = document.getElementById("contribution-privacy-notice");
+      expect(notice).not.toBeNull();
+      expect(notice?.textContent).toContain("Immojudis (Immojudis SAS) utilise ces informations");
+      expect(notice?.textContent).toContain("intérêt légitime");
+      expect(notice?.textContent).toContain("prestataire établi aux États-Unis");
+      expect(notice?.textContent).toContain("Conservation : 12 à 24 mois");
+      expect(notice?.textContent).toContain("saisir la CNIL");
+      expect(notice?.className).not.toContain("text-xs");
+      expect(notice?.className).not.toContain("text-muted-foreground");
+
+      const submit = screen.getByRole("button", { name: "Transmettre ma contribution" });
+      expect(
+        notice!.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        screen.getByText(/stockés dans un espace privé, accessible à l’équipe Immojudis/),
+      ).toBeTruthy();
+      vi.unstubAllEnvs();
     });
   });
 
