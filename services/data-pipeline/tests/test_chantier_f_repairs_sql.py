@@ -298,7 +298,8 @@ def _seed_tribunals(db) -> None:
         ("mans", "TJ Tribunal judiciaire du Mans", ["Tribunal judiciaire du Mans", "TJ Tribunal judiciaire du Mans"]),
         ("havre", "TJ Tribunal judiciaire du Havre", ["Tribunal judiciaire du Havre"]),
         ("sables", "TJ Tribunal judiciaire des Sables-d'Olonne", None),
-        ("roche", "TJ Tribunal judiciaire de la Roche-sur-Yon", []),
+        ("roche", "TJ Tribunal judiciaire de La Roche-sur-Yon", []),
+        ("roche2", "TJ Tribunal judiciaire de la Roche-Posay", []),
         ("isle", "TJ Tribunal judiciaire de l'Isle", []),
         ("pau", "TJ Pau", ["Tribunal judiciaire de Pau"]),
         # « TJ Le Creusot » existe deja sous un autre code : le doublon est un conflit, laisse intact.
@@ -343,7 +344,20 @@ def test_doubled_tribunal_names_count_by_default_and_repair_on_demand(repair_dat
         assert names["havre"] == "TJ Le Havre"
         assert names["sables"] == "TJ Les Sables-d'Olonne"
         assert names["roche"] == "TJ La Roche-sur-Yon"
-        assert names["isle"] == "TJ L'Isle"
+        assert names["isle"] == "TJ l'Isle"
+        assert names["roche2"] == "TJ la Roche-Posay"
+        # Meme casse que le code Python (court_competence._short_court_name) pour chaque nom repare.
+        from src.court_competence import _short_court_name
+
+        for code, official in (
+            ("mans", "Tribunal judiciaire du Mans"),
+            ("havre", "Tribunal judiciaire du Havre"),
+            ("sables", "Tribunal judiciaire des Sables-d'Olonne"),
+            ("roche", "Tribunal judiciaire de La Roche-sur-Yon"),
+            ("roche2", "Tribunal judiciaire de la Roche-Posay"),
+            ("isle", "Tribunal judiciaire de l'Isle"),
+        ):
+            assert names[code] == _short_court_name(official)
         assert names["pau"] == "TJ Pau"
         assert names["creusot"] == "TJ Tribunal judiciaire du Creusot"  # conflit : intact
         aliases = db.execute("select aliases from public.tribunals where code = 'mans'").fetchone()[0]
@@ -360,7 +374,7 @@ def test_doubled_tribunal_names_count_by_default_and_repair_on_demand(repair_dat
         assert _sale(db, "s-pau")["tribunal"] == "TJ Pau"
         assert _sale(db, "s-creusot")["tribunal"] == "TJ Tribunal judiciaire du Creusot"
         assert db.execute("select tribunal from public.judicial_sales").fetchone() == ("TJ Le Mans",)
-        assert db.execute("select count(*) from app_private.tribunal_name_repair_backup_20261025").fetchone() == (5,)
+        assert db.execute("select count(*) from app_private.tribunal_name_repair_backup_20261025").fetchone() == (6,)
 
         after_first = _snapshot(db)
         names_after = db.execute("select * from public.tribunals order by code").fetchall()
@@ -382,3 +396,13 @@ def test_doubled_tribunal_repair_defaults_to_counting_only() -> None:
     assert "\\set apply off" in text and "set transaction read only" in text
     assert text.rstrip().count("rollback") >= 1
     assert not re.search(r"^\s*(?:update|insert|delete)\b[^\n]*public\.", text.split("\\if :apply")[0], re.M)
+
+
+def test_doubled_tribunal_repair_has_no_branch_python_never_produces() -> None:
+    # court_competence._short_court_name ne retire que « de » / « d' » et ne transforme que « du » / « des » :
+    # une branche « de la » / « de l' » en SQL donnerait une casse que Python ne produit pas.
+    text = DOUBLED_TRIBUNALS.read_text(encoding="utf-8")
+    plan = text[text.index("create temporary table tribunal_name_plan") : text.index("alter table tribunal_name_plan")]
+
+    assert "when 'de la'" not in plan and "when 'de l'''" not in plan
+    assert "(?:(d'')|(du|des|de) +)" in plan
