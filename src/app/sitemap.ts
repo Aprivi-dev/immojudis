@@ -1,5 +1,9 @@
 import type { MetadataRoute } from "next";
 import { loadSitemapSales, SITEMAP_URL_LIMIT } from "@/lib/public-sitemap.server";
+import {
+  isPublicAdjudicationPricesEnabled,
+  PUBLIC_ADJUDICATION_PRICES_PATH,
+} from "@/lib/public-adjudication-prices";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
@@ -28,6 +32,7 @@ const PUBLIC_ROUTES = [
   ["/annonce-exemple", "2026-10-15"],
   ["/ventes-immobilieres-judiciaires", "2026-10-13"],
   ["/simulateur-frais-encheres", "2026-10-13"],
+  [PUBLIC_ADJUDICATION_PRICES_PATH, null], // listed only while PUBLIC_ADJUDICATION_PRICES_ENABLED is "true"
   ["/a-propos", "2026-10-13"],
   ["/contact", "2026-10-08"],
   ["/classement-des-annonces", "2026-10-14"],
@@ -61,6 +66,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .filter(
         ([path]) =>
           path !== "/tribunaux" || tribunals.status === "error" || tribunals.items.length > 0,
+      )
+      .filter(
+        ([path]) => path !== PUBLIC_ADJUDICATION_PRICES_PATH || isPublicAdjudicationPricesEnabled(),
       )
       .map(([path, modified]) => {
         const lastModified = path === "/sales" ? newestSale : modified;
