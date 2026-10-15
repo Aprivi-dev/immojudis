@@ -186,3 +186,4 @@ puis `npm run build` dans l'étape de compilation.
 
 - **Web** : `tsc --noEmit` + `npm run lint` + `npm run test` + `npm run build` (Node 24)
 - **Pipeline** : `ruff check` + `pytest` (Python 3.12)
+- **Migrations** : versions uniques, et sur une PR, chaque migration ajoutée doit être plus récente que la dernière de `main` (`npm run check:migrations -- --base-ref=origin/main` en local, après `git fetch origin main`)
