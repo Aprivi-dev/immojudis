@@ -54,14 +54,55 @@ def test_a_normal_apartment_is_untouched() -> None:
     assert "ambiguous_surface" not in sale.quality_flags
 
 
-def test_a_house_surface_that_is_really_a_plot_becomes_the_land_surface() -> None:
-    sale = _sale("house", "48256")
+def test_a_house_surface_that_the_source_calls_a_plot_becomes_the_land_surface() -> None:
+    sale = _sale("house", "48256", description="Maison d'habitation, superficie du sol de 48 256 m².")
 
     assert sale.app_surface_m2 is None
     assert sale.surface_m2 is None
     assert sale.land_surface_m2 == Decimal("48256")
     assert sale.raw_payload["implausible_surface_reconciliation"]["status"] == "demoted_to_land"
     assert sale.raw_payload["implausible_surface_reconciliation"]["ceiling_m2"] == "1000"
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Parcelle cadastrée section AB n°12 d'une contenance de 48256 m².",
+        "Une maison avec une superficie du sol de 48 256 m².",
+        "48 256 m² de terrain avec maison.",
+    ],
+)
+def test_a_house_surface_qualified_as_land_by_the_source_wording_ends_up_as_land(description: str) -> None:
+    sale = _sale("house", "48256", description=description)
+
+    assert sale.app_surface_m2 is None
+    assert sale.land_surface_m2 == Decimal("48256")
+
+
+def test_a_house_surface_not_qualified_by_the_source_is_dropped_not_copied_to_land() -> None:
+    sale = _sale("house", "48256")
+
+    assert sale.app_surface_m2 is None
+    assert sale.surface_m2 is None
+    assert sale.land_surface_m2 is None
+    assert "ambiguous_surface" in sale.quality_flags
+    reconciliation = sale.raw_payload["implausible_surface_reconciliation"]
+    assert reconciliation["status"] == "removed"
+    assert reconciliation["rejected_surface_m2"] == "48256"
+
+
+def test_a_land_word_next_to_another_number_does_not_qualify_the_rejected_surface() -> None:
+    sale = _sale("house", "48256", description="Maison sur un terrain de 800 m². Titre : 48 256 m² au total.")
+
+    assert sale.land_surface_m2 == Decimal("800")
+    assert sale.raw_payload["implausible_surface_reconciliation"]["status"] == "removed"
+
+
+def test_a_built_surface_wording_does_not_qualify_the_rejected_surface_as_land() -> None:
+    sale = _sale("house", "48256", description="Maison, terrain non communiqué, surface habitable 48 256 m².")
+
+    assert sale.land_surface_m2 is None
+    assert sale.raw_payload["implausible_surface_reconciliation"]["status"] == "removed"
 
 
 def test_a_house_keeps_a_known_land_surface_and_drops_the_implausible_built_one() -> None:
@@ -73,7 +114,7 @@ def test_a_house_keeps_a_known_land_surface_and_drops_the_implausible_built_one(
 
 
 def test_the_plausibility_correction_is_stable_when_the_sale_is_recomputed() -> None:
-    sale = _sale("house", "48256")
+    sale = _sale("house", "48256", description="Maison sur un terrain de 48 256 m².")
     normalize_asset_features(sale)
 
     assert sale.app_surface_m2 is None
