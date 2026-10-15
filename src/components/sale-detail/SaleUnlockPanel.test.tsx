@@ -28,6 +28,7 @@ const saleId = "11111111-1111-4111-8111-111111111111";
 const status = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => ({
   saleId,
   unlocked: false,
+  unlockable: true,
   analysisAccess: false,
   limit: 3,
   used: 1,

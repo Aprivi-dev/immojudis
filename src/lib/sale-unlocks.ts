@@ -13,6 +13,12 @@ export type SaleUnlockStatus = {
   saleId: string | null;
   /** La vente est débloquée pour ce compte et toujours en ligne. */
   unlocked: boolean;
+  /**
+   * La vente peut être débloquée : en ligne et prête pour l'offre Analyse. Faux pour une vente qui
+   * s'affiche en fiche gratuite mais que la base refuserait de débloquer (« Vente introuvable »).
+   * Une base sans cette information (migration pas appliquée) répond `true`, comme avant.
+   */
+  unlockable: boolean;
   /** Le compte a déjà accès à toutes les ventes (Analyse, administrateur) : rien à débloquer. */
   analysisAccess: boolean;
   /** Déblocages par mois ; `null` quand le compte n'a pas à débloquer. */
@@ -69,6 +75,33 @@ function unlockCountLabel(count: number): string {
 export function remainingUnlocksLine(status: Pick<SaleUnlockStatus, "remaining" | "limit">) {
   if (status.remaining == null || status.limit == null) return null;
   return `Il vous reste ${unlockCountLabel(status.remaining)} sur ${status.limit} ce mois-ci.`;
+}
+
+/** « Cette vente ne peut pas être débloquée pour le moment. » */
+export const SALE_NOT_UNLOCKABLE_TEXT = "Cette vente ne peut pas être débloquée pour le moment.";
+
+/** « Débloquer cette vente (il vous reste 2 sur 3) » : le lien principal des aperçus payants. */
+export function unlockCallToActionLabel(status: Pick<SaleUnlockStatus, "remaining" | "limit">) {
+  const limit = status.limit ?? MONTHLY_SALE_UNLOCKS;
+  return `Débloquer cette vente (il vous reste ${status.remaining ?? 0} sur ${limit})`;
+}
+
+/** « Vos 3 déblocages d’octobre reviennent le 1er novembre. » */
+export function unlockQuotaResetLine(
+  status: Pick<SaleUnlockStatus, "limit" | "periodStart" | "resetsAt">,
+) {
+  const month = parisMonthName(status.periodStart);
+  const ofMonth = /^[aeiouyàâéèêîôû]/i.test(month) ? `d’${month}` : `de ${month}`;
+  return `Vos ${status.limit ?? MONTHLY_SALE_UNLOCKS} déblocages ${ofMonth} reviennent le ${parisDayMonthLabel(status.resetsAt)}.`;
+}
+
+/** « Déblocages ce mois-ci : 2 sur 3 utilisés. Remis à 3 le 1er novembre. » (page Mon compte) */
+export function unlockUsageLine(
+  status: Pick<SaleUnlockStatus, "limit" | "used" | "resetsAt">,
+): string {
+  const limit = status.limit ?? MONTHLY_SALE_UNLOCKS;
+  const used = limit == null ? status.used : Math.min(status.used, limit);
+  return `Déblocages ce mois-ci : ${used} sur ${limit} utilisés. Remis à ${limit} le ${parisDayMonthLabel(status.resetsAt)}.`;
 }
 
 /** « Ce déblocage est définitif : il n’est restitué que si Immojudis retire elle-même la vente (conditions générales, article 2). Le compteur est remis à 3 le 1er novembre. » */

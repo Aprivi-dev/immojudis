@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { PublicApiError } from "@/lib/api-errors";
+import { parisMonthWindow } from "@/lib/paris-month";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
 
 /**
@@ -19,6 +20,8 @@ const instantSchema = z
 const rpcStatusSchema = z.object({
   sale_id: z.string().nullable().optional(),
   unlocked: z.boolean(),
+  // Absent d'une base dont la migration `unlockable` n'est pas appliquée : comme avant, « oui ».
+  unlockable: z.boolean().optional(),
   analysis_access: z.boolean(),
   limit: z.number().int().nullable(),
   used: z.number().int().nonnegative(),
@@ -36,6 +39,7 @@ function toStatus(row: z.infer<typeof rpcStatusSchema>): SaleUnlockStatus {
   return {
     saleId: row.sale_id ?? null,
     unlocked: row.unlocked,
+    unlockable: row.unlockable ?? true,
     analysisAccess: row.analysis_access,
     limit: row.limit,
     used: row.used,
@@ -74,7 +78,31 @@ function isMissingFunction(error: RpcError): boolean {
   return error?.code === "PGRST202" || error?.code === "42883";
 }
 
-/** Situation du compte pour ce mois et, avec `saleId`, état de déblocage de cette vente. */
+/**
+ * Situation d'une base qui n'a pas encore le déblocage (déploiement échelonné) : rien n'est
+ * débloqué ni débloquable, et aucun quota n'est annoncé. La fiche reste la fiche gratuite, sans
+ * bandeau d'erreur : ce n'est pas une panne.
+ */
+function unavailableSaleUnlockStatus(saleId: string | null): SaleUnlockStatus {
+  const { periodStart, periodEnd } = parisMonthWindow();
+  return {
+    saleId,
+    unlocked: false,
+    unlockable: false,
+    analysisAccess: false,
+    limit: null,
+    used: 0,
+    remaining: null,
+    periodStart,
+    resetsAt: periodEnd,
+  };
+}
+
+/**
+ * Situation du compte pour ce mois et, avec `saleId`, état de déblocage de cette vente. Une base
+ * sans la fonction répond « rien n'est débloquable », jamais une erreur (même repli que
+ * `hasUnlockedSale`).
+ */
 export async function getSaleUnlockStatus(
   auth: SupabaseAuthContext,
   saleId: string | null = null,
@@ -83,7 +111,10 @@ export async function getSaleUnlockStatus(
     "get_sale_unlock_status",
     saleId ? { p_sale_id: saleId } : {},
   );
-  if (error) throw error;
+  if (error) {
+    if (isMissingFunction(error)) return unavailableSaleUnlockStatus(saleId);
+    throw error;
+  }
   return parseSaleUnlockStatus(data);
 }
 
