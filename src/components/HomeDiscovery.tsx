@@ -7,6 +7,8 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 import { resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { loginPathWithRedirect } from "@/lib/navigation";
+import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_TEXT } from "@/lib/sale-unlocks";
 import { DOSSIER_APARTMENT_QUALITY, DOSSIER_APARTMENT_SIZES } from "./home-images";
 import styles from "./HomeDiscovery.module.css";
 
@@ -40,6 +42,7 @@ const methodSteps = [
 const discoveryFeatures = [
   "Accès aux annonces",
   "Informations essentielles",
+  `${MONTHLY_SALE_UNLOCKS} ventes débloquées par mois : ${UNLOCK_HIGHLIGHTS_TEXT}`,
   "Jusqu’à trois favoris",
 ] as const;
 
@@ -161,8 +164,8 @@ export function HomeDiscovery() {
                     </li>
                   ))}
                 </ul>
-                <Link href="/sales" className={styles.secondaryLink}>
-                  Explorer les ventes <ArrowRight aria-hidden="true" size={17} />
+                <Link href={loginPathWithRedirect(undefined)} className={styles.secondaryLink}>
+                  Créer mon compte gratuit <ArrowRight aria-hidden="true" size={17} />
                 </Link>
               </article>
               <article className={styles.plan}>

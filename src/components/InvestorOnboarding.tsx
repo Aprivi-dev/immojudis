@@ -7,6 +7,7 @@ import { pathWithSearch } from "@/lib/navigation";
 import { firstSearchToUrl, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS } from "@/lib/search/search-filters";
 import { formatPrice } from "@/lib/format";
+import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_TEXT } from "@/lib/sale-unlocks";
 
 const steps = ["Votre secteur", "Vos critères", "Votre première recherche"];
 const inputClass =
@@ -138,7 +139,12 @@ export function InvestorOnboarding() {
               <dl className="space-y-3 rounded-lg border border-border bg-background/70 p-4 text-sm">
                 <div className="flex flex-wrap justify-between gap-2">
                   <dt className="text-muted-foreground">Secteur</dt>
-                  <dd>{criteria.query ?? "Tous les secteurs couverts"}</dd>
+                  <dd>
+                    {criteria.query ??
+                      (criteria.department
+                        ? `Département ${criteria.department}`
+                        : "Tous les secteurs couverts")}
+                  </dd>
                 </div>
                 <div className="flex flex-wrap justify-between gap-2">
                   <dt className="text-muted-foreground">Type de bien</dt>
@@ -158,7 +164,8 @@ export function InvestorOnboarding() {
               </dl>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Ouvrez une fiche pour vérifier la date, la localisation et les caractéristiques du
-                bien. Les calculs détaillés et les pièces nécessitent un accès Analyse.
+                bien. Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail (
+                {UNLOCK_HIGHLIGHTS_TEXT}). L’offre Analyse les ouvre toutes.
               </p>
               <Link
                 href="/annonce-exemple"
