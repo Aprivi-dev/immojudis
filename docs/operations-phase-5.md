@@ -58,8 +58,8 @@ accueil, liste des ventes, annonce exemple, mentions légales et annuaire d'avoc
 statut HTTP, le type de contenu, le contrat JSON, les URL canoniques et la conservation du
 `x-request-id`. Il contrôle aussi `/login` (balise `noindex`), un 404 réel pour une vente inconnue et
 les signaux de référencement, selon l'état d'indexation **attendu**, donné par la variable
-`SEO_INDEXING_ENABLED` (variable de dépôt GitHub, à garder égale à celle de Vercel ; l'option
-`--indexing open|closed` la remplace en local) :
+`SEO_INDEXING_ENABLED` (variable de dépôt GitHub, à garder égale à celle de Vercel ; absente, le
+workflow attend un site ouvert ; l'option `--indexing open|closed` la remplace en local) :
 
 - **ouvert** (`true`) : `robots.txt` avec `Sitemap:` et sans `Disallow: /`, `/sitemap.xml` (au
   moins 10 URL) et le premier `sales/sitemap/N.xml` (au moins 100 URL, option `--min-sale-urls`),
