@@ -77,7 +77,10 @@ def court_name_candidates(label: object) -> list[str]:
     return candidates
 
 
-_NOTARIAL_VENUE_LABEL = re.compile(r"\ben l etude\b|\bnotaires?\b|\bnotarial|\boffice notarial\b")
+# Seules les formulations de lieu de vente (« en l'étude (du notaire) », « office notarial ») rejettent le
+# libellé : un simple mot « notaire » (« TJ Nancy, Me X, avocat, notaire ») ne doit pas faire perdre un
+# tribunal bien nommé, que la compétence INSEE ou le registre national retrouvent ensuite.
+_NOTARIAL_VENUE_LABEL = re.compile(r"\ben l etude\b|\boffice notarial\b")
 # « Tribunal judiciaire de En l'étude du Notaire » : l'en-tête Vench d'une vente chez le notaire.
 NOTARIAL_VENUE_PHRASE = re.compile(r"\btribunal\s+judiciaire\s+de\s+(?=en\s+l['’]\s*[ée]tude\b)", re.I)
 
