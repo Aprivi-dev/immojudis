@@ -459,8 +459,8 @@ describe("readable listing sections", () => {
     expect(screen.getByText("2 octobre 2026 · 14:00")).toBeTruthy();
     expect(screen.getByText("7 octobre 2026 · 10:30")).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "contact-demo@immojudis.fr" }).getAttribute("href"),
-    ).toBe("mailto:contact-demo@immojudis.fr");
+      screen.getByRole("link", { name: "contact-demo@immojudis.com" }).getAttribute("href"),
+    ).toBe("mailto:contact-demo@immojudis.com");
     expect(screen.getByText(/n’est pas automatiquement votre représentant/)).toBeTruthy();
   });
   it("does not call a notarial event a court hearing", () => {

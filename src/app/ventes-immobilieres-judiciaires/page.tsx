@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { ResourcesPage } from "./resources-guide";
 
 // Page pilier : le titre complet est posé tel quel (sans le suffixe du modèle du layout), il
@@ -26,5 +27,14 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <ResourcesPage />;
+  return (
+    <>
+      <BreadcrumbJsonLd
+        trail={[
+          { name: "Ventes immobilières judiciaires", path: "/ventes-immobilieres-judiciaires" },
+        ]}
+      />
+      <ResourcesPage />
+    </>
+  );
 }

@@ -20,7 +20,7 @@ import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { supabase } from "@/integrations/supabase/client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { loginPathWithRedirect, pathWithSearch, saleDetailPath } from "@/lib/navigation";
+import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import {
   FAVORITE_ADD_LABEL,
   FAVORITE_ANONYMOUS_TITLE,
@@ -256,7 +256,7 @@ export const ListingCard = memo(function ListingCard({
     >
       <Link
         id={`sale-card-${sale.id}`}
-        href={pathWithSearch(saleDetailPath(sale.id), { from: returnTo })}
+        href={saleDetailPath(sale.id, returnTo)}
         prefetch={false}
         onClick={() => onSelect(sale.id)}
         aria-label={`Voir ${title}`}
@@ -579,7 +579,7 @@ export function ListingMediaCarousel({
       }}
     >
       <Link
-        href={pathWithSearch(saleDetailPath(sale.id), { from: returnTo })}
+        href={saleDetailPath(sale.id, returnTo)}
         prefetch={false}
         aria-label={`Voir ${title}`}
         onClick={(event) => {

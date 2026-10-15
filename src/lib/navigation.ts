@@ -83,7 +83,9 @@ export function safeSalesReturnTo(value: unknown): string | undefined {
 export function saleDetailPath(saleId: string, returnTo?: string): string {
   const path = `/sales/${encodeURIComponent(saleId)}`;
   const safeReturnTo = safeSalesReturnTo(returnTo);
-  if (!safeReturnTo) return path;
+  // The plain catalogue is where "back" leads by default: a `?from=/sales` on every card would
+  // only multiply the URLs of each sale for crawlers (and for the cache).
+  if (!safeReturnTo || safeReturnTo === "/sales") return path;
 
   const search = new URLSearchParams({ from: safeReturnTo });
   return `${path}?${search.toString()}`;

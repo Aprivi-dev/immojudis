@@ -12,14 +12,22 @@ type ErrorLike = { code?: string; message?: string } | null;
 
 export type PublicSaleSummaryClient = {
   rpc: (
-    fn: "get_public_sale_summary" | "get_public_sale_details",
+    fn: "get_public_sale_summary" | "get_public_sale_details" | "get_public_sale_indexability",
     args: { p_sale_id: string },
   ) => PromiseLike<{ data: unknown; error: unknown }>;
 };
 
 export type PublicSaleSummaryResult =
   /** The sale is in the public catalogue. */
-  | { kind: "found"; sale: AuctionSale }
+  | {
+      kind: "found";
+      sale: AuctionSale;
+      /**
+       * Verdict of the database on whether the page may be indexed (only when asked for and the
+       * function is deployed). `undefined`: decide with `isIndexablePublicSale`.
+       */
+      indexable?: boolean;
+    }
   /** The sale does not exist or is not publicly visible. */
   | { kind: "missing" }
   /** The database function is not deployed yet: use the minimal legacy preview. */
@@ -101,6 +109,22 @@ async function fetchPublicSaleDetails(
   return row ? mapPublicSaleDetails(row) : {};
 }
 
+/**
+ * The database's own verdict (`app_private.is_indexable_public_sale`, the predicate the sitemap
+ * uses too), or `undefined` while the function is not deployed.
+ */
+async function fetchPublicSaleIndexability(
+  client: PublicSaleSummaryClient,
+  id: string,
+): Promise<boolean | undefined> {
+  const { data, error } = await client.rpc("get_public_sale_indexability", { p_sale_id: id });
+  if (error) {
+    if (isMissingFunction(error as ErrorLike, "get_public_sale_indexability")) return undefined;
+    throw error;
+  }
+  return typeof data === "boolean" ? data : undefined;
+}
+
 export function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
   return {
     id: row.id,
@@ -128,11 +152,13 @@ export function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
 export async function fetchPublicSaleSummary(
   client: PublicSaleSummaryClient,
   id: string,
+  options: { withIndexability?: boolean } = {},
 ): Promise<PublicSaleSummaryResult> {
   if (!SALE_ID_PATTERN.test(id)) return { kind: "missing" };
-  const [{ data, error }, details] = await Promise.all([
+  const [{ data, error }, details, indexable] = await Promise.all([
     client.rpc("get_public_sale_summary", { p_sale_id: id }),
     fetchPublicSaleDetails(client, id),
+    options.withIndexability ? fetchPublicSaleIndexability(client, id) : undefined,
   ]);
   if (error) {
     if (isMissingFunction(error as ErrorLike)) return { kind: "unsupported" };
@@ -140,6 +166,10 @@ export async function fetchPublicSaleSummary(
   }
   const row = (Array.isArray(data) ? data[0] : data) as SummaryRow | null | undefined;
   return row
-    ? { kind: "found", sale: { ...mapPublicSaleSummary(row), ...details } }
+    ? {
+        kind: "found",
+        sale: { ...mapPublicSaleSummary(row), ...details },
+        ...(indexable === undefined ? {} : { indexable }),
+      }
     : { kind: "missing" };
 }

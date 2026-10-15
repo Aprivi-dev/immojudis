@@ -13901,6 +13901,10 @@ export type Database = {
           photo_count: number;
         }[];
       };
+      get_public_sale_indexability: {
+        Args: { p_sale_id: string };
+        Returns: boolean;
+      };
       get_public_sale_summary: {
         Args: { p_sale_id: string };
         Returns: {
