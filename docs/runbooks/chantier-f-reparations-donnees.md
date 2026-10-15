@@ -121,8 +121,13 @@ select count(*) filter (where department is null or department = '') as sans_dep
   au lieu de mettre les trois lignes en quarantaine ; l'autre ligne reste visible jusqu'au balayage.
 - Réparation de l'existant : uniquement par identifiant commun. Le balayage
   `reconcile_duplicate_sales_in_supabase`, déjà exécuté à chaque collecte
-  (`DEDUPE_RECONCILE_ENABLED`, 2 000 lignes), fusionne les deux lignes puis supprime la ligne
+  (`DEDUPE_RECONCILE_ENABLED`, coupé par défaut ; il lit toutes les pages jusqu'à
+  `DEDUPE_RECONCILE_MAX_ROWS` = 20 000 lignes et supprime au plus `DEDUPE_RECONCILE_MAX_MERGES` = 100
+  lignes par passage), fusionne les deux lignes puis supprime la ligne
   secondaire ; il n'applique pas la clé de repli stricte (`strict_fallback=False`).
+  Relecture avant activation, sans écriture : lancer le workflow « Immojudis Data Pipeline » avec
+  `dedupe_candidates` coché (ou `python -m src.dedupe_candidates`) ; le journal et le résumé du job
+  listent chaque paire (conservée / supprimée : id, source, commune, date, prix, raison).
   Le workflow `data-pipeline.yml` le laisse coupé tant que la variable de dépôt GitHub
   `DEDUPE_RECONCILE_ENABLED` (Settings → Secrets and variables → Actions → Variables) ne vaut pas
   `true` : la créer avec `true` après avoir relu la liste ci-dessous.

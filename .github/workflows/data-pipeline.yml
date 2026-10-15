@@ -57,6 +57,11 @@ on:
         required: false
         default: false
         type: boolean
+      dedupe_candidates:
+        description: "List the duplicate pairs the sweep would merge (read-only report, no write)"
+        required: false
+        default: false
+        type: boolean
       model_benchmark:
         description: "Compare Replicate models on fixed synthetic cases without touching Supabase"
         required: false
@@ -72,7 +77,7 @@ concurrency:
   # document backlog has its own group so that scheduled collections are not
   # queued (and superseded) behind a long drain; both serialise their writes on
   # the catalogue writer lock, which the drain takes and releases per sale.
-  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || (inputs.documents_backlog && 'immojudis-document-backlog' || 'immojudis-data-pipeline')) }}
+  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || (inputs.dedupe_candidates && 'immojudis-dedupe-candidates' || (inputs.documents_backlog && 'immojudis-document-backlog' || 'immojudis-data-pipeline'))) }}
   cancel-in-progress: false
 
 jobs:
@@ -278,6 +283,7 @@ jobs:
           REQUESTED_SOURCE: ${{ github.event.inputs.source }}
           REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
           REQUESTED_LLM_BACKFILL: ${{ github.event.inputs.llm_backfill }}
+          REQUESTED_DEDUPE_CANDIDATES: ${{ github.event.inputs.dedupe_candidates }}
         run: |
           set -euo pipefail
           : "${SUPABASE_DB_URL:?Transactional publication requires SUPABASE_DB_URL}"
@@ -291,6 +297,11 @@ jobs:
 
           if [ "$REQUESTED_PUBLICATION_CHECK" = "true" ]; then
             python -m src.verify_publication
+            exit 0
+          fi
+          if [ "$REQUESTED_DEDUPE_CANDIDATES" = "true" ]; then
+            # Read-only: lists the pairs DEDUPE_RECONCILE would merge (job log and job summary).
+            python -m src.dedupe_candidates
             exit 0
           fi
           if [ "$REQUESTED_DOCUMENTS_BACKLOG" = "true" ]; then
@@ -319,7 +330,7 @@ jobs:
           bash scripts/allow_source_warning.sh python -m src.main "${args[@]}"
 
       - name: Finalize unfinished run
-        if: always() && inputs.publication_check != true
+        if: always() && inputs.publication_check != true && inputs.dedupe_candidates != true
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           REQUESTED_AUTOMATIC: ${{ inputs.automatic }}
