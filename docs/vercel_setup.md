@@ -297,6 +297,9 @@ vide ou absente ferment).
 - **Test de fumée.** `scripts/check-production-smoke.mjs` lit la même variable
   `SEO_INDEXING_ENABLED` pour savoir quel état vérifier. La variable de **dépôt GitHub** du même
   nom (Settings → Secrets and variables → Actions → Variables) doit donc suivre celle de Vercel.
+  Depuis l'ouverture du 15/10/2026, le workflow « Production smoke » attend un site **ouvert**
+  quand cette variable est absente : pour refermer l'indexation, poser `false` côté GitHub en même
+  temps que Vercel.
 
 #### Les trois sitemaps
 
@@ -342,7 +345,8 @@ renseignées, données relues).
 4. **Ouvrir l'indexation.**
    - Vercel → Environment Variables → `SEO_INDEXING_ENABLED=true`, environnement **Production**
      uniquement, puis Redeploy.
-   - GitHub → Settings → Secrets and variables → Actions → Variables → `SEO_INDEXING_ENABLED=true`.
+   - GitHub → Settings → Secrets and variables → Actions → Variables → `SEO_INDEXING_ENABLED=true`
+     (facultatif depuis le 15/10/2026 : sans variable, le test de fumée attend déjà un site ouvert).
    - Lancer à la main le workflow « Production smoke » (Actions → Run workflow) : il doit passer
      avec l'état « ouvert ».
    - À la main : `curl -s https://immojudis.com/robots.txt` doit contenir les trois sortes de
