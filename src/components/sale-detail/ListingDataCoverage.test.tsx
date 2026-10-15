@@ -215,16 +215,17 @@ describe("getListingDataCoverage", () => {
       <ListingDataCoverage sale={sale()} publicInformation={publicInformation()} />,
     );
 
+    // Two themes, then the single block of the information the file does not give.
     const details = container.querySelectorAll("details");
-    expect(details).toHaveLength(2);
+    expect(details).toHaveLength(3);
     expect(details[0]?.open).toBe(true);
     expect(details[1]?.open).toBe(false);
+    expect(details[2]?.open).toBe(false);
     expect(screen.getByText("3 chambres")).toBeTruthy();
     expect(screen.getByText("PV descriptif · p.4")).toBeTruthy();
     expect(screen.getByText("À confirmer")).toBeTruthy();
     expect(screen.getAllByText("Source à préciser")).toHaveLength(2);
     expect(screen.getByText("Estimation")).toBeTruthy();
-    expect(screen.getByText("Information manquante")).toBeTruthy();
     expect(screen.getByText("Sources à départager")).toBeTruthy();
     expect(screen.queryByText("rooms_count")).toBeNull();
     expect(screen.queryByText("130 critères")).toBeNull();
@@ -232,6 +233,75 @@ describe("getListingDataCoverage", () => {
 
     const result = await axe(container, { rules: { "color-contrast": { enabled: false } } });
     expect(result.violations.map(({ id, help }) => ({ id, help }))).toEqual([]);
+  });
+
+  it("groups the missing information in one collapsed block, out of the themes", () => {
+    const { container } = render(
+      <ListingDataCoverage sale={sale()} publicInformation={publicInformation()} />,
+    );
+
+    // No more « Information manquante » line inside a theme.
+    expect(screen.queryByText("Information manquante")).toBeNull();
+    const block = screen
+      .getByText("1 information non communiquée dans le dossier")
+      .closest("details")!;
+    expect(block.open).toBe(false);
+    expect(block.querySelector("summary")).toBeTruthy();
+    expect(block.textContent).toContain("Classe DPE");
+    expect(block.textContent).toContain("Énergie");
+    // The theme that held it keeps its other lines.
+    const energy = screen.getByText("Énergie").closest("details")!;
+    expect(energy.textContent).not.toContain("Classe DPE");
+    expect(energy.textContent).toContain("86 rue des Tests");
+    expect(container.querySelectorAll("details")).toHaveLength(3);
+  });
+
+  it("counts every missing information of every theme in the block title", () => {
+    const base = publicInformation();
+    const missing = (id: string, label: string) => ({
+      id,
+      label,
+      value: null,
+      status: "missing" as const,
+      explanation: "",
+      sources: [],
+    });
+    const information = {
+      ...base,
+      sections: [
+        {
+          ...base.sections[0]!,
+          items: [...base.sections[0]!.items, missing("parking", "Stationnement")],
+        },
+        base.sections[1]!,
+      ],
+    };
+    render(<ListingDataCoverage sale={sale()} publicInformation={information} />);
+
+    const block = screen
+      .getByText("2 informations non communiquées dans le dossier")
+      .closest("details")!;
+    expect(block.textContent).toContain("Stationnement");
+    expect(block.textContent).toContain("Classe DPE");
+    // A line without explanation has no action to offer.
+    expect(screen.queryByRole("button", { name: "En savoir plus sur Stationnement" })).toBeNull();
+  });
+
+  it("shows no block when nothing is missing", () => {
+    const base = publicInformation();
+    const information = {
+      ...base,
+      sections: base.sections.map((section) => ({
+        ...section,
+        items: section.items.filter((item) => item.status !== "missing"),
+      })),
+    };
+    const { container } = render(
+      <ListingDataCoverage sale={sale()} publicInformation={information} />,
+    );
+
+    expect(container.textContent).not.toContain("non communiqué");
+    expect(container.querySelectorAll("details")).toHaveLength(2);
   });
 
   it("uses the public information model as an autonomous fallback", () => {

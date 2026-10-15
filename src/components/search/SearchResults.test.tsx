@@ -219,9 +219,10 @@ describe("useful public discovery", () => {
         />
       </QueryClientProvider>,
     );
-    expect(screen.getByRole("heading", { name: "Bordeaux · 33" })).toBeTruthy();
-    expect(screen.getByText("Bordeaux · 33")).toBeTruthy();
-    expect(screen.getByText(/60\s*m²/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Appartement · Bordeaux" })).toBeTruthy();
+    expect(screen.getByText(/Département 33 · 60\s*m²/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();
+    expect(screen.getByText("Mise à prix").className).not.toContain("text-xs");
     expect(screen.getAllByText(/oct/i).length).toBeGreaterThan(0);
     for (const text of [
       "Visuel réservé",
@@ -234,7 +235,80 @@ describe("useful public discovery", () => {
       expect(container.textContent).not.toContain(text);
     }
     expect(container.querySelector('[class*="blur-"]')).toBeNull();
-    expect(screen.getByText(/Fiche complète avec un compte gratuit/)).toBeTruthy();
+    expect(
+      screen.getByText("Gratuit, sans carte bancaire · 3 fiches détaillées par mois"),
+    ).toBeTruthy();
+  });
+
+  it("titles the card « Type de bien · Ville » with a clean fallback when one is missing", () => {
+    const renderCard = (fields: Record<string, unknown>) =>
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={
+              {
+                id: "sale-fallback",
+                starting_price_eur: 90000,
+                media: [],
+                sale_venue_type: "notary",
+                ...fields,
+              } as unknown as AuctionSale
+            }
+            returnTo="/sales"
+            locked
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+          />
+        </QueryClientProvider>,
+      );
+
+    renderCard({ property_type: "house", city: "Lille", department: "59" });
+    expect(screen.getByRole("heading", { name: "Maison · Lille" })).toBeTruthy();
+    cleanup();
+
+    // Unknown type: « Bien », never an internal code.
+    renderCard({ property_type: "other", city: "Lille", department: "59" });
+    expect(screen.getByRole("heading", { name: "Bien · Lille" })).toBeTruthy();
+    cleanup();
+
+    // No city: the type alone, the department takes over below the title.
+    renderCard({ property_type: "apartment", city: null, department: "Gironde" });
+    expect(screen.getByRole("heading", { name: "Appartement" })).toBeTruthy();
+    expect(screen.getByText(/^Gironde · /)).toBeTruthy();
+    cleanup();
+
+    // Neither city nor department: say so rather than leave a hole.
+    renderCard({ property_type: "apartment", city: "  ", department: null });
+    expect(screen.getByRole("heading", { name: "Appartement" })).toBeTruthy();
+    expect(screen.getByText(/^Localisation à préciser · /)).toBeTruthy();
+  });
+
+  it("keeps the old reassurance on a locked sale that cannot be unlocked", () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ListingCard
+          sale={
+            {
+              id: "sale-notary",
+              city: "Lyon",
+              property_type: "apartment",
+              sale_venue_type: "notary",
+              media: [],
+            } as unknown as AuctionSale
+          }
+          returnTo="/sales"
+          locked
+          analysisLocked={false}
+          active={false}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Fiche complète avec un compte gratuit")).toBeTruthy();
+    expect(screen.queryByText(/fiches détaillées par mois/)).toBeNull();
   });
 
   it("signale « Annonce bien renseignée » sur les seules cartes du palier haut", () => {
@@ -375,8 +449,11 @@ describe("useful public discovery", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByText("À confirmer")).toBeTruthy();
+    expect(screen.getByText("Type de bien à confirmer")).toBeTruthy();
     expect(screen.queryByText("Appartement", { exact: true })).toBeNull();
+    expect(screen.getByRole("heading", { level: 3 }).textContent).toContain(
+      "Source : AGRASC · Bordeaux",
+    );
     expect(screen.getByText(/Source : AGRASC/)).toBeTruthy();
   });
 
@@ -549,7 +626,9 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     expect(cards[1].textContent).toContain("Débloquée");
     expect(cards[1].textContent).toContain("Voir le détail");
     expect(cards[0].textContent).not.toContain("Débloquée");
-    expect(cards[0].textContent).toContain("3 ventes à débloquer par mois, gratuit");
+    expect(cards[0].textContent).toContain(
+      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+    );
     expect(document.body.textContent).not.toContain("Analyse détaillée avec l’offre Analyse");
   });
 
@@ -565,8 +644,10 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
 
     await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
     const cards = screen.getAllByRole("article");
-    expect(cards[0].textContent).toContain("3 ventes à débloquer par mois, gratuit");
-    expect(cards[1].textContent).not.toContain("à débloquer par mois");
+    expect(cards[0].textContent).toContain(
+      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+    );
+    expect(cards[1].textContent).not.toContain("fiches détaillées par mois");
     expect(cards[1].textContent).toContain("Voir le détail");
   });
 
@@ -590,7 +671,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
     expect(screen.queryByText("Débloquée")).toBeNull();
     expect(screen.getByRole("article").textContent).toContain(
-      "3 ventes à débloquer par mois, gratuit",
+      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
     );
   });
 });

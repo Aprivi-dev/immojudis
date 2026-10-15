@@ -113,7 +113,7 @@ describe("FavoriteSales", () => {
 
     expect(await screen.findByText("Localisation à préciser")).toBeTruthy();
     expect(screen.getAllByText("À confirmer").length).toBeGreaterThanOrEqual(2);
-    expect(screen.queryByText("Bordeaux · Gironde")).toBeNull();
+    expect(screen.getByRole("heading", { level: 3 }).textContent).not.toContain("Bordeaux");
     expect(screen.queryByText(/92\s?000/)).toBeNull();
     expect(screen.queryByText(/15 octobre 2026/)).toBeNull();
     expect(mocks.fetchSalesAiReviewProjections).toHaveBeenCalledWith(["sale-1"]);
@@ -133,7 +133,7 @@ describe("FavoriteSales", () => {
       </QueryClientProvider>,
     );
 
-    await screen.findByText("Bordeaux · Gironde");
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
     expect(screen.getByText("Mise à prix")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
@@ -270,7 +270,7 @@ describe("FavoriteSales : changements des ventes suivies", () => {
       await screen.findByText("Impossible de charger les changements pour le moment."),
     ).toBeTruthy();
     // Les favoris restent affichés malgré l'erreur.
-    expect(screen.getByText("Bordeaux · Gironde")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Appartement · Bordeaux" })).toBeTruthy();
     const retry = screen.getAllByRole("button", { name: "Réessayer" });
     fireEvent.click(retry[retry.length - 1]);
 
