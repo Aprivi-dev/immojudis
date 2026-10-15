@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-/** Page publique qui détaille le classement, le repère « bien renseignée » et la publicité. */
+/** Page publique qui détaille le classement, le repère « Annonce bien renseignée » et la publicité. */
 export const RANKING_PAGE_PATH = "/classement-des-annonces";
 
 /**
@@ -27,13 +27,13 @@ export const RANKING_EXPLANATION_INTRO =
 
 export const RANKING_EXPLANATION_STEPS = [
   "Les annonces dont la position sur la carte est connue passent avant les autres.",
-  "Elles sont réparties en deux groupes selon la quantité d’informations renseignées dans la fiche Immojudis (par exemple photos, surface, performance énergétique, occupation, visites, documents, description, mise à prix, localisation, contact), appréciée selon le type de bien et la procédure. Le groupe des annonces « bien renseignées » (score de complétude d’au moins 40 sur 100) vient en premier.",
+  "Elles sont réparties en deux groupes selon la quantité d’informations renseignées dans la fiche Immojudis (par exemple photos, surface, performance énergétique, occupation, visites, documents, description, mise à prix, localisation, contact), appréciée selon le type de bien et la procédure. Le groupe des annonces portant le repère « Annonce bien renseignée » (score de complétude d’au moins 40 sur 100) vient en premier.",
   "Dans chaque groupe, la vente la plus proche est affichée en premier.",
 ] as const;
 
 export const RANKING_EXPLANATION_NOTES = [
   "Une annonce nouvellement publiée est évaluée dans les heures qui suivent.",
-  "Ce classement ne juge ni l’intérêt, ni la valeur, ni l’état du bien. Il ne dépend d’aucune rémunération : personne ne peut payer pour améliorer le rang d’une annonce. Un encart d’un cabinet d’avocats, signalé comme mise en avant payante, peut s’intercaler entre deux annonces ; il ne modifie pas leur ordre. Le repère « Annonce bien renseignée » indique une fiche détaillée ; il ne garantit ni l’exactitude des informations ni l’état du bien. Vous pouvez à tout moment trier par date, prix ou surface.",
+  "Ce classement ne juge ni l’intérêt, ni la valeur, ni l’état du bien. Il ne dépend d’aucune rémunération : personne ne peut payer pour améliorer le rang d’une annonce. Un encart d’un cabinet d’avocats, signalé comme mise en avant payante, peut s’intercaler entre deux annonces ; il ne modifie pas leur ordre. Le repère « Annonce bien renseignée » signale une annonce qui réunit une part importante des informations que nous recherchons ; il ne garantit ni l’exactitude des informations ni l’état du bien. Vous pouvez à tout moment trier par date, prix ou surface.",
 ] as const;
 
 /** Ajouté pour l'offre Analyse seulement, la seule qui voit le tri « Score d’investissement ». */

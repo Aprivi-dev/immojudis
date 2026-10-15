@@ -398,8 +398,8 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
         ]
       : []),
     ceiling.available
-      ? `Mise maximum conseillée: ${formatPrice(numberValue(ceiling.maxBid))}`
-      : `Mise maximum conseillée: indisponible (${stringOrNumberValue(ceiling.reason, "données incomplètes")})`,
+      ? `Enchère plafond (simulation): ${formatPrice(numberValue(ceiling.maxBid))}`
+      : `Enchère plafond (simulation): indisponible (${stringOrNumberValue(ceiling.reason, "données incomplètes")})`,
     ...(ceiling.available &&
     numberValue(ceiling.maxBid) != null &&
     numberValue(sale.startingPrice) != null &&
