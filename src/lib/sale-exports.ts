@@ -5,6 +5,7 @@ import type { Json } from "@/integrations/supabase/types";
 import { extractDpe } from "@/lib/dpe";
 import { formatDate } from "@/lib/format";
 import { estimateGrossYieldPct, geocodeAddress, pricePerM2 } from "@/lib/geo";
+import { cleanDateForListing } from "@/lib/listing-data-cleanup";
 import { featureIncluded } from "@/lib/plans";
 import { computeRentabilityScore } from "@/lib/profitability";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
@@ -373,7 +374,8 @@ function saleToApiFeedItem(sale: AuctionSale, origin?: string | null): SalesApiF
       pricePerM2: ppm == null ? null : Math.round(ppm),
     },
     audience: {
-      saleDate: sale.sale_date,
+      // A date-only sale is stored at UTC midnight: export the day, not a 01:00/02:00 hour that never existed.
+      saleDate: cleanDateForListing(sale.sale_date),
       formattedSaleDate: formatDate(sale.sale_date),
       visitDates: sale.visit_dates,
     },

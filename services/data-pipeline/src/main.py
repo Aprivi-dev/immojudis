@@ -1032,10 +1032,9 @@ def _publish_run(run: _PipelineRun) -> None:
                 run.outcome_bridge_created = outcome_bridge.created_count
                 run.outcome_bridge_reused = outcome_bridge.reused_count
                 run.supabase_deleted_secondary = delete_secondary_sales_in_supabase(app_ready)
-                if settings.get("dedupe_reconcile_enabled", True):
-                    run.supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase(
-                        limit=int(settings.get("dedupe_reconcile_max_rows") or 2000)
-                    )
+                # Coupé par défaut ; en mode « candidates » le balayage n'écrit rien et journalise les paires.
+                if settings.get("dedupe_reconcile_enabled", False) or settings.get("dedupe_reconcile_mode") == "candidates":
+                    run.supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase()
                 run.supabase_cleaned_past = mark_past_sales_in_supabase()
                 run.supabase_deleted_expired = delete_expired_sales_in_supabase()
                 run.supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()

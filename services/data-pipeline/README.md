@@ -124,14 +124,24 @@ PIPELINE_PDF_WORKERS=2
 PIPELINE_PDF_MAX_TARGETS=10
 PIPELINE_LLM_MAX_TARGETS=0
 PIPELINE_LLM_BACKFILL_MAX_TARGETS=10
-DEDUPE_RECONCILE_ENABLED=true
-DEDUPE_RECONCILE_MAX_ROWS=2000
+DEDUPE_RECONCILE_ENABLED=false
+DEDUPE_RECONCILE_MAX_ROWS=20000
+DEDUPE_RECONCILE_MAX_MERGES=100
+DEDUPE_RECONCILE_MODE=apply
 ```
 
-Après les upserts, le pipeline peut relire un lot borné d'annonces
-actives/prochaines déjà stockées et réappliquer la fusion multi-sources. Cette
-passe corrige les doublons historiques qui ne repassent pas forcément ensemble
-dans le scraping du jour, puis supprime les lignes sources secondaires.
+Après les upserts d'une collecte complète, le pipeline peut relire toutes les annonces
+actives/prochaines/inconnues déjà stockées (pagination, jusqu'à `DEDUPE_RECONCILE_MAX_ROWS` lignes lues)
+et réappliquer la fusion multi-sources. Cette passe corrige les doublons historiques qui ne repassent pas
+forcément ensemble dans le scraping du jour, puis supprime les lignes sources secondaires. Elle est
+coupée par défaut (`DEDUPE_RECONCILE_ENABLED=false`) ; garde-fou d'écriture : au plus
+`DEDUPE_RECONCILE_MAX_MERGES` lignes supprimées par passage, par groupes entiers.
+
+Mode candidats, sans aucune écriture, à lancer avant d'activer la passe :
+`python -m src.dedupe_candidates [--output rapport.json]`, ou le workflow GitHub « Dedupe candidates
+report » (lecture seule), ou la variable de dépôt `DEDUPE_RECONCILE_MODE=candidates` pendant une collecte
+complète. Il journalise chaque paire conservée / supprimée (identifiant, source, commune, date, mise à prix, raison)
+et écrit le même tableau dans le résumé du job.
 
 Pour résorber progressivement les annonces déjà en base sans synthèse IA
 publique, lancer un backfill borné. Il ne relance pas le scraping et cible par

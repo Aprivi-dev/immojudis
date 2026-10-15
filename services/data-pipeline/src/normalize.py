@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil import parser
 
-from src.admission import is_date_only, sale_date_has_passed
+from src.admission import is_date_only, licitor_lot_count, sale_date_has_passed
 from src.department_inference import department_from_geocode_evidence
 from src.listing_location import recover_listing_address, reject_monetary_address
 from src.models import INTERNAL_CONTACTS_KEY, AuctionSale
@@ -776,7 +776,16 @@ def normalize_sale(raw_sale: dict[str, object]) -> AuctionSale:
     ):
         raw_sale = dict(raw_sale)
         raw_sale['quality_flags'] = [*(raw_sale.get('quality_flags') or []), 'multi_lot_sale']
-    title = clean_text(raw_sale.get("title"))
+    elif (
+        clean_text(raw_sale.get('source_name')) == 'licitor'
+        and 'multi_lot_sale' not in (raw_sale.get('quality_flags') or [])
+        # Lots lus sur la fiche elle-même (« 1er lot de vente », « 2ème lot de vente »), pas le texte
+        # libre : le texte de Licitor écrit « en deux lots », que l'expression ci-dessus ne reconnaît pas.
+        and licitor_lot_count({'source_property_features': raw_sale.get('source_property_features')}) > 1
+    ):
+        raw_sale = dict(raw_sale)
+        raw_sale['quality_flags'] = [*(raw_sale.get('quality_flags') or []), 'multi_lot_sale']
+    title =clean_text(raw_sale.get("title"))
     detail_title = clean_text(_source_block_lookup(raw_sale, "titre_detail", "detail_titre", "asset_title"))
     if _is_generic_listing_title(title) and detail_title:
         title = detail_title

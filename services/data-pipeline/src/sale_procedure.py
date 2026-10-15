@@ -7,6 +7,7 @@ from typing import Any
 
 from src.models import AuctionSale
 from src.normalize import clean_text
+from src.tribunal_labels import NOTARIAL_VENUE_PHRASE
 
 SALE_PROCEDURE_SCHEMA_VERSION = "sale_procedure_v1"
 LEGAL_RULESET_VERSION = "fr_auction_participation_2026-08-20"
@@ -32,6 +33,7 @@ _EXPLICIT_NOTARY_PATTERNS = (
     re.compile(r"\bchambre\s+(?:interd[eé]partementale\s+|d[eé]partementale\s+)?des\s+notaires\b", re.I),
     re.compile(r"\bimmo[-\s]?interactif\b", re.I),
     re.compile(r"\borganisateur_categorie\s*:\s*notaire\b", re.I),
+    re.compile(r"\ben\s+l['’]\s*[eé]tude\s+(?:du\s+notaire|de\s+ma[iî]tre)\b", re.I),
 )
 _STATE_PATTERNS = (
     re.compile(r"\bvente\s+domaniale\b", re.I),
@@ -458,7 +460,9 @@ def _sale_corpus(sale: AuctionSale) -> str:
         *block_values,
         *document_values,
     ]
-    return clean_text("\n".join(str(value) for value in values if value)) or ""
+    corpus = clean_text("\n".join(str(value) for value in values if value)) or ""
+    # « Tribunal judiciaire de En l'étude du Notaire » (Vench) est un lieu notarial, pas un tribunal.
+    return NOTARIAL_VENUE_PHRASE.sub("", corpus)
 
 
 def _matched_signals(corpus: str, patterns: tuple[re.Pattern[str], ...]) -> list[str]:
