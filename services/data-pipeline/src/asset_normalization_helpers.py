@@ -139,12 +139,18 @@ def _validate_app_surface_scope(sale: AuctionSale) -> None:
 def _demote_implausible_built_surface(sale: AuctionSale, ceiling: Decimal) -> None:
     """Retire de la surface affichée une valeur au-dessus du plafond du type de bien.
 
-    Une maison la garde comme surface de terrain si aucune n'est connue ; un appartement n'a pas de terrain
-    propre (la règle de ``_fill_surfaces`` l'efface), la valeur est seulement écartée. La valeur rejetée
-    reste tracée dans ``raw_payload["implausible_surface_reconciliation"]``.
+    Une maison la garde comme surface de terrain seulement si le texte source la qualifie lui-même de
+    terrain, de parcelle ou de superficie du sol et si aucun terrain n'est connu ; sinon (et pour un
+    appartement, qui n'a pas de terrain propre) la valeur est seulement écartée : la recopier en terrain
+    serait une extrapolation. La valeur rejetée reste tracée dans
+    ``raw_payload["implausible_surface_reconciliation"]``.
     """
     rejected = sale.app_surface_m2
-    demoted_to_land = sale.property_type == "house" and sale.land_surface_m2 is None
+    demoted_to_land = (
+        sale.property_type == "house"
+        and sale.land_surface_m2 is None
+        and _source_qualifies_surface_as_land(sale, rejected)
+    )
     for field in ("surface_m2", "habitable_surface_m2", "carrez_surface_m2"):
         if getattr(sale, field) == rejected:
             setattr(sale, field, None)
@@ -161,6 +167,38 @@ def _demote_implausible_built_surface(sale: AuctionSale, ceiling: Decimal) -> No
         "basis": "built_surface_above_plausibility_ceiling",
     }
     _add_quality_flag(sale, "ambiguous_surface")
+
+
+_LAND_QUALIFIER_PATTERN = re.compile(
+    r"\b(?:terrains?|parcelles?|contenance|cadastr[a-zé]*|(?:superficie|surface)\s+(?:totale\s+)?du\s+sol)\b",
+    re.I,
+)
+_BUILT_QUALIFIER_PATTERN = re.compile(
+    r"\b(?:habitables?|carrez|privative|b[âa]ti(?:e|es|s)?|plancher|r[ée]f[ée]rence)\b", re.I
+)
+_SURFACE_NUMBER_PATTERN = re.compile(rf"{SURFACE_VALUE_PATTERN}\s*(?:m\s*(?:2|²)|mètres?\s+carrés?)", re.I)
+
+
+def _source_qualifies_surface_as_land(sale: AuctionSale, value: Decimal | None) -> bool:
+    """Vrai si le texte source étiquette lui-même ``value`` m² comme surface de terrain.
+
+    Le qualificatif (terrain, parcelle, contenance, superficie du sol) doit se trouver juste autour du
+    nombre, dans la même phrase, sans mention de surface bâtie (habitable, Carrez, bâti) entre les deux.
+    """
+    if value is None:
+        return False
+    for text in (sale.surface_evidence, sale.description, sale.title, sale.raw_text):
+        if not text:
+            continue
+        for match in _SURFACE_NUMBER_PATTERN.finditer(text):
+            if _parse_surface_decimal(match.group(1)) != value:
+                continue
+            before = re.split(r"[;\n]|\.\s", text[max(0, match.start() - 80) : match.start()])[-1]
+            after = re.split(r"[;\n]|\.\s", text[match.end() : match.end() + 40])[0]
+            window = f"{before} {after}"
+            if _LAND_QUALIFIER_PATTERN.search(window) and not _BUILT_QUALIFIER_PATTERN.search(window):
+                return True
+    return False
 
 
 def _large_non_residential_surface_is_supported(sale: AuctionSale) -> bool:
