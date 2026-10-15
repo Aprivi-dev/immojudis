@@ -143,17 +143,52 @@ describe("guide des ventes immobilières judiciaires", () => {
   describe("frise de la procédure", () => {
     it("est une liste ordonnée de 5 étapes, dans l'ordre de la procédure", () => {
       render(<ResourcesPage />);
-      const section = screen.getByRole("region", { name: "La procédure en 5 étapes" });
+      const section = screen.getByRole("region", {
+        name: "La vente à la barre du tribunal en 5 étapes",
+      });
       const list = section.querySelector("ol");
       expect(list).not.toBeNull();
       const items = Array.from(list!.querySelectorAll(":scope > li"));
       expect(items.map((item) => plain(item.querySelector("a")!.textContent ?? ""))).toEqual([
         "Visiter",
-        "Consigner",
+        "Remettre la garantie",
         "Enchérir",
         "Surenchère possible (10 jours)",
         "Payer",
       ]);
+    });
+
+    it("décrit la garantie de la 2e étape sans la confondre avec la consignation du prix", () => {
+      const { container } = render(<ResourcesPage />);
+      const item = container.querySelectorAll(
+        'section[aria-labelledby="frise-procedure"] ol li',
+      )[1];
+      expect(plain(item.querySelector("a")!.textContent ?? "")).toBe("Remettre la garantie");
+      const step = plain(item.querySelector("p")!.textContent ?? "");
+      expect(step).toBe(
+        "Remettre à l’avocat, avant les enchères, la garantie (chèque de banque ou caution bancaire irrévocable) : 10 % de la mise à prix, avec un minimum de 3 000 € en saisie immobilière (art. R. 322-41). Elle est restituée si vous ne gagnez pas.",
+      );
+      expect(step).not.toMatch(/consign/i);
+    });
+
+    it("annonce son périmètre (saisie au tribunal) et renvoie vers #differences", () => {
+      const { container } = render(<ResourcesPage />);
+      const section = container.querySelector('section[aria-labelledby="frise-procedure"]')!;
+      expect(plain(section.querySelector("h2")!.textContent ?? "")).toBe(
+        "La vente à la barre du tribunal en 5 étapes",
+      );
+      expect(plain(section.querySelector(":scope > p")!.textContent ?? "")).toBe(
+        "Cette frise décrit une saisie immobilière jugée au tribunal. Chez un notaire ou pour une vente de l’État, les règles diffèrent : voir « Tribunal, notaire ou État : quelle différence ? ».",
+      );
+      const link = section.querySelector(':scope > p a[href="#differences"]');
+      expect(link).not.toBeNull();
+      expect(container.querySelector("#differences")).not.toBeNull();
+    });
+
+    it("renvoie l'étape « Payer » vers la section d'après l'adjudication, pas vers les frais", () => {
+      const { container } = render(<ResourcesPage />);
+      const pay = container.querySelectorAll('section[aria-labelledby="frise-procedure"] ol li')[4];
+      expect(pay.querySelector("a")!.getAttribute("href")).toBe("#apres-adjudication");
     });
 
     it("renvoie chaque étape vers une section qui existe", () => {
@@ -211,12 +246,40 @@ describe("guide des ventes immobilières judiciaires", () => {
       );
       for (const phrase of [
         "une garantie de 10 % de la mise à prix, avec un minimum de 3 000 €",
-        "une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’achat n’est définitif qu’à l’expiration de ce délai",
+        "une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’adjudication n’est définitive qu’à l’expiration de ce délai",
         "acheteur ne porte pas lui-même les enchères",
       ]) {
         expect(note).toContain(phrase);
         expect(rest).toContain(phrase);
       }
+    });
+  });
+
+  describe("articles associés", () => {
+    it("renvoie vers les articles sur la saisie, la licitation et l'avocat obligatoire", () => {
+      const { container } = render(<ResourcesPage />);
+      const hrefs = Array.from(container.querySelectorAll("#articles-associes li a")).map((link) =>
+        link.getAttribute("href"),
+      );
+      for (const slug of [
+        "saisie-immobiliere-etapes-vente-forcee-acheteur",
+        "licitation-vente-bien-indivis-encheres-acheteur",
+        "avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
+      ]) {
+        expect(hrefs).toContain(`/ressources/${slug}`);
+      }
+      expect(new Set(hrefs).size).toBe(hrefs.length);
+    });
+  });
+
+  describe("définitivité de l'adjudication", () => {
+    it("parle d'adjudication définitive, pas d'achat définitif", () => {
+      const { container } = render(<ResourcesPage />);
+      const text = plain(container.querySelector("#deroulement")!.textContent ?? "");
+      expect(text).not.toContain("achat n’est définitif");
+      const phrase = "l’adjudication n’est définitive qu’à l’expiration de ce délai";
+      // Once in the « À retenir » box, once in the checklist « Ce qui vous engage ».
+      expect(text.split(phrase)).toHaveLength(3);
     });
   });
 
