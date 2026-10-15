@@ -46,4 +46,25 @@ Après un lancement manuel, le dernier step du workflow exécute `python -m src.
 
 Les jobs suivent les délais et le nombre maximal de tentatives de `auction_enrichment_jobs`. Après correction d'un problème de source, relancer le scan pour réévaluer les données puis le workflow avec `enrichment_only=true`. Un document inaccessible reste signalé ; il n'est jamais marqué extrait par défaut.
 
+### Jobs d'enrichissement épuisés (alerte `pipeline.enrichment.exhausted`)
+
+Un job `failed` dont `attempt_count >= max_attempts` n'est plus jamais pris en charge : c'est une lettre morte. Il ne compte pas dans `pipeline.enrichment.stalled` (il ne pourrait jamais la fermer) mais dans `evidence.exhausted` de l'observation `enrichment-queue`. L'observateur `observe_autonomous_pipeline` ouvre un avertissement séparé, `pipeline.enrichment.exhausted` (catégorie `import`, migration `20261025110000_enrichment_exhausted_alert.sql`), quand :
+
+- au moins **3** jobs sont devenus épuisés pendant les dernières 24 heures (`evidence.exhausted_24h`, d'après `updated_at` de la dernière tentative) : une source ou un type de document se met à échouer pour de bon ;
+- ou au moins **50** jobs épuisés attendent une décision (`evidence.exhausted`) : un reliquat que personne n'a traité.
+
+Les seuils sont recopiés dans les détails de l'alerte (`exhausted_24h_threshold`, `exhausted_threshold`). La hausse se referme d'elle-même 24 heures après le dernier nouvel épuisement (plus deux heures d'hystérésis) ; le reliquat se referme quand les jobs sont relancés ou annulés. Les jobs d'une vente retirée, passée ou remplacée par une révision plus récente sont en principe annulés par la prochaine prise en charge de la file (vérifier dans `claim_auction_enrichment_jobs*`) : ils quittent alors le décompte sans action.
+
+Reprise manuelle (en `service_role`, jamais sans avoir compris la cause ; ne pas relancer en boucle) :
+
+1. Regrouper les échecs par cause :
+   `select job_type, left(last_error, 120) as erreur, count(*) as jobs, min(updated_at), max(updated_at) from public.auction_enrichment_jobs where status = 'failed' and attempt_count >= max_attempts group by 1, 2 order by jobs desc;`
+2. Corriger la cause (source modifiée, document inaccessible, budget, bogue) puis la déployer. Si l'échec est définitif (document supprimé, fiche retirée), annuler plutôt que relancer :
+   `update public.auction_enrichment_jobs set status = 'cancelled', locked_at = null, updated_at = now() where status = 'failed' and attempt_count >= max_attempts and <filtre sur job_type et last_error>;`
+3. Sinon, conserver d'abord un instantané des lignes concernées (`select * from public.auction_enrichment_jobs where ...`), puis rendre **une seule** tentative, sans remise à zéro générale ni effacement de `last_error` (comme pour l'incident de budget du 13 septembre) : un job encore en échec s'épuise de nouveau aussitôt au lieu de boucler :
+   `update public.auction_enrichment_jobs set status = 'queued', attempt_count = greatest(0, max_attempts - 1), next_attempt_at = now(), locked_at = null, updated_at = now() where status = 'failed' and attempt_count >= max_attempts and <même filtre>;`
+4. Lancer le workflow avec `enrichment_only=true` ou attendre l'ordonnanceur, puis vérifier que `evidence.exhausted` baisse et que l'alerte se referme.
+
+Ces requêtes sont à valider avant toute exécution ; aucune n'a été lancée par le correctif.
+
 Vérifications : suite Python, tests de renouvellement de PDF/304, expiration des fiches, pagination, lots distincts, rollback simulé et transaction réelle sur PostgreSQL jetable.
