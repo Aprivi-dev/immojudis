@@ -11,7 +11,7 @@ import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { formatPrice } from "@/lib/format";
 import { publicDossierContents, publicSaleDescription } from "@/lib/public-sale-description";
-import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
+import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import Link from "next/link";
 import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
@@ -327,10 +327,10 @@ export function SalePublicPreview({
             </div>
             <div className={styles.actions}>
               <Link
-                href={pathWithSearch("/login", {
-                  mode: "investor",
-                  redirect: `${saleDetailPath(saleId, returnTo)}${requestedHash.startsWith("#") ? requestedHash : ""}`,
-                })}
+                href={loginPathWithRedirect(
+                  `${saleDetailPath(saleId, returnTo)}${requestedHash.startsWith("#") ? requestedHash : ""}`,
+                  { reason: "fiche" },
+                )}
                 className={styles.primary}
               >
                 Créer mon compte gratuit

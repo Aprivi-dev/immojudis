@@ -4,6 +4,7 @@ import http from "node:http";
 import https from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Production CSP upgrades HTTP requests. Exercise it over TLS on loopback,
 // with a disposable certificate used only by the isolated Playwright context.
@@ -36,10 +37,19 @@ execFileSync(
   { stdio: "ignore" },
 );
 
+// The build points Supabase at https://ci.supabase.co, which does not exist: the server-side calls
+// of a sale page would fail and answer 500. This preload (E2E server only) answers them locally.
+const serverFetchMock = fileURLToPath(
+  new URL("../e2e/support/server-fetch-mock.cjs", import.meta.url),
+);
+const nodeOptions = [process.env.NODE_OPTIONS, `--require ${JSON.stringify(serverFetchMock)}`]
+  .filter(Boolean)
+  .join(" ");
+
 const next = spawn(
   process.execPath,
   ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", "3101"],
-  { stdio: "inherit" },
+  { stdio: "inherit", env: { ...process.env, NODE_OPTIONS: nodeOptions } },
 );
 const server = https.createServer(
   { key: readFileSync(key), cert: readFileSync(cert) },

@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import { fetchDocumentReading } from "@/lib/client-api";
 import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
 import {
@@ -12,6 +11,7 @@ import {
   type DocumentReadingResponse,
 } from "@/lib/document-reading";
 import styles from "./DocumentReadingSection.module.css";
+import { UnlockCallToAction } from "./UnlockCallToAction";
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count > 1 ? "s" : ""}`;
@@ -57,9 +57,11 @@ export function DocumentReadingSection({
           {themes.length ? ` : ${themes.join(", ")}.` : "."} Chaque point cite le passage et la page
           de la pièce, avec l’offre Analyse ou en débloquant cette vente.
         </p>
-        <Link href="/offres" className={styles.cta}>
-          Découvrir l’offre Analyse
-        </Link>
+        <UnlockCallToAction
+          primaryClassName={styles.cta}
+          secondaryClassName={`${styles.cta} ${styles.ctaSecondary}`}
+          messageClassName={styles.lead}
+        />
       </section>
     );
   }

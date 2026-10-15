@@ -61,6 +61,22 @@ export const AI_REVIEW_SURFACE_FIELD_KEYS = [
   "property.land_surface_m2",
 ] as const satisfies readonly AiReviewFieldKey[];
 
+/**
+ * The reviewed fields the bid ceiling reads, the only ones a sale unlocked with « 3 déblocages par
+ * mois » gets back from `/api/sales/ai-review`: the mise à prix, the surfaces and the type of
+ * property (the critical inputs of the ceiling, see `criticalAnalysisInputsBlocked` in
+ * SimplifiedSaleDetailView), the rooms count (same critical inputs) and the occupancy status
+ * (`occupationCaseForStatus` in bid-ceiling-defaults). The city, the sale date, the parking count
+ * and the energy classes feed no ceiling figure: their review stays an Analyse read.
+ */
+export const AI_REVIEW_CEILING_FIELD_KEYS = [
+  "sale.starting_price_eur",
+  "property.property_type",
+  ...AI_REVIEW_SURFACE_FIELD_KEYS,
+  "property.rooms_count",
+  "property.occupancy_status",
+] as const satisfies readonly AiReviewFieldKey[];
+
 export const AI_REVIEW_ENERGY_FIELD_KEYS = [
   "property.source_energy_dpe_class",
   "property.source_energy_ges_class",

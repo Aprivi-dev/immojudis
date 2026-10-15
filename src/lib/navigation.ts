@@ -35,7 +35,7 @@ export const ACCOUNT_LINKS: readonly SiteLink[] = [
 ];
 
 /** Pourquoi la personne arrive sur la page de connexion : sert au bandeau d'explication. */
-export const LOGIN_REASONS = ["alerte", "favori", "export", "offre"] as const;
+export const LOGIN_REASONS = ["alerte", "favori", "export", "offre", "fiche"] as const;
 export type LoginReason = (typeof LOGIN_REASONS)[number];
 
 export function loginReason(value: unknown): LoginReason | undefined {

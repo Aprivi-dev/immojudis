@@ -8,7 +8,7 @@ import Save from "lucide-react/dist/esm/icons/save.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { pathWithSearch } from "@/lib/navigation";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import {
   disablePropertyReportShare,
   enablePropertyReportShare,
@@ -195,7 +195,7 @@ function PropertyReportWorkspace({
       typeof window !== "undefined"
         ? `${window.location.pathname}${window.location.search}`
         : "/sales";
-    router.push(pathWithSearch("/login", { redirect }));
+    router.push(loginPathWithRedirect(redirect, { reason: "offre" }));
     return false;
   };
 

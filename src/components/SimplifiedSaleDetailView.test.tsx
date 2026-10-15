@@ -822,6 +822,7 @@ describe("« 3 déblocages par mois » on the sale page", () => {
   const unlockStatus = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => ({
     saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
     unlocked: false,
+    unlockable: true,
     analysisAccess: false,
     limit: 3,
     used: 1,

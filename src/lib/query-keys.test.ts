@@ -65,6 +65,7 @@ describe("queryKeys", () => {
 
   it("keys the data that differs between the free, unlocked and Analyse views by access", () => {
     expect(queryKeys.saleUnlock("s1", "u1")).toEqual(["sale-unlock", "s1", "u1"]);
+    expect(queryKeys.saleUnlocksOverview("u1")).toEqual(["sale-unlocks-overview", "u1"]);
     for (const access of ["discovery", "unlocked", "analysis"] as const) {
       expect(queryKeys.documentReading("s1", access, "u1")).toEqual([
         "document-reading",

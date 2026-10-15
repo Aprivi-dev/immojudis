@@ -214,7 +214,8 @@ function mockSale() {
     tribunal_code: "TJ-BDX",
     property_type: "apartment",
     starting_price_eur: 120000,
-    sale_date: "2026-09-15T09:00:00.000Z",
+    // Toujours à venir, quelle que soit la date d'exécution : une vente passée n'est plus proposée.
+    sale_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     latitude: 44.8378,
     longitude: -0.5792,
     occupancy_status: "vacant",
