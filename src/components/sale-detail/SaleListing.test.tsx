@@ -343,6 +343,7 @@ describe("readable listing sections", () => {
       <ListingOverview sale={item()} premiumCeiling={120_000} ceilingContext={context} />,
     );
 
+    expect(screen.getByText("Enchère plafond (simulation)")).toBeTruthy();
     const line = screen.getByText(/Travaux : .*\(à chiffrer\)/);
     expect(line.textContent).toMatch(/Marge : 13 %/);
     expect(line.textContent).toMatch(/Valeur : 200\s000\s€ \(DVF normalisé, 01 octobre 2026\)/);
@@ -388,7 +389,7 @@ describe("readable listing sections", () => {
       />,
     );
 
-    expect(screen.queryByText("Enchère plafond indicative")).toBeNull();
+    expect(screen.queryByText("Enchère plafond (simulation)")).toBeNull();
     expect(screen.queryByText("Voir le scénario de prix")).toBeNull();
   });
   it("does not show zero or invalid amounts as known property facts", () => {

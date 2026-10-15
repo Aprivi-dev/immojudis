@@ -98,7 +98,7 @@ export function CinematicHero() {
               </div>
             </dl>
             <div className={styles.ceiling}>
-              <span>Plafond simulé</span>
+              <span>Enchère plafond (simulation)</span>
               <strong>{formatPrice(EXAMPLE_FIGURES.ceiling)}</strong>
             </div>
             <p className={styles.assumptions}>

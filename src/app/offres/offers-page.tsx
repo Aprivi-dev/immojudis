@@ -391,7 +391,7 @@ function DecisionEquation() {
       sign: "=",
       accent: true,
     },
-    { icon: <BadgeEuro className="size-8" />, label: "Enchère plafond simulée", result: true },
+    { icon: <BadgeEuro className="size-8" />, label: "Enchère plafond (simulation)", result: true },
   ];
 
   return (

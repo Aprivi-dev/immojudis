@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import Info from "lucide-react/dist/esm/icons/info.js";
 import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw.js";
@@ -83,7 +83,7 @@ export function CeilingPlanner({
           <button
             type="button"
             onClick={onReset}
-            className="inline-flex min-h-10 items-center gap-2 rounded-full border border-border px-3 text-xs font-semibold text-muted-foreground hover:text-foreground"
+            className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-3 text-xs font-semibold text-muted-foreground hover:text-foreground"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             Revenir aux hypothèses Immojudis
@@ -134,7 +134,7 @@ export function CeilingPlanner({
           type="button"
           aria-expanded={hypothesesOpen || !plan.available}
           onClick={() => setHypothesesOpen((open) => !open)}
-          className="mt-6 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-gold-text"
+          className="mt-6 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-gold-text"
         >
           <ChevronDown
             className={`h-4 w-4 transition-transform ${hypothesesOpen || !plan.available ? "rotate-180" : ""}`}
@@ -153,9 +153,13 @@ export function CeilingPlanner({
 
         <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold-text" />
-          Aide à la décision calculée avec vos hypothèses : elle ne remplace ni la lecture du cahier
-          des conditions de vente ni le conseil de votre avocat. Aucun prix d’adjudication n’est
-          garanti.
+          <span>
+            Aide à la décision calculée avec vos hypothèses : elle ne remplace ni la lecture du{" "}
+            <Terme terme="cahier-conditions-vente" placement="top">
+              cahier des conditions de vente
+            </Terme>{" "}
+            ni le conseil de votre avocat. Aucun prix d’adjudication n’est garanti.
+          </span>
         </p>
       </div>
     </section>
@@ -263,8 +267,8 @@ function Verdict({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: Ce
           "À ces hypothèses, aucune enchère n’est rentable : travaux, libération et frais dépassent déjà le coût total maximal."
         ) : start && plan.maxBid < start ? (
           <>
-            Votre plafond est inférieur à la {startingPrice} ({formatPrice(start)}) : à ces
-            hypothèses, mieux vaut ne pas enchérir.
+            À ces hypothèses, votre plafond ({formatPrice(plan.maxBid)}) est inférieur à la{" "}
+            {startingPrice} ({formatPrice(start)}) : l’enchère ne serait pas rentable.
           </>
         ) : start ? (
           <>
@@ -439,7 +443,7 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
   const fees = evaluation.fees;
   const rows: Array<[label: string, value: number, term?: TermeKey]> = [
     ["Prix d’adjudication", evaluation.price, "adjudication"],
-    ["Frais préalables", fees.fpt],
+    ["Frais préalables", fees.fpt, "frais-prealables"],
     ["Droits d’enregistrement", fees.registrationDuties + fees.csi + fees.vatOnPrice],
     ["Émoluments de l’avocat poursuivant", fees.emolumentsTTC, "emoluments"],
     ["Honoraires de votre avocat", fees.lawyerFees],
@@ -522,7 +526,7 @@ function QuickBid({
     <button
       type="button"
       onClick={() => onPick(value)}
-      className="min-h-9 rounded-full border border-border px-3 font-semibold text-muted-foreground hover:text-foreground"
+      className="min-h-11 rounded-full border border-border px-3 font-semibold text-muted-foreground hover:text-foreground"
     >
       {label} · {formatPrice(value)}
     </button>
@@ -531,6 +535,7 @@ function QuickBid({
 
 /** Libellés de `buildCashPlan` qui portent un terme à définir. */
 const CASH_STEP_TERMS: Record<string, TermeKey> = {
+  Consignation: "garantie-encherir",
   "Fin du délai de surenchère": "surenchere",
   "Libération du bien": "liberation",
 };
@@ -582,23 +587,65 @@ function Checklist({
   hypotheses: CeilingHypotheses;
   dpeClass: string | null;
 }) {
-  const items: string[] = [];
+  const items: Array<{ key: string; content: ReactNode }> = [];
+  const procesVerbal = (
+    <Terme terme="proces-verbal-descriptif" placement="top">
+      procès-verbal descriptif
+    </Terme>
+  );
   if (hypotheses.feesSource.fpt === "defaut")
-    items.push(
-      "Demandez à l’avocat poursuivant le montant des frais préalables : ils sont annoncés en début d’audience et s’ajoutent au prix.",
-    );
+    items.push({
+      key: "frais-prealables",
+      content: (
+        <>
+          Demandez à l’avocat poursuivant le montant des{" "}
+          <Terme terme="frais-prealables" placement="top">
+            frais préalables
+          </Terme>{" "}
+          : ils sont annoncés en début d’audience et s’ajoutent au prix.
+        </>
+      ),
+    });
   if (hypotheses.occupation.case === "inconnu")
-    items.push("Vérifiez l’occupation dans le procès-verbal descriptif.");
+    items.push({
+      key: "occupation-inconnue",
+      content: <>Vérifiez l’occupation dans le {procesVerbal}.</>,
+    });
   if (hypotheses.occupation.case === "loue")
-    items.push("Demandez le bail, le montant du loyer et la date de fin du bail.");
+    items.push({
+      key: "bail",
+      content: "Demandez le bail, le montant du loyer et la date de fin du bail.",
+    });
   if (hypotheses.value.surfaceEstimated)
-    items.push("Confirmez la surface (loi Carrez ou habitable) dans le procès-verbal descriptif.");
+    items.push({
+      key: "surface",
+      content: <>Confirmez la surface (loi Carrez ou habitable) dans le {procesVerbal}.</>,
+    });
   const dpe = dpeRentalNote(dpeClass);
-  if (dpe && hypotheses.project === "louer") items.push(dpe.text);
+  if (dpe && hypotheses.project === "louer") items.push({ key: "dpe", content: dpe.text });
   items.push(
-    "Lisez les procès-verbaux d’assemblée générale : des travaux votés peuvent être appelés après la vente.",
-    "La commune peut exercer son droit de préemption dans le mois qui suit l’adjudication.",
-    "Fixez votre plafond avant l’audience et donnez-le à votre avocat : les enchères vont vite.",
+    {
+      key: "assemblees-generales",
+      content:
+        "Lisez les procès-verbaux d’assemblée générale : des travaux votés peuvent être appelés après la vente.",
+    },
+    {
+      key: "preemption",
+      content: (
+        <>
+          La commune peut exercer son{" "}
+          <Terme terme="droit-preemption" placement="top">
+            droit de préemption
+          </Terme>{" "}
+          dans le mois qui suit l’adjudication.
+        </>
+      ),
+    },
+    {
+      key: "plafond-avant-audience",
+      content:
+        "Fixez votre plafond avant l’audience et donnez-le à votre avocat : les enchères vont vite.",
+    },
   );
   return (
     <section aria-labelledby="ceiling-checklist-title" className="mt-8">
@@ -607,7 +654,7 @@ function Checklist({
       </h3>
       <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
         {items.map((item) => (
-          <li key={item}>{item}</li>
+          <li key={item.key}>{item.content}</li>
         ))}
       </ul>
     </section>

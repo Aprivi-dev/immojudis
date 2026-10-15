@@ -22,7 +22,7 @@ describe("SaleDetailTabNav", () => {
   it("adds the tribunal statistics section to both keyboard and mobile navigation", () => {
     render(<Harness showStatistics />);
     expect(screen.getAllByRole("tab")).toHaveLength(6);
-    fireEvent.keyDown(screen.getByRole("tab", { name: "Estimation" }), { key: "ArrowRight" });
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Prix et plafond" }), { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "Statistiques" }).getAttribute("aria-selected")).toBe(
       "true",
     );
@@ -40,7 +40,7 @@ describe("SaleDetailTabNav", () => {
     expect(tabs).toHaveLength(5);
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       "Aperçu",
-      "Estimation",
+      "Prix et plafond",
       "Travaux",
       "Financement",
       "Démarches",
