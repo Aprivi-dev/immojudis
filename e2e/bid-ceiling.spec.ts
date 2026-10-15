@@ -49,7 +49,8 @@ test("vider « Frais préalables » ne réinjecte pas le défaut, on peut ressai
   const calculation = await openCalculation(page);
   await calculation.getByRole("button", { name: "Modifier les hypothèses" }).click();
 
-  const fees = page.getByLabel("Frais préalables");
+  // « exact » : les définitions du glossaire (« Définition : frais préalables ») ont aussi ce libellé.
+  const fees = page.getByLabel("Frais préalables", { exact: true });
   const defaultFees = await fees.inputValue();
   expect(Number(defaultFees)).toBeGreaterThan(0);
 
