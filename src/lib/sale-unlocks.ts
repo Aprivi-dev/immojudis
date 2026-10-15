@@ -38,6 +38,24 @@ export type SaleUnlockResult = SaleUnlockStatus & {
   consumed: boolean;
 };
 
+/** Une vente débloquée par le compte, telle que la liste « Mes ventes débloquées » l'affiche. */
+export type UnlockedSaleSummary = {
+  id: string;
+  title: string | null;
+  city: string | null;
+  department: string | null;
+  propertyType: string | null;
+  startingPriceEur: number | null;
+  saleDate: string | null;
+  status: string | null;
+};
+
+/** Réponse de `GET /api/sale-unlocks` : le compteur du mois et les ventes débloquées en ligne. */
+export type SaleUnlocksOverview = {
+  status: SaleUnlockStatus;
+  sales: UnlockedSaleSummary[];
+};
+
 /** Réponse de `POST /api/sales/[id]/unlock` quand le quota du mois est atteint. */
 export type SaleUnlockQuotaReachedResponse = {
   error: string;
@@ -66,6 +84,13 @@ export function unlockedItemsText({
   ];
   return `${items.slice(0, -1).join(", ")} et ${items[items.length - 1]}`;
 }
+
+/**
+ * Les trois éléments que l'on cite en un mot pour présenter le compte gratuit (accueil,
+ * onboarding). Une version courte de `unlockedItemsText` : `sale-unlocks.test.ts` vérifie que chacun
+ * y figure, pour que les deux ne dérivent pas.
+ */
+export const UNLOCK_HIGHLIGHTS_TEXT = "enchère plafond, lecture des pièces, historique";
 
 function unlockCountLabel(count: number): string {
   return `${count} déblocage${count > 1 ? "s" : ""}`;

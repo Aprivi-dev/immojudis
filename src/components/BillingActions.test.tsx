@@ -318,8 +318,11 @@ describe("BillingActions", () => {
 
     fireEvent.click(purchase);
 
+    // Motif « offre » : le bandeau de la page de connexion explique le détour.
     await waitFor(() =>
-      expect(mocks.navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/login\?redirect=%2F/)),
+      expect(mocks.navigate).toHaveBeenCalledWith(
+        expect.stringMatching(/^\/login\?redirect=%2F.*&mode=investor&reason=offre$/),
+      ),
     );
   });
 
@@ -421,7 +424,9 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" }));
     await waitFor(() =>
-      expect(mocks.navigate).toHaveBeenCalledWith("/login?mode=investor&redirect=%2Foffres"),
+      expect(mocks.navigate).toHaveBeenCalledWith(
+        "/login?redirect=%2Foffres&mode=investor&reason=offre",
+      ),
     );
     expect(mocks.updateOfferOpeningNotification).not.toHaveBeenCalled();
     expect(mocks.fetchOfferOpeningNotification).not.toHaveBeenCalled();

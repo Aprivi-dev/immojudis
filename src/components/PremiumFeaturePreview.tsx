@@ -2,17 +2,29 @@
 
 import Link from "next/link";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
+import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
 import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
+
+const PRIMARY_LINK_CLASS =
+  "inline-flex rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-brand-navy hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2";
+const SECONDARY_LINK_CLASS =
+  "inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2";
 
 /** Decorative placeholders only: protected values are never rendered under the blur. */
 export function PremiumFeaturePreview({
   title,
   description,
   labels,
+  unlockOffer = false,
 }: {
   title: string;
   description: string;
   labels: readonly string[];
+  /**
+   * What the preview announces can also be opened by unlocking the sale (the title says « ou en
+   * débloquant cette vente »): the main link then unlocks it, when the page has the unlock card.
+   */
+  unlockOffer?: boolean;
 }) {
   const checkoutOpen = useAnalysisCheckoutOpen();
   return (
@@ -49,16 +61,19 @@ export function PremiumFeaturePreview({
         </p>
       ) : null}
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
-        <Link
-          href="/offres"
-          className="inline-flex rounded-lg bg-gold px-4 py-3 text-sm font-semibold text-brand-navy hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
-        >
-          Découvrir l’offre Analyse
-        </Link>
-        <Link
-          href="/annonce-exemple"
-          className="inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
-        >
+        {unlockOffer ? (
+          <UnlockCallToAction
+            primaryClassName={PRIMARY_LINK_CLASS}
+            secondaryClassName={SECONDARY_LINK_CLASS}
+            messageClassName="basis-full text-sm font-medium text-foreground"
+            withOpeningRequest
+          />
+        ) : (
+          <Link href="/offres" className={PRIMARY_LINK_CLASS}>
+            Découvrir l’offre Analyse
+          </Link>
+        )}
+        <Link href="/annonce-exemple" className={SECONDARY_LINK_CLASS}>
           Voir une analyse exemple
         </Link>
       </div>

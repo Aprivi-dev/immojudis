@@ -7,6 +7,7 @@ import {
   MONTHLY_SALE_UNLOCKS,
   remainingUnlocksLine,
   unlockConfirmationText,
+  UNLOCK_HIGHLIGHTS_TEXT,
   unlockCallToActionLabel,
   unlockedItemsText,
   unlockQuotaReachedText,
@@ -161,6 +162,15 @@ describe("texts of the unlock", () => {
     expect(unlockConfirmationText(status)).toBe(
       "Ce déblocage est définitif : il n’est restitué que si Immojudis retire elle-même la vente (conditions générales, article 2). Le compteur est remis à 3 le 1er novembre.",
     );
+  });
+
+  it("cites each highlight of the free account in the full list of what an unlock opens", () => {
+    const full = unlockedItemsText({ ceiling: true, statistics: false });
+    expect(UNLOCK_HIGHLIGHTS_TEXT).toBe("enchère plafond, lecture des pièces, historique");
+    for (const highlight of UNLOCK_HIGHLIGHTS_TEXT.split(", ")) {
+      const word = highlight.split(" ").slice(-1)[0];
+      expect(full).toContain(word);
+    }
   });
 
   it("labels the main link of a paid preview with the remaining unlocks", () => {

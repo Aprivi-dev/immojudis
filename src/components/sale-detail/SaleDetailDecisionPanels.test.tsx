@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
+import { SaleUnlockOfferProvider } from "./UnlockCallToAction";
 import {
   AnalysisDecisionPanel,
   DiscoveryDecisionPanel,
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => mocks.auth }));
 vi.mock("@/lib/client-api", () => ({ fetchValuePreview: mocks.fetchValuePreview }));
+vi.mock("@/hooks/use-analysis-checkout-open", () => ({ useAnalysisCheckoutOpen: () => true }));
 
 afterEach(() => {
   cleanup();
@@ -47,7 +49,7 @@ describe("DiscoveryDecisionPanel", () => {
       name: "Créez un compte gratuit pour voir la fourchette de valeur",
     });
     expect(link.getAttribute("href")).toBe(
-      `/login?mode=investor&redirect=${encodeURIComponent(`/sales/${sale.id}`)}`,
+      `/login?redirect=${encodeURIComponent(`/sales/${sale.id}`)}&mode=investor&reason=fiche`,
     );
   });
 
@@ -80,6 +82,59 @@ describe("DiscoveryDecisionPanel", () => {
     renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
 
     expect(await screen.findByText("Pas encore d’estimation")).toBeTruthy();
+  });
+
+  describe("unlock link", () => {
+    const tribunalSale = { ...sale, sale_venue_type: "tribunal" } as unknown as AuctionSale;
+    const offer = {
+      saleId: sale.id,
+      unlocked: false,
+      unlockable: true,
+      analysisAccess: false,
+      limit: 3,
+      used: 1,
+      remaining: 2,
+      periodStart: "2026-09-30T22:00:00.000Z",
+      resetsAt: "2026-10-31T23:00:00.000Z",
+    };
+
+    it("links the ceiling row and the preview of a tribunal sale to the unlock card", () => {
+      mocks.auth = { user: { id: "user-1" }, loading: false };
+      mocks.fetchValuePreview.mockResolvedValue({ available: false });
+      renderWithQuery(
+        <SaleUnlockOfferProvider status={offer}>
+          <DiscoveryDecisionPanel sale={tribunalSale} />
+        </SaleUnlockOfferProvider>,
+      );
+
+      const links = screen.getAllByRole("link", {
+        name: "Débloquer cette vente (il vous reste 2 sur 3)",
+      });
+      // The row of the ceiling, and the main link of the paid preview.
+      expect(links).toHaveLength(2);
+      for (const link of links) expect(link.getAttribute("href")).toBe("#debloquer");
+    });
+
+    it("keeps only the offer when the page has no unlock card", () => {
+      renderWithQuery(<DiscoveryDecisionPanel sale={tribunalSale} />);
+
+      expect(screen.queryByRole("link", { name: /Débloquer cette vente/ })).toBeNull();
+      expect(screen.getByRole("link", { name: "Découvrir l’offre Analyse" })).toBeTruthy();
+    });
+
+    it("does not offer the unlock for the preview of a sale without ceiling", () => {
+      mocks.auth = { user: { id: "user-1" }, loading: false };
+      mocks.fetchValuePreview.mockResolvedValue({ available: false });
+      const notary = { ...sale, sale_venue_type: "notary" } as unknown as AuctionSale;
+      renderWithQuery(
+        <SaleUnlockOfferProvider status={offer}>
+          <DiscoveryDecisionPanel sale={notary} />
+        </SaleUnlockOfferProvider>,
+      );
+
+      // Only the hint of the ceiling row remains: the preview talks about comparables and works.
+      expect(screen.getAllByRole("link", { name: /Débloquer cette vente/ })).toHaveLength(1);
+    });
   });
 
   it("shows a zero starting price as to be confirmed", () => {

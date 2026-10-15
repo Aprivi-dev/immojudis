@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
+import { SaleUnlockOfferProvider } from "@/components/sale-detail/UnlockCallToAction";
 import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
 import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenariosSection";
 import { ListingEnvironmentalRisks } from "@/components/sale-detail/ListingEnvironmentalRisks";
@@ -186,6 +187,7 @@ export function FreeSaleDetailView({
   adjudicationStatisticsEnabled = false,
   aiReviewProjections = null,
   unlockStatus = null,
+  justUnlocked = false,
   onSaleUnlocked,
 }: SaleDetailProps) {
   return (
@@ -196,6 +198,7 @@ export function FreeSaleDetailView({
       adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       aiReviewProjections={aiReviewProjections}
       unlockStatus={unlockStatus}
+      justUnlocked={justUnlocked}
       onSaleUnlocked={onSaleUnlocked}
       access="discovery"
     />
@@ -499,484 +502,508 @@ function SaleDetailWorkspace({
     setAnchorVisit((current) => current + 1);
   };
 
+  // The previews that say « ou en débloquant cette vente » link to the unlock card, which exists
+  // only for a signed-in Découverte account on a sale that can be unlocked and is not unlocked yet.
+  const unlockOffer =
+    !publicDemo &&
+    user &&
+    access === "discovery" &&
+    unlockStatus?.unlockable &&
+    !unlockStatus.unlocked
+      ? unlockStatus
+      : null;
+
   return (
-    <main id="contenu" className={listingStyles.page} onClickCapture={handleSectionLink}>
-      <div className={listingStyles.container}>
-        <div className={listingStyles.topbar}>
-          <Link
-            href={returnTo ?? "/sales"}
-            className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-            {backLabel}
-          </Link>
-          <ListingActions sale={displaySale} publicDemo={publicDemo} />
-        </div>
-        <div className={listingStyles.upper}>
-          <PropertyIdentity
-            key={sale.id}
-            sale={displaySale}
-            aiReviewProjections={resolvedAiReviewProjections}
-            aiReviewStatus={aiReviewStatus}
-          />
-          <div className={listingStyles.heroSummary}>
-            <ListingOverview
+    <SaleUnlockOfferProvider status={unlockOffer}>
+      <main id="contenu" className={listingStyles.page} onClickCapture={handleSectionLink}>
+        <div className={listingStyles.container}>
+          <div className={listingStyles.topbar}>
+            <Link
+              href={returnTo ?? "/sales"}
+              className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
+              {backLabel}
+            </Link>
+            <ListingActions sale={displaySale} publicDemo={publicDemo} />
+          </div>
+          <div className={listingStyles.upper}>
+            <PropertyIdentity
+              key={sale.id}
               sale={displaySale}
-              publicDemo={publicDemo}
-              premiumCeiling={heroCeiling}
-              ceilingContext={ceilingContext}
-              showPremiumTeaser={access === "discovery" && isTribunalSale}
-              factReliabilities={factReliabilities}
               aiReviewProjections={resolvedAiReviewProjections}
               aiReviewStatus={aiReviewStatus}
-              scenarioSummary={
-                projectCosts
-                  ? {
-                      purchasePrice: projectCosts.price,
-                      works: projectCosts.works,
-                      totalCost: projectCosts.totalCost,
-                      marketValue: marketEstimate?.actionable
-                        ? (marketEstimate.estimatedValueEur ?? null)
-                        : null,
-                      personalized:
-                        ceilingChoices.choices.works != null || personalWorksBudget != null,
-                    }
-                  : null
-              }
             />
-          </div>
-        </div>
-        <ListingPreparation
-          key={`${user?.id ?? "guest-demo"}:${sale.id}`}
-          sale={displaySale}
-          publicDemo={publicDemo}
-          ownerId={user?.id ?? "guest-demo"}
-          factReliabilities={factReliabilities}
-          aiReviewProjections={resolvedAiReviewProjections}
-          aiReviewStatus={aiReviewStatus}
-          canSimulate={
-            fullData && isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked
-          }
-        />
-        {!publicDemo && user && access !== "analysis" ? (
-          <SaleUnlockPanel
-            saleId={sale.id}
-            status={unlockStatus}
-            unlocked={access === "unlocked"}
-            opens={{ ceiling: isTribunalSale, statistics: statisticsAvailable }}
-            announce={justUnlocked}
-            onUnlocked={(result) => onSaleUnlocked?.(result)}
-          />
-        ) : null}
-      </div>
-
-      <div id="annonce-sections" className={panelStyles.tabRegion}>
-        <SaleDetailTabNav
-          activeTab={activeTab}
-          onTabChange={changeTab}
-          showStatistics={statisticsAvailable}
-        />
-        <div
-          id={`sale-detail-panel-${activeTab}`}
-          role="tabpanel"
-          aria-labelledby={`sale-detail-tab-${activeTab}`}
-          tabIndex={0}
-          className={panelStyles.panel}
-        >
-          {activeTab === "apercu" ? (
-            <>
-              <PanelIntro eyebrow="01 / Le bien" title="L’essentiel sur le bien" />
-              <div className={panelStyles.twoColumns}>
-                <ListingDescription
-                  sale={displaySale}
-                  aiReviewProjections={resolvedAiReviewProjections}
-                  aiReviewStatus={aiReviewStatus}
-                />
-                <ListingLocation
-                  sale={displaySale}
-                  aiReviewProjections={resolvedAiReviewProjections}
-                  aiReviewStatus={aiReviewStatus}
-                />
-              </div>
-              <ListingCharacteristics sale={displaySale} />
-              <DocumentReadingSection
-                saleId={sale.id}
-                enabled={!publicDemo && !authLoading && Boolean(user)}
-                access={access}
-                userKey={user?.id}
-              />
-              <SalePassagesSection
-                saleId={sale.id}
-                startingPrice={displaySale.starting_price_eur ?? null}
-                enabled={!publicDemo && !authLoading && Boolean(user)}
-                access={access}
-                userKey={user?.id}
-              />
-              {access === "analysis" ? (
-                <RisksAndDocuments sale={displaySale} />
-              ) : (
-                <div id="risks" className={panelStyles.riskCard}>
-                  <h2>Points à vérifier</h2>
-                  <p>Consultez les pièces et faites confirmer l’état du bien avant de décider.</p>
-                  <a href="#documents">Voir les pièces disponibles</a>
-                </div>
-              )}
-              <UrbanismeSection
+            <div className={listingStyles.heroSummary}>
+              <ListingOverview
                 sale={displaySale}
-                mapLocation={sale}
-                loadStructuredUrbanism={
-                  access === "analysis" && !publicDemo && !authLoading && Boolean(user)
+                publicDemo={publicDemo}
+                premiumCeiling={heroCeiling}
+                ceilingContext={ceilingContext}
+                showPremiumTeaser={access === "discovery" && isTribunalSale}
+                factReliabilities={factReliabilities}
+                aiReviewProjections={resolvedAiReviewProjections}
+                aiReviewStatus={aiReviewStatus}
+                scenarioSummary={
+                  projectCosts
+                    ? {
+                        purchasePrice: projectCosts.price,
+                        works: projectCosts.works,
+                        totalCost: projectCosts.totalCost,
+                        marketValue: marketEstimate?.actionable
+                          ? (marketEstimate.estimatedValueEur ?? null)
+                          : null,
+                        personalized:
+                          ceilingChoices.choices.works != null || personalWorksBudget != null,
+                      }
+                    : null
                 }
               />
-              <ListingEnvironmentalRisks
-                saleId={sale.id}
-                demoProfile={publicDemo ? EXAMPLE_COMMUNE_RISKS : undefined}
-                enabled={
-                  !getAiReviewFieldResult(
-                    resolvedAiReviewProjections,
-                    "property.city",
-                    aiReviewStatus,
-                  ).blocked &&
-                  Boolean(
-                    displaySale.city || displaySale.postal_code || listingCoordinates(displaySale),
-                  )
-                }
-              />
-              {!publicDemo ? <ListingWeatherHistory saleId={sale.id} /> : null}
-            </>
+            </div>
+          </div>
+          <ListingPreparation
+            key={`${user?.id ?? "guest-demo"}:${sale.id}`}
+            sale={displaySale}
+            publicDemo={publicDemo}
+            ownerId={user?.id ?? "guest-demo"}
+            factReliabilities={factReliabilities}
+            aiReviewProjections={resolvedAiReviewProjections}
+            aiReviewStatus={aiReviewStatus}
+            canSimulate={
+              fullData && isTribunalSale && !valuationConflict && !criticalAnalysisInputsBlocked
+            }
+          />
+          {!publicDemo && user && access !== "analysis" ? (
+            <SaleUnlockPanel
+              saleId={sale.id}
+              status={unlockStatus}
+              // Just unlocked, while the unlocked read is still loading: the free view stays on screen
+              // and the card already says so.
+              unlocked={access === "unlocked" || unlockStatus?.unlocked === true}
+              opens={{ ceiling: isTribunalSale, statistics: statisticsAvailable }}
+              announce={justUnlocked}
+              onUnlocked={(result) => onSaleUnlocked?.(result)}
+            />
           ) : null}
+        </div>
 
-          {activeTab === "estimation" ? (
-            <>
-              <PanelIntro
-                eyebrow="02 / Prix"
-                title={isTribunalSale ? "Prix et enchère plafond" : "Prix et marché"}
-                description={
-                  isTribunalSale
-                    ? "Les trois montants à comparer avant de définir votre scénario."
-                    : "Le prix publié et les références de marché disponibles."
-                }
-              />
-              {marketAccess &&
-              marketEstimateOverride == null &&
-              !marketEstimate &&
-              (marketQuery.data?.error || marketQuery.error) ? (
-                <div className={panelStyles.warning} role="status" aria-live="polite">
-                  <div>
-                    <strong>Estimation de marché à compléter</strong>
-                    <p>
-                      {marketQuery.data?.error ??
-                        userMessage(
-                          marketQuery.error,
-                          "L’estimation est momentanément indisponible.",
-                        )}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void marketQuery.refetch()}
-                    disabled={marketQuery.isFetching}
-                  >
-                    {marketQuery.isFetching ? "Calcul en cours…" : "Relancer l’estimation"}
-                  </button>
-                </div>
-              ) : null}
-              <section id="summary" className="scroll-mt-36">
-                {valuationConflict ? (
-                  <div role="alert" className={panelStyles.warning}>
-                    <div>
-                      <h2>Estimation suspendue : données contradictoires</h2>
-                      <p>{valuationConflict}</p>
-                      {access === "analysis" ? (
-                        <p>
-                          Les caractéristiques seront vérifiées par Immojudis avant toute mise à
-                          jour.
-                        </p>
-                      ) : (
-                        <a href="#rendez-vous">Consulter les coordonnées du dossier</a>
-                      )}
-                    </div>
-                  </div>
-                ) : fullData && isTribunalSale ? (
-                  <AnalysisDecisionPanel
-                    sale={displaySale}
-                    marketEstimate={marketEstimate}
-                    marketLoading={marketQuery.isLoading && marketEstimate == null}
-                    worksBudget={retainedWorks}
-                    recommendedCeiling={ceilingPlan.maxBid}
-                    ceilingAvailable={ceilingPlan.available && ceilingPlan.reachable}
-                    ceilingGap={ceilingMissing}
-                    valueReason={valueReason}
-                    onAdjust={() => undefined}
-                    onEditWorks={() => changeTab("travaux")}
-                  />
-                ) : access === "analysis" ? (
-                  <NonJudicialDecisionPanel
-                    sale={displaySale}
-                    marketEstimate={detailedMarketEstimate}
-                    marketLoading={marketQuery.isLoading && marketEstimate == null}
-                  />
-                ) : (
-                  <DiscoveryDecisionPanel sale={displaySale} />
-                )}
-              </section>
-              {access === "analysis" ? (
-                <MarketSnapshot
-                  estimate={detailedMarketEstimate}
-                  computedAt={marketQuery.data?.computedAt ?? null}
-                  loading={marketQuery.isLoading && marketEstimate == null}
-                />
-              ) : null}
-              {fullData && isTribunalSale && !valuationConflict ? (
-                <div id="calculation" className="scroll-mt-36">
-                  <CeilingPlanner
-                    hypotheses={ceilingHypotheses}
-                    plan={ceilingPlan}
-                    choices={ceilingChoices.choices}
-                    onChoicesChange={ceilingChoices.update}
-                    onReset={ceilingChoices.reset}
-                    onEditWorks={() => changeTab("travaux")}
-                    marketLoading={marketQuery.isLoading && marketEstimate == null}
-                    valueReason={valueReason}
-                    dpeClass={dpeClass}
-                  />
-                </div>
-              ) : access === "analysis" ? (
-                <details className={panelStyles.disclosure} open={Boolean(expandedDetails.budget)}>
-                  <summary
-                    onClick={(event) => {
-                      event.preventDefault();
-                      setDetailOpen("budget", !expandedDetails.budget);
-                    }}
-                  >
-                    Frais et hypothèses
-                  </summary>
-                  <ListingBudget
+        <div id="annonce-sections" className={panelStyles.tabRegion}>
+          <SaleDetailTabNav
+            activeTab={activeTab}
+            onTabChange={changeTab}
+            showStatistics={statisticsAvailable}
+          />
+          <div
+            id={`sale-detail-panel-${activeTab}`}
+            role="tabpanel"
+            aria-labelledby={`sale-detail-tab-${activeTab}`}
+            tabIndex={0}
+            className={panelStyles.panel}
+          >
+            {activeTab === "apercu" ? (
+              <>
+                <PanelIntro eyebrow="01 / Le bien" title="L’essentiel sur le bien" />
+                <div className={panelStyles.twoColumns}>
+                  <ListingDescription
                     sale={displaySale}
                     aiReviewProjections={resolvedAiReviewProjections}
                     aiReviewStatus={aiReviewStatus}
                   />
-                </details>
-              ) : null}
-              {access === "analysis" ? (
-                <details className={panelStyles.disclosure} open={Boolean(expandedDetails.market)}>
-                  <summary
-                    onClick={(event) => {
-                      event.preventDefault();
-                      setDetailOpen("market", !expandedDetails.market);
-                    }}
-                  >
-                    Voir les références de marché
-                  </summary>
-                  {marketEstimate?.actionable === true || isTribunalSale ? (
-                    <MarketEvidence
+                  <ListingLocation
+                    sale={displaySale}
+                    aiReviewProjections={resolvedAiReviewProjections}
+                    aiReviewStatus={aiReviewStatus}
+                  />
+                </div>
+                <ListingCharacteristics sale={displaySale} />
+                <DocumentReadingSection
+                  saleId={sale.id}
+                  enabled={!publicDemo && !authLoading && Boolean(user)}
+                  access={access}
+                  userKey={user?.id}
+                />
+                <SalePassagesSection
+                  saleId={sale.id}
+                  startingPrice={displaySale.starting_price_eur ?? null}
+                  enabled={!publicDemo && !authLoading && Boolean(user)}
+                  access={access}
+                  userKey={user?.id}
+                />
+                {access === "analysis" ? (
+                  <RisksAndDocuments sale={displaySale} />
+                ) : (
+                  <div id="risks" className={panelStyles.riskCard}>
+                    <h2>Points à vérifier</h2>
+                    <p>Consultez les pièces et faites confirmer l’état du bien avant de décider.</p>
+                    <a href="#documents">Voir les pièces disponibles</a>
+                  </div>
+                )}
+                <UrbanismeSection
+                  sale={displaySale}
+                  mapLocation={sale}
+                  loadStructuredUrbanism={
+                    access === "analysis" && !publicDemo && !authLoading && Boolean(user)
+                  }
+                />
+                <ListingEnvironmentalRisks
+                  saleId={sale.id}
+                  demoProfile={publicDemo ? EXAMPLE_COMMUNE_RISKS : undefined}
+                  enabled={
+                    !getAiReviewFieldResult(
+                      resolvedAiReviewProjections,
+                      "property.city",
+                      aiReviewStatus,
+                    ).blocked &&
+                    Boolean(
+                      displaySale.city ||
+                      displaySale.postal_code ||
+                      listingCoordinates(displaySale),
+                    )
+                  }
+                />
+                {!publicDemo ? <ListingWeatherHistory saleId={sale.id} /> : null}
+              </>
+            ) : null}
+
+            {activeTab === "estimation" ? (
+              <>
+                <PanelIntro
+                  eyebrow="02 / Prix"
+                  title={isTribunalSale ? "Prix et enchère plafond" : "Prix et marché"}
+                  description={
+                    isTribunalSale
+                      ? "Les trois montants à comparer avant de définir votre scénario."
+                      : "Le prix publié et les références de marché disponibles."
+                  }
+                />
+                {marketAccess &&
+                marketEstimateOverride == null &&
+                !marketEstimate &&
+                (marketQuery.data?.error || marketQuery.error) ? (
+                  <div className={panelStyles.warning} role="status" aria-live="polite">
+                    <div>
+                      <strong>Estimation de marché à compléter</strong>
+                      <p>
+                        {marketQuery.data?.error ??
+                          userMessage(
+                            marketQuery.error,
+                            "L’estimation est momentanément indisponible.",
+                          )}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void marketQuery.refetch()}
+                      disabled={marketQuery.isFetching}
+                    >
+                      {marketQuery.isFetching ? "Calcul en cours…" : "Relancer l’estimation"}
+                    </button>
+                  </div>
+                ) : null}
+                <section id="summary" className="scroll-mt-36">
+                  {valuationConflict ? (
+                    <div role="alert" className={panelStyles.warning}>
+                      <div>
+                        <h2>Estimation suspendue : données contradictoires</h2>
+                        <p>{valuationConflict}</p>
+                        {access === "analysis" ? (
+                          <p>
+                            Les caractéristiques seront vérifiées par Immojudis avant toute mise à
+                            jour.
+                          </p>
+                        ) : (
+                          <a href="#rendez-vous">Consulter les coordonnées du dossier</a>
+                        )}
+                      </div>
+                    </div>
+                  ) : fullData && isTribunalSale ? (
+                    <AnalysisDecisionPanel
+                      sale={displaySale}
+                      marketEstimate={marketEstimate}
+                      marketLoading={marketQuery.isLoading && marketEstimate == null}
+                      worksBudget={retainedWorks}
+                      recommendedCeiling={ceilingPlan.maxBid}
+                      ceilingAvailable={ceilingPlan.available && ceilingPlan.reachable}
+                      ceilingGap={ceilingMissing}
+                      valueReason={valueReason}
+                      onAdjust={() => undefined}
+                      onEditWorks={() => changeTab("travaux")}
+                    />
+                  ) : access === "analysis" ? (
+                    <NonJudicialDecisionPanel
+                      sale={displaySale}
                       marketEstimate={detailedMarketEstimate}
                       marketLoading={marketQuery.isLoading && marketEstimate == null}
                     />
                   ) : (
-                    <p>
-                      Références insuffisantes pour afficher une estimation exploitable sur cette
-                      vente.
-                    </p>
+                    <DiscoveryDecisionPanel sale={displaySale} />
                   )}
-                </details>
-              ) : null}
-              {access === "analysis" && !publicDemo && hasVerifiedTribunal ? (
-                <TribunalEstimationEvidence
-                  sale={displaySale}
-                  valuationConflict={Boolean(valuationConflict)}
-                  statisticsAvailable={statisticsAvailable}
-                  open={Boolean(expandedDetails["tribunal-perspective"])}
-                  onOpenChange={(open) => setDetailOpen("tribunal-perspective", open)}
-                />
-              ) : null}
-            </>
-          ) : null}
-
-          {activeTab === "statistiques" && statisticsAvailable ? (
-            fullData ? (
-              <>
-                <AuctionScenariosSection
-                  saleId={sale.id}
-                  enabled={!publicDemo}
-                  access={access}
-                  userKey={user?.id}
-                />
-                <ListingStatistics
-                  sale={sale}
-                  premium={fullData && adjudicationStatisticsEnabled}
-                  showUpcomingListings={access === "analysis"}
-                  publicDemo={publicDemo}
-                  propertyTypeVerified={!valuationConflict && !propertyTypeReview.blocked}
-                />
-              </>
-            ) : (
-              <PremiumFeaturePreview
-                title={
-                  user && !publicDemo
-                    ? "Les statistiques du tribunal avec l’offre Analyse ou en débloquant cette vente"
-                    : "Les statistiques du tribunal avec l’offre Analyse"
-                }
-                description="Consultez les tendances, les adjudications et les indicateurs disponibles pour préparer votre enchère."
-                labels={["Scénarios d’enchères", "Prix d’adjudication", "Activité du tribunal"]}
-              />
-            )
-          ) : null}
-
-          {activeTab === "travaux" ? (
-            access === "analysis" ? (
-              <>
-                {valuationConflict || criticalAnalysisInputsBlocked ? (
-                  <div className={panelStyles.warning} role="status">
-                    <p>
-                      Les caractéristiques nécessaires au calcul restent à confirmer. Votre détail
-                      travaux peut être préparé, puis intégré au scénario après vérification.
-                    </p>
-                  </div>
-                ) : null}
-                <ListingWorks
-                  sale={displaySale}
-                  estimatedBudget={retainedWorks}
-                  onBudgetChange={ceilingEnabled ? selectWorksBudget : undefined}
-                  initialDraft={worksDraft}
-                  onDraftChange={setWorksDraft}
-                  surface={surface}
-                  onScenarioSelect={retainedWorks != null ? selectWorksBudget : undefined}
-                  maxWorks={
-                    heroCeiling != null
-                      ? maxWorksAtBid(ceilingHypotheses, displaySale.starting_price_eur ?? 0)
-                      : null
-                  }
-                />
-              </>
-            ) : (
-              <PremiumFeaturePreview
-                title="Estimez vos travaux avec l’offre Analyse"
-                description="Préparez une enveloppe par poste et intégrez-la à votre scénario d’achat."
-                labels={["Budget travaux", "Détail par poste", "Coût du projet"]}
-              />
-            )
-          ) : null}
-
-          {activeTab === "financement" ? (
-            <>
-              <div id="financing" className="scroll-mt-36">
-                <FinancingSimulator
-                  sale={displaySale}
-                  aiReviewProjections={resolvedAiReviewProjections}
-                  aiReviewStatus={aiReviewStatus}
-                  projectPriceOverride={projectCosts?.totalCost ?? null}
-                  initialDraft={financingDraft}
-                  onDraftChange={setFinancingDraft}
-                  onResultChange={setFinancingResult}
-                  initialInsuranceRate={0.3}
-                />
-                <ListingRental
-                  saleId={sale.id}
-                  acquisitionCost={
-                    activeFinancingResult?.totalProjectCost ?? projectCosts?.totalCost ?? null
-                  }
-                  monthlyDebtService={activeFinancingResult?.monthlyPayment ?? null}
-                  initialDraft={rentalDraft}
-                  onDraftChange={setRentalDraft}
-                />
-              </div>
-            </>
-          ) : null}
-
-          {activeTab === "demarches" ? (
-            <>
-              <PanelIntro
-                eyebrow="05 / Participation"
-                title="Préparer la vente"
-                description="Date, interlocuteur, pièces et étapes à suivre."
-              />
-              <div className={panelStyles.practical}>
-                <ListingPracticalDetails
-                  sale={displaySale}
-                  aiReviewProjections={resolvedAiReviewProjections}
-                  aiReviewStatus={aiReviewStatus}
-                />
-              </div>
-              <div className={panelStyles.steps}>
-                <h2>Vos prochaines étapes</h2>
-                <ol>
-                  <li>Consulter les conditions et les pièces officielles.</li>
-                  <li>Confirmer les visites et les modalités de participation.</li>
-                  <li>
-                    {isTribunalSale
-                      ? "Choisir un avocat compétent avant de préparer une enchère."
-                      : "Contacter l’organisateur pour préparer votre dossier."}
-                  </li>
-                </ol>
-              </div>
-              <SaleDocumentsSection
-                sale={displaySale}
-                open={Boolean(expandedDetails.documents)}
-                onOpenChange={(open) => setDetailOpen("documents", open)}
-                locked={!fullData}
-              />
-              <LawyerSection sale={displaySale} />
-              <details
-                className={panelStyles.disclosure}
-                open={Boolean(expandedDetails.participation)}
-              >
-                <summary
-                  onClick={(event) => {
-                    event.preventDefault();
-                    setDetailOpen("participation", !expandedDetails.participation);
-                  }}
-                >
-                  Voir toutes les conditions de la vente
-                </summary>
-                <SaleProcedurePanel sale={displaySale} />
-              </details>
-              {access === "analysis" && !publicDemo && isTribunalSale && !valuationConflict ? (
-                <section
-                  aria-label="Sauvegarde et export du rapport"
-                  className={panelStyles.reportActions}
-                >
-                  <h2>Conserver votre analyse</h2>
-                  <p>Sauvegardez le dossier ou exportez le rapport avec le scénario courant.</p>
-                  <PropertyReportActions
-                    saleId={sale.id}
-                    compact
-                    simulation={reportSimulation}
-                    requireSimulation
-                  />
                 </section>
-              ) : null}
-              {access === "analysis" && !publicDemo ? (
+                {access === "analysis" ? (
+                  <MarketSnapshot
+                    estimate={detailedMarketEstimate}
+                    computedAt={marketQuery.data?.computedAt ?? null}
+                    loading={marketQuery.isLoading && marketEstimate == null}
+                  />
+                ) : null}
+                {fullData && isTribunalSale && !valuationConflict ? (
+                  <div id="calculation" className="scroll-mt-36">
+                    <CeilingPlanner
+                      hypotheses={ceilingHypotheses}
+                      plan={ceilingPlan}
+                      choices={ceilingChoices.choices}
+                      onChoicesChange={ceilingChoices.update}
+                      onReset={ceilingChoices.reset}
+                      onEditWorks={() => changeTab("travaux")}
+                      marketLoading={marketQuery.isLoading && marketEstimate == null}
+                      valueReason={valueReason}
+                      dpeClass={dpeClass}
+                    />
+                  </div>
+                ) : access === "analysis" ? (
+                  <details
+                    className={panelStyles.disclosure}
+                    open={Boolean(expandedDetails.budget)}
+                  >
+                    <summary
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setDetailOpen("budget", !expandedDetails.budget);
+                      }}
+                    >
+                      Frais et hypothèses
+                    </summary>
+                    <ListingBudget
+                      sale={displaySale}
+                      aiReviewProjections={resolvedAiReviewProjections}
+                      aiReviewStatus={aiReviewStatus}
+                    />
+                  </details>
+                ) : null}
+                {access === "analysis" ? (
+                  <details
+                    className={panelStyles.disclosure}
+                    open={Boolean(expandedDetails.market)}
+                  >
+                    <summary
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setDetailOpen("market", !expandedDetails.market);
+                      }}
+                    >
+                      Voir les références de marché
+                    </summary>
+                    {marketEstimate?.actionable === true || isTribunalSale ? (
+                      <MarketEvidence
+                        marketEstimate={detailedMarketEstimate}
+                        marketLoading={marketQuery.isLoading && marketEstimate == null}
+                      />
+                    ) : (
+                      <p>
+                        Références insuffisantes pour afficher une estimation exploitable sur cette
+                        vente.
+                      </p>
+                    )}
+                  </details>
+                ) : null}
+                {access === "analysis" && !publicDemo && hasVerifiedTribunal ? (
+                  <TribunalEstimationEvidence
+                    sale={displaySale}
+                    valuationConflict={Boolean(valuationConflict)}
+                    statisticsAvailable={statisticsAvailable}
+                    open={Boolean(expandedDetails["tribunal-perspective"])}
+                    onOpenChange={(open) => setDetailOpen("tribunal-perspective", open)}
+                  />
+                ) : null}
+              </>
+            ) : null}
+
+            {activeTab === "statistiques" && statisticsAvailable ? (
+              fullData ? (
+                <>
+                  <AuctionScenariosSection
+                    saleId={sale.id}
+                    enabled={!publicDemo}
+                    access={access}
+                    userKey={user?.id}
+                  />
+                  <ListingStatistics
+                    sale={sale}
+                    premium={fullData && adjudicationStatisticsEnabled}
+                    showUpcomingListings={access === "analysis"}
+                    publicDemo={publicDemo}
+                    propertyTypeVerified={!valuationConflict && !propertyTypeReview.blocked}
+                  />
+                </>
+              ) : (
+                <PremiumFeaturePreview
+                  title={
+                    user && !publicDemo
+                      ? "Les statistiques du tribunal avec l’offre Analyse ou en débloquant cette vente"
+                      : "Les statistiques du tribunal avec l’offre Analyse"
+                  }
+                  description="Consultez les tendances, les adjudications et les indicateurs disponibles pour préparer votre enchère."
+                  labels={["Scénarios d’enchères", "Prix d’adjudication", "Activité du tribunal"]}
+                  unlockOffer={Boolean(user && !publicDemo)}
+                />
+              )
+            ) : null}
+
+            {activeTab === "travaux" ? (
+              access === "analysis" ? (
+                <>
+                  {valuationConflict || criticalAnalysisInputsBlocked ? (
+                    <div className={panelStyles.warning} role="status">
+                      <p>
+                        Les caractéristiques nécessaires au calcul restent à confirmer. Votre détail
+                        travaux peut être préparé, puis intégré au scénario après vérification.
+                      </p>
+                    </div>
+                  ) : null}
+                  <ListingWorks
+                    sale={displaySale}
+                    estimatedBudget={retainedWorks}
+                    onBudgetChange={ceilingEnabled ? selectWorksBudget : undefined}
+                    initialDraft={worksDraft}
+                    onDraftChange={setWorksDraft}
+                    surface={surface}
+                    onScenarioSelect={retainedWorks != null ? selectWorksBudget : undefined}
+                    maxWorks={
+                      heroCeiling != null
+                        ? maxWorksAtBid(ceilingHypotheses, displaySale.starting_price_eur ?? 0)
+                        : null
+                    }
+                  />
+                </>
+              ) : (
+                <PremiumFeaturePreview
+                  title="Estimez vos travaux avec l’offre Analyse"
+                  description="Préparez une enveloppe par poste et intégrez-la à votre scénario d’achat."
+                  labels={["Budget travaux", "Détail par poste", "Coût du projet"]}
+                />
+              )
+            ) : null}
+
+            {activeTab === "financement" ? (
+              <>
+                <div id="financing" className="scroll-mt-36">
+                  <FinancingSimulator
+                    sale={displaySale}
+                    aiReviewProjections={resolvedAiReviewProjections}
+                    aiReviewStatus={aiReviewStatus}
+                    projectPriceOverride={projectCosts?.totalCost ?? null}
+                    initialDraft={financingDraft}
+                    onDraftChange={setFinancingDraft}
+                    onResultChange={setFinancingResult}
+                    initialInsuranceRate={0.3}
+                  />
+                  <ListingRental
+                    saleId={sale.id}
+                    acquisitionCost={
+                      activeFinancingResult?.totalProjectCost ?? projectCosts?.totalCost ?? null
+                    }
+                    monthlyDebtService={activeFinancingResult?.monthlyPayment ?? null}
+                    initialDraft={rentalDraft}
+                    onDraftChange={setRentalDraft}
+                  />
+                </div>
+              </>
+            ) : null}
+
+            {activeTab === "demarches" ? (
+              <>
+                <PanelIntro
+                  eyebrow="05 / Participation"
+                  title="Préparer la vente"
+                  description="Date, interlocuteur, pièces et étapes à suivre."
+                />
+                <div className={panelStyles.practical}>
+                  <ListingPracticalDetails
+                    sale={displaySale}
+                    aiReviewProjections={resolvedAiReviewProjections}
+                    aiReviewStatus={aiReviewStatus}
+                  />
+                </div>
+                <div className={panelStyles.steps}>
+                  <h2>Vos prochaines étapes</h2>
+                  <ol>
+                    <li>Consulter les conditions et les pièces officielles.</li>
+                    <li>Confirmer les visites et les modalités de participation.</li>
+                    <li>
+                      {isTribunalSale
+                        ? "Choisir un avocat compétent avant de préparer une enchère."
+                        : "Contacter l’organisateur pour préparer votre dossier."}
+                    </li>
+                  </ol>
+                </div>
+                <SaleDocumentsSection
+                  sale={displaySale}
+                  open={Boolean(expandedDetails.documents)}
+                  onOpenChange={(open) => setDetailOpen("documents", open)}
+                  locked={!fullData}
+                />
+                <LawyerSection sale={displaySale} />
                 <details
                   className={panelStyles.disclosure}
-                  open={Boolean(expandedDetails["professional-pilot"])}
+                  open={Boolean(expandedDetails.participation)}
                 >
                   <summary
                     onClick={(event) => {
                       event.preventDefault();
-                      setDetailOpen("professional-pilot", !expandedDetails["professional-pilot"]);
+                      setDetailOpen("participation", !expandedDetails.participation);
                     }}
                   >
-                    Préparer le dossier de travail
+                    Voir toutes les conditions de la vente
                   </summary>
-                  <ProfessionalPilotLauncher
-                    sale={displaySale}
-                    definition={
-                      isTribunalSale
-                        ? buildTribunalPilot(displaySale)
-                        : venueType === "notary"
-                          ? buildNotaryPilot(displaySale)
-                          : buildStatePilot(displaySale)
-                    }
-                    publicDemo={publicDemo}
-                  />
+                  <SaleProcedurePanel sale={displaySale} />
                 </details>
-              ) : null}
-              {access === "analysis" ? <InformationAvailabilityNotice /> : null}
-            </>
-          ) : null}
+                {access === "analysis" && !publicDemo && isTribunalSale && !valuationConflict ? (
+                  <section
+                    aria-label="Sauvegarde et export du rapport"
+                    className={panelStyles.reportActions}
+                  >
+                    <h2>Conserver votre analyse</h2>
+                    <p>Sauvegardez le dossier ou exportez le rapport avec le scénario courant.</p>
+                    <PropertyReportActions
+                      saleId={sale.id}
+                      compact
+                      simulation={reportSimulation}
+                      requireSimulation
+                    />
+                  </section>
+                ) : null}
+                {access === "analysis" && !publicDemo ? (
+                  <details
+                    className={panelStyles.disclosure}
+                    open={Boolean(expandedDetails["professional-pilot"])}
+                  >
+                    <summary
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setDetailOpen("professional-pilot", !expandedDetails["professional-pilot"]);
+                      }}
+                    >
+                      Préparer le dossier de travail
+                    </summary>
+                    <ProfessionalPilotLauncher
+                      sale={displaySale}
+                      definition={
+                        isTribunalSale
+                          ? buildTribunalPilot(displaySale)
+                          : venueType === "notary"
+                            ? buildNotaryPilot(displaySale)
+                            : buildStatePilot(displaySale)
+                      }
+                      publicDemo={publicDemo}
+                    />
+                  </details>
+                ) : null}
+                {access === "analysis" ? <InformationAvailabilityNotice /> : null}
+              </>
+            ) : null}
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </SaleUnlockOfferProvider>
   );
 }

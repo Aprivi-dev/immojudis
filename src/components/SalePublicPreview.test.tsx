@@ -21,9 +21,11 @@ describe("SalePublicPreview", () => {
     const href = screen
       .getByRole("link", { name: /Créer mon compte gratuit/ })
       .getAttribute("href")!;
-    expect(new URL(href, "https://example.test").searchParams.get("redirect")).toBe(
-      "/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs",
-    );
+    const params = new URL(href, "https://example.test").searchParams;
+    expect(params.get("redirect")).toBe("/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs");
+    // Le bandeau de la page de connexion explique ce que le compte gratuit ouvre sur cette fiche.
+    expect(params.get("mode")).toBe("investor");
+    expect(params.get("reason")).toBe("fiche");
   });
 
   it("announces the statistics of the tribunal in the unlock only while their flag is open", () => {

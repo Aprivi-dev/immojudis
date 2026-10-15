@@ -22,6 +22,11 @@ vi.mock("@/hooks/use-analysis-checkout-open", () => ({
   useAnalysisCheckoutOpen: () => mocks.checkoutOpen(),
 }));
 
+// The opening request has its own tests (BillingActions): here only its presence matters.
+vi.mock("@/components/OfferOpeningRequest", () => ({
+  OfferOpeningRequest: () => <button type="button">Me prévenir de l’ouverture</button>,
+}));
+
 import { SaleUnlockPanel } from "./SaleUnlockPanel";
 
 const saleId = "11111111-1111-4111-8111-111111111111";
@@ -220,9 +225,10 @@ describe("SaleUnlockPanel", () => {
     expect(text).toContain(
       "Analyse ouvre toutes les ventes sans limite : 29 € TTC / mois, résiliable à tout moment.",
     );
-    expect(
-      screen.getByRole("link", { name: "Découvrir l’offre Analyse" }).getAttribute("href"),
-    ).toBe("/offres");
+    expect(screen.getByRole("link", { name: "Voir l’offre Analyse" }).getAttribute("href")).toBe(
+      "/offres",
+    );
+    expect(screen.queryByRole("button", { name: "Me prévenir de l’ouverture" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
   });
 
@@ -240,6 +246,9 @@ describe("SaleUnlockPanel", () => {
     expect(text).toContain("L’offre Analyse n’est pas encore ouverte à la souscription.");
     expect(text).not.toMatch(/souscrire|29 €|résiliable/);
     expect(text).toContain("Ils reviennent le 1er novembre.");
+    // The primary action is the opening request, not a link to a page that cannot sell it yet.
+    expect(screen.getByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /offre Analyse/ })).toBeNull();
   });
 
   it("promises nothing about the subscription while its availability is unknown", () => {
@@ -254,6 +263,63 @@ describe("SaleUnlockPanel", () => {
     );
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/souscri|29 €|résiliable|pas encore ouverte/);
+    expect(screen.getByRole("link", { name: "Voir l’offre Analyse" })).toBeTruthy();
+  });
+
+  it("gives each of its three cards the « debloquer » anchor the previews link to", () => {
+    const { container, rerender } = render(
+      <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    expect(container.querySelector("section#debloquer")).toBeTruthy();
+
+    rerender(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={status({ used: 3, remaining: 0 })}
+        unlocked={false}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(container.querySelector("section#debloquer")).toBeTruthy();
+
+    rerender(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={status({ unlocked: true, used: 2, remaining: 1 })}
+        unlocked
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(container.querySelector("section#debloquer")).toBeTruthy();
+  });
+
+  it("offers no button for a sale the database would refuse to unlock", () => {
+    const { container } = render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={status({ unlockable: false })}
+        unlocked={false}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(container.textContent).toContain(
+      "Cette vente ne peut pas être débloquée pour le moment.",
+    );
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(container.querySelector("#debloquer")).toBeNull();
+    expect(mocks.unlock).not.toHaveBeenCalled();
+  });
+
+  it("still shows an unlocked sale as unlocked", () => {
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={status({ unlocked: true, unlockable: true, used: 2, remaining: 1 })}
+        unlocked
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Cette vente est débloquée" })).toBeTruthy();
   });
 
   it("does not look at the subscription before the quota is spent", () => {
