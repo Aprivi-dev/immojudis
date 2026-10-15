@@ -39,6 +39,12 @@ REASON_LABELS = {
     "source_url": "même URL source",
 }
 
+# Mention du rapport quand le balayage est partiel : des doublons peuvent exister hors des lignes lues.
+PARTIAL_LABELS = {
+    "read_ceiling": "plafond de lecture atteint : balayage partiel",
+    "fetch_error": "lecture interrompue par une erreur Supabase : balayage partiel",
+}
+
 
 @dataclass(frozen=True)
 class DuplicateRowSummary:
@@ -64,6 +70,9 @@ class DuplicateMergeGroup:
 class DuplicateSweepPlan:
     scanned: int = 0
     truncated: bool = False
+    # Pourquoi le balayage est partiel : « read_ceiling » (plafond de lignes) ou « fetch_error » (lecture
+    # interrompue par une erreur HTTP). ``None`` quand ``truncated`` est faux.
+    truncation_reason: str | None = None
     groups: list[DuplicateMergeGroup] = dataclass_field(default_factory=list)
     # Lignes fusionnées à écrire (usage interne de l'application, absent du rapport).
     impacted_sales: list[AuctionSale] = dataclass_field(default_factory=list)
@@ -78,6 +87,12 @@ class DuplicateSweepPlan:
 @dataclass
 class DedupeScan:
     truncated: bool = False
+    truncation_reason: str | None = None
+
+    def mark_truncated(self, reason: str) -> None:
+        self.truncated = True
+        # La première cause reste : une erreur survenue avant le plafond ne doit pas être masquée.
+        self.truncation_reason = self.truncation_reason or reason
 
 
 def _summary(sale: AuctionSale) -> DuplicateRowSummary:
@@ -101,7 +116,13 @@ def fetch_candidate_rows(
     protected_ids: frozenset[str] | set[str],
     scan: DedupeScan | None = None,
 ) -> list[dict[str, Any]]:
-    """Lit toutes les pages jusqu'à ``limit`` lignes (hors lignes protégées par un alias relu)."""
+    """Lit toutes les pages jusqu'à ``limit`` lignes (hors lignes protégées par un alias relu).
+
+    La fin des données est une page vide : le serveur peut plafonner la taille de page (``max_rows`` de
+    PostgREST) sous ``PAGE_SIZE``, et une page courte ne prouve alors rien. Le décalage suit le nombre de
+    lignes réellement reçues. Une erreur HTTP ou réseau en cours de route, comme le plafond de lecture,
+    rend le balayage partiel (``scan.truncated``).
+    """
     endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_sales"
     rows: list[dict[str, Any]] = []
     offset = 0
@@ -124,14 +145,23 @@ def fetch_candidate_rows(
                 timeout=_TIMEOUT,
             )
         except httpx.HTTPError as exc:
-            LOGGER.warning("Supabase duplicate reconciliation fetch failed: %s", exc)
+            LOGGER.warning(
+                "Supabase duplicate reconciliation fetch failed after %s rows: %s; the scan is partial",
+                len(rows),
+                exc,
+            )
+            if scan is not None:
+                scan.mark_truncated("fetch_error")
             break
         if response.is_error:
             LOGGER.warning(
-                "Supabase duplicate reconciliation fetch failed (%s): %s",
+                "Supabase duplicate reconciliation fetch failed (%s) after %s rows: %s; the scan is partial",
                 response.status_code,
+                len(rows),
                 response.text[:300],
             )
+            if scan is not None:
+                scan.mark_truncated("fetch_error")
             break
         page_rows = response.json()
         if not page_rows:
@@ -141,19 +171,17 @@ def fetch_candidate_rows(
             for row in page_rows
             if isinstance(row, dict) and (not row.get("id") or str(row["id"]) not in protected_ids)
         )
-        if len(page_rows) < PAGE_SIZE:
-            break
+        offset += len(page_rows)
         if len(rows) >= limit:
-            # Plafond de lecture atteint alors qu'il reste des pages : le balayage est partiel.
+            # Plafond de lecture atteint sans avoir vu la page vide : le balayage est partiel.
             if scan is not None:
-                scan.truncated = True
+                scan.mark_truncated("read_ceiling")
             LOGGER.warning(
                 "Duplicate reconciliation reached its read ceiling (%s rows); later rows are not examined. "
                 "Raise DEDUPE_RECONCILE_MAX_ROWS if the catalogue is larger.",
                 limit,
             )
             break
-        offset += PAGE_SIZE
     return rows[:limit]
 
 
@@ -163,6 +191,7 @@ def build_plan(
     *,
     max_merges: int | None,
     truncated: bool = False,
+    truncation_reason: str | None = None,
 ) -> DuplicateSweepPlan:
     """Fusionne en mémoire les lignes lues et en déduit les groupes à fusionner.
 
@@ -170,7 +199,12 @@ def build_plan(
     groupes au-delà restent en l'état (``deferred_rows``) et sont repris au passage suivant. ``None`` :
     pas de plafond (rapport de candidats).
     """
-    plan = DuplicateSweepPlan(scanned=len(sales), truncated=truncated, reviewed_aliases=reviewed_aliases)
+    plan = DuplicateSweepPlan(
+        scanned=len(sales),
+        truncated=truncated,
+        truncation_reason=(truncation_reason or "read_ceiling") if truncated else None,
+        reviewed_aliases=reviewed_aliases,
+    )
     if len(sales) < 2:
         return plan
     # Résumés pris avant la fusion : elle recopie dans la survivante les champs des lignes absorbées.
@@ -256,7 +290,7 @@ def candidates_as_dicts(plan: DuplicateSweepPlan) -> list[dict[str, object]]:
 
 def markdown_summary(plan: DuplicateSweepPlan) -> str:
     by_reason = Counter(group.reason for group in plan.groups for _ in group.secondaries)
-    partial = " (plafond de lecture atteint : balayage partiel)" if plan.truncated else ""
+    partial = f" ({PARTIAL_LABELS.get(plan.truncation_reason or '', 'balayage partiel')})" if plan.truncated else ""
     parts = [
         "### Doublons candidats (aucune écriture)",
         f"- Lignes lues : {plan.scanned}{partial}",
@@ -279,9 +313,10 @@ def markdown_summary(plan: DuplicateSweepPlan) -> str:
 def emit_candidates_report(plan: DuplicateSweepPlan, *, output: Path | None = None) -> None:
     """Écrit le rapport dans le journal, le résumé de job GitHub (si présent) et un fichier JSON facultatif."""
     LOGGER.info(
-        "Duplicate candidates (no write): scanned=%s truncated=%s groups=%s rows_to_remove=%s",
+        "Duplicate candidates (no write): scanned=%s truncated=%s reason=%s groups=%s rows_to_remove=%s",
         plan.scanned,
         plan.truncated,
+        plan.truncation_reason,
         len(plan.groups),
         plan.secondary_count,
     )
@@ -293,5 +328,10 @@ def emit_candidates_report(plan: DuplicateSweepPlan, *, output: Path | None = No
             handle.write(markdown_summary(plan))
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
-        report = {"scanned": plan.scanned, "truncated": plan.truncated, "groups": candidates_as_dicts(plan)}
+        report = {
+            "scanned": plan.scanned,
+            "truncated": plan.truncated,
+            "truncation_reason": plan.truncation_reason,
+            "groups": candidates_as_dicts(plan),
+        }
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
