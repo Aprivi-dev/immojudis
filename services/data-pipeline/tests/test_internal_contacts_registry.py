@@ -492,6 +492,21 @@ def test_the_opposition_list_is_read_once_per_run_and_not_for_every_batch() -> N
     assert len(_opposition_reads(rest)) == 2
 
 
+def test_the_opposition_cache_default_delay_is_sixty_seconds() -> None:
+    assert registry.OPPOSED_CACHE_TTL_SECONDS == 60.0
+    clock = [0.0]
+    rest = _Rest()
+    cache = registry.OpposedAddressCache(clock=lambda: clock[0])
+
+    _run_with_cache(rest, cache, [_sale_in_run("run-1", EMAIL)])
+    clock[0] = 59.0
+    _run_with_cache(rest, cache, [_sale_in_run("run-1", EMAIL)])
+    assert len(_opposition_reads(rest)) == 1
+    clock[0] = 61.0
+    _run_with_cache(rest, cache, [_sale_in_run("run-1", EMAIL)])
+    assert len(_opposition_reads(rest)) == 2
+
+
 def test_the_opposition_list_is_read_again_for_a_new_run_or_after_the_delay() -> None:
     clock = [1000.0]
     rest = _Rest()
