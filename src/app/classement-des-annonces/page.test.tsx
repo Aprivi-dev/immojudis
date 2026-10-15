@@ -102,7 +102,7 @@ describe("page « Comment sont classées les annonces ? »", () => {
     render(<Page />);
     const section = screen.getByRole("region", { name: "Le repère « Annonce bien renseignée »" });
     expect(section.textContent).toContain("pas leur exactitude");
-    expect(section.textContent).toContain("Ce n’est ni une vérification ni une garantie.");
+    expect(section.textContent).toContain("Ce n’est ni une vérification ni une garantie d’exactitude.");
     expect(section.textContent).toContain("au moins 40 sur 100");
     expect(section.textContent).not.toContain("Fiche détaillée");
   });
