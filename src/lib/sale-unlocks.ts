@@ -86,11 +86,20 @@ export function unlockedItemsText({
 }
 
 /**
- * Les trois éléments que l'on cite en un mot pour présenter le compte gratuit (accueil,
- * onboarding). Une version courte de `unlockedItemsText` : `sale-unlocks.test.ts` vérifie que chacun
- * y figure, pour que les deux ne dérivent pas.
+ * Les éléments que l'on cite en un mot pour présenter le compte gratuit (accueil). Une version
+ * courte de `unlockedItemsText` : `sale-unlocks.test.ts` vérifie que chacun y figure, pour que les
+ * deux ne dérivent pas. Ce qu'un déblocage ouvre dépend de la vente (l'enchère plafond n'existe que
+ * pour une vente au tribunal) : on le dit, on ne promet pas la même chose pour toutes.
  */
-export const UNLOCK_HIGHLIGHTS_TEXT = "enchère plafond, lecture des pièces, historique";
+export const UNLOCK_HIGHLIGHTS_TEXT =
+  "enchère plafond (ventes au tribunal), lecture des pièces, historique, selon la vente";
+
+/**
+ * La même liste sans précision entre parenthèses, pour une phrase qui la met déjà entre
+ * parenthèses (onboarding).
+ */
+export const UNLOCK_HIGHLIGHTS_INLINE_TEXT =
+  "enchère plafond, lecture des pièces, historique, selon la vente";
 
 function unlockCountLabel(count: number): string {
   return `${count} déblocage${count > 1 ? "s" : ""}`;

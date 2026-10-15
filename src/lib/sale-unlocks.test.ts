@@ -7,6 +7,7 @@ import {
   MONTHLY_SALE_UNLOCKS,
   remainingUnlocksLine,
   unlockConfirmationText,
+  UNLOCK_HIGHLIGHTS_INLINE_TEXT,
   UNLOCK_HIGHLIGHTS_TEXT,
   unlockCallToActionLabel,
   unlockedItemsText,
@@ -166,9 +167,14 @@ describe("texts of the unlock", () => {
 
   it("cites each highlight of the free account in the full list of what an unlock opens", () => {
     const full = unlockedItemsText({ ceiling: true, statistics: false });
-    expect(UNLOCK_HIGHLIGHTS_TEXT).toBe("enchère plafond, lecture des pièces, historique");
-    for (const highlight of UNLOCK_HIGHLIGHTS_TEXT.split(", ")) {
-      const word = highlight.split(" ").slice(-1)[0];
+    expect(UNLOCK_HIGHLIGHTS_TEXT).toBe(
+      "enchère plafond (ventes au tribunal), lecture des pièces, historique, selon la vente",
+    );
+    expect(UNLOCK_HIGHLIGHTS_INLINE_TEXT).toBe(
+      "enchère plafond, lecture des pièces, historique, selon la vente",
+    );
+    for (const word of ["plafond", "pièces", "historique"]) {
+      expect(UNLOCK_HIGHLIGHTS_TEXT).toContain(word);
       expect(full).toContain(word);
     }
   });
