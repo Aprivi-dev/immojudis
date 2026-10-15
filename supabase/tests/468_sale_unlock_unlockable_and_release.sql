@@ -1,8 +1,8 @@
--- "3 déblocages par mois": `unlockable` in the status, the 24-month limit and the release of an
--- unlock (20261025130000 and 20261025130100).
+-- "3 déblocages par mois": `unlockable` in the status, the 24-month limit (also in unlock_sale_at,
+-- 20261025160000) and the release of an unlock (20261025130000 and 20261025130100).
 begin;
 
-select plan(15);
+select plan(20);
 
 -- Fixtures -------------------------------------------------------------------------------------
 insert into auth.users (
@@ -90,6 +90,35 @@ select is(
   (select count(*) from public.v_auction_sales_unlocked where title like 'Unlock limit title%'),
   1::bigint,
   'the unlocked-sale view applies the same limit'
+);
+
+-- unlock_sale_at: an expired unlock is not "already unlocked" ------------------------------------
+select is(
+  public.unlock_sale('c4640000-1000-4000-8000-000000000001') ->> 'already_unlocked',
+  'true',
+  'unlocking again a sale unlocked 23 months ago is idempotent'
+);
+select is(
+  (select count(*) from public.user_sale_unlocks
+   where sale_id = 'c4640000-1000-4000-8000-000000000001' and unlocked_at < now() - interval '22 months'),
+  1::bigint,
+  'and keeps the original unlock date'
+);
+select is(
+  public.unlock_sale('c4640000-1000-4000-8000-000000000002') ->> 'already_unlocked',
+  'false',
+  'unlocking again a sale unlocked 25 months ago is a new unlock, not an idempotent answer'
+);
+select is(
+  (select count(*) from public.user_sale_unlocks
+   where sale_id = 'c4640000-1000-4000-8000-000000000002' and unlocked_at > now() - interval '1 day'),
+  1::bigint,
+  'the expired row was replaced by a single new row of this month'
+);
+select is(
+  (public.get_sale_unlock_status('c4640000-1000-4000-8000-000000000002') ->> 'used')::integer,
+  1,
+  'which consumed one unlock of the current month, and opens the sale again'
 );
 reset role;
 
