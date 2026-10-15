@@ -39,6 +39,7 @@ const auth = { userId: "user-1" };
 const status: SaleUnlockStatus = {
   saleId,
   unlocked: false,
+  unlockable: true,
   analysisAccess: false,
   limit: 3,
   used: 3,

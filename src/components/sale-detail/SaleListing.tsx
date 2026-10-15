@@ -56,6 +56,7 @@ import {
   type FactReliabilityMap,
 } from "@/lib/fact-reliability";
 import { AiReviewField } from "./AiReviewField";
+import { UnlockCallToAction } from "./UnlockCallToAction";
 import { getListingPublicInformation } from "@/lib/listing-public-information";
 import {
   AI_REVIEW_ENERGY_FIELD_KEYS,
@@ -447,9 +448,11 @@ export function ListingOverview({
               <p className={styles.premiumTeaser}>
                 Disponible avec l’offre Analyse ou en débloquant cette vente
               </p>
-              <a href="/offres" className={styles.priceExplanation}>
-                Découvrir l’analyse
-              </a>
+              <UnlockCallToAction
+                offerLabel="Découvrir l’analyse"
+                primaryClassName={styles.priceExplanation}
+                messageClassName={styles.premiumContext}
+              />
             </div>
           ) : null}
         </div>

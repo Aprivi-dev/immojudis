@@ -4,7 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { BillingActions } from "@/components/BillingActions";
 import { useAuth } from "@/hooks/use-auth";
+import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { fetchAccessPlan } from "@/lib/client-billing";
+import { queryKeys } from "@/lib/query-keys";
+import { unlockUsageLine } from "@/lib/sale-unlocks";
 
 const dateFormat = new Intl.DateTimeFormat("fr-FR", {
   day: "numeric",
@@ -27,6 +30,15 @@ export function AccountPage() {
     staleTime: 60_000,
   });
   const plan = planQuery.data?.plan;
+  // « 3 déblocages par mois » : seul un compte qui n'a pas déjà toutes les ventes les consomme.
+  const unlocksQuery = useQuery({
+    queryKey: queryKeys.saleUnlocksOverview(user?.id ?? null),
+    queryFn: fetchSaleUnlocksOverview,
+    enabled: Boolean(user) && plan != null && !plan.hasAnalysisAccess,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const unlockStatus = unlocksQuery.data?.status;
   const pastDue = plan?.billing?.status === "past_due";
   const graceEnd = formatDate(plan?.billing?.graceEndsAt);
   const periodEnd = formatDate(plan?.currentPeriodEnd);
@@ -76,6 +88,27 @@ export function AccountPage() {
             Votre dernier paiement a échoué. Mettez à jour votre moyen de paiement
             {graceEnd ? <> avant le {graceEnd}</> : null} pour conserver l’accès aux outils Analyse.
           </p>
+        ) : null}
+        {plan && !plan.hasAnalysisAccess ? (
+          <div className="mt-3 text-sm text-muted-foreground" data-testid="account-unlocks">
+            {unlocksQuery.isError ? (
+              <p role="alert" className="text-red-700">
+                Le suivi de vos déblocages est indisponible pour le moment.
+              </p>
+            ) : unlockStatus ? (
+              unlockStatus.analysisAccess ? null : (
+                <p>{unlockUsageLine(unlockStatus)}</p>
+              )
+            ) : (
+              <p>Chargement de vos déblocages…</p>
+            )}
+            <Link
+              href="/compte/ventes-debloquees"
+              className="mt-1 inline-flex min-h-11 items-center font-semibold text-gold-text underline underline-offset-4"
+            >
+              Mes ventes débloquées
+            </Link>
+          </div>
         ) : null}
         <BillingActions className="mt-4" hideHelper />
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">

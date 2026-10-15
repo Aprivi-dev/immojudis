@@ -14,6 +14,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: { from: mocks.adminFrom },
 }));
 
+import { AI_REVIEW_CEILING_FIELD_KEYS } from "@/lib/ai-review-guard";
 import { GET } from "./route";
 
 const saleId = "11111111-1111-4111-8111-111111111111";
@@ -205,6 +206,64 @@ describe("GET /api/sales/ai-review", () => {
       }),
     ]);
     expect(JSON.stringify(payload)).not.toContain("sale_unavailable");
+  });
+
+  it("returns an unlocked sale only the fields the bid ceiling reads", async () => {
+    const row = (field_key: string) => ({
+      auction_sale_id: saleId,
+      field_key,
+      review_state: "unverified",
+      citation_status: "unverified",
+      is_publishable: false,
+      source_name: "AGRASC",
+      source_url: "https://example.test/source/1",
+    });
+    setup({
+      visibleIds: [],
+      unlockedRows: [{ id: saleId }],
+      // A sampled sale: the fields without a row come back as « missing projection » blocks.
+      caseStatuses: [{ auction_sale_id: saleId, mapping_status: "exact" }],
+      projections: [
+        row("sale.starting_price_eur"),
+        row("property.habitable_surface_m2"),
+        row("property.occupancy_status"),
+        row("property.city"),
+        row("sale.sale_date"),
+        row("property.source_energy_dpe_class"),
+      ],
+    });
+
+    const payload = await (await request()).json();
+    const keys = (payload.projections as { field_key: string }[]).map((p) => p.field_key).sort();
+
+    // The six rows read from the database, plus the « missing projection » rows of the others,
+    // are cut down to the seven fields of the ceiling.
+    expect(keys).toHaveLength(AI_REVIEW_CEILING_FIELD_KEYS.length);
+    expect(new Set(keys)).toEqual(new Set(AI_REVIEW_CEILING_FIELD_KEYS));
+    expect(keys).not.toContain("property.city");
+    expect(keys).not.toContain("sale.sale_date");
+    expect(keys).not.toContain("property.source_energy_dpe_class");
+  });
+
+  it("keeps the whole review for a sale the account can read in full (Analyse)", async () => {
+    setup({
+      visibleIds: [saleId],
+      projections: [
+        {
+          auction_sale_id: saleId,
+          field_key: "property.city",
+          review_state: "resolved",
+          citation_status: "verified",
+          is_publishable: false,
+          source_name: null,
+          source_url: null,
+        },
+      ],
+    });
+    const payload = await (await request()).json();
+    expect(payload.projections.map((p: { field_key: string }) => p.field_key)).toContain(
+      "property.city",
+    );
   });
 
   it("does not read the unlocked view for sales the full view already shows", async () => {

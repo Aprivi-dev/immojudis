@@ -17,6 +17,7 @@ import type {
   SaleUnlockQuotaReachedResponse,
   SaleUnlockResult,
   SaleUnlockStatus,
+  SaleUnlocksOverview,
 } from "@/lib/sale-unlocks";
 import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
 import type { ValuationBacktestResponse } from "@/lib/valuation-backtest";
@@ -87,6 +88,16 @@ export async function fetchSaleUnlockStatus(saleId: string): Promise<SaleUnlockS
     signal: AbortSignal.timeout(10_000),
   });
   return (await readJson<{ status: SaleUnlockStatus }>(response)).status;
+}
+
+/** The month so far (used, reset date) and the sales this account unlocked. Consumes nothing. */
+export async function fetchSaleUnlocksOverview(): Promise<SaleUnlocksOverview> {
+  const response = await fetch("/api/sale-unlocks", {
+    headers: await authHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  return readJson<SaleUnlocksOverview>(response);
 }
 
 /** The monthly quota is spent: carries the counter so the page can explain it. */

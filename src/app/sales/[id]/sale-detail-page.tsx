@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { fetchAccessPlan, fetchSaleUnlockStatus } from "@/lib/client-api";
-import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
+import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import type { AuctionSale } from "@/lib/types";
 import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
 import type { SaleUnlockResult } from "@/lib/sale-unlocks";
@@ -116,7 +116,7 @@ export function SaleDetailPage({
   };
   const canUseServerInitialData =
     initialData?.sale?.id === id || (!session && initialData?.preview?.id === id);
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: queryKeys.saleDetail(id, sessionKey, accessMode),
     queryFn: () =>
       loadSaleDetailRouteData(id, {
@@ -128,6 +128,15 @@ export function SaleDetailPage({
     initialData: canUseServerInitialData ? initialData : undefined,
     staleTime: 5 * 60_000,
   });
+  // Right after « Confirmer le déblocage » the key of the query changes (the unlocked view is a
+  // different read): the free view that was on screen is kept, with a banner, instead of a blank
+  // skeleton, and a failed re-read never ends on the error page (the unlock is already recorded).
+  const freeViewBeforeUnlock =
+    justUnlocked && accessMode === "unlocked" && !data?.sale
+      ? (queryClient.getQueryData<SaleDetailRouteData>(
+          queryKeys.saleDetail(id, sessionKey, "discovery"),
+        )?.sale ?? null)
+      : null;
   const sale = data?.sale ?? null;
   const preview = data?.preview ?? null;
   useEffect(() => {
@@ -167,7 +176,7 @@ export function SaleDetailPage({
           <h1 className="text-xl font-semibold">Connexion à renouveler</h1>
           <p className="mt-3 text-sm text-muted-foreground">{authError}</p>
           <a
-            href={`/login?redirect=${encodeURIComponent(loginReturnTo)}`}
+            href={loginPathWithRedirect(loginReturnTo, { mode: "login", reason: "fiche" })}
             className="mt-5 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-4 py-2 text-white"
           >
             Se reconnecter
@@ -212,6 +221,45 @@ export function SaleDetailPage({
       />
     );
   }
+  if (freeViewBeforeUnlock && !authLoading && accessReady && (isLoading || error)) {
+    return (
+      <>
+        {error ? (
+          <div
+            role="alert"
+            className="mx-auto mt-4 flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          >
+            <p className="font-medium">
+              Vente débloquée, mais le détail n’a pas pu être chargé. Votre déblocage est conservé.
+            </p>
+            <button
+              type="button"
+              className="min-h-10 rounded-md border border-amber-700/40 bg-white px-3 font-semibold text-amber-900"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+            >
+              Réessayer
+            </button>
+          </div>
+        ) : (
+          <div
+            role="status"
+            className="mx-auto mt-4 max-w-[1260px] rounded-lg border border-emerald-700/30 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
+          >
+            Vente débloquée. Chargement du détail…
+          </div>
+        )}
+        <DiscoverySaleDetailView
+          sale={freeViewBeforeUnlock}
+          returnTo={returnTo}
+          adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+          unlockStatus={unlockQuery.data ?? null}
+          justUnlocked={justUnlocked}
+          onSaleUnlocked={handleSaleUnlocked}
+        />
+      </>
+    );
+  }
   if (authLoading || entitlementsLoading || !accessReady || isLoading) {
     return <SaleDetailSkeleton />;
   }
@@ -237,7 +285,7 @@ export function SaleDetailPage({
             la fiche complète.
           </p>
           <a
-            href={`/login?redirect=${encodeURIComponent(loginReturnTo)}`}
+            href={loginPathWithRedirect(loginReturnTo, { reason: "fiche" })}
             className="mt-5 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-white"
           >
             Se connecter ou créer un compte

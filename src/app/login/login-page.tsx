@@ -77,6 +77,10 @@ const reasonCopy: Record<LoginReason, { signup: string; login: string }> = {
       "Créez votre compte gratuit : vous pourrez ensuite passer à l'offre Analyse quand vous le souhaitez.",
     login: "Connectez-vous pour découvrir l'offre Analyse.",
   },
+  fiche: {
+    signup: `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois.`,
+    login: "Connectez-vous pour consulter cette vente.",
+  },
 };
 
 const modeCopy: Record<
@@ -393,6 +397,15 @@ export function LoginPage() {
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {copy.description}
               </p>
+              {mode === "investor" ? (
+                // The explanation column is hidden below the lg breakpoint: say the promise here.
+                <p
+                  data-testid="login-free-promise"
+                  className="mt-2 text-sm font-medium leading-relaxed text-foreground lg:hidden"
+                >
+                  Gratuit : {MONTHLY_SALE_UNLOCKS} ventes en détail par mois, sans carte bancaire
+                </p>
+              ) : null}
 
               {!isSupabaseConfigured ? (
                 <div className="mt-5 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-100">

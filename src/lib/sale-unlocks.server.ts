@@ -2,7 +2,9 @@ import "server-only";
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { PublicApiError } from "@/lib/api-errors";
-import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
+import { parisMonthWindow } from "@/lib/paris-month";
+import { DETAIL_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
+import type { SaleUnlockResult, SaleUnlockStatus, UnlockedSaleSummary } from "@/lib/sale-unlocks";
 
 /**
  * « 3 déblocages par mois » côté serveur. Tout passe par les RPC `unlock_sale` et
@@ -19,6 +21,8 @@ const instantSchema = z
 const rpcStatusSchema = z.object({
   sale_id: z.string().nullable().optional(),
   unlocked: z.boolean(),
+  // Absent d'une base dont la migration `unlockable` n'est pas appliquée : comme avant, « oui ».
+  unlockable: z.boolean().optional(),
   analysis_access: z.boolean(),
   limit: z.number().int().nullable(),
   used: z.number().int().nonnegative(),
@@ -36,6 +40,7 @@ function toStatus(row: z.infer<typeof rpcStatusSchema>): SaleUnlockStatus {
   return {
     saleId: row.sale_id ?? null,
     unlocked: row.unlocked,
+    unlockable: row.unlockable ?? true,
     analysisAccess: row.analysis_access,
     limit: row.limit,
     used: row.used,
@@ -74,7 +79,31 @@ function isMissingFunction(error: RpcError): boolean {
   return error?.code === "PGRST202" || error?.code === "42883";
 }
 
-/** Situation du compte pour ce mois et, avec `saleId`, état de déblocage de cette vente. */
+/**
+ * Situation d'une base qui n'a pas encore le déblocage (déploiement échelonné) : rien n'est
+ * débloqué ni débloquable, et aucun quota n'est annoncé. La fiche reste la fiche gratuite, sans
+ * bandeau d'erreur : ce n'est pas une panne.
+ */
+function unavailableSaleUnlockStatus(saleId: string | null): SaleUnlockStatus {
+  const { periodStart, periodEnd } = parisMonthWindow();
+  return {
+    saleId,
+    unlocked: false,
+    unlockable: false,
+    analysisAccess: false,
+    limit: null,
+    used: 0,
+    remaining: null,
+    periodStart,
+    resetsAt: periodEnd,
+  };
+}
+
+/**
+ * Situation du compte pour ce mois et, avec `saleId`, état de déblocage de cette vente. Une base
+ * sans la fonction répond « rien n'est débloquable », jamais une erreur (même repli que
+ * `hasUnlockedSale`).
+ */
 export async function getSaleUnlockStatus(
   auth: SupabaseAuthContext,
   saleId: string | null = null,
@@ -83,8 +112,59 @@ export async function getSaleUnlockStatus(
     "get_sale_unlock_status",
     saleId ? { p_sale_id: saleId } : {},
   );
-  if (error) throw error;
+  if (error) {
+    if (isMissingFunction(error)) return unavailableSaleUnlockStatus(saleId);
+    throw error;
+  }
   return parseSaleUnlockStatus(data);
+}
+
+const unlockedSaleRowSchema = z.object({
+  id: z.string(),
+  title: z.string().nullable(),
+  city: z.string().nullable(),
+  department: z.string().nullable(),
+  property_type: z.string().nullable(),
+  starting_price_eur: z.number().nullable(),
+  sale_date: z.string().nullable(),
+  status: z.string().nullable(),
+});
+
+const UNLOCKED_SALE_COLUMNS =
+  "id,title,city,department,property_type,starting_price_eur,sale_date,status";
+/** Au plus 3 par mois et 24 mois de validité : 72 au maximum, la marge couvre un compte Analyse passé. */
+const UNLOCKED_SALES_LIST_LIMIT = 100;
+
+/**
+ * Les ventes que le compte a débloquées et qui sont toujours en ligne, la plus proche d'abord. La
+ * vue `v_auction_sales_unlocked` ne liste que les ventes débloquées du compte connecté (limite de
+ * 24 mois et vente en ligne comprises) : aucune autre vente n'est lisible par ce chemin. Une base
+ * sans la vue (déploiement échelonné) répond une liste vide.
+ */
+export async function listUnlockedSales(auth: SupabaseAuthContext): Promise<UnlockedSaleSummary[]> {
+  const { data, error } = await auth.supabase
+    .from(UNLOCKED_VIEW as typeof DETAIL_VIEW)
+    .select(UNLOCKED_SALE_COLUMNS)
+    .order("sale_date", { ascending: true, nullsFirst: false })
+    .order("id", { ascending: true })
+    .limit(UNLOCKED_SALES_LIST_LIMIT);
+  if (error) {
+    if (error.code === "42P01" || error.code === "PGRST205") return [];
+    throw error;
+  }
+  return z
+    .array(unlockedSaleRowSchema)
+    .parse(data ?? [])
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      city: row.city,
+      department: row.department,
+      propertyType: row.property_type,
+      startingPriceEur: row.starting_price_eur,
+      saleDate: row.sale_date,
+      status: row.status,
+    }));
 }
 
 /**

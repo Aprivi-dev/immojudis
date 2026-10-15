@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { pathWithSearch } from "@/lib/navigation";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import {
   getAccountType,
   getProfessionalStatus,
@@ -62,7 +62,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     // subscribing to it with useSearchParams() would push every protected page out of the
     // prerendered HTML.
     const redirect = `${window.location.pathname}${window.location.search}`;
-    router.replace(pathWithSearch("/login", { redirect }));
+    router.replace(loginPathWithRedirect(redirect, { mode: "login" }));
   }, [isPublic, loading, router, user]);
 
   if (isPublic) return <>{children}</>;

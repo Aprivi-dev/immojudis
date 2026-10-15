@@ -58,6 +58,8 @@ export const queryKeys = {
   saleDetail: (saleId: string, sessionKey: Id, mode: SaleAccessMode) =>
     ["sale-detail", saleId, sessionKey, mode] as const,
   saleUnlock: (saleId: string, userKey: Id) => ["sale-unlock", saleId, userKey] as const,
+  /** Compteur du mois et ventes débloquées du compte (Mon compte, résultats de recherche). */
+  saleUnlocksOverview: (userKey: Id) => ["sale-unlocks-overview", userKey] as const,
   documentReading: (saleId: string, access: SaleAccessMode, userKey?: Id) =>
     ["document-reading", saleId, access, userKey ?? "anonymous"] as const,
   salePassages: (saleId: string, access: SaleAccessMode, userKey?: Id) =>

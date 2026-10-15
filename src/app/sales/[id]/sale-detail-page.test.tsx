@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { Component, type ReactNode } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -145,7 +146,7 @@ describe("listing access resolution", () => {
     );
     expect(screen.getByRole("heading", { name: "Connexion à renouveler" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Se reconnecter" }).getAttribute("href")).toBe(
-      "/login?redirect=%2Fsales%2Fsale%23proofs",
+      "/login?redirect=%2Fsales%2Fsale%23proofs&reason=fiche",
     );
     expect(mocks.sale).not.toHaveBeenCalled();
   });
@@ -265,7 +266,9 @@ it("offers access to the selected listing when its public preview is absent", as
     </QueryClientProvider>,
   );
   const link = await screen.findByRole("link", { name: "Se connecter ou créer un compte" });
-  expect(link.getAttribute("href")).toBe("/login?redirect=%2Fsales%2Fsale");
+  expect(link.getAttribute("href")).toBe(
+    "/login?redirect=%2Fsales%2Fsale&mode=investor&reason=fiche",
+  );
   expect(screen.queryByText("Introuvable")).toBeNull();
 });
 
@@ -273,6 +276,7 @@ describe("« 3 déblocages par mois » on the sale page", () => {
   const status = (unlocked: boolean) => ({
     saleId: "sale",
     unlocked,
+    unlockable: true,
     analysisAccess: false,
     limit: 3,
     used: unlocked ? 1 : 0,
@@ -379,5 +383,94 @@ describe("« 3 déblocages par mois » on the sale page", () => {
 
     await screen.findByText("Vente débloquée");
     expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: true });
+  });
+
+  describe("right after « Confirmer le déblocage »", () => {
+    const free = { ...EXAMPLE_SALE, id: "sale" };
+    const setup = (unlockedRead: () => Promise<unknown>) => {
+      mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+      mocks.unlockStatus.mockResolvedValue(status(false));
+      mocks.sale.mockImplementation(async (_id: string, options: { unlocked?: boolean }) =>
+        options.unlocked ? unlockedRead() : free,
+      );
+    };
+
+    it("keeps the free view on screen with a status banner while the detail loads", async () => {
+      setup(() => new Promise(() => undefined));
+      renderPage();
+      await screen.findByText("Offre Découverte");
+      fireEvent.click(screen.getByRole("button", { name: "Simuler le déblocage" }));
+
+      const banner = await screen.findByRole("status");
+      expect(banner.textContent).toBe("Vente débloquée. Chargement du détail…");
+      // No blank skeleton: the view that was on screen is still there.
+      expect(screen.getByText("Offre Découverte")).toBeTruthy();
+      expect(screen.queryByRole("status", { name: "Chargement de la fiche" })).toBeNull();
+    });
+
+    it("replaces the banner with the unlocked view once it is read", async () => {
+      let finish: (sale: unknown) => void = () => undefined;
+      setup(() => new Promise((resolve) => (finish = resolve)));
+      renderPage();
+      await screen.findByText("Offre Découverte");
+      fireEvent.click(screen.getByRole("button", { name: "Simuler le déblocage" }));
+      await screen.findByRole("status");
+
+      finish(free);
+
+      await screen.findByText("Vente débloquée");
+      expect(screen.queryByText("Offre Découverte")).toBeNull();
+      expect(screen.queryByRole("status")).toBeNull();
+    });
+
+    it("says the unlock is kept when the detail cannot be read, with a retry and no error page", async () => {
+      let attempt = 0;
+      setup(async () => {
+        attempt += 1;
+        if (attempt === 1) throw new Error("boom");
+        return free;
+      });
+      renderPage();
+      await screen.findByText("Offre Découverte");
+      fireEvent.click(screen.getByRole("button", { name: "Simuler le déblocage" }));
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain(
+        "Vente débloquée, mais le détail n’a pas pu être chargé. Votre déblocage est conservé.",
+      );
+      // Nothing was thrown to the error page: the free view is still rendered.
+      expect(screen.getByText("Offre Découverte")).toBeTruthy();
+
+      fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+
+      await screen.findByText("Vente débloquée");
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("still ends on the error page when the first read of the sale fails", async () => {
+      mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: false } });
+      mocks.unlockStatus.mockResolvedValue(status(false));
+      mocks.sale.mockRejectedValue(new Error("boom"));
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const Boundary = class extends Component<{ children: ReactNode }, { failed: boolean }> {
+        state = { failed: false };
+        static getDerivedStateFromError() {
+          return { failed: true };
+        }
+        render() {
+          return this.state.failed ? <p>Erreur affichée</p> : this.props.children;
+        }
+      };
+      render(
+        <QueryClientProvider
+          client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+        >
+          <Boundary>
+            <SaleDetailPage id="sale" />
+          </Boundary>
+        </QueryClientProvider>,
+      );
+      await screen.findByText("Erreur affichée");
+    });
   });
 });
