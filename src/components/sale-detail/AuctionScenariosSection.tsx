@@ -103,18 +103,26 @@ export function AuctionScenariosSection({
           </p>
           {scenarios.ratioQuartiles.q25 != null && scenarios.ratioQuartiles.q75 != null ? (
             <div className={styles.headline}>
-              <span>Fourchette centrale des prix finaux</span>
+              <span>
+                Fourchette centrale des prix finaux (estimation à partir des ventes passées)
+              </span>
               <strong>
                 {formatEuro(scenarios.ratioQuartiles.q25 * startingPrice)} à{" "}
                 {formatEuro(scenarios.ratioQuartiles.q75 * startingPrice)}
               </strong>
               <small>
-                La moitié des ventes comparables{" "}
-                {scenarios.priceScope === "court" ? `du ${court}` : "en France"} a été adjugée entre{" "}
-                {formatEuro(scenarios.ratioQuartiles.q25 * startingPrice)} et{" "}
-                {formatEuro(scenarios.ratioQuartiles.q75 * startingPrice)} ; prix du milieu{" "}
-                {formatEuro((scenarios.ratioQuartiles.q50 ?? 1) * startingPrice)} (
-                {formatRatio(scenarios.ratioQuartiles.q50)} la mise à prix).
+                Dans la moitié centrale des ventes comparables{" "}
+                {scenarios.priceScope === "court" ? `du ${court}` : "en France"}, le prix final a
+                été compris entre {formatRatio(scenarios.ratioQuartiles.q25)} et{" "}
+                {formatRatio(scenarios.ratioQuartiles.q75)} la mise à prix. Appliqué à cette vente,
+                cela donne environ {formatEuro(scenarios.ratioQuartiles.q25 * startingPrice)} à{" "}
+                {formatEuro(scenarios.ratioQuartiles.q75 * startingPrice)}
+                {scenarios.ratioQuartiles.q50 != null
+                  ? `, avec un prix médian d’environ ${formatEuro(
+                      scenarios.ratioQuartiles.q50 * startingPrice,
+                    )} (${formatRatio(scenarios.ratioQuartiles.q50)})`
+                  : ""}
+                . Ce n’est pas une prévision.
               </small>
             </div>
           ) : null}
