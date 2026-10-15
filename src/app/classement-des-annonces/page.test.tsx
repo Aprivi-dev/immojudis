@@ -87,6 +87,16 @@ describe("page « Comment sont classées les annonces ? »", () => {
     );
   });
 
+  it("renvoie vers la méthode de calcul de l'écart avec le marché", () => {
+    render(<Page />);
+    const section = screen.getByRole("region", { name: "L’écart avec le marché" });
+    expect(
+      within(section)
+        .getByRole("link", { name: "Comment est calculé l’écart avec le marché" })
+        .getAttribute("href"),
+    ).toBe("/methode-ecart-marche");
+  });
+
   it("énonce les motifs de retrait réellement appliqués", () => {
     render(<Page />);
     const end = screen.getByRole("region", {
