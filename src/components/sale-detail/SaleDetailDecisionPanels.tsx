@@ -99,7 +99,9 @@ export function AnalysisDecisionPanel({
                 ? formatPrice(worksBudget)
                 : "aucun (bien repris en l’état)"}
           </strong>
-          <span>Enchère plafond (simulation), selon vos hypothèses de marché, de frais et de travaux.</span>
+          <span>
+            Enchère plafond (simulation), selon vos hypothèses de marché, de frais et de travaux.
+          </span>
         </p>
         <div>
           {onEditWorks ? (
