@@ -48,12 +48,24 @@ describe("home page images", () => {
   });
 });
 
+// Text outside the tags, read character by character (no tag-stripping regex).
+function visibleText(markup: string): string {
+  let text = "";
+  let inTag = false;
+  for (const char of markup) {
+    if (char === "<") inTag = true;
+    else if (char === ">") inTag = false;
+    else if (!inTag) text += /\s/.test(char) ? " " : char;
+  }
+  return text;
+}
+
 describe("home figures and free-access line", () => {
   it("shows the real figures with a link to /sales, then the free-access line", () => {
     const markup = renderToStaticMarkup(
       <CinematicHero summary={{ count: 1753, updatedAt: "2026-10-15T07:30:00.000Z" }} />,
     );
-    const text = markup.replace(/<[^>]+>/g, "").replace(/\s/g, " ");
+    const text = visibleText(markup);
 
     expect(text).toContain("1 753 ventes à venir · mises à jour le 15/10/2026");
     expect(markup).toMatch(/<a[^>]*href="\/sales"[^>]*>1[^<]*753 ventes à venir/);
