@@ -40,8 +40,12 @@ export function proxy(request: NextRequest) {
   return response;
 }
 
+// `/sitemap.xml` is no longer excluded: it gets the `X-Robots-Tag` like the secondary sitemaps
+// (`/ressources/sitemap.xml`, `/sales/sitemap/N.xml`). `/_next/image` stays excluded on purpose
+// (Next.js advises it: the proxy would run on every image variant for no use besides this header);
+// the gap is documented in docs/vercel_setup.md.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|media/|brand/|favicon.ico|apple-touch-icon.png|icon-192.png|icon-512.png|manifest.webmanifest|robots.txt|sitemap.xml).*)",
+    "/((?!_next/static|_next/image|media/|brand/|favicon.ico|apple-touch-icon.png|icon-192.png|icon-512.png|manifest.webmanifest|robots.txt).*)",
   ],
 };
