@@ -369,6 +369,36 @@ renseignées, données relues).
 `noindex` repart sur toutes les réponses et `robots.txt` retire les sitemaps. Pour retirer vite
 des adresses déjà indexées : Search Console → Suppressions, en plus du `noindex`.
 
+### Pages publiques de prix d'adjudication
+
+Drapeaux d'environnement **fermés par défaut**, lus à chaque rendu, qui ne s'ouvrent que si la
+valeur est exactement la chaîne `true` (pas d'espaces, `TRUE`, `1` ou `yes`).
+
+| Drapeau                                 | Défaut | Effet quand il vaut `true`                                                                                                                                                                                                                           |
+| --------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_ADJUDICATION_PRICES_ENABLED`    | éteint | Ouvre `/prix-encheres-immobilieres` (prix final médian rapporté à la mise à prix, part adjugée au-dessus de la mise, ventilation par type de bien, méthode). Éteint : réponse 404, `noindex`, absente de `sitemap.xml`. Aucun lien du site n'y mène. |
+| `ADJUDICATION_PRICE_STATISTICS_ENABLED` | éteint | Existant ; **doit aussi valoir `true`** : c'est l'interrupteur d'arrêt des statistiques de prix. Le couper ferme cette page publique en même temps que les statistiques réservées à l'offre Analyse.                                                 |
+
+La page ne sert que des agrégats nationaux déjà publiés par
+`published_adjudication_price_statistics` (jamais une vente, une adresse, un nom ni le détail d'un
+tribunal) et masque toute cellule de moins de 10 prix. Aucune migration n'est nécessaire.
+
+**Conditions pour allumer `PUBLIC_ADJUDICATION_PRICES_ENABLED`, toutes deux requises** :
+
+1. l'**accord écrit de Licitor** (source des prix d'adjudication) est obtenu : l'accord téléphonique
+   décrit dans `docs/model-card-tribunal-statistics.md` ne suffit pas pour une publication en
+   accès libre ;
+2. la **relecture juridique-rgpd** (droit des bases de données, RGPD) est faite.
+
+Ensuite : poser la variable en **Production**, Redeploy, vérifier que la page répond 200 et
+apparaît dans `sitemap.xml`. L'indexation par les moteurs dépend en plus de
+`SEO_INDEXING_ENABLED` (voir plus haut). **Retour arrière** : supprimer la variable (ou la passer à
+`false`) et redéployer ; la page redevient 404.
+
+Pages de « résultat » des ventes passées (`PUBLIC_PAST_SALE_PAGES_ENABLED`,
+`PUBLIC_PAST_SALE_PAGES_INDEXABLE`) : **pas implémentées**. Les données publiables n'existent plus
+après la purge du catalogue (analyse du 15/10/2026) ; ces drapeaux n'existent donc pas encore.
+
 ## 4. Build
 
 ```bash
