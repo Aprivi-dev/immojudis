@@ -675,7 +675,7 @@ export function ListingBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-extrabold uppercase tracking-normal shadow-sm ${toneClass}`}
+      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-extrabold shadow-sm ${toneClass}`}
     >
       {Icon ? <Icon className="h-3 w-3" /> : null}
       {children}
@@ -709,9 +709,7 @@ export function ListingSignal({
 }) {
   return (
     <span className="min-w-0 border-r border-line-soft px-2 py-2 last:border-r-0">
-      <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-ink-soft">
-        {label}
-      </span>
+      <span className="block text-xs font-bold text-ink-soft">{label}</span>
       <span className={`mt-0.5 block truncate font-extrabold ${tone}`}>{value}</span>
     </span>
   );

@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, PageShell } from "@/components/ui/primitives";
-import { WELL_INFORMED_BADGE_NOTE } from "@/components/WellInformedBadge";
+import {
+  WELL_INFORMED_BADGE_DETAIL,
+  WELL_INFORMED_BADGE_NOTE,
+} from "@/components/well-informed-copy";
 import {
   COMPLETENESS_SCORE_DEFINITION,
   RANKING_EXPLANATION_INTRO,
@@ -21,7 +24,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/classement-des-annonces" },
   title: "Classement des annonces",
   description:
-    "Comment Immojudis classe les annonces : ordre par défaut, autres tris, repère « bien renseignée », publicité des avocats, origine et retrait des ventes.",
+    "Comment Immojudis classe les annonces : ordre par défaut, autres tris, repère « Annonce bien renseignée », publicité des avocats, origine et retrait des ventes.",
 };
 
 /**
@@ -102,7 +105,10 @@ export default function Page() {
           <h2 id="bien-renseignee" className="font-display text-2xl font-semibold">
             Le repère « Annonce bien renseignée »
           </h2>
-          <p className="mt-3 text-ink-soft">{WELL_INFORMED_BADGE_NOTE}</p>
+          <div className="mt-3 space-y-3 text-ink-soft">
+            <p>{WELL_INFORMED_BADGE_NOTE}</p>
+            <p>{WELL_INFORMED_BADGE_DETAIL}</p>
+          </div>
         </Card>
 
         <Card as="section" aria-labelledby="publicite-avocats">

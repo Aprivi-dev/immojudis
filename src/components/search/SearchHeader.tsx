@@ -389,7 +389,7 @@ export function HomeTypeFilter({
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
 }) {
   return (
-    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
+    <label className="relative inline-flex min-h-11 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
       <Building2 className="ml-3 h-4 w-4 text-ink-soft" />
       <span className="sr-only">Type de bien</span>
       <select
@@ -429,7 +429,7 @@ export function SortDropdown({
   onChange: (sort: SearchSortKey) => void;
 }) {
   return (
-    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
+    <label className="relative inline-flex min-h-11 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
       <ArrowUpDown className="ml-3 h-4 w-4 text-ink-soft" />
       <span className="sr-only">Tri</span>
       <select
@@ -453,6 +453,37 @@ export function SortDropdown({
       </select>
       <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
     </label>
+  );
+}
+
+/**
+ * Raccourci visible à côté du tri par défaut (« Mieux renseignées d’abord ») : un appui trie par
+ * date de vente (la plus proche d'abord), un second appui revient au classement par défaut.
+ */
+export const SORT_BY_DATE_SHORTCUT_LABEL = "Trier par date de vente";
+
+export function SortByDateShortcut({
+  sort,
+  onChange,
+}: {
+  sort: SearchSortKey;
+  onChange: (sort: SearchSortKey) => void;
+}) {
+  const active = sort === "sale_date_asc";
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={() => onChange(active ? "relevance" : "sale_date_asc")}
+      className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+        active
+          ? "border-brand-navy bg-brand-navy text-white"
+          : "border-line bg-white text-brand-navy hover:border-gold"
+      }`}
+    >
+      <CalendarDays className="h-4 w-4" aria-hidden />
+      {SORT_BY_DATE_SHORTCUT_LABEL}
+    </button>
   );
 }
 
