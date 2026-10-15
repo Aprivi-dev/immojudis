@@ -99,7 +99,7 @@ export function AnalysisDecisionPanel({
                 ? formatPrice(worksBudget)
                 : "aucun (bien repris en l’état)"}
           </strong>
-          <span>Plafond indicatif selon vos hypothèses de marché, de frais et de travaux.</span>
+          <span>Enchère plafond (simulation), selon vos hypothèses de marché, de frais et de travaux.</span>
         </p>
         <div>
           {onEditWorks ? (
@@ -212,7 +212,7 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
           </dd>
         </div>
         <div>
-          <dt>Enchère plafond</dt>
+          <dt>Enchère plafond (simulation)</dt>
           <dd className={panelStyles.textValue}>
             Avec l’offre Analyse ou en débloquant cette vente
             <div className={panelStyles.valueNote}>
@@ -243,7 +243,7 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
             : "Les comparables et les travaux avec l’offre Analyse"
         }
         description="Le calcul complet de la mise à ne pas dépasser : valeur du bien, marge, travaux, libération, portage et tous les frais de la vente, avec les ventes comparables du secteur."
-        labels={["Enchère plafond", "Ventes comparables", "Travaux et frais"]}
+        labels={["Enchère plafond (simulation)", "Ventes comparables", "Travaux et frais"]}
         unlockOffer={getSaleProcedure(sale).venueType === "tribunal"}
       />
     </aside>
@@ -278,7 +278,7 @@ function comparisonMarkerPositions({
 
   return [
     { label: "Mise à prix", value: start, position: position(start, 8) },
-    { label: "Enchère plafond", value: ceiling, position: position(ceiling, 50) },
+    { label: "Enchère plafond (simulation)", value: ceiling, position: position(ceiling, 50) },
     { label: "Valeur estimée", value: market, position: position(market, 92) },
   ];
 }

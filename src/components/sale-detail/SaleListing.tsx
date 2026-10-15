@@ -444,7 +444,7 @@ export function ListingOverview({
             </div>
           ) : showPremiumTeaser ? (
             <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>Enchère plafond</p>
+              <p className={styles.priceLabel}>Enchère plafond (simulation)</p>
               <p className={styles.premiumTeaser}>
                 Disponible avec l’offre Analyse ou en débloquant cette vente
               </p>

@@ -81,10 +81,22 @@ describe("Terme", () => {
 
 describe("Terme : glossaire et zone d'appui", () => {
   it.each([
-    ["garantie-encherir", "garantie pour enchérir", "Chèque de banque ou caution bancaire"],
-    ["frais-prealables", "frais préalables", "aussi appelés frais taxés"],
+    [
+      "garantie-encherir",
+      "garantie pour enchérir",
+      "caution bancaire irrévocable remis à l’avocat avant les enchères (en saisie immobilière : 10 % de la mise à prix, 3 000 € au minimum)",
+    ],
+    [
+      "frais-prealables",
+      "frais préalables",
+      "montant a été fixé (taxé) par le juge. Ils sont à la charge de l’adjudicataire, en plus du prix",
+    ],
     ["proces-verbal-descriptif", "procès-verbal descriptif", "commissaire de justice"],
-    ["cahier-conditions-vente", "cahier des conditions de vente", "Document juridique"],
+    [
+      "cahier-conditions-vente",
+      "cahier des conditions de vente",
+      "rédigé par l’avocat du créancier poursuivant",
+    ],
     ["droit-preemption", "droit de préemption", "se substituer à l’adjudicataire"],
   ] as const)("définit « %s » avec un texte court et neutre", (terme, label, extrait) => {
     render(<Terme terme={terme} />);

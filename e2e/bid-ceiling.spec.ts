@@ -23,7 +23,7 @@ test("l'enchère plafond de l'exemple est chiffrée, avec ses lignes dépliables
   const calculation = await openCalculation(page);
 
   await expect(calculation).not.toContainText("À compléter");
-  await expect(calculation).not.toContainText("Pas d’enchère rentable");
+  await expect(calculation).not.toContainText("Marge de sécurité non tenue");
   await expect(calculation.getByText(/\d.*€/).first()).toBeVisible();
 
   // Chaque ligne du calcul se déplie.
