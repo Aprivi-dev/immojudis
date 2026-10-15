@@ -35,9 +35,10 @@ describe("pillar page /ventes-immobilieres-judiciaires", () => {
   it("has its own title, a 140-155 character description and Open Graph data", async () => {
     const { metadata } = await import("./ventes-immobilieres-judiciaires/page");
     expect(titleText(metadata)).toEqual({
-      text: "Vente immobilière judiciaire : guide complet de l'adjudication",
+      text: "Vente immobilière judiciaire : guide de l’adjudication",
       absolute: true,
     });
+    expect(titleText(metadata).text.length).toBeLessThanOrEqual(MAX_TITLE_LENGTH);
     const description = String(metadata.description);
     expect(description.length).toBeGreaterThanOrEqual(140);
     expect(description.length).toBeLessThanOrEqual(155);
