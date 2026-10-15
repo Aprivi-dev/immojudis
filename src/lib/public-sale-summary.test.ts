@@ -121,4 +121,44 @@ describe("public sale summary", () => {
     expect(result.kind).toBe("found");
     if (result.kind === "found") expect(result.sale).not.toHaveProperty("photo_count");
   });
+
+  describe("indexability verdict of the database", () => {
+    const answer = (verdict: unknown, error: unknown = null) =>
+      vi.fn((fn: string) =>
+        Promise.resolve(
+          fn === "get_public_sale_indexability"
+            ? { data: error ? null : verdict, error }
+            : { data: [row], error: null },
+        ),
+      );
+
+    it("is not asked for by default (the browser does not need it)", async () => {
+      const rpc = answer(true);
+      await fetchPublicSaleSummary({ rpc }, ID);
+      expect(rpc).not.toHaveBeenCalledWith("get_public_sale_indexability", expect.anything());
+    });
+
+    it("is returned with the sale when asked for", async () => {
+      for (const verdict of [true, false]) {
+        const result = await fetchPublicSaleSummary({ rpc: answer(verdict) }, ID, {
+          withIndexability: true,
+        });
+        expect(result).toMatchObject({ kind: "found", indexable: verdict });
+      }
+    });
+
+    it("is left undefined while the function is not deployed", async () => {
+      const rpc = answer(null, { code: "PGRST202", message: "Could not find the function" });
+      const result = await fetchPublicSaleSummary({ rpc }, ID, { withIndexability: true });
+      expect(result.kind).toBe("found");
+      expect(result).not.toHaveProperty("indexable");
+    });
+
+    it("throws on any other error", async () => {
+      const rpc = answer(null, { code: "57014", message: "timeout" });
+      await expect(
+        fetchPublicSaleSummary({ rpc }, ID, { withIndexability: true }),
+      ).rejects.toMatchObject({ code: "57014" });
+    });
+  });
 });
