@@ -12,7 +12,13 @@ from src.court_competence import (
 from src.department_inference import department_from_geocode_evidence
 from src.models import AuctionSale
 from src.normalize import clean_text, extract_department
-from src.tribunal_labels import court_name_candidates, tribunal_label_is_polluted, trim_court_city
+from src.tribunal_labels import (
+    NOTARIAL_VENUE_PHRASE,
+    court_name_candidates,
+    tribunal_label_is_notarial_venue,
+    tribunal_label_is_polluted,
+    trim_court_city,
+)
 
 CITY_TO_TRIBUNAL = {
     "bordeaux": "TJ Bordeaux",
@@ -148,6 +154,15 @@ def infer_missing_department(sale: AuctionSale) -> AuctionSale:
 
 
 def _fill_tribunal_fields(sale: AuctionSale) -> AuctionSale:
+    if tribunal_label_is_notarial_venue(sale.tribunal):
+        # « TJ En L'Étude Du Notaire » : vente notariale, aucun tribunal (le libellé reste tracé).
+        sale.raw_payload["tribunal_label_rejected"] = clean_text(sale.tribunal)
+        sale.tribunal = None
+        sale.tribunal_code = None
+        sale.raw_payload.pop("tribunal_assignment", None)
+        sale.raw_payload.pop(LABEL_ASSIGNMENT_KEY, None)
+        _add_quality_flag(sale, "non_judicial_sale_context")
+        return sale
     if _is_non_judicial_sale_context(sale) and not _extract_explicit_tribunal(sale.raw_text):
         sale.tribunal = None
         sale.tribunal_code = None
@@ -287,6 +302,8 @@ def _extract_explicit_tribunal(raw_text: str | None) -> str | None:
     text = clean_text(raw_text)
     if not text:
         return None
+    # « Tribunal judiciaire de En l'étude du Notaire » n'est pas un tribunal.
+    text = NOTARIAL_VENUE_PHRASE.sub("", text)
     match = re.search(r"\bTribunal\s+Judiciaire\s+de\s+([A-Za-zÀ-ÿ' -]+)", text, re.I)
     if match:
         city = clean_text(match.group(1).split("(")[0])
@@ -323,6 +340,7 @@ def _is_non_judicial_sale_context(sale: AuctionSale) -> bool:
     )
     if not text:
         return False
+    text = NOTARIAL_VENUE_PHRASE.sub("", text)
     if re.search(r"\btribunal\s+judiciaire\b|\bsaisie\s+immobili[èe]re\b|\bcahier\s+des\s+conditions\s+de\s+vente\b", text, re.I):
         return False
     return bool(

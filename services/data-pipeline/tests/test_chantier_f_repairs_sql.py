@@ -17,6 +17,7 @@ REPAIRS = Path(__file__).resolve().parents[3] / "supabase" / "repairs"
 LOCATION = REPAIRS / "20261020130001_repair_sale_department_and_coordinates.sql"
 PHANTOM = REPAIRS / "20261020130002_clear_info_encheres_phantom_point.sql"
 LICITOR = REPAIRS / "20261020130003_quarantine_licitor_multi_lot_annonces.sql"
+DOUBLED_TRIBUNALS = REPAIRS / "20261025100001_repair_doubled_tribunal_names.sql"
 
 SCHEMA = """
 do $$ begin
@@ -35,6 +36,8 @@ create table public.auction_sales (
   latitude numeric,
   longitude numeric,
   starting_price_eur numeric,
+  tribunal text,
+  tribunal_code text,
   quality_flags jsonb default '[]'::jsonb,
   raw_payload jsonb default '{}'::jsonb
 );
@@ -42,6 +45,17 @@ create table public.auction_cadastre_parcels (
   id uuid primary key default gen_random_uuid(),
   source_url text,
   match_kind text
+);
+create table public.tribunals (
+  code text primary key,
+  canonical_name text not null unique,
+  aliases jsonb default '[]'::jsonb,
+  updated_at timestamptz default now()
+);
+create table public.judicial_sales (
+  source_url text primary key,
+  tribunal text,
+  tribunal_code text
 );
 """
 
@@ -274,7 +288,97 @@ def test_licitor_quarantine_counts_by_default_and_applies_on_demand(repair_datab
         assert _snapshot(db) == after_first
 
 
+# --- point 26 : noms canoniques de tribunaux au prefixe double -------------------------------------
+
+
+def _seed_tribunals(db) -> None:
+    from psycopg.types.json import Jsonb
+
+    for code, name, aliases in (
+        ("mans", "TJ Tribunal judiciaire du Mans", ["Tribunal judiciaire du Mans", "TJ Tribunal judiciaire du Mans"]),
+        ("havre", "TJ Tribunal judiciaire du Havre", ["Tribunal judiciaire du Havre"]),
+        ("sables", "TJ Tribunal judiciaire des Sables-d'Olonne", None),
+        ("roche", "TJ Tribunal judiciaire de la Roche-sur-Yon", []),
+        ("isle", "TJ Tribunal judiciaire de l'Isle", []),
+        ("pau", "TJ Pau", ["Tribunal judiciaire de Pau"]),
+        # « TJ Le Creusot » existe deja sous un autre code : le doublon est un conflit, laisse intact.
+        ("creusot", "TJ Tribunal judiciaire du Creusot", []),
+        ("creusot2", "TJ Le Creusot", []),
+    ):
+        db.execute(
+            "insert into public.tribunals(code, canonical_name, aliases) values (%s, %s, %s)",
+            (code, name, Jsonb(aliases) if aliases is not None else None),
+        )
+    mans_proof = {"tribunal_assignment": {"court_code": "mans", "court_name": "TJ Tribunal judiciaire du Mans"}}
+    _insert_sale(db, "s-mans", tribunal="TJ Tribunal judiciaire du Mans", tribunal_code="mans", raw_payload=mans_proof)
+    _insert_sale(
+        db, "s-havre", tribunal="TJ Tribunal judiciaire du Havre", tribunal_code="havre",
+        raw_payload={"tribunal_label_assignment": {"court_name": "TJ Tribunal judiciaire du Havre"}},
+    )
+    _insert_sale(db, "s-pau", tribunal="TJ Pau", tribunal_code="pau")
+    _insert_sale(db, "s-creusot", tribunal="TJ Tribunal judiciaire du Creusot", tribunal_code="creusot")
+    db.execute(
+        "insert into public.judicial_sales(source_url, tribunal, tribunal_code) values "
+        "('s-mans', 'TJ Tribunal judiciaire du Mans', 'mans')"
+    )
+
+
+def test_doubled_tribunal_names_count_by_default_and_repair_on_demand(repair_database) -> None:
+    import psycopg
+
+    with psycopg.connect(repair_database, autocommit=True) as db:
+        _seed_tribunals(db)
+        before = _snapshot(db)
+        names_before = db.execute("select * from public.tribunals order by code").fetchall()
+
+        output = _psql(repair_database, DOUBLED_TRIBUNALS)
+        assert "MODE COMPTAGE SEULEMENT" in output
+        assert _snapshot(db) == before
+        assert db.execute("select * from public.tribunals order by code").fetchall() == names_before
+
+        _psql(repair_database, DOUBLED_TRIBUNALS, apply=True)
+
+        names = dict(db.execute("select code, canonical_name from public.tribunals").fetchall())
+        assert names["mans"] == "TJ Le Mans"
+        assert names["havre"] == "TJ Le Havre"
+        assert names["sables"] == "TJ Les Sables-d'Olonne"
+        assert names["roche"] == "TJ La Roche-sur-Yon"
+        assert names["isle"] == "TJ L'Isle"
+        assert names["pau"] == "TJ Pau"
+        assert names["creusot"] == "TJ Tribunal judiciaire du Creusot"  # conflit : intact
+        aliases = db.execute("select aliases from public.tribunals where code = 'mans'").fetchone()[0]
+        assert "TJ Le Mans" in aliases and "TJ Tribunal judiciaire du Mans" not in aliases
+        assert "Tribunal judiciaire du Mans" in aliases
+        assert db.execute("select aliases from public.tribunals where code = 'sables'").fetchone()[0] == [
+            "TJ Les Sables-d'Olonne"
+        ]
+        # Les trois valeurs que le rapprochement des tribunaux exige egales le restent.
+        mans = _sale(db, "s-mans")
+        assert mans["tribunal"] == "TJ Le Mans"
+        assert mans["raw_payload"]["tribunal_assignment"]["court_name"] == "TJ Le Mans"
+        assert _sale(db, "s-havre")["raw_payload"]["tribunal_label_assignment"]["court_name"] == "TJ Le Havre"
+        assert _sale(db, "s-pau")["tribunal"] == "TJ Pau"
+        assert _sale(db, "s-creusot")["tribunal"] == "TJ Tribunal judiciaire du Creusot"
+        assert db.execute("select tribunal from public.judicial_sales").fetchone() == ("TJ Le Mans",)
+        assert db.execute("select count(*) from app_private.tribunal_name_repair_backup_20261025").fetchone() == (5,)
+
+        after_first = _snapshot(db)
+        names_after = db.execute("select * from public.tribunals order by code").fetchall()
+        _psql(repair_database, DOUBLED_TRIBUNALS, apply=True)
+        assert _snapshot(db) == after_first
+        assert db.execute("select * from public.tribunals order by code").fetchall() == names_after
+
+
 def test_repair_files_do_not_live_in_the_migrations_folder() -> None:
     migrations = REPAIRS.parent / "migrations"
     assert not list(migrations.glob("20261020130*"))
-    assert len(list(REPAIRS.glob("*.sql"))) == 3
+    assert not list(migrations.glob("20261025100001*"))
+    assert {LOCATION, PHANTOM, LICITOR, DOUBLED_TRIBUNALS} <= set(REPAIRS.glob("*.sql"))
+
+
+def test_doubled_tribunal_repair_defaults_to_counting_only() -> None:
+    text = DOUBLED_TRIBUNALS.read_text(encoding="utf-8")
+
+    assert "\\set apply off" in text and "set transaction read only" in text
+    assert text.rstrip().count("rollback") >= 1
+    assert not re.search(r"^\s*(?:update|insert|delete)\b[^\n]*public\.", text.split("\\if :apply")[0], re.M)
