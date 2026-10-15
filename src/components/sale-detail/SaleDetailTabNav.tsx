@@ -21,7 +21,7 @@ export const SALE_DETAIL_TABS: ReadonlyArray<{
   label: string;
 }> = [
   { id: "apercu", label: "Aperçu" },
-  { id: "estimation", label: "Estimation" },
+  { id: "estimation", label: "Prix et plafond" },
   { id: "statistiques", label: "Statistiques" },
   { id: "travaux", label: "Travaux" },
   { id: "financement", label: "Financement" },

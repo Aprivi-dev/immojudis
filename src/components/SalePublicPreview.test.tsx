@@ -221,7 +221,7 @@ describe("SalePublicPreview", () => {
     );
     expect(description.textContent).toContain("Jardin");
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
-    expect(teaser.textContent).toContain("Enchère plafond conseillée");
+    expect(teaser.textContent).toContain("Enchère plafond (simulation)");
     expect(teaser.textContent).toContain("000 000 €");
     expect(teaser.textContent).not.toMatch(/[1-9]\d* ?\d* €/);
   });

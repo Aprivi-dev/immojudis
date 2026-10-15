@@ -235,7 +235,7 @@ describe("integrated scenario workspace", () => {
       expect(screen.getByText("Coût complet retenu")).toBeTruthy();
     });
 
-    await openTab("Estimation");
+    await openTab("Prix et plafond");
     await waitFor(() => {
       const row = screen.getByText("Votre montant").closest("tr")!;
       expect(row.getAttribute("aria-current")).toBe("true");

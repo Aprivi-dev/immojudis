@@ -169,3 +169,69 @@ describe("CeilingPlanner readability", () => {
     );
   });
 });
+
+describe("CeilingPlanner : vocabulaire du plafond", () => {
+  it("dit que l'enchère ne serait pas rentable quand le plafond est sous la mise à prix, sans conseiller", () => {
+    const { container } = renderPlanner({
+      saleOverride: { ...sale, starting_price_eur: 300_000 } as unknown as AuctionSale,
+    });
+    const verdict = screen.getByText(/À ces hypothèses, votre plafond \(/);
+    expect(verdict.textContent).toMatch(
+      /votre plafond \(.+€\) est inférieur à la mise à prix \(300\s000\s€\) : l’enchère ne serait pas rentable\./,
+    );
+    expect(container.textContent).not.toContain("mieux vaut");
+    expect(container.textContent).not.toMatch(/conseillée/);
+  });
+
+  it("définit les termes de procédure de la liste de vérifications et du simulateur", () => {
+    renderPlanner({ choices: { project: "louer" } });
+    const checklist = screen
+      .getByRole("heading", { name: "À vérifier avant l’audience" })
+      .closest("section")!;
+    expect(
+      within(checklist).getByRole("button", { name: "Définition : droit de préemption" }),
+    ).toBeTruthy();
+    expect(
+      within(checklist).getByRole("button", { name: "Définition : frais préalables" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Définition : cahier des conditions de vente" }),
+    ).toBeTruthy();
+    const simulator = screen
+      .getByRole("heading", { name: "Si vous l’emportez à…" })
+      .closest("section")!;
+    expect(
+      within(simulator).getByRole("button", { name: "Définition : frais préalables" }),
+    ).toBeTruthy();
+    expect(checklist.textContent).toContain(
+      "La commune peut exercer son droit de préemption dans le mois qui suit l’adjudication.",
+    );
+  });
+
+  it("définit le procès-verbal descriptif quand l'occupation est inconnue", () => {
+    renderPlanner({
+      saleOverride: { ...sale, occupancy_status: null } as unknown as AuctionSale,
+    });
+    const checklist = screen
+      .getByRole("heading", { name: "À vérifier avant l’audience" })
+      .closest("section")!;
+    expect(checklist.textContent).toContain(
+      "Vérifiez l’occupation dans le procès-verbal descriptif.",
+    );
+    expect(
+      within(checklist).getAllByRole("button", { name: "Définition : procès-verbal descriptif" })
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("donne une hauteur tactile d'au moins 44 px aux boutons du plafond", () => {
+    renderPlanner();
+    expect(
+      screen.getByRole("button", { name: "Revenir aux hypothèses Immojudis" }).className,
+    ).toContain("min-h-11");
+    expect(screen.getByRole("button", { name: "Modifier les hypothèses" }).className).toContain(
+      "min-h-11",
+    );
+    expect(screen.getByRole("button", { name: /^Plafond · / }).className).toContain("min-h-11");
+  });
+});
