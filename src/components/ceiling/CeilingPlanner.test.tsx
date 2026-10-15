@@ -178,7 +178,7 @@ describe("CeilingPlanner readability", () => {
     const note = within(simulator).getByRole("note");
     expect(note.textContent).toContain("Attribution du bien au meilleur enchérisseur");
     expect(within(note).getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
-      "/ventes-immobilieres-judiciaires#lexique",
+      "/ventes-immobilieres-judiciaires#lexique-adjudication",
     );
   });
 });
