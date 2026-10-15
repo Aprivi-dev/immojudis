@@ -14,6 +14,7 @@ import Scale from "lucide-react/dist/esm/icons/scale.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
+import { Terme, type TermeKey } from "@/components/ceiling/Terme";
 import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-offer";
@@ -23,10 +24,17 @@ import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
 
-const BENEFITS = [
+const BENEFITS: ReadonlyArray<{
+  icon: ReactNode;
+  title: string;
+  text: string;
+  /** Terme du titre à définir : la bulle « ? » suit le titre. */
+  term?: TermeKey;
+}> = [
   {
     icon: <BadgeEuro className="size-6" aria-hidden />,
     title: "Une enchère plafond chiffrée",
+    term: "enchere-plafond",
     text: "Valeur estimée, frais, travaux et marge de sécurité : vous voyez d’où vient votre limite et vous l’ajustez selon votre projet.",
   },
   {
@@ -39,7 +47,7 @@ const BENEFITS = [
     title: "Des comparables de ventes réelles",
     text: "L’estimation du bien s’appuie sur des ventes comparables réellement conclues autour du bien, avec leur source.",
   },
-] as const;
+];
 
 const UNLOCKED_ITEMS = unlockedItemsText({ ceiling: true, statistics: true });
 
@@ -220,9 +228,16 @@ export function OffersPage() {
             <li key={benefit.title}>
               <Card className="h-full">
                 <span className="text-gold-text">{benefit.icon}</span>
-                <h3 className="mt-3 font-display text-2xl font-semibold leading-tight">
-                  {benefit.title}
-                </h3>
+                <div className="mt-3 flex items-start gap-2">
+                  <h3 className="font-display text-2xl font-semibold leading-tight">
+                    {benefit.title}
+                  </h3>
+                  {benefit.term ? (
+                    <span className="mt-1">
+                      <Terme terme={benefit.term} bare />
+                    </span>
+                  ) : null}
+                </div>
                 <p className="mt-2 text-sm leading-relaxed text-ink-soft">{benefit.text}</p>
               </Card>
             </li>
@@ -348,7 +363,11 @@ function ComparisonTable() {
           {rows.map((row) => (
             <tr key={row.id}>
               <th scope="row" className="px-3 py-3 align-top font-medium sm:px-4">
-                {row.label}
+                {row.id === "ceiling" ? (
+                  <Terme terme="enchere-plafond">{row.label}</Terme>
+                ) : (
+                  row.label
+                )}
                 {row.hint ? (
                   <span className="mt-0.5 block text-xs font-normal text-ink-soft">{row.hint}</span>
                 ) : null}
