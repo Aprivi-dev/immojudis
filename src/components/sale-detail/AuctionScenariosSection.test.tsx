@@ -85,12 +85,21 @@ describe("AuctionScenariosSection", () => {
     renderSection();
 
     expect(await screen.findByText(/D’après 165 adjudications du TJ Bobigny/)).toBeTruthy();
-    expect(screen.getByText("Fourchette centrale des prix finaux")).toBeTruthy();
-    expect(screen.queryByText(/Prix final le plus fréquent/)).toBeNull();
     expect(
-      screen.getByText(/La moitié des ventes comparables du TJ Bobigny a été adjugée/).textContent,
-    ).toMatch(/entre 92\s000\s€ et 208\s000\s€/);
-    expect(screen.getByText(/92\s000\s€ à 208\s000\s€/)).toBeTruthy();
+      screen.getByText(
+        "Fourchette centrale des prix finaux (estimation à partir des ventes passées)",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Prix final le plus fréquent/)).toBeNull();
+    const range = screen.getByText(
+      /Dans la moitié centrale des ventes comparables du TJ Bobigny, le prix final a été compris/,
+    ).textContent;
+    expect(range).toMatch(/entre ×\S+ et ×\S+ la mise à prix\. Appliqué à cette vente/);
+    expect(range).toMatch(
+      /cela donne environ 92\s000\s€ à 208\s000\s€, avec un prix médian d’environ/,
+    );
+    expect(range).toMatch(/\(×\S+\)\. Ce n’est pas une prévision\.$/);
+    expect(screen.getByText(/^92\s000\s€ à 208\s000\s€$/)).toBeTruthy();
     expect(screen.getByText("Plus de 3 fois la mise à prix")).toBeTruthy();
     expect(screen.getByText(/^52\s%$/)).toBeTruthy();
     expect(screen.getByLabelText("Répartition observée des issues")).toBeTruthy();

@@ -137,6 +137,12 @@ export function CourtAuctionSummaryTable() {
         Rapport prix final / mise à prix : valeur du milieu. Un tribunal apparaît à partir de 10
         ventes. Les moyennes sont tirées vers le haut par quelques ventes très disputées.
       </p>
+      <p className="mt-2 max-w-4xl text-xs leading-relaxed text-brand-navy/70" id="moyennes-caveat">
+        Statistiques sur les ventes adjugées uniquement (ni reports, ni ventes sans enchérisseur),
+        issues de données tierces non vérifiées auprès du greffe. Fréquences observées dans le
+        passé, qui ne constituent pas une probabilité pour une vente donnée. Sources : historique
+        des adjudications publié par Licitor, DVF (DGFiP).
+      </p>
     </div>
   );
 }

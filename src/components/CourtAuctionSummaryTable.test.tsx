@@ -79,6 +79,21 @@ describe("CourtAuctionSummaryTable", () => {
     expect(screen.queryByText("Au moins le double")).toBeNull();
   });
 
+  it("précise sous le tableau le champ des statistiques, leur origine et leurs sources", async () => {
+    fetchCourtAuctionSummaries.mockResolvedValue(COURTS);
+    renderTable();
+    await screen.findByRole("table");
+
+    const caveat = document.getElementById("moyennes-caveat")?.textContent ?? "";
+    expect(caveat).toContain(
+      "ventes adjugées uniquement (ni reports, ni ventes sans enchérisseur)",
+    );
+    expect(caveat).toContain("données tierces non vérifiées auprès du greffe");
+    expect(caveat).toContain("ne constituent pas une probabilité pour une vente donnée");
+    expect(caveat).toContain("Licitor");
+    expect(caveat).toContain("DVF");
+  });
+
   it("annonce qu'aucun tribunal ne correspond au filtre", async () => {
     fetchCourtAuctionSummaries.mockResolvedValue(COURTS);
     renderTable();
