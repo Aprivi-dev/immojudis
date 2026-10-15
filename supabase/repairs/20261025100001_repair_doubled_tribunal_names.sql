@@ -57,23 +57,24 @@
 begin;
 set local lock_timeout = '5s';
 
--- Plan : table temporaire, calculee dans les deux modes. m[1] = article avec apostrophe, m[2] = article suivi
--- d'espaces, m[3] = le reste du nom (« du Mans » -> « Le Mans » ; « de la Roche » -> « La Roche » ;
--- « de Pau » -> « Pau » ; « d'Arras » -> « Arras »).
+-- Plan : table temporaire, calculee dans les deux modes. Meme regle que court_competence._short_court_name :
+-- seuls « du » et « des » changent de forme (« du Mans » -> « Le Mans », « des Sables-d'Olonne » ->
+-- « Les Sables-d'Olonne ») ; « de » et « d' » sont retires (« de Pau » -> « Pau », « d'Arras » -> « Arras ») ;
+-- le reste garde sa casse d'origine (« de La Roche-sur-Yon » -> « La Roche-sur-Yon », « de la Roche » ->
+-- « la Roche » : Python ne recase pas, et l'ancien code ne doublait le prefixe que pour « du » et « des »).
+-- m[1] = « d' », m[2] = article suivi d'espaces, m[3] = le reste du nom.
 create temporary table tribunal_name_plan on commit drop as
 select t.code,
        t.canonical_name as old_name,
        'TJ ' || case lower(coalesce(m[1], m[2]))  -- 'd''' et 'de' : pas d'article
                   when 'du' then 'Le '
                   when 'des' then 'Les '
-                  when 'de la' then 'La '
-                  when 'de l''' then 'L'''
                   else ''
                 end || m[3] as new_name
   from public.tribunals t
  cross join lateral regexp_match(
          t.canonical_name,
-         '^TJ Tribunal judiciaire (?:(d''|de l'')|(du|des|de la|de) +)(.+)$',
+         '^TJ Tribunal judiciaire (?:(d'')|(du|des|de) +)(.+)$',
          'i') as m
  where m is not null;
 
