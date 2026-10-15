@@ -8,6 +8,9 @@ import saleTypesArticle from "@/content/resources/ventes-notariales-domaniales-d
 import saleConditionsArticle from "@/content/resources/lire-cahier-conditions-vente-preparer-visite.json";
 import costsArticle from "@/content/resources/frais-vente-encheres-judiciaire.json";
 import financingArticle from "@/content/resources/financer-achat-encheres-pret-delais.json";
+import licitationArticle from "@/content/resources/licitation-vente-bien-indivis-encheres-acheteur.json";
+import seizureArticle from "@/content/resources/saisie-immobiliere-etapes-vente-forcee-acheteur.json";
+import lawyerArticle from "@/content/resources/avocat-obligatoire-encherir-tribunal-choisir-mandat-cout.json";
 
 export interface ResourceSection {
   id: string;
@@ -85,6 +88,9 @@ export const RESOURCE_ARTICLES: ResourceArticle[] = [
   defineArticle(occupationArticle, "/media/landing/dossier-apartment.webp"),
   defineArticle(buildingArticle, "/media/landing/auction-lyon.webp"),
   defineArticle(selectionArticle, "/media/landing/auction-nantes.webp"),
+  defineArticle(seizureArticle, "/media/landing/justice-goddess.webp"),
+  defineArticle(licitationArticle, "/media/landing/home-favorites.webp"),
+  defineArticle(lawyerArticle, "/media/landing/auction-toulouse.webp"),
 ];
 
 export const EXISTING_GUIDE: ResourceSummary = {
