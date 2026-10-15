@@ -423,7 +423,7 @@ export function ListingOverview({
           </div>
           {guardedPremiumCeiling != null ? (
             <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>Enchère plafond indicative</p>
+              <p className={styles.priceLabel}>Enchère plafond (simulation)</p>
               <p className={styles.premiumPriceValue}>{formatPrice(guardedPremiumCeiling)}</p>
               {ceilingContext ? (
                 <p className={styles.premiumContext}>

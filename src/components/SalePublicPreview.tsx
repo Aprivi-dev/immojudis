@@ -141,7 +141,7 @@ export function SalePublicPreview({
       : null,
     procedure.venueType === "tribunal"
       ? {
-          label: "Enchère plafond conseillée",
+          label: "Enchère plafond (simulation)",
           placeholder: "000 000 €",
           tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
         }

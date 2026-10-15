@@ -57,7 +57,13 @@ import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
-import { ResultsSummary, SearchHeader, SortDropdown, type SaveSearchOptions } from "./SearchHeader";
+import {
+  ResultsSummary,
+  SearchHeader,
+  SortByDateShortcut,
+  SortDropdown,
+  type SaveSearchOptions,
+} from "./SearchHeader";
 import { RankingExplanation } from "./RankingExplanation";
 import { enableAlertEmailRecap } from "./alert-email-consent";
 import { SearchResultsList } from "./SearchResults";
@@ -782,6 +788,12 @@ export function SearchPage({
                 preview={isPreview}
                 hasCenter={Boolean(center)}
                 investmentScore={investmentSortAllowed}
+                sort={visibleSearchSort(search.sort, {
+                  allowInvestmentScore: investmentSortAllowed,
+                })}
+                onChange={(sort) => updateSearch({ sort })}
+              />
+              <SortByDateShortcut
                 sort={visibleSearchSort(search.sort, {
                   allowInvestmentScore: investmentSortAllowed,
                 })}
