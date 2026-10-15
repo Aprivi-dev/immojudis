@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from src.information_sufficiency import (
+    _EXTRACT_EMAIL_RE,
     NO_BLOCKLIST,
     ContactBlocklist,
     build_blocklist,
@@ -57,6 +58,50 @@ def test_python_mirror_matches_the_typescript_contact_resolver_cases(case):
         observations=observations,
     )
     assert sorted(contact_emails(sale)) == sorted(case["expected"])
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Même tableau que src/lib/information-agent-email-in-text.test.ts (findEmailsInText).
+        ("maitre.dupont@cabinet-dupont.frTél : 01 02 03 04 05", "maitre.dupont@cabinet-dupont.fr"),
+        ("maitre.dupont@cabinet-dupont.fr.", "maitre.dupont@cabinet-dupont.fr"),
+        ("maitre.dupont@cabinet-dupont.fr/Tel 01 02 03 04 05", "maitre.dupont@cabinet-dupont.fr"),
+        ("maitre.dupont@cabinet-dupont.fr0145678901", "maitre.dupont@cabinet-dupont.fr"),
+        ("maitre.dupont@cabinet-dupont.fr, Paris", "maitre.dupont@cabinet-dupont.fr"),
+        ("Email : maitre.dupont@cabinet-dupont.fr (cabinet)", "maitre.dupont@cabinet-dupont.fr"),
+        ("MAITRE.DUPONT@CABINET-DUPONT.FR", "MAITRE.DUPONT@CABINET-DUPONT.FR"),
+        ("MAITRE.DUPONT@CABINET-DUPONT.FRTél 0145678901", "MAITRE.DUPONT@CABINET-DUPONT.FR"),
+        ("MAITRE.DUPONT@CABINET-DUPONT.FRTel 0145678901", "MAITRE.DUPONT@CABINET-DUPONT.FR"),
+        ("Maitre.Dupont@Cabinet-Dupont.Fr", "Maitre.Dupont@Cabinet-Dupont.Fr"),
+        ("Maitre.Dupont@Cabinet-Dupont.FrTél", "Maitre.Dupont@Cabinet-Dupont.Fr"),
+        ("greffe@mairie.sous.domaine.cabinet.fr", "greffe@mairie.sous.domaine.cabinet.fr"),
+        ("contact@avocats.paris", "contact@avocats.paris"),
+        ("contact@etude-dupont.immobilier", "contact@etude-dupont.immobilier"),
+        ("contact@etude-dupont.immobilierTél", "contact@etude-dupont.immobilier"),
+        ("jean+vente@exemple.notaires.fr", "jean+vente@exemple.notaires.fr"),
+        ("a_b%c@x.co", "a_b%c@x.co"),
+    ],
+)
+def test_email_pattern_stops_before_the_word_glued_to_the_address(text, expected):
+    # Motif brut (avant normalisation et validation zod), comme findEmailsInText côté TypeScript.
+    assert _EXTRACT_EMAIL_RE.findall(text) == [expected]
+
+
+def test_email_extraction_finds_several_addresses_and_rejects_non_addresses():
+    assert _EXTRACT_EMAIL_RE.findall(
+        "Me Dupont : dupont@cabinet.frTél 01 02 03 04 05 / Me Martin : martin@etude.paris."
+    ) == ["dupont@cabinet.fr", "martin@etude.paris"]
+    assert _EXTRACT_EMAIL_RE.findall("pas d'adresse ici, tél. 01 02 03 04 05") == []
+    assert _EXTRACT_EMAIL_RE.findall("x@localhost") == []
+    assert _EXTRACT_EMAIL_RE.findall("x@cabinet.f") == []
+    assert _EXTRACT_EMAIL_RE.findall("@cabinet.fr") == []
+
+
+def test_a_glued_lawyer_contact_gives_the_address_without_the_next_word_initial():
+    sale = make_sale(lawyer_contact="maitre.dupont@cabinet-dupont.frTél : 01 02 03 04 05")
+
+    assert set(contact_emails(sale)) == {"maitre.dupont@cabinet-dupont.fr"}
 
 
 def test_address_and_surface_are_enough_without_any_email():
