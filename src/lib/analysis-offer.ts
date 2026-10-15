@@ -45,7 +45,7 @@ export function offersPageDescription({
   label?: string;
 }): string {
   if (!open) {
-    return "Découverte est gratuite. Analyse, l’offre d’aide à la décision (enchère plafond chiffrée, alertes, comparables), ouvrira prochainement.";
+    return "Découverte est gratuite. Analyse, l’offre d’aide à la décision (enchère plafond, alertes quotidiennes, comparables), n’est pas encore ouverte à la souscription.";
   }
   const candidates = [
     `Découverte est gratuite. Analyse chiffre votre enchère plafond, suit les nouvelles ventes avec des alertes et s’appuie sur des comparables : ${label}.`,
