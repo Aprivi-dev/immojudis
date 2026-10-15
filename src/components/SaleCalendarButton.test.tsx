@@ -43,6 +43,7 @@ describe("SaleCalendarButton", () => {
     render(<SaleCalendarButton saleId={saleId} />);
 
     expect(screen.getByText(/à vérifier auprès de l’avocat poursuivant/)).toBeTruthy();
+    expect(screen.getByText(/ne se met pas à jour si la date change/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Ajouter à mon agenda" }));
 
     await waitFor(() => expect(clicked).toHaveLength(1));
@@ -61,7 +62,7 @@ describe("SaleCalendarButton", () => {
           JSON.stringify({
             ok: false,
             error:
-              "La date de cette audience n’est pas assez sûre pour être ajoutée à un agenda. Consultez la fiche de la vente.",
+              "La date de cette audience n’est pas confirmée (report, information contradictoire ou source unique) : nous ne l’ajoutons pas à votre agenda. Vérifiez-la auprès de l’avocat poursuivant ou du greffe.",
           }),
           { status: 409, headers: { "content-type": "application/json" } },
         ),
@@ -71,7 +72,7 @@ describe("SaleCalendarButton", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Ajouter à mon agenda" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain("pas assez sûre");
+    expect((await screen.findByRole("alert")).textContent).toContain("n’est pas confirmée");
     expect(clicked).toHaveLength(0);
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Ajouter à mon agenda" })).toBeTruthy();

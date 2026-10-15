@@ -30,6 +30,14 @@ function isMissingFunction(error: RpcError): boolean {
  * reserved to signed-in accounts, is never part of the file. The route is not indexed: it sits
  * under `/api/` (disallowed in robots.txt), is absent from the sitemaps and answers
  * `X-Robots-Tag: noindex`.
+ *
+ * The export follows the public page of the sale, nothing more: the date comes from the public
+ * database function above, which does not read the AI review projections
+ * (`v_auction_ai_review_projection_read_model`, served by `/api/sales/ai-review` to signed-in
+ * accounts only). A date the review blocks on the signed-in page can therefore still be exported
+ * as long as the public page shows it. This is why the button says the date comes from the
+ * listing and must be checked with the lawyer; no server-side indicator of the review state
+ * exists for an anonymous request.
  */
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const requestContext = createApiRequestContext(request, "sale-calendar");
@@ -60,7 +68,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const file = buildSaleCalendarFile(row, { origin });
     if (!file) {
       throw new PublicApiError(
-        "La date de cette audience n’est pas assez sûre pour être ajoutée à un agenda. Consultez la fiche de la vente.",
+        "La date de cette audience n’est pas confirmée (report, information contradictoire ou source unique) : nous ne l’ajoutons pas à votre agenda. Vérifiez-la auprès de l’avocat poursuivant ou du greffe.",
         409,
       );
     }
