@@ -1,0 +1,205 @@
+{
+  "slug": "saisie-immobiliere-etapes-vente-forcee-acheteur",
+  "publishedAt": "2026-10-15",
+  "updatedAt": "2026-10-15",
+  "title": "La saisie immobilière : de la dette à la vente aux enchères, les étapes vues par l’acheteur",
+  "seoTitle": "Saisie immobilière : les étapes pour l’acheteur",
+  "category": "Les fondamentaux",
+  "description": "Commandement de payer, cahier des conditions de vente, audience d’orientation, vente forcée : les grandes étapes d’une saisie immobilière, expliquées à celui qui veut acheter.",
+  "intro": [
+    "La saisie immobilière est la procédure par laquelle un créancier (la personne à qui une somme est due) fait vendre le bien immobilier de son débiteur (celui qui doit l’argent) pour être payé. Quand la vente a lieu aux enchères au tribunal, on parle de vente forcée ou, dans le langage courant, de vente « à la barre ».",
+    "Cet article suit la procédure du point de vue de l’acheteur potentiel : quelles étapes précèdent l’audience, quels documents deviennent disponibles et à quel moment, et pourquoi la date d’une vente n’est jamais acquise d’avance. Il n’aborde pas les moyens de défense du débiteur. Les délais cités sont ceux du Code des procédures civiles d’exécution (CPCE) ; votre avocat vérifie ceux de votre dossier."
+  ],
+  "takeaways": [
+    "La procédure s’ouvre par un commandement de payer valant saisie : le débiteur a huit jours pour payer, sinon la vente du bien peut être poursuivie (art. R. 321-3).",
+    "Le cahier des conditions de vente, qui contient la mise à prix et les règles de la vente, est déposé au greffe au plus tard le cinquième jour ouvrable après l’assignation du débiteur (art. R. 322-10).",
+    "À l’audience d’orientation, le juge décide d’une vente amiable ou d’une vente forcée ; l’audience de vente se tient ensuite dans un délai de deux à quatre mois (art. R. 322-15 et R. 322-26).",
+    "Une vente peut être arrêtée ou reportée avant l’audience : paiement de la dette, vente amiable, appel, force majeure, surendettement.",
+    "Seul un avocat inscrit au barreau du tribunal peut porter les enchères."
+  ],
+  "sections": [
+    {
+      "id": "point-de-depart",
+      "title": "Le point de départ : un créancier et un titre exécutoire",
+      "paragraphs": [
+        "Tout créancier muni d’un titre exécutoire constatant une créance liquide et exigible peut procéder à une saisie immobilière (art. L. 311-2). Un titre exécutoire est un document qui permet d’obtenir l’exécution forcée, comme une décision de justice ou certains actes notariés. « Liquide » signifie que la somme est chiffrée, « exigible » qu’elle est due maintenant.",
+        "Le créancier saisit l’immeuble par un acte signifié au débiteur (art. L. 321-1). À partir de là, le bien devient indisponible : le débiteur ne peut ni le vendre ni le grever de droits réels, sous réserve de la vente amiable autorisée par le juge (art. L. 321-2). Pour l’acheteur, cette phase est invisible : le bien n’est pas encore à vendre aux enchères."
+      ]
+    },
+    {
+      "id": "etapes",
+      "title": "Les étapes, dans l’ordre",
+      "paragraphs": [
+        "Le tableau suit la procédure de la dette jusqu’à la vente. La colonne de droite indique ce que cela signifie pour vous."
+      ],
+      "table": {
+        "headers": ["Étape", "Ce qui se passe", "Pour l’acheteur"],
+        "rows": [
+          [
+            "1. Commandement de payer valant saisie",
+            "Un commissaire de justice (anciennement huissier) signifie au débiteur un commandement : il a huit jours pour payer, sinon la procédure se poursuit (art. R. 321-1 et R. 321-3). Il est publié au fichier immobilier dans les deux mois (art. R. 321-6).",
+            "Rien n’est visible : la vente n’est pas encore annoncée."
+          ],
+          [
+            "2. Description du bien",
+            "Le commissaire de justice peut visiter le bien et dresser un procès-verbal de description : lieux, superficie, occupants et droits dont ils se prévalent (art. R. 322-1 et R. 322-2).",
+            "Ce procès-verbal est annexé au cahier : c’est une source sur l’occupation."
+          ],
+          [
+            "3. Assignation et dépôt du cahier",
+            "Dans les deux mois de la publication, le débiteur est assigné devant le juge de l’exécution à une audience d’orientation, un à trois mois avant sa date (art. R. 322-4). Le cahier des conditions de vente est déposé au greffe au plus tard le cinquième jour ouvrable après l’assignation (art. R. 322-10).",
+            "Première information fiable : mise à prix, désignation du bien, baux, conditions de la vente."
+          ],
+          [
+            "4. Audience d’orientation",
+            "Le juge vérifie les conditions de la saisie, statue sur les contestations et décide : vente amiable autorisée à la demande du débiteur, ou vente forcée (art. R. 322-15).",
+            "C’est elle qui détermine si le bien ira aux enchères."
+          ],
+          [
+            "5. Vente forcée annoncée",
+            "Le juge fixe l’audience de vente dans un délai de deux à quatre mois (art. R. 322-26). L’avis est publié et affiché un à deux mois avant (art. R. 322-31).",
+            "Vous pouvez consulter le cahier, visiter si des visites sont organisées et préparer l’enchère."
+          ],
+          [
+            "6. Audience d’adjudication",
+            "Les avocats portent les enchères ; le dernier enchérisseur est déclaré adjudicataire (art. R. 322-45).",
+            "Voir l’article « Le jour de l’audience : déroulé et rôle de l’avocat »."
+          ],
+          [
+            "7. Après la vente",
+            "Dix jours pour surenchérir, puis deux mois pour payer le prix et les frais (art. R. 322-51 et R. 322-56).",
+            "Voir l’article « Après l’adjudication »."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "cahier",
+      "title": "Le cahier des conditions de vente : votre document de travail",
+      "paragraphs": [
+        "Le cahier des conditions de vente décrit le bien et les modalités de la vente. Il comporte notamment le titre exécutoire, le décompte de la dette, la désignation de l’immeuble, l’origine de propriété, les servitudes, les baux consentis, le procès-verbal de description, les conditions de la vente, la mise à prix fixée par le créancier et la désignation du séquestre (art. R. 322-10). La mise à prix est le prix de départ des enchères ; le séquestre est le tiers qui conserve les fonds de la vente.",
+        "L’avis de vente indique où le consulter : au greffe du juge de l’exécution ou au cabinet de l’avocat du créancier poursuivant (art. R. 322-31). Les bons réflexes de lecture sont dans l’article « Lire le cahier des conditions de vente et préparer la visite »."
+      ]
+    },
+    {
+      "id": "vente-incertaine",
+      "title": "Pourquoi la date d’une vente n’est jamais certaine",
+      "paragraphs": [
+        "Plusieurs événements peuvent arrêter, retarder ou transformer la procédure avant le jour de l’audience. Ils font partie du fonctionnement normal de la saisie ; ne les lisez ni comme une bonne ni comme une mauvaise nouvelle pour votre projet."
+      ],
+      "bullets": [
+        "Le débiteur paie dans le délai de huit jours du commandement : la saisie s’arrête (service-public.fr, fiche « Saisie immobilière »).",
+        "Le juge autorise une vente amiable : il fixe un prix minimum et rappelle l’affaire dans un délai maximal de quatre mois (art. R. 322-21). Si la vente n’aboutit pas, il peut ordonner la vente forcée (art. R. 322-22 et R. 322-25).",
+        "Le jugement d’orientation fait l’objet d’un appel : la cour statue au plus tard un mois avant la date prévue de l’adjudication, faute de quoi le juge peut reporter l’audience (art. R. 322-19).",
+        "La vente forcée est reportée pour force majeure ou à la demande de la commission de surendettement (art. R. 322-28). Une nouvelle publicité est alors faite (art. R. 322-29).",
+        "Aucun créancier ne sollicite la vente le jour dit : le juge constate la caducité du commandement (art. R. 322-27)."
+      ]
+    },
+    {
+      "id": "regles-acheteur",
+      "title": "Ce que la procédure change pour vous",
+      "paragraphs": [
+        "Le bien est vendu pour désintéresser les créanciers : la mise à prix est fixée par le créancier poursuivant, et s’il n’y a aucune enchère, c’est lui qui est déclaré adjudicataire à ce prix (art. L. 322-6). La mise à prix n’est donc pas une estimation de la valeur du bien. L’article « Fixer son enchère plafond » explique comment raisonner à partir du marché et du coût complet.",
+        "Toute personne peut enchérir si elle justifie de garanties de paiement, sous réserve des incapacités liées à ses fonctions (art. L. 322-7), mais seuls les avocats portent les enchères (art. R. 322-40). L’article « Enchérir au tribunal : l’avocat obligatoire, comment le choisir, quel mandat lui donner » détaille ce point."
+      ],
+      "callout": {
+        "title": "Un repère, pas un calendrier garanti",
+        "text": "Les délais légaux fixent des maxima ou des fourchettes pour chaque étape, mais la durée totale varie selon les contestations, les reports et la charge des juridictions. Ne bloquez pas d’engagement financier qui ne serait pas réversible avant d’avoir confirmé la date de l’audience auprès de l’avocat poursuivant ou du greffe."
+      }
+    },
+    {
+      "id": "pistes-lecture",
+      "title": "Pour aller plus loin",
+      "paragraphs": [
+        "Le guide « Ventes immobilières judiciaires » présente le déroulement d’une vente (ancre #deroulement), les frais (ancre #frais) et un lexique (ancre #lexique) où figurent la saisie immobilière, la mise à prix, le cahier des conditions de vente et la vente à la barre.",
+        "Les ventes qui ne relèvent pas d’une saisie, comme la licitation d’un bien en indivision, suivent d’autres règles : voir l’article « La licitation : un bien en indivision vendu aux enchères, ce que cela change pour l’acheteur »."
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 311-2 (créancier muni d’un titre exécutoire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025928"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 321-1 (saisie de l’immeuble)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044073300"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 321-2 (indisponibilité de l’immeuble)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025948"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-6 (mise à prix, adjudication d’office)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025977"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-7 (garanties de paiement des enchérisseurs)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025979"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 321-1 (commandement de payer valant saisie)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025938974"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 321-3 (mentions du commandement, délai de huit jours)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000042941204"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 321-6 (publication au fichier immobilier)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026854624"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, articles R. 322-1 à R. 322-72 (la vente de l’immeuble saisi : description du bien, appel du jugement d’orientation, vente amiable, vente forcée, report, réitération)",
+      "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939038"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-4 (assignation à l’audience d’orientation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026854751"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-10 (cahier des conditions de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939072"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-15 (audience d’orientation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939086"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-31 (avis de vente)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343494"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-40 (enchères portées par un avocat)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343491"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-45 (arrêt des enchères)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939165"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-51 (surenchère dans les dix jours)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939181"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-56 (paiement du prix sous deux mois)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939193"
+    },
+    {
+      "label": "Service-Public — Saisie immobilière",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F16987"
+    },
+    {
+      "label": "Immojudis — Guide des ventes immobilières judiciaires : lexique (saisie immobilière)",
+      "url": "/ventes-immobilieres-judiciaires#lexique-saisie-immobiliere"
+    },
+    {
+      "label": "Immojudis — Guide des ventes immobilières judiciaires : déroulement d’une vente",
+      "url": "/ventes-immobilieres-judiciaires#deroulement"
+    },
+    {
+      "label": "Immojudis — Guide des ventes immobilières judiciaires : lexique (cahier des conditions de vente)",
+      "url": "/ventes-immobilieres-judiciaires#lexique-cahier-des-conditions-de-vente"
+    }
+  ]
+}

@@ -158,7 +158,7 @@ describe("/ressources/sitemap.xml (articles)", () => {
 
   it("lists every article, and only the articles", () => {
     const entries = resourcesSitemap();
-    expect(entries).toHaveLength(10);
+    expect(entries).toHaveLength(13);
     for (const entry of entries) {
       expect(entry.url).toMatch(/^https:\/\/immojudis\.com\/ressources\/[a-z0-9-]+$/);
       expect(entry.lastModified).toMatch(/^\d{4}-\d{2}-\d{2}$/);
