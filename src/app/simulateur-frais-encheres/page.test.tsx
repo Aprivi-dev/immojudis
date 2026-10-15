@@ -24,6 +24,16 @@ describe("page /simulateur-frais-encheres", () => {
     expect(html).toMatch(/href="\/offres"[^>]*>\s*Fixer son enchère plafond/);
   });
 
+  it("propose les trois calculs, le calcul direct étant celui du rendu serveur", () => {
+    const html = renderToString(<Page />);
+    expect(html).toContain("Que voulez-vous calculer ?");
+    expect(html).toContain("Budget vers prix maximal");
+    expect(html).toContain("Surenchère du dixième");
+    expect(html).toMatch(/<input(?=[^>]*value="cost")(?=[^>]*checked)[^>]*>/);
+    expect(html).not.toMatch(/<input(?=[^>]*value="budget")(?=[^>]*checked)[^>]*>/);
+    expect(html).toContain("Détail du coût");
+  });
+
   it("déclare des métadonnées dans les limites SEO, avec canonical", () => {
     expect(String(metadata.title).length + SITE_SUFFIX.length).toBeLessThanOrEqual(60);
     const description = String(metadata.description);
