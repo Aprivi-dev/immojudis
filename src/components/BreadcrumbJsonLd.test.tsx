@@ -14,8 +14,11 @@ describe("BreadcrumbJsonLd", () => {
     const html = renderToStaticMarkup(
       <BreadcrumbJsonLd trail={[{ name: "Offres", path: "/offres" }]} />,
     );
-    expect(html.startsWith('<script type="application/ld+json">')).toBe(true);
-    const data = JSON.parse(/<script[^>]*>(.*)<\/script>/.exec(html)![1]);
+    const opening = '<script type="application/ld+json">';
+    const closing = "</script>";
+    expect(html.startsWith(opening)).toBe(true);
+    expect(html.endsWith(closing)).toBe(true);
+    const data = JSON.parse(html.slice(opening.length, -closing.length));
     expect(data).toEqual({
       "@context": "https://schema.org",
       "@type": "BreadcrumbList",

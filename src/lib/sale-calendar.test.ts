@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { escapeIcsText } from "./ical";
 import {
   SALE_CALENDAR_DISCLAIMER,
   buildSaleCalendarFile,
@@ -113,7 +114,7 @@ describe("buildSaleCalendarFile", () => {
 
   it("keeps the court as the only place, and carries the verification notice", () => {
     const ics = unfolded();
-    expect(ics).toContain(`DESCRIPTION:${SALE_CALENDAR_DISCLAIMER.replace(/,/g, "\\,")}`);
+    expect(ics).toContain(`DESCRIPTION:${escapeIcsText(SALE_CALENDAR_DISCLAIMER)}`);
     expect(ics).toContain("à vérifier auprès de l’avocat poursuivant");
     expect((ics.match(/^LOCATION:/gm) ?? []).length).toBe(1);
     // The row type has no address: nothing but the court can reach LOCATION.
