@@ -72,6 +72,10 @@ function setAuthenticatedUser(id: string | null) {
   };
 }
 
+function tribunalSale(id: string): AuctionSale {
+  return { ...sale(id), sale_venue_type: "tribunal" } as unknown as AuctionSale;
+}
+
 function sale(id: string): AuctionSale {
   return {
     id,
@@ -538,7 +542,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
     testState.unlocksOverview.mockResolvedValue({ status: {}, sales: [{ id: "sale-b" }] });
 
-    renderForDiscoveryAccount([sale("sale-a"), sale("sale-b")]);
+    renderForDiscoveryAccount([tribunalSale("sale-a"), tribunalSale("sale-b")]);
 
     expect(await screen.findAllByText("Débloquée")).toHaveLength(1);
     const cards = screen.getAllByRole("article");
@@ -547,6 +551,23 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     expect(cards[0].textContent).not.toContain("Débloquée");
     expect(cards[0].textContent).toContain("3 ventes à débloquer par mois, gratuit");
     expect(document.body.textContent).not.toContain("Analyse détaillée avec l’offre Analyse");
+  });
+
+  it("sells the unlocks only on the sales held at a court", async () => {
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
+    testState.unlocksOverview.mockResolvedValue({ status: {}, sales: [] });
+
+    renderForDiscoveryAccount([
+      tribunalSale("sale-a"),
+      { ...sale("sale-b"), sale_venue_type: "notary" } as unknown as AuctionSale,
+    ]);
+
+    await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
+    const cards = screen.getAllByRole("article");
+    expect(cards[0].textContent).toContain("3 ventes à débloquer par mois, gratuit");
+    expect(cards[1].textContent).not.toContain("à débloquer par mois");
+    expect(cards[1].textContent).toContain("Voir le détail");
   });
 
   it("does not ask for the unlocks of a visitor or of an Analyse account", async () => {
@@ -564,7 +585,7 @@ describe("« 3 déblocages par mois » on the cards of a Découverte account", (
     testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
     testState.unlocksOverview.mockRejectedValue(new Error("indisponible"));
 
-    renderForDiscoveryAccount([sale("sale-a")]);
+    renderForDiscoveryAccount([tribunalSale("sale-a")]);
 
     await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
     expect(screen.queryByText("Débloquée")).toBeNull();

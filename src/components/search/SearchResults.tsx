@@ -33,6 +33,7 @@ import {
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
 import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
+import { saleIsTribunalVenue } from "@/lib/sale-procedure";
 import { formatDate, formatStartingPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
 import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
@@ -414,8 +415,9 @@ export const ListingCard = memo(function ListingCard({
           <span className="text-xs text-ink-soft">
             {locked
               ? "Fiche complète avec un compte gratuit"
-              : analysisLocked && !unlocked
-                ? `${MONTHLY_SALE_UNLOCKS} ventes à débloquer par mois, gratuit`
+              : analysisLocked && !unlocked && saleIsTribunalVenue(sale)
+                ? // The unlock is offered for the sales held at a court only.
+                  `${MONTHLY_SALE_UNLOCKS} ventes à débloquer par mois, gratuit`
                 : "Voir le détail"}
           </span>
           <div className="flex items-center">
