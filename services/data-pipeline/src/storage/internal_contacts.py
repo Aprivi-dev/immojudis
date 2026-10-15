@@ -54,7 +54,10 @@ REST_TIMEOUT = httpx.Timeout(60.0, connect=30.0)
 PAGE_SIZE = 1000  # plafond de lignes d'une réponse PostgREST
 MAX_PAGES = 50
 SALE_ID_CHUNK = 50
-OPPOSED_CACHE_TTL_SECONDS = 300.0
+# Une opposition enregistrée pendant un run (désinscription, lien du pied de message) doit empêcher toute
+# nouvelle écriture rapidement : au-delà d'une minute d'ancienneté, la liste mise en cache est relue. Le
+# cache ne sert qu'à éviter une relecture complète à chaque lot d'un même run, pas à tolérer un retard.
+OPPOSED_CACHE_TTL_SECONDS = 60.0
 
 _INSERT_SQL = """
 insert into public.information_agent_contacts
