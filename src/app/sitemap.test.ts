@@ -23,15 +23,17 @@ vi.mock("@/lib/public-sitemap.server", async () => {
 
 import sitemap from "./sitemap";
 import robots from "./robots";
+import resourcesSitemap from "./ressources/sitemap";
+import salesSitemap, { generateSitemaps as generateSalesSitemaps } from "./sales/sitemap";
 import nextConfig from "../../next.config";
-import { ROOT_SITEMAP_SALE_CAPACITY, SITEMAP_URL_LIMIT } from "@/lib/public-sitemap.server";
+import { SITEMAP_URL_LIMIT } from "@/lib/public-sitemap.server";
 
 const manySales = Array.from({ length: 2276 }, (_, index) => ({
   id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
   lastModified: new Date(Date.UTC(2026, 9, 9, 12, 0, 0) - index * 60_000).toISOString(),
 }));
 
-describe("sitemap.xml", () => {
+describe("sitemap.xml (static pages)", () => {
   beforeEach(() => {
     process.env.SITE_URL = "https://immojudis.com";
     mocks.loadSitemapSales.mockReset();
@@ -44,16 +46,16 @@ describe("sitemap.xml", () => {
     vi.restoreAllMocks();
   });
 
-  it("lists the public sales with their update date (more than 2 000 URLs)", async () => {
+  it("lists the pages only: no sale and no article", async () => {
     mocks.loadSitemapSales.mockResolvedValue(manySales);
     const entries = await sitemap();
-    expect(mocks.loadSitemapSales).toHaveBeenCalledWith(0, ROOT_SITEMAP_SALE_CAPACITY);
-    expect(entries.length).toBeGreaterThan(2000);
-    const sale = entries.find((entry) => entry.url.endsWith(manySales[1].id));
-    expect(sale).toMatchObject({
-      url: `https://immojudis.com/sales/${manySales[1].id}`,
-      lastModified: manySales[1].lastModified,
-    });
+    const paths = entries.map((entry) => new URL(entry.url).pathname);
+    expect(paths).toContain("/");
+    expect(paths).toContain("/ressources");
+    expect(paths).toContain("/ventes-immobilieres-judiciaires");
+    expect(paths.filter((path) => path.startsWith("/sales/"))).toEqual([]);
+    expect(paths.filter((path) => path.startsWith("/ressources/"))).toEqual([]);
+    expect(entries.length).toBeLessThan(50);
     expect(entries.every((entry) => new URL(entry.url).origin === "https://immojudis.com")).toBe(
       true,
     );
@@ -70,6 +72,8 @@ describe("sitemap.xml", () => {
       "/avocats",
       "/offres",
       "/tribunaux",
+      "/ressources",
+      "/annonce-exemple",
       "/legal",
       "/classement-des-annonces",
     ]) {
@@ -79,23 +83,22 @@ describe("sitemap.xml", () => {
     expect(byUrl.get("https://immojudis.com/sales")?.lastModified).toBe(manySales[0].lastModified);
   });
 
-  it("dates an article by its last change (updatedAt), else by its publication", async () => {
+  it("dates the pages that changed after 8 October by their real last change", async () => {
     mocks.loadSitemapSales.mockResolvedValue([]);
-    const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry]));
-    // Published on 05/10, corrected on 13/10.
-    expect(
-      byUrl.get("https://immojudis.com/ressources/prix-plafond-encheres-immobilieres")
-        ?.lastModified,
-    ).toBe("2026-10-13");
-    // Published on 13/10, never changed since.
-    expect(
-      byUrl.get("https://immojudis.com/ressources/frais-vente-encheres-judiciaire")?.lastModified,
-    ).toBe("2026-10-13");
+    const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
+    expect(byUrl.get("https://immojudis.com/offres")).toBe("2026-10-14");
+    expect(byUrl.get("https://immojudis.com/ressources")).toBe("2026-10-13");
+    expect(byUrl.get("https://immojudis.com/tribunaux")).toBe("2026-10-13");
+    expect(byUrl.get("https://immojudis.com/annonce-exemple")).toBe("2026-10-15");
   });
 
-  it("answers an error instead of a reduced sitemap when the database cannot be read", async () => {
+  it("stays available when the catalogue cannot be read: /sales just has no date", async () => {
     mocks.loadSitemapSales.mockRejectedValue(new Error("down"));
-    await expect(sitemap()).rejects.toThrow("down");
+    const entries = await sitemap();
+    const sales = entries.find((entry) => entry.url === "https://immojudis.com/sales");
+    expect(sales).toBeDefined();
+    expect(sales).not.toHaveProperty("lastModified");
+    expect(entries.length).toBeGreaterThan(10);
   });
 
   it("lists /offres, the address of the offers page, not its /accompagnement redirect", async () => {
@@ -122,13 +125,15 @@ describe("sitemap.xml", () => {
 
   it("leaves out changeFrequency and priority, which search engines ignore", async () => {
     mocks.loadSitemapSales.mockResolvedValue(manySales.slice(0, 3));
-    const entries = await sitemap();
+    const entries = [...(await sitemap()), ...resourcesSitemap()];
     expect(entries.some((entry) => "changeFrequency" in entry || "priority" in entry)).toBe(false);
   });
 
   it("never lists the source of a redirect declared in next.config.ts", async () => {
     mocks.loadSitemapSales.mockResolvedValue(manySales.slice(0, 3));
-    const paths = (await sitemap()).map((entry) => new URL(entry.url).pathname);
+    const paths = [...(await sitemap()), ...resourcesSitemap()].map(
+      (entry) => new URL(entry.url).pathname,
+    );
     const redirects = await nextConfig.redirects!();
     expect(redirects.length).toBeGreaterThan(0);
     for (const { source } of redirects) {
@@ -141,15 +146,91 @@ describe("sitemap.xml", () => {
       ).toEqual([]);
     }
   });
+});
 
-  it("stays under the 5 000 URLs per file", async () => {
+describe("/ressources/sitemap.xml (articles)", () => {
+  beforeEach(() => {
+    process.env.SITE_URL = "https://immojudis.com";
+  });
+  afterEach(() => {
+    delete process.env.SITE_URL;
+  });
+
+  it("lists every article, and only the articles", () => {
+    const entries = resourcesSitemap();
+    expect(entries).toHaveLength(10);
+    for (const entry of entries) {
+      expect(entry.url).toMatch(/^https:\/\/immojudis\.com\/ressources\/[a-z0-9-]+$/);
+      expect(entry.lastModified).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
+  it("dates an article by its last change (updatedAt), else by its publication", () => {
+    const byUrl = new Map(resourcesSitemap().map((entry) => [entry.url, entry.lastModified]));
+    // Published on 05/10, corrected on 13/10.
+    expect(byUrl.get("https://immojudis.com/ressources/prix-plafond-encheres-immobilieres")).toBe(
+      "2026-10-13",
+    );
+    // Published on 13/10, never changed since.
+    expect(byUrl.get("https://immojudis.com/ressources/frais-vente-encheres-judiciaire")).toBe(
+      "2026-10-13",
+    );
+  });
+});
+
+describe("/sales/sitemap/[id].xml (sales)", () => {
+  beforeEach(() => {
+    process.env.SITE_URL = "https://immojudis.com";
+    mocks.loadSitemapSales.mockReset();
+    mocks.loadSitemapSaleTotal.mockReset();
+  });
+  afterEach(() => {
+    delete process.env.SITE_URL;
+  });
+
+  it("generates one file per started block of 5 000 sales, none for an empty catalogue", async () => {
+    mocks.loadSitemapSaleTotal.mockResolvedValue(0);
+    expect(await generateSalesSitemaps()).toEqual([]);
+    mocks.loadSitemapSaleTotal.mockResolvedValue(2276);
+    expect(await generateSalesSitemaps()).toEqual([{ id: 0 }]);
+    mocks.loadSitemapSaleTotal.mockResolvedValue(SITEMAP_URL_LIMIT + 1);
+    expect(await generateSalesSitemaps()).toEqual([{ id: 0 }, { id: 1 }]);
+    mocks.loadSitemapSaleTotal.mockRejectedValue(new Error("down"));
+    expect(await generateSalesSitemaps()).toEqual([]);
+  });
+
+  it("lists the sales of file 0 from the first one, with their update date", async () => {
+    mocks.loadSitemapSales.mockResolvedValue(manySales);
+    const entries = await salesSitemap({ id: Promise.resolve("0") });
+    expect(mocks.loadSitemapSales).toHaveBeenCalledWith(0, SITEMAP_URL_LIMIT);
+    expect(entries).toHaveLength(2276);
+    expect(entries[1]).toEqual({
+      url: `https://immojudis.com/sales/${manySales[1].id}`,
+      lastModified: manySales[1].lastModified,
+    });
+  });
+
+  it("starts file 1 where file 0 stops, and stays under 5 000 URLs per file", async () => {
     mocks.loadSitemapSales.mockResolvedValue(
-      Array.from({ length: ROOT_SITEMAP_SALE_CAPACITY }, (_, index) => ({
+      Array.from({ length: SITEMAP_URL_LIMIT }, (_, index) => ({
         id: `s-${index}`,
         lastModified: null,
       })),
     );
-    expect((await sitemap()).length).toBeLessThanOrEqual(SITEMAP_URL_LIMIT);
+    const entries = await salesSitemap({ id: Promise.resolve("1") });
+    expect(mocks.loadSitemapSales).toHaveBeenCalledWith(SITEMAP_URL_LIMIT, 2 * SITEMAP_URL_LIMIT);
+    expect(entries.length).toBeLessThanOrEqual(SITEMAP_URL_LIMIT);
+  });
+
+  it("answers an error instead of a reduced file when the database cannot be read", async () => {
+    mocks.loadSitemapSales.mockRejectedValue(new Error("down"));
+    await expect(salesSitemap({ id: Promise.resolve("0") })).rejects.toThrow("down");
+  });
+
+  it("ignores an identifier that is not a file number", async () => {
+    expect(await salesSitemap({ id: Promise.resolve("abc") })).toEqual([]);
+    expect(await salesSitemap({ id: Promise.resolve("-1") })).toEqual([]);
+    expect(mocks.loadSitemapSales).not.toHaveBeenCalled();
   });
 });
 
@@ -165,21 +246,41 @@ describe("robots.txt", () => {
     vi.unstubAllEnvs();
   });
 
-  it("points to the sitemap and adds the extra files once the catalogue outgrows it", async () => {
+  it("lists the pages, the articles and one sales file per block of 5 000 sales", async () => {
     mocks.loadSitemapSaleTotal.mockResolvedValue(2276);
-    expect((await robots()).sitemap).toEqual(["https://immojudis.com/sitemap.xml"]);
-
-    mocks.loadSitemapSaleTotal.mockResolvedValue(ROOT_SITEMAP_SALE_CAPACITY + 6000);
     expect((await robots()).sitemap).toEqual([
       "https://immojudis.com/sitemap.xml",
+      "https://immojudis.com/ressources/sitemap.xml",
+      "https://immojudis.com/sales/sitemap/0.xml",
+    ]);
+
+    mocks.loadSitemapSaleTotal.mockResolvedValue(SITEMAP_URL_LIMIT * 2 + 1);
+    expect((await robots()).sitemap).toEqual([
+      "https://immojudis.com/sitemap.xml",
+      "https://immojudis.com/ressources/sitemap.xml",
       "https://immojudis.com/sales/sitemap/0.xml",
       "https://immojudis.com/sales/sitemap/1.xml",
+      "https://immojudis.com/sales/sitemap/2.xml",
     ]);
   });
 
-  it("keeps working when the database is unreachable", async () => {
+  it("lists exactly the sales files that the sales sitemap generates", async () => {
+    mocks.loadSitemapSaleTotal.mockResolvedValue(12_345);
+    const listed = ((await robots()).sitemap as string[]).filter((url) =>
+      url.includes("/sales/sitemap/"),
+    );
+    const generated = (await generateSalesSitemaps()).map(
+      ({ id }) => `https://immojudis.com/sales/sitemap/${id}.xml`,
+    );
+    expect(listed).toEqual(generated);
+  });
+
+  it("keeps working when the database is unreachable: the sales files are just not listed", async () => {
     mocks.loadSitemapSaleTotal.mockRejectedValue(new Error("down"));
-    expect((await robots()).sitemap).toEqual(["https://immojudis.com/sitemap.xml"]);
+    expect((await robots()).sitemap).toEqual([
+      "https://immojudis.com/sitemap.xml",
+      "https://immojudis.com/ressources/sitemap.xml",
+    ]);
   });
 
   it("drops the obsolete host directive and lets /login be crawled (its noindex must be seen)", async () => {
@@ -237,7 +338,11 @@ describe("robots.txt", () => {
       mocks.loadSitemapSaleTotal.mockResolvedValue(10);
       const result = await robots();
       expect(Array.isArray(result.rules) ? result.rules[0].allow : result.rules.allow).toBe("/");
-      expect(result.sitemap).toEqual(["https://immojudis.com/sitemap.xml"]);
+      expect(result.sitemap).toEqual([
+        "https://immojudis.com/sitemap.xml",
+        "https://immojudis.com/ressources/sitemap.xml",
+        "https://immojudis.com/sales/sitemap/0.xml",
+      ]);
     } finally {
       vi.unstubAllEnvs();
     }

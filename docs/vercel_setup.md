@@ -292,6 +292,73 @@ vide ou absente ferment).
   `SEO_INDEXING_ENABLED` pour savoir quel état vérifier. La variable de **dépôt GitHub** du même
   nom (Settings → Secrets and variables → Actions → Variables) doit donc suivre celle de Vercel.
 
+#### Les trois sitemaps
+
+`robots.txt` (quand l'indexation est ouverte) liste tous les sitemaps. Next.js ne génère pas
+d'index de sitemaps : ce sont des fichiers séparés, soumis chacun à Search Console.
+
+| Fichier                         | Contenu                                                              | Source                          |
+| ------------------------------- | -------------------------------------------------------------------- | ------------------------------- |
+| `/sitemap.xml`                  | Pages (accueil, catalogue, offres, guide, tribunaux, pages légales…) | `src/app/sitemap.ts`            |
+| `/ressources/sitemap.xml`       | Articles du blog, `lastmod` = `updatedAt`, sinon `publishedAt`       | `src/app/ressources/sitemap.ts` |
+| `/sales/sitemap/0.xml`, `1.xml` | Fiches de ventes publiques **et indexables**, 5 000 URL par fichier  | `src/app/sales/sitemap.ts`      |
+
+- **Fiches minces exclues.** La fonction SQL `app_private.is_indexable_public_sale` (migration
+  `20261025120000_indexable_public_sale_predicate.sql`) écarte du sitemap les fiches sans ville,
+  sans date exploitable, sans type précis (sauf fiche documentée) ou sans surface ni mise à prix.
+  La même fonction décide du `noindex, follow` de la page via `get_public_sale_indexability`.
+  **Appliquer cette migration avant l'ouverture** : sans elle, le sitemap liste toutes les ventes
+  visibles et la page retombe sur la copie TypeScript du prédicat (`isIndexablePublicSale`).
+- **`lastmod` des fiches.** C'est `auction_sales.updated_at`, que le pipeline réécrit à **chaque
+  passage** (`src/storage/supabase_client.py`, `row["updated_at"] = now`), même quand la vente n'a
+  pas changé : la date reflète le dernier passage, pas un changement de contenu. Google ignore un
+  `lastmod` qu'il juge inexact. Piste : une colonne `content_changed_at`, mise à jour par le
+  pipeline seulement quand la mise à prix, la date, le statut, les photos ou les pièces changent,
+  puis lue par `list_public_sale_sitemap_entries`. Non faite (elle touche l'écriture du pipeline
+  et la table `auction_sales` et ses triggers). À défaut, retirer `lastModified` de
+  `src/app/sales/sitemap.ts` est préférable à une date trompeuse.
+
+#### Jour d'ouverture
+
+À faire dans cet ordre, une fois la décision d'ouvrir prise (société créée, mentions légales
+renseignées, données relues).
+
+1. **Migrations.** `20261025120000_indexable_public_sale_predicate.sql` est appliquée en
+   production (par le propriétaire, jamais par un agent).
+2. **Redirections de domaine.** Vérifier que les variantes renvoient en **301** (ou 308,
+   permanent) vers l'origine canonique, sans chaîne : `www.immojudis.com`, `immojudis.fr`,
+   `www.immojudis.fr`. Depuis un poste :
+   `curl -sI https://www.immojudis.com/sales | grep -iE "^(HTTP|location)"` (idem pour les autres) ;
+   `location` doit être `https://immojudis.com/sales`. Réglage : Vercel → Project → Domains →
+   la variante → « Redirect to » le domaine canonique, code permanent.
+3. **Origine canonique.** `SITE_URL=https://immojudis.com` (Production). Contrôle :
+   `npm run env:check:prod`.
+4. **Ouvrir l'indexation.**
+   - Vercel → Environment Variables → `SEO_INDEXING_ENABLED=true`, environnement **Production**
+     uniquement, puis Redeploy.
+   - GitHub → Settings → Secrets and variables → Actions → Variables → `SEO_INDEXING_ENABLED=true`.
+   - Lancer à la main le workflow « Production smoke » (Actions → Run workflow) : il doit passer
+     avec l'état « ouvert ».
+   - À la main : `curl -s https://immojudis.com/robots.txt` doit contenir les trois sortes de
+     `Sitemap:` et aucun `Disallow: /` ; `curl -sI https://immojudis.com/ | grep -i x-robots-tag`
+     ne doit rien afficher.
+5. **Google Search Console.** Créer une propriété **Domaine** `immojudis.com` (vérification par un
+   enregistrement DNS TXT chez le gestionnaire du domaine : elle couvre `www`, `http` et tous les
+   sous-domaines). Puis Sitemaps → ajouter `sitemap.xml`, `ressources/sitemap.xml` et chaque
+   `sales/sitemap/N.xml` (le nombre de fichiers est celui de `robots.txt`). Inspecter ensuite
+   l'accueil, une fiche et un article (« Tester l'URL en direct », puis « Demander une indexation »
+   pour l'accueil).
+6. **Bing Webmaster Tools.** Importer la propriété depuis Search Console (ou la vérifier par DNS),
+   puis soumettre les mêmes sitemaps. Bing alimente aussi plusieurs moteurs tiers.
+7. **Suivi.** Rapport « Pages » de Search Console : « Exclue par la balise noindex » doit
+   correspondre aux fiches minces et à `/login` ; surveiller « Explorée, actuellement non
+   indexée » sur les fiches. Reprendre le décompte des fiches listées dans les sitemaps (somme
+   des URL de `sales/sitemap/N.xml`) après chaque évolution du prédicat.
+
+**Retour arrière.** Poser `SEO_INDEXING_ENABLED=false` (ou supprimer la variable), Redeploy : le
+`noindex` repart sur toutes les réponses et `robots.txt` retire les sitemaps. Pour retirer vite
+des adresses déjà indexées : Search Console → Suppressions, en plus du `noindex`.
+
 ## 4. Build
 
 ```bash

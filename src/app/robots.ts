@@ -1,16 +1,17 @@
 import type { MetadataRoute } from "next";
-import { loadSitemapSaleTotal, overflowSitemapCount } from "@/lib/public-sitemap.server";
+import { loadSitemapSaleTotal, salesSitemapCount } from "@/lib/public-sitemap.server";
 import { isSiteIndexable } from "@/lib/seo-indexing";
 import { isNonProductionVercelDeployment, resolveSiteOrigin } from "@/lib/site-url";
 
-// Lists the extra sales sitemaps when the catalogue outgrows `/sitemap.xml`.
+// Lists the three kinds of sitemap: the pages, the articles and the sales files.
 export const dynamic = "force-dynamic";
 
-async function overflowSitemaps(origin: string): Promise<string[]> {
+async function salesSitemaps(origin: string): Promise<string[]> {
   try {
-    const count = overflowSitemapCount(await loadSitemapSaleTotal());
+    const count = salesSitemapCount(await loadSitemapSaleTotal());
     return Array.from({ length: count }, (_, id) => `${origin}/sales/sitemap/${id}.xml`);
   } catch {
+    // A database error must not remove the robots.txt: the other sitemaps stay listed.
     return [];
   }
 }
@@ -40,6 +41,10 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   return {
     rules,
-    sitemap: [`${origin}/sitemap.xml`, ...(await overflowSitemaps(origin))],
+    sitemap: [
+      `${origin}/sitemap.xml`,
+      `${origin}/ressources/sitemap.xml`,
+      ...(await salesSitemaps(origin)),
+    ],
   };
 }

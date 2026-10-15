@@ -1,11 +1,12 @@
 import type { MetadataRoute } from "next";
-import { loadSitemapSales, ROOT_SITEMAP_SALE_CAPACITY } from "@/lib/public-sitemap.server";
+import { loadSitemapSales, SITEMAP_URL_LIMIT } from "@/lib/public-sitemap.server";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
-import { RESOURCE_ARTICLES, resourceLastModified } from "@/lib/resource-articles";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
-// Rebuilt on request from the data cache (refreshed every hour), never frozen at
-// build time: a sale published today must be listed today.
+// `/sitemap.xml` lists the static pages only. The articles have `/ressources/sitemap.xml`
+// (app/ressources/sitemap.ts) and the sales `/sales/sitemap/0.xml`, `1.xml`… (app/sales/sitemap.ts);
+// robots.txt lists the three. Rebuilt on request from the data cache (refreshed every hour), never
+// frozen at build time.
 export const dynamic = "force-dynamic";
 
 /**
@@ -38,13 +39,12 @@ const PUBLIC_ROUTES = [
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
 
-  // A database error is not hidden behind a shorter sitemap: it would tell crawlers that the
-  // sales are gone. The request fails (5xx), crawlers retry later, and the data cache never
-  // stores a thrown error. `loadPublicTribunalActivity` is the exception: it reports an
-  // unavailable database as an error result, and `/tribunaux` then stays listed (only a
-  // successful read that finds no court removes it).
+  // `loadPublicTribunalActivity` reports an unavailable database as an error result, and
+  // `/tribunaux` then stays listed (only a successful read that finds no court removes it).
+  // The sales are read only for the date of `/sales`: a database error leaves that date out
+  // instead of failing the list of pages, which does not depend on the catalogue.
   const [sales, tribunals] = await Promise.all([
-    loadSitemapSales(0, ROOT_SITEMAP_SALE_CAPACITY),
+    loadSitemapSales(0, SITEMAP_URL_LIMIT).catch(() => []),
     loadPublicTribunalActivity(),
   ]);
 
@@ -54,8 +54,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     null,
   );
 
-  return [
-    ...PUBLIC_ROUTES
+  return (
+    PUBLIC_ROUTES
       // The courts page has nothing to list (and is not indexed) while no court is listed.
       // A read error is not "no court": the page stays in the sitemap.
       .filter(
@@ -65,14 +65,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .map(([path, modified]) => {
         const lastModified = path === "/sales" ? newestSale : modified;
         return { url: `${origin}${path}`, ...(lastModified ? { lastModified } : {}) };
-      }),
-    ...RESOURCE_ARTICLES.map((article) => ({
-      url: `${origin}${article.href}`,
-      lastModified: resourceLastModified(article),
-    })),
-    ...sales.map((sale) => ({
-      url: `${origin}/sales/${sale.id}`,
-      ...(sale.lastModified ? { lastModified: sale.lastModified } : {}),
-    })),
-  ];
+      })
+  );
 }
