@@ -19,6 +19,7 @@ import { userMessage } from "@/lib/user-messages";
 import { Badge, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { ListingCard } from "@/components/search/SearchResults";
 import { FavoriteButton } from "./FavoriteButton";
+import { FavoriteSaleChanges } from "./FavoriteSaleChanges";
 import { queryKeys } from "@/lib/query-keys";
 
 const NOOP = () => undefined;
@@ -137,6 +138,15 @@ export function FavoriteSales() {
             Voir les ventes
           </Link>
         </Card>
+      ) : null}
+      {data && data.favorites.length > 0 ? (
+        <FavoriteSaleChanges
+          userId={user?.id}
+          favorites={data.favorites}
+          isAnalysis={isAnalysis}
+          aiReviewBySaleId={aiReviewBySaleId}
+          aiReviewStatus={aiReviewStatus}
+        />
       ) : null}
       {data && data.favorites.length > 0 ? (
         <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

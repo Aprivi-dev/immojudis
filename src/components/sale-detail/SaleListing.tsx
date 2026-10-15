@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { MapThumbnail } from "@/components/MapThumbnail";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
+import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { StreetViewDialog } from "@/components/StreetViewDialog";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { safeExternalHttpUrl } from "@/lib/external-url";
@@ -595,6 +596,14 @@ export function ListingPracticalDetails({
   const tribunal = saleIsTribunalVenue(sale);
   const notary = procedure.venueType === "notary";
   const state = procedure.venueType === "state";
+  // « Ajouter à mon agenda » only for a plain announced hearing: the server re-checks the date.
+  const calendarExportable =
+    tribunal &&
+    Boolean(sale.sale_date) &&
+    !status &&
+    !schedule &&
+    !timeConflict &&
+    !getAiReviewFieldResult(aiReviewProjections, "sale.sale_date", aiReviewStatus).blocked;
   const visits = listingVisits(sale);
   const contacts = listingContactLinks(procedure.organizerContact);
   const role = procedure.procedure?.organizer_type;
@@ -648,6 +657,7 @@ export function ListingPracticalDetails({
               >
                 {listingDate(schedule?.opens_at ?? sale.sale_date)}
               </AiReviewField>
+              {calendarExportable ? <SaleCalendarButton saleId={sale.id} /> : null}
               {timeConflict ? (
                 <p role="status" className="mt-2 text-sm font-medium text-amber-900">
                   {timeConflict}

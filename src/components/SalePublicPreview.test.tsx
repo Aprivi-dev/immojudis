@@ -258,6 +258,26 @@ describe("SalePublicPreview", () => {
     expect(teaser.textContent).toContain("Ventes comparables");
   });
 
+  it("offers « Ajouter à mon agenda » on a tribunal hearing, never on another venue or without date", () => {
+    const tribunal = renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2099-01-20T08:30:00+00:00",
+    });
+    expect(screen.getByRole("button", { name: "Ajouter à mon agenda" })).toBeTruthy();
+    expect(screen.getByText(/à vérifier auprès de l’avocat poursuivant/)).toBeTruthy();
+    tribunal.unmount();
+
+    const notary = renderPreview({
+      sale_venue_type: "notary",
+      sale_date: "2099-01-20T08:30:00+00:00",
+    });
+    expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
+    notary.unmount();
+
+    renderPreview({ sale_venue_type: "tribunal", sale_date: null });
+    expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
+  });
+
   it("has no structural accessibility violations", async () => {
     const { container } = renderPreview({
       sale_venue_type: "state",

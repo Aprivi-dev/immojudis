@@ -7,6 +7,7 @@ import Eye from "lucide-react/dist/esm/icons/eye.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { ListingPhoto } from "@/components/ListingPhoto";
+import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { formatPrice } from "@/lib/format";
 import { publicDossierContents, publicSaleDescription } from "@/lib/public-sale-description";
@@ -147,6 +148,7 @@ export function SalePublicPreview({
           <dd>
             {hearingDate}
             {hearingTime ? ` à ${hearingTime}` : ""}
+            {procedure.venueType === "tribunal" ? <SaleCalendarButton saleId={saleId} /> : null}
           </dd>
         </div>
       ) : null}
