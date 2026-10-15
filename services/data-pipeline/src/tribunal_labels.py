@@ -77,6 +77,20 @@ def court_name_candidates(label: object) -> list[str]:
     return candidates
 
 
+_NOTARIAL_VENUE_LABEL = re.compile(r"\ben l etude\b|\bnotaires?\b|\bnotarial|\boffice notarial\b")
+# « Tribunal judiciaire de En l'étude du Notaire » : l'en-tête Vench d'une vente chez le notaire.
+NOTARIAL_VENUE_PHRASE = re.compile(r"\btribunal\s+judiciaire\s+de\s+(?=en\s+l['’]\s*[ée]tude\b)", re.I)
+
+
+def tribunal_label_is_notarial_venue(label: object) -> bool:
+    """Vrai si le « tribunal » d'une annonce est en réalité le lieu de vente chez un notaire.
+
+    « TJ En L'Étude Du Notaire » désigne une vente notariale : la procédure est notariale et aucun
+    tribunal n'est compétent ; le libellé ne doit donc ni se rattacher à un tribunal ni être inventé.
+    """
+    return bool(_NOTARIAL_VENUE_LABEL.search(_fold(label)))
+
+
 def tribunal_label_is_polluted(label: object) -> bool:
     """Vrai si le libellé contient du texte d'annonce (« Suite À Des Poursuites… », « … le »)."""
     raw = str(label or "")
