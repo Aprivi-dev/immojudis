@@ -27,7 +27,6 @@ from src.config import (
     require_encheres_publiques_access,
 )
 from src.dedupe import merge_duplicate_sales
-from src.dedupe_candidates import report_duplicate_candidates
 from src.dpe import enrich_dpe_sales
 from src.encheres_publiques_guard import require_encheres_publiques_sale_access
 from src.enrichment.display_quality import has_current_display
@@ -1033,16 +1032,9 @@ def _publish_run(run: _PipelineRun) -> None:
                 run.outcome_bridge_created = outcome_bridge.created_count
                 run.outcome_bridge_reused = outcome_bridge.reused_count
                 run.supabase_deleted_secondary = delete_secondary_sales_in_supabase(app_ready)
-                if settings.get("dedupe_reconcile_mode") == "candidates":
-                    # Relecture avant activation : journalise les paires, n'écrit rien.
-                    try:
-                        report_duplicate_candidates()
-                    except Exception as exc:
-                        LOGGER.warning("Duplicate candidate report failed: %s", exc)
-                elif settings.get("dedupe_reconcile_enabled", False):
-                    run.supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase(
-                        limit=int(settings.get("dedupe_reconcile_max_rows") or 20000)
-                    )
+                # Coupé par défaut ; en mode « candidates » le balayage n'écrit rien et journalise les paires.
+                if settings.get("dedupe_reconcile_enabled", False) or settings.get("dedupe_reconcile_mode") == "candidates":
+                    run.supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase()
                 run.supabase_cleaned_past = mark_past_sales_in_supabase()
                 run.supabase_deleted_expired = delete_expired_sales_in_supabase()
                 run.supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()

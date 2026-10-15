@@ -9,8 +9,6 @@ import time
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
-from dataclasses import field as dataclass_field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -39,7 +37,6 @@ from src.asset_normalization import (
 from src.catalogue_readiness import apply_catalogue_readiness
 from src.config import LLM_EXTRACTIONS_DIR, PDF_DOCUMENT_TEXTS_DIR, PDF_TEXTS_DIR, load_settings
 from src.court_competence import tribunal_reference_rows
-from src.dedupe import merge_duplicate_sales
 from src.enrichment.display_quality import has_current_display
 from src.fact_claims import build_fact_claim_candidates, materialize_fact_claim_rows
 from src.freshness import document_fingerprint, documents_are_current, timestamp_is_fresh
@@ -63,12 +60,18 @@ from src.reviewed_aliases import (
 )
 from src.storage import internal_contacts
 from src.storage.column_sets import (
-    DEDUPLICATION_SALE_SELECT,
     JUDICIAL_SALE_COLUMNS,  # noqa: F401  (re-exported)
     LLM_BACKFILL_SALE_SELECT,
     POSTGRES_JSON_COLUMNS,
     PROPERTY_COLUMNS,  # noqa: F401  (re-exported)
     UPSERT_COLUMNS,
+)
+from src.storage.duplicate_sweep import (
+    DedupeScan,
+    DuplicateSweepPlan,
+    build_plan,
+    emit_candidates_report,
+    fetch_candidate_rows,
 )
 from src.storage.fact_claim_rows import (
     FACT_CLAIMS_COLUMNS,  # noqa: F401
@@ -2871,60 +2874,6 @@ def _auction_sale_from_row(row: dict[str, Any]) -> AuctionSale | None:
         return None
 
 
-@dataclass(frozen=True)
-class DuplicateRowSummary:
-    """Ce que le propriétaire doit voir d'une ligne publiée pour relire une fusion (aucune adresse)."""
-
-    id: str | None
-    source_name: str
-    source_url: str
-    city: str | None
-    sale_date: str | None
-    starting_price_eur: str | None
-    status: str | None
-
-
-@dataclass(frozen=True)
-class DuplicateMergeGroup:
-    """Une ligne conservée (primary) et les lignes que le balayage supprimerait (secondaries)."""
-
-    primary: DuplicateRowSummary
-    secondaries: tuple[DuplicateRowSummary, ...]
-    reason: str
-
-
-@dataclass
-class DuplicateSweepPlan:
-    scanned: int = 0
-    truncated: bool = False
-    groups: list[DuplicateMergeGroup] = dataclass_field(default_factory=list)
-    # Lignes fusionnées à écrire (usage interne de l'application, absent du rapport).
-    impacted_sales: list[AuctionSale] = dataclass_field(default_factory=list)
-    deferred_rows: int = 0
-    reviewed_aliases: ReviewedAliasRegistry | None = None
-
-    @property
-    def secondary_count(self) -> int:
-        return sum(len(group.secondaries) for group in self.groups)
-
-
-@dataclass
-class _DedupeScan:
-    truncated: bool = False
-
-
-def _duplicate_row_summary(sale: AuctionSale) -> DuplicateRowSummary:
-    return DuplicateRowSummary(
-        id=sale.id,
-        source_name=sale.source_name,
-        source_url=sale.source_url,
-        city=sale.city,
-        sale_date=sale.sale_date.isoformat() if sale.sale_date else None,
-        starting_price_eur=str(sale.starting_price_eur) if sale.starting_price_eur is not None else None,
-        status=sale.status,
-    )
-
-
 def plan_duplicate_reconciliation(
     *,
     statuses: tuple[str, ...] = ("active", "upcoming", "unknown"),
@@ -2933,68 +2882,21 @@ def plan_duplicate_reconciliation(
 ) -> DuplicateSweepPlan | None:
     """Calcule, sans rien écrire, les fusions que le balayage ferait sur les lignes publiées.
 
-    ``limit`` plafonne les lignes lues (toutes les pages sont parcourues jusque-là). ``max_merges``
-    plafonne les lignes secondaires supprimées par passage, par groupes entiers : les groupes au-delà
-    restent en l'état (``deferred_rows``) et sont repris au passage suivant. ``None`` : pas de plafond
-    (rapport de candidats). Renvoie ``None`` si Supabase n'est pas configuré.
+    ``limit`` plafonne les lignes lues (toutes les pages sont parcourues jusque-là) ; ``max_merges``
+    plafonne les lignes supprimées par passage (``None`` : pas de plafond). ``None`` si Supabase n'est
+    pas configuré.
     """
     settings = load_settings()
-    url = settings["supabase_url"]
-    key = settings["supabase_service_role_key"]
-    if not url or not key:
-        return None
+    url, key = settings["supabase_url"], settings["supabase_service_role_key"]
     max_rows = limit if limit is not None else int(settings.get("dedupe_reconcile_max_rows") or 20000)
-    if max_rows <= 0:
+    if not url or not key or max_rows <= 0:
         return None
-
     reviewed_aliases = _fetch_reviewed_alias_registry(str(url), str(key))
-    scan = _DedupeScan()
+    scan = DedupeScan()
     sales = _fetch_dedupe_candidate_sales(
-        str(url),
-        str(key),
-        statuses=statuses,
-        limit=max_rows,
-        reviewed_aliases=reviewed_aliases,
-        scan=scan,
+        str(url), str(key), statuses=statuses, limit=max_rows, reviewed_aliases=reviewed_aliases, scan=scan
     )
-    plan = DuplicateSweepPlan(
-        scanned=len(sales), truncated=scan.truncated, reviewed_aliases=reviewed_aliases
-    )
-    if len(sales) < 2:
-        return plan
-
-    # Résumés pris avant la fusion : elle recopie dans la survivante les champs des lignes absorbées.
-    summaries = {sale.source_url: _duplicate_row_summary(sale) for sale in sales}
-    # Le balayage supprime les lignes secondaires : preuve seulement, jamais la clé de repli stricte.
-    merged = merge_duplicate_sales(sales, strict_fallback=False)
-    protected_urls = reviewed_aliases.protected_source_urls()
-    all_secondary = set(_secondary_source_urls(merged))
-    kept = 0
-    for sale in merged:
-        secondary_urls = [
-            source_url
-            for source_url in dict.fromkeys(sale.source_urls)
-            if source_url and source_url in all_secondary and source_url not in protected_urls
-        ]
-        if not secondary_urls:
-            continue
-        # Plafond par groupes entiers. Un groupe plus gros que le plafond ne se fusionne jamais seul :
-        # il reste à relire à la main.
-        if max_merges is not None and kept + len(secondary_urls) > max_merges:
-            plan.deferred_rows += len(secondary_urls)
-            continue
-        kept += len(secondary_urls)
-        plan.impacted_sales.append(sale)
-        plan.groups.append(
-            DuplicateMergeGroup(
-                primary=summaries.get(sale.source_url) or _duplicate_row_summary(sale),
-                secondaries=tuple(
-                    summaries[source_url] for source_url in secondary_urls if source_url in summaries
-                ),
-                reason=sale.dedupe_confidence or "unknown",
-            )
-        )
-    return plan
+    return build_plan(sales, reviewed_aliases, max_merges=max_merges, truncated=scan.truncated)
 
 
 def reconcile_duplicate_sales_in_supabase(
@@ -3011,12 +2913,21 @@ def reconcile_duplicate_sales_in_supabase(
     active/upcoming/unknown rows, updates the canonical row, then deletes secondary
     source URLs. It reads every page up to ``DEDUPE_RECONCILE_MAX_ROWS`` and deletes
     at most ``DEDUPE_RECONCILE_MAX_MERGES`` secondary rows per pass.
+    With ``DEDUPE_RECONCILE_MODE=candidates`` it only reports the pairs it would merge.
     """
     settings = load_settings()
     url = settings["supabase_url"]
     key = settings["supabase_service_role_key"]
     db_url = settings.get("supabase_db_url")
     if not url or not key:
+        return 0
+    if settings.get("dedupe_reconcile_mode") == "candidates":
+        try:
+            candidates = plan_duplicate_reconciliation(statuses=statuses, limit=limit)
+            if candidates is not None:
+                emit_candidates_report(candidates)
+        except Exception as exc:  # le rapport ne doit jamais interrompre la collecte
+            LOGGER.warning("Duplicate candidate report failed: %s", exc)
         return 0
     if max_merges is None:
         configured = settings.get("dedupe_reconcile_max_merges")
@@ -3084,71 +2995,18 @@ def _fetch_dedupe_candidate_sales(
     statuses: tuple[str, ...],
     limit: int,
     reviewed_aliases: ReviewedAliasRegistry | None = None,
-    scan: _DedupeScan | None = None,
+    scan: DedupeScan | None = None,
 ) -> list[AuctionSale]:
     reviewed_aliases = reviewed_aliases or _fetch_reviewed_alias_registry(supabase_url, api_key)
-    protected_ids = reviewed_aliases.protected_sale_ids()
-    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/auction_sales"
-    rows: list[dict[str, Any]] = []
-    offset = 0
-    page_size = 1000
-    while True:
-        params: dict[str, str] = {
-            "select": DEDUPLICATION_SALE_SELECT,
-            # L'identifiant départage les dates égales : sans ordre total, la pagination par décalage
-            # peut répéter ou sauter des lignes d'une page à l'autre.
-            "order": "sale_date.asc.nullslast,updated_at.desc.nullslast,id.asc",
-            "limit": str(page_size),
-            "offset": str(offset),
-        }
-        if statuses:
-            params["status"] = _postgrest_in_filter(list(statuses))
-        try:
-            response = httpx.get(
-                endpoint,
-                params=params,
-                headers=_rest_headers(api_key, prefer="count=none"),
-                timeout=POSTGREST_TIMEOUT,
-            )
-        except httpx.HTTPError as exc:
-            LOGGER.warning("Supabase duplicate reconciliation fetch failed: %s", exc)
-            break
-        if response.is_error:
-            LOGGER.warning(
-                "Supabase duplicate reconciliation fetch failed (%s): %s",
-                response.status_code,
-                response.text[:300],
-            )
-            break
-        page_rows = response.json()
-        if not page_rows:
-            break
-        rows.extend(
-            row
-            for row in page_rows
-            if isinstance(row, dict)
-            and (not row.get("id") or str(row["id"]) not in protected_ids)
-        )
-        if len(page_rows) < page_size:
-            break
-        if len(rows) >= limit:
-            # Plafond de lecture atteint alors qu'il reste des pages : le balayage est partiel.
-            if scan is not None:
-                scan.truncated = True
-            LOGGER.warning(
-                "Duplicate reconciliation reached its read ceiling (%s rows); later rows are not examined. "
-                "Raise DEDUPE_RECONCILE_MAX_ROWS if the catalogue is larger.",
-                limit,
-            )
-            break
-        offset += page_size
-
-    sales: list[AuctionSale] = []
-    for row in rows[:limit]:
-        sale = _auction_sale_from_row(row)
-        if sale is not None:
-            sales.append(sale)
-    return sales
+    rows = fetch_candidate_rows(
+        supabase_url,
+        api_key,
+        statuses=statuses,
+        limit=limit,
+        protected_ids=reviewed_aliases.protected_sale_ids(),
+        scan=scan,
+    )
+    return [sale for sale in map(_auction_sale_from_row, rows) if sale is not None]
 
 
 def _has_current_llm_description(raw_payload: Any, prompt_version: str | None) -> bool:
