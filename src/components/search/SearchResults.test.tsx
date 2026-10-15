@@ -31,6 +31,7 @@ const testState = vi.hoisted(() => {
     },
     addFavoriteSale: vi.fn(),
     removeFavoriteSale: vi.fn(),
+    unlocksOverview: vi.fn(),
     push: vi.fn(),
   };
 });
@@ -41,6 +42,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: testState.supabase 
 vi.mock("@/lib/client-api", () => ({
   addFavoriteSale: testState.addFavoriteSale,
   removeFavoriteSale: testState.removeFavoriteSale,
+  fetchSaleUnlocksOverview: testState.unlocksOverview,
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: testState.push, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
@@ -59,6 +61,7 @@ afterEach(() => {
   testState.favoriteQuery.in.mockReset();
   testState.addFavoriteSale.mockReset().mockResolvedValue({});
   testState.removeFavoriteSale.mockReset().mockResolvedValue({});
+  testState.unlocksOverview.mockReset().mockResolvedValue({ status: {}, sales: [] });
   testState.push.mockReset();
 });
 
@@ -67,6 +70,10 @@ function setAuthenticatedUser(id: string | null) {
     user: id ? { id } : null,
     loading: false,
   };
+}
+
+function tribunalSale(id: string): AuctionSale {
+  return { ...sale(id), sale_venue_type: "tribunal" } as unknown as AuctionSale;
 }
 
 function sale(id: string): AuctionSale {
@@ -503,6 +510,88 @@ describe("listing media gallery", () => {
     expect(screen.getByTestId("sale-media-fallback-sale-no-photo")).toBeTruthy();
     expect(screen.getByText("Visuel : Appartement à Bordeaux")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Photo suivante" })).toBeNull();
+  });
+});
+
+describe("« 3 déblocages par mois » on the cards of a Découverte account", () => {
+  const renderForDiscoveryAccount = (sales: AuctionSale[]) =>
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <SearchResultsList
+          sales={sales}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked
+          isLoading={false}
+          error={null}
+          selectedSaleId={null}
+          hoveredSaleId={null}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          comparedSaleIds={[]}
+          comparisonDisabled={false}
+          onToggleComparison={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+  it("marks the sales the account unlocked and sells the unlocks on the others", async () => {
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
+    testState.unlocksOverview.mockResolvedValue({ status: {}, sales: [{ id: "sale-b" }] });
+
+    renderForDiscoveryAccount([tribunalSale("sale-a"), tribunalSale("sale-b")]);
+
+    expect(await screen.findAllByText("Débloquée")).toHaveLength(1);
+    const cards = screen.getAllByRole("article");
+    expect(cards[1].textContent).toContain("Débloquée");
+    expect(cards[1].textContent).toContain("Voir le détail");
+    expect(cards[0].textContent).not.toContain("Débloquée");
+    expect(cards[0].textContent).toContain("3 ventes à débloquer par mois, gratuit");
+    expect(document.body.textContent).not.toContain("Analyse détaillée avec l’offre Analyse");
+  });
+
+  it("sells the unlocks only on the sales held at a court", async () => {
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
+    testState.unlocksOverview.mockResolvedValue({ status: {}, sales: [] });
+
+    renderForDiscoveryAccount([
+      tribunalSale("sale-a"),
+      { ...sale("sale-b"), sale_venue_type: "notary" } as unknown as AuctionSale,
+    ]);
+
+    await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
+    const cards = screen.getAllByRole("article");
+    expect(cards[0].textContent).toContain("3 ventes à débloquer par mois, gratuit");
+    expect(cards[1].textContent).not.toContain("à débloquer par mois");
+    expect(cards[1].textContent).toContain("Voir le détail");
+  });
+
+  it("does not ask for the unlocks of a visitor or of an Analyse account", async () => {
+    renderResults([sale("sale-a")]);
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
+    renderResults([sale("sale-a")]);
+    await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalled());
+    expect(testState.unlocksOverview).not.toHaveBeenCalled();
+    expect(screen.queryByText("Débloquée")).toBeNull();
+  });
+
+  it("keeps the cards as they were when the unlocks cannot be read", async () => {
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
+    testState.unlocksOverview.mockRejectedValue(new Error("indisponible"));
+
+    renderForDiscoveryAccount([tribunalSale("sale-a")]);
+
+    await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
+    expect(screen.queryByText("Débloquée")).toBeNull();
+    expect(screen.getByRole("article").textContent).toContain(
+      "3 ventes à débloquer par mois, gratuit",
+    );
   });
 });
 

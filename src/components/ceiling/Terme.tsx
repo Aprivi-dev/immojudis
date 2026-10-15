@@ -5,9 +5,9 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import CircleHelp from "lucide-react/dist/esm/icons/circle-help.js";
 
 /**
- * Définitions courtes et neutres, alignées sur le lexique du guide. Elles n'énoncent aucune règle
- * de procédure : les montants, délais et conditions exacts relèvent du cahier des conditions de
- * vente et de l'avocat.
+ * Définitions courtes et neutres, alignées sur le lexique du guide. Elles n'énoncent pas de règle
+ * de procédure, sauf le montant de la garantie pour enchérir en saisie immobilière : les autres
+ * montants, délais et conditions exacts relèvent du cahier des conditions de vente et de l'avocat.
  */
 const TERMES = {
   "mise-a-prix": {
@@ -39,17 +39,60 @@ const TERMES = {
     definition:
       "Rémunération de l’avocat qui conduit la vente, calculée selon un barème réglementé et payée en plus du prix.",
   },
+  "garantie-encherir": {
+    label: "garantie pour enchérir",
+    definition:
+      "Chèque de banque ou caution bancaire irrévocable remis à l’avocat avant les enchères (en saisie immobilière : 10 % de la mise à prix, 3 000 € au minimum). Elle est restituée à l’enchérisseur qui ne l’emporte pas. Le plan de trésorerie l’appelle aussi « consignation » ; ne la confondez pas avec la consignation du prix, versée après la vente.",
+  },
+  "frais-prealables": {
+    label: "frais préalables",
+    definition:
+      "Frais de la procédure de saisie dont le montant a été fixé (taxé) par le juge. Ils sont à la charge de l’adjudicataire, en plus du prix. Leur montant est indiqué dans le cahier des conditions de vente ou annoncé avant les enchères : demandez-le à l’avocat poursuivant.",
+  },
+  "proces-verbal-descriptif": {
+    label: "procès-verbal descriptif",
+    definition:
+      "Document dressé par un commissaire de justice qui décrit le bien : composition, état apparent et occupation constatés lors de sa visite.",
+  },
+  "cahier-conditions-vente": {
+    label: "cahier des conditions de vente",
+    definition:
+      "Document juridique rédigé par l’avocat du créancier poursuivant, qui décrit le bien, les règles de la vente, l’occupation, les diagnostics, les servitudes et les frais. Il se consulte au greffe ou auprès de l’avocat poursuivant.",
+  },
+  "droit-preemption": {
+    label: "droit de préemption",
+    definition:
+      "Droit, pour la commune ou un autre titulaire prévu par la loi, de se substituer à l’adjudicataire pour acquérir le bien, dans un délai fixé par la loi.",
+  },
 } as const;
 
 export type TermeKey = keyof typeof TERMES;
 
 const GUIDE_HREF = "/ventes-immobilieres-judiciaires#lexique";
 
+/** Décale la bulle vers la gauche si elle dépasse du bord droit de l'écran (mot en fin de ligne). */
+function keepInViewport(node: HTMLSpanElement | null) {
+  if (!node) return;
+  node.style.transform = "";
+  const overflow = node.getBoundingClientRect().right - (window.innerWidth - 8);
+  if (overflow > 0) node.style.transform = `translateX(-${Math.ceil(overflow)}px)`;
+}
+
 /**
  * Un mot du métier suivi d'une petite bulle d'aide : un bouton qui ouvre une définition courte et
  * un lien vers le guide. Fermeture à la touche Échap, au clic extérieur ou quand le focus sort.
+ * L'icône reste petite (16 px) mais la zone d'appui fait 44 px.
  */
-export function Terme({ terme, children }: { terme: TermeKey; children?: ReactNode }) {
+export function Terme({
+  terme,
+  children,
+  placement = "bottom",
+}: {
+  terme: TermeKey;
+  children?: ReactNode;
+  /** `top` ouvre la bulle au-dessus du mot, pour un mot proche du bas d'un conteneur qui rogne. */
+  placement?: "bottom" | "top";
+}) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const root = useRef<HTMLSpanElement>(null);
@@ -90,7 +133,7 @@ export function Terme({ terme, children }: { terme: TermeKey; children?: ReactNo
         aria-controls={open ? id : undefined}
         aria-label={`Définition : ${entry.label}`}
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+        className="relative inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground after:absolute after:-inset-2.5 after:content-[''] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
       >
         <CircleHelp aria-hidden className="h-4 w-4" />
       </button>
@@ -99,7 +142,10 @@ export function Terme({ terme, children }: { terme: TermeKey; children?: ReactNo
           id={id}
           role="note"
           tabIndex={-1}
-          className="absolute left-0 top-full z-20 mt-1 w-64 max-w-[80vw] rounded-lg border border-border bg-white p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-foreground shadow-lg"
+          ref={keepInViewport}
+          className={`absolute left-0 z-20 w-64 max-w-[80vw] rounded-lg border border-border bg-white p-3 text-left text-xs font-normal normal-case leading-relaxed tracking-normal text-foreground shadow-lg ${
+            placement === "top" ? "bottom-full mb-1" : "top-full mt-1"
+          }`}
         >
           <span className="block">{entry.definition}</span>
           <Link

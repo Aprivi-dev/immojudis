@@ -189,6 +189,22 @@ def test_recompute_secrets_reach_only_the_recompute_steps() -> None:
             assert "SUPABASE_URL" in step.env and "SUPABASE_SERVICE_ROLE_KEY" in step.env
 
 
+def test_dedupe_candidates_reads_production_through_the_production_environment() -> None:
+    text = (WORKFLOWS / "dedupe-candidates.yml").read_text(encoding="utf-8")
+    migrations = (WORKFLOWS / "apply-supabase-migrations.yml").read_text(encoding="utf-8")
+    jobs = parse_jobs(text)
+
+    # Même nom d'environnement que le workflow de migrations, sur l'unique job qui reçoit les secrets.
+    assert re.search(r"^    environment: Production$", migrations, re.M)
+    assert re.search(r"^    environment: Production$", text, re.M)
+    assert [job.name for job in jobs] == ["report"]
+    assert [job.name for job in jobs if SECRET.search(job.env)] == []
+    assert [step.name for step in jobs[0].steps if SECRET.search(step.env)] == [
+        "List duplicate candidates without writing"
+    ]
+    assert "workflow_dispatch" in text and "pull_request" not in text and "schedule" not in text
+
+
 def test_information_agent_always_runs_main_with_secrets_on_its_two_business_steps() -> None:
     text = (WORKFLOWS / "information-agent-evidence.yml").read_text(encoding="utf-8")
     steps = {step.name: step for step in parse_jobs(text)[0].steps}

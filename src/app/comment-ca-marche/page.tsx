@@ -6,13 +6,15 @@ import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
+import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata: Metadata = {
-  alternates: { canonical: "/comment-ca-marche" },
+export const metadata: Metadata = pageMetadata({
+  path: "/comment-ca-marche",
   title: "Comment ça marche : préparer une vente",
   description:
     "Trouver une vente aux enchères, comprendre le bien, fixer son enchère plafond et se faire accompagner : les quatre étapes d’Immojudis.",
-};
+});
 
 const STEPS = [
   {
@@ -57,6 +59,15 @@ const STEPS = [
 ] as const;
 
 export default function Page() {
+  return (
+    <>
+      <BreadcrumbJsonLd trail={[{ name: "Comment ça marche", path: "/comment-ca-marche" }]} />
+      <PageContent />
+    </>
+  );
+}
+
+function PageContent() {
   return (
     <PageShell
       eyebrow="Comment ça marche"

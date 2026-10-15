@@ -44,6 +44,35 @@ describe("investor welcome flow", () => {
       "/sales?query=Bordeaux&maxPrice=150000&homeTypes=apartment",
     );
   });
+  it("announces the monthly unlocks of the free account instead of a flat « Analyse only »", () => {
+    render(<InvestorOnboarding />);
+    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    const text = document.body.textContent ?? "";
+    expect(text).toContain(
+      "Chaque mois, vous pouvez débloquer 3 ventes en détail (enchère plafond, lecture des pièces, historique, selon la vente). L’offre Analyse les ouvre toutes.",
+    );
+    expect(text).not.toContain("nécessitent un accès Analyse");
+  });
+
+  it.each([
+    ["33", "Département 33"],
+    ["33000", "Département 33"],
+    ["Bordeaux", "Bordeaux"],
+    ["", "Tous les secteurs couverts"],
+  ])("shows what was typed as the sector of the recap (%s)", (area, shown) => {
+    render(<InvestorOnboarding />);
+    fireEvent.change(screen.getByLabelText("Ville, département ou région"), {
+      target: { value: area },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    const sector = screen.getByText("Secteur").nextElementSibling;
+    expect(sector?.textContent).toBe(shown);
+    // A département typed as a number is never reported as « all sectors ».
+    if (area) expect(document.body.textContent).not.toContain("Tous les secteurs couverts");
+  });
+
   it("allows all fields to be skipped without payment or a write request", () => {
     render(<InvestorOnboarding />);
     expect(

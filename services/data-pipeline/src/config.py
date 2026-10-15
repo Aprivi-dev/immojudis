@@ -88,6 +88,12 @@ TARGET_DEPARTMENTS = _target_departments_from_env()
 FRENCH_POSTAL_CODE_PATTERN = r"(?:(?:0[1-9]|[1-8]\d|9[0-5])\d{3}|97[1-8]\d{2}|98[6-8]\d{2})"
 
 
+def _dedupe_reconcile_mode(value: str) -> str:
+    """"apply" ou "candidates" ; une valeur inconnue retombe sur le mode sans écriture."""
+    mode = (value or "apply").strip().lower()
+    return mode if mode in {"apply", "candidates"} else "candidates"
+
+
 def load_settings() -> dict[str, str | float | None]:
     load_dotenv(ROOT_DIR / ".env")
     return {
@@ -266,9 +272,18 @@ def load_settings() -> dict[str, str | float | None]:
         "llm_display_context_chars": max(4000, int(os.getenv("LLM_DISPLAY_CONTEXT_CHARS", "12000"))),
         "incremental_enrichment": os.getenv("INCREMENTAL_ENRICHMENT", "true").lower()
         in {"1", "true", "yes", "on"},
-        "dedupe_reconcile_enabled": os.getenv("DEDUPE_RECONCILE_ENABLED", "true").lower()
+        # Désactivé par défaut (comme le workflow) : le balayage supprime des lignes publiées.
+        "dedupe_reconcile_enabled": os.getenv("DEDUPE_RECONCILE_ENABLED", "false").lower()
         in {"1", "true", "yes", "on"},
-        "dedupe_reconcile_max_rows": max(0, int(os.getenv("DEDUPE_RECONCILE_MAX_ROWS", "2000"))),
+        # Plafond de lignes LUES par le balayage (garde-fou de lecture). Le catalogue compte quelques
+        # milliers de lignes publiées : le plafond doit rester très au-dessus, sinon les lignes les
+        # plus tardives (dates lointaines, dates inconnues) ne seraient jamais examinées.
+        "dedupe_reconcile_max_rows": max(0, int(os.getenv("DEDUPE_RECONCILE_MAX_ROWS", "20000"))),
+        # Plafond de lignes secondaires SUPPRIMÉES par passage (garde-fou d'écriture), par groupes entiers.
+        "dedupe_reconcile_max_merges": max(0, int(os.getenv("DEDUPE_RECONCILE_MAX_MERGES", "100"))),
+        # "apply" : fusionne et supprime (si DEDUPE_RECONCILE_ENABLED) ; "candidates" : journalise les
+        # paires qui seraient fusionnées, sans aucune écriture. Toute autre valeur vaut "candidates".
+        "dedupe_reconcile_mode": _dedupe_reconcile_mode(os.getenv("DEDUPE_RECONCILE_MODE", "apply")),
         "pdf_ocr_enabled": os.getenv("PDF_OCR_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
         "pdf_ocr_language": os.getenv("PDF_OCR_LANGUAGE", "fra+eng"),
         "pdf_ocr_tessdata": os.getenv("TESSDATA_PREFIX") or os.getenv("PDF_OCR_TESSDATA"),

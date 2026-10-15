@@ -21,7 +21,14 @@ export interface ResourceSection {
 interface ResourceContent {
   slug: string;
   publishedAt: string;
+  /** Last substantial change (`AAAA-MM-JJ`): `dateModified` of the article and sitemap `lastmod`. */
+  updatedAt?: string;
   title: string;
+  /**
+   * `<title>` and share title when the headline is too long for a search result (60 characters
+   * with the " - Immojudis" suffix). The `h1` and the cards keep `title`.
+   */
+  seoTitle?: string;
   category: string;
   description: string;
   intro: string[];
@@ -106,6 +113,20 @@ export const RESOURCE_SUMMARIES: ResourceSummary[] = [
     }),
   ),
 ];
+
+/** Title used for `<title>` and the share cards: `seoTitle` when set, the headline otherwise. */
+export function resourceDocumentTitle(
+  article: Pick<ResourceArticle, "title" | "seoTitle">,
+): string {
+  return article.seoTitle?.trim() || article.title;
+}
+
+/** Last modification date of an article: `updatedAt`, or the publication date. */
+export function resourceLastModified(
+  article: Pick<ResourceArticle, "publishedAt" | "updatedAt">,
+): string {
+  return article.updatedAt || article.publishedAt;
+}
 
 export function getResourceArticle(slug: string): ResourceArticle | undefined {
   return RESOURCE_ARTICLES.find((article) => article.slug === slug);

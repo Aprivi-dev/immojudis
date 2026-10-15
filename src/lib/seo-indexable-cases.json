@@ -1,0 +1,230 @@
+[
+  {
+    "name": "complete listing",
+    "facts": {
+      "city": "Romainville",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "apartment",
+      "app_surface_m2": 50,
+      "starting_price_eur": 85000
+    },
+    "indexable": true
+  },
+  {
+    "name": "price only (no surface) stays indexable",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "house",
+      "starting_price_eur": 60000
+    },
+    "indexable": true
+  },
+  {
+    "name": "surface only (no price) stays indexable",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "house",
+      "app_surface_m2": 80
+    },
+    "indexable": true
+  },
+  {
+    "name": "type is compared case-insensitively and trimmed",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": " Maison ",
+      "app_surface_m2": 80
+    },
+    "indexable": true
+  },
+  {
+    "name": "no city",
+    "facts": {
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "apartment",
+      "app_surface_m2": 50,
+      "starting_price_eur": 85000
+    },
+    "indexable": false
+  },
+  {
+    "name": "blank city",
+    "facts": {
+      "city": "   ",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "apartment",
+      "app_surface_m2": 50
+    },
+    "indexable": false
+  },
+  {
+    "name": "dash city",
+    "facts": {
+      "city": "-",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "apartment",
+      "app_surface_m2": 50
+    },
+    "indexable": false
+  },
+  {
+    "name": "no hearing date",
+    "facts": { "city": "Pau", "property_type": "apartment", "app_surface_m2": 50 },
+    "indexable": false
+  },
+  {
+    "name": "implausible hearing date flag",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2044-12-10T09:00:00+00:00",
+      "quality_flags": ["other_flag", "sale_date_implausible"],
+      "property_type": "apartment",
+      "app_surface_m2": 50
+    },
+    "indexable": false
+  },
+  {
+    "name": "other flags do not matter",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "quality_flags": ["missing_surface"],
+      "property_type": "apartment",
+      "starting_price_eur": 1000
+    },
+    "indexable": true
+  },
+  {
+    "name": "State disposal (cessions_etat) without date",
+    "facts": {
+      "city": "Dijon",
+      "primary_source": "cessions_etat",
+      "property_type": "building",
+      "starting_price_eur": 120000
+    },
+    "indexable": true
+  },
+  {
+    "name": "State disposal by venue type, flagged date",
+    "facts": {
+      "city": "Dijon",
+      "sale_venue_type": "state",
+      "quality_flags": ["sale_date_implausible"],
+      "property_type": "land",
+      "app_surface_m2": 900
+    },
+    "indexable": true
+  },
+  {
+    "name": "State disposal still needs a city",
+    "facts": {
+      "primary_source": "cessions_etat",
+      "property_type": "building",
+      "starting_price_eur": 120000
+    },
+    "indexable": false
+  },
+  {
+    "name": "State disposal still needs a surface or a price",
+    "facts": { "city": "Dijon", "sale_venue_type": "state", "property_type": "building" },
+    "indexable": false
+  },
+  {
+    "name": "type other, no document, short description",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "other",
+      "description_length": 499,
+      "document_count": 0,
+      "starting_price_eur": 50000
+    },
+    "indexable": false
+  },
+  {
+    "name": "type unknown, no type information at all",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "unknown",
+      "starting_price_eur": 50000
+    },
+    "indexable": false
+  },
+  {
+    "name": "null type without document",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "starting_price_eur": 50000
+    },
+    "indexable": false
+  },
+  {
+    "name": "type other but one case document",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "other",
+      "document_count": 1,
+      "starting_price_eur": 50000
+    },
+    "indexable": true
+  },
+  {
+    "name": "type other but a description of exactly 500 characters",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "other",
+      "description_length": 500,
+      "app_surface_m2": 40
+    },
+    "indexable": true
+  },
+  {
+    "name": "null type documented by its documents",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "document_count": 3,
+      "app_surface_m2": 40
+    },
+    "indexable": true
+  },
+  {
+    "name": "documented but neither surface nor price",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "other",
+      "document_count": 2
+    },
+    "indexable": false
+  },
+  {
+    "name": "zero surface and zero price",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "apartment",
+      "app_surface_m2": 0,
+      "starting_price_eur": 0
+    },
+    "indexable": false
+  },
+  {
+    "name": "completeness tier is ignored",
+    "facts": {
+      "city": "Pau",
+      "sale_date": "2026-12-10T09:00:00+00:00",
+      "property_type": "apartment",
+      "app_surface_m2": 30,
+      "completeness_tier": 0
+    },
+    "indexable": true
+  }
+]

@@ -72,9 +72,19 @@ _PHONE_RE = re.compile(r"(?<![\d+])(?:\+33\s?(?:\(0\)\s?)?|0)[1-9](?:[\s.\-]?\d{
 # --------------------------------------------------------------------------
 # Miroir du résolveur de contacts de l'agent (src/lib/information-agent.ts)
 # --------------------------------------------------------------------------
-# extractEmails : /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi puis
+# extractEmails : findEmailsInText (src/lib/information-agent/email-in-text.ts) puis
 # normalizedEmail : trim + lowerCase + z.string().email() (zod 3.25).
-_EXTRACT_EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE | re.ASCII)
+# Le motif est sensible à la casse, comme le TypeScript : le texte collecté colle souvent le mot suivant à
+# l'adresse (« maitre@x.frTél »), et une extension insensible à la casse absorberait sa majuscule (« …frT ») :
+# - extension en minuscules (ou capitalisée) : elle s'arrête au premier caractère qui ne peut pas la
+#   prolonger (majuscule, chiffre, point, barre) ;
+# - extension en capitales : elle n'emporte jamais la capitale d'un mot capitalisé (« FRTél » donne « FR ») ;
+#   ``(?![a-z…])`` est l'équivalent Python du ``(?!\p{Ll})`` du TypeScript (minuscules latines, accentuées
+#   comprises, que ``re`` ne sait pas désigner par propriété Unicode) ;
+# - au plus 24 lettres (``.immobilier``, ``.notaires`` passent) ; une suite plus longue n'est pas une adresse.
+_EXTRACT_EMAIL_RE = re.compile(
+    r"[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+(?:[A-Z]{2,24}(?![a-zß-öø-ÿœ])|[A-Za-z][a-z]{1,23}(?![a-z]))"
+)
 _ZOD_EMAIL_RE = re.compile(
     r"(?!\.)(?!.*\.\.)([A-Z0-9_'+\-.]*)[A-Z0-9_+-]@([A-Z0-9][A-Z0-9\-]*\.)+[A-Z]{2,}",
     re.IGNORECASE | re.ASCII,

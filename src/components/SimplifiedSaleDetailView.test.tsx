@@ -165,13 +165,13 @@ describe("integrated listing", () => {
     expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
     expectActivePanel(container, "apercu");
 
-    selectTab("Estimation");
-    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+    selectTab("Prix et plafond");
+    expect(screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected")).toBe(
       "true",
     );
     expectActivePanel(container, "estimation");
 
-    fireEvent.keyDown(screen.getByRole("tab", { name: "Estimation" }), { key: "ArrowRight" });
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Prix et plafond" }), { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "Statistiques" }).getAttribute("aria-selected")).toBe(
       "true",
     );
@@ -197,7 +197,7 @@ describe("integrated listing", () => {
 
     window.history.pushState(null, "", "#market");
     fireEvent(window, new Event("hashchange"));
-    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected")).toBe(
       "true",
     );
     expectActivePanel(container, "estimation");
@@ -206,7 +206,7 @@ describe("integrated listing", () => {
   it("defers tribunal forecast loading until its disclosure opens", () => {
     const sale = EXAMPLE_SALE_RECORDS.bordeaux.sale;
     renderDetail("analysis", sale, false);
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
 
     expect(mocks.forecast).toHaveBeenLastCalledWith(sale.id, false);
     const summary = screen.getByText("Perspective d’adjudication");
@@ -301,7 +301,7 @@ describe("integrated listing", () => {
           .getByRole("tab", {
             name:
               expectation.tab === "estimation"
-                ? "Estimation"
+                ? "Prix et plafond"
                 : expectation.tab === "demarches"
                   ? "Démarches"
                   : "Aperçu",
@@ -330,9 +330,9 @@ describe("integrated listing", () => {
       window.history.replaceState(null, "", `#${anchor}`);
       const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
 
-      expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
-        "true",
-      );
+      expect(
+        screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected"),
+      ).toBe("true");
       const target = container.querySelector(`#${anchor}`);
       expect(target).not.toBeNull();
       expect(target?.closest("details")).toBeNull();
@@ -368,7 +368,7 @@ describe("integrated listing", () => {
     window.history.replaceState(null, "", "#budget-analysis");
     const { container } = renderDetail("analysis", conflictingSale, false);
 
-    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected")).toBe(
       "true",
     );
     expectActivePanel(container, "estimation");
@@ -394,7 +394,7 @@ describe("integrated listing", () => {
       </QueryClientProvider>,
     );
 
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     expectActivePanel(view.container, "estimation");
     window.history.replaceState(null, "", "/");
 
@@ -561,7 +561,7 @@ describe("integrated listing", () => {
       false,
       estimate,
     );
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
 
     const summary = screen.getByText("Voir les références de marché");
     const disclosure = summary.closest("details");
@@ -591,7 +591,7 @@ describe("integrated listing", () => {
       false,
       estimate,
     );
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     fireEvent.click(screen.getByText("Voir les références de marché"));
 
     const market = container.querySelector("#market")!;
@@ -629,7 +629,7 @@ describe("integrated listing", () => {
 
   it("points the Estimation actions to the planner and its calculation", () => {
     renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
 
     expect(screen.getByRole("link", { name: "Ajuster mes hypothèses" }).getAttribute("href")).toBe(
       "#calculation",
@@ -658,7 +658,7 @@ describe("integrated listing", () => {
     window.history.replaceState(null, "", "/");
     renderDetail("analysis");
     expect(screen.getByText("Voir les sources et actions à confirmer")).toBeTruthy();
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     expect(screen.getByText("Voir les références de marché")).toBeTruthy();
   });
 
@@ -672,7 +672,7 @@ describe("integrated listing", () => {
       reliability: "medium",
     });
     renderDetail("discovery", undefined, true, true);
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     expect(
       screen.getByRole("heading", {
         name: "Les comparables et les travaux avec l’offre Analyse ; l’enchère plafond aussi en débloquant cette vente",
@@ -709,7 +709,7 @@ describe("integrated listing", () => {
       } as AuctionSale;
       const { container } = renderDetail("analysis", sale, false);
       expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
-      selectTab("Estimation");
+      selectTab("Prix et plafond");
 
       expect(screen.getByRole("heading", { name: "Prix et marché" })).toBeTruthy();
       expect(screen.queryByRole("link", { name: "Ajuster mes hypothèses" })).toBeNull();
@@ -822,6 +822,7 @@ describe("« 3 déblocages par mois » on the sale page", () => {
   const unlockStatus = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => ({
     saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
     unlocked: false,
+    unlockable: true,
     analysisAccess: false,
     limit: 3,
     used: 1,
@@ -925,7 +926,7 @@ describe("« 3 déblocages par mois » on the sale page", () => {
       saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
     });
 
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     expect(await screen.findByRole("heading", { name: "Le calcul, étape par étape" })).toBeTruthy();
     expect(container.querySelector("#calculation")).not.toBeNull();
 
@@ -941,7 +942,7 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     renderUnlocked();
 
     expect(mocks.fetchFactReliabilities).not.toHaveBeenCalled();
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     expect(screen.queryByText("Perspective d’adjudication")).toBeNull();
     expect(screen.queryByText("Prévision de l’audience chargée")).toBeNull();
   });
@@ -952,7 +953,7 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     // Aperçu: no risk evidence panel, only the generic « Points à vérifier » card.
     expect(screen.queryByText("Voir les sources et actions à confirmer")).toBeNull();
     // Estimation: no market evidence disclosure.
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     expect(screen.queryByText("Voir les références de marché")).toBeNull();
     // Travaux stays a preview of the Analyse offer.
     selectTab("Travaux");

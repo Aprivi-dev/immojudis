@@ -13884,6 +13884,20 @@ export type Database = {
       };
       get_court_auction_summaries: { Args: never; Returns: Json };
       get_withdrawn_catalogue_sources: { Args: never; Returns: string[] };
+      get_public_sale_calendar_event: {
+        Args: { p_sale_id: string };
+        Returns: {
+          city: string;
+          date_only: boolean;
+          exportable: boolean;
+          id: string;
+          property_type: string;
+          sale_date: string;
+          tribunal_city: string;
+          tribunal_name: string;
+          updated_at: string;
+        }[];
+      };
       get_public_sale_details: {
         Args: { p_sale_id: string };
         Returns: {
@@ -13900,6 +13914,10 @@ export type Database = {
           parking_count: number;
           photo_count: number;
         }[];
+      };
+      get_public_sale_indexability: {
+        Args: { p_sale_id: string };
+        Returns: boolean;
       };
       get_public_sale_summary: {
         Args: { p_sale_id: string };

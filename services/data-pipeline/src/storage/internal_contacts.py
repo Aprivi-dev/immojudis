@@ -18,13 +18,18 @@ Règles, identiques pour la transaction Postgres et pour PostgREST :
   après la vente et la purge de 21 jours (hebdomadaire) la supprime au plus tard 28 jours après la
   dernière consultation de l'annonce ;
 * ``created_at`` n'est jamais réécrit : il garde la date du premier relevé ;
-* aucune adresse n'est journalisée : l'appelant ne consigne que des compteurs et le type de l'erreur.
+* aucune adresse n'est journalisée : l'appelant ne consigne que des compteurs et le type de l'erreur ;
+* par PostgREST, la liste des adresses opposées (jusqu'à ``MAX_PAGES`` x ``PAGE_SIZE`` lignes) est lue une fois
+  par run (cinq minutes au plus), pas à chaque lot : elle ne peut pas être filtrée côté serveur sans mettre
+  les adresses dans l'URL, que le client HTTP journalise. Une lecture impossible, incomplète ou au-delà de la
+  limite n'écrit rien (fail-closed) et le dit dans le journal, sans adresse.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -49,6 +54,10 @@ REST_TIMEOUT = httpx.Timeout(60.0, connect=30.0)
 PAGE_SIZE = 1000  # plafond de lignes d'une réponse PostgREST
 MAX_PAGES = 50
 SALE_ID_CHUNK = 50
+# Une opposition enregistrée pendant un run (désinscription, lien du pied de message) doit empêcher toute
+# nouvelle écriture rapidement : au-delà d'une minute d'ancienneté, la liste mise en cache est relue. Le
+# cache ne sert qu'à éviter une relecture complète à chaque lot d'un même run, pas à tolérer un retard.
+OPPOSED_CACHE_TTL_SECONDS = 60.0
 
 _INSERT_SQL = """
 insert into public.information_agent_contacts
@@ -162,6 +171,40 @@ def write_internal_contacts_connection(connection: Any, sales: list[AuctionSale]
 _CONTENT_RANGE_TOTAL_RE = re.compile(r"/(\d+)\s*$")
 
 
+class RegistryReadError(RuntimeError):
+    """Lecture du registre incomplète ou au-delà de la limite : aucune adresse n'est écrite (fail-closed)."""
+
+
+class OpposedAddressCache:
+    """Adresses opposées lues par PostgREST, réutilisées d'un lot à l'autre pendant un run.
+
+    L'entrée est propre à un point d'accès et aux identifiants de run des ventes du lot : un autre run, ou
+    plus de ``ttl`` secondes, relit la liste en entier. Une lecture en échec ne laisse rien en cache.
+    """
+
+    def __init__(self, ttl: float = OPPOSED_CACHE_TTL_SECONDS, clock: Callable[[], float] = time.monotonic) -> None:
+        self._ttl = ttl
+        self._clock = clock
+        self._entry: tuple[str, frozenset[str | None], float, frozenset[str]] | None = None
+
+    def get(self, endpoint: str, run_ids: frozenset[str | None]) -> frozenset[str] | None:
+        if self._entry is None:
+            return None
+        cached_endpoint, cached_runs, loaded_at, opposed = self._entry
+        if cached_endpoint != endpoint or not run_ids <= cached_runs or self._clock() - loaded_at >= self._ttl:
+            return None
+        return opposed
+
+    def put(self, endpoint: str, run_ids: frozenset[str | None], opposed: frozenset[str]) -> None:
+        self._entry = (endpoint, run_ids, self._clock(), opposed)
+
+    def clear(self) -> None:
+        self._entry = None
+
+
+_OPPOSED_CACHE = OpposedAddressCache()
+
+
 def _read_pages(
     get: Callable[..., httpx.Response],
     endpoint: str,
@@ -189,16 +232,25 @@ def _read_pages(
         )
         batch = response.json()
         if not isinstance(batch, list):
-            raise RuntimeError("registre des contacts : réponse inattendue")
+            raise RegistryReadError("registre des contacts : réponse inattendue")
         match = _CONTENT_RANGE_TOTAL_RE.search(str((getattr(response, "headers", None) or {}).get("Content-Range") or ""))
         if match:
             total = int(match.group(1))
         rows.extend(item for item in batch if isinstance(item, dict))
         if not batch or (total is not None and len(rows) >= total):
             if total is not None and len(rows) != total:
-                raise RuntimeError("registre des contacts : lecture incomplète, aucune adresse écrite")
+                LOGGER.warning(
+                    "Internal contacts registry read incomplete: rows=%s announced=%s; nothing written", len(rows), total
+                )
+                raise RegistryReadError("registre des contacts : lecture incomplète, aucune adresse écrite")
             return rows
-    raise RuntimeError("registre des contacts : trop de pages, aucune adresse écrite")
+    LOGGER.error(
+        "Internal contacts registry read stopped at the page limit: pages=%s rows=%s; nothing written until the "
+        "limit is raised or the list is reduced",
+        MAX_PAGES,
+        len(rows),
+    )
+    raise RegistryReadError("registre des contacts : trop de pages, aucune adresse écrite")
 
 
 def write_internal_contacts_rest(
@@ -211,8 +263,13 @@ def write_internal_contacts_rest(
     get: Callable[..., httpx.Response] = httpx.get,
     post: Callable[..., httpx.Response] = httpx.post,
     patch: Callable[..., httpx.Response] = httpx.patch,
+    opposed_cache: OpposedAddressCache | None = None,
 ) -> int:
-    """Même règles par PostgREST : lire les oppositions et les lignes existantes, puis insérer ou rafraîchir."""
+    """Même règles par PostgREST : lire les oppositions et les lignes existantes, puis insérer ou rafraîchir.
+
+    Sans ``opposed_cache``, la liste des adresses opposées est relue à chaque appel ; ``write_safely`` fournit
+    le cache du processus pour ne la lire qu'une fois par run.
+    """
     rows = contact_rows(sales_with_internal_contacts(sales), sale_ids, now)
     if not rows:
         return 0
@@ -225,13 +282,18 @@ def write_internal_contacts_rest(
         return response
 
     # Aucune adresse dans une URL : le client HTTP journalise les URL complètes. Les oppositions sont donc
-    # lues en entier (pagination) et les lignes existantes par lots de ventes.
-    opposed = {
-        str(item.get("normalized_email"))
-        for item in _read_pages(
-            get, endpoint, {"select": "normalized_email", "opposition_status": "eq.opposed"}, api_key, check
+    # lues en entier (pagination, une fois par run grâce au cache) et les lignes existantes par lots de ventes.
+    run_ids = frozenset(sale.last_run_id for sale in sales)
+    opposed = opposed_cache.get(endpoint, run_ids) if opposed_cache is not None else None
+    if opposed is None:
+        opposed = frozenset(
+            str(item.get("normalized_email"))
+            for item in _read_pages(
+                get, endpoint, {"select": "normalized_email", "opposition_status": "eq.opposed"}, api_key, check
+            )
         )
-    }
+        if opposed_cache is not None:
+            opposed_cache.put(endpoint, run_ids, opposed)
     sale_ids = sorted({row["sale_id"] for row in rows})
     existing: dict[tuple[str, str], dict[str, Any]] = {}
     for start in range(0, len(sale_ids), SALE_ID_CHUNK):
@@ -317,7 +379,12 @@ def write_safely(
         if connection is not None:
             return write_internal_contacts_connection(connection, eligible, now)
         return write_internal_contacts_rest(
-            supabase_url, api_key, eligible, sale_ids_for_rest(supabase_url, api_key, eligible), now
+            supabase_url,
+            api_key,
+            eligible,
+            sale_ids_for_rest(supabase_url, api_key, eligible),
+            now,
+            opposed_cache=_OPPOSED_CACHE,
         )
     except Exception as exc:  # noqa: BLE001 - jamais d'échec de collecte pour un registre interne
         LOGGER.warning("Internal contacts registry write skipped: error=%s sales=%s", type(exc).__name__, len(eligible))

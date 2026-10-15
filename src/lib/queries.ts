@@ -21,7 +21,7 @@ type SupabaseReader = Pick<typeof supabase, "from">;
 
 // Fields needed by the search result card only. Keep heavy descriptions,
 // documents, source payloads and analysis evidence on the detail route.
-export const SALE_CARD_COLUMNS = [
+const SALE_CARD_COLUMN_NAMES = [
   "sale_venue_type",
   "sale_legal_framework",
   "sale_verification_status",
@@ -52,7 +52,14 @@ export const SALE_CARD_COLUMNS = [
   "media",
   "status",
   "completeness_tier",
-].join(",");
+] as const;
+
+export const SALE_CARD_COLUMNS = SALE_CARD_COLUMN_NAMES.join(",");
+
+/** Les mêmes colonnes sans le palier de complétude (base où sa migration n'est pas appliquée). */
+const SALE_CARD_COLUMNS_WITHOUT_TIER = SALE_CARD_COLUMN_NAMES.filter(
+  (column) => column !== "completeness_tier",
+).join(",");
 
 /** Colonnes d'une ligne de recherche complète, avec le palier de complétude de la carte. */
 const SALE_LIST_COLUMNS_WITH_TIER = `${SALE_LIST_COLUMNS},completeness_tier`;
@@ -97,16 +104,45 @@ type OrderableQuery<TQuery> = {
   order: (column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => TQuery;
 };
 
-/** Applique le tri complet d'une recherche sur une vue `_search` (voir `SORT_CLAUSES`). */
+/**
+ * Applique le tri complet d'une recherche sur une vue `_search` (voir `SORT_CLAUSES`). Sans
+ * `withTier`, le palier de complétude est ignoré (repli d'une base qui n'a pas la colonne).
+ */
 function applySearchOrder<TQuery extends OrderableQuery<TQuery>>(
   query: TQuery,
   sort: SortKey,
+  withTier = true,
 ): TQuery {
   let ordered = query.order("coordinates_rank", { ascending: true });
   for (const clause of SORT_CLAUSES[sort]) {
+    if (!withTier && clause.column === "completeness_tier") continue;
     ordered = ordered.order(clause.column, { ascending: clause.ascending, nullsFirst: false });
   }
   return ordered.order("id", { ascending: true });
+}
+
+/**
+ * La colonne `completeness_tier` n'existe pas encore (migration pas appliquée, déploiement
+ * échelonné) : PostgreSQL répond 42703, PostgREST une erreur `PGRST…` qui nomme la colonne.
+ */
+function isMissingCompletenessTier(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const { code, message } = error as { code?: unknown; message?: unknown };
+  const missingColumn = code === "42703" || (typeof code === "string" && code.startsWith("PGRST"));
+  return missingColumn && typeof message === "string" && message.includes("completeness_tier");
+}
+
+/**
+ * Lance la recherche avec le palier de complétude ; si la base ne l'a pas encore, la relance sans
+ * la colonne et sans ce tri plutôt que d'afficher une erreur de recherche.
+ */
+async function withCompletenessTierFallback<T>(run: (withTier: boolean) => Promise<T>): Promise<T> {
+  try {
+    return await run(true);
+  } catch (error) {
+    if (!isMissingCompletenessTier(error)) throw error;
+    return run(false);
+  }
 }
 
 type FilterableQuery = {
@@ -292,8 +328,9 @@ async function fetchSearchResultIds(
   limit: number,
   sort: SortKey,
   offset: number,
+  withTier: boolean,
 ): Promise<string[]> {
-  let q = applySearchOrder(db.from(catalogView).select("id"), sort).range(
+  let q = applySearchOrder(db.from(catalogView).select("id"), sort, withTier).range(
     offset,
     offset + limit - 1,
   );
@@ -337,18 +374,23 @@ export async function getSales(
   }
 
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
-  let q = applySearchOrder(
-    db
-      .from(catalogView)
-      .select(options.completenessTier ? SALE_LIST_COLUMNS_WITH_TIER : SALE_LIST_COLUMNS),
-    sort,
-  ).range(offset, offset + limit - 1);
+  return withCompletenessTierFallback(async (withTier) => {
+    let q = applySearchOrder(
+      db
+        .from(catalogView)
+        .select(
+          options.completenessTier && withTier ? SALE_LIST_COLUMNS_WITH_TIER : SALE_LIST_COLUMNS,
+        ),
+      sort,
+      withTier,
+    ).range(offset, offset + limit - 1);
 
-  q = applyAuthenticatedSaleFilters(q, filters);
+    q = applyAuthenticatedSaleFilters(q, filters);
 
-  const { data, error } = await q;
-  if (error) throw error;
-  return saleRows(data);
+    const { data, error } = await q;
+    if (error) throw error;
+    return saleRows(data);
+  });
 }
 
 export async function getSalesForSearch(
@@ -363,28 +405,40 @@ export async function getSalesForSearch(
   const db = options.client ?? supabase;
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
 
-  // The discovery view is a security barrier. EXPLAIN shows that selecting
-  // IDs and then re-reading the barrier doubles its materialization cost, so
-  // keep its existing single request. The app search view is invoker-safe and
-  // can prune the heavy lateral projections when the first request selects
-  // only IDs.
-  if (!options.discovery) {
-    const ids = await fetchSearchResultIds(db, catalogView, filters, limit, sort, offset);
-    if (ids.length === 0) return [];
-    const rows = await fetchSaleRowsByIds(db, catalogView, SALE_CARD_COLUMNS, filters, ids);
-    return orderSalesByIds(rows, ids);
-  }
+  return withCompletenessTierFallback(async (withTier) => {
+    const cardColumns = withTier ? SALE_CARD_COLUMNS : SALE_CARD_COLUMNS_WITHOUT_TIER;
 
-  let q = applySearchOrder(db.from(catalogView).select(SALE_CARD_COLUMNS), sort).range(
-    offset,
-    offset + limit - 1,
-  );
+    // The discovery view is a security barrier. EXPLAIN shows that selecting
+    // IDs and then re-reading the barrier doubles its materialization cost, so
+    // keep its existing single request. The app search view is invoker-safe and
+    // can prune the heavy lateral projections when the first request selects
+    // only IDs.
+    if (!options.discovery) {
+      const ids = await fetchSearchResultIds(
+        db,
+        catalogView,
+        filters,
+        limit,
+        sort,
+        offset,
+        withTier,
+      );
+      if (ids.length === 0) return [];
+      const rows = await fetchSaleRowsByIds(db, catalogView, cardColumns, filters, ids);
+      return orderSalesByIds(rows, ids);
+    }
 
-  q = applyAuthenticatedSaleFilters(q, filters);
+    let q = applySearchOrder(db.from(catalogView).select(cardColumns), sort, withTier).range(
+      offset,
+      offset + limit - 1,
+    );
 
-  const { data, error } = await q;
-  if (error) throw error;
-  return saleRows(data);
+    q = applyAuthenticatedSaleFilters(q, filters);
+
+    const { data, error } = await q;
+    if (error) throw error;
+    return saleRows(data);
+  });
 }
 
 export async function getSalesCount(

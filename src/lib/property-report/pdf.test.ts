@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Json } from "@/integrations/supabase/types";
 import { buildPlanEntitlements } from "./entitlements";
-import { reportToPdfLines } from "./pdf";
+import { REPORT_PDF_HEADINGS, reportToPdfLines } from "./pdf";
 import {
   buildReportRentalScenario,
   computeReportRentalScenario,
@@ -78,6 +78,11 @@ function reportWithRentalScenario(
 }
 
 describe("property report rental PDF", () => {
+  it("names the ceiling section a simulation, as a heading too", () => {
+    expect(REPORT_PDF_HEADINGS).toContain("Enchère plafond (simulation)");
+    expect(REPORT_PDF_HEADINGS).not.toContain("Enchère plafond");
+  });
+
   it("prints personal hypotheses and results instead of default rentability metrics", () => {
     const lines = reportToPdfLines(reportWithRentalScenario(), buildPlanEntitlements("analyse"));
 

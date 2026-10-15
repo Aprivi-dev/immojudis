@@ -1573,10 +1573,18 @@ def test_dedupe_candidate_fetch_excludes_both_reviewed_parent_ids(monkeypatch) -
         status_code = 200
         text = ""
 
-        def json(self):
-            return rows
+        def __init__(self, page):
+            self._page = page
 
-    monkeypatch.setattr(supabase_client.httpx, "get", lambda *args, **kwargs: Response())
+        def json(self):
+            return self._page
+
+    # Comme PostgREST : les lignes à l'offset 0, puis la page vide qui marque la fin des données.
+    monkeypatch.setattr(
+        supabase_client.httpx,
+        "get",
+        lambda *args, **kwargs: Response(rows if kwargs["params"]["offset"] == "0" else []),
+    )
 
     candidates = supabase_client._fetch_dedupe_candidate_sales(
         "https://supabase.test",

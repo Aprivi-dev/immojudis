@@ -42,7 +42,7 @@ export const REPORT_PDF_HEADINGS = [
   "Lecture opportunité",
   "Scénario locatif personnel",
   "Estimation locative indicative",
-  "Enchère plafond",
+  "Enchère plafond (simulation)",
   "Préparation audience",
   "Actions préparation audience",
   "Analyse de bien",
@@ -377,7 +377,7 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
       "état à confirmer avant enchère",
     )}`,
     "",
-    "Enchère plafond",
+    "Enchère plafond (simulation)",
     ...(personalSimulation
       ? [
           "Scénario personnel sauvegardé",
@@ -398,8 +398,8 @@ export function reportToPdfLines(report: SavedReportRow, plan: PlanEntitlements)
         ]
       : []),
     ceiling.available
-      ? `Mise maximum conseillée: ${formatPrice(numberValue(ceiling.maxBid))}`
-      : `Mise maximum conseillée: indisponible (${stringOrNumberValue(ceiling.reason, "données incomplètes")})`,
+      ? `Enchère plafond (simulation): ${formatPrice(numberValue(ceiling.maxBid))}`
+      : `Enchère plafond (simulation): indisponible (${stringOrNumberValue(ceiling.reason, "données incomplètes")})`,
     ...(ceiling.available &&
     numberValue(ceiling.maxBid) != null &&
     numberValue(sale.startingPrice) != null &&

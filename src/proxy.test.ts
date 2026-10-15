@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { proxy } from "./proxy";
+import { config, proxy } from "./proxy";
 
 function run(headers: Record<string, string> = {}) {
   return proxy(new NextRequest("https://immojudis.com/sales", { headers }));
@@ -47,5 +47,62 @@ describe("proxy CSP", () => {
   it("keeps propagating the request id", () => {
     const response = run({ "x-request-id": "client-12345678" });
     expect(response.headers.get("x-request-id")).toBe("client-12345678");
+  });
+});
+
+describe("proxy X-Robots-Tag", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("sends noindex on every response the proxy handles while SEO_INDEXING_ENABLED is not true (default)", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "");
+    expect(run().headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "false");
+    expect(run().headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it("sends nothing once the production site is open", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "true");
+    expect(run().headers.get("x-robots-tag")).toBeNull();
+  });
+
+  it("reads the switch at request time, not at import time", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "true");
+    expect(run().headers.get("x-robots-tag")).toBeNull();
+    vi.stubEnv("SEO_INDEXING_ENABLED", "false");
+    expect(run().headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it("keeps noindex on a preview even with the switch open", () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "true");
+    expect(run().headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+});
+
+describe("proxy matcher", () => {
+  // Next.js reads each matcher as `/((?!...).*)`: the same pattern, anchored, as a plain RegExp.
+  const matches = (path: string) =>
+    config.matcher.some((pattern) => new RegExp(`^${pattern}$`).test(path));
+
+  it("runs on pages, API routes and every sitemap, so they carry X-Robots-Tag when closed", () => {
+    for (const path of [
+      "/",
+      "/sales",
+      "/api/sales/ai-review",
+      "/sitemap.xml",
+      "/ressources/sitemap.xml",
+      "/sales/sitemap/0.xml",
+    ]) {
+      expect(matches(path), path).toBe(true);
+    }
+  });
+
+  it("skips static files, the image optimizer and robots.txt", () => {
+    for (const path of ["/_next/static/chunk.js", "/_next/image", "/media/a.jpg", "/robots.txt"]) {
+      expect(matches(path), path).toBe(false);
+    }
   });
 });

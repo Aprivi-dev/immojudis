@@ -68,6 +68,23 @@ describe("public sale page", () => {
     expect(metadata.robots).toBeUndefined();
   });
 
+  it("keeps a thin sale out of the index but follows its links", async () => {
+    const thin = { ...sale, city: null, app_surface_m2: null, starting_price_eur: null };
+    mocks.lookup.mockResolvedValue({ status: "found", sale: thin });
+    const metadata = await generateMetadata({ params });
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    // The page itself is still served normally (title, canonical).
+    expect(metadata.alternates).toEqual({ canonical: `/sales/${ID}` });
+  });
+
+  it("trusts the database verdict over the TypeScript predicate", async () => {
+    mocks.lookup.mockResolvedValue({ status: "found", sale, indexable: false });
+    expect((await generateMetadata({ params })).robots).toEqual({ index: false, follow: true });
+    const thin = { ...sale, city: null };
+    mocks.lookup.mockResolvedValue({ status: "found", sale: thin, indexable: true });
+    expect((await generateMetadata({ params })).robots).toBeUndefined();
+  });
+
   it("shares the site preview image and announces the lower-case address, whatever the URL case", async () => {
     mocks.lookup.mockResolvedValue({ status: "found", sale });
     const metadata = await generateMetadata({ params: Promise.resolve({ id: ID.toUpperCase() }) });

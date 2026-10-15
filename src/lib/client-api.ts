@@ -134,6 +134,7 @@ export {
   fetchPrecomputedMarketEstimate,
   fetchDocumentReading,
   fetchSaleUnlockStatus,
+  fetchSaleUnlocksOverview,
   unlockSaleRequest,
   SaleUnlockQuotaReachedError,
   fetchSalePassages,
