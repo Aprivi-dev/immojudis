@@ -103,7 +103,7 @@ describe("GET /api/sales/[id]/calendar", () => {
     await expect(response.json()).resolves.toMatchObject({
       ok: false,
       code: "CONFLICT",
-      error: expect.stringContaining("pas assez sûre"),
+      error: expect.stringContaining("n’est pas confirmée"),
     });
   });
 

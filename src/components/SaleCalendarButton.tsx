@@ -59,7 +59,8 @@ export function SaleCalendarButton({ saleId }: { saleId: string }) {
         {pending ? "Préparation…" : "Ajouter à mon agenda"}
       </Button>
       <p className="mt-1 text-xs text-ink-soft">
-        Date issue de l’annonce, à vérifier auprès de l’avocat poursuivant.
+        Date issue de l’annonce, à vérifier auprès de l’avocat poursuivant. Le fichier ne se met pas
+        à jour si la date change.
       </p>
       {message ? (
         <p role="alert" className="mt-1 text-xs text-red-700">
