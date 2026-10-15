@@ -57,6 +57,7 @@ const ANALYSIS_FEATURES = [
   "Historique de la vente pour toutes les ventes : passages précédents, baisses de mise à prix, reports",
   "Estimation détaillée et ventes comparables",
   "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
+  "Suivi des changements de vos favoris (date, mise à prix, statut, documents), consultable dans Mes favoris",
   "Statistiques des tribunaux : prix d’adjudication et scénarios d’enchères, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
 ] as const;
 
