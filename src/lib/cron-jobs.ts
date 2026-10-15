@@ -198,6 +198,16 @@ export async function runDataRetention(now = new Date()): Promise<Record<string,
     p_now: now.toISOString(),
   });
   if (error) throw new Error(error.message || "Data retention failed.");
+  // Each purge is isolated in the database: the others have run and are committed, but a failed
+  // one must still fail the monitored job (it stays in the report for the operator).
+  const purgeErrors =
+    data && typeof data === "object" && !Array.isArray(data) ? data.purge_errors : null;
+  if (purgeErrors && typeof purgeErrors === "object" && !Array.isArray(purgeErrors)) {
+    const failed = Object.entries(purgeErrors)
+      .map(([purge, sqlstate]) => `${purge} (${String(sqlstate)})`)
+      .join(", ");
+    if (failed) throw new Error(`Data retention: purge failed: ${failed}.`);
+  }
   return { deleted: data ?? {} };
 }
 
