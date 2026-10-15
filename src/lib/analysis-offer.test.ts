@@ -15,7 +15,9 @@ import {
 describe("offersPageDescription", () => {
   it("states no price while the offer is closed", () => {
     const text = offersPageDescription({ open: false, label: "29 € TTC / mois" });
-    expect(text).toContain("ouvrira prochainement");
+    expect(text).toContain("n’est pas encore ouverte à la souscription");
+    expect(text).toContain("alertes quotidiennes");
+    expect(text.length).toBeLessThanOrEqual(OFFERS_DESCRIPTION_MAX_LENGTH);
     expect(text).not.toContain("29");
   });
 

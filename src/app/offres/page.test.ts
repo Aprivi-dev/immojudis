@@ -18,7 +18,7 @@ describe("métadonnées de /offres", () => {
     vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "");
     const description = String(generateMetadata().description);
     expect(description).toBe(
-      "Découverte est gratuite. Analyse, l’offre d’aide à la décision (enchère plafond chiffrée, alertes, comparables), ouvrira prochainement.",
+      "Découverte est gratuite. Analyse, l’offre d’aide à la décision (enchère plafond, alertes quotidiennes, comparables), n’est pas encore ouverte à la souscription.",
     );
     expect(description).not.toMatch(/€|TTC|\d/);
     expect(description.length).toBeLessThanOrEqual(160);
@@ -27,7 +27,9 @@ describe("métadonnées de /offres", () => {
   it("n'annonce aucun prix tant que l'identité légale n'est pas publiée", () => {
     vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "price_123");
     mocks.legalReady.mockReturnValue({ ready: false, missing: ["raison sociale"] });
-    expect(String(generateMetadata().description)).toContain("ouvrira prochainement");
+    expect(String(generateMetadata().description)).toContain(
+      "n’est pas encore ouverte à la souscription",
+    );
   });
 
   it("reprend le libellé public quand l'offre est ouverte", () => {
