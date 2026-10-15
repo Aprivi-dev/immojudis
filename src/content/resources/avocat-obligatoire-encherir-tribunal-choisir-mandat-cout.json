@@ -14,7 +14,7 @@
     "Pour une vente forcée au tribunal, les enchères sont portées par un avocat inscrit au barreau du tribunal judiciaire où la vente est poursuivie, qui ne peut être porteur que d’un seul mandat (art. R. 322-40 du Code des procédures civiles d’exécution).",
     "Avant d’enchérir, il se fait remettre contre récépissé une garantie de 10 % de la mise à prix, avec un minimum de 3 000 € (art. R. 322-41).",
     "Le mandat, c’est le pouvoir que vous lui donnez d’enchérir pour vous ; il doit connaître votre identité complète et votre enchère plafond, car on ne peut pas désigner un acquéreur après coup (art. L. 322-8).",
-    "Son coût comprend des émoluments tarifés, dont un quart du barème revient à l’avocat de l’adjudicataire, des honoraires librement convenus et des débours.",
+    "Son coût comprend des émoluments tarifés, dont un quart du barème revient à l’avocat de l’adjudicataire, des honoraires convenus avec l’avocat et des débours.",
     "L’annuaire d’Immojudis aide à repérer les avocats du barreau compétent ; ce n’est ni une notation ni une recommandation."
   ],
   "sections": [
@@ -23,7 +23,7 @@
       "title": "Pourquoi un avocat est obligatoire",
       "paragraphs": [
         "En saisie immobilière, l’adjudication, c’est-à-dire l’attribution du bien au dernier enchérisseur, a lieu aux enchères publiques à l’audience du juge (art. L. 322-5). Les enchères sont portées par le ministère d’un avocat inscrit au barreau du tribunal judiciaire devant lequel la vente est poursuivie. Celui-ci ne peut être porteur que d’un seul mandat (art. R. 322-40). L’avis de vente rappelle cette règle (art. R. 322-31).",
-        "Concrètement, cela veut dire trois choses. Vous ne pouvez pas enchérir seul. L’avocat doit appartenir au barreau du tribunal concerné, et non à n’importe quel barreau. Et comme il ne peut représenter qu’un enchérisseur pour une vente, il faut le solliciter assez tôt.",
+        "Concrètement, cela veut dire trois choses. Vous ne pouvez pas enchérir seul. L’avocat doit appartenir au barreau du tribunal concerné, et non à n’importe quel barreau. Et comme il ne peut être porteur que d’un seul mandat (en pratique, un seul enchérisseur pour un même bien), il faut le solliciter assez tôt.",
         "L’obligation vise les ventes forcées au tribunal. Pour une licitation, les enchères reçues par un notaire peuvent être faites sans avocat (art. 1278 du Code de procédure civile), et les ventes notariales volontaires ou domaniales ont leurs propres règles : voir l’article « Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal »."
       ]
     },
@@ -35,14 +35,14 @@
       ],
       "bullets": [
         "Le barreau : vérifiez qu’il correspond au tribunal judiciaire qui juge la vente. L’annuaire d’Immojudis (rubrique « Avocats », page /avocats) permet de chercher par barreau ou à partir d’une vente.",
-        "L’indépendance : l’avocat poursuivant représente le créancier. L’annuaire l’écarte quand la recherche part d’une annonce. Les auxiliaires de justice intervenus dans la procédure ne peuvent pas enchérir, même par personne interposée (art. R. 322-39) : demandez à l’avocat que vous contactez s’il intervient déjà dans le dossier.",
+        "L’indépendance : l’avocat poursuivant agit pour le créancier. Par prudence, l’annuaire ne le propose pas pour la vente concernée. Le Code interdit aux auxiliaires de justice intervenus dans la procédure de se porter enchérisseurs, par eux-mêmes ou par personne interposée (art. R. 322-39) ; il ne dit pas expressément si l’avocat poursuivant peut porter les enchères d’un tiers. Demandez à l’avocat que vous contactez s’il intervient déjà dans le dossier et, si oui, s’il accepte de porter vos enchères.",
         "L’expérience : demandez combien d’audiences d’adjudication il suit chaque année et s’il connaît les usages de ce tribunal.",
         "La disponibilité : il doit pouvoir lire le cahier des conditions de vente, recevoir votre garantie avant la date limite qu’il vous donnera et être présent à l’audience.",
-        "La clarté sur le coût : demandez une convention d’honoraires écrite avant de vous engager. Elle est en principe exigée, sauf urgence ou force majeure, d’après Service-Public."
+        "La clarté sur le coût : demandez une convention d’honoraires écrite avant de vous engager. Elle est en principe exigée, sauf urgence, force majeure ou intervention au titre de l’aide juridictionnelle (art. 10 de la loi n° 71-1130 du 31 décembre 1971 ; Service-Public)."
       ],
       "callout": {
         "title": "À propos de l’annuaire",
-        "text": "Certains avocats de l’annuaire Immojudis bénéficient d’une mise en avant payante, signalée comme telle et affichée à part. Ce n’est ni une notation ni une recommandation : le choix de votre avocat vous appartient."
+        "text": "Certains avocats de l’annuaire Immojudis bénéficient d’une mise en avant payante ou en période d’essai de cette offre, signalée comme telle et affichée à part. Ce n’est ni une notation ni une recommandation : le choix de votre avocat vous appartient."
       }
     },
     {
@@ -90,9 +90,9 @@
       "id": "cout",
       "title": "Ce que coûte son intervention",
       "paragraphs": [
-        "La rémunération de l’avocat comporte trois éléments, d’après Service-Public : les honoraires, les émoluments et les débours.",
-        "Les émoluments sont tarifés par le Code de commerce. En saisie immobilière et en licitation, l’émolument proportionnel au prix est réparti entre l’avocat poursuivant, qui en perçoit les trois quarts, et l’avocat de l’adjudicataire, qui perçoit le quart restant (art. A. 444-191). Il se calcule par tranches dégressives (art. A. 444-102). À titre d’illustration, pour un prix de 150 000 €, l’émolument total est d’environ 2 990 € hors taxe, dont environ 750 € hors taxe pour l’avocat de l’adjudicataire. Ces chiffres sont à confirmer avec l’avocat.",
-        "Les honoraires, eux, sont fixés librement avec l’avocat, et les pages officielles consultées n’en donnent pas de montant type : comparez deux ou trois devis et demandez ce qui est inclus (étude du cahier, présence à l’audience, formalités après la vente). Les débours sont les sommes que l’avocat avance pour votre compte et vous refacture au réel. Il peut aussi demander une provision à l’avance. Si vous n’êtes pas adjudicataire, demandez avant l’audience ce qui resterait dû."
+        "Le coût de l’intervention de l’avocat comporte trois éléments, d’après Service-Public : les honoraires, les émoluments et les débours (ces derniers sont des sommes avancées pour votre compte, non une rémunération).",
+        "Les émoluments sont tarifés par le Code de commerce. En saisie immobilière et en licitation, l’émolument proportionnel au prix est réparti entre l’avocat poursuivant, qui en perçoit les trois quarts, et l’avocat de l’adjudicataire, qui perçoit le quart restant (art. A. 444-191). Il se calcule par tranches dégressives (art. A. 444-102). À titre d’illustration, pour un prix de 150 000 €, le barème en vigueur pour les procédures ouvertes depuis le 1er janvier 2021 donne environ 2 990 € hors taxe d’émolument total (environ 3 590 € avec 20 % de TVA). Les trois quarts reviennent à l’avocat poursuivant, environ 2 240 € hors taxe, le dernier quart à l’avocat de l’adjudicataire, soit environ 750 € hors taxe. L’adjudicataire supporte en principe l’ensemble de cet émolument en plus du prix, comme le détaille l’article « Frais d’une vente aux enchères judiciaire ». Ces chiffres sont un repère, à confirmer avec l’avocat.",
+        "Les honoraires correspondent aux prestations de l’avocat qui ne sont pas couvertes par le tarif réglementé (par exemple l’étude du cahier des conditions de vente et le conseil). Ils sont fixés avec l’avocat, dans le respect de la déontologie. Service-Public précise que, dans certaines matières dont la saisie immobilière et la licitation, la rémunération est tarifée : demandez donc à votre avocat ce qui relève de l’émolument et ce qui relève des honoraires. Les pages officielles consultées ne donnent pas de montant type d’honoraires : comparez deux ou trois devis et demandez ce qui est inclus (étude du cahier, présence à l’audience, formalités après la vente). Les débours sont les sommes que l’avocat avance pour votre compte et vous refacture au réel. Il peut aussi demander une provision à l’avance. Si vous n’êtes pas adjudicataire, demandez avant l’audience ce qui resterait dû."
       ],
       "bullets": [
         "À demander par écrit : le montant ou le mode de calcul des honoraires, les débours prévisibles, la provision éventuelle, ce qui est dû si vous n’emportez pas la vente.",
@@ -102,7 +102,9 @@
     {
       "id": "questions",
       "title": "Questions fréquentes",
-      "paragraphs": ["Quelques réponses courtes, à confronter à votre dossier."],
+      "paragraphs": [
+        "En saisie immobilière au tribunal : quelques réponses courtes, à confronter à votre dossier."
+      ],
       "bullets": [
         "Puis-je enchérir moi-même ? Non, pas en vente forcée au tribunal (art. R. 322-40).",
         "Mon avocat peut-il représenter deux enchérisseurs ? Non : il ne peut être porteur que d’un seul mandat (art. R. 322-40).",

@@ -11,7 +11,7 @@
     "Cet article suit la procédure du point de vue de l’acheteur potentiel : quelles étapes précèdent l’audience, quels documents deviennent disponibles et à quel moment, et pourquoi la date d’une vente n’est jamais acquise d’avance. Il n’aborde pas les moyens de défense du débiteur. Les délais cités sont ceux du Code des procédures civiles d’exécution (CPCE) ; votre avocat vérifie ceux de votre dossier."
   ],
   "takeaways": [
-    "La procédure s’ouvre par un commandement de payer valant saisie : le débiteur a huit jours pour payer, sinon la vente du bien peut être poursuivie (art. R. 321-3).",
+    "La procédure s’ouvre par un commandement de payer valant saisie : le débiteur a huit jours pour payer (un mois si le bien a été hypothéqué pour la dette d’un tiers), sinon la vente du bien peut être poursuivie (art. R. 321-3).",
     "Le cahier des conditions de vente, qui contient la mise à prix et les règles de la vente, est déposé au greffe au plus tard le cinquième jour ouvrable après l’assignation du débiteur (art. R. 322-10).",
     "À l’audience d’orientation, le juge décide d’une vente amiable ou d’une vente forcée ; l’audience de vente se tient ensuite dans un délai de deux à quatre mois (art. R. 322-15 et R. 322-26).",
     "Une vente peut être arrêtée ou reportée avant l’audience : paiement de la dette, vente amiable, appel, force majeure, surendettement.",
@@ -37,8 +37,8 @@
         "rows": [
           [
             "1. Commandement de payer valant saisie",
-            "Un commissaire de justice (anciennement huissier) signifie au débiteur un commandement : il a huit jours pour payer, sinon la procédure se poursuit (art. R. 321-1 et R. 321-3). Il est publié au fichier immobilier dans les deux mois (art. R. 321-6).",
-            "Rien n’est visible : la vente n’est pas encore annoncée."
+            "Un commissaire de justice (anciennement huissier) signifie au débiteur un commandement : il a huit jours pour payer (un mois si le bien a été hypothéqué pour la dette d’un tiers), sinon la procédure se poursuit (art. R. 321-1 et R. 321-3). Il est publié au fichier immobilier dans les deux mois (art. R. 321-6).",
+            "Aucune annonce de vente à ce stade : le commandement est publié au fichier immobilier, mais la vente n’est pas encore annoncée."
           ],
           [
             "2. Description du bien",
@@ -88,7 +88,7 @@
         "Plusieurs événements peuvent arrêter, retarder ou transformer la procédure avant le jour de l’audience. Ils font partie du fonctionnement normal de la saisie ; ne les lisez ni comme une bonne ni comme une mauvaise nouvelle pour votre projet."
       ],
       "bullets": [
-        "Le débiteur paie dans le délai de huit jours du commandement : la saisie s’arrête (service-public.fr, fiche « Saisie immobilière »).",
+        "Le débiteur paie sa dette (dans le délai de huit jours du commandement, ou plus tard avec l’accord du créancier) : la procédure s’arrête.",
         "Le juge autorise une vente amiable : il fixe un prix minimum et rappelle l’affaire dans un délai maximal de quatre mois (art. R. 322-21). Si la vente n’aboutit pas, il peut ordonner la vente forcée (art. R. 322-22 et R. 322-25).",
         "Le jugement d’orientation fait l’objet d’un appel : la cour statue au plus tard un mois avant la date prévue de l’adjudication, faute de quoi le juge peut reporter l’audience (art. R. 322-19).",
         "La vente forcée est reportée pour force majeure ou à la demande de la commission de surendettement (art. R. 322-28). Une nouvelle publicité est alors faite (art. R. 322-29).",
@@ -99,12 +99,12 @@
       "id": "regles-acheteur",
       "title": "Ce que la procédure change pour vous",
       "paragraphs": [
-        "Le bien est vendu pour désintéresser les créanciers : la mise à prix est fixée par le créancier poursuivant, et s’il n’y a aucune enchère, c’est lui qui est déclaré adjudicataire à ce prix (art. L. 322-6). La mise à prix n’est donc pas une estimation de la valeur du bien. L’article « Fixer son enchère plafond » explique comment raisonner à partir du marché et du coût complet.",
+        "Le bien est vendu pour désintéresser les créanciers : la mise à prix est fixée par le créancier poursuivant (le débiteur peut demander au juge de la modifier si elle est manifestement insuffisante), et s’il n’y a aucune enchère, c’est lui qui est déclaré adjudicataire à ce prix (art. L. 322-6). La mise à prix n’est donc pas une estimation de la valeur du bien. L’article « Fixer son enchère plafond » explique comment raisonner à partir du marché et du coût complet.",
         "Toute personne peut enchérir si elle justifie de garanties de paiement, sous réserve des incapacités liées à ses fonctions (art. L. 322-7), mais seuls les avocats portent les enchères (art. R. 322-40). L’article « Enchérir au tribunal : l’avocat obligatoire, comment le choisir, quel mandat lui donner » détaille ce point."
       ],
       "callout": {
         "title": "Un repère, pas un calendrier garanti",
-        "text": "Les délais légaux fixent des maxima ou des fourchettes pour chaque étape, mais la durée totale varie selon les contestations, les reports et la charge des juridictions. Ne bloquez pas d’engagement financier qui ne serait pas réversible avant d’avoir confirmé la date de l’audience auprès de l’avocat poursuivant ou du greffe."
+        "text": "Les délais légaux fixent des maxima ou des fourchettes pour chaque étape, mais la durée totale varie selon les contestations, les reports et la charge des juridictions. Il est prudent de ne pas engager de dépense irréversible avant d’avoir confirmé la date de l’audience auprès de l’avocat poursuivant ou du greffe."
       }
     },
     {
