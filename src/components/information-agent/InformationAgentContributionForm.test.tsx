@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InformationAgentContributionForm } from "./InformationAgentContributionForm";
 
 const TOKEN = "a".repeat(64);
+const STORAGE_KEY = "immojudis:contribution-token:mission-1";
+const OPT_OUT_PATH = `/api/information-agent/opt-out?e=${btoa("cabinet@example.test")}&t=${"c".repeat(64)}`;
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
   storageFrom: vi.fn(),
@@ -31,6 +33,7 @@ function referenceResponse() {
     maxSubmissionBytes: 40 * 1024 * 1024,
     maxPortalBytes: 480 * 1024 * 1024,
     maxPortalFiles: 12,
+    optOutPath: OPT_OUT_PATH,
   });
 }
 
@@ -50,6 +53,7 @@ function fillRequiredFields() {
 }
 
 beforeEach(() => {
+  window.sessionStorage.clear();
   mocks.fetch.mockReset();
   mocks.storageFrom.mockReset();
   mocks.uploadToSignedUrl.mockReset();
@@ -59,11 +63,13 @@ beforeEach(() => {
   mocks.randomUUID.mockReturnValue("11111111-1111-4111-8111-111111111111");
   vi.stubGlobal("fetch", mocks.fetch);
   vi.stubGlobal("crypto", { randomUUID: mocks.randomUUID });
+  vi.stubGlobal("scrollTo", vi.fn());
 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  window.sessionStorage.clear();
   window.history.replaceState(null, "", "/");
 });
 
@@ -91,7 +97,7 @@ describe("InformationAgentContributionForm", () => {
     window.history.replaceState(null, "", "/contribuer/mission-1#not-a-token");
     render(<InformationAgentContributionForm missionId="mission-1" />);
 
-    expect((await screen.findByRole("alert")).textContent).toContain("invalide");
+    expect((await screen.findByRole("alert")).textContent).toContain("Ce lien semble incomplet");
     expect(screen.queryByText("CASE-1234")).toBeNull();
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(window.location.hash).toBe("");
@@ -105,7 +111,8 @@ describe("InformationAgentContributionForm", () => {
       );
     renderContribution();
     await screen.findByText("CASE-1234");
-    expect(screen.getByText(/Cette adresse est déclarative/)).toBeTruthy();
+    expect(screen.getByText(/à laquelle vous souhaitez être recontacté/)).toBeTruthy();
+    expect(screen.getByText(/Nous la comparons à celle à laquelle nous avons écrit/)).toBeTruthy();
     fillRequiredFields();
     fireEvent.change(screen.getByLabelText("Votre réponse"), {
       target: { value: "La visite est possible sur rendez-vous." },
@@ -264,5 +271,262 @@ describe("InformationAgentContributionForm", () => {
     const retrySubmit = JSON.parse(String(mocks.fetch.mock.calls[3]?.[1]?.body));
     expect(retrySubmit.submissionId).toBe(firstSubmit.submissionId);
     expect(retrySubmit.files).toEqual(firstSubmit.files);
+  });
+
+  describe("jeton de dépôt", () => {
+    it("conserve le jeton dans sessionStorage, jamais dans l'URL", async () => {
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+
+      expect(window.sessionStorage.getItem(STORAGE_KEY)).toBe(TOKEN);
+      expect(window.location.href).not.toContain(TOKEN);
+      expect(document.body.innerHTML).not.toContain(TOKEN);
+    });
+
+    it("relit le jeton après un rechargement sans fragment", async () => {
+      window.sessionStorage.setItem(STORAGE_KEY, TOKEN);
+      window.history.replaceState(null, "", "/contribuer/mission-1");
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      render(<InformationAgentContributionForm missionId="mission-1" />);
+
+      expect(await screen.findByText("CASE-1234")).toBeTruthy();
+      expect(mocks.fetch).toHaveBeenCalledWith(
+        "/api/information-agent/contributions/mission-1",
+        expect.objectContaining({ body: JSON.stringify({ token: TOKEN }) }),
+      );
+    });
+
+    it("n'utilise pas le jeton d'une autre enquête", async () => {
+      window.sessionStorage.setItem("immojudis:contribution-token:mission-2", TOKEN);
+      window.history.replaceState(null, "", "/contribuer/mission-1");
+      render(<InformationAgentContributionForm missionId="mission-1" />);
+
+      expect((await screen.findByRole("alert")).textContent).toContain(
+        "Rouvrez-le depuis l’email que vous avez reçu, ou répondez simplement à cet email.",
+      );
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    });
+
+    it("ignore un jeton stocké mal formé", async () => {
+      window.sessionStorage.setItem(STORAGE_KEY, "tronque");
+      window.history.replaceState(null, "", "/contribuer/mission-1");
+      render(<InformationAgentContributionForm missionId="mission-1" />);
+
+      expect((await screen.findByRole("alert")).textContent).toContain("incomplet");
+      expect(mocks.fetch).not.toHaveBeenCalled();
+    });
+
+    it("efface le jeton quand le serveur confirme que le lien a expiré", async () => {
+      mocks.fetch.mockResolvedValueOnce(
+        jsonResponse({ error: "Lien de dépôt invalide ou expiré." }, 404),
+      );
+      renderContribution();
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain("Lien de dépôt invalide ou expiré.");
+      expect(alert.textContent).toContain("Répondez simplement à l’email");
+      expect(screen.queryByRole("button", { name: "Réessayer" })).toBeNull();
+      expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+
+    it("propose de réessayer après une panne serveur sans perdre le jeton", async () => {
+      mocks.fetch
+        .mockResolvedValueOnce(jsonResponse({ error: "Service de dépôt indisponible." }, 500))
+        .mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain("Service momentanément indisponible.");
+      expect(window.sessionStorage.getItem(STORAGE_KEY)).toBe(TOKEN);
+
+      fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+
+      expect(await screen.findByText("CASE-1234")).toBeTruthy();
+      expect(mocks.fetch).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(String(mocks.fetch.mock.calls[1]?.[1]?.body))).toEqual({ token: TOKEN });
+    });
+
+    it("traite une coupure réseau comme une panne passagère", async () => {
+      mocks.fetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      renderContribution();
+
+      expect((await screen.findByRole("alert")).textContent).toContain(
+        "Service momentanément indisponible.",
+      );
+      expect(screen.getByRole("button", { name: "Réessayer" })).toBeTruthy();
+      expect(window.sessionStorage.getItem(STORAGE_KEY)).toBe(TOKEN);
+    });
+
+    it("efface le jeton après un dépôt réussi", async () => {
+      mocks.fetch
+        .mockResolvedValueOnce(referenceResponse())
+        .mockResolvedValueOnce(jsonResponse({ ok: true }, 201));
+      renderContribution();
+      await screen.findByText("CASE-1234");
+      fillRequiredFields();
+      fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+
+      await screen.findByText("Contribution reçue");
+      expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+
+    it("efface le jeton si le dépôt est refusé car le lien a expiré", async () => {
+      mocks.fetch
+        .mockResolvedValueOnce(referenceResponse())
+        .mockResolvedValueOnce(jsonResponse({ error: "Ce dossier n’accepte plus de dépôt." }, 410));
+      renderContribution();
+      await screen.findByText("CASE-1234");
+      fillRequiredFields();
+      fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+
+      await waitFor(() =>
+        expect(screen.getByRole("alert").textContent).toContain("n’accepte plus de dépôt"),
+      );
+      expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+    });
+  });
+
+  describe("pied de page", () => {
+    it("propose la confidentialité et l'opposition sans exposer de lien signé", async () => {
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+
+      const privacy = screen.getByRole("link", { name: "Politique de confidentialité" });
+      expect(privacy.getAttribute("href")).toBe("/privacy");
+      expect(privacy.getAttribute("rel")).toContain("noopener");
+      expect(screen.getByRole("button", { name: "Ne plus être contacté" })).toBeTruthy();
+      expect(document.body.innerHTML).not.toContain("opt-out");
+    });
+
+    it("mène à la page d'opposition signée côté serveur au clic", async () => {
+      const assign = vi.fn();
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+      vi.stubGlobal("location", { assign });
+
+      fireEvent.click(screen.getByRole("button", { name: "Ne plus être contacté" }));
+
+      expect(assign).toHaveBeenCalledWith(OPT_OUT_PATH);
+    });
+
+    it("n'affiche pas l'opposition avec une adresse externe", async () => {
+      mocks.fetch.mockResolvedValueOnce(
+        jsonResponse({
+          caseReference: "CASE-1234",
+          subject: "Informations sur le bien",
+          optOutPath: "https://evil.example/opt-out?e=1",
+        }),
+      );
+      renderContribution();
+      await screen.findByText("CASE-1234");
+
+      expect(screen.queryByRole("button", { name: "Ne plus être contacté" })).toBeNull();
+      expect(screen.getByRole("link", { name: "Politique de confidentialité" })).toBeTruthy();
+    });
+  });
+
+  describe("accessibilité", () => {
+    it("amène l'erreur de validation à l'écran et au focus, et marque le champ fautif", async () => {
+      const scrollIntoView = vi.fn();
+      Element.prototype.scrollIntoView = scrollIntoView;
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+
+      const alert = await screen.findByRole("alert");
+      expect(alert.textContent).toContain("Indiquez votre nom ou votre cabinet.");
+      expect(alert.getAttribute("tabindex")).toBe("-1");
+      await waitFor(() => expect(document.activeElement).toBe(alert));
+      expect(scrollIntoView).toHaveBeenCalled();
+      const name = screen.getByLabelText(/Nom ou cabinet/);
+      expect(name.getAttribute("aria-invalid")).toBe("true");
+      expect(name.getAttribute("aria-describedby")).toBe(alert.id);
+      expect(screen.getByLabelText(/Adresse e-mail/).getAttribute("aria-invalid")).toBeNull();
+    });
+
+    it("garde l'indice du champ e-mail et refocalise une erreur répétée", async () => {
+      Element.prototype.scrollIntoView = vi.fn();
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+      fireEvent.change(screen.getByLabelText(/Nom ou cabinet/), { target: { value: "Cabinet" } });
+      fireEvent.change(screen.getByLabelText(/Adresse e-mail/), {
+        target: { value: "pas-un-mail" },
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      const alert = await screen.findByRole("alert");
+      await waitFor(() => expect(document.activeElement).toBe(alert));
+      const email = screen.getByLabelText(/Adresse e-mail/);
+      expect(email.getAttribute("aria-invalid")).toBe("true");
+      expect(email.getAttribute("aria-describedby")).toBe(`sender-email-hint ${alert.id}`);
+
+      (document.activeElement as HTMLElement).blur();
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("alert")));
+    });
+
+    it("déplace aria-invalid vers le nouveau champ fautif", async () => {
+      Element.prototype.scrollIntoView = vi.fn();
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+      await screen.findByRole("alert");
+
+      fireEvent.change(screen.getByLabelText(/Nom ou cabinet/), { target: { value: "Cabinet" } });
+      fireEvent.change(screen.getByLabelText(/Adresse e-mail/), {
+        target: { value: "cabinet@example.test" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+
+      await waitFor(() =>
+        expect(screen.getByRole("alert").textContent).toContain("Ajoutez une réponse"),
+      );
+      expect(screen.getByLabelText(/Nom ou cabinet/).getAttribute("aria-invalid")).toBeNull();
+      expect(screen.getByLabelText("Votre réponse").getAttribute("aria-invalid")).toBe("true");
+    });
+
+    it("focalise le titre « Contribution reçue » et remonte en haut après le dépôt", async () => {
+      const scrollTo = vi.fn();
+      vi.stubGlobal("scrollTo", scrollTo);
+      mocks.fetch
+        .mockResolvedValueOnce(referenceResponse())
+        .mockResolvedValueOnce(jsonResponse({ ok: true }, 201));
+      renderContribution();
+      await screen.findByText("CASE-1234");
+      fillRequiredFields();
+      fireEvent.change(screen.getByLabelText("Votre réponse"), { target: { value: "Oui." } });
+      fireEvent.click(screen.getByRole("button", { name: "Transmettre ma contribution" }));
+
+      const title = await screen.findByRole("heading", { name: "Contribution reçue" });
+      await waitFor(() => expect(document.activeElement).toBe(title));
+      expect(title.getAttribute("tabindex")).toBe("-1");
+      expect(scrollTo).toHaveBeenCalledWith({ top: 0 });
+    });
+
+    it("montre le focus clavier sur la zone de dépôt et agrandit la cible « Retirer »", async () => {
+      mocks.fetch.mockResolvedValueOnce(referenceResponse());
+      renderContribution();
+      await screen.findByText("CASE-1234");
+
+      const input = screen.getByLabelText("Pièces jointes");
+      expect(input.closest("label")?.className).toContain("has-[:focus-visible]:ring-2");
+      expect(input.closest("label")?.className).toContain("has-[:focus-visible]:ring-gold");
+
+      fireEvent.change(input, {
+        target: { files: [new File(["%PDF-1.7"], "pv.pdf", { type: "application/pdf" })] },
+      });
+      const remove = await screen.findByRole("button", { name: "Retirer pv.pdf" });
+      expect(remove.className).toContain("min-h-11");
+      expect(remove.className).toContain("min-w-11");
+    });
   });
 });
