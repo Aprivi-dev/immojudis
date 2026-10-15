@@ -2,20 +2,19 @@ import type { MetadataRoute } from "next";
 import {
   loadSitemapSales,
   loadSitemapSaleTotal,
-  overflowSitemapCount,
-  ROOT_SITEMAP_SALE_CAPACITY,
+  salesSitemapCount,
   SITEMAP_URL_LIMIT,
 } from "@/lib/public-sitemap.server";
 import { resolveSiteOrigin } from "@/lib/site-url";
 
-// Sales beyond the first ROOT_SITEMAP_SALE_CAPACITY (which `/sitemap.xml` lists)
-// are split in files of SITEMAP_URL_LIMIT URLs: /sales/sitemap/0.xml, 1.xml…
-// While the catalogue fits in `/sitemap.xml`, no file is generated here.
+// The public, indexable sales (thin pages are left out by the database function) in files of
+// SITEMAP_URL_LIMIT URLs: /sales/sitemap/0.xml, 1.xml… robots.txt lists every file. A file is
+// generated per started block of 5 000 sales, none while the catalogue is empty.
 export const dynamic = "force-dynamic";
 
 export async function generateSitemaps() {
   try {
-    const count = overflowSitemapCount(await loadSitemapSaleTotal());
+    const count = salesSitemapCount(await loadSitemapSaleTotal());
     return Array.from({ length: count }, (_, id) => ({ id }));
   } catch {
     return [];
@@ -28,7 +27,7 @@ export default async function sitemap(props: {
   const index = Number(await props.id);
   if (!Number.isInteger(index) || index < 0) return [];
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
-  const start = ROOT_SITEMAP_SALE_CAPACITY + index * SITEMAP_URL_LIMIT;
+  const start = index * SITEMAP_URL_LIMIT;
   const sales = await loadSitemapSales(start, start + SITEMAP_URL_LIMIT);
   return sales.map((sale) => ({
     url: `${origin}/sales/${sale.id}`,
