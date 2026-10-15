@@ -23,14 +23,21 @@ create temporary table pgtap_465_result (
   payload jsonb
 ) on commit drop;
 
+-- Sales that scope the registry rows (a sale-scoped contact must match its sale at insertion).
+insert into public.auction_sales (id, source_name, source_url, status)
+values
+  ('46500000-0000-4000-8000-000000000001', 'retention-pgtap', 'https://example.test/retention/1', 'upcoming'),
+  ('46500000-0000-4000-8000-000000000002', 'retention-pgtap', 'https://example.test/retention/2', 'upcoming'),
+  ('46500000-0000-4000-8000-000000000003', 'retention-pgtap', 'https://example.test/retention/3', 'upcoming');
+
 -- Registry rows: two old sale-scoped addresses never used for a mission (purged 21 days after
 -- their observation) and one global address that no purge touches.
 insert into public.information_agent_contacts (
-  scope_sale_id, email, opposition_status, observed_at
+  sale_id, scope_sale_id, email, opposition_status, observed_at
 )
 values
-  ('46500000-0000-4000-8000-000000000001', 'purge-a@example.test', 'none', '2026-09-01T00:00:00Z'),
-  ('46500000-0000-4000-8000-000000000002', 'purge-b@example.test', 'none', '2026-09-01T00:00:00Z');
+  ('46500000-0000-4000-8000-000000000001', '46500000-0000-4000-8000-000000000001', 'purge-a@example.test', 'none', '2026-09-01T00:00:00Z'),
+  ('46500000-0000-4000-8000-000000000002', '46500000-0000-4000-8000-000000000002', 'purge-b@example.test', 'none', '2026-09-01T00:00:00Z');
 insert into public.information_agent_contacts (email, opposition_status)
 values ('rollback@example.test', 'none');
 
@@ -64,9 +71,9 @@ select ok(
 
 -- Forced failures: the first purge raises at once; the last one deletes a row and then raises.
 insert into public.information_agent_contacts (
-  scope_sale_id, email, opposition_status, observed_at
+  sale_id, scope_sale_id, email, opposition_status, observed_at
 )
-values ('46500000-0000-4000-8000-000000000003', 'purge-c@example.test', 'none', '2026-09-01T00:00:00Z');
+values ('46500000-0000-4000-8000-000000000003', '46500000-0000-4000-8000-000000000003', 'purge-c@example.test', 'none', '2026-09-01T00:00:00Z');
 
 create or replace function app_private.purge_expired_operational_data(
   p_now timestamptz default statement_timestamp()
