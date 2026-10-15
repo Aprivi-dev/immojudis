@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { PublicApiError } from "@/lib/api-errors";
 import { parisMonthWindow } from "@/lib/paris-month";
-import type { SaleUnlockResult, SaleUnlockStatus } from "@/lib/sale-unlocks";
+import { DETAIL_VIEW, UNLOCKED_VIEW } from "@/lib/sale-views";
+import type { SaleUnlockResult, SaleUnlockStatus, UnlockedSaleSummary } from "@/lib/sale-unlocks";
 
 /**
  * « 3 déblocages par mois » côté serveur. Tout passe par les RPC `unlock_sale` et
@@ -116,6 +117,54 @@ export async function getSaleUnlockStatus(
     throw error;
   }
   return parseSaleUnlockStatus(data);
+}
+
+const unlockedSaleRowSchema = z.object({
+  id: z.string(),
+  title: z.string().nullable(),
+  city: z.string().nullable(),
+  department: z.string().nullable(),
+  property_type: z.string().nullable(),
+  starting_price_eur: z.number().nullable(),
+  sale_date: z.string().nullable(),
+  status: z.string().nullable(),
+});
+
+const UNLOCKED_SALE_COLUMNS =
+  "id,title,city,department,property_type,starting_price_eur,sale_date,status";
+/** Au plus 3 par mois et 24 mois de validité : 72 au maximum, la marge couvre un compte Analyse passé. */
+const UNLOCKED_SALES_LIST_LIMIT = 100;
+
+/**
+ * Les ventes que le compte a débloquées et qui sont toujours en ligne, la plus proche d'abord. La
+ * vue `v_auction_sales_unlocked` ne liste que les ventes débloquées du compte connecté (limite de
+ * 24 mois et vente en ligne comprises) : aucune autre vente n'est lisible par ce chemin. Une base
+ * sans la vue (déploiement échelonné) répond une liste vide.
+ */
+export async function listUnlockedSales(auth: SupabaseAuthContext): Promise<UnlockedSaleSummary[]> {
+  const { data, error } = await auth.supabase
+    .from(UNLOCKED_VIEW as typeof DETAIL_VIEW)
+    .select(UNLOCKED_SALE_COLUMNS)
+    .order("sale_date", { ascending: true, nullsFirst: false })
+    .order("id", { ascending: true })
+    .limit(UNLOCKED_SALES_LIST_LIMIT);
+  if (error) {
+    if (error.code === "42P01" || error.code === "PGRST205") return [];
+    throw error;
+  }
+  return z
+    .array(unlockedSaleRowSchema)
+    .parse(data ?? [])
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      city: row.city,
+      department: row.department,
+      propertyType: row.property_type,
+      startingPriceEur: row.starting_price_eur,
+      saleDate: row.sale_date,
+      status: row.status,
+    }));
 }
 
 /**

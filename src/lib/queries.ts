@@ -125,7 +125,7 @@ function applySearchOrder<TQuery extends OrderableQuery<TQuery>>(
  * La colonne `completeness_tier` n'existe pas encore (migration pas appliquée, déploiement
  * échelonné) : PostgreSQL répond 42703, PostgREST une erreur `PGRST…` qui nomme la colonne.
  */
-export function isMissingCompletenessTier(error: unknown): boolean {
+function isMissingCompletenessTier(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const { code, message } = error as { code?: unknown; message?: unknown };
   const missingColumn = code === "42703" || (typeof code === "string" && code.startsWith("PGRST"));

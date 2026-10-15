@@ -4,6 +4,7 @@ import { PublicApiError } from "@/lib/api-errors";
 import {
   getSaleUnlockStatus,
   hasUnlockedSale,
+  listUnlockedSales,
   SaleUnlockQuotaError,
   unlockSale,
 } from "@/lib/sale-unlocks.server";
@@ -109,5 +110,79 @@ describe("sale unlock server helpers", () => {
   it("treats a missing session as an authentication failure", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: { code: "42501", message: "x" } });
     await expect(unlockSale(authWith(rpc), saleId)).rejects.toThrow(/^Unauthorized/);
+  });
+});
+
+describe("listUnlockedSales", () => {
+  function authWithView(result: { data: unknown; error: unknown }) {
+    const builder = {
+      select: vi.fn(),
+      order: vi.fn(),
+      limit: vi.fn().mockResolvedValue(result),
+    };
+    builder.select.mockReturnValue(builder);
+    builder.order.mockReturnValue(builder);
+    const from = vi.fn().mockReturnValue(builder);
+    return {
+      auth: { supabase: { from }, userId: "user-1" } as unknown as SupabaseAuthContext,
+      from,
+      builder,
+    };
+  }
+
+  it("reads the unlocked-sales view of the caller, nearest sale first, with a few columns", async () => {
+    const { auth, from, builder } = authWithView({
+      data: [
+        {
+          id: saleId,
+          title: "Appartement à Lyon",
+          city: "Lyon",
+          department: "69",
+          property_type: "apartment",
+          starting_price_eur: 90000,
+          sale_date: "2026-11-20T09:00:00+00:00",
+          status: "upcoming",
+          raw_payload: { secret: true },
+        },
+      ],
+      error: null,
+    });
+
+    const sales = await listUnlockedSales(auth);
+
+    expect(from).toHaveBeenCalledWith("v_auction_sales_unlocked");
+    expect(builder.select).toHaveBeenCalledWith(
+      "id,title,city,department,property_type,starting_price_eur,sale_date,status",
+    );
+    expect(builder.order).toHaveBeenNthCalledWith(1, "sale_date", {
+      ascending: true,
+      nullsFirst: false,
+    });
+    expect(sales).toEqual([
+      {
+        id: saleId,
+        title: "Appartement à Lyon",
+        city: "Lyon",
+        department: "69",
+        propertyType: "apartment",
+        startingPriceEur: 90000,
+        saleDate: "2026-11-20T09:00:00+00:00",
+        status: "upcoming",
+      },
+    ]);
+  });
+
+  it.each(["42P01", "PGRST205"])(
+    "answers an empty list when the view is not deployed (%s)",
+    async (code) => {
+      const { auth } = authWithView({ data: null, error: { code, message: "missing" } });
+      expect(await listUnlockedSales(auth)).toEqual([]);
+    },
+  );
+
+  it("does not hide a real database failure behind an empty list", async () => {
+    const failure = { code: "XX000", message: "boom" };
+    const { auth } = authWithView({ data: null, error: failure });
+    await expect(listUnlockedSales(auth)).rejects.toBe(failure);
   });
 });
