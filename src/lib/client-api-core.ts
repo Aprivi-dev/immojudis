@@ -1,6 +1,12 @@
-import { getSupabase } from "@/integrations/supabase/lazy";
+import { getSupabase, hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
 
 export async function authHeaders(): Promise<HeadersInit> {
+  // Sans session stockée (visiteur anonyme), la réponse est connue d'avance : on ne charge pas
+  // supabase-js pour la lire (même erreur qu'une session absente).
+  if (!hasSupabaseAuthHint()) {
+    throw new Error("Connexion requise.");
+  }
+
   const {
     data: { session },
   } = await (await getSupabase()).auth.getSession();
