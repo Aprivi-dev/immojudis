@@ -396,9 +396,9 @@ async function resolveHtmlPath({ html, htmlDirectory }) {
 async function htmlReferencedJavaScriptBytes(htmlPath) {
   const html = await readFile(htmlPath, "utf8");
   const files = new Set();
-  for (const [tag] of html.matchAll(/<script\b[^>]*>/gu)) {
+  for (const [tag] of html.matchAll(/<script\b[^>]*>/giu)) {
     if (/\snomodule(?:[\s=>]|$)/iu.test(tag)) continue;
-    const source = /\ssrc="([^"]+)"/u.exec(tag)?.[1];
+    const source = /\ssrc="([^"]+)"/iu.exec(tag)?.[1];
     const file = source && /\/_next\/(static\/[^?"#]+\.js)(?:[?#]|$)/u.exec(source)?.[1];
     if (file) files.add(decodeURIComponent(file));
   }
