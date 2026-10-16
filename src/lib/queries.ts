@@ -8,6 +8,7 @@ import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
 import { fetchPublicSaleSummary } from "./public-sale-summary";
 import { saleRows } from "./sale-rows";
 import { readPagedRows } from "./paged-read";
+import { withPhotoMirror, type PhotoMirrorClient } from "./photo-mirror";
 export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
 export type { CreateAlertPayload } from "./alert-queries";
 export { DETAIL_VIEW, SALE_LIST_COLUMNS };
@@ -19,6 +20,9 @@ const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAI
 const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
 
 type SupabaseReader = Pick<typeof supabase, "from">;
+
+/** Copies hébergées des photos : la fonction publique est lue avec le client navigateur. */
+const mirrorClient = supabase as unknown as PhotoMirrorClient;
 
 // Fields needed by the search result card only. Keep heavy descriptions,
 // documents, source payloads and analysis evidence on the detail route.
@@ -488,7 +492,9 @@ export async function getSaleById(
       : DETAIL_VIEW;
   const { data, error } = await supabase.from(catalogView).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
-  return data ? sanitizeAuctionSaleForDisplay(data as AuctionSale) : null;
+  return data
+    ? withPhotoMirror(sanitizeAuctionSaleForDisplay(data as AuctionSale), mirrorClient)
+    : null;
 }
 
 export async function getSalePreviewById(id: string): Promise<AuctionSale | null> {
@@ -497,7 +503,7 @@ export async function getSalePreviewById(id: string): Promise<AuctionSale | null
   // `unsupported` means the database function is not deployed yet: keep the
   // minimal preview below so the page still works during a staggered release.
   const summary = await fetchPublicSaleSummary(supabase, id);
-  if (summary.kind === "found") return summary.sale;
+  if (summary.kind === "found") return withPhotoMirror(summary.sale, mirrorClient);
   if (summary.kind === "missing") return null;
   const { data, error } = await supabase
     .from(PUBLIC_PREVIEW_VIEW)

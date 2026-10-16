@@ -8,6 +8,8 @@ import {
   mapboxSatelliteImageUrl,
   mapboxStaticImageUrl,
 } from "@/lib/mapbox";
+import { photoCredit } from "@/lib/photo-credit";
+import { photoMirrorForCard } from "@/lib/photo-mirror";
 import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 
 type SaleVisualProps = {
@@ -36,6 +38,12 @@ type VisualCandidate = {
   url: string;
   srcSet?: string;
   label: string;
+  /**
+   * Notre copie d'une photo. Elle précède la photo de la source dans la liste des candidats : si
+   * elle échoue, le candidat suivant est la source elle-même. L'original a déjà été jugé (taille)
+   * quand la copie a été retenue, donc le contrôle de taille de l'image affichée ne s'y applique pas.
+   */
+  mirror?: boolean;
 };
 
 type VisualSelection = {
@@ -93,11 +101,19 @@ export function SaleVisual({
         format: thumbnail ? MAPBOX_LIST_THUMBNAIL_FORMAT : undefined,
       }),
   );
-  const photoCandidates: VisualCandidate[] = photos.map((photo) => ({
-    kind: "photo",
-    url: photo.url,
-    label: "Photo du bien",
-  }));
+  const photoCandidates: VisualCandidate[] = photos.flatMap((photo) => {
+    // La source est celle de la photo (hôte de l'URL d'origine), pas celle de la vente.
+    const credit = photoCredit(photo.url, null, { knownOnly: true });
+    const label = credit ? `Photo · ${credit.label}` : "Photo du bien";
+    const mirror = photoMirrorForCard(photo.mirror);
+    const original: VisualCandidate = { kind: "photo", url: photo.url, label };
+    return mirror
+      ? [
+          { kind: "photo", url: mirror.src, label, mirror: true } satisfies VisualCandidate,
+          original,
+        ]
+      : [original];
+  });
   const candidates: VisualCandidate[] = [
     ...(preferPhoto ? photoCandidates : []),
     ...(satelliteImage
@@ -123,6 +139,8 @@ export function SaleVisual({
   const candidateCount = candidates.length;
   const candidateUrl = candidate?.url ?? "";
   const candidateKind = candidate?.kind ?? null;
+  // Un contrôle de taille de l'image affichée ne vaut que pour une photo de la source.
+  const candidateChecksSize = candidateKind === "photo" && !candidate?.mirror;
   const candidateIsReady = Boolean(candidate && activeSelection.loadedUrl === candidate.url);
 
   const rejectCandidate = useCallback(() => {
@@ -163,14 +181,14 @@ export function SaleVisual({
     if (
       !image.naturalWidth ||
       !image.naturalHeight ||
-      (candidateKind === "photo" && shouldRejectRenderedPropertyImage(image))
+      (candidateChecksSize && shouldRejectRenderedPropertyImage(image))
     ) {
       rejectCandidate();
       return;
     }
 
     markCandidateReady();
-  }, [candidateKind, candidateUrl, markCandidateReady, rejectCandidate]);
+  }, [candidateChecksSize, candidateUrl, markCandidateReady, rejectCandidate]);
 
   if (!candidate) {
     return (
@@ -195,12 +213,19 @@ export function SaleVisual({
     );
   }
 
+  // Visuels prioritaires (`eager`, souvent l'élément LCP) : l'image est visible dès le HTML serveur,
+  // sans attendre onLoad ni l'hydratation (elle restait invisible jusqu'à 5 s de plus). On ne la
+  // retire qu'en cas d'erreur ou de photo rejetée, ce qui passe au candidat suivant. La case est
+  // déjà dimensionnée par le parent : aucun décalage de mise en page. Les visuels différés gardent
+  // le squelette puis le fondu à l'arrivée.
+  const revealed = candidateIsReady || eager;
+
   return (
     <div
       className={cn("relative h-full w-full overflow-hidden bg-muted", className)}
-      aria-busy={!candidateIsReady}
+      aria-busy={!revealed}
     >
-      {!candidateIsReady ? (
+      {!revealed ? (
         <div
           className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,#e8f1f6_25%,#f7fafc_45%,#e8f1f6_65%)] bg-[length:220%_100%]"
           aria-hidden
@@ -224,17 +249,14 @@ export function SaleVisual({
         referrerPolicy="strict-origin-when-cross-origin"
         onError={rejectCandidate}
         onLoad={(event) => {
-          if (
-            candidate.kind === "photo" &&
-            shouldRejectRenderedPropertyImage(event.currentTarget)
-          ) {
+          if (candidateChecksSize && shouldRejectRenderedPropertyImage(event.currentTarget)) {
             rejectCandidate();
             return;
           }
           markCandidateReady();
         }}
         className={`h-full w-full object-cover text-transparent transition duration-500 group-hover:scale-[1.025] ${
-          candidateIsReady ? "opacity-100" : "opacity-0"
+          revealed ? "opacity-100" : "opacity-0"
         }`}
       />
       {candidateIsReady ? (

@@ -59,3 +59,84 @@ describe("gallery keyboard and touch", () => {
     expect(screen.getByRole("img").getAttribute("alt")).toBe("Salon");
   });
 });
+
+describe("copies et crédit des photos", () => {
+  const mirror = {
+    path640: "s/a-640.webp",
+    path1600: "s/a-1600.webp",
+    width: 1600,
+    height: 1200,
+  };
+  const BASE = "https://ci.supabase.co/storage/v1/object/public/sale-photos/";
+
+  beforeEach(() => vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co"));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("affiche la grande copie (srcset 640w/1600w) et la petite en vignette", () => {
+    render(
+      <PhotoCarouselDialog
+        images={[
+          { url: "https://www.licitor.com/photos/a.jpg", alt: "Façade", mirror },
+          { url: "https://www.licitor.com/photos/b.jpg", alt: "Salon" },
+        ]}
+        initialIndex={0}
+        onClose={() => {}}
+      />,
+    );
+
+    const main = screen.getByRole("img", { name: "Façade" });
+    expect(main.getAttribute("src")).toBe(`${BASE}s/a-1600.webp`);
+    expect(main.getAttribute("srcset")).toBe(
+      `${BASE}s/a-640.webp 640w, ${BASE}s/a-1600.webp 1600w`,
+    );
+    const thumbnail = screen
+      .getByRole("button", { name: "Afficher la photo 1" })
+      .querySelector("img");
+    expect(thumbnail?.getAttribute("src")).toBe(`${BASE}s/a-640.webp`);
+  });
+
+  it("retombe sur la photo de la source quand la copie échoue", () => {
+    render(
+      <PhotoCarouselDialog
+        images={[{ url: "https://www.licitor.com/photos/a.jpg", alt: "Façade", mirror }]}
+        initialIndex={0}
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: "Façade" }));
+
+    const main = screen.getByRole("img", { name: "Façade" });
+    expect(main.getAttribute("src")).toBe("https://www.licitor.com/photos/a.jpg");
+    expect(main.getAttribute("srcset")).toBeNull();
+  });
+
+  it("crédite la photo affichée, avec un lien vers l'annonce d'origine", () => {
+    render(
+      <PhotoCarouselDialog
+        images={[
+          {
+            url: "https://www.licitor.com/photos/a.jpg",
+            alt: "Façade",
+            credit: { label: "Licitor", href: "https://www.licitor.com/annonce/1.html" },
+          },
+          {
+            url: "https://www.vench.fr/vignettes/v1.jpg",
+            alt: "Salon",
+            credit: { label: "Vench", href: null },
+          },
+        ]}
+        initialIndex={0}
+        onClose={() => {}}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "Licitor" });
+    expect(link.getAttribute("rel")).toBe("nofollow noopener noreferrer");
+    expect(link.getAttribute("target")).toBe("_blank");
+
+    fireEvent.click(screen.getByRole("button", { name: "Photo suivante" }));
+    expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Vench");
+    expect(screen.queryByRole("link", { name: "Licitor" })).toBeNull();
+  });
+});
