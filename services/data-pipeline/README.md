@@ -527,7 +527,9 @@ du runner est absent, au lieu de repasser ces pièces en `unknown`.
 ### Copier la photo principale des ventes
 
 Étape séparée de la collecte (jamais dans `_finalize_sale_for_app`, aucune écriture dans
-`auction_sales`), désactivée tant que `PHOTO_MIRROR_ENABLED` ne vaut pas `true` :
+`auction_sales`). Tant que `PHOTO_MIRROR_ENABLED` ne vaut pas `true`, aucune photo n'est
+téléchargée ni copiée, mais les retraits s'appliquent quand même (un retrait n'attend pas la
+réactivation) :
 
 ```bash
 PHOTO_MIRROR_ENABLED=true python -m src.photo_mirror --max-photos 400 --budget-minutes 15
@@ -535,13 +537,23 @@ PHOTO_MIRROR_ENABLED=true python -m src.photo_mirror --max-photos 400 --budget-m
 
 - ventes du catalogue public dont `catalogue_thumbnail_url` n'a pas de ligne `sale_photos` (ou dont
   la ligne est `failed`, moins de 3 essais, dernier essai de plus de 12 h), la plus proche date
-  d'abord ; plafonds `PHOTO_MIRROR_MAX_PHOTOS` (400) et `PHOTO_MIRROR_BUDGET_MINUTES` (15) ;
+  d'abord ; plafonds `PHOTO_MIRROR_MAX_PHOTOS` (400) et `PHOTO_MIRROR_BUDGET_MINUTES` (15, jusqu'à 150) ;
+  l'option `--automatic` (étape planifiée de `data-pipeline.yml`) ramène le budget à 20 minutes au
+  plus, sous le `timeout-minutes` de 25 de l'étape ;
+- les ventes Enchères Publiques sont exclues tant que l'accès n'est pas autorisé (source de la vente
+  comme hôte de la photo) ;
 - même garde anti-SSRF, même robots.txt, même délai par hôte (2 s au moins) et même User-Agent que
   les pièces jointes ; 15 s par requête, 2 reprises sur erreur réseau, 5xx ou 429 seulement ; lecture
   coupée à 8 Mo ; type contrôlé sur les premiers octets (jpeg, png, webp) ;
 - deux WebP sans EXIF (640 px et 1600 px, jamais agrandis) dans le bucket `sale-photos` ;
 - au début de chaque passage, les copies d'une source retirée passent en `withdrawn` et leurs
   fichiers sont supprimés ;
+- interrupteur allumé, chaque passage supprime aussi (300 lignes au plus) les copies `stored` dont
+  l'URL n'est plus la `catalogue_thumbnail_url` de leur vente ; un fichier encore utilisé par une
+  autre copie de la vente est conservé ;
+- un chemin encore dans `sale_retention_storage_queue` n'est pas réutilisé : la photo est reportée
+  au passage suivant ;
+- JPEG multi-images (`MPO`) acceptés ; profil ICC converti en sRGB puis supprimé ;
 - un JSON par photo, puis un résumé final ; le workflow manuel « Photo Mirror Backfill »
   (`.github/workflows/photo-mirror-backfill.yml`) rattrape le stock (60 min et 3 000 photos par défaut). Retrait : `docs/runbooks/retrait-photos.md`.
 

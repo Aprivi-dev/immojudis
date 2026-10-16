@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import struct
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -102,7 +103,58 @@ def make_gif() -> bytes:
     return buffer.getvalue()
 
 
-SVG = b'<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"></svg>'
+def make_mpo(width: int = 800, height: int = 600) -> bytes:
+    """A multi-picture JPEG (two frames), the kind some phones and cameras produce."""
+    buffer = io.BytesIO()
+    _picture(width, height).save(
+        buffer, "MPO", save_all=True, append_images=[Image.new("RGB", (width // 2, height // 2), (10, 10, 200))]
+    )
+    return buffer.getvalue()
+
+
+def _s15(value: float) -> bytes:
+    return struct.pack(">i", round(value * 65536))
+
+
+def linear_rgb_profile() -> bytes:
+    """A minimal ICC profile: sRGB primaries with a linear tone curve (so unlike sRGB, mid-tones are darker)."""
+
+    def xyz(x: float, y: float, z: float) -> bytes:
+        return b"XYZ \x00\x00\x00\x00" + _s15(x) + _s15(y) + _s15(z)
+
+    def gamma(value: float) -> bytes:
+        return b"curv\x00\x00\x00\x00" + struct.pack(">IH", 1, round(value * 256)) + b"\x00\x00"
+
+    text = b"none\x00"
+    tags = {
+        b"desc": b"desc\x00\x00\x00\x00" + struct.pack(">I", len(text)) + text + b"\x00" * 78,
+        b"cprt": b"text\x00\x00\x00\x00" + text,
+        b"wtpt": xyz(0.9642, 1.0, 0.8249),
+        b"rXYZ": xyz(0.4360, 0.2225, 0.0139),
+        b"gXYZ": xyz(0.3851, 0.7169, 0.0971),
+        b"bXYZ": xyz(0.1431, 0.0606, 0.7141),
+        b"rTRC": gamma(1.0),
+        b"gTRC": gamma(1.0),
+        b"bTRC": gamma(1.0),
+    }
+    first = 128 + 4 + 12 * len(tags)
+    table, body = b"", b""
+    for signature, data in tags.items():
+        table += signature + struct.pack(">II", first + len(body), len(data))
+        body += data + b"\x00" * (-len(data) % 4)
+    header = struct.pack(">I4sI4s4s4s", first + len(body), b"none", 0x02100000, b"mntr", b"RGB ", b"XYZ ")
+    header += b"\x00" * 12 + b"acsp" + b"\x00" * 24 + struct.pack(">I", 0)
+    header += _s15(0.9642) + _s15(1.0) + _s15(0.8249) + b"none" + b"\x00" * 16 + b"\x00" * 28
+    return header + struct.pack(">I", len(tags)) + table + body
+
+
+def make_jpeg_with_profile(color: tuple[int, int, int], profile: bytes, width: int = 800, height: int = 600) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), color).save(buffer, "JPEG", quality=95, icc_profile=profile)
+    return buffer.getvalue()
+
+
+SVG = b'<?xml version="1.0"?><svgxmlns="http://www.w3.org/2000/svg" width="800" height="600"></svg>'
 
 
 def webp_size(data: bytes) -> tuple[int, int]:
@@ -341,6 +393,62 @@ def test_a_large_original_gives_640_and_1600() -> None:
 @pytest.mark.parametrize("builder", [make_png, make_webp])
 def test_png_and_webp_originals_are_accepted(builder) -> None:
     assert webp_size(process_image(builder(900, 600)).data_640) == (640, 427)
+
+
+def test_a_multi_picture_jpeg_is_accepted_as_a_jpeg() -> None:
+    original = make_mpo(1200, 800)
+    assert sniff_image_type(original[:64]) == "jpeg"
+    assert Image.open(io.BytesIO(original)).format == "MPO"  # Pillow does not call it JPEG
+    processed = process_image(original)
+    assert (processed.width, processed.height) == (1200, 800)  # the first frame is the photo
+    assert webp_size(processed.data_640) == (640, 427)
+
+
+def test_a_body_that_is_not_the_format_its_signature_claims_is_still_refused() -> None:
+    # MPO is accepted only behind a JPEG signature; a PNG body behind a JPEG head decodes as nothing.
+    with pytest.raises(ImageRejected):
+        process_image(b"\xff\xd8\xff" + make_png(600, 400))
+
+
+def test_an_icc_profile_is_converted_to_srgb_then_dropped() -> None:
+    profile = linear_rgb_profile()
+    original = make_jpeg_with_profile((128, 64, 32), profile)
+    source = Image.open(io.BytesIO(original))
+    assert source.info.get("icc_profile") == profile  # the fixture really carries a profile
+    assert source.convert("RGB").getpixel((10, 10)) == pytest.approx((128, 64, 32), abs=2)
+    processed = process_image(original)
+    for data in (processed.data_640, processed.data_1600):
+        decoded = Image.open(io.BytesIO(data))
+        assert "icc_profile" not in decoded.info
+        red, green, blue = decoded.convert("RGB").getpixel((10, 10))
+        # Linear (128, 64, 32) is (188, 136, 98) in sRGB (the colours were not just copied).
+        assert (red, green, blue) == pytest.approx((188, 136, 98), abs=6)
+
+
+def test_an_image_without_a_profile_keeps_its_pixels() -> None:
+    flat = io.BytesIO()
+    Image.new("RGB", (800, 600), (128, 64, 32)).save(flat, "PNG")
+    red, green, blue = Image.open(io.BytesIO(process_image(flat.getvalue()).data_640)).convert("RGB").getpixel((5, 5))
+    assert (red, green, blue) == pytest.approx((128, 64, 32), abs=6)
+
+
+def test_an_unreadable_icc_profile_is_dropped_and_the_pixels_are_kept() -> None:
+    original = make_jpeg_with_profile((128, 64, 32), b"not an icc profile at all")
+    processed = process_image(original)
+    decoded = Image.open(io.BytesIO(processed.data_640))
+    assert "icc_profile" not in decoded.info
+    assert decoded.convert("RGB").getpixel((5, 5)) == pytest.approx((128, 64, 32), abs=6)
+
+
+def test_the_alpha_channel_survives_the_profile_conversion() -> None:
+    profile = linear_rgb_profile()
+    rgba = Image.new("RGBA", (800, 600), (128, 64, 32, 100))
+    buffer = io.BytesIO()
+    rgba.save(buffer, "PNG", icc_profile=profile)
+    decoded = Image.open(io.BytesIO(process_image(buffer.getvalue()).data_640)).convert("RGBA")
+    red, green, blue, alpha = decoded.getpixel((5, 5))
+    assert alpha == pytest.approx(100, abs=3)
+    assert red == pytest.approx(188, abs=8)
 
 
 def test_a_gif_and_a_svg_are_refused_by_the_processor() -> None:
@@ -664,7 +772,7 @@ def _candidate(url: str = PHOTO_URL, *, attempts: int = 0, name: str = "notaires
     return Candidate(SALE_ID, name, observations or [], url, attempts)
 
 
-def _mirror(candidate: Candidate, get: _Get, storage: _Storage | None = None, settings=None):
+def _mirror(candidate: Candidate, get: _Get, storage: _Storage | None = None, settings=None, store=None):
     downloader, clock, politeness = _downloader(get, settings=settings)
     storage = storage or _Storage()
     result = mirror_candidate(
@@ -674,6 +782,7 @@ def _mirror(candidate: Candidate, get: _Get, storage: _Storage | None = None, se
         pass_deadline=clock() + 1000,
         settings=settings or SETTINGS,
         clock=clock,
+        store=store,
     )
     return result, storage, get, politeness
 
@@ -765,6 +874,68 @@ def test_encheres_publiques_photos_need_the_access_gate() -> None:
     assert result.status == "stored"
 
 
+def test_a_photo_of_an_encheres_publiques_sale_needs_the_access_gate_whatever_its_host() -> None:
+    # The photo is hosted on a neutral CDN: only the sale's source says it belongs to Encheres Publiques.
+    for candidate in (
+        Candidate(SALE_ID, "encheres_publiques", [], PHOTO_URL),
+        Candidate(SALE_ID, "Encheres-Publiques", [], PHOTO_URL),
+        Candidate(SALE_ID, "other", [], PHOTO_URL, 0, "https://www.encheres-publiques.com/vente/1"),
+    ):
+        result, storage, get, politeness = _mirror(candidate, _Get(_ok()))
+        assert (result.status, result.reason) == ("blocked", "ep_not_authorized")
+        assert get.calls == [] and politeness.calls == [] and storage.uploads == {}
+    allowed = {**SETTINGS, "enable_encheres_publiques_benchmark": True, "encheres_publiques_access_authorized": True}
+    result, _, _, _ = _mirror(Candidate(SALE_ID, "encheres_publiques", [], PHOTO_URL), _Get(_ok()), settings=allowed)
+    assert result.status == "stored"
+    # Another source keeps working with the gate closed.
+    result, _, _, _ = _mirror(Candidate(SALE_ID, "notaires", [], PHOTO_URL, 0, "https://www.notaires.fr/x"), _Get(_ok()))
+    assert result.status == "stored"
+
+
+def test_a_path_still_in_the_retention_queue_is_not_reused() -> None:
+    original = make_jpeg(1000, 700)
+    import hashlib
+
+    sha = hashlib.sha256(original).hexdigest()
+    store = _Store()
+    store.queued = {f"{SALE_ID}/{sha[:16]}-1600.webp"}
+    result, storage, _, _ = _mirror(_candidate(attempts=1), _Get(Hop(200, {}, original)), store=store)
+    assert (result.status, result.reason) == ("deferred", "path_queued_for_deletion")
+    assert result.attempts == 1 and result.path_640 is None and result.path_1600 is None
+    assert storage.uploads == {} and storage.removed == []  # nothing sent, nothing removed
+    store.queued = set()  # the cron has emptied the queue: the next pass copies the photo
+    result, storage, _, _ = _mirror(_candidate(attempts=1), _Get(Hop(200, {}, original)), store=store)
+    assert result.status == "stored" and len(storage.uploads) == 2
+
+
+def test_a_file_another_stored_row_still_serves_is_never_removed_by_a_failure() -> None:
+    original = make_jpeg(1000, 700)
+    import hashlib
+
+    sha = hashlib.sha256(original).hexdigest()
+    shared_640 = f"{SALE_ID}/{sha[:16]}-640.webp"
+    # Same sale, same photo under another URL: that row is stored and owns the 640 px file.
+    store = _Store()
+    store.stored = {shared_640}
+    storage = _Storage(fail_on="-1600.webp")
+    result, storage, _, _ = _mirror(_candidate(), _Get(Hop(200, {}, original)), storage=storage, store=store)
+    assert result.status == "failed"
+    assert storage.removed == []  # the 640 px file belongs to the other row
+    # Without the other row the partial file is cleaned up as before.
+    store.stored = set()
+    storage = _Storage(fail_on="-1600.webp")
+    _, storage, _, _ = _mirror(_candidate(), _Get(Hop(200, {}, original)), storage=storage, store=store)
+    assert storage.removed == [shared_640]
+
+
+def test_discard_keeps_the_files_when_the_database_cannot_say() -> None:
+    store = _Store()
+    store.stored_paths = lambda paths: (_ for _ in ()).throw(RuntimeError("db down"))  # type: ignore[method-assign]
+    storage = _Storage()
+    photo_mirror._discard(storage, ["s/a-640.webp"], store)
+    assert storage.removed == []
+
+
 def test_a_failed_second_upload_does_not_leave_the_first_file_behind() -> None:
     storage = _Storage(fail_on="-1600.webp")
     result, _, _, _ = _mirror(_candidate(), _Get(Hop(200, {}, make_jpeg(1600, 1000))), storage=storage)
@@ -827,13 +998,30 @@ class _Store:
         self.marked: list[str] = []
         self.cleared: list[str] = []
         self.closed = False
+        self.stale = 0
+        self.stale_limits: list[int] = []
+        self.queued: set[str] = set()
+        self.stored: set[str] = set()
+        self.calls: list[str] = []
 
     def try_lock(self) -> bool:
         return self.lock
 
     def select_candidates(self, limit: int, *, include_encheres_publiques: bool) -> list[Candidate]:
+        self.calls.append("select")
         self.select_args.append((limit, include_encheres_publiques))
         return self.candidates[:limit]
+
+    def delete_stale_rows(self, limit: int) -> int:
+        self.calls.append("stale")
+        self.stale_limits.append(limit)
+        return self.stale
+
+    def paths_queued_for_deletion(self, paths: list[str]) -> bool:
+        return bool(self.queued & set(paths))
+
+    def stored_paths(self, paths: list[str]) -> set[str]:
+        return self.stored & set(paths)
 
     def save(self, result: PhotoResult) -> bool:
         self.saved.append(result)
@@ -874,18 +1062,54 @@ def _run(store: _Store, get: _Get, *, limits: MirrorLimits | None = None, clock:
 
 
 @pytest.mark.parametrize("value", [None, "", "false", "0", "1", "yes", "off"])
-def test_nothing_happens_unless_the_switch_is_true(value: str | None) -> None:
+def test_nothing_is_copied_unless_the_switch_is_true(value: str | None) -> None:
     class Exploding:
         def __getattr__(self, name: str):
             raise AssertionError(f"{name} must not be touched while the switch is off")
 
+    class WithdrawalOnlyStore(_Store):
+        def select_candidates(self, limit: int, *, include_encheres_publiques: bool) -> list[Candidate]:
+            raise AssertionError("no candidate is selected while the switch is off")
+
+        def delete_stale_rows(self, limit: int) -> int:
+            raise AssertionError("the switch is off: no copy is touched except for a withdrawal")
+
     env = {} if value is None else {"PHOTO_MIRROR_ENABLED": value}
+    store = WithdrawalOnlyStore([Candidate(SALE_ID, "n", [], PHOTO_URL)])
     summary = run_photo_mirror(
-        MirrorLimits(), settings=SETTINGS, store=Exploding(), storage=Exploding(), downloader=Exploding(), env=env
+        MirrorLimits(), settings=SETTINGS, store=store, storage=_Storage(), downloader=Exploding(), env=env
     )
     assert summary.stop_reason == "disabled"
-    assert summary.processed == 0
+    assert summary.processed == 0 and store.saved == []
     assert not mirror_enabled(env)
+
+
+def test_withdrawals_run_even_when_the_switch_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(source_withdrawal, "withdrawn_sources", lambda db_url=None: frozenset({"licitor"}))
+    store = _Store([Candidate(SALE_ID, "n", [], PHOTO_URL)])
+    store.rows = [
+        {"id": "a", "source_url": "https://www.licitor.com/data/pub/pic/1.jpg", "source_name": "notaires", "observations": []},
+        {"id": "c", "source_url": "https://x.example.test/3.jpg", "source_name": "notaires", "observations": []},
+    ]
+    store.file_rows = [{"id": "a", "path_640": "s/a-640.webp", "path_1600": "s/a-1600.webp", "shared": False}]
+    storage = _Storage()
+    summary = run_photo_mirror(
+        MirrorLimits(), settings=SETTINGS, store=store, storage=storage, env={"PHOTO_MIRROR_ENABLED": "false"}
+    )
+    assert store.marked == ["a"]
+    assert storage.removed == ["s/a-640.webp", "s/a-1600.webp"]
+    assert store.cleared == ["a"]
+    assert (summary.stop_reason, summary.withdrawn_marked, summary.withdrawn_files_removed) == ("disabled", 1, 2)
+    assert store.calls == []  # no stale-copy cleanup and no selection: nothing else runs
+    assert store.saved == []
+
+
+def test_withdrawals_with_the_switch_off_need_no_database_to_stay_quiet(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(photo_mirror, "PostgresPhotoStore", lambda *a, **k: pytest.fail("no database to open"))
+    summary = run_photo_mirror(MirrorLimits(), settings=SETTINGS, env={})
+    assert summary.stop_reason == "disabled"
+    with pytest.raises(RuntimeError, match="SUPABASE_DB_URL"):
+        run_photo_mirror(MirrorLimits(), settings=SETTINGS, env=ENABLED)
 
 
 def test_the_switch_is_true_only_for_true(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -894,15 +1118,27 @@ def test_the_switch_is_true_only_for_true(monkeypatch: pytest.MonkeyPatch) -> No
     assert not mirror_enabled()
 
 
-def test_main_with_the_switch_off_prints_a_notice_and_touches_nothing(
+def test_main_with_the_switch_off_still_runs_the_pass_for_withdrawals(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.delenv("PHOTO_MIRROR_ENABLED", raising=False)
     monkeypatch.setattr(
-        photo_mirror, "PostgresPhotoStore", lambda *a, **k: pytest.fail("the database must not be opened")
+        photo_mirror, "PostgresPhotoStore", lambda *a, **k: pytest.fail("no database without SUPABASE_DB_URL")
     )
+    monkeypatch.setattr(photo_mirror, "load_settings", lambda: SETTINGS)
     assert photo_mirror.main([]) == 0
-    assert json.loads(capsys.readouterr().out)["skipped"].startswith("PHOTO_MIRROR_ENABLED")
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["event"] == "photo_mirror_summary" and summary["stop_reason"] == "disabled"
+
+    seen: list[MirrorLimits] = []
+
+    def fake_run(limits: MirrorLimits, **kwargs: Any) -> photo_mirror.MirrorSummary:
+        seen.append(limits)
+        return photo_mirror.MirrorSummary(stop_reason="disabled")
+
+    monkeypatch.setattr(photo_mirror, "run_photo_mirror", fake_run)
+    assert photo_mirror.main(["--automatic", "--budget-minutes", "150"]) == 0
+    assert seen == [MirrorLimits(budget_seconds=20 * 60.0, max_photos=400)]
 
 
 def test_limits_come_from_the_environment_inputs_and_are_bounded() -> None:
@@ -911,6 +1147,22 @@ def test_limits_come_from_the_environment_inputs_and_are_bounded() -> None:
     assert limits_from_inputs("abc", "") == MirrorLimits(budget_seconds=900, max_photos=400)
     assert limits_from_inputs("0", "100000") == MirrorLimits(budget_seconds=150 * 60, max_photos=1)
     assert limits_from_inputs("999999", None).max_photos == photo_mirror.MAX_PHOTOS_LIMIT
+
+
+def test_the_automatic_budget_never_exceeds_twenty_minutes() -> None:
+    # The scheduled step stops at 25 minutes (data-pipeline.yml): a high setting must not get it killed mid-upload.
+    assert photo_mirror.AUTOMATIC_MAX_BUDGET_MINUTES == 20
+    assert limits_from_inputs(None, "150", automatic=True).budget_seconds == 20 * 60
+    assert limits_from_inputs(None, "21", automatic=True).budget_seconds == 20 * 60
+    assert limits_from_inputs(None, "10", automatic=True).budget_seconds == 10 * 60
+    assert limits_from_inputs(None, None, automatic=True).budget_seconds == 15 * 60
+    assert limits_from_inputs(None, "abc", automatic=True).budget_seconds == 15 * 60
+    assert limits_from_inputs(None, "150").budget_seconds == 150 * 60  # the manual backfill keeps its range
+    workflow = (Path(__file__).parents[3] / ".github/workflows/data-pipeline.yml").read_text(encoding="utf-8")
+    step = workflow.split("- name: Copie des photos principales", 1)[1].split("\n      - name:", 1)[0]
+    timeout = int(re.search(r"timeout-minutes:\s*(\d+)", step).group(1))  # type: ignore[union-attr]
+    assert timeout > photo_mirror.AUTOMATIC_MAX_BUDGET_MINUTES
+    assert "python -m src.photo_mirror --automatic" in step
 
 
 def test_a_pass_stores_logs_one_json_line_per_photo_and_a_summary(capsys: pytest.CaptureFixture[str]) -> None:
@@ -1013,6 +1265,43 @@ def test_files_of_a_row_changed_under_us_are_removed() -> None:
     assert summary.stored == 0
 
 
+def test_a_pass_deletes_stale_copies_before_selecting_and_reports_them() -> None:
+    store = _Store([Candidate(SALE_ID, "n", [], PHOTO_URL)])
+    store.stale = 12
+    summary, _ = _run(store, _Get(Hop(404, {})))
+    assert store.calls == ["stale", "select"]
+    assert store.stale_limits == [photo_mirror.STALE_BATCH]
+    assert 100 <= photo_mirror.STALE_BATCH <= 500  # a few hundred per pass
+    assert summary.stale_deleted == 12
+    assert summary.as_dict()["stale_deleted"] == 12
+
+
+def test_a_failing_stale_cleanup_does_not_stop_the_pass() -> None:
+    store = _Store([Candidate(SALE_ID, "n", [], PHOTO_URL)])
+
+    def broken(limit: int) -> int:
+        raise RuntimeError("db hiccup")
+
+    store.delete_stale_rows = broken  # type: ignore[method-assign]
+    summary, _ = _run(store, _Get(Hop(404, {})))
+    assert summary.failures_by_reason["stale_RuntimeError"] == 1
+    assert len(store.saved) == 1
+
+
+def test_a_deferred_photo_writes_no_row_and_is_not_counted_as_a_failure_to_retry() -> None:
+    original = make_jpeg(1000, 700)
+    import hashlib
+
+    sha = hashlib.sha256(original).hexdigest()
+    store = _Store([Candidate(SALE_ID, "n", [], PHOTO_URL), Candidate(OTHER_SALE_ID, "n", [], "https://b.example.test/2.jpg")])
+    store.queued = {f"{SALE_ID}/{sha[:16]}-640.webp"}
+    get = _Get(Hop(200, {}, original), Hop(404, {}))
+    summary, storage = _run(store, get)
+    assert [r.sale_id for r in store.saved] == [OTHER_SALE_ID]  # the deferred photo has no row
+    assert summary.by_status == {"deferred": 1, "gone": 1}
+    assert storage.uploads == {} and storage.removed == []
+
+
 # --------------------------------------------------------------------------------------------------
 # Withdrawal at the start of the pass
 # --------------------------------------------------------------------------------------------------
@@ -1105,11 +1394,11 @@ class _Connection:
 
 
 def test_the_selection_picks_new_photos_and_old_failures_nearest_sale_first() -> None:
-    connection = _Connection([(SALE_ID, "notaires", [], PHOTO_URL, 1)])
+    connection = _Connection([(SALE_ID, "notaires", [], PHOTO_URL, 1, "https://www.notaires.fr/x")])
     store = PostgresPhotoStore("postgresql://x", connect=lambda url: connection)
     assert connection.autocommit
     candidates = store.select_candidates(400, include_encheres_publiques=False)
-    assert candidates == [Candidate(SALE_ID, "notaires", [], PHOTO_URL, 1)]
+    assert candidates == [Candidate(SALE_ID, "notaires", [], PHOTO_URL, 1, "https://www.notaires.fr/x")]
     sql, params = connection.executed[0]
     normalized = re.sub(r"\s+", " ", sql)
     assert "p.id is null" in normalized
@@ -1117,7 +1406,39 @@ def test_the_selection_picks_new_photos_and_old_failures_nearest_sale_first() ->
     assert "p.last_attempt_at < now() - make_interval(hours => %s::int)" in normalized
     assert "not s.catalogue_quarantined" in normalized
     assert "order by (s.sale_date is null), s.sale_date, s.id" in normalized
+    # Encheres Publiques: by the photo host AND by the sale's source, both switched by the access flag.
+    assert "s.catalogue_thumbnail_url !~* %s" in normalized
+    assert "<> 'encheres_publiques'" in normalized
     assert params[:3] == (3, 12, False) and params[-1] == 400
+    assert params[2] is False and params[4] is False and normalized.count("%s") == len(params)
+    store.select_candidates(5, include_encheres_publiques=True)
+    assert connection.executed[1][1][2] is True and connection.executed[1][1][4] is True
+
+
+def test_the_stale_copies_query_only_touches_stored_rows_of_a_changed_photo() -> None:
+    connection = _Connection(rowcount=7)
+    store = PostgresPhotoStore("postgresql://x", connect=lambda url: connection)
+    assert store.delete_stale_rows(300) == 7
+    sql, params = connection.executed[0]
+    normalized = re.sub(r"\s+", " ", sql)
+    assert normalized.strip().startswith("delete from public.sale_photos")  # the trigger queues the files
+    assert "p.status = 'stored'" in normalized  # a withdrawn row must survive: it blocks the copy
+    assert "s.catalogue_thumbnail_url is distinct from p.source_url" in normalized
+    assert "limit %s" in normalized and params == (300,)
+
+
+def test_the_queue_and_stored_path_queries() -> None:
+    connection = _Connection([(1,)])
+    store = PostgresPhotoStore("postgresql://x", connect=lambda url: connection)
+    assert store.paths_queued_for_deletion(["a", "b"]) is True
+    sql, params = connection.executed[0]
+    assert "sale_retention_storage_queue" in sql and "bucket = 'sale-photos'" in sql and params == (["a", "b"],)
+    connection.rows = []
+    assert store.paths_queued_for_deletion(["a"]) is False
+    connection.rows = [("a", "b"), ("c", None)]
+    assert store.stored_paths(["a", "c", "z"]) == {"a", "c"}
+    sql, params = connection.executed[-1]
+    assert "p.status = 'stored'" in sql and params == (["a", "c", "z"], ["a", "c", "z"])
 
 
 def test_the_pass_never_writes_to_auction_sales_and_is_not_part_of_the_collection() -> None:
