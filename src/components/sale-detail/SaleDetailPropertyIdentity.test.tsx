@@ -94,6 +94,20 @@ describe("fiche : photo principale", () => {
     expect(within(screen.getByTestId("photo-credit")).queryByRole("link")).toBeNull();
   });
 
+  it("hôte inconnu : « source de l'annonce », sans hôte brut ni lien", () => {
+    render(
+      <PropertyIdentity
+        sale={sale({
+          media: [{ type: "image", url: "https://d1x9.cloudfront.net/p/a.jpg" }],
+        } as Partial<AuctionSale>)}
+      />,
+    );
+
+    const credit = screen.getByTestId("photo-credit");
+    expect(credit.textContent).toBe("Photo : source de l'annonce");
+    expect(within(credit).queryByRole("link")).toBeNull();
+  });
+
   it("ne crédite rien sans photo", () => {
     render(<PropertyIdentity sale={sale({ media: [] })} />);
     expect(screen.queryByTestId("photo-credit")).toBeNull();

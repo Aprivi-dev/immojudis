@@ -156,6 +156,37 @@ describe("SaleVisual", () => {
       expect(html).not.toContain('aria-busy="true"');
     });
 
+    it("le HTML serveur d'une photo de source eager reste masqué (logo, bannière, image cassée)", () => {
+      const html = renderToString(
+        <SaleVisual
+          sale={{ ...saleWithMedia("https://www.licitor.com/photos/a.jpg"), latitude: null }}
+          title="Maison"
+          eager
+        />,
+      );
+
+      expect(html).toContain("<img");
+      expect(html).toContain("opacity-0");
+      expect(html).not.toContain("opacity-100");
+      expect(html).toContain("animate-pulse");
+      expect(html).toContain('aria-busy="true"');
+    });
+
+    it("le HTML serveur d'une carte du secteur Mapbox eager est visible", () => {
+      vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+
+      const html = renderToString(
+        <SaleVisual
+          sale={{ ...saleWithMedia("https://www.licitor.com/photos/a.jpg"), address: null }}
+          title="Maison"
+          eager
+        />,
+      );
+
+      expect(html).toContain("/mapbox/streets-v12/static/");
+      expect(html).not.toContain("opacity-0");
+    });
+
     it("garde le squelette et l'image masquée d'un visuel différé jusqu'au chargement", () => {
       vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
       vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
@@ -208,8 +239,11 @@ describe("SaleVisual", () => {
       );
       fireEvent.error(screen.getByRole("img", { name: "Vue aérienne de Maison" }));
 
+      // Le candidat suivant est une photo de la source : masquée tant qu'elle n'est pas chargée.
       const photo = await screen.findByRole("img", { name: "Maison" });
       expect(photo.getAttribute("src")).toBe("https://images.example.test/photo-annonce.jpg");
+      expect(photo.className).toContain("opacity-0");
+      fireEvent.load(photo);
       expect(photo.className).toContain("opacity-100");
 
       fireEvent.error(photo);
@@ -321,6 +355,73 @@ describe("SaleVisual", () => {
 
       fireEvent.error(source);
       expect(await screen.findByText("Aucun visuel fiable")).toBeTruthy();
+    });
+
+    it("le HTML serveur d'une copie eager est visible, celui de la photo de source ne l'est pas", () => {
+      const withMirror = renderToString(<SaleVisual sale={mirrored()} title="Maison" eager />);
+      expect(withMirror).toContain(MIRROR_URL);
+      expect(withMirror).not.toContain("opacity-0");
+      expect(withMirror).not.toContain("animate-pulse");
+
+      const withoutMirror = renderToString(
+        <SaleVisual
+          sale={{ ...mirrored(), media: [{ type: "image", url: ORIGINAL }] }}
+          title="Maison"
+          eager
+        />,
+      );
+      expect(withoutMirror).toContain(ORIGINAL);
+      expect(withoutMirror).toContain("opacity-0");
+    });
+
+    it("copie eager en erreur : la photo de la source ne paraît qu'une fois chargée", async () => {
+      render(<SaleVisual sale={mirrored()} title="Maison" eager />);
+      const copy = screen.getByRole("img", { name: "Maison" });
+      expect(copy.className).toContain("opacity-100");
+
+      fireEvent.error(copy);
+      const source = await screen.findByRole("img", { name: "Maison" });
+      expect(source.getAttribute("src")).toBe(ORIGINAL);
+      expect(source.className).toContain("opacity-0");
+      fireEvent.load(source);
+      expect(source.className).toContain("opacity-100");
+    });
+
+    it("la liste des candidats change après l'échec de la copie : la source reste affichée", async () => {
+      const { rerender } = render(<SaleVisual sale={mirrored()} title="Maison" />);
+
+      fireEvent.error(screen.getByRole("img", { name: "Maison" }));
+      const source = await screen.findByRole("img", { name: "Maison" });
+      expect(source.getAttribute("src")).toBe(ORIGINAL);
+
+      // La copie disparaît d'un rafraîchissement : [copie, source] devient [source].
+      rerender(
+        <SaleVisual
+          sale={{ ...mirrored(), media: [{ type: "image", url: ORIGINAL }] }}
+          title="Maison"
+        />,
+      );
+
+      const still = screen.getByRole("img", { name: "Maison" });
+      expect(still.getAttribute("src")).toBe(ORIGINAL);
+      expect(screen.queryByText("Aucun visuel fiable")).toBeNull();
+      fireEvent.load(still);
+      expect(await screen.findByText("Photo · Licitor")).toBeTruthy();
+    });
+
+    it("une copie qui apparaît après coup passe devant la source, sans perdre la photo", async () => {
+      const unmirrored = { ...mirrored(), media: [{ type: "image" as const, url: ORIGINAL }] };
+      const { rerender } = render(<SaleVisual sale={unmirrored} title="Maison" />);
+      expect(screen.getByRole("img", { name: "Maison" }).getAttribute("src")).toBe(ORIGINAL);
+
+      rerender(<SaleVisual sale={mirrored()} title="Maison" />);
+
+      const copy = screen.getByRole("img", { name: "Maison" });
+      expect(copy.getAttribute("src")).toBe(MIRROR_URL);
+      fireEvent.error(copy);
+      expect((await screen.findByRole("img", { name: "Maison" })).getAttribute("src")).toBe(
+        ORIGINAL,
+      );
     });
 
     it("ne soumet pas la copie 640 px au contrôle de taille de l'original", async () => {
