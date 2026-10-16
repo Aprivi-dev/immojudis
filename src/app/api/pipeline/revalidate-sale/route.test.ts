@@ -24,7 +24,7 @@ vi.mock("react", async () => {
   return { ...actual, cache: <T extends (...args: never[]) => unknown>(fn: T) => fn };
 });
 
-import { POST } from "./route";
+import { maxDuration, POST } from "./route";
 
 const SECRET = "cron-secret-for-tests";
 const ID = "005a914d-563c-427b-88a4-740cbf851afb";
@@ -42,6 +42,10 @@ function request(body: unknown, authorization?: string, raw = false) {
 }
 
 describe("POST /api/pipeline/revalidate-sale", () => {
+  it("allows the warm-up run after the response enough time (24 pages x 5 s / 4 = 30 s)", () => {
+    expect(maxDuration).toBe(60);
+  });
+
   beforeEach(() => {
     vi.stubEnv("CRON_SECRET", SECRET);
     mocks.revalidateTag.mockReset();

@@ -76,7 +76,8 @@ export function loadWithdrawnSources(
 }
 
 const SESSION_KEY = "immojudis:withdrawn-sources";
-const SESSION_MS = 30 * 60_000;
+// Courte à dessein : le retrait d'une source pour raison juridique doit se propager vite.
+const SESSION_MS = 5 * 60_000;
 
 type SessionStorageLike = Pick<Storage, "getItem" | "setItem">;
 
@@ -103,7 +104,7 @@ function readSessionWithdrawnSources(storage: SessionStorageLike, now: number): 
 
 /**
  * Comme `loadWithdrawnSources`, mais l'interrupteur n'est lu qu'une fois par session de navigation
- * (30 minutes, `sessionStorage`) au lieu de l'être à chaque chargement de page. Seule une lecture
+ * (5 minutes, `sessionStorage`) au lieu de l'être à chaque chargement de page. Seule une lecture
  * réussie est mémorisée : une erreur laisse l'état par défaut et sera retentée à la page suivante.
  * Si `sessionStorage` est inaccessible, on lit comme avant.
  */

@@ -100,6 +100,28 @@ describe("warmSalePages", () => {
     ).resolves.toMatchObject({ warmed: 1, failed: 0 });
   });
 
+  it.each([401, 403, 429, 301, 302, 500])(
+    "does not count a %i answer as a warmed page and logs its status",
+    async (status) => {
+      const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+        page(status, "MISS"),
+      );
+      const log = vi.fn();
+      const summary = await warmSalePages([ID], { env: PRODUCTION, fetchImpl, log });
+      expect(summary).toEqual({ requested: 1, warmed: 0, failed: 1 });
+      expect(log).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "failed", saleId: ID, status }),
+      );
+    },
+  );
+
+  it("counts every 2xx answer as a warmed page", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => page(201));
+    await expect(
+      warmSalePages([ID], { env: PRODUCTION, fetchImpl, log: vi.fn() }),
+    ).resolves.toMatchObject({ warmed: 1, failed: 0 });
+  });
+
   it("really gives up after the time limit", async () => {
     const fetchImpl = vi.fn(
       (_url: string | URL | Request, init?: RequestInit) =>

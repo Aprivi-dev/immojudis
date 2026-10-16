@@ -24,7 +24,16 @@ let loading: Promise<SupabaseBrowserClient> | null = null;
 /** Appelé par `./client` dès que le client existe, quelle que soit la façon dont il a été chargé. */
 export function announceSupabaseClient(client: SupabaseBrowserClient): void {
   created = client;
-  for (const listener of [...createdListeners]) listener(client);
+  for (const listener of [...createdListeners]) {
+    // Un écouteur qui lève ne doit ni empêcher les suivants ni faire échouer l'évaluation de `./client`.
+    try {
+      listener(client);
+    } catch (error) {
+      console.error("[supabase] Écouteur du client en échec", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
 
 /**

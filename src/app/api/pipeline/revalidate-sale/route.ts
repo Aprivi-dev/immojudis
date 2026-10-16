@@ -9,6 +9,10 @@ import { warmSalePages } from "@/lib/sale-page-warmup";
 
 const MAX_SALES_PER_CALL = 100;
 
+// The warm-up runs in `after()`, inside this budget: 24 pages at 4 at a time and 5 s each take
+// 30 s in the worst case (see `MAX_WARMUP_PAGES`), so 60 s leaves a 30 s margin.
+export const maxDuration = 60;
+
 const saleIdSchema = z.string().regex(SALE_ID_PATTERN, "Identifiant de vente invalide.");
 const bodySchema = z.union([
   z.object({ saleId: saleIdSchema }).strict(),

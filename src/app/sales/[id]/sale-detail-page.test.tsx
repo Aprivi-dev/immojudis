@@ -388,7 +388,7 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
   });
 
-  it("shows the Analyse view, never the free one, when the unlock status arrives first", async () => {
+  it("never asks for an unlock status from an Analyse account, even while its rights are read", async () => {
     mocks.entitlements.mockImplementation(
       () =>
         new Promise((resolve) =>
@@ -399,18 +399,19 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
 
     renderPage();
-    // Let the read-ahead settle: the free listing and the unlock status are in the cache.
-    await waitFor(() => expect(mocks.unlockStatus).toHaveBeenCalled());
+    // The free listing is read ahead, but it is never displayed to this account.
     await waitFor(() => expect(mocks.sale).toHaveBeenCalledWith("sale", expect.anything()));
+    expect(mocks.unlockStatus).not.toHaveBeenCalled();
     expect(screen.queryByText("Offre Découverte")).toBeNull();
-    expect(screen.queryByText("Vente débloquée")).toBeNull();
 
     await screen.findByText("Analyse premium");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.unlockStatus).not.toHaveBeenCalled();
     expect(screen.queryByText("Offre Découverte")).toBeNull();
     expect(screen.queryByText("Vente débloquée")).toBeNull();
   });
 
-  it("reads the rights, the unlock status and the free listing together, then displays them", async () => {
+  it("reads the free listing while the rights are read, and the unlock status only after them", async () => {
     let grantRights: (plan: unknown) => void = () => undefined;
     mocks.entitlements.mockImplementation(() => new Promise((resolve) => (grantRights = resolve)));
     mocks.unlockStatus.mockResolvedValue(status(false));
@@ -418,12 +419,12 @@ describe("« 3 déblocages par mois » on the sale page", () => {
 
     renderPage();
 
-    // The three reads start before the rights answer…
-    await waitFor(() => expect(mocks.unlockStatus).toHaveBeenCalledTimes(1));
+    // The free listing starts before the rights answer…
     await waitFor(() => expect(mocks.sale).toHaveBeenCalledTimes(1));
     expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: true, unlocked: false });
-    // …but nothing is displayed until they do.
+    // …the unlock status does not, and nothing is displayed until the rights answer.
     await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.unlockStatus).not.toHaveBeenCalled();
     expect(screen.queryByText("Offre Découverte")).toBeNull();
 
     grantRights({ plan: { hasAnalysisAccess: false } });

@@ -4,6 +4,7 @@ import {
   getSupabase,
   hasSupabaseAuthHint,
   onSupabaseClient,
+  SUPABASE_AUTH_STORAGE_KEY,
   type SupabaseBrowserClient,
 } from "@/integrations/supabase/lazy";
 import type { AccountProfile } from "@/lib/account";
@@ -53,6 +54,7 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
     let supabase: SupabaseBrowserClient;
     let attached = false;
     let stopWatching: (() => void) | undefined;
+    let stopWatchingAnonymous: (() => void) | undefined;
 
     async function fetchProfile(nextUser: User): Promise<AccountProfile | null> {
       const { data, error } = await supabase
@@ -122,6 +124,7 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
       if (!active || attached) return;
       attached = true;
       supabase = client;
+      stopWatchingAnonymous?.();
       const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
         void verifySession(s);
       });
@@ -150,21 +153,41 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
       readSession();
     }
 
+    function loadClient() {
+      getSupabase().then(attach, () => {
+        if (!active) return;
+        setAuthError(
+          "Votre session n’a pas pu être vérifiée. Reconnectez-vous pour ouvrir l’annonce.",
+        );
+        setLoading(false);
+      });
+    }
+
     // Dès qu'un client existe (chargé ici ou par une page : connexion, catalogue…), on le surveille.
     const stopListening = onSupabaseClient(attach);
     if (!attached) {
       if (hasSupabaseAuthHint()) {
         // Session stockée ou retour d'authentification dans l'adresse : comme avant, on la retrouve.
-        getSupabase().then(attach, () => {
-          if (!active) return;
-          setAuthError(
-            "Votre session n’a pas pu être vérifiée. Reconnectez-vous pour ouvrir l’annonce.",
-          );
-          setLoading(false);
-        });
+        loadClient();
       } else {
         // Visiteur anonyme : rien à vérifier, on n'attend pas le chargement de supabase-js.
         setLoading(false);
+        // Sans client, rien ne synchronise les onglets : une connexion faite dans un autre onglet
+        // (événement `storage`) ou un indice de session apparu pendant que l'onglet était caché
+        // (retour de visibilité) charge le client, qui retrouve alors la session.
+        const onStorage = (event: StorageEvent) => {
+          if (event.key === SUPABASE_AUTH_STORAGE_KEY && event.newValue !== null) loadClient();
+        };
+        const onVisibilityChange = () => {
+          if (document.visibilityState === "visible" && hasSupabaseAuthHint()) loadClient();
+        };
+        window.addEventListener("storage", onStorage);
+        document.addEventListener("visibilitychange", onVisibilityChange);
+        stopWatchingAnonymous = () => {
+          window.removeEventListener("storage", onStorage);
+          document.removeEventListener("visibilitychange", onVisibilityChange);
+          stopWatchingAnonymous = undefined;
+        };
       }
     }
 
@@ -173,6 +196,7 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
       refreshRef.current = null;
       stopListening();
       stopWatching?.();
+      stopWatchingAnonymous?.();
     };
   }, [enabled]);
 
