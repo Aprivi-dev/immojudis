@@ -1,0 +1,58 @@
+"use client";
+
+import * as PopoverPrimitive from "@radix-ui/react-popover";
+import Link from "next/link";
+import { useState } from "react";
+import LogOut from "lucide-react/dist/esm/icons/log-out.js";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
+import { buttonBase, darkGhost, lightGhost } from "@/components/site-header-shared";
+import { getSupabase } from "@/integrations/supabase/lazy";
+import type { SiteLink } from "@/lib/navigation";
+import { cn } from "@/lib/utils";
+
+/** Menu « Mon compte » (personnes connectées) : Radix Popover n'est chargé que pour elles. */
+export function AccountMenu({ links, dark }: { links: SiteLink[]; dark: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+      <PopoverPrimitive.Trigger asChild>
+        <button type="button" className={cn(buttonBase, dark ? darkGhost : lightGhost)}>
+          Mon compte
+          <ChevronDown className="size-4" aria-hidden />
+        </button>
+      </PopoverPrimitive.Trigger>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          align="end"
+          sideOffset={8}
+          className="z-[70] w-60 rounded-lg border border-border bg-white p-1.5 text-sm text-foreground shadow-xl outline-none"
+        >
+          <ul>
+            {links.map((link) => (
+              <li key={link.href}>
+                <Link
+                  href={link.href}
+                  onClick={() => setOpen(false)}
+                  className="block rounded-md px-3 py-2.5 font-medium hover:bg-gold/10 hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+                >
+                  {link.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              void getSupabase().then((supabase) => supabase.auth.signOut());
+            }}
+            className="mt-1 flex w-full cursor-pointer items-center gap-2 rounded-md border-t border-border px-3 py-2.5 text-left font-medium hover:bg-gold/10 hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+          >
+            <LogOut className="size-4" aria-hidden />
+            Déconnexion
+          </button>
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
+  );
+}

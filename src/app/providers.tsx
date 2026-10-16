@@ -6,8 +6,8 @@ import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
 import { SiteFooter } from "@/components/SiteFooter";
 import { AppToaster } from "@/components/AppToaster";
-import { supabase } from "@/integrations/supabase/client";
-import { getWithdrawnSources, loadWithdrawnSources } from "@/lib/withdrawn-sources";
+import { getWithdrawnSources, loadWithdrawnSourcesOncePerSession } from "@/lib/withdrawn-sources";
+import { createWithdrawnSourcesClient } from "@/lib/withdrawn-sources-client";
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -19,10 +19,11 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Sources retirées du catalogue (aucune à ce jour) : la liste vient de la base (interrupteur unique).
+    // Lue une fois par session de navigation, sans charger supabase-js (appel REST anonyme).
     // Si elle diffère de celle déjà appliquée, les données déjà affichées sont relues.
     let cancelled = false;
     const before = [...getWithdrawnSources()].sort().join(",");
-    void loadWithdrawnSources(supabase).then((names) => {
+    void loadWithdrawnSourcesOncePerSession(createWithdrawnSourcesClient()).then((names) => {
       if (!cancelled && [...names].sort().join(",") !== before)
         void queryClient.invalidateQueries();
     });

@@ -221,6 +221,26 @@ const routeBudgets = [
   },
 ];
 
+// JavaScript réellement référencé par le HTML préfabriqué d'une page publique (balises
+// <script src> hors `nomodule`) : socle commun à toutes les routes (React, Next, runtime,
+// en-tête, fournisseurs) plus le code propre à la page. Les budgets de route ci-dessus ne
+// comptent que les fichiers propres à la page (`entryJSFiles`) et ne voient donc pas ce socle.
+// Relevé du 16/10/2026 avant l'allègement du JavaScript commun (V7 de l'audit de vitesse,
+// `supabase-js` et Sonner/Radix/Analytics chargés à la demande) : accueil 998 093 octets,
+// guide 910 095, article 924 937. Les plafonds ci-dessous ne laissent que ~2 % de marge sur ce
+// relevé : à resserrer sur la mesure suivant l'allègement (voir `htmlScriptBytesByPage` dans la
+// sortie JSON). Ne relevez pas le plafond sans accord du propriétaire.
+const htmlScriptBudgets = [
+  { name: "home", html: ".next/server/app/index.html", maxBytes: 1_018_000 },
+  {
+    name: "guide",
+    html: ".next/server/app/ventes-immobilieres-judiciaires.html",
+    maxBytes: 930_000,
+  },
+  // Premier article préfabriqué par ordre alphabétique (le slug exact importe peu).
+  { name: "article", htmlDirectory: ".next/server/app/ressources", maxBytes: 945_000 },
+];
+
 await checkSourceLineLimits();
 
 const requiredHtml = [[".next/server/app/index.html", "Les enchères immobilières"]];
@@ -276,6 +296,17 @@ for (const budget of routeBudgets) {
   }
 }
 
+const htmlScriptBytesByPage = {};
+for (const budget of htmlScriptBudgets) {
+  const bytes = await htmlReferencedJavaScriptBytes(await resolveHtmlPath(budget));
+  htmlScriptBytesByPage[budget.name] = bytes;
+  if (bytes > budget.maxBytes) {
+    throw new Error(
+      `JavaScript référencé par le HTML trop lourd pour ${budget.name}: ${bytes} octets > ${budget.maxBytes}.`,
+    );
+  }
+}
+
 if (totalClientBytes > MAX_TOTAL_CLIENT_JS_BYTES) {
   throw new Error(
     `JavaScript client total trop lourd: ${totalClientBytes} octets > ${MAX_TOTAL_CLIENT_JS_BYTES}.`,
@@ -311,6 +342,7 @@ console.info(
     largestChunkBytes,
     landingWebpCount: landingImages.length,
     largestBusinessModuleLines: Math.max(...Object.values(businessModuleLines)),
+    htmlScriptBytesByPage,
     publicMediaBytes,
     routeClientBytes,
     totalClientBytes,
@@ -346,6 +378,32 @@ async function clientJavaScriptBytesForRoute({ manifest, routeKey, entryKey }) {
   }
   const sizes = await Promise.all(
     [...new Set(files)].map(async (path) => (await stat(join(".next", path))).size),
+  );
+  return sizes.reduce((sum, bytes) => sum + bytes, 0);
+}
+
+async function resolveHtmlPath({ html, htmlDirectory }) {
+  if (html) return html;
+  const pages = (await readdir(htmlDirectory)).filter((name) => name.endsWith(".html")).sort();
+  if (pages.length === 0) throw new Error(`Aucune page HTML préfabriquée dans ${htmlDirectory}.`);
+  return join(htmlDirectory, pages[0]);
+}
+
+/** Somme des fichiers .js que le HTML d'une page demande au navigateur d'exécuter. */
+async function htmlReferencedJavaScriptBytes(htmlPath) {
+  const html = await readFile(htmlPath, "utf8");
+  const files = new Set();
+  for (const [tag] of html.matchAll(/<script\b[^>]*>/gu)) {
+    if (/\snomodule(?:[\s=>]|$)/iu.test(tag)) continue;
+    const source = /\ssrc="([^"]+)"/u.exec(tag)?.[1];
+    const file = source && /\/_next\/(static\/[^?"#]+\.js)(?:[?#]|$)/u.exec(source)?.[1];
+    if (file) files.add(decodeURIComponent(file));
+  }
+  if (files.size === 0) {
+    throw new Error(`Aucun <script src> de /_next/static trouvé dans ${htmlPath}.`);
+  }
+  const sizes = await Promise.all(
+    [...files].map(async (file) => (await stat(join(".next", file))).size),
   );
   return sizes.reduce((sum, bytes) => sum + bytes, 0);
 }
