@@ -7,6 +7,9 @@ import Eye from "lucide-react/dist/esm/icons/eye.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { ListingPhoto } from "@/components/ListingPhoto";
+import { PhotoCredit } from "@/components/PhotoCredit";
+import { photoCredit } from "@/lib/photo-credit";
+import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { formatPrice } from "@/lib/format";
@@ -233,14 +236,22 @@ export function SalePublicPreview({
               <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
             </h1>
             {photo?.url ? (
-              <figure className={styles.photo}>
-                <ListingPhoto
-                  src={photo.url}
-                  alt={`Photo du bien : ${headline}`}
-                  className="h-full w-full object-cover"
-                  fetchPriority="high"
+              <>
+                <figure className={styles.photo}>
+                  <ListingPhoto
+                    src={photo.url}
+                    mirror={photoMirrorForDetail(photo.mirror)}
+                    alt={`Photo du bien : ${headline}`}
+                    className="h-full w-full object-cover"
+                    fetchPriority="high"
+                  />
+                </figure>
+                <PhotoCredit
+                  credit={photoCredit(photo.url, preview)}
+                  className="mt-1.5 block text-xs text-muted-foreground"
+                  linkClassName="hover:text-foreground"
                 />
-              </figure>
+              </>
             ) : null}
             {propertyFacts}
             <section className={styles.description} aria-labelledby="public-description-title">

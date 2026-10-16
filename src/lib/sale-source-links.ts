@@ -73,6 +73,16 @@ export function sourceLabelFromUrl(href: string): string | null {
   return null;
 }
 
+/** Nom de la source seulement quand l'hôte est celui d'une source connue (jamais l'hôte brut). */
+export function knownSourceLabelFromUrl(href: string): string | null {
+  try {
+    const host = new URL(href).hostname.replace(/\.$/, "").replace(/^www\./i, "");
+    return HOST_LABELS.find(([pattern]) => pattern.test(host))?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function cleanHref(value: unknown): string | null {
   const href = safeExternalHttpUrl(value);
   // Lien vers une source retirée du catalogue : jamais affiché (voir withdrawn-sources.ts).

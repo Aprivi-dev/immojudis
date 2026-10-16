@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseDocs } from "@/lib/documents";
 import { sanitizeAuctionSaleForDisplay } from "@/lib/listing-data-cleanup";
+import { withPhotoMirrors } from "@/lib/photo-mirror";
 import { isLikelyPropertyImageUrl, propertyImages } from "@/lib/sale-media";
 import { saleRows } from "@/lib/sale-rows";
 import { saleSourceLinks } from "@/lib/sale-source-links";
@@ -9,6 +10,7 @@ import type { AuctionSale } from "@/lib/types";
 import {
   DEFAULT_WITHDRAWN_SOURCES,
   getWithdrawnSources,
+  isWithdrawnSourceUrl,
   loadWithdrawnSources,
   loadWithdrawnSourcesOncePerSession,
   resetWithdrawnSources,
@@ -132,6 +134,77 @@ describe("source retirée par l'interrupteur (usage futur)", () => {
       media: [{ type: "image", url: OTHER_PHOTO }],
     } as unknown as AuctionSale;
     expect(stripWithdrawnSourceContent(sale)).toEqual(sale);
+  });
+});
+
+describe("photo copiée par Immojudis d'une source retirée", () => {
+  const MIRROR = {
+    path640: "11111111-1111-1111-1111-111111111111/abc-640.webp",
+    path1600: "11111111-1111-1111-1111-111111111111/abc-1600.webp",
+    width: 1600,
+    height: 1200,
+  };
+  const MIRROR_URL = `https://ci.supabase.co/storage/v1/object/public/sale-photos/${MIRROR.path640}`;
+
+  function mirroredSale(): AuctionSale {
+    const sale = mergedSale();
+    sale.media = [
+      { type: "image", url: LICITOR_PHOTO, mirror: MIRROR },
+      { type: "image", url: OTHER_PHOTO },
+    ];
+    return sale;
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("l'URL de la copie n'est pas celle de la source : c'est l'origine qui décide", () => {
+    setWithdrawnSources(["licitor"]);
+    expect(isWithdrawnSourceUrl(MIRROR_URL)).toBe(false);
+    expect(isWithdrawnSourceUrl(LICITOR_PHOTO)).toBe(true);
+  });
+
+  it("la photo copiée d'une source retirée est masquée à l'affichage", () => {
+    setWithdrawnSources(["licitor"]);
+    const images = propertyImages(mirroredSale().media);
+    expect(images.map((image) => image.url)).toEqual([OTHER_PHOTO]);
+    expect(images.some((image) => image.mirror)).toBe(false);
+  });
+
+  it("elle est aussi retirée de la vente, copie comprise", () => {
+    setWithdrawnSources(["licitor"]);
+    const sale = sanitizeAuctionSaleForDisplay(mirroredSale());
+    expect(sale.media).toEqual([{ type: "image", url: OTHER_PHOTO }]);
+    expect(JSON.stringify(sale)).not.toContain("sale-photos");
+  });
+
+  it("une source retirée après l'enrichissement masque la photo déjà enrichie", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
+    const client = {
+      rpc: vi.fn().mockResolvedValue({
+        data: [
+          {
+            source_url: LICITOR_PHOTO,
+            path_640: MIRROR.path640,
+            path_1600: MIRROR.path1600,
+            width: 1600,
+            height: 1200,
+          },
+        ],
+        error: null,
+      }),
+    };
+    const [enriched] = await withPhotoMirrors([mergedSale()], client);
+    expect(enriched!.media![0]!.mirror?.path640).toBe(MIRROR.path640);
+    expect(propertyImages(enriched!.media).map((image) => image.url)).toEqual([
+      LICITOR_PHOTO,
+      OTHER_PHOTO,
+    ]);
+
+    setWithdrawnSources(["licitor"]);
+    expect(propertyImages(enriched!.media).map((image) => image.url)).toEqual([OTHER_PHOTO]);
   });
 });
 

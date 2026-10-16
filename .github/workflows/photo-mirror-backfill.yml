@@ -1,0 +1,68 @@
+name: Photo Mirror Backfill
+
+# Rattrapage du stock de photos principales (docs/runbooks/retrait-photos.md). Lancement manuel
+# uniquement ; la copie après chaque collecte planifiée est une étape de data-pipeline.yml. Aucune
+# photo n'est copiée tant que la variable de dépôt PHOTO_MIRROR_ENABLED ne vaut pas « true » (les
+# retraits, eux, s'appliquent quand même).
+on:
+  workflow_dispatch:
+    inputs:
+      max_photos:
+        description: "Maximum photos copied in this run (default 3000)"
+        required: false
+        type: string
+      budget_minutes:
+        description: "Time budget in minutes (default 60, maximum 150)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# The backfill never writes the catalogue (only sale_photos and the sale-photos bucket) and holds
+# its own database lock against a scheduled pass, so it does not queue behind collections.
+concurrency:
+  group: immojudis-photo-mirror
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Copy main sale photos
+    runs-on: ubuntu-latest
+    timeout-minutes: 160
+    defaults:
+      run:
+        working-directory: services/data-pipeline
+    env:
+      PYTHONUNBUFFERED: "1"
+      # Secrets are not part of the job environment: the pip step must not see them.
+      AUCTION_USER_AGENT: ${{ vars.AUCTION_USER_AGENT || 'ImmojudisBot/1.0 (+https://immojudis.com/contact)' }}
+      PDF_HOST_MIN_DELAY_SECONDS: 2
+      ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED: ${{ vars.ENCHERES_PUBLIQUES_ACCESS_AUTHORIZED || 'false' }}
+      PHOTO_MIRROR_ENABLED: ${{ vars.PHOTO_MIRROR_ENABLED || 'false' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.lock
+
+      - name: Install Python dependencies
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Copy main photos
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          REQUESTED_MAX_PHOTOS: ${{ inputs.max_photos }}
+          REQUESTED_BUDGET_MINUTES: ${{ inputs.budget_minutes }}
+        # Values are validated and clamped by the Python entry point.
+        run: |
+          python -m src.photo_mirror \
+            --max-photos "${REQUESTED_MAX_PHOTOS:-3000}" \
+            --budget-minutes "${REQUESTED_BUDGET_MINUTES:-60}"

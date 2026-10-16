@@ -8,6 +8,8 @@ import {
   mapboxSatelliteImageUrl,
   mapboxStaticImageUrl,
 } from "@/lib/mapbox";
+import { photoCredit } from "@/lib/photo-credit";
+import { photoMirrorForCard } from "@/lib/photo-mirror";
 import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 
 type SaleVisualProps = {
@@ -36,14 +38,52 @@ type VisualCandidate = {
   url: string;
   srcSet?: string;
   label: string;
+  /**
+   * Notre copie d'une photo. Elle précède la photo de la source dans la liste des candidats : si
+   * elle échoue, le candidat suivant est la source elle-même. L'original a déjà été jugé (taille)
+   * quand la copie a été retenue, donc le contrôle de taille de l'image affichée ne s'y applique pas.
+   */
+  mirror?: boolean;
 };
 
+/**
+ * Le candidat retenu se retrouve par son URL, jamais par sa position : la liste des candidats peut
+ * changer entre deux rendus (une copie apparaît ou disparaît) et une position pointerait ailleurs,
+ * voire nulle part. On retient donc les URL écartées ; le candidat affiché est le premier qui ne
+ * l'est pas.
+ */
 type VisualSelection = {
   saleId: string;
-  index: number;
-  exhausted: boolean;
+  rejectedUrls: readonly string[];
   loadedUrl: string | null;
 };
+
+const NO_URLS: readonly string[] = [];
+
+const freshSelection = (saleId: string): VisualSelection => ({
+  saleId,
+  rejectedUrls: NO_URLS,
+  loadedUrl: null,
+});
+
+/** Une autre vente repart de zéro : l'état d'une vente précédente ne s'applique pas à celle-ci. */
+function withRejectedUrl(current: VisualSelection, saleId: string, url: string): VisualSelection {
+  const rejected = current.saleId === saleId ? current.rejectedUrls : NO_URLS;
+  return {
+    saleId,
+    rejectedUrls: rejected.includes(url) ? rejected : [...rejected, url],
+    loadedUrl: null,
+  };
+}
+
+function withLoadedUrl(current: VisualSelection, saleId: string, url: string): VisualSelection {
+  if (current.saleId === saleId && current.loadedUrl === url) return current;
+  return {
+    saleId,
+    rejectedUrls: current.saleId === saleId ? current.rejectedUrls : NO_URLS,
+    loadedUrl: url,
+  };
+}
 
 export function SaleVisual({
   sale,
@@ -93,12 +133,20 @@ export function SaleVisual({
         format: thumbnail ? MAPBOX_LIST_THUMBNAIL_FORMAT : undefined,
       }),
   );
-  const photoCandidates: VisualCandidate[] = photos.map((photo) => ({
-    kind: "photo",
-    url: photo.url,
-    label: "Photo du bien",
-  }));
-  const candidates: VisualCandidate[] = [
+  const photoCandidates: VisualCandidate[] = photos.flatMap((photo) => {
+    // La source est celle de la photo (hôte de l'URL d'origine), pas celle de la vente.
+    const credit = photoCredit(photo.url, null, { knownOnly: true });
+    const label = credit?.label ? `Photo · ${credit.label}` : "Photo du bien";
+    const mirror = photoMirrorForCard(photo.mirror);
+    const original: VisualCandidate = { kind: "photo", url: photo.url, label };
+    return mirror
+      ? [
+          { kind: "photo", url: mirror.src, label, mirror: true } satisfies VisualCandidate,
+          original,
+        ]
+      : [original];
+  });
+  const allCandidates: VisualCandidate[] = [
     ...(preferPhoto ? photoCandidates : []),
     ...(satelliteImage
       ? [{ kind: "satellite" as const, ...satelliteImage, label: "Vue aérienne Mapbox" }]
@@ -109,50 +157,28 @@ export function SaleVisual({
     ...(preferPhoto ? [] : photoCandidates),
   ];
   const imageRef = useRef<HTMLImageElement>(null);
-  const [selection, setSelection] = useState<VisualSelection>({
-    saleId: sale.id,
-    index: 0,
-    exhausted: false,
-    loadedUrl: null,
-  });
-  const activeSelection =
-    selection.saleId === sale.id
-      ? selection
-      : { saleId: sale.id, index: 0, exhausted: false, loadedUrl: null };
-  const candidate = activeSelection.exhausted ? null : (candidates[activeSelection.index] ?? null);
-  const candidateCount = candidates.length;
+  const [selection, setSelection] = useState<VisualSelection>(freshSelection(sale.id));
+  const activeSelection = selection.saleId === sale.id ? selection : freshSelection(sale.id);
+  // `every` plutôt que `includes(item.url)` : passer un champ du candidat à un appel fait perdre au
+  // compilateur React les dépendances des callbacks ci-dessous (voir `react-hooks/preserve-manual-memoization`).
+  const candidate =
+    allCandidates.find((item) => activeSelection.rejectedUrls.every((url) => url !== item.url)) ??
+    null;
   const candidateUrl = candidate?.url ?? "";
   const candidateKind = candidate?.kind ?? null;
+  // Un contrôle de taille de l'image affichée ne vaut que pour une photo de la source.
+  const candidateChecksSize = candidateKind === "photo" && !candidate?.mirror;
   const candidateIsReady = Boolean(candidate && activeSelection.loadedUrl === candidate.url);
 
-  const rejectCandidate = useCallback(() => {
-    setSelection((current) => {
-      const index = current.saleId === sale.id ? current.index : 0;
-      const nextIndex = index + 1;
-      return {
-        saleId: sale.id,
-        index: nextIndex,
-        exhausted: nextIndex >= candidateCount,
-        loadedUrl: null,
-      };
-    });
-  }, [candidateCount, sale.id]);
-
-  const markCandidateReady = useCallback(() => {
-    if (!candidateUrl) return;
-
-    setSelection((current) => {
-      const index = current.saleId === sale.id ? current.index : 0;
-      if (current.saleId === sale.id && current.loadedUrl === candidateUrl) return current;
-
-      return {
-        saleId: sale.id,
-        index,
-        exhausted: false,
-        loadedUrl: candidateUrl,
-      };
-    });
-  }, [candidateUrl, sale.id]);
+  const saleId = sale.id;
+  const rejectUrl = useCallback(
+    (url: string) => setSelection((current) => withRejectedUrl(current, saleId, url)),
+    [saleId],
+  );
+  const markUrlReady = useCallback(
+    (url: string) => setSelection((current) => withLoadedUrl(current, saleId, url)),
+    [saleId],
+  );
 
   useEffect(() => {
     const image = imageRef.current;
@@ -163,14 +189,14 @@ export function SaleVisual({
     if (
       !image.naturalWidth ||
       !image.naturalHeight ||
-      (candidateKind === "photo" && shouldRejectRenderedPropertyImage(image))
+      (candidateChecksSize && shouldRejectRenderedPropertyImage(image))
     ) {
-      rejectCandidate();
+      rejectUrl(candidateUrl);
       return;
     }
 
-    markCandidateReady();
-  }, [candidateKind, candidateUrl, markCandidateReady, rejectCandidate]);
+    markUrlReady(candidateUrl);
+  }, [candidateChecksSize, candidateUrl, markUrlReady, rejectUrl]);
 
   if (!candidate) {
     return (
@@ -195,12 +221,23 @@ export function SaleVisual({
     );
   }
 
+  // Visuels prioritaires (`eager`, souvent l'élément LCP) : une vignette Mapbox ou une copie
+  // hébergée est visible dès le HTML serveur, sans attendre onLoad ni l'hydratation (elle restait
+  // invisible jusqu'à 5 s de plus). Leur taille est connue et sûre ; en cas d'erreur, le candidat
+  // suivant prend la place. La case est déjà dimensionnée par le parent : aucun décalage.
+  // Une photo de SOURCE reste masquée jusqu'à onLoad et au contrôle de taille : sinon un logo, une
+  // bannière ou une icône d'image cassée serait visible avant l'hydratation. Calculé pour chaque
+  // candidat : celui qui prend la suite n'apparaît pas avant d'être chargé, sauf s'il est lui-même
+  // révélable sans JavaScript. Les visuels différés gardent le squelette puis le fondu.
+  const revealedWithoutScript = eager && (candidate.kind !== "photo" || Boolean(candidate.mirror));
+  const revealed = candidateIsReady || revealedWithoutScript;
+
   return (
     <div
       className={cn("relative h-full w-full overflow-hidden bg-muted", className)}
-      aria-busy={!candidateIsReady}
+      aria-busy={!revealed}
     >
-      {!candidateIsReady ? (
+      {!revealed ? (
         <div
           className="absolute inset-0 animate-pulse bg-[linear-gradient(110deg,#e8f1f6_25%,#f7fafc_45%,#e8f1f6_65%)] bg-[length:220%_100%]"
           aria-hidden
@@ -222,19 +259,16 @@ export function SaleVisual({
         fetchPriority={eager ? "high" : "auto"}
         decoding="async"
         referrerPolicy="strict-origin-when-cross-origin"
-        onError={rejectCandidate}
+        onError={() => rejectUrl(candidate.url)}
         onLoad={(event) => {
-          if (
-            candidate.kind === "photo" &&
-            shouldRejectRenderedPropertyImage(event.currentTarget)
-          ) {
-            rejectCandidate();
+          if (candidateChecksSize && shouldRejectRenderedPropertyImage(event.currentTarget)) {
+            rejectUrl(candidate.url);
             return;
           }
-          markCandidateReady();
+          markUrlReady(candidate.url);
         }}
         className={`h-full w-full object-cover text-transparent transition duration-500 group-hover:scale-[1.025] ${
-          candidateIsReady ? "opacity-100" : "opacity-0"
+          revealed ? "opacity-100" : "opacity-0"
         }`}
       />
       {candidateIsReady ? (

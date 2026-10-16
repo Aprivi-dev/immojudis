@@ -172,6 +172,10 @@ jobs:
       ENCHERES_IMMOBILIERES_MAX_PAGES: 100
       LICITOR_MAX_PAGES: 100
       PIPELINE_IDLE_LLM_BACKFILL_ENABLED: false
+      # Copie hébergée de la photo principale (docs/runbooks/retrait-photos.md). Tant que la variable de
+      # dépôt PHOTO_MIRROR_ENABLED n'est pas « true », aucune photo n'est téléchargée ni copiée ; seuls les
+      # retraits (suppression de copies et de fichiers) s'exécutent.
+      PHOTO_MIRROR_ENABLED: ${{ vars.PHOTO_MIRROR_ENABLED || 'false' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -333,6 +337,25 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python -m src.pipeline_health --report-only
+
+      # Copie des photos principales après la collecte planifiée : étape séparée et bornée (15 min,
+      # 400 photos par défaut, et jamais plus de 20 min grâce à --automatic, sous le timeout de 25),
+      # qui ne fait jamais échouer la collecte (continue-on-error). Elle tourne à chaque collecte
+      # planifiée, même quand la variable de dépôt PHOTO_MIRROR_ENABLED n'est pas « true » : dans ce
+      # cas rien n'est téléchargé, mais les retraits (source retirée, copie « withdrawn ») s'appliquent,
+      # car un retrait n'attend pas la réactivation. Le rattrapage du stock est un workflow à part
+      # (photo-mirror-backfill.yml).
+      - name: Copie des photos principales
+        if: inputs.automatic == true
+        continue-on-error: true
+        timeout-minutes: 25
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PHOTO_MIRROR_BUDGET_MINUTES: ${{ vars.PHOTO_MIRROR_BUDGET_MINUTES || '15' }}
+          PHOTO_MIRROR_MAX_PHOTOS: ${{ vars.PHOTO_MIRROR_MAX_PHOTOS || '400' }}
+        run: python -m src.photo_mirror --automatic
 
       - name: Flag partial collection
         if: always() && steps.pipeline.outputs.source_warning == 'true'

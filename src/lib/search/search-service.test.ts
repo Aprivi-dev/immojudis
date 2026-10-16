@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { getSales, getSalesCount, getSalesForSearch, getSaleMapPoints, rpc } = vi.hoisted(() => ({
   getSales: vi.fn(),
@@ -19,6 +19,7 @@ vi.mock("@/lib/queries", () => ({
   getSaleMapPoints,
 }));
 
+import { forgetRememberedPhotoMirrors } from "@/lib/photo-mirror";
 import { fetchSearchCount, fetchSearchMapResults, fetchSearchResults } from "./search-service";
 
 describe("public preview search service", () => {
@@ -85,6 +86,138 @@ describe("public preview search service", () => {
     });
     const [sale] = await fetchSearchResults({ search: {}, preview: true });
     expect(sale.media).toEqual([]);
+  });
+
+  describe("copies hébergées des photos principales", () => {
+    const PHOTO = "https://www.licitor.com/photos/maison.jpg";
+    const PHOTO_B = "https://www.vench.fr/vignettes/v1.jpg";
+    const mirrorRow = {
+      source_url: PHOTO,
+      path_640: "s/abc-640.webp",
+      path_1600: "s/abc-1600.webp",
+      width: 1600,
+      height: 1200,
+    };
+
+    /** Recherche publique + fonction des copies, distinguées par le nom de la fonction. */
+    function mockRpc(mirrors: unknown) {
+      rpc.mockImplementation((name: string) =>
+        Promise.resolve(
+          name === "sale_photo_mirrors"
+            ? mirrors
+            : {
+                data: [
+                  { id: "a", total_count: 2, thumbnail_url: PHOTO },
+                  { id: "b", total_count: 2, thumbnail_url: PHOTO_B },
+                ],
+                error: null,
+              },
+        ),
+      );
+    }
+    const mirrorCalls = () => rpc.mock.calls.filter(([name]) => name === "sale_photo_mirrors");
+
+    beforeEach(() => {
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      forgetRememberedPhotoMirrors();
+    });
+
+    it("recherche connectée : cherche la photo que la carte affichera, pas media[0]", async () => {
+      mockRpc({ data: [mirrorRow], error: null });
+      getSalesForSearch.mockResolvedValue([
+        {
+          id: "full",
+          media: [
+            { type: "image", url: "https://www.licitor.com/images/logo.png" },
+            { type: "image", url: PHOTO },
+          ],
+        },
+      ]);
+
+      const [sale] = await fetchSearchResults({ search: {}, preview: false });
+
+      expect(mirrorCalls()[0]![1]).toEqual({ p_source_urls: [PHOTO] });
+      expect(sale!.media![1]!.mirror?.path640).toBe("s/abc-640.webp");
+      expect(sale!.media![0]).not.toHaveProperty("mirror");
+    });
+
+    it("un rafraîchissement sans copie ne retire pas la copie déjà connue", async () => {
+      vi.stubGlobal("window", {});
+      mockRpc({ data: [mirrorRow], error: null });
+      await fetchSearchResults({ search: {}, preview: true });
+
+      mockRpc({ data: null, error: { message: "délai dépassé" } });
+      const refreshed = await fetchSearchResults({ search: {}, preview: true });
+
+      expect(refreshed[0]!.media![0]).toMatchObject({
+        url: PHOTO,
+        mirror: { path640: "s/abc-640.webp" },
+      });
+      expect(refreshed[1]!.media![0]).toEqual({ type: "image", url: PHOTO_B });
+    });
+
+    it("recherche publique : un seul appel pour la page, après la lecture des ventes", async () => {
+      mockRpc({ data: [mirrorRow], error: null });
+
+      const items = await fetchSearchResults({ search: {}, preview: true });
+
+      expect(mirrorCalls()).toHaveLength(1);
+      expect(mirrorCalls()[0]![1]).toEqual({ p_source_urls: [PHOTO, PHOTO_B] });
+      expect(items[0]!.media![0]).toMatchObject({
+        url: PHOTO,
+        mirror: { path640: "s/abc-640.webp" },
+      });
+      expect(items[1]!.media![0]).toEqual({ type: "image", url: PHOTO_B });
+    });
+
+    it("le compte de la recherche ne déclenche aucune recherche de copies", async () => {
+      mockRpc({ data: [mirrorRow], error: null });
+      await fetchSearchCount({ search: {}, preview: true });
+      expect(mirrorCalls()).toHaveLength(0);
+    });
+
+    it("recherche connectée : la 1re photo de chaque vente reçoit sa copie", async () => {
+      mockRpc({ data: [mirrorRow], error: null });
+      getSalesForSearch.mockResolvedValue([
+        {
+          id: "full",
+          media: [
+            { type: "image", url: PHOTO },
+            { type: "image", url: PHOTO_B },
+          ],
+        },
+      ]);
+
+      const [sale] = await fetchSearchResults({ search: {}, preview: false });
+
+      expect(mirrorCalls()[0]![1]).toEqual({ p_source_urls: [PHOTO] });
+      expect(sale!.media![0]!.mirror?.path1600).toBe("s/abc-1600.webp");
+      expect(sale!.media![1]).toEqual({ type: "image", url: PHOTO_B });
+    });
+
+    it("interrupteur éteint : aucune fonction appelée, résultats identiques", async () => {
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "off");
+      mockRpc({ data: [mirrorRow], error: null });
+
+      const items = await fetchSearchResults({ search: {}, preview: true });
+
+      expect(mirrorCalls()).toHaveLength(0);
+      expect(JSON.stringify(items)).not.toContain("mirror");
+    });
+
+    it("fonction en erreur : la recherche reste intacte", async () => {
+      mockRpc({ data: null, error: { message: "boom" } });
+
+      const items = await fetchSearchResults({ search: {}, preview: true });
+
+      expect(items.map((sale) => sale.id)).toEqual(["a", "b"]);
+      expect(JSON.stringify(items)).not.toContain("mirror");
+    });
   });
 
   it("fetches only the requested authenticated page with a real offset", async () => {

@@ -137,6 +137,7 @@ def test_secrets_are_never_in_the_environment_of_pip_and_apt_steps(path: Path) -
         "dvf-import.yml",
         "reference-data-import.yml",
         "valuation-model-training.yml",
+        "photo-mirror-backfill.yml",
     ],
 )
 def test_pipeline_workflows_keep_secrets_out_of_the_job_environment(name: str) -> None:
@@ -164,6 +165,7 @@ def test_data_pipeline_secrets_reach_only_the_business_steps() -> None:
         "Run manually requested pipeline",
         "Finalize unfinished run",
         "Report source coverage and enrichment backlog",
+        "Copie des photos principales",
     }
     benchmark = {step.name: step for step in jobs["model-benchmark"].steps}
     assert [name for name, step in benchmark.items() if SECRET.search(step.env)] == [
@@ -226,6 +228,7 @@ def test_dvf_and_training_secrets_reach_only_their_python_step() -> None:
         ("dvf-import.yml", "Download and import DVF resources"),
         ("reference-data-import.yml", "Import reference data"),
         ("valuation-model-training.yml", "Train, validate and publish"),
+        ("photo-mirror-backfill.yml", "Copy main photos"),
     ):
         steps = parse_jobs((WORKFLOWS / name).read_text(encoding="utf-8"))[0].steps
         assert [step.name for step in steps if SECRET.search(step.env)] == [step_name], name
