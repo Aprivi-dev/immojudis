@@ -1,4 +1,5 @@
 import { validSaleDate } from "@/lib/search/sale-date-range";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { DPE_CLASSES, extractDpe, type DpeClass } from "@/lib/dpe";
 import { propertyTypeLabel } from "@/lib/format";
@@ -8,6 +9,7 @@ import type { AuctionSale } from "@/lib/types";
 import type { WatchedZoneInput } from "@/lib/watched-zones";
 import type { SalesStatisticsResponse } from "@/lib/sales-statistics";
 import { compactPrice } from "@/lib/search/search-filters";
+import { RESULTS_VIEW_PARAM, parseResultsView, type ResultsView } from "@/lib/search/results-view";
 import { stableUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { parseSaleType, saleTypeFilterLabel, type SaleTypeFilter } from "@/lib/sale-types";
 
@@ -264,6 +266,11 @@ export function useMediaQuery(query: string) {
   }, [query]);
 
   return matches;
+}
+
+/** Affichage des résultats (cartes ou tableau) lu dans l'adresse courante, à côté des filtres. */
+export function useResultsView(): ResultsView {
+  return parseResultsView(useSearchParams().get(RESULTS_VIEW_PARAM));
 }
 
 export function buildAlertName(search: SalesSearchParams) {
