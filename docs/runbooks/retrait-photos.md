@@ -20,8 +20,23 @@ Accuser réception tout de suite, noter la date de réception : c'est elle qui f
 - Une ligne `withdrawn` **empêche aussi la recopie** : le pipeline ne copie que les photos sans ligne
   (ou en échec récent). Supprimer la ligne autoriserait une nouvelle copie.
 - Interrupteurs : variable de dépôt `PHOTO_MIRROR_ENABLED` (pipeline, `true` pour copier) et
-  `NEXT_PUBLIC_PHOTO_MIRROR` (site, `on` pour afficher les copies). Les repasser à `false` / hors
-  `on` arrête les copies et leur affichage, mais ne supprime aucun fichier.
+  `NEXT_PUBLIC_PHOTO_MIRROR` (site, `on` pour afficher les copies). Ils arrêtent les copies et leur
+  affichage, mais ne suppriment aucun fichier.
+  - `PHOTO_MIRROR_ENABLED` à autre chose que `true` : plus aucun téléchargement ni copie, mais les
+    retraits continuent (le pipeline les applique à chaque passage planifié, interrupteur éteint ou
+    non : un retrait n'attend jamais la réactivation).
+  - `NEXT_PUBLIC_PHOTO_MIRROR` est **intégrée au build** (préfixe `NEXT_PUBLIC_`) : changer sa valeur
+    dans Vercel ne change rien tant que le site n'est pas **redéployé**. Pour couper l'affichage des
+    copies, la vider (ou la mettre hors `on`) puis redéployer en production.
+  - Même après le redéploiement, les pages en cache gardent les chemins des copies un moment : le
+    cache des pages dure 300 s (5 minutes) et le navigateur des visiteurs 60 s. Compter donc environ
+    6 minutes avant que plus personne ne reçoive l'ancien chemin.
+  - Si le fichier a déjà disparu du bucket (retrait par la procédure ci-dessous), l'image copiée
+    répond 404 et le site retombe sur l'URL de la source (lien direct) : pas d'image cassée, mais
+    l'image de la source reste affichée (voir le paragraphe suivant).
+- `public.sale_photo_mirrors` ne renvoie une copie que si sa vente est au catalogue public : une
+  vente mise en quarantaine, terminée ou périmée cesse d'être servie (au plus 5 minutes après, cache
+  compris), sans attendre sa purge.
 - Les fichiers sont supprimés par `/api/cron/sale-retention` (toutes les 5 minutes), qui vide la file
   `public.sale_retention_storage_queue` avec l'API Storage. Le bucket doit figurer dans la liste
   blanche de `src/lib/sale-retention.ts` (`sale-photos` y est ; sans cela le cron s'arrête sur
@@ -39,11 +54,21 @@ Supabase (rôle `service_role`), par une personne habilitée. Jamais depuis un a
 1. **Retrouver la photo.** Lecture seule :
 
    ```sql
-   select p.id, p.sale_id, p.source_url, p.source_host, p.status, p.sha256, p.path_640, p.path_1600
+   select p.id, p.sale_id, p.source_url, p.source_host, p.status, p.sha256, p.path_640, p.path_1600,
+          (select count(*) from public.sale_photos o
+            where o.id <> p.id and o.sale_id = p.sale_id and o.status = 'stored'
+              and (o.path_640 in (p.path_640, p.path_1600) or o.path_1600 in (p.path_640, p.path_1600))
+          ) as autres_copies_du_meme_fichier
    from public.sale_photos p
    where p.sale_id = '<sale_id>'            -- ou : p.source_url = '<url de la photo>'
    order by p.created_at;
    ```
+
+   Une même photo publiée sous deux URL d'une vente donne **un seul fichier** (même vente, même
+   empreinte), partagé par deux lignes. Si `autres_copies_du_meme_fichier` n'est pas 0 et que la
+   demande vise l'image elle-même, retirer **toutes** les lignes qui la portent (filtrer par
+   `sale_id` et `sha256` à l'étape 3) : sinon l'autre ligne continue de servir le fichier, qui
+   reste en place.
 
 2. **Garder la preuve minimale** (avant d'effacer quoi que ce soit), dans le registre des demandes
    de droits, **sans l'image** : empreinte `sha256`, identifiant de la vente, hôte de la source, date
@@ -63,10 +88,17 @@ Supabase (rôle `service_role`), par une personne habilitée. Jamais depuis un a
      where sale_id = '<sale_id>' and source_url = '<url de la photo>' and status = 'stored'
      for update
    ), queued as (
+     -- Un fichier qu'une autre copie `stored` (hors de la sélection) utilise encore reste en place.
      insert into public.sale_retention_storage_queue (bucket, object_path)
-     select 'sale-photos', file.object_path
+     select distinct 'sale-photos', file.object_path
      from target, lateral (values (target.path_640), (target.path_1600)) as file(object_path)
      where file.object_path is not null
+       and not exists (
+         select 1 from public.sale_photos o
+         where o.status = 'stored'
+           and o.id not in (select id from target)
+           and file.object_path in (o.path_640, o.path_1600)
+       )
      on conflict (bucket, object_path) do nothing
    )
    update public.sale_photos photo
@@ -77,9 +109,9 @@ Supabase (rôle `service_role`), par une personne habilitée. Jamais depuis un a
    commit;
    ```
 
-   Le pipeline fait la même chose tout seul à chaque passage pour une source retirée du catalogue
-   (voir plus bas), mais seulement quand `PHOTO_MIRROR_ENABLED` vaut `true` : pour une demande
-   urgente, utiliser la requête ci-dessus.
+   Le pipeline fait la même chose tout seul à chaque passage planifié pour une source retirée du
+   catalogue (voir plus bas), même quand `PHOTO_MIRROR_ENABLED` est éteint : pour une demande
+   urgente, utiliser la requête ci-dessus sans attendre le passage suivant.
 
 4. **Vérifier.** Attendre le passage du cron (5 minutes), puis :
    - `select count(*) from public.sale_retention_storage_queue where bucket = 'sale-photos';`
@@ -100,7 +132,8 @@ Supabase (rôle `service_role`), par une personne habilitée. Jamais depuis un a
      `SOURCE_HOSTS` (modification de code) ou passer par la requête de l'étape 2 ;
    - ajouter l'hôte à `BLOCKED_HOSTS` dans `services/data-pipeline/src/photo_mirror.py` (modification
      de code : les photos de cet hôte prennent le statut `blocked` sans téléchargement) ;
-   - repasser `PHOTO_MIRROR_ENABLED` à `false` (arrête toutes les sources).
+   - repasser `PHOTO_MIRROR_ENABLED` à `false` (arrête toutes les sources ; les retraits
+     continuent de s'appliquer).
 2. **Retirer les copies déjà faites**, avec la requête de l'étape 3 ci-dessus en remplaçant le filtre
    du `where` de `target` par :
 
@@ -117,13 +150,51 @@ Supabase (rôle `service_role`), par une personne habilitée. Jamais depuis un a
 
 ## Rétablir une photo
 
-Si la demande était infondée ou si la source a donné son accord par écrit : supprimer la ligne
-`withdrawn` (`delete from public.sale_photos where id = '<id>'`). Elle n'a plus de fichier, donc
-rien n'entre dans la file de rétention. Le prochain passage du pipeline recopie la photo.
+Si la demande était infondée ou si la source a donné son accord par écrit, supprimer la ligne
+`withdrawn` autorise une nouvelle copie. Attention : la nouvelle copie retombe sur **le même chemin**
+(`{sale_id}/{16 premiers caractères du sha256}-640.webp`, même empreinte) que l'ancienne. Si ce
+chemin attend encore dans `public.sale_retention_storage_queue` (retrait fait par la requête de
+l'étape 3, cron pas encore passé), le cron effacerait le fichier tout juste recopié.
+
+1. **Lire le chemin à surveiller** :
+
+   ```sql
+   select id, sale_id, left(sha256, 16) as prefixe
+   from public.sale_photos where id = '<id>' and status = 'withdrawn';
+   ```
+
+2. **Attendre que la file soit vide pour ce chemin** (le cron passe toutes les 5 minutes) :
+
+   ```sql
+   select object_path from public.sale_retention_storage_queue
+   where bucket = 'sale-photos' and object_path like '<sale_id>/<prefixe>-%';
+   ```
+
+   Tant que cette requête renvoie une ligne, ne pas supprimer la ligne `withdrawn`. Si la file ne se
+   vide pas, lire le dernier appel de `/api/cron/sale-retention` (voir « Vérifier » plus haut) plutôt
+   que de la vider à la main : retirer une entrée au moment où le cron l'a déjà lue ne sauve pas le
+   fichier.
+
+3. **Supprimer la ligne** (aucun fichier n'y est attaché, donc rien n'entre dans la file) :
+
+   ```sql
+   delete from public.sale_photos where id = '<id>' and status = 'withdrawn';
+   ```
+
+   Le prochain passage du pipeline recopie la photo (interrupteur `PHOTO_MIRROR_ENABLED` à `true`).
+
+Garde du pipeline : avant d'écrire une copie, il vérifie que ses deux chemins ne sont pas dans la file
+de rétention. S'ils y sont encore, il **reporte** la photo au passage suivant (aucune ligne écrite,
+aucun fichier envoyé) : oublier l'étape 2 retarde donc la copie sans jamais la faire effacer.
 
 ## Ce qui part tout seul
 
 - Vente purgée : la ligne `sale_photos` part en cascade, un déclencheur place ses fichiers (un seul
   si l'original faisait 640 px ou moins) dans `sale_retention_storage_queue`, et le cron les supprime.
+- Photo principale changée : quand la `catalogue_thumbnail_url` d'une vente n'est plus l'URL d'une
+  copie `stored`, chaque passage du pipeline (interrupteur allumé) supprime cette ligne, 300 au plus
+  par passage ; ses fichiers entrent dans la file de rétention, sauf ceux qu'une autre copie de la
+  vente utilise encore. Les lignes `withdrawn` ne sont jamais supprimées ainsi : elles empêchent la
+  recopie.
 - Fichier orphelin (copie interrompue) : le pipeline tente de le retirer lui-même ; sinon il se
   repère dans le bucket par un nom absent de `sale_photos.path_640` et `path_1600`.

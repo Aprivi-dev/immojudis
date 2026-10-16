@@ -7,7 +7,10 @@
 --   le site lit uniquement par `public.sale_photo_mirrors(text[])`.
 -- * Purge : la suppression d'une ligne (directe ou en cascade quand la vente est purgée) place ses
 --   fichiers dans `sale_retention_storage_queue`, la file que /api/cron/sale-retention vide
---   avec l'API Storage (jamais en SQL).
+--   avec l'API Storage (jamais en SQL). Un fichier qu'une autre copie `stored` de la vente utilise
+--   encore n'est pas mis en file.
+-- * Lecture : `sale_photo_mirrors` ne renvoie une copie que si sa vente est dans le catalogue public
+--   (ni en quarantaine, ni terminée, ni périmée).
 --
 -- Écart assumé avec le contrat : `public.sale_photo_mirrors` n'est pas SECURITY DEFINER. Le test
 -- 441_function_privileges.sql interdit toute fonction SECURITY DEFINER du schéma public exécutable
@@ -77,11 +80,32 @@ security definer
 set search_path = ''
 as $function$
   -- Au plus 100 URL lues. Une même URL partagée par deux ventes ne renvoie qu'une ligne.
+  -- Une copie n'est servie que tant que sa vente est dans le catalogue public : mise en quarantaine,
+  -- terminée, périmée ou masquée (source retirée), la vente cesse d'être servie au plus tard au
+  -- prochain rafraîchissement de cache du site. Prédicat identique à celui de la sélection des
+  -- candidats du pipeline (photo_mirror.py) et de la recherche publique
+  -- (search_auction_sales_preview_v4, 20261024100000), sans le prédicat d'indexation du sitemap.
   select distinct on (photo.source_url)
     photo.source_url, photo.path_640, photo.path_1600, photo.width, photo.height
   from public.sale_photos photo
+  join public.auction_sales s on s.id = photo.sale_id
   where photo.status = 'stored'
     and photo.source_url = any (p_source_urls[1:100])
+    and coalesce(s.status, 'unknown') in ('upcoming', 'unknown', 'postponed')
+    and (
+      case
+        when s.catalogue_expiry_materialized and s.catalogue_expiry_deadline is not null
+          then s.catalogue_expiry_deadline > current_timestamp
+        else app_private.sale_catalogue_entry_is_live_materialized(
+          false,
+          null,
+          s.sale_date,
+          s.raw_payload,
+          s.sale_procedure
+        )
+      end
+    )
+    and not s.catalogue_quarantined
   order by photo.source_url, photo.stored_at desc nulls last, photo.id;
 $function$;
 
@@ -119,6 +143,10 @@ set search_path = ''
 as $$
 begin
   -- `union` écarte le doublon quand path_640 = path_1600 (original étroit, un seul fichier).
+  -- Un fichier qu'une autre copie `stored` de la même vente référence encore reste en place : la même
+  -- photo sous deux URL donne le même chemin (même vente, même empreinte). Quand toute la vente est
+  -- supprimée, les copies partent ensemble (cascade) et aucune n'en retient une autre : tout est mis
+  -- en file.
   insert into public.sale_retention_storage_queue (bucket, object_path)
   select 'sale-photos', file.object_path
     from (
@@ -127,6 +155,14 @@ begin
       select old.path_1600
     ) file
    where nullif(file.object_path, '') is not null
+     and not exists (
+       select 1
+         from public.sale_photos other
+        where other.sale_id = old.sale_id
+          and other.id <> old.id
+          and other.status = 'stored'
+          and file.object_path in (other.path_640, other.path_1600)
+     )
   on conflict (bucket, object_path) do nothing;
   return old;
 end;

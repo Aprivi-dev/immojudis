@@ -1,8 +1,9 @@
 name: Photo Mirror Backfill
 
 # Rattrapage du stock de photos principales (docs/runbooks/retrait-photos.md). Lancement manuel
-# uniquement ; la copie après chaque collecte planifiée est une étape de data-pipeline.yml. Rien ne
-# se passe tant que la variable de dépôt PHOTO_MIRROR_ENABLED ne vaut pas « true ».
+# uniquement ; la copie après chaque collecte planifiée est une étape de data-pipeline.yml. Aucune
+# photo n'est copiée tant que la variable de dépôt PHOTO_MIRROR_ENABLED ne vaut pas « true » (les
+# retraits, eux, s'appliquent quand même).
 on:
   workflow_dispatch:
     inputs:

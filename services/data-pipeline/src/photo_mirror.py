@@ -1,29 +1,41 @@
 """Copie hébergée de la photo principale des ventes (test d'hébergement du 16/10/2026).
 
-``python -m src.photo_mirror [--max-photos 400] [--budget-minutes 15]``
+``python -m src.photo_mirror [--max-photos 400] [--budget-minutes 15] [--automatic]``
 
 Étape séparée et bornée, jamais appelée par la collecte ni par ``_finalize_sale_for_app`` : elle ne lit
 que ``auction_sales`` et n'y écrit jamais (une écriture déclencherait une quinzaine de déclencheurs). Elle
 écrit dans le bucket Storage ``sale-photos`` et dans ``public.sale_photos`` (migration
 ``20261026100000_sale_photo_mirrors.sql``).
 
-* **Interrupteur** : rien ne se passe si ``PHOTO_MIRROR_ENABLED`` ne vaut pas ``true``.
+* **Interrupteur** : si ``PHOTO_MIRROR_ENABLED`` ne vaut pas ``true``, aucune photo n'est téléchargée ni
+  copiée, mais les retraits (copies d'une source retirée, fichiers d'une copie ``withdrawn``) s'exécutent
+  quand même : un retrait n'attend jamais la réactivation.
 * **Sélection** : ventes du catalogue public dont ``catalogue_thumbnail_url`` n'a pas de ligne
   ``sale_photos``, ou dont la ligne est ``failed`` (moins de 3 essais, dernier essai de plus de 12 h). Les
-  ventes les plus proches de leur date passent en premier.
-* **Plafonds** : ``PHOTO_MIRROR_BUDGET_MINUTES`` (15) et ``PHOTO_MIRROR_MAX_PHOTOS`` (400).
+  ventes les plus proches de leur date passent en premier. Les ventes Enchères Publiques sont exclues tant
+  que l'accès n'est pas autorisé.
+* **Plafonds** : ``PHOTO_MIRROR_BUDGET_MINUTES`` (15) et ``PHOTO_MIRROR_MAX_PHOTOS`` (400). Avec
+  ``--automatic`` (étape planifiée de data-pipeline.yml), le budget est plafonné à 20 minutes quel que soit
+  le réglage, pour que le ``timeout-minutes`` de l'étape ne coupe jamais un envoi en cours.
 * **Téléchargement** : même garde anti-SSRF et même transport épinglé que les pièces jointes
   (``pdf_document_transport``), même politesse (``document_politeness`` : robots.txt, 2 s au moins par hôte,
   ``Crawl-delay``), même User-Agent. 15 s au plus par requête, 2 reprises seulement sur erreur réseau, 5xx ou
   429 (``Retry-After`` respecté), jamais sur 401/403/404/410. Lecture en flux coupée à 8 Mo. Le type est
   contrôlé sur les premiers octets (jpeg, png, webp ; gif et svg refusés), jamais sur l'en-tête
   ``Content-Type`` (info-encheres renvoie ``application/x-httpd-php`` pour de vrais JPEG).
-* **Image** : Pillow, pixels bornés, rotation EXIF appliquée puis ré-encodage complet sans métadonnée en
-  WebP qualité 75, 640 px et 1600 px de large au plus, sans jamais agrandir (original de 640 px ou moins :
+* **Image** : Pillow, pixels bornés (un JPEG multi-images est lu comme ``MPO``), rotation EXIF appliquée,
+  profil ICC converti en sRGB puis supprimé, ré-encodage complet sans métadonnée en WebP qualité 75, 640 px et 1600 px de large au plus, sans jamais agrandir (original de 640 px ou moins :
   un seul fichier, ``path_1600 = path_640``). Images trop petites ou allongées refusées comme sur le site
   (``shouldRejectRenderedPropertyImage`` de ``src/lib/sale-media.ts``).
 * **Retrait** : au début de chaque passage, les copies d'une source retirée passent en ``withdrawn`` et leurs
   fichiers sont supprimés du bucket ; aucune copie n'est faite pour une source retirée.
+* **Copies périmées** : interrupteur allumé, chaque passage supprime (au plus ``STALE_BATCH`` lignes) les
+  lignes ``stored`` dont ``source_url`` n'est plus la ``catalogue_thumbnail_url`` de leur vente ; le
+  déclencheur de la table met leurs fichiers en file de rétention, sauf ceux qu'une autre ligne ``stored``
+  de la vente référence encore.
+* **Chemins déjà en file** : un chemin qui attend encore sa suppression dans
+  ``sale_retention_storage_queue`` n'est jamais réutilisé. La photo est reportée au passage suivant (aucune
+  ligne écrite), faute de quoi le cron effacerait le fichier tout juste recopié.
 """
 
 from __future__ import annotations
@@ -49,7 +61,7 @@ from typing import Any, Protocol
 from urllib.parse import urljoin, urlsplit
 
 import httpx
-from PIL import Image, ImageOps
+from PIL import Image, ImageCms, ImageOps
 
 from src import source_withdrawal
 from src.config import EncheresPubliquesAccessNotAuthorized, load_settings
@@ -60,7 +72,10 @@ from src.document_politeness import (
     configured_host_delay_seconds,
     fetch_robots_document,
 )
-from src.encheres_publiques_guard import require_encheres_publiques_url_access
+from src.encheres_publiques_guard import (
+    require_encheres_publiques_sale_access,
+    require_encheres_publiques_url_access,
+)
 from src.pdf_document_transport import _PinnedHTTPTransport, resolve_public_document_target
 from src.source_withdrawal import is_withdrawn_source_url, sale_is_fully_withdrawn
 
@@ -72,6 +87,9 @@ MAX_PHOTOS_ENV = "PHOTO_MIRROR_MAX_PHOTOS"
 DEFAULT_BUDGET_MINUTES = 15
 # The GitHub job stops at 180 minutes; keep room for setup and the collection that precedes the pass.
 MAX_BUDGET_MINUTES = 150
+# The scheduled step of data-pipeline.yml stops at 25 minutes: its budget never goes above 20, whatever
+# PHOTO_MIRROR_BUDGET_MINUTES says (5 minutes left for the request in flight, retries and the summary).
+AUTOMATIC_MAX_BUDGET_MINUTES = 20
 DEFAULT_MAX_PHOTOS = 400
 MAX_PHOTOS_LIMIT = 10_000
 
@@ -102,6 +120,8 @@ RETRY_AFTER_HOURS = 12
 HOST_FAILURE_LIMIT = 3
 CONSECUTIVE_ERROR_LIMIT = 5
 WITHDRAWAL_BATCH = 500
+# Copies whose URL is no longer the sale's main photo, deleted per pass.
+STALE_BATCH = 300
 
 # Same rules as shouldRejectRenderedPropertyImage (src/lib/sale-media.ts).
 MIN_SHORT_SIDE = 300
@@ -149,6 +169,13 @@ class RetryableFailure(MirrorFailure):
     def __init__(self, reason: str, *, http_status: int | None = None, retry_after: float | None = None) -> None:
         super().__init__("failed", reason, http_status=http_status)
         self.retry_after = retry_after
+
+
+class PathPending(MirrorFailure):
+    """The files' names are still in the retention queue: nothing is written, the photo waits for the next pass."""
+
+    def __init__(self) -> None:
+        super().__init__("deferred", "path_queued_for_deletion")
 
 
 class ImageRejected(MirrorFailure):
@@ -234,14 +261,55 @@ def _encode_webp(image: Image.Image, width: int) -> bytes:
     return data
 
 
+#: Pillow formats accepted for each signature. A multi-picture JPEG (some cameras and phones) is opened as
+#: ``MPO``: same bytes signature, first frame is the photo.
+EXPECTED_FORMATS: Mapping[str, frozenset[str]] = {
+    "jpeg": frozenset({"JPEG", "MPO"}),
+    "png": frozenset({"PNG"}),
+    "webp": frozenset({"WEBP"}),
+}
+
+
+def _to_srgb(image: Image.Image) -> Image.Image:
+    """Convert to sRGB when the image carries an ICC profile; the result carries no profile.
+
+    The browser would otherwise show the re-encoded WebP (stripped of its profile, so read as sRGB) with
+    shifted colours for a Display P3, Adobe RGB or CMYK original. An unreadable profile is dropped and the
+    pixels are taken as they are.
+    """
+    icc = image.info.get("icc_profile")
+    if not icc:
+        return image
+    has_alpha = image.mode in ("RGBA", "LA", "PA") or (image.mode == "P" and "transparency" in image.info)
+    alpha = image.convert("RGBA").getchannel("A") if has_alpha else None
+    base = image if image.mode in ("RGB", "L", "CMYK") else image.convert("RGB")
+    try:
+        source = ImageCms.ImageCmsProfile(io.BytesIO(icc))
+        converted = ImageCms.profileToProfile(
+            base,
+            source,
+            ImageCms.createProfile("sRGB"),
+            renderingIntent=ImageCms.Intent.PERCEPTUAL,
+            outputMode="RGB",
+        )
+    except (ImageCms.PyCMSError, OSError, ValueError, TypeError):
+        converted = base.convert("RGB")
+    if converted is None:  # pragma: no cover - only when inPlace is requested
+        converted = base.convert("RGB")
+    if alpha is not None:
+        converted.putalpha(alpha)
+    converted.info = {}
+    return converted
+
+
 def process_image(data: bytes) -> ProcessedImage:
     """Check, orient and re-encode a downloaded original into the files to host."""
     kind = sniff_image_type(data[:PREFIX_BYTES])
-    expected = {"jpeg": "JPEG", "png": "PNG", "webp": "WEBP"}[kind]
+    expected = EXPECTED_FORMATS[kind]
     try:
         with _pixel_limit():
             source = Image.open(io.BytesIO(data))
-            if source.format != expected:
+            if source.format not in expected:
                 raise ImageRejected("unsupported_type")
             if source.width * source.height > MAX_PIXELS:
                 raise ImageRejected("decompression_bomb", width=source.width, height=source.height)
@@ -253,6 +321,7 @@ def process_image(data: bytes) -> ProcessedImage:
             reason = rejection_reason(width, height)
             if reason is not None:
                 raise ImageRejected(reason, width=width, height=height)
+            oriented = _to_srgb(oriented)
             if oriented.mode in ("RGBA", "LA") or (oriented.mode == "P" and "transparency" in oriented.info):
                 prepared = oriented.convert("RGBA")
             elif oriented.mode != "RGB":
@@ -595,6 +664,8 @@ class Candidate:
     observations: object
     photo_url: str
     previous_attempts: int = 0
+    #: ``auction_sales.source_url``: the sale's own page, for the Encheres Publiques access gate.
+    sale_source_url: str = ""
 
 
 @dataclass
@@ -632,11 +703,17 @@ class PhotoStore(Protocol):
 
     def clear_paths(self, ids: list[str]) -> None: ...
 
+    def delete_stale_rows(self, limit: int) -> int: ...
+
+    def paths_queued_for_deletion(self, paths: list[str]) -> bool: ...
+
+    def stored_paths(self, paths: list[str]) -> set[str]: ...
+
     def close(self) -> None: ...
 
 
 CANDIDATES_SQL = """
-select s.id, s.source_name, s.observations, s.catalogue_thumbnail_url, coalesce(p.attempts, 0)
+select s.id, s.source_name, s.observations, s.catalogue_thumbnail_url, coalesce(p.attempts, 0), s.source_url
   from public.auction_sales s
   left join public.sale_photos p
     on p.sale_id = s.id and p.source_url = s.catalogue_thumbnail_url
@@ -660,6 +737,11 @@ select s.id, s.source_name, s.observations, s.catalogue_thumbnail_url, coalesce(
             )
        )
    and (%s or s.catalogue_thumbnail_url !~* %s)
+   and (
+         %s
+         or replace(replace(lower(btrim(coalesce(s.source_name, ''))), '-', '_'), ' ', '_')
+            <> 'encheres_publiques'
+       )
  order by (s.sale_date is null), s.sale_date, s.id
  limit %s
 """
@@ -718,6 +800,33 @@ update public.sale_photos set path_640 = null, path_1600 = null, bytes_640 = nul
  where id = any(%s::uuid[]) and status = 'withdrawn'
 """
 
+# A copy whose URL is no longer the sale's main photo. Only ``stored`` rows: a ``withdrawn`` row must stay,
+# it is what keeps a withdrawn photo from being copied again if the sale shows it once more. The delete
+# trigger puts the files in the retention queue (except those another ``stored`` row still uses).
+DELETE_STALE_ROWS_SQL = """
+delete from public.sale_photos
+ where id in (
+   select p.id
+     from public.sale_photos p
+     join public.auction_sales s on s.id = p.sale_id
+    where p.status = 'stored'
+      and s.catalogue_thumbnail_url is distinct from p.source_url
+    order by p.id
+    limit %s
+ )
+"""
+
+QUEUED_PATHS_SQL = """
+select 1 from public.sale_retention_storage_queue
+ where bucket = 'sale-photos' and object_path = any(%s::text[])
+ limit 1
+"""
+
+STORED_PATHS_SQL = """
+select p.path_640, p.path_1600 from public.sale_photos p
+ where p.status = 'stored' and (p.path_640 = any(%s::text[]) or p.path_1600 = any(%s::text[]))
+"""
+
 
 class PostgresPhotoStore:
     """``sale_photos`` and the read-only catalogue selection, on one autocommit connection.
@@ -746,6 +855,7 @@ class PostgresPhotoStore:
                 RETRY_AFTER_HOURS,
                 include_encheres_publiques,
                 ENCHERES_PUBLIQUES_URL_PATTERN,
+                include_encheres_publiques,
                 int(limit),
             ),
         ).fetchall()
@@ -756,6 +866,7 @@ class PostgresPhotoStore:
                 observations=row[2],
                 photo_url=str(row[3]),
                 previous_attempts=int(row[4] or 0),
+                sale_source_url=str(row[5] or ""),
             )
             for row in rows
         ]
@@ -798,6 +909,17 @@ class PostgresPhotoStore:
     def clear_paths(self, ids: list[str]) -> None:
         self._connection.execute(CLEAR_PATHS_SQL, (ids,))
 
+    def delete_stale_rows(self, limit: int) -> int:
+        cursor = self._connection.execute(DELETE_STALE_ROWS_SQL, (int(limit),))
+        return int(cursor.rowcount or 0)
+
+    def paths_queued_for_deletion(self, paths: list[str]) -> bool:
+        return self._connection.execute(QUEUED_PATHS_SQL, (paths,)).fetchone() is not None
+
+    def stored_paths(self, paths: list[str]) -> set[str]:
+        rows = self._connection.execute(STORED_PATHS_SQL, (paths, paths)).fetchall()
+        return {path for row in rows for path in row if path in paths}
+
     def close(self) -> None:
         try:
             self._connection.close()
@@ -824,9 +946,13 @@ def _bounded_int(value: object, default: int, low: int, high: int) -> int:
     return max(low, min(high, parsed))
 
 
-def limits_from_inputs(max_photos: object = None, budget_minutes: object = None) -> MirrorLimits:
+def limits_from_inputs(
+    max_photos: object = None, budget_minutes: object = None, *, automatic: bool = False
+) -> MirrorLimits:
+    """Bounded limits. ``automatic`` (scheduled step) caps the budget at ``AUTOMATIC_MAX_BUDGET_MINUTES``."""
+    ceiling = min(MAX_BUDGET_MINUTES, AUTOMATIC_MAX_BUDGET_MINUTES) if automatic else MAX_BUDGET_MINUTES
     return MirrorLimits(
-        budget_seconds=60.0 * _bounded_int(budget_minutes, DEFAULT_BUDGET_MINUTES, 1, MAX_BUDGET_MINUTES),
+        budget_seconds=60.0 * _bounded_int(budget_minutes, min(DEFAULT_BUDGET_MINUTES, ceiling), 1, ceiling),
         max_photos=_bounded_int(max_photos, DEFAULT_MAX_PHOTOS, 1, MAX_PHOTOS_LIMIT),
     )
 
@@ -848,6 +974,7 @@ class MirrorSummary:
     bytes_stored: int = 0
     withdrawn_marked: int = 0
     withdrawn_files_removed: int = 0
+    stale_deleted: int = 0
     elapsed_seconds: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
@@ -864,6 +991,7 @@ class MirrorSummary:
             "bytes_stored": self.bytes_stored,
             "withdrawn_marked": self.withdrawn_marked,
             "withdrawn_files_removed": self.withdrawn_files_removed,
+            "stale_deleted": self.stale_deleted,
             "elapsed_seconds": round(self.elapsed_seconds, 1),
         }
 
@@ -903,8 +1031,13 @@ def mirror_candidate(
     pass_deadline: float,
     settings: Mapping[str, object],
     clock: Callable[[], float] = time.monotonic,
+    store: PhotoStore | None = None,
 ) -> PhotoResult:
-    """Copy one photo. Never raises for a photo-level failure: the outcome is the returned result."""
+    """Copy one photo. Never raises for a photo-level failure: the outcome is the returned result.
+
+    With a ``store``: a path still waiting in the retention queue is not reused (``deferred`` result, nothing
+    written), and a file another ``stored`` row of the sale uses is never removed on failure.
+    """
     started = clock()
     url = candidate.photo_url
     result = PhotoResult(
@@ -920,6 +1053,17 @@ def mirror_candidate(
         names = SimpleNamespace(source_name=candidate.sale_source_name, observations=candidate.observations)
         if sale_is_fully_withdrawn(names, db_url):
             raise MirrorFailure("withdrawn", "source_withdrawn", permanent=True)
+        try:
+            # The sale itself (its source and page), not only the host of the photo.
+            require_encheres_publiques_sale_access(
+                source_name=candidate.sale_source_name,
+                source_url=candidate.sale_source_url or None,
+                source_urls=[url],
+                documents=[],
+                settings=settings,
+            )
+        except EncheresPubliquesAccessNotAuthorized as exc:
+            raise MirrorFailure("blocked", "ep_not_authorized", permanent=True) from exc
         downloader.precheck(url)
         original = downloader.download(url, pass_deadline=pass_deadline)
         result.bytes_downloaded = len(original)
@@ -927,6 +1071,8 @@ def mirror_candidate(
         processed = process_image(original)
         result.width, result.height = processed.width, processed.height
         result.path_640, result.path_1600 = photo_paths(candidate.sale_id, result.sha256, single=processed.single)
+        if store is not None and store.paths_queued_for_deletion([result.path_640, result.path_1600]):
+            raise PathPending
         storage.upload(result.path_640, processed.data_640)
         uploaded.append(result.path_640)
         if not processed.single:
@@ -937,12 +1083,12 @@ def mirror_candidate(
         result.status = "stored"
     except MirrorFailure as failure:
         _apply_failure(result, failure, candidate.previous_attempts)
-        _discard(storage, uploaded)
+        _discard(storage, uploaded, store)
     except Exception as exc:  # noqa: BLE001 - storage or encoder bug: this photo only, retried later
         LOGGER.warning("Photo mirror: unexpected %s for sale %s", type(exc).__name__, candidate.sale_id)
         result.status, result.reason = "failed", f"unexpected_{type(exc).__name__}"
         result.path_640 = result.path_1600 = result.bytes_640 = result.bytes_1600 = None
-        _discard(storage, uploaded)
+        _discard(storage, uploaded, store)
     result.seconds = clock() - started
     return result
 
@@ -955,15 +1101,27 @@ def _apply_failure(result: PhotoResult, failure: MirrorFailure, previous_attempt
     result.height = failure.height if failure.height is not None else result.height
     result.path_640 = result.path_1600 = result.bytes_640 = result.bytes_1600 = None
     # A rejected image is never tried again: the attempts are used up at once.
-    result.attempts = MAX_ATTEMPTS if failure.status == "failed" and failure.permanent else previous_attempts + 1
+    if failure.status == "deferred":
+        result.attempts = previous_attempts  # nothing was tried: no attempt is used up
+    else:
+        result.attempts = MAX_ATTEMPTS if failure.status == "failed" and failure.permanent else previous_attempts + 1
 
 
-def _discard(storage: PhotoStorage, paths: list[str]) -> None:
-    """Best effort: do not leave a half-copied photo behind."""
+def _discard(storage: PhotoStorage, paths: list[str], store: PhotoStore | None = None) -> None:
+    """Best effort: do not leave a half-copied photo behind, nor remove one another row still serves.
+
+    Two rows of a sale can share a path (same photo under two URLs: same sale, same fingerprint). The upload
+    tolerates the existing file, so a failure afterwards must not delete it. When the database cannot say,
+    the files are kept: an orphan costs a few kilobytes, a missing file breaks a served photo.
+    """
     if not paths:
         return
     try:
-        storage.remove(paths)
+        if store is not None:
+            kept = store.stored_paths(paths)
+            paths = [path for path in paths if path not in kept]
+        if paths:
+            storage.remove(paths)
     except Exception:  # noqa: BLE001
         LOGGER.warning("Photo mirror: could not remove %s partial file(s)", len(paths))
 
@@ -1017,10 +1175,9 @@ def run_photo_mirror(
     env: Mapping[str, str] | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> MirrorSummary:
+    """One pass. Switch off: withdrawals only (no download, no copy, no other write)."""
     summary = MirrorSummary()
-    if not mirror_enabled(env):
-        summary.stop_reason = "disabled"
-        return summary
+    enabled = mirror_enabled(env)
     settings = settings if settings is not None else load_settings()
     started = clock()
     deadline = started + limits.budget_seconds
@@ -1029,6 +1186,9 @@ def run_photo_mirror(
         if store is None:
             db_url = str(settings.get("supabase_db_url") or "")
             if not db_url:
+                if not enabled:  # nothing to withdraw without a database; not an error while the switch is off
+                    summary.stop_reason = "disabled"
+                    return summary
                 raise RuntimeError("SUPABASE_DB_URL is required for the photo mirror")
             store = PostgresPhotoStore(db_url)
         if storage is None:
@@ -1036,9 +1196,12 @@ def run_photo_mirror(
 
             client = get_supabase_client()
             if client is None:
+                if not enabled:
+                    summary.stop_reason = "disabled"
+                    return summary
                 raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for the photo mirror")
             storage = SupabasePhotoStorage(client)
-        if downloader is None:
+        if enabled and downloader is None:
             downloader = PhotoDownloader(
                 politeness=build_politeness(settings),
                 user_agent=str(settings["user_agent"]),
@@ -1054,6 +1217,18 @@ def run_photo_mirror(
         except Exception as exc:  # noqa: BLE001 - copies still hidden by status; retried by the next pass
             LOGGER.warning("Photo mirror: withdrawal step failed: %s", type(exc).__name__)
             summary.failures_by_reason[f"withdrawal_{type(exc).__name__}"] += 1
+
+        if not enabled:
+            summary.stop_reason = "disabled"
+            return summary
+        if downloader is None:  # pragma: no cover - built above whenever the switch is on
+            raise RuntimeError("downloader missing")
+
+        try:
+            summary.stale_deleted = store.delete_stale_rows(STALE_BATCH)
+        except Exception as exc:  # noqa: BLE001 - hygiene only: the copies stay, the next pass retries
+            LOGGER.warning("Photo mirror: stale copies step failed: %s", type(exc).__name__)
+            summary.failures_by_reason[f"stale_{type(exc).__name__}"] += 1
 
         ep_open = _encheres_publiques_open(settings)
         candidates = store.select_candidates(limits.max_photos, include_encheres_publiques=ep_open)
@@ -1076,12 +1251,18 @@ def run_photo_mirror(
                 pass_deadline=deadline,
                 settings=settings,
                 clock=clock,
+                store=store,
             )
+            if result.status == "deferred":
+                # Nothing is written: the photo is selected again by the next pass.
+                _count(summary, result)
+                _emit(_photo_log(result))
+                continue
             try:
                 written = store.save(result)
             except Exception as exc:  # noqa: BLE001 - the database, not the photo
                 LOGGER.warning("Photo mirror: could not record sale %s: %s", candidate.sale_id, type(exc).__name__)
-                _discard(storage, [p for p in (result.path_640, result.path_1600) if p])
+                _discard(storage, [p for p in (result.path_640, result.path_1600) if p], store)
                 consecutive_errors += 1
                 summary.failures_by_reason["database_error"] += 1
                 if consecutive_errors >= CONSECUTIVE_ERROR_LIMIT:
@@ -1091,7 +1272,7 @@ def run_photo_mirror(
             consecutive_errors = 0
             if not written:
                 # The row changed under us (withdrawn by hand): do not leave the files we just sent.
-                _discard(storage, [p for p in (result.path_640, result.path_1600) if p])
+                _discard(storage, [p for p in (result.path_640, result.path_1600) if p], store)
                 result.status, result.reason = "failed", "row_changed"
             _count(summary, result)
             _emit(_photo_log(result))
@@ -1160,6 +1341,9 @@ def _write_step_summary(summary: Mapping[str, Any]) -> None:
         f"- Octets téléchargés : {summary['bytes_downloaded']}, octets hébergés : {summary['bytes_stored']}",
         f"- Statuts : {json.dumps(summary['by_status'], ensure_ascii=False)}",
         f"- Échecs par motif : {json.dumps(summary['failures_by_reason'], ensure_ascii=False)}",
+        f"- Retraits : {summary['withdrawn_marked']} copie(s) retirée(s), "
+        f"{summary['withdrawn_files_removed']} fichier(s) supprimé(s) ; copies périmées supprimées : "
+        f"{summary['stale_deleted']}",
     ]
     try:
         with open(path, "a", encoding="utf-8") as handle:
@@ -1172,11 +1356,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Copie des photos principales des ventes (bucket sale-photos).")
     parser.add_argument("--max-photos", default=os.getenv(MAX_PHOTOS_ENV))
     parser.add_argument("--budget-minutes", default=os.getenv(BUDGET_ENV))
+    parser.add_argument(
+        "--automatic",
+        action="store_true",
+        help=f"scheduled run: the budget never exceeds {AUTOMATIC_MAX_BUDGET_MINUTES} minutes",
+    )
     args = parser.parse_args(argv)
     if not mirror_enabled():
-        _emit({"event": "photo_mirror_summary", "skipped": f"{ENABLED_ENV} is not true"})
-        return 0
-    limits = limits_from_inputs(args.max_photos, args.budget_minutes)
+        # No copy, but withdrawals still run (the summary says `disabled`).
+        LOGGER.info("%s is not true: no photo is copied, only withdrawals are applied", ENABLED_ENV)
+    limits = limits_from_inputs(args.max_photos, args.budget_minutes, automatic=args.automatic)
     summary = run_photo_mirror(limits).as_dict()
     _emit(summary)
     _write_step_summary(summary)
