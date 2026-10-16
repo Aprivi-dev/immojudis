@@ -62,7 +62,9 @@ export async function runSaleRetention(
   const removedIds: string[] = [];
   let removalFailure: Error | null = null;
   for (const [bucket, items] of byBucket) {
-    if (!["information-agent-evidence", "information-agent-approved"].includes(bucket)) {
+    if (
+      !["information-agent-evidence", "information-agent-approved", "sale-photos"].includes(bucket)
+    ) {
       removalFailure = new Error("Unexpected retention bucket");
       break;
     }

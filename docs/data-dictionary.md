@@ -8,6 +8,8 @@ Ce dictionnaire couvre uniquement les tables, vocabulaires et contrats d’Outco
 
 Les tables historiques `auction_sales`, `properties` et `judicial_sales` restent des modèles de catalogue et de lecture pendant la migration. Elles ne remplacent aucune entité du registre. `user_profiles`, `user_subscriptions` et `public.has_analysis_access()` sont réutilisés comme intégration d’identité et d’entitlement, mais ne font pas partie du registre judiciaire lui-même.
 
+Table du catalogue, hors registre : `sale_photos` conserve la copie hébergée de la photo principale d’une vente (une ligne par `(sale_id, source_url)` ; `status` parmi `stored`, `failed`, `gone`, `blocked`, `withdrawn` ; empreinte `sha256` de l’original ; chemins `path_640` et `path_1600` dans le bucket public `sale-photos`). Elle est fermée aux rôles navigateur (lecture par `public.sale_photo_mirrors(text[])`, qui ne renvoie que les copies `stored`), écrite par le pipeline avec la clé service, et ses fichiers sont supprimés avec la vente via `sale_retention_storage_queue`.
+
 ## Conventions globales
 
 | Sujet | Contrat |

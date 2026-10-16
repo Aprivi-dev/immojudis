@@ -65,6 +65,19 @@ describe("sale retention", () => {
     expect(ack).toHaveBeenCalledTimes(1);
     expect(ack).toHaveBeenCalledWith("id", ["a", "c", "b"]);
   });
+  it("removes mirrored sale photos, a narrow original's single file included", async () => {
+    const { client, ack, remove } = clientFor(null, [
+      { id: "p1", bucket: "sale-photos", object_path: "sale/0123456789abcdef-640.webp" },
+      { id: "p2", bucket: "sale-photos", object_path: "sale/0123456789abcdef-1600.webp" },
+    ]);
+    expect(await runSaleRetention(new Date(), client)).toMatchObject({ filesDeleted: 2 });
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith([
+      "sale/0123456789abcdef-640.webp",
+      "sale/0123456789abcdef-1600.webp",
+    ]);
+    expect(ack).toHaveBeenCalledWith("id", ["p1", "p2"]);
+  });
   it("acknowledges buckets already removed when a later bucket fails", async () => {
     const { client, ack, remove } = clientFor(null, [
       { id: "a", bucket: "information-agent-evidence", object_path: "sale/a.pdf" },
