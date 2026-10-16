@@ -5,14 +5,23 @@ import Camera from "lucide-react/dist/esm/icons/camera.js";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left.js";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
 import X from "lucide-react/dist/esm/icons/x.js";
+import { PhotoCredit } from "@/components/PhotoCredit";
 import { RotatingCamera360 } from "@/components/RotatingCamera360";
+import type { PhotoCredit as PhotoCreditData } from "@/lib/photo-credit";
+import { photoMirrorForCard, photoMirrorForDetail } from "@/lib/photo-mirror";
+import type { SaleMediaMirror } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export type CarouselImage = {
   id?: string;
+  /** URL d'origine de la photo (la source) : elle sert de repli si la copie échoue. */
   url: string;
   alt: string;
   source?: string | null;
+  /** Notre copie de la photo, affichée en premier quand elle existe. */
+  mirror?: SaleMediaMirror | null;
+  /** Source de la photo (hôte de l'URL d'origine) et lien vers l'annonce d'origine. */
+  credit?: PhotoCreditData | null;
 };
 
 type PhotoCarouselDialogProps = {
@@ -161,6 +170,7 @@ export function PhotoCarouselDialog({
           <div className="relative flex h-full min-h-0 w-full items-center justify-center px-0 py-2 sm:px-4 sm:py-4">
             <ListingPhoto
               src={current.url}
+              mirror={photoMirrorForDetail(current.mirror)}
               alt={current.alt}
               className="block max-h-full max-w-full select-none object-contain"
               loading="eager"
@@ -192,10 +202,18 @@ export function PhotoCarouselDialog({
               </>
             )}
           </div>
-          {current.source && (
-            <span className="absolute bottom-3 left-3 max-w-[calc(100%-1.5rem)] truncate rounded-full border border-white/12 bg-black/45 px-3 py-1 text-xs font-medium text-white/82 backdrop-blur">
-              Source · {current.source}
-            </span>
+          {current.credit ? (
+            <PhotoCredit
+              credit={current.credit}
+              className="absolute bottom-3 left-3 max-w-[calc(100%-1.5rem)] truncate rounded-full border border-white/12 bg-black/45 px-3 py-1 text-xs font-medium text-white/82 backdrop-blur"
+              linkClassName="text-white"
+            />
+          ) : (
+            current.source && (
+              <span className="absolute bottom-3 left-3 max-w-[calc(100%-1.5rem)] truncate rounded-full border border-white/12 bg-black/45 px-3 py-1 text-xs font-medium text-white/82 backdrop-blur">
+                Source · {current.source}
+              </span>
+            )
           )}
         </div>
 
@@ -218,6 +236,7 @@ export function PhotoCarouselDialog({
               >
                 <ListingPhoto
                   src={image.url}
+                  mirror={photoMirrorForCard(image.mirror)}
                   alt=""
                   compactFallback
                   className="h-full w-full object-cover"

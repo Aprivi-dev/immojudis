@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
@@ -93,6 +93,59 @@ describe("SalePublicPreview", () => {
       "redirect",
     );
     expect(redirect).toBe("/sales/sale-1");
+  });
+
+  describe("photo principale", () => {
+    const ORIGINAL = "https://www.licitor.com/photos/maison.jpg";
+    const BASE = "https://ci.supabase.co/storage/v1/object/public/sale-photos/";
+
+    beforeEach(() => vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co"));
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("affiche la copie hébergée et crédite la source de l'URL d'origine, sans lien", () => {
+      renderPreview({
+        media: [
+          {
+            type: "image",
+            url: ORIGINAL,
+            mirror: {
+              path640: "s/a-640.webp",
+              path1600: "s/a-1600.webp",
+              width: 1600,
+              height: 1200,
+            },
+          },
+        ],
+      });
+
+      const image = screen.getByRole("img", { name: /Photo du bien/ });
+      expect(image.getAttribute("src")).toBe(`${BASE}s/a-1600.webp`);
+      expect(image.getAttribute("srcset")).toContain("640w");
+      // La page publique ne reçoit pas l'annonce d'origine : le nom de la source, sans lien.
+      expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
+      expect(screen.queryByRole("link", { name: "Licitor" })).toBeNull();
+    });
+
+    it("sans copie, la photo de la source reste affichée telle quelle", () => {
+      renderPreview({ media: [{ type: "image", url: ORIGINAL }] });
+
+      expect(screen.getByRole("img", { name: /Photo du bien/ }).getAttribute("src")).toBe(ORIGINAL);
+      expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
+    });
+
+    it("hôte inconnu : « source de l'annonce », sans hôte brut ni lien", () => {
+      renderPreview({ media: [{ type: "image", url: "https://d1x9.cloudfront.net/p/a.jpg" }] });
+
+      const credit = screen.getByTestId("photo-credit");
+      expect(credit.textContent).toBe("Photo : source de l'annonce");
+      expect(credit.textContent).not.toContain("cloudfront");
+      expect(credit.querySelector("a")).toBeNull();
+    });
+
+    it("sans photo, aucun crédit", () => {
+      renderPreview({ media: [] });
+      expect(screen.queryByTestId("photo-credit")).toBeNull();
+    });
   });
 
   it("links to the guide, the costs article, the courts and the fees simulator", () => {

@@ -751,6 +751,91 @@ if (
   failures.push("v_auction_sales_discovery_search lost its security barrier");
 }
 
+// Photos principales hébergées (test du 16/10/2026): the bucket serves only re-encoded WebP files by
+// public URL, the table is closed to the browser roles, the site reads copies through one definer
+// function keyed by a source URL it already knows, and the files leave with the sale through the
+// retention queue.
+const [salePhotosMigration, saleRetentionSource] = await Promise.all([
+  readFile(
+    new URL("../supabase/migrations/20261026100000_sale_photo_mirrors.sql", import.meta.url),
+    "utf8",
+  ),
+  readFile(new URL("../src/lib/sale-retention.ts", import.meta.url), "utf8"),
+]);
+if (
+  !/insert\s+into\s+storage\.buckets[\s\S]*?'sale-photos'[\s\S]*?\btrue\b[\s\S]*?2097152[\s\S]*?array\['image\/webp'\]/i.test(
+    salePhotosMigration,
+  )
+) {
+  failures.push("The sale-photos bucket is not limited to 2 MB of image/webp");
+}
+if (
+  /create\s+policy[\s\S]{0,500}?on\s+storage\.objects[\s\S]{0,500}?sale-photos/i.test(
+    salePhotosMigration,
+  )
+) {
+  failures.push("The sale-photos bucket has a browser-facing Storage policy");
+}
+if (
+  !/alter\s+table\s+public\.sale_photos\s+enable\s+row\s+level\s+security/i.test(
+    salePhotosMigration,
+  )
+) {
+  failures.push("sale_photos does not enable RLS");
+}
+if (
+  !/revoke\s+all\s+on\s+table\s+public\.sale_photos\s+from\s+public,\s*anon,\s*authenticated/i.test(
+    salePhotosMigration,
+  )
+) {
+  failures.push("sale_photos is not closed to anon and authenticated");
+}
+if (
+  salePhotosMigration
+    .split(";")
+    .some(
+      (statement) =>
+        /^\s*(?:--[^\n]*\n\s*)*grant\s/i.test(statement) &&
+        /\bpublic\.sale_photos\b/i.test(statement) &&
+        /\bto\s+(?:public|anon|authenticated)\b/i.test(statement),
+    ) ||
+  /create\s+policy[^;]*\bsale_photos\b/i.test(salePhotosMigration)
+) {
+  failures.push("sale_photos is granted or exposed by a policy to a browser role");
+}
+const salePhotoReader =
+  /create\s+or\s+replace\s+function\s+app_private\.sale_photo_mirrors\([^)]*\)[\s\S]*?\$function\$;/i.exec(
+    salePhotosMigration,
+  )?.[0];
+if (
+  !salePhotoReader ||
+  !/security\s+definer\s+set\s+search_path\s*=\s*''/i.test(salePhotoReader) ||
+  !/photo\.status\s*=\s*'stored'/i.test(salePhotoReader) ||
+  !/p_source_urls\[1:100\]/i.test(salePhotoReader)
+) {
+  failures.push(
+    "sale_photo_mirrors is not a bounded SECURITY DEFINER reader of the stored copies only",
+  );
+}
+if (
+  /function\s+public\.sale_photo_mirrors\([^)]*\)\s*returns\s+table\s*\([^)]*\)[^$]*?security\s+definer/i.test(
+    salePhotosMigration,
+  )
+) {
+  failures.push("public.sale_photo_mirrors is SECURITY DEFINER (use the app_private wrapper)");
+}
+if (
+  !/after\s+delete\s+on\s+public\.sale_photos[\s\S]*?enqueue_sale_photo_files_for_deletion/i.test(
+    salePhotosMigration,
+  ) ||
+  !/check\s*\(bucket\s+in\s*\([^)]*'sale-photos'[^)]*\)\)/i.test(salePhotosMigration)
+) {
+  failures.push("Deleting a sale photo does not queue its files for removal");
+}
+if (!/"sale-photos"/.test(saleRetentionSource)) {
+  failures.push("The retention worker does not accept the sale-photos bucket");
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -788,6 +873,7 @@ console.log(
       "sale-unlock-rls-and-definer-boundary",
       "document-reading-personal-data-filter",
       "listing-completeness-score-stays-private",
+      "sale-photos-bucket-table-and-purge",
     ],
   }),
 );

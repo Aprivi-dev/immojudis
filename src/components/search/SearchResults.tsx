@@ -6,6 +6,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { getDisplaySurface } from "@/lib/surface";
 import { SaleVisual } from "@/components/SaleVisual";
 import { ListingPhoto } from "@/components/ListingPhoto";
+import { isPhotoMirrorUrl, photoMirrorForCard } from "@/lib/photo-mirror";
 import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
@@ -669,6 +670,7 @@ export function ListingMediaCarousel({
         <ListingPhoto
           key={photo.url}
           src={photo.url}
+          mirror={photoMirrorForCard(photo.mirror)}
           alt={title}
           className={styles.photo}
           loading={eager ? "eager" : "lazy"}
@@ -679,8 +681,10 @@ export function ListingMediaCarousel({
           onOriginalError={() => markPhotoFailed(photo.url)}
           onLoad={(event) => {
             const renderedSource = event.currentTarget.currentSrc || event.currentTarget.src;
+            // La copie n'est retenue que si l'original a passé ce contrôle (voir photo-mirror.ts).
             if (
               !renderedSource.includes("/_next/image?") &&
+              !isPhotoMirrorUrl(renderedSource) &&
               shouldRejectRenderedPropertyImage(event.currentTarget)
             ) {
               markPhotoFailed(photo.url);
