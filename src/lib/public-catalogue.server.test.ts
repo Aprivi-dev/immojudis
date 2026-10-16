@@ -143,6 +143,17 @@ describe("copies hébergées des photos de la première page", () => {
     expect(result!.count).toBe(3);
   });
 
+  it("passe par le cache de données des copies : 5 minutes, clé sur les URL", async () => {
+    mirrorRpc.mockResolvedValue({ data: [mirrorRow(PHOTO_A, "a/x")], error: null });
+    cacheDeclarations.length = 0;
+
+    await loadInitialCatalogue({}, { search, firstPage, photoMirrorClient });
+
+    expect(cacheDeclarations).toHaveLength(1);
+    expect(cacheDeclarations[0]!.keyParts.slice(0, 2)).toEqual(["photo-mirrors", "v1"]);
+    expect(cacheDeclarations[0]!.options).toMatchObject({ revalidate: 300 });
+  });
+
   it("enrichit aussi une recherche filtrée, après sa lecture", async () => {
     search.mockResolvedValue(withPhotos());
     mirrorRpc.mockResolvedValue({ data: [mirrorRow(PHOTO_B, "b/y")], error: null });

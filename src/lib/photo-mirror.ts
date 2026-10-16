@@ -1,5 +1,5 @@
 import { publicEnv } from "@/lib/env";
-import { shouldRejectPropertyImageSize } from "@/lib/sale-media";
+import { propertyImages, shouldRejectPropertyImageSize } from "@/lib/sale-media";
 import type { AuctionSale, SaleMedia, SaleMediaMirror } from "@/lib/types";
 
 /**
@@ -12,8 +12,20 @@ import type { AuctionSale, SaleMedia, SaleMediaMirror } from "@/lib/types";
  * Sans copie, interrupteur éteint, erreur ou délai dépassé : la page est celle d'avant.
  */
 export const PHOTO_MIRROR_BUCKET = "sale-photos";
-/** Délai au-delà duquel on affiche les photos des sources plutôt que d'attendre les copies. */
+/**
+ * Délai du rendu serveur au-delà duquel on affiche les photos des sources plutôt que d'attendre les
+ * copies : la page n'attend personne.
+ */
 export const PHOTO_MIRROR_TIMEOUT_MS = 300;
+/**
+ * Même délai côté navigateur (recherche, fiche) : l'appel part de chez l'internaute, vers la base,
+ * et ne bloque aucun rendu serveur. Un délai de 300 ms y ferait perdre la copie sur un réseau lent.
+ */
+export const PHOTO_MIRROR_BROWSER_TIMEOUT_MS = 1_500;
+/** Photos d'une fiche dont on cherche la copie : celles que l'écran montre en premier. */
+export const PHOTO_MIRROR_DETAIL_PHOTOS = 3;
+/** Copies déjà connues du navigateur (URL d'origine vers copie), au plus. */
+export const PHOTO_MIRROR_MEMORY_MAX = 500;
 /** La fonction SQL ignore tout ce qui dépasse. */
 export const PHOTO_MIRROR_MAX_URLS = 100;
 
@@ -71,23 +83,24 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-/**
- * Un seul appel pour toutes les URL (au plus 100 distinctes). Ne lève jamais : interrupteur éteint,
- * erreur, réponse inattendue ou délai dépassé donnent une table vide et une ligne de journal.
- */
-export async function fetchPhotoMirrors(
-  client: PhotoMirrorClient | null | undefined,
-  urls: Iterable<string>,
-  options: { timeoutMs?: number; enabled?: boolean } = {},
-): Promise<Map<string, SaleMediaMirror>> {
-  const mirrors = new Map<string, SaleMediaMirror>();
-  if (!client || !(options.enabled ?? isPhotoMirrorEnabled())) return mirrors;
-
-  const distinct = [...new Set(urls)]
+/** URL distinctes, http(s), au plus 100 : ce que la fonction SQL accepte. */
+export function photoMirrorLookupUrls(urls: Iterable<string>): string[] {
+  return [...new Set(urls)]
     .filter((url) => typeof url === "string" && /^https?:\/\//i.test(url))
     .slice(0, PHOTO_MIRROR_MAX_URLS);
-  if (!distinct.length) return mirrors;
+}
 
+/**
+ * Un seul appel pour toutes les URL. LÈVE en cas d'erreur, de réponse inattendue ou de délai
+ * dépassé : c'est ce qui permet au cache serveur de ne jamais garder un échec. Pour l'affichage,
+ * utiliser `fetchPhotoMirrors`.
+ */
+export async function fetchPhotoMirrorsStrict(
+  client: PhotoMirrorClient,
+  urls: string[],
+  options: { timeoutMs?: number } = {},
+): Promise<Map<string, SaleMediaMirror>> {
+  const mirrors = new Map<string, SaleMediaMirror>();
   const timeoutMs = options.timeoutMs ?? PHOTO_MIRROR_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -95,7 +108,7 @@ export async function fetchPhotoMirrors(
       timer = setTimeout(() => reject(new Error(`délai de ${timeoutMs} ms dépassé`)), timeoutMs);
     });
     const { data, error } = await Promise.race([
-      Promise.resolve(client.rpc("sale_photo_mirrors", { p_source_urls: distinct })),
+      Promise.resolve(client.rpc("sale_photo_mirrors", { p_source_urls: urls })),
       timeout,
     ]);
     if (error) throw error;
@@ -106,41 +119,106 @@ export async function fetchPhotoMirrors(
       if (mirror) mirrors.set(row.source_url, mirror);
     }
     return mirrors;
-  } catch (error) {
-    console.warn(
-      "[photos] Copies indisponibles, photos des sources affichées:",
-      errorMessage(error),
-    );
-    return new Map();
   } finally {
     clearTimeout(timer);
   }
 }
 
 /**
+ * Un seul appel pour toutes les URL (au plus 100 distinctes). Ne lève jamais : interrupteur éteint,
+ * erreur, réponse inattendue ou délai dépassé donnent une table vide et une ligne de journal.
+ */
+export async function fetchPhotoMirrors(
+  client: PhotoMirrorClient | null | undefined,
+  urls: Iterable<string>,
+  options: { timeoutMs?: number; enabled?: boolean } = {},
+): Promise<Map<string, SaleMediaMirror>> {
+  if (!client || !(options.enabled ?? isPhotoMirrorEnabled())) return new Map();
+
+  const distinct = photoMirrorLookupUrls(urls);
+  if (!distinct.length) return new Map();
+
+  try {
+    return await fetchPhotoMirrorsStrict(client, distinct, { timeoutMs: options.timeoutMs });
+  } catch (error) {
+    console.warn(
+      "[photos] Copies indisponibles, photos des sources affichées:",
+      errorMessage(error),
+    );
+    return new Map();
+  }
+}
+
+/**
+ * Copies déjà vues par ce navigateur. Un rafraîchissement qui revient sans copie (délai dépassé,
+ * panne, copie momentanément absente) ne doit pas faire changer l'image d'une carte : on garde la
+ * copie connue pour la même URL d'origine. Si elle a disparu pour de bon, l'image affichée échoue
+ * et la carte retombe sur la photo de la source. Réservé au navigateur (`remember`) : sur le
+ * serveur, ce cache serait partagé entre visiteurs.
+ */
+const rememberedMirrors = new Map<string, SaleMediaMirror>();
+
+function remember(url: string, mirror: SaleMediaMirror) {
+  rememberedMirrors.delete(url);
+  rememberedMirrors.set(url, mirror);
+  while (rememberedMirrors.size > PHOTO_MIRROR_MEMORY_MAX) {
+    const oldest = rememberedMirrors.keys().next().value;
+    if (oldest === undefined) break;
+    rememberedMirrors.delete(oldest);
+  }
+}
+
+/** Pour les tests. */
+export function forgetRememberedPhotoMirrors() {
+  rememberedMirrors.clear();
+}
+
+export type PhotoMirrorOptions = {
+  /**
+   * Nombre de photos par vente dont on cherche la copie, dans l'ordre où l'écran les montre
+   * (`propertyImages`). 1 par défaut : la vignette d'une carte, seule photo copiée.
+   */
+  photos?: number;
+  timeoutMs?: number;
+  /** Navigateur seulement : garde les copies connues d'un appel à l'autre (voir ci-dessus). */
+  remember?: boolean;
+  /** Remplace l'appel direct (cache serveur) ; reçoit les URL à chercher et ne doit pas lever. */
+  fetchMirrors?: (urls: string[]) => Promise<Map<string, SaleMediaMirror>>;
+};
+
+/**
  * Ajoute `mirror` aux photos des ventes qui ont une copie, avec un seul appel pour la page.
- * `first` : la 1re photo de chaque vente (cartes de liste). `all` : toutes (fiche d'une vente).
- * Ne modifie rien : renvoie la même liste si aucune copie n'est trouvée.
+ * Les photos cherchées sont celles que l'écran montre : les `photos` premières de `propertyImages`
+ * (la 1re par défaut, celle de la carte), pas `media[0]`. Ne modifie rien : renvoie la même liste
+ * si aucune copie n'est trouvée.
  */
 export async function withPhotoMirrors<T extends { media?: AuctionSale["media"] }>(
   sales: T[],
   client: PhotoMirrorClient | null | undefined,
-  options: { scope?: "first" | "all"; timeoutMs?: number } = {},
+  options: PhotoMirrorOptions = {},
 ): Promise<T[]> {
   if (!client || !sales.length || !isPhotoMirrorEnabled()) return sales;
 
-  const scope = options.scope ?? "first";
-  const mediaOf = (sale: T): SaleMedia[] => {
-    const media = Array.isArray(sale?.media) ? sale.media : [];
-    return scope === "first" ? media.slice(0, 1) : media;
-  };
+  const count = Math.max(1, options.photos ?? 1);
+  const mediaOf = (sale: T): SaleMedia[] => propertyImages(sale?.media).slice(0, count);
   const urls: string[] = [];
   for (const sale of sales) {
-    for (const item of mediaOf(sale)) if (typeof item?.url === "string") urls.push(item.url);
+    for (const item of mediaOf(sale)) urls.push(item.url);
   }
+  const lookupUrls = photoMirrorLookupUrls(urls);
 
-  const mirrors = await fetchPhotoMirrors(client, urls, { timeoutMs: options.timeoutMs });
-  if (!mirrors.size) return sales;
+  const mirrors = !lookupUrls.length
+    ? new Map<string, SaleMediaMirror>()
+    : options.fetchMirrors
+      ? await options.fetchMirrors(lookupUrls)
+      : await fetchPhotoMirrors(client, lookupUrls, { timeoutMs: options.timeoutMs });
+  // Jamais sur le serveur, même si l'appelant le demande : la mémoire y serait commune à tous.
+  const keepKnown = Boolean(options.remember) && typeof window !== "undefined";
+  if (keepKnown) {
+    for (const [url, mirror] of mirrors) remember(url, mirror);
+  }
+  const mirrorOf = (url: string) =>
+    mirrors.get(url) ?? (keepKnown ? rememberedMirrors.get(url) : undefined);
 
   let changed = false;
   const enriched = sales.map((sale) => {
@@ -148,7 +226,7 @@ export async function withPhotoMirrors<T extends { media?: AuctionSale["media"] 
     if (!Array.isArray(sale?.media) || !sale.media.some((item) => targets.has(item))) return sale;
     let touched = false;
     const media = sale.media.map((item) => {
-      const mirror = targets.has(item) ? mirrors.get(item.url) : undefined;
+      const mirror = targets.has(item) ? mirrorOf(item.url) : undefined;
       if (!mirror) return item;
       touched = true;
       return { ...item, mirror };
@@ -160,13 +238,19 @@ export async function withPhotoMirrors<T extends { media?: AuctionSale["media"] 
   return changed ? enriched : sales;
 }
 
-/** Même chose pour une seule vente (fiche) : toutes ses photos sont cherchées. */
+/**
+ * Même chose pour une seule vente (fiche) : les 3 premières photos affichées sont cherchées (seule
+ * la photo principale est copiée aujourd'hui ; les autres ne coûtent qu'une URL de plus).
+ */
 export async function withPhotoMirror<T extends { media?: AuctionSale["media"] }>(
   sale: T,
   client: PhotoMirrorClient | null | undefined,
-  options: { timeoutMs?: number } = {},
+  options: PhotoMirrorOptions = {},
 ): Promise<T> {
-  const [enriched] = await withPhotoMirrors([sale], client, { ...options, scope: "all" });
+  const [enriched] = await withPhotoMirrors([sale], client, {
+    photos: PHOTO_MIRROR_DETAIL_PHOTOS,
+    ...options,
+  });
   return enriched ?? sale;
 }
 

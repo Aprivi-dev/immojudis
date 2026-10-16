@@ -24,6 +24,13 @@ it("sans annonce d'origine, le nom de la source seul, sans lien", () => {
   expect(screen.queryByRole("link")).toBeNull();
 });
 
+it("source inconnue : « Photo : source de l'annonce », sans lien ni hôte", () => {
+  render(<PhotoCredit credit={{ label: null, href: null }} />);
+
+  expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : source de l'annonce");
+  expect(screen.queryByRole("link")).toBeNull();
+});
+
 it("n'affiche rien sans crédit", () => {
   const { container } = render(<PhotoCredit credit={null} />);
   expect(container.innerHTML).toBe("");

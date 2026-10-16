@@ -139,4 +139,23 @@ describe("copies et crédit des photos", () => {
     expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Vench");
     expect(screen.queryByRole("link", { name: "Licitor" })).toBeNull();
   });
+
+  it("source inconnue : « Photo : source de l'annonce », sans lien", () => {
+    render(
+      <PhotoCarouselDialog
+        images={[
+          {
+            url: "https://d1x9.cloudfront.net/p/a.jpg",
+            alt: "Façade",
+            credit: { label: null, href: null },
+          },
+        ]}
+        initialIndex={0}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : source de l'annonce");
+    expect(screen.queryByRole("link")).toBeNull();
+  });
 });

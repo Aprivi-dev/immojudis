@@ -44,8 +44,19 @@ describe("photoCredit", () => {
     });
   });
 
-  it("hôte inconnu : l'hôte sert de nom, sauf en mode « sources connues »", () => {
-    expect(photoCredit("https://cdn.exemple.test/p.jpg", null)?.label).toBe("cdn.exemple.test");
+  it("hôte inconnu : crédit générique sans nom ni lien, jamais l'hôte brut", () => {
+    expect(photoCredit("https://d1x9.cloudfront.net/p.jpg", null)).toEqual({
+      label: null,
+      href: null,
+    });
+    // Même avec une vente et ses liens : on ne renvoie pas vers une autre source.
+    expect(photoCredit("https://d1x9.cloudfront.net/p.jpg", sale)).toEqual({
+      label: null,
+      href: null,
+    });
+  });
+
+  it("mode « sources connues » : aucun crédit pour un hôte inconnu", () => {
     expect(photoCredit("https://cdn.exemple.test/p.jpg", null, { knownOnly: true })).toBeNull();
   });
 
