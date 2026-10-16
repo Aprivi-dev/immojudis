@@ -102,3 +102,38 @@ page : elles ralentissent le défilement, pas le premier affichage.
 - P5 : en cours.
 - P4 écartée : test d'hébergement de la **photo principale de chaque vente, pour toutes les
   sources** téléchargeables, désactivable par interrupteur (pipeline et site).
+
+## Exécution (16/10/2026)
+
+- PR #269 (vitesse) puis PR #270 (P1, P5 et test d'hébergement) fusionnées sur accord du
+  propriétaire (« Tu fusionnes et tu lances le test »).
+- Migration `20261026100000_sale_photo_mirrors.sql` appliquée en production par le workflow
+  « Apply Supabase Migrations ». Le premier essai a été annulé par un verrou pris par une collecte en
+  cours, sans rien modifier. Le second essai a réussi.
+- Variable de dépôt `PHOTO_MIRROR_ENABLED=true` créée par le propriétaire, puis rattrapage lancé
+  (« Photo Mirror Backfill »). Après 6 minutes : 220 copies, de 40 à 60 Ko en moyenne pour la version
+  640 px. Petites Affiches est bloqué, comme prévu.
+- `NEXT_PUBLIC_PHOTO_MIRROR=on` sur Vercel (production), puis redéploiement. 18 copies sont servies sur
+  la page 1 de `/sales`.
+
+### Remesure de `/sales` (production, 14 h à 15 h UTC)
+
+| Mesure                                              | Avant         | Après                           |
+| --------------------------------------------------- | ------------- | ------------------------------- |
+| Poids de la page 1 après défilement (mobile)        | 2 584 Ko      | 1 829 Ko (−29 %)                |
+| Poids de la page 2 après défilement (mobile)        | 3 485 Ko      | 1 838 Ko (−47 %)                |
+| Vignette Mapbox                                     | 173 Ko        | 46 Ko (−73 %)                   |
+| LCP mobile, 1re carte Mapbox (4G réellement bridée) | 9,1 s         | ≈ 3 s                           |
+| Lighthouse mobile, page 1 (1re carte photo)         | 89, LCP 2,6 s | 78, LCP 4,7 s (instable)        |
+| Lighthouse bureau                                   | 61            | 59 (TBT 4,3 s, carte Mapbox GL) |
+
+- P1 a supprimé le délai d'affichage de la vignette Mapbox.
+- Le LCP mobile de la page 1 est instable : la photo s'affiche vers 3,4 s, puis son élément grandit de
+  5 % vers 6 s une fois sur deux.
+- Les copies sont servies depuis le cache Cloudflare de Supabase (HIT) en 0,15 à 0,22 s.
+
+Propositions suivantes :
+
+- Q1 : stabiliser le LCP mobile. Validé.
+- Q2 : différer la carte Mapbox GL sur bureau. Non retenu pour l'instant.
+- Q3 : préconnexion vers Supabase, cache d'un an des copies, qualité WebP. Validé.
