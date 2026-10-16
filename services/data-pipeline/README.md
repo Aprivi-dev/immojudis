@@ -542,8 +542,8 @@ PHOTO_MIRROR_ENABLED=true python -m src.photo_mirror --max-photos 400 --budget-m
 - deux WebP sans EXIF (640 px et 1600 px, jamais agrandis) dans le bucket `sale-photos` ;
 - au début de chaque passage, les copies d'une source retirée passent en `withdrawn` et leurs
   fichiers sont supprimés ;
-- un JSON par photo, puis un résumé final ; le mode manuel « photo_mirror_backfill » du workflow
-  rattrape le stock (60 min et 3 000 photos par défaut). Retrait : `docs/runbooks/retrait-photos.md`.
+- un JSON par photo, puis un résumé final ; le workflow manuel « Photo Mirror Backfill »
+  (`.github/workflows/photo-mirror-backfill.yml`) rattrape le stock (60 min et 3 000 photos par défaut). Retrait : `docs/runbooks/retrait-photos.md`.
 
 ## Enrichissement LLM Replicate
 

@@ -30,7 +30,7 @@ on:
           - encheres_immobilieres
           - notaires
       limit:
-        description: "Optional raw listing limit (document backlog: maximum sales, default 200; photo mirror backfill: maximum photos, default 3000)"
+        description: "Optional raw listing limit (document backlog: maximum sales, default 200)"
         required: false
         type: string
       publication_check:
@@ -50,15 +50,6 @@ on:
         type: boolean
       documents_budget_minutes:
         description: "Document backlog time budget in minutes (default 120, maximum 150)"
-        required: false
-        type: string
-      photo_mirror_backfill:
-        description: "Copy the main photos of the catalogue (backfill of the stock): nearest sales first, bounded by limit and budget. Needs the repository variable PHOTO_MIRROR_ENABLED=true"
-        required: false
-        default: false
-        type: boolean
-      photo_mirror_budget_minutes:
-        description: "Photo mirror backfill time budget in minutes (default 60, maximum 150)"
         required: false
         type: string
       llm_backfill:
@@ -81,9 +72,7 @@ concurrency:
   # document backlog has its own group so that scheduled collections are not
   # queued (and superseded) behind a long drain; both serialise their writes on
   # the catalogue writer lock, which the drain takes and releases per sale.
-  # The photo mirror backfill never writes the catalogue (only sale_photos and the sale-photos bucket)
-  # and holds its own database lock against a scheduled pass, so it does not queue behind collections.
-  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || (inputs.documents_backlog && 'immojudis-document-backlog' || (inputs.photo_mirror_backfill && 'immojudis-photo-mirror' || 'immojudis-data-pipeline'))) }}
+  group: ${{ inputs.model_benchmark && 'immojudis-llm-benchmark' || (inputs.publication_check && 'immojudis-publication-verification' || (inputs.documents_backlog && 'immojudis-document-backlog' || 'immojudis-data-pipeline')) }}
   cancel-in-progress: false
 
 jobs:
@@ -290,8 +279,6 @@ jobs:
           REQUESTED_ENRICHMENT_ONLY: ${{ github.event.inputs.enrichment_only }}
           REQUESTED_DOCUMENTS_BACKLOG: ${{ github.event.inputs.documents_backlog }}
           REQUESTED_DOCUMENTS_BUDGET_MINUTES: ${{ github.event.inputs.documents_budget_minutes }}
-          REQUESTED_PHOTO_MIRROR_BACKFILL: ${{ github.event.inputs.photo_mirror_backfill }}
-          REQUESTED_PHOTO_MIRROR_BUDGET_MINUTES: ${{ github.event.inputs.photo_mirror_budget_minutes }}
           REQUESTED_RUN_ID: ${{ github.event.inputs.run_id }}
           REQUESTED_SOURCE: ${{ github.event.inputs.source }}
           REQUESTED_LIMIT: ${{ github.event.inputs.limit }}
@@ -316,14 +303,6 @@ jobs:
             python -m src.document_backlog \
               --max-sales "${REQUESTED_LIMIT:-200}" \
               --budget-minutes "${REQUESTED_DOCUMENTS_BUDGET_MINUTES:-120}"
-            exit 0
-          fi
-          if [ "$REQUESTED_PHOTO_MIRROR_BACKFILL" = "true" ]; then
-            # Values are validated and clamped by the Python entry point; nothing happens
-            # unless PHOTO_MIRROR_ENABLED is true.
-            python -m src.photo_mirror \
-              --max-photos "${REQUESTED_LIMIT:-3000}" \
-              --budget-minutes "${REQUESTED_PHOTO_MIRROR_BUDGET_MINUTES:-60}"
             exit 0
           fi
           if [ "$REQUESTED_ENRICHMENT_ONLY" = "true" ]; then
@@ -360,7 +339,8 @@ jobs:
 
       # Copie des photos principales après la collecte planifiée : étape séparée et bornée (15 min,
       # 400 photos par défaut), qui ne fait jamais échouer la collecte (continue-on-error) et ne tourne
-      # que si la variable de dépôt PHOTO_MIRROR_ENABLED vaut « true ».
+      # que si la variable de dépôt PHOTO_MIRROR_ENABLED vaut « true ». Le rattrapage du stock est un
+      # workflow à part (photo-mirror-backfill.yml).
       - name: Copie des photos principales
         if: inputs.automatic == true && vars.PHOTO_MIRROR_ENABLED == 'true'
         continue-on-error: true
