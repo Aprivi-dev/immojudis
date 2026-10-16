@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { ListingCard, ListingMediaCarousel, SearchResultsList } from "./SearchResults";
@@ -594,6 +594,66 @@ describe("listing media gallery", () => {
 
     fireEvent.click(image);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  describe("copie hébergée de la photo principale", () => {
+    const MIRROR_URL =
+      "https://ci.supabase.co/storage/v1/object/public/sale-photos/sale-gallery/a-640.webp";
+    const SOURCE = "https://www.licitor.com/photos/property-living-room.jpg";
+    const mirroredSale = {
+      ...mediaSale,
+      id: "sale-mirrored",
+      media: [
+        {
+          type: "image",
+          url: SOURCE,
+          mirror: {
+            path640: "sale-gallery/a-640.webp",
+            path1600: "sale-gallery/a-1600.webp",
+            width: 1600,
+            height: 1200,
+          },
+        },
+      ],
+    } as unknown as AuctionSale;
+
+    beforeEach(() => vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co"));
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("affiche la copie 640 px telle quelle, sans optimiseur", () => {
+      render(<ListingMediaCarousel sale={mirroredSale} locked={false} title="Appartement" />);
+
+      const image = screen.getByRole("img", { name: "Appartement" });
+      expect(image.getAttribute("src")).toBe(MIRROR_URL);
+      expect(image.getAttribute("src")).not.toContain("/_next/image");
+    });
+
+    it("retombe sur la source si la copie échoue, puis sur le visuel de repli", async () => {
+      render(<ListingMediaCarousel sale={mirroredSale} locked={false} title="Appartement" />);
+
+      fireEvent.error(screen.getByRole("img", { name: "Appartement" }));
+      const source = await screen.findByRole("img", { name: "Appartement" });
+      expect(source.getAttribute("src")).toBe(SOURCE);
+
+      fireEvent.error(source);
+      expect(await screen.findByTestId("sale-media-fallback-sale-mirrored")).toBeTruthy();
+    });
+
+    it("ne rejette pas la copie 640 px sur sa taille rendue (l'original a déjà été jugé)", async () => {
+      vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(640);
+      vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(230);
+      try {
+        render(<ListingMediaCarousel sale={mirroredSale} locked={false} title="Appartement" />);
+        fireEvent.load(screen.getByRole("img", { name: "Appartement" }));
+
+        expect(screen.queryByTestId("sale-media-fallback-sale-mirrored")).toBeNull();
+        expect(screen.getByRole("img", { name: "Appartement" }).getAttribute("src")).toBe(
+          MIRROR_URL,
+        );
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
   });
 
   it("keeps SaleVisual as the fallback when no usable property photo exists", () => {

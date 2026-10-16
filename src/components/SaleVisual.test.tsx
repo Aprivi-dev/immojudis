@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderToString } from "react-dom/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
 import type { AuctionSale } from "@/lib/types";
 import { SaleVisual } from "./SaleVisual";
@@ -132,6 +133,205 @@ describe("SaleVisual", () => {
       expect(screen.getByText("Aucun visuel fiable")).toBeTruthy();
     });
     expect(screen.queryByRole("img")).toBeNull();
+  });
+
+  describe("visuel prioritaire affiché sans attendre le JavaScript", () => {
+    it("le HTML serveur d'un visuel eager contient l'image visible, sans squelette", () => {
+      vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+
+      const html = renderToString(
+        <SaleVisual
+          sale={saleWithMedia("https://images.example.test/p.jpg")}
+          title="Maison"
+          eager
+          thumbnail
+        />,
+      );
+
+      expect(html).toContain("<img");
+      expect(html).toContain("/mapbox/satellite-v9/static/");
+      expect(html).toContain('fetchPriority="high"');
+      expect(html).not.toContain("opacity-0");
+      expect(html).not.toContain("animate-pulse");
+      expect(html).not.toContain('aria-busy="true"');
+    });
+
+    it("garde le squelette et l'image masquée d'un visuel différé jusqu'au chargement", () => {
+      vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+
+      const { container } = render(
+        <SaleVisual sale={saleWithMedia("https://images.example.test/p.jpg")} title="Maison" />,
+      );
+
+      const image = screen.getByRole("img", { name: "Vue aérienne de Maison" });
+      expect(image.className).toContain("opacity-0");
+      expect(container.querySelector(".animate-pulse")).not.toBeNull();
+      expect(container.firstElementChild?.getAttribute("aria-busy")).toBe("true");
+
+      fireEvent.load(image);
+      expect(image.className).toContain("opacity-100");
+      expect(container.querySelector(".animate-pulse")).toBeNull();
+    });
+
+    it("un visuel eager est visible avant tout onLoad et ne dépend pas de l'hydratation", () => {
+      vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+
+      const { container } = render(
+        <SaleVisual
+          sale={saleWithMedia("https://images.example.test/p.jpg")}
+          title="Maison"
+          eager
+        />,
+      );
+
+      const image = screen.getByRole("img", { name: "Vue aérienne de Maison" });
+      expect(image.className).toContain("opacity-100");
+      expect(image.className).not.toContain("opacity-0");
+      expect(container.querySelector(".animate-pulse")).toBeNull();
+      expect(container.firstElementChild?.getAttribute("aria-busy")).toBe("false");
+      expect(image.getAttribute("loading")).toBe("eager");
+      expect(image.getAttribute("fetchpriority")).toBe("high");
+    });
+
+    it("passe au candidat suivant sur une erreur, même pour un visuel eager", async () => {
+      vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+
+      render(
+        <SaleVisual
+          sale={saleWithMedia("https://images.example.test/photo-annonce.jpg")}
+          title="Maison"
+          eager
+        />,
+      );
+      fireEvent.error(screen.getByRole("img", { name: "Vue aérienne de Maison" }));
+
+      const photo = await screen.findByRole("img", { name: "Maison" });
+      expect(photo.getAttribute("src")).toBe("https://images.example.test/photo-annonce.jpg");
+      expect(photo.className).toContain("opacity-100");
+
+      fireEvent.error(photo);
+      expect(await screen.findByText("Aucun visuel fiable")).toBeTruthy();
+      expect(screen.queryByRole("img")).toBeNull();
+    });
+
+    it("écarte une photo rejetée par le contrôle de taille, même eager", async () => {
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+      vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(120);
+      vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(80);
+
+      render(
+        <SaleVisual
+          sale={{ ...saleWithMedia("https://images.example.test/petite.jpg"), latitude: null }}
+          title="Maison"
+          eager
+        />,
+      );
+      fireEvent.load(screen.getByRole("img", { name: "Maison" }));
+
+      expect(await screen.findByText("Aucun visuel fiable")).toBeTruthy();
+    });
+
+    it("récupère aussi une erreur survenue avant l'hydratation d'un visuel eager", async () => {
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+      vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(0);
+      vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(0);
+
+      render(
+        <SaleVisual
+          sale={{ ...saleWithMedia("https://images.example.test/expiree.jpg"), latitude: null }}
+          title="Terrain"
+          eager
+        />,
+      );
+
+      await waitFor(() => expect(screen.getByText("Aucun visuel fiable")).toBeTruthy());
+    });
+  });
+
+  describe("source de la photo", () => {
+    const noMap = (url: string) => ({ ...saleWithMedia(url), latitude: null, longitude: null });
+
+    it("remplace « Photo du bien » par « Photo · [source] » quand l'hôte est connu", async () => {
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+
+      render(<SaleVisual sale={noMap("https://www.licitor.com/photos/a.jpg")} title="Maison" />);
+      fireEvent.load(screen.getByRole("img", { name: "Maison" }));
+
+      expect(await screen.findByText("Photo · Licitor")).toBeTruthy();
+      expect(screen.queryByText("Photo du bien")).toBeNull();
+    });
+
+    it("garde « Photo du bien » quand la source est inconnue", async () => {
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+
+      render(<SaleVisual sale={noMap("https://cdn.exemple.test/a.jpg")} title="Maison" />);
+      fireEvent.load(screen.getByRole("img", { name: "Maison" }));
+
+      expect(await screen.findByText("Photo du bien")).toBeTruthy();
+    });
+  });
+
+  describe("copie hébergée de la photo", () => {
+    const ORIGINAL = "https://www.licitor.com/photos/a.jpg";
+    const MIRROR_URL = "https://ci.supabase.co/storage/v1/object/public/sale-photos/s/a-640.webp";
+
+    function mirrored(): AuctionSale {
+      return {
+        ...saleWithMedia(ORIGINAL),
+        latitude: null,
+        longitude: null,
+        media: [
+          {
+            type: "image",
+            url: ORIGINAL,
+            mirror: {
+              path640: "s/a-640.webp",
+              path1600: "s/a-1600.webp",
+              width: 1600,
+              height: 1200,
+            },
+          },
+        ],
+      } as AuctionSale;
+    }
+
+    beforeEach(() => {
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co");
+      vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(false);
+    });
+
+    it("affiche d'abord la copie, avec la source de l'URL d'origine", async () => {
+      render(<SaleVisual sale={mirrored()} title="Maison" />);
+
+      const photo = screen.getByRole("img", { name: "Maison" });
+      expect(photo.getAttribute("src")).toBe(MIRROR_URL);
+      fireEvent.load(photo);
+      expect(await screen.findByText("Photo · Licitor")).toBeTruthy();
+    });
+
+    it("si la copie échoue, retombe sur la photo de la source, puis sur le visuel suivant", async () => {
+      render(<SaleVisual sale={mirrored()} title="Maison" />);
+
+      fireEvent.error(screen.getByRole("img", { name: "Maison" }));
+      const source = await screen.findByRole("img", { name: "Maison" });
+      expect(source.getAttribute("src")).toBe(ORIGINAL);
+
+      fireEvent.error(source);
+      expect(await screen.findByText("Aucun visuel fiable")).toBeTruthy();
+    });
+
+    it("ne soumet pas la copie 640 px au contrôle de taille de l'original", async () => {
+      vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(640);
+      vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(230);
+
+      render(<SaleVisual sale={mirrored()} title="Maison" />);
+      fireEvent.load(screen.getByRole("img", { name: "Maison" }));
+
+      expect(await screen.findByText("Photo · Licitor")).toBeTruthy();
+    });
   });
 });
 

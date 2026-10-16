@@ -77,9 +77,13 @@ function propertyImageSource(url: string): URL | null {
 export function shouldRejectRenderedPropertyImage(image: HTMLImageElement) {
   const { naturalWidth, naturalHeight } = image;
   if (!naturalWidth || !naturalHeight) return false;
+  return shouldRejectPropertyImageSize(naturalWidth, naturalHeight);
+}
 
-  const shortestSide = Math.min(naturalWidth, naturalHeight);
-  const longestSide = Math.max(naturalWidth, naturalHeight);
+/** Même règle que ci-dessus sur des dimensions connues (logo, bannière ou vignette trop petite). */
+export function shouldRejectPropertyImageSize(width: number, height: number) {
+  const shortestSide = Math.min(width, height);
+  const longestSide = Math.max(width, height);
   const aspectRatio = longestSide / shortestSide;
 
   return shortestSide < 300 || longestSide < 480 || aspectRatio > 3.2;

@@ -14254,6 +14254,16 @@ export type Database = {
         Returns: string;
       };
       run_data_retention: { Args: { p_now?: string }; Returns: Json };
+      sale_photo_mirrors: {
+        Args: { p_source_urls: string[] };
+        Returns: {
+          height: number | null;
+          path_1600: string | null;
+          path_640: string | null;
+          source_url: string;
+          width: number | null;
+        }[];
+      };
       save_referenced_lawyer_with_coverage: {
         Args: { p_coverage: Json; p_lawyer: Json; p_lawyer_id: string };
         Returns: {
