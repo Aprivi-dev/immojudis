@@ -51,7 +51,12 @@ const MAX_CLIENT_CHUNK_BYTES = 1_875_000;
 // and the reduced ceiling estimate to the sale detail chunks. Measured 5,402,556 bytes in
 // total. The ceiling is raised once, to 5,450,000; every route-level initial-load budget
 // below is unchanged and still passes.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_450_000;
+//
+// The adjuge.info batch (October 2026) adds the reverse fees simulator and surenchère
+// calculator, the departments pages, the sale key-facts band and the optional results
+// table of /sales (desktop only). Measured 5,456,599 bytes in total. The ceiling is raised
+// once, to 5,500,000; every route-level initial-load budget below is unchanged.
+const MAX_TOTAL_CLIENT_JS_BYTES = 5_500_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
