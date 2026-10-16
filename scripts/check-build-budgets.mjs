@@ -225,20 +225,23 @@ const routeBudgets = [
 // <script src> hors `nomodule`) : socle commun à toutes les routes (React, Next, runtime,
 // en-tête, fournisseurs) plus le code propre à la page. Les budgets de route ci-dessus ne
 // comptent que les fichiers propres à la page (`entryJSFiles`) et ne voient donc pas ce socle.
-// Relevé du 16/10/2026 avant l'allègement du JavaScript commun (V7 de l'audit de vitesse,
-// `supabase-js` et Sonner/Radix/Analytics chargés à la demande) : accueil 998 093 octets,
-// guide 910 095, article 924 937. Les plafonds ci-dessous ne laissent que ~2 % de marge sur ce
-// relevé : à resserrer sur la mesure suivant l'allègement (voir `htmlScriptBytesByPage` dans la
-// sortie JSON). Ne relevez pas le plafond sans accord du propriétaire.
+// Avant l'allègement du JavaScript commun (V7 de l'audit de vitesse, `supabase-js` chargé à la
+// demande, Analytics et menu « Mon compte » différés) : accueil 998 093 octets, guide 910 095,
+// article 924 937. Après : 720 427, 632 403 et 647 245. Les plafonds ci-dessous laissent ~2 % de
+// marge sur la mesure après. Ne relevez pas un plafond sans accord du propriétaire.
+//
+// Piège mesuré : ne pas charger par `import()` un module aussi importé statiquement par d'autres
+// pages (Sonner, Radix Dialog). Turbopack en recopie alors le code dans chacun de leurs fichiers
+// (Sonner : 13 copies, +600 Ko au total) au lieu de le partager avec le socle commun.
 const htmlScriptBudgets = [
-  { name: "home", html: ".next/server/app/index.html", maxBytes: 1_018_000 },
+  { name: "home", html: ".next/server/app/index.html", maxBytes: 735_000 },
   {
     name: "guide",
     html: ".next/server/app/ventes-immobilieres-judiciaires.html",
-    maxBytes: 930_000,
+    maxBytes: 645_000,
   },
   // Premier article préfabriqué par ordre alphabétique (le slug exact importe peu).
-  { name: "article", htmlDirectory: ".next/server/app/ressources", maxBytes: 945_000 },
+  { name: "article", htmlDirectory: ".next/server/app/ressources", maxBytes: 660_000 },
 ];
 
 await checkSourceLineLimits();
