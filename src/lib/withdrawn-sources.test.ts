@@ -10,6 +10,7 @@ import {
   DEFAULT_WITHDRAWN_SOURCES,
   getWithdrawnSources,
   loadWithdrawnSources,
+  loadWithdrawnSourcesOncePerSession,
   resetWithdrawnSources,
   setWithdrawnSources,
   stripWithdrawnSourceContent,
@@ -183,6 +184,93 @@ describe("retrait levé", () => {
     setWithdrawnSources(["licitor"]);
     await loadWithdrawnSources({ rpc: () => Promise.reject(new Error("réseau")) }, 1_000);
     expect([...getWithdrawnSources()]).toEqual([]);
+  });
+});
+
+describe("une lecture par session de navigation", () => {
+  function memoryStorage() {
+    const values = new Map<string, string>();
+    return {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => void values.set(key, value),
+    };
+  }
+  function countingClient(data: unknown, error: unknown = null) {
+    const client = { calls: 0, rpc: () => (client.calls++, Promise.resolve({ data, error })) };
+    return client;
+  }
+
+  it("lit la base à la première page puis plus du tout pendant la session", async () => {
+    const storage = memoryStorage();
+    const client = countingClient([]);
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 });
+    // Page suivante : le module est rechargé (état vierge) mais la session se souvient.
+    resetWithdrawnSources();
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 600_000 });
+    expect(client.calls).toBe(1);
+  });
+
+  it("applique la liste mémorisée sans interroger la base", async () => {
+    const storage = memoryStorage();
+    await loadWithdrawnSourcesOncePerSession(countingClient(["licitor"]), { storage, now: 1_000 });
+    resetWithdrawnSources();
+
+    const client = countingClient([]);
+    const names = await loadWithdrawnSourcesOncePerSession(client, { storage, now: 120_000 });
+    expect(names).toEqual(["licitor"]);
+    expect([...getWithdrawnSources()]).toEqual(["licitor"]);
+    expect(client.calls).toBe(0);
+  });
+
+  it("relit la base une fois la mémoire de session périmée (30 minutes)", async () => {
+    const storage = memoryStorage();
+    const client = countingClient([]);
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 });
+    resetWithdrawnSources();
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 + 30 * 60_000 });
+    expect(client.calls).toBe(2);
+  });
+
+  it("ne mémorise pas une erreur : la page suivante retente", async () => {
+    const storage = memoryStorage();
+    const failing = countingClient(null, { code: "PGRST202" });
+    await loadWithdrawnSourcesOncePerSession(failing, { storage, now: 1_000 });
+    resetWithdrawnSources();
+    const healthy = countingClient(["licitor"]);
+    await loadWithdrawnSourcesOncePerSession(healthy, { storage, now: 2_000 });
+    expect(failing.calls).toBe(1);
+    expect(healthy.calls).toBe(1);
+    expect([...getWithdrawnSources()]).toEqual(["licitor"]);
+  });
+
+  it("ignore une valeur mémorisée illisible et lit la base", async () => {
+    const storage = memoryStorage();
+    storage.setItem("immojudis:withdrawn-sources", "{pas du json");
+    const client = countingClient([]);
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 });
+    expect(client.calls).toBe(1);
+  });
+
+  it("lit comme avant quand sessionStorage est inaccessible", async () => {
+    const storage = {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {
+        throw new Error("denied");
+      },
+    };
+    const client = countingClient(["licitor"]);
+    await expect(
+      loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 }),
+    ).resolves.toEqual(["licitor"]);
+    expect(client.calls).toBe(1);
+  });
+
+  it("lit comme avant sans stockage de session", async () => {
+    const client = countingClient([]);
+    await loadWithdrawnSourcesOncePerSession(client, { storage: null, now: 1_000 });
+    expect(client.calls).toBe(1);
   });
 });
 

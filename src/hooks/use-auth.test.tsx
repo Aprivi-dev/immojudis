@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, renderHook, waitFor } from "@testing-library/react";
 import { AuthProvider } from "@/components/AuthProvider";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  announceSupabaseClient,
+  resetSupabaseLazyForTests,
+  SUPABASE_AUTH_STORAGE_KEY,
+  type SupabaseBrowserClient,
+} from "@/integrations/supabase/lazy";
 import { useAuth } from "./use-auth";
 
 const mocks = vi.hoisted(() => ({
+  client: null as unknown,
+  failImport: false,
   getSession: vi.fn(),
   getUser: vi.fn(),
   profile: vi.fn(),
@@ -15,21 +23,32 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("next/navigation", () => ({ usePathname: () => mocks.pathname }));
 vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    auth: {
-      getSession: mocks.getSession,
-      getUser: mocks.getUser,
-      onAuthStateChange: (callback: typeof mocks.callback) => {
-        mocks.subscribe();
-        mocks.callback = callback;
-        return { data: { sub: null, subscription: { unsubscribe: mocks.unsubscribe } } };
-      },
-    },
-    from: () => ({ select: () => ({ eq: () => ({ maybeSingle: mocks.profile }) }) }),
+  get supabase() {
+    if (mocks.failImport) throw new Error("Chunk indisponible");
+    return mocks.client;
   },
 }));
+mocks.client = {
+  auth: {
+    getSession: mocks.getSession,
+    getUser: mocks.getUser,
+    onAuthStateChange: (callback: typeof mocks.callback) => {
+      mocks.subscribe();
+      mocks.callback = callback;
+      return { data: { sub: null, subscription: { unsubscribe: mocks.unsubscribe } } };
+    },
+  },
+  from: () => ({ select: () => ({ eq: () => ({ maybeSingle: mocks.profile }) }) }),
+};
 const session = (id: string) => ({ user: { id }, access_token: id });
+beforeEach(() => {
+  // Une session est stockée : le client Supabase est chargé dès l'arrivée sur la page.
+  window.localStorage.setItem(SUPABASE_AUTH_STORAGE_KEY, "{}");
+});
 afterEach(() => {
+  window.localStorage.clear();
+  resetSupabaseLazyForTests();
+  mocks.failImport = false;
   cleanup();
   vi.resetAllMocks();
   mocks.callback = null;
@@ -233,5 +252,54 @@ describe("verified authentication state", () => {
     await act(async () => resolveFirst({ data: { user: { id: "first" } }, error: null }));
     expect(result.current.session?.user.id).toBe("second");
     expect(result.current.profile?.user_id).toBe("second");
+  });
+
+  it("n'attend pas supabase-js pour un visiteur anonyme et ne charge pas le client", async () => {
+    window.localStorage.clear();
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current).toMatchObject({ session: null, user: null, profile: null });
+    expect(mocks.subscribe).not.toHaveBeenCalled();
+    expect(mocks.getSession).not.toHaveBeenCalled();
+  });
+
+  it("charge le client quand l'adresse porte un retour d'authentification", async () => {
+    window.localStorage.clear();
+    window.history.replaceState(null, "", "/reinitialisation#access_token=abc&type=recovery");
+    mocks.getSession.mockResolvedValue({ data: { session: session("recovery") } });
+    mocks.getUser.mockResolvedValue({ data: { user: { id: "recovery" } }, error: null });
+    mocks.profile.mockResolvedValue({ data: { user_id: "recovery" }, error: null });
+    try {
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.user?.id).toBe("recovery"));
+      expect(mocks.getSession).toHaveBeenCalledTimes(1);
+    } finally {
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("voit une connexion faite sur une page qui charge le client plus tard", async () => {
+    window.localStorage.clear();
+    mocks.getSession.mockResolvedValue({ data: { session: null } });
+    mocks.getUser.mockResolvedValue({ data: { user: { id: "late" } }, error: null });
+    mocks.profile.mockResolvedValue({ data: { user_id: "late" }, error: null });
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(mocks.subscribe).not.toHaveBeenCalled();
+
+    // La page de connexion importe le client : le fournisseur s'y abonne.
+    act(() => announceSupabaseClient(mocks.client as SupabaseBrowserClient));
+    await waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(1));
+    act(() => mocks.callback?.("SIGNED_IN", session("late")));
+    await waitFor(() => expect(result.current.user?.id).toBe("late"));
+    expect(result.current.profile?.user_id).toBe("late");
+  });
+
+  it("signale l'échec de chargement du client quand une session est stockée", async () => {
+    mocks.failImport = true;
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.authError).toBeTruthy();
+    expect(result.current.user).toBeNull();
   });
 });
