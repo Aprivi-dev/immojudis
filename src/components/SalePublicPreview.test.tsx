@@ -133,6 +133,15 @@ describe("SalePublicPreview", () => {
       expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
     });
 
+    it("hôte inconnu : « source de l'annonce », sans hôte brut ni lien", () => {
+      renderPreview({ media: [{ type: "image", url: "https://d1x9.cloudfront.net/p/a.jpg" }] });
+
+      const credit = screen.getByTestId("photo-credit");
+      expect(credit.textContent).toBe("Photo : source de l'annonce");
+      expect(credit.textContent).not.toContain("cloudfront");
+      expect(credit.querySelector("a")).toBeNull();
+    });
+
     it("sans photo, aucun crédit", () => {
       renderPreview({ media: [] });
       expect(screen.queryByTestId("photo-credit")).toBeNull();

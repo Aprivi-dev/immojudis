@@ -16,6 +16,7 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
+import { forgetRememberedPhotoMirrors } from "./photo-mirror";
 import { getSaleById, getSalePreviewById } from "./queries";
 
 const ID = "005a914d-563c-427b-88a4-740cbf851afb";
@@ -34,6 +35,7 @@ function mirrorReads() {
 
 describe("fiche lue par le navigateur : copie hébergée de la photo", () => {
   beforeEach(() => {
+    forgetRememberedPhotoMirrors();
     mocks.rpc.mockReset();
     mocks.from.mockReset();
     mocks.getSession.mockReset().mockResolvedValue({ data: { session: { user: { id: "u" } } } });
@@ -92,6 +94,35 @@ describe("fiche lue par le navigateur : copie hébergée de la photo", () => {
 
     expect(sale!.id).toBe(ID);
     expect(JSON.stringify(sale)).not.toContain("mirror");
+  });
+
+  it("fiche complète : une copie déjà connue survit à une relecture sans copie", async () => {
+    readsFullSale();
+    mocks.rpc.mockResolvedValueOnce({ data: [mirrorRow], error: null });
+    await getSaleById(ID);
+
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: "boom" } });
+    const refreshed = await getSaleById(ID);
+
+    expect(refreshed!.media![0]).toMatchObject({ mirror: { path640: `${ID}/abc-640.webp` } });
+  });
+
+  it("fiche complète : le navigateur attend 1 500 ms, pas 300", async () => {
+    vi.useFakeTimers();
+    try {
+      readsFullSale();
+      mocks.rpc.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({ data: [mirrorRow] }), 1_000)),
+      );
+
+      const pending = getSaleById(ID);
+      await vi.advanceTimersByTimeAsync(1_000);
+      const sale = await pending;
+
+      expect(sale!.media![0]).toMatchObject({ mirror: { path640: `${ID}/abc-640.webp` } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("fiche complète : interrupteur éteint, aucun appel", async () => {

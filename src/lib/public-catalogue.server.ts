@@ -6,6 +6,7 @@ import {
   type PreviewSearchResponse,
 } from "@/lib/search/preview-search";
 import { isPhotoMirrorEnabled, withPhotoMirrors, type PhotoMirrorClient } from "@/lib/photo-mirror";
+import { cachedPhotoMirrorFetcher } from "@/lib/photo-mirror.server";
 import { salesSearchSignature, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import type { AuctionSale } from "@/lib/types";
@@ -100,13 +101,19 @@ export async function loadInitialCatalogue(
       isDefaultCatalogueSearch(search) ? firstPage() : run(search),
       dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
     );
-    // Copies hébergées des photos : un seul appel pour la page, après le cache de la première page
-    // (une copie ou une panne ne reste donc pas cinq minutes). Jamais bloquant : voir photo-mirror.ts.
-    const items = await withPhotoMirrors(
-      excludeHomepageExampleSales(response.items),
+    // Copies hébergées des photos : un seul appel pour la page, après le cache de la première page.
+    // Les copies trouvées ont leur propre cache de 5 minutes (photo-mirror.server.ts) ; une panne
+    // ou un délai dépassé n'y est jamais gardé. Jamais bloquant : voir photo-mirror.ts.
+    const mirrorClient =
       dependencies.photoMirrorClient !== undefined
         ? dependencies.photoMirrorClient
-        : photoMirrorClient(),
+        : photoMirrorClient();
+    const items = await withPhotoMirrors(
+      excludeHomepageExampleSales(response.items),
+      mirrorClient,
+      {
+        fetchMirrors: cachedPhotoMirrorFetcher(mirrorClient),
+      },
     );
     return {
       signature: salesSearchSignature(search),

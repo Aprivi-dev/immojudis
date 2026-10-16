@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
   PHOTO_MIRROR_MAX_URLS,
+  PHOTO_MIRROR_MEMORY_MAX,
   fetchPhotoMirrors,
+  fetchPhotoMirrorsStrict,
+  forgetRememberedPhotoMirrors,
   isPhotoMirrorEnabled,
   isPhotoMirrorUrl,
   mirrorFromRow,
@@ -104,14 +108,39 @@ describe("photo mirrors", () => {
       expect(new Set(urls).size).toBe(PHOTO_MIRROR_MAX_URLS);
     });
 
-    it("sur une fiche, cherche toutes les photos de la vente", async () => {
-      const other = "https://www.licitor.com/photos/b.jpg";
+    it("sur une fiche, ne cherche que les 3 premières photos affichées", async () => {
+      const others = [1, 2, 3].map((n) => `https://www.licitor.com/photos/b${n}.jpg`);
       const { client, rpc } = clientReturning([]);
 
-      await withPhotoMirror(sale("a", LICITOR, other), client);
+      await withPhotoMirror(sale("a", LICITOR, ...others), client);
 
       expect(rpc).toHaveBeenCalledTimes(1);
-      expect(rpc.mock.calls[0]![1].p_source_urls).toEqual([LICITOR, other]);
+      expect(rpc.mock.calls[0]![1].p_source_urls).toEqual([LICITOR, others[0], others[1]]);
+    });
+
+    it("cherche la photo que la carte affichera (propertyImages), pas media[0]", async () => {
+      const logo = "https://www.licitor.com/images/logo.png";
+      const { client, rpc } = clientReturning([]);
+
+      await withPhotoMirrors([sale("a", logo, LICITOR)], client);
+
+      expect(rpc.mock.calls[0]![1].p_source_urls).toEqual([LICITOR]);
+    });
+
+    it("suit l'ordre d'affichage : une photo mieux notée passe devant media[0]", async () => {
+      const plain = "https://www.licitor.com/p/1.jpg";
+      const best = "https://www.licitor.com/photos/galerie/2.jpg";
+      const { client, rpc } = clientReturning([]);
+
+      await withPhotoMirrors([sale("a", plain, best)], client);
+
+      expect(rpc.mock.calls[0]![1].p_source_urls).toEqual([best]);
+    });
+
+    it("n'appelle rien quand aucune photo n'est affichable", async () => {
+      const { client, rpc } = clientReturning([]);
+      await withPhotoMirrors([sale("a", "https://www.licitor.com/images/logo.png")], client);
+      expect(rpc).not.toHaveBeenCalled();
     });
 
     it("n'appelle rien quand aucune vente n'a de photo", async () => {
@@ -183,6 +212,102 @@ describe("photo mirrors", () => {
     });
   });
 
+  describe("copies déjà connues du navigateur", () => {
+    beforeEach(() => {
+      vi.stubGlobal("window", {});
+      forgetRememberedPhotoMirrors();
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      forgetRememberedPhotoMirrors();
+    });
+
+    it("un rafraîchissement sans copie ne retire pas la copie connue", async () => {
+      const first = clientReturning([row(LICITOR)]);
+      await withPhotoMirrors([sale("a", LICITOR)], first.client, { remember: true });
+
+      const failing = clientReturning(null, { message: "boom" });
+      const [refreshed] = await withPhotoMirrors([sale("a", LICITOR)], failing.client, {
+        remember: true,
+      });
+      expect(refreshed!.media[0]!.mirror?.path640).toBe("sale-1/abc-640.webp");
+
+      const empty = clientReturning([]);
+      const [again] = await withPhotoMirrors([sale("a", LICITOR)], empty.client, {
+        remember: true,
+      });
+      expect(again!.media[0]!.mirror?.path640).toBe("sale-1/abc-640.webp");
+    });
+
+    it("ne vaut que pour la même URL d'origine", async () => {
+      const first = clientReturning([row(LICITOR)]);
+      await withPhotoMirrors([sale("a", LICITOR)], first.client, { remember: true });
+
+      const empty = clientReturning([]);
+      const other = [sale("b", VENCH)];
+      expect(await withPhotoMirrors(other, empty.client, { remember: true })).toBe(other);
+    });
+
+    it("la copie récente remplace la copie connue", async () => {
+      await withPhotoMirrors([sale("a", LICITOR)], clientReturning([row(LICITOR)]).client, {
+        remember: true,
+      });
+      const newer = clientReturning([row(LICITOR, { path_640: "sale-1/new-640.webp" })]);
+
+      const [result] = await withPhotoMirrors([sale("a", LICITOR)], newer.client, {
+        remember: true,
+      });
+
+      expect(result!.media[0]!.mirror?.path640).toBe("sale-1/new-640.webp");
+    });
+
+    it("sans « remember », rien n'est mémorisé ni réutilisé", async () => {
+      await withPhotoMirrors([sale("a", LICITOR)], clientReturning([row(LICITOR)]).client);
+
+      const empty = clientReturning([]);
+      const sales = [sale("a", LICITOR)];
+      expect(await withPhotoMirrors(sales, empty.client, { remember: true })).toBe(sales);
+    });
+
+    it("jamais sur le serveur, même si l'appelant le demande", async () => {
+      vi.unstubAllGlobals();
+      await withPhotoMirrors([sale("a", LICITOR)], clientReturning([row(LICITOR)]).client, {
+        remember: true,
+      });
+      vi.stubGlobal("window", {});
+
+      const sales = [sale("a", LICITOR)];
+      expect(await withPhotoMirrors(sales, clientReturning([]).client, { remember: true })).toBe(
+        sales,
+      );
+    });
+
+    it("garde au plus 500 copies, les plus anciennes partent d'abord", async () => {
+      const urls = Array.from(
+        { length: PHOTO_MIRROR_MEMORY_MAX + 1 },
+        (_, index) => `https://www.licitor.com/photos/m${index}.jpg`,
+      );
+      for (let start = 0; start < urls.length; start += 50) {
+        const batch = urls.slice(start, start + 50);
+        await withPhotoMirrors(
+          batch.map((url, index) => sale(`s${start + index}`, url)),
+          clientReturning(batch.map((url) => row(url))).client,
+          { remember: true },
+        );
+      }
+
+      const empty = clientReturning([]);
+      const [oldest] = await withPhotoMirrors([sale("x", urls[0]!)], empty.client, {
+        remember: true,
+      });
+      const [newest] = await withPhotoMirrors([sale("y", urls.at(-1)!)], empty.client, {
+        remember: true,
+      });
+      expect(oldest!.media[0]!.mirror).toBeUndefined();
+      expect(newest!.media[0]!.mirror).toBeDefined();
+    });
+  });
+
   describe("pannes", () => {
     it("une erreur de la fonction laisse la page inchangée et se contente d'un journal", async () => {
       const { client } = clientReturning(null, { message: "function does not exist" });
@@ -217,6 +342,34 @@ describe("photo mirrors", () => {
 
       expect(await pending).toBe(sales);
       expect(console.warn).toHaveBeenCalledWith(expect.any(String), expect.stringContaining("300"));
+    });
+
+    it("le délai du navigateur est de 1 500 ms, celui du serveur de 300 ms", async () => {
+      expect(PHOTO_MIRROR_BROWSER_TIMEOUT_MS).toBe(1500);
+      vi.useFakeTimers();
+      const rpc = vi.fn(() => new Promise(() => undefined));
+      const sales = [sale("a", LICITOR)];
+
+      const pending = withPhotoMirrors(sales, { rpc } as unknown as PhotoMirrorClient, {
+        timeoutMs: PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
+      });
+      await vi.advanceTimersByTimeAsync(1499);
+      let settled = false;
+      void pending.then(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(await pending).toBe(sales);
+    });
+
+    it("la version stricte lève au lieu d'avaler l'erreur (le cache ne garde jamais un échec)", async () => {
+      const failing = clientReturning(null, { message: "boom" });
+      await expect(fetchPhotoMirrorsStrict(failing.client, [LICITOR])).rejects.toEqual({
+        message: "boom",
+      });
+      const weird = clientReturning({ not: "an array" });
+      await expect(fetchPhotoMirrorsStrict(weird.client, [LICITOR])).rejects.toThrow();
     });
 
     it("sans client (Supabase non configuré), ne fait rien", async () => {

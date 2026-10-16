@@ -8,7 +8,11 @@ import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
 import { fetchPublicSaleSummary } from "./public-sale-summary";
 import { saleRows } from "./sale-rows";
 import { readPagedRows } from "./paged-read";
-import { withPhotoMirror, type PhotoMirrorClient } from "./photo-mirror";
+import {
+  PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
+  withPhotoMirror,
+  type PhotoMirrorClient,
+} from "./photo-mirror";
 export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
 export type { CreateAlertPayload } from "./alert-queries";
 export { DETAIL_VIEW, SALE_LIST_COLUMNS };
@@ -23,6 +27,7 @@ type SupabaseReader = Pick<typeof supabase, "from">;
 
 /** Copies hébergées des photos : la fonction publique est lue avec le client navigateur. */
 const mirrorClient = supabase as unknown as PhotoMirrorClient;
+const mirrorOptions = { timeoutMs: PHOTO_MIRROR_BROWSER_TIMEOUT_MS, remember: true };
 
 // Fields needed by the search result card only. Keep heavy descriptions,
 // documents, source payloads and analysis evidence on the detail route.
@@ -493,7 +498,11 @@ export async function getSaleById(
   const { data, error } = await supabase.from(catalogView).select("*").eq("id", id).maybeSingle();
   if (error) throw error;
   return data
-    ? withPhotoMirror(sanitizeAuctionSaleForDisplay(data as AuctionSale), mirrorClient)
+    ? withPhotoMirror(
+        sanitizeAuctionSaleForDisplay(data as AuctionSale),
+        mirrorClient,
+        mirrorOptions,
+      )
     : null;
 }
 
@@ -503,7 +512,7 @@ export async function getSalePreviewById(id: string): Promise<AuctionSale | null
   // `unsupported` means the database function is not deployed yet: keep the
   // minimal preview below so the page still works during a staggered release.
   const summary = await fetchPublicSaleSummary(supabase, id);
-  if (summary.kind === "found") return withPhotoMirror(summary.sale, mirrorClient);
+  if (summary.kind === "found") return withPhotoMirror(summary.sale, mirrorClient, mirrorOptions);
   if (summary.kind === "missing") return null;
   const { data, error } = await supabase
     .from(PUBLIC_PREVIEW_VIEW)
