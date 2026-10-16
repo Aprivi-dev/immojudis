@@ -20,6 +20,12 @@ première carte, quand celle-ci n'a pas de photo.
 | Même page, vignettes Mapbox bloquées        | 78    | 2,7 s                     |
 | `/sales` quand la 1re carte a une photo     | 89    | 2,6 s                     |
 
+Simulation « photos hébergées chez nous » (Playwright, mobile en 4G réellement bridée, 3 essais) :
+27 photos vench.fr et licitor.com servies en WebP 640 px, 45 Ko en moyenne. Premier affichage
+(FCP) de 1,79 à 1,64 s, LCP de 2,15 à 2,06 s, fin du chargement de 5,9 à 5,8 s. Même en
+remplaçant toutes les photos par une image grise de 1,3 Ko, le gain plafonne à 0,3 s de FCP et
+0,6 à 0,9 s de LCP. Sur bureau, le gain est nul. **Gain de l'hébergement : faible.**
+
 Deux causes, sans rapport avec les photos des sources :
 
 1. **La vignette Mapbox reste invisible jusqu'à l'exécution du JavaScript.** Le HTML l'envoie avec
