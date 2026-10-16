@@ -98,6 +98,8 @@ export function CinematicHero({ summary = null }: { summary?: HomeCatalogueSumma
               src="/media/landing/dossier-apartment.webp"
               alt="Appartement lumineux avec moulures et parquet, visuel d’illustration"
               fill
+              loading="eager"
+              fetchPriority="high"
               sizes={DOSSIER_APARTMENT_SIZES}
               quality={DOSSIER_APARTMENT_QUALITY}
             />
