@@ -4,7 +4,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
-import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
+import { getExampleSaleRecords } from "@/lib/example-sale";
+
+// Dated relative to today, like /annonce-exemple: the frozen records would turn into a past sale.
+const EXAMPLE_SALE_RECORDS = getExampleSaleRecords();
 import type { AuctionSale } from "@/lib/types";
 import type { MarketEstimate } from "@/lib/market.server";
 import { AI_REVIEW_FIELD_KEYS, type AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
@@ -608,7 +611,13 @@ describe("integrated listing", () => {
     const practical = container.querySelector("#rendez-vous")!;
     expect(practical.textContent).toContain("Tribunal judiciaire de Bordeaux");
     expect(practical.textContent).toContain("Me Camille Durand");
-    expect(practical.textContent).toMatch(/15 octobre 2026/);
+    const hearingDay = new Intl.DateTimeFormat("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "Europe/Paris",
+    }).format(new Date(EXAMPLE_SALE_RECORDS.bordeaux.sale.sale_date!));
+    expect(practical.textContent).toContain(hearingDay);
     expect(practical.textContent).toContain("Visites");
   });
 
