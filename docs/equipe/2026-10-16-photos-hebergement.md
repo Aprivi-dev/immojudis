@@ -13,12 +13,12 @@ modifié, rien écrit en base.
 ne ferait presque rien gagner au premier affichage. La vraie cause est la vignette Mapbox de la
 première carte, quand celle-ci n'a pas de photo.
 
-| Mesure (production, mobile 4G, 3 essais) | Score | Affichage principal (LCP) |
-| ---------------------------------------- | ----- | ------------------------- |
-| `/sales` telle quelle, 1re carte sans photo | 57 | 9,1 s |
-| Même page, photos des sources bloquées | 61 | 9,1 s (aucun gain) |
-| Même page, vignettes Mapbox bloquées | 78 | 2,7 s |
-| `/sales` quand la 1re carte a une photo | 89 | 2,6 s |
+| Mesure (production, mobile 4G, 3 essais)    | Score | Affichage principal (LCP) |
+| ------------------------------------------- | ----- | ------------------------- |
+| `/sales` telle quelle, 1re carte sans photo | 57    | 9,1 s                     |
+| Même page, photos des sources bloquées      | 61    | 9,1 s (aucun gain)        |
+| Même page, vignettes Mapbox bloquées        | 78    | 2,7 s                     |
+| `/sales` quand la 1re carte a une photo     | 89    | 2,6 s                     |
 
 Deux causes, sans rapport avec les photos des sources :
 
@@ -36,11 +36,11 @@ page : elles ralentissent le défilement, pas le premier affichage.
 
 ## Stockage, si l'on hébergeait quand même
 
-| Scénario | Aujourd'hui | Catalogue stable (ventes purgées) | Un an sans aucune purge |
-| -------- | ----------- | --------------------------------- | ----------------------- |
-| Originaux | 1,9 Go | 2,5 Go | 19,5 Go |
-| WebP, une taille (1 200 px) | 0,44 Go | 0,57 Go | 4,5 Go |
-| WebP, deux tailles (640 + 1 600 px) | 0,73 Go | 0,95 Go | 7,5 Go |
+| Scénario                            | Aujourd'hui | Catalogue stable (ventes purgées) | Un an sans aucune purge |
+| ----------------------------------- | ----------- | --------------------------------- | ----------------------- |
+| Originaux                           | 1,9 Go      | 2,5 Go                            | 19,5 Go                 |
+| WebP, une taille (1 200 px)         | 0,44 Go     | 0,57 Go                           | 4,5 Go                  |
+| WebP, deux tailles (640 + 1 600 px) | 0,73 Go     | 0,95 Go                           | 7,5 Go                  |
 
 - Catalogue : 1 675 ventes à venir, 1 166 avec photo, environ 5 300 photos. Les photos de
   notaires.fr en font 60 %.
@@ -68,13 +68,13 @@ page : elles ralentissent le défilement, pas le premier affichage.
 
 ## Propositions
 
-| N° | Proposition | Priorité | Effort |
-| -- | ----------- | -------- | ------ |
-| P1 | Afficher la vignette de la 1re carte dès le HTML, sans attendre le JavaScript (la cacher seulement en cas d'erreur). Gain attendu : LCP de 9 s à environ 2,7 s quand la 1re carte n'a pas de photo. | Critique | S |
-| P2 | Mettre en production les vignettes Mapbox allégées de la PR #269 (environ −850 Ko sur la page 1), puis remesurer. | Critique | Fusion de la PR #269 |
-| P3 | Décider du sort de l'optimiseur pour notaires.fr, Avoventes et vench.fr (garder, retirer, ou garder en attendant les accords). | Important | S |
-| P4 | Ne pas héberger les photos pour l'instant. Y revenir source par source après une autorisation écrite, en commençant par la photo principale. | Important | Aucun |
-| P5 | Ajouter un crédit visible « Photo : via [source] » avec lien vers l'annonce d'origine. | Suggestion | S |
+| N°  | Proposition                                                                                                                                                                                         | Priorité   | Effort               |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------------------- |
+| P1  | Afficher la vignette de la 1re carte dès le HTML, sans attendre le JavaScript (la cacher seulement en cas d'erreur). Gain attendu : LCP de 9 s à environ 2,7 s quand la 1re carte n'a pas de photo. | Critique   | S                    |
+| P2  | Mettre en production les vignettes Mapbox allégées de la PR #269 (environ −850 Ko sur la page 1), puis remesurer.                                                                                   | Critique   | Fusion de la PR #269 |
+| P3  | Décider du sort de l'optimiseur pour notaires.fr, Avoventes et vench.fr (garder, retirer, ou garder en attendant les accords).                                                                      | Important  | S                    |
+| P4  | Ne pas héberger les photos pour l'instant. Y revenir source par source après une autorisation écrite, en commençant par la photo principale.                                                        | Important  | Aucun                |
+| P5  | Ajouter un crédit visible « Photo : via [source] » avec lien vers l'annonce d'origine.                                                                                                              | Suggestion | S                    |
 
 ## Limites
 
