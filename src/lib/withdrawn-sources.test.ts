@@ -206,7 +206,7 @@ describe("une lecture par session de navigation", () => {
     await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 });
     // Page suivante : le module est rechargé (état vierge) mais la session se souvient.
     resetWithdrawnSources();
-    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 600_000 });
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 120_000 });
     expect(client.calls).toBe(1);
   });
 
@@ -222,12 +222,12 @@ describe("une lecture par session de navigation", () => {
     expect(client.calls).toBe(0);
   });
 
-  it("relit la base une fois la mémoire de session périmée (30 minutes)", async () => {
+  it("relit la base une fois la mémoire de session périmée (5 minutes)", async () => {
     const storage = memoryStorage();
     const client = countingClient([]);
     await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 });
     resetWithdrawnSources();
-    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 + 30 * 60_000 });
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 + 5 * 60_000 });
     expect(client.calls).toBe(2);
   });
 

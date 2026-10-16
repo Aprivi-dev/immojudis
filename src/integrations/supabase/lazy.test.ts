@@ -91,6 +91,25 @@ describe("onSupabaseClient", () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it("journalise un écouteur qui lève sans empêcher les autres ni l'annonce", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = vi.fn(() => {
+      throw new Error("écouteur cassé");
+    });
+    const healthy = vi.fn();
+    onSupabaseClient(failing);
+    onSupabaseClient(healthy);
+
+    const client = { marker: "announced" } as unknown as SupabaseBrowserClient;
+    expect(() => announceSupabaseClient(client)).not.toThrow();
+    expect(healthy).toHaveBeenCalledWith(client);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith(
+      "[supabase] Écouteur du client en échec",
+      expect.objectContaining({ message: "écouteur cassé" }),
+    );
+  });
+
   it("prévient tout de suite si le client existe déjà", () => {
     const client = { marker: "existing" } as unknown as SupabaseBrowserClient;
     announceSupabaseClient(client);

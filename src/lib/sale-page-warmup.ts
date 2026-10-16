@@ -6,8 +6,9 @@ export const WARMUP_TIMEOUT_MS = 5_000;
 export const WARMUP_CONCURRENCY = 4;
 /**
  * Pages warmed per call at most: the warm-up runs in `after()`, inside the function's time
- * budget. 24 pages at 4 at a time and 5 s each stay under 30 s in the worst case; the other
- * pages of a larger batch are rendered by their first visitor, as before.
+ * budget (`maxDuration = 30` on `revalidate-sale`). 24 pages at 4 at a time make 6 rounds of 5 s
+ * at most, that is 30 s in the worst case, which is why the cap is the budget and not 100: the
+ * other pages of a larger batch are rendered by their first visitor, as before.
  */
 export const MAX_WARMUP_PAGES = 24;
 
@@ -75,8 +76,10 @@ export async function warmSalePages(
       });
       // Read to the end: the answer is complete only once the page is generated and streamed.
       await response.arrayBuffer();
-      // A 404 is a valid answer for a sale that left the catalogue: the page is cached as such.
-      const ok = response.status < 500;
+      // Only a 2xx or a 404 means the page was generated: a 404 is a valid answer for a sale that
+      // left the catalogue (cached as such). Anything else (401, 403, 429, 3xx, 5xx) is a page that
+      // was not warmed, whatever the reason (firewall, rate limit, redirect, error).
+      const ok = (response.status >= 200 && response.status < 300) || response.status === 404;
       if (ok) summary.warmed += 1;
       else summary.failed += 1;
       log({

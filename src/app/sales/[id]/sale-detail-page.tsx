@@ -104,15 +104,13 @@ export function SaleDetailPage({
   // (base sans le déblocage, erreur), la fiche reste la fiche gratuite.
   const unlockEnabled = discovery && !authLoading && Boolean(entitlementsData);
   const queryClient = useQueryClient();
-  // The unlock status only depends on the session: it is read together with the rights instead of
-  // after them (it is the account's own status, and it only decides the view once the rights say
-  // « Découverte », see `unlockEnabled`). Once the rights are known to include the analysis, it is
-  // no longer read.
+  // The unlock status is the account's own, and it only decides the view for a Discovery account:
+  // it is never read before the rights are known, nor for an account that includes the analysis.
   const entitlementsKnown = Boolean(entitlementsData);
   const unlockQuery = useQuery({
     queryKey: queryKeys.saleUnlock(id, sessionKey),
     queryFn: () => fetchSaleUnlockStatus(id),
-    enabled: Boolean(session) && !authLoading && (!entitlementsKnown || discovery),
+    enabled: unlockEnabled,
     staleTime: 60_000,
     // One more try before the free view is shown with a notice: a transient failure must not look
     // like a lost unlock.

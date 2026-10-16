@@ -302,4 +302,142 @@ describe("verified authentication state", () => {
     expect(result.current.authError).toBeTruthy();
     expect(result.current.user).toBeNull();
   });
+
+  describe("visiteur anonyme : synchronisation avec les autres onglets", () => {
+    function setVisibility(state: "visible" | "hidden") {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: state });
+    }
+    function storageEvent(init: StorageEventInit) {
+      return new StorageEvent("storage", { storageArea: window.localStorage, ...init });
+    }
+    function signedInElsewhere() {
+      mocks.getSession.mockResolvedValue({ data: { session: session("other-tab") } });
+      mocks.getUser.mockResolvedValue({ data: { user: { id: "other-tab" } }, error: null });
+      mocks.profile.mockResolvedValue({ data: { user_id: "other-tab" }, error: null });
+    }
+    afterEach(() => {
+      delete (document as { visibilityState?: unknown }).visibilityState;
+    });
+
+    it("charge le client et retrouve la session quand un autre onglet se connecte (storage)", async () => {
+      window.localStorage.clear();
+      signedInElsewhere();
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(mocks.getSession).not.toHaveBeenCalled();
+
+      window.localStorage.setItem(SUPABASE_AUTH_STORAGE_KEY, "{}");
+      act(() => {
+        window.dispatchEvent(
+          storageEvent({ key: SUPABASE_AUTH_STORAGE_KEY, oldValue: null, newValue: "{}" }),
+        );
+      });
+      await waitFor(() => expect(result.current.user?.id).toBe("other-tab"));
+      expect(mocks.subscribe).toHaveBeenCalledTimes(1);
+      expect(mocks.getSession).toHaveBeenCalledTimes(1);
+    });
+
+    it("ignore les événements storage d'une autre clé ou sans nouvelle valeur", async () => {
+      window.localStorage.clear();
+      signedInElsewhere();
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      act(() => {
+        window.dispatchEvent(storageEvent({ key: "autre-cle", newValue: "x" }));
+        window.dispatchEvent(
+          storageEvent({ key: SUPABASE_AUTH_STORAGE_KEY, oldValue: "{}", newValue: null }),
+        );
+        window.dispatchEvent(storageEvent({ key: null, newValue: null }));
+      });
+      await act(async () => {});
+      expect(mocks.subscribe).not.toHaveBeenCalled();
+      expect(mocks.getSession).not.toHaveBeenCalled();
+    });
+
+    it("charge le client au retour de visibilité si un indice de session est apparu", async () => {
+      window.localStorage.clear();
+      signedInElsewhere();
+      setVisibility("hidden");
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      // Onglet caché, ou visible mais toujours sans indice : rien n'est chargé.
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      setVisibility("visible");
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await act(async () => {});
+      expect(mocks.subscribe).not.toHaveBeenCalled();
+
+      window.localStorage.setItem(SUPABASE_AUTH_STORAGE_KEY, "{}");
+      setVisibility("hidden");
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await act(async () => {});
+      expect(mocks.subscribe).not.toHaveBeenCalled();
+
+      setVisibility("visible");
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await waitFor(() => expect(result.current.user?.id).toBe("other-tab"));
+      expect(mocks.subscribe).toHaveBeenCalledTimes(1);
+    });
+
+    it("retire ses écouteurs une fois le client chargé et au démontage", async () => {
+      window.localStorage.clear();
+      const addWindow = vi.spyOn(window, "addEventListener");
+      const removeWindow = vi.spyOn(window, "removeEventListener");
+      const addDocument = vi.spyOn(document, "addEventListener");
+      const removeDocument = vi.spyOn(document, "removeEventListener");
+      const handler = (spy: typeof addWindow, type: string) =>
+        spy.mock.calls.find(([name]) => name === type)?.[1];
+      try {
+        // Démontage avant tout chargement du client.
+        const first = renderHook(() => useAuth());
+        await waitFor(() => expect(first.result.current.loading).toBe(false));
+        const onStorage = handler(addWindow, "storage");
+        const onVisibility = handler(addDocument, "visibilitychange");
+        expect(onStorage).toBeTypeOf("function");
+        expect(onVisibility).toBeTypeOf("function");
+        first.unmount();
+        expect(handler(removeWindow, "storage")).toBe(onStorage);
+        expect(handler(removeDocument, "visibilitychange")).toBe(onVisibility);
+
+        // Client chargé par une autre page : les écouteurs sont retirés sans attendre le démontage.
+        removeWindow.mockClear();
+        removeDocument.mockClear();
+        mocks.getSession.mockResolvedValue({ data: { session: null } });
+        const second = renderHook(() => useAuth());
+        await waitFor(() => expect(second.result.current.loading).toBe(false));
+        act(() => announceSupabaseClient(mocks.client as SupabaseBrowserClient));
+        await waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(1));
+        expect(handler(removeWindow, "storage")).toBeTypeOf("function");
+        expect(handler(removeDocument, "visibilitychange")).toBeTypeOf("function");
+        const removedOnce = removeWindow.mock.calls.filter(([name]) => name === "storage").length;
+        second.unmount();
+        expect(removeWindow.mock.calls.filter(([name]) => name === "storage")).toHaveLength(
+          removedOnce,
+        );
+
+        // Après le démontage, un événement storage ne charge plus rien.
+        mocks.subscribe.mockClear();
+        window.dispatchEvent(
+          storageEvent({ key: SUPABASE_AUTH_STORAGE_KEY, oldValue: null, newValue: "{}" }),
+        );
+        await act(async () => {});
+        expect(mocks.subscribe).not.toHaveBeenCalled();
+      } finally {
+        addWindow.mockRestore();
+        removeWindow.mockRestore();
+        addDocument.mockRestore();
+        removeDocument.mockRestore();
+      }
+    });
+  });
 });
