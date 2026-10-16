@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { buildUnversionedAssetCacheRules } from "./src/lib/asset-cache-headers.ts";
 import { listingPhotoRemotePatterns } from "./src/lib/listing-photo-source.ts";
 import { buildSecurityHeaders, resolveCspMode } from "./src/lib/security-headers.ts";
 
@@ -63,6 +64,9 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: securityHeaders,
       },
+      // Après la règle de sécurité : les deux s'appliquent (clés d'en-tête différentes). Les
+      // règles suivantes ne portent que `Cache-Control`, jamais un en-tête de sécurité.
+      ...buildUnversionedAssetCacheRules(),
     ];
   },
   async redirects() {

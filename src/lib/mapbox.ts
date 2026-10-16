@@ -7,6 +7,16 @@ const MAPBOX_STATIC_SATELLITE_STYLE = "mapbox/satellite-v9";
 export const MAPBOX_ATTRIBUTION = "© Mapbox © OpenStreetMap";
 export const MAPBOX_COPYRIGHT_URL = "https://www.mapbox.com/about/maps/";
 
+export type MapboxStaticImageFormat = "png" | "jpeg" | "webp";
+
+/**
+ * Format demandé à Mapbox pour les vignettes de liste : l'API Static Images le sert nativement
+ * (suffixe ".webp"). Mesuré le 16/10/2026 sur une vignette 512×384 @2x : carte du secteur
+ * 137 Ko en PNG contre 43 Ko en WebP, satellite 228 Ko en JPEG contre 180 Ko en WebP. Mettre
+ * `undefined` pour revenir au format implicite de Mapbox.
+ */
+export const MAPBOX_LIST_THUMBNAIL_FORMAT: MapboxStaticImageFormat | undefined = "webp";
+
 /**
  * Désactive la télémétrie de Mapbox GL (envois vers events.mapbox.com) : sans consentement, la
  * carte ne doit rien transmettre d'autre que les tuiles. EVENTS_URL est un accesseur en lecture
@@ -53,6 +63,8 @@ export function mapboxStaticImageUrl({
   height = DEFAULT_STATIC_IMAGE_SIZE.height,
   marker = true,
   style,
+  pixelRatio = 2,
+  format,
 }: {
   lat: number;
   lng: number;
@@ -63,6 +75,9 @@ export function mapboxStaticImageUrl({
   height?: number;
   marker?: boolean;
   style?: string;
+  /** 2 (défaut) ajoute le suffixe "@2x" ; 1 demande l'image à la densité normale. */
+  pixelRatio?: 1 | 2;
+  format?: MapboxStaticImageFormat;
 }) {
   const token = getMapboxAccessToken();
   if (!token) return "";
@@ -79,9 +94,9 @@ export function mapboxStaticImageUrl({
   const center = camera.join(",");
   const overlay = marker ? `pin-s+0f766e(${formatCoordinate(lng)},${formatCoordinate(lat)})/` : "";
 
-  return `https://api.mapbox.com/styles/v1/${stylePath}/static/${overlay}${center}/${safeWidth}x${safeHeight}@2x?access_token=${encodeURIComponent(
-    token,
-  )}`;
+  return `https://api.mapbox.com/styles/v1/${stylePath}/static/${overlay}${center}/${safeWidth}x${safeHeight}${pixelRatio === 2 ? "@2x" : ""}${
+    format ? `.${format}` : ""
+  }?access_token=${encodeURIComponent(token)}`;
 }
 
 export function mapboxMapUrl(lat: number, lng: number) {
@@ -130,6 +145,8 @@ export function mapboxSatelliteImageUrl({
   width = DEFAULT_STATIC_IMAGE_SIZE.width,
   height = DEFAULT_STATIC_IMAGE_SIZE.height,
   marker = true,
+  pixelRatio,
+  format,
 }: {
   lat: number;
   lng: number;
@@ -137,6 +154,8 @@ export function mapboxSatelliteImageUrl({
   width?: number;
   height?: number;
   marker?: boolean;
+  pixelRatio?: 1 | 2;
+  format?: MapboxStaticImageFormat;
 }) {
   return mapboxStaticImageUrl({
     lat,
@@ -145,6 +164,8 @@ export function mapboxSatelliteImageUrl({
     width,
     height,
     marker,
+    pixelRatio,
+    format,
     style: MAPBOX_STATIC_SATELLITE_STYLE,
   });
 }

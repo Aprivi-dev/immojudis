@@ -38,6 +38,25 @@ describe("mapbox helpers", () => {
     expect(url).toContain("access_token=pk.test-token");
   });
 
+  it("keeps @2x by default and only drops it or adds a native format on request", () => {
+    vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test-token");
+    const base = { lat: 45, lng: 1, zoom: 14, width: 400, height: 300, marker: false };
+
+    expect(mapboxStaticImageUrl(base)).toContain("/1,45,14/400x300@2x?access_token=");
+    expect(mapboxStaticImageUrl({ ...base, pixelRatio: 1 })).toContain(
+      "/1,45,14/400x300?access_token=",
+    );
+    expect(mapboxStaticImageUrl({ ...base, format: "webp" })).toContain(
+      "/1,45,14/400x300@2x.webp?access_token=",
+    );
+    expect(mapboxStaticImageUrl({ ...base, pixelRatio: 1, format: "webp" })).toContain(
+      "/1,45,14/400x300.webp?access_token=",
+    );
+    expect(
+      mapboxSatelliteImageUrl({ lat: 45, lng: 1, width: 400, height: 300, pixelRatio: 1 }),
+    ).toContain("/mapbox/satellite-v9/static/");
+  });
+
   it("returns a Mapbox style URL and no static image URL without a token", () => {
     expect(getMapboxStyleUrl()).toBe("mapbox://styles/mapbox/streets-v12");
     expect(mapboxStaticImageUrl({ lat: 45, lng: 1 })).toBe("");

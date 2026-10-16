@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Navbar } from "./Navbar";
 import { SiteHeader } from "./SiteHeader";
@@ -14,8 +14,9 @@ vi.mock("next/navigation", () => ({ usePathname: () => state.pathname }));
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: state.user, profile: state.profile, loading: false }),
 }));
+const signOut = vi.hoisted(() => vi.fn());
 vi.mock("@/integrations/supabase/client", () => ({
-  supabase: { auth: { signOut: vi.fn() } },
+  supabase: { auth: { signOut } },
 }));
 vi.mock("next/dynamic", () => ({
   default: () => () => null,
@@ -65,12 +66,46 @@ describe("SiteHeader", () => {
     expect(screen.queryByRole("link", { name: "Connexion" })).toBeNull();
   });
 
-  it("donne accès, depuis le menu mobile, à Connexion, Ressources et aux pages légales", () => {
+  it("ne monte pas le menu mobile avant le premier appui, puis le ferme et rend le focus au bouton", async () => {
+    render(<SiteHeader />);
+    const button = screen.getByRole("button", { name: "Ouvrir le menu" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(button);
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(button.getAttribute("aria-controls")).toBe("site-mobile-navigation");
+
+    fireEvent.click(screen.getByRole("button", { name: "Fermer le menu" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(button);
+  });
+
+  it("ouvre le menu « Mon compte » avec les pages de l'espace personnel et la déconnexion", async () => {
+    state.user = { id: "user-1" };
+    render(<SiteHeader />);
+    const trigger = await waitFor(() => {
+      const found = screen.getByRole("button", { name: /Mon compte/ });
+      expect(found.getAttribute("aria-haspopup")).toBe("dialog");
+      return found;
+    });
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+    fireEvent.click(trigger);
+    const link = await screen.findByRole("link", { name: "Mes favoris" });
+    expect(link.getAttribute("href")).toBe("/favoris");
+
+    fireEvent.click(screen.getByRole("button", { name: "Déconnexion" }));
+    await waitFor(() => expect(signOut).toHaveBeenCalledTimes(1));
+  });
+
+  it("donne accès, depuis le menu mobile, à Connexion, Ressources et aux pages légales", async () => {
     state.pathname = "/sales";
     render(<SiteHeader placement="sticky" center={<input aria-label="Ville" />} />);
     fireEvent.click(screen.getByRole("button", { name: "Ouvrir le menu" }));
 
-    const menu = within(screen.getByRole("navigation", { name: "Navigation mobile" }));
+    const menu = within(await screen.findByRole("navigation", { name: "Navigation mobile" }));
     expect(menu.getByRole("link", { name: "Ressources" }).getAttribute("href")).toBe("/ressources");
     expect(menu.getByRole("link", { name: "Mentions légales" }).getAttribute("href")).toBe(
       "/legal",
@@ -82,11 +117,11 @@ describe("SiteHeader", () => {
     expect(dialog.getByRole("link", { name: "Connexion" }).getAttribute("href")).toBe("/login");
   });
 
-  it("ajoute les pages de l'espace personnel au menu mobile d'une personne connectée", () => {
+  it("ajoute les pages de l'espace personnel au menu mobile d'une personne connectée", async () => {
     state.user = { id: "user-1" };
     render(<SiteHeader />);
     fireEvent.click(screen.getByRole("button", { name: "Ouvrir le menu" }));
-    const menu = within(screen.getByRole("navigation", { name: "Navigation mobile" }));
+    const menu = within(await screen.findByRole("navigation", { name: "Navigation mobile" }));
     for (const label of ["Mes favoris", "Mes alertes", "Mes comparaisons", "Mon compte"]) {
       expect(menu.getByRole("link", { name: label })).toBeTruthy();
     }

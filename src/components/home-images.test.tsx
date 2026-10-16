@@ -25,17 +25,31 @@ describe("home page images", () => {
   const hero = renderToStaticMarkup(<CinematicHero />);
   const discovery = renderToStaticMarkup(<HomeDiscovery />);
 
-  it("preloads the background photo only", () => {
-    // `preload` of next/image emits a <link rel="preload" as="image">.
-    const preloads = hero.match(/<link\b[^>]*rel="preload"[^>]*>/g) ?? [];
-    expect(preloads).toHaveLength(1);
-    expect(preloads[0]).toContain("home-bordeaux-twilight");
-
-    // The example photo of the file card is an ordinary image: no priority, not forced eager.
+  it("loads the example photo eagerly and at high priority, without the `preload` prop", () => {
+    // `preload` of next/image is reserved to the background photo (the LCP element on large
+    // screens). The example photo of the file card is the LCP element on mobile: eager and
+    // high priority instead, as recommended when the LCP element varies with the screen.
     const [dossier] = imageTags(hero, "dossier-apartment");
     expect(dossier).toBeDefined();
-    expect(attribute(dossier, "fetchpriority")).toBeUndefined();
-    expect(attribute(dossier, "loading")).not.toBe("eager");
+    expect(attribute(dossier, "fetchpriority")).toBe("high");
+    expect(attribute(dossier, "loading")).toBe("eager");
+
+    // React itself hoists a <link rel="preload"> for an <img fetchPriority="high"> (same URLs as
+    // the <img>, so the browser downloads the file once). Nothing else is preloaded.
+    const preloads = hero.match(/<link\b[^>]*rel="preload"[^>]*>/g) ?? [];
+    expect(preloads).toHaveLength(2);
+    expect(preloads[0]).toContain("home-bordeaux-twilight");
+    expect(preloads[0]).not.toContain("fetchPriority");
+    expect(preloads[1]).toContain("dossier-apartment");
+    expect(preloads[1]).toContain('imageSizes="(max-width: 760px) 100vw, 50vw"');
+    expect(preloads[1]).toContain('fetchPriority="high"');
+  });
+
+  it("does not fetch the example photo a second time further down the page", () => {
+    // The second block lazy-loads the same URLs: one download, served from the cache.
+    const [inOffers] = imageTags(discovery, "dossier-apartment");
+    expect(attribute(inOffers, "loading")).toBe("lazy");
+    expect(discovery).not.toMatch(/rel="preload"/);
   });
 
   it("asks for the same size and quality of dossier-apartment.webp in both blocks", () => {
