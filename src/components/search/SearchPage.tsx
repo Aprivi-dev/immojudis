@@ -61,6 +61,8 @@ import {
 import type { MapViewportChange } from "./MapPanel";
 import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
+import { scrollToSaleCard } from "./scroll-to-sale-card";
+import { useDeferredStart } from "./use-deferred-start";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
 import {
@@ -181,7 +183,10 @@ export function SearchPage({
   const [geocoding, setGeocoding] = useState(false);
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
-  const mapVisible = isDesktop || mobileMapOpen;
+  // Sur bureau, la carte (mapbox-gl + points) ne démarre qu'après le premier affichage de la liste
+  // (voir `useDeferredStart` plus bas) ; son cadre, lui, est réservé dès que l'écran est large.
+  const [desktopMapStarted, setDesktopMapStarted] = useState(false);
+  const mapVisible = mobileMapOpen || (isDesktop && desktopMapStarted);
   // Le tableau n'existe que sur écran large : en dessous, toujours les cartes.
   const displayedView = effectiveResultsView(resultsView, isDesktop);
   const geographicLabel = search.city || search.department || search.query || "";
@@ -442,6 +447,11 @@ export function SearchPage({
           : "loading";
   const hasLocalFilters = false;
   const isInitialLoading = (authLoading && !serverSeeded) || entitlementsLoading || isLoading;
+  useDeferredStart({
+    enabled: isDesktop && !desktopMapStarted,
+    listReady: !isInitialLoading,
+    onStart: () => setDesktopMapStarted(true),
+  });
   const activeFiltersCount = countActiveSearchFilters(search);
   const activeFilters = useMemo(() => activeFilterChips(search), [search]);
   const displayCount = totalCount ?? filteredSales.length;
@@ -571,12 +581,7 @@ export function SearchPage({
 
   const handleMapSelect = useCallback((saleId: string) => {
     setSelectedSaleId(saleId);
-    window.setTimeout(() => {
-      document.getElementById(`sale-card-${saleId}`)?.scrollIntoView({
-        block: "center",
-        behavior: "smooth",
-      });
-    }, 40);
+    window.setTimeout(() => scrollToSaleCard(saleId), 40);
   }, []);
 
   const handleViewportChange = useCallback(
@@ -959,7 +964,7 @@ export function SearchPage({
         <aside className="relative hidden min-h-[calc(100svh_-_var(--sales-header-height))] bg-line-soft lg:order-2 lg:block">
           {isDesktop ? (
             <div className="sticky top-[var(--sales-header-height)] h-[calc(100svh_-_var(--sales-header-height))]">
-              <LazyMapPanel {...mapPanelProps} />
+              {desktopMapStarted ? <LazyMapPanel {...mapPanelProps} /> : <MapPanelSkeleton />}
             </div>
           ) : null}
         </aside>
