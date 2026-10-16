@@ -4,6 +4,11 @@ const mocks = vi.hoisted(() => ({
   loadSitemapSales: vi.fn(),
   loadSitemapSaleTotal: vi.fn(),
   loadTribunalActivity: vi.fn(),
+  loadDepartments: vi.fn(),
+}));
+
+vi.mock("@/lib/department-pages.server", () => ({
+  tryLoadDepartmentCatalogue: mocks.loadDepartments,
 }));
 
 vi.mock("@/lib/public-tribunal-activity.server", () => ({
@@ -21,12 +26,32 @@ vi.mock("@/lib/public-sitemap.server", async () => {
   };
 });
 
-import sitemap from "./sitemap";
+import sitemap, { maxDuration } from "./sitemap";
 import robots from "./robots";
 import resourcesSitemap from "./ressources/sitemap";
 import salesSitemap, { generateSitemaps as generateSalesSitemaps } from "./sales/sitemap";
 import nextConfig from "../../next.config";
 import { SITEMAP_URL_LIMIT } from "@/lib/public-sitemap.server";
+import { GUIDE_LAST_UPDATED } from "@/lib/guide-dates";
+import {
+  aggregateDepartments,
+  DEPARTMENT_PAGES_MAX_DURATION_SECONDS,
+  type DepartmentSaleInput,
+} from "@/lib/department-pages";
+
+function departmentSales(department: string, count: number): DepartmentSaleInput[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${department}-${index}`,
+    department,
+    city: "Ville",
+    propertyType: "house",
+    saleDate: "2026-11-10T13:00:00Z",
+    startingPriceEur: 60_000,
+    surfaceM2: 70,
+    venueType: "tribunal",
+    status: "scheduled",
+  }));
+}
 
 const manySales = Array.from({ length: 2276 }, (_, index) => ({
   id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
@@ -40,10 +65,17 @@ describe("sitemap.xml (static pages)", () => {
     mocks.loadSitemapSaleTotal.mockReset();
     mocks.loadTribunalActivity.mockReset();
     mocks.loadTribunalActivity.mockResolvedValue({ status: "ok", items: [{ code: "pau" }] });
+    mocks.loadDepartments.mockReset();
+    mocks.loadDepartments.mockResolvedValue({ status: "error" });
   });
   afterEach(() => {
     delete process.env.SITE_URL;
     vi.restoreAllMocks();
+  });
+
+  it("allows the render the duration of a full catalogue read", () => {
+    expect(maxDuration).toBe(60);
+    expect(maxDuration).toBe(DEPARTMENT_PAGES_MAX_DURATION_SECONDS);
   });
 
   it("lists the pages only: no sale and no article", async () => {
@@ -92,6 +124,17 @@ describe("sitemap.xml (static pages)", () => {
     expect(byUrl.get("https://immojudis.com/annonce-exemple")).toBe("2026-10-15");
   });
 
+  it("dates the guide with the date it displays (GUIDE_LAST_UPDATED), not its own copy", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([]);
+    const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
+    expect(byUrl.get("https://immojudis.com/ventes-immobilieres-judiciaires")).toBe(
+      GUIDE_LAST_UPDATED,
+    );
+    // The guide re-exports the same constant its page displays.
+    const guide = await import("./ventes-immobilieres-judiciaires/resources-guide");
+    expect(guide.GUIDE_LAST_UPDATED).toBe(GUIDE_LAST_UPDATED);
+  });
+
   it("stays available when the catalogue cannot be read: /sales just has no date", async () => {
     mocks.loadSitemapSales.mockRejectedValue(new Error("down"));
     const entries = await sitemap();
@@ -121,6 +164,83 @@ describe("sitemap.xml (static pages)", () => {
     mocks.loadTribunalActivity.mockResolvedValue({ status: "error" });
     const urls = (await sitemap()).map((entry) => entry.url);
     expect(urls).toContain("https://immojudis.com/tribunaux");
+  });
+
+  it("lists the market-gap method page with its real last change", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([]);
+    const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
+    expect(byUrl.get("https://immojudis.com/methode-ecart-marche")).toBe("2026-10-15");
+  });
+
+  describe("department pages", () => {
+    const catalogue = aggregateDepartments([
+      ...departmentSales("33", 3),
+      ...departmentSales("75", 2),
+      ...departmentSales("13", 40),
+      ...departmentSales("01", 1),
+    ]);
+
+    it("lists the index and only the departments with at least 3 upcoming sales", async () => {
+      mocks.loadSitemapSales.mockResolvedValue([]);
+      mocks.loadDepartments.mockResolvedValue({ status: "ok", catalogue });
+      const paths = (await sitemap()).map((entry) => new URL(entry.url).pathname);
+      expect(paths).toContain("/ventes-encheres-immobilieres");
+      expect(paths).toContain("/ventes-encheres-immobilieres/gironde");
+      expect(paths).toContain("/ventes-encheres-immobilieres/bouches-du-rhone");
+      // 2 sales and 1 sale: below the threshold, not listed.
+      expect(paths).not.toContain("/ventes-encheres-immobilieres/paris");
+      expect(paths).not.toContain("/ventes-encheres-immobilieres/ain");
+      expect(
+        paths.filter((path) => path.startsWith("/ventes-encheres-immobilieres/")),
+      ).toHaveLength(2);
+    });
+
+    it("lists a department exactly at the threshold and not one sale below", async () => {
+      mocks.loadSitemapSales.mockResolvedValue([]);
+      mocks.loadDepartments.mockResolvedValue({
+        status: "ok",
+        catalogue: aggregateDepartments([...departmentSales("33", 3), ...departmentSales("34", 2)]),
+      });
+      const paths = (await sitemap()).map((entry) => new URL(entry.url).pathname);
+      expect(paths).toContain("/ventes-encheres-immobilieres/gironde");
+      expect(paths).not.toContain("/ventes-encheres-immobilieres/herault");
+    });
+
+    it("does not list the index nor any department while no department qualifies", async () => {
+      mocks.loadSitemapSales.mockResolvedValue([]);
+      mocks.loadDepartments.mockResolvedValue({
+        status: "ok",
+        catalogue: aggregateDepartments([...departmentSales("33", 2), ...departmentSales("75", 1)]),
+      });
+      const paths = (await sitemap()).map((entry) => new URL(entry.url).pathname);
+      expect(paths.filter((path) => path.startsWith("/ventes-encheres-immobilieres"))).toEqual([]);
+    });
+
+    it("keeps the index but adds no department when the catalogue cannot be read", async () => {
+      mocks.loadSitemapSales.mockResolvedValue([]);
+      mocks.loadDepartments.mockResolvedValue({ status: "error" });
+      const paths = (await sitemap()).map((entry) => new URL(entry.url).pathname);
+      expect(paths).toContain("/ventes-encheres-immobilieres");
+      expect(paths.filter((path) => path.startsWith("/ventes-encheres-immobilieres/"))).toEqual([]);
+    });
+
+    it("gives the department pages no last-modified date (hourly figures are not a change)", async () => {
+      mocks.loadSitemapSales.mockResolvedValue([]);
+      mocks.loadDepartments.mockResolvedValue({ status: "ok", catalogue });
+      const entries = (await sitemap()).filter((entry) =>
+        entry.url.includes("/ventes-encheres-immobilieres"),
+      );
+      expect(entries.length).toBeGreaterThan(0);
+      for (const entry of entries) expect(entry).not.toHaveProperty("lastModified");
+    });
+
+    it("never lists a department page from /sales or from the articles sitemap", async () => {
+      mocks.loadSitemapSales.mockResolvedValue([]);
+      mocks.loadDepartments.mockResolvedValue({ status: "ok", catalogue });
+      const urls = (await sitemap()).map((entry) => entry.url);
+      expect(new Set(urls).size).toBe(urls.length);
+      expect(resourcesSitemap().some((entry) => entry.url.includes("ventes-encheres"))).toBe(false);
+    });
   });
 
   it("leaves out changeFrequency and priority, which search engines ignore", async () => {
@@ -158,7 +278,7 @@ describe("/ressources/sitemap.xml (articles)", () => {
 
   it("lists every article, and only the articles", () => {
     const entries = resourcesSitemap();
-    expect(entries).toHaveLength(10);
+    expect(entries).toHaveLength(13);
     for (const entry of entries) {
       expect(entry.url).toMatch(/^https:\/\/immojudis\.com\/ressources\/[a-z0-9-]+$/);
       expect(entry.lastModified).toMatch(/^\d{4}-\d{2}-\d{2}$/);

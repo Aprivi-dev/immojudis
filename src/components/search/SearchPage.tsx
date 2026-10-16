@@ -33,6 +33,12 @@ import {
   sortClientSearchResults,
   visibleSearchSort,
 } from "@/lib/search/search-filters";
+import {
+  effectiveResultsView,
+  keepCurrentResultsView,
+  withResultsView,
+  type ResultsView,
+} from "@/lib/search/results-view";
 import { areMapViewportsClose } from "@/lib/search/map-viewport-results";
 import { isAnalysisOfferOpen } from "@/lib/search/analysis-offer-open";
 import {
@@ -59,6 +65,7 @@ import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./ac
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
 import {
   ResultsSummary,
+  ResultsViewToggle,
   SearchHeader,
   SortByDateShortcut,
   SortDropdown,
@@ -81,6 +88,7 @@ import {
   searchToDraft,
   stableUrlRecord,
   useMediaQuery,
+  useResultsView,
   watchedZoneInputFromSearch,
 } from "./search-page-state";
 import { userMessage } from "@/lib/user-messages";
@@ -135,11 +143,18 @@ export function SearchPage({
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
   const currentHref = queryString ? `${pathname}?${queryString}` : pathname;
+  // Cartes ou tableau : lu dans l'adresse (`?view=table`), hors des filtres de la recherche.
+  const resultsView = useResultsView();
   // The filters live in the URL: updating them rewrites the query string in place, without a
   // server round trip. Next.js keeps `useSearchParams` in sync with `history.replaceState`.
+  // L'affichage (`view`) n'est pas un filtre : il est relu dans l'adresse courante et conservé.
   const replaceSearch = useCallback(
     (record: SalesSearchUrlRecord) => {
-      window.history.replaceState(null, "", pathWithSearch(pathname, record));
+      window.history.replaceState(
+        null,
+        "",
+        pathWithSearch(pathname, keepCurrentResultsView(record)),
+      );
     },
     [pathname],
   );
@@ -167,6 +182,8 @@ export function SearchPage({
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   const mapVisible = isDesktop || mobileMapOpen;
+  // Le tableau n'existe que sur écran large : en dessous, toujours les cartes.
+  const displayedView = effectiveResultsView(resultsView, isDesktop);
   const geographicLabel = search.city || search.department || search.query || "";
   useEffect(() => {
     let cancelled = false;
@@ -432,9 +449,12 @@ export function SearchPage({
   const hasMore =
     totalCount != null && pageOffset + rawSales.length < totalCount && rawSales.length >= pageSize;
   const hasPrevious = page > 1;
+  // Un tableau a besoin de largeur : sans « Agrandir la carte », les résultats prennent plus de place.
   const splitClass = wideMap
     ? "lg:grid-cols-[minmax(360px,38%)_minmax(0,1fr)]"
-    : "lg:grid-cols-[minmax(0,52%)_minmax(0,48%)]";
+    : displayedView === "table"
+      ? "lg:grid-cols-[minmax(0,66%)_minmax(0,34%)]"
+      : "lg:grid-cols-[minmax(0,52%)_minmax(0,48%)]";
   const localSearchStatistics = useMemo(
     () => buildSearchStatistics(displayedSales),
     [displayedSales],
@@ -522,8 +542,22 @@ export function SearchPage({
       ? undefined
       : pathWithSearch(
           pathname,
-          salesSearchToUrlRecord(mergeSalesSearch(search, { page: targetPage })),
+          withResultsView(
+            salesSearchToUrlRecord(mergeSalesSearch(search, { page: targetPage })),
+            resultsView,
+          ),
         );
+
+  const changeResultsView = useCallback(
+    (view: ResultsView) => {
+      window.history.replaceState(
+        null,
+        "",
+        pathWithSearch(pathname, withResultsView(salesSearchToUrlRecord(searchRef.current), view)),
+      );
+    },
+    [pathname],
+  );
 
   const loadNextPage = useCallback(() => {
     if (!hasMore || isFetching) return;
@@ -809,6 +843,7 @@ export function SearchPage({
                 })}
                 onChange={(sort) => updateSearch({ sort })}
               />
+              <ResultsViewToggle view={resultsView} onChange={changeResultsView} />
             </div>
           </div>
           <RankingExplanation investmentScore={investmentSortAllowed} />
@@ -865,6 +900,7 @@ export function SearchPage({
               hasGeographicFilter(search) ? () => updateSearch(WHOLE_FRANCE_PATCH) : undefined
             }
             hideEmptyState={page > 1}
+            view={displayedView}
             sponsoredPlacement={
               <SearchLawyerPlacement
                 geographicLabel={geographicLabel}

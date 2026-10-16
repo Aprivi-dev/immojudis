@@ -19,6 +19,7 @@ import {
   SORT_OPTIONS,
 } from "@/lib/search/search-filters";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
+import type { ResultsView } from "@/lib/search/results-view";
 import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
 import type { SearchDraft } from "./search-page-state";
 
@@ -484,6 +485,49 @@ export function SortByDateShortcut({
       <CalendarDays className="h-4 w-4" aria-hidden />
       {SORT_BY_DATE_SHORTCUT_LABEL}
     </button>
+  );
+}
+
+const RESULTS_VIEW_OPTIONS = [
+  { value: "cards", label: "Cartes" },
+  { value: "table", label: "Tableau" },
+] as const satisfies readonly { value: ResultsView; label: string }[];
+
+/**
+ * « Cartes / Tableau » : l'affichage des résultats. Réservé à l'écran large (≥ lg), où le tableau
+ * existe ; en dessous, la liste reste en cartes et ce choix n'est pas proposé.
+ */
+export function ResultsViewToggle({
+  view,
+  onChange,
+}: {
+  view: ResultsView;
+  onChange: (view: ResultsView) => void;
+}) {
+  return (
+    <fieldset className="hidden min-w-0 border-0 p-0 lg:block">
+      <legend className="sr-only">Affichage des résultats</legend>
+      <div className="inline-flex overflow-hidden rounded-md border border-line bg-white shadow-sm">
+        {RESULTS_VIEW_OPTIONS.map(({ value, label }) => {
+          const active = view === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(value)}
+              className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 px-3 text-sm font-bold focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-soft ${
+                active
+                  ? "bg-brand-navy text-white"
+                  : "bg-white text-brand-navy hover:bg-surface-tint"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
