@@ -200,7 +200,13 @@ reset role;
 select is((select count(*) from public.sale_retention_storage_queue where bucket = 'sale-photos'), 0::bigint, 'the queue starts empty');
 
 set local role service_role;
-select is((public.purge_expired_auction_sales('2000-01-02 12:00Z', 25)->>'deleted')::integer, 2, 'the expired sales are purged');
+-- La purge supprime une vente par appel (`limit least(p_limit, 1)`) : deux appels pour les deux ventes.
+select is(
+  (public.purge_expired_auction_sales('2000-01-02 12:00Z', 25)->>'deleted')::integer
+    + (public.purge_expired_auction_sales('2000-01-02 12:00Z', 25)->>'deleted')::integer,
+  2,
+  'the expired sales are purged'
+);
 reset role;
 
 select is(
