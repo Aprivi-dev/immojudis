@@ -3,6 +3,7 @@ import {
   isLikelyPropertyImageUrl,
   propertyImageUrlScore,
   propertyImages,
+  shouldRejectPropertyImageSize,
   shouldRejectRenderedPropertyImage,
 } from "@/lib/sale-media";
 
@@ -88,5 +89,22 @@ describe("sale media selection", () => {
         naturalHeight: 800,
       } as HTMLImageElement),
     ).toBe(false);
+  });
+});
+
+describe("photos copiées", () => {
+  it("garde la copie attachée à la photo et l'URL d'origine comme identité", () => {
+    const mirror = { path640: "s/a-640.webp", path1600: null, width: 1200, height: 800 };
+    const images = propertyImages([
+      { type: "image", url: "https://example.test/photo/a.jpg", mirror },
+      { type: "image", url: "https://example.test/photo/a.jpg" },
+    ]);
+    expect(images).toEqual([{ type: "image", url: "https://example.test/photo/a.jpg", mirror }]);
+  });
+
+  it("applique la règle de taille à des dimensions connues", () => {
+    expect(shouldRejectPropertyImageSize(1200, 800)).toBe(false);
+    expect(shouldRejectPropertyImageSize(320, 180)).toBe(true);
+    expect(shouldRejectPropertyImageSize(1200, 240)).toBe(true);
   });
 });

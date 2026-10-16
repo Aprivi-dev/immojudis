@@ -5,6 +5,7 @@ import {
   type PreviewRpcClient,
   type PreviewSearchResponse,
 } from "@/lib/search/preview-search";
+import { isPhotoMirrorEnabled, withPhotoMirrors, type PhotoMirrorClient } from "@/lib/photo-mirror";
 import { salesSearchSignature, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import type { AuctionSale } from "@/lib/types";
@@ -36,6 +37,11 @@ export type CatalogueDependencies = {
   /** Returns the shared, cached first page; defaults to Next's data cache. */
   firstPage?: () => Promise<PreviewSearchResponse>;
   timeoutMs?: number;
+  /**
+   * Client de la fonction `sale_photo_mirrors` ; par défaut le client anonyme du serveur. Utilisé
+   * seulement si `NEXT_PUBLIC_PHOTO_MIRROR=on`.
+   */
+  photoMirrorClient?: PhotoMirrorClient | null;
 };
 
 function defaultSearch(search: SalesSearchParams): Promise<PreviewSearchResponse> {
@@ -58,6 +64,12 @@ const cachedFirstPage = unstable_cache(() => defaultSearch({}), [...FIRST_PAGE_C
   revalidate: FIRST_PAGE_REVALIDATE_SECONDS,
   tags: [PUBLIC_CATALOGUE_CACHE_TAG],
 });
+
+/** Le client n'est créé que si l'interrupteur est ouvert. */
+function photoMirrorClient(): PhotoMirrorClient | null {
+  if (!isPhotoMirrorEnabled()) return null;
+  return createPublicSupabaseClient() as unknown as PhotoMirrorClient | null;
+}
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -88,9 +100,17 @@ export async function loadInitialCatalogue(
       isDefaultCatalogueSearch(search) ? firstPage() : run(search),
       dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
     );
+    // Copies hébergées des photos : un seul appel pour la page, après le cache de la première page
+    // (une copie ou une panne ne reste donc pas cinq minutes). Jamais bloquant : voir photo-mirror.ts.
+    const items = await withPhotoMirrors(
+      excludeHomepageExampleSales(response.items),
+      dependencies.photoMirrorClient !== undefined
+        ? dependencies.photoMirrorClient
+        : photoMirrorClient(),
+    );
     return {
       signature: salesSearchSignature(search),
-      items: excludeHomepageExampleSales(response.items),
+      items,
       count: response.count,
     };
   } catch (error) {

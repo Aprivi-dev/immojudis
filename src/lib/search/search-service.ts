@@ -2,6 +2,7 @@ import { getSales, getSalesCount, getSalesForSearch, getSaleMapPoints } from "@/
 import { supabase } from "@/integrations/supabase/client";
 import { geocodeAddress } from "@/lib/geo";
 import { readPagedRows } from "@/lib/paged-read";
+import { withPhotoMirrors, type PhotoMirrorClient } from "@/lib/photo-mirror";
 import type { AuctionSale } from "@/lib/types";
 import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
 import {
@@ -26,7 +27,25 @@ const MAX_COMPLETE_SEARCH_ROWS = 10_000;
 
 const inFlightPreviewSearches = new Map<string, Promise<PreviewSearchResponse>>();
 
-export async function fetchSearchResults({
+/**
+ * Page de résultats avec, quand l'interrupteur est ouvert, la copie hébergée de la photo
+ * principale de chaque vente (un seul appel pour la page, après la lecture des ventes : aucune
+ * jointure dans les fonctions SQL de recherche, jamais bloquant). La première page rendue par le
+ * serveur reçoit les mêmes copies (`loadInitialCatalogue`), pour que les rafraîchissements ne
+ * changent pas les images.
+ */
+export async function fetchSearchResults(options: {
+  search: SalesSearchParams;
+  preview: boolean;
+  discovery?: boolean;
+}): Promise<AuctionSale[]> {
+  return withPhotoMirrors(
+    await loadSearchResults(options),
+    supabase as unknown as PhotoMirrorClient,
+  );
+}
+
+async function loadSearchResults({
   search,
   preview,
   discovery = false,

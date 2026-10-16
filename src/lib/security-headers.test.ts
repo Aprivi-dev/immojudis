@@ -156,4 +156,25 @@ describe("CSP delivery mode", () => {
     expect(cspRequiresDynamicRendering({ CSP_NONCE_DYNAMIC: "true" })).toBe(true);
     expect(cspRequiresDynamicRendering({ CSP_REPORT_ONLY: "false" })).toBe(true);
   });
+
+  it("lets the browser load the hosted copies of sale photos from Supabase Storage", () => {
+    // Copies des photos (bucket public `sale-photos`) : <img> https vers le projet Supabase.
+    const supabaseUrl = "https://project.supabase.co";
+    const imgSrc = (policy: string) =>
+      policy.split("; ").find((directive) => directive.startsWith("img-src "))!;
+    const legacy = headerMap(buildSecurityHeaders({ isProduction: true, supabaseUrl }));
+    const strict = buildStrictContentSecurityPolicy({
+      nonce: "abc",
+      isProduction: true,
+      supabaseUrl,
+    });
+
+    for (const policy of [legacy["Content-Security-Policy"]!, strict]) {
+      expect(imgSrc(policy).split(" ")).toContain("https:");
+      expect(policy).not.toMatch(/cross-origin-embedder/i);
+    }
+    // Aucun en-tête d'isolation ne bloque une image d'un autre hôte.
+    expect(legacy["Cross-Origin-Embedder-Policy"]).toBeUndefined();
+    expect(legacy["Cross-Origin-Resource-Policy"]).toBeUndefined();
+  });
 });

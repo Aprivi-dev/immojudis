@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { fetchPublicSaleSummary, SALE_ID_PATTERN } from "@/lib/public-sale-summary";
+import { withPhotoMirror, type PhotoMirrorClient } from "@/lib/photo-mirror";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { loadWithdrawnSources } from "@/lib/withdrawn-sources";
 import type { AuctionSale } from "@/lib/types";
@@ -93,9 +94,14 @@ export const lookupPublicSale = cache(async (id: string): Promise<PublicSaleLook
   if (!client) return { status: "unavailable" };
 
   const normalizedId = id.toLowerCase();
-  return unstable_cache(
+  const lookup = await unstable_cache(
     () => readPublicSale(client, normalizedId),
     ["public-sale-lookup", normalizedId],
     { tags: [publicSaleCacheTag(normalizedId)], revalidate: PUBLIC_SALE_REVALIDATE_SECONDS },
   )();
+  if (lookup.status !== "found") return lookup;
+  // Copie hébergée de la photo : cherchée après le cache, pour qu'un échec ou un délai dépassé ne
+  // reste pas cinq minutes (voir photo-mirror.ts : jamais bloquant, jamais d'erreur visible).
+  const sale = await withPhotoMirror(lookup.sale, client as unknown as PhotoMirrorClient);
+  return sale === lookup.sale ? lookup : { ...lookup, sale };
 });
