@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getSales, getSalesForSearch, getSaleMapPoints, rpc } = vi.hoisted(() => ({
+const { getSales, getSalesCount, getSalesForSearch, getSaleMapPoints, rpc } = vi.hoisted(() => ({
   getSales: vi.fn(),
+  getSalesCount: vi.fn(),
   getSalesForSearch: vi.fn(),
   getSaleMapPoints: vi.fn(),
   rpc: vi.fn(),
@@ -14,7 +15,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 vi.mock("@/lib/queries", () => ({
   getSales,
   getSalesForSearch,
-  getSalesCount: vi.fn(),
+  getSalesCount,
   getSaleMapPoints,
 }));
 
@@ -311,4 +312,100 @@ it("passes dates to the additive public RPC before counting or pagination", asyn
       p_offset: 24,
     }),
   );
+});
+
+describe("complete scan for advanced filters", () => {
+  // A catalogue of `size` sales; `getSales` answers like the database: `limit` rows from `offset`.
+  function catalogue(size: number) {
+    const rows = Array.from({ length: size }, (_, index) => ({
+      id: `sale-${index}`,
+      starting_price_eur: 1000 + index,
+      app_surface_m2: 50,
+    }));
+    let inFlight = 0;
+    let peak = 0;
+    const offsets: number[] = [];
+    getSales.mockImplementation(async (_filters, limit: number, _sort, offset: number) => {
+      offsets.push(offset);
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      inFlight -= 1;
+      return rows.slice(offset, offset + limit);
+    });
+    return { rows, offsets, peak: () => peak };
+  }
+  const search = { maxPricePerM2: 1_000_000 };
+
+  beforeEach(() => {
+    getSales.mockReset();
+    getSalesCount.mockReset();
+  });
+
+  it.each([0, 1, 99, 100, 101, 1753, 4000, 9999])(
+    "returns the %i sales in database order, whatever the count says",
+    async (size) => {
+      for (const count of [size, Math.max(0, size - 500), size + 900, new Error("down")]) {
+        const { rows, peak } = catalogue(size);
+        if (count instanceof Error) getSalesCount.mockRejectedValue(count);
+        else getSalesCount.mockResolvedValue(count);
+
+        const found = await fetchSearchResults({
+          search: { ...search, limit: 100_000 },
+          preview: false,
+          discovery: size % 2 === 0,
+        });
+
+        expect(
+          found.map((sale) => sale.id),
+          `${size} / ${String(count)}`,
+        ).toEqual(rows.map((row) => row.id));
+        expect(peak()).toBeLessThanOrEqual(4);
+        getSales.mockReset();
+      }
+    },
+  );
+
+  it("counts with the filters and the view of the batches, and shares the scan with the count", async () => {
+    const { offsets } = catalogue(350);
+    getSalesCount.mockResolvedValue(350);
+
+    const [results, count] = await Promise.all([
+      fetchSearchResults({ search: { ...search, limit: 1000 }, preview: false }),
+      fetchSearchCount({ search, preview: false }),
+    ]);
+
+    expect(results).toHaveLength(350);
+    expect(count).toBe(350);
+    // Four batches, once: the list and the count share one scan.
+    expect([...offsets].sort((a, b) => a - b)).toEqual([0, 100, 200, 300]);
+    expect(getSalesCount).toHaveBeenCalledTimes(1);
+    expect(getSalesCount).toHaveBeenCalledWith(expect.anything(), { discovery: false });
+    expect(getSales).toHaveBeenCalledWith(expect.anything(), 100, expect.anything(), 300, {
+      discovery: false,
+      completenessTier: true,
+    });
+  });
+
+  it("still refuses a search of 10 000 sales or more", async () => {
+    catalogue(10_000);
+    getSalesCount.mockResolvedValue(10_000);
+
+    await expect(fetchSearchResults({ search, preview: false })).rejects.toThrow(
+      "Cette recherche est trop large",
+    );
+  });
+
+  it("passes on the failure of a batch", async () => {
+    catalogue(1000);
+    getSalesCount.mockResolvedValue(1000);
+    getSales.mockImplementation(async (_f, _l, _s, offset: number) => {
+      if (offset === 500) throw new Error("lecture impossible");
+      return Array.from({ length: 100 }, (_, index) => ({ id: `${offset}-${index}` }));
+    });
+
+    await expect(fetchSearchResults({ search, preview: false })).rejects.toThrow(
+      "lecture impossible",
+    );
+  });
 });

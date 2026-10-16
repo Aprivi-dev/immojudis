@@ -15,23 +15,33 @@ import type { AuctionSale } from "@/lib/types";
 import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
 import type { SaleUnlockResult } from "@/lib/sale-unlocks";
 
+const loadDiscoveryView = () => import("@/components/DiscoverySaleDetailView");
+const loadSimplifiedViews = () => import("@/components/SimplifiedSaleDetailView");
+
 const DiscoverySaleDetailView = dynamic(
-  () =>
-    import("@/components/DiscoverySaleDetailView").then((module) => module.DiscoverySaleDetailView),
+  () => loadDiscoveryView().then((module) => module.DiscoverySaleDetailView),
   { loading: () => <SaleDetailSkeleton /> },
 );
 
 const AnalysisSaleDetailView = dynamic(
-  () =>
-    import("@/components/SimplifiedSaleDetailView").then((module) => module.AnalysisSaleDetailView),
+  () => loadSimplifiedViews().then((module) => module.AnalysisSaleDetailView),
   { loading: () => <SaleDetailSkeleton /> },
 );
 
 const UnlockedSaleDetailView = dynamic(
-  () =>
-    import("@/components/SimplifiedSaleDetailView").then((module) => module.UnlockedSaleDetailView),
+  () => loadSimplifiedViews().then((module) => module.UnlockedSaleDetailView),
   { loading: () => <SaleDetailSkeleton /> },
 );
+
+/**
+ * Downloads the code of the views (not data) while the rights and the listing are being read, so
+ * that it is already there when the access mode is known. A failed download is ignored: the
+ * `dynamic` loaders import the module again when the view is actually displayed.
+ */
+function preloadSaleViews(views: { discovery: boolean; simplified: boolean }) {
+  if (views.discovery) void loadDiscoveryView().catch(() => undefined);
+  if (views.simplified) void loadSimplifiedViews().catch(() => undefined);
+}
 
 type SaleDetailRouteData = {
   sale: AuctionSale | null;
@@ -93,10 +103,16 @@ export function SaleDetailPage({
   // « 3 déblocages par mois » : un compte Découverte peut avoir débloqué cette vente. Sans réponse
   // (base sans le déblocage, erreur), la fiche reste la fiche gratuite.
   const unlockEnabled = discovery && !authLoading && Boolean(entitlementsData);
+  const queryClient = useQueryClient();
+  // The unlock status only depends on the session: it is read together with the rights instead of
+  // after them (it is the account's own status, and it only decides the view once the rights say
+  // « Découverte », see `unlockEnabled`). Once the rights are known to include the analysis, it is
+  // no longer read.
+  const entitlementsKnown = Boolean(entitlementsData);
   const unlockQuery = useQuery({
     queryKey: queryKeys.saleUnlock(id, sessionKey),
     queryFn: () => fetchSaleUnlockStatus(id),
-    enabled: unlockEnabled,
+    enabled: Boolean(session) && !authLoading && (!entitlementsKnown || discovery),
     staleTime: 60_000,
     // One more try before the free view is shown with a notice: a transient failure must not look
     // like a lost unlock.
@@ -107,13 +123,31 @@ export function SaleDetailPage({
   const unlocked = unlockEnabled && unlockQuery.data?.unlocked === true;
   const accessMode: SaleAccessMode = !discovery ? "analysis" : unlocked ? "unlocked" : "discovery";
   const accessReady = !session || (Boolean(entitlementsData) && unlockReady);
-  const queryClient = useQueryClient();
   const [justUnlocked, setJustUnlocked] = useState(false);
   const handleSaleUnlocked = (result: SaleUnlockResult) => {
     setJustUnlocked(true);
     queryClient.setQueryData(queryKeys.saleUnlock(id, sessionKey), result);
     void queryClient.invalidateQueries({ queryKey: ["sale-detail", id] });
   };
+  const signedIn = Boolean(session) && !authLoading;
+  useEffect(() => {
+    if (!signedIn) return;
+    if (entitlementsKnown) {
+      preloadSaleViews({ discovery, simplified: !discovery || unlockEnabled });
+      return;
+    }
+    // Rights not known yet: the code of both families of views is fetched now, and the free
+    // listing (the one every signed-in account may read) is read while the rights are being
+    // checked. It is only displayed if the rights say « Découverte » (`accessReady` below); any
+    // other mode reads its own view afterwards, exactly as before.
+    preloadSaleViews({ discovery: true, simplified: true });
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.saleDetail(id, sessionKey, "discovery"),
+      queryFn: () =>
+        loadSaleDetailRouteData(id, { discovery: true, unlocked: false, authenticated: true }),
+      staleTime: 5 * 60_000,
+    });
+  }, [signedIn, entitlementsKnown, discovery, unlockEnabled, queryClient, id, sessionKey]);
   const canUseServerInitialData =
     initialData?.sale?.id === id || (!session && initialData?.preview?.id === id);
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -139,9 +173,12 @@ export function SaleDetailPage({
       : null;
   const sale = data?.sale ?? null;
   const preview = data?.preview ?? null;
+  // The listing may already be in the cache (read while the rights were being checked): it only
+  // counts as viewed once it can be displayed.
+  const displayable = !authLoading && accessReady;
   useEffect(() => {
-    if (sale?.id) markSaleViewed(sale.id);
-  }, [sale?.id]);
+    if (displayable && sale?.id) markSaleViewed(sale.id);
+  }, [displayable, sale?.id]);
 
   useEffect(() => {
     if (authLoading || !accessReady || !sale?.id) return;
