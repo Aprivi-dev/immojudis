@@ -2,27 +2,31 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./lawyer-directory-page", () => ({ LawyerDirectoryPage: () => null }));
 
-import Page, { metadata } from "./page";
+import Page, * as pageModule from "./page";
+
+const { metadata } = pageModule;
 
 describe("/avocats server page", () => {
-  it("passes the URL filters to the directory as props", async () => {
-    const element = await Page({
-      searchParams: Promise.resolve({ bar: "Bordeaux", saleId: ["x", "abc"], other: "ignored" }),
-    });
-    // The page is a fragment: the breadcrumb data, then the directory.
-    const directory = element.props.children.find(
-      (child: { props?: { search?: unknown } }) => child.props?.search !== undefined,
-    );
-    expect(directory.props.search).toEqual({
-      bar: "Bordeaux",
-      saleId: "abc",
-      city: undefined,
-      department: undefined,
-    });
+  it("is static: it takes no request data, so it is prerendered once for every visitor", () => {
+    // `searchParams` (a request-time API) would make the route dynamic: the filters of the URL
+    // are read in the browser by the directory instead.
+    expect(Page.length).toBe(0);
+    expect(Object.keys(pageModule).sort()).toEqual(["default", "metadata"]);
+    for (const option of ["dynamic", "revalidate", "fetchCache", "runtime"])
+      expect(pageModule).not.toHaveProperty(option);
   });
 
-  it("has an accented title without the site name", () => {
+  it("renders the breadcrumb data, then the directory, without any filter prop", () => {
+    const element = Page();
+    const directory = element.props.children.find(
+      (child: { type?: { name?: string } }) => child.type?.name === "LawyerDirectoryPage",
+    );
+    expect(directory.props).toEqual({});
+  });
+
+  it("keeps the title, the description and the canonical of the indexed page", () => {
     expect(metadata.title).toBe("Annuaire des avocats par barreau");
+    expect(metadata.description).toContain("avocat inscrit au barreau compétent");
     expect(metadata.alternates).toEqual({ canonical: "/avocats" });
   });
 });

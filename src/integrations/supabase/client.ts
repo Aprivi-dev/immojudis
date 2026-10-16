@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { publicEnv } from "@/lib/env";
+import { announceSupabaseClient, SUPABASE_AUTH_STORAGE_KEY } from "./lazy";
 import type { Database } from "./types";
 
 const isBrowser = typeof window !== "undefined";
@@ -25,10 +26,13 @@ export const supabase = createClient<Database>(
       storage: isBrowser ? window.localStorage : undefined,
       // Unique storageKey avoids collisions when multiple Supabase clients
       // (browser + SSR fallback) momentarily coexist during hydration.
-      storageKey: "encheres-immo-auth",
+      storageKey: SUPABASE_AUTH_STORAGE_KEY,
     },
     global: {
       fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
     },
   },
 );
+
+// Prévient les abonnés de `onSupabaseClient` (fournisseur d'authentification) qu'il existe.
+announceSupabaseClient(supabase);

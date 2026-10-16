@@ -1,6 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ revalidateTag: vi.fn(), revalidatePath: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  revalidateTag: vi.fn(),
+  revalidatePath: vi.fn(),
+  after: vi.fn(),
+  warmSalePages: vi.fn(),
+}));
+
+// `after()` only exists inside a request: the test keeps the callbacks and runs them by hand.
+vi.mock("next/server", async () => ({
+  ...(await vi.importActual<typeof import("next/server")>("next/server")),
+  after: mocks.after,
+}));
+vi.mock("@/lib/sale-page-warmup", () => ({ warmSalePages: mocks.warmSalePages }));
 
 vi.mock("next/cache", () => ({
   revalidateTag: mocks.revalidateTag,
@@ -12,7 +24,7 @@ vi.mock("react", async () => {
   return { ...actual, cache: <T extends (...args: never[]) => unknown>(fn: T) => fn };
 });
 
-import { POST } from "./route";
+import { maxDuration, POST } from "./route";
 
 const SECRET = "cron-secret-for-tests";
 const ID = "005a914d-563c-427b-88a4-740cbf851afb";
@@ -30,10 +42,16 @@ function request(body: unknown, authorization?: string, raw = false) {
 }
 
 describe("POST /api/pipeline/revalidate-sale", () => {
+  it("allows the warm-up run after the response enough time (24 pages x 5 s / 4 = 30 s)", () => {
+    expect(maxDuration).toBe(60);
+  });
+
   beforeEach(() => {
     vi.stubEnv("CRON_SECRET", SECRET);
     mocks.revalidateTag.mockReset();
     mocks.revalidatePath.mockReset();
+    mocks.after.mockReset();
+    mocks.warmSalePages.mockReset().mockResolvedValue({ requested: 0, warmed: 0, failed: 0 });
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -41,6 +59,7 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     const response = await POST(request({ saleId: ID }));
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ ok: false, code: "AUTH_REQUIRED" });
+    expect(mocks.after).not.toHaveBeenCalled();
     expect(mocks.revalidateTag).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
@@ -78,6 +97,24 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/sales/${OTHER_ID}`);
   });
 
+  it("schedules one warm-up of the invalidated pages after the response, without running it", async () => {
+    const response = await POST(
+      request({ saleIds: [ID, OTHER_ID, ID.toUpperCase()] }, `Bearer ${SECRET}`),
+    );
+    expect(response.status).toBe(200);
+    // Scheduled, not awaited: the response does not wait for any request to the site.
+    expect(mocks.after).toHaveBeenCalledTimes(1);
+    expect(mocks.warmSalePages).not.toHaveBeenCalled();
+
+    const [callback] = mocks.after.mock.calls[0] as [() => unknown];
+    await callback();
+
+    expect(mocks.warmSalePages).toHaveBeenCalledTimes(1);
+    expect(mocks.warmSalePages).toHaveBeenCalledWith([ID, OTHER_ID], {
+      requestId: response.headers.get("x-request-id"),
+    });
+  });
+
   it.each([
     ["an empty object", {}],
     ["a malformed identifier", { saleId: "not-a-uuid" }],
@@ -90,6 +127,7 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     expect(response.status).toBe(400);
     expect(mocks.revalidateTag).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
+    expect(mocks.after).not.toHaveBeenCalled();
   });
 
   it("rejects a body that is not JSON", async () => {

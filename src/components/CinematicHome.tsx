@@ -75,14 +75,16 @@ export function CinematicHero({ summary = null }: { summary?: HomeCatalogueSumma
           <div className={styles.facts}>
             {summary ? (
               <p>
-                <Link href="/sales">{catalogueSummaryLine(summary)}</Link>
+                <Link href="/sales" prefetch={false}>
+                  {catalogueSummaryLine(summary)}
+                </Link>
               </p>
             ) : null}
             <p>
               <Link href="/offres">{FREE_ACCESS_LINE}</Link>
             </p>
           </div>
-          <Link className={styles.exampleLink} href="/annonce-exemple">
+          <Link className={styles.exampleLink} href="/annonce-exemple" prefetch={false}>
             Voir une analyse exemple <ArrowRight size={18} aria-hidden="true" />
           </Link>
           <p className={styles.caption}>
@@ -98,6 +100,8 @@ export function CinematicHero({ summary = null }: { summary?: HomeCatalogueSumma
               src="/media/landing/dossier-apartment.webp"
               alt="Appartement lumineux avec moulures et parquet, visuel d’illustration"
               fill
+              loading="eager"
+              fetchPriority="high"
               sizes={DOSSIER_APARTMENT_SIZES}
               quality={DOSSIER_APARTMENT_QUALITY}
             />

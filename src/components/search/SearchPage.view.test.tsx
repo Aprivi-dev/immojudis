@@ -16,7 +16,7 @@ vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: null, loading: false, session: null, authError: null }),
 }));
 // next/dynamic reste réel ; seule la carte Mapbox est neutralisée.
-vi.mock("./MapPanel", () => ({ MapPanel: () => null }));
+vi.mock("./MapPanel", () => ({ MapPanel: () => <div data-testid="map-panel" /> }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/sales",
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
@@ -190,5 +190,38 @@ describe("/sales : choix Cartes / Tableau", () => {
     expect(
       screen.getByRole("group", { name: "Affichage des résultats", hidden: true }).className,
     ).toContain("lg:block");
+  });
+});
+
+describe("/sales : démarrage différé de la carte sur bureau", () => {
+  it("réserve le cadre de la carte puis l'affiche sans action de la personne", async () => {
+    renderSales("/sales");
+    // Premier affichage : la liste est là, la carte n'est pas encore initialisée. Le module de la
+    // carte (simulé) se chargerait en quelques millisecondes si rien ne le différait.
+    expect(screen.getAllByRole("article")).toHaveLength(sales.length);
+    expect(screen.getByText("Chargement de la carte")).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByTestId("map-panel")).toBeNull();
+    expect(screen.getByText("Chargement de la carte")).toBeTruthy();
+
+    expect(await screen.findByTestId("map-panel")).toBeTruthy();
+    expect(screen.queryByText("Chargement de la carte")).toBeNull();
+  });
+
+  it("démarre la carte dès le premier geste", async () => {
+    renderSales("/sales");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByTestId("map-panel")).toBeNull();
+
+    fireEvent.pointerDown(window);
+    // Bien avant le repli de 300 ms.
+    expect(await screen.findByTestId("map-panel", undefined, { timeout: 150 })).toBeTruthy();
+  });
+
+  it("n'ajoute ni carte ni cadre de carte sur mobile", async () => {
+    renderSales("/sales", false);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByTestId("map-panel")).toBeNull();
+    expect(screen.queryByText("Chargement de la carte")).toBeNull();
   });
 });

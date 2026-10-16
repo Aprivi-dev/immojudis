@@ -1,6 +1,7 @@
 import { getSales, getSalesCount, getSalesForSearch, getSaleMapPoints } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
 import { geocodeAddress } from "@/lib/geo";
+import { readPagedRows } from "@/lib/paged-read";
 import type { AuctionSale } from "@/lib/types";
 import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
 import {
@@ -19,6 +20,9 @@ import {
   dataFiltersFromSearch,
   dataSortFromSearch,
 } from "./search-filters";
+
+/** Garde-fou de la lecture complète des filtres avancés : au-delà, la recherche est trop large. */
+const MAX_COMPLETE_SEARCH_ROWS = 10_000;
 
 const inFlightPreviewSearches = new Map<string, Promise<PreviewSearchResponse>>();
 
@@ -115,28 +119,28 @@ async function fetchCompleteFilteredSearch(search: SalesSearchParams, discovery:
     const center = search.aroundAddress ? await geocodeAddress(search.aroundAddress) : null;
     if (search.aroundAddress && !center)
       throw new Error("Localisation introuvable. Précisez la ville ou l’adresse.");
-    const rows: AuctionSale[] = [];
     const batchSize = 100;
-    for (let offset = 0; offset < 10000; offset += batchSize) {
+    const dataFilters = dataFiltersFromSearch(criteria);
+    const dataSort = dataSortFromSearch(search.sort, { allowInvestmentScore: !discovery });
+    // The batches are read in parallel once the total is known (see `readPagedRows`): same rows,
+    // same order, same limit as reading them one after the other.
+    const { rows, truncated } = await readPagedRows<AuctionSale>({
+      pageSize: batchSize,
+      maxRows: MAX_COMPLETE_SEARCH_ROWS,
+      countTotal: () => getSalesCount(dataFilters, { discovery }),
       // Advanced client-side filters need fields intentionally omitted from
       // the lightweight card projection (DPE, visits, documents, evidence).
-      const batch = await getSales(
-        dataFiltersFromSearch(criteria),
-        batchSize,
-        dataSortFromSearch(search.sort, { allowInvestmentScore: !discovery }),
-        offset,
-        { discovery, completenessTier: true },
+      readPage: (offset) =>
+        getSales(dataFilters, batchSize, dataSort, offset, { discovery, completenessTier: true }),
+    });
+    if (truncated)
+      throw new Error(
+        "Cette recherche est trop large. Choisissez une région ou un département pour appliquer les filtres avancés.",
       );
-      rows.push(...batch);
-      if (batch.length < batchSize)
-        return sortClientSearchResults(
-          applyClientSearchFilters(excludeHomepageExampleSales(rows), search, center),
-          search,
-          center,
-        );
-    }
-    throw new Error(
-      "Cette recherche est trop large. Choisissez une région ou un département pour appliquer les filtres avancés.",
+    return sortClientSearchResults(
+      applyClientSearchFilters(excludeHomepageExampleSales(rows), search, center),
+      search,
+      center,
     );
   })().finally(() => completeSearches.delete(key));
   completeSearches.set(key, request);

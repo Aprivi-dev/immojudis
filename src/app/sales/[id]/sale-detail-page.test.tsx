@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SaleDetailPage } from "./sale-detail-page";
 import { EXAMPLE_SALE } from "@/lib/example-sale";
+import { markSaleViewed } from "@/hooks/use-viewed-sales";
+import { queryKeys } from "@/lib/query-keys";
 
 const mocks = vi.hoisted(() => ({
   scroll: vi.fn(),
@@ -248,10 +250,13 @@ describe("listing access resolution", () => {
     );
     expect((await screen.findByRole("alert")).textContent).toContain("droits d’accès");
     expect(screen.queryByText("Offre Découverte")).toBeNull();
-    expect(mocks.sale).not.toHaveBeenCalled();
+    // The free listing read ahead (while the rights were being checked) is not displayed, and the
+    // full listing is never read before the rights are known.
+    expect(mocks.sale).not.toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
     fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
     await waitFor(() => expect(screen.getByText("Analyse premium")).toBeTruthy());
     expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
+    expect(screen.queryByText("Offre Découverte")).toBeNull();
   });
 });
 
@@ -362,14 +367,84 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("never asks for an unlock status from an Analyse account", async () => {
-    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
+  it("never asks for an unlock status from an Analyse account whose rights are already known", async () => {
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(queryKeys.featureEntitlementsPlan("test"), {
+      plan: { hasAnalysisAccess: true },
+    });
+
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("Analyse premium");
+    expect(mocks.unlockStatus).not.toHaveBeenCalled();
+    expect(mocks.entitlements).not.toHaveBeenCalled();
+    // Only the listing of the Analyse view is read: no read-ahead of the free one.
+    expect(mocks.sale).toHaveBeenCalledTimes(1);
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: false, unlocked: false });
+  });
+
+  it("never asks for an unlock status from an Analyse account, even while its rights are read", async () => {
+    mocks.entitlements.mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ plan: { hasAnalysisAccess: true } }), 30),
+        ),
+    );
+    mocks.unlockStatus.mockResolvedValue(status(true));
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+    renderPage();
+    // The free listing is read ahead, but it is never displayed to this account.
+    await waitFor(() => expect(mocks.sale).toHaveBeenCalledWith("sale", expect.anything()));
+    expect(mocks.unlockStatus).not.toHaveBeenCalled();
+    expect(screen.queryByText("Offre Découverte")).toBeNull();
+
+    await screen.findByText("Analyse premium");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mocks.unlockStatus).not.toHaveBeenCalled();
+    expect(screen.queryByText("Offre Découverte")).toBeNull();
+    expect(screen.queryByText("Vente débloquée")).toBeNull();
+  });
+
+  it("reads the free listing while the rights are read, and the unlock status only after them", async () => {
+    let grantRights: (plan: unknown) => void = () => undefined;
+    mocks.entitlements.mockImplementation(() => new Promise((resolve) => (grantRights = resolve)));
+    mocks.unlockStatus.mockResolvedValue(status(false));
     mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
 
     renderPage();
 
-    await screen.findByText("Analyse premium");
+    // The free listing starts before the rights answer…
+    await waitFor(() => expect(mocks.sale).toHaveBeenCalledTimes(1));
+    expect(mocks.sale).toHaveBeenCalledWith("sale", { discovery: true, unlocked: false });
+    // …the unlock status does not, and nothing is displayed until the rights answer.
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(mocks.unlockStatus).not.toHaveBeenCalled();
+    expect(screen.queryByText("Offre Découverte")).toBeNull();
+
+    grantRights({ plan: { hasAnalysisAccess: false } });
+
+    await screen.findByText("Offre Découverte");
+    // The listing read ahead is reused, not read a second time.
+    expect(mocks.sale).toHaveBeenCalledTimes(1);
+    expect(mocks.unlockStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not mark a listing as viewed before the access is known", async () => {
+    mocks.entitlements.mockImplementation(() => new Promise(() => undefined));
+    mocks.unlockStatus.mockResolvedValue(status(false));
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+
+    renderPage();
+    await waitFor(() => expect(mocks.sale).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(markSaleViewed).not.toHaveBeenCalled();
   });
 
   it("switches to the unlocked view as soon as the unlock is confirmed", async () => {
