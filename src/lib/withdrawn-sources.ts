@@ -75,6 +75,61 @@ export function loadWithdrawnSources(
   return inFlight;
 }
 
+const SESSION_KEY = "immojudis:withdrawn-sources";
+const SESSION_MS = 30 * 60_000;
+
+type SessionStorageLike = Pick<Storage, "getItem" | "setItem">;
+
+function browserSessionStorage(): SessionStorageLike | null {
+  try {
+    return typeof window === "undefined" ? null : window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function readSessionWithdrawnSources(storage: SessionStorageLike, now: number): string[] | null {
+  try {
+    const parsed: unknown = JSON.parse(storage.getItem(SESSION_KEY) ?? "null");
+    if (!parsed || typeof parsed !== "object") return null;
+    const { at, names } = parsed as { at?: unknown; names?: unknown };
+    if (typeof at !== "number" || now - at < 0 || now - at >= SESSION_MS) return null;
+    if (!Array.isArray(names)) return null;
+    return names.filter((name): name is string => typeof name === "string");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Comme `loadWithdrawnSources`, mais l'interrupteur n'est lu qu'une fois par session de navigation
+ * (30 minutes, `sessionStorage`) au lieu de l'être à chaque chargement de page. Seule une lecture
+ * réussie est mémorisée : une erreur laisse l'état par défaut et sera retentée à la page suivante.
+ * Si `sessionStorage` est inaccessible, on lit comme avant.
+ */
+export async function loadWithdrawnSourcesOncePerSession(
+  client: WithdrawnSourcesClient,
+  {
+    storage = browserSessionStorage(),
+    now = Date.now(),
+  }: { storage?: SessionStorageLike | null; now?: number } = {},
+): Promise<readonly string[]> {
+  const remembered = storage ? readSessionWithdrawnSources(storage, now) : null;
+  if (remembered) {
+    setWithdrawnSources(remembered);
+    return [...withdrawn];
+  }
+  const names = await loadWithdrawnSources(client, now);
+  if (storage && loadedAt > 0 && now - loadedAt < CACHE_MS) {
+    try {
+      storage.setItem(SESSION_KEY, JSON.stringify({ at: now, names }));
+    } catch {
+      // Stockage plein ou refusé : la prochaine page relira.
+    }
+  }
+  return names;
+}
+
 /** Source retirée dont `url` est un hôte propre, sinon `null`. */
 export function withdrawnSourceOfUrl(url: unknown): string | null {
   if (typeof url !== "string" || !url.trim()) return null;

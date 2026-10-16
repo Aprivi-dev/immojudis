@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   loginPathWithRedirect,
+  linkPrefetch,
   loginReason,
   pathWithSearch,
   searchParamsToRecord,
@@ -106,5 +107,18 @@ describe("searchParamsToRecord", () => {
     expect(searchParamsToRecord(new URLSearchParams("city=Lyon&city=Nice"))).toEqual({
       city: "Nice",
     });
+  });
+});
+
+describe("linkPrefetch", () => {
+  it("désactive le préchargement des pages rendues à la demande", () => {
+    expect(linkPrefetch("/sales")).toBe(false);
+    expect(linkPrefetch("/annonce-exemple")).toBe(false);
+  });
+
+  it("laisse le comportement par défaut aux pages préfabriquées et aux fiches", () => {
+    expect(linkPrefetch("/offres")).toBeUndefined();
+    expect(linkPrefetch("/ressources")).toBeUndefined();
+    expect(linkPrefetch("/sales/abc")).toBeUndefined();
   });
 });

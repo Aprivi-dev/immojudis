@@ -1,30 +1,37 @@
 "use client";
 
-import * as DialogPrimitive from "@radix-ui/react-dialog";
-import * as PopoverPrimitive from "@radix-ui/react-popover";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode, type Ref } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
-import LogOut from "lucide-react/dist/esm/icons/log-out.js";
 import Menu from "lucide-react/dist/esm/icons/menu.js";
-import X from "lucide-react/dist/esm/icons/x.js";
-import { BrandMark } from "@/components/BrandLogo";
-import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/integrations/supabase/client";
-import { getAccountType, isAdminAccount } from "@/lib/account";
 import {
-  ACCOUNT_LINKS,
-  SITE_INFO_LINKS,
-  SITE_LEGAL_LINKS,
-  SITE_NAV_LINKS,
-  type SiteLink,
-} from "@/lib/navigation";
+  buttonBase,
+  darkGhost,
+  goldButton,
+  HeaderLogo,
+  isActive,
+  lightGhost,
+} from "@/components/site-header-shared";
+import { useAuth } from "@/hooks/use-auth";
+import { getAccountType, isAdminAccount } from "@/lib/account";
+import { ACCOUNT_LINKS, linkPrefetch, SITE_NAV_LINKS, type SiteLink } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 const AlertNotificationCenter = dynamic(() =>
   import("@/components/AlertNotificationCenter").then((module) => module.AlertNotificationCenter),
+);
+
+// Radix (Dialog, Popover) n'est chargé qu'au premier usage : appui sur le bouton du menu mobile,
+// ou affichage du menu « Mon compte » d'une personne connectée.
+const loadMobileMenu = () =>
+  import("@/components/SiteHeaderMobileMenu").then((module) => ({
+    default: module.MobileMenuDialog,
+  }));
+const MobileMenuDialog = lazy(loadMobileMenu);
+const AccountMenu = lazy(() =>
+  import("@/components/SiteHeaderAccountMenu").then((module) => ({ default: module.AccountMenu })),
 );
 
 export type SiteHeaderTheme = "dark" | "light";
@@ -42,11 +49,6 @@ type SiteHeaderProps = {
   headerRef?: Ref<HTMLElement>;
 };
 
-function isActive(pathname: string | null, href: string): boolean {
-  if (!pathname) return false;
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
 export function SiteHeader({
   theme = "light",
   placement = "fixed",
@@ -58,6 +60,9 @@ export function SiteHeader({
   const pathname = usePathname();
   const { user, profile, loading } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  // Le menu mobile (Radix Dialog) n'est monté, donc chargé, qu'après le premier appui.
+  const [menuRequested, setMenuRequested] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const dark = theme === "dark";
   const signedIn = !loading && Boolean(user);
   const admin = isAdminAccount(user, profile);
@@ -124,7 +129,9 @@ export function SiteHeader({
             {signedIn ? (
               <>
                 <AlertNotificationCenter />
-                <AccountMenu links={accountLinks} dark={dark} />
+                <Suspense fallback={<AccountMenuPlaceholder dark={dark} />}>
+                  <AccountMenu links={accountLinks} dark={dark} />
+                </Suspense>
               </>
             ) : (
               <>
@@ -140,40 +147,41 @@ export function SiteHeader({
             )}
           </div>
 
-          <DialogPrimitive.Root open={menuOpen} onOpenChange={setMenuOpen}>
-            <DialogPrimitive.Trigger asChild>
-              <button
-                type="button"
-                aria-label="Ouvrir le menu"
-                className={cn(
-                  "ml-auto inline-grid size-11 shrink-0 cursor-pointer place-items-center rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold lg:hidden",
-                  dark
-                    ? "border-white/40 bg-brand-navy/50 text-white"
-                    : "border-border bg-white text-foreground",
-                )}
-              >
-                <Menu className="size-5" aria-hidden />
-              </button>
-            </DialogPrimitive.Trigger>
-            <DialogPrimitive.Portal>
-              <DialogPrimitive.Overlay className="fixed inset-0 z-[60] bg-brand-navy/30 backdrop-blur-sm" />
-              <DialogPrimitive.Content
-                id="site-mobile-navigation"
-                aria-describedby={undefined}
-                className="fixed inset-y-0 right-0 z-[61] flex w-[min(92vw,24rem)] flex-col overflow-y-auto border-l border-border bg-white text-foreground shadow-2xl outline-none"
-              >
-                <DialogPrimitive.Title className="sr-only">
-                  Menu de navigation
-                </DialogPrimitive.Title>
-                <MobileMenu
-                  signedIn={signedIn}
-                  accountLinks={accountLinks}
-                  pathname={pathname}
-                  onNavigate={() => setMenuOpen(false)}
-                />
-              </DialogPrimitive.Content>
-            </DialogPrimitive.Portal>
-          </DialogPrimitive.Root>
+          <button
+            ref={menuButtonRef}
+            type="button"
+            aria-label="Ouvrir le menu"
+            aria-haspopup="dialog"
+            aria-expanded={menuOpen}
+            aria-controls={menuOpen ? "site-mobile-navigation" : undefined}
+            onClick={() => {
+              setMenuRequested(true);
+              setMenuOpen(true);
+            }}
+            onPointerEnter={() => void loadMobileMenu()}
+            onFocus={() => void loadMobileMenu()}
+            onTouchStart={() => void loadMobileMenu()}
+            className={cn(
+              "ml-auto inline-grid size-11 shrink-0 cursor-pointer place-items-center rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold lg:hidden",
+              dark
+                ? "border-white/40 bg-brand-navy/50 text-white"
+                : "border-border bg-white text-foreground",
+            )}
+          >
+            <Menu className="size-5" aria-hidden />
+          </button>
+          {menuRequested ? (
+            <Suspense fallback={null}>
+              <MobileMenuDialog
+                open={menuOpen}
+                onOpenChange={setMenuOpen}
+                triggerRef={menuButtonRef}
+                signedIn={signedIn}
+                accountLinks={accountLinks}
+                pathname={pathname}
+              />
+            </Suspense>
+          ) : null}
         </div>
         {belowBar}
       </header>
@@ -182,60 +190,11 @@ export function SiteHeader({
   );
 }
 
-const buttonBase =
-  "inline-flex min-h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold";
-const lightGhost =
-  "border border-border bg-white text-foreground hover:border-gold hover:bg-gold/10";
-const darkGhost = "border border-gold-light text-gold-light hover:bg-white/10";
-const goldButton = "bg-gold text-brand-navy hover:bg-gold-light";
-
-export function HeaderLogo({
-  dark = false,
-  showTagline = false,
-  onClick,
-}: {
-  dark?: boolean;
-  showTagline?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <Link
-      href="/"
-      onClick={onClick}
-      className="inline-flex shrink-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
-    >
-      {dark ? null : (
-        <span aria-hidden className="inline-flex">
-          <BrandMark variant="transparent" className="size-7" />
-        </span>
-      )}
-      <span className="flex flex-col leading-none">
-        <span
-          className={cn(
-            "font-display font-semibold tracking-tight",
-            dark ? "text-[2.5rem] font-medium text-white" : "text-2xl text-foreground",
-          )}
-        >
-          Immo<span className={dark ? "text-gold-light" : "text-gold-text"}>judis</span>
-          <span className="sr-only">, accueil</span>
-        </span>
-        {showTagline ? (
-          <span
-            aria-hidden
-            className="mt-1 hidden text-xs font-normal text-muted-foreground min-[480px]:block"
-          >
-            Les ventes immobilières en toute clarté
-          </span>
-        ) : null}
-      </span>
-    </Link>
-  );
-}
-
 function HeaderNavLink({ link, active, dark }: { link: SiteLink; active: boolean; dark: boolean }) {
   return (
     <Link
       href={link.href}
+      prefetch={linkPrefetch(link.href)}
       aria-current={active ? "page" : undefined}
       className={cn(
         "rounded-md px-3 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold",
@@ -251,186 +210,12 @@ function HeaderNavLink({ link, active, dark }: { link: SiteLink; active: boolean
   );
 }
 
-function AccountMenu({ links, dark }: { links: SiteLink[]; dark: boolean }) {
-  const [open, setOpen] = useState(false);
+/** Même bouton que « Mon compte », le temps que le menu (Radix Popover) se charge. */
+function AccountMenuPlaceholder({ dark }: { dark: boolean }) {
   return (
-    <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
-      <PopoverPrimitive.Trigger asChild>
-        <button type="button" className={cn(buttonBase, dark ? darkGhost : lightGhost)}>
-          Mon compte
-          <ChevronDown className="size-4" aria-hidden />
-        </button>
-      </PopoverPrimitive.Trigger>
-      <PopoverPrimitive.Portal>
-        <PopoverPrimitive.Content
-          align="end"
-          sideOffset={8}
-          className="z-[70] w-60 rounded-lg border border-border bg-white p-1.5 text-sm text-foreground shadow-xl outline-none"
-        >
-          <ul>
-            {links.map((link) => (
-              <li key={link.href}>
-                <Link
-                  href={link.href}
-                  onClick={() => setOpen(false)}
-                  className="block rounded-md px-3 py-2.5 font-medium hover:bg-gold/10 hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
-                >
-                  {link.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              void supabase.auth.signOut();
-            }}
-            className="mt-1 flex w-full cursor-pointer items-center gap-2 rounded-md border-t border-border px-3 py-2.5 text-left font-medium hover:bg-gold/10 hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
-          >
-            <LogOut className="size-4" aria-hidden />
-            Déconnexion
-          </button>
-        </PopoverPrimitive.Content>
-      </PopoverPrimitive.Portal>
-    </PopoverPrimitive.Root>
-  );
-}
-
-function MobileMenu({
-  signedIn,
-  accountLinks,
-  pathname,
-  onNavigate,
-}: {
-  signedIn: boolean;
-  accountLinks: SiteLink[];
-  pathname: string | null;
-  onNavigate: () => void;
-}) {
-  return (
-    <>
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <HeaderLogo onClick={onNavigate} />
-        <DialogPrimitive.Close asChild>
-          <button
-            type="button"
-            aria-label="Fermer le menu"
-            className="inline-grid size-11 cursor-pointer place-items-center rounded-md border border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
-          >
-            <X className="size-5" aria-hidden />
-          </button>
-        </DialogPrimitive.Close>
-      </div>
-
-      <nav aria-label="Navigation mobile" className="flex flex-col px-4 py-3">
-        <MobileSection
-          title="Parcourir"
-          links={SITE_NAV_LINKS}
-          pathname={pathname}
-          onNavigate={onNavigate}
-        />
-        {signedIn ? (
-          <MobileSection
-            title="Mon espace"
-            links={accountLinks}
-            pathname={pathname}
-            onNavigate={onNavigate}
-          />
-        ) : null}
-        <MobileSection
-          title="Aide"
-          links={SITE_INFO_LINKS}
-          pathname={pathname}
-          onNavigate={onNavigate}
-        />
-        <MobileSection
-          title="Informations légales"
-          links={SITE_LEGAL_LINKS}
-          pathname={pathname}
-          onNavigate={onNavigate}
-          subtle
-        />
-      </nav>
-
-      <div className="mt-auto grid gap-2 border-t border-border bg-white p-4">
-        {signedIn ? (
-          <>
-            <AlertNotificationCenter mobile />
-            <button
-              type="button"
-              onClick={() => {
-                onNavigate();
-                void supabase.auth.signOut();
-              }}
-              className={cn(buttonBase, lightGhost, "w-full")}
-            >
-              <LogOut className="size-4" aria-hidden />
-              Déconnexion
-            </button>
-          </>
-        ) : (
-          <>
-            <Link
-              href="/login"
-              onClick={onNavigate}
-              className={cn(buttonBase, lightGhost, "w-full")}
-            >
-              Connexion
-            </Link>
-            <Link
-              href="/login?mode=investor"
-              onClick={onNavigate}
-              className={cn(buttonBase, goldButton, "w-full")}
-            >
-              Créer un compte
-            </Link>
-          </>
-        )}
-      </div>
-    </>
-  );
-}
-
-function MobileSection({
-  title,
-  links,
-  pathname,
-  onNavigate,
-  subtle = false,
-}: {
-  title: string;
-  links: readonly SiteLink[];
-  pathname: string | null;
-  onNavigate: () => void;
-  subtle?: boolean;
-}) {
-  return (
-    <div className="mb-3">
-      <p className="px-1 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </p>
-      <ul>
-        {links.map((link) => {
-          const active = isActive(pathname, link.href);
-          return (
-            <li key={link.href}>
-              <Link
-                href={link.href}
-                onClick={onNavigate}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex min-h-11 items-center rounded-md px-1 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold",
-                  subtle ? "text-sm font-medium text-muted-foreground" : "text-base",
-                  active ? "text-gold-text" : "hover:text-gold-text",
-                )}
-              >
-                {link.label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+    <button type="button" aria-busy className={cn(buttonBase, dark ? darkGhost : lightGhost)}>
+      Mon compte
+      <ChevronDown className="size-4" aria-hidden />
+    </button>
   );
 }

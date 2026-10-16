@@ -1,11 +1,16 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  getSupabase,
+  hasSupabaseAuthHint,
+  onSupabaseClient,
+  type SupabaseBrowserClient,
+} from "@/integrations/supabase/lazy";
 import type { AccountProfile } from "@/lib/account";
 import { profileFromUserMetadata } from "@/lib/account";
 
 // Share only concurrent reads. Settled results are never cached across auth events.
-const pendingUsers = new Map<string, ReturnType<typeof supabase.auth.getUser>>();
+const pendingUsers = new Map<string, ReturnType<SupabaseBrowserClient["auth"]["getUser"]>>();
 const pendingProfiles = new Map<string, Promise<AccountProfile | null>>();
 
 function concurrentRead<T>(pending: Map<string, Promise<T>>, key: string, read: () => Promise<T>) {
@@ -43,6 +48,11 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
     let verification = 0;
     let verifiedUserId: string | undefined;
     let currentSession: Session | null | undefined;
+
+    // Le client n'est branché qu'une fois chargé (voir `attach`) : un visiteur anonyme n'en charge pas.
+    let supabase: SupabaseBrowserClient;
+    let attached = false;
+    let stopWatching: (() => void) | undefined;
 
     async function fetchProfile(nextUser: User): Promise<AccountProfile | null> {
       const { data, error } = await supabase
@@ -108,36 +118,61 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
       setLoading(false);
     }
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      void verifySession(s);
-    });
+    function attach(client: SupabaseBrowserClient) {
+      if (!active || attached) return;
+      attached = true;
+      supabase = client;
+      const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+        void verifySession(s);
+      });
+      stopWatching = () => sub.subscription.unsubscribe();
 
-    function readSession() {
-      const currentVerification = verification;
-      supabase.auth
-        .getSession()
-        .then(({ data }) => {
-          if (active && verification === currentVerification) void verifySession(data.session);
-        })
-        .catch(() => {
-          if (!active || verification !== currentVerification) return;
+      function readSession() {
+        const currentVerification = verification;
+        supabase.auth
+          .getSession()
+          .then(({ data }) => {
+            if (active && verification === currentVerification) void verifySession(data.session);
+          })
+          .catch(() => {
+            if (!active || verification !== currentVerification) return;
+            setAuthError(
+              "Votre session n’a pas pu être vérifiée. Reconnectez-vous pour ouvrir l’annonce.",
+            );
+            setLoading(false);
+          });
+      }
+
+      refreshRef.current = () => {
+        if (currentSession === undefined) readSession();
+        else void verifySession(currentSession);
+      };
+      readSession();
+    }
+
+    // Dès qu'un client existe (chargé ici ou par une page : connexion, catalogue…), on le surveille.
+    const stopListening = onSupabaseClient(attach);
+    if (!attached) {
+      if (hasSupabaseAuthHint()) {
+        // Session stockée ou retour d'authentification dans l'adresse : comme avant, on la retrouve.
+        getSupabase().then(attach, () => {
+          if (!active) return;
           setAuthError(
             "Votre session n’a pas pu être vérifiée. Reconnectez-vous pour ouvrir l’annonce.",
           );
           setLoading(false);
         });
+      } else {
+        // Visiteur anonyme : rien à vérifier, on n'attend pas le chargement de supabase-js.
+        setLoading(false);
+      }
     }
-
-    refreshRef.current = () => {
-      if (currentSession === undefined) readSession();
-      else void verifySession(currentSession);
-    };
-    readSession();
 
     return () => {
       active = false;
       refreshRef.current = null;
-      sub.subscription.unsubscribe();
+      stopListening();
+      stopWatching?.();
     };
   }, [enabled]);
 

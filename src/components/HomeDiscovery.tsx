@@ -123,7 +123,7 @@ export function HomeDiscovery() {
             <Link href="/ventes-immobilieres-judiciaires" className={styles.primaryLink}>
               Comprendre les enchères <ArrowRight aria-hidden="true" size={17} />
             </Link>
-            <Link href="/sales" className={styles.methodExplore}>
+            <Link href="/sales" prefetch={false} className={styles.methodExplore}>
               Explorer les ventes <ArrowRight aria-hidden="true" size={17} />
             </Link>
           </div>

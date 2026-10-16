@@ -1,9 +1,9 @@
-import { supabase } from "@/integrations/supabase/client";
+import { getSupabase } from "@/integrations/supabase/lazy";
 
 export async function authHeaders(): Promise<HeadersInit> {
   const {
     data: { session },
-  } = await supabase.auth.getSession();
+  } = await (await getSupabase()).auth.getSession();
 
   if (!session?.access_token) {
     throw new Error("Connexion requise.");

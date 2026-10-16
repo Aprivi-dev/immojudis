@@ -3,6 +3,19 @@ export const OFFERS_PATH = "/offres";
 
 export type SiteLink = { readonly href: string; readonly label: string };
 
+/**
+ * Pages rendues à la demande (elles lisent les paramètres de la requête ou la date du jour) :
+ * les liens globaux (en-tête, menu, pied de page, accueil) qui y mènent ne les préchargent pas,
+ * sinon chaque page vue déclenche autant d'appels serveur que de liens à l'écran. La page se
+ * charge au clic, comme avant.
+ */
+const DYNAMIC_PAGE_PATHS: ReadonlySet<string> = new Set(["/sales", "/annonce-exemple"]);
+
+/** Valeur de la propriété `prefetch` de `<Link>` : `false` pour une page dynamique, sinon le défaut. */
+export function linkPrefetch(href: string): false | undefined {
+  return DYNAMIC_PAGE_PATHS.has(href) ? false : undefined;
+}
+
 /** Les cinq entrées de l'en-tête, identiques sur toutes les pages. */
 export const SITE_NAV_LINKS: readonly SiteLink[] = [
   { href: "/sales", label: "Ventes" },
