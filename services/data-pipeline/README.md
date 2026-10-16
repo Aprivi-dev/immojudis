@@ -524,6 +524,27 @@ python -m src.document_backlog --max-sales 200 --budget-minutes 120 --max-passes
 persisté dans `auction_extractions` (statut `verified`) quand le cache local
 du runner est absent, au lieu de repasser ces pièces en `unknown`.
 
+### Copier la photo principale des ventes
+
+Étape séparée de la collecte (jamais dans `_finalize_sale_for_app`, aucune écriture dans
+`auction_sales`), désactivée tant que `PHOTO_MIRROR_ENABLED` ne vaut pas `true` :
+
+```bash
+PHOTO_MIRROR_ENABLED=true python -m src.photo_mirror --max-photos 400 --budget-minutes 15
+```
+
+- ventes du catalogue public dont `catalogue_thumbnail_url` n'a pas de ligne `sale_photos` (ou dont
+  la ligne est `failed`, moins de 3 essais, dernier essai de plus de 12 h), la plus proche date
+  d'abord ; plafonds `PHOTO_MIRROR_MAX_PHOTOS` (400) et `PHOTO_MIRROR_BUDGET_MINUTES` (15) ;
+- même garde anti-SSRF, même robots.txt, même délai par hôte (2 s au moins) et même User-Agent que
+  les pièces jointes ; 15 s par requête, 2 reprises sur erreur réseau, 5xx ou 429 seulement ; lecture
+  coupée à 8 Mo ; type contrôlé sur les premiers octets (jpeg, png, webp) ;
+- deux WebP sans EXIF (640 px et 1600 px, jamais agrandis) dans le bucket `sale-photos` ;
+- au début de chaque passage, les copies d'une source retirée passent en `withdrawn` et leurs
+  fichiers sont supprimés ;
+- un JSON par photo, puis un résumé final ; le mode manuel « photo_mirror_backfill » du workflow
+  rattrape le stock (60 min et 3 000 photos par défaut). Retrait : `docs/runbooks/retrait-photos.md`.
+
 ## Enrichissement LLM Replicate
 
 Le module `src/enrichment/` utilise Replicate pour rédiger la synthèse publique
