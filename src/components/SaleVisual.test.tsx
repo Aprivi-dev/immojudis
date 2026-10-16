@@ -61,15 +61,14 @@ describe("SaleVisual", () => {
 
     const satellite = screen.getByRole("img", { name: "Vue aérienne de Maison" });
     // 17 - log2(512 / 400) = 16,64 : la zone visible est celle de l'ancien 512×384.
-    expect(satellite.getAttribute("src")).toContain(",16.64/400x300?access_token=");
+    expect(satellite.getAttribute("src")).toContain(",16.64/400x300.webp?access_token=");
     expect(satellite.getAttribute("src")).not.toContain("@2x");
     const srcSet = satellite.getAttribute("srcset") ?? "";
     const [oneX, twoX] = srcSet.split(", ");
     expect(oneX).toBe(`${satellite.getAttribute("src")} 1x`);
-    expect(twoX).toContain(",16.64/400x300@2x?access_token=");
+    expect(twoX).toContain(",16.64/400x300@2x.webp?access_token=");
     expect(twoX).toMatch(/ 2x$/);
-    // Le satellite est déjà du JPEG chez Mapbox : aucun format imposé.
-    expect(srcSet).not.toContain(".webp");
+    // WebP natif Mapbox aussi pour le satellite (228 Ko en JPEG contre 180 Ko en WebP, mesuré).
   });
 
   it("sert la carte du secteur des vignettes de liste en WebP natif Mapbox", () => {

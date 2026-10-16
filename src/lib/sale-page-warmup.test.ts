@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { warmSalePages } from "./sale-page-warmup";
+import { MAX_WARMUP_PAGES, warmSalePages } from "./sale-page-warmup";
 
 const ID = "005a914d-563c-427b-88a4-740cbf851afb";
 const OTHER_ID = "11111111-2222-4333-8444-555555555555";
@@ -135,8 +135,9 @@ describe("warmSalePages", () => {
 
     const summary = await warmSalePages(ids, { env: PRODUCTION, fetchImpl, log: vi.fn() });
 
-    expect(summary.warmed).toBe(30);
-    expect(fetchImpl).toHaveBeenCalledTimes(30);
+    // A batch larger than the cap warms its first MAX_WARMUP_PAGES pages only.
+    expect(summary).toEqual({ requested: MAX_WARMUP_PAGES, warmed: MAX_WARMUP_PAGES, failed: 0 });
+    expect(fetchImpl).toHaveBeenCalledTimes(MAX_WARMUP_PAGES);
     expect(peak).toBeLessThanOrEqual(4);
   });
 });

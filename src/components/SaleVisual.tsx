@@ -21,7 +21,7 @@ type SaleVisualProps = {
   preferPhoto?: boolean;
   /**
    * Vignette de liste : les visuels Mapbox sont demandés à la densité de l'écran (srcset 1x/2x au
-   * lieu d'un @2x systématique) et, pour la carte du secteur, au format WebP.
+   * lieu d'un @2x systématique) et au format WebP.
    */
   thumbnail?: boolean;
   /**
@@ -76,6 +76,7 @@ export function SaleVisual({
         width: mapWidth,
         height: mapHeight,
         pixelRatio,
+        format: thumbnail ? MAPBOX_LIST_THUMBNAIL_FORMAT : undefined,
       }),
   );
   const sectorMapImage = mapboxImage(
