@@ -4,7 +4,14 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LawyerDirectoryProfile, LawyerDirectoryResponse } from "@/lib/lawyer-directory";
 
-const mocks = vi.hoisted(() => ({ fetchLawyerDirectory: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  fetchLawyerDirectory: vi.fn(),
+  query: "bar=Bordeaux",
+}));
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(mocks.query),
+}));
 
 vi.mock("@/lib/client-api", () => ({ fetchLawyerDirectory: mocks.fetchLawyerDirectory }));
 vi.mock("@/components/LawyerReferralButton", () => ({ LawyerReferralButton: () => null }));
@@ -38,7 +45,8 @@ function profile(overrides: Partial<LawyerDirectoryProfile>): LawyerDirectoryPro
   };
 }
 
-function renderDirectory(lawyers: LawyerDirectoryProfile[]) {
+function renderDirectory(lawyers: LawyerDirectoryProfile[], query = "bar=Bordeaux") {
+  mocks.query = query;
   const response: LawyerDirectoryResponse = {
     lawyers,
     sectorLabel: "Bordeaux",
@@ -51,12 +59,15 @@ function renderDirectory(lawyers: LawyerDirectoryProfile[]) {
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <LawyerDirectoryPage search={{ bar: "Bordeaux" }} />
+      <LawyerDirectoryPage />
     </QueryClientProvider>,
   );
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  mocks.fetchLawyerDirectory.mockReset();
+});
 
 describe("annuaire des avocats", () => {
   it("ne laisse pas entendre de spécialisation dans les titres", async () => {
@@ -122,5 +133,48 @@ describe("annuaire des avocats", () => {
         .getAllByRole("listitem")
         .map((item) => item.textContent),
     ).toEqual(["Un", "Deux", "Trois"]);
+  });
+
+  describe("filtres lus dans l'adresse, côté navigateur", () => {
+    it("remplit le formulaire et interroge l'annuaire avec les filtres de l'adresse", async () => {
+      renderDirectory([profile({ id: "a" })], "bar=Pau&saleId=abc&city=Tarbes&department=64&x=1");
+
+      await screen.findByRole("heading", { name: "Avocats de l'annuaire" });
+
+      expect(mocks.fetchLawyerDirectory).toHaveBeenCalledTimes(1);
+      expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({
+        bar: "Pau",
+        saleId: "abc",
+        city: "Tarbes",
+        department: "64",
+      });
+      expect(
+        (screen.getByPlaceholderText("Bordeaux, Paris, Lyon…") as HTMLInputElement).value,
+      ).toBe("Pau");
+      expect(document.querySelector('input[name="saleId"]')?.getAttribute("value")).toBe("abc");
+      expect(screen.getByRole("link", { name: "Retour à l'annonce" }).getAttribute("href")).toBe(
+        "/sales/abc",
+      );
+    });
+
+    it("garde la dernière valeur d'un paramètre répété, comme la page serveur d'avant", async () => {
+      renderDirectory([profile({ id: "a" })], "saleId=x&saleId=abc&bar=Lyon&bar=Paris");
+
+      await screen.findByRole("heading", { name: "Avocats de l'annuaire" });
+
+      expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({ saleId: "abc", bar: "Paris" });
+    });
+
+    it("sans filtre : annuaire non filtré, lien de retour vers les ventes, pas de vente cachée", async () => {
+      renderDirectory([profile({ id: "a" })], "");
+
+      await screen.findByRole("heading", { name: "Avocats de l'annuaire" });
+
+      expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({});
+      expect(screen.getByRole("link", { name: "Retour aux ventes" }).getAttribute("href")).toBe(
+        "/sales",
+      );
+      expect(document.querySelector('input[name="saleId"]')).toBeNull();
+    });
   });
 });
