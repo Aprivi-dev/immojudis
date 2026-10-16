@@ -11,7 +11,7 @@ function page(status = 200, cache = "MISS") {
 
 describe("warmSalePages", () => {
   it("requests each page once on the public origin, with a short time limit", async () => {
-    const fetchImpl = vi.fn(async () => page());
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => page());
     const log = vi.fn();
 
     const summary = await warmSalePages([ID, OTHER_ID, ID.toUpperCase()], {
@@ -35,7 +35,7 @@ describe("warmSalePages", () => {
   });
 
   it("uses the production domain, never the address of the deployment", async () => {
-    const fetchImpl = vi.fn(async () => page());
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => page());
     await warmSalePages([ID], {
       env: { ...PRODUCTION, VERCEL_URL: "immojudis-abc123.vercel.app" },
       fetchImpl,
@@ -48,7 +48,7 @@ describe("warmSalePages", () => {
   });
 
   it("does nothing, and says so, when no origin is configured or the origin is invalid", async () => {
-    const fetchImpl = vi.fn(async () => page());
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => page());
     const log = vi.fn();
 
     await expect(warmSalePages([ID], { env: {}, fetchImpl, log })).resolves.toMatchObject({
@@ -63,7 +63,7 @@ describe("warmSalePages", () => {
   });
 
   it("requests nothing for an empty list", async () => {
-    const fetchImpl = vi.fn(async () => page());
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => page());
     await expect(warmSalePages([], { env: PRODUCTION, fetchImpl, log: vi.fn() })).resolves.toEqual({
       requested: 0,
       warmed: 0,
@@ -92,7 +92,9 @@ describe("warmSalePages", () => {
   });
 
   it("counts a 404 as a warmed page: the sale left the catalogue and its 404 is cached", async () => {
-    const fetchImpl = vi.fn(async () => page(404, "MISS"));
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+      page(404, "MISS"),
+    );
     await expect(
       warmSalePages([ID], { env: PRODUCTION, fetchImpl, log: vi.fn() }),
     ).resolves.toMatchObject({ warmed: 1, failed: 0 });
@@ -123,7 +125,7 @@ describe("warmSalePages", () => {
     );
     let inFlight = 0;
     let peak = 0;
-    const fetchImpl = vi.fn(async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
       inFlight += 1;
       peak = Math.max(peak, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 2));

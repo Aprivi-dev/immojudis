@@ -284,7 +284,7 @@ describe("Supabase sale search query", () => {
     expect(count.calls).toContainEqual(["select", "id", { count: "exact", head: true }]);
     expect(count.calls).toContainEqual(["not", "latitude", "is", null]);
     expect(count.calls).toContainEqual(["not", "longitude", "is", null]);
-    const filters = (builder: QueryRecorder) =>
+    const filters = (builder: { calls: unknown[][] }) =>
       builder.calls.filter((call) => call[0] === "ilike" || call[0] === "not");
     const [firstPage] = client.builders.filter((builder) => !builder.isCount);
     expect(filters(count)).toEqual(filters(firstPage));
