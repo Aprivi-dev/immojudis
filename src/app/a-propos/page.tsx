@@ -10,6 +10,7 @@ import SearchCheck from "lucide-react/dist/esm/icons/search-check.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { RESOURCES_PATH } from "@/lib/navigation";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
+import { CloudBackgroundPreload } from "@/components/CloudBackgroundPreload";
 import { pageMetadata } from "@/lib/page-metadata";
 
 export const metadata: Metadata = pageMetadata({
@@ -31,6 +32,7 @@ export default function Page() {
 function PageContent() {
   return (
     <main id="contenu" className="liquid-page min-h-screen px-4 py-10 text-foreground sm:px-6">
+      <CloudBackgroundPreload />
       <div className="mx-auto max-w-6xl">
         <section className="glass-shell overflow-hidden rounded-lg p-6 sm:p-8 lg:p-10">
           <div className="grid gap-8 lg:grid-cols-[1fr_26rem] lg:items-center">
