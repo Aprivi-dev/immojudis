@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
@@ -18,7 +20,8 @@ import { LawyerReferralButton } from "@/components/LawyerReferralButton";
 import { fetchLawyerDirectory } from "@/lib/client-api";
 import { sponsoredPlacementLabel } from "@/lib/lawyer-placement-label";
 import type { LawyerDirectoryOfficialSource, LawyerDirectoryProfile } from "@/lib/lawyer-directory";
-import type { DirectorySearch } from "@/lib/lawyer-directory-search";
+import { validateDirectorySearch, type DirectorySearch } from "@/lib/lawyer-directory-search";
+import { searchParamsToRecord } from "@/lib/navigation";
 import Link from "next/link";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
@@ -33,12 +36,34 @@ const FRENCH_DATE_FORMATTER = new Intl.DateTimeFormat("fr-FR", {
   timeZone: "Europe/Paris",
 });
 
+const NO_SEARCH: DirectorySearch = {};
+
 /**
- * The filters come from the server page as props: the page reads the URL on the
- * server, so its heading and form are part of the HTML sent to crawlers instead
- * of waiting for a client-side `useSearchParams`.
+ * The page is prerendered once for every visitor (static, cached by the CDN): the heading, the
+ * explanation of the ranking and the search form are in the HTML itself. The filters of the URL
+ * (`?bar=…&saleId=…`) are read in the browser under a Suspense boundary, as on `/sales`; until
+ * they are known, the HTML shows the page as it is without any filter, and the directory request
+ * only starts once the filters are.
  */
-export function LawyerDirectoryPage({ search }: { search: DirectorySearch }) {
+export function LawyerDirectoryPage() {
+  return (
+    <Suspense fallback={<DirectoryLayout search={NO_SEARCH} results={<DirectorySkeleton />} />}>
+      <LawyerDirectoryFromUrl />
+    </Suspense>
+  );
+}
+
+function LawyerDirectoryFromUrl() {
+  const searchParams = useSearchParams();
+  const queryString = searchParams.toString();
+  const search = useMemo(
+    () => validateDirectorySearch(searchParamsToRecord(new URLSearchParams(queryString))),
+    [queryString],
+  );
+  return <LawyerDirectoryWithResults search={search} />;
+}
+
+function LawyerDirectoryWithResults({ search }: { search: DirectorySearch }) {
   const directoryQuery = useQuery({
     queryKey: queryKeys.lawyerDirectory(search.saleId, search.bar, search.city, search.department),
     queryFn: () => fetchLawyerDirectory(search),
@@ -46,6 +71,44 @@ export function LawyerDirectoryPage({ search }: { search: DirectorySearch }) {
   });
   const errorMessage = userMessage(directoryQuery.error, "Annuaire indisponible");
 
+  return (
+    <DirectoryLayout
+      search={search}
+      results={
+        directoryQuery.isLoading ? (
+          <DirectorySkeleton />
+        ) : directoryQuery.isError ? (
+          <DirectoryError message={errorMessage} />
+        ) : (
+          <DirectoryResults
+            lawyers={directoryQuery.data?.lawyers ?? []}
+            barAssociation={
+              directoryQuery.data?.barAssociation ?? search.bar ?? search.city ?? null
+            }
+            sectorLabel={
+              directoryQuery.data?.sectorLabel ??
+              search.bar ??
+              search.city ??
+              search.department ??
+              null
+            }
+            saleId={search.saleId}
+            isDemo={directoryQuery.data?.isDemo ?? false}
+            officialSource={directoryQuery.data?.officialSource ?? null}
+          />
+        )
+      }
+    />
+  );
+}
+
+function DirectoryLayout({
+  search,
+  results,
+}: {
+  search: DirectorySearch;
+  results: React.ReactNode;
+}) {
   return (
     <main id="contenu" className="min-h-screen bg-background text-brand-navy">
       <section className="border-b border-brand-navy/10 bg-white">
@@ -120,28 +183,7 @@ export function LawyerDirectoryPage({ search }: { search: DirectorySearch }) {
       </section>
 
       <section className="mx-auto max-w-[1260px] px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
-        {directoryQuery.isLoading ? (
-          <DirectorySkeleton />
-        ) : directoryQuery.isError ? (
-          <DirectoryError message={errorMessage} />
-        ) : (
-          <DirectoryResults
-            lawyers={directoryQuery.data?.lawyers ?? []}
-            barAssociation={
-              directoryQuery.data?.barAssociation ?? search.bar ?? search.city ?? null
-            }
-            sectorLabel={
-              directoryQuery.data?.sectorLabel ??
-              search.bar ??
-              search.city ??
-              search.department ??
-              null
-            }
-            saleId={search.saleId}
-            isDemo={directoryQuery.data?.isDemo ?? false}
-            officialSource={directoryQuery.data?.officialSource ?? null}
-          />
-        )}
+        {results}
       </section>
     </main>
   );

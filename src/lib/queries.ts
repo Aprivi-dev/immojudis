@@ -7,6 +7,7 @@ import { assertCloudConfigured } from "./query-configuration";
 import { sanitizeAuctionSaleForDisplay } from "./listing-data-cleanup";
 import { fetchPublicSaleSummary } from "./public-sale-summary";
 import { saleRows } from "./sale-rows";
+import { readPagedRows } from "./paged-read";
 export { createAlert, deleteAlert, getAlerts, updateAlert } from "./alert-queries";
 export type { CreateAlertPayload } from "./alert-queries";
 export { DETAIL_VIEW, SALE_LIST_COLUMNS };
@@ -535,24 +536,37 @@ export async function getSaleMapPoints(
   if (!options.client && !assertCloudConfigured()) return [];
   const db = options.client ?? supabase;
   const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
-  const points: AuctionSale[] = [];
-
-  for (let from = 0; from < MAP_POINTS_HARD_LIMIT; from += MAP_POINT_PAGE_SIZE) {
-    let q = db
-      .from(catalogView)
-      .select(SALE_MAP_POINT_COLUMNS)
-      .not("latitude", "is", null)
-      .not("longitude", "is", null)
-      .order("id", { ascending: true })
-      .range(from, from + MAP_POINT_PAGE_SIZE - 1);
-    q = applyAuthenticatedSaleFilters(q, filters);
-    const { data, error } = await q;
-    if (error) throw error;
-    const page = saleRows(data);
-    points.push(...page);
-    if (page.length < MAP_POINT_PAGE_SIZE) break;
-  }
-  return points;
+  // The pages are read in parallel once the total is known (see `readPagedRows`): same points,
+  // same order (by identifier), same limit as reading them one after the other.
+  const { rows } = await readPagedRows<AuctionSale>({
+    pageSize: MAP_POINT_PAGE_SIZE,
+    maxRows: MAP_POINTS_HARD_LIMIT,
+    countTotal: async () => {
+      let q = db
+        .from(catalogView)
+        .select("id", { count: "exact", head: true })
+        .not("latitude", "is", null)
+        .not("longitude", "is", null);
+      q = applyAuthenticatedSaleFilters(q, filters);
+      const { count, error } = await q;
+      if (error) throw error;
+      return count;
+    },
+    readPage: async (from) => {
+      let q = db
+        .from(catalogView)
+        .select(SALE_MAP_POINT_COLUMNS)
+        .not("latitude", "is", null)
+        .not("longitude", "is", null)
+        .order("id", { ascending: true })
+        .range(from, from + MAP_POINT_PAGE_SIZE - 1);
+      q = applyAuthenticatedSaleFilters(q, filters);
+      const { data, error } = await q;
+      if (error) throw error;
+      return saleRows(data);
+    },
+  });
+  return rows;
 }
 
 /**

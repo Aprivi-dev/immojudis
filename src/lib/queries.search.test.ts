@@ -249,16 +249,21 @@ describe("Supabase sale search query", () => {
   });
 
   it("charge tous les points de la carte, par pages de 1 000, avec des colonnes minimales", async () => {
-    const page = (start: number, count: number) =>
-      Array.from({ length: count }, (_, index) => ({ id: `p-${start + index}` }));
-    const client = new QueryClient([page(0, 1000), page(1000, 1000), page(2000, 250)]);
+    const client = new PointsClient(2250);
 
     const rows = await getSaleMapPoints({ city: "Bordeaux" }, { client: client as never });
 
-    expect(rows).toHaveLength(2250);
-    expect(client.builders).toHaveLength(3);
-    expect(client.builders[1].calls).toContainEqual(["range", 1000, 1999]);
-    const calls = client.builders[0].calls;
+    expect(rows.map((row) => (row as { id: string }).id)).toEqual(
+      Array.from({ length: 2250 }, (_, index) => `p-${index}`),
+    );
+    const pages = client.builders.filter((builder) => !builder.isCount);
+    expect(pages).toHaveLength(3);
+    expect(pages.map((builder) => builder.calls.find((call) => call[0] === "range"))).toEqual([
+      ["range", 0, 999],
+      ["range", 1000, 1999],
+      ["range", 2000, 2999],
+    ]);
+    const calls = pages[0].calls;
     expect(calls).toContainEqual(["not", "latitude", "is", null]);
     expect(calls).toContainEqual(["order", "id", { ascending: true }]);
     const columns = String(calls.find((call) => call[0] === "select")?.[1]).split(",");
@@ -267,6 +272,55 @@ describe("Supabase sale search query", () => {
     );
     expect(columns.length).toBeLessThanOrEqual(10);
     expect(columns).not.toContain("title");
+  });
+
+  it("compte les points avec les mêmes filtres que la lecture, sur la même vue", async () => {
+    const client = new PointsClient(1500);
+
+    await getSaleMapPoints({ city: "Bordeaux" }, { client: client as never });
+
+    const [count] = client.builders.filter((builder) => builder.isCount);
+    expect(client.builders.filter((builder) => builder.isCount)).toHaveLength(1);
+    expect(count.calls).toContainEqual(["select", "id", { count: "exact", head: true }]);
+    expect(count.calls).toContainEqual(["not", "latitude", "is", null]);
+    expect(count.calls).toContainEqual(["not", "longitude", "is", null]);
+    const filters = (builder: { calls: unknown[][] }) =>
+      builder.calls.filter((call) => call[0] === "ilike" || call[0] === "not");
+    const [firstPage] = client.builders.filter((builder) => !builder.isCount);
+    expect(filters(count)).toEqual(filters(firstPage));
+    expect(new Set(client.views).size).toBe(1);
+  });
+
+  it.each([0, 999, 1000, 1001, 5000, 10_000, 10_500])(
+    "rend les mêmes points pour %i lignes qu'une lecture en série, avec un total juste, faux ou en échec",
+    async (size) => {
+      const expected = Array.from({ length: Math.min(size, 10_000) }, (_, index) => `p-${index}`);
+      for (const count of [size, Math.max(0, size - 1500), size + 3000, "fails"] as const) {
+        const client = new PointsClient(size, count);
+        const rows = await getSaleMapPoints({}, { client: client as never });
+        expect(
+          rows.map((row) => (row as { id: string }).id),
+          `${size} / ${count}`,
+        ).toEqual(expected);
+      }
+    },
+  );
+
+  it("n'ouvre jamais plus de quatre lectures de pages à la fois", async () => {
+    const client = new PointsClient(10_000);
+
+    await getSaleMapPoints({}, { client: client as never });
+
+    expect(client.peak).toBeLessThanOrEqual(4);
+    expect(client.peak).toBeGreaterThan(1);
+  });
+
+  it("propage l'échec d'une page de la carte", async () => {
+    const client = new PointsClient(5000, 5000, { failPageAt: 2000 });
+
+    await expect(getSaleMapPoints({}, { client: client as never })).rejects.toMatchObject({
+      message: "page en échec",
+    });
   });
 
   it("keeps discovery on one request because its security barrier makes two phases slower", async () => {
@@ -299,6 +353,100 @@ class QueryClient {
     );
     this.builders.push(builder);
     return builder;
+  }
+}
+
+/** Une table de `size` points (`p-0`…), lue par pages (`range`) ou comptée (`head`). */
+class PointsClient {
+  builders: PointsQuery[] = [];
+  views: string[] = [];
+  peak = 0;
+  private inFlight = 0;
+
+  constructor(
+    private readonly size: number,
+    private readonly count: number | "fails" = size,
+    private readonly options: { failPageAt?: number } = {},
+  ) {}
+
+  from(view: string) {
+    this.views.push(view);
+    const builder = new PointsQuery(this.size, this.count, this.options, {
+      start: () => {
+        this.inFlight += 1;
+        this.peak = Math.max(this.peak, this.inFlight);
+      },
+      end: () => {
+        this.inFlight -= 1;
+      },
+    });
+    this.builders.push(builder);
+    return builder;
+  }
+}
+
+class PointsQuery {
+  calls: unknown[][] = [];
+
+  constructor(
+    private readonly size: number,
+    private readonly count: number | "fails",
+    private readonly options: { failPageAt?: number },
+    private readonly gauge: { start: () => void; end: () => void },
+  ) {}
+
+  get isCount() {
+    return this.calls.some((call) => call[0] === "select" && (call[2] as { head?: boolean })?.head);
+  }
+
+  select(...args: unknown[]) {
+    return this.record("select", ...args);
+  }
+  order(...args: unknown[]) {
+    return this.record("order", ...args);
+  }
+  range(...args: unknown[]) {
+    return this.record("range", ...args);
+  }
+  not(...args: unknown[]) {
+    return this.record("not", ...args);
+  }
+  ilike(...args: unknown[]) {
+    return this.record("ilike", ...args);
+  }
+
+  then<TResult1, TResult2 = never>(
+    onfulfilled?: ((value: unknown) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): PromiseLike<TResult1 | TResult2> {
+    return this.answer().then(onfulfilled, onrejected);
+  }
+
+  private async answer() {
+    this.gauge.start();
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      if (this.isCount) {
+        return this.count === "fails"
+          ? { data: null, count: null, error: new Error("décompte indisponible") }
+          : { data: null, count: this.count, error: null };
+      }
+      const range = this.calls.find((call) => call[0] === "range") as number[];
+      if (range[1] === this.options.failPageAt)
+        return { data: null, error: new Error("page en échec") };
+      const end = Math.min(range[2] + 1, this.size);
+      const data = Array.from({ length: Math.max(0, end - range[1]) }, (_, index) => ({
+        id: `p-${range[1] + index}`,
+      }));
+      return { data, error: null };
+    } finally {
+      this.gauge.end();
+    }
+  }
+
+  private record(method: string, ...args: unknown[]) {
+    this.calls.push([method, ...args]);
+    return this;
   }
 }
 
