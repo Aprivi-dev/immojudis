@@ -1,10 +1,11 @@
 import { revalidatePath, revalidateTag } from "next/cache";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { cronRequestAuthorized } from "@/lib/cron-auth";
 import { publicSaleCacheTag } from "@/lib/public-sale.server";
 import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
 import { resolveRequestId } from "@/lib/request-id";
+import { warmSalePages } from "@/lib/sale-page-warmup";
 
 const MAX_SALES_PER_CALL = 100;
 
@@ -22,6 +23,10 @@ const bodySchema = z.union([
  * or `{ "saleIds": ["<uuid>", ...] }` (at most 100). For every sale it expires the
  * `sale-<id>` data-cache tag and the cached page `/sales/<id>`: the next visitor triggers
  * a fresh read instead of waiting for the 5-minute revalidation.
+ *
+ * Once the response is sent (`after()`), each invalidated page is requested once on the public
+ * origin so that it is regenerated before the first visitor (often a crawler) arrives. That
+ * warm-up never delays nor fails the response (see `warmSalePages`).
  */
 export async function POST(request: Request) {
   const requestId = resolveRequestId(request.headers.get("x-request-id"));
@@ -59,6 +64,8 @@ export async function POST(request: Request) {
     revalidateTag(publicSaleCacheTag(id), { expire: 0 });
     revalidatePath(`/sales/${id}`);
   }
+  // One GET per invalidated sale, after the response: it cannot call this route back.
+  after(() => warmSalePages(ids, { requestId }));
 
   return NextResponse.json(
     { ok: true, revalidated: ids.map(publicSaleCacheTag), requestId },
