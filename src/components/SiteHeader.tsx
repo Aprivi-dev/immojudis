@@ -14,6 +14,7 @@ import {
   isActive,
   lightGhost,
 } from "@/components/site-header-shared";
+import { MobileMenuDialog } from "@/components/SiteHeaderMobileMenu";
 import { useAuth } from "@/hooks/use-auth";
 import { getAccountType, isAdminAccount } from "@/lib/account";
 import { ACCOUNT_LINKS, linkPrefetch, SITE_NAV_LINKS, type SiteLink } from "@/lib/navigation";
@@ -23,13 +24,9 @@ const AlertNotificationCenter = dynamic(() =>
   import("@/components/AlertNotificationCenter").then((module) => module.AlertNotificationCenter),
 );
 
-// Radix (Dialog, Popover) n'est chargé qu'au premier usage : appui sur le bouton du menu mobile,
-// ou affichage du menu « Mon compte » d'une personne connectée.
-const loadMobileMenu = () =>
-  import("@/components/SiteHeaderMobileMenu").then((module) => ({
-    default: module.MobileMenuDialog,
-  }));
-const MobileMenuDialog = lazy(loadMobileMenu);
+// Radix Popover (menu « Mon compte ») n'est chargé que pour une personne connectée. Radix Dialog
+// (menu mobile) reste dans le JavaScript commun : d'autres pages l'importent aussi, et un import
+// dynamique ici ferait copier le module dans chacun de leurs fichiers (mesuré : +30 Ko par copie).
 const AccountMenu = lazy(() =>
   import("@/components/SiteHeaderAccountMenu").then((module) => ({ default: module.AccountMenu })),
 );
@@ -60,8 +57,6 @@ export function SiteHeader({
   const pathname = usePathname();
   const { user, profile, loading } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
-  // Le menu mobile (Radix Dialog) n'est monté, donc chargé, qu'après le premier appui.
-  const [menuRequested, setMenuRequested] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const dark = theme === "dark";
   const signedIn = !loading && Boolean(user);
@@ -154,13 +149,7 @@ export function SiteHeader({
             aria-haspopup="dialog"
             aria-expanded={menuOpen}
             aria-controls={menuOpen ? "site-mobile-navigation" : undefined}
-            onClick={() => {
-              setMenuRequested(true);
-              setMenuOpen(true);
-            }}
-            onPointerEnter={() => void loadMobileMenu()}
-            onFocus={() => void loadMobileMenu()}
-            onTouchStart={() => void loadMobileMenu()}
+            onClick={() => setMenuOpen(true)}
             className={cn(
               "ml-auto inline-grid size-11 shrink-0 cursor-pointer place-items-center rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold lg:hidden",
               dark
@@ -170,18 +159,14 @@ export function SiteHeader({
           >
             <Menu className="size-5" aria-hidden />
           </button>
-          {menuRequested ? (
-            <Suspense fallback={null}>
-              <MobileMenuDialog
-                open={menuOpen}
-                onOpenChange={setMenuOpen}
-                triggerRef={menuButtonRef}
-                signedIn={signedIn}
-                accountLinks={accountLinks}
-                pathname={pathname}
-              />
-            </Suspense>
-          ) : null}
+          <MobileMenuDialog
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            triggerRef={menuButtonRef}
+            signedIn={signedIn}
+            accountLinks={accountLinks}
+            pathname={pathname}
+          />
         </div>
         {belowBar}
       </header>
