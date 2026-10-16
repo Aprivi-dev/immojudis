@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { parseSaleUnlockResult, parseSaleUnlockStatus } from "@/lib/sale-unlocks.server";
 import {
+  FREE_ACCESS_LINE,
   MONTHLY_SALE_UNLOCKS,
   remainingUnlocksLine,
   unlockConfirmationText,
@@ -31,6 +32,13 @@ describe("single source of the monthly quota", () => {
   it("takes the number of unlocks from PLAN_LIMITS", () => {
     expect(MONTHLY_SALE_UNLOCKS).toBe(PLAN_LIMITS.decouverte.monthlyUnlocks);
     expect(MONTHLY_SALE_UNLOCKS).toBe(3);
+  });
+
+  it("builds the free-access line from the quota, not from a typed number", () => {
+    expect(FREE_ACCESS_LINE).toBe(
+      `Gratuit, sans carte bancaire · ${PLAN_LIMITS.decouverte.monthlyUnlocks} fiches détaillées par mois`,
+    );
+    expect(FREE_ACCESS_LINE).toBe("Gratuit, sans carte bancaire · 3 fiches détaillées par mois");
   });
 
   it("matches the constant of the database migration", () => {

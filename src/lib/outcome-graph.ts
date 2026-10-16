@@ -1,4 +1,9 @@
 import { clamp } from "@/lib/guards";
+import {
+  isSignificantMarketGap,
+  MARKET_GAP_NOT_SIGNIFICANT_LABEL,
+  marketDiscountPct,
+} from "@/lib/market-gap";
 export type OutcomeGraphHorizon = "T-30" | "T-14" | "T-7" | "T-1" | "T-2h";
 
 export type OutcomeGraphConfidenceLabel = "faible" | "moyen" | "élevé";
@@ -461,15 +466,22 @@ function explanationFactors(
       direction: "neutral",
     },
   ];
-  if (isPositiveMoney(context.marketValueCents) && isPositiveMoney(context.startingPriceCents)) {
-    const discountPct = Math.round(
-      (1 - context.startingPriceCents / context.marketValueCents) * 100,
+  // Same range as the sale page (`src/lib/market-gap.ts`): outside it, no percentage is shown.
+  const discountPct = marketDiscountPct(context.marketValueCents, context.startingPriceCents);
+  if (discountPct != null) {
+    factors.push(
+      isSignificantMarketGap(discountPct)
+        ? {
+            label: "Décote de départ",
+            detail: `${Math.abs(discountPct)} % ${discountPct >= 0 ? "sous" : "au-dessus de"} la valeur de marché estimée`,
+            direction: discountPct >= 20 ? "up" : discountPct < 0 ? "down" : "neutral",
+          }
+        : {
+            label: "Décote de départ",
+            detail: `${MARKET_GAP_NOT_SIGNIFICANT_LABEL} avec la valeur de marché estimée`,
+            direction: "neutral",
+          },
     );
-    factors.push({
-      label: "Décote de départ",
-      detail: `${Math.abs(discountPct)} % ${discountPct >= 0 ? "sous" : "au-dessus de"} la valeur de marché estimée`,
-      direction: discountPct >= 20 ? "up" : discountPct < 0 ? "down" : "neutral",
-    });
   }
   if (pressure && pressure.coverage < 1) {
     factors.push({

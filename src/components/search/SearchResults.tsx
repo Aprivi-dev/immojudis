@@ -6,7 +6,6 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { getDisplaySurface } from "@/lib/surface";
 import { SaleVisual } from "@/components/SaleVisual";
 import { ListingPhoto } from "@/components/ListingPhoto";
-import { saleDisplayTitle } from "@/lib/sale-title";
 import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
@@ -32,9 +31,7 @@ import {
   fetchSaleUnlocksOverview,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
-import { saleIsTribunalVenue } from "@/lib/sale-procedure";
-import { formatDate, formatStartingPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatStartingPrice, occupancyLabel } from "@/lib/format";
 import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import type { AuctionSale } from "@/lib/types";
@@ -42,8 +39,11 @@ import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
 import type { ActiveFilterChip } from "./active-filter-chips";
 import { ErrorState, NoResultsState } from "./SearchFilters";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
+import { SearchResultsTable } from "./SearchResultsTable";
+import { cardTypeLabel, departmentLabel, listingAccessLine, listingTitle } from "./listing-text";
 import styles from "./SearchResults.module.css";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
+import { Terme } from "@/components/ceiling/Terme";
 import {
   AI_REVIEW_SURFACE_FIELD_KEYS,
   firstBlockedAiReviewField,
@@ -53,6 +53,7 @@ import {
 } from "@/lib/ai-review-guard";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
+import type { ResultsView } from "@/lib/search/results-view";
 export function SearchResultsList({
   sales,
   sponsoredPlacement,
@@ -76,6 +77,7 @@ export function SearchResultsList({
   onResetFilters,
   onShowFrance,
   hideEmptyState = false,
+  view = "cards",
 }: {
   sales: AuctionSale[];
   sponsoredPlacement?: React.ReactNode;
@@ -101,6 +103,8 @@ export function SearchResultsList({
   onShowFrance?: () => void;
   /** Page au-delà de la dernière : c'est la pagination qui l'explique, pas les critères. */
   hideEmptyState?: boolean;
+  /** « table » : un tableau des mêmes annonces (écran large) ; les cartes sinon. */
+  view?: ResultsView;
 }) {
   const { user, loading: authLoading } = useAuth();
   const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
@@ -149,45 +153,81 @@ export function SearchResultsList({
         />
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 min-[600px]:grid-cols-2">
-        {isLoading
-          ? Array.from({ length: 8 }).map((_, index) => <SearchResultsSkeleton key={index} />)
-          : sales.map((sale, index) => (
-              <Fragment key={sale.id}>
-                {index === 4 && sponsoredPlacement ? (
-                  <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
-                ) : null}
-                <ListingCard
-                  sale={sale}
-                  returnTo={returnTo}
-                  eagerImage={index < 2}
-                  locked={locked}
-                  analysisLocked={analysisLocked}
-                  active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
-                  onHover={onHover}
-                  onSelect={onSelect}
-                  comparisonSelected={comparedSaleIds.includes(sale.id)}
-                  comparisonDisabled={
-                    comparisonDisabled ||
-                    (comparedSaleIds.length >= MAX_COMPARED_SALES &&
-                      !comparedSaleIds.includes(sale.id))
-                  }
-                  onToggleComparison={onToggleComparison}
-                  aiReviewProjections={aiReviewBySaleId?.[sale.id]}
-                  aiReviewStatus={aiReviewStatus}
-                  favoriteScope={favoriteScope}
-                  initialFavorite={favoriteIds.has(sale.id)}
-                  unlocked={unlockedIds.has(sale.id)}
-                />
-              </Fragment>
-            ))}
-        {sales.length === 4 && sponsoredPlacement ? (
-          <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
-        ) : null}
-      </div>
+      {view === "table" ? (
+        <>
+          <SearchResultsTable
+            sales={sales}
+            returnTo={returnTo}
+            locked={locked}
+            analysisLocked={analysisLocked}
+            isLoading={isLoading}
+            selectedSaleId={selectedSaleId}
+            hoveredSaleId={hoveredSaleId}
+            onHover={onHover}
+            onSelect={onSelect}
+            unlockedIds={unlockedIds}
+            aiReviewBySaleId={aiReviewBySaleId}
+            aiReviewStatus={aiReviewStatus}
+            favoriteIds={favoriteIds}
+            favoriteScope={favoriteScope}
+            FavoriteButton={CompactFavoriteButton}
+          />
+          {!isLoading && sales.length >= 4 && sponsoredPlacement ? (
+            <div className="mt-4">{sponsoredPlacement}</div>
+          ) : null}
+        </>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 min-[600px]:grid-cols-2">
+          {isLoading
+            ? Array.from({ length: 8 }).map((_, index) => <SearchResultsSkeleton key={index} />)
+            : sales.map((sale, index) => (
+                <Fragment key={sale.id}>
+                  {index === 4 && sponsoredPlacement ? (
+                    <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
+                  ) : null}
+                  <ListingCard
+                    sale={sale}
+                    returnTo={returnTo}
+                    eagerImage={index < 2}
+                    locked={locked}
+                    analysisLocked={analysisLocked}
+                    active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
+                    onHover={onHover}
+                    onSelect={onSelect}
+                    comparisonSelected={comparedSaleIds.includes(sale.id)}
+                    comparisonDisabled={
+                      comparisonDisabled ||
+                      (comparedSaleIds.length >= MAX_COMPARED_SALES &&
+                        !comparedSaleIds.includes(sale.id))
+                    }
+                    onToggleComparison={onToggleComparison}
+                    aiReviewProjections={aiReviewBySaleId?.[sale.id]}
+                    aiReviewStatus={aiReviewStatus}
+                    favoriteScope={favoriteScope}
+                    initialFavorite={favoriteIds.has(sale.id)}
+                    unlocked={unlockedIds.has(sale.id)}
+                  />
+                </Fragment>
+              ))}
+          {sales.length === 4 && sponsoredPlacement ? (
+            <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
+/** Assemble les éléments présents, séparés par « · » : aucun séparateur ne reste seul. */
+function withSeparators(parts: React.ReactNode[]): React.ReactNode {
+  const kept = parts.filter((part) => part != null && part !== false && part !== "");
+  return kept.map((part, index) => (
+    <Fragment key={index}>
+      {index > 0 ? " · " : null}
+      {part}
+    </Fragment>
+  ));
+}
+
 export const ListingCard = memo(function ListingCard({
   sale,
   returnTo,
@@ -231,11 +271,6 @@ export const ListingCard = memo(function ListingCard({
   const { isViewed } = useViewedSales();
   const premiumLocked = locked || analysisLocked;
   const viewed = !locked && isViewed(sale.id);
-  const propertyTypeReview = getAiReviewFieldResult(
-    aiReviewProjections,
-    "property.property_type",
-    aiReviewStatus,
-  );
   const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
   const roomsReview = getAiReviewFieldResult(
     aiReviewProjections,
@@ -247,17 +282,12 @@ export const ListingCard = memo(function ListingCard({
     AI_REVIEW_SURFACE_FIELD_KEYS,
     aiReviewStatus,
   );
-  const guardedPropertyType = propertyTypeReview.blocked
-    ? "À confirmer"
-    : propertyTypeLabel(sale.property_type);
-  const guardedCity = cityReview.blocked ? null : sale.city;
-  const title = locked
-    ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
-    : propertyTypeReview.blocked || cityReview.blocked
-      ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
-      : saleDisplayTitle(sale);
+  const title = listingTitle(sale, { locked, aiReviewProjections, aiReviewStatus });
   // Cession de l'État en ligne sans échéance publiée : « Procédure à venir » plutôt que « Date à confirmer ».
   const stateListing = stateListingStatus(sale);
+  // Titre « Type de bien · Ville » ; sans ville, le département prend le relais sous le titre.
+  const showCity = cityReview.blocked || Boolean(sale.city?.trim());
+  const departmentLine = departmentLabel(sale.department);
   const roomSummary = roomsReview.blocked
     ? null
     : sale.rooms_count != null
@@ -311,48 +341,56 @@ export const ListingCard = memo(function ListingCard({
           <div className="min-w-0">
             <h3 className="font-display text-lg font-semibold leading-tight sm:text-xl">
               <AiReviewField
-                fieldKey="property.city"
-                projections={aiReviewProjections}
-                reviewStatus={aiReviewStatus}
-                fallback="Localisation à préciser"
-                sourceName={sale.source_name}
-                sourceUrl={sale.source_url}
-                showSourceLink={false}
-              >
-                {[sale.city, sale.department].filter(Boolean).join(" · ") ||
-                  "Localisation à préciser"}
-              </AiReviewField>
-            </h3>
-            <p className="mt-1 text-sm leading-5 text-ink-soft">
-              <AiReviewField
                 fieldKey="property.property_type"
                 projections={aiReviewProjections}
                 reviewStatus={aiReviewStatus}
+                fallback="Type de bien à confirmer"
                 sourceName={sale.source_name}
                 sourceUrl={sale.source_url}
                 showSourceLink={false}
               >
-                {propertyTypeLabel(sale.property_type)}
-              </AiReviewField>{" "}
-              ·{" "}
-              {surfaceReviewField ? (
-                <AiReviewField
-                  fieldKey={surfaceReviewField}
-                  projections={aiReviewProjections}
-                  reviewStatus={aiReviewStatus}
-                  fallback="Surface à confirmer"
-                  sourceName={sale.source_name}
-                  sourceUrl={sale.source_url}
-                  showSourceLink={false}
-                >
-                  {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
-                </AiReviewField>
-              ) : displaySurface.value != null ? (
-                displaySurface.label
-              ) : (
-                "Surface n.c."
-              )}
-              {roomSummary ? ` · ${roomSummary}` : ""}
+                {cardTypeLabel(sale.property_type)}
+              </AiReviewField>
+              {showCity ? (
+                <>
+                  {" · "}
+                  <AiReviewField
+                    fieldKey="property.city"
+                    projections={aiReviewProjections}
+                    reviewStatus={aiReviewStatus}
+                    fallback="Localisation à préciser"
+                    sourceName={sale.source_name}
+                    sourceUrl={sale.source_url}
+                    showSourceLink={false}
+                  >
+                    {sale.city}
+                  </AiReviewField>
+                </>
+              ) : null}
+            </h3>
+            <p className="mt-1 text-sm leading-5 text-ink-soft">
+              {withSeparators([
+                !showCity && !departmentLine ? "Localisation à préciser" : null,
+                departmentLine,
+                surfaceReviewField ? (
+                  <AiReviewField
+                    fieldKey={surfaceReviewField}
+                    projections={aiReviewProjections}
+                    reviewStatus={aiReviewStatus}
+                    fallback="Surface à confirmer"
+                    sourceName={sale.source_name}
+                    sourceUrl={sale.source_url}
+                    showSourceLink={false}
+                  >
+                    {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
+                  </AiReviewField>
+                ) : displaySurface.value != null ? (
+                  displaySurface.label
+                ) : (
+                  "Surface n.c."
+                ),
+                roomSummary,
+              ])}
             </p>
           </div>
           <CompactFavoriteButton
@@ -378,7 +416,11 @@ export const ListingCard = memo(function ListingCard({
             {formatStartingPrice(sale.starting_price_eur)}
           </AiReviewField>
         </p>
-        <p className="text-xs text-ink-soft">Mise à prix</p>
+        <p className="text-[13px] font-medium leading-5 text-ink-soft sm:text-sm">
+          <Terme terme="mise-a-prix" placement="top">
+            Mise à prix
+          </Terme>
+        </p>
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-soft">
           <span className="inline-flex items-center gap-1">
             <CalendarDays className="h-3.5 w-3.5" />
@@ -412,13 +454,8 @@ export const ListingCard = memo(function ListingCard({
           )}
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-surface-tint pt-3">
-          <span className="text-xs text-ink-soft">
-            {locked
-              ? "Fiche complète avec un compte gratuit"
-              : analysisLocked && !unlocked && saleIsTribunalVenue(sale)
-                ? // The unlock is offered for the sales held at a court only.
-                  `${MONTHLY_SALE_UNLOCKS} ventes à débloquer par mois, gratuit`
-                : "Voir le détail"}
+          <span className="text-sm text-ink-soft">
+            {listingAccessLine(sale, { locked, analysisLocked, unlocked })}
           </span>
           <div className="flex items-center">
             <ShareButton sale={sale} title={title} />

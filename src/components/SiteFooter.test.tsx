@@ -32,6 +32,17 @@ it("renvoie, depuis toutes les pages, vers l'explication du classement des annon
   );
 });
 
+it("renvoie vers l'index des ventes par département, et non vers chaque département", () => {
+  render(<SiteFooter />);
+  const main = within(screen.getByRole("navigation", { name: "Navigation pied de page" }));
+  expect(main.getByRole("link", { name: "Par département" }).getAttribute("href")).toBe(
+    "/ventes-encheres-immobilieres",
+  );
+  expect(main.getAllByRole("link").map((link) => link.getAttribute("href"))).not.toContain(
+    "/ventes-encheres-immobilieres/gironde",
+  );
+});
+
 it("stays out of the admin console", () => {
   expect(showsSiteFooter("/admin")).toBe(false);
   expect(showsSiteFooter("/admin/operations")).toBe(false);

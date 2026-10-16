@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import { SaleUnlockOfferProvider } from "./UnlockCallToAction";
@@ -74,6 +74,62 @@ describe("DiscoveryDecisionPanel", () => {
     expect(await screen.findByText(/80\s000\s€\s–\s100\s000\s€/)).toBeTruthy();
     expect(mocks.fetchValuePreview).toHaveBeenCalledWith(sale.id);
     expect(screen.queryByRole("link", { name: /Créez un compte gratuit/ })).toBeNull();
+  });
+
+  it("states the gap in % when it is significant", async () => {
+    mocks.auth = { user: { id: "user-1" }, loading: false };
+    mocks.fetchValuePreview.mockResolvedValue({
+      available: true,
+      lowEur: 80_000,
+      highEur: 100_000,
+      discountPct: 40,
+      discountNotSignificant: false,
+      startingPricePerM2: null,
+    });
+    renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
+
+    expect(
+      await screen.findByText(/La mise à prix est environ 40 % sous la valeur estimée du bien\./),
+    ).toBeTruthy();
+  });
+
+  it("never shows a percentage for an implausible gap of 85 %, only the price per m²", async () => {
+    mocks.auth = { user: { id: "user-1" }, loading: false };
+    mocks.fetchValuePreview.mockResolvedValue({
+      available: true,
+      lowEur: 270_000,
+      highEur: 330_000,
+      // The API sends no percentage for an implausible gap (see `buildValuePreview`).
+      discountPct: null,
+      discountNotSignificant: true,
+      startingPricePerM2: 750,
+    });
+    renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
+
+    const status = await screen.findByRole("status");
+    const text = (status.textContent ?? "").replace(/\s/g, " ");
+    expect(text).toContain("Écart non significatif : mise à prix de");
+    expect(text).toContain("750");
+    expect(text).toContain("m²");
+    expect(text).not.toMatch(/\d+ %/);
+    expect(text).not.toContain("sous la valeur estimée");
+    expect(text).toContain("c’est le calcul de l’enchère plafond");
+  });
+
+  it("shows no sentence when the preview carries no gap at all", async () => {
+    mocks.auth = { user: { id: "user-1" }, loading: false };
+    mocks.fetchValuePreview.mockResolvedValue({
+      available: true,
+      lowEur: 80_000,
+      highEur: 100_000,
+      discountPct: null,
+      discountNotSignificant: false,
+      startingPricePerM2: null,
+    });
+    renderWithQuery(<DiscoveryDecisionPanel sale={sale} />);
+
+    await screen.findByText(/80\s000\s€\s–\s100\s000\s€/);
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("keeps « Pas encore d’estimation » for an account without estimate", async () => {
@@ -210,6 +266,54 @@ describe("AnalysisDecisionPanel", () => {
     );
 
     expect(screen.getByText("À confirmer")).toBeTruthy();
+  });
+
+  it("says the ceiling is before works until a works budget is entered", () => {
+    const { container } = renderWithQuery(<AnalysisDecisionPanel {...base} worksBudget={null} />);
+
+    expect(
+      screen.getByText("Plafond hors travaux : ajoutez votre budget travaux pour l’affiner"),
+    ).toBeTruthy();
+    expect(container.textContent).not.toContain("Travaux inclus");
+    expect(container.textContent).not.toContain("à chiffrer");
+  });
+
+  it("names the works budget the ceiling is computed after", () => {
+    renderWithQuery(<AnalysisDecisionPanel {...base} worksBudget={34_080} />);
+
+    expect(screen.getByText(/^Plafond après 34\s080\s€ de travaux$/)).toBeTruthy();
+  });
+
+  it("keeps « aucun (bien repris en l’état) » for a zero works budget", () => {
+    renderWithQuery(<AnalysisDecisionPanel {...base} worksBudget={0} />);
+
+    expect(screen.getByText("Travaux inclus : aucun (bien repris en l’état)")).toBeTruthy();
+  });
+
+  it("keeps « Chiffrer les travaux » as the action of the panel", () => {
+    const onEditWorks = vi.fn();
+    renderWithQuery(
+      <AnalysisDecisionPanel {...base} worksBudget={null} onEditWorks={onEditWorks} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Chiffrer les travaux" }));
+    expect(onEditWorks).toHaveBeenCalledOnce();
+  });
+
+  it("explains « Mise à prix » and « Enchère plafond » with a definition bubble", () => {
+    renderWithQuery(<AnalysisDecisionPanel {...base} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Définition : mise à prix" }));
+    expect(screen.getByRole("note").textContent).toContain("Prix de départ de la vente");
+    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
+      "/ventes-immobilieres-judiciaires#lexique-mise-a-prix",
+    );
+    const ceiling = screen.getByRole("button", { name: "Définition : enchère plafond" });
+    fireEvent.pointerDown(ceiling); // a real press first closes the other bubble
+    fireEvent.click(ceiling);
+    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
+      "/ventes-immobilieres-judiciaires#lexique-enchere-plafond",
+    );
   });
 });
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PLAN_LIMITS } from "@/lib/plans";
 
@@ -240,6 +240,21 @@ describe("page Offres", () => {
       name: /Rapport PDF du scénario/,
     }).parentElement!;
     expect(pdf.textContent).toContain("Non inclus");
+  });
+
+  it("définit l'enchère plafond là où elle est présentée, vers le lexique du guide", () => {
+    render(<OffersPage />);
+
+    // Une bulle près du titre du bénéfice, une dans le comparatif.
+    const hints = screen.getAllByRole("button", { name: "Définition : enchère plafond" });
+    expect(hints).toHaveLength(2);
+    // Le titre garde son nom accessible : la bulle est à côté, pas dedans.
+    expect(screen.getByRole("heading", { name: "Une enchère plafond chiffrée" })).toBeTruthy();
+
+    fireEvent.click(hints[0]);
+    expect(screen.getByRole("link", { name: "En savoir plus" }).getAttribute("href")).toBe(
+      "/ventes-immobilieres-judiciaires#lexique-enchere-plafond",
+    );
   });
 
   it("explique la formule de l'enchère plafond aux lecteurs d'écran", () => {

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CsvExportButton,
   HomeTypeFilter,
   ResultsSummary,
+  ResultsViewToggle,
   SaveSearchButton,
   SearchHeader,
   SortByDateShortcut,
@@ -221,5 +222,42 @@ describe("CsvExportButton", () => {
     render(<CsvExportButton exporting={false} locked onClick={onClick} />);
     fireEvent.click(screen.getByRole("button", { name: "Exporter en CSV" }));
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ResultsViewToggle", () => {
+  it("propose Cartes et Tableau dans un groupe nommé, avec l'affichage courant enfoncé", () => {
+    render(<ResultsViewToggle view="cards" onChange={() => undefined} />);
+    const group = screen.getByRole("group", { name: "Affichage des résultats" });
+    const cards = within(group).getByRole("button", { name: "Cartes" });
+    const table = within(group).getByRole("button", { name: "Tableau" });
+    expect(cards.getAttribute("aria-pressed")).toBe("true");
+    expect(table.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("enfonce Tableau quand c'est l'affichage courant", () => {
+    render(<ResultsViewToggle view="table" onChange={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Tableau" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Cartes" }).getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+  });
+
+  it("transmet l'affichage choisi", () => {
+    const onChange = vi.fn();
+    render(<ResultsViewToggle view="cards" onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tableau" }));
+    expect(onChange).toHaveBeenLastCalledWith("table");
+    fireEvent.click(screen.getByRole("button", { name: "Cartes" }));
+    expect(onChange).toHaveBeenLastCalledWith("cards");
+  });
+
+  it("n'apparaît qu'à partir de lg : masqué en dessous par le CSS", () => {
+    render(<ResultsViewToggle view="cards" onChange={() => undefined} />);
+    const group = screen.getByRole("group", { name: "Affichage des résultats", hidden: true });
+    expect(group.className).toContain("hidden");
+    expect(group.className).toContain("lg:block");
   });
 });
