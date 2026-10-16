@@ -112,3 +112,30 @@ Priorité : Critique / Important / Suggestion. Effort : S < 1 h, M < 1 jour, L >
 
 Rapports bruts (scratchpad de session, non versionnés) : Lighthouse, temps de réponse,
 journal du build et des budgets.
+
+## Exécution
+
+Validé par le propriétaire le 15/10/2026 (« Je valide tout »). Livré par la PR #269, fusionnée le
+16/10/2026 sur son accord (proposition P2 du compte-rendu du 16/10 sur les photos).
+
+| N°  | État                                                                                                  |
+| --- | ----------------------------------------------------------------------------------------------------- |
+| V1  | Fait : vignettes 400×300 avec `srcset` 1x/2x, `content-visibility: auto`                              |
+| V1b | Fait autrement : WebP natif servi par Mapbox (pas de passage par `next/image`)                        |
+| V2  | Fait : carte bureau démarrée après la liste                                                           |
+| V3  | Fait                                                                                                  |
+| V4  | Fait : `www.vench.fr/vignettes/*.jpg` par `/_next/image`                                              |
+| V5  | Non fait : `experimental.sri` ne couvre pas les scripts inline par page                               |
+| V6  | Fait : préchargement dans les `page.tsx`                                                              |
+| V7  | Fait : `supabase-js` à la demande, Analytics après inactivité ; Sonner et Dialog gardés dans le socle |
+| V8  | Fait : appels de la fiche en parallèle, lecture par pages avec concurrence 4                          |
+| V9  | Fait                                                                                                  |
+| V10 | Fait                                                                                                  |
+| V11 | Fait : au plus 24 fiches réchauffées par appel                                                        |
+| V12 | Analyse seule : environ 70 Ko de CSS inutilisé à traiter à part                                       |
+| V13 | Fait : polices WOFF2 versionnées dans `src/fonts/`                                                    |
+| V14 | Fait                                                                                                  |
+
+Remesure locale (A/B, base fictive) : JS des pages publiques −20 à −30 %, TBT environ divisé par 2,
+images de `/sales` −72 %. Ajout après remesure : `/offres` ne charge plus `supabase-js` pour un
+visiteur anonyme.

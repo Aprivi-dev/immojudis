@@ -91,3 +91,14 @@ page : elles ralentissent le défilement, pas le premier affichage.
   un correctif mesuré.
 - Les citations des conditions d'utilisation des sources viennent d'un outil de résumé : à relire
   sur les pages avant tout courrier.
+
+## Décision du propriétaire (16/10/2026)
+
+« ok pour P1/P2/P3/P5 et du coup testons d'heberger les images ».
+
+- P1 : en cours.
+- P2 : PR #269 fusionnée.
+- P3 : optimiseur conservé pour notaires.fr, Avoventes et Vench (« Garder les trois »).
+- P5 : en cours.
+- P4 écartée : test d'hébergement de la **photo principale de chaque vente, pour toutes les
+  sources** téléchargeables, désactivable par interrupteur (pipeline et site).
