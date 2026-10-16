@@ -9,6 +9,13 @@ vi.mock("@/integrations/supabase/client", () => ({
   supabase: { auth: { getSession: mocks.getSession } },
 }));
 
+// Ces tests portent sur les appels authentifiés : on simule une session stockée, sinon
+// `authHeaders` répond « Connexion requise. » sans même lire la session.
+vi.mock("@/integrations/supabase/lazy", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/integrations/supabase/lazy")>()),
+  hasSupabaseAuthHint: () => true,
+}));
+
 import {
   fetchAccessPlan,
   fetchBillingOffer,
