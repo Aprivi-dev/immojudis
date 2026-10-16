@@ -2,7 +2,11 @@ import { getSales, getSalesCount, getSalesForSearch, getSaleMapPoints } from "@/
 import { supabase } from "@/integrations/supabase/client";
 import { geocodeAddress } from "@/lib/geo";
 import { readPagedRows } from "@/lib/paged-read";
-import { withPhotoMirrors, type PhotoMirrorClient } from "@/lib/photo-mirror";
+import {
+  PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
+  withPhotoMirrors,
+  type PhotoMirrorClient,
+} from "@/lib/photo-mirror";
 import type { AuctionSale } from "@/lib/types";
 import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
 import {
@@ -42,6 +46,7 @@ export async function fetchSearchResults(options: {
   return withPhotoMirrors(
     await loadSearchResults(options),
     supabase as unknown as PhotoMirrorClient,
+    { timeoutMs: PHOTO_MIRROR_BROWSER_TIMEOUT_MS, remember: true },
   );
 }
 

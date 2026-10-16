@@ -1,7 +1,10 @@
 import type { PhotoCredit as PhotoCreditData } from "@/lib/photo-credit";
 import { cn } from "@/lib/utils";
 
-/** « Photo : via [source] », avec un lien vers l'annonce d'origine quand on l'a. */
+/**
+ * « Photo : via [source] », avec un lien vers l'annonce d'origine quand on l'a. Source inconnue :
+ * « Photo : source de l'annonce », sans lien.
+ */
 export function PhotoCredit({
   credit,
   className,
@@ -12,6 +15,13 @@ export function PhotoCredit({
   linkClassName?: string;
 }) {
   if (!credit) return null;
+  if (!credit.label) {
+    return (
+      <span data-testid="photo-credit" className={className}>
+        Photo : source de l&apos;annonce
+      </span>
+    );
+  }
   return (
     <span data-testid="photo-credit" className={className}>
       Photo : via{" "}

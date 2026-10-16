@@ -19,6 +19,7 @@ vi.mock("@/lib/queries", () => ({
   getSaleMapPoints,
 }));
 
+import { forgetRememberedPhotoMirrors } from "@/lib/photo-mirror";
 import { fetchSearchCount, fetchSearchMapResults, fetchSearchResults } from "./search-service";
 
 describe("public preview search service", () => {
@@ -120,7 +121,45 @@ describe("public preview search service", () => {
       vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
       vi.spyOn(console, "warn").mockImplementation(() => undefined);
     });
-    afterEach(() => vi.unstubAllEnvs());
+    afterEach(() => {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      forgetRememberedPhotoMirrors();
+    });
+
+    it("recherche connectée : cherche la photo que la carte affichera, pas media[0]", async () => {
+      mockRpc({ data: [mirrorRow], error: null });
+      getSalesForSearch.mockResolvedValue([
+        {
+          id: "full",
+          media: [
+            { type: "image", url: "https://www.licitor.com/images/logo.png" },
+            { type: "image", url: PHOTO },
+          ],
+        },
+      ]);
+
+      const [sale] = await fetchSearchResults({ search: {}, preview: false });
+
+      expect(mirrorCalls()[0]![1]).toEqual({ p_source_urls: [PHOTO] });
+      expect(sale!.media![1]!.mirror?.path640).toBe("s/abc-640.webp");
+      expect(sale!.media![0]).not.toHaveProperty("mirror");
+    });
+
+    it("un rafraîchissement sans copie ne retire pas la copie déjà connue", async () => {
+      vi.stubGlobal("window", {});
+      mockRpc({ data: [mirrorRow], error: null });
+      await fetchSearchResults({ search: {}, preview: true });
+
+      mockRpc({ data: null, error: { message: "délai dépassé" } });
+      const refreshed = await fetchSearchResults({ search: {}, preview: true });
+
+      expect(refreshed[0]!.media![0]).toMatchObject({
+        url: PHOTO,
+        mirror: { path640: "s/abc-640.webp" },
+      });
+      expect(refreshed[1]!.media![0]).toEqual({ type: "image", url: PHOTO_B });
+    });
 
     it("recherche publique : un seul appel pour la page, après la lecture des ventes", async () => {
       mockRpc({ data: [mirrorRow], error: null });
