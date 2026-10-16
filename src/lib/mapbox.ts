@@ -10,10 +10,10 @@ export const MAPBOX_COPYRIGHT_URL = "https://www.mapbox.com/about/maps/";
 export type MapboxStaticImageFormat = "png" | "jpeg" | "webp";
 
 /**
- * Format demandé à Mapbox pour les vignettes de liste dont le style est vectoriel (carte du
- * secteur) : l'API Static Images le sert nativement (suffixe ".webp"), bien plus léger que le PNG
- * implicite. Les styles uniquement raster (satellite) renvoient déjà du JPEG. Mettre `undefined`
- * pour revenir au format implicite de Mapbox.
+ * Format demandé à Mapbox pour les vignettes de liste : l'API Static Images le sert nativement
+ * (suffixe ".webp"). Mesuré le 16/10/2026 sur une vignette 512×384 @2x : carte du secteur
+ * 137 Ko en PNG contre 43 Ko en WebP, satellite 228 Ko en JPEG contre 180 Ko en WebP. Mettre
+ * `undefined` pour revenir au format implicite de Mapbox.
  */
 export const MAPBOX_LIST_THUMBNAIL_FORMAT: MapboxStaticImageFormat | undefined = "webp";
 

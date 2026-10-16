@@ -4,6 +4,12 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 export const WARMUP_TIMEOUT_MS = 5_000;
 /** Pages requested at the same time, so that a batch of 100 sales does not hit the site at once. */
 export const WARMUP_CONCURRENCY = 4;
+/**
+ * Pages warmed per call at most: the warm-up runs in `after()`, inside the function's time
+ * budget. 24 pages at 4 at a time and 5 s each stay under 30 s in the worst case; the other
+ * pages of a larger batch are rendered by their first visitor, as before.
+ */
+export const MAX_WARMUP_PAGES = 24;
 
 export type SalePageWarmupSummary = {
   requested: number;
@@ -38,7 +44,7 @@ export async function warmSalePages(
   options: WarmupOptions = {},
 ): Promise<SalePageWarmupSummary> {
   const log = options.log ?? defaultLog;
-  const ids = [...new Set(saleIds.map((id) => id.toLowerCase()))];
+  const ids = [...new Set(saleIds.map((id) => id.toLowerCase()))].slice(0, MAX_WARMUP_PAGES);
   const summary: SalePageWarmupSummary = { requested: ids.length, warmed: 0, failed: 0 };
   if (ids.length === 0) return summary;
 
