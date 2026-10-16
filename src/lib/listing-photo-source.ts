@@ -15,6 +15,14 @@ export const listingPhotoRemotePatterns = [
     pathname: "/inotr/media/**",
     search: "",
   },
+  {
+    // Vignettes publiques des annonces vench.fr (« /vignettes/v74451.jpg ») : rien d'autre du site.
+    protocol: "https" as const,
+    hostname: "www.vench.fr",
+    port: "",
+    pathname: "/vignettes/*.jpg",
+    search: "",
+  },
 ];
 
 export function canOptimizeListingPhoto(source: string): boolean {
@@ -35,6 +43,10 @@ export function canOptimizeListingPhoto(source: string): boolean {
       return /^\/public\/uploads\/cabinet\/\d+\/images\/[^/]+\.(?:png|jpe?g|webp|avif)$/i.test(
         url.pathname,
       );
+    }
+
+    if (url.hostname === "www.vench.fr") {
+      return /^\/vignettes\/[^/]+\.jpg$/.test(url.pathname);
     }
 
     return (

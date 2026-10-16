@@ -48,8 +48,29 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: testState.push, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
 vi.mock("@/components/SaleVisual", () => ({
-  SaleVisual: ({ locked, title }: { locked: boolean; title: string }) => (
-    <div>{locked ? "Visuel réservé" : `Visuel : ${title}`}</div>
+  SaleVisual: ({
+    locked,
+    title,
+    thumbnail,
+    mapWidth,
+    mapHeight,
+    mapFramingWidth,
+  }: {
+    locked: boolean;
+    title: string;
+    thumbnail?: boolean;
+    mapWidth?: number;
+    mapHeight?: number;
+    mapFramingWidth?: number;
+  }) => (
+    <div
+      data-testid="sale-visual"
+      data-thumbnail={String(Boolean(thumbnail))}
+      data-map-size={`${mapWidth}x${mapHeight}`}
+      data-map-framing={mapFramingWidth}
+    >
+      {locked ? "Visuel réservé" : `Visuel : ${title}`}
+    </div>
   ),
 }));
 afterEach(() => {
@@ -587,6 +608,37 @@ describe("listing media gallery", () => {
     expect(screen.getByTestId("sale-media-fallback-sale-no-photo")).toBeTruthy();
     expect(screen.getByText("Visuel : Appartement à Bordeaux")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Photo suivante" })).toBeNull();
+  });
+
+  it("asks SaleVisual for a light 400×300 map thumbnail framed like the former 512×384", () => {
+    render(
+      <ListingMediaCarousel
+        sale={{ ...mediaSale, id: "sale-no-photo", media: [] } as unknown as AuctionSale}
+        locked={false}
+        title="Appartement à Bordeaux"
+      />,
+    );
+
+    const visual = screen.getByTestId("sale-visual");
+    expect(visual.getAttribute("data-thumbnail")).toBe("true");
+    expect(visual.getAttribute("data-map-size")).toBe("400x300");
+    expect(visual.getAttribute("data-map-framing")).toBe("512");
+  });
+});
+
+describe("result cards off screen", () => {
+  it("skips the rendering of cards off screen but keeps the id the map scrolls to", () => {
+    renderResults([sale("sale-a"), sale("sale-b")]);
+
+    const cards = screen.getAllByRole("article");
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card.className).toContain("[content-visibility:auto]");
+      expect(card.className).toContain("[contain-intrinsic-size:none_auto_28rem]");
+    }
+    expect(document.getElementById("sale-card-sale-a")).toBeTruthy();
+    expect(cards[0].contains(document.getElementById("sale-card-sale-a"))).toBe(true);
+    expect(cards[1].contains(document.getElementById("sale-card-sale-b"))).toBe(true);
   });
 });
 

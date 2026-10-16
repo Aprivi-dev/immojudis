@@ -3,7 +3,11 @@ import ImageOff from "lucide-react/dist/esm/icons/image-off.js";
 import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import type { AuctionSale } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { mapboxSatelliteImageUrl, mapboxStaticImageUrl } from "@/lib/mapbox";
+import {
+  MAPBOX_LIST_THUMBNAIL_FORMAT,
+  mapboxSatelliteImageUrl,
+  mapboxStaticImageUrl,
+} from "@/lib/mapbox";
 import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 
 type SaleVisualProps = {
@@ -15,11 +19,22 @@ type SaleVisualProps = {
   mapWidth?: number;
   mapHeight?: number;
   preferPhoto?: boolean;
+  /**
+   * Vignette de liste : les visuels Mapbox sont demandés à la densité de l'écran (srcset 1x/2x au
+   * lieu d'un @2x systématique) et, pour la carte du secteur, au format WebP.
+   */
+  thumbnail?: boolean;
+  /**
+   * Largeur de cadrage de référence (en pixels) du visuel Mapbox. Si elle diffère de `mapWidth`,
+   * le zoom est ajusté pour que la zone affichée reste la même (même cadrage, moins de pixels).
+   */
+  mapFramingWidth?: number;
 };
 
 type VisualCandidate = {
   kind: "map" | "photo" | "satellite";
   url: string;
+  srcSet?: string;
   label: string;
 };
 
@@ -39,30 +54,44 @@ export function SaleVisual({
   mapWidth = 896,
   mapHeight = 672,
   preferPhoto = false,
+  thumbnail = false,
+  mapFramingWidth,
 }: SaleVisualProps) {
   const photos = locked ? [] : propertyImages(sale.media);
   const hasCoordinates = sale.latitude != null && sale.longitude != null;
   const hasPreciseAddress = Boolean(sale.address?.trim());
-  const satelliteUrl =
-    !locked && hasCoordinates && hasPreciseAddress
-      ? mapboxSatelliteImageUrl({
-          lat: sale.latitude as number,
-          lng: sale.longitude as number,
-          zoom: 17,
-          width: mapWidth,
-          height: mapHeight,
-        })
-      : "";
-  const sectorMapUrl =
-    !locked && hasCoordinates && !hasPreciseAddress
-      ? mapboxStaticImageUrl({
-          lat: sale.latitude as number,
-          lng: sale.longitude as number,
-          zoom: 12,
-          width: mapWidth,
-          height: mapHeight,
-        })
-      : "";
+  // Image plus étroite que la référence : on recule d'autant de niveaux de zoom pour garder la
+  // même zone visible (Mapbox arrondit le zoom au centième).
+  const zoomOffset =
+    mapFramingWidth && mapFramingWidth !== mapWidth ? Math.log2(mapWidth / mapFramingWidth) : 0;
+  const framedZoom = (zoom: number) => Math.round((zoom + zoomOffset) * 100) / 100;
+  const satelliteImage = mapboxImage(
+    !locked && hasCoordinates && hasPreciseAddress,
+    thumbnail,
+    (pixelRatio) =>
+      mapboxSatelliteImageUrl({
+        lat: sale.latitude as number,
+        lng: sale.longitude as number,
+        zoom: framedZoom(17),
+        width: mapWidth,
+        height: mapHeight,
+        pixelRatio,
+      }),
+  );
+  const sectorMapImage = mapboxImage(
+    !locked && hasCoordinates && !hasPreciseAddress,
+    thumbnail,
+    (pixelRatio) =>
+      mapboxStaticImageUrl({
+        lat: sale.latitude as number,
+        lng: sale.longitude as number,
+        zoom: framedZoom(12),
+        width: mapWidth,
+        height: mapHeight,
+        pixelRatio,
+        format: thumbnail ? MAPBOX_LIST_THUMBNAIL_FORMAT : undefined,
+      }),
+  );
   const photoCandidates: VisualCandidate[] = photos.map((photo) => ({
     kind: "photo",
     url: photo.url,
@@ -70,11 +99,11 @@ export function SaleVisual({
   }));
   const candidates: VisualCandidate[] = [
     ...(preferPhoto ? photoCandidates : []),
-    ...(satelliteUrl
-      ? [{ kind: "satellite" as const, url: satelliteUrl, label: "Vue aérienne Mapbox" }]
+    ...(satelliteImage
+      ? [{ kind: "satellite" as const, ...satelliteImage, label: "Vue aérienne Mapbox" }]
       : []),
-    ...(sectorMapUrl
-      ? [{ kind: "map" as const, url: sectorMapUrl, label: "Carte du secteur Mapbox" }]
+    ...(sectorMapImage
+      ? [{ kind: "map" as const, ...sectorMapImage, label: "Carte du secteur Mapbox" }]
       : []),
     ...(preferPhoto ? [] : photoCandidates),
   ];
@@ -180,6 +209,7 @@ export function SaleVisual({
         ref={imageRef}
         key={candidate.url}
         src={candidate.url}
+        srcSet={candidate.srcSet}
         alt={
           candidate.kind === "photo"
             ? title
@@ -213,4 +243,25 @@ export function SaleVisual({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Visuel Mapbox d'une vignette : une seule URL (@2x) par défaut ; en mode vignette, URL à densité
+ * normale et srcset 1x/2x pour que seuls les écrans haute densité téléchargent le @2x.
+ */
+function mapboxImage(
+  enabled: boolean,
+  thumbnail: boolean,
+  build: (pixelRatio: 1 | 2) => string,
+): { url: string; srcSet?: string } | null {
+  if (!enabled) return null;
+  if (!thumbnail) {
+    const url = build(2);
+    return url ? { url } : null;
+  }
+
+  const oneX = build(1);
+  const twoX = build(2);
+  if (!oneX) return null;
+  return { url: oneX, srcSet: twoX ? `${oneX} 1x, ${twoX} 2x` : undefined };
 }

@@ -54,6 +54,14 @@ import {
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
 import type { ResultsView } from "@/lib/search/results-view";
+
+/**
+ * Vignette cartographique d'une carte de résultats (ratio 4:3, comme le cadre `aspect-[4/3]`).
+ * `framingWidth` est la largeur de l'ancien visuel (512 px @2x) : le zoom est reculé en
+ * conséquence pour que la zone visible reste identique avec moins de pixels.
+ */
+const LIST_MAP_THUMBNAIL = { width: 400, height: 300, framingWidth: 512 } as const;
+
 export function SearchResultsList({
   sales,
   sponsoredPlacement,
@@ -302,7 +310,7 @@ export const ListingCard = memo(function ListingCard({
       onMouseLeave={() => onHover(null)}
       onFocusCapture={() => onHover(sale.id)}
       onBlurCapture={() => onHover(null)}
-      className={`group relative overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)] transition-[border-color,box-shadow] ${active ? "border-gold ring-1 ring-gold" : "border-line-soft hover:border-gold hover:shadow-[0_8px_24px_rgba(19,34,56,0.09)]"}`}
+      className={`group relative overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)] transition-[border-color,box-shadow] [contain-intrinsic-size:none_auto_28rem] [content-visibility:auto] ${active ? "border-gold ring-1 ring-gold" : "border-line-soft hover:border-gold hover:shadow-[0_8px_24px_rgba(19,34,56,0.09)]"}`}
     >
       <Link
         id={`sale-card-${sale.id}`}
@@ -623,8 +631,10 @@ export function ListingMediaCarousel({
           locked={locked}
           eager={eager}
           preferPhoto
-          mapWidth={512}
-          mapHeight={384}
+          thumbnail
+          mapWidth={LIST_MAP_THUMBNAIL.width}
+          mapHeight={LIST_MAP_THUMBNAIL.height}
+          mapFramingWidth={LIST_MAP_THUMBNAIL.framingWidth}
         />
       </div>
     );
