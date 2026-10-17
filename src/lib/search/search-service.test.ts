@@ -20,7 +20,12 @@ vi.mock("@/lib/queries", () => ({
 }));
 
 import { forgetRememberedPhotoMirrors } from "@/lib/photo-mirror";
-import { fetchSearchCount, fetchSearchMapResults, fetchSearchResults } from "./search-service";
+import {
+  fetchSearchCount,
+  fetchSearchMapResults,
+  fetchSearchPhotoMirrors,
+  fetchSearchResults,
+} from "./search-service";
 
 describe("public preview search service", () => {
   const PHOTO = "https://www.licitor.com/photos/maison.jpg";
@@ -269,6 +274,43 @@ describe("public preview search service", () => {
       expect(mirrorCalls()[0]![1]).toEqual({ p_source_urls: [PHOTO] });
       expect(sale!.media![0]!.mirror?.path1600).toBe("s/abc-1600.webp");
       expect(sale!.media![1]).toEqual({ type: "image", url: PHOTO_B });
+    });
+
+    it("withMirrors: false rend les ventes sans attendre ni appeler les copies", async () => {
+      getSalesForSearch.mockResolvedValue([{ id: "full", media: [{ type: "image", url: PHOTO }] }]);
+
+      const items = await fetchSearchResults({ search: {}, preview: false, withMirrors: false });
+
+      expect(items.map((sale) => sale.id)).toEqual(["full"]);
+      expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it("fetchSearchPhotoMirrors : un seul appel pour la page, URL d'origine vers copie", async () => {
+      rpc.mockResolvedValue({ data: [mirrorRow], error: null });
+      const sales = [
+        { id: "a", media: [{ type: "image", url: PHOTO }] },
+        { id: "b", media: [{ type: "image", url: PHOTO_B }] },
+      ] as never[];
+
+      const mirrors = await fetchSearchPhotoMirrors(sales);
+
+      expect(mirrorCalls()).toHaveLength(1);
+      expect(mirrorCalls()[0]![1]).toEqual({ p_source_urls: [PHOTO, PHOTO_B] });
+      expect([...mirrors.keys()]).toEqual([PHOTO]);
+      expect(mirrors.get(PHOTO)?.path640).toBe("s/abc-640.webp");
+    });
+
+    it("fetchSearchPhotoMirrors : table vide en cas de panne, d'interrupteur éteint ou de page vide", async () => {
+      rpc.mockResolvedValue({ data: null, error: { message: "boom" } });
+      const sales = [{ id: "a", media: [{ type: "image", url: PHOTO }] }] as never[];
+      expect((await fetchSearchPhotoMirrors(sales)).size).toBe(0);
+
+      expect((await fetchSearchPhotoMirrors([])).size).toBe(0);
+
+      rpc.mockClear();
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "off");
+      expect((await fetchSearchPhotoMirrors(sales)).size).toBe(0);
+      expect(rpc).not.toHaveBeenCalled();
     });
 
     it("interrupteur éteint : aucune fonction appelée, résultats identiques", async () => {
