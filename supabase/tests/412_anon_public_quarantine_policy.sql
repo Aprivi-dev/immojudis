@@ -229,7 +229,7 @@ select ok(
     ))
   ) > 0
   and position(
-    'publication_quarantine' in lower(pg_get_functiondef(
+    'catalogue_quarantined' in lower(pg_get_functiondef(
       'app_private.auction_sale_is_publicly_visible(uuid)'::regprocedure
     ))
   ) > 0,
@@ -243,7 +243,7 @@ select ok(
     where polrelid = 'public.auction_sales'::regclass
       and polname = 'auction_sales_authenticated_read'
       and pg_get_expr(polqual, polrelid) like '%is_admin%'
-      and pg_get_expr(polqual, polrelid) like '%publication_quarantine%'
+      and pg_get_expr(polqual, polrelid) like '%catalogue_quarantined%'
   ),
   'authenticated premium policy retains its admin bypass and quarantine guard'
 );
