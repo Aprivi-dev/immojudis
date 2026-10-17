@@ -3,7 +3,6 @@ import { connection } from "next/server";
 import localFont from "next/font/local";
 import "./../styles.css";
 import { AppProviders } from "./providers";
-import { cormorantGaramond as cormorantGaramondItalic } from "@/fonts/cormorant-garamond-italic";
 import { AudienceMeasurement } from "@/components/AudienceMeasurement";
 import { SkipLink } from "@/components/SkipLink";
 import { cspRequiresDynamicRendering } from "@/lib/security-headers";
@@ -21,7 +20,7 @@ const cormorantGaramond = localFont({
     // Seules les graisses réellement employées par font-display : 400, 500 et 600 (les graisses
     // 300 et 700 ne sont jamais demandées). Le h1 de l'accueil n'emploie que 500 et l'italique 400,
     // mais 600 sert à d'autres titres : on ne réduit pas la liste.
-    // L'italique (mêmes graisses) est déclarée à part, dans `src/fonts/cormorant-garamond-italic.ts`,
+    // L'italique (mêmes graisses) est déclarée à part, par des `@font-face` de `src/styles.css`,
     // sous le même nom de famille : `next/font` précharge tous les fichiers d'une même déclaration,
     // et l'italique ne sert au premier écran que sur l'accueil et /ressources.
     { path: "../fonts/cormorant-garamond-latin-normal.woff2", weight: "400", style: "normal" },
@@ -33,7 +32,7 @@ const cormorantGaramond = localFont({
   // Préchargée : le h1 de l'accueil s'affiche avec cette police, qui sinon n'est demandée
   // qu'après le calcul des styles (changement visible à l'affichage, `display: swap`). Seul le
   // fichier des graisses normales l'est ici ; l'italique l'est par les pages qui l'affichent au
-  // premier écran (`src/fonts/cormorant-garamond-italic-preloaded.ts`).
+  // premier écran (`src/components/PreloadCormorantItalic.tsx`).
   preload: true,
   // Police de secours ajustée (size-adjust, ascent/descent) calculée sur le fichier de la police,
   // comme le faisait `next/font/google` : limite le décalage de mise en page au remplacement.
@@ -108,10 +107,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // default the proxy sends no strict policy at all and static pages stay static.
   if (cspRequiresDynamicRendering()) await connection();
   return (
-    <html
-      lang="fr"
-      className={`${cormorantGaramond.variable} ${cormorantGaramondItalic.variable} ${ibmPlexSans.variable}`}
-    >
+    <html lang="fr" className={`${cormorantGaramond.variable} ${ibmPlexSans.variable}`}>
       <body>
         <SkipLink />
         <AppProviders>{children}</AppProviders>
