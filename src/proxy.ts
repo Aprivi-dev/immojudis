@@ -1,6 +1,12 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { resolveRequestId } from "@/lib/request-id";
+import {
+  isSalesDefaultPath,
+  isUnfilteredSalesRequest,
+  SALES_DEFAULT_PATH,
+  SALES_PATH,
+} from "@/lib/sales-isr";
 import { robotsTagHeaderValue } from "@/lib/seo-indexing";
 import {
   buildCspResponseHeaders,
@@ -27,6 +33,30 @@ function strictCspHeaders(requestHeaders: Headers) {
   return cspHeaders;
 }
 
+/**
+ * `/sales` sans paramètre est réécrit vers sa variante statique (ISR, 5 minutes) : le visiteur et
+ * les robots gardent l'adresse `/sales`, le CDN sert la page sans réveiller de fonction. Toute
+ * autre adresse du catalogue (filtre, `?page=N`) reste rendue à la demande. Voir
+ * `src/lib/sales-isr.ts`.
+ *
+ * Pas de réécriture quand la CSP à nonce est servie (`strictCspEnabled`) : un nonce ne se pose que
+ * sur une page rendue à la demande, la variante statique n'en aurait pas. La variante demandée en
+ * direct revient alors à `/sales`.
+ */
+function routeResponse(request: NextRequest, requestHeaders: Headers, strictCsp: boolean) {
+  const { pathname, search } = request.nextUrl;
+  if (strictCsp) {
+    if (isSalesDefaultPath(pathname)) {
+      return NextResponse.redirect(new URL(`${SALES_PATH}${search}`, request.url), 307);
+    }
+  } else if (isUnfilteredSalesRequest({ method: request.method, pathname, search })) {
+    const target = request.nextUrl.clone();
+    target.pathname = SALES_DEFAULT_PATH;
+    return NextResponse.rewrite(target, { request: { headers: requestHeaders } });
+  }
+  return NextResponse.next({ request: { headers: requestHeaders } });
+}
+
 export function proxy(request: NextRequest) {
   const requestId = resolveRequestId(request.headers.get("x-request-id"));
   const requestHeaders = new Headers(request.headers);
@@ -38,15 +68,20 @@ export function proxy(request: NextRequest) {
   // historical policy of next.config.ts keeps protecting the pages in the default mode. Next.js
   // reads the nonce from the request's CSP header (the report-only variant is honoured too) and
   // stamps it on the scripts of dynamic pages.
-  const cspHeaders = strictCspEnabled() ? strictCspHeaders(requestHeaders) : [];
+  const strictCsp = strictCspEnabled();
+  const cspHeaders = strictCsp ? strictCspHeaders(requestHeaders) : [];
 
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  const response = routeResponse(request, requestHeaders, strictCsp);
   response.headers.set("x-request-id", requestId);
   for (const header of cspHeaders) response.headers.set(header.key, header.value);
   // Indexation fermée (SEO_INDEXING_ENABLED absente ou différente de « true », aperçu Vercel) :
   // lue ici, à chaque requête, et non figée dans next.config.ts au build.
   const robotsTag = robotsTagHeaderValue();
   if (robotsTag) response.headers.set("X-Robots-Tag", robotsTag);
+  // La variante interne, demandée en direct, ne s'indexe jamais, quel que soit l'état de l'indexation.
+  if (isSalesDefaultPath(request.nextUrl.pathname)) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  }
   return response;
 }
 
