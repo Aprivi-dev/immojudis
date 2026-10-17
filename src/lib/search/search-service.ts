@@ -1,9 +1,10 @@
 import { getSales, getSalesCount, getSalesForSearch, getSaleMapPoints } from "@/lib/queries";
-import { supabase } from "@/integrations/supabase/client";
+import { getSupabase } from "@/integrations/supabase/lazy";
 import { geocodeAddress } from "@/lib/geo";
 import { readPagedRows } from "@/lib/paged-read";
 import {
   PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
+  isPhotoMirrorEnabled,
   withPhotoMirrors,
   type PhotoMirrorClient,
 } from "@/lib/photo-mirror";
@@ -43,11 +44,13 @@ export async function fetchSearchResults(options: {
   preview: boolean;
   discovery?: boolean;
 }): Promise<AuctionSale[]> {
-  return withPhotoMirrors(
-    await loadSearchResults(options),
-    supabase as unknown as PhotoMirrorClient,
-    { timeoutMs: PHOTO_MIRROR_BROWSER_TIMEOUT_MS, remember: true },
-  );
+  const sales = await loadSearchResults(options);
+  // Le client Supabase n'est chargé que si les copies sont demandées (voir `lazy.ts`).
+  if (!sales.length || !isPhotoMirrorEnabled()) return sales;
+  return withPhotoMirrors(sales, (await getSupabase()) as unknown as PhotoMirrorClient, {
+    timeoutMs: PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
+    remember: true,
+  });
 }
 
 async function loadSearchResults({
@@ -123,9 +126,9 @@ function fetchPreviewSearch(search: SalesSearchParams): Promise<PreviewSearchRes
   const currentRequest = inFlightPreviewSearches.get(requestKey);
   if (currentRequest) return currentRequest;
 
-  const request = runPreviewSearch(supabase as unknown as PreviewRpcClient, search).finally(() =>
-    inFlightPreviewSearches.delete(requestKey),
-  );
+  const request = getSupabase()
+    .then((client) => runPreviewSearch(client as unknown as PreviewRpcClient, search))
+    .finally(() => inFlightPreviewSearches.delete(requestKey));
 
   inFlightPreviewSearches.set(requestKey, request);
   return request;

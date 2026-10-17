@@ -17,7 +17,7 @@ import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
-import { supabase } from "@/integrations/supabase/client";
+import { getSupabase } from "@/integrations/supabase/lazy";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
@@ -121,7 +121,7 @@ export function SearchResultsList({
   const favoriteQuery = useQuery({
     queryKey: queryKeys.searchFavoriteStatus(user?.id ?? null, favoriteQueryIds),
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (await getSupabase())
         .from("user_favorites")
         .select("sale_id")
         .eq("user_id", user!.id)
