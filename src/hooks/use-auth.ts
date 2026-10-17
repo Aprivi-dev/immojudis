@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import {
   getSupabase,
@@ -24,12 +31,69 @@ function concurrentRead<T>(pending: Map<string, Promise<T>>, key: string, read: 
   return request;
 }
 
-export const AuthContext = createContext<ReturnType<typeof useVerifiedAuth> | null>(null);
+export type AuthState = ReturnType<typeof useVerifiedAuth>;
+
+// État rendu par le serveur et par le premier rendu d'hydratation : identité en cours de vérification.
+const INITIAL_AUTH_STATE: AuthState = {
+  session: null,
+  user: null,
+  profile: null,
+  loading: true,
+  authError: null,
+};
+
+export type AuthStore = {
+  getSnapshot: () => AuthState;
+  subscribe: (listener: () => void) => () => void;
+  publish: (next: AuthState) => void;
+};
+
+// L'état d'authentification est partagé par un magasin externe, et non par la valeur du contexte.
+// Le contexte ne porte que ce magasin, dont l'identité ne change jamais. Une valeur de contexte qui
+// change (ici `loading`, vrai puis faux dès le premier effet) force React à abandonner le HTML
+// serveur de toute frontière Suspense pas encore hydratée (celle de `loading.tsx`, tant que son
+// code n'est pas arrivé) et à la refaire côté client, sous le squelette. Un magasin ne réveille que
+// les composants déjà montés ; les autres lisent l'état courant en s'hydratant.
+export function createAuthStore(): AuthStore {
+  let state = INITIAL_AUTH_STATE;
+  const listeners = new Set<() => void>();
+  return {
+    getSnapshot: () => state,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    publish(next) {
+      if (
+        next.session === state.session &&
+        next.user === state.user &&
+        next.profile === state.profile &&
+        next.loading === state.loading &&
+        next.authError === state.authError
+      )
+        return;
+      state = next;
+      for (const listener of [...listeners]) listener();
+    },
+  };
+}
+
+export const AuthContext = createContext<AuthStore | null>(null);
+
+const subscribeNever = () => () => {};
+const initialAuthState = () => INITIAL_AUTH_STATE;
 
 export function useAuth() {
-  const shared = useContext(AuthContext);
-  const standalone = useVerifiedAuth(shared === null);
-  return shared ?? standalone;
+  const store = useContext(AuthContext);
+  const standalone = useVerifiedAuth(store === null);
+  const shared = useSyncExternalStore(
+    store?.subscribe ?? subscribeNever,
+    store?.getSnapshot ?? initialAuthState,
+    initialAuthState,
+  );
+  return store === null ? standalone : shared;
 }
 
 // AppProviders keeps a single verified identity across client-side navigation.
