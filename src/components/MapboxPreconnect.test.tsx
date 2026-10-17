@@ -7,6 +7,10 @@ function preconnectLinks(html: string) {
   return html.match(/<link[^>]*rel="preconnect"[^>]*>/g) ?? [];
 }
 
+function preconnectOrigins(html: string) {
+  return preconnectLinks(html).map((link) => /href="([^"]*)"/.exec(link)?.[1] ?? "");
+}
+
 describe("MapboxPreconnect", () => {
   beforeEach(() => vi.stubEnv("NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN", "pk.test"));
   afterEach(() => vi.unstubAllEnvs());
@@ -29,9 +33,7 @@ describe("MapboxPreconnect", () => {
         <p>contenu</p>
       </SalesLayout>,
     );
-    expect(preconnectLinks(html).some((link) => link.includes("https://api.mapbox.com"))).toBe(
-      true,
-    );
+    expect(preconnectOrigins(html)).toContain("https://api.mapbox.com");
     expect(html).toContain("<p>contenu</p>");
   });
 });
