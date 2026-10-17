@@ -46,8 +46,21 @@ export function createApiRequestContext(request: Request, scope: string): ApiReq
   };
 }
 
-export function withApiHeaders<T extends Response>(response: T, context: ApiRequestContext): T {
-  response.headers.set("x-request-id", context.requestId);
+export type ApiHeadersOptions = {
+  /**
+   * `false` : l'identifiant de requête n'est pas répercuté dans la réponse. Pour les réponses
+   * publiques gardées par un CDN, qui seraient sinon servies à d'autres visiteurs avec
+   * l'identifiant de la première requête (il reste dans le journal). Vrai par défaut.
+   */
+  echoRequestId?: boolean;
+};
+
+export function withApiHeaders<T extends Response>(
+  response: T,
+  context: ApiRequestContext,
+  options: ApiHeadersOptions = {},
+): T {
+  if (options.echoRequestId !== false) response.headers.set("x-request-id", context.requestId);
   if (!response.headers.has("cache-control")) response.headers.set("cache-control", "no-store");
   logApiCompletion(context, response.status);
   return response;
@@ -57,8 +70,9 @@ export function apiJson<T>(
   body: T,
   context: ApiRequestContext,
   init?: ResponseInit,
+  headerOptions?: ApiHeadersOptions,
 ): NextResponse<T> {
-  return withApiHeaders(NextResponse.json(body, init), context);
+  return withApiHeaders(NextResponse.json(body, init), context, headerOptions);
 }
 
 export function apiError(error: unknown, context: ApiRequestContext, options: ApiErrorOptions) {

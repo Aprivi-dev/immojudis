@@ -25,6 +25,20 @@ export type InitialCatalogue = {
  * shows up after 5 to 10 minutes on `/sales`, depending on when the two caches expire.
  */
 export const FIRST_PAGE_REVALIDATE_SECONDS = 300;
+/**
+ * Durée de garde (CDN) d'une recherche FILTRÉE de `/api/catalogue/preview`. Plus courte que celle de
+ * la première page : une recherche étroite (ville, tribunal, prix, dates) est celle où l'on guette
+ * une nouvelle annonce ou un changement de statut, alors que la première page, sans filtre, est lue
+ * par tous les visiteurs et se rafraîchit en tâche de fond. Chaque adresse filtrée a de toute façon
+ * peu de lecteurs : la garder moins longtemps coûte peu de lectures de la base, et le quota par IP
+ * borne le reste.
+ */
+export const FILTERED_SEARCH_REVALIDATE_SECONDS = 120;
+/**
+ * Durée de garde d'une réponse dont les copies de photos ont échoué : le temps de laisser la base
+ * respirer, sans que le CDN fige les photos des sources pour les 2 à 5 minutes habituelles.
+ */
+export const DEGRADED_MIRRORS_REVALIDATE_SECONDS = 10;
 export const PUBLIC_CATALOGUE_CACHE_TAG = "public-catalogue";
 /** Maximum time the server waits for the database before the browser takes over. */
 const SERVER_SEARCH_TIMEOUT_MS = 6_000;
@@ -139,6 +153,13 @@ export type PreviewCataloguePage = {
   items: AuctionSale[];
   count: number;
   mirrors: Array<[string, SaleMediaMirror]>;
+  /**
+   * `true` si l'interrupteur des copies est ouvert, qu'au moins une photo a été cherchée et que la
+   * lecture des copies a échoué ou dépassé son délai (table vide à cause d'elle). Une base qui
+   * répond « aucune copie » n'est pas une dégradation. Ce drapeau n'est pas dans le corps de la
+   * réponse : il sert à choisir la durée de cache.
+   */
+  mirrorsDegraded: boolean;
 };
 
 /**
@@ -146,7 +167,8 @@ export type PreviewCataloguePage = {
  * filtres et le même cache de la première page que le rendu serveur de `/sales`
  * (`loadInitialCatalogue`), puis les copies de photos de la page (même cache de 5 minutes), le tout
  * en une réponse. Contrairement au rendu serveur, une panne LÈVE : la route répond alors 503 et
- * rien n'est mis en cache. Les ventes sont rendues sans copie ; les copies trouvées sont à part
+ * rien n'est mis en cache. Une panne des seules copies ne lève pas : la liste est servie, marquée
+ * `mirrorsDegraded`. Les ventes sont rendues sans copie ; les copies trouvées sont à part
  * (la route ne répond pas avec un état qui dépendrait du visiteur).
  */
 export async function loadPreviewCataloguePage(
@@ -164,7 +186,12 @@ export async function loadPreviewCataloguePage(
     dependencies.photoMirrorClient !== undefined
       ? dependencies.photoMirrorClient
       : photoMirrorClient();
-  const fetchMirrors = cachedPhotoMirrorFetcher(mirrorClient);
+  let unavailable = false;
+  const fetchMirrors = cachedPhotoMirrorFetcher(mirrorClient, {
+    onUnavailable: () => {
+      unavailable = true;
+    },
+  });
   let mirrors = new Map<string, SaleMediaMirror>();
   await withPhotoMirrors(items, mirrorClient, {
     fetchMirrors: async (urls) => {
@@ -172,5 +199,10 @@ export async function loadPreviewCataloguePage(
       return mirrors;
     },
   });
-  return { items, count: response.count, mirrors: [...mirrors] };
+  return {
+    items,
+    count: response.count,
+    mirrors: [...mirrors],
+    mirrorsDegraded: unavailable && mirrors.size === 0,
+  };
 }
