@@ -9,7 +9,7 @@ import { isPhotoMirrorEnabled, withPhotoMirrors, type PhotoMirrorClient } from "
 import { cachedPhotoMirrorFetcher } from "@/lib/photo-mirror.server";
 import { salesSearchSignature, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
-import type { AuctionSale } from "@/lib/types";
+import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 
 /** First page of the catalogue as seen by a signed-out visitor. */
 export type InitialCatalogue = {
@@ -127,4 +127,45 @@ export async function loadInitialCatalogue(
     );
     return null;
   }
+}
+
+/** Une page de la recherche d'aperçu pour le navigateur : ventes sans copie, total et copies. */
+export type PreviewCataloguePage = {
+  items: AuctionSale[];
+  count: number;
+  mirrors: Array<[string, SaleMediaMirror]>;
+};
+
+/**
+ * Recherche d'aperçu servie par `GET /api/catalogue/preview` : la même fonction SQL, les mêmes
+ * filtres et le même cache de la première page que le rendu serveur de `/sales`
+ * (`loadInitialCatalogue`), puis les copies de photos de la page (même cache de 5 minutes), le tout
+ * en une réponse. Contrairement au rendu serveur, une panne LÈVE : la route répond alors 503 et
+ * rien n'est mis en cache. Les ventes sont rendues sans copie ; les copies trouvées sont à part
+ * (la route ne répond pas avec un état qui dépendrait du visiteur).
+ */
+export async function loadPreviewCataloguePage(
+  search: SalesSearchParams,
+  dependencies: CatalogueDependencies = {},
+): Promise<PreviewCataloguePage> {
+  const run = dependencies.search ?? defaultSearch;
+  const firstPage = dependencies.firstPage ?? cachedFirstPage;
+  const response = await withTimeout(
+    isDefaultCatalogueSearch(search) ? firstPage() : run(search),
+    dependencies.timeoutMs ?? SERVER_SEARCH_TIMEOUT_MS,
+  );
+  const items = excludeHomepageExampleSales(response.items);
+  const mirrorClient =
+    dependencies.photoMirrorClient !== undefined
+      ? dependencies.photoMirrorClient
+      : photoMirrorClient();
+  const fetchMirrors = cachedPhotoMirrorFetcher(mirrorClient);
+  let mirrors = new Map<string, SaleMediaMirror>();
+  await withPhotoMirrors(items, mirrorClient, {
+    fetchMirrors: async (urls) => {
+      mirrors = await fetchMirrors(urls);
+      return mirrors;
+    },
+  });
+  return { items, count: response.count, mirrors: [...mirrors] };
 }
