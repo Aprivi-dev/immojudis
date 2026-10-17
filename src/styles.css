@@ -428,6 +428,17 @@
       url("/media/landing/cloud-background.webp") center top / cover no-repeat;
   }
 
+  /* Même dégradé sans l'image des nuages (51 Ko) : pour les squelettes de chargement, où elle
+     ne sert qu'à retarder le premier affichage sur mobile. Déclaré après `.liquid-page`. */
+  .liquid-page.liquid-page-plain {
+    background: linear-gradient(
+      180deg,
+      rgb(238 247 255 / 74%) 0%,
+      rgb(255 250 242 / 96%) 54%,
+      #ffffff 100%
+    );
+  }
+
   .liquid-page::before {
     pointer-events: none;
     content: "";

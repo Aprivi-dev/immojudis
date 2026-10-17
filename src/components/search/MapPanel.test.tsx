@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   zoomIn: vi.fn(),
   zoomOut: vi.fn(),
   popupOpen: true,
+  mapOptions: [] as Array<Record<string, unknown>>,
 }));
 vi.mock("@/lib/mapbox", () => ({
   getMapboxAccessToken: () => mocks.token,
@@ -29,7 +30,8 @@ vi.mock("mapbox-gl", () => ({
   default: {
     Map: class {
       canvas = document.createElement("canvas");
-      constructor() {
+      constructor(options: Record<string, unknown>) {
+        mocks.mapOptions.push(options);
         if (mocks.throws) throw new Error("WebGL unavailable");
       }
       on(event: string, layerOrCallback: unknown, maybeCallback?: unknown) {
@@ -96,6 +98,7 @@ beforeEach(() => {
   mocks.throws = false;
   mocks.handlers.clear();
   mocks.popupOpen = true;
+  mocks.mapOptions.length = 0;
   vi.clearAllMocks();
   vi.stubGlobal(
     "ResizeObserver",
@@ -255,6 +258,11 @@ describe("public map resilience", () => {
     expect(screen.queryByText(/annonces restent accessibles dans la liste/)).toBeNull();
     expect(screen.getByText(/Positions approximatives/)).toBeTruthy();
     expect(screen.queryByText("DPE")).toBeNull();
+  });
+  it("starts Mapbox without label fades or repeated world copies", async () => {
+    await showMap();
+    expect(mocks.mapOptions).toHaveLength(1);
+    expect(mocks.mapOptions[0]).toMatchObject({ fadeDuration: 0, renderWorldCopies: false });
   });
   it("clears the load timer on unmount", async () => {
     const view = await showMap();
