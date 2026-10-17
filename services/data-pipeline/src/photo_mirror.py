@@ -96,7 +96,13 @@ MAX_PHOTOS_LIMIT = 10_000
 BUCKET = "sale-photos"
 WIDTHS = (640, 1600)
 WEBP_QUALITY = 75
-CACHE_CONTROL_SECONDS = 86_400
+# One year. The file name carries the fingerprint of the original photo (``photo_paths``), so a new
+# image always has a new name and a file is never overwritten (``upsert`` is false): nothing
+# needs to be revalidated. The price: a withdrawal deletes the file (and Supabase invalidates its
+# CDN), but a browser that already holds the image keeps showing it until it expires, one year at
+# the latest (see docs/runbooks/retrait-photos.md). storage3 turns this number into
+# ``cache-control: max-age=<seconds>``; it has no way to add ``immutable``.
+CACHE_CONTROL_SECONDS = 31_536_000
 # Same ceiling as the bucket (file_size_limit of the migration).
 BUCKET_FILE_LIMIT_BYTES = 2 * 1024 * 1024
 
