@@ -20,7 +20,7 @@ import {
   fetchSalesStatistics,
 } from "@/lib/client-api";
 import { createAlert, getSaleById } from "@/lib/queries";
-import { applyPhotoMirrors, isPhotoMirrorEnabled } from "@/lib/photo-mirror";
+import { applyPhotoMirrors, isPhotoMirrorEnabled, mirrorsFromSales } from "@/lib/photo-mirror";
 import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 import { trackProductEvent } from "@/lib/product-events";
 import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
@@ -337,6 +337,7 @@ export function SearchPage({
   const {
     data: connectedSales,
     error,
+    errorUpdateCount: connectedFailures,
     isFetching,
     isLoading,
     refetch: refetchSales,
@@ -377,13 +378,19 @@ export function SearchPage({
     : queryClient.getQueryData<AuctionSale[]>(
         salesSearchQueryKey(searchKeySignature, ANONYMOUS_PREVIEW_SCOPE),
       );
-  const publicListShown = !isPreview && connectedSales === undefined && !error && !!publicSales;
+  // Un échec de la liste connectée est retenu jusqu'au succès (`errorUpdateCount` survit au nouvel
+  // essai, alors que `error` repasse à `null` pendant « Réessayer ») : la liste publique verrouillée
+  // ne revient pas pendant le nouvel essai, qui montre un chargement puis la liste ou l'erreur.
+  const connectedFailed = Boolean(error) || connectedFailures > 0;
+  const publicListShown =
+    !isPreview && connectedSales === undefined && !connectedFailed && !!publicSales;
   const listIsPublic = isPreview || publicListShown;
-  const totalCount = publicListShown
+  const publicTotalCount = publicListShown
     ? queryClient.getQueryData<number>(
         salesSearchCountQueryKey(searchKeySignature, ANONYMOUS_PREVIEW_SCOPE),
       )
-    : connectedTotalCount;
+    : undefined;
+  const totalCount = publicListShown ? publicTotalCount : connectedTotalCount;
 
   // Copies de photos de la liste connectée : un appel dès que les ventes sont lues (leurs photos en
   // viennent), posé sur la liste à son arrivée. Les copies déjà connues du navigateur s'appliquent
@@ -398,14 +405,29 @@ export function SearchPage({
     staleTime: 5 * 60_000,
     retry: false,
   });
+  // Copies que la liste publique du serveur porte déjà (`media[].mirror`) : table URL d'origine vers
+  // copie, posée tout de suite sur la liste connectée (qui arrive sans copie) et mémorisée par
+  // `remember` pour les rafraîchissements. Sans cela, les photos retomberaient sur la source avant
+  // de remonter sur la copie (clignotement).
+  const publicMirrors = useMemo(
+    () => (publicSales ? mirrorsFromSales(publicSales) : NO_PHOTO_MIRRORS),
+    [publicSales],
+  );
+  const knownMirrors = useMemo(
+    () =>
+      photoMirrors?.size || publicMirrors.size
+        ? new Map([...publicMirrors, ...(photoMirrors ?? NO_PHOTO_MIRRORS)])
+        : NO_PHOTO_MIRRORS,
+    [photoMirrors, publicMirrors],
+  );
   const rawSales = useMemo(
     () =>
       publicListShown
         ? publicSales!
         : isPreview
           ? connectedList
-          : applyPhotoMirrors(connectedList, photoMirrors ?? NO_PHOTO_MIRRORS, { remember: true }),
-    [connectedList, isPreview, photoMirrors, publicListShown, publicSales],
+          : applyPhotoMirrors(connectedList, knownMirrors, { remember: true }),
+    [connectedList, isPreview, knownMirrors, publicListShown, publicSales],
   );
 
   const {
@@ -513,7 +535,10 @@ export function SearchPage({
   });
   const activeFiltersCount = countActiveSearchFilters(search);
   const activeFilters = useMemo(() => activeFilterChips(search), [search]);
-  const displayCount = totalCount ?? filteredSales.length;
+  // Liste publique sans compteur public : on n'invente pas un total avec la longueur de la page
+  // (24 au lieu de 2 276) ; l'en-tête annonce « Recherche en cours… » (voir `publicTotalMissing`).
+  const publicTotalMissing = publicListShown && publicTotalCount === undefined;
+  const displayCount = totalCount ?? (publicListShown ? 0 : filteredSales.length);
   const filteredCount = displayedSales.length;
   const hasMore =
     totalCount != null && pageOffset + rawSales.length < totalCount && rawSales.length >= pageSize;
@@ -886,7 +911,9 @@ export function SearchPage({
               search={search}
               displayCount={displayCount}
               hasLocalFilters={hasLocalFilters}
-              isLoading={isInitialLoading || (isCountLoading && !publicListShown)}
+              isLoading={
+                isInitialLoading || publicTotalMissing || (isCountLoading && !publicListShown)
+              }
               hasError={Boolean(error) && rawSales.length === 0}
               geocoding={geocoding}
             />
