@@ -61,6 +61,25 @@ const MIRROR = {
   height: 1200,
 };
 const MIRROR_FILE = "sale-photos/s/abc-640.webp";
+const PHOTO_HOST = new URL(PHOTO).hostname;
+
+/** Vrai si l'image pointe vers l'hôte de la source, directement ou via l'optimiseur d'images. */
+function isSourcePhoto(src: string) {
+  const candidates = [src];
+  try {
+    const nested = new URL(src, "https://immojudis.test").searchParams.get("url");
+    if (nested) candidates.push(nested);
+  } catch {
+    // Adresse illisible : seule la valeur brute est examinée.
+  }
+  return candidates.some((candidate) => {
+    try {
+      return new URL(candidate, "https://immojudis.test").hostname === PHOTO_HOST;
+    } catch {
+      return false;
+    }
+  });
+}
 /**
  * Champ qu'une carte ne montre que dans une liste déverrouillée (`listingTitle`) : il prouve ce
  * qu'une liste connectée affiche, donc ce que la liste publique ne doit jamais afficher.
@@ -532,7 +551,7 @@ describe("/sales : copies de photos de la liste connectée", () => {
       await act(async () => mirrors.resolve(new Map([[PHOTO, MIRROR]])));
       expect(container.innerHTML).toContain(MIRROR_FILE);
       // Aucune image n'a jamais été posée avec l'URL de la source.
-      expect(images.seen.filter((src) => src.includes("licitor.com"))).toEqual([]);
+      expect(images.seen.filter((src) => isSourcePhoto(src))).toEqual([]);
       expect(images.seen.some((src) => src.includes(MIRROR_FILE))).toBe(true);
     } finally {
       images.stop();
@@ -554,7 +573,7 @@ describe("/sales : copies de photos de la liste connectée", () => {
       await act(async () => plan.resolve(analysisPlan));
       await waitFor(() => expect(cards()).toHaveLength(2));
 
-      expect(images.seen.some((src) => src.includes("licitor.com"))).toBe(true);
+      expect(images.seen.some((src) => isSourcePhoto(src))).toBe(true);
       expect(images.seen.some((src) => src.includes(MIRROR_FILE))).toBe(false);
     } finally {
       images.stop();
