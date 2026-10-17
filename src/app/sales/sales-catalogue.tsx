@@ -32,12 +32,26 @@ export const salesMetadata: Metadata = pageMetadata({
  * rendue à la demande vient d'être produite. Une page statique (ISR) est servie jusqu'à 5 minutes
  * après sa génération : sans cette date, ses lignes seraient déjà périmées à l'hydratation et le
  * navigateur relancerait aussitôt la recherche (requête de trop, « Actualisation des annonces… »).
+ *
+ * `requireServerSeed` : lève l'erreur au lieu de rendre la page sans liste quand la base est
+ * indisponible. Pour la variante statique (ISR) : une page vide serait gardée 5 minutes, alors que
+ * l'erreur laisse Next.js servir la dernière bonne page et retenter à la requête suivante (voir
+ * `mustSeedStaticCatalogue`). Hors régénération, la page rendue à la demande garde son repli : le
+ * navigateur charge alors les annonces.
  */
 export async function renderSalesCatalogue(
   search: SalesSearchParams,
-  { dataUpdatedAt }: { dataUpdatedAt?: number } = {},
+  {
+    dataUpdatedAt,
+    requireServerSeed = false,
+  }: { dataUpdatedAt?: number; requireServerSeed?: boolean } = {},
 ) {
   const initial = await loadInitialCatalogue(search);
+  if (!initial && requireServerSeed) {
+    throw new Error(
+      "Catalogue public indisponible : la régénération de /sales est abandonnée, la dernière page valide reste servie.",
+    );
+  }
 
   const queryClient = new QueryClient();
   if (initial) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isSalesDefaultPath,
   isUnfilteredSalesRequest,
+  mustSeedStaticCatalogue,
   publicPathname,
   SALES_DEFAULT_PATH,
   SALES_PATH,
@@ -50,5 +51,27 @@ describe("internal variant", () => {
     expect(publicPathname("/sales")).toBe("/sales");
     expect(publicPathname("/sales/abc")).toBe("/sales/abc");
     expect(publicPathname("/")).toBe("/");
+  });
+});
+
+describe("mustSeedStaticCatalogue", () => {
+  it("refuses an empty regeneration in production, outside of `next build`", () => {
+    expect(mustSeedStaticCatalogue({ NODE_ENV: "production" })).toBe(true);
+    expect(mustSeedStaticCatalogue({ NODE_ENV: "production", NEXT_PHASE: "" })).toBe(true);
+    expect(
+      mustSeedStaticCatalogue({ NODE_ENV: "production", NEXT_PHASE: "phase-production-server" }),
+    ).toBe(true);
+  });
+
+  it("lets `next build` render without a list (no database in CI)", () => {
+    expect(
+      mustSeedStaticCatalogue({ NODE_ENV: "production", NEXT_PHASE: "phase-production-build" }),
+    ).toBe(false);
+  });
+
+  it("keeps the fallback in development and tests (no previous page to keep)", () => {
+    expect(mustSeedStaticCatalogue({ NODE_ENV: "development" })).toBe(false);
+    expect(mustSeedStaticCatalogue({ NODE_ENV: "test" })).toBe(false);
+    expect(mustSeedStaticCatalogue({})).toBe(false);
   });
 });

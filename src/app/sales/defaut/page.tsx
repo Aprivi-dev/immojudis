@@ -1,5 +1,6 @@
 import { FIRST_PAGE_REVALIDATE_SECONDS } from "@/lib/public-catalogue.server";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
+import { mustSeedStaticCatalogue } from "@/lib/sales-isr";
 import { renderSalesCatalogue, salesMetadata } from "../sales-catalogue";
 
 // Variante statique de l'adresse nue `/sales` (voir `src/lib/sales-isr.ts`) : `src/proxy.ts`
@@ -14,6 +15,10 @@ import { renderSalesCatalogue, salesMetadata } from "../sales-catalogue";
 //   page au navigateur derrière `loading.tsx` ; c'est exact, l'adresse n'en porte aucun. Il
 //   écarte aussi `connection()` du layout racine : le proxy ne réécrit donc plus vers cette page
 //   dès que la CSP à nonce est servie (`strictCspEnabled`), qui exige un rendu à la demande.
+// - Panne de base : en production, hors `next build`, une régénération qui ne peut pas lire le
+//   catalogue lève l'erreur (`requireServerSeed`) : Next.js garde alors la dernière bonne page au
+//   lieu de mettre en cache 5 minutes une page sans annonces. Au build, la page reste rendue sans
+//   liste (pas de base dans l'environnement factice de la CI). Voir `mustSeedStaticCatalogue`.
 // - Pas de `robots` ici : l'adresse publique est `/sales`, qui doit rester indexable ; la variante
 //   interne reçoit `X-Robots-Tag: noindex` du proxy quand on la demande directement.
 export const revalidate = 300;
@@ -25,5 +30,6 @@ export default async function Page() {
   // `staleTime` du navigateur) : une page servie plus tard que cela relance la recherche.
   return renderSalesCatalogue(validateSalesSearch({}), {
     dataUpdatedAt: Date.now() + FIRST_PAGE_REVALIDATE_SECONDS * 1000,
+    requireServerSeed: mustSeedStaticCatalogue(),
   });
 }
