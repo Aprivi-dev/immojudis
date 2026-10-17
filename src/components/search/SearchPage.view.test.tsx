@@ -210,7 +210,7 @@ describe("/sales : la carte du bureau ne démarre qu'au premier geste", () => {
     expect(screen.getByTestId("map-preview")).toBeTruthy();
   });
 
-  it.each(["pointerDown", "keyDown", "wheel", "touchStart"] as const)(
+  it.each(["pointerDown", "wheel", "touchStart"] as const)(
     "démarre la carte au premier geste (%s)",
     async (gesture) => {
       renderSales("/sales");
@@ -223,22 +223,43 @@ describe("/sales : la carte du bureau ne démarre qu'au premier geste", () => {
     },
   );
 
-  it("démarre la carte au clic sur « Afficher la carte »", async () => {
+  it("ne démarre pas la carte à Tab ni à une touche : le focus reste sur le bouton", async () => {
+    renderSales("/sales");
+    const button = screen.getByRole("button", { name: "Afficher la carte" });
+    act(() => button.focus());
+    fireEvent.keyDown(button, { key: "Tab" });
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    fireEvent.focus(screen.getByTestId("map-preview"));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(screen.queryByTestId("map-panel")).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+
+  it("démarre la carte au clic sur « Afficher la carte », avec le focus sur la carte", async () => {
     renderSales("/sales");
     fireEvent.click(screen.getByRole("button", { name: "Afficher la carte" }));
     expect(await screen.findByTestId("map-panel")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Afficher la carte" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Carte des ventes" }));
+    expect(screen.getByText("Carte affichée")).toBeTruthy();
   });
 
-  it("démarre la carte au survol et au focus de sa zone", async () => {
-    const hover = renderSales("/sales");
-    fireEvent.pointerEnter(screen.getByTestId("map-preview"));
-    expect(await screen.findByTestId("map-panel")).toBeTruthy();
-    hover.unmount();
-
+  it("démarre la carte après 300 ms de survol continu, pas avant", async () => {
     renderSales("/sales");
-    fireEvent.focus(screen.getByRole("button", { name: "Afficher la carte" }));
-    expect(await screen.findByTestId("map-panel")).toBeTruthy();
+    fireEvent.pointerEnter(screen.getByTestId("map-preview"));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(screen.queryByTestId("map-panel")).toBeNull();
+    expect(await screen.findByTestId("map-panel", undefined, { timeout: 1000 })).toBeTruthy();
+  });
+
+  it("ne démarre pas la carte quand la souris ne fait que traverser sa zone", async () => {
+    renderSales("/sales");
+    const preview = screen.getByTestId("map-preview");
+    fireEvent.pointerEnter(preview);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    fireEvent.pointerLeave(preview);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(screen.queryByTestId("map-panel")).toBeNull();
   });
 
   it("n'ajoute ni carte, ni aperçu, ni cadre de carte sur mobile", async () => {

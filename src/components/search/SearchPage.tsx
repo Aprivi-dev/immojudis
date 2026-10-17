@@ -66,7 +66,7 @@ import type { MapViewportChange } from "./MapPanel";
 import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
 import { scrollToSaleCard } from "./scroll-to-sale-card";
-import { MapPreview } from "./MapPreview";
+import { DesktopMapZone } from "./DesktopMapZone";
 import { useFirstGestureStart } from "./use-first-gesture-start";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
@@ -192,8 +192,9 @@ export function SearchPage({
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
   // Sur bureau, la carte (mapbox-gl + points) ne se télécharge ni ne s'initialise qu'au premier
-  // geste, au survol ou au focus de sa zone, ou au clic sur « Afficher la carte » (voir
-  // `useFirstGestureStart` et `MapPreview`) ; son cadre, lui, est réservé dès que l'écran est large.
+  // geste (appui, molette, toucher), au survol continu de sa zone ou au bouton « Afficher la carte »
+  // (voir `useFirstGestureStart`, `MapPreview`, `DesktopMapZone`) ; son cadre est réservé dès que
+  // l'écran est large.
   const [desktopMapStarted, setDesktopMapStarted] = useState(false);
   const mapVisible = mobileMapOpen || (isDesktop && desktopMapStarted);
   // Le tableau n'existe que sur écran large : en dessous, toujours les cartes.
@@ -1023,13 +1024,9 @@ export function SearchPage({
             alone, so nothing shifts when the media query resolves after hydration. */}
         <aside className="relative hidden min-h-[calc(100svh_-_var(--sales-header-height))] bg-line-soft lg:order-2 lg:block">
           {isDesktop ? (
-            <div className="sticky top-[var(--sales-header-height)] h-[calc(100svh_-_var(--sales-header-height))]">
-              {desktopMapStarted ? (
-                <LazyMapPanel {...mapPanelProps} />
-              ) : (
-                <MapPreview onStart={startDesktopMap} />
-              )}
-            </div>
+            <DesktopMapZone started={desktopMapStarted} onStart={startDesktopMap}>
+              <LazyMapPanel {...mapPanelProps} />
+            </DesktopMapZone>
           ) : null}
         </aside>
       </div>
