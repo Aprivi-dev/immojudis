@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { Suspense, use } from "react";
 import { act } from "@testing-library/react";
-import { hydrateRoot } from "react-dom/client";
+import { hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,25 +11,46 @@ import { createAuthStore, useAuth } from "./use-auth";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/sales" }));
 
+let fetches = 0;
+const catalogueQuery = {
+  queryKey: ["catalogue"],
+  queryFn: async () => {
+    fetches += 1;
+    return "liste";
+  },
+  staleTime: 0,
+};
+
 // Page de catalogue réduite à l'essentiel : une frontière Suspense (celle de `loading.tsx`) dont
 // le contenu dépend d'un module « arrivé trop tard » (promesse en attente côté client, déjà
-// résolue côté serveur) et qui lit l'état d'authentification.
+// résolue côté serveur) et qui lit l'état d'authentification. Le contenu change de forme selon
+// `loading`, comme une vraie liste : un premier rendu client qui ne verrait pas `loading: true`
+// ne concorderait pas avec le HTML serveur.
 function Results({ code }: { code: Promise<string> }) {
   const label = use(code);
   const { loading, user } = useAuth();
-  const query = useQuery({ queryKey: ["catalogue"], queryFn: async () => "liste", staleTime: 0 });
+  const query = useQuery(catalogueQuery);
   return (
     <ul data-testid="results" data-auth={loading ? "loading" : user ? "user" : "anonymous"}>
       <li>{label}</li>
       <li>{query.data ?? "serveur"}</li>
+      {loading ? <li>vérification</li> : <li>{user ? "connecté" : "visiteur"}</li>}
     </ul>
   );
+}
+
+// Observateur React Query monté hors de la frontière suspendue : lui seul est réellement abonné
+// pendant que `Results` attend son code, et il réagit donc à une invalidation.
+function CatalogueObserver() {
+  useQuery(catalogueQuery);
+  return null;
 }
 
 function Page({ code, queryClient }: { code: Promise<string>; queryClient: QueryClient }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <CatalogueObserver />
         <Suspense fallback={<div data-testid="skeleton">squelette</div>}>
           <Results code={code} />
         </Suspense>
@@ -49,11 +70,17 @@ function newQueryClient() {
   return client;
 }
 
+const roots: Root[] = [];
+
 afterEach(() => {
+  act(() => {
+    for (const root of roots.splice(0)) root.unmount();
+  });
   vi.restoreAllMocks();
   window.localStorage.clear();
   resetSupabaseLazyForTests();
   document.body.innerHTML = "";
+  fetches = 0;
 });
 
 describe("hydratation du catalogue sous une frontière Suspense", () => {
@@ -77,14 +104,16 @@ describe("hydratation du catalogue sous une frontière Suspense", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const queryClient = newQueryClient();
     await act(async () => {
-      hydrateRoot(container, <Page code={code} queryClient={queryClient} />, {
-        onRecoverableError,
-      });
+      roots.push(
+        hydrateRoot(container, <Page code={code} queryClient={queryClient} />, {
+          onRecoverableError,
+        }),
+      );
     });
     return { container, serverList, arrive, onRecoverableError, consoleError, queryClient };
   }
 
-  it("garde le HTML serveur quand l'authentification d'un visiteur anonyme se résout avant l'arrivée du code", async () => {
+  it("concorde avec le HTML serveur quand l'authentification d'un visiteur anonyme se résout avant l'arrivée du code", async () => {
     const { container, serverList, arrive, onRecoverableError, consoleError } =
       await hydrateWithLateCode();
 
@@ -98,22 +127,29 @@ describe("hydratation du catalogue sous une frontière Suspense", () => {
     // Même nœud : hydraté, pas recréé ; et il montre désormais l'état résolu.
     expect(container.querySelector('[data-testid="results"]')).toBe(serverList);
     expect(serverList?.getAttribute("data-auth")).toBe("anonymous");
+    expect(serverList?.textContent).toContain("visiteur");
     expect(onRecoverableError).not.toHaveBeenCalled();
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it("garde aussi le HTML serveur quand React Query est invalidé avant l'arrivée du code", async () => {
-    const { container, serverList, arrive, queryClient, consoleError } =
+  it("concorde aussi avec le HTML serveur quand React Query est invalidé avant l'arrivée du code", async () => {
+    const { container, serverList, arrive, queryClient, onRecoverableError, consoleError } =
       await hydrateWithLateCode();
 
+    // L'observateur hors frontière est bien actif : l'invalidation relance réellement la requête.
+    const before = fetches;
     await act(async () => {
       await queryClient.invalidateQueries();
     });
+    expect(fetches).toBeGreaterThan(before);
     expect(container.querySelector('[data-testid="skeleton"]')).toBeNull();
     expect(container.querySelector('[data-testid="results"]')).toBe(serverList);
 
     await act(async () => arrive("annonces"));
+    expect(container.querySelector('[data-testid="skeleton"]')).toBeNull();
     expect(container.querySelector('[data-testid="results"]')).toBe(serverList);
+    expect(serverList?.getAttribute("data-auth")).toBe("anonymous");
+    expect(onRecoverableError).not.toHaveBeenCalled();
     expect(consoleError).not.toHaveBeenCalled();
   });
 });

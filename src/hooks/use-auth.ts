@@ -34,13 +34,13 @@ function concurrentRead<T>(pending: Map<string, Promise<T>>, key: string, read: 
 export type AuthState = ReturnType<typeof useVerifiedAuth>;
 
 // État rendu par le serveur et par le premier rendu d'hydratation : identité en cours de vérification.
-const INITIAL_AUTH_STATE: AuthState = {
+const INITIAL_AUTH_STATE: Readonly<AuthState> = Object.freeze({
   session: null,
   user: null,
   profile: null,
   loading: true,
   authError: null,
-};
+});
 
 export type AuthStore = {
   getSnapshot: () => AuthState;
