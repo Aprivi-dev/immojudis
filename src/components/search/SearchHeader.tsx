@@ -698,6 +698,18 @@ export function LayoutToggle({ wideMap, onToggle }: { wideMap: boolean; onToggle
   );
 }
 
+/**
+ * Hauteur de l'en-tête avec un titre sur DEUX lignes, réservée sous `sm`. À 412 px, le h1 tient
+ * sur une ligne en Cormorant Garamond (348 px pour 348 px disponibles) mais sur deux dans la
+ * police de secours, plus large (379 px) ; sur les écrans plus étroits, sur deux dans les deux.
+ * Quand la police arrive après le premier affichage (4G), la ligne en trop disparaissait : tout
+ * ce qui suit remontait de 33 px (CLS 0,03) et la photo de la première carte, déjà peinte, gardait
+ * pour le LCP une surface rognée par le bas de l'écran (puis un second LCP quand elle était
+ * recréée à l'hydratation). Valeur : py-4 (2 rem) + surtitre (0,9375) + marge (0,25) + h1 de
+ * 2 × 2,0625 (1,65 rem, interligne 1,25) + marge (0,25) + compteur (1,25) = 8,8125 rem.
+ */
+const RESULTS_SUMMARY_MOBILE_MIN_HEIGHT = "min-h-[8.8125rem] sm:min-h-0";
+
 export function ResultsSummary({
   search,
   displayCount,
@@ -715,7 +727,7 @@ export function ResultsSummary({
 }) {
   const location = search.city || search.department || search.query || "France entière";
   return (
-    <div className="min-w-0 px-4 py-4 sm:px-5">
+    <div className={`min-w-0 px-4 py-4 sm:px-5 ${RESULTS_SUMMARY_MOBILE_MIN_HEIGHT}`}>
       <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gold-text">
         Le catalogue des enchères
       </p>

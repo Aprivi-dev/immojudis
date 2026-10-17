@@ -187,6 +187,27 @@ describe("ResultsSummary", () => {
     expect(live).toHaveLength(1);
     expect(live[0].textContent).toBe("12 annonces");
   });
+
+  it("réserve la hauteur de deux lignes de titre sous sm, pour qu'aucune police ne décale la page", () => {
+    // Le h1 passe de deux lignes (police de secours) à une (Cormorant) à l'arrivée de la police :
+    // sans réserve, tout ce qui suit remonte de 33 px (CLS) et la photo de la première carte
+    // change de surface visible (LCP). 8,8125 rem = py-4 + surtitre + 2 lignes de h1 + compteur.
+    const summary = (city?: string) =>
+      render(
+        <ResultsSummary
+          search={city ? { city } : {}}
+          displayCount={12}
+          hasLocalFilters={false}
+          isLoading={false}
+          geocoding={false}
+        />,
+      ).container.firstElementChild as HTMLElement;
+
+    for (const root of [summary(), summary("Lyon")]) {
+      expect(root.className).toContain("min-h-[8.8125rem]");
+      expect(root.className).toContain("sm:min-h-0");
+    }
+  });
 });
 
 describe("SearchHeader : effacer les filtres", () => {
