@@ -9,6 +9,8 @@ export const FAVORITE_REMOVE_LABEL = "Retirer des favoris";
 /** Pour un visiteur : le cœur reste visible et dit ce que le compte gratuit apporte. */
 export const FAVORITE_ANONYMOUS_TITLE =
   "Créer un compte gratuit pour garder cette vente (3 favoris)";
+/** Compte reconnu dont la liste connectée n'est pas encore arrivée : le cœur attend les droits. */
+export const FAVORITE_VERIFYING_TITLE = "Vérification du compte…";
 
 /** Confirms an add and, on a capped plan, shows how many places are used. */
 export async function announceFavoriteAdded(

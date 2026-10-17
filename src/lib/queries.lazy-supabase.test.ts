@@ -28,6 +28,8 @@ describe("requêtes du catalogue : client Supabase chargé à la demande", () =>
 
   it("importer les requêtes et le service de recherche n'évalue pas le client Supabase", async () => {
     await import("./queries");
+    await import("./alert-queries");
+    await import("./query-configuration");
     await import("./search/search-service");
     await import("@/components/search/SearchResults");
 

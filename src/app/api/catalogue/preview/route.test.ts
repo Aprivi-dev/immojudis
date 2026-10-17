@@ -176,21 +176,160 @@ describe("GET /api/catalogue/preview", () => {
     expect(rpcCalls("sale_photo_mirrors")).toHaveLength(0);
   });
 
-  it("se met en cache publiquement, aussi longtemps que la première page du catalogue", async () => {
+  it("garde la première page sans filtre 300 s dans le CDN", async () => {
     const response = await GET(request("/api/catalogue/preview"));
 
     expect(response.headers.get("cache-control")).toBe(
       "public, s-maxage=300, stale-while-revalidate=60",
     );
-    expect(response.headers.get("x-request-id")).toBeTruthy();
   });
 
-  it("limite les appels par adresse IP, comme les autres routes publiques", async () => {
+  it("garde une recherche filtrée 120 s seulement", async () => {
+    for (const query of ["city=Pau", "page=2", "sort=price_asc", "minSaleDate=2026-11-01"]) {
+      const response = await GET(request(`/api/catalogue/preview?${query}`));
+
+      expect(response.headers.get("cache-control"), query).toBe(
+        "public, s-maxage=120, stale-while-revalidate=60",
+      );
+    }
+  });
+
+  it("garde la première page par défaut même quand les valeurs par défaut sont explicites", async () => {
+    const response = await GET(request("/api/catalogue/preview?sort=relevance&page=1"));
+
+    expect(response.headers.get("cache-control")).toBe(
+      "public, s-maxage=300, stale-while-revalidate=60",
+    );
+  });
+
+  it("ne répercute pas x-request-id sur une réponse publique mise en cache", async () => {
+    const response = await GET(
+      new Request("https://example.test/api/catalogue/preview", {
+        headers: { "x-request-id": "req-du-premier-visiteur" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-request-id")).toBeNull();
+    expect(JSON.stringify(await response.json())).not.toContain("req-du-premier-visiteur");
+  });
+
+  it("répercute x-request-id sur les erreurs, qui ne sont jamais mises en cache", async () => {
+    const response = await GET(
+      new Request("https://example.test/api/catalogue/preview?page=0", {
+        headers: { "x-request-id": "req-erreur-1" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("x-request-id")).toBe("req-erreur-1");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  describe("copies de photos en échec", () => {
+    const DEGRADED = "public, s-maxage=10";
+
+    it("ne fige pas la réponse dans le CDN quand la lecture des copies échoue", async () => {
+      mocks.rpc.mockImplementation((name: string) =>
+        Promise.resolve(
+          name === "sale_photo_mirrors"
+            ? { data: null, error: { message: "boom" } }
+            : { data: searchRows, error: null },
+        ),
+      );
+
+      for (const path of ["/api/catalogue/preview", "/api/catalogue/preview?city=Pau"]) {
+        const response = await GET(request(path));
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control"), path).toBe(DEGRADED);
+        // La liste est servie ; le drapeau reste interne à la route.
+        expect(body.items).toHaveLength(2);
+        expect(body.mirrors).toEqual([]);
+        expect(body).not.toHaveProperty("mirrorsDegraded");
+      }
+    });
+
+    it("ne fige pas non plus un délai dépassé", async () => {
+      vi.useFakeTimers();
+      try {
+        mocks.rpc.mockImplementation((name: string) =>
+          name === "sale_photo_mirrors"
+            ? new Promise(() => undefined)
+            : Promise.resolve({ data: searchRows, error: null }),
+        );
+
+        const pending = GET(request("/api/catalogue/preview"));
+        await vi.advanceTimersByTimeAsync(1_000);
+        const response = await pending;
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe(DEGRADED);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("garde la durée normale quand la base répond qu'aucune copie n'existe", async () => {
+      mocks.rpc.mockImplementation((name: string) =>
+        Promise.resolve(
+          name === "sale_photo_mirrors"
+            ? { data: [], error: null }
+            : { data: searchRows, error: null },
+        ),
+      );
+
+      const response = await GET(request("/api/catalogue/preview"));
+
+      expect(response.headers.get("cache-control")).toBe(
+        "public, s-maxage=300, stale-while-revalidate=60",
+      );
+    });
+
+    it("garde la durée normale quand l'interrupteur est éteint", async () => {
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "off");
+      mocks.rpc.mockImplementation((name: string) =>
+        Promise.resolve(
+          name === "sale_photo_mirrors"
+            ? { data: null, error: { message: "boom" } }
+            : { data: searchRows, error: null },
+        ),
+      );
+
+      const response = await GET(request("/api/catalogue/preview"));
+
+      expect(response.headers.get("cache-control")).toBe(
+        "public, s-maxage=300, stale-while-revalidate=60",
+      );
+    });
+  });
+
+  it("limite les appels à 180 par minute et par adresse IP (politique dédiée)", async () => {
     await GET(request("/api/catalogue/preview"));
 
     expect(mocks.enforceIp).toHaveBeenCalledWith(
-      expect.objectContaining({ bucketKey: "catalogue.preview", limit: 60, windowSeconds: 60 }),
+      expect.objectContaining({ bucketKey: "catalogue.preview", limit: 180, windowSeconds: 60 }),
     );
+  });
+
+  it("contrôle le quota avant de lire la base", async () => {
+    const order: string[] = [];
+    mocks.enforceIp.mockImplementation(async () => {
+      order.push("quota");
+    });
+    mocks.rpc.mockImplementation((name: string) => {
+      order.push(name);
+      return Promise.resolve({
+        data: name === "sale_photo_mirrors" ? [] : searchRows,
+        error: null,
+      });
+    });
+
+    await GET(request("/api/catalogue/preview"));
+
+    expect(order[0]).toBe("quota");
+    expect(order).toContain("search_auction_sales_preview_v3");
   });
 
   it("répond 429 avec Retry-After, sans cache et sans lire la base, au-delà du quota", async () => {
@@ -221,6 +360,33 @@ describe("GET /api/catalogue/preview", () => {
       ["un tribunal trop long", `tribunal=${"t".repeat(161)}`],
       ["plus de 8 types de bien", "homeTypes=a,b,c,d,e,f,g,h,i"],
       ["un type de bien trop long", `homeTypes=${"x".repeat(81)}`],
+      ["une page décimale", "page=2.7"],
+      ["une page en notation scientifique", "page=1e2"],
+      ["une page hexadécimale", "page=0x10"],
+      ["une page signée", "page=%2B2"],
+      ["une page avec un zéro de tête", "page=02"],
+      ["une page entourée d'espaces", "page=%202"],
+      ["une taille de page décimale", "limit=2.7"],
+      ["une taille de page en notation scientifique", "limit=1e2"],
+      ["une taille de page hexadécimale", "limit=0x10"],
+      ["un paramètre inconnu", "evil=1"],
+      ["un critère réservé (occupation)", "occupancy=libre"],
+      ["un critère réservé (score)", "minScore=80"],
+      ["une zone de carte", "bbox=-1,43,1,45"],
+      ["un alias de paramètre", "min_price=1"],
+      ["un paramètre répété", "page=2&page=3"],
+      ["un nombre de chambres négatif", "minBeds=-1"],
+      ["un nombre de chambres décimal", "minBeds=2.5"],
+      ["un nombre de chambres trop grand", "minBeds=21"],
+      ["un nombre de chambres en notation scientifique", "minBeds=1e1"],
+      ["un nombre de salles de bain négatif", "minBaths=-1"],
+      ["un nombre de salles de bain décimal", "minBaths=1.5"],
+      ["un nombre de salles de bain trop grand", "minBaths=21"],
+      ["un caractère NUL dans la ville", "city=Pa%00u"],
+      ["un caractère NUL dans les mots-clés", "keywords=%00"],
+      ["un retour à la ligne dans la recherche", "query=Pau%0A"],
+      ["une tabulation dans le tribunal", "tribunal=Bordeaux%09"],
+      ["un caractère DEL dans le département", "department=33%7F"],
     ])("refuse %s avec un 400 sans lire la base ni consommer le quota", async (_label, query) => {
       const response = await GET(request(`/api/catalogue/preview?${query}`));
       const body = await response.json();
@@ -232,21 +398,22 @@ describe("GET /api/catalogue/preview", () => {
       expect(mocks.enforceIp).not.toHaveBeenCalled();
     });
 
-    it("ignore les critères réservés ou inconnus sans les transmettre", async () => {
-      const response = await GET(
-        request(
-          "/api/catalogue/preview?occupancy=libre&minScore=80&bbox=-1,43,1,45&viewport=45:44:2:1&evil=1",
-        ),
-      );
+    it.each([
+      ["0 chambre", "minBeds=0&minBaths=0"],
+      ["20 chambres et salles de bain", "minBeds=20&minBaths=20"],
+      ["la dernière page", "page=101&limit=100"],
+    ])("accepte %s", async (_label, query) => {
+      const response = await GET(request(`/api/catalogue/preview?${query}`));
 
       expect(response.status).toBe(200);
+    });
+
+    it("transmet les nombres de pièces tels quels à la fonction publique", async () => {
+      await GET(request("/api/catalogue/preview?minBeds=3&minBaths=2"));
+
       expect(rpcCalls("search_auction_sales_preview_v3")[0]![1]).toMatchObject({
-        p_occupancy_status: null,
-        p_min_score: null,
-        p_north: null,
-        p_south: null,
-        p_east: null,
-        p_west: null,
+        p_min_bedrooms: 3,
+        p_min_bathrooms: 2,
       });
     });
   });

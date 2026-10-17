@@ -16,8 +16,9 @@ export const PREVIEW_SEARCH_API_PATH = "/api/catalogue/preview";
 
 /**
  * Critères que la recherche d'aperçu honore, sous leur nom d'adresse canonique (celui de
- * `salesSearchToUrlRecord`). Tout autre paramètre est ignoré : il ne change ni le résultat ni,
- * côté navigateur, l'adresse demandée (donc pas de cache contourné par un paramètre en trop).
+ * `salesSearchToUrlRecord`). Côté navigateur, tout autre critère est écarté de l'adresse. Côté
+ * route, tout autre paramètre est refusé (400) : la réponse est mise en cache par adresse, un
+ * paramètre en trop ou répété ouvrirait une entrée de cache par valeur (et contournerait le CDN).
  */
 export const PREVIEW_SEARCH_URL_KEYS = [
   "city",
@@ -50,13 +51,31 @@ export type PreviewSearchApiResponse = {
   mirrors: Array<[string, SaleMediaMirror]>;
 };
 
+/** Chambres et salles de bain minimum : entiers de 0 à 20 (au-delà, aucune annonce n'existe). */
+const MAX_ROOMS_FILTER = 20;
+
+/**
+ * Valeur envoyée à la route pour un critère de pièces. Le champ de saisie accepte « 2,5 » ou « 30 » :
+ * on envoie l'entier équivalent (« au moins 2,5 chambres » = au moins 3), jamais une valeur que la
+ * route refuserait.
+ */
+function canonicalRoomsFilter(value: string | number | boolean): string | number | boolean {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(MAX_ROOMS_FILTER, Math.ceil(value))
+    : value;
+}
+
 /** Paramètres d'adresse de la recherche d'aperçu : triés, donc identiques pour la même recherche. */
 export function previewSearchQueryString(search: SalesSearchParams): string {
   const record = salesSearchToUrlRecord(search);
   const params = new URLSearchParams();
   for (const key of PREVIEW_SEARCH_URL_KEYS) {
     const value = record[key];
-    if (value != null && value !== "") params.set(key, String(value));
+    if (value == null || value === "") continue;
+    params.set(
+      key,
+      String(key === "minBeds" || key === "minBaths" ? canonicalRoomsFilter(value) : value),
+    );
   }
   return params.toString();
 }
@@ -66,7 +85,11 @@ export function previewSearchApiUrl(search: SalesSearchParams): string {
   return query ? `${PREVIEW_SEARCH_API_PATH}?${query}` : PREVIEW_SEARCH_API_PATH;
 }
 
-/** Critères numériques, dates et listes fermées : une valeur fournie mais illisible est refusée. */
+/**
+ * Critères numériques, dates et listes fermées : une valeur fournie mais illisible est refusée.
+ * `page` et `limit` (entiers stricts) et `minBeds` / `minBaths` (entiers de 0 à 20) sont contrôlés
+ * avant : voir `INTEGER_FIELDS`.
+ */
 const STRICT_FIELDS: Record<string, keyof SalesSearchParams> = {
   limit: "limit",
   maxPrice: "maxPrice",
@@ -83,6 +106,21 @@ const STRICT_FIELDS: Record<string, keyof SalesSearchParams> = {
   transactionType: "transactionType",
 };
 
+/**
+ * Entiers en base 10, sans signe, sans zéro de tête, sans point ni exposant : `2.7`, `1e2`, `0x10`,
+ * `+5` et ` 5` sont refusés (l'adresse canonique n'en contient jamais). `min` et `max` sont inclus.
+ */
+const INTEGER_FIELDS: Record<string, { min: number; max: number }> = {
+  page: { min: 1, max: Number.MAX_SAFE_INTEGER },
+  limit: { min: 1, max: Number.MAX_SAFE_INTEGER },
+  minBeds: { min: 0, max: 20 },
+  minBaths: { min: 0, max: 20 },
+};
+const STRICT_INTEGER = /^(?:0|[1-9][0-9]{0,15})$/;
+
+/** Caractères de contrôle (NUL, tabulation, retour à la ligne, DEL, C1…) : jamais dans un critère. */
+const CONTROL_CHARACTER = /\p{Cc}/u;
+
 export type PreviewSearchRequest =
   | { ok: true; search: SalesSearchParams }
   | { ok: false; message: string };
@@ -91,7 +129,7 @@ export type PreviewSearchRequest =
  * Limites de la fonction SQL `search_auction_sales_preview_v3/v4` : au-delà, elle lève une erreur.
  * On les contrôle ici pour répondre 400 sans lui faire lire la base.
  */
-const RPC_LIMITS = {
+export const RPC_LIMITS = {
   departments: 220,
   keywords: 5,
   propertyTypes: 8,
@@ -137,16 +175,38 @@ export function previewSearchLimitViolation(search: SalesSearchParams): string |
 }
 
 /**
- * Lit les paramètres d'adresse de la route avec la logique de la page (`validateSalesSearch`), ne
- * garde que les critères de l'aperçu public, refuse une valeur illisible et vérifie les limites de
- * la fonction SQL. Les critères réservés (occupation, score, zone de carte…) ne passent pas : la
- * fonction publique les refuse et `buildPreviewSearchArgs` ne les transmet jamais.
+ * Lit les paramètres d'adresse de la route avec la logique de la page (`validateSalesSearch`) et
+ * vérifie les limites de la fonction SQL. Refuse (400) : un paramètre qui n'est pas dans
+ * `PREVIEW_SEARCH_URL_KEYS` (les critères réservés, comme l'occupation, le score ou la zone de
+ * carte, n'y sont pas : la fonction publique les refuse et `buildPreviewSearchArgs` ne les
+ * transmet jamais), un paramètre répété, un caractère de contrôle, un entier illisible ou hors
+ * plage, une valeur numérique, une date ou une liste fermée illisible.
  */
 export function parsePreviewSearchRequest(params: URLSearchParams): PreviewSearchRequest {
+  const known = new Set<string>(PREVIEW_SEARCH_URL_KEYS);
+  const seen = new Set<string>();
+  for (const [key, value] of params) {
+    if (!known.has(key)) return { ok: false, message: "Paramètre inconnu." };
+    if (seen.has(key)) return { ok: false, message: `Paramètre « ${key} » répété.` };
+    seen.add(key);
+    // Avant tout `trim()` : une tabulation ou un retour à la ligne en bout de valeur est refusé aussi.
+    if (CONTROL_CHARACTER.test(value)) {
+      return { ok: false, message: `Paramètre « ${key} » invalide.` };
+    }
+  }
+
   const raw: Record<string, string> = {};
   for (const key of PREVIEW_SEARCH_URL_KEYS) {
     const value = params.get(key)?.trim();
     if (value) raw[key] = value;
+  }
+  for (const [key, { min, max }] of Object.entries(INTEGER_FIELDS)) {
+    if (!(key in raw)) continue;
+    const value = params.get(key)!;
+    const number = STRICT_INTEGER.test(value) ? Number(value) : Number.NaN;
+    if (!(number >= min && number <= max)) {
+      return { ok: false, message: `Paramètre « ${key} » invalide.` };
+    }
   }
   const search = validateSalesSearch(raw);
   for (const [key, field] of Object.entries(STRICT_FIELDS)) {

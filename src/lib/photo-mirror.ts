@@ -266,6 +266,24 @@ export function applyPhotoMirrors<T extends { media?: AuctionSale["media"] }>(
 }
 
 /**
+ * Table URL d'origine vers copie des photos qui en portent une (`media[].mirror`). Sert à garder les
+ * copies d'une liste déjà rendue (liste publique du serveur) quand une autre liste, qui arrive sans
+ * copie, la remplace : voir `applyPhotoMirrors` avec `remember`.
+ */
+export function mirrorsFromSales(
+  sales: ReadonlyArray<{ media?: AuctionSale["media"] }>,
+): Map<string, SaleMediaMirror> {
+  const mirrors = new Map<string, SaleMediaMirror>();
+  for (const sale of sales) {
+    if (!Array.isArray(sale?.media)) continue;
+    for (const item of sale.media) {
+      if (item?.mirror && typeof item.url === "string") mirrors.set(item.url, item.mirror);
+    }
+  }
+  return mirrors;
+}
+
+/**
  * Même chose pour une seule vente (fiche) : les 3 premières photos affichées sont cherchées (seule
  * la photo principale est copiée aujourd'hui ; les autres ne coûtent qu'une URL de plus).
  */

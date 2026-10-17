@@ -24,6 +24,7 @@ import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import {
   FAVORITE_ADD_LABEL,
   FAVORITE_ANONYMOUS_TITLE,
+  FAVORITE_VERIFYING_TITLE,
   FAVORITE_REMOVE_LABEL,
   announceFavoriteAdded,
 } from "@/components/favorite-feedback";
@@ -855,6 +856,8 @@ export function CompactFavoriteButton({
   const queryClient = useQueryClient();
   const [isFavorite, setIsFavorite] = useState(initialFavorite);
   const [busy, setBusy] = useState(false);
+  // `locked` pour un compte reconnu = liste publique gardée pendant la vérification de ses droits.
+  const verifying = Boolean(user) && locked;
 
   useEffect(() => {
     setIsFavorite(initialFavorite);
@@ -915,8 +918,11 @@ export function CompactFavoriteButton({
       disabled={busy}
       aria-pressed={locked ? undefined : isFavorite}
       aria-label={isFavorite && !locked ? FAVORITE_REMOVE_LABEL : FAVORITE_ADD_LABEL}
-      title={locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
-      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60"
+      // Compte reconnu sur la liste publique conservée : `aria-disabled` (le cœur reste focalisable et
+      // annoncé) plutôt qu'un clic sans effet.
+      aria-disabled={verifying ? true : undefined}
+      title={verifying ? FAVORITE_VERIFYING_TITLE : locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
+      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60"
     >
       <Heart className={`h-5 w-5 ${isFavorite && !locked ? "fill-danger text-danger" : ""}`} />
     </button>
