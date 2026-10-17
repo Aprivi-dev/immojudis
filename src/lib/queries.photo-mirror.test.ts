@@ -40,6 +40,9 @@ describe("fiche lue par le navigateur : copie hébergée de la photo", () => {
     mocks.from.mockReset();
     mocks.getSession.mockReset().mockResolvedValue({ data: { session: { user: { id: "u" } } } });
     vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
+    // `assertCloudConfigured` lit l'environnement public, sans importer le client Supabase.
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "ci-publishable-key");
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
   afterEach(() => vi.unstubAllEnvs());
