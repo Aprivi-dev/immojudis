@@ -1,3 +1,6 @@
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from src.normalize import normalize_sale, parse_french_datetime
@@ -53,13 +56,25 @@ def test_normalization_uses_the_declared_sale_timezone_not_the_property_departme
     assert sale.sale_date.isoformat() == "2026-09-15T15:00:00+00:00"
 
 
+_FRENCH_MONTHS = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
+
+
 def test_pdf_extraction_uses_the_same_explicit_source_timezone() -> None:
+    # Une date passée ou à plus de 548 jours est écartée (pdf_sale_date_guard) : un jeudi environ deux
+    # mois après le jour où le test tourne, pour ne jamais dépendre de la date d'exécution.
+    day = date.today() + timedelta(days=60)
+    day += timedelta(days=(3 - day.weekday()) % 7)
     sale = normalize_sale({
         "source_name": "unit", "source_url": "https://example.test/sale",
         "sale_timezone": "America/Martinique",
     })
     enrich_sale_from_pdf_text(sale, [
-        "Audience d'adjudication le jeudi 15 octobre 2026 à 15h00 au tribunal de Fort-de-France.",
+        f"Audience d'adjudication le jeudi {day.day} {_FRENCH_MONTHS[day.month - 1]} {day.year} à 15h00"
+        " au tribunal de Fort-de-France.",
     ])
+    expected = datetime(day.year, day.month, day.day, 15, tzinfo=ZoneInfo("America/Martinique")).astimezone(UTC)
     assert sale.sale_date is not None
-    assert sale.sale_date.isoformat() == "2026-10-15T19:00:00+00:00"
+    assert sale.sale_date.isoformat() == expected.isoformat()
