@@ -177,8 +177,22 @@ async function requestPreviewSearch(search: SalesSearchParams): Promise<PreviewS
   const response = await fetch(previewSearchApiUrl(search), {
     headers: { accept: "application/json" },
   });
-  const body = await readJson<PreviewSearchApiResponse>(response);
-  return { items: body.items, count: body.count, mirrors: new Map(body.mirrors) };
+  const body = await readJson<PreviewSearchApiResponse | null>(response);
+  // Une réponse 200 qui n'est pas du JSON (page d'erreur d'un proxy, corps vide) donne `null` : on
+  // la refuse ici plutôt que de laisser le rendu lire `undefined.length`.
+  if (
+    !Array.isArray(body?.items) ||
+    typeof body.count !== "number" ||
+    !Number.isFinite(body.count)
+  ) {
+    throw new Error("Le catalogue a renvoyé une réponse illisible. Réessayez dans un instant.");
+  }
+  // Les copies ne bloquent jamais l'affichage : une table absente ou illisible vaut « aucune copie ».
+  return {
+    items: body.items,
+    count: body.count,
+    mirrors: new Map(Array.isArray(body.mirrors) ? body.mirrors : []),
+  };
 }
 
 // Share one complete, bounded scan between the list, count and map. Filtering
