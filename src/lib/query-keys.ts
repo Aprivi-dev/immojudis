@@ -47,6 +47,8 @@ export const queryKeys = {
     ["sales-search-map", signature, accessScope] as const,
   salesMapDetail: (accessScope: string | null, saleId: string | null) =>
     ["sales-map-detail", accessScope, saleId] as const,
+  salesPhotoMirrors: (accessScope: string | null, saleIds: readonly string[]) =>
+    ["sales-photo-mirrors", accessScope, saleIds] as const,
   salesAiReview: (userKey: Id, saleIds: readonly string[]) =>
     ["sales-ai-review", userKey, saleIds] as const,
   salesStatistics: (signature: string) => ["sales-statistics", signature] as const,

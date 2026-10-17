@@ -1,5 +1,5 @@
 import { saleDateBoundary } from "./search/sale-date-range";
-import { supabase } from "@/integrations/supabase/client";
+import { getSupabase, type SupabaseBrowserClient } from "@/integrations/supabase/lazy";
 import { departmentSearchValues, frenchSearchTerms } from "@/lib/search/french-geo-search";
 import type { AuctionSale, SaleFilters, SortKey } from "./types";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS, UNLOCKED_VIEW } from "./sale-views";
@@ -23,10 +23,15 @@ const SEARCH_VIEW = "v_auction_sales_app_search" as typeof DETAIL_VIEW;
 const DISCOVERY_SEARCH_VIEW = "v_auction_sales_discovery_search" as typeof DETAIL_VIEW;
 const PUBLIC_PREVIEW_VIEW = "v_auction_sales_app_preview";
 
-type SupabaseReader = Pick<typeof supabase, "from">;
+type SupabaseReader = Pick<SupabaseBrowserClient, "from">;
 
-/** Copies hébergées des photos : la fonction publique est lue avec le client navigateur. */
-const mirrorClient = supabase as unknown as PhotoMirrorClient;
+/**
+ * Copies hébergées des photos : la fonction publique est lue avec le client navigateur, chargé à la
+ * demande (voir `getSupabase`).
+ */
+async function mirrorClient(): Promise<PhotoMirrorClient> {
+  return (await getSupabase()) as unknown as PhotoMirrorClient;
+}
 const mirrorOptions = { timeoutMs: PHOTO_MIRROR_BROWSER_TIMEOUT_MS, remember: true };
 
 // Fields needed by the search result card only. Keep heavy descriptions,
@@ -365,7 +370,7 @@ export async function getSales(
   } = {},
 ): Promise<AuctionSale[]> {
   if (!options.client && !assertCloudConfigured()) return [];
-  const db = options.client ?? supabase;
+  const db = options.client ?? (await getSupabase());
 
   if (options.preview) {
     let q = db
@@ -412,7 +417,7 @@ export async function getSalesForSearch(
 ): Promise<AuctionSale[]> {
   if (!options.client && !assertCloudConfigured()) return [];
 
-  const db = options.client ?? supabase;
+  const db = options.client ?? (await getSupabase());
   const catalogView = options.discovery ? DISCOVERY_SEARCH_VIEW : SEARCH_VIEW;
 
   return withCompletenessTierFallback(async (withTier) => {
@@ -457,6 +462,7 @@ export async function getSalesCount(
 ): Promise<number> {
   if (!assertCloudConfigured()) return 0;
   const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
+  const supabase = await getSupabase();
   let q = supabase.from(catalogView).select("id", { count: "exact", head: true });
 
   q = applyAuthenticatedSaleFilters(q, filters);
@@ -468,6 +474,7 @@ export async function getSalesCount(
 
 export async function getSalesPreviewCount(filters: SaleFilters = {}): Promise<number> {
   if (!assertCloudConfigured()) return 0;
+  const supabase = await getSupabase();
   let q = supabase.from(PUBLIC_PREVIEW_VIEW).select("id", { count: "exact", head: true });
 
   q = applySaleTypeFilter(q, filters);
@@ -485,6 +492,7 @@ export async function getSaleById(
 ): Promise<AuctionSale | null> {
   if (!assertCloudConfigured()) return null;
   if (typeof window === "undefined") return null;
+  const supabase = await getSupabase();
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -500,7 +508,7 @@ export async function getSaleById(
   return data
     ? withPhotoMirror(
         sanitizeAuctionSaleForDisplay(data as AuctionSale),
-        mirrorClient,
+        await mirrorClient(),
         mirrorOptions,
       )
     : null;
@@ -511,8 +519,11 @@ export async function getSalePreviewById(id: string): Promise<AuctionSale | null
   // Card-level facts of the public catalogue (type, surface, city, hearing date…).
   // `unsupported` means the database function is not deployed yet: keep the
   // minimal preview below so the page still works during a staggered release.
+  const supabase = await getSupabase();
   const summary = await fetchPublicSaleSummary(supabase, id);
-  if (summary.kind === "found") return withPhotoMirror(summary.sale, mirrorClient, mirrorOptions);
+  if (summary.kind === "found") {
+    return withPhotoMirror(summary.sale, await mirrorClient(), mirrorOptions);
+  }
   if (summary.kind === "missing") return null;
   const { data, error } = await supabase
     .from(PUBLIC_PREVIEW_VIEW)
@@ -549,7 +560,7 @@ export async function getSaleMapPoints(
   options: { discovery?: boolean; client?: SupabaseReader } = {},
 ): Promise<AuctionSale[]> {
   if (!options.client && !assertCloudConfigured()) return [];
-  const db = options.client ?? supabase;
+  const db = options.client ?? (await getSupabase());
   const catalogView = options.discovery ? DISCOVERY_VIEW : DETAIL_VIEW;
   // The pages are read in parallel once the total is known (see `readPagedRows`): same points,
   // same order (by identifier), same limit as reading them one after the other.
@@ -600,6 +611,7 @@ export async function getNearbySales(
   // 1° latitude ≈ 111 km. 1° longitude ≈ 111 km × cos(lat).
   const dLat = radiusKm / 111;
   const dLng = radiusKm / (111 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
+  const supabase = await getSupabase();
   let q = supabase
     .from(DETAIL_VIEW)
     .select(SALE_LIST_COLUMNS)
@@ -621,6 +633,7 @@ export async function getStats(): Promise<{
   nextSale: string | null;
 }> {
   if (!assertCloudConfigured()) return { totalSales: 0, departments: 0, nextSale: null };
+  const supabase = await getSupabase();
   const { count, error } = await supabase
     .from(PUBLIC_PREVIEW_VIEW)
     .select("*", { count: "exact", head: true });
@@ -658,6 +671,7 @@ export async function getStats(): Promise<{
 // Favorites
 export async function getFavorites(userId: string): Promise<AuctionSale[]> {
   if (!assertCloudConfigured()) return [];
+  const supabase = await getSupabase();
   const { data: favs, error } = await supabase
     .from("user_favorites")
     .select("sale_id")
@@ -675,6 +689,7 @@ export async function getFavorites(userId: string): Promise<AuctionSale[]> {
 
 export async function getFavoriteIds(userId: string): Promise<Set<string>> {
   if (!assertCloudConfigured()) return new Set();
+  const supabase = await getSupabase();
   const { data, error } = await supabase
     .from("user_favorites")
     .select("sale_id")
@@ -685,6 +700,7 @@ export async function getFavoriteIds(userId: string): Promise<Set<string>> {
 
 export async function addFavorite(userId: string, saleId: string) {
   assertCloudConfigured();
+  const supabase = await getSupabase();
   const { error } = await supabase
     .from("user_favorites")
     .insert({ user_id: userId, sale_id: saleId });
@@ -693,6 +709,7 @@ export async function addFavorite(userId: string, saleId: string) {
 
 export async function removeFavorite(userId: string, saleId: string) {
   assertCloudConfigured();
+  const supabase = await getSupabase();
   const { error } = await supabase
     .from("user_favorites")
     .delete()
