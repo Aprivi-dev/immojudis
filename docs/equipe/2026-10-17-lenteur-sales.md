@@ -103,3 +103,33 @@ Ordre conseillé : S0, puis S1 et S3 (premier pas), puis S2, puis S4 une fois me
 - Le plan Vercel Hobby limite la mesure : les journaux ne sont gardés qu'une heure et il n'y a pas de métriques de
   fonction.
 - Le parcours connecté et Safari n'ont pas été testés dans le navigateur.
+
+## Décision et exécution (17/10/2026)
+
+Le propriétaire a validé les 8 propositions (« Ok pour les 8 correctifs ») et indiqué qu'il navigue connecté avec son compte
+administrateur.
+
+Les correctifs sont regroupés dans la PR #273, en trois chantiers. Chacun a été relu par `code-reviewer`, puis corrigé.
+
+- **S0 (base)**
+  - Trois migrations `20261027100000` à `20261027100200` : la visibilité est calculée sur des colonnes matérialisées, sans
+    relire `raw_payload`.
+  - Contrôle d'équivalence en lecture seule sur la production : 1 646 annonces visibles avec l'ancienne règle comme avec
+    la nouvelle, aucune différence.
+  - Pose, contrôles et retour arrière : `docs/runbooks/catalogue-visibility-projection.md`.
+- **S2, S3 et S4 (données et parcours connecté)**
+  - supabase-js est chargé à la demande.
+  - Route `/api/catalogue/preview` : un seul aller-retour par clic, avec un cache CDN de 120 s (filtré) ou 300 s (sans
+    filtre).
+  - Le compte connecté garde la liste affichée pendant sa vérification.
+- **S1, S5, S6 et S7 (premier écran, carte, cache, CSP)**
+  - Premier écran allégé.
+  - Mapbox GL est chargé au premier geste.
+  - `/sales` sans filtre est servie en ISR (`/sales/defaut`, 300 s).
+  - La CSP stricte en rapport seul n'est plus envoyée ; la CSP appliquée est inchangée.
+
+Restes à faire :
+
+- Câbler l'appel de `/api/pipeline/revalidate-sale` depuis le pipeline lors d'un retrait ou d'une annulation.
+  Aujourd'hui, un retrait disparaît de `/sales` en 5 à 10 minutes.
+- Remesurer en production après la pose des migrations.
