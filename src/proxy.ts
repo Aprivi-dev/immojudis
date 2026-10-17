@@ -7,19 +7,14 @@ import {
   buildStrictContentSecurityPolicy,
   generateCspNonce,
   resolveCspMode,
+  strictCspEnabled,
 } from "@/lib/security-headers";
 
-export function proxy(request: NextRequest) {
-  const requestId = resolveRequestId(request.headers.get("x-request-id"));
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-request-id", requestId);
-
-  // Strict, nonce-based CSP (plan P4-04). Next.js reads the nonce from the request's CSP header
-  // (the report-only variant is honoured too) and stamps it on the scripts of dynamic pages.
-  const mode = resolveCspMode();
+/** Delivers the strict policy to the browser and its nonce to the Next.js renderer. */
+function strictCspHeaders(requestHeaders: Headers) {
   const nonce = generateCspNonce();
   const cspHeaders = buildCspResponseHeaders({
-    mode,
+    mode: resolveCspMode(),
     policy: buildStrictContentSecurityPolicy({
       nonce,
       isProduction: process.env.NODE_ENV === "production",
@@ -29,6 +24,21 @@ export function proxy(request: NextRequest) {
   });
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set(cspHeaders[0].key, cspHeaders[0].value);
+  return cspHeaders;
+}
+
+export function proxy(request: NextRequest) {
+  const requestId = resolveRequestId(request.headers.get("x-request-id"));
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+
+  // Strict, nonce-based CSP (plan P4-04), delivered only when it is enforced (CSP_REPORT_ONLY=false)
+  // or previewed (CSP_NONCE_DYNAMIC=true): `strictCspEnabled` explains why the report-only variant
+  // is no longer sent by default (it flagged every script of every page, ~35 reports a visit). The
+  // historical policy of next.config.ts keeps protecting the pages in the default mode. Next.js
+  // reads the nonce from the request's CSP header (the report-only variant is honoured too) and
+  // stamps it on the scripts of dynamic pages.
+  const cspHeaders = strictCspEnabled() ? strictCspHeaders(requestHeaders) : [];
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("x-request-id", requestId);

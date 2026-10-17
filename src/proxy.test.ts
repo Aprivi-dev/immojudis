@@ -9,7 +9,29 @@ function run(headers: Record<string, string> = {}) {
 describe("proxy CSP", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("is report-only by default and never replaces the page's enforced policy", () => {
+  it("sends no strict policy by default: no violation to report, the historical CSP protects", () => {
+    const response = run();
+
+    expect(response.headers.get("content-security-policy-report-only")).toBeNull();
+    expect(response.headers.get("content-security-policy")).toBeNull();
+    expect(response.headers.get("reporting-endpoints")).toBeNull();
+    // No nonce is handed to Next.js either: nothing to stamp, nothing that forces dynamic rendering.
+    expect(response.headers.get("x-middleware-override-headers") ?? "").not.toContain("x-nonce");
+    expect(response.headers.get("x-middleware-override-headers") ?? "").not.toContain(
+      "content-security-policy",
+    );
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+  });
+
+  it("does not send it either when CSP_REPORT_ONLY is explicitly true", () => {
+    vi.stubEnv("CSP_REPORT_ONLY", "true");
+    const response = run();
+    expect(response.headers.get("content-security-policy-report-only")).toBeNull();
+    expect(response.headers.get("reporting-endpoints")).toBeNull();
+  });
+
+  it("previews it in report-only mode with CSP_NONCE_DYNAMIC=true, never replacing the page's policy", () => {
+    vi.stubEnv("CSP_NONCE_DYNAMIC", "true");
     const response = run();
     const report = response.headers.get("content-security-policy-report-only") ?? "";
 
@@ -24,9 +46,11 @@ describe("proxy CSP", () => {
 
     expect(response.headers.get("content-security-policy")).toContain("'strict-dynamic'");
     expect(response.headers.get("content-security-policy-report-only")).toBeNull();
+    expect(response.headers.get("reporting-endpoints")).toContain("/api/csp-report");
   });
 
   it("hands the same fresh nonce to Next.js through the forwarded request headers", () => {
+    vi.stubEnv("CSP_NONCE_DYNAMIC", "true");
     const first = run();
     const second = run();
     const nonceOf = (response: Response) =>
