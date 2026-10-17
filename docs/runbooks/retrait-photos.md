@@ -46,6 +46,38 @@ Ce runbook retire **notre copie**. La fiche peut encore afficher l'image à part
 source (lien direct). Si la demande vise aussi cet affichage, il faut en plus masquer l'image ou la
 vente (procédure habituelle de retrait d'une annonce), ce que ce document ne fait pas.
 
+## Caches : ce qu'un retrait n'efface pas tout de suite
+
+Le pipeline dépose les fichiers avec `cache-control: max-age=31536000` (**1 an**, constante
+`CACHE_CONTROL_SECONDS` de `photo_mirror.py`). Le nom d'un fichier contient l'empreinte de l'image
+d'origine : une image nouvelle a toujours un nouveau nom, un fichier n'est jamais écrasé, donc rien
+n'a besoin d'être revalidé. C'est un **compromis assumé** : un retrait reste effectif, parce que le
+fichier est supprimé du bucket et que le site cesse de donner son chemin (ligne `withdrawn`, au plus
+6 minutes plus tard), mais **un navigateur qui a déjà l'image peut la réafficher sans interroger le
+serveur, jusqu'à 1 an**, pour qui a gardé un onglet ouvert, une page en cache ou l'adresse directe du
+fichier. Ce qu'on peut promettre à un demandeur : plus aucun visiteur ne reçoit cette image depuis
+le site après environ 6 minutes, et l'adresse du fichier répond 404 à tout navigateur qui la
+demande. Ce qu'on ne peut pas promettre : effacer la copie locale d'un navigateur.
+
+- **Seuls les fichiers déposés après ce changement ont 1 an** : `max-age` est fixé à l'envoi et les
+  fichiers existants ne sont jamais renvoyés (`upsert` à `false`). Les plus anciens gardent 86 400 s
+  (1 jour). Le cache de ces derniers s'épuise donc au plus tard un jour après un retrait.
+- **CDN de Supabase** (doc « Smart CDN », vérifiée le 16/10/2026) : à la suppression ou à la
+  modification d'un objet, le cache du CDN est invalidé automatiquement, en **60 secondes** au plus
+  (le temps que l'information gagne tous les centres de données), copies transformées comprises.
+  Mais le Smart CDN n'est activé automatiquement que **pour les projets Pro et au-delà** : sur une
+  autre offre, rien n'indique que la suppression purge le CDN, qui peut alors garder le fichier
+  jusqu'à l'expiration de son cache (1 an ici) ou son éviction. **À vérifier : l'offre du projet
+  Supabase** (tableau de bord, Facturation), avant de s'appuyer sur cette purge.
+- La doc de Supabase le dit aussi : même invalidé côté CDN, un navigateur ne rafraîchit pas son cache
+  pour autant, et elle conseille, pour un objet qui pourrait être supprimé, une durée de cache
+  navigateur plus courte (1 heure par défaut). Si un retrait doit être **immédiatement** visible
+  jusque dans les navigateurs, il faut revenir à une durée courte : modifier
+  `CACHE_CONTROL_SECONDS` (ne vaut que pour les nouveaux fichiers).
+- Pour vérifier le 404 à l'étape 4 sans être trompé par un cache, ajouter à l'adresse une chaîne de
+  requête inédite (`…/<chemin>?cacheNonce=1`, voir la doc Supabase) : le CDN la traite comme un
+  nouvel objet et interroge l'origine.
+
 ## Retirer une photo
 
 Les requêtes ci-dessous écrivent en production : elles se lancent à la main, dans l'éditeur SQL
@@ -116,7 +148,9 @@ Supabase (rôle `service_role`), par une personne habilitée. Jamais depuis un a
 4. **Vérifier.** Attendre le passage du cron (5 minutes), puis :
    - `select count(*) from public.sale_retention_storage_queue where bucket = 'sale-photos';`
      revient à 0 (sinon lire le dernier appel de `/api/cron/sale-retention`) ;
-   - l'ancienne URL publique `…/storage/v1/object/public/sale-photos/<chemin>` répond 404 ;
+   - l'ancienne URL publique `…/storage/v1/object/public/sale-photos/<chemin>` répond 404 (jusqu'à
+     60 secondes après la suppression, le temps de la purge du CDN ; voir « Caches » plus haut pour
+     la contourner et pour les navigateurs qui ont déjà l'image) ;
    - `select * from public.sale_photo_mirrors(array['<url de la photo>']);` ne renvoie rien.
 
 5. **Répondre** au demandeur dans le délai cible, sans joindre l'image.

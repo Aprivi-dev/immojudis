@@ -11,6 +11,7 @@ import {
   mirrorFromRow,
   photoMirrorForCard,
   photoMirrorForDetail,
+  photoMirrorOrigin,
   photoMirrorUrl,
   withPhotoMirror,
   withPhotoMirrors,
@@ -419,6 +420,24 @@ describe("photo mirrors", () => {
       expect(isPhotoMirrorUrl(`${BASE}sale-1/abc-640.webp`)).toBe(true);
       expect(isPhotoMirrorUrl(LICITOR)).toBe(false);
       expect(isPhotoMirrorUrl(undefined)).toBe(false);
+    });
+  });
+
+  describe("préconnexion", () => {
+    it("donne l'origine du stockage, sans chemin ni barre finale", () => {
+      expect(photoMirrorOrigin()).toBe("https://ci.supabase.co");
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co/");
+      expect(photoMirrorOrigin()).toBe("https://ci.supabase.co");
+    });
+
+    it("n'en donne aucune si l'interrupteur est éteint ou Supabase non configuré", () => {
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "off");
+      expect(photoMirrorOrigin()).toBeNull();
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "");
+      expect(photoMirrorOrigin()).toBeNull();
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "pas-une-url");
+      expect(photoMirrorOrigin()).toBeNull();
     });
   });
 });
