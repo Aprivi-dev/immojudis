@@ -192,11 +192,11 @@ select ok(
       'app_private.search_auction_sales_preview_v2(text[],text,text,text,text[],text[],numeric,numeric,numeric,numeric,integer,integer,text,numeric,text[],double precision,double precision,double precision,double precision,text,integer,integer,text)'
     ]::text[]) as signature
     where position(
-      'publication_quarantine' in
+      'catalogue_quarantined' in
       pg_catalog.pg_get_functiondef(signature::regprocedure)
     ) = 0
   ),
-  'v1 and v2 definitions retain the quarantine predicate after migration'
+  'v1 and v2 definitions retain the quarantine predicate (materialized column) after migration'
 );
 
 -- v3 and v4 read the materialized catalogue_quarantined column, which the
@@ -233,7 +233,7 @@ select ok(
     from pg_catalog.pg_policy policy
     where policy.polrelid = 'public.auction_sales'::regclass
       and policy.polname = 'auction_sales_authenticated_read'
-      and pg_catalog.pg_get_expr(policy.polqual, policy.polrelid) like '%publication_quarantine%'
+      and pg_catalog.pg_get_expr(policy.polqual, policy.polrelid) like '%catalogue_quarantined%'
       and pg_catalog.pg_get_expr(policy.polqual, policy.polrelid) like '%is_admin%'
   ),
   'authenticated base-sale policy keeps the quarantine gate while preserving admin access'
