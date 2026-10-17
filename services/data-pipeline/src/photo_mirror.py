@@ -726,14 +726,9 @@ select s.id, s.source_name, s.observations, s.catalogue_thumbnail_url, coalesce(
  where s.catalogue_thumbnail_url is not null
    and coalesce(s.status, 'unknown') in ('upcoming', 'unknown', 'postponed')
    and not s.catalogue_quarantined
-   and (
-         case
-           when s.catalogue_expiry_materialized and s.catalogue_expiry_deadline is not null
-             then s.catalogue_expiry_deadline > now()
-           else app_private.sale_catalogue_entry_is_live_materialized(
-                  false, null, s.sale_date, s.raw_payload, s.sale_procedure)
-         end
-       )
+   and app_private.sale_catalogue_projection_is_live(
+         s.catalogue_expiry_materialized, s.catalogue_expiry_deadline, s.sale_date,
+         s.catalogue_expiry_fallback, s.catalogue_state_observed_at, s.catalogue_state_end_estimate)
    and (
          p.id is null
          or (

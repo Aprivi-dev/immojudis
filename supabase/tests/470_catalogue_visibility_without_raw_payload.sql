@@ -1,6 +1,6 @@
 begin;
 
-select plan(35);
+select plan(47);
 
 -- 20261027100000 : la visibilité publique ne lit plus raw_payload. Ce test prouve que l'ancien
 -- prédicat (sale_catalogue_entry_is_live_materialized + raw_payload->>'publication_quarantine') et le
@@ -104,6 +104,53 @@ select ok(
   'la politique des comptes connectés garde l''accès administrateur et lit la colonne de quarantaine'
 );
 
+-- La réécriture des définitions garde SECURITY DEFINER et le search_path vide de chaque fonction.
+select ok(
+  (select count(*) >= 10
+   from pg_proc procedure_row
+   join pg_namespace schema_row on schema_row.oid = procedure_row.pronamespace
+   where schema_row.nspname = 'app_private'
+     and procedure_row.proname in (
+       'auction_sale_is_publicly_visible', 'search_auction_sales_preview',
+       'search_auction_sales_preview_v2', 'search_auction_sales_preview_v3',
+       'search_auction_sales_preview_v4', 'list_public_sale_sitemap_entries',
+       'get_public_sale_summary', 'get_public_sale_details', 'get_public_tribunal_activity',
+       'get_public_sale_indexability', 'get_public_sale_calendar_event', 'sale_photo_mirrors'
+     ))
+  and not exists (
+    select 1
+    from pg_proc procedure_row
+    join pg_namespace schema_row on schema_row.oid = procedure_row.pronamespace
+    where schema_row.nspname = 'app_private'
+      and procedure_row.proname in (
+        'auction_sale_is_publicly_visible', 'search_auction_sales_preview',
+        'search_auction_sales_preview_v2', 'search_auction_sales_preview_v3',
+        'search_auction_sales_preview_v4', 'list_public_sale_sitemap_entries',
+        'get_public_sale_summary', 'get_public_sale_details', 'get_public_tribunal_activity',
+        'get_public_sale_indexability', 'get_public_sale_calendar_event', 'sale_photo_mirrors'
+      )
+      and (
+        not procedure_row.prosecdef
+        or procedure_row.proconfig is null
+        or not (procedure_row.proconfig @> array['search_path=""'])
+      )
+  ),
+  'les fonctions publiques de visibilité restent SECURITY DEFINER avec search_path vide'
+);
+
+-- La fonction dormante de l'étape 2 de P4-01 recolle un prédicat de visibilité dans un texte SQL : elle
+-- doit lire la colonne, comme les vues (sinon l'ancien prédicat reviendrait en l'activant).
+select ok(
+  pg_get_functiondef('app_private.set_catalogue_raw_columns_hidden(boolean)'::regprocedure)
+    !~* 'publication_quarantine'
+  and pg_get_functiondef('app_private.set_catalogue_raw_columns_hidden(boolean)'::regprocedure)
+    ~ 's\.catalogue_quarantined'
+  and (select proconfig @> array['search_path=""'] and not prosecdef
+       from pg_proc
+       where oid = 'app_private.set_catalogue_raw_columns_hidden(boolean)'::regprocedure),
+  'set_catalogue_raw_columns_hidden lit catalogue_quarantined (plus raw_payload) et garde ses réglages'
+);
+
 -- Jeu d'essai ---------------------------------------------------------------------------------------
 
 create function pg_temp.iso(p_at timestamptz) returns text language sql as
@@ -202,7 +249,29 @@ values
   ('c4700000-0000-4000-8000-000000000027', 'licitor', 'https://example.test/470/27', 'upcoming',
     current_timestamp + interval '3 days', '{"publication_quarantine": ""}'::jsonb, '{}'::jsonb),
   ('c4700000-0000-4000-8000-000000000028', 'licitor', 'https://example.test/470/28', 'upcoming',
-    current_timestamp + interval '3 days', '{"publication_quarantine": null}'::jsonb, '{}'::jsonb);
+    current_timestamp + interval '3 days', '{"publication_quarantine": null}'::jsonb, '{}'::jsonb),
+  -- 29 à 32 : bornes de la fiche de l'État. 29 observée dans plus d'un jour dans le futur (masquée : c'est
+  -- la condition « au plus un jour dans le futur »), 30 dans 23 h (visible), 31 il y a 13 jours et 23 h
+  -- (visible), 32 il y a 14 jours et 1 minute (masquée : fenêtre de 14 jours)
+  ('c4700000-0000-4000-8000-000000000029', 'cessions_etat', 'https://example.test/470/29', 'upcoming', null,
+    jsonb_build_object('source_name', 'cessions_etat', 'state_listing', jsonb_build_object(
+      'active', true, 'observed_at', pg_temp.iso(current_timestamp + interval '2 days'))), '{}'::jsonb),
+  ('c4700000-0000-4000-8000-000000000030', 'cessions_etat', 'https://example.test/470/30', 'upcoming', null,
+    jsonb_build_object('source_name', 'cessions_etat', 'state_listing', jsonb_build_object(
+      'active', true, 'observed_at', pg_temp.iso(current_timestamp + interval '23 hours'))), '{}'::jsonb),
+  ('c4700000-0000-4000-8000-000000000031', 'cessions_etat', 'https://example.test/470/31', 'upcoming', null,
+    jsonb_build_object('source_name', 'cessions_etat', 'state_listing', jsonb_build_object(
+      'active', true, 'observed_at', pg_temp.iso(current_timestamp - interval '13 days 23 hours'))), '{}'::jsonb),
+  ('c4700000-0000-4000-8000-000000000032', 'cessions_etat', 'https://example.test/470/32', 'upcoming', null,
+    jsonb_build_object('source_name', 'cessions_etat', 'state_listing', jsonb_build_object(
+      'active', true, 'observed_at', pg_temp.iso(current_timestamp - interval '14 days 1 minute'))), '{}'::jsonb),
+  -- 33 : conflit de dates, date future, calendrier en ligne absent ; le test change ensuite sa seule
+  -- sale_procedure. 34 : à venir, date future, date limite matérialisée ; le test la passe ensuite en
+  -- « postponed » sans toucher à sale_date.
+  ('c4700000-0000-4000-8000-000000000033', 'licitor', 'https://example.test/470/33', 'upcoming',
+    current_timestamp + interval '6 days', '{"source_conflicts": [{"field": "sale_date"}]}'::jsonb, '{}'::jsonb),
+  ('c4700000-0000-4000-8000-000000000034', 'licitor', 'https://example.test/470/34', 'upcoming',
+    current_timestamp + interval '7 days', '{}'::jsonb, '{}'::jsonb);
 
 -- Les valeurs matérialisées ---------------------------------------------------------------------------
 
@@ -218,7 +287,9 @@ select is(
     'c4700000-0000-4000-8000-000000000014', 'c4700000-0000-4000-8000-000000000015',
     'c4700000-0000-4000-8000-000000000016', 'c4700000-0000-4000-8000-000000000017',
     'c4700000-0000-4000-8000-000000000018', 'c4700000-0000-4000-8000-000000000019',
-    'c4700000-0000-4000-8000-000000000020'
+    'c4700000-0000-4000-8000-000000000020', 'c4700000-0000-4000-8000-000000000029',
+    'c4700000-0000-4000-8000-000000000030', 'c4700000-0000-4000-8000-000000000031',
+    'c4700000-0000-4000-8000-000000000032', 'c4700000-0000-4000-8000-000000000033'
   ],
   'le jeu d''essai couvre bien les annonces sans date limite matérialisée (le repli exercé)'
 );
@@ -285,7 +356,9 @@ select is(
     'c4700000-0000-4000-8000-000000000016', 'c4700000-0000-4000-8000-000000000018',
     'c4700000-0000-4000-8000-000000000023', 'c4700000-0000-4000-8000-000000000025',
     'c4700000-0000-4000-8000-000000000026', 'c4700000-0000-4000-8000-000000000027',
-    'c4700000-0000-4000-8000-000000000028'
+    'c4700000-0000-4000-8000-000000000028', 'c4700000-0000-4000-8000-000000000030',
+    'c4700000-0000-4000-8000-000000000031', 'c4700000-0000-4000-8000-000000000033',
+    'c4700000-0000-4000-8000-000000000034'
   ],
   'l''ancien prédicat retient les annonces attendues du jeu d''essai'
 );
@@ -471,6 +544,29 @@ select ok(
   'le marqueur retiré, l''annonce redevient visible'
 );
 
+-- Une écriture directe de la colonne ne contourne rien : raw_payload reste la source de vérité, la
+-- colonne est recalculée à chaque écriture, même si raw_payload ne change pas.
+update public.auction_sales
+set catalogue_quarantined = false
+where id = 'c4700000-0000-4000-8000-000000000003';
+
+update public.auction_sales
+set catalogue_quarantined = true
+where id = 'c4700000-0000-4000-8000-000000000001';
+
+select ok(
+  (select catalogue_quarantined from public.auction_sales where id = 'c4700000-0000-4000-8000-000000000003')
+  and not app_private.auction_sale_is_publicly_visible('c4700000-0000-4000-8000-000000000003')
+  and not exists (select 1 from public.v_auction_sales_discovery where id = 'c4700000-0000-4000-8000-000000000003'),
+  'une annonce en quarantaine dont on écrit catalogue_quarantined = false reste masquée (colonne corrigée)'
+);
+
+select ok(
+  not (select catalogue_quarantined from public.auction_sales where id = 'c4700000-0000-4000-8000-000000000001')
+  and app_private.auction_sale_is_publicly_visible('c4700000-0000-4000-8000-000000000001'),
+  'une annonce propre dont on écrit catalogue_quarantined = true reste visible (colonne corrigée)'
+);
+
 -- Les valeurs de repli suivent les écritures ---------------------------------------------------------
 
 update public.auction_sales
@@ -519,6 +615,122 @@ select ok(
      from public.auction_sales where id = 'c4700000-0000-4000-8000-000000000013')
   and not app_private.auction_sale_is_publicly_visible('c4700000-0000-4000-8000-000000000013'),
   'une écriture directe des colonnes de repli est recalculée par le déclencheur'
+);
+
+-- Changement de sale_procedure seul : sale_date et raw_payload ne bougent pas. Le calendrier en ligne se
+-- ferme dans le passé, la valeur de repli suit et l'annonce sort du catalogue.
+update public.auction_sales
+set sale_procedure = jsonb_build_object('sale_window', jsonb_build_object(
+      'opens_at', pg_temp.iso(current_timestamp - interval '12 days'),
+      'closes_at', pg_temp.iso(current_timestamp - interval '1 day')))
+where id = 'c4700000-0000-4000-8000-000000000033';
+
+select ok(
+  (select catalogue_expiry_deadline is null and catalogue_expiry_fallback < current_timestamp
+     from public.auction_sales where id = 'c4700000-0000-4000-8000-000000000033')
+  and not app_private.auction_sale_is_publicly_visible('c4700000-0000-4000-8000-000000000033'),
+  'un changement de sale_procedure seul recalcule la valeur de repli'
+);
+
+-- Transition à venir -> reportée seule : sale_date ne bouge pas, mais la date limite matérialisée
+-- disparaît. La valeur de repli prend le relais, l'annonce reste visible jusqu'à sa date.
+select ok(
+  (select catalogue_expiry_deadline is not null and catalogue_expiry_fallback is null
+     from public.auction_sales where id = 'c4700000-0000-4000-8000-000000000034'),
+  'avant la transition, l''annonce à venir a une date limite et aucune valeur de repli'
+);
+
+update public.auction_sales
+set status = 'postponed'
+where id = 'c4700000-0000-4000-8000-000000000034';
+
+select ok(
+  (select catalogue_expiry_deadline is null and catalogue_expiry_fallback > current_timestamp
+     from public.auction_sales where id = 'c4700000-0000-4000-8000-000000000034')
+  and app_private.auction_sale_is_publicly_visible('c4700000-0000-4000-8000-000000000034')
+  and exists (select 1 from public.v_auction_sales_discovery where id = 'c4700000-0000-4000-8000-000000000034'),
+  'la transition upcoming -> postponed seule matérialise la valeur de repli (annonce toujours visible)'
+);
+
+-- Valeurs que les formats acceptent mais que le calendrier refuse : jamais d'écriture refusée, l'annonce
+-- est seulement masquée (l'ancien prédicat, lui, levait l'erreur à chaque lecture).
+insert into public.auction_sales (id, source_name, source_url, status, sale_date, raw_payload, sale_procedure)
+values
+  -- 35 jour inexistant dans observed_at, 36 décalage horaire +99:00, 37 fin de publication au 30 février
+  ('c4700000-0000-4000-8000-000000000035', 'cessions_etat', 'https://example.test/470/35', 'upcoming', null,
+    jsonb_build_object('source_name', 'cessions_etat', 'state_listing', jsonb_build_object(
+      'active', true, 'observed_at', '2026-02-30T10:00:00+00:00')), '{}'::jsonb),
+  ('c4700000-0000-4000-8000-000000000036', 'cessions_etat', 'https://example.test/470/36', 'upcoming', null,
+    jsonb_build_object('source_name', 'cessions_etat', 'state_listing', jsonb_build_object(
+      'active', true, 'observed_at', '2026-10-16T10:00:00+99:00')), '{}'::jsonb),
+  ('c4700000-0000-4000-8000-000000000037', 'cessions_etat', 'https://example.test/470/37', 'upcoming', null,
+    jsonb_build_object('source_name', 'cessions_etat', 'state_listing', jsonb_build_object(
+      'active', true, 'observed_at', pg_temp.iso(current_timestamp - interval '1 day'),
+      'listing_end_estimate', '2026-02-30')), '{}'::jsonb);
+
+select ok(
+  (select count(*) = 3
+     and bool_and(catalogue_state_observed_at is null and catalogue_state_end_estimate is null
+                  and catalogue_expiry_materialized)
+     from public.auction_sales
+     where id in ('c4700000-0000-4000-8000-000000000035', 'c4700000-0000-4000-8000-000000000036',
+                  'c4700000-0000-4000-8000-000000000037'))
+  and not exists (
+    select 1
+    from public.auction_sales
+    where id in ('c4700000-0000-4000-8000-000000000035', 'c4700000-0000-4000-8000-000000000036',
+                 'c4700000-0000-4000-8000-000000000037')
+      and (app_private.auction_sale_is_publicly_visible(id)
+           or exists (select 1 from public.v_auction_sales_discovery d where d.id = auction_sales.id))
+  ),
+  'observed_at au 30 février, observed_at en +99:00 et fin au 30 février : insertion acceptée, annonce masquée'
+);
+
+-- Même chose en mise à jour : une fiche valide dont la date devient impossible n'empêche pas l'écriture.
+update public.auction_sales
+set raw_payload = jsonb_build_object('source_name', 'cessions_etat', 'state_listing', jsonb_build_object(
+      'active', true, 'observed_at', '2026-10-16T10:00:00-99:00'))
+where id = 'c4700000-0000-4000-8000-000000000007';
+
+select ok(
+  (select catalogue_state_observed_at is null and catalogue_state_end_estimate is null
+     from public.auction_sales where id = 'c4700000-0000-4000-8000-000000000007')
+  and not app_private.auction_sale_is_publicly_visible('c4700000-0000-4000-8000-000000000007'),
+  'une mise à jour vers un décalage horaire impossible est acceptée et masque l''annonce'
+);
+
+-- Requête de dérive du runbook (docs/runbooks/catalogue-visibility-projection.md) : zéro ligne tant que
+-- les déclencheurs sont actifs, une ligne dès qu'une écriture les contourne.
+select is(
+  (select count(*) from public.auction_sales
+    where catalogue_quarantined is distinct from (coalesce(raw_payload ->> 'publication_quarantine', '') <> '')),
+  0::bigint,
+  'la requête de dérive ne trouve rien quand les déclencheurs ont fait leur travail'
+);
+
+alter table public.auction_sales disable trigger user;
+update public.auction_sales
+set raw_payload = raw_payload || '{"publication_quarantine": "operator_hold"}'::jsonb
+where id = 'c4700000-0000-4000-8000-000000000026';
+alter table public.auction_sales enable trigger user;
+
+select is(
+  (select array_agg(id::text order by id) from public.auction_sales
+    where catalogue_quarantined is distinct from (coalesce(raw_payload ->> 'publication_quarantine', '') <> '')),
+  array['c4700000-0000-4000-8000-000000000026'],
+  'la requête de dérive repère une quarantaine écrite hors déclencheur'
+);
+
+-- Le rattrapage de la migration corrigerait cette ligne ; ici la réécriture de raw_payload la rattrape
+-- par le déclencheur (le WHEN couvre raw_payload).
+update public.auction_sales
+set raw_payload = raw_payload || '{"touched": true}'::jsonb
+where id = 'c4700000-0000-4000-8000-000000000026';
+
+select ok(
+  (select catalogue_quarantined from public.auction_sales where id = 'c4700000-0000-4000-8000-000000000026')
+  and not app_private.auction_sale_is_publicly_visible('c4700000-0000-4000-8000-000000000026'),
+  'une écriture suivante, déclencheurs actifs, corrige la dérive et masque l''annonce'
 );
 
 -- Le prédicat lui-même ----------------------------------------------------------------------------------
