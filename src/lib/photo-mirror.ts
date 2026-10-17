@@ -264,6 +264,21 @@ function storageBase(): string | null {
     : null;
 }
 
+/**
+ * Origine du stockage des copies (`https://<projet>.supabase.co`), pour `preconnect` ; `null` si
+ * l'interrupteur est éteint ou si Supabase n'est pas configuré (aucune connexion à préparer).
+ */
+export function photoMirrorOrigin(): string | null {
+  if (!isPhotoMirrorEnabled()) return null;
+  const base = storageBase();
+  if (!base) return null;
+  try {
+    return new URL(base).origin;
+  } catch {
+    return null;
+  }
+}
+
 /** URL publique d'un fichier du bucket, ou `null` si le chemin ou la configuration est invalide. */
 export function photoMirrorUrl(path: string | null | undefined): string | null {
   const base = storageBase();
