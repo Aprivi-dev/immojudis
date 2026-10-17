@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ load: vi.fn() }));
 
@@ -93,9 +93,41 @@ describe("/sales static variant (ISR)", () => {
     }
   });
 
-  it("still renders when the database is unavailable: the browser takes over", async () => {
+  it("still renders when the database is unavailable in development and tests: the browser takes over", async () => {
     mocks.load.mockResolvedValue(null);
     const html = renderToStaticMarkup(await Page());
     expect(html).toContain('data-seeded="false"');
+  });
+
+  describe("database outage in production", () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("fails the regeneration instead of caching an empty page for 5 minutes", async () => {
+      // Next.js then keeps serving the last successfully generated page and retries on the next
+      // request (ISR guide: "If an error is thrown while attempting to revalidate…").
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("NEXT_PHASE", "");
+      mocks.load.mockResolvedValue(null);
+      await expect(Page()).rejects.toThrow(/Catalogue public indisponible/);
+    });
+
+    it("still renders the page without a list during `next build`, so a build without database passes", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("NEXT_PHASE", "phase-production-build");
+      mocks.load.mockResolvedValue(null);
+      const html = renderToStaticMarkup(await Page());
+      expect(html).toContain('data-seeded="false"');
+    });
+
+    it("renders normally when the database answers", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("NEXT_PHASE", "");
+      mocks.load.mockResolvedValue({
+        signature: salesSearchSignature({}),
+        items: [{ id: "a" }],
+        count: 1,
+      });
+      expect(renderToStaticMarkup(await Page())).toContain('data-seeded="true"');
+    });
   });
 });

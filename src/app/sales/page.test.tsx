@@ -86,6 +86,17 @@ describe("/sales server page", () => {
     expect(html).toContain('data-seeded="false"');
   });
 
+  it("keeps that fallback in production too: only the static variant refuses an empty page", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      mocks.load.mockResolvedValue(null);
+      const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+      expect(html).toContain('data-seeded="false"');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("has an accented title and description, without the site name", () => {
     expect(metadata.title).toBe("Ventes immobilières aux enchères en France");
     expect(String(metadata.description)).toMatch(/^Consultez les ventes immobilières aux enchères/);
