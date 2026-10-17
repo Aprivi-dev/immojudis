@@ -14,6 +14,7 @@ import {
   FIRST_PAGE_CACHE_KEY,
   isDefaultCatalogueSearch,
   loadInitialCatalogue,
+  loadPreviewCataloguePage,
 } from "./public-catalogue.server";
 import { salesSearchSignature } from "./search/search-url-state";
 
@@ -197,5 +198,98 @@ describe("copies hébergées des photos de la première page", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("page d'aperçu servie au navigateur (/api/catalogue/preview)", () => {
+  const PHOTO_A = "https://www.licitor.com/photos/a.jpg";
+  const PHOTO_B = "https://www.vench.fr/vignettes/v1.jpg";
+  const search = vi.fn();
+  const firstPage = vi.fn();
+  const mirrorRpc = vi.fn();
+  const photoMirrorClient = { rpc: mirrorRpc };
+  const withPhotos = () => ({
+    items: [
+      { id: "example-immojudis-bordeaux-t2", media: [{ type: "image", url: PHOTO_B }] },
+      { id: "a", media: [{ type: "image", url: PHOTO_A }] },
+    ] as never[],
+    count: 2276,
+  });
+
+  beforeEach(() => {
+    search.mockReset().mockResolvedValue(withPhotos());
+    firstPage.mockReset().mockResolvedValue(withPhotos());
+    mirrorRpc.mockReset().mockResolvedValue({
+      data: [
+        {
+          source_url: PHOTO_A,
+          path_640: "a/x-640.webp",
+          path_1600: "a/x-1600.webp",
+          width: 1600,
+          height: 1200,
+        },
+      ],
+      error: null,
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("rend les mêmes ventes et le même total que le rendu serveur, copies à part", async () => {
+    const dependencies = { search, firstPage, photoMirrorClient };
+
+    const page = await loadPreviewCataloguePage({ city: "Pau" }, dependencies);
+    const initial = await loadInitialCatalogue({ city: "Pau" }, dependencies);
+
+    expect(page.count).toBe(initial!.count);
+    expect(page.items.map((sale) => sale.id)).toEqual(initial!.items.map((sale) => sale.id));
+    expect(page.items[0]!.media![0]).toEqual({ type: "image", url: PHOTO_A });
+    expect(page.mirrors).toEqual([
+      [PHOTO_A, { path640: "a/x-640.webp", path1600: "a/x-1600.webp", width: 1600, height: 1200 }],
+    ]);
+    expect(initial!.items[0]!.media![0]).toMatchObject({ mirror: { path640: "a/x-640.webp" } });
+  });
+
+  it("sert la première page depuis le cache partagé, et lit la base pour une recherche filtrée", async () => {
+    await loadPreviewCataloguePage({}, { search, firstPage, photoMirrorClient });
+    expect(firstPage).toHaveBeenCalledTimes(1);
+    expect(search).not.toHaveBeenCalled();
+
+    await loadPreviewCataloguePage({ city: "Pau" }, { search, firstPage, photoMirrorClient });
+    expect(search).toHaveBeenCalledWith({ city: "Pau" });
+  });
+
+  it("interrupteur éteint : aucune copie et aucun appel", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "off");
+
+    const page = await loadPreviewCataloguePage({}, { search, firstPage, photoMirrorClient });
+
+    expect(page.mirrors).toEqual([]);
+    expect(mirrorRpc).not.toHaveBeenCalled();
+  });
+
+  it("une erreur des copies garde la liste", async () => {
+    mirrorRpc.mockResolvedValue({ data: null, error: { message: "boom" } });
+
+    const page = await loadPreviewCataloguePage({}, { search, firstPage, photoMirrorClient });
+
+    expect(page.items).toHaveLength(1);
+    expect(page.mirrors).toEqual([]);
+  });
+
+  it("lève quand la base échoue ou tarde trop (la route répond 503, rien n'est mis en cache)", async () => {
+    search.mockRejectedValue(new Error("statement timeout"));
+    await expect(
+      loadPreviewCataloguePage({ city: "Pau" }, { search, firstPage, photoMirrorClient }),
+    ).rejects.toThrow("statement timeout");
+
+    search.mockReturnValue(new Promise(() => undefined));
+    await expect(
+      loadPreviewCataloguePage(
+        { city: "Pau" },
+        { search, firstPage, photoMirrorClient, timeoutMs: 5 },
+      ),
+    ).rejects.toThrow(/Délai dépassé/);
   });
 });

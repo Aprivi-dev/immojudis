@@ -23,74 +23,200 @@ import { forgetRememberedPhotoMirrors } from "@/lib/photo-mirror";
 import { fetchSearchCount, fetchSearchMapResults, fetchSearchResults } from "./search-service";
 
 describe("public preview search service", () => {
+  const PHOTO = "https://www.licitor.com/photos/maison.jpg";
+  const PHOTO_B = "https://www.vench.fr/vignettes/v1.jpg";
+  const mirror = {
+    path640: "s/abc-640.webp",
+    path1600: "s/abc-1600.webp",
+    width: 1600,
+    height: 1200,
+  };
+  const publicSales = [
+    {
+      id: "a",
+      starting_price_eur: 90000,
+      city: "Bordeaux",
+      department: "33",
+      app_surface_m2: 60,
+      latitude: 44.84,
+      longitude: -0.58,
+      media: [{ type: "image", url: PHOTO }],
+    },
+    { id: "b", starting_price_eur: 120000, city: "Pau", media: [{ type: "image", url: PHOTO_B }] },
+  ];
+
+  /** Réponse de la route `/api/catalogue/preview`. */
+  function previewResponse(
+    body: Partial<{ items: unknown[]; count: number; mirrors: unknown[] }> = {},
+    status = 200,
+  ) {
+    return new Response(
+      JSON.stringify(
+        status === 200
+          ? { items: publicSales, count: 2276, mirrors: [[PHOTO, mirror]], ...body }
+          : { ok: false, error: "Catalogue indisponible." },
+      ),
+      { status, headers: { "content-type": "application/json" } },
+    );
+  }
+  const fetchMock = vi.fn();
+  const requestedUrls = () => fetchMock.mock.calls.map(([url]) => String(url));
+
   beforeEach(() => {
     getSales.mockReset();
     getSalesForSearch.mockReset();
     getSaleMapPoints.mockReset();
     rpc.mockReset();
+    fetchMock.mockReset().mockImplementation(() => Promise.resolve(previewResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    forgetRememberedPhotoMirrors();
   });
 
-  it("maps useful public facts without copying unexpected protected fields", async () => {
-    rpc.mockResolvedValue({
-      data: [
-        {
-          id: "public-sale",
-          starting_price_eur: 90000,
-          total_count: 1,
+  describe("visiteur anonyme : un seul aller-retour sur notre domaine", () => {
+    beforeEach(() => {
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
+    });
+
+    it("demande la page à /api/catalogue/preview et jamais à Supabase", async () => {
+      const items = await fetchSearchResults({ search: { department: "33" }, preview: true });
+
+      expect(requestedUrls()).toEqual(["/api/catalogue/preview?department=33"]);
+      expect(rpc).not.toHaveBeenCalled();
+      expect(items.map((sale) => sale.id)).toEqual(["a", "b"]);
+    });
+
+    it("pose les copies de photos de la réponse, sans second appel", async () => {
+      const [first, second] = await fetchSearchResults({ search: {}, preview: true });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(rpc).not.toHaveBeenCalled();
+      expect(first!.media![0]).toMatchObject({ url: PHOTO, mirror: { path640: mirror.path640 } });
+      expect(second!.media![0]).toEqual({ type: "image", url: PHOTO_B });
+    });
+
+    it("garde la carte au même format pour la carte Mapbox (coordonnées publiques)", async () => {
+      const [sale] = await fetchSearchResults({ search: {}, preview: true });
+      const { buildMapboxSaleFeatureCollection } = await import("@/lib/mapbox-sales");
+
+      expect(buildMapboxSaleFeatureCollection([sale!]).features[0]!.geometry.coordinates).toEqual([
+        -0.58, 44.84,
+      ]);
+    });
+
+    it("partage un seul appel entre la liste et le total d'une même recherche", async () => {
+      const search = { query: "Nouvelle-Aquitaine", page: 2 };
+      const [items, count] = await Promise.all([
+        fetchSearchResults({ search, preview: true }),
+        fetchSearchCount({ search, preview: true }),
+      ]);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(items).toHaveLength(2);
+      expect(count).toBe(2276);
+    });
+
+    it("sépare les recherches différentes et refait l'appel quand la précédente est terminée", async () => {
+      await Promise.all([
+        fetchSearchResults({ search: { saleType: "notary", page: 2 }, preview: true }),
+        fetchSearchResults({ search: { saleType: "tribunal", page: 2 }, preview: true }),
+      ]);
+      expect(requestedUrls().sort()).toEqual([
+        "/api/catalogue/preview?page=2&saleType=notary",
+        "/api/catalogue/preview?page=2&saleType=tribunal",
+      ]);
+
+      await fetchSearchResults({ search: { saleType: "notary", page: 2 }, preview: true });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("n'envoie que les critères publics, dans un ordre stable", async () => {
+      await fetchSearchResults({
+        search: {
+          sort: "price_asc",
           city: "Bordeaux",
-          department: "33",
-          property_type: "apartment",
-          app_surface_m2: 60,
-          sale_date: "2026-10-01T09:00:00Z",
-          latitude: 44.84,
-          longitude: -0.58,
-          thumbnail_url: "https://example.test/property-photo.jpg",
-          address: "must not leak",
-          lawyer_contact: "must not leak",
-          documents: [{ url: "private" }],
-          investment_score: 82,
+          minSqft: 80,
+          minBeds: 3,
+          minSaleDate: "2026-09-11",
+          maxSaleDate: "2026-10-01",
+          page: 4,
+          limit: 12,
+          occupancy: "vacant",
+          minScore: 70,
+          dpeClasses: ["A"],
+          viewport: { north: 45, south: 44, east: 1, west: 0 },
         },
-      ],
-      error: null,
+        preview: true,
+      });
+
+      const url = new URL(requestedUrls()[0]!, "https://example.test");
+      expect(url.pathname).toBe("/api/catalogue/preview");
+      expect([...url.searchParams.keys()]).toEqual([
+        "city",
+        "limit",
+        "maxSaleDate",
+        "minBeds",
+        "minSaleDate",
+        "minSqft",
+        "page",
+        "sort",
+      ]);
     });
-    const [sale] = await fetchSearchResults({ search: {}, preview: true });
-    expect(sale).toMatchObject({
-      city: "Bordeaux",
-      app_surface_m2: 60,
-      latitude: 44.84,
-      media: [{ type: "image", url: "https://example.test/property-photo.jpg" }],
+
+    it("compte : lit le total de la même réponse", async () => {
+      await expect(fetchSearchCount({ search: {}, preview: true })).resolves.toBe(2276);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
-    for (const key of [
-      "address",
-      "lawyer_contact",
-      "documents",
-      "investment_score",
-      "thumbnail_url",
-    ]) {
-      expect(sale).not.toHaveProperty(key);
-    }
-    const { buildMapboxSaleFeatureCollection } = await import("@/lib/mapbox-sales");
-    expect(buildMapboxSaleFeatureCollection([sale]).features[0].geometry.coordinates).toEqual([
-      -0.58, 44.84,
-    ]);
+
+    it("un rafraîchissement sans copie ne retire pas la copie déjà connue", async () => {
+      vi.stubGlobal("window", {});
+      await fetchSearchResults({ search: {}, preview: true });
+
+      fetchMock.mockImplementation(() => Promise.resolve(previewResponse({ mirrors: [] })));
+      const refreshed = await fetchSearchResults({ search: {}, preview: true });
+
+      expect(refreshed[0]!.media![0]).toMatchObject({
+        url: PHOTO,
+        mirror: { path640: mirror.path640 },
+      });
+      expect(refreshed[1]!.media![0]).toEqual({ type: "image", url: PHOTO_B });
+    });
+
+    it("réponse sans copie : les photos des sources, comme avant", async () => {
+      fetchMock.mockImplementation(() => Promise.resolve(previewResponse({ mirrors: [] })));
+
+      const items = await fetchSearchResults({ search: {}, preview: true });
+
+      expect(JSON.stringify(items)).not.toContain("mirror");
+    });
+
+    it("n'affiche aucun champ réservé même si la réponse en contenait", async () => {
+      const items = await fetchSearchResults({ search: {}, preview: true });
+
+      for (const key of ["address", "lawyer_contact", "documents", "investment_score"]) {
+        expect(items[0]).not.toHaveProperty(key);
+      }
+    });
+
+    it.each([400, 429, 503])(
+      "une réponse %i lève une erreur (affichée par la page, comme avant)",
+      async (status) => {
+        fetchMock.mockImplementation(() => Promise.resolve(previewResponse({}, status)));
+
+        await expect(fetchSearchResults({ search: {}, preview: true })).rejects.toMatchObject({
+          status,
+        });
+        // L'échec ne reste pas en mémoire : la tentative suivante refait l'appel.
+        fetchMock.mockImplementation(() => Promise.resolve(previewResponse()));
+        await expect(fetchSearchResults({ search: {}, preview: true })).resolves.toHaveLength(2);
+      },
+    );
   });
 
-  it.each([
-    "javascript:alert(1)",
-    "https://example.test/document.pdf",
-    "https://example.test/logo.png",
-  ])("rejects an unsuitable thumbnail: %s", async (thumbnail_url) => {
-    rpc.mockResolvedValue({
-      data: [{ id: "public-sale", total_count: 1, thumbnail_url }],
-      error: null,
-    });
-    const [sale] = await fetchSearchResults({ search: {}, preview: true });
-    expect(sale.media).toEqual([]);
-  });
-
-  describe("copies hébergées des photos principales", () => {
-    const PHOTO = "https://www.licitor.com/photos/maison.jpg";
-    const PHOTO_B = "https://www.vench.fr/vignettes/v1.jpg";
+  describe("recherche connectée : copies des photos", () => {
     const mirrorRow = {
       source_url: PHOTO,
       path_640: "s/abc-640.webp",
@@ -98,37 +224,15 @@ describe("public preview search service", () => {
       width: 1600,
       height: 1200,
     };
-
-    /** Recherche publique + fonction des copies, distinguées par le nom de la fonction. */
-    function mockRpc(mirrors: unknown) {
-      rpc.mockImplementation((name: string) =>
-        Promise.resolve(
-          name === "sale_photo_mirrors"
-            ? mirrors
-            : {
-                data: [
-                  { id: "a", total_count: 2, thumbnail_url: PHOTO },
-                  { id: "b", total_count: 2, thumbnail_url: PHOTO_B },
-                ],
-                error: null,
-              },
-        ),
-      );
-    }
     const mirrorCalls = () => rpc.mock.calls.filter(([name]) => name === "sale_photo_mirrors");
 
     beforeEach(() => {
       vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
       vi.spyOn(console, "warn").mockImplementation(() => undefined);
     });
-    afterEach(() => {
-      vi.unstubAllEnvs();
-      vi.unstubAllGlobals();
-      forgetRememberedPhotoMirrors();
-    });
 
-    it("recherche connectée : cherche la photo que la carte affichera, pas media[0]", async () => {
-      mockRpc({ data: [mirrorRow], error: null });
+    it("cherche la photo que la carte affichera, pas media[0]", async () => {
+      rpc.mockResolvedValue({ data: [mirrorRow], error: null });
       getSalesForSearch.mockResolvedValue([
         {
           id: "full",
@@ -144,45 +248,11 @@ describe("public preview search service", () => {
       expect(mirrorCalls()[0]![1]).toEqual({ p_source_urls: [PHOTO] });
       expect(sale!.media![1]!.mirror?.path640).toBe("s/abc-640.webp");
       expect(sale!.media![0]).not.toHaveProperty("mirror");
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it("un rafraîchissement sans copie ne retire pas la copie déjà connue", async () => {
-      vi.stubGlobal("window", {});
-      mockRpc({ data: [mirrorRow], error: null });
-      await fetchSearchResults({ search: {}, preview: true });
-
-      mockRpc({ data: null, error: { message: "délai dépassé" } });
-      const refreshed = await fetchSearchResults({ search: {}, preview: true });
-
-      expect(refreshed[0]!.media![0]).toMatchObject({
-        url: PHOTO,
-        mirror: { path640: "s/abc-640.webp" },
-      });
-      expect(refreshed[1]!.media![0]).toEqual({ type: "image", url: PHOTO_B });
-    });
-
-    it("recherche publique : un seul appel pour la page, après la lecture des ventes", async () => {
-      mockRpc({ data: [mirrorRow], error: null });
-
-      const items = await fetchSearchResults({ search: {}, preview: true });
-
-      expect(mirrorCalls()).toHaveLength(1);
-      expect(mirrorCalls()[0]![1]).toEqual({ p_source_urls: [PHOTO, PHOTO_B] });
-      expect(items[0]!.media![0]).toMatchObject({
-        url: PHOTO,
-        mirror: { path640: "s/abc-640.webp" },
-      });
-      expect(items[1]!.media![0]).toEqual({ type: "image", url: PHOTO_B });
-    });
-
-    it("le compte de la recherche ne déclenche aucune recherche de copies", async () => {
-      mockRpc({ data: [mirrorRow], error: null });
-      await fetchSearchCount({ search: {}, preview: true });
-      expect(mirrorCalls()).toHaveLength(0);
-    });
-
-    it("recherche connectée : la 1re photo de chaque vente reçoit sa copie", async () => {
-      mockRpc({ data: [mirrorRow], error: null });
+    it("la 1re photo de chaque vente reçoit sa copie, en un seul appel", async () => {
+      rpc.mockResolvedValue({ data: [mirrorRow], error: null });
       getSalesForSearch.mockResolvedValue([
         {
           id: "full",
@@ -195,6 +265,7 @@ describe("public preview search service", () => {
 
       const [sale] = await fetchSearchResults({ search: {}, preview: false });
 
+      expect(mirrorCalls()).toHaveLength(1);
       expect(mirrorCalls()[0]![1]).toEqual({ p_source_urls: [PHOTO] });
       expect(sale!.media![0]!.mirror?.path1600).toBe("s/abc-1600.webp");
       expect(sale!.media![1]).toEqual({ type: "image", url: PHOTO_B });
@@ -202,20 +273,21 @@ describe("public preview search service", () => {
 
     it("interrupteur éteint : aucune fonction appelée, résultats identiques", async () => {
       vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "off");
-      mockRpc({ data: [mirrorRow], error: null });
+      getSalesForSearch.mockResolvedValue([{ id: "full", media: [{ type: "image", url: PHOTO }] }]);
 
-      const items = await fetchSearchResults({ search: {}, preview: true });
+      const items = await fetchSearchResults({ search: {}, preview: false });
 
-      expect(mirrorCalls()).toHaveLength(0);
+      expect(rpc).not.toHaveBeenCalled();
       expect(JSON.stringify(items)).not.toContain("mirror");
     });
 
     it("fonction en erreur : la recherche reste intacte", async () => {
-      mockRpc({ data: null, error: { message: "boom" } });
+      rpc.mockResolvedValue({ data: null, error: { message: "boom" } });
+      getSalesForSearch.mockResolvedValue([{ id: "full", media: [{ type: "image", url: PHOTO }] }]);
 
-      const items = await fetchSearchResults({ search: {}, preview: true });
+      const items = await fetchSearchResults({ search: {}, preview: false });
 
-      expect(items.map((sale) => sale.id)).toEqual(["a", "b"]);
+      expect(items.map((sale) => sale.id)).toEqual(["full"]);
       expect(JSON.stringify(items)).not.toContain("mirror");
     });
   });
@@ -232,45 +304,7 @@ describe("public preview search service", () => {
     expect(getSalesForSearch).toHaveBeenCalledWith(expect.any(Object), 24, "date_desc", 48, {
       discovery: true,
     });
-  });
-
-  it("preserves public classification, filters before counting and deduplicates each family separately", async () => {
-    rpc.mockImplementation((_name, args) =>
-      Promise.resolve({
-        data: [
-          {
-            id: args.p_sale_venue_type,
-            starting_price_eur: 120000,
-            sale_venue_type: args.p_sale_venue_type,
-            sale_verification_status: "pending",
-            total_count: 37,
-            lawyer_contact: "must not leak",
-          },
-        ],
-        error: null,
-      }),
-    );
-    const [items, count, tribunal] = await Promise.all([
-      fetchSearchResults({ search: { saleType: "notary", page: 2 }, preview: true }),
-      fetchSearchCount({ search: { saleType: "notary", page: 2 }, preview: true }),
-      fetchSearchResults({ search: { saleType: "tribunal", page: 2 }, preview: true }),
-    ]);
-    expect(rpc).toHaveBeenCalledTimes(2);
-    expect(rpc).toHaveBeenCalledWith(
-      "search_auction_sales_preview_v3",
-      expect.objectContaining({ p_sale_venue_type: "notary", p_offset: 24 }),
-    );
-    expect(items).toEqual([
-      {
-        id: "notary",
-        starting_price_eur: 120000,
-        sale_venue_type: "notary",
-        sale_verification_status: "pending",
-        media: [],
-      },
-    ]);
-    expect(count).toBe(37);
-    expect(tribunal[0].sale_venue_type).toBe("tribunal");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("excludes homepage example sales from authenticated and map results", async () => {
@@ -284,119 +318,6 @@ describe("public preview search service", () => {
 
     await expect(fetchSearchResults({ search: {}, preview: false })).resolves.toEqual([realSale]);
     await expect(fetchSearchMapResults({})).resolves.toEqual([realSale]);
-  });
-
-  it("excludes homepage example sales from anonymous preview results", async () => {
-    rpc.mockResolvedValue({
-      data: [
-        {
-          id: "example-immojudis-bordeaux-t2",
-          starting_price_eur: 92_000,
-          total_count: 2,
-        },
-        {
-          id: "49deebe5-bbba-4c8a-9f4e-237a2edbae94",
-          starting_price_eur: 135_000,
-          total_count: 2,
-        },
-      ],
-      error: null,
-    });
-
-    await expect(fetchSearchResults({ search: {}, preview: true })).resolves.toEqual([
-      { id: "49deebe5-bbba-4c8a-9f4e-237a2edbae94", starting_price_eur: 135_000, media: [] },
-    ]);
-  });
-
-  it("deduplicates the preview request and sends expanded region departments", async () => {
-    rpc.mockResolvedValue({
-      data: [{ id: "sale-33", starting_price_eur: 120_000, total_count: 7 }],
-      error: null,
-    });
-
-    const search = { query: "Nouvelle-Aquitaine" };
-    const [items, count] = await Promise.all([
-      fetchSearchResults({ search, preview: true }),
-      fetchSearchCount({ search, preview: true }),
-    ]);
-
-    expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith(
-      "search_auction_sales_preview_v3",
-      expect.objectContaining({
-        p_departments: expect.arrayContaining(["33", "Gironde", "64", "Pyrénées-Atlantiques"]),
-        p_keywords: null,
-        p_postal_code: null,
-      }),
-    );
-    expect(items).toEqual([{ id: "sale-33", starting_price_eur: 120_000, media: [] }]);
-    expect(count).toBe(7);
-  });
-
-  it("sends a postal code as an exact preview filter", async () => {
-    rpc.mockResolvedValue({ data: [], error: null });
-
-    await fetchSearchResults({ search: { query: "33000" }, preview: true });
-
-    expect(rpc).toHaveBeenCalledWith(
-      "search_auction_sales_preview_v3",
-      expect.objectContaining({
-        p_departments: null,
-        p_keywords: null,
-        p_postal_code: "33000",
-      }),
-    );
-  });
-
-  it("paginates preview RPC results without reloading earlier rows", async () => {
-    rpc.mockResolvedValue({ data: [], error: null });
-
-    await fetchSearchResults({ search: { page: 4, limit: 12 }, preview: true });
-
-    expect(rpc).toHaveBeenCalledWith(
-      "search_auction_sales_preview_v3",
-      expect.objectContaining({ p_limit: 12, p_offset: 36 }),
-    );
-  });
-
-  it("normalizes an accent-insensitive city query into keyword terms", async () => {
-    rpc.mockResolvedValue({ data: [], error: null });
-
-    await fetchSearchResults({ search: { query: "Nîmes centre" }, preview: true });
-
-    expect(rpc).toHaveBeenCalledWith(
-      "search_auction_sales_preview_v3",
-      expect.objectContaining({ p_keywords: ["nimes", "centre"] }),
-    );
-  });
-
-  it("allows public surface and room filters but never sends protected analysis or exact-location filters", async () => {
-    rpc.mockResolvedValue({ data: [], error: null });
-
-    await fetchSearchResults({
-      search: {
-        minSqft: 80,
-        minBeds: 3,
-        occupancy: "vacant",
-        minScore: 70,
-        viewport: { north: 45, south: 44, east: 1, west: 0 },
-      },
-      preview: true,
-    });
-
-    expect(rpc).toHaveBeenCalledWith(
-      "search_auction_sales_preview_v3",
-      expect.objectContaining({
-        p_min_surface: 80,
-        p_min_bedrooms: 3,
-        p_occupancy_status: null,
-        p_min_score: null,
-        p_north: null,
-        p_south: null,
-        p_east: null,
-        p_west: null,
-      }),
-    );
   });
 });
 
@@ -429,22 +350,6 @@ describe("advanced filters before pagination", () => {
     expect(getSales).toHaveBeenCalledTimes(2);
     expect(getSales.mock.calls[1][3]).toBe(100);
   });
-});
-
-it("passes dates to the additive public RPC before counting or pagination", async () => {
-  rpc.mockResolvedValue({ data: [], error: null });
-  await fetchSearchResults({
-    search: { minSaleDate: "2026-09-11", maxSaleDate: "2026-10-01", page: 2 },
-    preview: true,
-  });
-  expect(rpc).toHaveBeenLastCalledWith(
-    "search_auction_sales_preview_v4",
-    expect.objectContaining({
-      p_min_sale_date: "2026-09-11",
-      p_max_sale_date: "2026-10-01",
-      p_offset: 24,
-    }),
-  );
 });
 
 describe("complete scan for advanced filters", () => {

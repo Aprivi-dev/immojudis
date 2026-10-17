@@ -1,21 +1,19 @@
 import { getSales, getSalesCount, getSalesForSearch, getSaleMapPoints } from "@/lib/queries";
 import { getSupabase } from "@/integrations/supabase/lazy";
+import { readJson } from "@/lib/client-api-core";
 import { geocodeAddress } from "@/lib/geo";
 import { readPagedRows } from "@/lib/paged-read";
 import {
   PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
+  applyPhotoMirrors,
   isPhotoMirrorEnabled,
   withPhotoMirrors,
   type PhotoMirrorClient,
 } from "@/lib/photo-mirror";
-import type { AuctionSale } from "@/lib/types";
+import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 import { excludeHomepageExampleSales } from "@/lib/example-sale-identity";
-import {
-  previewSearchRequestKey,
-  runPreviewSearch,
-  type PreviewRpcClient,
-  type PreviewSearchResponse,
-} from "./preview-search";
+import { previewSearchRequestKey, type PreviewSearchResponse } from "./preview-search";
+import { previewSearchApiUrl, type PreviewSearchApiResponse } from "./preview-search-request";
 import type { SalesSearchParams } from "./search-url-state";
 import {
   applyClientSearchFilters,
@@ -30,20 +28,30 @@ import {
 /** Garde-fou de la lecture complète des filtres avancés : au-delà, la recherche est trop large. */
 const MAX_COMPLETE_SEARCH_ROWS = 10_000;
 
-const inFlightPreviewSearches = new Map<string, Promise<PreviewSearchResponse>>();
+/** Réponse de la route d'aperçu : les ventes, leur total et les copies de photos trouvées. */
+type PreviewSearchPage = PreviewSearchResponse & {
+  mirrors: ReadonlyMap<string, SaleMediaMirror>;
+};
+
+const inFlightPreviewSearches = new Map<string, Promise<PreviewSearchPage>>();
 
 /**
  * Page de résultats avec, quand l'interrupteur est ouvert, la copie hébergée de la photo
- * principale de chaque vente (un seul appel pour la page, après la lecture des ventes : aucune
- * jointure dans les fonctions SQL de recherche, jamais bloquant). La première page rendue par le
- * serveur reçoit les mêmes copies (`loadInitialCatalogue`), pour que les rafraîchissements ne
- * changent pas les images.
+ * principale de chaque vente. Aperçu anonyme : un seul appel à notre route `/api/catalogue/preview`,
+ * qui renvoie les ventes et les copies ensemble. Recherche connectée : les copies sont lues en un
+ * appel après la lecture des ventes (aucune jointure dans les fonctions SQL de recherche, jamais
+ * bloquant). La première page rendue par le serveur reçoit les mêmes copies
+ * (`loadInitialCatalogue`), pour que les rafraîchissements ne changent pas les images.
  */
 export async function fetchSearchResults(options: {
   search: SalesSearchParams;
   preview: boolean;
   discovery?: boolean;
 }): Promise<AuctionSale[]> {
+  if (options.preview) {
+    const page = await fetchPreviewSearch(options.search);
+    return applyPhotoMirrors(page.items, page.mirrors, { remember: true });
+  }
   const sales = await loadSearchResults(options);
   // Le client Supabase n'est chargé que si les copies sont demandées (voir `lazy.ts`).
   if (!sales.length || !isPhotoMirrorEnabled()) return sales;
@@ -55,15 +63,11 @@ export async function fetchSearchResults(options: {
 
 async function loadSearchResults({
   search,
-  preview,
   discovery = false,
 }: {
   search: SalesSearchParams;
-  preview: boolean;
   discovery?: boolean;
 }): Promise<AuctionSale[]> {
-  if (preview) return excludeHomepageExampleSales((await fetchPreviewSearch(search)).items);
-
   if (hasClientOnlyFilters(search)) {
     const rows = await fetchCompleteFilteredSearch(search, discovery);
     const start = ((search.page ?? 1) - 1) * (search.limit ?? DEFAULT_SEARCH_LIMIT);
@@ -121,17 +125,29 @@ export async function fetchSearchMapResults(
   );
 }
 
-function fetchPreviewSearch(search: SalesSearchParams): Promise<PreviewSearchResponse> {
+/**
+ * Recherche d'aperçu : un seul GET sur notre domaine, sans Supabase ni vérification CORS. La liste
+ * et le total d'une même recherche partagent cet appel (clé identique, dédoublonnée en vol).
+ */
+function fetchPreviewSearch(search: SalesSearchParams): Promise<PreviewSearchPage> {
   const requestKey = previewSearchRequestKey(search);
   const currentRequest = inFlightPreviewSearches.get(requestKey);
   if (currentRequest) return currentRequest;
 
-  const request = getSupabase()
-    .then((client) => runPreviewSearch(client as unknown as PreviewRpcClient, search))
-    .finally(() => inFlightPreviewSearches.delete(requestKey));
+  const request = requestPreviewSearch(search).finally(() =>
+    inFlightPreviewSearches.delete(requestKey),
+  );
 
   inFlightPreviewSearches.set(requestKey, request);
   return request;
+}
+
+async function requestPreviewSearch(search: SalesSearchParams): Promise<PreviewSearchPage> {
+  const response = await fetch(previewSearchApiUrl(search), {
+    headers: { accept: "application/json" },
+  });
+  const body = await readJson<PreviewSearchApiResponse>(response);
+  return { items: body.items, count: body.count, mirrors: new Map(body.mirrors) };
 }
 
 // Share one complete, bounded scan between the list, count and map. Filtering

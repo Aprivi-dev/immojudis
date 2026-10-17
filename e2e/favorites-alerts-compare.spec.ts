@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { mapPreviewRows, type PreviewSearchRow } from "@/lib/search/preview-search";
 
 const userId = "76000000-0000-4000-8000-000000000002";
 const email = "favoris.e2e@example.test";
@@ -63,18 +64,22 @@ const APP_ROWS = [appRow(SALE_A, "Lyon", 60_000, 40), appRow(SALE_B, "Villeurban
 
 /** Catalogue public : deux ventes pour un visiteur, aucune pour une recherche trop étroite. */
 async function mockPublicCatalogue(page: Page, rows: unknown[] = PREVIEW_ROWS) {
-  await page.route("https://ci.supabase.co/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname.includes("search_auction_sales_preview")) {
-      await route.fulfill({
-        status: 200,
-        headers: { "content-type": "application/json" },
-        json: rows,
-      });
-      return;
-    }
-    await route.fulfill({ status: 200, json: [] });
+  // Le navigateur d'un visiteur interroge notre route `/api/catalogue/preview` (liste, total et
+  // copies de photos en une réponse), pas Supabase.
+  await page.route("**/api/catalogue/preview*", async (route) => {
+    const previewRows = rows as PreviewSearchRow[];
+    await route.fulfill({
+      status: 200,
+      json: {
+        items: mapPreviewRows(previewRows),
+        count: Number(previewRows[0]?.total_count ?? 0),
+        mirrors: [],
+      },
+    });
   });
+  await page.route("https://ci.supabase.co/**", (route) =>
+    route.fulfill({ status: 200, json: [] }),
+  );
 }
 
 test.describe("visiteur sans compte", () => {
