@@ -154,8 +154,11 @@ comparer après chaque déploiement, et après toute bascule de `CSP_REPORT_ONLY
 ```bash
 SITE=https://immojudis.com
 SECURITY='^(content-security-policy|x-frame-options|permissions-policy|strict-transport-security|referrer-policy|x-content-type-options|cross-origin-opener-policy):'
-curl -sI "$SITE/sales"        | grep -iE "$SECURITY" | sort > /tmp/sales.headers
-curl -sI "$SITE/sales?page=2" | grep -iE "$SECURITY" | sort > /tmp/sales-page2.headers
+# Noms en minuscules, fins de ligne retirées : la page en cache et la page rendue à la demande
+# n'écrivent pas la casse des noms de la même façon (`content-security-policy` / `Content-Security-Policy`).
+normalise() { tr -d '\r' | grep -iE "$SECURITY" | awk '{ i = index($0, ":"); print tolower(substr($0, 1, i - 1)) substr($0, i) }' | sort; }
+curl -sI "$SITE/sales"        | normalise > /tmp/sales.headers
+curl -sI "$SITE/sales?page=2" | normalise > /tmp/sales-page2.headers
 diff /tmp/sales.headers /tmp/sales-page2.headers && echo "en-têtes de sécurité identiques"
 wc -l < /tmp/sales.headers   # 7 lignes : CSP (historique), X-Frame-Options, Permissions-Policy, HSTS, Referrer-Policy, X-Content-Type-Options, COOP
 
