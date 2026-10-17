@@ -219,6 +219,54 @@ describe("public preview search service", () => {
         await expect(fetchSearchResults({ search: {}, preview: true })).resolves.toHaveLength(2);
       },
     );
+
+    it.each([
+      ["une page HTML (proxy, CDN)", () => new Response("<html>502</html>", { status: 200 })],
+      ["un corps vide", () => new Response("", { status: 200 })],
+      ["un JSON null", () => new Response("null", { status: 200 })],
+      ["des ventes absentes", () => new Response(JSON.stringify({ count: 3 }), { status: 200 })],
+      [
+        "des ventes qui ne sont pas une liste",
+        () => new Response(JSON.stringify({ items: {}, count: 3 }), { status: 200 }),
+      ],
+      [
+        "un total absent",
+        () => new Response(JSON.stringify({ items: publicSales }), { status: 200 }),
+      ],
+      [
+        "un total en texte",
+        () => new Response(JSON.stringify({ items: publicSales, count: "2276" }), { status: 200 }),
+      ],
+    ])("une réponse 200 avec %s lève une erreur lisible", async (_label, response) => {
+      fetchMock.mockImplementation(() => Promise.resolve(response()));
+
+      for (const call of [
+        () => fetchSearchResults({ search: {}, preview: true }),
+        () => fetchSearchCount({ search: {}, preview: true }),
+      ]) {
+        const failure = await call().catch((error: unknown) => error);
+
+        expect(failure).toBeInstanceOf(Error);
+        expect((failure as Error).message).toBe(
+          "Le catalogue a renvoyé une réponse illisible. Réessayez dans un instant.",
+        );
+      }
+    });
+
+    it("des copies illisibles valent « aucune copie » et ne bloquent pas la liste", async () => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ items: publicSales, count: 2, mirrors: "oups" }), {
+            status: 200,
+          }),
+        ),
+      );
+
+      const items = await fetchSearchResults({ search: {}, preview: true });
+
+      expect(items).toHaveLength(2);
+      expect(items[0]!.media![0]).toEqual({ type: "image", url: PHOTO });
+    });
   });
 
   describe("recherche connectée : copies des photos", () => {

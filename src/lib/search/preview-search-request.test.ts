@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildPreviewSearchArgs, previewSearchRequestKey } from "./preview-search";
 import {
   PREVIEW_SEARCH_API_PATH,
+  PREVIEW_SEARCH_URL_KEYS,
   parsePreviewSearchRequest,
   previewSearchApiUrl,
   previewSearchLimitViolation,
@@ -29,6 +30,43 @@ describe("adresse de la recherche d'aperçu", () => {
         viewport: { north: 45, south: 44, east: 1, west: 0 },
       }),
     ).toBe("city=Bordeaux&sort=price_asc");
+  });
+
+  it("n'envoie que des paramètres que la route accepte", () => {
+    const full: SalesSearchParams = {
+      city: "Bordeaux",
+      department: "33",
+      homeTypes: ["house", "apartment"],
+      keywords: "garage jardin",
+      limit: 12,
+      maxPrice: 300_000,
+      maxSaleDate: "2026-12-31",
+      maxSqft: 200,
+      minBaths: 2,
+      minBeds: 3,
+      minPrice: 50_000,
+      minSaleDate: "2026-11-01",
+      minSqft: 40,
+      page: 3,
+      query: "Nîmes centre",
+      saleType: "notary",
+      sort: "price_desc",
+      status: ["upcoming"],
+      transactionType: "sold",
+      tribunal: "Tribunal judiciaire de Bordeaux",
+    };
+    const query = previewSearchQueryString(full);
+    const names = [...new URLSearchParams(query).keys()];
+
+    // Tous les critères de l'aperçu sont couverts, et rien d'autre n'est envoyé.
+    expect(names.sort()).toEqual([...PREVIEW_SEARCH_URL_KEYS].sort());
+    expect(parse(query).ok).toBe(true);
+  });
+
+  it("envoie des nombres de pièces que la route accepte, même pour une saisie libre", () => {
+    expect(previewSearchQueryString({ minBeds: 2.5, minBaths: 30 })).toBe("minBaths=20&minBeds=3");
+    expect(previewSearchQueryString({ minBeds: 0 })).toBe("minBeds=0");
+    expect(parse(previewSearchQueryString({ minBeds: 2.5, minBaths: 30 })).ok).toBe(true);
   });
 
   it("est identique pour une même recherche, quel que soit l'ordre des critères", () => {
@@ -65,15 +103,21 @@ describe("la route lit les critères comme la page", () => {
     },
   );
 
-  it("ignore les critères réservés, les noms d'alias et les paramètres inconnus", () => {
-    const parsed = parse(
-      "occupancy=libre&minScore=80&bbox=-1,43,1,45&viewport=45:44:2:1&min_price=1&q=Lyon&evil=1",
-    );
-
-    expect(parsed).toEqual({ ok: true, search: expect.any(Object) });
-    if (!parsed.ok) return;
-    expect(buildPreviewSearchArgs(parsed.search)).toEqual(buildPreviewSearchArgs({}));
-  });
+  it.each([
+    "occupancy=libre",
+    "minScore=80",
+    "bbox=-1,43,1,45",
+    "viewport=45:44:2:1",
+    "min_price=1",
+    "q=Lyon",
+    "evil=1",
+    "page=1&page=2",
+  ])(
+    "refuse les critères réservés, les alias, les paramètres inconnus et répétés : %s",
+    (query) => {
+      expect(parse(query)).toEqual({ ok: false, message: expect.any(String) });
+    },
+  );
 
   it("accepte les valeurs par défaut explicites", () => {
     expect(parse("sort=relevance&page=1&transactionType=for_sale&limit=24").ok).toBe(true);
@@ -89,6 +133,21 @@ describe("paramètres refusés", () => {
     "page=420&limit=24",
     "minPrice=cher",
     "minBeds=-1",
+    "page=2.7",
+    "page=1e2",
+    "page=0x10",
+    "limit=2.7",
+    "limit=1e2",
+    "limit=0x10",
+    "limit=%2B10",
+    "limit=010",
+    "minBeds=2.5",
+    "minBeds=21",
+    "minBaths=21",
+    "minBaths=1e1",
+    "city=Pa%00u",
+    "query=Pau%0A",
+    "keywords=garage%09",
     "sort=inconnu",
     "saleType=casino",
     "transactionType=rent",
@@ -97,6 +156,12 @@ describe("paramètres refusés", () => {
     "minSaleDate=2026-12-01&maxSaleDate=2026-11-01",
   ])("%s", (query) => {
     expect(parse(query)).toEqual({ ok: false, message: expect.any(String) });
+  });
+
+  it("accepte les entiers stricts en base 10 et les bornes des pièces", () => {
+    for (const query of ["page=1", "page=12&limit=100", "minBeds=0", "minBeds=20&minBaths=20"]) {
+      expect(parse(query).ok, query).toBe(true);
+    }
   });
 
   it("refuse ce que la fonction SQL refuserait (longueurs et nombres de critères)", () => {

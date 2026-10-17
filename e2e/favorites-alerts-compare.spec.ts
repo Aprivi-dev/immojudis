@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mapPreviewRows, type PreviewSearchRow } from "@/lib/search/preview-search";
+import { parsePreviewSearchRequest } from "@/lib/search/preview-search-request";
 
 const userId = "76000000-0000-4000-8000-000000000002";
 const email = "favoris.e2e@example.test";
@@ -67,6 +68,16 @@ async function mockPublicCatalogue(page: Page, rows: unknown[] = PREVIEW_ROWS) {
   // Le navigateur d'un visiteur interroge notre route `/api/catalogue/preview` (liste, total et
   // copies de photos en une réponse), pas Supabase.
   await page.route("**/api/catalogue/preview*", async (route) => {
+    // Comme la vraie route : une adresse qui n'est pas canonique (paramètre inconnu, entier illisible)
+    // est refusée en 400. Le test échoue donc si le navigateur envoie autre chose que ce qu'elle accepte.
+    const parsed = parsePreviewSearchRequest(new URL(route.request().url()).searchParams);
+    if (!parsed.ok) {
+      await route.fulfill({
+        status: 400,
+        json: { ok: false, error: parsed.message, code: "INVALID_REQUEST" },
+      });
+      return;
+    }
     const previewRows = rows as PreviewSearchRow[];
     await route.fulfill({
       status: 200,

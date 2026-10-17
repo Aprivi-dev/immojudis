@@ -276,6 +276,48 @@ describe("page d'aperçu servie au navigateur (/api/catalogue/preview)", () => {
 
     expect(page.items).toHaveLength(1);
     expect(page.mirrors).toEqual([]);
+    expect(page.mirrorsDegraded).toBe(true);
+  });
+
+  it("un délai dépassé des copies marque aussi la page comme dégradée", async () => {
+    mirrorRpc.mockReturnValue(new Promise(() => undefined));
+    vi.useFakeTimers();
+    try {
+      const pending = loadPreviewCataloguePage({}, { search, firstPage, photoMirrorClient });
+      await vi.advanceTimersByTimeAsync(1_000);
+      const page = await pending;
+
+      expect(page.mirrors).toEqual([]);
+      expect(page.mirrorsDegraded).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("une réponse « aucune copie » n'est pas une dégradation", async () => {
+    mirrorRpc.mockResolvedValue({ data: [], error: null });
+
+    const page = await loadPreviewCataloguePage({}, { search, firstPage, photoMirrorClient });
+
+    expect(page.mirrors).toEqual([]);
+    expect(page.mirrorsDegraded).toBe(false);
+  });
+
+  it("copies trouvées, interrupteur éteint ou aucune photo cherchée : pas de dégradation", async () => {
+    const found = await loadPreviewCataloguePage({}, { search, firstPage, photoMirrorClient });
+    expect(found.mirrorsDegraded).toBe(false);
+
+    mirrorRpc.mockResolvedValue({ data: null, error: { message: "boom" } });
+    vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "off");
+    const off = await loadPreviewCataloguePage({}, { search, firstPage, photoMirrorClient });
+    expect(off.mirrorsDegraded).toBe(false);
+
+    vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
+    mirrorRpc.mockClear();
+    firstPage.mockResolvedValue({ items: [{ id: "a", media: [] }] as never[], count: 1 });
+    const noPhoto = await loadPreviewCataloguePage({}, { search, firstPage, photoMirrorClient });
+    expect(noPhoto.mirrorsDegraded).toBe(false);
+    expect(mirrorRpc).not.toHaveBeenCalled();
   });
 
   it("lève quand la base échoue ou tarde trop (la route répond 503, rien n'est mis en cache)", async () => {

@@ -111,6 +111,35 @@ describe("public preview search", () => {
     await expect(runPreviewSearch({ rpc }, {})).rejects.toThrow("timeout");
   });
 
+  it("lève une Error lisible (message et code PostgREST) au lieu de l'objet brut", async () => {
+    const postgrestError = {
+      message: "canceling statement due to statement timeout",
+      code: "57014",
+      details: null,
+      hint: null,
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: postgrestError });
+
+    const failure = await runPreviewSearch({ rpc }, {}).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe(
+      "Recherche d'aperçu en échec : canceling statement due to statement timeout (code 57014)",
+    );
+    expect((failure as Error).cause).toBe(postgrestError);
+  });
+
+  it("garde une Error telle quelle et nomme une erreur sans message", async () => {
+    const original = new Error("timeout");
+    const rpc = vi.fn().mockResolvedValueOnce({ data: null, error: original });
+    await expect(runPreviewSearch({ rpc }, {})).rejects.toBe(original);
+
+    rpc.mockResolvedValueOnce({ data: null, error: { code: "PGRST000" } });
+    await expect(runPreviewSearch({ rpc }, {})).rejects.toThrow(
+      "Recherche d'aperçu en échec : erreur inconnue (code PGRST000)",
+    );
+  });
+
   it("derives one request key per distinct search", () => {
     expect(previewSearchRequestKey({})).toBe(previewSearchRequestKey({ sort: "relevance" }));
     expect(previewSearchRequestKey({})).not.toBe(previewSearchRequestKey({ city: "Pau" }));
