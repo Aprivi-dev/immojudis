@@ -239,6 +239,7 @@ export function CadastralNeighborhoodMap({
         <div
           ref={mapContainerRef}
           className={styles.mapCanvas}
+          role="region"
           aria-label={`Plan cadastral autour de ${addressLabel}`}
         />
 
@@ -268,7 +269,7 @@ export function CadastralNeighborhoodMap({
         )}
       </div>
 
-      <div className={styles.legend} aria-label="Légende du plan">
+      <div className={styles.legend} role="group" aria-label="Légende du plan">
         {showMarker ? (
           <span>
             <i className={styles.legendPoint} aria-hidden="true" /> {pointLabel}

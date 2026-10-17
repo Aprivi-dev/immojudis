@@ -137,3 +137,17 @@ Propositions suivantes :
 - Q1 : stabiliser le LCP mobile. Validé.
 - Q2 : différer la carte Mapbox GL sur bureau. Non retenu pour l'instant.
 - Q3 : préconnexion vers Supabase, cache d'un an des copies, qualité WebP. Validé.
+
+### Q4 : liste de `/sales` recréée à l'hydratation (17/10/2026)
+
+- Q4 a été validé par le propriétaire (« tu corriges la dispersion passagère »).
+- **Cause.** Le premier rendu client de l'authentification ne concordait pas avec le HTML serveur, si bien que React recréait la liste déjà affichée.
+- **Correctif.** L'état d'authentification est lu dans un magasin partagé. Il vaut « vérification en cours » pendant l'hydratation, comme dans le HTML serveur.
+- **Résultats :**
+  - liste recréée 0 fois sur 12 essais, contre 10 fois sur 10 avant ;
+  - une seule entrée LCP ;
+  - CLS mobile à 0.
+- **Effet de bord.** Un CLS bureau de 0,03 apparaît, sous le seuil de 0,1. Il existait déjà, mais la recréation le masquait.
+- **Accessibilité.** Le contrôle Axe de la fiche d'exemple a révélé un défaut ancien, lui aussi masqué jusque-là : des étiquettes sans rôle sur le plan cadastral. Il est corrigé.
+- **Relecture de code.** Aucun point bloquant. Les tests ont été renforcés : déconnexion, changement de compte, montage après le chargement, vérification unique de l'identité.
+- **Limite documentée dans le code.** Un composant monté pendant le changement d'identité peut voir une fois l'état précédent. Aucune décision d'accès ne repose sur cet état côté client.
