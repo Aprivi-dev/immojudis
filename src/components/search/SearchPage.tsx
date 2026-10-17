@@ -62,7 +62,8 @@ import type { MapViewportChange } from "./MapPanel";
 import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
 import { scrollToSaleCard } from "./scroll-to-sale-card";
-import { useDeferredStart } from "./use-deferred-start";
+import { MapPreview } from "./MapPreview";
+import { useFirstGestureStart } from "./use-first-gesture-start";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
 import {
@@ -183,8 +184,9 @@ export function SearchPage({
   const [geocoding, setGeocoding] = useState(false);
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
-  // Sur bureau, la carte (mapbox-gl + points) ne démarre qu'après le premier affichage de la liste
-  // (voir `useDeferredStart` plus bas) ; son cadre, lui, est réservé dès que l'écran est large.
+  // Sur bureau, la carte (mapbox-gl + points) ne se télécharge ni ne s'initialise qu'au premier
+  // geste, au survol ou au focus de sa zone, ou au clic sur « Afficher la carte » (voir
+  // `useFirstGestureStart` et `MapPreview`) ; son cadre, lui, est réservé dès que l'écran est large.
   const [desktopMapStarted, setDesktopMapStarted] = useState(false);
   const mapVisible = mobileMapOpen || (isDesktop && desktopMapStarted);
   // Le tableau n'existe que sur écran large : en dessous, toujours les cartes.
@@ -447,10 +449,10 @@ export function SearchPage({
           : "loading";
   const hasLocalFilters = false;
   const isInitialLoading = (authLoading && !serverSeeded) || entitlementsLoading || isLoading;
-  useDeferredStart({
+  const startDesktopMap = useCallback(() => setDesktopMapStarted(true), []);
+  useFirstGestureStart({
     enabled: isDesktop && !desktopMapStarted,
-    listReady: !isInitialLoading,
-    onStart: () => setDesktopMapStarted(true),
+    onStart: startDesktopMap,
   });
   const activeFiltersCount = countActiveSearchFilters(search);
   const activeFilters = useMemo(() => activeFilterChips(search), [search]);
@@ -964,7 +966,11 @@ export function SearchPage({
         <aside className="relative hidden min-h-[calc(100svh_-_var(--sales-header-height))] bg-line-soft lg:order-2 lg:block">
           {isDesktop ? (
             <div className="sticky top-[var(--sales-header-height)] h-[calc(100svh_-_var(--sales-header-height))]">
-              {desktopMapStarted ? <LazyMapPanel {...mapPanelProps} /> : <MapPanelSkeleton />}
+              {desktopMapStarted ? (
+                <LazyMapPanel {...mapPanelProps} />
+              ) : (
+                <MapPreview onStart={startDesktopMap} />
+              )}
             </div>
           ) : null}
         </aside>
