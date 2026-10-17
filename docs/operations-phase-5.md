@@ -122,6 +122,18 @@ curl -sI "https://immojudis.com/sales?page=2" # cache-control: private, no-cache
 
 - Une annonce publiée apparaît sur `/sales` après 5 à 10 minutes (cache de la première page, puis page
   régénérée).
+- Un retrait, une annulation ou une modification disparaît de `/sales` après le même délai de 5 à 10 minutes,
+  sauf si le pipeline l'annonce à `POST /api/pipeline/revalidate-sale` (`Authorization: Bearer $CRON_SECRET`,
+  corps `{ "saleIds": ["<uuid>", …] }`). Chaque appel, quel que soit le nombre de ventes, expire la fiche de
+  chaque vente (`sale-<id>` et `/sales/<id>`), le cache de données du catalogue (étiquette `public-catalogue`)
+  et la page statique `/sales/defaut` : la destination de la réécriture, pas `/sales`, car le proxy ne
+  s'exécute pas pour une revalidation. Le prochain visiteur déclenche alors une lecture fraîche. Les retraits
+  et les annulations doivent donc figurer dans la liste envoyée, au même titre que les ventes publiées ou
+  modifiées.
+- **Aucun appelant dans ce dépôt.** Ni le pipeline Python (`services/data-pipeline/`) ni un workflow GitHub
+  n'appelle encore la route : tant qu'ils ne le font pas, retraits, annulations et modifications attendent la
+  fenêtre de 5 à 10 minutes. Câbler l'appel (étape finale du pipeline, avec `CRON_SECRET` et l'adresse du site
+  en secrets) reste à faire.
 - `/sales/defaut` répond aussi, avec `X-Robots-Tag: noindex, nofollow` : c'est la page interne, jamais liée
   ni dans un plan de site. Sa canonique est `/sales`.
 - Tant que la CSP à nonce est servie (`CSP_REPORT_ONLY=false` ou `CSP_NONCE_DYNAMIC=true`), le proxy ne
