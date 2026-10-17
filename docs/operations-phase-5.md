@@ -105,6 +105,30 @@ Vercel) :
 Rollback : remettre `CSP_REPORT_ONLY=true` et retirer `CSP_NONCE_DYNAMIC` (ou le mettre à `false`), puis
 redéployer.
 
+## `/sales` sans filtre servi depuis le cache
+
+L'adresse nue `/sales` (aucun paramètre) est servie par une page statique régénérée toutes les 5 minutes
+(ISR, `src/app/sales/defaut/page.tsx`) ; `src/proxy.ts` y réécrit la requête, le visiteur et les robots
+continuent de voir `/sales`. Toute adresse avec un paramètre (`?page=2`, un filtre, `?utm_source=…`) reste
+rendue à la demande par `src/app/sales/page.tsx`, avec ses annonces dans le HTML. Détails et pièges
+(`usePathname`) : en-tête de `src/lib/sales-isr.ts`.
+
+À vérifier après un déploiement :
+
+```bash
+curl -sI https://immojudis.com/sales          # x-vercel-cache: HIT (ou STALE), cache-control: s-maxage=300
+curl -sI "https://immojudis.com/sales?page=2" # cache-control: private, no-cache, no-store (rendu à la demande)
+```
+
+- Une annonce publiée apparaît sur `/sales` après 5 à 10 minutes (cache de la première page, puis page
+  régénérée).
+- `/sales/defaut` répond aussi, avec `X-Robots-Tag: noindex, nofollow` : c'est la page interne, jamais liée
+  ni dans un plan de site. Sa canonique est `/sales`.
+- Tant que la CSP à nonce est servie (`CSP_REPORT_ONLY=false` ou `CSP_NONCE_DYNAMIC=true`), le proxy ne
+  réécrit plus : `/sales` est rendu à la demande, comme toutes les pages.
+- Retour en arrière : annuler le commit « `/sales` sans filtre servi depuis le cache » (le proxy n'écrit plus,
+  `/sales` redevient entièrement dynamique) et redéployer.
+
 ## Validation de livraison
 
 - Node `24.15.0` et npm `11.18.0` sont épinglés, conformément au runtime Node 24.x actuellement fourni par Vercel.

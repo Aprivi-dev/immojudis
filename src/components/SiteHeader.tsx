@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import Menu from "lucide-react/dist/esm/icons/menu.js";
@@ -54,7 +54,7 @@ export function SiteHeader({
   className,
   headerRef,
 }: SiteHeaderProps) {
-  const pathname = usePathname();
+  const pathname = usePublicPathname();
   const { user, profile, loading } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);

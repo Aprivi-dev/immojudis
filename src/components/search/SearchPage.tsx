@@ -9,7 +9,8 @@ import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { usePublicPathname } from "@/hooks/use-public-pathname";
 import {
   createWatchedZone as createWatchedZoneRequest,
   fetchAccessPlan,
@@ -142,7 +143,7 @@ export function SearchPage({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const pathname = usePathname();
+  const pathname = usePublicPathname();
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
   const currentHref = queryString ? `${pathname}?${queryString}` : pathname;

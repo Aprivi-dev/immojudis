@@ -106,6 +106,76 @@ describe("proxy X-Robots-Tag", () => {
   });
 });
 
+describe("proxy /sales ISR variant", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  const request = (url: string, init?: ConstructorParameters<typeof NextRequest>[1]) =>
+    proxy(new NextRequest(url, init));
+  const rewrittenTo = (response: Response) => response.headers.get("x-middleware-rewrite");
+
+  it("rewrites the bare address to the static variant, keeping the address of the visitor", () => {
+    const response = request("https://immojudis.com/sales");
+    expect(rewrittenTo(response)).toBe("https://immojudis.com/sales/defaut");
+    expect(response.headers.get("x-request-id")).toBeTruthy();
+    expect(response.headers.get("x-middleware-override-headers")).toContain("x-request-id");
+  });
+
+  it("rewrites HEAD too, and keeps the indexation header of the proxy", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "");
+    const response = request("https://immojudis.com/sales", { method: "HEAD" });
+    expect(rewrittenTo(response)).toBe("https://immojudis.com/sales/defaut");
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it("leaves every filtered or paginated address to the page rendered on demand", () => {
+    for (const search of ["?page=2", "?city=Pau&sort=price_asc", "?view=table", "?utm_source=x"]) {
+      const response = request(`https://immojudis.com/sales${search}`);
+      expect(rewrittenTo(response), search).toBeNull();
+    }
+  });
+
+  it("does not touch the other pages or the sale pages", () => {
+    for (const path of ["/", "/sales/2f6c1c3e", "/sales/sitemap/0.xml", "/api/sales/ai-review"]) {
+      expect(rewrittenTo(request(`https://immojudis.com${path}`)), path).toBeNull();
+    }
+  });
+
+  it("does not rewrite writes", () => {
+    expect(rewrittenTo(request("https://immojudis.com/sales", { method: "POST" }))).toBeNull();
+  });
+
+  it("serves the variant asked for directly, never indexable (even once the site is open)", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("SEO_INDEXING_ENABLED", "true");
+    const response = request("https://immojudis.com/sales/defaut");
+    expect(response.status).toBe(200);
+    expect(rewrittenTo(response)).toBeNull();
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    // The public address of the same page stays indexable.
+    expect(request("https://immojudis.com/sales").headers.get("x-robots-tag")).toBeNull();
+  });
+
+  describe("with the strict nonce CSP served (it needs a render at request time)", () => {
+    it.each([
+      ["enforced", { CSP_REPORT_ONLY: "false" }],
+      ["previewed", { CSP_NONCE_DYNAMIC: "true" }],
+    ])("does not rewrite the bare address when it is %s", (_label, env) => {
+      for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+      const response = request("https://immojudis.com/sales");
+      expect(rewrittenTo(response)).toBeNull();
+      expect(response.headers.get("x-middleware-request-x-nonce")).toBeTruthy();
+    });
+
+    it("sends the variant asked for directly back to /sales", () => {
+      vi.stubEnv("CSP_REPORT_ONLY", "false");
+      const response = request("https://immojudis.com/sales/defaut");
+      expect(response.status).toBe(307);
+      expect(response.headers.get("location")).toBe("https://immojudis.com/sales");
+    });
+  });
+});
+
 describe("proxy matcher", () => {
   // Next.js reads each matcher as `/((?!...).*)`: the same pattern, anchored, as a plain RegExp.
   const matches = (path: string) =>
