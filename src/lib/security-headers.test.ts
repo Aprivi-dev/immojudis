@@ -6,6 +6,7 @@ import {
   cspRequiresDynamicRendering,
   generateCspNonce,
   resolveCspMode,
+  strictCspEnabled,
 } from "./security-headers";
 
 function headerMap(headers: { key: string; value: string }[]) {
@@ -155,6 +156,19 @@ describe("CSP delivery mode", () => {
     expect(cspRequiresDynamicRendering({})).toBe(false);
     expect(cspRequiresDynamicRendering({ CSP_NONCE_DYNAMIC: "true" })).toBe(true);
     expect(cspRequiresDynamicRendering({ CSP_REPORT_ONLY: "false" })).toBe(true);
+  });
+
+  it("delivers the strict policy only when enforcing or previewing it, never by default", () => {
+    // Default: static pages carry no nonce, so a report-only policy would flag every script.
+    expect(strictCspEnabled({})).toBe(false);
+    expect(strictCspEnabled({ CSP_REPORT_ONLY: "true" })).toBe(false);
+    expect(strictCspEnabled({ CSP_NONCE_DYNAMIC: "false" })).toBe(false);
+    expect(strictCspEnabled({ CSP_NONCE_DYNAMIC: " TRUE " })).toBe(true);
+    expect(strictCspEnabled({ CSP_REPORT_ONLY: "false" })).toBe(true);
+    // Delivering the policy and rendering at request time (nonces) are one and the same decision.
+    for (const env of [{}, { CSP_NONCE_DYNAMIC: "true" }, { CSP_REPORT_ONLY: "false" }]) {
+      expect(cspRequiresDynamicRendering(env)).toBe(strictCspEnabled(env));
+    }
   });
 
   it("lets the browser load the hosted copies of sale photos from Supabase Storage", () => {

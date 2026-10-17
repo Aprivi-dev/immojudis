@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { publicLegalPublisher } from "@/lib/legal-documents";
 import { linkPrefetch } from "@/lib/navigation";
 
@@ -30,7 +30,7 @@ export function showsSiteFooter(pathname: string | null): boolean {
 }
 
 export function SiteFooter() {
-  const pathname = usePathname();
+  const pathname = usePublicPathname();
   if (!showsSiteFooter(pathname)) return null;
   const entityName = publicLegalPublisher().entityName ?? "Immojudis";
 

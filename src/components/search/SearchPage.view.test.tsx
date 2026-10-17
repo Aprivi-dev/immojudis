@@ -193,35 +193,61 @@ describe("/sales : choix Cartes / Tableau", () => {
   });
 });
 
-describe("/sales : démarrage différé de la carte sur bureau", () => {
-  it("réserve le cadre de la carte puis l'affiche sans action de la personne", async () => {
+describe("/sales : la carte du bureau ne démarre qu'au premier geste", () => {
+  it("réserve le cadre de la carte avec un aperçu et un bouton nommé, sans charger la carte", async () => {
     renderSales("/sales");
-    // Premier affichage : la liste est là, la carte n'est pas encore initialisée. Le module de la
-    // carte (simulé) se chargerait en quelques millisecondes si rien ne le différait.
+    // Premier affichage : la liste est là, la carte n'est pas initialisée. Le module de la carte
+    // (simulé) se chargerait en quelques millisecondes si rien ne le différait.
     expect(screen.getAllByRole("article")).toHaveLength(sales.length);
-    expect(screen.getByText("Chargement de la carte")).toBeTruthy();
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(screen.queryByTestId("map-panel")).toBeNull();
-    expect(screen.getByText("Chargement de la carte")).toBeTruthy();
-
-    expect(await screen.findByTestId("map-panel")).toBeTruthy();
+    const preview = screen.getByTestId("map-preview");
+    expect(within(preview).getByRole("button", { name: "Afficher la carte" })).toBeTruthy();
     expect(screen.queryByText("Chargement de la carte")).toBeNull();
-  });
 
-  it("démarre la carte dès le premier geste", async () => {
-    renderSales("/sales");
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(screen.queryByTestId("map-panel")).toBeNull();
-
-    fireEvent.pointerDown(window);
-    // Bien avant le repli de 300 ms.
-    expect(await screen.findByTestId("map-panel", undefined, { timeout: 150 })).toBeTruthy();
-  });
-
-  it("n'ajoute ni carte ni cadre de carte sur mobile", async () => {
-    renderSales("/sales", false);
+    // Ni inactivité du navigateur ni minuteur ne la lancent (l'ancien repli était de 300 ms,
+    // le plafond de 5 s).
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(screen.queryByTestId("map-panel")).toBeNull();
+    expect(screen.getByTestId("map-preview")).toBeTruthy();
+  });
+
+  it.each(["pointerDown", "keyDown", "wheel", "touchStart"] as const)(
+    "démarre la carte au premier geste (%s)",
+    async (gesture) => {
+      renderSales("/sales");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(screen.queryByTestId("map-panel")).toBeNull();
+
+      fireEvent[gesture](window);
+      expect(await screen.findByTestId("map-panel", undefined, { timeout: 500 })).toBeTruthy();
+      expect(screen.queryByTestId("map-preview")).toBeNull();
+    },
+  );
+
+  it("démarre la carte au clic sur « Afficher la carte »", async () => {
+    renderSales("/sales");
+    fireEvent.click(screen.getByRole("button", { name: "Afficher la carte" }));
+    expect(await screen.findByTestId("map-panel")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Afficher la carte" })).toBeNull();
+  });
+
+  it("démarre la carte au survol et au focus de sa zone", async () => {
+    const hover = renderSales("/sales");
+    fireEvent.pointerEnter(screen.getByTestId("map-preview"));
+    expect(await screen.findByTestId("map-panel")).toBeTruthy();
+    hover.unmount();
+
+    renderSales("/sales");
+    fireEvent.focus(screen.getByRole("button", { name: "Afficher la carte" }));
+    expect(await screen.findByTestId("map-panel")).toBeTruthy();
+  });
+
+  it("n'ajoute ni carte, ni aperçu, ni cadre de carte sur mobile", async () => {
+    renderSales("/sales", false);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    fireEvent.pointerDown(window);
+    expect(screen.queryByTestId("map-panel")).toBeNull();
+    expect(screen.queryByTestId("map-preview")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Afficher la carte" })).toBeNull();
     expect(screen.queryByText("Chargement de la carte")).toBeNull();
   });
 });

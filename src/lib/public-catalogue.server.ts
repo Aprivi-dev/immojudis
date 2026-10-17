@@ -18,7 +18,12 @@ export type InitialCatalogue = {
   count: number;
 };
 
-/** The unfiltered first page is shared by every visitor and cached for 5 minutes. */
+/**
+ * The unfiltered first page is shared by every visitor and cached for 5 minutes. The static page
+ * that serves the bare `/sales` (`src/app/sales/defaut/page.tsx`, ISR) is regenerated at the same
+ * pace: its `revalidate` literal must equal this value (a test checks it). A new sale therefore
+ * shows up after 5 to 10 minutes on `/sales`, depending on when the two caches expire.
+ */
 export const FIRST_PAGE_REVALIDATE_SECONDS = 300;
 /**
  * Durée de garde (CDN) d'une recherche FILTRÉE de `/api/catalogue/preview`. Plus courte que celle de

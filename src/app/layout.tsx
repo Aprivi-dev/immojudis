@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import localFont from "next/font/local";
 import "./../styles.css";
 import { AppProviders } from "./providers";
+import { cormorantGaramond as cormorantGaramondItalic } from "@/fonts/cormorant-garamond-italic";
 import { AudienceMeasurement } from "@/components/AudienceMeasurement";
 import { SkipLink } from "@/components/SkipLink";
 import { cspRequiresDynamicRendering } from "@/lib/security-headers";
@@ -17,23 +18,22 @@ import { resolveSiteOrigin } from "@/lib/site-url";
 // Les options de `next/font` doivent être des littéraux : pas de variable ni de fonction ici.
 const cormorantGaramond = localFont({
   src: [
-    // Seules les graisses réellement employées par font-display : 400 (dont l'italique des
-    // accents de titre), 500 et 600. Les graisses 300 et 700 ne sont jamais demandées. Le h1 de
-    // l'accueil n'emploie que 500 et l'italique 400, mais 600 sert à d'autres titres : on ne
-    // réduit pas la liste.
+    // Seules les graisses réellement employées par font-display : 400, 500 et 600 (les graisses
+    // 300 et 700 ne sont jamais demandées). Le h1 de l'accueil n'emploie que 500 et l'italique 400,
+    // mais 600 sert à d'autres titres : on ne réduit pas la liste.
+    // L'italique (mêmes graisses) est déclarée à part, dans `src/fonts/cormorant-garamond-italic.ts`,
+    // sous le même nom de famille : `next/font` précharge tous les fichiers d'une même déclaration,
+    // et l'italique ne sert au premier écran que sur l'accueil et /ressources.
     { path: "../fonts/cormorant-garamond-latin-normal.woff2", weight: "400", style: "normal" },
     { path: "../fonts/cormorant-garamond-latin-normal.woff2", weight: "500", style: "normal" },
     { path: "../fonts/cormorant-garamond-latin-normal.woff2", weight: "600", style: "normal" },
-    { path: "../fonts/cormorant-garamond-latin-italic.woff2", weight: "400", style: "italic" },
-    { path: "../fonts/cormorant-garamond-latin-italic.woff2", weight: "500", style: "italic" },
-    { path: "../fonts/cormorant-garamond-latin-italic.woff2", weight: "600", style: "italic" },
   ],
   display: "swap",
   variable: "--font-cormorant-garamond",
   // Préchargée : le h1 de l'accueil s'affiche avec cette police, qui sinon n'est demandée
-  // qu'après le calcul des styles (changement visible à l'affichage, `display: swap`). Les deux
-  // fichiers (normal et italique) sont préchargés : l'italique sert aussi au-dessus de la ligne
-  // de flottaison (accent « clarté. » du h1 de l'accueil, h1 de /ressources).
+  // qu'après le calcul des styles (changement visible à l'affichage, `display: swap`). Seul le
+  // fichier des graisses normales l'est ici ; l'italique l'est par les pages qui l'affichent au
+  // premier écran (`src/fonts/cormorant-garamond-italic-preloaded.ts`).
   preload: true,
   // Police de secours ajustée (size-adjust, ascent/descent) calculée sur le fichier de la police,
   // comme le faisait `next/font/google` : limite le décalage de mise en page au remplacement.
@@ -104,11 +104,14 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // A nonce can only be stamped on scripts at request time. Enforcing the strict CSP (or
-  // previewing it with CSP_NONCE_DYNAMIC=true) therefore renders every page dynamically; in the
-  // default report-only mode static pages stay static and only report.
+  // previewing it with CSP_NONCE_DYNAMIC=true) therefore renders every page dynamically; by
+  // default the proxy sends no strict policy at all and static pages stay static.
   if (cspRequiresDynamicRendering()) await connection();
   return (
-    <html lang="fr" className={`${cormorantGaramond.variable} ${ibmPlexSans.variable}`}>
+    <html
+      lang="fr"
+      className={`${cormorantGaramond.variable} ${cormorantGaramondItalic.variable} ${ibmPlexSans.variable}`}
+    >
       <body>
         <SkipLink />
         <AppProviders>{children}</AppProviders>

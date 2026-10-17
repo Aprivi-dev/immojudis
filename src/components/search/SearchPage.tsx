@@ -9,7 +9,8 @@ import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { usePublicPathname } from "@/hooks/use-public-pathname";
 import {
   createWatchedZone as createWatchedZoneRequest,
   fetchAccessPlan,
@@ -65,7 +66,8 @@ import type { MapViewportChange } from "./MapPanel";
 import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
 import { scrollToSaleCard } from "./scroll-to-sale-card";
-import { useDeferredStart } from "./use-deferred-start";
+import { MapPreview } from "./MapPreview";
+import { useFirstGestureStart } from "./use-first-gesture-start";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
 import {
@@ -147,7 +149,7 @@ export function SearchPage({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const pathname = usePathname();
+  const pathname = usePublicPathname();
   const searchParams = useSearchParams();
   const queryString = searchParams.toString();
   const currentHref = queryString ? `${pathname}?${queryString}` : pathname;
@@ -189,8 +191,9 @@ export function SearchPage({
   const [geocoding, setGeocoding] = useState(false);
   const [locationCenter, setLocationCenter] = useState<(GeoPoint & { zoom?: number }) | null>(null);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
-  // Sur bureau, la carte (mapbox-gl + points) ne démarre qu'après le premier affichage de la liste
-  // (voir `useDeferredStart` plus bas) ; son cadre, lui, est réservé dès que l'écran est large.
+  // Sur bureau, la carte (mapbox-gl + points) ne se télécharge ni ne s'initialise qu'au premier
+  // geste, au survol ou au focus de sa zone, ou au clic sur « Afficher la carte » (voir
+  // `useFirstGestureStart` et `MapPreview`) ; son cadre, lui, est réservé dès que l'écran est large.
   const [desktopMapStarted, setDesktopMapStarted] = useState(false);
   const mapVisible = mobileMapOpen || (isDesktop && desktopMapStarted);
   // Le tableau n'existe que sur écran large : en dessous, toujours les cartes.
@@ -526,12 +529,10 @@ export function SearchPage({
   const hasLocalFilters = false;
   const isInitialLoading =
     !publicListShown && ((authLoading && !serverSeeded) || entitlementsLoading || isLoading);
-  useDeferredStart({
+  const startDesktopMap = useCallback(() => setDesktopMapStarted(true), []);
+  useFirstGestureStart({
     enabled: isDesktop && !desktopMapStarted,
-    // La liste publique laissée à l'écran n'est pas la liste attendue : la carte ne dispute pas la base
-    // à la liste connectée.
-    listReady: !isInitialLoading && !publicListShown,
-    onStart: () => setDesktopMapStarted(true),
+    onStart: startDesktopMap,
   });
   const activeFiltersCount = countActiveSearchFilters(search);
   const activeFilters = useMemo(() => activeFilterChips(search), [search]);
@@ -1050,7 +1051,11 @@ export function SearchPage({
         <aside className="relative hidden min-h-[calc(100svh_-_var(--sales-header-height))] bg-line-soft lg:order-2 lg:block">
           {isDesktop ? (
             <div className="sticky top-[var(--sales-header-height)] h-[calc(100svh_-_var(--sales-header-height))]">
-              {desktopMapStarted ? <LazyMapPanel {...mapPanelProps} /> : <MapPanelSkeleton />}
+              {desktopMapStarted ? (
+                <LazyMapPanel {...mapPanelProps} />
+              ) : (
+                <MapPreview onStart={startDesktopMap} />
+              )}
             </div>
           ) : null}
         </aside>
