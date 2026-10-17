@@ -81,19 +81,53 @@ Deux politiques coexistent (plan P4-04) :
 
 - la politique historique (`'unsafe-inline'`), appliquée par `next.config.ts` avec HSTS en production ;
 - une CSP stricte à nonce (`src/proxy.ts`, `script-src 'nonce-…' 'strict-dynamic'`, `connect-src` limité au projet
-  Supabase, `frame-src` explicite), envoyée en `Content-Security-Policy-Report-Only` tant que
-  `CSP_REPORT_ONLY` n'est pas `false` (défaut : rapport seul). Les violations arrivent sur
+  Supabase, `frame-src` explicite), **non envoyée par défaut**. Elle l'était en
+  `Content-Security-Policy-Report-Only` jusqu'au 17/10/2026 : un nonce n'atteint que les pages rendues à la
+  demande, et les pages statiques ou en cache (accueil, fiches, `/sales` sans filtre) n'en portent pas. Chaque
+  script (26 fichiers `_next/static` et 9 scripts en ligne par page) était donc signalé, jusqu'à 35
+  `POST /api/csp-report` par visite sur Safari et Firefox. Mesuré sur Vercel : même `/sales`, rendu à la demande,
+  ne portait aucun attribut `nonce` sur ses 34 balises `<script>` (cause non établie, à élucider avant
+  d'appliquer la politique). Elle n'est envoyée que dans les deux cas ci-dessous ; les violations arrivent sur
   `POST /api/csp-report` et sont journalisées (`scope: "csp-report"`).
 
-Passage à l'application, à faire après 7 jours sans violation (à relever dans les logs Vercel) :
+Voie vers une CSP stricte (décision de sécurité distincte, à prendre après élucidation des nonces absents sur
+Vercel) :
 
-1. Prévisualiser avec `CSP_NONCE_DYNAMIC=true` : toutes les pages deviennent dynamiques pour recevoir un
-   nonce (coût : plus de cache statique ni CDN). Vérifier les violations restantes (widget ClimaScore en
-   iframe `srcdoc`, lecteur de documents sur des hôtes tiers : les ajouter à `CSP_FRAME_SRC_EXTRA`).
-2. Mettre `CSP_REPORT_ONLY=false` : la politique stricte est appliquée, la politique historique retirée et
-   le rendu dynamique forcé automatiquement.
+1. Prévisualiser avec `CSP_NONCE_DYNAMIC=true` : la politique stricte repasse en rapport seul et toutes les
+   pages deviennent dynamiques pour recevoir un nonce (coût : plus de cache statique ni CDN, donc plus
+   d'ISR, y compris pour `/sales` sans filtre). Vérifier les violations restantes (widget ClimaScore en iframe
+   `srcdoc`, lecteur de documents sur des hôtes tiers : les ajouter à `CSP_FRAME_SRC_EXTRA`).
+2. Après 7 jours sans violation (à relever dans les logs Vercel), mettre `CSP_REPORT_ONLY=false` : la politique
+   stricte est appliquée, la politique historique retirée et le rendu dynamique forcé automatiquement.
+3. Alternative qui garde les pages statiques : l'intégrité des sous-ressources de Next.js
+   (`experimental.sri`, politique à empreintes au lieu de nonces).
 
-Rollback : remettre `CSP_REPORT_ONLY=true` (ou retirer la variable) et redéployer.
+Rollback : remettre `CSP_REPORT_ONLY=true` et retirer `CSP_NONCE_DYNAMIC` (ou le mettre à `false`), puis
+redéployer.
+
+## `/sales` sans filtre servi depuis le cache
+
+L'adresse nue `/sales` (aucun paramètre) est servie par une page statique régénérée toutes les 5 minutes
+(ISR, `src/app/sales/defaut/page.tsx`) ; `src/proxy.ts` y réécrit la requête, le visiteur et les robots
+continuent de voir `/sales`. Toute adresse avec un paramètre (`?page=2`, un filtre, `?utm_source=…`) reste
+rendue à la demande par `src/app/sales/page.tsx`, avec ses annonces dans le HTML. Détails et pièges
+(`usePathname`) : en-tête de `src/lib/sales-isr.ts`.
+
+À vérifier après un déploiement :
+
+```bash
+curl -sI https://immojudis.com/sales          # x-vercel-cache: HIT (ou STALE), cache-control: s-maxage=300
+curl -sI "https://immojudis.com/sales?page=2" # cache-control: private, no-cache, no-store (rendu à la demande)
+```
+
+- Une annonce publiée apparaît sur `/sales` après 5 à 10 minutes (cache de la première page, puis page
+  régénérée).
+- `/sales/defaut` répond aussi, avec `X-Robots-Tag: noindex, nofollow` : c'est la page interne, jamais liée
+  ni dans un plan de site. Sa canonique est `/sales`.
+- Tant que la CSP à nonce est servie (`CSP_REPORT_ONLY=false` ou `CSP_NONCE_DYNAMIC=true`), le proxy ne
+  réécrit plus : `/sales` est rendu à la demande, comme toutes les pages.
+- Retour en arrière : annuler le commit « `/sales` sans filtre servi depuis le cache » (le proxy n'écrit plus,
+  `/sales` redevient entièrement dynamique) et redéployer.
 
 ## Validation de livraison
 

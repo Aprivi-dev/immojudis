@@ -1,22 +1,13 @@
-import type { Metadata } from "next";
-import { dehydrate, HydrationBoundary, QueryClient } from "@tanstack/react-query";
-import { pageMetadata } from "@/lib/page-metadata";
-import { loadInitialCatalogue } from "@/lib/public-catalogue.server";
-import {
-  ANONYMOUS_PREVIEW_SCOPE,
-  salesSearchCountQueryKey,
-  salesSearchQueryKey,
-} from "@/lib/search/catalog-placeholder";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
-import { SalesPage } from "./sales-page";
+import { renderSalesCatalogue, salesMetadata } from "./sales-catalogue";
 
 // The canonical stays `/sales` for every filtered or paginated address of the catalogue.
-export const metadata: Metadata = pageMetadata({
-  path: "/sales",
-  title: "Ventes immobilières aux enchères en France",
-  description:
-    "Consultez les ventes immobilières aux enchères : tribunal, notaire et État. Filtrez par lieu, type de bien, budget et date de vente.",
-});
+export const metadata = salesMetadata;
+
+// This page is rendered at request time: it reads `searchParams`, so every filtered or paginated
+// address (`/sales?page=2`) gets its own server-rendered HTML for visitors and crawlers. The bare
+// address `/sales` never reaches it: `src/proxy.ts` rewrites it to the static variant
+// `./defaut/page.tsx` (ISR, 5 minutes), see `src/lib/sales-isr.ts`.
 
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -33,27 +24,7 @@ function flattenSearchParams(params: Record<string, string | string[] | undefine
 }
 
 export default async function Page({ searchParams }: PageProps) {
-  const search = validateSalesSearch(flattenSearchParams(await searchParams));
-  // The signed-out catalogue is rendered here so that the first HTML already
-  // contains the listings (links to every sale included). The browser keeps the
-  // same React Query keys, so hydration reuses these rows without a flash.
-  const initial = await loadInitialCatalogue(search);
-
-  const queryClient = new QueryClient();
-  if (initial) {
-    queryClient.setQueryData(
-      salesSearchQueryKey(initial.signature, ANONYMOUS_PREVIEW_SCOPE),
-      initial.items,
-    );
-    queryClient.setQueryData(
-      salesSearchCountQueryKey(initial.signature, ANONYMOUS_PREVIEW_SCOPE),
-      initial.count,
-    );
-  }
-
-  return (
-    <HydrationBoundary state={dehydrate(queryClient)}>
-      <SalesPage serverSeeded={initial !== null} />
-    </HydrationBoundary>
-  );
+  // The signed-out catalogue is rendered here so that the first HTML already contains the listings
+  // (links to every sale included).
+  return renderSalesCatalogue(validateSalesSearch(flattenSearchParams(await searchParams)));
 }
