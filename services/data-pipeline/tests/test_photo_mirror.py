@@ -1435,6 +1435,14 @@ def test_the_selection_picks_new_photos_and_old_failures_nearest_sale_first() ->
     assert "p.status = 'failed' and p.attempts < %s" in normalized
     assert "p.last_attempt_at < now() - make_interval(hours => %s::int)" in normalized
     assert "not s.catalogue_quarantined" in normalized
+    # The visibility is read on columns only, like public.sale_photo_mirrors: raw_payload is never touched.
+    assert (
+        "app_private.sale_catalogue_projection_is_live( s.catalogue_expiry_materialized, "
+        "s.catalogue_expiry_deadline, s.sale_date, s.catalogue_expiry_fallback, "
+        "s.catalogue_state_observed_at, s.catalogue_state_end_estimate)"
+    ) in normalized
+    assert "sale_catalogue_entry_is_live" not in normalized
+    assert "raw_payload" not in normalized
     assert "order by (s.sale_date is null), s.sale_date, s.id" in normalized
     # Encheres Publiques: by the photo host AND by the sale's source, both switched by the access flag.
     assert "s.catalogue_thumbnail_url !~* %s" in normalized
