@@ -20,6 +20,8 @@ import {
   fetchSalesStatistics,
 } from "@/lib/client-api";
 import { createAlert, getSaleById } from "@/lib/queries";
+import { applyPhotoMirrors, isPhotoMirrorEnabled } from "@/lib/photo-mirror";
+import type { AuctionSale, SaleMediaMirror } from "@/lib/types";
 import { trackProductEvent } from "@/lib/product-events";
 import { OFFERS_PATH, loginPathWithRedirect, pathWithSearch } from "@/lib/navigation";
 import { geocodeAddress, geocodeAdministrativeArea, type GeoPoint } from "@/lib/geo";
@@ -56,6 +58,7 @@ import {
 import {
   fetchSearchCount,
   fetchSearchMapResults,
+  fetchSearchPhotoMirrors,
   fetchSearchResults,
 } from "@/lib/search/search-service";
 import type { MapViewportChange } from "./MapPanel";
@@ -103,6 +106,9 @@ const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPan
 
 /** The map draws at most this many points: more would make clusters and popups sluggish. */
 const MAP_POINT_LIMIT = 500;
+
+const NO_SALES: AuctionSale[] = [];
+const NO_PHOTO_MIRRORS: ReadonlyMap<string, SaleMediaMirror> = new Map();
 
 function SearchStatisticsLoading() {
   return (
@@ -329,7 +335,7 @@ export function SearchPage({
   const catalogScope = comparisonScope ?? serverSeededScope;
 
   const {
-    data: rawSales = [],
+    data: connectedSales,
     error,
     isFetching,
     isLoading,
@@ -338,13 +344,20 @@ export function SearchPage({
     queryKey: salesSearchQueryKey(searchKeySignature, catalogScope),
     placeholderData: (previous, query) =>
       catalogPlaceholder(previous, query?.queryKey, catalogScope),
-    queryFn: () => fetchSearchResults({ search, preview: isPreview, discovery: isDiscovery }),
+    // Les copies de photos arrivent à part (plus bas) : la liste n'attend pas leur appel.
+    queryFn: () =>
+      fetchSearchResults({
+        search,
+        preview: isPreview,
+        discovery: isDiscovery,
+        withMirrors: false,
+      }),
     enabled: catalogReady,
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
 
-  const { data: totalCount, isLoading: isCountLoading } = useQuery({
+  const { data: connectedTotalCount, isLoading: isCountLoading } = useQuery({
     queryKey: salesSearchCountQueryKey(searchKeySignature, catalogScope),
     placeholderData: (previous, query) =>
       catalogPlaceholder(previous, query?.queryKey, catalogScope),
@@ -353,6 +366,47 @@ export function SearchPage({
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
+
+  // Liste publique servie dans le HTML pour cette recherche (cache lu sans requête). Un compte
+  // reconnu la garde à l'écran, en mode aperçu, pendant la vérification de ses droits et le
+  // chargement de sa liste ; elle est remplacée dès que la liste connectée arrive. Rien de réservé
+  // n'y figure (c'est l'aperçu de tout visiteur) et aucun droit n'est décidé ici : le serveur
+  // choisit ce que la liste connectée contient.
+  const publicSales = isPreview
+    ? undefined
+    : queryClient.getQueryData<AuctionSale[]>(
+        salesSearchQueryKey(searchKeySignature, ANONYMOUS_PREVIEW_SCOPE),
+      );
+  const publicListShown = !isPreview && connectedSales === undefined && !error && !!publicSales;
+  const listIsPublic = isPreview || publicListShown;
+  const totalCount = publicListShown
+    ? queryClient.getQueryData<number>(
+        salesSearchCountQueryKey(searchKeySignature, ANONYMOUS_PREVIEW_SCOPE),
+      )
+    : connectedTotalCount;
+
+  // Copies de photos de la liste connectée : un appel dès que les ventes sont lues (leurs photos en
+  // viennent), posé sur la liste à son arrivée. Les copies déjà connues du navigateur s'appliquent
+  // tout de suite. Aperçu anonyme : la route apporte déjà les copies.
+  const connectedList = connectedSales ?? NO_SALES;
+  const connectedIds = useMemo(() => connectedList.map((sale) => sale.id), [connectedList]);
+  const { data: photoMirrors } = useQuery({
+    queryKey: queryKeys.salesPhotoMirrors(catalogScope, connectedIds),
+    queryFn: () => fetchSearchPhotoMirrors(connectedList),
+    placeholderData: (previous) => previous,
+    enabled: catalogReady && !isPreview && connectedList.length > 0 && isPhotoMirrorEnabled(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const rawSales = useMemo(
+    () =>
+      publicListShown
+        ? publicSales!
+        : isPreview
+          ? connectedList
+          : applyPhotoMirrors(connectedList, photoMirrors ?? NO_PHOTO_MIRRORS, { remember: true }),
+    [connectedList, isPreview, photoMirrors, publicListShown, publicSales],
+  );
 
   const {
     data: rawMapSales = [],
@@ -372,21 +426,21 @@ export function SearchPage({
 
   const filteredSales = useMemo(
     () =>
-      isPreview
+      listIsPublic
         ? rawSales
         : sortClientSearchResults(
             applyClientSearchFilters(rawSales, search, center),
             search,
             center,
           ),
-    [center, isPreview, rawSales, search],
+    [center, listIsPublic, rawSales, search],
   );
 
   const mappableSales = useMemo(
     () =>
       (!mapVisible
         ? []
-        : isPreview
+        : listIsPublic
           ? rawSales
           : sortClientSearchResults(
               applyClientSearchFilters(rawMapSales.length ? rawMapSales : rawSales, search, center),
@@ -394,7 +448,7 @@ export function SearchPage({
               center,
             )
       ).filter(hasCoordinates),
-    [center, isPreview, mapVisible, rawMapSales, rawSales, search],
+    [center, listIsPublic, mapVisible, rawMapSales, rawSales, search],
   );
   const mapSales = useMemo(() => mappableSales.slice(0, MAP_POINT_LIMIT), [mappableSales]);
   const mappablePointsTotal = mappableSales.length;
@@ -425,7 +479,9 @@ export function SearchPage({
     // Discovery rows already use the public redacted view. The AI review
     // endpoint reads Analyse-only projections and must not blank valid public
     // city, price or date values for free users.
-    enabled: Boolean(user && !authLoading && !isPreview && !isDiscovery && aiReviewSaleIds.length),
+    enabled: Boolean(
+      user && !authLoading && !listIsPublic && !isDiscovery && aiReviewSaleIds.length,
+    ),
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -438,7 +494,7 @@ export function SearchPage({
     return grouped;
   }, [aiReviewData]);
   const aiReviewStatus: AiReviewRequestStatus =
-    !user || isPreview || isDiscovery || aiReviewSaleIds.length === 0
+    !user || listIsPublic || isDiscovery || aiReviewSaleIds.length === 0
       ? "disabled"
       : aiReviewError
         ? "error"
@@ -446,10 +502,13 @@ export function SearchPage({
           ? "ready"
           : "loading";
   const hasLocalFilters = false;
-  const isInitialLoading = (authLoading && !serverSeeded) || entitlementsLoading || isLoading;
+  const isInitialLoading =
+    !publicListShown && ((authLoading && !serverSeeded) || entitlementsLoading || isLoading);
   useDeferredStart({
     enabled: isDesktop && !desktopMapStarted,
-    listReady: !isInitialLoading,
+    // La liste publique laissée à l'écran n'est pas la liste attendue : la carte ne dispute pas la base
+    // à la liste connectée.
+    listReady: !isInitialLoading && !publicListShown,
     onStart: () => setDesktopMapStarted(true),
   });
   const activeFiltersCount = countActiveSearchFilters(search);
@@ -625,7 +684,7 @@ export function SearchPage({
     selectedSaleDetailLoading: Boolean(selectedMapSaleId && selectedMapSaleDetailLoading),
     isLoading: isInitialLoading || isMapLoading || isMapFetching,
     searchAsMove: !isPreview && Boolean(search.searchAsMove),
-    preview: isPreview,
+    preview: listIsPublic,
     showDpeLegend: !dpeLocked,
     aiReviewBySaleId,
     aiReviewStatus,
@@ -827,7 +886,7 @@ export function SearchPage({
               search={search}
               displayCount={displayCount}
               hasLocalFilters={hasLocalFilters}
-              isLoading={isInitialLoading || isCountLoading}
+              isLoading={isInitialLoading || (isCountLoading && !publicListShown)}
               hasError={Boolean(error) && rawSales.length === 0}
               geocoding={geocoding}
             />
@@ -884,8 +943,8 @@ export function SearchPage({
           <SearchResultsList
             sales={displayedSales}
             returnTo={currentHref}
-            locked={isPreview}
-            analysisLocked={isDiscovery}
+            locked={listIsPublic}
+            analysisLocked={isDiscovery && !publicListShown}
             isLoading={isInitialLoading}
             error={error}
             onRetry={() => void refetchSales()}

@@ -6,6 +6,7 @@ import { readPagedRows } from "@/lib/paged-read";
 import {
   PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
   applyPhotoMirrors,
+  fetchPhotoMirrors,
   isPhotoMirrorEnabled,
   withPhotoMirrors,
   type PhotoMirrorClient,
@@ -47,18 +48,48 @@ export async function fetchSearchResults(options: {
   search: SalesSearchParams;
   preview: boolean;
   discovery?: boolean;
+  /**
+   * `false` : la recherche connectée rend les ventes dès qu'elles sont lues, sans attendre les
+   * copies de photos (`fetchSearchPhotoMirrors`, à poser ensuite avec `applyPhotoMirrors`). Sans
+   * effet sur l'aperçu anonyme, dont la route apporte déjà les copies.
+   */
+  withMirrors?: boolean;
 }): Promise<AuctionSale[]> {
   if (options.preview) {
     const page = await fetchPreviewSearch(options.search);
     return applyPhotoMirrors(page.items, page.mirrors, { remember: true });
   }
   const sales = await loadSearchResults(options);
+  if (options.withMirrors === false) return sales;
   // Le client Supabase n'est chargé que si les copies sont demandées (voir `lazy.ts`).
   if (!sales.length || !isPhotoMirrorEnabled()) return sales;
   return withPhotoMirrors(sales, (await getSupabase()) as unknown as PhotoMirrorClient, {
     timeoutMs: PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
     remember: true,
   });
+}
+
+/**
+ * Copies de photos des ventes d'une page connectée, lues en un appel (URL d'origine vers copie).
+ * Jamais bloquant : interrupteur éteint, panne ou délai dépassé donnent une table vide.
+ */
+export async function fetchSearchPhotoMirrors(
+  sales: AuctionSale[],
+): Promise<ReadonlyMap<string, SaleMediaMirror>> {
+  if (!sales.length || !isPhotoMirrorEnabled()) return new Map();
+  const client = (await getSupabase()) as unknown as PhotoMirrorClient;
+  let found: ReadonlyMap<string, SaleMediaMirror> = new Map();
+  // `withPhotoMirrors` choisit les photos que l'écran montre ; on n'en garde que les copies.
+  await withPhotoMirrors(sales, client, {
+    fetchMirrors: async (urls) => {
+      const mirrors = await fetchPhotoMirrors(client, urls, {
+        timeoutMs: PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
+      });
+      found = mirrors;
+      return mirrors;
+    },
+  });
+  return found;
 }
 
 async function loadSearchResults({
