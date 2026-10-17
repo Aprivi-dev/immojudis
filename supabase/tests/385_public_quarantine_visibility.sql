@@ -1,6 +1,6 @@
 begin;
 
-select plan(15);
+select plan(18);
 
 select is(
   (select jsonb_agg(jsonb_build_array(ordinal_position, column_name, data_type) order by ordinal_position)
@@ -174,6 +174,51 @@ select is(
     where id = 'c3850000-0000-4000-8000-000000000002'),
   0::bigint,
   'authenticated discovery view omits quarantined rows'
+);
+-- The policy itself, by its behavior and not its text: a signed-in Analyse account that is not an
+-- administrator reads the clean rows of the table and none of the quarantined one.
+select is(
+  (select count(*) from public.auction_sales
+    where id = 'c3850000-0000-4000-8000-000000000002'),
+  0::bigint,
+  'authenticated non-admin account cannot read the quarantined base row'
+);
+select is(
+  (select count(*) from public.auction_sales
+    where id in (
+      'c3850000-0000-4000-8000-000000000001',
+      'c3850000-0000-4000-8000-000000000003'
+    )),
+  2::bigint,
+  'authenticated non-admin account still reads the clean base rows (the policy is not simply empty)'
+);
+reset role;
+
+-- An administrator keeps access to the quarantined row (the admin bypass of the policy).
+insert into auth.users (
+  id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+  created_at, updated_at, raw_app_meta_data, raw_user_meta_data
+)
+values (
+  'c3850000-0000-4000-8000-000000000011',
+  '00000000-0000-0000-0000-000000000000',
+  'authenticated', 'authenticated', 'public-quarantine-admin@example.test', '',
+  now(), now(), now(), '{}'::jsonb, '{}'::jsonb
+);
+insert into public.user_profiles (user_id, email, user_role)
+values (
+  'c3850000-0000-4000-8000-000000000011', 'public-quarantine-admin@example.test', 'admin'
+)
+on conflict (user_id) do update set user_role = 'admin';
+
+set local role authenticated;
+set local "request.jwt.claim.role" = 'authenticated';
+set local "request.jwt.claim.sub" = 'c3850000-0000-4000-8000-000000000011';
+select is(
+  (select count(*) from public.auction_sales
+    where id = 'c3850000-0000-4000-8000-000000000002'),
+  1::bigint,
+  'authenticated administrator reads the quarantined base row'
 );
 reset role;
 
