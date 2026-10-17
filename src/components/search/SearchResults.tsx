@@ -63,6 +63,13 @@ import type { ResultsView } from "@/lib/search/results-view";
  */
 const LIST_MAP_THUMBNAIL = { width: 400, height: 300, framingWidth: 512 } as const;
 
+/**
+ * Nombre de cartes dont l'image est chargée en priorité haute (`fetchpriority="high"`, hors
+ * chargement différé). Une seule : sur mobile la deuxième carte est sous la ligne de flottaison,
+ * et une seconde image prioritaire (33 Ko) ralentit celle de l'élément principal (LCP).
+ */
+export const EAGER_IMAGE_COUNT = 1;
+
 export function SearchResultsList({
   sales,
   sponsoredPlacement,
@@ -197,7 +204,7 @@ export function SearchResultsList({
                   <ListingCard
                     sale={sale}
                     returnTo={returnTo}
-                    eagerImage={index < 2}
+                    eagerImage={index < EAGER_IMAGE_COUNT}
                     locked={locked}
                     analysisLocked={analysisLocked}
                     active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
