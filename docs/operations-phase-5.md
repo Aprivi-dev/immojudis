@@ -140,6 +140,45 @@ curl -sI "https://immojudis.com/sales?page=2" # cache-control: private, no-cache
   réécrit plus : `/sales` est rendu à la demande, comme toutes les pages.
 - Retour en arrière : annuler le commit « `/sales` sans filtre servi depuis le cache » (le proxy n'écrit plus,
   `/sales` redevient entièrement dynamique) et redéployer.
+- Si la base tombe pendant une régénération, la page statique ne se régénère pas (elle lève l'erreur) :
+  Vercel garde la dernière bonne page et retente à la requête suivante, au lieu de garder 5 minutes une page
+  sans annonces. Le `next build` reste possible sans base (page produite sans liste).
+
+### Contrôle des en-têtes après déploiement
+
+`/sales` (page statique `/sales/defaut`, réécrite par le proxy) et `/sales?page=2` (rendu à la demande) ne
+passent pas par le même chemin de rendu : les en-têtes de sécurité doivent pourtant être identiques. À
+comparer après chaque déploiement, et après toute bascule de `CSP_REPORT_ONLY` ou `CSP_NONCE_DYNAMIC`
+(qui exige un redéploiement complet) :
+
+```bash
+SITE=https://immojudis.com
+SECURITY='^(content-security-policy|x-frame-options|permissions-policy|strict-transport-security|referrer-policy|x-content-type-options|cross-origin-opener-policy):'
+curl -sI "$SITE/sales"        | grep -iE "$SECURITY" | sort > /tmp/sales.headers
+curl -sI "$SITE/sales?page=2" | grep -iE "$SECURITY" | sort > /tmp/sales-page2.headers
+diff /tmp/sales.headers /tmp/sales-page2.headers && echo "en-têtes de sécurité identiques"
+wc -l < /tmp/sales.headers   # 7 lignes : CSP (historique), X-Frame-Options, Permissions-Policy, HSTS, Referrer-Policy, X-Content-Type-Options, COOP
+
+# Pas de cookie, cache actif sur /sales (un cookie empêcherait le CDN de le servir)
+curl -sI "$SITE/sales" | grep -iE '^(set-cookie|x-vercel-cache|cache-control|age):'
+```
+
+Attendu :
+
+- **Aucune différence** entre les deux listes d'en-têtes de sécurité. Les sept doivent être présents :
+  `Content-Security-Policy` (la politique historique, tant que la CSP à nonce n'est pas servie), `X-Frame-Options`,
+  `Permissions-Policy`, `Strict-Transport-Security`, `Referrer-Policy`, `X-Content-Type-Options` et
+  `Cross-Origin-Opener-Policy`. Une différence, ou un en-tête absent de `/sales`, est un défaut du déploiement :
+  ne pas ouvrir l'indexation avant de l'avoir compris.
+- **`/sales` : pas de `set-cookie`**, `x-vercel-cache: HIT` (ou `STALE`, ou `PRERENDER` juste après un
+  déploiement) et `cache-control: public, s-maxage=300` ou équivalent. Répéter l'appel : `x-vercel-cache` doit
+  passer à `HIT`. `MISS` à chaque appel, ou un `set-cookie`, signifie que la page n'est pas servie depuis le
+  cache.
+- `/sales?page=2` : `cache-control: private, no-cache, no-store` et aucun `x-vercel-cache: HIT` (rendu à la
+  demande).
+
+Un test unitaire (`src/lib/security-headers.test.ts`) vérifie que la règle d'en-têtes de `next.config.ts`
+(`/(.*)`) couvre `/sales/defaut` ; ce contrôle vérifie, lui, ce que le CDN envoie réellement.
 
 ## Validation de livraison
 

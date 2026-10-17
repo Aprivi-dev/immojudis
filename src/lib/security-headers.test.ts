@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import nextConfig from "../../next.config";
 import {
   buildCspResponseHeaders,
   buildSecurityHeaders,
@@ -190,5 +191,44 @@ describe("CSP delivery mode", () => {
     // Aucun en-tête d'isolation ne bloque une image d'un autre hôte.
     expect(legacy["Cross-Origin-Embedder-Policy"]).toBeUndefined();
     expect(legacy["Cross-Origin-Resource-Policy"]).toBeUndefined();
+  });
+});
+
+describe("next.config headers() on the static variant of /sales", () => {
+  // Next.js lit `source` comme un motif de chemin ; `/(.*)` (le groupe `(.*)` capture tout le
+  // chemin) équivaut à cette expression.
+  const matches = (source: string, path: string) => new RegExp("^" + source + "$").test(path);
+
+  it("covers /sales/defaut, where the proxy rewrites /sales to, with every security header", async () => {
+    const rules = await nextConfig.headers!();
+    const securityRule = rules.find((rule) => rule.source === "/(.*)");
+    expect(securityRule).toBeDefined();
+
+    for (const path of [
+      "/",
+      "/sales",
+      "/sales/defaut",
+      "/sales/defaut.rsc",
+      "/sales/defaut.segments/_tree.segment.rsc",
+    ]) {
+      expect(matches(securityRule!.source, path), path).toBe(true);
+    }
+    expect(securityRule!.headers.map((header) => header.key)).toEqual(
+      expect.arrayContaining([
+        "Content-Security-Policy",
+        "X-Frame-Options",
+        "Permissions-Policy",
+        "Referrer-Policy",
+        "X-Content-Type-Options",
+        "Cross-Origin-Opener-Policy",
+      ]),
+    );
+  });
+
+  it("lets no other rule override a security header (the others carry Cache-Control only)", async () => {
+    const rules = await nextConfig.headers!();
+    for (const rule of rules.filter((candidate) => candidate.source !== "/(.*)")) {
+      expect(rule.headers.map((header) => header.key)).toEqual(["Cache-Control"]);
+    }
   });
 });
