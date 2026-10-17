@@ -347,10 +347,14 @@ test.describe("compte gratuit connecté", () => {
     });
     await page.goto("/sales?city=Lyon");
 
-    await page.getByRole("button", { name: "Créer une alerte" }).first().click();
     const checkbox = page.getByRole("checkbox", {
       name: /Recevoir un email récapitulatif chaque semaine/,
     });
+    // Le premier clic peut précéder l'hydratation : on le rejoue jusqu'à ce qu'il soit pris.
+    await expect(async () => {
+      await page.getByRole("button", { name: "Créer une alerte" }).first().click();
+      await expect(checkbox).toBeVisible({ timeout: 1000 });
+    }).toPass();
     await expect(checkbox).not.toBeChecked();
 
     // Sans la case : l'alerte est créée, aucun consentement n'est enregistré.
