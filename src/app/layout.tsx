@@ -104,8 +104,8 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // A nonce can only be stamped on scripts at request time. Enforcing the strict CSP (or
-  // previewing it with CSP_NONCE_DYNAMIC=true) therefore renders every page dynamically; in the
-  // default report-only mode static pages stay static and only report.
+  // previewing it with CSP_NONCE_DYNAMIC=true) therefore renders every page dynamically; by
+  // default the proxy sends no strict policy at all and static pages stay static.
   if (cspRequiresDynamicRendering()) await connection();
   return (
     <html lang="fr" className={`${cormorantGaramond.variable} ${ibmPlexSans.variable}`}>
