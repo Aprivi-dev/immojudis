@@ -35,15 +35,17 @@ const numbers = (block: string, pattern: RegExp) =>
 describe("bornes de la fonction SQL de recherche publique", () => {
   it("la dernière définition de la validation est celle de 20261024100000", () => {
     // Une migration plus récente qui réécrirait ces bornes doit être lue à sa place : on le fait
-    // échouer ici plutôt que de comparer en silence à une définition périmée. 20261027100000
-    // réécrit le corps des fonctions de recherche (visibilité sans raw_payload) sans changer leurs
-    // bornes : elle ne contient pas le message de validation.
-    const defining = migrationNames().filter((name) => read(name).includes(VALIDATION_MESSAGE));
+    // échouer ici plutôt que de comparer en silence à une définition périmée. 20261027100200
+    // réécrit le corps des fonctions de recherche (visibilité sans raw_payload) en relisant leur
+    // définition en base (pg_get_functiondef) : les bornes sont conservées et le message de
+    // validation n'apparaît pas dans son texte.
+    const names = migrationNames();
+    const defining = names.filter((name) => read(name).includes(VALIDATION_MESSAGE));
     expect(defining.at(-1)).toBe(LAST_DEFINITION);
-    expect(migrationNames().some((name) => name.startsWith("20261027100000_"))).toBe(true);
-    expect(
-      read(migrationNames().find((name) => name.startsWith("20261027100000_"))!),
-    ).not.toContain(VALIDATION_MESSAGE);
+    const rewrite = names.find((name) => name.startsWith("20261027100200_"));
+    expect(rewrite).toBeDefined();
+    expect(read(rewrite!)).toContain("search_auction_sales_preview_v3");
+    expect(read(rewrite!)).not.toContain(VALIDATION_MESSAGE);
   });
 
   it.each([3, 4] as const)(
