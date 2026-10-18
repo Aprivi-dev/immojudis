@@ -110,6 +110,23 @@ export function mapPreviewRows(rows: PreviewSearchRow[]): AuctionSale[] {
   })) as AuctionSale[];
 }
 
+/**
+ * Erreur lisible pour le journal. PostgREST renvoie un objet simple (`message`, `code`, `details`,
+ * `hint`), pas une `Error` : levé tel quel, il s'imprime « [object Object] » ou sans pile. Le
+ * message dit quelle recherche a échoué, avec le message et le code de la base ; l'objet d'origine
+ * reste dans `cause`. La route répond de toute façon par un message générique (jamais ce texte).
+ */
+function previewSearchError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  const { message, code } =
+    typeof error === "object" && error !== null
+      ? (error as { message?: unknown; code?: unknown })
+      : ({} as { message?: unknown; code?: unknown });
+  const detail = typeof message === "string" && message ? message : "erreur inconnue";
+  const suffix = typeof code === "string" && code ? ` (code ${code})` : "";
+  return new Error(`Recherche d'aperçu en échec : ${detail}${suffix}`, { cause: error });
+}
+
 export async function runPreviewSearch(
   client: PreviewRpcClient,
   search: SalesSearchParams,
@@ -122,7 +139,7 @@ export async function runPreviewSearch(
         p_max_sale_date: search.maxSaleDate ?? null,
       })
     : client.rpc("search_auction_sales_preview_v3", args));
-  if (error) throw error;
+  if (error) throw previewSearchError(error);
   const rows = (data ?? []) as PreviewSearchRow[];
   return {
     items: mapPreviewRows(rows),

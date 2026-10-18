@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { getSupabase } from "@/integrations/supabase/lazy";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { UserAlert } from "./types";
 import { assertCloudConfigured } from "./query-configuration";
@@ -14,6 +14,7 @@ export type CreateAlertPayload = Omit<
 
 export async function getAlerts(userId: string): Promise<UserAlert[]> {
   if (!assertCloudConfigured()) return [];
+  const supabase = await getSupabase();
   const { data, error } = await supabase
     .from("user_alerts")
     .select("*")
@@ -35,6 +36,7 @@ export async function createAlert(userId: string, payload: CreateAlertPayload) {
     alert_frequency: payload.alert_frequency === "weekly" ? "weekly" : "daily",
     advanced_criteria: payload.advanced_criteria ?? {},
   };
+  const supabase = await getSupabase();
   const { error } = await supabase.from("user_alerts").insert(insertPayload);
   if (error) throw error;
 }
@@ -42,6 +44,7 @@ export async function createAlert(userId: string, payload: CreateAlertPayload) {
 export async function updateAlert(userId: string, alertId: string, patch: Partial<UserAlert>) {
   assertCloudConfigured();
   const { advanced_criteria: advancedCriteria, ...rest } = patch;
+  const supabase = await getSupabase();
   const { error } = await supabase
     .from("user_alerts")
     .update({
@@ -56,6 +59,7 @@ export async function updateAlert(userId: string, alertId: string, patch: Partia
 
 export async function deleteAlert(userId: string, alertId: string) {
   assertCloudConfigured();
+  const supabase = await getSupabase();
   const { error } = await supabase
     .from("user_alerts")
     .delete()
