@@ -17,13 +17,14 @@ import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
-import { supabase } from "@/integrations/supabase/client";
+import { getSupabase } from "@/integrations/supabase/lazy";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import {
   FAVORITE_ADD_LABEL,
   FAVORITE_ANONYMOUS_TITLE,
+  FAVORITE_VERIFYING_TITLE,
   FAVORITE_REMOVE_LABEL,
   announceFavoriteAdded,
 } from "@/components/favorite-feedback";
@@ -62,6 +63,13 @@ import type { ResultsView } from "@/lib/search/results-view";
  * conséquence pour que la zone visible reste identique avec moins de pixels.
  */
 const LIST_MAP_THUMBNAIL = { width: 400, height: 300, framingWidth: 512 } as const;
+
+/**
+ * Nombre de cartes dont l'image est chargée en priorité haute (`fetchpriority="high"`, hors
+ * chargement différé). Une seule : sur mobile la deuxième carte est sous la ligne de flottaison,
+ * et une seconde image prioritaire (33 Ko) ralentit celle de l'élément principal (LCP).
+ */
+export const EAGER_IMAGE_COUNT = 1;
 
 export function SearchResultsList({
   sales,
@@ -121,7 +129,7 @@ export function SearchResultsList({
   const favoriteQuery = useQuery({
     queryKey: queryKeys.searchFavoriteStatus(user?.id ?? null, favoriteQueryIds),
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (await getSupabase())
         .from("user_favorites")
         .select("sale_id")
         .eq("user_id", user!.id)
@@ -197,7 +205,7 @@ export function SearchResultsList({
                   <ListingCard
                     sale={sale}
                     returnTo={returnTo}
-                    eagerImage={index < 2}
+                    eagerImage={index < EAGER_IMAGE_COUNT}
                     locked={locked}
                     analysisLocked={analysisLocked}
                     active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
@@ -848,6 +856,8 @@ export function CompactFavoriteButton({
   const queryClient = useQueryClient();
   const [isFavorite, setIsFavorite] = useState(initialFavorite);
   const [busy, setBusy] = useState(false);
+  // `locked` pour un compte reconnu = liste publique gardée pendant la vérification de ses droits.
+  const verifying = Boolean(user) && locked;
 
   useEffect(() => {
     setIsFavorite(initialFavorite);
@@ -908,8 +918,11 @@ export function CompactFavoriteButton({
       disabled={busy}
       aria-pressed={locked ? undefined : isFavorite}
       aria-label={isFavorite && !locked ? FAVORITE_REMOVE_LABEL : FAVORITE_ADD_LABEL}
-      title={locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
-      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60"
+      // Compte reconnu sur la liste publique conservée : `aria-disabled` (le cœur reste focalisable et
+      // annoncé) plutôt qu'un clic sans effet.
+      aria-disabled={verifying ? true : undefined}
+      title={verifying ? FAVORITE_VERIFYING_TITLE : locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
+      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60"
     >
       <Heart className={`h-5 w-5 ${isFavorite && !locked ? "fill-danger text-danger" : ""}`} />
     </button>

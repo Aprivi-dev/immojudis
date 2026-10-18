@@ -13,6 +13,27 @@ describe("API observability", () => {
     expect(context.requestId).toBe("edge-12345678");
   });
 
+  it("echoes the request id by default and omits it on request (shared public responses)", () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const context = createApiRequestContext(
+      new Request("https://example.test/api", { headers: { "x-request-id": "edge-12345678" } }),
+      "api.test",
+    );
+
+    const echoed = apiJson({ ok: true }, context);
+    const omitted = apiJson(
+      { ok: true },
+      createApiRequestContext(new Request("https://example.test/api"), "api.test"),
+      { headers: { "cache-control": "public, s-maxage=60" } },
+      { echoRequestId: false },
+    );
+
+    expect(echoed.headers.get("x-request-id")).toBe("edge-12345678");
+    expect(omitted.headers.get("x-request-id")).toBeNull();
+    // Le reste ne change pas : l'en-tête de cache demandé est conservé.
+    expect(omitted.headers.get("cache-control")).toBe("public, s-maxage=60");
+  });
+
   it("replaces unsafe request ids and redacts internal errors", async () => {
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const context = createApiRequestContext(

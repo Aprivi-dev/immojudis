@@ -5,7 +5,12 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
-import { ListingCard, ListingMediaCarousel, SearchResultsList } from "./SearchResults";
+import {
+  EAGER_IMAGE_COUNT,
+  ListingCard,
+  ListingMediaCarousel,
+  SearchResultsList,
+} from "./SearchResults";
 import { SearchStatisticsPanel } from "./SearchStatisticsPanel";
 import { buildSearchStatistics } from "./search-page-state";
 
@@ -55,6 +60,7 @@ vi.mock("@/components/SaleVisual", () => ({
     mapWidth,
     mapHeight,
     mapFramingWidth,
+    eager,
   }: {
     locked: boolean;
     title: string;
@@ -62,9 +68,11 @@ vi.mock("@/components/SaleVisual", () => ({
     mapWidth?: number;
     mapHeight?: number;
     mapFramingWidth?: number;
+    eager?: boolean;
   }) => (
     <div
       data-testid="sale-visual"
+      data-eager={String(Boolean(eager))}
       data-thumbnail={String(Boolean(thumbnail))}
       data-map-size={`${mapWidth}x${mapHeight}`}
       data-map-framing={mapFramingWidth}
@@ -175,6 +183,13 @@ describe("useful public discovery", () => {
       (screen.getByRole("button", { name: "Comparer Appartement à d" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it("gives high image priority to the first card only", () => {
+    renderResults([sale("eager-a"), sale("eager-b"), sale("eager-c")]);
+    const eager = screen.getAllByTestId("sale-visual").map((visual) => visual.dataset.eager);
+    expect(eager).toEqual(["true", "false", "false"]);
+    expect(EAGER_IMAGE_COUNT).toBe(1);
   });
 
   it("keeps the active card synchronized with hover after memoization", () => {

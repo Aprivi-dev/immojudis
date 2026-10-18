@@ -8,6 +8,7 @@ import {
   forgetRememberedPhotoMirrors,
   isPhotoMirrorEnabled,
   isPhotoMirrorUrl,
+  applyPhotoMirrors,
   mirrorFromRow,
   photoMirrorForCard,
   photoMirrorForDetail,
@@ -238,6 +239,30 @@ describe("photo mirrors", () => {
         remember: true,
       });
       expect(again!.media[0]!.mirror?.path640).toBe("sale-1/abc-640.webp");
+    });
+
+    it("applyPhotoMirrors : pose les copies d'une réponse déjà reçue, sans appel, et les retient", () => {
+      const copy = mirrorFromRow(row(LICITOR))!;
+
+      const [first] = applyPhotoMirrors([sale("a", LICITOR)], new Map([[LICITOR, copy]]), {
+        remember: true,
+      });
+      expect(first!.media[0]!.mirror?.path640).toBe("sale-1/abc-640.webp");
+
+      // Réponse suivante sans copie : la copie connue est conservée.
+      const [again] = applyPhotoMirrors([sale("a", LICITOR)], new Map(), { remember: true });
+      expect(again!.media[0]!.mirror?.path640).toBe("sale-1/abc-640.webp");
+    });
+
+    it("applyPhotoMirrors : ne touche que la photo affichée et renvoie la même liste sans copie", () => {
+      const copy = mirrorFromRow(row(LICITOR))!;
+      const sales = [sale("a", VENCH, LICITOR)];
+
+      const [result] = applyPhotoMirrors(sales, new Map([[LICITOR, copy]]));
+      expect(result!.media[1]).not.toHaveProperty("mirror");
+
+      const untouched = [sale("b", VENCH)];
+      expect(applyPhotoMirrors(untouched, new Map([[LICITOR, copy]]))).toBe(untouched);
     });
 
     it("ne vaut que pour la même URL d'origine", async () => {
