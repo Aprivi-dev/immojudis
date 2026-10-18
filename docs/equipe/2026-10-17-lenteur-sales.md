@@ -133,3 +133,29 @@ Restes à faire :
 - Câbler l'appel de `/api/pipeline/revalidate-sale` depuis le pipeline lors d'un retrait ou d'une annulation.
   Aujourd'hui, un retrait disparaît de `/sales` en 5 à 10 minutes.
 - Remesurer en production après la pose des migrations.
+
+## Mise en production (18/10/2026)
+
+- PR #273 fusionnée à 06 h 31 UTC. Le site a été déployé par Vercel.
+- Migrations `20261027100000` à `20261027100200` appliquées à 07 h 09 UTC par « Apply Supabase Migrations », hors
+  collecte.
+- Contrôle d'équivalence juste avant l'application : 1 645 annonces visibles avec l'ancienne règle comme avec la
+  nouvelle, aucune différence. Après l'application : aucune dérive de la quarantaine, toujours 1 645 annonces visibles.
+
+Temps dans la base, avant et après :
+
+| Requête                                                                    | Avant    | Après |
+| -------------------------------------------------------------------------- | -------- | ----- |
+| Décompte des points de carte d'un compte connecté (`v_auction_sales_app`)  | 5 449 ms | 22 ms |
+| Décompte de la vue découverte (`v_auction_sales_discovery`)                | 4 663 ms | 22 ms |
+| Première page de la recherche publique (`search_auction_sales_preview_v3`) | 601 ms   | 59 ms |
+
+Site en production :
+
+- `/sales` sans filtre est servi depuis le cache (`x-vercel-cache: HIT`).
+- `/sales?page=2` reste rendu à chaque requête.
+- Plus d'en-tête CSP en rapport seul.
+- Aucun `set-cookie`.
+
+Dans l'heure qui suit, seules deux erreurs sont remontées, une fois chacune : un délai dépassé de la lecture des copies de
+photos, déjà connu et sans effet visible.
