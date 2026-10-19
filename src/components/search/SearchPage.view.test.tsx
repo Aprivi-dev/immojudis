@@ -218,7 +218,9 @@ describe("/sales : la carte du bureau ne démarre qu'au premier geste", () => {
       expect(screen.queryByTestId("map-panel")).toBeNull();
 
       fireEvent[gesture](window);
-      expect(await screen.findByTestId("map-panel", undefined, { timeout: 500 })).toBeTruthy();
+      // 2 s : le geste ne coûte que quelques ms au calme, mais la machine peut être très chargée (CI,
+      // autres chantiers) ; 500 ms échouait par intermittence sans rien révéler du comportement.
+      expect(await screen.findByTestId("map-panel", undefined, { timeout: 2_000 })).toBeTruthy();
       expect(screen.queryByTestId("map-preview")).toBeNull();
     },
   );

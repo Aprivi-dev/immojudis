@@ -148,7 +148,7 @@ describe("public preview search service", () => {
           minSaleDate: "2026-09-11",
           maxSaleDate: "2026-10-01",
           page: 4,
-          limit: 12,
+          limit: 50,
           occupancy: "vacant",
           minScore: 70,
           dpeClasses: ["A"],
