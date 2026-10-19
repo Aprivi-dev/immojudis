@@ -95,3 +95,25 @@ def test_audit_rederives_agrasc_seller_exclusion_from_traced_public_urls():
     }]
     assert certificate['unhandled_public_urls'] == []
     assert certificate['public_discovery_certified'] is True
+
+
+def test_terminal_empty_page_without_announced_total_does_not_certify_inventory():
+    # Page de connexion, blocage silencieux ou filtre vide : zéro annonce et aucun total annoncé.
+    p = PaginationCoverage()
+    p.accept([], terminal=True)
+    assert not p.exhausted
+    assert p.metrics()['coverage_complete'] is False
+    assert p.metrics()['stop_reason'] == 'empty_page_unverified'
+
+
+def test_terminal_empty_page_is_complete_when_the_source_announces_zero():
+    p = PaginationCoverage()
+    p.accept([], terminal=True, expected_total=0)
+    assert p.exhausted
+
+
+def test_terminal_empty_page_after_listings_still_certifies_inventory():
+    p = PaginationCoverage()
+    p.accept([{'source_url': 'a'}])
+    p.accept([], terminal=True)
+    assert p.exhausted

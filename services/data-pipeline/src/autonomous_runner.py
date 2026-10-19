@@ -302,7 +302,9 @@ def finish_source(db_url: str, run_id: str) -> None:
             retry_deadline = _retry_not_before_deadline(coverage.get('retry_not_before'))
             if retry_deadline is not None:
                 deadline = max(deadline, retry_deadline)
-        record_source_presence(db, run_id, source, availability, complete)
+        # Un run en échec (budget épuisé, arrêt brutal) ne prouve rien sur l'absence : seul un run
+        # `succeeded` compte comme inventaire complet, sinon le compteur d'absence avancerait.
+        record_source_presence(db, run_id, source, availability, complete and status == 'succeeded')
         db.execute("""update public.auction_source_state set
             availability=%s,coverage=%s,last_error=%s,consecutive_failures=%s,
             next_inventory_at=%s,suspended_until=%s,

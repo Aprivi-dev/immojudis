@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildNotificationPreferencePatch,
   buildSaleReminderPreferencePatch,
   canCreateEmailAlertNotification,
   canSendSaleReminder,
   notificationPreferenceUpdateSchema,
+  SALE_REMINDERS_NOT_OFFERED_MESSAGE,
+  updateNotificationPreferences,
 } from "@/lib/notification-preferences";
 
 describe("notification preferences", () => {
@@ -105,7 +107,7 @@ describe("rappels d'audience : consentement distinct", () => {
     saleRemindersRevokedAt: null,
   };
 
-  it("date le premier consentement et garde la date d'origine ensuite", () => {
+  it("date le premier consentement, puis redate chaque nouveau consentement après un retrait", () => {
     expect(
       buildSaleReminderPreferencePatch({
         current: never,
@@ -129,9 +131,23 @@ describe("rappels d'audience : consentement distinct", () => {
         timestamp: "2026-10-21T10:00:00.000Z",
       }),
     ).toMatchObject({
-      sale_reminders_consented_at: "2026-10-19T10:00:00.000Z",
+      sale_reminders_consented_at: "2026-10-21T10:00:00.000Z",
       sale_reminders_revoked_at: null,
     });
+  });
+
+  it("garde la date d'origine quand les rappels sont déjà actifs", () => {
+    expect(
+      buildSaleReminderPreferencePatch({
+        current: {
+          saleRemindersEnabled: true,
+          saleRemindersConsentedAt: "2026-10-19T10:00:00.000Z",
+          saleRemindersRevokedAt: null,
+        },
+        enabled: true,
+        timestamp: "2026-10-21T10:00:00.000Z",
+      }).sale_reminders_consented_at,
+    ).toBe("2026-10-19T10:00:00.000Z");
   });
 
   it("date le retrait seulement quand les rappels étaient actifs", () => {
@@ -191,5 +207,100 @@ describe("rappels d'audience : consentement distinct", () => {
       timestamp: "2026-10-19T10:00:00.000Z",
     });
     expect(Object.keys(reminders).some((key) => key.startsWith("alert_email"))).toBe(false);
+  });
+});
+
+describe("rappels d'audience : activation seulement quand l'envoi est proposé", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  function fakeAuth(isAdmin: boolean, row: Record<string, unknown> | null = null) {
+    const upsert = vi.fn((patch: Record<string, unknown>) => ({
+      select: () => ({ single: async () => ({ data: { ...patch }, error: null }) }),
+    }));
+    const auth = {
+      userId: "user-1",
+      isAdmin,
+      supabase: {
+        from: () => ({
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }) }),
+          upsert,
+        }),
+      },
+    };
+    return { auth: auth as never, upsert };
+  }
+
+  const activate = { saleRemindersEnabled: true, consentSource: "settings" as const };
+  const NOW = new Date("2026-10-21T10:00:00.000Z");
+
+  it.each([
+    ["sans variable (off)", undefined, false],
+    ["off", "off", true],
+    ["internal pour un compte qui n'est pas administrateur", "internal", false],
+  ])("refuse l'activation : %s", async (_label, mode, isAdmin) => {
+    if (mode) vi.stubEnv("SALE_REMINDERS_MODE", mode);
+    const { auth, upsert } = fakeAuth(isAdmin);
+    await expect(
+      updateNotificationPreferences({ auth, input: activate, now: NOW }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: SALE_REMINDERS_NOT_OFFERED_MESSAGE,
+    });
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("accepte l'activation en mode internal pour un administrateur et en mode on", async () => {
+    vi.stubEnv("SALE_REMINDERS_MODE", "internal");
+    const admin = fakeAuth(true);
+    await updateNotificationPreferences({ auth: admin.auth, input: activate, now: NOW });
+    expect(admin.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sale_reminders_enabled: true,
+        sale_reminders_consented_at: NOW.toISOString(),
+      }),
+      { onConflict: "user_id" },
+    );
+
+    vi.stubEnv("SALE_REMINDERS_MODE", "on");
+    const user = fakeAuth(false);
+    await updateNotificationPreferences({ auth: user.auth, input: activate, now: NOW });
+    expect(user.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("permet toujours de retirer le consentement, même quand l'envoi est fermé", async () => {
+    const { auth, upsert } = fakeAuth(false, {
+      sale_reminders_enabled: true,
+      sale_reminders_consented_at: "2026-10-19T10:00:00.000Z",
+      sale_reminders_revoked_at: null,
+    });
+    await updateNotificationPreferences({
+      auth,
+      input: { saleRemindersEnabled: false, consentSource: "settings" },
+      now: NOW,
+    });
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sale_reminders_enabled: false,
+        sale_reminders_revoked_at: NOW.toISOString(),
+      }),
+      { onConflict: "user_id" },
+    );
+  });
+
+  it("redate le consentement quand la personne reconsent après un retrait", async () => {
+    vi.stubEnv("SALE_REMINDERS_MODE", "on");
+    const { auth, upsert } = fakeAuth(false, {
+      sale_reminders_enabled: false,
+      sale_reminders_consented_at: "2026-10-19T10:00:00.000Z",
+      sale_reminders_revoked_at: "2026-10-20T10:00:00.000Z",
+    });
+    await updateNotificationPreferences({ auth, input: activate, now: NOW });
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sale_reminders_consented_at: NOW.toISOString(),
+        sale_reminders_revoked_at: null,
+      }),
+      { onConflict: "user_id" },
+    );
   });
 });

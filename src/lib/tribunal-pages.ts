@@ -6,6 +6,7 @@ import {
   type DepartmentSale,
 } from "@/lib/department-pages";
 import { courtShortName, type PublicTribunalActivity } from "@/lib/public-tribunal-activity";
+import type { PublicTribunalDirectoryEntry } from "@/lib/public-tribunal-directory";
 import { normalizeFrenchSearchText } from "@/lib/search/french-geo-search";
 
 /**
@@ -43,7 +44,11 @@ export function tribunalPlaceName(name: string): string {
   );
 }
 
-/** « bobigny », « le-puy-en-velay », « les-sables-d-olonne » : sans accent, en minuscules. */
+/**
+ * Ancienne forme des adresses : « bobigny », « le-puy-en-velay », « les-sables-d-olonne », sans
+ * accent, en minuscules. Elle ne sert plus qu'à rediriger les anciennes adresses (voir
+ * `legacyTribunalRedirectPath`).
+ */
 export function tribunalSlugBase(name: string): string {
   return normalizeFrenchSearchText(tribunalPlaceName(name)).replaceAll(" ", "-");
 }
@@ -54,17 +59,39 @@ export type TribunalPage = {
   path: string;
 };
 
+/**
+ * Adresse stable d'un tribunal : son code, ramené à des minuscules, chiffres et tirets
+ * (« justice_tj_1_93 » donne « justice-tj-1-93 »). Elle ne dépend ni du nom (qui peut être
+ * corrigé), ni des autres tribunaux, ni de la présence de ventes à venir : une adresse publiée ne
+ * change plus et ne désigne jamais deux tribunaux.
+ */
+export function tribunalCodeSlug(code: string): string {
+  return normalizeFrenchSearchText(code).replaceAll(" ", "-");
+}
+
+export function tribunalPagePath(code: string): string {
+  return `${TRIBUNAL_PAGES_PATH}/${tribunalCodeSlug(code)}`;
+}
+
 function departmentSuffix(activity: PublicTribunalActivity): string {
   return normalizeFrenchSearchText(activity.department ?? "").replaceAll(" ", "-");
 }
 
-/**
- * Une adresse par tribunal, stable : elle ne vient que du nom du tribunal du référentiel. Deux
- * tribunaux qui donneraient la même adresse la complètent par le département, puis par leur code
- * (un cas qui n'existe pas dans le référentiel actuel, prévu pour qu'une adresse ne désigne jamais
- * deux tribunaux).
- */
+/** Une page par tribunal, à l'adresse stable tirée de son code (voir `tribunalCodeSlug`). */
 export function tribunalPages(items: readonly PublicTribunalActivity[]): TribunalPage[] {
+  return items.map((activity) => ({
+    activity,
+    slug: tribunalCodeSlug(activity.code),
+    path: tribunalPagePath(activity.code),
+  }));
+}
+
+/**
+ * Les adresses telles qu'elles étaient publiées avant les adresses par code : le nom du tribunal,
+ * complété par le département puis par le code quand deux tribunaux à ventes à venir avaient le
+ * même nom. Sert uniquement à retrouver où rediriger une ancienne adresse.
+ */
+export function legacyTribunalPages(items: readonly PublicTribunalActivity[]): TribunalPage[] {
   const bases = items.map(
     (item) => tribunalSlugBase(item.searchName || item.name || "") || item.code,
   );
@@ -82,6 +109,50 @@ export function tribunalPages(items: readonly PublicTribunalActivity[]): Tribuna
     used.add(slug);
     return { activity, slug, path: `${TRIBUNAL_PAGES_PATH}/${slug}` };
   });
+}
+
+/**
+ * La nouvelle adresse d'un tribunal publié sous son ancienne adresse (nom), ou `null`. D'abord les
+ * tribunaux à ventes à venir, avec l'algorithme d'origine (collisions comprises) ; ensuite le
+ * référentiel complet pour un tribunal qui n'a plus de vente, seulement quand le nom désigne un
+ * tribunal et un seul.
+ */
+export function legacyTribunalRedirectPath(
+  items: readonly PublicTribunalActivity[],
+  directory: readonly PublicTribunalDirectoryEntry[],
+  slug: string,
+): string | null {
+  const active = legacyTribunalPages(items).find((page) => page.slug === slug);
+  if (active) return tribunalPagePath(active.activity.code);
+  const named = directory.filter(
+    (entry) => (tribunalSlugBase(entry.searchName || entry.name) || entry.code) === slug,
+  );
+  return named.length === 1 ? tribunalPagePath(named[0].code) : null;
+}
+
+/** Le tribunal connu du référentiel qui porte cette adresse, ou `null`. */
+export function knownTribunalFromSlug(
+  directory: readonly PublicTribunalDirectoryEntry[],
+  slug: string,
+): PublicTribunalDirectoryEntry | null {
+  return directory.find((entry) => tribunalCodeSlug(entry.code) === slug) ?? null;
+}
+
+/** Un tribunal du référentiel sans vente à venir, sous la forme des chiffres d'une page. */
+export function emptyTribunalActivity(entry: PublicTribunalDirectoryEntry): PublicTribunalActivity {
+  return {
+    code: entry.code,
+    name: entry.name,
+    searchName: entry.searchName,
+    city: entry.city,
+    department: entry.department,
+    upcomingCount: 0,
+    nextSaleDate: null,
+    medianStartingPriceEur: null,
+    houseCount: 0,
+    apartmentCount: 0,
+    otherCount: 0,
+  };
 }
 
 /** La page du tribunal désigné par l'adresse, ou `null` : seule l'adresse exacte existe. */
@@ -180,6 +251,8 @@ export function tribunalPageDescription(
   now: Date = new Date(),
 ): string {
   const count = activity.upcomingCount;
+  if (count === 0)
+    return `Aucune vente judiciaire à venir ${atTribunalPhrase(activity)} pour le moment.`;
   const head = `${count} ${count > 1 ? "ventes judiciaires" : "vente judiciaire"} à venir ${atTribunalPhrase(activity)}`;
   const nextTime = timestamp(activity.nextSaleDate);
   const next =
@@ -210,8 +283,11 @@ export function tribunalDepartment(
  * Prochaine audience du tribunal. La fonction d'activité publique prend la plus proche date de
  * toutes les ventes à venir, reportées comprises (une vente reportée garde son ancienne date). La
  * liste des ventes, elle, connaît le statut : quand elle est lue, la prochaine audience est la
- * première vente non reportée dont la date n'est pas passée. Sans liste, on garde la date de
- * l'activité publique.
+ * première vente non reportée dont la date n'est pas passée, cherchée sur toutes les lignes reçues
+ * (dans n'importe quel ordre). Sans liste, on garde la date de l'activité publique. `null` veut dire
+ * « non connue » : la page l'écrit (« Non connue »), elle ne laisse pas la case vide. Cela arrive
+ * quand aucune ligne reçue ne convient, par exemple quand toutes les premières lignes (la liste est
+ * bornée) sont des ventes reportées : une audience plus lointaine peut exister sans qu'on la voie.
  */
 export function nextAudienceDate(
   activity: Pick<PublicTribunalActivity, "nextSaleDate">,

@@ -1,12 +1,16 @@
 import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { Database } from "@/integrations/supabase/types";
+import { PublicApiError } from "@/lib/api-errors";
 import { saleRemindersOfferedTo } from "@/lib/sale-reminders-mode";
 
 type NotificationPreferenceRow =
   Database["public"]["Tables"]["user_notification_preferences"]["Row"];
 type NotificationPreferenceInsert =
   Database["public"]["Tables"]["user_notification_preferences"]["Insert"];
+
+export const SALE_REMINDERS_NOT_OFFERED_MESSAGE =
+  "Les rappels d’audience ne sont pas encore proposés : votre consentement ne peut pas être enregistré pour le moment.";
 
 export const notificationPreferenceUpdateSchema = z
   .object({
@@ -74,6 +78,11 @@ export async function updateNotificationPreferences({
   input: NotificationPreferenceUpdatePayload;
   now?: Date;
 }): Promise<NotificationPreferencesResponse> {
+  // On ne recueille pas de consentement pour un envoi qui n'a pas lieu (mode `off`, ou `internal`
+  // pour une personne qui n'est pas administratrice). Le retrait reste toujours possible.
+  if (input.saleRemindersEnabled === true && !saleRemindersOfferedTo({ isAdmin: auth.isAdmin })) {
+    throw new PublicApiError(SALE_REMINDERS_NOT_OFFERED_MESSAGE, 409);
+  }
   const existing = await getNotificationPreferences({ auth });
   const timestamp = now.toISOString();
   // Seules les préférences envoyées sont écrites: cocher les rappels ne touche pas au consentement
@@ -156,7 +165,12 @@ export function canSendSaleReminder(
   return Boolean(preferences.saleRemindersEnabled && preferences.saleRemindersConsentedAt);
 }
 
-/** Même règle de datation que le consentement aux alertes: la première date est conservée. */
+/**
+ * Le consentement est daté à chaque nouvelle activation, y compris après un retrait : la preuve
+ * porte sur le consentement en cours, pas sur un ancien. Réenregistrer « actif » alors que les
+ * rappels le sont déjà garde la date d'origine. La date du retrait est conservée jusqu'au
+ * consentement suivant.
+ */
 export function buildSaleReminderPreferencePatch({
   current,
   enabled,
@@ -175,7 +189,9 @@ export function buildSaleReminderPreferencePatch({
   return {
     sale_reminders_enabled: enabled,
     sale_reminders_consented_at: enabled
-      ? (current.saleRemindersConsentedAt ?? timestamp)
+      ? current.saleRemindersEnabled
+        ? (current.saleRemindersConsentedAt ?? timestamp)
+        : timestamp
       : current.saleRemindersConsentedAt,
     sale_reminders_revoked_at: enabled
       ? null

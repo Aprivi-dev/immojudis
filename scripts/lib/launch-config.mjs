@@ -186,15 +186,32 @@ export function blockingLaunchProblems(env) {
   return problems;
 }
 
+/** Valeurs reconnues de SALE_REMINDERS_MODE (src/lib/sale-reminders-mode.ts). */
+const SALE_REMINDERS_MODE_VALUES = ["off", "internal", "on"];
+
+/**
+ * Avertissement (jamais bloquant) quand SALE_REMINDERS_MODE a une valeur que le site ne reconnaît
+ * pas : il la traite comme « off », donc aucun rappel ne partirait alors que le propriétaire croit
+ * l'avoir ouvert. Variable absente ou vide : mode « off » voulu, rien à dire.
+ */
+export function saleRemindersModeAdvisories(env) {
+  const raw = String(env.SALE_REMINDERS_MODE ?? "").trim();
+  if (!raw || SALE_REMINDERS_MODE_VALUES.includes(raw.toLowerCase())) return [];
+  return [
+    `[env] SALE_REMINDERS_MODE vaut « ${raw} », valeur inconnue : les rappels d'audience restent fermés (off). Valeurs reconnues : ${SALE_REMINDERS_MODE_VALUES.join(", ")}.`,
+  ];
+}
+
 /**
  * Applies the guards to a production build. Returns the process exit code and
  * the lines to print, so the caller (and the tests) decide how to emit them.
  */
 export function evaluateProductionLaunchConfig(env) {
   if (!isProductionBuild(env)) return { exitCode: 0, errors: [], warnings: [] };
+  const advisories = saleRemindersModeAdvisories(env);
   const blocking = blockingLaunchProblems(env);
   const problems = [...productionLaunchProblems(env), ...blocking];
-  if (!problems.length) return { exitCode: 0, errors: [], warnings: [] };
+  if (!problems.length) return { exitCode: 0, errors: [], warnings: advisories };
 
   if (launchEscapeHatchEnabled(env) && !blocking.length) {
     const bar = "!".repeat(78);
@@ -207,6 +224,7 @@ export function evaluateProductionLaunchConfig(env) {
         ...problems.map((problem) => `[env]   - ${problem}`),
         `[env] Ce déploiement n'est pas conforme. Retirer ${ESCAPE_HATCH} dès que les valeurs sont fournies.`,
         bar,
+        ...advisories,
       ],
     };
   }
@@ -220,6 +238,6 @@ export function evaluateProductionLaunchConfig(env) {
         ? `[env] L'origine canonique ne peut pas être contournée par ${ESCAPE_HATCH} : définir SITE_URL (https, domaine public) dans Vercel.`
         : `[env] Renseigner ces variables dans Vercel, ou définir ${ESCAPE_HATCH}=true pour ne recevoir que des avertissements (déploiement non conforme).`,
     ],
-    warnings: [],
+    warnings: advisories,
   };
 }
