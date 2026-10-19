@@ -180,7 +180,7 @@ select is(
 
 update public.auction_sales set status = 'cancelled'
   where id = 'c4710000-0000-4000-8000-000000000010';
-update public.auction_sales set status = 'sold'
+update public.auction_sales set status = 'adjudicated'
   where id = 'c4710000-0000-4000-8000-000000000010';
 delete from public.auction_sales where id = 'c4710000-0000-4000-8000-000000000010';
 delete from public.auction_sales where id = 'c4710000-0000-4000-8000-000000000011';
