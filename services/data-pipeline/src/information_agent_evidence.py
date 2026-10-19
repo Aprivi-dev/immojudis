@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-import fitz
 import httpx
+import pymupdf as fitz
 
 from src.config import load_settings
 from src.information_agent_semantic import (
@@ -32,6 +32,7 @@ from src.information_agent_semantic import (
 )
 from src.normalize import clean_text
 from src.pdf_enrichment import classify_document_type
+from src.pdf_ocr_child_output import parse_ocr_child_output
 
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 MAX_PAGES = 100
@@ -822,8 +823,7 @@ def _ocr_pdf_page(
             return _ocr_fallback(fallback, "ocr_timeout")
         if process.returncode != 0:
             return _ocr_fallback(fallback, "fallback_text")
-        payload = json.loads(stdout or "{}")
-        text = payload.get("text") if isinstance(payload, dict) else None
+        text = parse_ocr_child_output(stdout).get("text")
         if isinstance(text, str) and clean_text(text):
             return text, "ocr_pymupdf", 0.74
     except Exception:
