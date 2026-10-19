@@ -180,6 +180,12 @@ describe("serverEnv pipeline, alerts and email", () => {
     ).toBe("alert@x.test");
   });
 
+  it("reads SALE_REMINDERS_MODE through the shared configuration, trimmed and blank as unset", () => {
+    expect(serverEnv({ SALE_REMINDERS_MODE: " internal " }).saleReminders.mode).toBe("internal");
+    expect(serverEnv({ SALE_REMINDERS_MODE: "  " }).saleReminders.mode).toBeUndefined();
+    expect(serverEnv({}).saleReminders.mode).toBeUndefined();
+  });
+
   it("treats whitespace-only secrets as unset", () => {
     const env = serverEnv({
       STRIPE_SECRET_KEY: "   ",
