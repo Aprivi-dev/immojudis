@@ -38,6 +38,7 @@ export function MobileMenuDialog({
   signedIn,
   accountLinks,
   pathname,
+  openNotifications = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -45,6 +46,8 @@ export function MobileMenuDialog({
   signedIn: boolean;
   accountLinks: SiteLink[];
   pathname: string | null;
+  /** Ouvre aussi le panneau des notifications (action « Voir » d'un message). */
+  openNotifications?: boolean;
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -64,6 +67,7 @@ export function MobileMenuDialog({
             signedIn={signedIn}
             accountLinks={accountLinks}
             pathname={pathname}
+            openNotifications={openNotifications}
             onNavigate={() => onOpenChange(false)}
           />
         </DialogPrimitive.Content>
@@ -76,11 +80,13 @@ function MobileMenu({
   signedIn,
   accountLinks,
   pathname,
+  openNotifications,
   onNavigate,
 }: {
   signedIn: boolean;
   accountLinks: SiteLink[];
   pathname: string | null;
+  openNotifications: boolean;
   onNavigate: () => void;
 }) {
   return (
@@ -131,7 +137,7 @@ function MobileMenu({
       <div className="mt-auto grid gap-2 border-t border-border bg-white p-4">
         {signedIn ? (
           <>
-            <AlertNotificationCenter mobile />
+            <AlertNotificationCenter mobile openOnMount={openNotifications} />
             <button
               type="button"
               onClick={() => {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { requestOpenNotifications } from "@/lib/notification-center-events";
 import { Navbar } from "./Navbar";
 import { SiteHeader } from "./SiteHeader";
 
@@ -27,7 +28,10 @@ beforeEach(() => {
   state.user = null;
   state.profile = null;
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("SiteHeader", () => {
   it("expose les mêmes cinq entrées quel que soit le thème", () => {
@@ -125,6 +129,39 @@ describe("SiteHeader", () => {
     for (const label of ["Mes favoris", "Mes alertes", "Mes comparaisons", "Mon compte"]) {
       expect(menu.getByRole("link", { name: label })).toBeTruthy();
     }
+  });
+});
+
+describe("SiteHeader : notifications sur mobile", () => {
+  it("relie le bouton du menu au texte des non-lus seulement pour une personne connectée", () => {
+    const { unmount } = render(<SiteHeader />);
+    expect(
+      screen.getByRole("button", { name: "Ouvrir le menu" }).getAttribute("aria-describedby"),
+    ).toBeNull();
+    unmount();
+
+    state.user = { id: "user-1" };
+    render(<SiteHeader />);
+    expect(
+      screen.getByRole("button", { name: "Ouvrir le menu" }).getAttribute("aria-describedby"),
+    ).toBe("site-mobile-menu-unread");
+  });
+
+  it("ouvre le menu mobile quand un message demande de voir les notifications sous lg", async () => {
+    state.user = { id: "user-1" };
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    render(<SiteHeader />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    act(() => requestOpenNotifications());
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+  });
+
+  it("laisse la cloche de la barre répondre à partir de lg, sans ouvrir le menu mobile", () => {
+    state.user = { id: "user-1" };
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    render(<SiteHeader />);
+    act(() => requestOpenNotifications());
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });
 

@@ -52,9 +52,29 @@ export default function AlertNotificationPanel({
   });
   const emailEnabled = preferencesQuery.data?.preferences.alertEmailEnabled ?? false;
 
+  async function restoreNotification(notificationId: string) {
+    try {
+      await updateAlertNotification({ notificationId, action: "restore" });
+      await queryClient.invalidateQueries({ queryKey: NOTIFICATION_QUERY_KEY });
+    } catch (error) {
+      toast.error(userMessage(error, "Impossible de rétablir cette notification."));
+    }
+  }
+
   const updateMutation = useMutation({
     mutationFn: updateAlertNotification,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: NOTIFICATION_QUERY_KEY }),
+    onSuccess: async (_result, variables) => {
+      await queryClient.invalidateQueries({ queryKey: NOTIFICATION_QUERY_KEY });
+      if (variables.action === "dismiss") {
+        toast("Notification masquée", {
+          duration: 5000,
+          action: {
+            label: "Annuler",
+            onClick: () => void restoreNotification(variables.notificationId),
+          },
+        });
+      }
+    },
     onError: (error) => toast.error(userMessage(error, "Action impossible")),
   });
   const preferencesMutation = useMutation({
@@ -85,7 +105,7 @@ export default function AlertNotificationPanel({
           type="button"
           aria-label="Rafraîchir"
           onClick={() => void onRefresh()}
-          className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text"
+          className="inline-grid size-11 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text"
         >
           {isFetching ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -156,7 +176,7 @@ export default function AlertNotificationPanel({
         ) : (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             <Inbox className="mx-auto mb-2 h-5 w-5" />
-            Aucune alerte
+            Aucune nouvelle vente pour vos alertes pour le moment.
           </div>
         )}
       </div>
@@ -213,24 +233,24 @@ function NotificationItem({
           </div>
         </Link>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2">
           <button
             type="button"
             aria-label={unread ? "Marquer comme lue" : "Marquer comme non lue"}
             disabled={disabled}
             onClick={onRead}
-            className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-grid size-11 place-items-center rounded-md border border-border text-muted-foreground hover:border-gold/50 hover:text-gold-text disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Check className="h-3.5 w-3.5" />
+            <Check className="h-4 w-4" />
           </button>
           <button
             type="button"
             aria-label="Masquer"
             disabled={disabled}
             onClick={onDismiss}
-            className="inline-grid h-8 w-8 place-items-center rounded-md border border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-grid size-11 place-items-center rounded-md border border-border text-muted-foreground hover:border-destructive/40 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>
