@@ -3,6 +3,7 @@ import { memo, type ComponentType } from "react";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import {
   AI_REVIEW_SURFACE_FIELD_KEYS,
@@ -201,7 +202,14 @@ const ListingRow = memo(function ListingRow({
   const stateListing = stateListingStatus(sale);
   const showCity = cityReview.blocked || Boolean(sale.city?.trim());
   const departmentLine = departmentLabel(sale.department);
-  const accessLine = listingAccessLine(sale, { locked, analysisLocked, unlocked, verifying });
+  const launchOffer = useLaunchOffer().active;
+  const accessLine = listingAccessLine(sale, {
+    locked,
+    analysisLocked,
+    unlocked,
+    verifying,
+    launchOffer,
+  });
   const surfaceText = displaySurface.value != null ? displaySurface.label : "Surface n.c.";
   const review = {
     projections: aiReviewProjections,

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "sonner";
+import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { useAuth } from "@/hooks/use-auth";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -70,6 +71,7 @@ import { SALES_PAGINATION_ID, SearchPagination } from "./SearchPagination";
 import { scrollToSaleCard } from "./scroll-to-sale-card";
 import { DESKTOP_MAP_ZONE_ID, DesktopMapZone } from "./DesktopMapZone";
 import { loadMapPanelModule, preloadMapModules } from "./preload-map";
+import { useRestoreSaleCard } from "./use-restore-sale-card";
 import { useFirstGestureStart } from "./use-first-gesture-start";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
@@ -571,6 +573,8 @@ export function SearchPage({
   // Au-delà de la page 1, la pagination l'explique et propose la page 1 ; page 1 (taille de page
   // refusée), le message de l'erreur s'affiche dans la liste.
   const pageOutOfRange = outOfRange && page > 1;
+  // « Retour aux ventes » d'une fiche : la liste défile jusqu'à la carte consultée.
+  useRestoreSaleCard(!isInitialLoading && rawSales.length > 0);
   const startDesktopMap = useCallback(() => setDesktopMapStarted(true), []);
   useFirstGestureStart({
     enabled: isDesktop && !desktopMapStarted,
@@ -1007,6 +1011,8 @@ export function SearchPage({
         onExportCsv={exportCsv}
         onToggleLayout={() => setWideMap((value) => !value)}
       />
+
+      <AuthConnectionBanner className="my-3" />
 
       <div
         className={`grid min-h-[calc(100svh_-_var(--sales-header-height))] grid-cols-1 ${splitClass}`}

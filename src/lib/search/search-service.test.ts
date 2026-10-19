@@ -20,11 +20,11 @@ vi.mock("@/lib/queries", () => ({
 }));
 
 import { forgetRememberedPhotoMirrors } from "@/lib/photo-mirror";
+import { retryUnlessRefused } from "@/lib/query-retry";
 import {
   OUT_OF_RANGE_MESSAGE,
   SearchRejectedError,
   isOutOfRangeSearchError,
-  retrySearch,
 } from "./search-errors";
 import {
   fetchSearchCount,
@@ -154,7 +154,7 @@ describe("public preview search service", () => {
           minSaleDate: "2026-09-11",
           maxSaleDate: "2026-10-01",
           page: 4,
-          limit: 12,
+          limit: 50,
           occupancy: "vacant",
           minScore: 70,
           dpeClasses: ["A"],
@@ -243,7 +243,7 @@ describe("public preview search service", () => {
       expect(isOutOfRangeSearchError(failure)).toBe(true);
       expect((failure as Error).message).toBe(OUT_OF_RANGE_MESSAGE);
       // La règle de relance de la page ne rejoue pas cette erreur.
-      expect(retrySearch(0, failure)).toBe(false);
+      expect(retryUnlessRefused(0, failure)).toBe(false);
       // Le service ne relance rien de lui-même.
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
@@ -269,7 +269,7 @@ describe("public preview search service", () => {
         (error: unknown) => error,
       );
       expect(failure).not.toBeInstanceOf(SearchRejectedError);
-      expect(retrySearch(0, failure)).toBe(true);
+      expect(retryUnlessRefused(0, failure)).toBe(true);
     });
 
     it.each([

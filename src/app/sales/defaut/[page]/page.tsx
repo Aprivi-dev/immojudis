@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PHOTO_MIRROR_ISR_TIMEOUT_MS } from "@/lib/photo-mirror";
 import { FIRST_PAGE_REVALIDATE_SECONDS } from "@/lib/public-catalogue.server";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { mustSeedStaticCatalogue, SALES_ISR_PAGES } from "@/lib/sales-isr";
@@ -43,6 +44,8 @@ export default async function Page({ params }: PageProps) {
   return renderSalesCatalogue(validateSalesSearch({ page }), {
     dataUpdatedAt: Date.now() + FIRST_PAGE_REVALIDATE_SECONDS * 1000,
     requireServerSeed: mustSeedStaticCatalogue(),
+    // Régénération en arrière-plan : on peut attendre les copies de photos plus longtemps.
+    photoMirrorTimeoutMs: PHOTO_MIRROR_ISR_TIMEOUT_MS,
     staticQuery: `page=${page}`,
   });
 }

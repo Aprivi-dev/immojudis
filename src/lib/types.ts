@@ -8,6 +8,12 @@ export type AuctionSale = {
   document_count?: number | null;
   /** Signed-out page only: number of photos of the full listing. */
   photo_count?: number | null;
+  /**
+   * Signed-out page only: date of the last change of a visible field of the listing (price, date,
+   * status, address, surface, rooms, photo). Absent or null when no change has been seen: no date is
+   * published then. Never the technical `updated_at` of the row, which moves with every collection run.
+   */
+  content_changed_at?: string | null;
   /** Signed-out page only: visits are announced (their text may name the address). */
   has_visit_dates?: boolean | null;
   source_checks?: Record<string, { checked_at?: string }> | null;

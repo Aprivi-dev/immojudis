@@ -7,6 +7,8 @@ import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
+import { LaunchOfferNote } from "@/components/LaunchOfferNote";
+import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 import { pageMetadata } from "@/lib/page-metadata";
 
 export const metadata: Metadata = pageMetadata({
@@ -38,7 +40,7 @@ const STEPS = [
   {
     icon: BadgeEuro,
     title: "Fixer son enchère plafond",
-    text: "Avec l’offre Analyse, le simulateur chiffre votre enchère plafond : valeur estimée, marge, travaux, libération du bien, portage (les coûts supportés tant que le bien ne rapporte rien) et tous les frais de la vente, que vous ajustez selon votre projet. Préparez aussi votre financement : il n’y a en principe pas de condition suspensive de prêt dans les ventes judiciaires ; vérifiez le cahier pour les autres ventes. Fixez la limite avant l’audience, puis tenez-vous-y.",
+    text: `Le simulateur chiffre votre enchère plafond : valeur estimée, marge, travaux, libération du bien, portage (les coûts supportés tant que le bien ne rapporte rien) et tous les frais de la vente, que vous ajustez selon votre projet. Le compte gratuit l’ouvre sur ${MONTHLY_SALE_UNLOCKS} ventes au tribunal par mois (déblocages) ; l’offre Analyse l’ouvre sur toutes les ventes au tribunal. Préparez aussi votre financement : il n’y a en principe pas de condition suspensive de prêt dans les ventes judiciaires ; vérifiez le cahier pour les autres ventes. Fixez la limite avant l’audience, puis tenez-vous-y.`,
     links: [
       { href: "/annonce-exemple", label: "Essayer le simulateur" },
       { href: "/ressources/frais-vente-encheres-judiciaire", label: "Comprendre les frais" },
@@ -75,6 +77,7 @@ function PageContent() {
       description="Immojudis rassemble les ventes immobilières aux enchères, les explique et vous aide à préparer votre limite."
       width="narrow"
     >
+      <LaunchOfferNote className="mb-5" />
       <ol className="grid gap-5">
         {STEPS.map((step, index) => (
           <li key={step.title}>

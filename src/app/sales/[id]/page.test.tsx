@@ -10,6 +10,12 @@ vi.mock("next/navigation", () => ({
       digest: "NEXT_HTTP_ERROR_FALLBACK;404",
     });
   },
+  // Same digest shape as the real one: NEXT_REDIRECT;<type>;<url>;<status>;
+  permanentRedirect: (url: string) => {
+    throw Object.assign(new Error("NEXT_REDIRECT"), {
+      digest: `NEXT_REDIRECT;replace;${url};308;`,
+    });
+  },
 }));
 vi.mock("./sale-detail-page", () => ({
   SaleDetailPage: ({ id }: { id: string }) => <div data-testid="detail">{id}</div>,
@@ -44,6 +50,16 @@ describe("public sale page", () => {
     await expect(Page({ params })).rejects.toMatchObject({
       digest: "NEXT_HTTP_ERROR_FALLBACK;404",
     });
+  });
+
+  it("redirects permanently (308) an identifier merged into another sale to the kept one", async () => {
+    const KEPT = "99999999-aaaa-4bbb-8ccc-dddddddddddd";
+    mocks.lookup.mockResolvedValue({ status: "merged", targetId: KEPT });
+    await expect(Page({ params })).rejects.toMatchObject({
+      digest: `NEXT_REDIRECT;replace;/sales/${KEPT};308;`,
+    });
+    // Nothing is announced to search engines for the old address.
+    expect((await generateMetadata({ params })).robots).toEqual({ index: false, follow: false });
   });
 
   it("keeps a missing sale out of search engines", async () => {

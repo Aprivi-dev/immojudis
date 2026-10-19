@@ -1,39 +1,46 @@
 import "server-only";
 import { loadInitialCatalogue, type InitialCatalogue } from "@/lib/public-catalogue.server";
-import {
-  loadSitemapSaleTotal,
-  loadSitemapSales,
-  type SitemapSale,
-} from "@/lib/public-sitemap.server";
+import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 
 /**
- * Les deux chiffres de la ligne « N ventes à venir · mises à jour le … » de l'accueil, calculés sur
- * nos données :
+ * Les deux éléments de la ligne « N ventes à venir · données vérifiées le … » de l'accueil, calculés
+ * sur nos données :
  * - `count` : le total que /sales affiche pour une recherche sans filtre (même fonction, même
  *   cache de 5 minutes que la première page du catalogue) ;
- * - `updatedAt` : la mise à jour la plus récente parmi les ventes publiques (la colonne
- *   `updated_at` que lit aussi le sitemap, cache d'une heure). `null` quand elle manque.
+ * - `verifiedAt` : la date de la dernière collecte réussie d'une source (la plus récente
+ *   `last_publication_complete_at`, lue par `get_public_catalogue_verified_at` : une ligne agrégée,
+ *   sans relire les ventes). Ce n'est PAS la date de modification d'une fiche : la colonne
+ *   `updated_at` des ventes bouge à chaque passage de la collecte, même sans changement visible, et la
+ *   ligne ne prétend pas qu'une annonce a changé ce jour-là. `null` quand la date manque.
  */
 export type HomeCatalogueSummary = {
   count: number;
-  updatedAt: string | null;
+  verifiedAt: string | null;
 };
 
 export type HomeCatalogueSummaryDependencies = {
   catalogue?: () => Promise<InitialCatalogue | null>;
-  /** Ventes publiques avec leur dernière mise à jour. */
-  sales?: () => Promise<SitemapSale[]>;
+  /** Date de la dernière collecte réussie (ISO), ou `null` si aucune. */
+  verifiedAt?: () => Promise<string | null>;
   now?: Date;
   timeoutMs?: number;
 };
 
 const SUMMARY_TIMEOUT_MS = 4_000;
-/** Une mise à jour datée du futur (horloge ou donnée fausse) n'est pas affichée. */
+/** Une date du futur (horloge ou donnée fausse) n'est pas affichée. */
 const FUTURE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
 
-async function defaultSales(): Promise<SitemapSale[]> {
-  const total = await loadSitemapSaleTotal();
-  return loadSitemapSales(0, total);
+type VerifiedAtClient = {
+  rpc: (fn: "get_public_catalogue_verified_at") => PromiseLike<{ data: unknown; error: unknown }>;
+};
+
+/** Lecture minimale : une fonction publique qui rend une seule date. */
+async function defaultVerifiedAt(): Promise<string | null> {
+  const client = createPublicSupabaseClient() as unknown as VerifiedAtClient | null;
+  if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
+  const { data, error } = await client.rpc("get_public_catalogue_verified_at");
+  if (error) throw error;
+  return typeof data === "string" ? data : null;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -47,23 +54,18 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-/** Date ISO la plus récente, ou `null` si aucune n'est exploitable. */
-export function latestUpdate(sales: SitemapSale[], now: Date): string | null {
-  const limit = now.getTime() + FUTURE_TOLERANCE_MS;
-  let latest: number | null = null;
-  for (const { lastModified } of sales) {
-    if (!lastModified) continue;
-    const time = Date.parse(lastModified);
-    if (!Number.isFinite(time) || time > limit) continue;
-    if (latest === null || time > latest) latest = time;
-  }
-  return latest === null ? null : new Date(latest).toISOString();
+/** Date ISO exploitable (lisible, pas dans le futur), ou `null`. */
+export function usableVerifiedAt(value: string | null | undefined, now: Date): string | null {
+  if (!value) return null;
+  const time = Date.parse(value);
+  if (!Number.isFinite(time) || time > now.getTime() + FUTURE_TOLERANCE_MS) return null;
+  return new Date(time).toISOString();
 }
 
 /**
  * Chiffres de l'accueil. Retourne `null` quand le total est inconnu, nul ou que la base répond mal :
  * l'accueil n'affiche alors aucune ligne (jamais de chiffre inventé, jamais d'erreur). Une date
- * introuvable laisse le total seul.
+ * introuvable (fonction pas encore posée, aucune collecte réussie) laisse le total seul.
  */
 export async function loadHomeCatalogueSummary(
   dependencies: HomeCatalogueSummaryDependencies = {},
@@ -78,19 +80,19 @@ export async function loadHomeCatalogueSummary(
     const count = catalogue?.count;
     if (typeof count !== "number" || !Number.isFinite(count) || count <= 0) return null;
 
-    let updatedAt: string | null = null;
+    let verifiedAt: string | null = null;
     try {
-      updatedAt = latestUpdate(
-        await withTimeout((dependencies.sales ?? defaultSales)(), timeoutMs),
+      verifiedAt = usableVerifiedAt(
+        await withTimeout((dependencies.verifiedAt ?? defaultVerifiedAt)(), timeoutMs),
         now,
       );
     } catch (error) {
       console.warn(
-        "[accueil] Date de mise à jour indisponible:",
+        "[accueil] Date de la dernière collecte indisponible:",
         error instanceof Error ? error.message : error,
       );
     }
-    return { count: Math.round(count), updatedAt };
+    return { count: Math.round(count), verifiedAt };
   } catch (error) {
     console.warn(
       "[accueil] Chiffres du catalogue indisponibles:",

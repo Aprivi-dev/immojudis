@@ -164,9 +164,20 @@ def test_data_pipeline_secrets_reach_only_the_business_steps() -> None:
     assert receiving == {
         "Run manually requested pipeline",
         "Finalize unfinished run",
+        "Invalidate public cache",
         "Report source coverage and enrichment backlog",
         "Copie des photos principales",
     }
+    # CRON_SECRET (qui autorise aussi les routes Vercel Cron) ne part que dans l'étape d'invalidation.
+    assert [name for name, step in steps.items() if "CRON_SECRET" in step.env] == ["Invalidate public cache"]
+    invalidation = steps["Invalidate public cache"]
+    assert "CRON_SECRET: ${{ secrets.CRON_SECRET }}" in invalidation.env
+    assert "SITE_URL: ${{ vars.SITE_URL }}" in invalidation.env
+    assert invalidation.run.strip() == "python -m src.cache_invalidation --flush"
+    # Après la finalisation (un retrait déjà écrit part même si la collecte échoue) et jamais bloquante.
+    names = [step.name for step in jobs["run"].steps]
+    assert names.index("Invalidate public cache") == names.index("Finalize unfinished run") + 1
+    assert re.search(r"name: Invalidate public cache\n\s+if: always\(\)\n\s+continue-on-error: true", invalidation.text)
     benchmark = {step.name: step for step in jobs["model-benchmark"].steps}
     assert [name for name, step in benchmark.items() if SECRET.search(step.env)] == [
         "Compare existing and candidate models"
@@ -205,6 +216,39 @@ def test_dedupe_candidates_reads_production_through_the_production_environment()
         "List duplicate candidates without writing"
     ]
     assert "workflow_dispatch" in text and "pull_request" not in text and "schedule" not in text
+
+
+def test_photo_copy_step_runs_after_a_failed_collection_and_fails_visibly() -> None:
+    text = (WORKFLOWS / "data-pipeline.yml").read_text(encoding="utf-8")
+    steps = {step.name: step for step in parse_jobs(text)[0].steps}
+    step = steps["Copie des photos principales"]
+
+    # Même après une collecte en échec, mais seulement pour une exécution planifiée.
+    assert re.search(r"^        if: always\(\) && inputs\.automatic == true$", step.text, re.M)
+    # Jamais masquée : les échecs de photos sortent en code 0 (src/photo_mirror.py), une sélection qui
+    # lève sort en 1 et doit rendre le travail rouge.
+    assert "continue-on-error" not in step.text
+    assert "python -m src.photo_mirror --automatic" in step.run
+
+
+def test_dedupe_sweep_is_manual_serialised_with_the_pipeline_and_gives_secrets_to_one_step() -> None:
+    text = (WORKFLOWS / "dedupe-sweep.yml").read_text(encoding="utf-8")
+    jobs = parse_jobs(text)
+
+    assert [job.name for job in jobs] == ["sweep"]
+    assert re.search(r"^    environment: Production$", text, re.M)
+    assert "workflow_dispatch" in text and "pull_request" not in text and "schedule" not in text
+    # Même groupe que la collecte : le balayage supprime des fiches et ne doit pas la chevaucher.
+    assert re.search(r"^  group: immojudis-data-pipeline$", text, re.M)
+    assert re.search(r"^  cancel-in-progress: false$", text, re.M)
+    assert [job.name for job in jobs if SECRET.search(job.env)] == []
+    assert [step.name for step in jobs[0].steps if SECRET.search(step.env)] == [
+        "Merge and delete duplicate sales"
+    ]
+    assert "--require-hashes" in text
+    # Chaque action est épinglée par SHA de commit (40 hexadécimaux), jamais par étiquette.
+    assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)
+    assert "python -m src.dedupe_apply" in text
 
 
 def test_information_agent_always_runs_main_with_secrets_on_its_two_business_steps() -> None:

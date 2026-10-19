@@ -26,11 +26,3 @@ export class SearchRejectedError extends Error {
 export function isOutOfRangeSearchError(error: unknown): boolean {
   return error instanceof SearchRejectedError && error.outOfRange;
 }
-
-/**
- * Règle de relance des recherches (`retry` de React Query) : une panne est retentée une fois, une
- * demande refusée (400) jamais.
- */
-export function retrySearch(failureCount: number, error: unknown): boolean {
-  return !(error instanceof SearchRejectedError) && failureCount < 1;
-}

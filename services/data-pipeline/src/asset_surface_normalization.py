@@ -37,6 +37,12 @@ from src.normalize import (
     is_outside_carrez_context,
     parse_surface,
 )
+from src.surface_plausibility import (
+    SURFACE_VALUES_CONFLICT_KEY,
+    built_surfaces_equal_to_land,
+    conflicting_generic_surfaces,
+    parcel_total_surfaces,
+)
 
 _SURFACE_FIELDS = ("surface_m2", "habitable_surface_m2", "carrez_surface_m2", "land_surface_m2")
 
@@ -48,9 +54,12 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         value = getattr(sale, field, None)
         if value is not None and not isinstance(value, Decimal):
             setattr(sale, field, _decimal_value(value))
-    ambiguous_mixed_lot_surface = _is_ambiguous_mixed_lot_surface(
-        sale.property_type or "", text
-    ) or _is_unestablished_multi_unit_surface(sale, text)
+    conflicting_values = _record_conflicting_surface_values(sale)
+    ambiguous_mixed_lot_surface = (
+        _is_ambiguous_mixed_lot_surface(sale.property_type or "", text)
+        or _is_unestablished_multi_unit_surface(sale, text)
+        or bool(conflicting_values)
+    )
     if ambiguous_mixed_lot_surface:
         # A generic structured value can be the first lot's area. Keep the
         # typed measurements for audit, but do not expose one as the sale-wide
@@ -109,6 +118,7 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
             "basis": "duplicated_built_surface_without_land_evidence",
         }
         _add_quality_flag(sale, "land_surface_conflict_resolved")
+    rejected_equal_to_land = _reject_built_surface_equal_to_land(sale)
     _discard_placeholder_built_surface(sale)
     text_built_surface = _extract_built_surface(text, sale)
     if sale.surface_m2 is None:
@@ -123,6 +133,7 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
             sale.carrez_surface_m2 = text_carrez_surface
         if _corroborated_text_built_surface(sale) == text_built_surface:
             _record_surface_conflict_resolution(sale, previous_surface, text_built_surface)
+    rejected_equal_to_land = _reject_built_surface_equal_to_land(sale) or rejected_equal_to_land
     if carrez_is_implausible_against_habitable(sale.carrez_surface_m2, sale.habitable_surface_m2):
         # Une Carrez à moins de 20 % de la surface habitable est une partie du bien (cave,
         # surface hors Carrez) : la surface habitable fait foi, la valeur écartée reste tracée.
@@ -163,6 +174,8 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
     _validate_app_surface_scope(sale)
     _reconcile_surface_evidence(sale, text, ambiguous_mixed_lot_surface=ambiguous_mixed_lot_surface)
     _flag_ambiguous_surface(sale)
+    if rejected_equal_to_land and sale.app_surface_m2 is None:
+        _add_quality_flag(sale, "ambiguous_surface")
     if (
         sale.surface_scope is None
         and sale.app_surface_m2 is None
@@ -170,6 +183,48 @@ def _fill_surfaces(sale: AuctionSale, text: str) -> None:
         and sale.property_type in {"house", "building"}
     ):
         sale.surface_scope = "land"
+
+
+def _record_conflicting_surface_values(sale: AuctionSale) -> list[Decimal]:
+    """Deux valeurs sans qualificatif dans le titre ou la description : la surface reste « à confirmer ».
+
+    Seuls le titre et la description sont comparés (le texte brut d'une page mêle les ventes voisines). Les
+    valeurs en conflit sont retirées des surfaces générique et habitable ; le marqueur empêche de les relire
+    dans le texte, et la trace garde les valeurs écartées.
+    """
+    values = conflicting_generic_surfaces("\n".join(filter(None, (sale.title, sale.description))))
+    if not values:
+        sale.raw_payload.pop(SURFACE_VALUES_CONFLICT_KEY, None)
+        return []
+    for field in ("surface_m2", "habitable_surface_m2"):
+        if getattr(sale, field) in values:
+            setattr(sale, field, None)
+    sale.raw_payload[SURFACE_VALUES_CONFLICT_KEY] = {
+        "status": "to_confirm",
+        "values_m2": [str(value) for value in values],
+        "basis": "two_unqualified_surface_values_for_the_same_asset",
+    }
+    return values
+
+
+def _reject_built_surface_equal_to_land(sale: AuctionSale) -> bool:
+    """Retire une surface habitable ou bâtie égale à la surface du terrain (la contenance mal recopiée)."""
+    fields = list(built_surfaces_equal_to_land(sale))
+    if not fields:
+        return False
+    for field in fields:
+        setattr(sale, field, None)
+    sale.raw_payload["built_surface_equal_to_land_reconciliation"] = {
+        "status": "removed",
+        "fields": fields,
+        "rejected_surface_m2": str(sale.land_surface_m2),
+        "basis": "built_surface_equal_to_land_surface",
+    }
+    _add_quality_flag(sale, "surface_conflict_resolved")
+    if sale.surface_scope == "total":
+        # La portée « totale » se rapportait à la valeur retirée.
+        sale.surface_scope = None
+    return True
 
 
 def _reconcile_surface_evidence(
@@ -528,6 +583,9 @@ def _business_rule_to_ref(rule: dict[str, Any]) -> dict[str, Any]:
 
 def _extract_surface_kind(text: str, kind: str, sale: AuctionSale | None = None) -> Decimal | None:
     if kind == 'land_surface_m2':
+        # « …, soit superficie totale 1550 m² » conclut une liste de parcelles : c'est la contenance du terrain.
+        if parcel_totals := parcel_total_surfaces(text):
+            return parcel_totals[-1]
         cadastral = list(re.finditer(r'\b(?:([0-9]+)\s*ha\s*)?([0-9]+)\s*a\s*([0-9]+)\s*ca\b', text, re.I))
         values = {Decimal(m.group(1) or 0)*10000 + Decimal(m.group(2))*100 + Decimal(m.group(3)) for m in cadastral}
         if len(values) > 1:

@@ -37,8 +37,9 @@ _TRAILING_PARENTHESES_RE = re.compile(r"(?:\s*\([^()]*\))+\s*$")
 _COURT_PREFIX = r"(?:tribunal judiciaire|tribunal de grande instance|tgi|tj)"
 _REPEATED_COURT_PREFIX_RE = re.compile(rf"^({_COURT_PREFIX})(?: {_COURT_PREFIX})+\b")
 _ABBREVIATED_SAINT = {"st": "saint", "ste": "sainte"}
-# Variante usuelle d'un tribunal -> clé du référentiel (« Briey » est le TJ de Val-de-Briey).
-COURT_LABEL_KEY_ALIASES = {"briey": "val de briey"}
+# Variante usuelle d'un tribunal -> clé du référentiel (« Briey » est le TJ de Val-de-Briey, « Toulouse Site
+# Deville » le TJ de Toulouse : Deville est le site du tribunal où se tiennent les audiences d'adjudication).
+COURT_LABEL_KEY_ALIASES = {"briey": "val de briey", "toulouse site deville": "toulouse"}
 
 _DEFAULT_COMPETENCES_PATH = (
     RAW_DIR / "outcome_sources" / "justice_courts" / "resource-e2a1941b-observed-competences.csv"

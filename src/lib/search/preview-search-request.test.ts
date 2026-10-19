@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildPreviewSearchArgs, previewSearchRequestKey } from "./preview-search";
 import {
+  PREVIEW_PAGE_SIZES,
   PREVIEW_SEARCH_API_PATH,
   PREVIEW_SEARCH_URL_KEYS,
   parsePreviewSearchRequest,
@@ -38,7 +39,7 @@ describe("adresse de la recherche d'aperçu", () => {
       department: "33",
       homeTypes: ["house", "apartment"],
       keywords: "garage jardin",
-      limit: 12,
+      limit: 50,
       maxPrice: 300_000,
       maxSaleDate: "2026-12-31",
       maxSqft: 200,
@@ -69,6 +70,32 @@ describe("adresse de la recherche d'aperçu", () => {
     expect(parse(previewSearchQueryString({ minBeds: 2.5, minBaths: 30 })).ok).toBe(true);
   });
 
+  it("envoie des prix entiers et plafonnés que la route accepte, même pour une saisie libre", () => {
+    expect(previewSearchQueryString({ minPrice: 1234.5, maxPrice: 1234.5 })).toBe(
+      "maxPrice=1234&minPrice=1235",
+    );
+    expect(previewSearchQueryString({ minPrice: 1e30, maxPrice: 1e30 })).toBe(
+      "maxPrice=100000000&minPrice=100000000",
+    );
+    expect(previewSearchQueryString({ minPrice: 0, maxPrice: 0 })).toBe("maxPrice=0&minPrice=0");
+    const query = previewSearchQueryString({ minPrice: 1e30, maxPrice: 99_999_999.4 });
+    expect(query).toBe("maxPrice=99999999&minPrice=100000000");
+    expect(parse(query).ok).toBe(true);
+    expect(parse(previewSearchQueryString({ minPrice: 1e30, maxPrice: 1e30 })).ok).toBe(true);
+  });
+
+  it("n'envoie une taille de page que si la route l'accepte (24, 50 ou 100)", () => {
+    for (const limit of PREVIEW_PAGE_SIZES) {
+      const query = previewSearchQueryString({ limit });
+      expect(query).toBe(`limit=${limit}`);
+      expect(parse(query).ok).toBe(true);
+    }
+    // Une autre taille (adresse écrite à la main) n'est pas envoyée : la route prend sa taille par défaut.
+    for (const limit of [1, 12, 25, 99, 101, 500]) {
+      expect(previewSearchQueryString({ limit })).toBe("");
+    }
+  });
+
   it("est identique pour une même recherche, quel que soit l'ordre des critères", () => {
     expect(previewSearchQueryString({ city: "Pau", page: 2 })).toBe(
       previewSearchQueryString({ page: 2, city: "Pau" }),
@@ -83,7 +110,7 @@ describe("la route lit les critères comme la page", () => {
     { query: "Nouvelle-Aquitaine", page: 2 },
     { query: "33000" },
     { query: "Nîmes centre", keywords: "garage" },
-    { homeTypes: ["house", "apartment"], saleType: "notary", page: 4, limit: 12 },
+    { homeTypes: ["house", "apartment"], saleType: "notary", page: 4, limit: 50 },
     { minSqft: 80, minBeds: 3, minBaths: 2, maxSqft: 200 },
     { minSaleDate: "2026-09-11", maxSaleDate: "2026-10-01", page: 2 },
     { status: ["upcoming"], tribunal: "Tribunal judiciaire de Bordeaux", city: "Bordeaux" },
@@ -130,6 +157,17 @@ describe("paramètres refusés", () => {
     "page=1.5x",
     "limit=0",
     "limit=101",
+    "limit=1",
+    "limit=12",
+    "limit=25",
+    "limit=99",
+    "minPrice=1000.5",
+    "maxPrice=1e30",
+    "maxPrice=100000001",
+    "minPrice=99999999999999",
+    "minPrice=050000",
+    "minPrice=%2B5000",
+    "maxPrice=0x10",
     "page=420&limit=24",
     "minPrice=cher",
     "minBeds=-1",

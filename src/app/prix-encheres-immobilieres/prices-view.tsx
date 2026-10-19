@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HideForLaunchOfferAccount, LaunchOfferNote } from "@/components/LaunchOfferNote";
 import { Badge, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import type { PublicAdjudicationPrices } from "@/lib/public-adjudication-prices";
 import { PUBLIC_ADJUDICATION_MIN_SAMPLE } from "@/lib/public-adjudication-prices";
@@ -209,9 +210,15 @@ export function PricesView({ data }: { data: PublicAdjudicationPrices }) {
             Le détail tribunal par tribunal et les scénarios de prix d’une vente sont réservés à
             l’offre Analyse.
           </p>
-          <Link href="/offres" className={buttonClasses({ variant: "primary", className: "mt-4" })}>
-            Découvrir l’offre Analyse
-          </Link>
+          <LaunchOfferNote className="mt-3" />
+          <HideForLaunchOfferAccount>
+            <Link
+              href="/offres"
+              className={buttonClasses({ variant: "primary", className: "mt-4" })}
+            >
+              Découvrir l’offre Analyse
+            </Link>
+          </HideForLaunchOfferAccount>
         </Card>
 
         <Card as="section" id="methode" aria-labelledby="prix-methode">

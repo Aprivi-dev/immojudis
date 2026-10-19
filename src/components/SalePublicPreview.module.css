@@ -10,6 +10,45 @@
   padding: 24px 16px 56px;
 }
 
+/* Fil d'Ariane : mêmes libellés que le BreadcrumbList JSON-LD de la fiche. */
+.breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.breadcrumb li {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.breadcrumb li + li::before {
+  content: "›";
+  content: "›" / "";
+  margin-right: 6px;
+}
+
+.breadcrumb a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--brand-navy);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.breadcrumb [aria-current="page"] {
+  overflow: hidden;
+  max-width: min(60ch, 70vw);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .back {
   display: inline-flex;
   min-height: 44px;
@@ -114,30 +153,10 @@
   background: var(--line-soft);
 }
 
-.adds {
-  margin-top: 26px;
-  border-radius: 16px;
-  background: var(--surface-tint);
-  padding: 18px 20px;
-}
-
 .addsTitle {
   color: var(--brand-navy);
   font-size: 15px;
   font-weight: 750;
-}
-
-.adds ul {
-  margin-top: 10px;
-  padding-left: 18px;
-  color: var(--ink-strong);
-  font-size: 14px;
-  line-height: 1.65;
-  list-style: disc;
-}
-
-.adds li + li {
-  margin-top: 4px;
 }
 
 .description {
@@ -248,6 +267,39 @@
   font-size: 14px;
 }
 
+/* Inscription sous le prix : une phrase, un bouton, la ligne d'accès commune. */
+.signup {
+  margin-top: 20px;
+  border: 1px solid var(--gold-light);
+  border-radius: 16px;
+  background: var(--surface-tint);
+  padding: 18px 20px;
+}
+
+.signupText {
+  color: var(--ink-strong);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.signup .primary {
+  margin-top: 14px;
+}
+
+.signupLine {
+  margin-top: 10px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.signupStatus {
+  color: var(--ink-strong);
+  font-size: 15px;
+  font-weight: 650;
+}
+
 .facts {
   display: grid;
   gap: 12px;
@@ -341,14 +393,6 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-}
-
-.accessIntro {
-  max-width: 680px;
-  margin-top: 8px;
-  color: var(--ink-soft);
-  font-size: 15px;
-  line-height: 1.65;
 }
 
 .actions {

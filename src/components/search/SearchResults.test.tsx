@@ -1012,7 +1012,7 @@ describe("favourite heart for a visitor", () => {
     renderAnonymous();
     const heart = screen.getByRole("button", { name: "Ajouter aux favoris" });
     expect(heart.getAttribute("title")).toBe(
-      "Créer un compte gratuit pour garder cette vente (3 favoris)",
+      "Créer un compte gratuit pour garder cette vente (10 favoris)",
     );
     expect(heart.className).toContain("h-11");
   });

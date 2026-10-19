@@ -16,6 +16,7 @@ import Heart from "lucide-react/dist/esm/icons/heart.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { getSupabase } from "@/integrations/supabase/lazy";
 import Link from "next/link";
@@ -300,6 +301,7 @@ export const ListingCard = memo(function ListingCard({
   const displaySurface = getDisplaySurface(sale);
   const { isViewed } = useViewedSales();
   const detailLink = useSaleDetailLink(sale.id, returnTo);
+  const launchOffer = useLaunchOffer().active;
   const premiumLocked = locked || analysisLocked;
   const viewed = !locked && isViewed(sale.id);
   const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
@@ -428,8 +430,8 @@ export const ListingCard = memo(function ListingCard({
           <CompactFavoriteButton
             key={`${sale.id}:${favoriteScope ?? "anonymous"}`}
             saleId={sale.id}
-            // Discovery can save up to three favourites. Keep the favourite
-            // control available while the rest of the card stays analysis-gated.
+            // Discovery can save a limited number of favourites (PLAN_LIMITS.decouverte.favoriteSales).
+            // Keep the favourite control available while the rest of the card stays analysis-gated.
             locked={locked}
             favoriteScope={favoriteScope}
             initialFavorite={initialFavorite}
@@ -487,7 +489,7 @@ export const ListingCard = memo(function ListingCard({
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-surface-tint pt-3">
           <span className="text-sm text-ink-soft">
-            {listingAccessLine(sale, { locked, analysisLocked, unlocked, verifying })}
+            {listingAccessLine(sale, { locked, analysisLocked, unlocked, verifying, launchOffer })}
           </span>
           <div className="flex items-center">
             <ShareButton sale={sale} title={title} />

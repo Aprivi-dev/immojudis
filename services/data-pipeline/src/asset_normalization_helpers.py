@@ -18,18 +18,26 @@ from src.normalize import (
     clean_text,
     parse_surface,
 )
+from src.surface_plausibility import SURFACE_VALUES_CONFLICT_KEY, is_parcel_total, source_proves_built_total
 
 # Plafonds de vraisemblance de la surface affichée (m²). Au-delà, la valeur est presque toujours celle
 # d'une parcelle, d'un lot voisin ou d'un chiffre du titre (appartement à 34 596 m², maison à 48 256 m²).
 # Prudents : seul l'évidemment faux est écarté ; les types commercial, mixte et autres gardent leur règle
 # propre (plus de 1 000 m² sans preuve).
 MAX_PLAUSIBLE_BUILT_SURFACE_M2 = {"apartment": Decimal("500"), "house": Decimal("1000")}
-# Une surface habitable expressément étiquetée comme telle est plus fiable qu'un nombre isolé du titre.
-MAX_PLAUSIBLE_LABELLED_HOUSE_SURFACE_M2 = Decimal("5000")
+# Une surface habitable étiquetée comme telle garde le plafond d'une maison (1 000 m²) : « Surface habitable :
+# 2 464,70 m² » est presque toujours une parcelle ou un total d'ensemble. Seul un texte qui prouve un total
+# bâti (« surface totale bâtie », « de plancher ») relève le plafond.
+MAX_PLAUSIBLE_LABELLED_HOUSE_SURFACE_M2 = Decimal("1000")
+MAX_PLAUSIBLE_PROVEN_BUILT_TOTAL_HOUSE_SURFACE_M2 = Decimal("5000")
 
 
 def _plausible_surface_ceiling(sale: AuctionSale) -> Decimal | None:
     if sale.property_type == "house" and sale.app_surface_kind == "habitable":
+        if source_proves_built_total(
+            (sale.surface_evidence, sale.description, sale.title, sale.raw_text), sale.app_surface_m2
+        ):
+            return MAX_PLAUSIBLE_PROVEN_BUILT_TOTAL_HOUSE_SURFACE_M2
         return MAX_PLAUSIBLE_LABELLED_HOUSE_SURFACE_M2
     return MAX_PLAUSIBLE_BUILT_SURFACE_M2.get(sale.property_type or "")
 
@@ -187,6 +195,9 @@ def _source_qualifies_surface_as_land(sale: AuctionSale, value: Decimal | None) 
     """
     if value is None:
         return False
+    # « …, soit superficie totale 1550 m² » à la suite de parcelles cadastrales : la contenance du terrain.
+    if is_parcel_total((sale.surface_evidence, sale.description, sale.title, sale.raw_text), value):
+        return True
     for text in (sale.surface_evidence, sale.description, sale.title, sale.raw_text):
         if not text:
             continue
@@ -247,6 +258,7 @@ def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decima
     if sale is not None and (
         _is_ambiguous_mixed_lot_surface(sale.property_type or "", text)
         or _is_unestablished_multi_unit_surface(sale, text)
+        or sale.raw_payload.get(SURFACE_VALUES_CONFLICT_KEY)
     ):
         return None
     patterns = (
@@ -273,8 +285,12 @@ def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decima
                 _set_surface_evidence(sale, "built_surface_text", _evidence(text, match.start(), match.end()))
             return value
 
+    # Un seul qualificatif peut séparer le bien de sa surface (« maison éclusière d'environ 80 m² »), à
+    # condition que ce ne soit pas une annexe (« maison avec garage de 25 m² » est la surface du garage).
     short_pattern = (
         rf"\b(?:appartement|maison|villa|immeuble|b[âa]timent|local|hangar)\s+"
+        rf"(?:(?!(?:avec|et|sur|de|d|du|des|garage|cave|jardin|terrain|parking|piscine|d[ée]pendances?|annexes?|"
+        rf"cour|terrasse|balcon|combles?|grenier)\b)[a-zà-ÿ]+\s+)?"
         rf"(?:d['’]environ\s+|de\s+){SURFACE_VALUE_PATTERN}\s*m(?:2|²)"
     )
     candidates: list[tuple[Decimal, re.Match[str]]] = []
