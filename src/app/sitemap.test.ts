@@ -93,7 +93,7 @@ describe("sitemap.xml (static pages)", () => {
     );
   });
 
-  it("includes /tribunaux and gives every static page a real last-modified date", async () => {
+  it("includes /tribunaux and gives every static page a real last-modified date, except /sales", async () => {
     mocks.loadSitemapSales.mockResolvedValue(manySales);
     const entries = await sitemap();
     const byUrl = new Map(entries.map((entry) => [entry.url, entry]));
@@ -111,8 +111,18 @@ describe("sitemap.xml (static pages)", () => {
     ]) {
       expect(byUrl.get(`https://immojudis.com${path}`)?.lastModified).toBeTruthy();
     }
-    // The catalogue page changes with its newest sale.
-    expect(byUrl.get("https://immojudis.com/sales")?.lastModified).toBe(manySales[0].lastModified);
+    // No reliable date exists for the catalogue page: the newest `updated_at` of a sale moves with
+    // every collection run. A missing date is better than a false one.
+    expect(byUrl.get("https://immojudis.com/sales")).not.toHaveProperty("lastModified");
+  });
+
+  it("never reads the sales for a date any more, whatever their dates are", async () => {
+    mocks.loadSitemapSales.mockResolvedValue(manySales);
+    const entries = await sitemap();
+    expect(mocks.loadSitemapSales).not.toHaveBeenCalled();
+    expect(entries.find((entry) => entry.url === "https://immojudis.com/sales")).toEqual({
+      url: "https://immojudis.com/sales",
+    });
   });
 
   it("dates the pages that changed after 8 October by their real last change", async () => {
@@ -135,7 +145,7 @@ describe("sitemap.xml (static pages)", () => {
     expect(guide.GUIDE_LAST_UPDATED).toBe(GUIDE_LAST_UPDATED);
   });
 
-  it("stays available when the catalogue cannot be read: /sales just has no date", async () => {
+  it("stays available when the catalogue cannot be read: /sales has no date, with or without a read", async () => {
     mocks.loadSitemapSales.mockRejectedValue(new Error("down"));
     const entries = await sitemap();
     const sales = entries.find((entry) => entry.url === "https://immojudis.com/sales");
@@ -319,7 +329,7 @@ describe("/sales/sitemap/[id].xml (sales)", () => {
     expect(await generateSalesSitemaps()).toEqual([]);
   });
 
-  it("lists the sales of file 0 from the first one, with their update date", async () => {
+  it("lists the sales of file 0 from the first one, with the date of their last visible change", async () => {
     mocks.loadSitemapSales.mockResolvedValue(manySales);
     const entries = await salesSitemap({ id: Promise.resolve("0") });
     expect(mocks.loadSitemapSales).toHaveBeenCalledWith(0, SITEMAP_URL_LIMIT);
@@ -327,6 +337,20 @@ describe("/sales/sitemap/[id].xml (sales)", () => {
     expect(entries[1]).toEqual({
       url: `https://immojudis.com/sales/${manySales[1].id}`,
       lastModified: manySales[1].lastModified,
+    });
+  });
+
+  it("emits no lastmod for a sale without a reliable date", async () => {
+    mocks.loadSitemapSales.mockResolvedValue([
+      { id: "a", lastModified: null },
+      { id: "b", lastModified: "2026-10-20T09:30:00.000Z" },
+    ]);
+    const entries = await salesSitemap({ id: Promise.resolve("0") });
+    expect(entries[0]).toEqual({ url: "https://immojudis.com/sales/a" });
+    expect(entries[0]).not.toHaveProperty("lastModified");
+    expect(entries[1]).toEqual({
+      url: "https://immojudis.com/sales/b",
+      lastModified: "2026-10-20T09:30:00.000Z",
     });
   });
 

@@ -16,11 +16,11 @@ import {
 type Client = Parameters<typeof fetchSitemapSalePage>[0];
 
 describe("sitemap sales page", () => {
-  it("reads identifiers and update dates through the dedicated RPC", async () => {
+  it("reads identifiers and the date of the last visible change through the dedicated RPC", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [
-        { id: "a", updated_at: "2026-10-09T10:00:00Z", total_count: "2276" },
-        { id: "b", updated_at: null, total_count: "2276" },
+        { id: "a", content_changed_at: "2026-10-09T10:00:00Z", total_count: "2276" },
+        { id: "b", content_changed_at: null, total_count: "2276" },
       ],
       error: null,
     });
@@ -36,6 +36,17 @@ describe("sitemap sales page", () => {
       ],
       total: 2276,
     });
+  });
+
+  it("never takes the technical updated_at for a modification date", async () => {
+    // The previous contract of the RPC (before the migration that adds content_changed_at): a database
+    // that has not been migrated yet must produce no date at all, not a false one.
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ id: "a", updated_at: "2026-10-18T08:00:00Z", total_count: "1" }],
+      error: null,
+    });
+    const page = await fetchSitemapSalePage({ rpc } as unknown as Client, 0);
+    expect(page.sales).toEqual([{ id: "a", lastModified: null }]);
   });
 
   it("falls back to the preview view while the RPC is not deployed", async () => {
