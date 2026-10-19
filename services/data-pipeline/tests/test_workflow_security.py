@@ -164,9 +164,20 @@ def test_data_pipeline_secrets_reach_only_the_business_steps() -> None:
     assert receiving == {
         "Run manually requested pipeline",
         "Finalize unfinished run",
+        "Invalidate public cache",
         "Report source coverage and enrichment backlog",
         "Copie des photos principales",
     }
+    # CRON_SECRET (qui autorise aussi les routes Vercel Cron) ne part que dans l'étape d'invalidation.
+    assert [name for name, step in steps.items() if "CRON_SECRET" in step.env] == ["Invalidate public cache"]
+    invalidation = steps["Invalidate public cache"]
+    assert "CRON_SECRET: ${{ secrets.CRON_SECRET }}" in invalidation.env
+    assert "SITE_URL: ${{ vars.SITE_URL }}" in invalidation.env
+    assert invalidation.run.strip() == "python -m src.cache_invalidation --flush"
+    # Après la finalisation (un retrait déjà écrit part même si la collecte échoue) et jamais bloquante.
+    names = [step.name for step in jobs["run"].steps]
+    assert names.index("Invalidate public cache") == names.index("Finalize unfinished run") + 1
+    assert re.search(r"name: Invalidate public cache\n\s+if: always\(\)\n\s+continue-on-error: true", invalidation.text)
     benchmark = {step.name: step for step in jobs["model-benchmark"].steps}
     assert [name for name, step in benchmark.items() if SECRET.search(step.env)] == [
         "Compare existing and candidate models"
