@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
@@ -69,6 +69,7 @@ vi.mock("next/dynamic", () => ({
       images,
       onClose,
       saleId,
+      calculatedCeiling,
       sale,
       marketEstimateOverride,
       forecastQuery,
@@ -79,6 +80,7 @@ vi.mock("next/dynamic", () => ({
       images?: unknown[];
       onClose?: () => void;
       saleId?: string;
+      calculatedCeiling?: number | null;
       sale?: AuctionSale;
       marketEstimateOverride?: unknown;
       forecastQuery?: unknown;
@@ -87,6 +89,14 @@ vi.mock("next/dynamic", () => ({
       propertyTypeVerified?: boolean;
     }) {
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
+      // « Mon dossier » (SaleFileCard) : seul composant chargé à la demande qui reçoit ce plafond.
+      if (calculatedCeiling !== undefined) {
+        return (
+          <section aria-label="Mon dossier" data-ceiling={String(calculatedCeiling)}>
+            Mon dossier
+          </section>
+        );
+      }
       if (sale && marketEstimateOverride === undefined) {
         return (
           <section
@@ -982,6 +992,30 @@ describe("« 3 déblocages par mois » on the sale page", () => {
     expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
     expect(screen.queryByText("Conserver votre analyse")).toBeNull();
     expect(screen.queryByText("Préparer le dossier de travail")).toBeNull();
+  });
+
+  it("offers « Mon dossier » (free storage) to a signed-in account, with the ceiling of the calculator", async () => {
+    renderUnlocked();
+
+    await screen.findByRole("region", { name: "Mon dossier" });
+    // The unlocked sale opens the calculator: its result (once the estimate is in) is what the account can save.
+    await waitFor(() =>
+      expect(
+        Number(screen.getByRole("region", { name: "Mon dossier" }).getAttribute("data-ceiling")),
+      ).toBeGreaterThan(0),
+    );
+  });
+
+  it("offers « Mon dossier » without any ceiling to a free account that has not unlocked the sale", async () => {
+    renderFree(unlockStatus());
+
+    const card = await screen.findByRole("region", { name: "Mon dossier" });
+    expect(card.getAttribute("data-ceiling")).toBe("null");
+  });
+
+  it("does not show « Mon dossier » to a visitor", () => {
+    renderDetail("discovery");
+    expect(screen.queryByRole("region", { name: "Mon dossier" })).toBeNull();
   });
 
   it("states that the unlocked elements are neither legal nor financial advice", () => {

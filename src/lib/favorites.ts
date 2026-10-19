@@ -6,6 +6,10 @@ import { featureAccess, featureIncluded, type FeatureAccess, type PlanCode } fro
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/queries";
 import { saleRows } from "@/lib/sale-rows";
+import {
+  normalizeFavoriteDossierStatus,
+  type FavoriteDossierStatus,
+} from "@/lib/favorite-dossier-shared";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import type { AuctionSale } from "@/lib/types";
 
@@ -23,6 +27,10 @@ export type FavoriteSale = {
   saleId: string;
   favoritedAt: string;
   sale: AuctionSale;
+  /** « Mon dossier » (point 68) : statut personnel et enchère plafond enregistrés, absents si vides. */
+  personalStatus: FavoriteDossierStatus | null;
+  bidCeilingEur: number | null;
+  bidCeilingSavedAt: string | null;
 };
 
 export type FavoriteDepartmentSummary = {
@@ -170,7 +178,10 @@ export async function removeFavoriteSale({
 }
 
 export function joinFavoriteRowsToSales(
-  favoriteRows: Array<Pick<FavoriteRow, "id" | "sale_id" | "created_at">>,
+  favoriteRows: Array<
+    Pick<FavoriteRow, "id" | "sale_id" | "created_at"> &
+      Partial<Pick<FavoriteRow, "personal_status" | "bid_ceiling_eur" | "bid_ceiling_saved_at">>
+  >,
   sales: AuctionSale[],
 ): FavoriteSale[] {
   const salesById = new Map(sales.map((sale) => [sale.id, sale]));
@@ -183,6 +194,10 @@ export function joinFavoriteRowsToSales(
         saleId: favorite.sale_id,
         favoritedAt: favorite.created_at,
         sale,
+        personalStatus: normalizeFavoriteDossierStatus(favorite.personal_status),
+        bidCeilingEur:
+          typeof favorite.bid_ceiling_eur === "number" ? favorite.bid_ceiling_eur : null,
+        bidCeilingSavedAt: favorite.bid_ceiling_saved_at ?? null,
       },
     ];
   });
@@ -214,7 +229,7 @@ export function buildFavoriteSalesSummary(
   };
 }
 
-async function assertSaleFavoritesAvailable(auth: SupabaseAuthContext) {
+export async function assertSaleFavoritesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "sales.favorites")) {
     throw new Error("Favoris réservés au plan Analyse.");
