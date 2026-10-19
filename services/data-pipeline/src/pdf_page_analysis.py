@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
-import fitz
+import pymupdf as fitz
 
 from src.normalize import clean_text
 
