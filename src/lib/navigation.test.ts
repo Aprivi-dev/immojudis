@@ -4,10 +4,26 @@ import {
   linkPrefetch,
   loginReason,
   pathWithSearch,
+  salesReturnHref,
   searchParamsToRecord,
   SITE_NAV_LINKS,
 } from "./navigation";
 import { validateSalesSearch } from "./search/search-url-state";
+
+describe("salesReturnHref", () => {
+  it("ramène à la recherche d'origine, sur la carte de la vente", () => {
+    expect(salesReturnHref("/sales?city=Lyon&page=2", "abc-123")).toBe(
+      "/sales?city=Lyon&page=2#sale-card-abc-123",
+    );
+    expect(salesReturnHref(undefined, "abc-123")).toBe("/sales#sale-card-abc-123");
+    expect(salesReturnHref(null, "abc-123")).toBe("/sales#sale-card-abc-123");
+  });
+
+  it("n'ajoute pas d'ancre à une origine qui n'est pas le catalogue", () => {
+    expect(salesReturnHref("/annonce-exemple", "abc")).toBe("/annonce-exemple");
+    expect(salesReturnHref("https://example.test/sales", "abc")).toBe("https://example.test/sales");
+  });
+});
 
 describe("loginPathWithRedirect", () => {
   it("ramène la personne sur sa recherche après la connexion", () => {

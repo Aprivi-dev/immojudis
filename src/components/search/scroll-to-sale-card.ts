@@ -1,3 +1,5 @@
+import { SALE_CARD_ANCHOR_PREFIX } from "@/lib/navigation";
+
 /** Durée laissée au défilement doux avant de vérifier que la carte est bien au centre. */
 const SMOOTH_SCROLL_SETTLE_MS = 900;
 
@@ -8,10 +10,16 @@ const SMOOTH_SCROLL_SETTLE_MS = 900;
  * qu'elles n'ont pas été affichées, et elle se corrige quand le défilement les croise. La cible
  * calculée au départ peut donc être un peu décalée ; après le défilement doux, on recentre d'un
  * coup si la carte s'est éloignée du centre de l'écran.
+ *
+ * Retour depuis une fiche (`#sale-card-<id>`) : `behavior: "instant"`, la liste doit être déjà en
+ * place quand la page apparaît.
  */
-export function scrollToSaleCard(saleId: string) {
-  const find = () => document.getElementById(`sale-card-${saleId}`);
-  find()?.scrollIntoView({ block: "center", behavior: "smooth" });
+export function scrollToSaleCard(
+  saleId: string,
+  { behavior = "smooth" }: { behavior?: "smooth" | "instant" } = {},
+) {
+  const find = () => document.getElementById(`${SALE_CARD_ANCHOR_PREFIX}${saleId}`);
+  find()?.scrollIntoView({ block: "center", behavior });
 
   window.setTimeout(() => {
     const card = find();

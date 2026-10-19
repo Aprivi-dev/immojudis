@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { escapeIcsText } from "./ical";
 import {
   SALE_CALENDAR_DISCLAIMER,
+  SALE_HEARING_DEFAULT_DURATION_HOURS,
   buildSaleCalendarFile,
+  saleCalendarSequence,
   saleCalendarUid,
   type SaleCalendarRow,
 } from "./sale-calendar";
@@ -141,5 +143,53 @@ describe("buildSaleCalendarFile", () => {
     for (const line of file!.body.split("\r\n")) {
       expect(new TextEncoder().encode(line).length).toBeLessThanOrEqual(75);
     }
+  });
+
+  it("carries the link to the sale in the description, on its own line", () => {
+    const ics = unfolded();
+    expect(ics).toContain(
+      `DESCRIPTION:${escapeIcsText(SALE_CALENDAR_DISCLAIMER)}\\nFiche de la vente : ${origin}/sales/${lowerId}`,
+    );
+  });
+
+  it("ends a timed hearing after the default duration of 2 h, and says so", () => {
+    expect(SALE_HEARING_DEFAULT_DURATION_HOURS).toBe(2);
+    const ics = unfolded();
+    expect(ics).toContain("DTSTART:20261020T073000Z\r\nDTEND:20261020T093000Z\r\n");
+    expect(ics).toContain("Durée indicative : 2 h");
+  });
+
+  it("gives an all-day hearing no DTEND other than the next day, and no duration", () => {
+    const ics = unfolded({ sale_date: "2026-10-22T22:00:00+00:00", date_only: true });
+    expect(ics.match(/DTEND/g)).toHaveLength(1);
+    expect(ics).toContain("DTEND;VALUE=DATE:20261024");
+    expect(ics).not.toContain("Durée indicative");
+  });
+
+  it("reminds 7 days and 1 day before a timed hearing, at its hour", () => {
+    const ics = unfolded();
+    expect(ics.match(/BEGIN:VALARM/g)).toHaveLength(2);
+    expect(ics).toContain("TRIGGER:-P7D\r\n");
+    expect(ics).toContain("TRIGGER:-P1D\r\n");
+    expect(ics).toContain("ACTION:DISPLAY");
+    expect(ics).toContain("Audience d’adjudication – Appartement à Bordeaux (demain)");
+  });
+
+  it("moves the reminders of an all-day hearing to 9 h instead of midnight", () => {
+    const ics = unfolded({ sale_date: "2026-10-22T22:00:00+00:00", date_only: true });
+    expect(ics).toContain("TRIGGER:-P6DT15H\r\n");
+    expect(ics).toContain("TRIGGER:-PT15H\r\n");
+    expect(ics).not.toContain("TRIGGER:-P7D");
+  });
+
+  it("numbers the revisions so that a changed sale replaces the event already in a calendar", () => {
+    expect(saleCalendarSequence(null)).toBe(0);
+    expect(saleCalendarSequence(new Date("2025-12-31T00:00:00Z"))).toBe(0);
+    expect(saleCalendarSequence(new Date("2026-01-01T01:00:00Z"))).toBe(60);
+    const before = saleCalendarSequence(new Date("2026-10-14T08:00:00Z"));
+    const after = saleCalendarSequence(new Date("2026-10-16T09:30:00Z"));
+    expect(after).toBeGreaterThan(before);
+    expect(unfolded()).toContain(`SEQUENCE:${before}\r\n`);
+    expect(unfolded({ updated_at: null })).toContain("SEQUENCE:0\r\n");
   });
 });
