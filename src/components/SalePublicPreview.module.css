@@ -267,6 +267,36 @@
   font-size: 14px;
 }
 
+/* Repère d'écart au marché sous la mise à prix : neutre, sans couleur de verdict. */
+.marketBand {
+  margin-top: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  padding: 12px 14px;
+}
+
+.marketBandLabel {
+  color: var(--ink-strong);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.marketBandNote {
+  margin-top: 6px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.marketBandLink {
+  color: var(--gold-text);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* Inscription sous le prix : une phrase, un bouton, la ligne d'accès commune. */
 .signup {
   margin-top: 20px;

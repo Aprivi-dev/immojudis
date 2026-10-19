@@ -8,6 +8,10 @@ import {
   MARKET_GAP_MIN_DISCOUNT_PCT,
   MARKET_GAP_NOT_SIGNIFICANT_LABEL,
 } from "@/lib/market-gap";
+import {
+  MARKET_GAP_BAND_LABELS,
+  MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
+} from "@/lib/market-gap-band";
 import { pageMetadata } from "@/lib/page-metadata";
 
 export const metadata: Metadata = pageMetadata({
@@ -205,6 +209,40 @@ function PageContent() {
             pourcentage. Elle s’applique aussi au facteur « Décote de départ » de la prévision de
             résultat de la fiche, qui indique alors seulement « {MARKET_GAP_NOT_SIGNIFICANT_LABEL}{" "}
             ».
+          </p>
+        </Section>
+
+        <Section id="bandes" title="Le repère en trois bandes de la fiche publique">
+          <p>
+            Sans compte, la fiche d’une vente au tribunal ou chez le notaire peut afficher un repère
+            en trois bandes, <strong>sans aucun chiffre</strong>. Il situe la mise à prix par
+            rapport à la fourchette de la valeur estimée (du 10e au 90e centile), et non par rapport
+            à la seule valeur centrale :
+          </p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>
+              « nettement sous la valeur estimée » : la mise à prix est sous le bas de la fourchette
+              ;
+            </li>
+            <li>« proche de la valeur estimée » : elle est dans la fourchette ;</li>
+            <li>
+              « au-dessus de la valeur estimée » : elle est au-dessus du haut de la fourchette.
+            </li>
+          </ul>
+          <p>
+            Le repère n’apparaît que si l’estimation est jugée fiable (critères ci-dessus), si la
+            fourchette n’est pas plus large que {MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT} % de la
+            valeur estimée et, lorsque l’estimation est combinée à un modèle statistique, si ce
+            modèle est toujours actif. Les seuils de la section précédente s’appliquent aussi :
+            au-delà, aucun repère n’est donné. Quand l’estimation n’est pas assez fiable, la fiche
+            l’indique (« {MARKET_GAP_BAND_LABELS.insufficient} ») ; tant qu’elle n’est pas calculée,
+            elle ne dit rien. Une cession de l’État, dont le prix est un prix publié, n’a pas de
+            repère.
+          </p>
+          <p>
+            Le pourcentage, la valeur estimée et la fourchette restent réservés aux comptes. Ce
+            repère est indicatif : la mise à prix est un prix de départ, et il ne remplace ni une
+            visite ni l’avis d’un professionnel.
           </p>
         </Section>
 
