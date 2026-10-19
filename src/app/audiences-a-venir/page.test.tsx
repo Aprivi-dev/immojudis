@@ -106,15 +106,25 @@ describe("/audiences-a-venir : génération et indexation", () => {
     expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
   });
 
-  it("compte une vente publiée par deux sources une seule fois (même tribunal, jour et mise à prix)", async () => {
+  it("compte une vente publiée par deux sources une seule fois (même adresse source)", async () => {
     serve([
-      row({ id: "a", starting_price_eur: 50_000 }),
-      row({ id: "b", starting_price_eur: 50_000 }),
+      row({ id: "a", starting_price_eur: 50_000, source_url: "https://www.licitor.com/annonce/1" }),
+      row({ id: "b", starting_price_eur: 50_000, source_url: "https://licitor.com/annonce/1/" }),
       row({ id: "c", starting_price_eur: 60_000 }),
     ]);
     const metadata = await generateMetadata();
     expect(String(metadata.description)).toContain("2 audiences");
     expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  it("garde deux lots distincts du même tribunal, du même jour et au même prix", async () => {
+    serve([
+      row({ id: "a", starting_price_eur: 50_000, source_url: "https://www.licitor.com/annonce/1" }),
+      row({ id: "b", starting_price_eur: 50_000, source_url: "https://www.licitor.com/annonce/2" }),
+      row({ id: "c", starting_price_eur: 50_000 }),
+    ]);
+    const metadata = await generateMetadata();
+    expect(String(metadata.description)).toContain("3 audiences");
   });
 
   it("répond noindex et dit l'indisponibilité quand la lecture échoue pendant le build", async () => {
