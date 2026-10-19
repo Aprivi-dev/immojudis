@@ -4,8 +4,9 @@ import { resolveRequestId } from "@/lib/request-id";
 import {
   isSalesDefaultPath,
   isUnfilteredSalesRequest,
+  publicSalesAddress,
   SALES_DEFAULT_PATH,
-  SALES_PATH,
+  salesPageVariantFor,
 } from "@/lib/sales-isr";
 import { robotsTagHeaderValue } from "@/lib/seo-indexing";
 import {
@@ -34,24 +35,32 @@ function strictCspHeaders(requestHeaders: Headers) {
 }
 
 /**
- * `/sales` sans paramètre est réécrit vers sa variante statique (ISR, 5 minutes) : le visiteur et
- * les robots gardent l'adresse `/sales`, le CDN sert la page sans réveiller de fonction. Toute
- * autre adresse du catalogue (filtre, `?page=N`) reste rendue à la demande. Voir
- * `src/lib/sales-isr.ts`.
+ * `/sales` sans paramètre, `/sales?page=2` et `/sales?page=3` sont réécrits vers leur variante
+ * statique (ISR, 5 minutes) : le visiteur et les robots gardent l'adresse demandée, le CDN sert la
+ * page sans réveiller de fonction. Toute autre adresse du catalogue (filtre, autre page, paramètre
+ * en plus) reste rendue à la demande. Voir `src/lib/sales-isr.ts`.
  *
  * Pas de réécriture quand la CSP à nonce est servie (`strictCspEnabled`) : un nonce ne se pose que
  * sur une page rendue à la demande, la variante statique n'en aurait pas. La variante demandée en
- * direct revient alors à `/sales`.
+ * direct revient alors à l'adresse publique.
  */
 function routeResponse(request: NextRequest, requestHeaders: Headers, strictCsp: boolean) {
   const { pathname, search } = request.nextUrl;
   if (strictCsp) {
     if (isSalesDefaultPath(pathname)) {
-      return NextResponse.redirect(new URL(`${SALES_PATH}${search}`, request.url), 307);
+      return NextResponse.redirect(new URL(publicSalesAddress(pathname, search), request.url), 307);
     }
-  } else if (isUnfilteredSalesRequest({ method: request.method, pathname, search })) {
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+  const salesRequest = { method: request.method, pathname, search };
+  const variantPath = isUnfilteredSalesRequest(salesRequest)
+    ? SALES_DEFAULT_PATH
+    : salesPageVariantFor(salesRequest);
+  if (variantPath) {
     const target = request.nextUrl.clone();
-    target.pathname = SALES_DEFAULT_PATH;
+    target.pathname = variantPath;
+    // La variante ne porte aucun paramètre : `?page=N` est déjà dans son chemin.
+    target.search = "";
     return NextResponse.rewrite(target, { request: { headers: requestHeaders } });
   }
   return NextResponse.next({ request: { headers: requestHeaders } });

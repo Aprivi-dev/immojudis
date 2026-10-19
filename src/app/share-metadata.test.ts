@@ -36,7 +36,14 @@ const PAGES: Array<
     () => import("./classement-des-annonces/page"),
   ],
   ["/annonce-exemple", "annonce-exemple", () => import("./annonce-exemple/page")],
-  ["/sales", "sales", () => import("./sales/page")],
+  [
+    "/sales",
+    "sales",
+    async () => ({
+      generateMetadata: async () =>
+        (await import("./sales/page")).generateMetadata({ searchParams: Promise.resolve({}) }),
+    }),
+  ],
 ];
 
 describe("share metadata of the public pages", () => {

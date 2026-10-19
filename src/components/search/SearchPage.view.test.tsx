@@ -179,6 +179,9 @@ describe("/sales : choix Cartes / Tableau", () => {
       "table",
     );
     const fiche = screen.getAllByRole("link", { name: /^Voir / })[0];
+    // Pas de ?from= dans le HTML du serveur : l'origine s'ajoute dès que le lien est approché.
+    expect(fiche.getAttribute("href")).not.toContain("from=");
+    fireEvent.pointerEnter(fiche);
     expect(decodeURIComponent(fiche.getAttribute("href") ?? "")).toContain("view=table");
   });
 

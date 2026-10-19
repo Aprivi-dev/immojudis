@@ -1,11 +1,16 @@
 /**
  * `/sales` sans paramètre, servi depuis le cache (ISR) par une réécriture du proxy.
  *
- * Le catalogue filtré ou paginé (`/sales?page=2`, …) est rendu à la demande par
- * `src/app/sales/page.tsx` : il lit `searchParams`. L'adresse nue `/sales` est la même pour tous
- * les visiteurs (première page du catalogue public, déjà en cache 5 minutes) ; `src/proxy.ts` la
- * réécrit vers `SALES_DEFAULT_PATH`, une page statique régénérée toutes les 5 minutes
+ * Le catalogue filtré (`/sales?city=Pau`, …) est rendu à la demande par `src/app/sales/page.tsx` :
+ * il lit `searchParams`. L'adresse nue `/sales` est la même pour tous les visiteurs (première page
+ * du catalogue public, déjà en cache 5 minutes) ; `src/proxy.ts` la réécrit vers
+ * `SALES_DEFAULT_PATH`, une page statique régénérée toutes les 5 minutes
  * (`src/app/sales/defaut/page.tsx`). Le navigateur et les robots continuent de voir `/sales`.
+ *
+ * Il en va de même pour `?page=2` et `?page=3` sans autre paramètre (`SALES_ISR_PAGES`) : le proxy
+ * les réécrit vers `/sales/defaut/2` et `/sales/defaut/3` (`src/app/sales/defaut/[page]/page.tsx`,
+ * même cache de 5 minutes). Leur HTML ne dépend d'aucun visiteur (ni cookie ni en-tête lu), il se
+ * partage donc entre tous au lieu d'être rendu à chaque requête.
  *
  * Paramètres de suivi (`utm_*`, `gclid`, `fbclid`) : `/sales?utm_source=x` reste rendu à la
  * demande, il n'est pas servi par la variante statique. La page statique est rendue pour une
@@ -52,9 +57,57 @@ export function isSalesDefaultPath(pathname: string): boolean {
   );
 }
 
-/** Chemin de l'adresse publique : la variante interne se présente comme `/sales`. */
+/**
+ * Pages du catalogue servies par une variante statique, en plus de la première : `?page=2` et
+ * `?page=3`, celles que les robots et les liens partagés visitent le plus. Au-delà, ou avec un
+ * filtre, la page reste rendue à la demande. Cette liste est lue par la variante
+ * (`generateStaticParams`) et par le proxy : un seul endroit.
+ */
+export const SALES_ISR_PAGES: readonly number[] = [2, 3];
+
+/** Motif de la route des variantes de pages (pour `revalidatePath(…, "page")`). */
+export const SALES_PAGE_VARIANTS_ROUTE = `${SALES_DEFAULT_PATH}/[page]`;
+
+/** Variante statique de la page `page` du catalogue ; jamais liée, jamais dans le plan du site. */
+export function salesPageVariantPath(page: number): string {
+  return `${SALES_DEFAULT_PATH}/${page}`;
+}
+
+/**
+ * Chemin de la variante statique qui sert cette requête pour `?page=N` (N dans `SALES_ISR_PAGES`),
+ * ou `null`. Il faut `/sales` en lecture seule et, pour toute l'adresse, exactement `?page=N` :
+ * un autre paramètre (filtre, `view`, `utm_*`) ou une autre écriture (`?page=02`) reste rendu à la
+ * demande, car la variante ne connaît que le `useSearchParams()` de cette adresse-là.
+ */
+export function salesPageVariantFor(request: {
+  method: string;
+  pathname: string;
+  search: string;
+}): string | null {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  if (request.pathname !== SALES_PATH) return null;
+  const match = /^\?page=([1-9][0-9]*)$/.exec(request.search);
+  const page = match ? Number(match[1]) : Number.NaN;
+  return SALES_ISR_PAGES.includes(page) ? salesPageVariantPath(page) : null;
+}
+
+/**
+ * Adresse publique d'une variante demandée en direct quand le proxy ne réécrit pas (CSP à nonce) :
+ * `/sales/defaut` devient `/sales`, `/sales/defaut/N` devient `/sales?page=N`.
+ */
+export function publicSalesAddress(pathname: string, search: string): string {
+  const page = /^\/sales\/defaut\/([1-9][0-9]*)$/.exec(pathname)?.[1];
+  return page ? `${SALES_PATH}?page=${page}` : `${SALES_PATH}${search}`;
+}
+
+/**
+ * Chemin de l'adresse publique : la variante interne (`/sales/defaut`, `/sales/defaut/N`) se
+ * présente comme `/sales`.
+ */
 export function publicPathname(pathname: string): string {
-  return pathname === SALES_DEFAULT_PATH ? SALES_PATH : pathname;
+  return pathname === SALES_DEFAULT_PATH || /^\/sales\/defaut\/[1-9][0-9]*$/.test(pathname)
+    ? SALES_PATH
+    : pathname;
 }
 
 /** Valeur de `NEXT_PHASE` pendant `next build` (`PHASE_PRODUCTION_BUILD` de `next/constants`). */

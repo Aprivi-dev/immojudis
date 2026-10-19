@@ -51,11 +51,13 @@ import {
   salesSearchQueryKey,
 } from "@/lib/search/catalog-placeholder";
 import {
+  canonicalSalesQuery,
   mergeSalesSearch,
   salesSearchToUrlRecord,
   type SalesSearchParams,
   type SalesSearchUrlRecord,
 } from "@/lib/search/search-url-state";
+import { isOutOfRangeSearchError } from "@/lib/search/search-errors";
 import {
   fetchSearchCount,
   fetchSearchMapResults,
@@ -64,9 +66,10 @@ import {
 } from "@/lib/search/search-service";
 import type { MapViewportChange } from "./MapPanel";
 import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
-import { SearchPagination } from "./SearchPagination";
+import { SALES_PAGINATION_ID, SearchPagination } from "./SearchPagination";
 import { scrollToSaleCard } from "./scroll-to-sale-card";
-import { DesktopMapZone } from "./DesktopMapZone";
+import { DESKTOP_MAP_ZONE_ID, DesktopMapZone } from "./DesktopMapZone";
+import { loadMapPanelModule, preloadMapModules } from "./preload-map";
 import { useFirstGestureStart } from "./use-first-gesture-start";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
 import { Footer, MapPanelSkeleton, MobileMapToggle } from "./SearchFilters";
@@ -91,9 +94,11 @@ import {
   downloadBlob,
   draftToSearch,
   emptySearchDraft,
+  historyModeForDraftChange,
   searchStatisticsFromServer,
   searchToDraft,
   stableUrlRecord,
+  type HistoryMode,
   useMediaQuery,
   useResultsView,
   watchedZoneInputFromSearch,
@@ -101,13 +106,17 @@ import {
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
 
-const LazyMapPanel = dynamic(() => import("./MapPanel").then((mod) => mod.MapPanel), {
+const LazyMapPanel = dynamic(() => loadMapPanelModule().then((mod) => mod.MapPanel), {
   ssr: false,
   loading: () => <MapPanelSkeleton />,
 });
 
 /** The map draws at most this many points: more would make clusters and popups sluggish. */
 const MAP_POINT_LIMIT = 500;
+
+/** Liens d'évitement : invisibles tant qu'ils n'ont pas le focus clavier. */
+const SKIP_LINK_CLASSES =
+  "sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-brand-navy focus:shadow-lg";
 
 const NO_SALES: AuctionSale[] = [];
 const NO_PHOTO_MIRRORS: ReadonlyMap<string, SaleMediaMirror> = new Map();
@@ -158,16 +167,30 @@ export function SearchPage({
   // The filters live in the URL: updating them rewrites the query string in place, without a
   // server round trip. Next.js keeps `useSearchParams` in sync with `history.replaceState`.
   // L'affichage (`view`) n'est pas un filtre : il est relu dans l'adresse courante et conservé.
+  // `mode` : « push » ajoute une entrée à l'historique du navigateur (ouverture de la carte,
+  // changement de page, filtre validé), pour que « Retour » la défasse au lieu de quitter le site ;
+  // « replace » remplace l'adresse (saisie en cours : une frappe n'empile rien).
   const replaceSearch = useCallback(
-    (record: SalesSearchUrlRecord) => {
-      window.history.replaceState(
-        null,
-        "",
-        pathWithSearch(pathname, keepCurrentResultsView(record)),
-      );
+    (record: SalesSearchUrlRecord, mode: HistoryMode = "replace") => {
+      const url = pathWithSearch(pathname, keepCurrentResultsView(record));
+      if (mode === "push") window.history.pushState(null, "", url);
+      else window.history.replaceState(null, "", url);
     },
     [pathname],
   );
+  // Une adresse qui porte une valeur ignorée (`minPrice=-5`, `maxPrice=1e30`, `page=1`) est
+  // ramenée à ce que la recherche retient réellement : l'adresse partagée dit la même chose que
+  // la liste affichée.
+  useEffect(() => {
+    const canonical = canonicalSalesQuery(new URLSearchParams(queryString));
+    if (!canonical) return;
+    const next = canonical.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${pathname}${next ? `?${next}` : ""}${window.location.hash}`,
+    );
+  }, [pathname, queryString]);
   const { user, loading: authLoading } = useAuth();
   const isPreview = !user;
   const searchRef = useRef(search);
@@ -178,6 +201,8 @@ export function SearchPage({
   const [wideMap, setWideMap] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [mobileMapOpen, setMobileMapOpen] = useState(Boolean(search.map));
+  // Fenêtre du comparateur : ouverte par la barre (bureau) ou par la pastille de la barre basse.
+  const [comparisonOpen, setComparisonOpen] = useState(false);
   const [savingAlert, setSavingAlert] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [dpeExplorerOpen, setDpeExplorerOpen] = useState(false);
@@ -280,7 +305,8 @@ export function SearchPage({
       const nextRecord = salesSearchToUrlRecord(nextSearch);
       if (stableUrlRecord(currentRecord) === stableUrlRecord(nextRecord)) return;
       ownDraftNavigations.current.add(JSON.stringify(searchToDraft(nextSearch)));
-      replaceSearch(nextRecord);
+      // Un choix (type de vente, case, classe…) est une étape de l'historique, une saisie non.
+      replaceSearch(nextRecord, historyModeForDraftChange(searchToDraft(searchRef.current), draft));
     }, 320);
 
     return () => window.clearTimeout(timeout);
@@ -344,6 +370,7 @@ export function SearchPage({
     errorUpdateCount: connectedFailures,
     isFetching,
     isLoading,
+    isPlaceholderData,
     refetch: refetchSales,
   } = useQuery({
     queryKey: salesSearchQueryKey(searchKeySignature, catalogScope),
@@ -359,7 +386,10 @@ export function SearchPage({
       }),
     enabled: catalogReady,
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    // Pas de rafraîchissement en tâche de fond pour le visiteur anonyme : la route d'aperçu garde
+    // déjà la réponse 2 à 5 minutes dans le CDN, et une relecture toutes les 60 s désactivait
+    // « Page suivante » le temps de la requête.
+    refetchInterval: isPreview ? false : 60_000,
   });
 
   const { data: connectedTotalCount, isLoading: isCountLoading } = useQuery({
@@ -369,7 +399,7 @@ export function SearchPage({
     queryFn: () => fetchSearchCount({ search, preview: isPreview, discovery: isDiscovery }),
     enabled: catalogReady,
     staleTime: 60_000,
-    refetchInterval: 60_000,
+    refetchInterval: isPreview ? false : 60_000,
   });
 
   // Liste publique servie dans le HTML pour cette recherche (cache lu sans requête). Un compte
@@ -530,6 +560,17 @@ export function SearchPage({
   const hasLocalFilters = false;
   const isInitialLoading =
     !publicListShown && ((authLoading && !serverSeeded) || entitlementsLoading || isLoading);
+  // Relecture de fond d'une liste déjà affichée (minuteur du compte connecté) : elle ne désactive
+  // rien et ne s'annonce pas. Premier chargement, changement de page ou de filtre, nouvel essai :
+  // la liste est occupée.
+  const backgroundRefresh =
+    isFetching && !isLoading && !isPlaceholderData && connectedSales !== undefined;
+  const listBusy = isFetching && !backgroundRefresh;
+  // Page ou taille de page refusée par la route (400) : ce n'est pas une panne du catalogue.
+  const outOfRange = isOutOfRangeSearchError(error);
+  // Au-delà de la page 1, la pagination l'explique et propose la page 1 ; page 1 (taille de page
+  // refusée), le message de l'erreur s'affiche dans la liste.
+  const pageOutOfRange = outOfRange && page > 1;
   const startDesktopMap = useCallback(() => setDesktopMapStarted(true), []);
   useFirstGestureStart({
     enabled: isDesktop && !desktopMapStarted,
@@ -545,6 +586,26 @@ export function SearchPage({
   const hasMore =
     totalCount != null && pageOffset + rawSales.length < totalCount && rawSales.length >= pageSize;
   const hasPrevious = page > 1;
+  // La pagination s'affiche dès qu'il y a une page à parcourir ou des résultats (voir SearchPagination).
+  const paginationVisible = hasMore || hasPrevious || filteredCount > 0;
+  // Total annoncé par le bouton de la fenêtre des filtres (« Afficher 1 646 annonces ») : seulement
+  // quand les critères saisis sont déjà ceux de la liste et que celle-ci est à jour. Sinon le
+  // bouton garde son libellé neutre plutôt que d'annoncer le total d'une autre recherche.
+  const draftMatchesSearch = useMemo(
+    () =>
+      stableUrlRecord(
+        salesSearchToUrlRecord({
+          ...draftToSearch(draft, search),
+          page: undefined,
+          limit: undefined,
+        }),
+      ) === mapSearchKeySignature,
+    [draft, mapSearchKeySignature, search],
+  );
+  const filtersResultCount =
+    draftMatchesSearch && !listBusy && !isInitialLoading && !isCountLoading && totalCount != null
+      ? totalCount
+      : null;
   // Un tableau a besoin de largeur : sans « Agrandir la carte », les résultats prennent plus de place.
   const splitClass = wideMap
     ? "lg:grid-cols-[minmax(360px,38%)_minmax(0,1fr)]"
@@ -610,26 +671,31 @@ export function SearchPage({
   });
 
   const updateSearch = useCallback(
-    (patch: Partial<SalesSearchParams>) => {
+    (patch: Partial<SalesSearchParams>, mode: HistoryMode = "replace") => {
       const next = mergeSalesSearch(searchRef.current, patch);
-      replaceSearch(salesSearchToUrlRecord(next));
+      replaceSearch(salesSearchToUrlRecord(next), mode);
     },
     [replaceSearch],
+  );
+  // Un choix de la personne (tri, critère retiré, page) est une étape de l'historique.
+  const chooseSearch = useCallback(
+    (patch: Partial<SalesSearchParams>) => updateSearch(patch, "push"),
+    [updateSearch],
   );
 
   const resetFilters = useCallback(() => {
     setDraft(emptySearchDraft());
-    replaceSearch(salesSearchToUrlRecord({ sort: search.sort }));
+    replaceSearch(salesSearchToUrlRecord({ sort: search.sort }), "push");
   }, [replaceSearch, search.sort]);
 
   const previousPageRef = useRef(page);
   useEffect(() => {
-    if (previousPageRef.current === page || isFetching || isInitialLoading) return;
+    if (previousPageRef.current === page || listBusy || isInitialLoading) return;
     previousPageRef.current = page;
     const results = document.getElementById("sales-results");
     results?.scrollIntoView({ block: "start", behavior: "instant" });
     results?.focus({ preventScroll: true });
-  }, [page, isFetching, isInitialLoading]);
+  }, [page, listBusy, isInitialLoading]);
 
   // Address of another page of the same search (`/sales?…&page=N`, page 1 without `page`): the
   // pagination renders real links with it. The canonical stays `/sales` (see sales/page.tsx).
@@ -656,14 +722,42 @@ export function SearchPage({
   );
 
   const loadNextPage = useCallback(() => {
-    if (!hasMore || isFetching) return;
-    updateSearch({ page: page + 1 });
-  }, [hasMore, isFetching, page, updateSearch]);
+    if (!hasMore || listBusy) return;
+    chooseSearch({ page: page + 1 });
+  }, [chooseSearch, hasMore, listBusy, page]);
 
   const loadPreviousPage = useCallback(() => {
-    if (!hasPrevious || isFetching) return;
-    updateSearch({ page: page - 1 });
-  }, [hasPrevious, isFetching, page, updateSearch]);
+    if (!hasPrevious || listBusy) return;
+    chooseSearch({ page: page - 1 });
+  }, [chooseSearch, hasPrevious, listBusy, page]);
+
+  const goToPage = useCallback(
+    (targetPage: number) => {
+      if (listBusy) return;
+      chooseSearch({ page: targetPage });
+    },
+    [chooseSearch, listBusy],
+  );
+
+  // Carte mobile : l'ouvrir ajoute une entrée à l'historique, « Retour » la referme. La refermer
+  // par le bouton « Liste » défait cette entrée (au lieu d'en empiler une) quand c'est nous qui
+  // l'avons ajoutée ; une adresse ouverte directement sur la carte se referme sans quitter la page.
+  const mapOpenedByUsRef = useRef(false);
+  const openMobileMap = useCallback(() => {
+    mapOpenedByUsRef.current = true;
+    updateSearch({ map: true }, "push");
+  }, [updateSearch]);
+  const closeMobileMap = useCallback(() => {
+    if (mapOpenedByUsRef.current) {
+      mapOpenedByUsRef.current = false;
+      window.history.back();
+      return;
+    }
+    updateSearch({ map: false });
+  }, [updateSearch]);
+  useEffect(() => {
+    if (!search.map) mapOpenedByUsRef.current = false;
+  }, [search.map]);
 
   const handleMapSelect = useCallback((saleId: string) => {
     setSelectedSaleId(saleId);
@@ -721,7 +815,7 @@ export function SearchPage({
     onSearchAsMoveChange: handleSearchAsMoveChange,
     // Sur mobile la carte recouvre la liste : « Voir la liste » la referme.
     onShowList: () => {
-      if (!isDesktop) updateSearch({ map: false });
+      if (!isDesktop) closeMobileMap();
     },
   };
 
@@ -739,6 +833,12 @@ export function SearchPage({
   }
 
   async function saveSearch(options?: SaveSearchOptions) {
+    // Session en cours de vérification : `user` est encore vide, sans que la personne soit
+    // déconnectée. L'envoyer se connecter la ferait créer un compte qu'elle a déjà.
+    if (authLoading) {
+      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
+      return;
+    }
     if (!user) {
       // La première alerte est gratuite : on invite à créer un compte puis on
       // ramène la personne sur sa recherche.
@@ -838,6 +938,10 @@ export function SearchPage({
   }
 
   async function exportCsv() {
+    if (authLoading) {
+      toast.message("Vérification de votre compte en cours. Réessayez dans un instant.");
+      return;
+    }
     if (!user) {
       router.push(loginPathWithRedirect(currentHref, { reason: "export" }));
       return;
@@ -868,19 +972,26 @@ export function SearchPage({
       id="contenu"
       className="min-h-screen bg-surface-muted text-brand-navy [--sales-header-height:8rem] lg:[--sales-header-height:8rem]"
     >
-      <a
-        href="#sales-results"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-brand-navy focus:shadow-lg"
-      >
+      <a href="#sales-results" className={SKIP_LINK_CLASSES}>
         Aller aux résultats
       </a>
+      {paginationVisible ? (
+        <a href={`#${SALES_PAGINATION_ID}`} className={SKIP_LINK_CLASSES}>
+          Aller à la pagination
+        </a>
+      ) : null}
+      {isDesktop ? (
+        <a href={`#${DESKTOP_MAP_ZONE_ID}`} className={SKIP_LINK_CLASSES}>
+          Aller à la carte
+        </a>
+      ) : null}
 
       <SearchHeader
         draft={draft}
         setDraft={setDraft}
         activeFiltersCount={activeFiltersCount}
         isLoading={isInitialLoading}
-        isFetching={isFetching}
+        isFetching={listBusy}
         filtersOpen={filtersOpen}
         savingAlert={savingAlert}
         exportingCsv={exportingCsv}
@@ -903,10 +1014,10 @@ export function SearchPage({
         <section
           id="sales-results"
           tabIndex={-1}
-          style={{ scrollMarginTop: "calc(var(--sales-header-height) + 12px)" }}
-          className="min-w-0 bg-surface-muted lg:order-1 lg:border-r lg:border-line-soft"
+          // L'en-tête ne colle à l'écran qu'à partir de lg : en dessous, rien à dégager.
+          className="min-w-0 scroll-mt-3 bg-surface-muted lg:order-1 lg:scroll-mt-[calc(var(--sales-header-height)+12px)] lg:border-r lg:border-line-soft"
           aria-label="Résultats de recherche"
-          aria-busy={isFetching}
+          aria-busy={listBusy}
         >
           <div className="flex flex-wrap items-center justify-between gap-1 border-b border-line-soft bg-white pr-4">
             <ResultsSummary
@@ -916,8 +1027,9 @@ export function SearchPage({
               isLoading={
                 isInitialLoading || publicTotalMissing || (isCountLoading && !publicListShown)
               }
-              hasError={Boolean(error) && rawSales.length === 0}
+              hasError={Boolean(error) && !pageOutOfRange && rawSales.length === 0}
               geocoding={geocoding}
+              refreshing={listBusy && !isInitialLoading}
             />
 
             <div className="flex flex-wrap items-center gap-2 px-4 pb-2 sm:px-0">
@@ -928,13 +1040,13 @@ export function SearchPage({
                 sort={visibleSearchSort(search.sort, {
                   allowInvestmentScore: investmentSortAllowed,
                 })}
-                onChange={(sort) => updateSearch({ sort })}
+                onChange={(sort) => chooseSearch({ sort })}
               />
               <SortByDateShortcut
                 sort={visibleSearchSort(search.sort, {
                   allowInvestmentScore: investmentSortAllowed,
                 })}
-                onChange={(sort) => updateSearch({ sort })}
+                onChange={(sort) => chooseSearch({ sort })}
               />
               <ResultsViewToggle view={resultsView} onChange={changeResultsView} />
             </div>
@@ -961,21 +1073,18 @@ export function SearchPage({
             onRemove={comparison.remove}
             onClear={comparison.clear}
             onRestore={comparison.replace}
+            open={comparisonOpen}
+            onOpenChange={setComparisonOpen}
             hideWhenEmpty
           />
 
-          {isFetching && !isInitialLoading ? (
-            <p role="status" className="px-5 pt-3 text-xs font-medium text-ink-soft">
-              Actualisation des annonces…
-            </p>
-          ) : null}
           <SearchResultsList
             sales={displayedSales}
             returnTo={currentHref}
             locked={listIsPublic}
             analysisLocked={isDiscovery && !publicListShown}
             isLoading={isInitialLoading}
-            error={error}
+            error={pageOutOfRange ? null : error}
             onRetry={() => void refetchSales()}
             selectedSaleId={selectedSaleId}
             hoveredSaleId={hoveredSaleId}
@@ -987,26 +1096,29 @@ export function SearchPage({
             aiReviewBySaleId={aiReviewBySaleId}
             aiReviewStatus={aiReviewStatus}
             activeFilters={activeFilters}
-            onRemoveFilter={(filter) => updateSearch(filter.clear)}
+            onRemoveFilter={(filter) => chooseSearch(filter.clear)}
             onResetFilters={resetFilters}
             onShowFrance={
-              hasGeographicFilter(search) ? () => updateSearch(WHOLE_FRANCE_PATCH) : undefined
+              hasGeographicFilter(search) ? () => chooseSearch(WHOLE_FRANCE_PATCH) : undefined
             }
             hideEmptyState={page > 1}
             view={displayedView}
+            // Encart des avocats : en fin de liste, sur la première page seulement.
             sponsoredPlacement={
-              <SearchLawyerPlacement
-                geographicLabel={geographicLabel}
-                city={search.city}
-                department={search.department}
-              />
+              page === 1 ? (
+                <SearchLawyerPlacement
+                  geographicLabel={geographicLabel}
+                  city={search.city}
+                  department={search.department}
+                />
+              ) : undefined
             }
           />
 
           <SearchPagination
             hasMore={hasMore}
             hasPrevious={hasPrevious}
-            isFetching={isFetching}
+            isFetching={listBusy}
             loadedCount={filteredCount}
             totalCount={mapListFollowsViewport ? displayCount : totalCount}
             mapListFollowsViewport={mapListFollowsViewport}
@@ -1016,7 +1128,11 @@ export function SearchPage({
             onPrevious={loadPreviousPage}
             nextHref={pageHref(page + 1)}
             previousHref={pageHref(page - 1)}
-            onFirstPage={() => updateSearch({ page: 1 })}
+            pageHref={pageHref}
+            onGoToPage={goToPage}
+            onFirstPage={() => chooseSearch({ page: 1 })}
+            firstHref={pageHref(1)}
+            outOfRange={outOfRange}
           />
 
           <details
@@ -1066,6 +1182,7 @@ export function SearchPage({
           draft={draft}
           setDraft={setDraft}
           activeFiltersCount={activeFiltersCount}
+          resultCount={filtersResultCount}
           onClose={() => setFiltersOpen(false)}
           onReset={resetFilters}
         />
@@ -1073,14 +1190,19 @@ export function SearchPage({
 
       <MobileMapToggle
         activeFiltersCount={activeFiltersCount}
+        comparedCount={comparison.items.length}
         onOpenFilters={() => setFiltersOpen(true)}
-        onOpenMap={() => updateSearch({ map: true })}
+        onOpenComparison={() => setComparisonOpen(true)}
+        // Le module de la carte (et Mapbox GL) se télécharge dès l'appui, pendant que le doigt se
+        // relève : la carte est prête, ou presque, au moment du clic.
+        onPreloadMap={preloadMapModules}
+        onOpenMap={openMobileMap}
       />
 
       <DialogPrimitive.Root
         open={mobileMapOpen && !isDesktop}
         onOpenChange={(open) => {
-          if (!open) updateSearch({ map: false });
+          if (!open) closeMobileMap();
         }}
       >
         <DialogPrimitive.Portal>
@@ -1099,15 +1221,16 @@ export function SearchPage({
             <div className="absolute inset-x-0 top-0 z-10 flex h-14 items-center justify-between border-b border-brand-navy/10 bg-white/95 px-3 backdrop-blur">
               <button
                 type="button"
-                onClick={() => updateSearch({ map: false })}
+                onClick={closeMobileMap}
                 className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md border border-line-soft bg-white px-3 text-sm font-bold text-brand-navy shadow-sm"
               >
                 <X className="h-4 w-4" />
                 Liste
               </button>
+              {/* Titre court : la phrase qui explique la limite est dans la légende de la carte. */}
               <span className="text-sm font-bold text-ink-strong">
                 {mappablePointsTotal > mapSales.length
-                  ? `${mapSales.length.toLocaleString("fr-FR")} biens affichés sur ${mappablePointsTotal.toLocaleString("fr-FR")} : précisez vos filtres ou activez « Chercher en déplaçant la carte »`
+                  ? `${mapSales.length.toLocaleString("fr-FR")} sur ${mappablePointsTotal.toLocaleString("fr-FR")} biens`
                   : `${mapSales.length.toLocaleString("fr-FR")} biens sur la carte`}
               </span>
             </div>

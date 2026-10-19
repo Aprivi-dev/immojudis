@@ -1,5 +1,87 @@
 import { describe, expect, it } from "vitest";
-import { mergeSalesSearch, salesSearchToUrlRecord, validateSalesSearch } from "./search-url-state";
+import {
+  MAX_PRICE_EUR,
+  canonicalSalesQuery,
+  mergeSalesSearch,
+  salesSearchToUrlRecord,
+  validateSalesSearch,
+} from "./search-url-state";
+
+describe("montants et valeurs ignorées dans l'adresse", () => {
+  it("plafonne les montants à 100 000 000 € et les arrondit à l'euro", () => {
+    expect(MAX_PRICE_EUR).toBe(100_000_000);
+    expect(validateSalesSearch({ maxPrice: "1e30" }).maxPrice).toBe(100_000_000);
+    expect(validateSalesSearch({ minPrice: "999999999999" }).minPrice).toBe(100_000_000);
+    expect(validateSalesSearch({ maxPricePerM2: "1e12" }).maxPricePerM2).toBe(100_000_000);
+    expect(validateSalesSearch({ maxPrice: "150000.6" }).maxPrice).toBe(150_001);
+    expect(validateSalesSearch({ maxPrice: "100000000" }).maxPrice).toBe(100_000_000);
+  });
+
+  it("n'écrit jamais de notation scientifique dans l'adresse", () => {
+    for (const raw of ["1e30", "1e+30", "9e99", "1e21", "123456789012345678901234"]) {
+      const record = salesSearchToUrlRecord(validateSalesSearch({ maxPrice: raw, minSqft: raw }));
+      for (const value of Object.values(record)) expect(String(value)).not.toMatch(/\de[+-]?\d/i);
+    }
+  });
+
+  it("ignore une valeur négative ou illisible", () => {
+    const search = validateSalesSearch({ minPrice: "-5", maxPrice: "abc", minBeds: "-1" });
+    expect(search.minPrice).toBeUndefined();
+    expect(search.maxPrice).toBeUndefined();
+    expect(search.minBeds).toBeUndefined();
+  });
+});
+
+describe("canonicalSalesQuery", () => {
+  const canonical = (query: string) => canonicalSalesQuery(new URLSearchParams(query))?.toString();
+
+  it("laisse une adresse déjà canonique telle quelle", () => {
+    for (const query of [
+      "",
+      "city=Pau",
+      "minPrice=50000&maxPrice=200000",
+      "page=2&sort=price_asc",
+      "view=table&utm_source=x",
+    ]) {
+      expect(canonicalSalesQuery(new URLSearchParams(query)), query).toBeNull();
+    }
+  });
+
+  it("retire une valeur ignorée : minPrice=-5", () => {
+    expect(canonical("city=Pau&minPrice=-5")).toBe("city=Pau");
+    expect(canonical("minPrice=abc&maxPrice=")).toBe("");
+    expect(canonical("page=0")).toBe("");
+  });
+
+  it("ramène un montant démesuré au plafond, sans notation scientifique", () => {
+    expect(canonical("maxPrice=1e%2B30")).toBe("maxPrice=100000000");
+    expect(canonical("maxPrice=1e30&city=Pau")).toBe("city=Pau&maxPrice=100000000");
+  });
+
+  it("retire page=1 et normalise l'écriture des entiers", () => {
+    expect(canonical("page=1&city=Pau")).toBe("city=Pau");
+    expect(canonical("page=02")).toBe("page=2");
+    expect(canonical("minBeds=2.0")).toBe("minBeds=2");
+  });
+
+  it("garde les paramètres qui ne sont pas des critères numériques", () => {
+    expect(canonical("view=table&utm_source=x&minPrice=-1&city=Pau")).toBe(
+      "view=table&utm_source=x&city=Pau",
+    );
+  });
+
+  it("passe un ancien nom de critère à son nom canonique", () => {
+    expect(canonical("min_price=50000")).toBe("minPrice=50000");
+  });
+
+  it("une fois canonique, l'adresse ne change plus (pas de boucle de réécriture)", () => {
+    for (const query of ["minPrice=-5&maxPrice=1e30&page=1&city=Pau", "min_price=1&page=02"]) {
+      const first = canonicalSalesQuery(new URLSearchParams(query));
+      expect(first).not.toBeNull();
+      expect(canonicalSalesQuery(first!)).toBeNull();
+    }
+  });
+});
 
 describe("sales search URL state", () => {
   it("round-trips sale families and resets pagination when the family changes", () => {
