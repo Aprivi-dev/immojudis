@@ -257,13 +257,10 @@ select is(
   1::bigint,
   'le service_role lit la boîte d''envoi'
 );
-select is(
-  (with removed as (
-     delete from app_private.catalogue_invalidations
-      where sale_id = 'c4710000-0000-4000-8000-000000000012'
-      returning 1)
-   select count(*) from removed),
-  1::bigint,
+-- Un DELETE ne peut pas vivre dans une sous-requête : lives_ok, puis le décompte plus bas.
+select lives_ok(
+  $$ delete from app_private.catalogue_invalidations
+     where sale_id = 'c4710000-0000-4000-8000-000000000012' $$,
   'le service_role supprime les lignes transmises'
 );
 select throws_ok(
