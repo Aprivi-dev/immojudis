@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   enforce: vi.fn(),
   getStatus: vi.fn(),
   unlock: vi.fn(),
+  record: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -15,6 +16,9 @@ vi.mock("@/integrations/supabase/auth-middleware", () => ({
   requireSupabaseAuthContext: mocks.requireAuth,
 }));
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: mocks.enforce }));
+vi.mock("@/lib/account-product-events.server", () => ({
+  recordAccountProductEvent: mocks.record,
+}));
 vi.mock("@/lib/sale-unlocks.server", async () => {
   class SaleUnlockQuotaError extends Error {
     readonly status: SaleUnlockStatus;
@@ -59,6 +63,7 @@ describe("POST /api/sales/[id]/unlock", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.requireAuth.mockResolvedValue(auth);
     mocks.enforce.mockResolvedValue(1);
+    mocks.record.mockResolvedValue(true);
   });
 
   it("unlocks the sale for the signed-in account and answers privately", async () => {
@@ -78,6 +83,22 @@ describe("POST /api/sales/[id]/unlock", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.json()).toEqual({ result });
     expect(mocks.unlock).toHaveBeenCalledWith(auth, saleId);
+    expect(mocks.record).toHaveBeenCalledTimes(1);
+    expect(mocks.record).toHaveBeenCalledWith("user-1", { type: "sale_unlocked", saleId });
+  });
+
+  it("measures nothing when the sale was already unlocked or the account has Analyse", async () => {
+    mocks.unlock.mockResolvedValue({
+      ...status,
+      unlocked: true,
+      alreadyUnlocked: true,
+      consumed: false,
+    });
+
+    const response = await post();
+
+    expect(response.status).toBe(200);
+    expect(mocks.record).not.toHaveBeenCalled();
   });
 
   it("requires a signed-in account before touching the quota", async () => {
@@ -87,6 +108,7 @@ describe("POST /api/sales/[id]/unlock", () => {
 
     expect(response.status).toBe(401);
     expect(mocks.unlock).not.toHaveBeenCalled();
+    expect(mocks.record).not.toHaveBeenCalled();
   });
 
   it("rejects an identifier that is not a UUID", async () => {
@@ -106,6 +128,10 @@ describe("POST /api/sales/[id]/unlock", () => {
       error: "Vous avez utilisé tous vos déblocages de ce mois-ci.",
       code: "unlock_quota_reached",
       status,
+    });
+    expect(mocks.record).toHaveBeenCalledWith("user-1", {
+      type: "quota_reached",
+      quota: "unlocks",
     });
   });
 

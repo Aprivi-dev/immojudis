@@ -4,6 +4,7 @@ import {
   bearerTokenFromRequest,
   requireSupabaseAuthContext,
 } from "@/integrations/supabase/auth-middleware";
+import { recordAccountProductEvent } from "@/lib/account-product-events.server";
 import { apiRouteError } from "@/lib/api-observability";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
@@ -43,18 +44,24 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
  * débloquée ne consomme rien. Un compte Analyse n'a rien à débloquer. Aucun appel Stripe.
  */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  let userId: string | null = null;
   try {
     const saleId = saleIdSchema.parse((await context.params).id);
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    userId = auth.userId;
     await enforceUserRateLimit({
       userId: auth.userId,
       bucketKey: "sale-unlock",
       ...RATE_LIMIT_POLICIES.compute,
     });
     const result = await unlockSale(auth, saleId);
+    // Mesure par compte : seul un déblocage réellement consommé compte (ni vente déjà débloquée, ni
+    // compte Analyse).
+    if (result.consumed) await recordAccountProductEvent(userId, { type: "sale_unlocked", saleId });
     return NextResponse.json({ result }, { headers: PRIVATE_HEADERS });
   } catch (error) {
     if (error instanceof SaleUnlockQuotaError) {
+      await recordAccountProductEvent(userId, { type: "quota_reached", quota: "unlocks" });
       const body: SaleUnlockQuotaReachedResponse = {
         error: "Vous avez utilisé tous vos déblocages de ce mois-ci.",
         code: "unlock_quota_reached",
