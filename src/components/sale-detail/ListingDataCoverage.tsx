@@ -349,9 +349,10 @@ function factActionAriaLabel(fact: PublicListingFact, label: string): string {
     return label + " pour " + fact.label;
   }
   if (fact.status === "estimated") return label + " de " + fact.label;
-  if (fact.sources.length > 1) return "Voir les sources de " + fact.label;
+  // The accessible name starts with the visible text (WCAG 2.5.3, label in name).
+  if (fact.sources.length > 1) return label + " : voir les sources de " + fact.label;
   return fact.sources.length > 0
-    ? "Voir la source de " + fact.label
+    ? label + " : voir la source de " + fact.label
     : "En savoir plus sur " + fact.label;
 }
 
