@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { BillingActions } from "@/components/BillingActions";
+import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { fetchAccessPlan } from "@/lib/client-billing";
@@ -16,6 +17,9 @@ const dateFormat = new Intl.DateTimeFormat("fr-FR", {
   month: "long",
   year: "numeric",
 });
+
+const TOGGLE_CLASS =
+  "mt-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm";
 
 /** Ce que l'on retrouve derrière chaque entrée de « Mon espace ». */
 const SPACE_DESCRIPTIONS: Readonly<Record<string, string>> = {
@@ -122,10 +126,10 @@ export function AccountPage() {
           récapitulatif n’est envoyé que si vous l’activez ici ou depuis la cloche.
         </p>
         {user ? (
-          <AlertEmailRecapToggle
-            userId={user.id}
-            className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm"
-          />
+          <>
+            <AlertEmailRecapToggle userId={user.id} className={TOGGLE_CLASS} />
+            <SaleRemindersToggle userId={user.id} className={TOGGLE_CLASS} />
+          </>
         ) : null}
       </section>
 

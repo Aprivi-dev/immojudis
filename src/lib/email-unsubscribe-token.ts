@@ -7,7 +7,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  */
 export const UNSUBSCRIBE_TOKEN_TTL_DAYS = 60;
 
-export type UnsubscribeScope = { kind: "alerts" } | { kind: "alert"; alertId: string };
+export type UnsubscribeScope =
+  | { kind: "alerts" }
+  | { kind: "alert"; alertId: string }
+  // Rappels d'audience et avertissements graves: un consentement distinct de celui des alertes.
+  | { kind: "reminders" };
 
 export type UnsubscribeClaims = {
   userId: string;
@@ -35,11 +39,13 @@ function sign(payload: string, env?: Pick<NodeJS.ProcessEnv, string>): string {
 }
 
 function scopeToString(scope: UnsubscribeScope): string {
+  if (scope.kind === "reminders") return "reminders";
   return scope.kind === "alert" ? `alert:${scope.alertId}` : "alerts";
 }
 
 function scopeFromString(value: string): UnsubscribeScope | null {
   if (value === "alerts") return { kind: "alerts" };
+  if (value === "reminders") return { kind: "reminders" };
   const match = /^alert:(.+)$/.exec(value);
   return match && UUID_PATTERN.test(match[1]) ? { kind: "alert", alertId: match[1] } : null;
 }
