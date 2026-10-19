@@ -40,6 +40,48 @@ changer. Relancer hors collecte. Les trois sont rejouables.
 
 **Avant la troisième**, enregistrer les définitions actuelles (voir « Retour arrière »).
 
+## Les trois clés de quarantaine (20261028110200)
+
+Le pipeline met une vente en quarantaine si l'une de **trois** clés de `raw_payload` est vraie
+(`_QUARANTINE_PAYLOAD_KEYS`, `src/admission.py`) : `publication_quarantine`,
+`publication_identity_conflict` (posée par `hold_identity`) et `source_identity_mismatch`. Jusqu'à
+cette migration, `catalogue_quarantined` ne lisait que la première. La règle est maintenant dans
+`app_private.catalogue_quarantine_from_payload(raw_payload)` (vrai comme en Python : chaîne non vide,
+`true`, nombre non nul, tableau ou objet non vide), lue par les deux déclencheurs de projection.
+
+**Effet à l'application** : une vente qui ne porte que `publication_identity_conflict` ou
+`source_identity_mismatch`, sans `publication_quarantine`, et dont le statut n'est pas `quarantined`,
+quitte le catalogue public. À compter **avant** d'appliquer (lecture seule, hors pointe) :
+
+```sql
+select count(*) filter (where coalesce(status, 'unknown') in ('upcoming', 'unknown', 'postponed')
+                          and not catalogue_quarantined) as deviendront_masquees,
+       count(*) filter (where catalogue_quarantined) as deja_masquees
+from public.auction_sales
+where coalesce(raw_payload ->> 'publication_identity_conflict', '') not in ('', '{}', 'null')
+   or coalesce(raw_payload ->> 'source_identity_mismatch', '') not in ('', 'false', '0', '[]', '{}', 'null');
+```
+
+La migration recalcule la colonne des lignes concernées (`app_private.repair_catalogue_quarantine_drift()`,
+sans déclencher le journal des ventes ni la relecture IA : une bascule qu'elle provoque ne passe donc pas
+par les déclencheurs, le cache public se renouvelle à son échéance). Cette fonction se rejoue à tout moment
+(`select app_private.repair_catalogue_quarantine_drift();`, hors pointe : verrou `SHARE ROW EXCLUSIVE`) ;
+elle remplace le « rejouer 20261027100100 » de la section suivante.
+
+## Surveillance (`python -m src.pipeline_health --report-only`)
+
+Le rapport de la fin de chaque collecte contient `catalogue_projection` (des comptes, rien d'autre) :
+
+| Clé                               | Sens                                                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `quarantine_drift_48h`            | lignes modifiées depuis 48 h dont la colonne diffère de la règle ; **non nul : rapport dégradé**                                |
+| `quarantine_drift_full`           | la même sur toutes les lignes, le lundi (UTC) seulement (`PIPELINE_HEALTH_FULL_DRIFT` la force ou la coupe) ; non nul : dégradé |
+| `status_quarantined_without_flag` | ventes `status = 'quarantined'` dont `catalogue_quarantined` vaut faux (masquées par leur statut seul)                          |
+| `state_listings_leaving_7d`       | fiches de l'État visibles qui sortiront du catalogue sous 7 jours (observées il y a 7 à 14 jours)                               |
+
+Avant la migration, la dérive est mesurée sur `publication_quarantine` seule (`quarantine_rule`). Si les
+colonnes manquent, `available` vaut faux et le rapport continue.
+
 ## Requête de dérive (lecture seule)
 
 À lancer après la pose, puis après toute opération qui désactive les déclencheurs de `auction_sales`
