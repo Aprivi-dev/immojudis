@@ -82,6 +82,7 @@ const TERMES: Record<TermeKey, TermeEntry> = {
     label: "droit de préemption",
     definition:
       "Droit, pour la commune ou un autre titulaire prévu par la loi, de se substituer à l’adjudicataire pour acquérir le bien, dans un délai fixé par la loi.",
+    anchor: "lexique-droit-de-preemption",
   },
 };
 
