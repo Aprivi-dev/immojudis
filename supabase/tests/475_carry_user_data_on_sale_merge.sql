@@ -33,7 +33,7 @@ values
    'Merge carry s1', 'upcoming', '2099-01-01 12:00:00Z',
    '["https://example.test/merge-carry/s1"]'::jsonb),
   ('c4750000-1000-4000-8000-000000000003', 'merge-carry-test', 'https://example.test/merge-carry/c2',
-   'Merge carry c2', 'quarantined', '2099-01-01 12:00:00Z',
+   'Merge carry c2', 'upcoming', '2099-01-01 12:00:00Z',
    '["https://example.test/merge-carry/c2", "https://example.test/merge-carry/s2"]'::jsonb),
   ('c4750000-1000-4000-8000-000000000004', 'merge-carry-test', 'https://example.test/merge-carry/s2',
    'Merge carry s2', 'upcoming', '2099-01-01 12:00:00Z',
@@ -44,6 +44,11 @@ values
    'Merge carry f2', 'upcoming', '2099-01-01 12:00:00Z', '[]'::jsonb),
   ('c4750000-1000-4000-8000-000000000007', 'merge-carry-test', 'https://example.test/merge-carry/lone',
    'Merge carry lone', 'upcoming', '2099-01-01 12:00:00Z', '[]'::jsonb);
+
+-- c2 est masquée du catalogue public par la clé de quarantaine de sa fiche (catalogue_quarantined).
+update public.auction_sales
+   set raw_payload = '{"publication_quarantine": "merge_carry_test"}'::jsonb
+ where id = 'c4750000-1000-4000-8000-000000000003';
 
 -- Structure -------------------------------------------------------------------------------------
 select has_table('app_private', 'auction_sale_merges', 'the merge correspondence table exists');
@@ -101,9 +106,11 @@ insert into public.saved_property_reports (id, user_id, sale_id, report_kind, ti
 
 -- Alertes : le compte 1 a une correspondance sur s1 et sur c1 (même alerte : un doublon), le compte 2 une
 -- correspondance sur s1 seulement, avec sa notification.
-insert into public.user_alerts (id, user_id, name) values
-  ('c4750000-5000-4000-8000-000000000001', 'c4750000-0000-4000-8000-000000000001', 'Alerte 1'),
-  ('c4750000-5000-4000-8000-000000000002', 'c4750000-0000-4000-8000-000000000002', 'Alerte 2');
+-- Un compte Découverte n'a droit qu'à une alerte hebdomadaire sans critère avancé
+-- (app_private.enforce_geographic_alert_quota) : une par compte, en « weekly ».
+insert into public.user_alerts (id, user_id, name, alert_frequency) values
+  ('c4750000-5000-4000-8000-000000000001', 'c4750000-0000-4000-8000-000000000001', 'Alerte 1', 'weekly'),
+  ('c4750000-5000-4000-8000-000000000002', 'c4750000-0000-4000-8000-000000000002', 'Alerte 2', 'weekly');
 insert into public.user_alert_matches (id, user_id, alert_id, sale_id) values
   ('c4750000-5100-4000-8000-000000000001', 'c4750000-0000-4000-8000-000000000001', 'c4750000-5000-4000-8000-000000000001', 'c4750000-1000-4000-8000-000000000002'),
   ('c4750000-5100-4000-8000-000000000002', 'c4750000-0000-4000-8000-000000000001', 'c4750000-5000-4000-8000-000000000001', 'c4750000-1000-4000-8000-000000000001'),
