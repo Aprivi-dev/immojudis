@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { OfferOpeningSurvey } from "@/components/OfferOpeningSurvey";
 import { useAuth } from "@/hooks/use-auth";
 import {

@@ -9,7 +9,7 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import type { InformationRequestSelection } from "@/components/admin/AdminCatalogueReadinessPanel";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { ADMIN_PAGE_MAX_LIMIT, ADMIN_PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";

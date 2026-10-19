@@ -11,7 +11,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchAdminCatalogueReadiness: mocks.fetch,
   runAdminCatalogueReadinessActionClient: mocks.action,
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 afterEach(() => {
   cleanup();

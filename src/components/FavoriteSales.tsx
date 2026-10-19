@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useAuth } from "@/hooks/use-auth";
 import {
   addFavoriteSale,

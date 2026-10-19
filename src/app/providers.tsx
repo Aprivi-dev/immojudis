@@ -6,7 +6,7 @@ import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
 import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
 import { SiteFooter } from "@/components/SiteFooter";
-import { AppToaster } from "@/components/AppToaster";
+import { LazyToaster } from "@/components/LazyToaster";
 import { getWithdrawnSources, loadWithdrawnSourcesOncePerSession } from "@/lib/withdrawn-sources";
 import { createWithdrawnSourcesClient } from "@/lib/withdrawn-sources-client";
 
@@ -43,7 +43,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
             </Suspense>
             {children}
             <SiteFooter />
-            <AppToaster />
+            <LazyToaster />
           </div>
         </LaunchOfferProvider>
       </AuthProvider>

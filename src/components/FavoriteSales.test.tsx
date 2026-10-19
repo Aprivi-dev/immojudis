@@ -32,7 +32,7 @@ vi.mock("@/lib/client-api", () => ({
 vi.mock("@/hooks/use-analysis-checkout-open", () => ({
   useAnalysisCheckoutOpen: () => mocks.checkoutOpen(),
 }));
-vi.mock("sonner", () => ({ toast: mocks.toast }));
+vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 vi.mock("@/hooks/use-viewed-sales", () => ({ useViewedSales: () => ({ isViewed: () => false }) }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: vi.fn() } }));
 vi.mock("next/navigation", () => ({

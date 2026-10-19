@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { updateOfferOpeningSurvey } from "@/lib/client-billing";
 import {
   OFFER_OPENING_INTERVIEW_HELP,

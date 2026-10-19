@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import X from "lucide-react/dist/esm/icons/x.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { useAuth } from "@/hooks/use-auth";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
