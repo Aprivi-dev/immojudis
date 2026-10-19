@@ -226,6 +226,24 @@ describe("nextAudienceDate", () => {
     ).toBeNull();
   });
 
+  it("cherche sur toutes les lignes reçues, dans n'importe quel ordre, après les ventes reportées", () => {
+    const postponed = Array.from({ length: 29 }, (_, index) =>
+      sale(`2026-10-${String(16 + (index % 10)).padStart(2, "0")}T10:00:00Z`, "postponed"),
+    );
+    expect(
+      nextAudienceDate(
+        { nextSaleDate: "2026-10-16T10:00:00Z" },
+        [...postponed, sale("2027-01-12T10:00:00Z"), sale("2026-12-03T10:00:00Z")],
+        now,
+      ),
+    ).toBe("2026-12-03T10:00:00Z");
+  });
+
+  it("rend null (date non connue) quand toutes les lignes reçues sont reportées", () => {
+    const postponed = Array.from({ length: 30 }, () => sale("2026-10-20T10:00:00Z", "postponed"));
+    expect(nextAudienceDate({ nextSaleDate: "2026-10-20T10:00:00Z" }, postponed, now)).toBeNull();
+  });
+
   it("garde la date de l'activité publique quand la liste n'a pas pu être lue", () => {
     expect(nextAudienceDate({ nextSaleDate: "2026-11-02T10:00:00Z" }, null, now)).toBe(
       "2026-11-02T10:00:00Z",

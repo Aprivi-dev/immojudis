@@ -226,6 +226,28 @@ describe("page d'un tribunal : contenu", () => {
     expect(list.textContent).not.toContain("audience le 20 octobre 2026");
   });
 
+  it("écrit « Non connue » quand aucune prochaine audience n'est connue (toutes reportées)", async () => {
+    mocks.sales.mockResolvedValue({
+      status: "ok",
+      sales: [sale("r1", { status: "postponed" }), sale("r2", { status: "postponed" })],
+    });
+    render(await Page(params("bobigny")));
+    const figures = screen.getByRole("region", { name: "Les chiffres du tribunal" });
+    expect(figures.textContent).toContain("Prochaine audienceNon connue");
+  });
+
+  it("n'affiche pas « à venir » pour une vente au statut inconnu : « Statut à confirmer »", async () => {
+    mocks.sales.mockResolvedValue({
+      status: "ok",
+      sales: [sale("u", { status: "unknown" }), sale("a")],
+    });
+    render(await Page(params("bobigny")));
+    const list = screen.getByRole("region", { name: "Les 2 prochaines ventes" });
+    const items = within(list).getAllByRole("listitem");
+    expect(items[0].textContent).toContain("Statut à confirmer");
+    expect(items[1].textContent).not.toContain("Statut à confirmer");
+  });
+
   it("garde la page, ses chiffres et un renvoi vers la recherche quand la liste est indisponible", async () => {
     mocks.sales.mockResolvedValue({ status: "error" });
     render(await Page(params("bobigny")));
