@@ -130,12 +130,22 @@ function writePdf(objects: string[]): Uint8Array {
 
 type PdfLine = { text: string; heading: boolean };
 
+/**
+ * Ligne spéciale : la page en cours est terminée et la suite commence sur une page neuve. Sans
+ * effet sur une page vide (deux sauts de suite, ou un saut en tête, ne créent pas de page blanche).
+ */
+export const PDF_PAGE_BREAK = "\f";
+
 export function paginatePdfLines(lines: string[], headings: readonly string[] = []): PdfLine[][] {
   const headingSet = new Set(headings.map(sanitizePdfText));
   const blocks = lines
-    .map(sanitizePdfText)
+    .map((line) => (line === PDF_PAGE_BREAK ? line : sanitizePdfText(line)))
     .filter(Boolean)
-    .map((text) => ({ lines: splitLongLine(text), heading: headingSet.has(text) }));
+    .map((text) =>
+      text === PDF_PAGE_BREAK
+        ? { lines: [] as string[], heading: false, pageBreak: true }
+        : { lines: splitLongLine(text), heading: headingSet.has(text), pageBreak: false },
+    );
   const pages: PdfLine[][] = [];
   let page: PdfLine[] = [];
   const nextPage = () => {
@@ -143,6 +153,10 @@ export function paginatePdfLines(lines: string[], headings: readonly string[] = 
     page = [];
   };
   blocks.forEach((block, index) => {
+    if (block.pageBreak) {
+      nextPage();
+      return;
+    }
     const following = blocks[index + 1];
     const followingSize =
       block.heading && following

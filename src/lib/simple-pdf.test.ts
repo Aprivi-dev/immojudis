@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTextPdf, paginatePdfLines } from "@/lib/simple-pdf";
+import { createTextPdf, paginatePdfLines, PDF_PAGE_BREAK } from "@/lib/simple-pdf";
 
 describe("createTextPdf", () => {
   it("moves a heading with its following paragraph instead of leaving it at the page foot", () => {
@@ -17,6 +17,37 @@ describe("createTextPdf", () => {
         .join(" "),
     ).toContain("Une action à vérifier");
     expect(pages).toHaveLength(2);
+  });
+
+  it("starts a fresh page at a page break, without a blank page for a leading or repeated break", () => {
+    const pages = paginatePdfLines(
+      [
+        PDF_PAGE_BREAK,
+        "Début",
+        "Suite",
+        PDF_PAGE_BREAK,
+        PDF_PAGE_BREAK,
+        "Résumé",
+        "Une ligne",
+        PDF_PAGE_BREAK,
+      ],
+      ["Résumé"],
+    );
+    expect(pages.map((page) => page.map((line) => line.text))).toEqual([
+      ["Début", "Suite"],
+      ["Résumé", "Une ligne"],
+    ]);
+    // Un intertitre en tête de page neuve n'est pas précédé d'une ligne blanche.
+    expect(pages[1][0]).toEqual({ text: "Résumé", heading: true });
+  });
+
+  it("numbers the pages after a page break", () => {
+    const text = new TextDecoder().decode(
+      createTextPdf({ title: "Rapport", lines: ["Page un", PDF_PAGE_BREAK, "Page deux"] }),
+    );
+    expect(text).toContain("/Count 2");
+    expect(text).toContain("(1/2)");
+    expect(text).toContain("(2/2)");
   });
 
   it("keeps a wrapped bullet together when it fits on a fresh page", () => {
