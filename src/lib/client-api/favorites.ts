@@ -1,4 +1,5 @@
 import { authHeaders, readJson } from "@/lib/client-api-core";
+import type { FavoriteDossierInput, FavoriteDossierResponse } from "@/lib/favorite-dossier-shared";
 import type {
   FavoriteSaleDeleteResponse,
   FavoriteSaleInput,
@@ -39,4 +40,29 @@ export async function removeFavoriteSale(args: {
   });
 
   return readJson<FavoriteSaleDeleteResponse>(response);
+}
+
+/** « Mon dossier » gratuit (point 68) : statut et enchère plafond enregistrés sur une vente suivie. */
+export async function fetchFavoriteDossier(saleId: string): Promise<FavoriteDossierResponse> {
+  const search = new URLSearchParams({ saleId });
+  const response = await fetch(`/api/favorites/dossier?${search.toString()}`, {
+    headers: await authHeaders(),
+  });
+
+  return readJson<FavoriteDossierResponse>(response);
+}
+
+export async function saveFavoriteDossier(args: {
+  data: FavoriteDossierInput;
+}): Promise<FavoriteDossierResponse> {
+  const response = await fetch("/api/favorites/dossier", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify(args.data),
+  });
+
+  return readJson<FavoriteDossierResponse>(response);
 }

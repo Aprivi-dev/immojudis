@@ -33,6 +33,9 @@ export const queryKeys = {
   /** Changes detected on the sales the account follows (« Mes favoris »). */
   saleChangeEvents: (userId: Id) => ["sale-change-events", userId] as const,
   favoriteStatus: (userId: Id, saleId: string) => ["favorite-status", userId, saleId] as const,
+  /** « Mon dossier » d'une vente suivie ; sous le préfixe `favorites`, donc rafraîchi avec la liste. */
+  favoriteDossier: (userId: Id, saleId: string) =>
+    ["favorites", userId, "dossier", saleId] as const,
   searchFavoriteStatus: (userId: Id, saleIds: readonly string[]) =>
     ["search-favorite-status", userId, saleIds] as const,
   /** Prefix of {@link queryKeys.searchFavoriteStatus} for every id list of a user. */

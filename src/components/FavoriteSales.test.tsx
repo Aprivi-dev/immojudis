@@ -57,6 +57,9 @@ function favoritesResponse(): FavoriteSalesResponse {
         saleId: "sale-1",
         favoritedAt: "2026-09-01T10:00:00.000Z",
         sale: { ...EXAMPLE_SALE, id: "sale-1" },
+        personalStatus: null,
+        bidCeilingEur: null,
+        bidCeilingSavedAt: null,
       },
     ],
     unavailableSaleIds: [],
@@ -163,6 +166,50 @@ describe("FavoriteSales", () => {
     expect(screen.getByRole("link", { name: "Voir les ventes" }).getAttribute("href")).toBe(
       "/sales",
     );
+  });
+});
+
+describe("FavoriteSales : Mon dossier (point 68)", () => {
+  function renderPage() {
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FavoriteSales />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("affiche le statut et le plafond enregistrés sous la carte du favori", async () => {
+    const response = favoritesResponse();
+    response.favorites[0] = {
+      ...response.favorites[0],
+      personalStatus: "bidding",
+      bidCeilingEur: 185_000,
+      bidCeilingSavedAt: "2026-10-10T08:00:00.000Z",
+    };
+    mocks.fetchFavoriteSales.mockResolvedValue(response);
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchSaleChangeEvents.mockResolvedValue({ events: [] });
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    expect(screen.getByText("Prêt à enchérir")).toBeTruthy();
+    expect(screen.getByText(/185\s000\s€/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Modifier sur la fiche" }).getAttribute("href")).toBe(
+      "/sales/sale-1",
+    );
+  });
+
+  it("affiche une valeur absente comme absente, jamais comme un statut ou un montant", async () => {
+    mocks.fetchFavoriteSales.mockResolvedValue(favoritesResponse());
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchSaleChangeEvents.mockResolvedValue({ events: [] });
+    renderPage();
+
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
+    expect(screen.getByText("aucun")).toBeTruthy();
+    expect(screen.getByText("aucun enregistré")).toBeTruthy();
   });
 });
 

@@ -10707,20 +10707,32 @@ export type Database = {
       };
       user_favorites: {
         Row: {
+          bid_ceiling_eur: number | null;
+          bid_ceiling_saved_at: string | null;
           created_at: string;
           id: string;
+          personal_status: string | null;
+          personal_status_updated_at: string | null;
           sale_id: string;
           user_id: string;
         };
         Insert: {
+          bid_ceiling_eur?: number | null;
+          bid_ceiling_saved_at?: string | null;
           created_at?: string;
           id?: string;
+          personal_status?: string | null;
+          personal_status_updated_at?: string | null;
           sale_id: string;
           user_id: string;
         };
         Update: {
+          bid_ceiling_eur?: number | null;
+          bid_ceiling_saved_at?: string | null;
           created_at?: string;
           id?: string;
+          personal_status?: string | null;
+          personal_status_updated_at?: string | null;
           sale_id?: string;
           user_id?: string;
         };
