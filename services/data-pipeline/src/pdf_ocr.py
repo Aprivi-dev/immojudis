@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 
-import fitz
+import pymupdf as fitz
 
 from src.normalize import clean_text
 

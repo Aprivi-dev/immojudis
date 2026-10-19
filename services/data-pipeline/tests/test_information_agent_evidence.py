@@ -19,6 +19,7 @@ from src.information_agent_evidence import (
     extract_evidence_facts,
 )
 from src.information_agent_semantic import PhotoSemanticAnalysis, SemanticAnalysis, SemanticFact
+from src.pdf_ocr_child_output import parse_ocr_child_output
 
 
 def _pdf_bytes(text: str) -> bytes:
@@ -340,6 +341,38 @@ def test_pdf_ocr_child_can_import_the_module_from_the_service_root(tmp_path) -> 
     payload = json.loads(result.stdout)
     assert isinstance(payload, dict)
     assert "text" in payload or "error" in payload
+
+
+def test_pdf_ocr_child_output_ignores_warnings_printed_before_the_payload() -> None:
+    stdout = (
+        "The fitz API is deprecated, use pymupdf instead.\n"
+        '{"text": "Texte reconnu"}\n'
+    )
+
+    assert parse_ocr_child_output(stdout) == {"text": "Texte reconnu"}
+    assert parse_ocr_child_output('{"error": "boom"}\n') == {"error": "boom"}
+    assert parse_ocr_child_output("") == {}
+    assert parse_ocr_child_output(None) == {}
+    assert parse_ocr_child_output("[1, 2]\n") == {}
+
+
+def test_pdf_ocr_keeps_the_text_when_the_child_prints_a_warning_first(monkeypatch, tmp_path) -> None:
+    class WarningProcess:
+        pid = 4321
+        returncode = 0
+
+        def communicate(self, timeout=None):
+            return 'Warning on stdout\n{"text": "Texte reconnu"}\n', ""
+
+    monkeypatch.setattr(evidence.subprocess, "Popen", lambda *args, **kwargs: WarningProcess())
+
+    text, method, confidence = evidence._ocr_pdf_page(
+        SimpleNamespace(number=0),
+        "Fallback text",
+        source_path=tmp_path / "evidence.pdf",
+    )
+
+    assert (text, method, confidence) == ("Texte reconnu", "ocr_pymupdf", 0.74)
 
 
 def test_password_protected_pdf_remains_unpublished() -> None:
