@@ -115,6 +115,15 @@ export function SaleUnlockPanel({
               {remainingUnlocksLine(current)}
             </p>
           ) : null}
+          {opens.ceiling ? (
+            // L'ancre est dans le calcul de la fiche : le lien de section de la fiche ouvre l'onglet.
+            <a
+              href="#calculation"
+              className={buttonClasses({ variant: "primary", className: "mt-4" })}
+            >
+              Voir mon enchère plafond
+            </a>
+          ) : null}
         </Card>
       </>
     );

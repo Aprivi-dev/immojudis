@@ -27,6 +27,43 @@ const PROD_ID = "-//Immojudis//Audiences d’adjudication//FR";
 export const SALE_CALENDAR_DISCLAIMER =
   "Date issue de l’annonce, à vérifier auprès de l’avocat poursuivant.";
 
+/**
+ * Durée par défaut d'une audience dont l'heure est connue : 2 h. Les annonces ne publient que
+ * l'heure de début ; sans fin, chaque agenda invente la sienne (30 min, 1 h…) et l'audience se
+ * superpose à d'autres événements. Les 2 h sont indicatives et le fichier le dit (voir la
+ * description) : une audience d'adjudication peut compter plusieurs dossiers.
+ */
+export const SALE_HEARING_DEFAULT_DURATION_HOURS = 2;
+
+/**
+ * Rappels de l'agenda : sept jours avant (le temps de réunir garantie et financement) et la veille.
+ * Un événement horaire sonne à l'heure de l'audience, ces jours-là. Un événement sur la journée
+ * n'a pas d'heure : à minuit, le rappel réveillerait quelqu'un, il est donc décalé à 9 h (heure
+ * locale de l'agenda, une date sans heure étant flottante).
+ */
+const REMINDERS_TIMED = [
+  { trigger: "-P7D", when: "dans 7 jours" },
+  { trigger: "-P1D", when: "demain" },
+] as const;
+const REMINDERS_ALL_DAY = [
+  { trigger: "-P6DT15H", when: "dans 7 jours" },
+  { trigger: "-PT15H", when: "demain" },
+] as const;
+
+/** Origine de la numérotation de `SEQUENCE` : le début de l'année du lancement. */
+const SEQUENCE_EPOCH_MS = Date.UTC(2026, 0, 1);
+
+/**
+ * `SEQUENCE` d'un événement : les minutes écoulées depuis le 1er janvier 2026 à la dernière
+ * modification de la vente. Un agenda qui connaît déjà l'UID remplace son événement quand le fichier
+ * porte un numéro plus grand ; une vente modifiée (date reportée, par exemple) en reçoit donc un
+ * plus grand sans qu'aucun compteur ne soit stocké. Sans date de modification : 0.
+ */
+export function saleCalendarSequence(updatedAt: Date | null): number {
+  if (!updatedAt) return 0;
+  return Math.max(0, Math.floor((updatedAt.getTime() - SEQUENCE_EPOCH_MS) / 60_000));
+}
+
 /** Stable identifier of the event: `sale-<id>@<domain>`, lower-cased like the canonical URL. */
 export function saleCalendarUid(saleId: string, origin: string): string {
   return `sale-${saleId.toLowerCase()}@${new URL(origin).hostname}`;
@@ -68,18 +105,37 @@ export function buildSaleCalendarFile(
     tribunal_city: row.tribunal_city,
   });
 
+  const lastModified = validDate(row.updated_at);
+  const description = [
+    SALE_CALENDAR_DISCLAIMER,
+    `Fiche de la vente : ${url}`,
+    timed
+      ? `Durée indicative : ${SALE_HEARING_DEFAULT_DURATION_HOURS} h (l’annonce ne publie pas l’heure de fin).`
+      : null,
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
+
   const body = buildIcsCalendar(
     {
       uid: saleCalendarUid(saleId, origin),
       stamp: now,
-      lastModified: validDate(row.updated_at),
+      lastModified,
+      sequence: saleCalendarSequence(lastModified),
       start: timed ? { kind: "instant", at: date } : { kind: "day", isoDay: parisDateKey(date) },
+      end: timed
+        ? new Date(date.getTime() + SALE_HEARING_DEFAULT_DURATION_HOURS * 3_600_000)
+        : null,
       summary,
-      description: `${SALE_CALENDAR_DISCLAIMER} Fiche de la vente : ${url}`,
+      description,
       location,
       url,
       // The date comes from the announcement: the calendar shows it as to be confirmed.
       status: "TENTATIVE",
+      alarms: (timed ? REMINDERS_TIMED : REMINDERS_ALL_DAY).map((reminder) => ({
+        trigger: reminder.trigger,
+        description: `${summary} (${reminder.when})`,
+      })),
     },
     PROD_ID,
   );

@@ -116,3 +116,30 @@
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* Chargement, erreur et pièces non lisibles : la hauteur est réservée, la page ne saute pas. */
+.placeholder {
+  min-height: 132px;
+}
+
+.stateAction {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  margin-top: 8px;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--gold-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.stateAction:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}

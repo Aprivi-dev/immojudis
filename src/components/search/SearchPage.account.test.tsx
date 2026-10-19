@@ -13,7 +13,13 @@ import type { AuctionSale } from "@/lib/types";
  * liste publique.
  */
 const state = vi.hoisted(() => ({
-  auth: { user: null as null | { id: string }, loading: true },
+  auth: { user: null as null | { id: string }, loading: true } as {
+    user: null | { id: string };
+    loading: boolean;
+    authError?: string;
+    authErrorKind?: "expired" | "unavailable";
+    retry?: () => void;
+  },
   fetchAccessPlan: vi.fn(),
   fetchSearchResults: vi.fn(),
   fetchSearchCount: vi.fn(),
@@ -23,7 +29,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/use-auth", () => ({
-  useAuth: () => ({ ...state.auth, session: null, authError: null }),
+  useAuth: () => ({ session: null, authError: null, ...state.auth }),
 }));
 vi.mock("./MapPanel", () => ({ MapPanel: () => <div data-testid="map-panel" /> }));
 vi.mock("next/navigation", () => ({
@@ -229,6 +235,34 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
+});
+
+describe("/sales : session impossible à vérifier", () => {
+  it("garde la liste publique et ajoute le bandeau « Réessayer » / « Se reconnecter »", () => {
+    const retry = vi.fn();
+    state.auth = {
+      user: null,
+      loading: false,
+      authError: "Votre session n’a pas pu être vérifiée.",
+      authErrorKind: "unavailable",
+      retry,
+    };
+    render(page(seededClient()));
+    expect(cards()).toHaveLength(24);
+    const banner = screen.getByTestId("auth-connection-banner");
+    expect(banner.textContent).toContain("Nous n’avons pas pu vérifier votre connexion.");
+    fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("link", { name: "Se reconnecter" }).getAttribute("href")).toMatch(
+      /^\/login\?redirect=/,
+    );
+  });
+
+  it("n'affiche aucun bandeau pour un visiteur ordinaire", () => {
+    state.auth = { user: null, loading: false };
+    render(page(seededClient()));
+    expect(screen.queryByTestId("auth-connection-banner")).toBeNull();
+  });
 });
 
 describe("/sales : compte reconnu avec une liste publique déjà affichée", () => {
