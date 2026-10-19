@@ -49,10 +49,13 @@ class _FinishDB:
         return _Result(None)
 
 
-def _finish(monkeypatch, **kwargs) -> dict[str, object]:
+def _finish(monkeypatch, presence: list | None = None, **kwargs) -> dict[str, object]:
     db = _FinishDB(**kwargs)
     monkeypatch.setattr("src.autonomous_runner._postgres_connect", lambda url: nullcontext(db))
-    monkeypatch.setattr("src.autonomous_runner.record_source_presence", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "src.autonomous_runner.record_source_presence",
+        lambda *a, **k: presence.append(a) if presence is not None else None,
+    )
     before = datetime.now(UTC)
     finish_source("db", "run")
     assert db.state_update is not None
@@ -178,3 +181,48 @@ def test_access_denied_reads_the_structured_counter_then_the_http_status(
     coverage, problems, expected
 ) -> None:
     assert access_denied(coverage, problems) is expected
+
+
+def test_failed_run_never_counts_as_a_complete_inventory_for_absence(monkeypatch) -> None:
+    presence: list = []
+    _finish(
+        monkeypatch,
+        presence=presence,
+        status="failed",
+        problems=["Execution budget exceeded; committed checkpoints preserved"],
+        coverage={"listings_emitted": 10, "coverage_complete": True},
+        published=10,
+    )
+
+    ((_db, _run, _source, _availability, complete),) = presence
+    assert complete is False
+
+
+def test_succeeded_run_with_complete_coverage_counts_for_absence(monkeypatch) -> None:
+    presence: list = []
+    _finish(
+        monkeypatch,
+        presence=presence,
+        status="succeeded",
+        problems=[],
+        coverage={"listings_emitted": 40, "coverage_complete": True},
+        published=40,
+    )
+
+    ((_db, _run, _source, _availability, complete),) = presence
+    assert complete is True
+
+
+def test_succeeded_run_with_partial_coverage_does_not_count_for_absence(monkeypatch) -> None:
+    presence: list = []
+    _finish(
+        monkeypatch,
+        presence=presence,
+        status="succeeded",
+        problems=[],
+        coverage={"listings_emitted": 40, "coverage_complete": False},
+        published=40,
+    )
+
+    ((_db, _run, _source, _availability, complete),) = presence
+    assert complete is False

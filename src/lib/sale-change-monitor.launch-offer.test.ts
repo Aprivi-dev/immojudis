@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   launchOffer: vi.fn(),
   profilesOr: vi.fn(),
+  tables: {} as Record<string, Array<Record<string, unknown>>>,
 }));
 vi.mock("@/lib/launch-offer.server", () => ({ isLaunchOfferActive: mocks.launchOffer }));
 vi.mock("@/lib/property-reports", () => ({ resolvePlanEntitlements: vi.fn() }));
@@ -13,7 +14,10 @@ vi.mock("@/integrations/supabase/client.server", () => {
       select: () => query,
       eq: () => query,
       order: () => query,
-      limit: async () => ({ data: [], error: null }),
+      range: async (from: number, to: number) => ({
+        data: (mocks.tables[name] ?? []).slice(from, to + 1),
+        error: null,
+      }),
       or: (filter: string) => {
         if (name === "user_profiles") mocks.profilesOr(filter);
         return query;
@@ -30,6 +34,7 @@ describe("candidats du suivi des changements pendant l'offre de lancement", () =
   beforeEach(() => {
     mocks.launchOffer.mockReset();
     mocks.profilesOr.mockReset();
+    mocks.tables = {};
   });
 
   it("sans l'offre, seuls les comptes premium ou administrateurs sont retenus (plus les abonnés)", async () => {

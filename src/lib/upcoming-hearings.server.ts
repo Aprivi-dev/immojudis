@@ -17,7 +17,7 @@ import {
  * pour qu'une audience lue juste avant une régénération ne reste pas affichée deux heures.
  */
 export const HEARINGS_DATA_REVALIDATE_SECONDS = 900;
-const HEARINGS_CACHE_TAG = "upcoming-hearings";
+export const HEARINGS_CACHE_TAG = "upcoming-hearings";
 
 type HearingsRpcClient = {
   rpc: (

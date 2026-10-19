@@ -25,6 +25,8 @@ vi.mock("react", async () => {
 });
 
 import { PUBLIC_CATALOGUE_CACHE_TAG } from "@/lib/public-catalogue.server";
+import { TRIBUNAL_SALES_CACHE_TAG } from "@/lib/tribunal-pages.server";
+import { HEARINGS_CACHE_TAG } from "@/lib/upcoming-hearings.server";
 import { maxDuration, POST } from "./route";
 
 const SECRET = "cron-secret-for-tests";
@@ -98,8 +100,23 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     // Pages 2 et 3 du catalogue : leurs variantes statiques sont expirées avec la première.
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/sales/defaut/[page]", "page");
     expect(mocks.revalidatePath).not.toHaveBeenCalledWith("/sales");
-    expect(mocks.revalidateTag).toHaveBeenCalledTimes(2);
-    expect(mocks.revalidatePath).toHaveBeenCalledTimes(3);
+    expect(mocks.revalidateTag).toHaveBeenCalledTimes(4);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(5);
+  });
+
+  it("also expires the tribunal pages and the upcoming hearings, once per call", async () => {
+    const response = await POST(request({ saleIds: [ID, OTHER_ID] }, `Bearer ${SECRET}`));
+    expect(response.status).toBe(200);
+    expect(TRIBUNAL_SALES_CACHE_TAG).toBe("tribunal-pages");
+    expect(HEARINGS_CACHE_TAG).toBe("upcoming-hearings");
+    for (const tag of [TRIBUNAL_SALES_CACHE_TAG, HEARINGS_CACHE_TAG]) {
+      expect(mocks.revalidateTag.mock.calls.filter(([name]) => name === tag)).toEqual([
+        [tag, { expire: 0 }],
+      ]);
+    }
+    // Route dynamique : le motif avec le type « page », comme pour les variantes du catalogue.
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/tribunaux/[slug]", "page");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/audiences-a-venir");
   });
 
   it("expires the catalogue once per call, however many sales are withdrawn or changed", async () => {
@@ -114,8 +131,8 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     );
     expect(defaultPages).toHaveLength(1);
     // Two sales: two tags and two pages for them, plus the catalogue (first page and page variants).
-    expect(mocks.revalidateTag).toHaveBeenCalledTimes(3);
-    expect(mocks.revalidatePath).toHaveBeenCalledTimes(4);
+    expect(mocks.revalidateTag).toHaveBeenCalledTimes(5);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(6);
   });
 
   it("expires several sales once each", async () => {
@@ -124,10 +141,10 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     expect(await response.json()).toMatchObject({
       revalidated: [`sale-${ID}`, `sale-${OTHER_ID}`],
     });
-    // Two sales, plus the catalogue (see below).
+    // Two sales, plus the catalogue, the tribunal pages and the hearings.
     expect(mocks.revalidateTag).toHaveBeenCalledWith(`sale-${ID}`, { expire: 0 });
     expect(mocks.revalidateTag).toHaveBeenCalledWith(`sale-${OTHER_ID}`, { expire: 0 });
-    expect(mocks.revalidateTag).toHaveBeenCalledTimes(3);
+    expect(mocks.revalidateTag).toHaveBeenCalledTimes(5);
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/sales/${OTHER_ID}`);
   });
 

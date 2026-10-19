@@ -290,8 +290,11 @@ class PaginationCoverage:
             self.expected_total = expected_total
         urls = {str(sale.get("source_url")) for sale in sales if sale.get("source_url")}
         if not urls:
-            self.empty_unverified = not terminal
-            self.exhausted = bool(terminal and not self.total_changed and
+            # Une page vide finale sans total annoncé et sans aucune annonce déjà vue ne prouve rien
+            # (page de connexion, blocage silencieux, filtre vide) : l'inventaire n'est pas complet.
+            blank_without_total = self.expected_total is None and not self.seen
+            self.empty_unverified = not terminal or blank_without_total
+            self.exhausted = bool(terminal and not self.total_changed and not blank_without_total and
                                   (self.expected_total is None or len(self.seen) == self.expected_total))
             return False
         if urls <= self.seen:

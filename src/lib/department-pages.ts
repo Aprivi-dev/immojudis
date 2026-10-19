@@ -64,10 +64,11 @@ export function departmentSearchPath(department: Pick<DepartmentRef, "code">): s
 /**
  * Statut d'une vente à venir. La fonction publique de recherche ne renvoie pas la colonne
  * `status` : le lecteur (`department-pages.server.ts`) repère les ventes reportées avec un second
- * appel filtré sur ce statut. Toute autre vente à venir (« upcoming » ou statut inconnu) est
- * `scheduled`.
+ * appel filtré sur ce statut. Toute autre vente à venir est `scheduled`. La page d'un tribunal
+ * (`get_public_tribunal_sales`) lit le statut : `unknown` y marque une vente dont la base ne connaît
+ * pas le statut, qui n'est pas présentée comme « à venir » mais « à confirmer ».
  */
-export type DepartmentSaleStatus = "scheduled" | "postponed";
+export type DepartmentSaleStatus = "scheduled" | "postponed" | "unknown";
 
 /** Une vente à venir du catalogue public, réduite à ce que la page affiche. */
 export type DepartmentSale = {

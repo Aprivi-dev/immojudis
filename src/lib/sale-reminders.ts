@@ -38,8 +38,16 @@ const REMINDER_DAYS: ReadonlyArray<{ days: number; kind: "audience_j7" | "audien
 
 /** Les événements de changement plus anciens ne sont plus relus (le cron passe chaque jour). */
 export const WARNING_LOOKBACK_HOURS = 72;
-/** Au plus ce nombre d'éléments par email et par passage : le reste attend le passage suivant. */
+/** Au plus ce nombre d'éléments par email : au-delà, un second email part (rien n'est perdu). */
 export const MAX_REMINDER_ITEMS_PER_EMAIL = 10;
+/**
+ * Au plus ce nombre d'emails par personne et par passage. Un reste éventuel (de quoi dépasser
+ * 50 éléments) fait échouer le passage : le rattrapage de 09:15 envoie la suite.
+ */
+export const MAX_EMAILS_PER_USER = 5;
+const DAY_MS = 86_400_000;
+/** Pas du décalage quotidien de l'ordre de départ (nombre d'or : les points de départ tournent). */
+const START_ROTATION_STEP = 0.6180339887498949;
 /** Au plus ce nombre de ventes suivies examinées par personne. */
 const MAX_FOLLOWED_SALES_PER_USER = 300;
 /** Statuts qui justifient un avertissement (vente retirée, reportée, annulée ou adjugée). */
@@ -100,8 +108,10 @@ export type SaleReminderRunSummary = {
   /** Rappels envoyés, par motif. */
   sentByKind: Record<SaleReminderKind, number>;
   purgedJournalRows: number;
-  /** Vrai quand le temps imparti s'est écoulé avant la fin : le reste attend le passage suivant. */
+  /** Vrai quand le temps imparti s'est écoulé avant la fin : le passage doit être rejoué. */
   truncated: boolean;
+  /** Éléments détectés mais non réservés faute de place (plus de 50 pour une personne). */
+  deferred: number;
   skipped: "off" | "not_configured" | null;
 };
 
@@ -118,6 +128,7 @@ function emptySummary(mode: SaleRemindersMode): SaleReminderRunSummary {
     sentByKind: { audience_j7: 0, audience_j1: 0, date_changed: 0, status_changed: 0 },
     purgedJournalRows: 0,
     truncated: false,
+    deferred: 0,
     skipped: null,
   };
 }
@@ -338,6 +349,40 @@ export async function detectRemindersForUser({
 }
 
 /**
+ * Ordre de traitement des personnes : trié, puis décalé d'un nombre qui dépend du jour (le
+ * rattrapage part de l'autre moitié de l'anneau). Sans cela, une troncature par le délai écarterait
+ * chaque jour les mêmes personnes, et le rattrapage referait le même travail avant d'arriver au même
+ * endroit.
+ */
+export function rotateRecipients(userIds: readonly string[], now: Date, catchUp = false): string[] {
+  const sorted = [...userIds].sort();
+  if (sorted.length < 2) return sorted;
+  const day = Math.floor(now.getTime() / DAY_MS);
+  const base = Math.floor(sorted.length * ((day * START_ROTATION_STEP) % 1));
+  const start = (base + (catchUp ? Math.floor(sorted.length / 2) : 0)) % sorted.length;
+  return [...sorted.slice(start), ...sorted.slice(0, start)];
+}
+
+/**
+ * Fait échouer le passage quand il n'a pas tout traité (temps écoulé, éléments non réservés ou
+ * envois refusés) : `runMonitoredCron` le note en échec, donc le rattrapage de 09:15 s'exécute
+ * et la supervision le voit. Les rappels déjà envoyés ne repartent pas (journal) ; les lignes
+ * `failed` (moins de trois essais) et les `pending` orphelines de plus d'une heure sont reprises.
+ */
+export function assertSaleRemindersComplete(summary: SaleReminderRunSummary): void {
+  const problems = [
+    summary.truncated ? "passage interrompu par le délai imparti" : null,
+    summary.emailsFailed > 0 ? `${summary.emailsFailed} envoi(s) en échec` : null,
+    summary.deferred > 0 ? `${summary.deferred} rappel(s) non réservé(s) faute de place` : null,
+  ].filter((problem): problem is string => problem !== null);
+  if (problems.length) {
+    throw new Error(
+      `Rappels d'audience incomplets : ${problems.join(", ")} (${summary.emailsSent} email(s) envoyé(s)).`,
+    );
+  }
+}
+
+/**
  * Passage quotidien. En mode `off` il ne lit rien et ne touche à rien. En `internal` seuls les
  * administrateurs ayant consenti reçoivent les emails (objet préfixé « [Test interne] »).
  */
@@ -347,12 +392,15 @@ export async function runSaleReminders({
   env = process.env,
   fetchImpl = fetch,
   mode = saleRemindersMode(env),
+  catchUp = false,
 }: {
   store: SaleReminderStore;
   now?: Date;
   env?: Pick<NodeJS.ProcessEnv, string>;
   fetchImpl?: typeof fetch;
   mode?: SaleRemindersMode;
+  /** Passage de rattrapage (09:15) : il part de l'autre moitié de l'ordre des personnes. */
+  catchUp?: boolean;
 }): Promise<SaleReminderRunSummary> {
   const summary = emptySummary(mode);
   if (mode === "off") return { ...summary, skipped: "off" };
@@ -373,6 +421,7 @@ export async function runSaleReminders({
     recipients = consenting.filter((userId) => admins.has(userId));
   }
   summary.recipients = recipients.length;
+  recipients = rotateRecipients(recipients, now, catchUp);
 
   const deadline = Date.now() + PROCESSING_BUDGET_MS;
   async function processUser(userId: string) {
@@ -381,10 +430,14 @@ export async function runSaleReminders({
     if (!detected.length) return;
 
     // Réserve d'abord (le journal garantit qu'un rappel ne part jamais deux fois), dans l'ordre
-    // d'urgence, dans la limite d'un email.
+    // d'urgence, dans la limite de MAX_EMAILS_PER_USER emails : le reste est compté et fait
+    // échouer le passage, le rattrapage le réserve (les déjà réservés sont sautés).
+    const maxItems = MAX_REMINDER_ITEMS_PER_EMAIL * MAX_EMAILS_PER_USER;
     const claimed: Array<{ reminder: DetectedReminder; id: string }> = [];
+    let visited = 0;
     for (const reminder of detected) {
-      if (claimed.length >= MAX_REMINDER_ITEMS_PER_EMAIL) break;
+      if (claimed.length >= maxItems) break;
+      visited += 1;
       const id = await store.claim({
         userId,
         saleId: reminder.saleId,
@@ -395,47 +448,61 @@ export async function runSaleReminders({
       });
       if (id) claimed.push({ reminder, id });
     }
+    summary.deferred += detected.length - visited;
     summary.claimed += claimed.length;
     if (!claimed.length) return;
-    const ids = claimed.map(({ id }) => id);
+    const allIds = claimed.map(({ id }) => id);
 
+    let recipient: string | null;
     try {
-      const recipient = await store.userEmail(userId);
-      if (!recipient) {
-        await store.markFailed(ids, {
-          error: "Aucune adresse email authentifiée disponible pour cet utilisateur.",
-        });
-        summary.emailsFailed += 1;
-        return;
-      }
-      const items = claimed.map(({ reminder }) => reminder.item);
-      const message = buildSaleReminderMessage({
-        userId,
-        items,
-        recipientEmail: recipient,
-        from,
-        appUrl,
-        internal: sendMode === "internal",
-        now,
-        env,
-      });
-      const key = createHash("sha256")
-        .update([...ids].sort().join(","))
-        .digest("hex")
-        .slice(0, 24);
-      const result = await sendResendEmail({
-        apiKey,
-        message,
-        idempotencyKey: `immojudis-sale-reminders-${userId}-${key}`,
-        fetchImpl,
-      });
-      await store.markSent(ids, { messageId: result.id, at: new Date() });
-      summary.emailsSent += 1;
-      for (const { reminder } of claimed) summary.sentByKind[reminder.kind] += 1;
+      recipient = await store.userEmail(userId);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Envoi email impossible.";
-      await store.markFailed(ids, { error: detail.slice(0, 500) });
+      const detail = error instanceof Error ? error.message : "Adresse email illisible.";
+      await store.markFailed(allIds, { error: detail.slice(0, 500) });
       summary.emailsFailed += 1;
+      return;
+    }
+    if (!recipient) {
+      await store.markFailed(allIds, {
+        error: "Aucune adresse email authentifiée disponible pour cet utilisateur.",
+      });
+      summary.emailsFailed += 1;
+      return;
+    }
+
+    // Un email par groupe de MAX_REMINDER_ITEMS_PER_EMAIL éléments, les plus urgents d'abord.
+    for (let start = 0; start < claimed.length; start += MAX_REMINDER_ITEMS_PER_EMAIL) {
+      const group = claimed.slice(start, start + MAX_REMINDER_ITEMS_PER_EMAIL);
+      const ids = group.map(({ id }) => id);
+      try {
+        const message = buildSaleReminderMessage({
+          userId,
+          items: group.map(({ reminder }) => reminder.item),
+          recipientEmail: recipient,
+          from,
+          appUrl,
+          internal: sendMode === "internal",
+          now,
+          env,
+        });
+        const key = createHash("sha256")
+          .update([...ids].sort().join(","))
+          .digest("hex")
+          .slice(0, 24);
+        const result = await sendResendEmail({
+          apiKey,
+          message,
+          idempotencyKey: `immojudis-sale-reminders-${userId}-${key}`,
+          fetchImpl,
+        });
+        await store.markSent(ids, { messageId: result.id, at: new Date() });
+        summary.emailsSent += 1;
+        for (const { reminder } of group) summary.sentByKind[reminder.kind] += 1;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Envoi email impossible.";
+        await store.markFailed(ids, { error: detail.slice(0, 500) });
+        summary.emailsFailed += 1;
+      }
     }
   }
 

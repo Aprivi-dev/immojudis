@@ -8,6 +8,8 @@ import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
 import { resolveRequestId } from "@/lib/request-id";
 import { warmSalePages } from "@/lib/sale-page-warmup";
 import { SALES_DEFAULT_PATH, SALES_PAGE_VARIANTS_ROUTE, SALES_PATH } from "@/lib/sales-isr";
+import { TRIBUNAL_SALES_CACHE_TAG } from "@/lib/tribunal-pages.server";
+import { HEARINGS_CACHE_TAG } from "@/lib/upcoming-hearings.server";
 
 const MAX_SALES_PER_CALL = 100;
 
@@ -30,7 +32,10 @@ const bodySchema = z.union([
  * `sale-<id>` data-cache tag and the cached page `/sales/<id>`: the next visitor triggers
  * a fresh read instead of waiting for the 5-minute revalidation.
  *
- * The call also expires, once per call whatever the number of sales, the catalogue pages: the
+ * The call also expires, once per call whatever the number of sales, the pages that list sales
+ * without being their own page: the tribunal pages (`/tribunaux/<slug>`, 1 h data cache tagged
+ * `tribunal-pages`) and the upcoming hearings (`/audiences-a-venir`, tagged `upcoming-hearings`).
+ * A withdrawn sale must leave them as soon as it leaves its own page. And the catalogue pages: the
  * `public-catalogue` data-cache tag (first page, 5 minutes) and the static page that serves the
  * bare `/sales`. A sale that is withdrawn, cancelled or changed must leave `/sales` as soon as it
  * leaves its own page, not 5 to 10 minutes later. The pipeline must therefore announce those
@@ -90,6 +95,12 @@ export async function POST(request: Request) {
   // Pages 2 et 3 du catalogue (variantes statiques `/sales/defaut/[page]`) : même durée de vie, même
   // retrait d'une vente. Le motif de la route, avec le type « page », les couvre toutes.
   revalidatePath(SALES_PAGE_VARIANTS_ROUTE, "page");
+  // Pages tribunal (`/tribunaux/[slug]`, route dynamique : type « page ») et audiences à venir : leurs
+  // lectures sont mises en cache une heure ou quinze minutes, une vente retirée n'y resterait pas.
+  revalidateTag(TRIBUNAL_SALES_CACHE_TAG, { expire: 0 });
+  revalidateTag(HEARINGS_CACHE_TAG, { expire: 0 });
+  revalidatePath("/tribunaux/[slug]", "page");
+  revalidatePath("/audiences-a-venir");
   // One GET per invalidated sale, and one on the public `/sales` (the proxy rewrites it to the static
   // page just expired), after the response: it cannot call this route back.
   after(() => warmSalePages(ids, { requestId, extraPaths: [SALES_PATH] }));
