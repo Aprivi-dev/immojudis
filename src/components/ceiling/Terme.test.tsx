@@ -100,7 +100,12 @@ describe("Terme : glossaire et zone d'appui", () => {
       "rédigé par l’avocat du créancier poursuivant",
       "lexique-cahier-des-conditions-de-vente",
     ],
-    ["droit-preemption", "droit de préemption", "se substituer à l’adjudicataire", "lexique"],
+    [
+      "droit-preemption",
+      "droit de préemption",
+      "se substituer à l’adjudicataire",
+      "lexique-droit-de-preemption",
+    ],
     [
       "consignation",
       "consignation du prix",

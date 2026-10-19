@@ -1,20 +1,24 @@
 {
   "slug": "ventes-notariales-domaniales-differences-tribunal",
   "publishedAt": "2026-10-13",
+  "updatedAt": "2026-10-19",
   "title": "Ventes notariales et ventes domaniales : en quoi elles diffèrent d’une vente au tribunal",
   "seoTitle": "Ventes notariales et domaniales : différences",
   "category": "Les fondamentaux",
-  "description": "Qui organise la vente, avocat obligatoire ou non, garantie, surenchère, délais de paiement : les différences entre enchères au tribunal, chez le notaire et ventes de l’État.",
+  "description": "Qui organise la vente, avocat obligatoire ou non, garantie, surenchère, délais de paiement : les différences entre enchères au tribunal, chez le notaire (bougie ou vente interactive) et ventes de l’État.",
   "intro": [
-    "Toutes les ventes aux enchères immobilières ne se déroulent pas au tribunal. Un bien peut être vendu par un tribunal à la suite d’une dette (c’est la saisie immobilière), par un notaire à la demande de son propriétaire, ou par l’État lorsqu’il se sépare d’un immeuble qui lui appartient. Ce sont trois cadres juridiques différents, avec des règles de garantie, de délai et de représentation qui ne se ressemblent pas.",
-    "Immojudis distingue ces trois types de vente sur chaque fiche. Cet article les compare pour que vous sachiez quelles questions poser selon l’organisateur. Il s’appuie sur des textes officiels et sur des pages de Notaires de France dont certaines datent de 2020 ou 2021 : confirmez toujours les montants et délais dans le cahier des conditions de vente (ou cahier des charges), le document qui fixe les règles de la vente."
+    "Toutes les ventes aux enchères immobilières ne se déroulent pas au tribunal. Un bien peut être vendu par un tribunal à la suite d’une dette (c’est la saisie immobilière), par un notaire à la demande de son propriétaire, ou par l’État lorsqu’il se sépare d’un immeuble qui lui appartient. Ce sont trois cadres juridiques différents, avec des règles de garantie, de délai et de représentation qui ne se ressemblent pas. Dans une vente aux enchères, l’adjudication est l’attribution du bien au dernier enchérisseur.",
+    "Chez le notaire, il faut en plus distinguer deux formules. La vente à la bougie est une vente aux enchères au sens strict : on enchérit en salle et le notaire prononce l’adjudication. La vente interactive en ligne n’en est pas une : pendant une durée limitée, des acheteurs déposent des offres, le vendeur en retient une et un avant-contrat est signé. Ce n’est donc pas une adjudication, et les règles d’une vente au tribunal ne s’y appliquent pas.",
+    "Immojudis distingue ces types de vente sur chaque fiche. Cet article les compare pour que vous sachiez quelles questions poser selon l’organisateur. Il s’appuie sur des textes officiels, sur deux pages de Notaires de France (l’une publiée le 21 avril 2020, l’autre mise à jour le 29 avril 2021) et sur les conditions d’utilisation d’un service de vente interactive en ligne (version du 23 mars 2026). Les pratiques ont pu évoluer depuis : confirmez toujours les montants et délais dans le cahier des conditions de vente (ou cahier des charges), le document qui fixe les règles de la vente."
   ],
   "takeaways": [
     "L’organisateur détermine les règles : juge de l’exécution au tribunal, notaire pour une vente notariale, administration de l’État pour une vente domaniale.",
+    "Chez le notaire, la vente à la bougie est une vente aux enchères avec adjudication ; la vente interactive en ligne recueille des offres, le vendeur en retient une et un avant-contrat est signé.",
+    "Une vente interactive n’est pas une adjudication du tribunal : l’avant-contrat peut comporter des conditions suspensives, ce qui n’existe pas dans une vente forcée au tribunal.",
     "Un avocat est obligatoire pour porter les enchères en saisie immobilière ; pour les ventes notariales et domaniales, lisez le cahier, qui fait foi.",
     "La garantie de 10 % de la mise à prix (minimum 3 000 €) est imposée par le Code pour la saisie immobilière ; ailleurs, c’est le cahier qui la fixe.",
     "La surenchère de dix jours est une règle légale en saisie immobilière et en licitation judiciaire ; dans une vente notariale volontaire ou domaniale, seul le cahier des charges peut la prévoir.",
-    "« En ligne » ne désigne pas un type de vente : c’est une façon de participer."
+    "« En ligne » ne dit pas si l’on participe à des enchères ou à une vente par offres : identifiez la formule avant de vous engager."
   ],
   "sections": [
     {
@@ -32,6 +36,12 @@
         ],
         "rows": [
           [
+            "Nature de la vente",
+            "Des enchères : l’adjudication est prononcée à l’audience et emporte vente forcée du bien (art. L. 322-10 du CPCE).",
+            "À la bougie : des enchères, avec adjudication prononcée par le notaire. Interactive : des offres pendant une durée limitée, le vendeur en retient une, puis un avant-contrat est signé.",
+            "Adjudication publique ou cession amiable avec mise en concurrence (art. R. 3211-2 du Code général de la propriété des personnes publiques)."
+          ],
+          [
             "Qui organise",
             "Le juge de l’exécution du tribunal judiciaire, à la demande d’un créancier.",
             "Un notaire, à la demande du propriétaire (vente volontaire) ou commis par un tribunal.",
@@ -46,25 +56,25 @@
           [
             "Garantie pour enchérir",
             "Imposée par le Code : chèque de banque ou caution bancaire irrévocable, 10 % de la mise à prix, minimum 3 000 € (art. R. 322-41).",
-            "Fixée par le cahier. Notaires de France cite 20 % de la mise à prix, en chèque de banque ou certifié (à vérifier).",
+            "Fixée par le cahier. À la bougie, Notaires de France cite un chèque de banque ou certifié de 20 % de la mise à prix (à vérifier). Vente interactive : les conditions d’utilisation consultées ne mentionnent pas de dépôt de garantie (à vérifier).",
             "Fixée par le cahier des charges (à vérifier)."
           ],
           [
             "Surenchère",
             "Règle légale : un dixième du prix principal, dans les dix jours (art. R. 322-50 et R. 322-51 du CPCE ; en licitation, art. 1377 et 1279 du CPC).",
-            "Non prévue par la loi dans une vente volontaire : seul le cahier des charges peut la prévoir. Notaires de France décrit 10 % dans les 10 jours pour la vente « à la bougie » (à vérifier). Dans une licitation reçue par un notaire, elle se forme par requête au greffe (art. 1280 du CPC).",
+            "Non prévue par la loi dans une vente volontaire : seul le cahier des charges peut la prévoir. À la bougie, Notaires de France décrit 10 % dans les 10 jours (à vérifier). Dans une licitation reçue par un notaire, elle se forme par requête au greffe (art. 1280 du CPC). Vente interactive : aucune surenchère décrite dans les sources consultées, puisqu’il n’y a pas d’adjudication.",
             "Selon le cahier des charges (à vérifier)."
           ],
           [
             "Délai de paiement",
             "Deux mois après l’adjudication définitive (art. R. 322-56).",
-            "45 jours selon Notaires de France (à vérifier dans le cahier).",
+            "À la bougie : 45 jours selon Notaires de France, en l’absence de surenchère (à vérifier dans le cahier). Vente interactive : pas de délai d’adjudication ; le calendrier suit l’avant-contrat, puis l’acte de vente signé chez le notaire.",
             "Selon le cahier des charges. En cas de défaut, l’acquéreur peut être déchu de la vente après mise en demeure d’un mois (art. R. 3211-8 du Code général de la propriété des personnes publiques) et devoir une amende d’au moins 5 % du prix (art. L. 3211-12)."
           ],
           [
             "Condition suspensive de prêt",
             "Aucune prévue dans la procédure.",
-            "Aucune pour les ventes classiques, selon Notaires de France ; la vente interactive en ligne peut comporter des clauses suspensives (la source ne précise pas lesquelles).",
+            "À la bougie : aucune, selon Notaires de France. Vente interactive : possible, car l’acheteur retenu signe un avant-contrat (Notaires de France indique qu’on peut y insérer des clauses suspensives). Lisez l’avant-contrat avant de signer.",
             "À vérifier dans le cahier des charges."
           ],
           [
@@ -80,23 +90,67 @@
       "id": "tribunal",
       "title": "Au tribunal : la procédure la plus encadrée",
       "paragraphs": [
-        "La saisie immobilière est la procédure par laquelle un créancier fait vendre le bien de son débiteur pour être payé. Le Code des procédures civiles d’exécution (CPCE) en fixe presque toutes les règles : avocat obligatoire pour enchérir, garantie, déroulement de l’audience, surenchère de dix jours, paiement en deux mois, titre d’expulsion.",
+        "La saisie immobilière est la procédure par laquelle un créancier fait vendre le bien de son débiteur pour être payé. Le Code des procédures civiles d’exécution (CPCE) en fixe presque toutes les règles : avocat obligatoire pour enchérir, garantie, déroulement de l’audience, surenchère de dix jours, paiement en deux mois, titre d’expulsion. L’adjudication y est une vente forcée : elle transmet la propriété du bien à l’adjudicataire, avec les seuls droits qu’avait le propriétaire saisi (art. L. 322-10).",
         "Le tribunal peut aussi ordonner la vente d’un bien par licitation judiciaire, par exemple lorsque des héritiers ou des ex-époux ne peuvent pas partager un bien (art. 1377 du Code de procédure civile). Les règles de la saisie sont alors largement reprises. Les enchères peuvent être reçues par le juge ou par un notaire commis par le tribunal (art. 1272). Le détail de la saisie figure dans les articles « Le jour de l’audience : déroulé et rôle de l’avocat » et « Après l’adjudication : surenchère, paiement, consignation et titre de vente »."
       ]
     },
     {
       "id": "notaire",
-      "title": "Chez le notaire : les ventes à la bougie et interactives",
+      "title": "Chez le notaire (1) : la vente à la bougie, de vraies enchères",
       "paragraphs": [
-        "Dans une vente notariale, le propriétaire choisit de vendre aux enchères par l’intermédiaire d’un notaire. Notaires de France décrit deux formules : la vente « à la bougie », en salle, où l’adjudication est prononcée après l’extinction de deux feux successifs sans nouvelle enchère, et la vente interactive en ligne, d’une durée limitée (24 heures selon la page consultée), où l’on suit les offres sur le site des notaires. Pour enchérir en ligne, il faut signer une demande d’agrément et les conditions de vente, puis s’inscrire.",
-        "Le notaire fixe la mise à prix avec le vendeur, après expertise. Notaires de France indique que les enchérisseurs déposent un chèque de consignation de 20 % de la mise à prix, restitué s’ils ne gagnent pas. Les visites sont groupées, à dates fixes, la dernière au moins dix jours avant la vente. Sans surenchère dans les dix jours, l’adjudicataire dispose de 45 jours pour payer le prix. Selon la même source, il n’y a ni délai de rétractation de dix jours ni, pour une vente à la bougie, de condition suspensive d’obtention de prêt.",
-        "Ces informations proviennent de pages de Notaires de France mises en ligne en 2020 et 2021. Les pratiques varient d’un office à l’autre : le cahier des charges de chaque vente prime."
+        "Dans une vente notariale volontaire, le propriétaire choisit de vendre aux enchères par l’intermédiaire d’un notaire. La vente à la bougie se déroule en salle : une bougie est allumée au début des enchères et, quand elle s’éteint, une nouvelle la remplace. Selon Notaires de France, l’adjudication est prononcée lorsque deux feux successifs s’éteignent sans nouvelle enchère. Le dernier enchérisseur devient adjudicataire et le notaire dresse un procès-verbal d’adjudication, qui sert d’acte de vente.",
+        "Le notaire fixe la mise à prix avec le vendeur, après expertise. Notaires de France indique que les enchérisseurs remettent un chèque de banque ou certifié de 20 % de la mise à prix, restitué s’ils ne gagnent pas. Les visites sont groupées, à dates fixes, la dernière au moins dix jours avant la vente. Pendant dix jours après la séance, toute personne autre que l’adjudicataire peut surenchérir d’au moins 10 % : une nouvelle vente est alors organisée. Sans surenchère, l’adjudicataire dispose de 45 jours pour payer le prix. Selon la même source, il n’y a ni délai de rétractation de dix jours ni condition suspensive d’obtention de prêt dans cette formule.",
+        "Ces informations proviennent de deux pages de Notaires de France : l’une publiée le 21 avril 2020, l’autre mise à jour le 29 avril 2021. Aucune mise à jour plus récente n’y est affichée. Les pratiques varient d’un office à l’autre : le cahier des charges de chaque vente prime."
       ],
       "bullets": [
         "Avocat : les pages consultées ne mentionnent pas d’obligation d’avocat. Demandez-le explicitement au notaire.",
         "Frais : le cahier des charges indique ce qui est à la charge de l’acquéreur. Vérifiez si les frais sont inclus dans le prix annoncé ou s’ajoutent à lui.",
         "Vente d’origine judiciaire : un notaire peut recevoir des enchères ordonnées par un tribunal. Les règles du Code de procédure civile s’appliquent alors, avec la possibilité d’enchérir sans avocat (art. 1278, rendu applicable à la licitation par l’art. 1377)."
       ]
+    },
+    {
+      "id": "vente-interactive",
+      "title": "Chez le notaire (2) : la vente interactive en ligne, des offres et un avant-contrat",
+      "paragraphs": [
+        "La vente interactive est une autre formule, proposée sur internet. Ce n’est pas une séance d’enchères qui se termine par une adjudication : c’est une période, limitée dans le temps, pendant laquelle des acheteurs déposent des offres. Notaires de France indique que la vente en ligne dure 24 heures et qu’elle permet de connaître en temps réel les offres d’achat successives. Les conditions d’utilisation d’un service de vente interactive (version du 23 mars 2026) parlent d’une période entre un début et une fin des offres, que l’organisateur peut décaler en prévenant les inscrits, et d’un report de deux minutes lorsqu’une offre est portée dans les deux dernières minutes (art. 2.5 et 5). La durée peut donc varier d’une vente à l’autre.",
+        "Le vendeur n’est pas tenu de retenir l’offre la plus élevée. Ces mêmes conditions prévoient qu’il peut la refuser si elle n’atteint pas la valeur qu’il souhaite (communiquée ou non à l’avance) ou si une offre moins élevée présente une meilleure couverture financière (art. 2.6). Autrement dit, le meilleur prix ne gagne pas automatiquement : la solidité du financement compte aussi.",
+        "L’offre retenue ne produit pas une adjudication, mais un avant-contrat. Notaires de France indique que l’acheteur signe un compromis de vente auprès du notaire à l’issue de la vente, et qu’il est possible d’y insérer des clauses suspensives (la phrase est tronquée sur la page consultée, sans liste précise). Les conditions d’utilisation décrivent le service comme « totalement différent des ventes aux enchères notariales ou judiciaires qui aboutissent à des ventes définitives », et elles prévoient une exclusion des autres ventes du site pour l’acheteur retenu qui ne signe pas la promesse de vente, sauf motif de non-obtention de prêt (art. 2.3). Ces deux sources laissent donc penser qu’une condition suspensive, notamment d’obtention de prêt, peut figurer dans l’avant-contrat. Seul l’avant-contrat de la vente qui vous intéresse en donne la liste exacte.",
+        "Pour participer, Notaires de France indique qu’il faut signer une demande d’agrément et les conditions de vente lors de la visite, puis s’inscrire sur le site. La présentation commerciale du service ajoute qu’aucun dépôt ni consignation n’est demandé pour faire une offre et que les offres affichées incluent déjà les honoraires de négociation. Cette information ne vient pas d’un texte contractuel : vérifiez-la dans les conditions de la vente visée avant de la considérer comme acquise."
+      ],
+      "table": {
+        "headers": ["Point", "Vente à la bougie", "Vente interactive en ligne"],
+        "rows": [
+          [
+            "Ce qui se passe",
+            "Des enchères en salle ; adjudication prononcée après l’extinction de deux feux successifs sans nouvelle enchère.",
+            "Des offres déposées pendant une durée limitée ; le vendeur en retient une, qui n’est pas forcément la plus élevée."
+          ],
+          [
+            "Document signé à l’issue",
+            "Procès-verbal d’adjudication, qui sert d’acte de vente.",
+            "Avant-contrat (compromis ou promesse de vente) signé chez le notaire, puis acte de vente."
+          ],
+          [
+            "Conditions suspensives",
+            "Aucune, selon Notaires de France.",
+            "Possibles dans l’avant-contrat (à lire avant de signer)."
+          ],
+          [
+            "Garantie demandée",
+            "Chèque de banque ou certifié de 20 % de la mise à prix, selon Notaires de France.",
+            "Non mentionnée dans les conditions d’utilisation consultées ; la présentation commerciale indique qu’aucun dépôt n’est exigé (à vérifier)."
+          ],
+          [
+            "Après la séance",
+            "Surenchère de 10 % possible pendant 10 jours ; paiement sous 45 jours en l’absence de surenchère.",
+            "Aucune surenchère décrite dans les sources consultées ; le calendrier suit l’avant-contrat."
+          ]
+        ]
+      },
+      "callout": {
+        "title": "Pourquoi la différence compte",
+        "text": "Une adjudication au tribunal est une vente forcée qui transmet la propriété (art. L. 322-10 du CPCE)  et la procédure ne prévoit pas de condition suspensive de prêt. Une vente interactive, elle, aboutit à un avant-contrat qui peut contenir des conditions suspensives. Ne transposez donc pas à une vente interactive la garantie de 10 %, la surenchère ou les délais de paiement d’une vente au tribunal : lisez les conditions de la vente et l’avant-contrat."
+      }
     },
     {
       "id": "etat",
@@ -112,7 +166,7 @@
       "title": "Reconnaître le type de vente dans Immojudis",
       "paragraphs": [
         "Sur chaque fiche, Immojudis indique l’organisateur (tribunal, office notarial ou organisme de l’État) et le type de vente. Une vente organisée par un notaire n’est pas forcément judiciaire, et une vente judiciaire peut être confiée à un notaire. Le mode de participation (sur place, en ligne ou les deux) est une information distincte.",
-        "Le catalogue n’est pas exhaustif et la couverture varie selon les sources. En cas de doute, remontez à l’annonce d’origine et à l’organisateur."
+        "Attention : « en ligne » ne suffit pas à savoir de quoi il s’agit. Une vente interactive en ligne fonctionne par offres et avant-contrat, pas par enchères et adjudication. Vérifiez la formule dans l’annonce d’origine et dans les conditions de la vente. Le catalogue n’est pas exhaustif et la couverture varie selon les sources : en cas de doute, remontez à l’annonce d’origine et à l’organisateur."
       ],
       "callout": {
         "title": "À retenir",
@@ -127,9 +181,11 @@
       ],
       "bullets": [
         "Qui organise la vente et où puis-je consulter le cahier des conditions de vente ou des charges ?",
+        "S’agit-il d’enchères avec adjudication (au tribunal ou à la bougie) ou d’une vente interactive par offres avec avant-contrat ?",
         "Un avocat est-il obligatoire pour enchérir ? Puis-je enchérir en ligne ?",
         "Quelle garantie dois-je remettre, sous quelle forme et à l’ordre de qui ?",
         "Une surenchère est-elle possible ? Dans quel délai et pour quel montant ?",
+        "Pour une vente interactive : le vendeur doit-il retenir l’offre la plus élevée, et quelles conditions suspensives l’avant-contrat prévoit-il ?",
         "Quel est le délai pour payer le prix, et que se passe-t-il en cas de retard ?",
         "Quels frais s’ajoutent au prix, et sont-ils inclus dans la mise à prix annoncée ?",
         "Le bien est-il occupé et quels documents le confirment ?",
@@ -141,6 +197,10 @@
     {
       "label": "Légifrance — Code des procédures civiles d’exécution, articles R. 322-40 et R. 322-41 (avocat et garantie)",
       "url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000025024948/LEGISCTA000025939147"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-10 (effets de l’adjudication)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025985"
     },
     {
       "label": "Légifrance — Code de procédure civile, articles 1278 (enchères reçues par un notaire), 1279 et 1280 (surenchère) et 1377 (licitation)",
@@ -163,12 +223,16 @@
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006310209"
     },
     {
-      "label": "Notaires de France — Les ventes aux enchères immobilières notariales",
+      "label": "Notaires de France — Les ventes aux enchères immobilières notariales (page mise à jour le 29/04/2021 : vente à la bougie et vente interactive)",
       "url": "https://www.notaires.fr/fr/immobilier-fiscalite/vente-rapide/les-ventes-aux-encheres-immobilieres-notariales"
     },
     {
-      "label": "Notaires de France — Les ventes aux enchères notariales (vente à la bougie)",
+      "label": "Notaires de France — Les ventes aux enchères notariales (page publiée le 21/04/2020 : déroulé de la vente à la bougie)",
       "url": "https://www.immobilier.notaires.fr/fr/articles/conseils-et-actualites/achat-vente/les-ventes-aux-encheres-notariales"
+    },
+    {
+      "label": "Conditions générales d’utilisation d’un service de vente interactive notariale en ligne (version du 23/03/2026 : offres, choix du vendeur, avant-contrat)",
+      "url": "https://www.36heures.immo/cgu-vente-interactive"
     },
     {
       "label": "Bercy — Qu’est-ce qu’une vente domaniale ? (appels d’offres, intermédiaires, adjudications)",
