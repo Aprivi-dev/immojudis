@@ -300,6 +300,13 @@ vide ou absente ferment).
   Depuis l'ouverture du 15/10/2026, le workflow « Production smoke » attend un site **ouvert**
   quand cette variable est absente : pour refermer l'indexation, poser `false` côté GitHub en même
   temps que Vercel.
+- **Test de fumée du catalogue.** Quel que soit l'état de l'indexation, le script vérifie aussi :
+  deux requêtes successives sur `/sales` (la seconde en `x-vercel-cache: HIT`, sans `Set-Cookie` ni
+  `Vary`, des liens `/sales/<uuid>` dans le HTML), `/sales/defaut` en `noindex`, au moins 20 liens de
+  fiches dans le HTML de `/sales?page=2`, un `cache-control` public sur `/api/catalogue/preview`, et
+  (indexation ouverte) aucun sitemap qui liste `/sales/defaut`. Une alerte ici veut dire que le cache de
+  `/sales` ne sert plus (cookie, `Vary`, rendu dynamique) ou que la page paginée a perdu ses annonces.
+  Voir `docs/runbooks/catalogue-visibility-projection.md`.
 
 #### Les trois sitemaps
 

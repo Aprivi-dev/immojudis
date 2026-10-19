@@ -22,12 +22,16 @@ const UPDATE_DATE_FORMAT = new Intl.DateTimeFormat("fr-FR", {
   timeZone: "Europe/Paris",
 });
 
-/** « 1 753 ventes à venir · mises à jour le 15/10/2026 » ; la date seule peut manquer. */
-export function catalogueSummaryLine({ count, updatedAt }: HomeCatalogueSummary): string {
+/**
+ * « 1 753 ventes à venir · données vérifiées le 15/10/2026 » ; la date seule peut manquer. C'est la
+ * date de la dernière collecte réussie, pas celle d'une modification d'annonce : la ligne ne dit pas
+ * que les ventes ont « été mises à jour ».
+ */
+export function catalogueSummaryLine({ count, verifiedAt }: HomeCatalogueSummary): string {
   const sales = `${formatNumber(count)} vente${count > 1 ? "s" : ""} à venir`;
-  const date = updatedAt ? new Date(updatedAt) : null;
+  const date = verifiedAt ? new Date(verifiedAt) : null;
   return date && Number.isFinite(date.getTime())
-    ? `${sales} · mises à jour le ${UPDATE_DATE_FORMAT.format(date)}`
+    ? `${sales} · données vérifiées le ${UPDATE_DATE_FORMAT.format(date)}`
     : sales;
 }
 
