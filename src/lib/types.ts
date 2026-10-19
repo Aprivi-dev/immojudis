@@ -16,6 +16,11 @@ export type AuctionSale = {
   content_changed_at?: string | null;
   /** Signed-out page only: visits are announced (their text may name the address). */
   has_visit_dates?: boolean | null;
+  /**
+   * Signed-out page only: the starting price against the local market (DVF) in three bands, never a
+   * figure (`get_public_sale_market_gap_band`). Absent when there is nothing reliable to say.
+   */
+  market_gap_band?: "under" | "near" | "above" | "insufficient" | null;
   source_checks?: Record<string, { checked_at?: string }> | null;
   source_conflicts?: Array<{
     field?: string;
