@@ -54,13 +54,20 @@ export const ACCOUNT_LINKS: readonly AccountLink[] = [
 ];
 
 /**
- * Les entrées du menu « Mon compte ». « Mes ventes débloquées » n'apparaît que pour un compte
- * dont l'offre est connue et n'ouvre pas déjà toutes les ventes (`false`, pas `undefined`).
+ * Les entrées du menu « Mon compte » à afficher. « Mes ventes débloquées » n'apparaît que pour un
+ * compte dont l'offre est connue et n'ouvre pas déjà toutes les ventes (`false`, pas `undefined`).
  */
+export function visibleAccountLinks(
+  links: readonly AccountLink[],
+  hasAnalysisAccess: boolean | undefined,
+): SiteLink[] {
+  return links
+    .filter((link) => !link.hideForAnalysis || hasAnalysisAccess === false)
+    .map(({ href, label }) => ({ href, label }));
+}
+
 export function accountLinksFor(hasAnalysisAccess: boolean | undefined): SiteLink[] {
-  return ACCOUNT_LINKS.filter((link) => !link.hideForAnalysis || hasAnalysisAccess === false).map(
-    ({ href, label }) => ({ href, label }),
-  );
+  return visibleAccountLinks(ACCOUNT_LINKS, hasAnalysisAccess);
 }
 
 /**

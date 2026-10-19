@@ -13,12 +13,16 @@ import {
   isActive,
   lightGhost,
 } from "@/components/site-header-shared";
+import { useAuth } from "@/hooks/use-auth";
+import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
 import { getSupabase } from "@/integrations/supabase/lazy";
 import {
   SITE_INFO_LINKS,
   SITE_LEGAL_LINKS,
   SITE_NAV_LINKS,
   linkPrefetch,
+  visibleAccountLinks,
+  type AccountLink,
   type SiteLink,
 } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
@@ -44,7 +48,7 @@ export function MobileMenuDialog({
   onOpenChange: (open: boolean) => void;
   triggerRef: RefObject<HTMLButtonElement | null>;
   signedIn: boolean;
-  accountLinks: SiteLink[];
+  accountLinks: AccountLink[];
   pathname: string | null;
   /** Ouvre aussi le panneau des notifications (action « Voir » d'un message). */
   openNotifications?: boolean;
@@ -84,11 +88,13 @@ function MobileMenu({
   onNavigate,
 }: {
   signedIn: boolean;
-  accountLinks: SiteLink[];
+  accountLinks: AccountLink[];
   pathname: string | null;
   openNotifications: boolean;
   onNavigate: () => void;
 }) {
+  const { user } = useAuth();
+  const shownAccountLinks = visibleAccountLinks(accountLinks, useHasAnalysisAccess(user?.id));
   return (
     <>
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
@@ -114,7 +120,7 @@ function MobileMenu({
         {signedIn ? (
           <MobileSection
             title="Mon espace"
-            links={accountLinks}
+            links={shownAccountLinks}
             pathname={pathname}
             onNavigate={onNavigate}
           />

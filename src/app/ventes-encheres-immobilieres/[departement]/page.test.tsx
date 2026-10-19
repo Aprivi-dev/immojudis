@@ -252,6 +252,18 @@ describe("page d'un département : contenu", () => {
     expect(list.textContent).not.toContain("audience le 20 octobre 2026");
   });
 
+  it("propose à un visiteur « Recevoir les nouvelles ventes de ce secteur » via la connexion", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    const cta = screen.getByRole("link", { name: "Recevoir les nouvelles ventes de ce secteur" });
+    // Motif « alerte », puis retour sur la confirmation avec le département choisi.
+    expect(cta.getAttribute("href")).toBe(
+      "/login?redirect=%2Falertes%2Fcreer%3Fdepartment%3D33&mode=investor&reason=alerte",
+    );
+    // Aucune alerte ni email n'est créé par la page elle-même.
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
   it("renvoie vers la recherche du département et vers les tribunaux concernés", async () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     render(await Page(params("gironde")));

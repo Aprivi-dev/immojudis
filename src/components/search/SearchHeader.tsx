@@ -545,10 +545,13 @@ export function SaveSearchButton({
   signedIn = false,
   dailyAllowed = false,
   emailRecapEnabled = false,
+  label = "Créer une alerte",
   onClick,
 }: {
   saving: boolean;
   compact?: boolean;
+  /** Texte du bouton (hors version compacte). */
+  label?: string;
   /** Connecté : on propose le choix de la fréquence ; sinon on envoie vers la connexion. */
   signedIn?: boolean;
   dailyAllowed?: boolean;
@@ -574,7 +577,7 @@ export function SaveSearchButton({
       }`}
     >
       {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-      {compact ? null : "Créer une alerte"}
+      {compact ? null : label}
     </button>
   );
   if (!signedIn) return button;

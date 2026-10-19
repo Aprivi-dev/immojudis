@@ -18,8 +18,13 @@ import { MobileMenuDialog } from "@/components/SiteHeaderMobileMenu";
 import { MOBILE_MENU_UNREAD_ID } from "@/components/mobile-menu-unread";
 import { useAuth } from "@/hooks/use-auth";
 import { getAccountType, isAdminAccount } from "@/lib/account";
-import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
-import { accountLinksFor, linkPrefetch, SITE_NAV_LINKS, type SiteLink } from "@/lib/navigation";
+import {
+  ACCOUNT_LINKS,
+  linkPrefetch,
+  SITE_NAV_LINKS,
+  type AccountLink,
+  type SiteLink,
+} from "@/lib/navigation";
 import { isDesktopHeader, onOpenNotificationsRequest } from "@/lib/notification-center-events";
 import { cn } from "@/lib/utils";
 
@@ -92,10 +97,11 @@ export function SiteHeader({
     });
   }, [signedIn]);
 
-  const hasAnalysisAccess = useHasAnalysisAccess(signedIn ? user?.id : null);
-
-  const accountLinks: SiteLink[] = [
-    ...accountLinksFor(hasAnalysisAccess),
+  // Le menu « Mon compte » et le menu mobile retirent eux-mêmes les entrées qui dépendent de
+  // l'offre du compte (« Mes ventes débloquées ») : la lecture de l'offre n'est faite qu'à leur
+  // ouverture, pas à chaque page.
+  const accountLinks: AccountLink[] = [
+    ...ACCOUNT_LINKS,
     ...(professional ? [{ href: "/espace-pro", label: "Espace pro" }] : []),
     ...(admin ? [{ href: "/admin", label: "Administration" }] : []),
   ];
