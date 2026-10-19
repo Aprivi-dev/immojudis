@@ -37,7 +37,7 @@ const PUBLIC_ROUTES = [
   ["/avocats", "2026-10-08"],
   ["/offres", "2026-10-14"],
   ["/comment-ca-marche", "2026-10-13"],
-  ["/ressources", "2026-10-13"],
+  ["/ressources", "2026-10-19"],
   ["/tribunaux", "2026-10-13"],
   ["/annonce-exemple", "2026-10-15"],
   ["/ventes-immobilieres-judiciaires", GUIDE_LAST_UPDATED], // same date as the guide page

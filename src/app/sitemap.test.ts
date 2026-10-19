@@ -129,7 +129,7 @@ describe("sitemap.xml (static pages)", () => {
     mocks.loadSitemapSales.mockResolvedValue([]);
     const byUrl = new Map((await sitemap()).map((entry) => [entry.url, entry.lastModified]));
     expect(byUrl.get("https://immojudis.com/offres")).toBe("2026-10-14");
-    expect(byUrl.get("https://immojudis.com/ressources")).toBe("2026-10-13");
+    expect(byUrl.get("https://immojudis.com/ressources")).toBe("2026-10-19");
     expect(byUrl.get("https://immojudis.com/tribunaux")).toBe("2026-10-13");
     expect(byUrl.get("https://immojudis.com/annonce-exemple")).toBe("2026-10-15");
   });
@@ -288,7 +288,7 @@ describe("/ressources/sitemap.xml (articles)", () => {
 
   it("lists every article, and only the articles", () => {
     const entries = resourcesSitemap();
-    expect(entries).toHaveLength(13);
+    expect(entries).toHaveLength(16);
     for (const entry of entries) {
       expect(entry.url).toMatch(/^https:\/\/immojudis\.com\/ressources\/[a-z0-9-]+$/);
       expect(entry.lastModified).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -297,9 +297,9 @@ describe("/ressources/sitemap.xml (articles)", () => {
 
   it("dates an article by its last change (updatedAt), else by its publication", () => {
     const byUrl = new Map(resourcesSitemap().map((entry) => [entry.url, entry.lastModified]));
-    // Published on 05/10, corrected on 13/10.
+    // Published on 05/10, corrected on 19/10.
     expect(byUrl.get("https://immojudis.com/ressources/prix-plafond-encheres-immobilieres")).toBe(
-      "2026-10-13",
+      "2026-10-19",
     );
     // Published on 13/10, never changed since.
     expect(byUrl.get("https://immojudis.com/ressources/frais-vente-encheres-judiciaire")).toBe(

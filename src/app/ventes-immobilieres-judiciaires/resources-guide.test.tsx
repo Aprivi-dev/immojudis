@@ -53,6 +53,7 @@ describe("guide des ventes immobilières judiciaires", () => {
       ["Surenchère", "lexique-surenchere"],
       ["Consignation du prix", "lexique-consignation-du-prix"],
       ["Enchère plafond", "lexique-enchere-plafond"],
+      ["Droit de préemption", "lexique-droit-de-preemption"],
     ])("donne au terme « %s » l'ancre %s", (term, anchor) => {
       expect(lexiqueAnchor(term)).toBe(anchor);
       const { container } = render(<ResourcesPage />);
@@ -119,7 +120,7 @@ describe("guide des ventes immobilières judiciaires", () => {
       expect(structured.dateModified).toBe(GUIDE_LAST_UPDATED);
       expect(time!.getAttribute("datetime")).toBe(structured.dateModified);
       expect(time!.textContent).toBe(formatGuideDate(structured.dateModified!));
-      expect(time!.textContent).toBe("13/10/2026");
+      expect(time!.textContent).toBe("19/10/2026");
     });
 
     it("est une date AAAA-MM-JJ valide, pas postérieure à aujourd'hui", () => {
@@ -265,6 +266,11 @@ describe("guide des ventes immobilières judiciaires", () => {
         "saisie-immobiliere-etapes-vente-forcee-acheteur",
         "licitation-vente-bien-indivis-encheres-acheteur",
         "avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
+        "analyser-opportunite-encheres",
+        "immeuble-rapport-encheres",
+        "droit-de-preemption-encheres-commune-acheteur",
+        "garantie-10-pourcent-cheque-banque-caution-encheres",
+        "copropriete-encheres-charges-assemblees",
       ]) {
         expect(hrefs).toContain(`/ressources/${slug}`);
       }
