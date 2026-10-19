@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   search: {} as { mode?: "investor" | "professional"; redirect?: string; reason?: string },
+  launch: { active: false, pending: false },
   replace: vi.fn(),
   signIn: vi.fn(),
   signUp: vi.fn(),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
+vi.mock("@/hooks/use-launch-offer", () => ({ useLaunchOffer: () => mocks.launch }));
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: null, profile: null, loading: false }),
 }));
@@ -29,10 +31,12 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(mocks.search),
 }));
 
+import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { LoginPage } from "./login-page";
 
 beforeEach(() => {
   mocks.search = {};
+  mocks.launch = { active: false, pending: false };
   vi.clearAllMocks();
 });
 afterEach(cleanup);
@@ -180,7 +184,7 @@ describe("login page", () => {
     const { unmount } = render(<LoginPage />);
     const promise = screen.getByTestId("login-free-promise");
     expect(promise.textContent).toBe(
-      "Gratuit : 3 ventes en détail par mois (selon la vente), sans carte bancaire",
+      "Gratuit : 3 ventes en détail par mois (enchère plafond, lecture des pièces, historique, selon la vente), sans carte bancaire",
     );
     // Visible sous le point de rupture « lg », où la colonne d'explication prend le relais.
     expect(promise.className).toContain("lg:hidden");
@@ -189,6 +193,84 @@ describe("login page", () => {
     mocks.search = {};
     render(<LoginPage />);
     expect(screen.queryByTestId("login-free-promise")).toBeNull();
+  });
+
+  it("l'export n'est promis au compte gratuit que si c'est vrai : exact dans les deux états", () => {
+    mocks.search = { mode: "investor", reason: "export" };
+    const { unmount } = render(<LoginPage />);
+    // Offre de lancement coupée : l'export est réservé à Analyse.
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Créez votre compte gratuit, sans carte bancaire. L’export des résultats est réservé à l’offre Analyse.",
+    );
+    unmount();
+
+    mocks.launch = { active: true, pending: false };
+    const active = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toContain(
+      "Créez votre compte gratuit pour exporter ces résultats",
+    );
+    expect(screen.getByTestId("login-reason").textContent).toContain("offre de lancement");
+    active.unmount();
+
+    mocks.search = { reason: "export" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Connectez-vous pour exporter ces résultats.",
+    );
+  });
+
+  it("annonce 10 favoris offerts et le motif « ouverture » de la liste d'attente", () => {
+    mocks.search = { mode: "investor", reason: "favori" };
+    const { unmount } = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toContain("(10 favoris offerts)");
+    unmount();
+
+    mocks.search = { mode: "investor", reason: "ouverture" };
+    const signup = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Créez votre compte gratuit pour être prévenu de l’ouverture de l’offre Analyse.",
+    );
+    signup.unmount();
+
+    mocks.search = { reason: "ouverture" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Connectez-vous pour être prévenu de l’ouverture de l’offre Analyse.",
+    );
+  });
+
+  it("offre de lancement : la mention du visiteur remplace la promesse des 3 ventes", () => {
+    mocks.search = { mode: "investor" };
+    mocks.launch = { active: true, pending: false };
+    render(<LoginPage />);
+
+    expect(screen.getByTestId("login-free-promise").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    expect(screen.getByTestId("login-launch-offer").textContent).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    expect(screen.getByTestId("login-launch-offer-column").textContent).toBe(
+      LAUNCH_OFFER_VISITOR_TEXT,
+    );
+  });
+
+  it("offre de lancement : motifs « offre » et « fiche » sans promesse de quota", () => {
+    mocks.launch = { active: true, pending: false };
+    mocks.search = { mode: "investor", reason: "fiche" };
+    const { unmount } = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toContain("offre de lancement");
+    expect(screen.getByTestId("login-reason").textContent).not.toContain("3 en détail");
+    unmount();
+
+    mocks.search = { mode: "investor", reason: "offre" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Créez votre compte gratuit : pendant l’offre de lancement, il bénéficie des avantages de l’offre Analyse.",
+    );
+  });
+
+  it("sans offre de lancement, aucune mention de l'offre n'apparaît", () => {
+    mocks.search = { mode: "investor" };
+    render(<LoginPage />);
+    expect(screen.queryByTestId("login-launch-offer")).toBeNull();
+    expect(screen.queryByTestId("login-launch-offer-column")).toBeNull();
   });
 
   it("n'affiche aucun bandeau pour un motif inconnu", () => {

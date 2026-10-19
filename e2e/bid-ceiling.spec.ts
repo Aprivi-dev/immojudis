@@ -13,7 +13,7 @@ async function openCalculation(page: Page) {
   await page.goto("/annonce-exemple#calculation");
   const calculation = page.locator("#calculation");
   await expect(page.getByRole("heading", { name: "Votre enchère plafond" })).toBeVisible();
-  await expect(calculation).toContainText(/Enchère plafond · Équilibré/);
+  await expect(calculation).toContainText(/Enchère plafond \(simulation\) · Équilibré/);
   return calculation;
 }
 

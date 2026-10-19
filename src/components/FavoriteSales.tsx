@@ -20,6 +20,7 @@ import { Badge, Card, PageShell, buttonClasses } from "@/components/ui/primitive
 import { ListingCard } from "@/components/search/SearchResults";
 import { FavoriteButton } from "./FavoriteButton";
 import { FavoriteSaleChanges } from "./FavoriteSaleChanges";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { queryKeys } from "@/lib/query-keys";
 
 const NOOP = () => undefined;
@@ -92,7 +93,8 @@ export function FavoriteSales() {
       description={
         <>
           Retrouvez ici les ventes que vous avez ajoutées aux favoris, sur tous vos appareils.
-          L’offre Découverte permet 3 favoris ; l’offre Analyse n’a pas de limite.
+          L’offre Découverte permet {PLAN_LIMITS.decouverte.favoriteSales} favoris ; l’offre Analyse
+          n’a pas de limite.
           {limit != null && data ? (
             <>
               {" "}

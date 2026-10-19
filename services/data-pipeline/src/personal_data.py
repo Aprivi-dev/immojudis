@@ -15,7 +15,12 @@ avec les mêmes cas.
   « née », « consorts », « héritiers de », « succession de ».
 - Il ne retire jamais une commune, une rue, un tribunal, une étude notariale ni une société (SCI,
   SARL…) : un nom n'est reconnu qu'après une civilité (Monsieur, Mme, M.…) ou sous la forme
-  « Prénom NOM ».
+  « Prénom NOM » ou « NOM Prénom » (« DUPONT Pierre » : le prénom doit figurer dans la liste
+  `_FIRST_NAMES`, sans quoi « EDF Collectivités » ou « BNP Paribas » seraient pris pour des noms).
+- Après un rôle (« le débiteur », « propriétaire », « vendeur »… suivi de `:`, d'une virgule ou
+  d'un espace), le nom est retiré avec ou sans civilité (« Le saisi, Paul ROY, occupe… »), sauf si
+  le mot qui suit est « Me », « Maître » ou un nom de bien (« propriétaire Local COMMERCIAL »).
+- « À la requête de : Madame X » (deux-points) et « À la requête de la Mme X » sont reconnus.
 - Le statut n'est jamais déduit : « occupé(e)(s) par <nom> » devient toujours « un occupant ». « Un
   locataire » n'apparaît que si la formule source le dit (« loué à <nom> », « bail consenti à <nom> »,
   « locataire <nom> » : on remplace le nom, pas le rôle).
@@ -28,6 +33,7 @@ avec les mêmes cas.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Callable
 from typing import Any
 
@@ -52,11 +58,70 @@ _NOT_SENTENCE_START = rf"(?!(?:Le|La|Les|Un|Une|Il|Elle|Dans|Pour|Sur|Et|Ce|Cett
 _NEXT = rf"(?:(?:Le|La|Les){_SP}+{_NOT_STOP}{_TOKEN}|{_NOT_SENTENCE_START}{_NOT_STOP}{_TOKEN})"
 _PARTICLE = rf"(?:de{_SP}+la|de|du|des|d{_APOS}|van|von|der|den|ben|el|al|di|da|dos|del|della)"
 _INITIAL = rf"[{_UP}]\.{_SP}*"
+# Prénoms usuels (liste partagée mot pour mot avec `FIRST_NAMES` du miroir TypeScript ; un test compare
+# les deux). Sert uniquement à reconnaître « NOM Prénom » (« DUPONT Pierre ») sans civilité : sans
+# liste, tout « SIGLE Mot » (« EDF Collectivités », « BNP Paribas ») serait pris pour une personne.
+# Un prénom absent de la liste n'est pas reconnu sans civilité ; il l'est après « Monsieur », « Mme »…
+_FIRST_NAMES = (
+    "Marie Nathalie Isabelle Sylvie Catherine Françoise Martine Christine Monique Valérie "
+    "Sandrine Patricia Brigitte Nicole Véronique Annie Jacqueline Stéphanie Céline Chantal "
+    "Julie Sophie Anne Laurence Corinne Michèle Dominique Claire Florence Marguerite Danielle "
+    "Hélène Pascale Karine Béatrice Christiane Thérèse Odile Fabienne Sabrina Virginie "
+    "Aurélie Émilie Laetitia Nadia Samira Fatima Léa Camille Chloé Manon Emma Inès Sarah "
+    "Laura Lucie Marine Pauline Mélanie Delphine Agnès Colette Josette Paulette Yvette "
+    "Ginette Odette Simone Suzanne Denise Geneviève Évelyne Josiane Régine Maryse Muriel "
+    "Cécile Élodie Charlotte Audrey Alice Eva Lina Anaïs Juliette Mathilde Louise Jeanne "
+    "Madeleine Yvonne Raymonde Andrée Arlette Bernadette Liliane Gisèle Huguette Nadine Sonia "
+    "Amandine Magali Ghislaine Roselyne Rose Maud Élisabeth Lydie Carole Cathy Jessica Élise "
+    "Aline Alexandra Angélique Adeline Estelle Gaëlle Armelle Solange Mireille Marlène Noémie "
+    "Margaux Clémence Océane Morgane Lisa Anna Clara Zoé Jade Mona Leïla Yasmine Khadija "
+    "Aïcha Malika Naima Latifa Samia Houria Karima Rachida Ana Maria Carmen Rosa Isabel "
+    "Marion Roxane Justine Johanna Séverine Stella Vanessa Wendy Tiphaine Sylviane Reine Jean "
+    "Pierre Michel André Philippe René Louis Alain Jacques Bernard Marcel Daniel Roger Robert "
+    "Paul Claude Christian Henri Georges Nicolas François Patrick Gérard Christophe Joseph "
+    "Yves Éric Frédéric Laurent Stéphane David Pascal Olivier Thierry Sébastien Julien "
+    "Alexandre Maxime Thomas Antoine Mathieu Guillaume Romain Kevin Jérôme Franck Didier "
+    "Denis Gilles Serge Bruno Marc Luc Hervé Raymond Lucien Maurice Albert Fernand Gaston "
+    "Émile Roland Rémy Rémi Vincent Anthony Benoît Cédric Damien Fabrice Fabien Gaël Grégory "
+    "Jonathan Lionel Ludovic Mickaël Nathan Hugo Lucas Théo Enzo Ahmed Mohamed Mohammed Karim "
+    "Youssef Rachid Abdel Samir Hassan Omar Ali Mehdi Nabil Saïd Farid Manuel José Antonio "
+    "Carlos Miguel João Jorge Luis Paulo Giuseppe Mario Marco Stefano Gabriel Adrien Arnaud "
+    "Baptiste Bastien Clément Corentin Dylan Étienne Florian Jordan Léo Loïc Mathis Nolan "
+    "Quentin Raphaël Sylvain Tristan Valentin Victor Xavier Yann Yannick Régis Rodolphe "
+    "Gilbert Gérald Jocelyn Aimé Auguste Édouard Eugène Félix Léon Armand Alfred Noël Max Sam "
+    "Tom Jules Hubert Guy Francis Joël Jacky Jackie Thibault Thibaut Cyril Cyrille Dimitri "
+    "Mathias Matthieu Ibrahim Moussa Mamadou Abdelkader Mustapha Brahim Idriss Anis Amine "
+    "Bilal Yanis Bertrand Gaétan Géraud Josselin Maël Ronan Tanguy Erwan Gwenaël Hugues "
+    "Ludwig Sacha Ulysse Marius Aurélien Pierrick Johan Steven Teddy Stan Rodrigue Léopold "
+    "Basile"
+)
+
+
+def _first_name_forms() -> str:
+    forms: set[str] = set()
+    for name in _FIRST_NAMES.split(" "):
+        plain = "".join(c for c in unicodedata.normalize("NFD", name) if not unicodedata.combining(c))
+        for form in (name, plain):
+            forms.add(form)
+            forms.add(form.upper())
+    return "|".join(sorted(forms, key=lambda form: (-len(form), form)))
+
+
+_FIRST_NAME_FORMS = _first_name_forms()
+# Un ou plusieurs prénoms de la liste, composés avec un trait d'union : « Jean-Pierre », « MARIE-CLAIRE ».
+_FIRST_NAME = rf"(?:{_FIRST_NAME_FORMS})(?:-(?:{_FIRST_NAME_FORMS}))*(?![{_L}])"
 # Prénom(s) puis NOM(S) en capitales : « Jean-Pierre DUPONT ».
-_BARE = (
+_BARE_FORENAME_FIRST = (
     rf"{_CAPW}(?:{_SP}+{_CAPW}){{0,2}}{_SP}+{_NOT_STOP}{_UPW}"
     rf"(?:{_SP}+(?:{_PARTICLE}{_SP}*)?{_NOT_STOP}{_UPW}){{0,2}}"
 )
+# NOM(S) en capitales puis prénom(s) de la liste : « DUPONT Pierre », « DE LA FONTAINE Claire »,
+# « DUPONT PIERRE ».
+_BARE_SURNAME_FIRST = (
+    rf"{_NOT_STOP}{_UPW}(?:{_SP}+(?:{_PARTICLE}{_SP}*)?{_NOT_STOP}{_UPW}){{0,2}}"
+    rf"{_SP}+{_FIRST_NAME}(?:{_SP}+{_FIRST_NAME}){{0,2}}"
+)
+_BARE = rf"(?:{_BARE_FORENAME_FIRST}|{_BARE_SURNAME_FIRST})"
 _NAMESEQ = rf"(?:{_INITIAL})*{_TOKEN}(?:{_SP}+(?:{_PARTICLE}{_SP}+)?{_NEXT}){{0,4}}"
 _NAME_SINGLE = rf"{_TOKEN}(?:{_SP}+(?:{_PARTICLE}{_SP}+)?{_NEXT}){{0,2}}"
 # « Pierre Martin » en casse mixte, sans civilité : deux à trois mots, jamais un début de phrase.
@@ -148,8 +213,12 @@ _ADDRESS_SEPARATOR = re.compile(rf"(?:{_SP}*,{_SP}*|{_SP}+|-)")
 _MAX_ADDRESS_TOKENS = 30
 
 _NO_BEFORE = rf"(?<![{_L}\d])"
+# « À LA REQUETE DE : Madame X » (deux-points) et « à la requête de la Mme X » (article devant la
+# civilité) : le « la » n'est consommé que devant une civilité.
 _REQUETE = re.compile(
-    rf"{_NO_BEFORE}([àa]{_SP}+la{_SP}+requ[êe]te)({_SP}+(?:des|de|du|d{_APOS})){_SP}*", re.IGNORECASE
+    rf"{_NO_BEFORE}([àa]{_SP}+la{_SP}+requ[êe]te)({_SP}+(?:des|de|du|d{_APOS}))(?:{_SP}*:)?{_SP}*"
+    rf"(?:(?:la|le){_SP}+(?={_CIV}))?",
+    re.IGNORECASE,
 )
 _OCCUPIED = re.compile(rf"{_NO_BEFORE}occup[ée](?:e|s|es)?{_SP}+par{_SP}+", re.IGNORECASE)
 # « le locataire en place, Madame X » : le qualificatif reste, le nom part.
@@ -299,10 +368,27 @@ def _occupied(text: str, match: re.Match[str]) -> _Edit | None:
     return match.end(), end, "un occupant"
 
 
+# Après un rôle sans civilité, ces mots ne commencent pas un nom (avocat, bien décrit en capitales).
+_ROLE_NOT_A_NAME = frozenset(
+    (
+        "me maître maitre mtre appartement maison local locaux lot lots bien biens terrain studio garage "
+        "parking cave villa pavillon entrepôt entrepot bâtiment batiment commerce parcelle logement fonds"
+    ).split(" ")
+)
+
+
 def _role(text: str, match: re.Match[str]) -> _Edit | None:
     civil = _PERSON_CIV.match(text, match.end())
-    if not civil or not _acceptable(civil.group(0), "civ"):
-        return None
+    if civil:
+        if not _acceptable(civil.group(0), "civ"):
+            return None
+    else:
+        # Sans civilité : « Le saisi, Paul ROY », « propriétaire : DUPONT Pierre ».
+        bare = _PERSON_BARE.match(text, match.end())
+        if not bare or not _acceptable(bare.group(0), "bare"):
+            return None
+        if re.split(r"[\s'’-]", bare.group(0), maxsplit=1)[0].lower() in _ROLE_NOT_A_NAME:
+            return None
     end = _person_end(text, match.end())
     if end is None:
         return None

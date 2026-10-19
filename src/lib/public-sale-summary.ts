@@ -50,7 +50,8 @@ type SummaryRow = {
   tribunal_name: string | null;
   tribunal_city: string | null;
   thumbnail_url: string | null;
-  updated_at: string | null;
+  /** Date of the last visible change; absent while the database function is not migrated yet. */
+  content_changed_at?: string | null;
 };
 
 /**
@@ -142,7 +143,7 @@ export function mapPublicSaleSummary(row: SummaryRow): AuctionSale {
     bathrooms_count: row.bathrooms_count,
     tribunal_name: row.tribunal_name,
     tribunal_city: row.tribunal_city,
-    updated_at: row.updated_at,
+    content_changed_at: row.content_changed_at ?? null,
     media: isLikelyPropertyImageUrl(row.thumbnail_url)
       ? [{ type: "image", url: row.thumbnail_url }]
       : [],

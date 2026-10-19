@@ -98,7 +98,7 @@ export function productionLaunchProblems(env) {
 }
 
 /** Billed price of the Analyse subscription. Keep in sync with src/lib/analysis-offer.ts (tested). */
-export const ANALYSIS_RECURRING_PRICE_CENTS = 2_900;
+export const ANALYSIS_RECURRING_PRICE_CENTS = 5_900;
 export const ANALYSIS_OFFER_LABEL_ENV = "NEXT_PUBLIC_ANALYSIS_OFFER_LABEL";
 
 const LABEL_AMOUNT = String.raw`\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?`;
@@ -117,7 +117,7 @@ export function analysisOfferLabelAmountsCents(label) {
 }
 
 /**
- * The public price label is only copy; the amount charged is the Stripe Price (2 900 cents).
+ * The public price label is only copy; the amount charged is the Stripe Price (5 900 cents).
  * A label that states another amount, or none, would advertise a price that is not billed:
  * the build is refused. An unset (blank) label falls back to the approved default label.
  * Not covered by the launch escape hatch: it is a wrong price, not a missing value.

@@ -264,6 +264,12 @@ def test_parse_french_datetime_keeps_iso_date_embedded_in_text() -> None:
 
 
 def test_normalize_sale_extracts_department_and_property_type() -> None:
+    from datetime import date, timedelta
+
+    # Date relative au jour d'exécution : une date écrite en dur finirait par être passée (statut « past »).
+    day = date.today() + timedelta(days=60)
+    months = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre",
+              "octobre", "novembre", "décembre")
     sale = normalize_sale(
         {
             "source_name": "avoventes",
@@ -271,7 +277,7 @@ def test_normalize_sale_extracts_department_and_property_type() -> None:
             "title": "Vente aux enchères Maison",
             "address": "12 rue Test 33000 Bordeaux",
             "starting_price_eur": "80 000 €",
-            "sale_date": "12 décembre 2026 à 10h00",
+            "sale_date": f"{day.day} {months[day.month - 1]} {day.year} à 10h00",
         }
     )
     assert sale.department == "33"

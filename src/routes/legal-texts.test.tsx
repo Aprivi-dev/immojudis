@@ -59,8 +59,8 @@ describe("conditions générales", () => {
     );
     cleanup();
     // Only a label stating the billed price passes the build (scripts/verify-required-env.mjs).
-    vi.stubEnv("NEXT_PUBLIC_ANALYSIS_OFFER_LABEL", "29 € / mois");
-    expect(pageText(<TermsPage />)).toContain("Prix de l’abonnement Analyse : 29 € / mois");
+    vi.stubEnv("NEXT_PUBLIC_ANALYSIS_OFFER_LABEL", "59 € / mois");
+    expect(pageText(<TermsPage />)).toContain("Prix de l’abonnement Analyse : 59 € / mois");
   });
 
   it("décrivent un seul chemin de résiliation, aligné sur le bouton réel du compte", () => {

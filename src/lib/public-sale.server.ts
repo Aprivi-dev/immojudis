@@ -15,6 +15,11 @@ export type PublicSaleLookup =
       /** Database verdict on indexing; absent while the function is not deployed. */
       indexable?: boolean;
     }
+  /**
+   * The identifier belongs to a sale that was merged into another one (duplicate merge) and the
+   * kept sale is in the public catalogue: answer with a permanent redirect to `targetId`.
+   */
+  | { status: "merged"; targetId: string }
   /** No such public sale: answer 404. */
   | { status: "missing" }
   /** The server cannot reach the database (not configured): let the browser decide. */
@@ -37,6 +42,38 @@ async function legacyPreview(
     .maybeSingle();
   if (error) throw error;
   return (data as AuctionSale | null) ?? null;
+}
+
+type MergedSaleClient = {
+  rpc: (
+    fn: "get_merged_sale_target",
+    args: { p_sale_id: string },
+  ) => PromiseLike<{ data: unknown; error: unknown }>;
+};
+
+/**
+ * The kept sale of an identifier that a duplicate merge removed (`get_merged_sale_target`: the
+ * identifier only, and only when the kept sale is visible in the public catalogue), or `null`.
+ * A database that does not have the function yet answers like a sale that was never merged.
+ */
+async function fetchMergedSaleTarget(
+  client: NonNullable<ReturnType<typeof createPublicSupabaseClient>>,
+  id: string,
+): Promise<string | null> {
+  const { data, error } = await (client as unknown as MergedSaleClient).rpc(
+    "get_merged_sale_target",
+    { p_sale_id: id },
+  );
+  if (error) {
+    const { code, message } = error as { code?: string; message?: string };
+    if (code === "PGRST202" || code === "42883" || /get_merged_sale_target/.test(message ?? "")) {
+      return null;
+    }
+    throw error;
+  }
+  if (typeof data !== "string" || !SALE_ID_PATTERN.test(data)) return null;
+  const targetId = data.toLowerCase();
+  return targetId === id ? null : targetId;
 }
 
 /**
@@ -69,10 +106,19 @@ async function readPublicSale(
       ...(summary.indexable === undefined ? {} : { indexable: summary.indexable }),
     };
   }
-  if (summary.kind === "missing") return { status: "missing" };
+  if (summary.kind === "missing") return missingOrMerged(client, id);
 
   const sale = await legacyPreview(client, id);
-  return sale ? { status: "found", sale } : { status: "missing" };
+  return sale ? { status: "found", sale } : missingOrMerged(client, id);
+}
+
+/** A sale that is not public: a merged duplicate redirects to the sale that was kept, else 404. */
+async function missingOrMerged(
+  client: NonNullable<ReturnType<typeof createPublicSupabaseClient>>,
+  id: string,
+): Promise<PublicSaleLookup> {
+  const targetId = await fetchMergedSaleTarget(client, id);
+  return targetId ? { status: "merged", targetId } : { status: "missing" };
 }
 
 /**

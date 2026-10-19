@@ -36,7 +36,7 @@ const SALE = {
   tribunal_name: "Tribunal judiciaire de Lyon",
   tribunal_city: "Lyon",
   thumbnail_url: null,
-  updated_at: new Date().toISOString(),
+  content_changed_at: null,
 };
 
 function json(body, status = 200) {

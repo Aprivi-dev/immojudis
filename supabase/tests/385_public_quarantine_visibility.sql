@@ -1,4 +1,7 @@
 begin;
+-- L'offre de lancement (active par défaut, 20261028120000) donne l'accès Analyse à tout compte
+-- connecté : ce test vérifie les règles d'un compte gratuit, il la coupe (annulé par le rollback).
+update app_private.launch_offer set active = false where singleton;
 
 select plan(18);
 
@@ -253,13 +256,34 @@ select ok(
       'app_private.search_auction_sales_preview_v3(text[],text,text,text,text[],text[],numeric,numeric,numeric,numeric,integer,integer,text,numeric,text[],double precision,double precision,double precision,double precision,text,integer,integer,text)'::regprocedure
     )
   ) > 0
+  -- Since 20261028110200 the projection calls the single rule, which reads publication_quarantine
+  -- and the two other quarantine keys of the pipeline.
   and position(
-    'publication_quarantine' in
+    'app_private.catalogue_quarantine_from_payload' in
     pg_catalog.pg_get_functiondef(
       'app_private.sync_auction_sale_catalogue_projection()'::regprocedure
     )
-  ) > 0,
-  'v3 filters on the materialized quarantine column, derived from publication_quarantine'
+  ) > 0
+  and position(
+    'app_private.catalogue_quarantine_from_payload' in
+    pg_catalog.pg_get_functiondef(
+      'app_private.sync_auction_sale_catalogue_visibility()'::regprocedure
+    )
+  ) > 0
+  and (
+    select bool_and(
+      position(
+        quarantine_key in
+        pg_catalog.pg_get_functiondef(
+          'app_private.catalogue_quarantine_from_payload(jsonb)'::regprocedure
+        )
+      ) > 0
+    )
+    from unnest(array[
+      'publication_quarantine', 'publication_identity_conflict', 'source_identity_mismatch'
+    ]) as quarantine_key
+  ),
+  'v3 filters on the materialized quarantine column, derived from publication_quarantine (and the other pipeline keys) by one rule'
 );
 
 select ok(

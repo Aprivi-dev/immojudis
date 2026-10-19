@@ -47,7 +47,7 @@ describe("page « Comment sont classées les annonces ? »", () => {
       "Le score de complétude mesure, sur 100, la part des informations utiles renseignées dans la fiche Immojudis, appuyées par une source ; il ne juge ni l’intérêt ni la valeur du bien.",
     );
     expect(section.textContent).not.toContain("décision prête");
-    expect(section.textContent).toContain("Il ne dépend d’aucune rémunération");
+    expect(section.textContent).toContain("ne dépend d’aucune rémunération");
     expect(section.textContent).toContain("évaluée dans les heures qui suivent");
   });
 

@@ -34,7 +34,8 @@ function sale(overrides: Partial<AuctionSale> = {}): AuctionSale {
     tribunal_name: null,
     tribunal_city: null,
     media: [{ type: "image", url: "https://media.example.test/photo.jpg" }],
-    updated_at: "2026-10-08T08:00:00Z",
+    // Technical date of the row (moves with every collection run): must never be published.
+    updated_at: "2026-10-18T08:00:00Z",
     ...overrides,
   } as AuctionSale;
 }
@@ -180,6 +181,26 @@ describe("sale structured data", () => {
         item: `${origin}/sales/005a914d-563c-427b-88a4-740cbf851afb`,
       },
     ]);
+  });
+
+  it("publishes dateModified only from the date of the last visible change", () => {
+    const listingOf = (overrides: Partial<AuctionSale>) =>
+      (
+        saleStructuredData(sale(overrides), { origin, now: NOW }) as {
+          "@graph": Array<Record<string, unknown>>;
+        }
+      )["@graph"][0];
+
+    // Known date: published, in ISO form.
+    expect(listingOf({ content_changed_at: "2026-10-20T09:30:00Z" }).dateModified).toBe(
+      "2026-10-20T09:30:00.000Z",
+    );
+    // No reliable date: nothing, even though `updated_at` is filled.
+    for (const content_changed_at of [null, undefined, "pas une date"]) {
+      const listing = listingOf({ content_changed_at });
+      expect(listing, String(content_changed_at)).not.toHaveProperty("dateModified");
+    }
+    expect(JSON.stringify(listingOf({}))).not.toContain("2026-10-18");
   });
 
   it("builds a breadcrumb for an information page", () => {

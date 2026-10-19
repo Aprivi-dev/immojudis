@@ -1,6 +1,9 @@
 -- "3 déblocages par mois": `unlockable` in the status, the 24-month limit (also in unlock_sale_at,
 -- 20261025160000) and the release of an unlock (20261025130000 and 20261025130100).
 begin;
+-- L'offre de lancement (active par défaut, 20261028120000) donne l'accès Analyse à tout compte
+-- connecté : ce test vérifie les règles d'un compte gratuit, il la coupe (annulé par le rollback).
+update app_private.launch_offer set active = false where singleton;
 
 select plan(20);
 

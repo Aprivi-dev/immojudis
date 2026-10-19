@@ -7,7 +7,7 @@ import { publicSaleCacheTag } from "@/lib/public-sale.server";
 import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
 import { resolveRequestId } from "@/lib/request-id";
 import { warmSalePages } from "@/lib/sale-page-warmup";
-import { SALES_DEFAULT_PATH } from "@/lib/sales-isr";
+import { SALES_DEFAULT_PATH, SALES_PATH } from "@/lib/sales-isr";
 
 const MAX_SALES_PER_CALL = 100;
 
@@ -37,8 +37,14 @@ const bodySchema = z.union([
  * sales too, not only the new ones.
  *
  * Once the response is sent (`after()`), each invalidated page is requested once on the public
- * origin so that it is regenerated before the first visitor (often a crawler) arrives. That
- * warm-up never delays nor fails the response (see `warmSalePages`).
+ * origin so that it is regenerated before the first visitor (often a crawler) arrives: the sale
+ * pages and `/sales` itself (rewritten to the static page expired above). That warm-up never delays
+ * nor fails the response (see `warmSalePages`).
+ *
+ * What this route cannot purge: the CDN copies of `/api/catalogue/preview` and of the `.ics` export
+ * (`/api/sales/<id>/calendar`). Purging them by tag needs `invalidateByTag` of `@vercel/functions`,
+ * which the repository does not depend on; both routes therefore keep their answer for 60 s only (see
+ * `PREVIEW_CDN_MAX_AGE_SECONDS` and `CALENDAR_CACHE_SECONDS`).
  */
 export async function POST(request: Request) {
   const requestId = resolveRequestId(request.headers.get("x-request-id"));
@@ -81,8 +87,9 @@ export async function POST(request: Request) {
   // The destination of the rewrite, not `/sales`: `revalidatePath` works on the route files, and
   // the proxy (which rewrites `/sales` to this page) does not run for revalidations.
   revalidatePath(SALES_DEFAULT_PATH);
-  // One GET per invalidated sale, after the response: it cannot call this route back.
-  after(() => warmSalePages(ids, { requestId }));
+  // One GET per invalidated sale, and one on the public `/sales` (the proxy rewrites it to the static
+  // page just expired), after the response: it cannot call this route back.
+  after(() => warmSalePages(ids, { requestId, extraPaths: [SALES_PATH] }));
 
   return NextResponse.json(
     { ok: true, revalidated: ids.map(publicSaleCacheTag), requestId },

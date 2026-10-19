@@ -42,7 +42,41 @@ export function DocumentReadingSection({
     staleTime: 10 * 60_000,
     retry: false,
   });
-  if (!enabled || !query.data) return null;
+  if (!enabled) return null;
+  // Trois états visibles avant la lecture, à hauteur réservée : chargement, erreur (avec
+  // « Réessayer ») et pièces non lisibles. Aucun ne dépend de ce que le compte a le droit de lire :
+  // le cas « teaser » plus bas reste inchangé.
+  if (!query.data) {
+    return (
+      <section
+        id="lecture-pieces"
+        className={`${styles.card} ${styles.placeholder}`}
+        aria-labelledby="document-reading-title"
+        aria-busy={!query.isError}
+      >
+        <h2 id="document-reading-title">Lecture des pièces du dossier</h2>
+        {query.isError ? (
+          <>
+            <p role="alert" className={styles.lead}>
+              La lecture des pièces n’a pas pu être chargée.
+            </p>
+            <button
+              type="button"
+              className={styles.stateAction}
+              onClick={() => void query.refetch()}
+              disabled={query.isFetching}
+            >
+              Réessayer
+            </button>
+          </>
+        ) : (
+          <p role="status" className={styles.lead}>
+            Lecture des pièces en cours…
+          </p>
+        )}
+      </section>
+    );
+  }
   const data = query.data;
 
   if (data.access === "teaser") {
@@ -66,7 +100,24 @@ export function DocumentReadingSection({
     );
   }
 
-  if (data.status === "no_text") return null;
+  if (data.status === "no_text") {
+    return (
+      <section
+        id="lecture-pieces"
+        className={`${styles.card} ${styles.placeholder}`}
+        aria-labelledby="document-reading-title"
+      >
+        <h2 id="document-reading-title">Lecture des pièces du dossier</h2>
+        <p className={styles.lead}>
+          Les pièces de ce dossier n’ont pas pu être lues automatiquement (documents numérisés).
+          Lisez-les directement :
+        </p>
+        <a href="#documents" className={styles.stateAction}>
+          Voir les pièces disponibles
+        </a>
+      </section>
+    );
+  }
   if (data.status !== "completed") {
     return (
       <section id="lecture-pieces" className={styles.card} aria-labelledby="document-reading-title">

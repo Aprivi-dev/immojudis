@@ -143,6 +143,18 @@ report » (lecture seule), ou la variable de dépôt `DEDUPE_RECONCILE_MODE=cand
 complète. Il journalise chaque paire conservée / supprimée (identifiant, source, commune, date, mise à prix, raison)
 et écrit le même tableau dans le résumé du job.
 
+La collecte planifiée lance une seule source à la fois ; or la passe ci-dessus n'est appelée par
+`src.main` que pour `--source all` sans limite, donc jamais en collecte planifiée. Le point d'entrée
+`python -m src.dedupe_apply` (workflow GitHub « Dedupe sweep », manuel, groupe de concurrence
+`immojudis-data-pipeline`, environnement Production) l'exécute à part : passerelle du catalogue, puis
+fusion et suppression, au plus 100 lignes par passage et seulement si `DEDUPE_RECONCILE_ENABLED=true`
+(sinon rien n'est écrit, et le mode candidats reste en lecture seule). Dans ce balayage, la clé de repli
+stricte (tribunal, jour, mise à prix, bien) est permise hors Vench / Petites Affiches, et un (jour, prix)
+partagé par plus de 5 annonces ou un groupe de plus de 5 lignes n'est jamais fusionné. Les données des
+comptes (favoris, notes, alertes, rapports…) des lignes supprimées passent à la fiche conservée dans la
+base (migration `20261028110000`), qui garde aussi la correspondance ancien identifiant → fiche conservée
+(redirection 308 de `/sales/<ancien id>`).
+
 Pour résorber progressivement les annonces déjà en base sans synthèse IA
 publique, lancer un backfill borné. Il ne relance pas le scraping et cible par
 défaut les ventes `active` et `upcoming` :
@@ -556,6 +568,26 @@ PHOTO_MIRROR_ENABLED=true python -m src.photo_mirror --max-photos 400 --budget-m
 - JPEG multi-images (`MPO`) acceptés ; profil ICC converti en sRGB puis supprimé ;
 - un JSON par photo, puis un résumé final ; le workflow manuel « Photo Mirror Backfill »
   (`.github/workflows/photo-mirror-backfill.yml`) rattrape le stock (60 min et 3 000 photos par défaut). Retrait : `docs/runbooks/retrait-photos.md`.
+
+### Invalider le cache public après un retrait
+
+Un déclencheur de `public.auction_sales` note dans `app_private.catalogue_invalidations` chaque vente qui
+quitte le catalogue public (statut, quarantaine, date, ou ligne visible supprimée). L'étape
+« Invalidate public cache » de `data-pipeline.yml` (après « Finalize unfinished run », `if: always()`)
+envoie ces identifiants au site :
+
+```bash
+SUPABASE_DB_URL=… SITE_URL=https://immojudis.com CRON_SECRET=… python -m src.cache_invalidation --flush
+```
+
+- au plus 100 identifiants par appel (`for update skip locked`), `POST {SITE_URL}/api/pipeline/revalidate-sale`
+  avec `Authorization: Bearer $CRON_SECRET`, 10 s au plus, aucune redirection suivie ;
+- les lignes ne sont supprimées que sur une réponse 2xx ; au premier échec le passage s'arrête et le
+  suivant reprend ; 20 lots au plus (2 000 lignes) par passage ;
+- ne lève jamais et sort toujours avec 0 : un compteur JSON par passage, et une annotation
+  `::warning::` du workflow si rien n'a pu être envoyé ;
+- `CRON_SECRET` (secret de dépôt) et `SITE_URL` (variable de dépôt) ne sont vus que par cette étape.
+  Suivi et retour arrière : `docs/runbooks/catalogue-visibility-projection.md`.
 
 ## Enrichissement LLM Replicate
 

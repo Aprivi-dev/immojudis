@@ -115,4 +115,58 @@ describe("buildIcsCalendar", () => {
     expect(ics).toContain("STATUS:TENTATIVE\r\n");
     for (const line of ics.split("\r\n")) expect(octets(line)).toBeLessThanOrEqual(75);
   });
+
+  it("writes DTEND, SEQUENCE and display reminders only when they are given", () => {
+    const ics = buildIcsCalendar(
+      {
+        ...base,
+        start: { kind: "instant", at: new Date("2026-10-20T07:30:00Z") },
+        end: new Date("2026-10-20T09:30:00Z"),
+        sequence: 42,
+        alarms: [
+          { trigger: "-P7D", description: "Audience, dans 7 jours" },
+          { trigger: "-P1D", description: "Audience demain" },
+        ],
+      },
+      "-//Test//FR",
+    );
+    expect(ics).toContain("DTSTART:20261020T073000Z\r\nDTEND:20261020T093000Z\r\n");
+    expect(ics).toContain("SEQUENCE:42\r\n");
+    expect(ics.match(/BEGIN:VALARM/g)).toHaveLength(2);
+    expect(ics).toContain(
+      "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-P7D\r\nDESCRIPTION:Audience\\, dans 7 jours\r\nEND:VALARM\r\n",
+    );
+    // Les alarmes sont dans l'événement, avant sa fermeture.
+    expect(ics.indexOf("END:VALARM")).toBeLessThan(ics.indexOf("END:VEVENT"));
+  });
+
+  it("ignores an end that does not follow the start, a bad sequence and a trigger that is not a duration", () => {
+    const ics = buildIcsCalendar(
+      {
+        ...base,
+        start: { kind: "instant", at: new Date("2026-10-20T07:30:00Z") },
+        end: new Date("2026-10-20T07:30:00Z"),
+        sequence: -1,
+        alarms: [{ trigger: "-P7D\r\nATTENDEE:mailto:x@y.z", description: "x" }],
+      },
+      "-//Test//FR",
+    );
+    expect(ics).not.toContain("DTEND");
+    expect(ics).not.toContain("SEQUENCE");
+    expect(ics).not.toContain("VALARM");
+    expect(ics).not.toContain("ATTENDEE");
+  });
+
+  it("never gives an all-day event a DTEND other than the next day", () => {
+    const ics = buildIcsCalendar(
+      {
+        ...base,
+        start: { kind: "day", isoDay: "2026-10-23" },
+        end: new Date("2026-10-23T10:00:00Z"),
+      },
+      "-//Test//FR",
+    );
+    expect(ics.match(/DTEND/g)).toHaveLength(1);
+    expect(ics).toContain("DTEND;VALUE=DATE:20261024\r\n");
+  });
 });

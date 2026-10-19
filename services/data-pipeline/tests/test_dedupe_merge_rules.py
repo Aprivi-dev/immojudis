@@ -1,5 +1,7 @@
 """P2-14 : une fusion ne perd rien et ne rapproche pas deux ventes distinctes."""
-from src.dedupe import dedupe_sales, merge_duplicate_sales
+import pytest
+
+from src.dedupe import _merge_into, dedupe_sales, merge_duplicate_sales
 from src.normalize import normalize_sale
 
 ADDRESS = "12 avenue de la Republique 33000 Bordeaux"
@@ -126,3 +128,69 @@ def test_missing_date_or_price_without_surface_is_not_enough():
 
 def test_different_surfaces_do_not_merge_on_surface_alone():
     assert len(_pair({"surface_m2": "72 m²"}, {"price": None, "date": None, "surface_m2": "80 m²"})) == 2
+
+
+# --- heure conservée à la fusion (point 7) -----------------------------------------------------
+
+def _grenoble_pair():
+    """Vench horodaté (24/11/2026 14 h) et Petites Affiches en date seule (minuit UTC), même annonce."""
+    timed = _make("https://www.vench.example/vente-777-maison-grenoble.html", source="vench", date="24 novembre 2026 à 14h")
+    date_only = _make(
+        "https://www.petitesaffiches.example/maison-grenoble-777.html",
+        source="petites_affiches",
+        date="24 novembre 2026",
+    )
+    return timed, date_only
+
+
+def _sale_date_conflicts(sale):
+    return [item for item in sale.raw_payload.get("source_conflicts", []) if item["field"] == "sale_date"]
+
+
+@pytest.mark.parametrize("target_is_timed", [True, False])
+def test_merge_keeps_the_timed_sale_date_whichever_side_is_the_survivor(target_is_timed):
+    timed, date_only = _grenoble_pair()
+    expected = timed.sale_date
+    assert date_only.sale_date.hour == 0 and expected.hour != 0
+
+    target, source = (timed, date_only) if target_is_timed else (date_only, timed)
+    # Même si l'autre côté a la meilleure « autorité » de champ (contrôle plus récent), l'heure l'emporte.
+    source.raw_payload["source_checks"] = {source.source_url: {"checked_at": "2026-10-19T08:00:00+00:00"}}
+    _merge_into(target, source, confidence="listing_id")
+
+    assert target.sale_date == expected
+    # Une simple différence de précision n'est pas un désaccord entre sources.
+    assert not _sale_date_conflicts(target)
+
+
+def test_merge_keeps_the_existing_rule_when_the_days_differ_or_both_hours_are_known():
+    vench = _make("https://www.vench.example/vente-1-a.html", source="vench", date="24 novembre 2026 à 14h")
+    next_day = _make("https://www.petitesaffiches.example/a-1.html", source="petites_affiches", date="25 novembre 2026")
+    _merge_into(vench, next_day, confidence="listing_id")
+    assert len(_sale_date_conflicts(vench)) == 1
+
+    morning = _make("https://www.vench.example/vente-2-a.html", source="vench", date="24 novembre 2026 à 9h")
+    afternoon = _make(
+        "https://www.petitesaffiches.example/a-2.html", source="petites_affiches", date="24 novembre 2026 à 14h"
+    )
+    _merge_into(morning, afternoon, confidence="listing_id")
+    assert len(_sale_date_conflicts(morning)) == 1
+
+
+def test_two_date_only_values_of_one_day_are_left_alone():
+    first = _make("https://www.vench.example/vente-3-a.html", source="vench", date="24 novembre 2026")
+    second = _make("https://www.petitesaffiches.example/a-3.html", source="petites_affiches", date="24 novembre 2026")
+    before = first.sale_date
+    _merge_into(first, second, confidence="listing_id")
+
+    assert first.sale_date == before
+    assert not _sale_date_conflicts(first)
+
+
+def test_a_full_merge_of_the_grenoble_pair_keeps_the_hour():
+    timed, date_only = _grenoble_pair()
+    expected = timed.sale_date
+
+    result = merge_duplicate_sales([date_only, timed], strict_fallback=False)
+
+    assert [sale.sale_date for sale in result] == [expected]

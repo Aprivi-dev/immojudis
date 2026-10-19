@@ -1,5 +1,8 @@
 -- "3 déblocages par mois": a Découverte account unlocks one sale at a time, three per Paris month.
 begin;
+-- L'offre de lancement (active par défaut, 20261028120000) donne l'accès Analyse à tout compte
+-- connecté : ce test vérifie les règles d'un compte gratuit, il la coupe (annulé par le rollback).
+update app_private.launch_offer set active = false where singleton;
 
 select plan(66);
 

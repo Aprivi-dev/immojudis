@@ -8,8 +8,15 @@ import { buildSaleCalendarFile, type SaleCalendarRow } from "@/lib/sale-calendar
 import { resolveSiteOrigin } from "@/lib/site-url";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 
-/** Same freshness as the public page of the sale (`PUBLIC_SALE_REVALIDATE_SECONDS`). */
-const CALENDAR_CACHE_SECONDS = 300;
+/**
+ * One minute in the CDN. It was 300 s, as long as the public page of the sale
+ * (`PUBLIC_SALE_REVALIDATE_SECONDS`), while the plan was to purge this response when a sale is
+ * withdrawn. Purging a CDN response by tag needs `invalidateByTag` of `@vercel/functions`, which is not
+ * a dependency of the repository: the lifetime is bounded instead, so that a withdrawn or postponed
+ * hearing leaves the export within a minute (plus 60 s of `stale-while-revalidate`) of the
+ * invalidation of its page. See docs/runbooks/catalogue-visibility-projection.md.
+ */
+const CALENDAR_CACHE_SECONDS = 60;
 
 type RpcError = { code?: string; message?: string } | null;
 
@@ -83,6 +90,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         },
       }),
       requestContext,
+      // The file is kept by shared caches and served to other visitors: it must not carry the
+      // request id of the first request (it stays in the logs).
+      { echoRequestId: false },
     );
   } catch (error) {
     const response = apiRouteError(error, request, "sale-calendar", {

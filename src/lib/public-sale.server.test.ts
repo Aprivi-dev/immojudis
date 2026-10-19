@@ -87,6 +87,92 @@ describe("public sale lookup", () => {
     expect(await lookupPublicSale("nope")).toEqual({ status: "missing" });
   });
 
+  describe("identifier merged into another sale", () => {
+    const KEPT_ID = "99999999-aaaa-4bbb-8ccc-dddddddddddd";
+
+    /** The sale itself is not public (no summary row); the merge lookup answers `merged`. */
+    function mergedClient(merged: unknown) {
+      return {
+        rpc: vi.fn((fn: string) =>
+          Promise.resolve(fn === "get_merged_sale_target" ? merged : { data: [], error: null }),
+        ),
+        from: vi.fn(),
+      };
+    }
+
+    it("answers merged, with the kept identifier in lower case", async () => {
+      const supabase = mergedClient({ data: KEPT_ID.toUpperCase(), error: null });
+      mocks.client.mockReturnValue(supabase);
+
+      expect(await lookupPublicSale(ID)).toEqual({ status: "merged", targetId: KEPT_ID });
+      expect(supabase.rpc).toHaveBeenCalledWith("get_merged_sale_target", { p_sale_id: ID });
+    });
+
+    it("stays missing when the kept sale is not visible (the database returns nothing)", async () => {
+      mocks.client.mockReturnValue(mergedClient({ data: null, error: null }));
+      expect(await lookupPublicSale(ID)).toEqual({ status: "missing" });
+    });
+
+    it("never redirects to something that is not an identifier, nor to itself", async () => {
+      mocks.client.mockReturnValue(mergedClient({ data: "/sales/../admin", error: null }));
+      expect(await lookupPublicSale(ID)).toEqual({ status: "missing" });
+      mocks.store.clear();
+      mocks.client.mockReturnValue(mergedClient({ data: ID, error: null }));
+      expect(await lookupPublicSale(ID)).toEqual({ status: "missing" });
+    });
+
+    it("does not look for a merge when the sale itself is public", async () => {
+      const supabase = client({
+        rpc: { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null },
+      });
+      mocks.client.mockReturnValue(supabase);
+      expect((await lookupPublicSale(ID)).status).toBe("found");
+      expect(supabase.rpc.mock.calls.some(([fn]) => fn === "get_merged_sale_target")).toBe(false);
+    });
+
+    it("stays missing while the function is not deployed", async () => {
+      mocks.client.mockReturnValue(
+        mergedClient({ data: null, error: { code: "PGRST202", message: "not found" } }),
+      );
+      expect(await lookupPublicSale(ID)).toEqual({ status: "missing" });
+    });
+
+    it("throws on another database error instead of answering 404", async () => {
+      mocks.client.mockReturnValue(
+        mergedClient({ data: null, error: { code: "57014", message: "timeout" } }),
+      );
+      await expect(lookupPublicSale(ID)).rejects.toMatchObject({ code: "57014" });
+    });
+
+    it("looks for a merge in the legacy fallback as well", async () => {
+      const supabase = {
+        rpc: vi.fn((fn: string) =>
+          Promise.resolve(
+            fn === "get_merged_sale_target"
+              ? { data: KEPT_ID, error: null }
+              : { data: null, error: { code: "PGRST202", message: "missing" } },
+          ),
+        ),
+        from: vi.fn(() => ({
+          select: () => ({
+            eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }),
+          }),
+        })),
+      };
+      mocks.client.mockReturnValue(supabase);
+      expect(await lookupPublicSale(ID)).toEqual({ status: "merged", targetId: KEPT_ID });
+    });
+
+    it("is cached like any answer, under the tag of the old identifier", async () => {
+      const supabase = mergedClient({ data: KEPT_ID, error: null });
+      mocks.client.mockReturnValue(supabase);
+      await lookupPublicSale(ID);
+      await lookupPublicSale(ID);
+      expect(summaryReads(supabase)).toBe(1);
+      expect([...mocks.store.values()][0].tags).toEqual([`sale-${ID}`]);
+    });
+  });
+
   it("falls back to the minimal preview view before the function is deployed", async () => {
     mocks.client.mockReturnValue(
       client({

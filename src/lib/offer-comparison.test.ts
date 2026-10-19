@@ -23,7 +23,9 @@ describe("offerComparisonRows", () => {
   });
 
   it("chiffre les quotas à partir des limites du plan", () => {
-    expect(row("favorites").decouverte.text).toBe("3 favoris");
+    expect(row("favorites").decouverte.text).toBe("10 favoris");
+    // L'enchère plafond n'existe que pour les ventes au tribunal : la ligne le dit.
+    expect(row("ceiling").hint).toContain("toutes les ventes au tribunal");
     expect(row("favorites").analyse.text).toBe("Illimités");
     expect(row("alerts").decouverte.text).toBe("1 alerte, email hebdomadaire");
     expect(row("alerts").analyse.text).toBe("Jusqu’à 25, email quotidien");

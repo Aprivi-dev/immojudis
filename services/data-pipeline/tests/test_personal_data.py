@@ -217,6 +217,13 @@ _LONG_WHITESPACE_TEXTS = {
     "bail consenti répété": ("bail consenti" + " " * 300) * 200,
     "occupé par répété": ("occupé par Madame Eva ROY" + " " * 300) * 200,
     "à la requête de répété": ("à la requête de" + " " * 300) * 200,
+    "à la requête de : répété": ("à la requête de :" + " " * 300 + "la" + " " * 300) * 100,
+    "rôle répété": ("Le débiteur" + " " * 300) * 200,
+    "rôle suivi d'un nom répété": ("Le saisi, Paul" + " " * 300 + "ROY" + " " * 300) * 100,
+    "NOM Prénom répété": ("occupé par DUPONT" + " " * 300 + "Pierre" + " " * 300) * 100,
+    "longue suite de noms en capitales": "occupé par " + "DUPONT " * 5000,
+    "longue suite de prénoms": "Le saisi, " + "Pierre " * 5000,
+    "longue suite de NOM Prénom": "occupé par " + "DUPONT Pierre " * 3000,
 }
 
 
@@ -232,3 +239,18 @@ def test_birth_and_residence_are_still_removed_with_their_leading_separator() ->
     assert redact_personal_text("Madame X    née le 3 mai 1950 vend.") == "Madame X vend."
     long = ("Madame X, née le 3 mai 1950" + " " * 300) * 200
     assert "1950" not in (redact_personal_text(long) or "")
+
+
+def test_first_names_are_the_same_as_in_the_typescript_mirror() -> None:
+    """La liste de prénoms de `NOM Prénom` est copiée mot pour mot des deux côtés."""
+    import re
+
+    from src.personal_data import _FIRST_NAMES
+
+    source = (Path(__file__).resolve().parents[3] / "src" / "lib" / "personal-data-filter.ts").read_text("utf-8")
+    block = re.search(r"const FIRST_NAMES =([\s\S]*?);\n", source)
+    assert block is not None
+    typescript = "".join(re.findall(r'"([^"]*)"', block.group(1)))
+
+    assert len(_FIRST_NAMES.split(" ")) > 300
+    assert _FIRST_NAMES == typescript

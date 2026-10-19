@@ -56,6 +56,7 @@ export type PlanLimits = {
   pdfExportsPerMonth: number | null;
   savedReports: number | null;
   reportEditing: "limited" | "full";
+  /** Favoris du compte gratuit : égal à `app_private.free_favorite_limit()` en base (un test les compare). */
   favoriteSales: number | null;
   /**
    * Ventes qu'un compte peut débloquer par mois civil (heure de Paris). Source unique du
@@ -174,7 +175,7 @@ export const PLAN_LIMITS: Record<PlanCode, PlanLimits> = {
     pdfExportsPerMonth: 0,
     savedReports: 0,
     reportEditing: "limited",
-    favoriteSales: 3,
+    favoriteSales: 10,
     monthlyUnlocks: 3,
     watchedZones: 1,
     saleAnalysisSets: 1,

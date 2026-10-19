@@ -2,6 +2,7 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { BillingActions } from "./BillingActions";
 
 const mocks = vi.hoisted(() => ({
@@ -12,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   fetchBillingOffer: vi.fn(),
   fetchOfferOpeningNotification: vi.fn(),
   updateOfferOpeningNotification: vi.fn(),
+  updateOfferOpeningSurvey: vi.fn(),
+  launch: { active: false, pending: false },
   startAnalyseCheckout: vi.fn(),
   openBillingPortal: vi.fn(),
   openSubscriptionCancellation: vi.fn(),
@@ -20,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   track: vi.fn(),
 }));
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
+
+vi.mock("@/hooks/use-launch-offer", () => ({ useLaunchOffer: () => mocks.launch }));
 
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({ user: mocks.user, loading: mocks.loading }),
@@ -34,6 +39,7 @@ vi.mock("@/lib/client-billing", () => ({
   fetchBillingOffer: mocks.fetchBillingOffer,
   fetchOfferOpeningNotification: mocks.fetchOfferOpeningNotification,
   updateOfferOpeningNotification: mocks.updateOfferOpeningNotification,
+  updateOfferOpeningSurvey: mocks.updateOfferOpeningSurvey,
   startAnalyseCheckout: mocks.startAnalyseCheckout,
   openBillingPortal: mocks.openBillingPortal,
   openSubscriptionCancellation: mocks.openSubscriptionCancellation,
@@ -59,6 +65,7 @@ afterEach(() => {
 beforeEach(() => {
   mocks.user = { id: "investor" };
   mocks.loading = false;
+  mocks.launch = { active: false, pending: false };
   mocks.fetchAccessPlan.mockResolvedValue({
     plan: { plan: "decouverte", currentPeriodEnd: null },
   });
@@ -71,6 +78,9 @@ beforeEach(() => {
     notification: { requested: false, consentedAt: null },
   });
   mocks.updateOfferOpeningNotification.mockResolvedValue({
+    notification: { requested: true, consentedAt: "2026-10-20T10:00:00.000Z" },
+  });
+  mocks.updateOfferOpeningSurvey.mockResolvedValue({
     notification: { requested: true, consentedAt: "2026-10-20T10:00:00.000Z" },
   });
   mocks.startAnalyseCheckout.mockRejectedValue(new Error("test checkout arrêté"));
@@ -363,20 +373,30 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
     expect(mocks.fetchBillingOffer).toHaveBeenCalledTimes(2);
   });
 
-  it("shows « Ouverture prochaine » when the price is not configured", async () => {
+  it("offre fermée : le bouton principal est « Me prévenir de l’ouverture » et le tarif est prévu, pas à payer", async () => {
     mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: true, missing: [] });
-    mocks.fetchBillingOffer.mockResolvedValue({ configured: false, trialDays: 7, label: "29 €" });
+    mocks.fetchBillingOffer.mockResolvedValue({
+      configured: false,
+      trialDays: 7,
+      label: "59 € TTC / mois",
+    });
     renderActions();
 
-    const closed = await screen.findByRole("button", { name: "Ouverture prochaine" });
-    expect((closed as HTMLButtonElement).disabled).toBe(true);
+    expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
+    expect(
+      screen.getByText("Tarif prévu : 59 € TTC / mois. Pas encore souscriptible."),
+    ).toBeTruthy();
+    // Plus de bouton grisé « Ouverture prochaine » : aucun achat n'est proposé.
+    expect(screen.queryByRole("button", { name: "Ouverture prochaine" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Démarrer l’essai|Souscrire/ })).toBeNull();
     expect(screen.queryByText(/temporairement indisponible/)).toBeNull();
     expect(screen.getByRole("link", { name: "Voir les mentions légales" })).toBeTruthy();
   });
 
-  it("shows « Ouverture prochaine » while the legal identity is incomplete", async () => {
+  it("offre fermée aussi tant que l'identité légale est incomplète", async () => {
     renderActions();
-    expect(await screen.findByRole("button", { name: "Ouverture prochaine" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
+    expect(screen.getByText(/Pas encore souscriptible\./)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Démarrer l’essai/ })).toBeNull();
   });
 
@@ -423,13 +443,112 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
     renderActions();
 
     fireEvent.click(await screen.findByRole("button", { name: "Me prévenir de l’ouverture" }));
+    // Motif « ouverture » : la demande est enregistrée au retour, une fois le compte créé.
     await waitFor(() =>
       expect(mocks.navigate).toHaveBeenCalledWith(
-        "/login?redirect=%2Foffres&mode=investor&reason=offre",
+        "/login?redirect=%2Foffres%3Fdemande%3Douverture&mode=investor&reason=ouverture",
       ),
     );
     expect(mocks.updateOfferOpeningNotification).not.toHaveBeenCalled();
     expect(mocks.fetchOfferOpeningNotification).not.toHaveBeenCalled();
+  });
+
+  it("explique au visiteur ce qu'il demande avant le détour par la création du compte", async () => {
+    mocks.user = null;
+    renderActions();
+    await screen.findByRole("button", { name: "Me prévenir de l’ouverture" });
+    expect(screen.getByText(/En cliquant, vous demandez à recevoir un seul email/)).toBeTruthy();
+    expect(screen.getByText(/Un compte gratuit est nécessaire/)).toBeTruthy();
+  });
+
+  it("enregistre la demande au retour de la connexion, puis retire le paramètre de l'adresse", async () => {
+    window.history.replaceState(null, "", "/offres?demande=ouverture");
+    renderActions();
+
+    await waitFor(() => expect(mocks.updateOfferOpeningNotification).toHaveBeenCalledWith(true));
+    expect(await screen.findByText(/Votre demande est enregistrée/)).toBeTruthy();
+    expect(window.location.search).toBe("");
+    expect(mocks.track).toHaveBeenCalledWith("opening_notification_requested");
+  });
+
+  it("n'enregistre rien au retour si le compte avait déjà demandé", async () => {
+    mocks.fetchOfferOpeningNotification.mockResolvedValue({
+      notification: { requested: true, consentedAt: "2026-10-20T10:00:00.000Z" },
+    });
+    window.history.replaceState(null, "", "/offres?demande=ouverture");
+    renderActions();
+
+    expect(await screen.findByText(/Votre demande est enregistrée/)).toBeTruthy();
+    expect(mocks.updateOfferOpeningNotification).not.toHaveBeenCalled();
+    expect(window.location.search).toBe("");
+  });
+
+  it("n'enregistre rien sans le paramètre de retour", async () => {
+    window.history.replaceState(null, "", "/offres");
+    renderActions();
+    await screen.findByRole("button", { name: "Me prévenir de l’ouverture" });
+    expect(mocks.updateOfferOpeningNotification).not.toHaveBeenCalled();
+  });
+
+  it("propose les questions facultatives une fois la demande enregistrée, case d'entretien décochée", async () => {
+    mocks.fetchOfferOpeningNotification.mockResolvedValue({
+      notification: { requested: true, consentedAt: "2026-10-20T10:00:00.000Z", survey: null },
+    });
+    renderActions();
+
+    const form = await screen.findByTestId("offer-opening-survey");
+    expect(form.textContent).toContain("toutes facultatives");
+    const interview = screen.getByRole("checkbox", {
+      name: /J’accepte un entretien de 20 minutes/,
+    }) as HTMLInputElement;
+    expect(interview.checked).toBe(false);
+    expect(screen.getByRole("combobox")).toBeTruthy();
+
+    // Tout peut rester vide : l'envoi ne bloque sur rien.
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer mes réponses" }));
+    await waitFor(() =>
+      expect(mocks.updateOfferOpeningSurvey).toHaveBeenCalledWith({
+        profile: null,
+        salesPerMonth: null,
+        priceTooExpensiveEur: null,
+        priceCheapEur: null,
+        interviewAccepted: false,
+      }),
+    );
+  });
+
+  it("envoie les réponses saisies et l'accord à l'entretien", async () => {
+    mocks.fetchOfferOpeningNotification.mockResolvedValue({
+      notification: { requested: true, consentedAt: "2026-10-20T10:00:00.000Z", survey: null },
+    });
+    renderActions();
+    await screen.findByTestId("offer-opening-survey");
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "avocat" } });
+    fireEvent.change(screen.getByLabelText(/Combien de ventes étudiez-vous par mois/), {
+      target: { value: "12" },
+    });
+    fireEvent.change(screen.getByLabelText(/trop chère/), { target: { value: "60" } });
+    fireEvent.change(screen.getByLabelText(/bon marché/), { target: { value: "15" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /entretien de 20 minutes/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer mes réponses" }));
+
+    await waitFor(() =>
+      expect(mocks.updateOfferOpeningSurvey).toHaveBeenCalledWith({
+        profile: "avocat",
+        salesPerMonth: 12,
+        priceTooExpensiveEur: 60,
+        priceCheapEur: 15,
+        interviewAccepted: true,
+      }),
+    );
+    expect(await screen.findByText("Réponses enregistrées.")).toBeTruthy();
+  });
+
+  it("ne montre pas les questions à qui n'a pas encore demandé à être prévenu", async () => {
+    renderActions();
+    await screen.findByRole("button", { name: "Me prévenir de l’ouverture" });
+    expect(screen.queryByTestId("offer-opening-survey")).toBeNull();
   });
 
   it("does not offer the opening request once the subscription is open", async () => {
@@ -437,6 +556,61 @@ describe("BillingActions : offre en chargement, en erreur ou fermée", () => {
     renderActions();
     await screen.findByRole("button", { name: "Démarrer l’essai Analyse" });
     expect(screen.queryByRole("button", { name: "Me prévenir de l’ouverture" })).toBeNull();
+  });
+});
+
+describe("BillingActions : offre de lancement", () => {
+  it("ne propose ni achat ni portail à un compte gratuit surclassé, et rappelle la mention", async () => {
+    mocks.launch = { active: true, pending: false };
+    mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: true, missing: [] });
+    mocks.fetchAccessPlan.mockResolvedValue({
+      plan: { plan: "analyse", currentPeriodEnd: null, launchOffer: true },
+    });
+    renderActions();
+
+    const notice = await screen.findByTestId("launch-offer-notice");
+    expect(notice.textContent).toBe(LAUNCH_OFFER_ACCOUNT_TEXT);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByText(/Gérer mon abonnement|Résilier/)).toBeNull();
+    expect(mocks.startAnalyseCheckout).not.toHaveBeenCalled();
+    expect(mocks.openBillingPortal).not.toHaveBeenCalled();
+  });
+
+  it("laisse le portail à un ancien abonné dont le paiement a échoué, même pendant l'offre", async () => {
+    mocks.fetchAccessPlan.mockResolvedValue({
+      plan: {
+        plan: "analyse",
+        currentPeriodEnd: "2026-08-01T00:00:00.000Z",
+        launchOffer: true,
+        billing: { status: "past_due", hasStripeCustomer: true, graceEndsAt: null },
+      },
+    });
+    renderActions();
+    expect(await screen.findByRole("button", { name: "Gérer mon abonnement" })).toBeTruthy();
+    expect(screen.queryByTestId("launch-offer-notice")).toBeNull();
+  });
+
+  it("montre au visiteur la mention de l'offre avec un lien de création de compte, sans achat", async () => {
+    mocks.user = null;
+    mocks.launch = { active: true, pending: false };
+    mocks.legalPublisherConfigurationStatus.mockReturnValue({ ready: true, missing: [] });
+    renderActions();
+
+    const notice = await screen.findByTestId("launch-offer-notice");
+    expect(notice.textContent).toContain(LAUNCH_OFFER_VISITOR_TEXT);
+    expect(
+      screen.getByRole("link", { name: "Créer mon compte gratuit" }).getAttribute("href"),
+    ).toMatch(/^\/login\?redirect=%2Fsales&mode=investor&reason=offre$/);
+    expect(screen.queryByRole("button", { name: /Démarrer l’essai|Souscrire/ })).toBeNull();
+  });
+
+  it("attend l'état de l'offre avant de montrer le moindre bouton à un visiteur", async () => {
+    mocks.user = null;
+    mocks.launch = { active: false, pending: true };
+    renderActions();
+    expect(await screen.findByRole("status", { name: "Chargement de l’offre" })).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByText(/Pas encore souscriptible/)).toBeNull();
   });
 });
 

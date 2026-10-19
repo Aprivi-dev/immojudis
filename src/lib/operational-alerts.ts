@@ -1,6 +1,8 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { sendResendEmail } from "@/lib/email-alerts";
 import { serverEnv } from "@/lib/env";
+import { escapeHtml } from "@/lib/guards";
 
 export type OperationalAlertNotification = {
   alert_key: string;
@@ -48,12 +50,22 @@ type AlertDeliveryConfig =
       workflow: string;
     };
 
+/** Second channel: an email to the owner, through Resend. Present only when OPERATIONS_ALERT_EMAIL_TO is set. */
+type AlertEmailConfig = {
+  apiKey: string;
+  from: string;
+  to: string[];
+};
+
 export type OperationalAlertDeliverySummary = {
-  channel: AlertDeliveryConfig["channel"] | null;
+  /** The primary channel (webhook or GitHub Actions); `email` when it is the only one configured. */
+  channel: AlertDeliveryConfig["channel"] | "email" | null;
   configured: boolean;
   claimed: number;
   delivered: number;
   failed: number;
+  /** Only when the email channel is on: how many incident emails left, how many did not. */
+  email?: { sent: number; failed: number };
 };
 
 export async function deliverOperationalAlertNotifications({
@@ -68,7 +80,8 @@ export async function deliverOperationalAlertNotifications({
   now?: Date;
 } = {}): Promise<OperationalAlertDeliverySummary> {
   const config = resolveOperationalAlertDeliveryConfig(env);
-  if (!config) {
+  const emailConfig = resolveOperationalAlertEmailConfig(env);
+  if (!config && !emailConfig) {
     logDelivery("warn", {
       channel: null,
       configured: false,
@@ -76,6 +89,7 @@ export async function deliverOperationalAlertNotifications({
     });
     return { channel: null, configured: false, claimed: 0, delivered: 0, failed: 0 };
   }
+  const channel = config?.channel ?? "email";
 
   const timestamp = now.toISOString();
   const { data, error } = await client.rpc("claim_operational_alert_notifications", {
@@ -85,26 +99,51 @@ export async function deliverOperationalAlertNotifications({
   if (error) throw new Error(error.message || "Unable to claim operational alerts.");
 
   const alerts = data ?? [];
+  let emailSent = 0;
+  let emailFailed = 0;
   const outcomes = await Promise.all(
     alerts.map(async (alert) => {
+      // Both channels are tried, whatever the other does: the email is there for the day the primary one is
+      // down. The notification succeeds on the primary channel when there is one (a failed email is logged
+      // and never retried through it); the email alone decides when it is the only channel.
+      const [primary, emailResult] = await Promise.allSettled([
+        config ? dispatchOperationalAlert(config, alert, fetchImpl, env) : Promise.resolve(),
+        emailConfig
+          ? sendOperationalAlertEmail(emailConfig, alert, fetchImpl, env)
+          : Promise.resolve(),
+      ]);
+      if (emailConfig) {
+        if (emailResult.status === "fulfilled") emailSent += 1;
+        else {
+          emailFailed += 1;
+          logDelivery("error", {
+            alertKey: alert.alert_key,
+            channel: "email",
+            event: alert.event_type,
+            severity: alert.severity,
+            status: "failed",
+            message: errorMessage(emailResult.reason),
+          });
+        }
+      }
+      const decisive = config ? primary : emailResult;
       try {
-        await dispatchOperationalAlert(config, alert, fetchImpl, env);
+        if (decisive.status === "rejected") throw decisive.reason;
         await completeDelivery(client, alert, true, null, timestamp);
         logDelivery("info", {
           alertKey: alert.alert_key,
-          channel: config.channel,
+          channel,
           event: alert.event_type,
           severity: alert.severity,
           status: "delivered",
         });
         return true;
       } catch (deliveryError) {
-        const message =
-          deliveryError instanceof Error ? deliveryError.message : String(deliveryError);
+        const message = errorMessage(deliveryError);
         await completeDelivery(client, alert, false, message, timestamp);
         logDelivery("error", {
           alertKey: alert.alert_key,
-          channel: config.channel,
+          channel,
           event: alert.event_type,
           severity: alert.severity,
           status: "failed",
@@ -117,12 +156,109 @@ export async function deliverOperationalAlertNotifications({
 
   const delivered = outcomes.filter(Boolean).length;
   return {
-    channel: config.channel,
+    channel,
     configured: true,
     claimed: alerts.length,
     delivered,
     failed: alerts.length - delivered,
+    ...(emailConfig ? { email: { sent: emailSent, failed: emailFailed } } : {}),
   };
+}
+
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : String(reason);
+}
+
+/**
+ * The email channel: on only when OPERATIONS_ALERT_EMAIL_TO lists at least one valid address AND Resend is
+ * configured (RESEND_API_KEY and ALERT_EMAIL_FROM, already used by the alert emails). No new secret.
+ * Without the variable, nothing is sent and nothing is logged: the channel does not exist.
+ */
+export function resolveOperationalAlertEmailConfig(
+  env: Pick<NodeJS.ProcessEnv, string>,
+): AlertEmailConfig | null {
+  const { alerts, email } = serverEnv(env);
+  if (!alerts.emailTo) return null;
+  const to = alerts.emailTo
+    .split(",")
+    .map((address) => address.trim())
+    .filter((address) => /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(address))
+    .slice(0, 3);
+  if (to.length === 0 || !email.resendApiKey || !email.from) {
+    logDelivery("warn", {
+      channel: "email",
+      configured: false,
+      message:
+        "OPERATIONS_ALERT_EMAIL_TO is set but the email channel is off: it needs a valid address, RESEND_API_KEY and ALERT_EMAIL_FROM.",
+    });
+    return null;
+  }
+  return { apiKey: email.resendApiKey, from: email.from, to };
+}
+
+const EVENT_LABELS: Record<OperationalAlertNotification["event_type"], string> = {
+  opened: "Incident ouvert",
+  updated: "Incident toujours ouvert",
+  resolved: "Incident résolu",
+};
+
+/** The incident email: the same bounded facts as the GitHub payload (no secret, no user data). */
+export function buildOperationalAlertEmail(
+  alert: OperationalAlertNotification,
+  environment: string,
+  { from, to }: Pick<AlertEmailConfig, "from"> & { to: string },
+) {
+  const label = EVENT_LABELS[alert.event_type];
+  const details = JSON.stringify(alert.details, null, 2).slice(0, 4_000);
+  const lines = [
+    `${label} (${alert.severity}) : ${alert.alert_key}`,
+    "",
+    `Catégorie : ${alert.category}`,
+    `Environnement : ${environment}`,
+    `Première occurrence : ${alert.first_seen_at}`,
+    `Dernière occurrence : ${alert.last_seen_at}`,
+    ...(alert.resolved_at ? [`Résolution : ${alert.resolved_at}`] : []),
+    "",
+    "Diagnostic :",
+    details,
+    "",
+    "Cet email double l'alerte du workflow GitHub « Immojudis Operational Alert ».",
+  ];
+  return {
+    from,
+    to,
+    subject: `[Immojudis] ${label} · ${alert.severity} · ${alert.alert_key}`.slice(0, 200),
+    text: lines.join("\n"),
+    html: `<p><strong>${escapeHtml(label)}</strong> (${escapeHtml(alert.severity)}) : <code>${escapeHtml(alert.alert_key)}</code></p><ul><li>Catégorie : ${escapeHtml(alert.category)}</li><li>Environnement : ${escapeHtml(environment)}</li><li>Première occurrence : ${escapeHtml(alert.first_seen_at)}</li><li>Dernière occurrence : ${escapeHtml(alert.last_seen_at)}</li>${alert.resolved_at ? `<li>Résolution : ${escapeHtml(alert.resolved_at)}</li>` : ""}</ul><p>Diagnostic :</p><pre>${escapeHtml(details)}</pre><p>Cet email double l'alerte du workflow GitHub « Immojudis Operational Alert ».</p>`,
+  };
+}
+
+async function sendOperationalAlertEmail(
+  config: AlertEmailConfig,
+  alert: OperationalAlertNotification,
+  fetchImpl: typeof fetch,
+  env: Pick<NodeJS.ProcessEnv, string>,
+): Promise<void> {
+  const environment = serverEnv(env).alerts.environment;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    for (const to of config.to) {
+      await sendResendEmail({
+        apiKey: config.apiKey,
+        // Resend ignores a repeated key for 24 hours: a retried notification does not send the email twice.
+        idempotencyKey:
+          `immojudis-ops-alert-${alert.alert_key}-${alert.notification_version}-${to}`.slice(
+            0,
+            256,
+          ),
+        fetchImpl: (input, init) => fetchImpl(input, { ...init, signal: controller.signal }),
+        message: buildOperationalAlertEmail(alert, environment, { from: config.from, to }),
+      });
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function resolveOperationalAlertDeliveryConfig(

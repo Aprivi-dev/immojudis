@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailFallbacks";
 
 import { SalePublicPreview } from "@/components/SalePublicPreview";
+import { hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
 import { useAuth } from "@/hooks/use-auth";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
@@ -62,15 +64,29 @@ async function loadSaleDetailRouteData(
   return { sale: null, preview: await getSalePreviewById(id) };
 }
 
-export function SaleDetailPage({
-  id,
-  initialData,
-  adjudicationStatisticsEnabled = false,
-}: {
+type SaleDetailPageProps = {
   id: string;
   initialData?: SaleDetailRouteData;
   adjudicationStatisticsEnabled?: boolean;
-}) {
+};
+
+export function SaleDetailPage(props: SaleDetailPageProps) {
+  const { session, loading, authError } = useAuth();
+  return (
+    <>
+      {/* Identité déjà vérifiée mais revérification impossible (réseau) : la fiche reste affichée.
+          Sans session, la fiche elle-même explique pourquoi elle ne s'ouvre pas. */}
+      {!loading && authError && session ? <AuthConnectionBanner className="mt-3" /> : null}
+      <SaleDetailContent {...props} />
+    </>
+  );
+}
+
+function SaleDetailContent({
+  id,
+  initialData,
+  adjudicationStatisticsEnabled = false,
+}: SaleDetailPageProps) {
   // The page is statically generated and cached (ISR): it must not read the URL
   // during rendering (useSearchParams would force client-side rendering and hide
   // the public content from crawlers). The return link and the hash are read from
@@ -87,6 +103,13 @@ export function SaleDetailPage({
   const returnTo = safeSalesReturnTo(from) ?? "/sales";
   const loginReturnTo = `${saleDetailPath(id, safeSalesReturnTo(from))}${requestedHash}`;
   const { session, loading: authLoading, authError } = useAuth();
+  // Une session stockée dans le navigateur (lue après l'hydratation, pour ne pas écarter le HTML du
+  // serveur) : pendant que ses droits arrivent, l'aperçu public dit qu'il vérifie le compte au lieu
+  // de proposer d'en créer un.
+  const [sessionHinted, setSessionHinted] = useState(false);
+  useLayoutEffect(() => {
+    setSessionHinted(hasSupabaseAuthHint());
+  }, []);
   const sessionKey = session?.user.id ?? "anonymous";
   const {
     data: entitlementsData,
@@ -204,18 +227,16 @@ export function SaleDetailPage({
     };
   }, [sale?.id, authLoading, accessReady]);
 
-  if (!authLoading && authError) {
+  if (!authLoading && authError && !session) {
     return (
       <main id="contenu" className="mx-auto my-12 max-w-xl px-4">
-        <section role="alert" className="rounded-lg border border-border bg-white p-6">
-          <h1 className="text-xl font-semibold">Connexion à renouveler</h1>
+        <section className="rounded-lg border border-border bg-white p-6">
+          <h1 className="text-xl font-semibold">Connexion à vérifier</h1>
           <p className="mt-3 text-sm text-muted-foreground">{authError}</p>
-          <a
-            href={loginPathWithRedirect(loginReturnTo, { mode: "login", reason: "fiche" })}
-            className="mt-5 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-4 py-2 text-white"
-          >
-            Se reconnecter
-          </a>
+          <AuthConnectionBanner
+            className="mt-4"
+            loginHref={loginPathWithRedirect(loginReturnTo, { mode: "login", reason: "fiche" })}
+          />
         </section>
       </main>
     );
@@ -233,7 +254,7 @@ export function SaleDetailPage({
         </p>
         <button
           type="button"
-          className="mt-5 rounded-md bg-brand-navy px-4 py-2 text-white"
+          className="mt-5 min-h-11 rounded-md bg-brand-navy px-4 py-2 text-white"
           onClick={() => void retryEntitlements()}
         >
           Réessayer
@@ -253,6 +274,7 @@ export function SaleDetailPage({
         returnTo={returnTo}
         requestedHash={requestedHash}
         adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        verifyingAccount={sessionHinted}
       />
     );
   }
@@ -269,7 +291,7 @@ export function SaleDetailPage({
             </p>
             <button
               type="button"
-              className="min-h-10 rounded-md border border-amber-700/40 bg-white px-3 font-semibold text-amber-900"
+              className="min-h-11 rounded-md border border-amber-700/40 bg-white px-3 font-semibold text-amber-900"
               onClick={() => void refetch()}
               disabled={isFetching}
             >
@@ -293,6 +315,26 @@ export function SaleDetailPage({
           onSaleUnlocked={handleSaleUnlocked}
         />
       </>
+    );
+  }
+  // Connecté : l'aperçu reste affiché tant que les droits et la fiche arrivent, au lieu d'un
+  // squelette plein écran entre l'aperçu public et la fiche.
+  if (
+    serverPreview &&
+    !initialData?.sale &&
+    !authLoading &&
+    session &&
+    (!accessReady || isLoading)
+  ) {
+    return (
+      <SalePublicPreview
+        saleId={id}
+        preview={serverPreview}
+        returnTo={returnTo}
+        requestedHash={requestedHash}
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        verifyingAccount
+      />
     );
   }
   if (authLoading || entitlementsLoading || !accessReady || isLoading) {
@@ -359,7 +401,7 @@ export function SaleDetailPage({
           </p>
           <button
             type="button"
-            className="min-h-10 rounded-md border border-amber-700/40 bg-white px-3 font-semibold text-amber-900"
+            className="min-h-11 rounded-md border border-amber-700/40 bg-white px-3 font-semibold text-amber-900"
             onClick={() => void unlockQuery.refetch()}
             disabled={unlockQuery.isFetching}
           >
