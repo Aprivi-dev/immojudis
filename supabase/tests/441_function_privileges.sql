@@ -44,6 +44,7 @@ select is(
     'review_outcome_evidence(uuid,text,text,jsonb,text)',
     'set_auction_sale_readiness_override(uuid,text,text,timestamp with time zone)',
     'set_catalogue_readiness_enforcement(boolean)',
+    'set_launch_offer(boolean)',
     'unlock_sale(uuid)'
   ]::text[],
   'authenticated executes only the allowlisted SECURITY DEFINER functions'

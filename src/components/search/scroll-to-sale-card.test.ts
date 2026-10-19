@@ -33,6 +33,12 @@ describe("scrollToSaleCard", () => {
     expect(card.scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
+  it("défile d'un coup au retour d'une fiche (behavior: instant)", () => {
+    const card = mountCard({ top: 300, bottom: 500 });
+    scrollToSaleCard("sale-1", { behavior: "instant" });
+    expect(card.scrollIntoView).toHaveBeenCalledWith({ block: "center", behavior: "instant" });
+  });
+
   it("recentre d'un coup si la hauteur estimée des cartes a décalé la cible", () => {
     const card = mountCard({ top: 640, bottom: 840 });
     scrollToSaleCard("sale-1");

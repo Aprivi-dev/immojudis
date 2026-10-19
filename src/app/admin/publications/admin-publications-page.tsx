@@ -4,7 +4,7 @@ import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-q
 import CheckCircle from "lucide-react/dist/esm/icons/check-circle.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { AdminPanel, AdminSectionHeading, AdminShell } from "@/components/admin/AdminShell";
 import { formatDateTime, formatPrice, queryErrorMessage } from "@/components/admin/admin-format";
 import { EmptyState, useAdminRefresh } from "@/components/admin/admin-ui";

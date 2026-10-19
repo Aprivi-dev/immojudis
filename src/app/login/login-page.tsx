@@ -13,8 +13,9 @@ import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import Mail from "lucide-react/dist/esm/icons/mail.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UserRound from "lucide-react/dist/esm/icons/user-round.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import {
   getAccountType,
@@ -31,8 +32,10 @@ import {
   type LoginReason,
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { postAuthDestination } from "@/lib/onboarding";
-import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
+import { PLAN_LIMITS } from "@/lib/plans";
+import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
 import { ACCOUNT_EXISTS_MESSAGE, userMessage } from "@/lib/user-messages";
 
@@ -61,38 +64,71 @@ const PASSWORD_RULE_ID = "login-password-rule";
 /** Délai avant de pouvoir demander un nouvel email de confirmation. */
 const RESEND_COOLDOWN_SECONDS = 30;
 
-/** Phrase du bandeau : l'action qui a envoyé la personne ici, et ce que le compte gratuit change. */
-const reasonCopy: Record<LoginReason, { signup: string; login: string }> = {
-  alerte: {
-    signup: "Créez votre compte gratuit pour enregistrer cette alerte, sans carte bancaire.",
-    login: "Connectez-vous pour enregistrer cette alerte.",
-  },
-  favori: {
-    signup: "Créez votre compte gratuit pour garder cette vente en favori (3 favoris offerts).",
-    login: "Connectez-vous pour garder cette vente en favori.",
-  },
-  export: {
-    signup: "Créez votre compte gratuit pour exporter ces résultats, sans carte bancaire.",
-    login: "Connectez-vous pour exporter ces résultats.",
-  },
-  offre: {
-    signup:
-      "Créez votre compte gratuit : vous pourrez ensuite passer à l'offre Analyse quand vous le souhaitez.",
-    login: "Connectez-vous pour découvrir l'offre Analyse.",
-  },
-  fiche: {
-    signup: `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
-    login: "Connectez-vous pour consulter cette vente.",
-  },
-  "mes-favoris": {
-    signup: "Créez votre compte gratuit pour garder vos ventes en favori et les retrouver ici.",
-    login: "Connectez-vous pour retrouver vos favoris.",
-  },
-  "mes-alertes": {
-    signup: "Créez votre compte gratuit pour enregistrer vos alertes et les retrouver ici.",
-    login: "Connectez-vous pour retrouver vos alertes.",
-  },
-};
+/**
+ * Phrase du bandeau : l'action qui a envoyé la personne ici, et ce que le compte gratuit change.
+ * Deux états : avec l'offre de lancement le compte gratuit a les avantages Analyse (export compris) ;
+ * sans elle, l'export reste réservé à l'offre Analyse et le texte ne promet pas plus que le produit.
+ */
+function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string; login: string } {
+  switch (reason) {
+    case "alerte":
+      return {
+        signup: "Créez votre compte gratuit pour enregistrer cette alerte, sans carte bancaire.",
+        login: "Connectez-vous pour enregistrer cette alerte.",
+      };
+    case "favori":
+      return {
+        signup: `Créez votre compte gratuit pour garder cette vente en favori (${PLAN_LIMITS.decouverte.favoriteSales} favoris offerts).`,
+        login: "Connectez-vous pour garder cette vente en favori.",
+      };
+    case "export":
+      return launchOffer
+        ? {
+            signup:
+              "Créez votre compte gratuit pour exporter ces résultats : l’export fait partie des avantages de l’offre Analyse accordés pendant l’offre de lancement, sans carte bancaire.",
+            login: "Connectez-vous pour exporter ces résultats.",
+          }
+        : {
+            signup:
+              "Créez votre compte gratuit, sans carte bancaire. L’export des résultats est réservé à l’offre Analyse.",
+            login: "Connectez-vous. L’export des résultats est réservé à l’offre Analyse.",
+          };
+    case "offre":
+      return launchOffer
+        ? {
+            signup:
+              "Créez votre compte gratuit : pendant l’offre de lancement, il bénéficie des avantages de l’offre Analyse.",
+            login: "Connectez-vous pour retrouver les avantages de l’offre Analyse.",
+          }
+        : {
+            signup:
+              "Créez votre compte gratuit : vous pourrez ensuite passer à l'offre Analyse quand vous le souhaitez.",
+            login: "Connectez-vous pour découvrir l'offre Analyse.",
+          };
+    case "ouverture":
+      return {
+        signup: "Créez votre compte gratuit pour être prévenu de l’ouverture de l’offre Analyse.",
+        login: "Connectez-vous pour être prévenu de l’ouverture de l’offre Analyse.",
+      };
+    case "mes-favoris":
+      return {
+        signup: "Créez votre compte gratuit pour garder vos ventes en favori et les retrouver ici.",
+        login: "Connectez-vous pour retrouver vos favoris.",
+      };
+    case "mes-alertes":
+      return {
+        signup: "Créez votre compte gratuit pour enregistrer vos alertes et les retrouver ici.",
+        login: "Connectez-vous pour retrouver vos alertes.",
+      };
+    case "fiche":
+      return {
+        signup: launchOffer
+          ? "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant l’offre de lancement, il ouvre aussi les analyses de l’offre Analyse."
+          : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
+        login: "Connectez-vous pour consulter cette vente.",
+      };
+  }
+}
 
 const modeCopy: Record<
   LoginMode,
@@ -124,10 +160,9 @@ const modeCopy: Record<
   },
 };
 
-const UNLOCKED_ITEMS = unlockedItemsText({ ceiling: true, statistics: true });
-
 export function LoginPage() {
   const { user, profile, loading } = useAuth();
+  const launchOffer = useLaunchOffer().active;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -331,10 +366,18 @@ export function LoginPage() {
             </p>
             <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
               Découverte ouvre gratuitement le catalogue et, chaque mois, {MONTHLY_SALE_UNLOCKS}{" "}
-              ventes en détail ({UNLOCKED_ITEMS}). Analyse ouvre toutes les ventes, avec les
-              comparables, les alertes quotidiennes et les exports, sur abonnement résiliable. Les
-              professionnels déposent et suivent leurs annonces dans leur espace.
+              ventes en détail ({UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes,
+              avec les comparables, les alertes quotidiennes et les exports, sur abonnement
+              résiliable. Les professionnels déposent et suivent leurs annonces dans leur espace.
             </p>
+            {launchOffer ? (
+              <p
+                data-testid="login-launch-offer-column"
+                className="mt-5 max-w-md rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground"
+              >
+                {LAUNCH_OFFER_VISITOR_TEXT}
+              </p>
+            ) : null}
 
             <div className="mt-10 grid gap-3">
               <FeatureLine
@@ -447,7 +490,9 @@ export function LoginPage() {
                   data-testid="login-reason"
                   className="mt-5 rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm leading-relaxed text-foreground"
                 >
-                  {isSignup ? reasonCopy[reason].signup : reasonCopy[reason].login}
+                  {isSignup
+                    ? reasonCopy(reason, launchOffer).signup
+                    : reasonCopy(reason, launchOffer).login}
                 </p>
               ) : null}
 
@@ -471,8 +516,17 @@ export function LoginPage() {
                   data-testid="login-free-promise"
                   className="mt-2 text-sm font-medium leading-relaxed text-foreground lg:hidden"
                 >
-                  Gratuit : {MONTHLY_SALE_UNLOCKS} ventes en détail par mois (selon la vente), sans
-                  carte bancaire
+                  {launchOffer
+                    ? LAUNCH_OFFER_VISITOR_TEXT
+                    : `Gratuit : ${MONTHLY_SALE_UNLOCKS} ventes en détail par mois (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
+                </p>
+              ) : null}
+              {mode === "investor" && launchOffer ? (
+                <p
+                  data-testid="login-launch-offer"
+                  className="mt-3 hidden rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground lg:block"
+                >
+                  {LAUNCH_OFFER_VISITOR_TEXT}
                 </p>
               ) : null}
 

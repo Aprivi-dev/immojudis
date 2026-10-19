@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import { formatStartingPrice } from "@/lib/format";
+import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import type { AuctionSale } from "@/lib/types";
 import { ListingCard, SearchResultsList } from "./SearchResults";
@@ -150,6 +151,9 @@ describe("vue « tableau » des résultats", () => {
 
     const links = screen.getAllByRole("link", { name: /^Voir / });
     expect(links).toHaveLength(2);
+    // Le HTML du serveur n'a pas de ?from= : l'origine s'ajoute dès que la personne approche le lien.
+    expect(links[0].getAttribute("href")).toBe("/sales/sale-a");
+    fireEvent.pointerEnter(links[0]);
     expect(links[0].getAttribute("href")).toBe(
       "/sales/sale-a?from=%2Fsales%3Fcity%3DBordeaux%26view%3Dtable",
     );
@@ -275,6 +279,24 @@ describe("vue « tableau » des résultats", () => {
     expect(listingAccessLine(notary, { ...open, locked: true })).toBe(
       "Fiche complète avec un compte gratuit",
     );
+  });
+
+  it("offre de lancement : le visiteur lit la mention de l'offre, pour toutes les ventes", () => {
+    const tribunal = makeSale("sale-t");
+    const notary = makeSale("sale-n", { sale_venue_type: "notary" });
+    const visitor = { locked: true, analysisLocked: true, unlocked: false, launchOffer: true };
+    expect(listingAccessLine(tribunal, visitor)).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    expect(listingAccessLine(notary, visitor)).toBe(LAUNCH_OFFER_VISITOR_TEXT);
+    // Hors offre, ou pour un compte connecté, la ligne habituelle ne change pas.
+    expect(listingAccessLine(tribunal, { ...visitor, launchOffer: false })).toBe(FREE_ACCESS_LINE);
+    expect(
+      listingAccessLine(tribunal, {
+        locked: false,
+        analysisLocked: false,
+        unlocked: false,
+        launchOffer: true,
+      }),
+    ).toBe("Voir le détail");
   });
 
   it("marque les ventes débloquées d'un compte Découverte", async () => {

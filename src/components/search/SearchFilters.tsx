@@ -4,20 +4,29 @@ import Map from "lucide-react/dist/esm/icons/map.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import SearchIcon from "lucide-react/dist/esm/icons/search.js";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SearchRejectedError } from "@/lib/search/search-errors";
 import { userMessage } from "@/lib/user-messages";
 import type { ActiveFilterChip } from "./active-filter-chips";
 
 export function MobileMapToggle({
   activeFiltersCount,
+  comparedCount = 0,
   onOpenFilters,
+  onOpenComparison,
+  onPreloadMap,
   onOpenMap,
 }: {
   activeFiltersCount: number;
+  /** Biens choisis pour la comparaison : au moins un, et la pastille « Comparer (N) » apparaît. */
+  comparedCount?: number;
   onOpenFilters: () => void;
+  onOpenComparison?: () => void;
+  /** Appelé à l'appui du doigt sur « Carte » (avant le clic) pour télécharger la carte à l'avance. */
+  onPreloadMap?: () => void;
   onOpenMap: () => void;
 }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-2 gap-2 border-t border-brand-navy/10 bg-white/95 p-2 shadow-[0_-14px_34px_rgba(19,34,56,0.12)] backdrop-blur lg:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-30 grid auto-cols-fr grid-flow-col gap-2 border-t border-brand-navy/10 bg-white/95 p-2 shadow-[0_-14px_34px_rgba(19,34,56,0.12)] backdrop-blur lg:hidden">
       <button
         type="button"
         onClick={onOpenFilters}
@@ -31,9 +40,21 @@ export function MobileMapToggle({
           </span>
         ) : null}
       </button>
+      {comparedCount > 0 && onOpenComparison ? (
+        <button
+          type="button"
+          onClick={onOpenComparison}
+          data-comparison-pill=""
+          className="inline-flex h-11 cursor-pointer items-center justify-center rounded-full border border-brand-navy bg-white px-3 text-sm font-extrabold text-brand-navy transition-colors hover:bg-surface-muted"
+        >
+          Comparer ({comparedCount})
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={onOpenMap}
+        onPointerDown={onPreloadMap}
+        onTouchStart={onPreloadMap}
         className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-brand-navy px-4 text-sm font-extrabold text-white transition-colors hover:bg-brand-navy-soft"
       >
         <Map className="h-4 w-4" />
@@ -107,22 +128,29 @@ export function NoResultsState({
 }
 
 export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => void }) {
+  // Recherche refusée par la route (400) : la demande est en cause, pas le catalogue. La rejouer
+  // donnerait la même réponse, donc pas de « Réessayer ».
+  const rejected = error instanceof SearchRejectedError;
   return (
     <div
       role="alert"
       className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700"
     >
       <div>
-        <p className="font-bold">Le catalogue ne répond pas pour le moment.</p>
+        <p className="font-bold">
+          {rejected
+            ? "Cette recherche n’est pas possible."
+            : "Le catalogue ne répond pas pour le moment."}
+        </p>
         <p className="mt-1 font-medium">
           {userMessage(error, "Réessayez dans quelques secondes.")}
         </p>
       </div>
-      {onRetry ? (
+      {onRetry && !rejected ? (
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-bold text-red-700 hover:bg-red-100"
+          className="inline-flex min-h-11 items-center rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-bold text-red-700 hover:bg-red-100"
         >
           Réessayer
         </button>
@@ -157,7 +185,10 @@ export function ListingCardSkeleton() {
 export function MapPanelSkeleton() {
   return (
     <div className="grid h-full min-h-[28rem] place-items-center bg-surface-tint">
-      <div className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-3 text-sm font-bold text-brand-navy shadow-lg">
+      <div
+        role="status"
+        className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-3 text-sm font-bold text-brand-navy shadow-lg"
+      >
         <LoaderCircle className="h-4 w-4 animate-spin text-brand-navy" />
         Chargement de la carte
       </div>

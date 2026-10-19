@@ -11,6 +11,10 @@ import financingArticle from "@/content/resources/financer-achat-encheres-pret-d
 import licitationArticle from "@/content/resources/licitation-vente-bien-indivis-encheres-acheteur.json";
 import seizureArticle from "@/content/resources/saisie-immobiliere-etapes-vente-forcee-acheteur.json";
 import lawyerArticle from "@/content/resources/avocat-obligatoire-encherir-tribunal-choisir-mandat-cout.json";
+import preemptionArticle from "@/content/resources/droit-de-preemption-encheres-commune-acheteur.json";
+import guaranteeArticle from "@/content/resources/garantie-10-pourcent-cheque-banque-caution-encheres.json";
+import condominiumArticle from "@/content/resources/copropriete-encheres-charges-assemblees.json";
+import { GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 
 export interface ResourceSection {
   id: string;
@@ -91,6 +95,9 @@ export const RESOURCE_ARTICLES: ResourceArticle[] = [
   defineArticle(seizureArticle, "/media/landing/justice-goddess.webp"),
   defineArticle(licitationArticle, "/media/landing/home-favorites.webp"),
   defineArticle(lawyerArticle, "/media/landing/auction-toulouse.webp"),
+  defineArticle(preemptionArticle, "/media/landing/auction-nantes.webp"),
+  defineArticle(guaranteeArticle, "/media/landing/dossier-apartment.webp"),
+  defineArticle(condominiumArticle, "/media/landing/auction-lyon.webp"),
 ];
 
 export const EXISTING_GUIDE: ResourceSummary = {
@@ -101,7 +108,8 @@ export const EXISTING_GUIDE: ResourceSummary = {
     "De la première annonce à l’audience : les procédures, les documents à lire, les frais et les risques à comprendre pour préparer votre achat.",
   href: "/ventes-immobilieres-judiciaires",
   image: "/media/landing/judicial-candle.webp",
-  readingMinutes: 18,
+  // Même valeur que la mention de la page du guide (source unique : `src/lib/guide-dates.ts`).
+  readingMinutes: GUIDE_READING_MINUTES,
 };
 
 export const RESOURCE_SUMMARIES: ResourceSummary[] = [

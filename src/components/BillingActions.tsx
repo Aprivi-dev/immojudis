@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import CreditCard from "lucide-react/dist/esm/icons/credit-card.js";
 import CircleX from "lucide-react/dist/esm/icons/circle-x.js";
 import Settings from "lucide-react/dist/esm/icons/settings.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   Dialog,
   DialogContent,
@@ -13,9 +13,11 @@ import {
 } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/use-auth";
 import { useBillingOffer, type BillingOfferSource } from "@/hooks/use-billing-offer";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { useCheckoutReturn } from "@/hooks/use-checkout-return";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { launchOfferText } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import {
   fetchAccessPlan,
@@ -69,7 +71,10 @@ export function BillingActions({
   const ownOffer = useBillingOffer(!offerSource);
   const { offer, reload: reloadOffer } = offerSource ?? ownOffer;
   const checkoutReturn = useCheckoutReturn(handleCheckoutReturn);
+  const launch = useLaunchOffer();
   const [plan, setPlan] = useState<PlanCode | null>(null);
+  // Plan Analyse parce que l'offre de lancement est active (pas d'abonnement) : aucun parcours de paiement.
+  const [launchOfferPlan, setLaunchOfferPlan] = useState(false);
   const [planState, setPlanState] = useState<PlanReadState>("loading");
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
   const [billing, setBilling] = useState<PlanBilling | null>(null);
@@ -88,6 +93,7 @@ export function BillingActions({
   useEffect(() => {
     let active = true;
     setPlan(null);
+    setLaunchOfferPlan(false);
     setCurrentPeriodEnd(null);
     setBilling(null);
 
@@ -100,6 +106,7 @@ export function BillingActions({
       .then((response) => {
         if (!active) return;
         setPlan(response.plan.plan);
+        setLaunchOfferPlan(response.plan.launchOffer === true);
         setCurrentPeriodEnd(response.plan.currentPeriodEnd);
         setBilling(response.plan.billing ?? null);
         setPlanState("ready");
@@ -135,6 +142,7 @@ export function BillingActions({
         setCurrentPeriodEnd(response.plan.currentPeriodEnd);
         setBilling(response.plan.billing ?? null);
         setPlan(response.plan.plan);
+        setLaunchOfferPlan(response.plan.launchOffer === true);
         if (response.plan.plan === "analyse") return;
       } catch {
         if (!active) return;
@@ -153,7 +161,9 @@ export function BillingActions({
     };
   }, [checkoutReturn, userId, planState, plan]);
 
-  const hasAnalysis = plan === "analyse";
+  // Abonné (ou premium, administrateur) : le portail de paiement s'applique. Le surclassement de
+  // l'offre de lancement n'est pas un abonnement : il n'ouvre ni portail ni résiliation.
+  const hasAnalysis = plan === "analyse" && !launchOfferPlan;
   // Only a real Stripe subscription sends to the portal.  A Stripe customer alone is not
   // enough: it exists as soon as the payment page opens, even if the visitor never paid.
   // A subscriber whose renewal failed has lost the plan but still needs the portal to
@@ -309,7 +319,11 @@ export function BillingActions({
             </button>
           ) : null}
         </div>
-      ) : checkingAccount || offer.status === "loading" ? (
+      ) : launchOfferPlan ? (
+        <LaunchOfferNotice audience="account" />
+      ) : !userId && !loading && launch.active ? (
+        <LaunchOfferNotice audience="visitor" />
+      ) : checkingAccount || offer.status === "loading" || (!userId && launch.pending) ? (
         <div
           role="status"
           aria-busy="true"
@@ -331,39 +345,42 @@ export function BillingActions({
         </div>
       ) : (
         <>
-          <div className={`flex flex-col gap-2 sm:flex-row ${className}`}>
-            <button
-              type="button"
-              onClick={openCheckoutReview}
-              ref={checkoutTriggerRef}
-              disabled={loading || Boolean(busy) || !offerOpen}
-              className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <CreditCard className="h-4 w-4" />
-              {offerOpen ? purchaseLabel : "Ouverture prochaine"}
-            </button>
-            {offerOpen && !hideHelper ? (
-              <span className="inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-muted-foreground">
-                {trialAvailable
-                  ? `${ANALYSIS_TRIAL_LABEL} · abonnement résiliable depuis Mon compte`
-                  : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL} · sans nouvel essai`}
-              </span>
-            ) : null}
-          </div>
-
-          {!offerOpen ? (
-            <div className="mt-3 text-sm leading-relaxed text-brand-navy/80">
-              <p role="status">
-                Les souscriptions ouvriront prochainement. Vous pouvez explorer gratuitement le
-                catalogue.{" "}
+          {offerOpen ? (
+            <div className={`flex flex-col gap-2 sm:flex-row ${className}`}>
+              <button
+                type="button"
+                onClick={openCheckoutReview}
+                ref={checkoutTriggerRef}
+                disabled={loading || Boolean(busy)}
+                className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <CreditCard className="h-4 w-4" />
+                {purchaseLabel}
+              </button>
+              {!hideHelper ? (
+                <span className="inline-flex items-center justify-center px-3 py-2 text-xs font-semibold text-muted-foreground">
+                  {trialAvailable
+                    ? `${ANALYSIS_TRIAL_LABEL} · abonnement résiliable depuis Mon compte`
+                    : `${ANALYSIS_SUBSCRIPTION_ONLY_LABEL} · sans nouvel essai`}
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            // Offre fermée : le bouton principal est la demande d'information, pas un achat.
+            <div className={`text-sm leading-relaxed text-brand-navy/80 ${className}`}>
+              <OfferOpeningRequest className="mt-0" primary />
+              <p role="status" className="mt-3 font-medium">
+                Tarif prévu : {offerLabel}. Pas encore souscriptible.
+              </p>
+              <p className="mt-1">
+                Vous pouvez explorer gratuitement le catalogue.{" "}
                 <Link href="/legal" className="underline">
                   Voir les mentions légales
                 </Link>
                 .
               </p>
-              <OfferOpeningRequest />
             </div>
-          ) : null}
+          )}
         </>
       )}
 
@@ -469,6 +486,30 @@ export function BillingActions({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * Offre de lancement : à la place du bouton d'achat. Aucun paiement n'est proposé, la mention
+ * rappelle que les avantages sont retirables sans préavis (textes de `src/lib/launch-offer.ts`).
+ */
+function LaunchOfferNotice({ audience }: { audience: "account" | "visitor" }) {
+  return (
+    <div
+      role="status"
+      data-testid="launch-offer-notice"
+      className="rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm leading-relaxed text-brand-navy"
+    >
+      <p>{launchOfferText(audience)}</p>
+      {audience === "visitor" ? (
+        <Link
+          href={loginPathWithRedirect("/sales", { reason: "offre" })}
+          className="mt-2 inline-flex min-h-11 items-center font-semibold text-gold-text underline underline-offset-4"
+        >
+          Créer mon compte gratuit
+        </Link>
+      ) : null}
+    </div>
   );
 }
 

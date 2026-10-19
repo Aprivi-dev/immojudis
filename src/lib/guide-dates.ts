@@ -8,4 +8,14 @@
  *
  * Module sans dépendance, pour que le sitemap l'importe sans charger le composant du guide.
  */
-export const GUIDE_LAST_UPDATED = "2026-10-13";
+export const GUIDE_LAST_UPDATED = "2026-10-19";
+
+/**
+ * Temps de lecture du guide, en minutes : source unique de la mention de la page
+ * (`resources-guide.tsx`) et de la carte du guide sur `/ressources` (`EXISTING_GUIDE` de
+ * `src/lib/resource-articles.ts`). Le texte du guide est du JSX, que seul un rendu complet permet
+ * de compter : le test du guide recompte les mots de la page (230 mots par minute) et échoue si
+ * cette valeur s'en écarte de plus d'une minute. À mettre à jour avec `GUIDE_LAST_UPDATED` quand
+ * le contenu du guide change sur le fond.
+ */
+export const GUIDE_READING_MINUTES = 24;

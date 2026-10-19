@@ -70,7 +70,7 @@ export function resolveAnalysisPriceId(env: Pick<NodeJS.ProcessEnv, string> = pr
   const priceId = env.STRIPE_ANALYSIS_PRICE_ID?.trim();
   if (!priceId) {
     throw new Error(
-      "Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID manquant pour le tarif validé de 29 € / mois.",
+      "Stripe Analyse n'est pas configuré: STRIPE_ANALYSIS_PRICE_ID manquant pour le tarif validé de 59 € / mois.",
     );
   }
   if (!/^price_[A-Za-z0-9]+$/.test(priceId)) {
@@ -370,7 +370,7 @@ async function resolveConfiguredAnalysisPrice(
     price.recurring.interval !== ANALYSIS_RECURRING_INTERVAL ||
     price.recurring.interval_count !== ANALYSIS_RECURRING_INTERVAL_COUNT
   ) {
-    throw new Error("Le Price Stripe Analyse doit être actif et récurrent à 29 € / mois en EUR.");
+    throw new Error("Le Price Stripe Analyse doit être actif et récurrent à 59 € / mois en EUR.");
   }
   return price;
 }

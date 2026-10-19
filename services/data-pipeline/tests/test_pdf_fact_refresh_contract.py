@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -10,6 +10,24 @@ from src.pdf_enrichment import _invalidate_replaced_document_facts, enrich_sale_
 SOURCE_URL = "https://example.test/pdf-fact-refresh"
 DOCUMENT_URL = "https://example.test/current-pv.pdf"
 INITIAL = "Appartement de 50 m², 2 pièces, 1 chambre. Le bien est libre de toute occupation."
+_FRENCH_MONTHS = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
+
+
+def _french_date(days_ahead: int) -> tuple[date, str]:
+    """Une date future relative au jour d'exécution, avec son écriture « 22 octobre 2026 ».
+
+    pdf_sale_date_guard écarte les dates passées ou à plus de 548 jours : une date écrite en dur
+    ferait échouer le test dès qu'elle est dépassée.
+    """
+    day = date.today() + timedelta(days=days_ahead)
+    return day, f"{day.day} {_FRENCH_MONTHS[day.month - 1]} {day.year}"
+
+
+HEARING_DAY, HEARING_TEXT = _french_date(60)
+OTHER_DAY, OTHER_TEXT = _french_date(90)
 COMPETING = (
     "Lot 1 : appartement de 50 m², 2 pièces, 1 chambre. "
     "Lot 2 : appartement de 70 m², 3 pièces, 2 chambres."
@@ -165,7 +183,7 @@ def test_replaced_bytes_preserve_a_different_displayed_surface():
 
 def test_replaced_pdf_date_is_invalidated_after_postgres_utc_roundtrip():
     sale = _sale()
-    text = "La vente aux enchères aura lieu le 22 octobre 2026 à 14h30."
+    text = f"La vente aux enchères aura lieu le {HEARING_TEXT} à 14h30."
     enrich_sale_from_pdf_text(sale, [_document(text)])
     assert isinstance(sale.sale_date, datetime)
     sale.sale_date = sale.sale_date.astimezone(UTC)
@@ -193,24 +211,24 @@ def test_replaced_pdf_visit_dates_are_invalidated():
 def test_replaced_pdf_date_restores_a_canonical_date_from_french_source_text():
     sale = _sale()
     enrich_sale_from_pdf_text(
-        sale, [_document("La vente aux enchères aura lieu le 22 octobre 2026 à 14h30.")]
+        sale, [_document(f"La vente aux enchères aura lieu le {HEARING_TEXT} à 14h30.")]
     )
     sale.raw_payload["source_factual_snapshot"] = {
         "source_name": "info_encheres",
         "source_url": SOURCE_URL,
-        "sale_date": "25 novembre 2026 à 15h00",
+        "sale_date": f"{OTHER_TEXT} à 15h00",
     }
 
     _replace(sale)
 
     assert isinstance(sale.sale_date, datetime)
-    assert (sale.sale_date.month, sale.sale_date.day) == (11, 25)
+    assert (sale.sale_date.month, sale.sale_date.day) == (OTHER_DAY.month, OTHER_DAY.day)
 
 
 def test_replaced_pdf_date_restores_source_status_from_snapshot():
     sale = _sale()
     enrich_sale_from_pdf_text(
-        sale, [_document("La vente aux enchères aura lieu le 22 octobre 2026 à 14h30.")]
+        sale, [_document(f"La vente aux enchères aura lieu le {HEARING_TEXT} à 14h30.")]
     )
     sale.raw_payload["source_factual_snapshot"] = {
         "source_name": "info_encheres",
@@ -345,7 +363,7 @@ def test_pdf_status_restores_unknown_from_an_explicitly_empty_source_snapshot():
         "source_name": "info_encheres", "source_url": SOURCE_URL,
         "status": None, "sale_date": None,
     }
-    enrich_sale_from_pdf_text(sale, [_document("Vente aux enchères le 22 octobre 2026 à 14h30.")])
+    enrich_sale_from_pdf_text(sale, [_document(f"Vente aux enchères le {HEARING_TEXT} à 14h30.")])
     assert sale.status == "upcoming"
 
     _replace(sale)

@@ -8,7 +8,7 @@ import MailPlus from "lucide-react/dist/esm/icons/mail-plus.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { ADMIN_PAGE_SIZE as PAGE_SIZE, adminClampOffset } from "@/lib/admin-pagination";
 import Link from "next/link";

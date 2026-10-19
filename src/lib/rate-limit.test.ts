@@ -11,8 +11,11 @@ import {
   enforceIpRateLimit,
   enforceUserRateLimit,
   hashClientIp,
+  ipRateLimiterStats,
+  resetIpRateLimiterStats,
   secondsUntilWindowEnds,
   tryConsumeUserRateLimit,
+  UNKNOWN_CLIENT_LIMIT,
 } from "./rate-limit";
 
 /** Fixed-window counter shared by both RPCs, like the SQL functions. */
@@ -39,7 +42,9 @@ const policy = { userId: "user-1", bucketKey: "market-estimate", limit: 30, wind
 describe("rate limiting", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    resetIpRateLimiterStats();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
 
   it("allows 30 calls per minute and rejects the 31st with a RateLimitError", async () => {
@@ -96,6 +101,180 @@ describe("rate limiting", () => {
     await expect(
       enforceIpRateLimit({ request, bucketKey: "k", limit: 1, windowSeconds: 60 }),
     ).resolves.toBeUndefined();
+  });
+
+  describe("failures of the IP limiter are counted in the logs, and still fail open", () => {
+    const request = new Request("https://example.test/api/x", {
+      headers: { "x-real-ip": "198.51.100.4" },
+    });
+    const logged = () =>
+      vi.mocked(console.error).mock.calls.map(([line]) => JSON.parse(String(line)));
+
+    it("logs one JSON line per failure with the counters of the instance", async () => {
+      mocks.rpc.mockRejectedValue(new Error("network down"));
+      const input = { request, bucketKey: "catalogue.preview", limit: 180, windowSeconds: 60 };
+
+      await expect(enforceIpRateLimit(input)).resolves.toBeUndefined();
+      await expect(enforceIpRateLimit(input)).resolves.toBeUndefined();
+
+      expect(logged()).toEqual([
+        expect.objectContaining({
+          scope: "rate-limit",
+          event: "ip_limiter_failure",
+          outcome: "fail_open",
+          reason: "exception",
+          bucket: "catalogue.preview",
+          message: "network down",
+          failures: 1,
+          calls: 1,
+        }),
+        expect.objectContaining({ failures: 2, calls: 2 }),
+      ]);
+      expect(ipRateLimiterStats()).toMatchObject({ calls: 2, failures: 2, unidentified: 0 });
+      // Ni l'adresse ni son empreinte ne sont journalisées.
+      expect(JSON.stringify(logged())).not.toContain("198.51.100.4");
+    });
+
+    it("also counts an error answered by the database (not a refusal) and lets the call through", async () => {
+      mocks.rpc.mockResolvedValue({ data: null, error: { message: "permission denied" } });
+
+      await expect(
+        enforceIpRateLimit({ request, bucketKey: "k", limit: 1, windowSeconds: 60 }),
+      ).resolves.toBeUndefined();
+
+      expect(logged()).toEqual([
+        expect.objectContaining({ reason: "rpc_error", message: "permission denied", failures: 1 }),
+      ]);
+    });
+
+    it("does not count a refusal as a failure of the limiter", async () => {
+      installCounter();
+      const input = { request, bucketKey: "k", limit: 1, windowSeconds: 60 };
+      await enforceIpRateLimit(input);
+
+      await expect(enforceIpRateLimit(input)).rejects.toBeInstanceOf(RateLimitError);
+
+      expect(console.error).not.toHaveBeenCalled();
+      expect(ipRateLimiterStats()).toMatchObject({ calls: 2, failures: 0 });
+    });
+
+    it("bounds the length of the logged message", async () => {
+      mocks.rpc.mockRejectedValue(new Error("x".repeat(5000)));
+
+      await enforceIpRateLimit({ request, bucketKey: "k", limit: 1, windowSeconds: 60 });
+
+      expect(logged()[0].message).toHaveLength(200);
+    });
+  });
+
+  describe("a request without a usable address", () => {
+    const anonymous = (headers: Record<string, string> = {}) =>
+      new Request("https://example.test/api/x", { headers });
+    const sent = () =>
+      mocks.rpc.mock.calls.map(
+        ([, args]) => args as { p_bucket_key: string; p_ip_hash: string; p_limit: number },
+      );
+
+    it("gets a dedicated bucket and a very low quota, whatever the policy", async () => {
+      installCounter();
+      const policy = { bucketKey: "catalogue.preview", limit: 180, windowSeconds: 60 };
+
+      await enforceIpRateLimit({ ...policy, request: anonymous() });
+
+      expect(sent()[0]).toMatchObject({ p_limit: UNKNOWN_CLIENT_LIMIT });
+      expect(sent()[0].p_bucket_key).toMatch(/^catalogue\.preview\.unknown\.[0-9a-f]{16}$/);
+      expect(UNKNOWN_CLIENT_LIMIT).toBeLessThanOrEqual(10);
+    });
+
+    it("never gets more than the policy allows", async () => {
+      installCounter();
+
+      await enforceIpRateLimit({
+        request: anonymous(),
+        bucketKey: "k",
+        limit: 3,
+        windowSeconds: 60,
+      });
+
+      expect(sent()[0].p_limit).toBe(3);
+    });
+
+    it("is refused once the low quota is used, while an identified address keeps its own", async () => {
+      installCounter();
+      const policy = { bucketKey: "catalogue.preview", limit: 180, windowSeconds: 60 };
+      for (let call = 0; call < UNKNOWN_CLIENT_LIMIT; call += 1) {
+        await enforceIpRateLimit({ ...policy, request: anonymous() });
+      }
+
+      await expect(enforceIpRateLimit({ ...policy, request: anonymous() })).rejects.toBeInstanceOf(
+        RateLimitError,
+      );
+      await expect(
+        enforceIpRateLimit({
+          ...policy,
+          request: anonymous({ "x-real-ip": "198.51.100.4" }),
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("does not make every anonymous client share one bucket", async () => {
+      installCounter();
+      const policy = { bucketKey: "k", limit: 180, windowSeconds: 60 };
+      for (let call = 0; call < UNKNOWN_CLIENT_LIMIT; call += 1) {
+        await enforceIpRateLimit({ ...policy, request: anonymous({ "user-agent": "client-a" }) });
+      }
+
+      await expect(
+        enforceIpRateLimit({ ...policy, request: anonymous({ "user-agent": "client-a" }) }),
+      ).rejects.toBeInstanceOf(RateLimitError);
+      await expect(
+        enforceIpRateLimit({ ...policy, request: anonymous({ "user-agent": "client-b" }) }),
+      ).resolves.toBeUndefined();
+      const buckets = new Set(sent().map((call) => call.p_bucket_key));
+      expect(buckets.size).toBe(2);
+    });
+
+    it("keeps the bucket of an identified address apart from the one of an anonymous request", async () => {
+      installCounter();
+      await enforceIpRateLimit({
+        request: anonymous(),
+        bucketKey: "k",
+        limit: 60,
+        windowSeconds: 60,
+      });
+      await enforceIpRateLimit({
+        request: anonymous({ "x-real-ip": "198.51.100.4" }),
+        bucketKey: "k",
+        limit: 60,
+        windowSeconds: 60,
+      });
+
+      const [unknown, identified] = sent();
+      expect(identified.p_bucket_key).toBe("k");
+      expect(unknown.p_bucket_key).not.toBe("k");
+      expect(identified.p_limit).toBe(60);
+    });
+
+    it("is counted in the logs: first occurrence, then every hundredth", async () => {
+      installCounter();
+      const policy = { bucketKey: "k", limit: 180, windowSeconds: 60 };
+
+      for (let call = 0; call < 200; call += 1) {
+        await enforceIpRateLimit({
+          ...policy,
+          request: anonymous({ "user-agent": `client-${call}` }),
+        });
+      }
+
+      const lines = vi.mocked(console.warn).mock.calls.map(([line]) => JSON.parse(String(line)));
+      expect(lines.map((line) => line.unidentified)).toEqual([1, 100, 200]);
+      expect(lines[0]).toMatchObject({
+        scope: "rate-limit",
+        event: "ip_unidentified",
+        bucket: "k",
+      });
+      expect(ipRateLimiterStats().unidentified).toBe(200);
+    });
   });
 
   it("resolves the client IP from platform headers and hashes it with a salt", () => {

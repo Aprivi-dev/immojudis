@@ -48,6 +48,8 @@ export {
   updateAdminLawyerReferralRequest,
   fetchAdminSubscriptions,
   grantAdminSubscription,
+  fetchAdminLaunchOffer,
+  setAdminLaunchOfferClient,
 } from "@/lib/client-api/admin";
 
 export {

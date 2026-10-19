@@ -77,11 +77,13 @@ function visibleText(markup: string): string {
 describe("home figures and free-access line", () => {
   it("shows the real figures with a link to /sales, then the free-access line", () => {
     const markup = renderToStaticMarkup(
-      <CinematicHero summary={{ count: 1753, updatedAt: "2026-10-15T07:30:00.000Z" }} />,
+      <CinematicHero summary={{ count: 1753, verifiedAt: "2026-10-15T07:30:00.000Z" }} />,
     );
     const text = visibleText(markup);
 
-    expect(text).toContain("1 753 ventes à venir · mises à jour le 15/10/2026");
+    expect(text).toContain("1 753 ventes à venir · données vérifiées le 15/10/2026");
+    // La ligne ne prétend plus que les annonces ont été modifiées ce jour-là.
+    expect(text).not.toContain("mises à jour le");
     expect(markup).toMatch(/<a[^>]*href="\/sales"[^>]*>1[^<]*753 ventes à venir/);
     expect(text).toContain("Gratuit, sans carte bancaire · 3 fiches détaillées par mois");
     expect(markup).toMatch(/<a[^>]*href="\/offres"[^>]*>Gratuit, sans carte bancaire/);
@@ -93,14 +95,14 @@ describe("home figures and free-access line", () => {
       renderToStaticMarkup(<CinematicHero summary={null} />),
     ]) {
       expect(markup).not.toContain("ventes à venir");
-      expect(markup).not.toContain("mises à jour");
+      expect(markup).not.toContain("vérifiées");
       expect(markup).toContain("Gratuit, sans carte bancaire");
     }
   });
 
   it("keeps the total alone, singular for one sale, when the date is unknown", () => {
-    expect(catalogueSummaryLine({ count: 1, updatedAt: null })).toBe("1 vente à venir");
-    expect(catalogueSummaryLine({ count: 12, updatedAt: "pas une date" })).toBe(
+    expect(catalogueSummaryLine({ count: 1, verifiedAt: null })).toBe("1 vente à venir");
+    expect(catalogueSummaryLine({ count: 12, verifiedAt: "pas une date" })).toBe(
       "12 ventes à venir",
     );
   });

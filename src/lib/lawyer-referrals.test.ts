@@ -53,7 +53,7 @@ describe("lawyer referrals", () => {
           dataSharingConfirmed: true,
         },
       }),
-    ).rejects.toThrow("Mise en relation avocat réservée au plan Analyse ou Investisseur.");
+    ).rejects.toThrow("Mise en relation avocat réservée au plan Analyse.");
 
     expect(recordFeatureUsageEvent).not.toHaveBeenCalled();
   });
@@ -287,7 +287,7 @@ describe("lawyer referrals", () => {
         auth: fakeReferralAuth(),
         query: { saleId: SALE_ID },
       }),
-    ).rejects.toThrow("Mise en relation avocat réservée au plan Analyse ou Investisseur.");
+    ).rejects.toThrow("Mise en relation avocat réservée au plan Analyse.");
   });
 
   it("only proposes lawyers of the bar of the sale's tribunal", async () => {

@@ -10,6 +10,7 @@ import {
   departmentPageTitle,
   isDepartmentPageIndexable,
 } from "@/lib/department-pages";
+import { neighboringDepartmentCodes } from "@/lib/department-neighbors";
 import { loadDepartmentCatalogue } from "@/lib/department-pages.server";
 import { jsonLdString } from "@/lib/json-ld";
 import { pageMetadata } from "@/lib/page-metadata";
@@ -72,6 +73,12 @@ export default async function Page({ params }: PageProps) {
           (item) => departmentFromCode(item.department)?.code === department.code,
         )
       : [];
+  const neighborCounts = Object.fromEntries(
+    neighboringDepartmentCodes(department.code).map((code) => [
+      code,
+      catalogue.departments[code]?.upcomingCount ?? 0,
+    ]),
+  );
   const origin = resolveSiteOrigin(process.env, "http://localhost:3000")!;
   const itemList = departmentItemListStructuredData(origin, stats?.sales ?? []);
 
@@ -94,6 +101,7 @@ export default async function Page({ params }: PageProps) {
         stats={stats}
         tribunals={tribunals}
         generatedAt={catalogue.generatedAt}
+        neighborCounts={neighborCounts}
       />
     </>
   );

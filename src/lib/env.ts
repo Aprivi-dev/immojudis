@@ -84,6 +84,7 @@ const SERVER_KEYS = [
   "OPERATIONS_ALERT_GITHUB_REPOSITORY",
   "OPERATIONS_ALERT_GITHUB_WORKFLOW",
   "OPERATIONS_ALERT_GITHUB_REF",
+  "OPERATIONS_ALERT_EMAIL_TO",
   "VERCEL_ENV",
   "NODE_ENV",
 ] as const;
@@ -202,6 +203,8 @@ export function serverEnv(source?: EnvSource) {
         firstFilled(env.OPERATIONS_ALERT_GITHUB_WORKFLOW) ?? DEFAULT_OPERATIONAL_ALERT_WORKFLOW,
       githubRef:
         firstFilled(env.OPERATIONS_ALERT_GITHUB_REF, env.GITHUB_SCROLL_REF) ?? DEFAULT_PIPELINE_REF,
+      /** Second channel: the owner's address(es), comma separated. Unset: no incident email at all. */
+      emailTo: env.OPERATIONS_ALERT_EMAIL_TO,
       /** Deployment label attached to alert payloads. */
       environment: firstFilled(env.VERCEL_ENV, env.NODE_ENV) ?? "unknown",
     },

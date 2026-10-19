@@ -6,7 +6,7 @@ from itertools import combinations
 
 from psycopg.types.json import Jsonb
 
-from src.admission import LICITOR_MULTI_LOT_QUARANTINE, quarantine_reason
+from src.admission import LICITOR_MULTI_LOT_QUARANTINE, MULTI_LOT_QUARANTINE, quarantine_reason
 from src.dedupe import (
     PRIMARY_SOURCE_PRIORITY,
     _address_dedupe_keys,
@@ -316,8 +316,8 @@ def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
                 )
     ensure_room_bedroom_consistency(result, existing, incoming)
     reason = quarantine_reason(incoming)
-    # La quarantaine multi-lots Licitor est recalculée à chaque collecte : pas un conflit d'identité à conserver.
-    if reason and reason != LICITOR_MULTI_LOT_QUARANTINE:
+    # La quarantaine multi-lots est recalculée à chaque collecte : pas un conflit d'identité à conserver.
+    if reason and reason not in {LICITOR_MULTI_LOT_QUARANTINE, MULTI_LOT_QUARANTINE}:
         result.raw_payload['source_identity_mismatch'] = True
         result.raw_payload['publication_conflict_evidence'] = {
             'source_url': incoming_url, 'reason': reason, 'sale_procedure': incoming.sale_procedure,

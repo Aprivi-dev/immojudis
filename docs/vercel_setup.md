@@ -85,6 +85,9 @@ Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans
 Le token `GITHUB_SCROLL_TOKEN` côté Vercel doit être un fine-grained PAT GitHub limité au repo `Aprivi-dev/immojudis` avec accès Actions en écriture.
 Il sert aussi de canal externe par défaut pour `operational-alert.yml`; un webhook HTTPS dédié peut
 le remplacer avec `OPERATIONS_ALERT_WEBHOOK_URL`.
+Pour recevoir aussi chaque incident par email, poser `OPERATIONS_ALERT_EMAIL_TO` (adresse du propriétaire ;
+`RESEND_API_KEY` et `ALERT_EMAIL_FROM` doivent être présents) : sans cette variable, aucun email d'incident
+n'est envoyé.
 
 ### Offre payante Stripe
 
@@ -300,6 +303,13 @@ vide ou absente ferment).
   Depuis l'ouverture du 15/10/2026, le workflow « Production smoke » attend un site **ouvert**
   quand cette variable est absente : pour refermer l'indexation, poser `false` côté GitHub en même
   temps que Vercel.
+- **Test de fumée du catalogue.** Quel que soit l'état de l'indexation, le script vérifie aussi :
+  deux requêtes successives sur `/sales` (la seconde en `x-vercel-cache: HIT`, sans `Set-Cookie` ni
+  `Vary`, des liens `/sales/<uuid>` dans le HTML), `/sales/defaut` en `noindex`, au moins 20 liens de
+  fiches dans le HTML de `/sales?page=2`, un `cache-control` public sur `/api/catalogue/preview`, et
+  (indexation ouverte) aucun sitemap qui liste `/sales/defaut`. Une alerte ici veut dire que le cache de
+  `/sales` ne sert plus (cookie, `Vary`, rendu dynamique) ou que la page paginée a perdu ses annonces.
+  Voir `docs/runbooks/catalogue-visibility-projection.md`.
 
 #### Les trois sitemaps
 

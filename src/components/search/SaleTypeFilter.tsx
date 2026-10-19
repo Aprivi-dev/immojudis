@@ -26,7 +26,7 @@ export function SaleTypeFilter({
             type="button"
             aria-pressed={value === option.value}
             onClick={() => onChange(option.value)}
-            className={`min-h-9 shrink-0 cursor-pointer whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 ${
+            className={`min-h-11 shrink-0 cursor-pointer whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 ${
               value === option.value
                 ? "border-brand-navy bg-brand-navy text-white"
                 : "border-line bg-white text-brand-navy hover:border-brand-navy"
@@ -35,14 +35,14 @@ export function SaleTypeFilter({
             {option.label}
           </button>
         ))}
-        {!compact && (
-          <Link
-            href="/ventes-immobilieres-judiciaires#differences"
-            className="px-1 py-2 text-xs font-semibold text-brand-navy underline underline-offset-4"
-          >
-            Quelle différence ?
-          </Link>
-        )}
+        <Link
+          href="/ventes-immobilieres-judiciaires#differences"
+          // Affiché sur chaque visite de /sales : pas de préchargement de la page d'explication.
+          prefetch={false}
+          className="inline-flex min-h-11 items-center px-1 py-2 text-xs font-semibold text-brand-navy underline underline-offset-4"
+        >
+          Quelle différence ?
+        </Link>
       </div>
     </fieldset>
   );
