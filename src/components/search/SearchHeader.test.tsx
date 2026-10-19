@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CsvExportButton,
   HomeTypeFilter,
+  PriceFilter,
   ResultsSummary,
   ResultsViewToggle,
   SaveSearchButton,
@@ -11,7 +13,7 @@ import {
   SortByDateShortcut,
   SortDropdown,
 } from "./SearchHeader";
-import { emptySearchDraft } from "./search-page-state";
+import { emptySearchDraft, type SearchDraft } from "./search-page-state";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/sales" }));
 vi.mock("@/hooks/use-auth", () => ({
@@ -191,7 +193,8 @@ describe("ResultsSummary", () => {
   it("réserve la hauteur de deux lignes de titre sous sm, pour qu'aucune police ne décale la page", () => {
     // Le h1 passe de deux lignes (police de secours) à une (Cormorant) à l'arrivée de la police :
     // sans réserve, tout ce qui suit remonte de 33 px (CLS) et la photo de la première carte
-    // change de surface visible (LCP). 8,8125 rem = py-4 + surtitre + 2 lignes de h1 + compteur.
+    // change de surface visible (LCP). 7,625 rem = py-4 + 2 lignes de h1 + compteur (le surtitre,
+    // masqué sous sm, n'y est plus compté : 8,8125 rem avant).
     const summary = (city?: string) =>
       render(
         <ResultsSummary
@@ -204,8 +207,73 @@ describe("ResultsSummary", () => {
       ).container.firstElementChild as HTMLElement;
 
     for (const root of [summary(), summary("Lyon")]) {
-      expect(root.className).toContain("min-h-[8.8125rem]");
+      expect(root.className).toContain("min-h-[7.625rem]");
       expect(root.className).toContain("sm:min-h-0");
+    }
+  });
+
+  it("masque le surtitre sous sm (il reste affiché à partir de sm)", () => {
+    render(
+      <ResultsSummary
+        search={{}}
+        displayCount={12}
+        hasLocalFilters={false}
+        isLoading={false}
+        geocoding={false}
+      />,
+    );
+    const eyebrow = screen.getByText("Le catalogue des enchères");
+    expect(eyebrow.className).toContain("hidden");
+    expect(eyebrow.className).toContain("sm:block");
+    // Le titre, lui, reste toujours là.
+    expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
+  });
+
+  it("montre une petite pastille dans la ligne du compteur quand la liste se met à jour, sans texte", () => {
+    const props = {
+      search: {},
+      displayCount: 12,
+      hasLocalFilters: false,
+      isLoading: false,
+      geocoding: false,
+    };
+    const { rerender } = render(<ResultsSummary {...props} />);
+    expect(screen.queryByTestId("results-refreshing")).toBeNull();
+    rerender(<ResultsSummary {...props} refreshing />);
+    const indicator = screen.getByTestId("results-refreshing");
+    expect(indicator.getAttribute("aria-hidden")).toBe("true");
+    expect(indicator.textContent).toBe("");
+    // Rien de visible n'est ajouté au compteur annoncé.
+    expect(screen.queryByText(/Actualisation/)).toBeNull();
+  });
+});
+
+describe("PriceFilter : minimum au-dessus du maximum", () => {
+  it("dit que la mise à prix minimum dépasse le maximum, dans les deux présentations", () => {
+    const draft = { ...emptySearchDraft(), minPrice: "300000", maxPrice: "100000" };
+    for (const stacked of [false, true]) {
+      const { unmount } = render(
+        <PriceFilter draft={draft} setDraft={vi.fn()} stacked={stacked} />,
+      );
+      expect(screen.getByRole("alert").textContent).toBe(
+        "La mise à prix minimum dépasse le maximum",
+      );
+      unmount();
+    }
+  });
+
+  it("ne dit rien quand les montants sont cohérents ou incomplets", () => {
+    for (const [minPrice, maxPrice] of [
+      ["100000", "300000"],
+      ["100000", "100000"],
+      ["100000", ""],
+      ["", "100000"],
+    ]) {
+      const { unmount } = render(
+        <PriceFilter draft={{ ...emptySearchDraft(), minPrice, maxPrice }} setDraft={vi.fn()} />,
+      );
+      expect(screen.queryByRole("alert")).toBeNull();
+      unmount();
     }
   });
 });
@@ -234,6 +302,103 @@ describe("SearchHeader : effacer les filtres", () => {
     expect(reset.className).not.toMatch(/\bhidden\b/);
     fireEvent.click(reset);
     expect(base.onReset).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SearchHeader : mobile", () => {
+  const base = {
+    draft: emptySearchDraft(),
+    setDraft: vi.fn(),
+    activeFiltersCount: 0,
+    isLoading: false,
+    isFetching: false,
+    filtersOpen: false,
+    savingAlert: false,
+    exportingCsv: false,
+    csvExportLocked: false,
+    wideMap: false,
+    onFiltersOpenChange: vi.fn(),
+    onReset: vi.fn(),
+    onSaveSearch: vi.fn(),
+    onExportCsv: vi.fn(),
+    onToggleLayout: vi.fn(),
+  };
+
+  it("ne reste collé en haut de l'écran qu'à partir de lg", () => {
+    render(<SearchHeader {...base} />);
+    const header = document.querySelector("header[data-site-header]") as HTMLElement;
+    const classes = header.className.split(/\s+/);
+    // `sticky` sans préfixe aurait été conservé par l'ancien en-tête : seul `lg:sticky` reste.
+    expect(classes).toContain("static");
+    expect(classes).toContain("lg:sticky");
+    expect(classes).not.toContain("sticky");
+  });
+
+  it("propose « Type de bien », « Mise à prix max. » et « Date de vente » sous le champ de recherche", () => {
+    render(<SearchHeader {...base} />);
+    const chips = screen.getByRole("group", { name: "Filtres rapides" });
+    expect(chips.className).toContain("lg:hidden");
+    expect(within(chips).getByRole("combobox", { name: "Type de bien" })).toBeTruthy();
+    expect(within(chips).getByRole("button", { name: /Mise à prix max\./ })).toBeTruthy();
+    expect(within(chips).getByRole("button", { name: /Date de vente/ })).toBeTruthy();
+    // Chaque pastille tient les 44 px de hauteur d'une cible tactile.
+    for (const chip of [
+      within(chips).getByRole("button", { name: /Mise à prix max\./ }),
+      within(chips).getByRole("button", { name: /Date de vente/ }),
+    ]) {
+      expect(chip.className).toContain("h-11");
+    }
+  });
+
+  /** L'en-tête avec un vrai brouillon : les saisies passent par l'état, comme dans la page. */
+  function StatefulHeader() {
+    const [draft, setDraft] = useState<SearchDraft>(emptySearchDraft());
+    return (
+      <>
+        <SearchHeader {...base} draft={draft} setDraft={setDraft} />
+        <output data-testid="draft">
+          {JSON.stringify({ homeTypes: draft.homeTypes, maxPrice: draft.maxPrice })}
+        </output>
+      </>
+    );
+  }
+  const draftState = () => JSON.parse(screen.getByTestId("draft").textContent ?? "{}");
+
+  it("applique le type de bien choisi dans la pastille", () => {
+    render(<StatefulHeader />);
+    const select = within(screen.getByRole("group", { name: "Filtres rapides" })).getByRole(
+      "combobox",
+      { name: "Type de bien" },
+    );
+    fireEvent.change(select, { target: { value: "house" } });
+    expect(draftState().homeTypes).toEqual(["house"]);
+  });
+
+  it("applique le maximum saisi dans la pastille « Mise à prix max. » et le rappelle une fois posé", () => {
+    render(<StatefulHeader />);
+    fireEvent.click(screen.getByRole("button", { name: /Mise à prix max\./ }));
+    fireEvent.change(screen.getByLabelText("Mise à prix maximum (€)"), {
+      target: { value: "150000" },
+    });
+    expect(draftState().maxPrice).toBe("150000");
+    expect(screen.getByRole("button", { name: /Mise à prix max\./ }).textContent).toContain(
+      "150 k€",
+    );
+  });
+
+  it("dit dans la pastille quand le minimum saisi dépasse ce maximum", () => {
+    function Header() {
+      const [draft, setDraft] = useState<SearchDraft>({
+        ...emptySearchDraft(),
+        minPrice: "400000",
+        maxPrice: "100000",
+      });
+      return <SearchHeader {...base} draft={draft} setDraft={setDraft} />;
+    }
+    render(<Header />);
+    fireEvent.click(screen.getByRole("button", { name: /Mise à prix max\./ }));
+    const alerts = screen.getAllByRole("alert").map((alert) => alert.textContent);
+    expect(alerts).toContain("La mise à prix minimum dépasse le maximum");
   });
 });
 

@@ -55,6 +55,20 @@ describe("sale type search controls", () => {
       "/ventes-immobilieres-judiciaires#differences",
     );
   });
+  it("keeps the comparison link in the compact version, and every control at 44 px", () => {
+    render(<SaleTypeFilter compact value="" onChange={() => undefined} />);
+    expect(screen.getByRole("link", { name: "Quelle différence ?" }).getAttribute("href")).toBe(
+      "/ventes-immobilieres-judiciaires#differences",
+    );
+    const controls = [
+      ...screen.getAllByRole("button"),
+      screen.getByRole("link", { name: "Quelle différence ?" }),
+    ];
+    expect(controls.length).toBeGreaterThan(2);
+    for (const control of controls) {
+      expect(control.className, control.textContent ?? "").toContain("min-h-11");
+    }
+  });
   it("preserves the family when editing other filters and includes it in the alert name", () => {
     const search = { saleType: "notary" as const, city: "Bordeaux", page: 3 };
     expect(draftToSearch(searchToDraft(search), search)).toMatchObject({

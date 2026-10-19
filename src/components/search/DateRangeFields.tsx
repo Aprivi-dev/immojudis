@@ -48,7 +48,7 @@ export function DateRangeFields({
       </label>
       <button
         type="button"
-        className="min-h-9 text-sm underline"
+        className="min-h-11 text-sm underline"
         onClick={() => setDraft((c) => ({ ...c, minSaleDate: "", maxSaleDate: "" }))}
       >
         Effacer les dates

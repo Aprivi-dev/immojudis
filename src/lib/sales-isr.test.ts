@@ -4,8 +4,13 @@ import {
   isUnfilteredSalesRequest,
   mustSeedStaticCatalogue,
   publicPathname,
+  publicSalesAddress,
   SALES_DEFAULT_PATH,
+  SALES_ISR_PAGES,
+  SALES_PAGE_VARIANTS_ROUTE,
   SALES_PATH,
+  salesPageVariantFor,
+  salesPageVariantPath,
 } from "./sales-isr";
 
 describe("isUnfilteredSalesRequest", () => {
@@ -51,6 +56,60 @@ describe("internal variant", () => {
     expect(publicPathname("/sales")).toBe("/sales");
     expect(publicPathname("/sales/abc")).toBe("/sales/abc");
     expect(publicPathname("/")).toBe("/");
+  });
+});
+
+describe("page variants (?page=2 and ?page=3)", () => {
+  const request = (overrides: Partial<Parameters<typeof salesPageVariantFor>[0]> = {}) => ({
+    method: "GET",
+    pathname: "/sales",
+    search: "?page=2",
+    ...overrides,
+  });
+
+  it("serves exactly the pages of SALES_ISR_PAGES, from the address with no other parameter", () => {
+    expect(SALES_ISR_PAGES).toEqual([2, 3]);
+    expect(salesPageVariantFor(request())).toBe("/sales/defaut/2");
+    expect(salesPageVariantFor(request({ search: "?page=3" }))).toBe("/sales/defaut/3");
+    expect(salesPageVariantFor(request({ method: "HEAD" }))).toBe("/sales/defaut/2");
+    expect(salesPageVariantPath(3)).toBe("/sales/defaut/3");
+  });
+
+  it("refuses anything else: other pages, other spellings, extra parameters, writes, other paths", () => {
+    for (const search of [
+      "",
+      "?page=1",
+      "?page=4",
+      "?page=02",
+      "?page=2.0",
+      "?page=2&view=table",
+      "?view=table&page=2",
+      "?page=2&page=3",
+      "?city=Pau&page=2",
+      "?page=2#top",
+      "?page=",
+      "?Page=2",
+    ]) {
+      expect(salesPageVariantFor(request({ search })), search).toBeNull();
+    }
+    expect(salesPageVariantFor(request({ method: "POST" }))).toBeNull();
+    expect(salesPageVariantFor(request({ pathname: "/sales/abc" }))).toBeNull();
+    expect(salesPageVariantFor(request({ pathname: "/ventes" }))).toBeNull();
+  });
+
+  it("presents the variants as /sales and finds the public address back", () => {
+    expect(publicPathname("/sales/defaut/2")).toBe(SALES_PATH);
+    expect(publicPathname("/sales/defaut/12")).toBe(SALES_PATH);
+    expect(publicPathname("/sales/defaut/abc")).toBe("/sales/defaut/abc");
+    expect(publicPathname("/sales/defaut/0")).toBe("/sales/defaut/0");
+    expect(isSalesDefaultPath("/sales/defaut/2")).toBe(true);
+    expect(publicSalesAddress("/sales/defaut", "")).toBe("/sales");
+    expect(publicSalesAddress("/sales/defaut/3", "")).toBe("/sales?page=3");
+    expect(publicSalesAddress("/sales/defaut.rsc", "?x=1")).toBe("/sales?x=1");
+  });
+
+  it("names the route pattern revalidated when a sale is withdrawn", () => {
+    expect(SALES_PAGE_VARIANTS_ROUTE).toBe("/sales/defaut/[page]");
   });
 });
 

@@ -7,7 +7,7 @@ import { publicSaleCacheTag } from "@/lib/public-sale.server";
 import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
 import { resolveRequestId } from "@/lib/request-id";
 import { warmSalePages } from "@/lib/sale-page-warmup";
-import { SALES_DEFAULT_PATH } from "@/lib/sales-isr";
+import { SALES_DEFAULT_PATH, SALES_PAGE_VARIANTS_ROUTE } from "@/lib/sales-isr";
 
 const MAX_SALES_PER_CALL = 100;
 
@@ -81,6 +81,9 @@ export async function POST(request: Request) {
   // The destination of the rewrite, not `/sales`: `revalidatePath` works on the route files, and
   // the proxy (which rewrites `/sales` to this page) does not run for revalidations.
   revalidatePath(SALES_DEFAULT_PATH);
+  // Pages 2 et 3 du catalogue (variantes statiques `/sales/defaut/[page]`) : même durée de vie, même
+  // retrait d'une vente. Le motif de la route, avec le type « page », les couvre toutes.
+  revalidatePath(SALES_PAGE_VARIANTS_ROUTE, "page");
   // One GET per invalidated sale, after the response: it cannot call this route back.
   after(() => warmSalePages(ids, { requestId }));
 

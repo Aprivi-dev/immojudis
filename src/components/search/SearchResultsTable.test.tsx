@@ -150,6 +150,9 @@ describe("vue « tableau » des résultats", () => {
 
     const links = screen.getAllByRole("link", { name: /^Voir / });
     expect(links).toHaveLength(2);
+    // Le HTML du serveur n'a pas de ?from= : l'origine s'ajoute dès que la personne approche le lien.
+    expect(links[0].getAttribute("href")).toBe("/sales/sale-a");
+    fireEvent.pointerEnter(links[0]);
     expect(links[0].getAttribute("href")).toBe(
       "/sales/sale-a?from=%2Fsales%3Fcity%3DBordeaux%26view%3Dtable",
     );
