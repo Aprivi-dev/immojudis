@@ -146,6 +146,14 @@ const DEFAULT_SALE_CHANGE_EVENT_LIMIT = 80;
 const MAX_SALE_CHANGE_EVENT_LIMIT = 250;
 const DEFAULT_SALE_CHANGE_MONITOR_USER_LIMIT = 25;
 const MAX_SALE_CHANGE_MONITOR_USER_LIMIT = 100;
+// Lecture des candidats par pages (identifiants seulement) pour pouvoir faire tourner le lot :
+// sans cela, un tri fixe + limite ne verrait jamais que les mêmes profils.
+const MONITOR_CANDIDATE_PAGE_SIZE = 1000;
+const MONITOR_CANDIDATE_MAX_PAGES = 10;
+// Part du lot gardée pour les comptes non prioritaires quand les prioritaires suffiraient à tout
+// remplir (un quart), afin qu'ils ne soient jamais affamés.
+const MONITOR_REST_RESERVE_RATIO = 0.25;
+const DAY_MS = 86_400_000;
 
 export async function listSaleChangeEvents({
   auth,
@@ -318,12 +326,16 @@ export async function monitorUserSaleChanges({
 
 export async function runSaleChangeMonitorBatch({
   userLimit = DEFAULT_SALE_CHANGE_MONITOR_USER_LIMIT,
+  now = new Date(),
 }: {
   userLimit?: number;
+  /** Date du passage : elle fixe la fenêtre tournante (un pas par jour UTC). */
+  now?: Date;
 } = {}): Promise<SaleChangeMonitorBatchResult> {
   const startedAt = new Date().toISOString();
   const candidates = await getInvestorUsers(
     clampLimit(userLimit, MAX_SALE_CHANGE_MONITOR_USER_LIMIT),
+    now,
   );
   const results: SaleChangeMonitorBatchUserResult[] = [];
 
@@ -684,46 +696,124 @@ async function insertChangeEvents(rows: SaleChangeEventInsert[]): Promise<SaleCh
   return data ?? [];
 }
 
-async function getInvestorUsers(limit: number): Promise<InvestorMonitorCandidate[]> {
+type MonitorCandidate = InvestorMonitorCandidate & { priority: boolean };
+
+/** Lit toutes les pages d'une requête d'identifiants, dans la limite de `MONITOR_CANDIDATE_MAX_PAGES`. */
+async function readCandidatePages<T>(
+  page: (
+    from: number,
+    to: number,
+  ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let index = 0; index < MONITOR_CANDIDATE_MAX_PAGES; index += 1) {
+    const from = index * MONITOR_CANDIDATE_PAGE_SIZE;
+    const { data, error } = await page(from, from + MONITOR_CANDIDATE_PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if ((data?.length ?? 0) < MONITOR_CANDIDATE_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+/**
+ * Fenêtre tournante sur un anneau trié : le jour J lit les positions J*quota à J*quota+quota-1
+ * (modulo la taille), donc des passages successifs avancent sans trou ni répétition. Le passage de
+ * rattrapage du même jour retombe sur la même fenêtre, ce qui est voulu.
+ */
+function rotatingWindow<T>(ring: T[], quota: number, now: Date): T[] {
+  if (quota <= 0 || !ring.length) return [];
+  if (quota >= ring.length) return ring;
+  const day = Math.floor(now.getTime() / DAY_MS);
+  const start = (day * quota) % ring.length;
+  return Array.from({ length: quota }, (_, index) => ring[(start + index) % ring.length]);
+}
+
+/**
+ * Choisit les comptes du passage. Les prioritaires (consentement aux rappels, abonnés, premium,
+ * administrateurs) passent d'abord ; un quart du lot reste réservé aux autres. Dans chaque
+ * groupe, la fenêtre tourne chaque jour.
+ */
+export function selectRotatingMonitorCandidates({
+  candidates,
+  limit,
+  now,
+}: {
+  candidates: MonitorCandidate[];
+  limit: number;
+  now: Date;
+}): InvestorMonitorCandidate[] {
+  const byUserId = (a: MonitorCandidate, b: MonitorCandidate) => a.userId.localeCompare(b.userId);
+  const priority = candidates.filter((candidate) => candidate.priority).sort(byUserId);
+  const rest = candidates.filter((candidate) => !candidate.priority).sort(byUserId);
+  const reserve = rest.length ? Math.floor(limit * MONITOR_REST_RESERVE_RATIO) : 0;
+  const priorityQuota = Math.min(priority.length, limit - reserve);
+  const restQuota = Math.min(rest.length, limit - priorityQuota);
+  return [
+    ...rotatingWindow(priority, priorityQuota, now),
+    ...rotatingWindow(rest, restQuota, now),
+  ].map(({ userId, userRole }) => ({ userId, userRole }));
+}
+
+async function getInvestorUsers(limit: number, now: Date): Promise<InvestorMonitorCandidate[]> {
   // Offre de lancement : tout compte qui a un profil a le suivi des changements d'Analyse, donc
-  // tous les profils sont candidats (dans la limite du lot). Sans l'offre, seuls les comptes
-  // premium ou administrateurs le sont, plus les abonnés Analyse ci-dessous.
+  // tous les profils sont candidats. Sans l'offre, seuls les comptes premium ou administrateurs
+  // le sont, plus les abonnés Analyse ci-dessous. Le lot est ensuite tiré en rotation : le cron
+  // ne modifie pas `updated_at`, un tri sur cette colonne rendrait toujours les mêmes profils.
   const launchOffer = await isLaunchOfferActive();
   const profilesQuery = supabaseAdmin
     .from("user_profiles")
     .select("user_id,account_tier,user_role");
-  const [profilesResult, subscriptionsResult] = await Promise.all([
-    (launchOffer ? profilesQuery : profilesQuery.or("account_tier.eq.premium,user_role.eq.admin"))
-      .order("updated_at", { ascending: true })
-      .limit(limit),
-    supabaseAdmin
-      .from("user_subscriptions")
-      .select("user_id,plan_code,status,current_period_end")
-      .eq("plan_code", "analyse")
-      .order("updated_at", { ascending: true })
-      .limit(limit),
+  const [profiles, subscriptions, consents] = await Promise.all([
+    readCandidatePages((from, to) =>
+      (launchOffer ? profilesQuery : profilesQuery.or("account_tier.eq.premium,user_role.eq.admin"))
+        .order("user_id", { ascending: true })
+        .range(from, to),
+    ),
+    readCandidatePages((from, to) =>
+      supabaseAdmin
+        .from("user_subscriptions")
+        .select("user_id,plan_code,status,current_period_end")
+        .eq("plan_code", "analyse")
+        .order("user_id", { ascending: true })
+        .range(from, to),
+    ),
+    readCandidatePages((from, to) =>
+      supabaseAdmin
+        .from("user_notification_preferences")
+        .select("user_id")
+        .eq("sale_reminders_enabled", true)
+        .order("user_id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
-  if (profilesResult.error) throw profilesResult.error;
-  if (subscriptionsResult.error) throw subscriptionsResult.error;
-  const candidates = new Map<string, InvestorMonitorCandidate>();
-  for (const profile of profilesResult.data ?? []) {
+  const consented = new Set(consents.map((row) => row.user_id));
+  const candidates = new Map<string, MonitorCandidate>();
+  for (const profile of profiles) {
+    const userRole = profile.user_role === "admin" ? "admin" : "user";
     candidates.set(profile.user_id, {
       userId: profile.user_id,
-      userRole: profile.user_role === "admin" ? "admin" : "user",
+      userRole,
+      priority:
+        userRole === "admin" ||
+        profile.account_tier === "premium" ||
+        consented.has(profile.user_id),
     });
   }
-  for (const subscription of (subscriptionsResult.data ?? []).filter((row) =>
+  for (const subscription of subscriptions.filter((row) =>
     isPlanPeriodActive(row.status, row.current_period_end),
   )) {
-    if (!candidates.has(subscription.user_id)) {
+    const existing = candidates.get(subscription.user_id);
+    if (existing) existing.priority = true;
+    else
       candidates.set(subscription.user_id, {
         userId: subscription.user_id,
         userRole: "user",
+        priority: true,
       });
-    }
   }
-  return Array.from(candidates.values()).slice(0, limit);
+  return selectRotatingMonitorCandidates({ candidates: [...candidates.values()], limit, now });
 }
 
 export function systemAuthForInvestorUser(
