@@ -2,13 +2,13 @@ import Link from "next/link";
 import type { QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchFavoriteSales } from "@/lib/client-api";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { queryKeys } from "@/lib/query-keys";
 
 export const FAVORITE_ADD_LABEL = "Ajouter aux favoris";
 export const FAVORITE_REMOVE_LABEL = "Retirer des favoris";
 /** Pour un visiteur : le cœur reste visible et dit ce que le compte gratuit apporte. */
-export const FAVORITE_ANONYMOUS_TITLE =
-  "Créer un compte gratuit pour garder cette vente (3 favoris)";
+export const FAVORITE_ANONYMOUS_TITLE = `Créer un compte gratuit pour garder cette vente (${PLAN_LIMITS.decouverte.favoriteSales} favoris)`;
 /** Compte reconnu dont la liste connectée n'est pas encore arrivée : le cœur attend les droits. */
 export const FAVORITE_VERIFYING_TITLE = "Vérification du compte…";
 

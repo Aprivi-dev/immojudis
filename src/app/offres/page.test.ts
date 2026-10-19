@@ -36,7 +36,7 @@ describe("métadonnées de /offres", () => {
     vi.stubEnv("STRIPE_ANALYSIS_PRICE_ID", "price_123");
     vi.stubEnv("NEXT_PUBLIC_ANALYSIS_OFFER_LABEL", "");
     const description = String(generateMetadata().description);
-    expect(description).toContain("29 € TTC / mois");
+    expect(description).toContain("59 € TTC / mois");
     expect(description.length).toBeLessThanOrEqual(160);
   });
 

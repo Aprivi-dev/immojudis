@@ -8,7 +8,9 @@ import Search from "lucide-react/dist/esm/icons/search.js";
 import { exampleHeadlineFigures } from "@/lib/example-sale";
 import { formatNumber, formatPrice } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
-import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
+import { useAuth } from "@/hooks/use-auth";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { freeAccessLine } from "@/lib/sale-unlocks";
 import { DOSSIER_APARTMENT_QUALITY, DOSSIER_APARTMENT_SIZES } from "./home-images";
 import styles from "./CinematicHome.module.css";
 
@@ -36,6 +38,8 @@ export function catalogueSummaryLine({ count, verifiedAt }: HomeCatalogueSummary
 }
 
 export function CinematicHero({ summary = null }: { summary?: HomeCatalogueSummary | null }) {
+  const { user } = useAuth();
+  const launchOffer = useLaunchOffer().active;
   return (
     <section className={styles.hero} aria-labelledby="home-title">
       <Image
@@ -85,7 +89,7 @@ export function CinematicHero({ summary = null }: { summary?: HomeCatalogueSumma
               </p>
             ) : null}
             <p>
-              <Link href="/offres">{FREE_ACCESS_LINE}</Link>
+              <Link href="/offres">{freeAccessLine({ launchOffer, signedIn: Boolean(user) })}</Link>
             </p>
           </div>
           <Link className={styles.exampleLink} href="/annonce-exemple" prefetch={false}>

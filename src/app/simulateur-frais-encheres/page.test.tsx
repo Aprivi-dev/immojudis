@@ -21,7 +21,19 @@ describe("page /simulateur-frais-encheres", () => {
     const html = renderToString(<Page />);
     expect(html).toContain('aria-live="polite"');
     expect(html).toMatch(/href="\/sales"[^>]*>\s*Trouver une vente/);
-    expect(html).toMatch(/href="\/offres"[^>]*>\s*Fixer son enchère plafond/);
+    // « Fixer son enchère plafond » ne mène plus à la page des offres : il essaie l'exemple.
+    expect(html).not.toMatch(/href="\/offres"[^>]*>\s*Fixer son enchère plafond/);
+    expect(html).toMatch(
+      /href="\/annonce-exemple"[^>]*>\s*Essayer l’enchère plafond sur un exemple/,
+    );
+    expect(html).toMatch(/href="\/offres"[^>]*>\s*Voir les offres/);
+  });
+
+  it("dit ce que le compte gratuit et Analyse ouvrent, sans réserver l'enchère plafond à Analyse", () => {
+    const html = renderToString(<Page />).replaceAll("<!-- -->", "");
+    expect(html).toContain("sur 3 ventes au tribunal par mois avec le compte gratuit");
+    expect(html).toContain("toutes les ventes au tribunal avec l’offre Analyse");
+    expect(html).not.toContain("se fixe avec l’offre Analyse");
   });
 
   it("propose les trois calculs, le calcul direct étant celui du rendu serveur", () => {

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { isLaunchOfferActive } from "@/lib/launch-offer.server";
 import { featureIncluded, isPlanPeriodActive } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { DETAIL_VIEW, SALE_LIST_COLUMNS } from "@/lib/sale-views";
@@ -553,7 +554,7 @@ function addChangeIfDifferent(
 async function assertRealtimeChangesAvailable(auth: SupabaseAuthContext) {
   const plan = await resolvePlanEntitlements(auth);
   if (!featureIncluded(plan.plan, "alerts.realtimeChanges")) {
-    throw new Error("Suivi temps réel des changements réservé au plan Investisseur.");
+    throw new Error("Suivi temps réel des changements réservé au plan Analyse.");
   }
 }
 
@@ -684,11 +685,15 @@ async function insertChangeEvents(rows: SaleChangeEventInsert[]): Promise<SaleCh
 }
 
 async function getInvestorUsers(limit: number): Promise<InvestorMonitorCandidate[]> {
+  // Offre de lancement : tout compte qui a un profil a le suivi des changements d'Analyse, donc
+  // tous les profils sont candidats (dans la limite du lot). Sans l'offre, seuls les comptes
+  // premium ou administrateurs le sont, plus les abonnés Analyse ci-dessous.
+  const launchOffer = await isLaunchOfferActive();
+  const profilesQuery = supabaseAdmin
+    .from("user_profiles")
+    .select("user_id,account_tier,user_role");
   const [profilesResult, subscriptionsResult] = await Promise.all([
-    supabaseAdmin
-      .from("user_profiles")
-      .select("user_id,account_tier,user_role")
-      .or("account_tier.eq.premium,user_role.eq.admin")
+    (launchOffer ? profilesQuery : profilesQuery.or("account_tier.eq.premium,user_role.eq.admin"))
       .order("updated_at", { ascending: true })
       .limit(limit),
     supabaseAdmin

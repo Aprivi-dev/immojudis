@@ -104,7 +104,7 @@ test.describe("visiteur sans compte", () => {
     await expect(heart).toBeVisible();
     await expect(heart).toHaveAttribute(
       "title",
-      "Créer un compte gratuit pour garder cette vente (3 favoris)",
+      "Créer un compte gratuit pour garder cette vente (10 favoris)",
     );
     const box = await heart.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(43.5);

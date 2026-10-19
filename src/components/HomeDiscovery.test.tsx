@@ -27,6 +27,6 @@ describe("HomeDiscovery free offer card", () => {
     render(<HomeDiscovery />);
     const card = screen.getByRole("heading", { name: "Découverte" }).closest("article")!;
     expect(card.textContent).toContain("Accès aux annonces");
-    expect(card.textContent).toContain("Jusqu’à trois favoris");
+    expect(card.textContent).toContain("Jusqu’à 10 favoris");
   });
 });

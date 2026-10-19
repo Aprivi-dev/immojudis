@@ -21,6 +21,7 @@ export function buildPlanEntitlements(
   currentPeriodEnd: string | null = null,
   limits: PlanEntitlements["limits"] = PLAN_LIMITS[plan],
   billing?: PlanBilling,
+  options: { launchOffer?: boolean } = {},
 ): PlanEntitlements {
   return {
     plan,
@@ -28,6 +29,9 @@ export function buildPlanEntitlements(
     hasAnalysisAccess: plan === "analyse",
     currentPeriodEnd,
     ...(billing ? { billing } : {}),
+    // Marqueur d'affichage : le plan est Analyse parce que l'offre de lancement est active, pas
+    // parce que le compte est abonné ou premium.
+    ...(options.launchOffer ? { launchOffer: true as const } : {}),
     limits,
     features: {
       salesStatistics: featureAccess(plan, "sales.statistics"),

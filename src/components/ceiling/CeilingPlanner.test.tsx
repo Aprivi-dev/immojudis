@@ -62,6 +62,13 @@ function renderPlanner({
 const RENT_WARNING =
   "Loyer non renseigné : le plafond ne tient pas compte du rendement. Saisissez un loyer.";
 
+describe("CeilingPlanner titre", () => {
+  it("dit que le montant est une simulation, avec le profil choisi", () => {
+    renderPlanner();
+    expect(screen.getByText(/^Enchère plafond \(simulation\) · /)).toBeTruthy();
+  });
+});
+
 describe("CeilingPlanner verdict", () => {
   it("warns when a rental project has no reference rent for the department", () => {
     renderPlanner({

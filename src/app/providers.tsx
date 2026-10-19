@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, useEffect, useState } from "react";
 import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
+import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
 import { SiteFooter } from "@/components/SiteFooter";
 import { AppToaster } from "@/components/AppToaster";
 import { getWithdrawnSources, loadWithdrawnSourcesOncePerSession } from "@/lib/withdrawn-sources";
@@ -35,14 +36,16 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <div className="min-h-screen bg-background">
-          <Suspense fallback={<NavigationFallback />}>
-            <Navbar />
-          </Suspense>
-          {children}
-          <SiteFooter />
-          <AppToaster />
-        </div>
+        <LaunchOfferProvider>
+          <div className="min-h-screen bg-background">
+            <Suspense fallback={<NavigationFallback />}>
+              <Navbar />
+            </Suspense>
+            {children}
+            <SiteFooter />
+            <AppToaster />
+          </div>
+        </LaunchOfferProvider>
       </AuthProvider>
     </QueryClientProvider>
   );
