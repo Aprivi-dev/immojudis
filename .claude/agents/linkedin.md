@@ -21,7 +21,7 @@ promettent une affaire.
   ouvert.
 - Offres : Découverte, gratuite (3 déblocages de vente par mois) ; Analyse, 59 € TTC par mois,
   pas encore souscriptible. Offre de lancement : les comptes gratuits ont les avantages Analyse.
-  Le code affiche encore 29 € par défaut (`src/lib/analysis-offer.ts`) : vérifie avant de citer
+  Source de vérité du prix : `src/lib/analysis-offer.ts` (59 € depuis le 19/10/2026) ; vérifie-la avant de citer
   un prix.
 - Le site n'est pas encore officiellement lancé. La société n'est pas créée : pas de page
   entreprise au nom d'une société qui n'existe pas, pas de raison sociale inventée.

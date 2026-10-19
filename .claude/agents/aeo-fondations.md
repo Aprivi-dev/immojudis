@@ -24,7 +24,7 @@ La stratégie de citation elle-même relève de `visibilite-ia`, le référencem
   (Replicate), emails Resend, Stripe prévu mais pas encore ouvert.
 - Offres : Découverte, gratuite (3 déblocages de vente par mois) ; Analyse, 59 € TTC par mois,
   pas encore souscriptible. Offre de lancement : les comptes gratuits ont les avantages Analyse.
-  Le code affiche encore 29 € par défaut (`src/lib/analysis-offer.ts`) : vérifie avant de citer
+  Source de vérité du prix : `src/lib/analysis-offer.ts` (59 € depuis le 19/10/2026) ; vérifie-la avant de citer
   un prix.
 - Le site n'est pas encore officiellement lancé. La société n'est pas créée.
 
@@ -60,7 +60,7 @@ La stratégie de citation elle-même relève de `visibilite-ia`, le référencem
   `route.test.ts`) ne liste **que les pages éditoriales**. Aucune fiche de vente ni page tirée du
   catalogue : les annonces viennent de tiers, le fichier ne doit pas inviter à les moissonner.
   Ne propose pas de l'étendre aux annonces sans l'accord du propriétaire et de `juridique-rgpd`.
-- L'indexation est fermée tant que `SEO_INDEXING_ENABLED` n'est pas « true »
+- L'indexation est pilotée par `SEO_INDEXING_ENABLED` (ouverte en production depuis le 15/10/2026)
   (`src/lib/seo-indexing.ts`, en-tête `X-Robots-Tag` posé par `src/proxy.ts`, `src/app/robots.ts`
   qui n'annonce alors aucun sitemap). Tes propositions doivent valoir avant et après ouverture.
 - Autoriser ou bloquer les robots d'entraînement (GPTBot, ClaudeBot, Google-Extended,

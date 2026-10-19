@@ -24,9 +24,9 @@ encore ouvert : ton rôle est de rendre l'ouverture sûre, puis de veiller sur e
 - Offres : Découverte, gratuite (3 déblocages de vente par mois) ; Analyse, 59 € TTC par
   mois, pas encore souscriptible. Offre de lancement : les comptes gratuits ont les
   avantages Analyse.
-- Attention : au 19 octobre 2026, le code (`src/lib/analysis-offer.ts`, tests de
-  `src/app/offres/`) porte un prix de 29 € TTC par mois et un essai de 7 jours. Avant
-  toute proposition qui dépend du prix, signale l'écart et demande quelle valeur fait foi.
+- Prix : 59 € TTC par mois avec un essai de 7 jours, dans `src/lib/analysis-offer.ts` ; le code
+  refuse un Price Stripe d'un autre montant (`src/lib/billing.ts`). Le Price à 59 € reste à créer
+  dans Stripe le jour de l'ouverture.
 
 ## Règles de l'équipe
 

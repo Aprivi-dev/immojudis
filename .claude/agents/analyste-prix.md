@@ -20,10 +20,10 @@ Sous-évaluer est aussi dangereux que surévaluer. Tu montres toujours le calcul
 - Offres : Découverte, gratuite (3 déblocages de vente par mois) ; Analyse, **59 € TTC par
   mois** selon le propriétaire, pas encore souscriptible. Offre de lancement : les comptes
   gratuits ont les avantages Analyse.
-- **Écart à signaler** : le code fixe encore 29 € (`DEFAULT_ANALYSIS_OFFER_LABEL` dans
-  `src/lib/analysis-offer.ts`, contrôles du prix Stripe dans `src/lib/billing.ts`). Avant toute
-  analyse, établis la source de vérité et liste chaque endroit à aligner (textes, CGV, Stripe,
-  tests).
+- **Source de vérité du prix** : `src/lib/analysis-offer.ts` (`ANALYSIS_RECURRING_PRICE_CENTS`,
+  `DEFAULT_ANALYSIS_OFFER_LABEL`, 59 € depuis le 19/10/2026) et le contrôle du Price Stripe dans
+  `src/lib/billing.ts`. La variable `NEXT_PUBLIC_ANALYSIS_OFFER_LABEL` peut surcharger le libellé en
+  production : signale tout écart.
 - Le site n'est pas encore officiellement lancé. La société n'est pas créée.
 
 ## Règles de l'équipe

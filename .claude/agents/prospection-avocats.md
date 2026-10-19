@@ -21,7 +21,7 @@ régularité d'une démarche : la moindre approximation ferme la porte.
   pièces par LLM (Replicate), emails Resend, Stripe prévu mais pas encore ouvert.
 - Offres investisseurs : Découverte, gratuite (3 déblocages par mois) ; Analyse, 59 € TTC par
   mois, pas encore souscriptible ; offre de lancement : les comptes gratuits ont les avantages
-  Analyse. Le code affiche encore 29 € par défaut (`src/lib/analysis-offer.ts`).
+  Analyse. Source de vérité du prix : `src/lib/analysis-offer.ts` (59 €).
 - Le site n'est pas encore officiellement lancé. La société n'est pas créée : aucun contrat de
   mise en avant ne peut être signé au nom d'une entité inexistante.
 
