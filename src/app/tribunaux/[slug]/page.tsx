@@ -1,18 +1,25 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
 import { departmentFromCode, departmentItemListStructuredData } from "@/lib/department-pages";
 import { jsonLdString } from "@/lib/json-ld";
 import { pageMetadata } from "@/lib/page-metadata";
+import type { PublicTribunalActivity } from "@/lib/public-tribunal-activity";
 import { loadPublicTribunalActivity } from "@/lib/public-tribunal-activity.server";
+import { tryLoadPublicTribunalDirectory } from "@/lib/public-tribunal-directory.server";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import {
   TRIBUNAL_PAGES_PATH,
+  emptyTribunalActivity,
   isTribunalPageIndexable,
+  knownTribunalFromSlug,
+  legacyTribunalRedirectPath,
   nextAudienceDate,
   tribunalPageDescription,
   tribunalPageFromSlug,
+  tribunalPagePath,
   tribunalPages,
+  type TribunalPage,
   tribunalPageTitle,
   tribunalPlaceName,
 } from "@/lib/tribunal-pages";
@@ -32,25 +39,52 @@ export async function generateStaticParams() {
   return [];
 }
 
+type Resolved =
+  | { kind: "active"; items: PublicTribunalActivity[]; page: TribunalPage }
+  /** Tribunal connu du référentiel qui n'a aucune vente à venir : page servie, hors index. */
+  | { kind: "empty"; items: PublicTribunalActivity[]; page: TribunalPage }
+  /** Ancienne adresse (nom du tribunal) : redirection permanente vers l'adresse par code. */
+  | { kind: "redirect"; path: string }
+  | { kind: "unknown" };
+
 /**
- * Le tribunal de l'adresse, d'après l'activité publique (un tribunal sans vente à venir n'y figure
- * pas : sa page n'existe plus). Lève une erreur si la base est indisponible.
+ * Le tribunal de l'adresse. L'adresse vient du code du tribunal : elle ne change pas quand ses
+ * ventes à venir apparaissent ou disparaissent. D'abord les tribunaux qui ont des ventes (activité
+ * publique), puis le référentiel complet (page « aucune vente à venir »), puis les anciennes
+ * adresses par nom (redirection). Lève une erreur si la base est indisponible : jamais de 404
+ * déduit d'une panne, la réponse n'est alors pas mise en cache.
  */
-async function loadPage(slug: string) {
+async function resolvePage(slug: string): Promise<Resolved> {
   const activity = await loadPublicTribunalActivity();
   if (activity.status === "error") throw new Error("Activité publique des tribunaux indisponible.");
-  return { items: activity.items, page: tribunalPageFromSlug(activity.items, slug) };
+  const page = tribunalPageFromSlug(activity.items, slug);
+  if (page) return { kind: "active", items: activity.items, page };
+
+  const directory = await tryLoadPublicTribunalDirectory();
+  if (directory.status === "error") throw new Error("Référentiel des tribunaux indisponible.");
+  const known = knownTribunalFromSlug(directory.items, slug);
+  if (known) {
+    const emptyActivity = emptyTribunalActivity(known);
+    return {
+      kind: "empty",
+      items: activity.items,
+      page: { activity: emptyActivity, slug, path: tribunalPagePath(known.code) },
+    };
+  }
+  const path = legacyTribunalRedirectPath(activity.items, directory.items, slug);
+  return path ? { kind: "redirect", path } : { kind: "unknown" };
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { page } = await loadPage((await params).slug);
-  if (!page) {
+  const resolved = await resolvePage((await params).slug);
+  if (resolved.kind === "unknown" || resolved.kind === "redirect") {
     return { title: "Tribunal introuvable", robots: { index: false, follow: false } };
   }
-  const sales = await tryLoadTribunalSales(page.activity.code);
+  const { page } = resolved;
+  const sales = resolved.kind === "active" ? await tryLoadTribunalSales(page.activity.code) : null;
   const activity = {
     ...page.activity,
-    nextSaleDate: nextAudienceDate(page.activity, sales.status === "ok" ? sales.sales : null),
+    nextSaleDate: nextAudienceDate(page.activity, sales?.status === "ok" ? sales.sales : null),
   };
   return {
     ...pageMetadata({
@@ -58,8 +92,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title: tribunalPageTitle(activity),
       description: tribunalPageDescription(activity),
     }),
-    // Moins de trois ventes à venir : page consultable, mais sans intérêt pour un moteur de
-    // recherche. Elle reste hors du sitemap (même seuil) et ses liens sont suivis.
+    // Moins de trois ventes à venir (aucune comprise) : page consultable, mais sans intérêt pour
+    // un moteur de recherche. Elle reste hors du sitemap (même seuil) et ses liens sont suivis.
     ...(isTribunalPageIndexable(activity.upcomingCount)
       ? {}
       : { robots: { index: false, follow: true } }),
@@ -67,10 +101,17 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function Page({ params }: PageProps) {
-  const { items, page } = await loadPage((await params).slug);
-  if (!page) notFound();
+  const resolved = await resolvePage((await params).slug);
+  if (resolved.kind === "unknown") notFound();
+  // Avant toute écriture de la réponse : un vrai 308, pas une redirection côté client.
+  if (resolved.kind === "redirect") permanentRedirect(resolved.path);
+  const { items, page } = resolved;
 
-  const sales = await tryLoadTribunalSales(page.activity.code);
+  // Un tribunal sans vente à venir n'a rien à lire : la page le dit, sans interroger la base.
+  const sales =
+    resolved.kind === "active"
+      ? await tryLoadTribunalSales(page.activity.code)
+      : ({ status: "ok", sales: [] } as const);
   const department = departmentFromCode(page.activity.department);
   const siblings = department
     ? tribunalPages(items).filter(
