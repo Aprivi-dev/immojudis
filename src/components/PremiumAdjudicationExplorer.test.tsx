@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdjudicationPriceStatisticsDirectoryResponse } from "@/lib/adjudication-price-statistics";
 
@@ -75,6 +76,23 @@ describe("PremiumAdjudicationExplorer", () => {
     mocks.fetchDirectory.mockResolvedValue(directory);
   });
   afterEach(cleanup);
+
+  it("ne met le message de vérification ni dans le HTML du serveur ni avant l’hydratation", () => {
+    mocks.useAuth.mockReturnValue({ session: null, loading: true });
+    const client = new QueryClient();
+
+    const html = renderToString(
+      <QueryClientProvider client={client}>
+        <PremiumAdjudicationExplorer />
+      </QueryClientProvider>,
+    );
+
+    expect(html).not.toContain("Vérification de votre accès");
+    expect(html).toContain("Prix d’adjudication par tribunal");
+
+    renderExplorer();
+    expect(screen.getByRole("status").textContent).toBe("Vérification de votre accès Analyse…");
+  });
 
   it("n’expose aucun chiffre protégé au visiteur ou au plan Découverte", async () => {
     mocks.useAuth.mockReturnValue({ session: null, loading: false });

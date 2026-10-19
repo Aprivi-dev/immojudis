@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildTribunalJudicialActivityDirectory,
@@ -42,6 +43,36 @@ describe("TribunalJudicialActivityExplorer", () => {
     });
   });
   afterEach(cleanup);
+
+  it("porte la requête dans le h1", () => {
+    render(<TribunalJudicialActivityExplorer />);
+
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Ventes judiciaires à venir par tribunal judiciaire",
+    );
+    expect(screen.queryByText("Statistiques Tribunaux")).toBeNull();
+  });
+
+  it("n'écrit pas « Vérification de votre accès » dans le HTML du serveur", () => {
+    // Côté serveur le compte est toujours en cours de vérification : le message n'a pas lieu d'être
+    // dans le HTML que les moteurs lisent.
+    mocks.useAuth.mockReturnValue({ session: null, loading: true });
+    mocks.useQuery.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+
+    const html = renderToString(<TribunalJudicialActivityExplorer />);
+
+    expect(html).not.toContain("Vérification de votre accès");
+    expect(html).toContain("Ventes judiciaires à venir par tribunal judiciaire");
+  });
+
+  it("affiche le message de vérification dans le navigateur, une fois hydraté", () => {
+    mocks.useAuth.mockReturnValue({ session: null, loading: true });
+    mocks.useQuery.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+
+    render(<TribunalJudicialActivityExplorer />);
+
+    expect(screen.getByRole("status").textContent).toBe("Vérification de votre accès Analyse…");
+  });
 
   it("présente la France puis les ressorts avant le détail tribunal", () => {
     render(<TribunalJudicialActivityExplorer />);
