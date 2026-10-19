@@ -156,9 +156,11 @@ select ok(
   'the public wrapper is security invoker'
 );
 select ok(
-  (select coalesce(proconfig::text, '') like '%search_path=""%'
-     from pg_proc where oid = 'public.get_public_sale_market_gap_band(uuid)'::regprocedure),
-  'the public wrapper has an empty search_path'
+  (select proconfig @> array['search_path=""']::text[]
+     from pg_proc where oid = 'public.get_public_sale_market_gap_band(uuid)'::regprocedure)
+  and (select proconfig @> array['search_path=""']::text[]
+         from pg_proc where oid = 'app_private.get_public_sale_market_gap_band(uuid)'::regprocedure),
+  'the wrapper and the read have an empty search_path'
 );
 select is(
   pg_get_function_result('public.get_public_sale_market_gap_band(uuid)'::regprocedure),
