@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Clock from "lucide-react/dist/esm/icons/clock.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   executeAdminContractWithdrawal,
   executeAdminPrivacyErasure,

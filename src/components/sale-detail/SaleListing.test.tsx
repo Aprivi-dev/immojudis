@@ -22,7 +22,7 @@ vi.mock("@/components/MapboxPreviewButton", () => ({
 }));
 vi.mock("@/components/MapThumbnail", () => ({ MapThumbnail: () => <div>Carte</div> }));
 vi.mock("@/components/StreetViewDialog", () => ({ StreetViewDialog: () => null }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 afterEach(() => {
   cleanup();

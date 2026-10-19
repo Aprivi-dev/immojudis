@@ -14,7 +14,7 @@ import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left.js";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
 import Share2 from "lucide-react/dist/esm/icons/share-2.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useAuth } from "@/hooks/use-auth";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
 import { getSupabase } from "@/integrations/supabase/lazy";

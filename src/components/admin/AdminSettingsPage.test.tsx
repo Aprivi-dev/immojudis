@@ -11,7 +11,7 @@ vi.mock("@/lib/client-api", () => ({
   updatePipelineControl: mocks.save,
 }));
 vi.mock("next/dynamic", () => ({ default: () => () => <div>Section chargée</div> }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const control = {
   enabled: true,
   source_details_enabled: false,

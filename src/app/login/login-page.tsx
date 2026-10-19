@@ -13,7 +13,7 @@ import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import Mail from "lucide-react/dist/esm/icons/mail.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UserRound from "lucide-react/dist/esm/icons/user-round.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useAuth } from "@/hooks/use-auth";
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import {

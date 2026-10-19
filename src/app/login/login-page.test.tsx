@@ -22,7 +22,7 @@ vi.mock("@/integrations/supabase/client", () => ({
     auth: { signInWithPassword: mocks.signIn, signUp: mocks.signUp, resend: mocks.resend },
   },
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: mocks.toastError } }));
+vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: mocks.toastError } }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/login",
   useRouter: () => ({ push: vi.fn(), replace: mocks.replace, refresh: vi.fn(), back: vi.fn() }),

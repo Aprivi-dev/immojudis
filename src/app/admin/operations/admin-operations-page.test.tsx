@@ -67,7 +67,7 @@ vi.mock("@/lib/client-api", () => ({
   startAdminScrollRequest: mocks.startScroll,
 }));
 
-vi.mock("sonner", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
+vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
 
 const RUNS: AdminDashboardRunsData = {
   checkedAt: "2026-09-19T08:00:00.000Z",

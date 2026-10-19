@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import CreditCard from "lucide-react/dist/esm/icons/credit-card.js";
 import CircleX from "lucide-react/dist/esm/icons/circle-x.js";
 import Settings from "lucide-react/dist/esm/icons/settings.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import {
   Dialog,
   DialogContent,

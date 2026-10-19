@@ -25,7 +25,7 @@ vi.mock("@/lib/client-api", () => ({
   removeFavoriteSale: mocks.remove,
   fetchFavoriteSales: mocks.fetchFavorites,
 }));
-vi.mock("sonner", () => ({ toast: { success: mocks.toastSuccess, error: vi.fn() } }));
+vi.mock("@/lib/toast", () => ({ toast: { success: mocks.toastSuccess, error: vi.fn() } }));
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: () => {

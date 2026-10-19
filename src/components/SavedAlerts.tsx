@@ -20,7 +20,7 @@ import {
 } from "@/lib/alert-criteria-labels";
 import { formatDate } from "@/lib/format";
 import type { UserAlert, UserWatchedZone } from "@/lib/types";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { userMessage } from "@/lib/user-messages";
 import { Badge, Button, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { queryKeys } from "@/lib/query-keys";

@@ -6,7 +6,7 @@ import Save from "lucide-react/dist/esm/icons/save.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import XCircle from "lucide-react/dist/esm/icons/x-circle.js";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { fetchAdminReferencedLawyers, saveAdminReferencedLawyer } from "@/lib/client-api";
 import type { AdminReferencedLawyerInput, AdminReferencedLawyerSummary } from "@/lib/admin-lawyers";
 

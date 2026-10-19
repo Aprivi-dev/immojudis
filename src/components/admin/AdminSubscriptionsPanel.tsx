@@ -3,7 +3,7 @@ import CreditCard from "lucide-react/dist/esm/icons/credit-card.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Save from "lucide-react/dist/esm/icons/save.js";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { fetchAdminSubscriptions, grantAdminSubscription } from "@/lib/client-api";
 import { dateTimeLocalToUtcIso, formatDateTimeLocalInput } from "@/lib/admin-subscription-datetime";
 import type {
