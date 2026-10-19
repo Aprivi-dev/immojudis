@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import Check from "lucide-react/dist/esm/icons/check.js";
 import Inbox from "lucide-react/dist/esm/icons/inbox.js";
 import Loader2 from "lucide-react/dist/esm/icons/loader-2.js";
@@ -6,12 +6,8 @@ import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2.js";
 import { toast } from "sonner";
 import Link from "next/link";
-import {
-  fetchAccessPlan,
-  fetchNotificationPreferences,
-  updateAlertNotification,
-  updateNotificationPreferences,
-} from "@/lib/client-api";
+import { updateAlertNotification } from "@/lib/client-api";
+import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { cleanSaleTitle } from "@/lib/sale-title";
 import type { AlertNotificationSummary } from "@/lib/alert-notifications";
 import { userMessage } from "@/lib/user-messages";
@@ -39,18 +35,6 @@ export default function AlertNotificationPanel({
   const NOTIFICATION_QUERY_KEY = queryKeys.alertNotifications(userId);
   const queryClient = useQueryClient();
   const unreadCount = notifications.filter((notification) => !notification.readAt).length;
-  const entitlements = useQuery({
-    queryKey: queryKeys.featureEntitlementsPlan(userId),
-    queryFn: fetchAccessPlan,
-  });
-  // Free accounts can switch the email on too: they get one weekly digest, Analyse a daily one.
-  const hasAnalysisAccess = entitlements.data?.plan.hasAnalysisAccess === true;
-  const preferencesQuery = useQuery({
-    queryKey: queryKeys.notificationPreferences(userId),
-    queryFn: fetchNotificationPreferences,
-    staleTime: 60_000,
-  });
-  const emailEnabled = preferencesQuery.data?.preferences.alertEmailEnabled ?? false;
 
   async function restoreNotification(notificationId: string) {
     try {
@@ -76,14 +60,6 @@ export default function AlertNotificationPanel({
       }
     },
     onError: (error) => toast.error(userMessage(error, "Action impossible")),
-  });
-  const preferencesMutation = useMutation({
-    mutationFn: updateNotificationPreferences,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.notificationPreferences(userId) });
-      toast.success("Préférences mises à jour");
-    },
-    onError: (error) => toast.error(userMessage(error, "Préférences impossibles")),
   });
 
   return (
@@ -115,32 +91,11 @@ export default function AlertNotificationPanel({
         </button>
       </div>
 
-      <label className="flex items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 text-sm">
-        <span>
-          <span className="block font-semibold text-foreground">Alertes email</span>
-          <span className="block text-xs text-muted-foreground">
-            {emailEnabled
-              ? hasAnalysisAccess
-                ? "Consentement actif"
-                : "Consentement actif : un email récapitulatif par semaine"
-              : hasAnalysisAccess
-                ? "Notifications dans l’application uniquement"
-                : "Cochez pour recevoir un email récapitulatif chaque semaine"}
-          </span>
-        </span>
-        <input
-          type="checkbox"
-          checked={emailEnabled}
-          disabled={preferencesQuery.isLoading || preferencesMutation.isPending}
-          onChange={(event) =>
-            preferencesMutation.mutate({
-              alertEmailEnabled: event.target.checked,
-              consentSource: "settings",
-            })
-          }
-          className="h-4 w-4 accent-[var(--gold)]"
-        />
-      </label>
+      {/* Un compte gratuit reçoit un récapitulatif par semaine, l'offre Analyse un par jour. */}
+      <AlertEmailRecapToggle
+        userId={userId}
+        className="flex items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 text-sm"
+      />
 
       <div className="max-h-[28rem] overflow-y-auto">
         {isError ? (

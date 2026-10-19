@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { loginPathWithRedirect } from "@/lib/navigation";
+import { loginPathWithRedirect, type LoginReason } from "@/lib/navigation";
 import {
   getAccountType,
   getProfessionalStatus,
@@ -32,6 +32,11 @@ const PUBLIC_PATHS = new Set([
   "/properties",
 ]);
 const PROFESSIONAL_PATHS = new Set(["/publish"]);
+/** Pages de l'espace personnel dont la connexion s'explique sur la page de connexion. */
+const LOGIN_REASON_BY_PATH: Readonly<Record<string, LoginReason>> = {
+  "/favoris": "mes-favoris",
+  "/alertes": "mes-alertes",
+};
 const ADMIN_PREFIX = "/admin";
 const ADMIN_SECURITY_PATH = "/admin/securite";
 
@@ -62,8 +67,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
     // subscribing to it with useSearchParams() would push every protected page out of the
     // prerendered HTML.
     const redirect = `${window.location.pathname}${window.location.search}`;
-    router.replace(loginPathWithRedirect(redirect, { mode: "login" }));
-  }, [isPublic, loading, router, user]);
+    router.replace(
+      loginPathWithRedirect(redirect, { mode: "login", reason: LOGIN_REASON_BY_PATH[pathname] }),
+    );
+  }, [isPublic, loading, pathname, router, user]);
 
   if (isPublic) return <>{children}</>;
 

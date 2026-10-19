@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountLinksFor,
   loginPathWithRedirect,
   linkPrefetch,
   loginReason,
@@ -58,8 +59,39 @@ describe("loginReason", () => {
     expect(loginReason("alerte")).toBe("alerte");
     expect(loginReason("offre")).toBe("offre");
     expect(loginReason("fiche")).toBe("fiche");
+    expect(loginReason("mes-favoris")).toBe("mes-favoris");
+    expect(loginReason("mes-alertes")).toBe("mes-alertes");
     expect(loginReason("<script>")).toBeUndefined();
     expect(loginReason(undefined)).toBeUndefined();
+  });
+});
+
+describe("accountLinksFor", () => {
+  const labels = (hasAnalysisAccess: boolean | undefined) =>
+    accountLinksFor(hasAnalysisAccess).map((link) => link.label);
+
+  it("ajoute « Mes ventes débloquées » aux seuls comptes sans l'offre Analyse", () => {
+    expect(labels(false)).toEqual([
+      "Mes favoris",
+      "Mes alertes",
+      "Mes ventes débloquées",
+      "Mes comparaisons",
+      "Mon compte",
+    ]);
+    expect(labels(true)).toEqual(["Mes favoris", "Mes alertes", "Mes comparaisons", "Mon compte"]);
+  });
+
+  it("n'affiche rien de propre à l'une ou l'autre offre tant que l'offre est inconnue", () => {
+    expect(labels(undefined)).toEqual(labels(true));
+  });
+
+  it("ne laisse fuir aucun indicateur interne dans les liens rendus", () => {
+    for (const link of accountLinksFor(false)) {
+      expect(Object.keys(link).sort()).toEqual(["href", "label"]);
+    }
+    expect(
+      accountLinksFor(false).find((link) => link.label === "Mes ventes débloquées")?.href,
+    ).toBe("/compte/ventes-debloquees");
   });
 });
 

@@ -191,6 +191,21 @@ describe("login page", () => {
     expect(screen.queryByTestId("login-free-promise")).toBeNull();
   });
 
+  it("explique le détour depuis l'espace personnel : favoris et alertes", () => {
+    mocks.search = { reason: "mes-favoris" };
+    const { unmount } = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Connectez-vous pour retrouver vos favoris.",
+    );
+    unmount();
+
+    mocks.search = { reason: "mes-alertes" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Connectez-vous pour retrouver vos alertes.",
+    );
+  });
+
   it("n'affiche aucun bandeau pour un motif inconnu", () => {
     mocks.search = { mode: "investor", reason: "inconnu" };
     render(<LoginPage />);

@@ -307,6 +307,35 @@ describe("FavoriteSales : changements des ventes suivies", () => {
     expect(mocks.fetchSaleChangeEvents).not.toHaveBeenCalled();
   });
 
+  it("affiche les favoris d'abord, puis une ligne compacte pour le suivi non inclus", async () => {
+    setup();
+    mocks.fetchFavoriteSales.mockResolvedValue({
+      ...favoritesResponse(),
+      plan: { code: "decouverte", label: "Découverte", feature: "limited", limit: 3 },
+    });
+    renderPage();
+
+    const line = await screen.findByRole("region", {
+      name: "Suivez les changements de vos ventes",
+    });
+    const card = screen.getByRole("heading", { name: "Appartement · Bordeaux" });
+    // La carte du favori précède la ligne d'offre dans la page.
+    expect(card.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Une ligne : ni aperçu flouté, ni libellés de substitution.
+    expect(line.querySelector(".blur-\\[5px\\]")).toBeNull();
+    expect(screen.queryByText("Date modifiée")).toBeNull();
+    expect(line.querySelectorAll("a")).toHaveLength(1);
+  });
+
+  it("affiche aussi les favoris avant les changements récents d'un compte Analyse", async () => {
+    setup([changeEvent()]);
+    renderPage();
+
+    const changes = await screen.findByRole("heading", { name: "Changements récents" });
+    const card = screen.getByRole("heading", { name: "Appartement · Bordeaux" });
+    expect(card.compareDocumentPosition(changes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("ne promet ni essai ni souscription quand l'offre Analyse n'est pas ouverte", async () => {
     setup();
     mocks.checkoutOpen.mockReturnValue(false);

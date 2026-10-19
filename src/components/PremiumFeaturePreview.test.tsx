@@ -19,4 +19,19 @@ describe("PremiumFeaturePreview", () => {
       screen.getByRole("link", { name: "Voir une analyse exemple" }).getAttribute("href"),
     ).toBe("/annonce-exemple");
   });
+
+  it("tient en une ligne en version compacte, sans aperçu flouté", () => {
+    const { container } = render(
+      <PremiumFeaturePreview compact title="Titre" description="Description" labels={["A", "B"]} />,
+    );
+
+    expect(screen.getByText("Titre")).toBeTruthy();
+    expect(screen.getByText("Description")).toBeTruthy();
+    expect(screen.queryByText("A")).toBeNull();
+    expect(container.querySelector("div[aria-hidden='true']")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Découvrir l’offre Analyse" }).getAttribute("href"),
+    ).toBe("/offres");
+    expect(screen.queryByRole("link", { name: "Voir une analyse exemple" })).toBeNull();
+  });
 });
