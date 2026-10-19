@@ -144,8 +144,10 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     await callback();
 
     expect(mocks.warmSalePages).toHaveBeenCalledTimes(1);
+    // The sale pages, plus the public `/sales` (rewritten to the static page that was just expired).
     expect(mocks.warmSalePages).toHaveBeenCalledWith([ID, OTHER_ID], {
       requestId: response.headers.get("x-request-id"),
+      extraPaths: ["/sales"],
     });
   });
 

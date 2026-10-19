@@ -162,7 +162,7 @@ async function setup(
         configured: options.offerConfigured ?? true,
         trialDays: 7,
         trialAvailable: true,
-        label: "29 € / mois",
+        label: "59 € / mois",
       },
     }),
   );

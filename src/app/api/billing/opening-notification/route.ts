@@ -9,7 +9,9 @@ import {
 import {
   getOfferOpeningNotification,
   offerOpeningNotificationSchema,
+  offerOpeningSurveySchema,
   setOfferOpeningNotification,
+  setOfferOpeningSurvey,
 } from "@/lib/offer-opening-notification";
 import { enforceUserRateLimit } from "@/lib/rate-limit";
 import { RATE_LIMIT_POLICIES } from "@/lib/rate-limit-policies";
@@ -43,6 +45,29 @@ export async function PUT(request: Request) {
   } catch (error) {
     return apiRouteError(error, request, "billing-opening-notification", {
       fallbackMessage: "Demande impossible",
+    });
+  }
+}
+
+/**
+ * Optional answers of the qualified waiting list (profile, sales studied per month, two price
+ * marks, 20-minute interview). Only for someone whose request is active: nothing here is required
+ * to join the list.
+ */
+export async function PATCH(request: Request) {
+  try {
+    const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    await enforceUserRateLimit({
+      userId: auth.userId,
+      bucketKey: "billing.opening-notification",
+      ...RATE_LIMIT_POLICIES.formSubmit,
+    });
+    const input = offerOpeningSurveySchema.parse(await request.json());
+    const response = await setOfferOpeningSurvey({ auth, admin: supabaseAdmin, input });
+    return NextResponse.json(response, { headers: NO_STORE });
+  } catch (error) {
+    return apiRouteError(error, request, "billing-opening-notification", {
+      fallbackMessage: "Réponses impossibles à enregistrer",
     });
   }
 }

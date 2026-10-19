@@ -5,8 +5,10 @@ import { FeesSimulator } from "@/components/fees-simulator/FeesSimulator";
 import { formatScaleDate } from "@/components/fees-simulator/scale-date";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
+import { LaunchOfferNote } from "@/components/LaunchOfferNote";
 import { pageMetadata } from "@/lib/page-metadata";
 import { EMOLUMENT_SCALE_DATE, EMOLUMENT_SCALE_REFERENCE } from "@/lib/profitability";
+import { MONTHLY_SALE_UNLOCKS } from "@/lib/sale-unlocks";
 import { getSurenchereReminder } from "@/lib/surenchere-reminder";
 
 export const metadata: Metadata = pageMetadata({
@@ -52,16 +54,24 @@ function PageContent() {
           Et ensuite ?
         </h2>
         <p className="mt-2 max-w-2xl text-ink-soft">
-          Ce simulateur chiffre les frais, pas votre limite d’enchère : l’enchère plafond se fixe
-          avec l’offre Analyse.
+          Ce simulateur chiffre les frais, pas votre limite d’enchère. L’enchère plafond s’ouvre sur{" "}
+          {MONTHLY_SALE_UNLOCKS} ventes au tribunal par mois avec le compte gratuit, et sur toutes
+          les ventes au tribunal avec l’offre Analyse.
         </p>
+        <LaunchOfferNote className="mt-3 max-w-2xl" />
         <div className="mt-4 flex flex-wrap gap-2">
           <Link href="/sales" className={buttonClasses({ variant: "primary", size: "md" })}>
             Trouver une vente
             <ArrowRight className="size-4" aria-hidden />
           </Link>
+          <Link
+            href="/annonce-exemple"
+            className={buttonClasses({ variant: "secondary", size: "md" })}
+          >
+            Essayer l’enchère plafond sur un exemple
+          </Link>
           <Link href="/offres" className={buttonClasses({ variant: "secondary", size: "md" })}>
-            Fixer son enchère plafond
+            Voir les offres
           </Link>
         </div>
       </section>

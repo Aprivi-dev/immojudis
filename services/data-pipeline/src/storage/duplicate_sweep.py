@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 
-from src.dedupe import merge_duplicate_sales
+from src.dedupe import SWEEP_STRICT_EXCLUDED_SOURCES, SWEEP_STRICT_MAX_GROUP, merge_duplicate_sales
 from src.models import AuctionSale
 from src.reviewed_aliases import ReviewedAliasRegistry
 from src.storage.column_sets import DEDUPLICATION_SALE_SELECT
@@ -30,6 +30,9 @@ LOGGER = logging.getLogger(__name__)
 
 PAGE_SIZE = 1000
 _TIMEOUT = httpx.Timeout(120.0, connect=30.0)
+# Un groupe de plus de 5 lignes (la fiche conservée et ses lignes secondaires) n'est jamais fusionné
+# automatiquement : il reste à relire à la main.
+MAX_GROUP_ROWS = 5
 
 # Raisons internes (dedupe_confidence) rendues lisibles.
 REASON_LABELS = {
@@ -37,6 +40,7 @@ REASON_LABELS = {
     "address": "même adresse précise",
     "content_hash": "même contenu (hash)",
     "source_url": "même URL source",
+    "strict_key": "clé de repli stricte (même tribunal, même jour, même mise à prix, même bien), hors Vench / Petites Affiches",
 }
 
 # Mention du rapport quand le balayage est partiel : des doublons peuvent exister hors des lignes lues.
@@ -77,6 +81,8 @@ class DuplicateSweepPlan:
     # Lignes fusionnées à écrire (usage interne de l'application, absent du rapport).
     impacted_sales: list[AuctionSale] = dataclass_field(default_factory=list)
     deferred_rows: int = 0
+    # Groupes écartés parce qu'ils dépassent MAX_GROUP_ROWS lignes (à relire à la main).
+    oversized_groups: int = 0
     reviewed_aliases: ReviewedAliasRegistry | None = None
 
     @property
@@ -209,8 +215,14 @@ def build_plan(
         return plan
     # Résumés pris avant la fusion : elle recopie dans la survivante les champs des lignes absorbées.
     summaries = {sale.source_url: _summary(sale) for sale in sales}
-    # Le balayage supprime les lignes secondaires : preuve seulement, jamais la clé de repli stricte.
-    merged = merge_duplicate_sales(sales, strict_fallback=False)
+    # Le balayage supprime les lignes secondaires : la preuve (adresse précise, identifiant d'annonce
+    # commun) d'abord ; la clé de repli stricte seulement hors Vench / Petites Affiches et hors d'un
+    # (jour, prix) partagé par plus de SWEEP_STRICT_MAX_GROUP annonces (lots distincts au même prix).
+    merged = merge_duplicate_sales(
+        sales,
+        strict_excluded_sources=SWEEP_STRICT_EXCLUDED_SOURCES,
+        strict_max_group=SWEEP_STRICT_MAX_GROUP,
+    )
     protected_urls = reviewed_aliases.protected_source_urls()
     all_secondary = set(_secondary_source_urls(merged))
     kept = 0
@@ -221,6 +233,10 @@ def build_plan(
             if source_url and source_url in all_secondary and source_url not in protected_urls
         ]
         if not secondary_urls:
+            continue
+        # Plus de MAX_GROUP_ROWS lignes pour une même fiche : trop pour une preuve automatique, à relire.
+        if len(secondary_urls) + 1 > MAX_GROUP_ROWS:
+            plan.oversized_groups += 1
             continue
         # Un groupe plus gros que le plafond ne se fusionne jamais seul : il reste à relire à la main.
         if max_merges is not None and kept + len(secondary_urls) > max_merges:
@@ -298,6 +314,10 @@ def markdown_summary(plan: DuplicateSweepPlan) -> str:
     ]
     for reason, count in sorted(by_reason.items()):
         parts.append(f"  - {REASON_LABELS.get(reason, reason)} : {count}")
+    if plan.oversized_groups:
+        parts.append(
+            f"- Groupes de plus de {MAX_GROUP_ROWS} lignes écartés (à relire à la main) : {plan.oversized_groups}"
+        )
     if plan.groups:
         parts += [
             "",
@@ -332,6 +352,7 @@ def emit_candidates_report(plan: DuplicateSweepPlan, *, output: Path | None = No
             "scanned": plan.scanned,
             "truncated": plan.truncated,
             "truncation_reason": plan.truncation_reason,
+            "oversized_groups": plan.oversized_groups,
             "groups": candidates_as_dicts(plan),
         }
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

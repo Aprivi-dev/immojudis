@@ -70,16 +70,27 @@ export function salesPageMetadata(search: SalesSearchParams): Metadata {
  * l'erreur laisse Next.js servir la dernière bonne page et retenter à la requête suivante (voir
  * `mustSeedStaticCatalogue`). Hors régénération, la page rendue à la demande garde son repli : le
  * navigateur charge alors les annonces.
+ *
+ * `photoMirrorTimeoutMs` : délai de lecture des copies de photos (300 ms par défaut). La régénération
+ * statique en accepte davantage : voir `PHOTO_MIRROR_ISR_TIMEOUT_MS`.
  */
 export async function renderSalesCatalogue(
   search: SalesSearchParams,
   {
     dataUpdatedAt,
     requireServerSeed = false,
+    photoMirrorTimeoutMs,
     staticQuery,
-  }: { dataUpdatedAt?: number; requireServerSeed?: boolean; staticQuery?: string } = {},
+  }: {
+    dataUpdatedAt?: number;
+    requireServerSeed?: boolean;
+    photoMirrorTimeoutMs?: number;
+    staticQuery?: string;
+  } = {},
 ) {
-  const initial = await loadInitialCatalogue(search);
+  const initial = await (photoMirrorTimeoutMs === undefined
+    ? loadInitialCatalogue(search)
+    : loadInitialCatalogue(search, { photoMirrorTimeoutMs }));
   if (!initial && requireServerSeed) {
     throw new Error(
       "Catalogue public indisponible : la régénération de /sales est abandonnée, la dernière page valide reste servie.",

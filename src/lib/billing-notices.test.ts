@@ -54,7 +54,7 @@ describe("buildPaymentFailedMessage", () => {
       "Votre accès Analyse reste ouvert 7 jours à compter de la fin de la période payée pour vous permettre de mettre à jour votre moyen de paiement ; la mensualité reste due. Passé ce délai sans paiement, l’accès est suspendu. Votre compte Découverte et vos données restent accessibles.",
     );
     expect(message.text).toContain("le 15 octobre 2026");
-    expect(message.text).toContain("Montant de l’abonnement : 29 € TTC / mois");
+    expect(message.text).toContain("Montant de l’abonnement : 59 € TTC / mois");
     expect(message.text).toContain("Résilier mon abonnement");
     expect(message.text).toContain("L’équipe Immojudis");
     expect(message.text).toContain("https://immojudis.com/compte");
@@ -82,9 +82,9 @@ describe("buildTrialEndingMessage", () => {
   });
 
   it("gives the amount, the date of the first payment, how to cancel and a signature", () => {
-    const message = buildTrialEndingMessage({ ...base, trialEnd, priceLabel: "29 € TTC / mois" });
+    const message = buildTrialEndingMessage({ ...base, trialEnd, priceLabel: "59 € TTC / mois" });
     expect(message.text).toContain(
-      "le premier paiement est prélevé le 20 octobre 2026 : 29 € TTC / mois",
+      "le premier paiement est prélevé le 20 octobre 2026 : 59 € TTC / mois",
     );
     expect(message.text).toContain("Résilier mon abonnement");
     expect(message.text).toContain("https://immojudis.com/compte");

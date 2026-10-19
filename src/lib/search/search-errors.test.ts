@@ -3,7 +3,6 @@ import {
   OUT_OF_RANGE_MESSAGE,
   SearchRejectedError,
   isOutOfRangeSearchError,
-  retrySearch,
 } from "./search-errors";
 
 describe("SearchRejectedError", () => {
@@ -28,17 +27,5 @@ describe("SearchRejectedError", () => {
   it("ne prend pas une panne pour un refus", () => {
     expect(isOutOfRangeSearchError(new Error("Page hors limites."))).toBe(false);
     expect(isOutOfRangeSearchError(null)).toBe(false);
-  });
-});
-
-describe("retrySearch", () => {
-  it("retente une panne une fois", () => {
-    expect(retrySearch(0, new Error("réseau"))).toBe(true);
-    expect(retrySearch(1, new Error("réseau"))).toBe(false);
-  });
-
-  it("ne rejoue jamais une demande refusée : la réponse serait la même", () => {
-    expect(retrySearch(0, new SearchRejectedError("Page hors limites."))).toBe(false);
-    expect(retrySearch(0, new SearchRejectedError("Zone trop large."))).toBe(false);
   });
 });

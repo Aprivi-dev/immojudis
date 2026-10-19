@@ -66,7 +66,8 @@ import {
   salesSearchCountQueryKey,
   salesSearchQueryKey,
 } from "@/lib/search/catalog-placeholder";
-import { SearchRejectedError, retrySearch } from "@/lib/search/search-errors";
+import { retryUnlessRefused } from "@/lib/query-retry";
+import { SearchRejectedError } from "@/lib/search/search-errors";
 
 const sales = Array.from({ length: 24 }, (_, index) => ({
   id: `sale-${index + 1}`,
@@ -340,7 +341,7 @@ describe("/sales : page hors bornes", () => {
     state.fetchSearchResults.mockRejectedValue(new SearchRejectedError("Page hors limites."));
     state.fetchSearchCount.mockRejectedValue(new SearchRejectedError("Page hors limites."));
     renderSales("/sales?page=999&city=Pau", {
-      client: new QueryClient({ defaultOptions: { queries: { retry: retrySearch } } }),
+      client: new QueryClient({ defaultOptions: { queries: { retry: retryUnlessRefused } } }),
     });
 
     const link = await screen.findByRole("link", { name: "Revenir à la page 1" });

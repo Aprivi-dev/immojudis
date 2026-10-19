@@ -391,7 +391,9 @@ export function saleStructuredData(
   const headline = saleHeadline(sale);
   const description = saleSeoDescription(sale);
   const hasPrice = sale.starting_price_eur != null && sale.starting_price_eur > 0;
-  const updated = parseDate(sale.updated_at);
+  // Date of the last VISIBLE change (price, date, status, address, surface, rooms, photo), or nothing:
+  // the technical `updated_at` of the row moves with every collection run and is never published.
+  const modified = parseDate(sale.content_changed_at);
 
   const listing: Record<string, unknown> = {
     "@type": "RealEstateListing",
@@ -401,7 +403,7 @@ export function saleStructuredData(
     description,
     inLanguage: "fr-FR",
     ...(image ? { image: [image] } : {}),
-    ...(updated ? { dateModified: updated.toISOString() } : {}),
+    ...(modified ? { dateModified: modified.toISOString() } : {}),
     ...(city
       ? {
           about: {

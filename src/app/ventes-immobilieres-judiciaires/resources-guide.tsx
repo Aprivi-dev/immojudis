@@ -5,7 +5,7 @@ import { CloudBackgroundPreload } from "@/components/CloudBackgroundPreload";
 import { SaleTypesOverview } from "@/components/SaleTypesOverview";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import { jsonLdString } from "@/lib/json-ld";
-import { GUIDE_LAST_UPDATED } from "@/lib/guide-dates";
+import { GUIDE_LAST_UPDATED, GUIDE_READING_MINUTES } from "@/lib/guide-dates";
 import { getResourceArticle } from "@/lib/resource-articles";
 
 /**
@@ -13,7 +13,7 @@ import { getResourceArticle } from "@/lib/resource-articles";
  * (source unique) et alimente la mention « Mis à jour le » de la page, le `dateModified` de ses
  * données structurées et l'entrée du guide dans le sitemap (`src/app/sitemap.ts`).
  */
-export { GUIDE_LAST_UPDATED };
+export { GUIDE_LAST_UPDATED, GUIDE_READING_MINUTES };
 
 /** « 2026-10-13 » devient « 13/10/2026 ». */
 export function formatGuideDate(isoDate: string): string {
@@ -23,13 +23,6 @@ export function formatGuideDate(isoDate: string): string {
 
 /** Vitesse de lecture retenue pour un texte d'information en français (mots par minute). */
 export const READING_WORDS_PER_MINUTE = 230;
-
-/**
- * Temps de lecture affiché, en minutes. Constante plutôt que calcul au rendu : le texte du guide
- * est du JSX, que seul un rendu complet permet de compter. Le test du guide recompte les mots de
- * la page et échoue si cette valeur s'écarte de plus d'une minute du résultat.
- */
-export const GUIDE_READING_MINUTES = 23;
 
 /** Slug stable d'un terme du lexique : minuscules, sans accents, espaces et apostrophes en tirets. */
 export function lexiqueSlug(term: string): string {
@@ -53,7 +46,7 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Une vente en ligne est-elle un type de vente à part ?",
-    a: "Non. En ligne décrit la façon de participer, pas le cadre juridique. Il faut toujours identifier l’organisateur et lire les conditions de la vente.",
+    a: "Non. En ligne décrit la façon de participer, pas le cadre juridique. Il faut toujours identifier l’organisateur et lire les conditions de la vente. Attention : chez un notaire, la vente interactive en ligne fonctionne par offres et avant-contrat, pas par enchères avec adjudication (voir l’article sur les ventes notariales et domaniales).",
   },
   {
     q: "Qui peut acheter un bien aux enchères au tribunal ?",
@@ -177,6 +170,10 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
     def: "Sommes qu’un professionnel (avocat, notaire) avance pour votre compte, par exemple des droits ou des frais de formalités, et qu’il vous refacture au réel.",
   },
   {
+    term: "Droit de préemption",
+    def: "Droit, pour la commune ou un autre titulaire prévu par la loi, d’acquérir en priorité un bien situé dans un périmètre déterminé. Lorsque l’adjudication est autorisée ou ordonnée par un juge, il s’exerce par substitution à l’adjudicataire, au prix de la dernière enchère ou de la surenchère, dans les trente jours de l’adjudication (art. L. 213-1 et R. 213-15 du Code de l’urbanisme).",
+  },
+  {
     term: "Émoluments",
     def: "Rémunération des avocats fixée par un barème réglementaire et proportionnelle au prix d’adjudication (art. A. 444-191 du Code de commerce). Elle est distincte des honoraires, librement convenus avec l’avocat.",
   },
@@ -282,6 +279,11 @@ const RELATED_SLUGS = [
   "financer-achat-encheres-pret-delais",
   "acheter-bien-occupe-encheres",
   "prix-plafond-encheres-immobilieres",
+  "analyser-opportunite-encheres",
+  "immeuble-rapport-encheres",
+  "droit-de-preemption-encheres-commune-acheteur",
+  "garantie-10-pourcent-cheque-banque-caution-encheres",
+  "copropriete-encheres-charges-assemblees",
 ] as const;
 
 /**

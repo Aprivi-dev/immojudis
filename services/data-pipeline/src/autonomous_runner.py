@@ -17,6 +17,7 @@ from psycopg.types.json import Jsonb
 from src import source_withdrawal
 from src.config import load_settings
 from src.run_finalizer import register_run
+from src.source_absence import withdraw_missing_sales
 from src.source_health import SOURCE_WARNING_EXIT_CODE
 from src.storage.supabase_client import connect
 
@@ -313,6 +314,23 @@ def finish_source(db_url: str, run_id: str) -> None:
              complete,publication_complete,source,run_id))
         db.execute("""update public.auction_runs set summary=coalesce(summary,'{}') || %s
             where id=%s""", (Jsonb({'scrape_coverage': {source: coverage}}), run_id))
+    # Après le commit, hors de la transaction qui clôt le run : une panne ici ne doit rien défaire.
+    # Seulement après un inventaire complet réussi (jamais sur un inventaire partiel).
+    if complete and status == 'succeeded' and not denied:
+        _withdraw_missing_sales(db_url, run_id, source)
+
+
+def _withdraw_missing_sales(db_url: str, run_id: str, source: str) -> None:
+    """Retire les ventes absentes des deux derniers inventaires complets (src.source_absence)."""
+    result = withdraw_missing_sales(db_url, source, connect=_postgres_connect)
+    if result is None:
+        return
+    try:
+        with _postgres_connect(db_url) as db:
+            db.execute("""update public.auction_runs set summary=coalesce(summary,'{}') || %s
+                where id=%s""", (Jsonb({'source_absence': result}), run_id))
+    except Exception as exc:  # le compte rendu du run est secondaire
+        print(f'Source absence summary not recorded: {type(exc).__name__}')
 
 
 def record_source_presence(db, run_id: str, source: str, availability: str, complete: bool) -> None:
@@ -322,10 +340,12 @@ def record_source_presence(db, run_id: str, source: str, availability: str, comp
     # retain the legacy raw_payload path byte-for-byte for compatibility with
     # existing views and older databases.
     compact_objects = db.execute(
-        "select to_regclass(%s), to_regprocedure(%s)",
+        "select to_regclass(%s), to_regprocedure(%s), exists(select 1 from pg_catalog.pg_attribute"
+        " where attrelid = to_regclass(%s) and attname = 'absent_inventories' and not attisdropped)",
         (
             "app_private.auction_sale_source_presence",
             "app_private.auction_sale_source_presence_json(uuid)",
+            "app_private.auction_sale_source_presence",
         ),
     ).fetchone()
     if compact_objects and compact_objects[0] and compact_objects[1]:
@@ -356,6 +376,8 @@ def record_source_presence(db, run_id: str, source: str, availability: str, comp
             (source, availability, complete, run_id, complete, run_id,
              source, source, source, run_id, complete, complete),
         )
+        if complete and len(compact_objects) > 2 and compact_objects[2]:
+            count_absent_inventories(db, run_id, source)
         return
     db.execute("""update public.auction_sales s set raw_payload=jsonb_set(
         coalesce(s.raw_payload,'{}'),'{source_presence}',
@@ -372,6 +394,25 @@ def record_source_presence(db, run_id: str, source: str, availability: str, comp
           or exists(select 1 from public.auction_collection_items i
           where i.run_id=%s and i.canonical_source_url=s.source_url)""",
         (source,source,availability,run_id,complete,run_id,source,source,source,run_id))
+
+
+def count_absent_inventories(db, run_id: str, source: str) -> None:
+    """Compte les inventaires COMPLETS consécutifs d'une source où chaque vente est absente.
+
+    À appeler seulement après un inventaire complet (``state`` vient d'être posée pour ce run). Une vente revue
+    remet son compteur à zéro. Idempotent pour un même run : ``absent_run_id`` empêche de compter deux fois le
+    même inventaire. Les ventes absentes depuis deux inventaires complets sont retirées par
+    ``src.source_absence`` (migration 20261028110100).
+    """
+    db.execute("""update app_private.auction_sale_source_presence as p set
+        absent_inventories = case when p.state = 'absent' then p.absent_inventories + 1 else 0 end,
+        absent_since = case when p.state = 'absent' then coalesce(p.absent_since, p.checked_at) else null end,
+        absent_run_id = case when p.state = 'absent' then %s::text else null end
+      where p.source_name = %s::text and p.run_id = %s::text and p.checked_at is not null
+        and (
+          (p.state = 'absent' and p.absent_run_id is distinct from %s::text)
+          or (p.state = 'present' and (p.absent_inventories > 0 or p.absent_run_id is not null))
+        )""", (run_id, source, run_id, run_id))
 
 
 DOCUMENT_READING_BUDGET_SECONDS = 5 * 60

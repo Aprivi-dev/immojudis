@@ -16,7 +16,12 @@
  *   « née », « consorts », « héritiers de », « succession de ».
  * - Il ne retire jamais une commune, une rue, un tribunal, une étude notariale ni une société (SCI,
  *   SARL…) : un nom n'est reconnu qu'après une civilité (Monsieur, Mme, M.…) ou sous la forme
- *   « Prénom NOM ».
+ *   « Prénom NOM » ou « NOM Prénom » (« DUPONT Pierre » : le prénom doit figurer dans la liste
+ *   `FIRST_NAMES`, sans quoi « EDF Collectivités » ou « BNP Paribas » seraient pris pour des noms).
+ * - Après un rôle (« le débiteur », « propriétaire », « vendeur »… suivi de `:`, d'une virgule ou
+ *   d'un espace), le nom est retiré avec ou sans civilité (« Le saisi, Paul ROY, occupe… »), sauf si
+ *   le mot qui suit est « Me », « Maître » ou un nom de bien (« propriétaire Local COMMERCIAL »).
+ * - « À la requête de : Madame X » (deux-points) et « À la requête de la Mme X » sont reconnus.
  * - Le statut n'est jamais déduit : « occupé(e)(s) par <nom> » devient toujours « un occupant ». « Un
  *   locataire » n'apparaît que si la formule source le dit (« loué à <nom> », « bail consenti à
  *   <nom> », « locataire <nom> » : on remplace le nom, pas le rôle).
@@ -47,10 +52,65 @@ const NOT_SENTENCE_START = `(?!(?:Le|La|Les|Un|Une|Il|Elle|Dans|Pour|Sur|Et|Ce|C
 const NEXT = `(?:(?:Le|La|Les)${SP}+${NOT_STOP}${TOKEN}|${NOT_SENTENCE_START}${NOT_STOP}${TOKEN})`;
 const PARTICLE = `(?:de${SP}+la|de|du|des|d${APOS}|van|von|der|den|ben|el|al|di|da|dos|del|della)`;
 const INITIAL = `[${UP}]\\.${SP}*`;
+// Prénoms usuels (liste partagée mot pour mot avec `_FIRST_NAMES` du miroir Python ; un test compare
+// les deux). Sert uniquement à reconnaître « NOM Prénom » (« DUPONT Pierre ») sans civilité : sans
+// liste, tout « SIGLE Mot » (« EDF Collectivités », « BNP Paribas ») serait pris pour une personne.
+// Un prénom absent de la liste n'est pas reconnu sans civilité ; il l'est après « Monsieur », « Mme »…
+const FIRST_NAMES =
+  "Marie Nathalie Isabelle Sylvie Catherine Françoise Martine Christine Monique Valérie " +
+  "Sandrine Patricia Brigitte Nicole Véronique Annie Jacqueline Stéphanie Céline Chantal " +
+  "Julie Sophie Anne Laurence Corinne Michèle Dominique Claire Florence Marguerite Danielle " +
+  "Hélène Pascale Karine Béatrice Christiane Thérèse Odile Fabienne Sabrina Virginie " +
+  "Aurélie Émilie Laetitia Nadia Samira Fatima Léa Camille Chloé Manon Emma Inès Sarah " +
+  "Laura Lucie Marine Pauline Mélanie Delphine Agnès Colette Josette Paulette Yvette " +
+  "Ginette Odette Simone Suzanne Denise Geneviève Évelyne Josiane Régine Maryse Muriel " +
+  "Cécile Élodie Charlotte Audrey Alice Eva Lina Anaïs Juliette Mathilde Louise Jeanne " +
+  "Madeleine Yvonne Raymonde Andrée Arlette Bernadette Liliane Gisèle Huguette Nadine Sonia " +
+  "Amandine Magali Ghislaine Roselyne Rose Maud Élisabeth Lydie Carole Cathy Jessica Élise " +
+  "Aline Alexandra Angélique Adeline Estelle Gaëlle Armelle Solange Mireille Marlène Noémie " +
+  "Margaux Clémence Océane Morgane Lisa Anna Clara Zoé Jade Mona Leïla Yasmine Khadija " +
+  "Aïcha Malika Naima Latifa Samia Houria Karima Rachida Ana Maria Carmen Rosa Isabel " +
+  "Marion Roxane Justine Johanna Séverine Stella Vanessa Wendy Tiphaine Sylviane Reine Jean " +
+  "Pierre Michel André Philippe René Louis Alain Jacques Bernard Marcel Daniel Roger Robert " +
+  "Paul Claude Christian Henri Georges Nicolas François Patrick Gérard Christophe Joseph " +
+  "Yves Éric Frédéric Laurent Stéphane David Pascal Olivier Thierry Sébastien Julien " +
+  "Alexandre Maxime Thomas Antoine Mathieu Guillaume Romain Kevin Jérôme Franck Didier " +
+  "Denis Gilles Serge Bruno Marc Luc Hervé Raymond Lucien Maurice Albert Fernand Gaston " +
+  "Émile Roland Rémy Rémi Vincent Anthony Benoît Cédric Damien Fabrice Fabien Gaël Grégory " +
+  "Jonathan Lionel Ludovic Mickaël Nathan Hugo Lucas Théo Enzo Ahmed Mohamed Mohammed Karim " +
+  "Youssef Rachid Abdel Samir Hassan Omar Ali Mehdi Nabil Saïd Farid Manuel José Antonio " +
+  "Carlos Miguel João Jorge Luis Paulo Giuseppe Mario Marco Stefano Gabriel Adrien Arnaud " +
+  "Baptiste Bastien Clément Corentin Dylan Étienne Florian Jordan Léo Loïc Mathis Nolan " +
+  "Quentin Raphaël Sylvain Tristan Valentin Victor Xavier Yann Yannick Régis Rodolphe " +
+  "Gilbert Gérald Jocelyn Aimé Auguste Édouard Eugène Félix Léon Armand Alfred Noël Max Sam " +
+  "Tom Jules Hubert Guy Francis Joël Jacky Jackie Thibault Thibaut Cyril Cyrille Dimitri " +
+  "Mathias Matthieu Ibrahim Moussa Mamadou Abdelkader Mustapha Brahim Idriss Anis Amine " +
+  "Bilal Yanis Bertrand Gaétan Géraud Josselin Maël Ronan Tanguy Erwan Gwenaël Hugues " +
+  "Ludwig Sacha Ulysse Marius Aurélien Pierrick Johan Steven Teddy Stan Rodrigue Léopold " +
+  "Basile";
+const FIRST_NAME_FORMS = (() => {
+  const forms = new Set<string>();
+  for (const name of FIRST_NAMES.split(" ")) {
+    const bare = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    for (const form of [name, bare]) {
+      forms.add(form);
+      forms.add(form.toUpperCase());
+    }
+  }
+  return [...forms].sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0)).join("|");
+})();
+// Un ou plusieurs prénoms de la liste, composés avec un trait d'union : « Jean-Pierre », « MARIE-CLAIRE ».
+const FIRST_NAME = `(?:${FIRST_NAME_FORMS})(?:-(?:${FIRST_NAME_FORMS}))*(?![${L}])`;
 // Prénom(s) puis NOM(S) en capitales : « Jean-Pierre DUPONT ».
-const BARE =
+const BARE_FORENAME_FIRST =
   `${CAPW}(?:${SP}+${CAPW}){0,2}${SP}+${NOT_STOP}${UPW}` +
   `(?:${SP}+(?:${PARTICLE}${SP}*)?${NOT_STOP}${UPW}){0,2}`;
+// NOM(S) en capitales puis prénom(s) de la liste : « DUPONT Pierre », « DE LA FONTAINE Claire »,
+// « DUPONT PIERRE ».
+const BARE_SURNAME_FIRST =
+  `${NOT_STOP}${UPW}(?:${SP}+(?:${PARTICLE}${SP}*)?${NOT_STOP}${UPW}){0,2}` +
+  `${SP}+${FIRST_NAME}(?:${SP}+${FIRST_NAME}){0,2}`;
+const BARE = `(?:${BARE_FORENAME_FIRST}|${BARE_SURNAME_FIRST})`;
 const NAMESEQ = `(?:${INITIAL})*${TOKEN}(?:${SP}+(?:${PARTICLE}${SP}+)?${NEXT}){0,4}`;
 const NAME_SINGLE = `${TOKEN}(?:${SP}+(?:${PARTICLE}${SP}+)?${NEXT}){0,2}`;
 // « Pierre Martin » en casse mixte, sans civilité : deux à trois mots, jamais un début de phrase.
@@ -154,8 +214,11 @@ const ADDRESS_SEPARATOR = sticky(`(?:${SP}*,${SP}*|${SP}+|-)`);
 const MAX_ADDRESS_TOKENS = 30;
 
 const NO_BEFORE = `(?<![${L}\\d])`;
+// « À LA REQUETE DE : Madame X » (deux-points) et « à la requête de la Mme X » (article devant la
+// civilité) : le « la » n'est consommé que devant une civilité.
 const REQUETE = new RegExp(
-  `${NO_BEFORE}([àa]${SP}+la${SP}+requ[êe]te)(${SP}+(?:des|de|du|d${APOS}))${SP}*`,
+  `${NO_BEFORE}([àa]${SP}+la${SP}+requ[êe]te)(${SP}+(?:des|de|du|d${APOS}))(?:${SP}*:)?${SP}*` +
+    `(?:(?:la|le)${SP}+(?=${CIV}))?`,
   "gi",
 );
 const OCCUPIED = new RegExp(`${NO_BEFORE}occup[ée](?:e|s|es)?${SP}+par${SP}+`, "gi");
@@ -320,9 +383,24 @@ const tenant: Handler = (text, match) => {
   return [match.index + match[1].length + match[2].length, end, ""];
 };
 
+// Après un rôle sans civilité, ces mots ne commencent pas un nom (avocat, bien décrit en capitales).
+const ROLE_NOT_A_NAME = new Set(
+  (
+    "me maître maitre mtre appartement maison local locaux lot lots bien biens terrain studio garage " +
+    "parking cave villa pavillon entrepôt entrepot bâtiment batiment commerce parcelle logement fonds"
+  ).split(" "),
+);
+
 const role: Handler = (text, match) => {
   const civil = matchAt(PERSON_CIV, text, matchEnd(match));
-  if (!civil || !acceptable(civil[0], "civ")) return null;
+  if (civil) {
+    if (!acceptable(civil[0], "civ")) return null;
+  } else {
+    // Sans civilité : « Le saisi, Paul ROY », « propriétaire : DUPONT Pierre ».
+    const bare = matchAt(PERSON_BARE, text, matchEnd(match));
+    if (!bare || !acceptable(bare[0], "bare")) return null;
+    if (ROLE_NOT_A_NAME.has(bare[0].split(/[\s'’-]/)[0].toLowerCase())) return null;
+  }
   const end = personEnd(text, matchEnd(match));
   if (end === null) return null;
   return [match.index + match[1].length + match[2].length, end, ""];
