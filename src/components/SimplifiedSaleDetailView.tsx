@@ -597,7 +597,11 @@ function SaleDetailWorkspace({
             />
           ) : null}
           {!publicDemo && user ? (
-            <SaleFileCard saleId={sale.id} calculatedCeiling={heroCeiling} />
+            <SaleFileCard
+              saleId={sale.id}
+              calculatedCeiling={heroCeiling}
+              calculationPending={ceilingEnabled && marketPending}
+            />
           ) : null}
         </div>
 

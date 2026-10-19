@@ -176,6 +176,21 @@ describe("SaleFileCard (Mon dossier)", () => {
     expect(screen.getByLabelText("Mon statut")).toBeTruthy();
   });
 
+  it("dit que le calcul est en cours plutôt que de le déclarer indisponible", async () => {
+    mocks.fetchDossier.mockResolvedValue(followed());
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <SaleFileCard saleId={SALE_ID} calculatedCeiling={null} calculationPending />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Calcul de l’enchère plafond en cours…")).toBeTruthy();
+    expect(screen.queryByText(/n’est disponible/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Enregistrer mon plafond/ })).toBeNull();
+  });
+
   it("annonce l'échec d'un enregistrement et garde l'état affiché", async () => {
     mocks.fetchDossier.mockResolvedValue(followed());
     mocks.saveDossier.mockRejectedValue(new Error("Enregistrement impossible pour le moment."));
