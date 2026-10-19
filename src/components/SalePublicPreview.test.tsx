@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
+import { FREE_ACCESS_LINE } from "@/lib/sale-unlocks";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
 
 afterEach(cleanup);
@@ -18,14 +19,16 @@ describe("SalePublicPreview", () => {
         requestedHash="#proofs"
       />,
     );
-    const href = screen
-      .getByRole("link", { name: /Créer mon compte gratuit/ })
-      .getAttribute("href")!;
-    const params = new URL(href, "https://example.test").searchParams;
-    expect(params.get("redirect")).toBe("/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs");
-    // Le bandeau de la page de connexion explique ce que le compte gratuit ouvre sur cette fiche.
-    expect(params.get("mode")).toBe("investor");
-    expect(params.get("reason")).toBe("fiche");
+    // Le bloc sous le prix et la section « Consulter le dossier » mènent au même endroit.
+    const links = screen.getAllByRole("link", { name: /Créer mon compte gratuit/ });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      const params = new URL(link.getAttribute("href")!, "https://example.test").searchParams;
+      expect(params.get("redirect")).toBe("/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs");
+      // Le bandeau de la page de connexion explique ce que le compte gratuit ouvre sur cette fiche.
+      expect(params.get("mode")).toBe("investor");
+      expect(params.get("reason")).toBe("fiche");
+    }
   });
 
   it("announces the statistics of the tribunal in the unlock only while their flag is open", () => {
@@ -34,8 +37,8 @@ describe("SalePublicPreview", () => {
       <SalePublicPreview saleId="sale-1" preview={tribunal} returnTo="/sales" />,
     );
     const intro = (view: typeof closed) =>
-      view.container.querySelector("#public-access-title")?.parentElement?.textContent ?? "";
-    expect(intro(closed)).toContain("débloquer 3 ventes par mois");
+      view.container.querySelector("[class*=tierFree]")?.textContent ?? "";
+    expect(intro(closed)).toContain("3 déblocages de ventes");
     expect(intro(closed)).toContain("l’enchère plafond, la lecture des pièces");
     expect(intro(closed)).not.toContain("statistiques du tribunal");
     closed.unmount();
@@ -86,7 +89,7 @@ describe("SalePublicPreview", () => {
     expect(container.textContent).not.toContain("enchère plafond");
     expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
 
-    const cta = screen.getByRole("link", { name: /Créer mon compte gratuit/ });
+    const cta = screen.getAllByRole("link", { name: /Créer mon compte gratuit/ })[0];
     expect(cta.getAttribute("href")).toContain("mode=investor");
     // The unfiltered catalogue is the default way back: no `?from=/sales` in the destination.
     const redirect = new URL(cta.getAttribute("href")!, "https://example.test").searchParams.get(
@@ -178,7 +181,7 @@ describe("SalePublicPreview", () => {
     });
 
     expect(screen.getByText("Avocat obligatoire pour enchérir")).toBeTruthy();
-    expect(screen.getByText(/audience d’adjudication/)).toBeTruthy();
+    expect(screen.getByText(/lors d’une audience d’/)).toBeTruthy();
     expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
   });
 
@@ -270,8 +273,8 @@ describe("SalePublicPreview", () => {
     expect(screen.queryByRole("img")).toBeNull();
   });
 
-  it("lists what the free account adds instead of a vague protection notice", () => {
-    renderPreview({
+  it("says what the free account opens in two places only, not three or four", () => {
+    const { container } = renderPreview({
       sale_venue_type: "tribunal",
       sale_verification_status: "verified",
       photo_count: 5,
@@ -279,10 +282,105 @@ describe("SalePublicPreview", () => {
       document_count: 3,
     });
     expect(screen.queryByText(/protège les informations/)).toBeNull();
-    const list = screen.getByText("Avec le compte gratuit, vous voyez aussi").parentElement!;
-    expect(list.textContent).toContain("5 photos du bien");
-    expect(list.textContent).toContain("dates et le lieu des visites");
-    expect(list.textContent).toContain("3 pièces au dossier");
+    // Le bloc sous le prix, puis la comparaison des offres : plus la liste ni l'introduction.
+    expect(screen.queryByText("Avec le compte gratuit, vous voyez aussi")).toBeNull();
+    expect(container.textContent).not.toContain("Le compte Découverte est gratuit");
+    expect(
+      container.textContent?.match(/voir l’adresse, les photos et la fourchette/g),
+    ).toHaveLength(1);
+    expect(container.textContent?.match(/Découverte · gratuit/g)).toHaveLength(1);
+    // Rien de ce que le compte révèle n'est annoncé en chiffres.
+    expect(container.textContent).not.toContain("5 photos");
+  });
+
+  describe("bloc d'inscription sous le prix", () => {
+    it("vient juste après le prix, avec la phrase, le bouton et la ligne d'accès commune", () => {
+      renderPreview({ sale_venue_type: "tribunal", starting_price_eur: 59_000 });
+      const block = screen.getByTestId("public-signup");
+      expect(block.textContent).toContain(
+        "Créez votre compte gratuit pour voir l’adresse, les photos et la fourchette de valeur de cette vente.",
+      );
+      expect(block.textContent).toContain(FREE_ACCESS_LINE);
+      expect(within(block).getByRole("link", { name: /Créer mon compte gratuit/ })).toBeTruthy();
+      const priceBlock = screen.getByText("Prix de départ, hors frais").parentElement!;
+      expect(priceBlock.nextElementSibling).toBe(block);
+    });
+
+    it("suit le prix aussi pour une vente notariale, dont le prix passe après les faits", () => {
+      renderPreview({ sale_venue_type: "notary", starting_price_eur: 59_000 });
+      const block = screen.getByTestId("public-signup");
+      expect(block.previousElementSibling?.textContent).toContain("Mise à prix");
+    });
+
+    it("dit « Vérification de votre compte… » à la place du bouton quand une session est détectée", () => {
+      const { container } = renderPreview({ sale_venue_type: "tribunal" }, "sale-1", true);
+      const block = screen.getByTestId("public-signup");
+      expect(within(block).getByRole("status").textContent).toBe("Vérification de votre compte…");
+      expect(screen.queryByRole("link", { name: /Créer mon compte gratuit/ })).toBeNull();
+      expect(container.textContent).not.toContain(FREE_ACCESS_LINE);
+      // La suite de la recherche reste proposée.
+      expect(screen.getByRole("link", { name: "Continuer ma recherche" })).toBeTruthy();
+    });
+  });
+
+  it("garde le h1 et expose un fil d'Ariane cohérent avec le JSON-LD (Accueil, Ventes, la vente)", () => {
+    renderPreview({
+      sale_venue_type: "tribunal",
+      property_type: "apartment",
+      app_surface_m2: 50,
+      city: "Romainville",
+      department: "93",
+      sale_date: "2026-10-20T09:00:00+02:00",
+    });
+    const nav = screen.getByRole("navigation", { name: "Fil d’Ariane" });
+    const items = Array.from(nav.querySelectorAll("li"));
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Accueil",
+      "Ventes",
+      screen.getByRole("heading", { level: 1 }).firstChild?.textContent,
+    ]);
+    expect(nav.querySelector('a[href="/"]')?.textContent).toBe("Accueil");
+    expect(nav.querySelector('a[href="/sales"]')?.textContent).toBe("Ventes");
+    expect(nav.querySelector('[aria-current="page"]')).toBe(items[2].firstElementChild);
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+  });
+
+  it("« Retour aux ventes » revient à la recherche d'origine, sur la carte de cette vente", () => {
+    renderPreview(
+      { id: "7c1e22ab-563c-427b-88a4-740cbf851afb" },
+      "7c1e22ab",
+      false,
+      "/sales?city=Lyon&page=2",
+    );
+    expect(screen.getByRole("link", { name: /Retour aux ventes/ }).getAttribute("href")).toBe(
+      "/sales?city=Lyon&page=2#sale-card-7c1e22ab-563c-427b-88a4-740cbf851afb",
+    );
+  });
+
+  it("donne leur définition à « mise à prix » et à « adjudication »", () => {
+    renderPreview({ sale_venue_type: "tribunal" });
+    expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Définition : adjudication" })).toBeTruthy();
+  });
+
+  it("n'annonce pas « Mise à prix » comme terme à définir pour une cession de l'État", () => {
+    renderPreview({ sale_venue_type: "state", starting_price_eur: 10_000 });
+    expect(screen.queryByRole("button", { name: "Définition : mise à prix" })).toBeNull();
+  });
+
+  it("masque les valeurs factices aux lecteurs d'écran et aux extraits de recherche", () => {
+    const { container } = renderPreview({
+      sale_venue_type: "tribunal",
+      starting_price_eur: 59_000,
+    });
+    const placeholders = Array.from(container.querySelectorAll("[data-nosnippet]"));
+    expect(placeholders.map((node) => node.textContent)).toEqual([
+      "000 000 € – 000 000 €",
+      "00 %",
+      "000 000 €",
+      "00 ventes",
+    ]);
+    for (const node of placeholders) expect(node.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("describes the property from its facts and teases the analysis without figures", () => {
@@ -343,11 +441,17 @@ describe("SalePublicPreview", () => {
   });
 });
 
-function renderPreview(overrides: Partial<AuctionSale> = {}, saleId = "sale-1") {
+function renderPreview(
+  overrides: Partial<AuctionSale> = {},
+  saleId = "sale-1",
+  verifyingAccount = false,
+  returnTo = "/sales",
+) {
   return render(
     <SalePublicPreview
       saleId={saleId}
-      returnTo="/sales"
+      returnTo={returnTo}
+      verifyingAccount={verifyingAccount}
       preview={
         {
           id: "sale-1",

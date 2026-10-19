@@ -35,12 +35,14 @@ function renderPlanner({
   market = estimate,
   tweak,
   valueReason,
+  onEditWorks,
 }: {
   saleOverride?: AuctionSale;
   choices?: CeilingUserChoices;
   market?: MarketEstimate | null;
   tweak?: (hypotheses: CeilingHypotheses) => CeilingHypotheses;
   valueReason?: string;
+  onEditWorks?: () => void;
 } = {}) {
   const built = buildCeilingHypotheses(saleOverride, market, choices);
   const hypotheses = tweak ? tweak(built) : built;
@@ -52,6 +54,7 @@ function renderPlanner({
       onChoicesChange={() => undefined}
       onReset={() => undefined}
       valueReason={valueReason}
+      onEditWorks={onEditWorks}
     />,
   );
 }
@@ -247,5 +250,47 @@ describe("CeilingPlanner : vocabulaire du plafond", () => {
       "min-h-11",
     );
     expect(screen.getByRole("button", { name: /^Plafond · / }).className).toContain("min-h-11");
+  });
+});
+
+describe("CeilingPlanner : simulateur d'enchère", () => {
+  const field = () => screen.getByLabelText(/Montant de l’enchère simulée/) as HTMLInputElement;
+
+  it("accepte un champ vide pendant la saisie au lieu de le ramener à 0", () => {
+    renderPlanner();
+    expect(field().value).toBe("30000");
+    fireEvent.change(field(), { target: { value: "" } });
+    expect(field().value).toBe("");
+    fireEvent.change(field(), { target: { value: "4" } });
+    expect(field().value).toBe("4");
+    fireEvent.change(field(), { target: { value: "45000" } });
+    expect(field().value).toBe("45000");
+  });
+
+  it("calcule avec 0 € tant que le champ est vide, puis réaffiche le montant en quittant le champ", () => {
+    renderPlanner();
+    const simulator = screen
+      .getByRole("heading", { name: "Si vous l’emportez à…" })
+      .closest("section")!;
+    const before = simulator.textContent;
+    fireEvent.change(field(), { target: { value: "" } });
+    expect(field().value).toBe("");
+    expect(simulator.textContent).not.toBe(before);
+    fireEvent.blur(field());
+    expect(field().value).toBe("0");
+  });
+
+  it("un choix rapide remplace le texte en cours de saisie", () => {
+    renderPlanner();
+    fireEvent.change(field(), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Mise à prix · / }));
+    expect(field().value).toBe("30000");
+  });
+
+  it("donne une cible de 44 px à « Choisir les travaux »", () => {
+    renderPlanner({ onEditWorks: () => undefined });
+    expect(screen.getByRole("button", { name: "Choisir les travaux" }).className).toContain(
+      "min-h-11",
+    );
   });
 });
