@@ -1,7 +1,7 @@
 {
   "slug": "licitation-vente-bien-indivis-encheres-acheteur",
   "publishedAt": "2026-10-15",
-  "updatedAt": "2026-10-15",
+  "updatedAt": "2026-10-19",
   "title": "La licitation : un bien en indivision vendu aux enchères, ce que cela change pour l’acheteur",
   "seoTitle": "Licitation : ce que cela change pour l’acheteur",
   "category": "Les fondamentaux",
@@ -14,7 +14,7 @@
     "La licitation est la vente aux enchères d’un bien détenu à plusieurs lorsqu’il ne peut pas être partagé commodément ; le prix est ensuite réparti entre les indivisaires (art. 1686 du Code civil, qui parle de « copropriétaires »).",
     "C’est le tribunal qui ordonne la vente (art. 1377 du Code de procédure civile) et qui détermine la mise à prix (art. 1273), alors qu’en saisie immobilière elle est fixée par le créancier.",
     "À l’audience, les enchères suivent en grande partie les règles de la saisie immobilière, avec un avocat obligatoire ; devant un notaire commis, elles peuvent être faites sans avocat (art. 1278).",
-    "La surenchère d’un dixième dans les dix jours existe aussi en licitation (art. 1279 et 1280).",
+    "La surenchère d’un dixième dans les dix jours existe aussi en licitation (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE). Devant notaire, la forme exacte est à confirmer avec l’avocat ou le notaire.",
     "Occupation, frais et délais de paiement se lisent dans le cahier des charges : ne les déduisez pas des règles de la saisie."
   ],
   "sections": [
@@ -59,7 +59,7 @@
           [
             "Surenchère",
             "Un dixième du prix, dans les dix jours (art. R. 322-50 et R. 322-51)",
-            "Même règle, dans les dix jours qui suivent l’adjudication définitive (art. 1279) ; devant notaire, par requête au greffe (art. 1280)"
+            "Même règle, dans les dix jours qui suivent l’adjudication définitive (art. 1279, qui renvoie aux art. R. 322-50 à R. 322-55 du CPCE) ; devant notaire, forme exacte à confirmer avec l’avocat ou le notaire"
           ]
         ]
       },
@@ -165,10 +165,6 @@
     {
       "label": "Légifrance — Code de procédure civile, article 1279 (surenchère du dixième en licitation)",
       "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026460004"
-    },
-    {
-      "label": "Légifrance — Code de procédure civile, article 1280 (surenchère devant notaire en licitation)",
-      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039624733"
     },
     {
       "label": "Légifrance — Code de procédure civile, article 1377 (licitation ordonnée par le tribunal)",
