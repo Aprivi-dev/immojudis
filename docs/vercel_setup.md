@@ -85,6 +85,9 @@ Secrets à configurer dans GitHub Actions pour que le worker puisse écrire dans
 Le token `GITHUB_SCROLL_TOKEN` côté Vercel doit être un fine-grained PAT GitHub limité au repo `Aprivi-dev/immojudis` avec accès Actions en écriture.
 Il sert aussi de canal externe par défaut pour `operational-alert.yml`; un webhook HTTPS dédié peut
 le remplacer avec `OPERATIONS_ALERT_WEBHOOK_URL`.
+Pour recevoir aussi chaque incident par email, poser `OPERATIONS_ALERT_EMAIL_TO` (adresse du propriétaire ;
+`RESEND_API_KEY` et `ALERT_EMAIL_FROM` doivent être présents) : sans cette variable, aucun email d'incident
+n'est envoyé.
 
 ### Offre payante Stripe
 
