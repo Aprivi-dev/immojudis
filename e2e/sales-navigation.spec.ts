@@ -86,9 +86,9 @@ test.describe("« Retour » sur /sales", () => {
 
     await saleLink.click();
     await expect(page).toHaveURL(new RegExp(`/sales/${KNOWN_SALE}`));
-    // Le « Retour aux ventes » de la fiche ramène à la même page du catalogue.
+    // Le « Retour aux ventes » de la fiche ramène à la même page du catalogue, sur la carte ouverte.
     const back = page.getByRole("link", { name: /Retour aux ventes/ });
-    await expect(back).toHaveAttribute("href", "/sales?page=2");
+    await expect(back).toHaveAttribute("href", `/sales?page=2#sale-card-${KNOWN_SALE}`);
 
     await page.goBack();
     await expect(page).toHaveURL(/\/sales\?page=2$/);
