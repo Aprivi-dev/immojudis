@@ -159,4 +159,47 @@ describe("AccountPage unlocks", () => {
       consentSource: "settings",
     });
   });
+
+  it("propose les rappels d'audience, décochés et distincts des alertes, quand l'envoi est ouvert", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },
+    });
+    mocks.overview.mockResolvedValue({ status: status(), sales: [] });
+    mocks.preferences.mockResolvedValue({
+      preferences: { alertEmailEnabled: false, saleRemindersEnabled: false },
+      saleRemindersAvailable: true,
+    });
+    mocks.updatePreferences.mockResolvedValue({});
+    renderPage();
+
+    const notifications = within(await screen.findByRole("region", { name: "Notifications" }));
+    await waitFor(() => expect(notifications.getAllByRole("checkbox")).toHaveLength(2));
+    const boxes = notifications.getAllByRole("checkbox") as HTMLInputElement[];
+    expect(boxes.every((box) => !box.checked)).toBe(true);
+    await waitFor(() => expect(boxes.every((box) => !box.disabled)).toBe(true));
+    fireEvent.click(boxes[1]);
+    await waitFor(() => expect(mocks.updatePreferences).toHaveBeenCalled());
+    expect(mocks.updatePreferences.mock.calls[0][0]).toEqual({
+      saleRemindersEnabled: true,
+      consentSource: "settings",
+    });
+  });
+
+  it("ne montre que la case des alertes tant que les rappels d'audience ne sont pas ouverts", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },
+    });
+    mocks.overview.mockResolvedValue({ status: status(), sales: [] });
+    mocks.preferences.mockResolvedValue({
+      preferences: { alertEmailEnabled: false, saleRemindersEnabled: false },
+      saleRemindersAvailable: false,
+    });
+    renderPage();
+
+    const notifications = within(await screen.findByRole("region", { name: "Notifications" }));
+    await notifications.findByRole("checkbox");
+    await waitFor(() => expect(mocks.preferences).toHaveBeenCalled());
+    expect(notifications.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.queryByText("Rappels d’audience et avertissements")).toBeNull();
+  });
 });

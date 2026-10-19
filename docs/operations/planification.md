@@ -1,6 +1,6 @@
 # Inventaire des tâches planifiées
 
-Mis à jour le 14 octobre 2026. Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
+Mis à jour le 19 octobre 2026. Toute route `src/app/api/cron/*` doit figurer ici, dans `vercel.json`
 ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le vérifie.
 
 ## Tâches applicatives (routes `/api/cron/*`)
@@ -10,6 +10,7 @@ ou dans une migration `pg_cron` ; le test `src/lib/scheduled-jobs.test.ts` le v�
 | Évaluation des alertes                                     | Vercel Cron        | 06:15, rattrapage 08:15 | `/api/cron/smart-alerts`              | oui                                                  | pas de succès depuis 30 h     |
 | Envoi des alertes                                          | Vercel Cron        | 06:30, rattrapage 08:30 | `/api/cron/alert-notifications`       | oui                                                  | 30 h                          |
 | Suivi des changements                                      | Vercel Cron        | 06:45, rattrapage 08:45 | `/api/cron/sale-change-monitor`       | oui                                                  | 30 h                          |
+| Rappels d'audience et avertissements graves                | Vercel Cron        | 07:15, rattrapage 09:15 | `/api/cron/sale-reminders`            | oui                                                  | 30 h                          |
 | Rétention des données                                      | Vercel Cron        | dimanche 04:15          | `/api/cron/data-retention`            | oui                                                  | 8 jours                       |
 | Complétude des annonces (palier de classement de /sales)   | Supabase `pg_cron` | toutes les heures à :20 | `/api/cron/listing-completeness`      | oui                                                  | 3 h                           |
 | Complétude des annonces (filet quotidien)                  | Vercel Cron        | 05:50 tous les jours    | `/api/cron/listing-completeness`      | oui (même tâche, même seuil)                         | 3 h                           |
@@ -32,7 +33,18 @@ Si plus de 3 h séparent l'application de la migration `20261024100100` et le d�
 qui n'existe pas encore. Il suffit alors d'appeler la route une fois, avec `CRON_SECRET`
 (`Authorization: Bearer $CRON_SECRET` sur `/api/cron/listing-completeness`), pour la refermer.
 
-Les trois tâches Vercel quotidiennes ont un second passage deux heures plus tard : il ne fait rien
+Les rappels d'audience (J-7, J-1) et les avertissements graves (date modifiée, vente retirée,
+reportée ou adjugée) passent après le suivi des changements, dont ils lisent les événements. Ils sont
+pilotés par la variable `SALE_REMINDERS_MODE` : `off` (défaut, rien n'est lu ni envoyé, le passage
+réussit quand même), `internal` (seulement aux administrateurs ayant consenti, objet « [Test
+interne] », pour mesurer les fausses alertes dans le journal `sale_reminder_dispatches`), `on`
+(toutes les personnes ayant consenti). Une valeur inconnue vaut `off`. Le consentement est distinct de
+celui des alertes (`/compte`, rubrique Notifications) et la case n'est proposée que dans les modes
+qui envoient. Le journal garantit qu'un même rappel ne part jamais deux fois et se purge au-delà de
+180 jours. La tâche exige les variables d'envoi des alertes (`RESEND_API_KEY`, `ALERT_EMAIL_FROM`,
+`SITE_URL`) : sans elles le passage réussit sans rien envoyer (`skipped: not_configured`).
+
+Les quatre tâches Vercel quotidiennes ont un second passage deux heures plus tard : il ne fait rien
 si la tâche a déjà réussi dans les 20 dernières heures (`catchUpSchedule` de `runMonitoredCron`).
 Chaque passage réessaie 3 fois (5 s, 20 s, 60 s) sur une erreur réseau ou 5xx.
 

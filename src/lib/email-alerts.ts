@@ -215,6 +215,30 @@ export async function revokeEmailAlertConsent({
   return { userId, revokedAt };
 }
 
+/**
+ * Retire le consentement aux rappels d'audience et avertissements graves (désinscription par le
+ * lien signé de chaque email). Le consentement aux alertes email n'est pas touché.
+ */
+export async function revokeSaleReminderConsent({
+  userId,
+  now = new Date(),
+}: {
+  userId: string;
+  now?: Date;
+}): Promise<{ userId: string; revokedAt: string }> {
+  const revokedAt = now.toISOString();
+  const { error } = await supabaseAdmin.from("user_notification_preferences").upsert(
+    {
+      user_id: userId,
+      sale_reminders_enabled: false,
+      sale_reminders_revoked_at: revokedAt,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw error;
+  return { userId, revokedAt };
+}
+
 /** Pause a single alert (per-alert unsubscribe); other alerts keep running. */
 export async function deactivateAlertForUser({
   userId,
@@ -647,7 +671,7 @@ export async function sendResendEmail({
   return { id: body.id ?? null };
 }
 
-async function readUserEmail(userId: string): Promise<string | null> {
+export async function readUserEmail(userId: string): Promise<string | null> {
   const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
   if (error) throw error;
   const email = data.user?.email?.trim();
@@ -822,6 +846,6 @@ function arrayOfStrings(value: unknown): string[] {
     : [];
 }
 
-function escapeAttribute(value: string): string {
+export function escapeAttribute(value: string): string {
   return escapeHtml(value).replace(/`/g, "&#96;");
 }

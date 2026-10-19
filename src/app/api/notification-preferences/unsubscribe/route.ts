@@ -3,6 +3,7 @@ import { errorDetailForLog } from "@/lib/api-errors";
 import {
   deactivateAlertForUser,
   revokeEmailAlertConsent,
+  revokeSaleReminderConsent,
   unsubscribeEmailAlertsByNotificationId,
 } from "@/lib/email-alerts";
 import { verifyUnsubscribeToken } from "@/lib/email-unsubscribe-token";
@@ -33,12 +34,18 @@ export async function GET(request: Request) {
     const scopeLabel =
       claims.scope.kind === "alert"
         ? "Voulez-vous désactiver cette alerte ?"
-        : "Voulez-vous ne plus recevoir d'alertes par email ?";
+        : claims.scope.kind === "reminders"
+          ? "Voulez-vous ne plus recevoir les rappels d'audience et les avertissements sur vos ventes suivies ?"
+          : "Voulez-vous ne plus recevoir d'alertes par email ?";
     return htmlResponse("Confirmer la désinscription", scopeLabel, 200, null, {
       field: "token",
       value: token,
       button:
-        claims.scope.kind === "alert" ? "Désactiver cette alerte" : "Me désinscrire des emails",
+        claims.scope.kind === "alert"
+          ? "Désactiver cette alerte"
+          : claims.scope.kind === "reminders"
+            ? "Me désinscrire des rappels"
+            : "Me désinscrire des emails",
     });
   }
 
@@ -87,6 +94,15 @@ export async function POST(request: Request) {
           "Cette alerte est désactivée. Vos autres alertes continuent de fonctionner.",
           200,
           { href: "/alertes", label: "Gérer mes alertes" },
+        );
+      }
+      if (claims.scope.kind === "reminders") {
+        await revokeSaleReminderConsent({ userId: claims.userId });
+        return htmlResponse(
+          "Rappels désactivés",
+          "Vous ne recevrez plus de rappels d'audience ni d'avertissements par email. Vos alertes email ne sont pas modifiées.",
+          200,
+          { href: "/compte", label: "Gérer mes notifications" },
         );
       }
       await revokeEmailAlertConsent({ userId: claims.userId });
