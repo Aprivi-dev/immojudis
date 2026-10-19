@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { SiteHeader } from "@/components/SiteHeader";
 
 /**
@@ -10,7 +10,7 @@ import { SiteHeader } from "@/components/SiteHeader";
  * SearchHeader, avec sa barre de recherche au milieu.
  */
 export function Navbar() {
-  const pathname = usePathname();
+  const pathname = usePublicPathname();
   const isAdminArea = pathname === "/admin" || pathname.startsWith("/admin/");
   const isSalesListing = pathname === "/sales" || pathname === "/sales/";
 

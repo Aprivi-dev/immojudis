@@ -29,6 +29,8 @@ export function AdminInformationAgentReviewPanel() {
   const [previewingAssetId, setPreviewingAssetId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ assetId: string; signedUrl: string } | null>(null);
   const [rightsNotes, setRightsNotes] = useState<Record<string, string>>({});
+  // Motif facultatif d'un rejet, transmis comme `notes` et conservé dans l'historique de la revue.
+  const [rejectNotes, setRejectNotes] = useState<Record<string, string>>({});
   // "Caviardage vérifié": checkbox + name of the person, required before a piece goes public.
   const [redaction, setRedaction] = useState<Record<string, { confirmed: boolean; by: string }>>(
     {},
@@ -49,7 +51,8 @@ export function AdminInformationAgentReviewPanel() {
   }, [query.data]);
   const review = useMutation({
     mutationFn: reviewAdminInformationAgentFactClient,
-    onSuccess: () => {
+    onSuccess: (_response, input) => {
+      setRejectNotes((previous) => ({ ...previous, [input.factId]: "" }));
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: ["admin-catalogue-readiness"] });
       toast.success("Information contrôlée. La fiche sera réévaluée après enrichissement.");
@@ -491,7 +494,7 @@ export function AdminInformationAgentReviewPanel() {
                       </p>
                     ) : null}
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
+                  <div className="flex shrink-0 flex-wrap gap-2 lg:max-w-sm">
                     <button
                       type="button"
                       className="admin-button-primary inline-flex items-center gap-2"
@@ -517,11 +520,31 @@ export function AdminInformationAgentReviewPanel() {
                       className="admin-button-secondary inline-flex items-center gap-2"
                       disabled={review.isPending}
                       onClick={() =>
-                        review.mutate({ factId: fact.id, decision: "rejected", notes: null })
+                        review.mutate({
+                          factId: fact.id,
+                          decision: "rejected",
+                          notes: rejectNotes[fact.id]?.trim() || null,
+                        })
                       }
                     >
                       <XCircle className="size-4" /> Rejeter
                     </button>
+                    <label className="block w-full basis-full text-xs text-brand-navy/70">
+                      <span className="font-medium">Motif du rejet (facultatif)</span>
+                      <input
+                        type="text"
+                        value={rejectNotes[fact.id] ?? ""}
+                        onChange={(event) =>
+                          setRejectNotes((previous) => ({
+                            ...previous,
+                            [fact.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Ex. information déjà connue, source douteuse"
+                        maxLength={1000}
+                        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2.5 py-2 text-sm text-brand-navy outline-none focus:border-gold-soft focus:ring-1 focus:ring-gold-soft"
+                      />
+                    </label>
                   </div>
                 </div>
               </article>

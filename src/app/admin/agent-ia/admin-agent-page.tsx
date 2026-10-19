@@ -1,8 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { AdminPanelLoading } from "@/components/admin/admin-ui";
-import { AdminShell } from "@/components/admin/AdminShell";
+import { AdminPanel, AdminShell } from "@/components/admin/AdminShell";
 import { useAuth } from "@/hooks/use-auth";
 
 // Cinq panneaux lourds (maturité du catalogue, missions, faits, réponses, template) : chargés
@@ -12,8 +11,18 @@ const LazyAdminInformationAgentWorkspace = dynamic(
     import("@/components/admin/AdminInformationAgentWorkspace").then(
       (module) => module.AdminInformationAgentWorkspace,
     ),
-  { loading: () => <AdminPanelLoading label="le template agent" /> },
+  { loading: () => <AgentPanelsLoading /> },
 );
+
+// Libellé propre à cette vue : « Chargement de … » de AdminPanelLoading ne s'accorde pas avec
+// « des panneaux de l'agent d'information ».
+export function AgentPanelsLoading() {
+  return (
+    <AdminPanel className="flex min-h-36 items-center justify-center p-6 text-sm text-brand-navy/60">
+      <span role="status">Chargement des panneaux de l’agent d’information…</span>
+    </AdminPanel>
+  );
+}
 
 /**
  * Vue « Agent IA ». Pas de bouton « Actualiser » global : rafraîchir l'éditeur du template

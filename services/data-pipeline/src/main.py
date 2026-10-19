@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 
-from src import source_withdrawal
+from src import retention_tombstones, source_withdrawal
 from src.admission import admit_sales, has_price_or_surface, is_expired, publication_rejection, split_insufficient
 from src.asset_normalization import normalize_asset_features
 from src.cadastre import enrich_cadastre_sales
@@ -698,9 +698,9 @@ def _prepare_and_publish_early(run: _PipelineRun) -> None:
         if options.upsert and admitted:
             started = time.perf_counter()
             try:
-                run.early_upserted += upsert_sales_to_supabase(admitted)
-                run.early_publication_fingerprints.update(_sale_publication_fingerprints(admitted))
-                run.early_observations_upserted += upsert_observations_to_supabase(admitted)
+                run.early_upserted += (published := retention_tombstones.publish_batch(admitted, upsert_sales_to_supabase, run_id, record_sale_decisions, errors, run.app_ready)).count
+                run.early_publication_fingerprints.update(_sale_publication_fingerprints(published.sales))
+                run.early_observations_upserted += upsert_observations_to_supabase(published.sales)
             except Exception as exc:
                 record_sale_decisions(run_id, admitted, decision="publication_failed", reason=str(exc)[:1000])
                 LOGGER.exception("Early Supabase batch failed at offset %s: %s", offset, exc)
@@ -1032,10 +1032,9 @@ def _publish_run(run: _PipelineRun) -> None:
                 run.outcome_bridge_created = outcome_bridge.created_count
                 run.outcome_bridge_reused = outcome_bridge.reused_count
                 run.supabase_deleted_secondary = delete_secondary_sales_in_supabase(app_ready)
-                if settings.get("dedupe_reconcile_enabled", True):
-                    run.supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase(
-                        limit=int(settings.get("dedupe_reconcile_max_rows") or 2000)
-                    )
+                # Coupé par défaut ; en mode « candidates » le balayage n'écrit rien et journalise les paires.
+                if settings.get("dedupe_reconcile_enabled", False) or settings.get("dedupe_reconcile_mode") == "candidates":
+                    run.supabase_reconciled_duplicates = reconcile_duplicate_sales_in_supabase()
                 run.supabase_cleaned_past = mark_past_sales_in_supabase()
                 run.supabase_deleted_expired = delete_expired_sales_in_supabase()
                 run.supabase_deleted_vench_without_surface = delete_vench_sales_without_surface_in_supabase()
@@ -1673,8 +1672,8 @@ def _enabled_scrapers(
     """Map of enabled source name → zero-arg scraper callable, honouring the
     requested source and the per-source benchmark toggles. `known` (source_url →
     change-signature) lets list-based scrapers skip detail pages of unchanged
-    listings; licitor exposes price/date only on detail pages, so it always
-    fetches."""
+    listings; licitor skips it too when its list-card signature is unchanged
+    (should_fetch_detail), and its internal contacts are then not refreshed."""
     ep_benchmark_enabled = bool(settings.get("enable_encheres_publiques_benchmark"))
     if source == "encheres_publiques" or (source == "all" and ep_benchmark_enabled):
         require_encheres_publiques_access(settings)
@@ -1850,7 +1849,7 @@ def publish_factual_batch(run_id: str, raws: list, known: dict, errors: dict) ->
     if not admitted:
         return
     try:
-        count = upsert_sales_to_supabase(admitted)
+        count = retention_tombstones.publish_batch(admitted, upsert_sales_to_supabase, run_id, record_sale_decisions, errors).count
         LOGGER.info("Progressive factual publication: %s catalogue identities", count)
     except Exception as exc:
         record_sale_decisions(run_id, admitted, decision="publication_failed", reason=str(exc)[:1000])

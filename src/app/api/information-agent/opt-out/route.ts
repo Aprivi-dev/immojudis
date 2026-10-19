@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     if (error) throw error;
     return page(
       "Opposition enregistrée",
-      "Votre adresse ne sera plus contactée par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité.",
+      "Votre adresse et votre identité professionnelle ne seront plus contactées par Immojudis. Vous pouvez exercer vos autres droits depuis la page Confidentialité.",
       200,
     );
   } catch (error) {
@@ -101,7 +101,7 @@ function escapeHtml(value: string): string {
 
 function page(title: string, message: string, status: number, confirmAction?: string) {
   const form = confirmAction
-    ? `<form method="post" action="${escapeHtml(confirmAction)}" style="margin:20px 0 0"><button type="submit" style="background:#172036;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:15px;cursor:pointer">Confirmer : ne plus me contacter</button></form>`
+    ? `<form method="post" action="${escapeHtml(confirmAction)}" style="margin:20px 0 0"><button type="submit" style="background:#172036;color:#fff;border:0;border-radius:8px;padding:14px 18px;font-size:15px;cursor:pointer">Confirmer : ne plus me contacter</button></form>`
     : "";
   return new NextResponse(
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${escapeHtml(title)} - Immojudis</title></head><body style="margin:0;background:#f6f4ef;color:#182033;font-family:Arial,sans-serif"><main style="min-height:100vh;display:grid;place-items:center;padding:24px"><section style="max-width:520px;background:#fff;border:1px solid #e8e1d4;border-radius:10px;padding:28px"><h1 style="margin:0 0 10px;font-size:24px">${escapeHtml(title)}</h1><p style="margin:0;color:#4b5563;line-height:1.55">${escapeHtml(message)}</p>${form}</section></main></body></html>`,

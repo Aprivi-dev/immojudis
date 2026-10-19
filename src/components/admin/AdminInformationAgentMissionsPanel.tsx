@@ -8,6 +8,7 @@ import MailCheck from "lucide-react/dist/esm/icons/mail-check.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import type { InformationRequestSelection } from "@/components/admin/AdminCatalogueReadinessPanel";
 import { AdminPagination } from "@/components/admin/AdminPagination";
@@ -26,6 +27,7 @@ import type {
   InformationAgentPreviewResponse,
 } from "@/lib/information-agent";
 import type { InformationAgentInventoryItem } from "@/lib/information-agent-inventory";
+import { saleDetailPath } from "@/lib/navigation";
 
 const QUERY_KEY = ["admin-information-agent-missions"] as const;
 const SOURCE_REFRESH_QUERY_KEY = ["admin-information-agent-source-refresh"] as const;
@@ -367,6 +369,22 @@ export function AdminInformationAgentMissionsPanel({
     Boolean(shownPreview?.response.fingerprint) &&
     !shownPreview?.response.blockers.length;
 
+  // Pourquoi « Valider et envoyer » est grisé : dit à côté du bouton, pas dans une info-bulle que ni
+  // le clavier ni le tactile ne voient.
+  const sendDisabledReason = runAction.isPending
+    ? null
+    : !looksLikeEmail(recipientEmail)
+      ? "Renseignez une adresse email valide pour activer l’envoi."
+      : subject.trim().length < 3 || bodyText.trim().length < 20
+        ? "Renseignez un objet et un message (20 caractères au moins) pour activer l’envoi."
+        : !shownPreview
+          ? "Affichez l’aperçu pour activer l’envoi."
+          : !previewIsCurrent
+            ? "Le message a changé depuis l’aperçu : actualisez l’aperçu pour activer l’envoi."
+            : !previewAllowsSend
+              ? "L’aperçu signale un blocage : l’envoi reste bloqué tant qu’un contrôle échoue."
+              : null;
+
   const resumeMission = (mission: InformationAgentMission) => {
     // A pending automatic preparation for the queue must never overwrite a
     // mission selected from the history list.
@@ -374,6 +392,9 @@ export function AdminInformationAgentMissionsPanel({
     onClose();
     setDraftError(null);
     hydrateMission(mission);
+    // La liste est sous le formulaire : sans ce déplacement, l'ouverture ne se voit pas.
+    composerSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    composerHeadingRef.current?.focus({ preventScroll: true });
   };
   const closeComposer = () => {
     selectionRef.current = null;
@@ -675,84 +696,89 @@ export function AdminInformationAgentMissionsPanel({
             ) : null}
           </div>
           {activeMission.status === "draft" || activeMission.status === "failed" ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {selection && sourceRefreshReady ? (
+            <>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {selection && sourceRefreshReady ? (
+                  <button
+                    type="button"
+                    className="admin-button-secondary inline-flex items-center gap-2"
+                    disabled={createDraft.isPending || sourceRefreshInProgress}
+                    onClick={() =>
+                      prepareDraft(selection, {
+                        recipientEmail,
+                        recipientName,
+                        force: true,
+                      })
+                    }
+                  >
+                    <RefreshCw className="size-3.5" />
+                    {createDraft.isPending
+                      ? "Régénération…"
+                      : "Régénérer depuis la source actualisée"}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="admin-button-primary inline-flex items-center gap-2"
+                  aria-describedby={sendDisabledReason ? "send-disabled-reason" : undefined}
+                  disabled={
+                    runAction.isPending ||
+                    !previewAllowsSend ||
+                    !looksLikeEmail(recipientEmail) ||
+                    subject.trim().length < 3 ||
+                    bodyText.trim().length < 20
+                  }
+                  onClick={() => {
+                    const fingerprint = shownPreview?.response.fingerprint;
+                    if (!previewAllowsSend || !fingerprint) return;
+                    if (
+                      !window.confirm(
+                        `Envoyer maintenant cet email à ${recipientEmail.trim()}, tel qu’affiché dans l’aperçu ? Aucun autre envoi n’aura lieu sans nouvelle validation.`,
+                      )
+                    )
+                      return;
+                    runAction.mutate({
+                      action: "approve_and_send",
+                      missionId: activeMission.id,
+                      approvalConfirmed: true,
+                      previewFingerprint: fingerprint,
+                      recipientEmail: recipientEmail.trim(),
+                      recipientName: recipientName.trim() || null,
+                      recipientOriginUrl: recipientOriginUrl.trim() || null,
+                      subject: subject.trim(),
+                      bodyText: bodyText.trim(),
+                    });
+                  }}
+                >
+                  <MailCheck className="size-4" />
+                  Valider et envoyer
+                </button>
                 <button
                   type="button"
                   className="admin-button-secondary inline-flex items-center gap-2"
-                  disabled={createDraft.isPending || sourceRefreshInProgress}
+                  disabled={!recipientEmail.trim() || !subject.trim() || !bodyText.trim()}
+                  onClick={() => void copyMessage()}
+                >
+                  <Copy className="size-4" />
+                  Copier le message
+                </button>
+                <button
+                  type="button"
+                  className="admin-button-secondary"
+                  disabled={runAction.isPending}
                   onClick={() =>
-                    prepareDraft(selection, {
-                      recipientEmail,
-                      recipientName,
-                      force: true,
-                    })
+                    runAction.mutate({ action: "cancel", missionId: activeMission.id })
                   }
                 >
-                  <RefreshCw className="size-3.5" />
-                  {createDraft.isPending
-                    ? "Régénération…"
-                    : "Régénérer depuis la source actualisée"}
+                  Annuler la mission
                 </button>
+              </div>
+              {sendDisabledReason ? (
+                <p id="send-disabled-reason" className="mt-2 text-xs text-brand-navy/70">
+                  {sendDisabledReason}
+                </p>
               ) : null}
-              <button
-                type="button"
-                className="admin-button-primary inline-flex items-center gap-2"
-                title={
-                  previewAllowsSend
-                    ? undefined
-                    : "Affichez l’aperçu de la version finale ; l’envoi reste bloqué tant qu’un contrôle échoue."
-                }
-                disabled={
-                  runAction.isPending ||
-                  !previewAllowsSend ||
-                  !looksLikeEmail(recipientEmail) ||
-                  subject.trim().length < 3 ||
-                  bodyText.trim().length < 20
-                }
-                onClick={() => {
-                  const fingerprint = shownPreview?.response.fingerprint;
-                  if (!previewAllowsSend || !fingerprint) return;
-                  if (
-                    !window.confirm(
-                      `Envoyer maintenant cet email à ${recipientEmail.trim()}, tel qu’affiché dans l’aperçu ? Aucun autre envoi n’aura lieu sans nouvelle validation.`,
-                    )
-                  )
-                    return;
-                  runAction.mutate({
-                    action: "approve_and_send",
-                    missionId: activeMission.id,
-                    approvalConfirmed: true,
-                    previewFingerprint: fingerprint,
-                    recipientEmail: recipientEmail.trim(),
-                    recipientName: recipientName.trim() || null,
-                    recipientOriginUrl: recipientOriginUrl.trim() || null,
-                    subject: subject.trim(),
-                    bodyText: bodyText.trim(),
-                  });
-                }}
-              >
-                <MailCheck className="size-4" />
-                Valider et envoyer
-              </button>
-              <button
-                type="button"
-                className="admin-button-secondary inline-flex items-center gap-2"
-                disabled={!recipientEmail.trim() || !subject.trim() || !bodyText.trim()}
-                onClick={() => void copyMessage()}
-              >
-                <Copy className="size-4" />
-                Copier le message
-              </button>
-              <button
-                type="button"
-                className="admin-button-secondary"
-                disabled={runAction.isPending}
-                onClick={() => runAction.mutate({ action: "cancel", missionId: activeMission.id })}
-              >
-                Annuler la mission
-              </button>
-            </div>
+            </>
           ) : null}
           {activeMission.status === "sent" || activeMission.status === "replied" ? (
             <div className="mt-4 rounded-lg border bg-white p-3">
@@ -808,20 +834,34 @@ export function AdminInformationAgentMissionsPanel({
                 className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 text-sm"
               >
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{mission.recipientEmail}</p>
+                  {mission.saleId ? (
+                    <p className="truncate font-medium">
+                      <Link
+                        href={saleDetailPath(mission.saleId)}
+                        className="underline-offset-2 hover:underline"
+                      >
+                        {mission.saleTitle || "Annonce sans titre"}
+                      </Link>
+                    </p>
+                  ) : null}
+                  <p
+                    className={`truncate ${mission.saleId ? "text-xs text-brand-navy/70" : "font-medium"}`}
+                  >
+                    {mission.recipientEmail}
+                  </p>
                   <p className="mt-0.5 text-xs text-brand-navy/50">
                     {missionStatusLabel(mission.status)} · {formatDateTime(mission.updatedAt)}
                   </p>
                 </div>
-                {mission.status === "draft" || mission.status === "failed" ? (
-                  <button
-                    type="button"
-                    className="admin-button-secondary"
-                    onClick={() => resumeMission(mission)}
-                  >
-                    Reprendre
-                  </button>
-                ) : null}
+                {/* Un brouillon ou un échec se reprend ; tout autre statut s'ouvre en lecture seule
+                    (seul le formulaire de réponse consignée reste actif pour envoyée / répondue). */}
+                <button
+                  type="button"
+                  className="admin-button-secondary"
+                  onClick={() => resumeMission(mission)}
+                >
+                  {isMissionEditable(mission.status) ? "Reprendre" : "Ouvrir"}
+                </button>
               </div>
             ))}
             <AdminPagination
@@ -993,11 +1033,32 @@ function PreviewPanel({
             </div>
             <div>
               <dt className="inline font-medium">Origine de l’adresse : </dt>
-              <dd className="inline">
-                {preview.addressOrigin.text}
-                {preview.addressOrigin.url ? ` (${preview.addressOrigin.url})` : ""}
-              </dd>
+              <dd className="inline">{preview.addressOrigin.text}</dd>
             </div>
+            {preview.addressOrigin.automated ? (
+              <div role="note" className="rounded-lg border border-amber-200 bg-amber-50 p-2">
+                <dt className="inline font-medium">Adresse retrouvée automatiquement : </dt>
+                <dd className="inline">
+                  l’outil de recherche l’a lue sur une page publique, personne ne l’a encore
+                  vérifiée.{" "}
+                  {preview.addressOrigin.url ? (
+                    <>
+                      <a
+                        href={preview.addressOrigin.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium underline"
+                      >
+                        Ouvrir la page source
+                      </a>{" "}
+                      et vérifier que l’adresse est bien celle de ce professionnel avant d’envoyer.
+                    </>
+                  ) : (
+                    "Vérifiez l’adresse avant d’envoyer."
+                  )}
+                </dd>
+              </div>
+            ) : null}
           </dl>
           <iframe
             title="Aperçu de l’e-mail envoyé"

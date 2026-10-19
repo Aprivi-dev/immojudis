@@ -137,7 +137,7 @@ export function SaleDocumentsSection({
               {documents.length > 0
                 ? "Consultez les pièces jointes ; vérifiez leur nature et leur date."
                 : lockedCount > 0
-                  ? `${lockedCount} pièce${lockedCount > 1 ? "s" : ""} au dossier, accessible${lockedCount > 1 ? "s" : ""} avec l’offre Analyse.`
+                  ? `${lockedCount} pièce${lockedCount > 1 ? "s" : ""} au dossier, accessible${lockedCount > 1 ? "s" : ""} avec l’offre Analyse ou en débloquant cette vente.`
                   : "Aucune pièce attachée à cette annonce pour le moment."}
             </span>
           </span>
@@ -150,7 +150,7 @@ export function SaleDocumentsSection({
             <p className="text-sm leading-relaxed text-brand-navy/75">
               Cahier des conditions de vente, procès-verbal descriptif, diagnostics : l’offre
               Analyse donne accès aux pièces et à ce qu’elles révèlent (occupation, travaux,
-              risques).{" "}
+              risques). Vous pouvez aussi débloquer cette vente.{" "}
               <a
                 href="/offres"
                 className="font-semibold text-gold-text underline underline-offset-4"

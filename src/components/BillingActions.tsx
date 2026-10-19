@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import Bell from "lucide-react/dist/esm/icons/bell.js";
 import CreditCard from "lucide-react/dist/esm/icons/credit-card.js";
 import CircleX from "lucide-react/dist/esm/icons/circle-x.js";
 import Settings from "lucide-react/dist/esm/icons/settings.js";
@@ -17,14 +16,12 @@ import { useBillingOffer, type BillingOfferSource } from "@/hooks/use-billing-of
 import { useCheckoutReturn } from "@/hooks/use-checkout-return";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { pathWithSearch } from "@/lib/navigation";
+import { loginPathWithRedirect } from "@/lib/navigation";
 import {
   fetchAccessPlan,
-  fetchOfferOpeningNotification,
   openBillingPortal,
   openSubscriptionCancellation,
   startAnalyseCheckout,
-  updateOfferOpeningNotification,
 } from "@/lib/client-billing";
 import {
   hasLiveStripeSubscription,
@@ -39,10 +36,7 @@ import {
   ANALYSIS_TRIAL_LABEL,
   resolveAnalysisOfferLabel,
 } from "@/lib/analysis-offer";
-import {
-  OFFER_OPENING_CONSENT_TEXT,
-  OFFER_OPENING_REQUESTED_TEXT,
-} from "@/lib/offer-opening-consent";
+import { OfferOpeningRequest } from "@/components/OfferOpeningRequest";
 import { userMessage } from "@/lib/user-messages";
 import { trackProductEvent } from "@/lib/product-events";
 
@@ -86,10 +80,7 @@ export function BillingActions({
   const activationStartedAt = useRef<number | null>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [immediatePerformanceAccepted, setImmediatePerformanceAccepted] = useState(false);
-  const [openingRequested, setOpeningRequested] = useState<boolean | null>(null);
-  const [openingBusy, setOpeningBusy] = useState(false);
 
-  const offerReady = offer.status === "ready";
   const offerOpen = offer.status === "ready" && offer.open;
   const trialAvailable = offer.status === "ready" ? offer.trialAvailable : true;
   const offerLabel = (offer.status === "ready" ? offer.label : null) ?? resolveAnalysisOfferLabel();
@@ -176,29 +167,13 @@ export function BillingActions({
     CANCELLABLE_STATUSES.includes(billing.status) &&
     Boolean(currentPeriodEnd);
   const checkingAccount = loading || (Boolean(userId) && planState === "loading");
-  const showOpeningRequest = !managesBilling && !checkingAccount && offerReady && !offerOpen;
-
-  useEffect(() => {
-    if (!userId || !showOpeningRequest) return;
-    let active = true;
-    fetchOfferOpeningNotification()
-      .then((response) => {
-        if (active) setOpeningRequested(response.notification.requested);
-      })
-      .catch(() => {
-        if (active) setOpeningRequested(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [userId, showOpeningRequest]);
 
   function redirectToLogin() {
     const redirect =
       typeof window !== "undefined"
         ? `${window.location.pathname}${window.location.search}`
         : "/offres";
-    router.push(pathWithSearch("/login", { redirect }));
+    router.push(loginPathWithRedirect(redirect, { reason: "offre" }));
   }
 
   async function openCheckoutReview() {
@@ -266,26 +241,6 @@ export function BillingActions({
     } catch (error) {
       toast.error(userMessage(error, "Résiliation indisponible"));
       setBusy(null);
-    }
-  }
-
-  async function changeOpeningRequest(enabled: boolean) {
-    if (openingBusy) return;
-    if (!user) {
-      router.push(pathWithSearch("/login", { mode: "investor", redirect: "/offres" }));
-      return;
-    }
-    setOpeningBusy(true);
-    try {
-      const response = await updateOfferOpeningNotification(enabled);
-      setOpeningRequested(response.notification.requested);
-      if (enabled && response.notification.requested) {
-        trackProductEvent("opening_notification_requested");
-      }
-    } catch (error) {
-      toast.error(userMessage(error, "Demande impossible"));
-    } finally {
-      setOpeningBusy(false);
     }
   }
 
@@ -406,36 +361,7 @@ export function BillingActions({
                 </Link>
                 .
               </p>
-              {openingRequested ? (
-                <p role="status" className="mt-3 font-medium">
-                  {OFFER_OPENING_REQUESTED_TEXT}{" "}
-                  <button
-                    type="button"
-                    onClick={() => changeOpeningRequest(false)}
-                    disabled={openingBusy}
-                    className="font-semibold underline disabled:opacity-60"
-                  >
-                    Retirer ma demande
-                  </button>
-                </p>
-              ) : (
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => changeOpeningRequest(true)}
-                    disabled={openingBusy || loading}
-                    className="ij-login-button inline-flex w-full items-center justify-center gap-2 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Bell className="h-4 w-4" aria-hidden />
-                    Me prévenir de l’ouverture
-                  </button>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {user
-                      ? OFFER_OPENING_CONSENT_TEXT
-                      : "Un compte gratuit est nécessaire pour être prévenu : vous serez invité à le créer."}
-                  </p>
-                </div>
-              )}
+              <OfferOpeningRequest />
             </div>
           ) : null}
         </>

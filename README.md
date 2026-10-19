@@ -13,7 +13,7 @@ Le dépôt réunit deux briques :
 | Brique                  | Dossier                                                       | Stack                         | Rôle                                                |
 | ----------------------- | ------------------------------------------------------------- | ----------------------------- | --------------------------------------------------- |
 | **Application web**     | racine (`src/`)                                               | Next.js App Router · React 19 | Front + API serveur consommés par l'investisseur    |
-| **Pipeline de données** | [`services/data-pipeline/`](services/data-pipeline/README.md) | Python 3.11                   | Scraping → normalisation → déduplication → Supabase |
+| **Pipeline de données** | [`services/data-pipeline/`](services/data-pipeline/README.md) | Python 3.12                   | Scraping → normalisation → déduplication → Supabase |
 
 ---
 
@@ -185,4 +185,5 @@ puis `npm run build` dans l'étape de compilation.
 À chaque push / PR sur `main` ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) :
 
 - **Web** : `tsc --noEmit` + `npm run lint` + `npm run test` + `npm run build` (Node 24)
-- **Pipeline** : `ruff check` + `pytest` (Python 3.11)
+- **Pipeline** : `ruff check` + `pytest` (Python 3.12)
+- **Migrations** : versions uniques, et sur une PR, chaque migration ajoutée doit être plus récente que la dernière de `main` (`npm run check:migrations -- --base-ref=origin/main` en local, après `git fetch origin main`)

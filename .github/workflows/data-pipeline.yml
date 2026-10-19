@@ -95,6 +95,8 @@ jobs:
       # Merging duplicates already in the database stays off until the repository variable
       # DEDUPE_RECONCILE_ENABLED is set to true (docs/runbooks/chantier-f-reparations-donnees.md).
       DEDUPE_RECONCILE_ENABLED: ${{ vars.DEDUPE_RECONCILE_ENABLED || 'false' }}
+      # Repository variable DEDUPE_RECONCILE_MODE=candidates: the sweep only lists the pairs it would merge.
+      DEDUPE_RECONCILE_MODE: ${{ vars.DEDUPE_RECONCILE_MODE || 'apply' }}
       REPLICATE_MODEL: qwen/qwen3-7-plus
       PIPELINE_ENRICH_WORKERS: 2
       PIPELINE_LLM_WORKERS: 1
@@ -151,6 +153,8 @@ jobs:
       # Crawl-delay raises it).
       PDF_HOST_MIN_DELAY_SECONDS: 2
       ENABLE_LICITOR_BENCHMARK: true
+      # Interrupteur de suspension du decodage des adresses masquees (actif si la variable de depot est absente).
+      LICITOR_DECODE_PROTECTED_EMAILS: ${{ vars.LICITOR_DECODE_PROTECTED_EMAILS || 'true' }}
       ENABLE_VENCH_BENCHMARK: true
       ENABLE_INFO_ENCHERES_BENCHMARK: true
       # A repository variable is required for each half of the future source
@@ -168,6 +172,10 @@ jobs:
       ENCHERES_IMMOBILIERES_MAX_PAGES: 100
       LICITOR_MAX_PAGES: 100
       PIPELINE_IDLE_LLM_BACKFILL_ENABLED: false
+      # Copie hébergée de la photo principale (docs/runbooks/retrait-photos.md). Tant que la variable de
+      # dépôt PHOTO_MIRROR_ENABLED n'est pas « true », aucune photo n'est téléchargée ni copiée ; seuls les
+      # retraits (suppression de copies et de fichiers) s'exécutent.
+      PHOTO_MIRROR_ENABLED: ${{ vars.PHOTO_MIRROR_ENABLED || 'false' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -330,6 +338,25 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: python -m src.pipeline_health --report-only
 
+      # Copie des photos principales après la collecte planifiée : étape séparée et bornée (15 min,
+      # 400 photos par défaut, et jamais plus de 20 min grâce à --automatic, sous le timeout de 25),
+      # qui ne fait jamais échouer la collecte (continue-on-error). Elle tourne à chaque collecte
+      # planifiée, même quand la variable de dépôt PHOTO_MIRROR_ENABLED n'est pas « true » : dans ce
+      # cas rien n'est téléchargé, mais les retraits (source retirée, copie « withdrawn ») s'appliquent,
+      # car un retrait n'attend pas la réactivation. Le rattrapage du stock est un workflow à part
+      # (photo-mirror-backfill.yml).
+      - name: Copie des photos principales
+        if: inputs.automatic == true
+        continue-on-error: true
+        timeout-minutes: 25
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PHOTO_MIRROR_BUDGET_MINUTES: ${{ vars.PHOTO_MIRROR_BUDGET_MINUTES || '15' }}
+          PHOTO_MIRROR_MAX_PHOTOS: ${{ vars.PHOTO_MIRROR_MAX_PHOTOS || '400' }}
+        run: python -m src.photo_mirror --automatic
+
       - name: Flag partial collection
         if: always() && steps.pipeline.outputs.source_warning == 'true'
         run: |
@@ -403,7 +430,7 @@ jobs:
 
       - name: Save model comparison
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: replicate-model-benchmark
           path: services/data-pipeline/model-benchmark.json

@@ -4,7 +4,14 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LawyerDirectoryProfile, LawyerDirectoryResponse } from "@/lib/lawyer-directory";
 
-const mocks = vi.hoisted(() => ({ fetchLawyerDirectory: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  fetchLawyerDirectory: vi.fn(),
+  query: "bar=Bordeaux",
+}));
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(mocks.query),
+}));
 
 vi.mock("@/lib/client-api", () => ({ fetchLawyerDirectory: mocks.fetchLawyerDirectory }));
 vi.mock("@/components/LawyerReferralButton", () => ({ LawyerReferralButton: () => null }));
@@ -38,7 +45,8 @@ function profile(overrides: Partial<LawyerDirectoryProfile>): LawyerDirectoryPro
   };
 }
 
-function renderDirectory(lawyers: LawyerDirectoryProfile[]) {
+function renderDirectory(lawyers: LawyerDirectoryProfile[], query = "bar=Bordeaux") {
+  mocks.query = query;
   const response: LawyerDirectoryResponse = {
     lawyers,
     sectorLabel: "Bordeaux",
@@ -51,12 +59,15 @@ function renderDirectory(lawyers: LawyerDirectoryProfile[]) {
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <LawyerDirectoryPage search={{ bar: "Bordeaux" }} />
+      <LawyerDirectoryPage />
     </QueryClientProvider>,
   );
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  mocks.fetchLawyerDirectory.mockReset();
+});
 
 describe("annuaire des avocats", () => {
   it("ne laisse pas entendre de spécialisation dans les titres", async () => {
@@ -68,7 +79,7 @@ describe("annuaire des avocats", () => {
     expect(document.body.textContent).not.toMatch(/Spécialistes en droit immobilier/i);
   });
 
-  it("affiche « Mise en avant payante » sur les profils sponsorisés seulement", async () => {
+  it("affiche « Publicité · Sponsorisé » sur les profils sponsorisés seulement", async () => {
     renderDirectory([
       profile({
         id: "a",
@@ -82,18 +93,20 @@ describe("annuaire des avocats", () => {
     const standard = screen.getByText("Maître Standard").closest("article");
     expect(sponsored).not.toBeNull();
     expect(standard).not.toBeNull();
-    expect(within(sponsored as HTMLElement).getByText("Mise en avant payante")).toBeTruthy();
-    expect(within(standard as HTMLElement).queryByText("Mise en avant payante")).toBeNull();
+    expect(within(sponsored as HTMLElement).getByText("Publicité · Sponsorisé")).toBeTruthy();
+    expect(within(standard as HTMLElement).queryByText(/Sponsorisé/)).toBeNull();
     expect(document.body.textContent).not.toMatch(/partenaire/i);
   });
 
-  it("n'appelle pas « payante » une mise en avant encore en essai", async () => {
+  it("signale une mise en avant encore en essai comme telle, sans la dire payée", async () => {
     renderDirectory([
       profile({ id: "t", displayName: "Maître Essai", isSponsored: true, placement: "trial" }),
     ]);
     const trial = (await screen.findByText("Maître Essai")).closest("article") as HTMLElement;
-    expect(within(trial).getByText("Mise en avant en période d'essai")).toBeTruthy();
-    expect(within(trial).queryByText("Mise en avant payante")).toBeNull();
+    expect(
+      within(trial).getByText("Publicité · Sponsorisé (période d’essai gratuite)"),
+    ).toBeTruthy();
+    expect(within(trial).queryByText("Publicité · Sponsorisé")).toBeNull();
     expect(screen.getByText("Mise en avant (essai ou payante)")).toBeTruthy();
     expect(document.body.textContent).not.toContain("rémunèrent Immojudis");
   });
@@ -120,5 +133,48 @@ describe("annuaire des avocats", () => {
         .getAllByRole("listitem")
         .map((item) => item.textContent),
     ).toEqual(["Un", "Deux", "Trois"]);
+  });
+
+  describe("filtres lus dans l'adresse, côté navigateur", () => {
+    it("remplit le formulaire et interroge l'annuaire avec les filtres de l'adresse", async () => {
+      renderDirectory([profile({ id: "a" })], "bar=Pau&saleId=abc&city=Tarbes&department=64&x=1");
+
+      await screen.findByRole("heading", { name: "Avocats de l'annuaire" });
+
+      expect(mocks.fetchLawyerDirectory).toHaveBeenCalledTimes(1);
+      expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({
+        bar: "Pau",
+        saleId: "abc",
+        city: "Tarbes",
+        department: "64",
+      });
+      expect(
+        (screen.getByPlaceholderText("Bordeaux, Paris, Lyon…") as HTMLInputElement).value,
+      ).toBe("Pau");
+      expect(document.querySelector('input[name="saleId"]')?.getAttribute("value")).toBe("abc");
+      expect(screen.getByRole("link", { name: "Retour à l'annonce" }).getAttribute("href")).toBe(
+        "/sales/abc",
+      );
+    });
+
+    it("garde la dernière valeur d'un paramètre répété, comme la page serveur d'avant", async () => {
+      renderDirectory([profile({ id: "a" })], "saleId=x&saleId=abc&bar=Lyon&bar=Paris");
+
+      await screen.findByRole("heading", { name: "Avocats de l'annuaire" });
+
+      expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({ saleId: "abc", bar: "Paris" });
+    });
+
+    it("sans filtre : annuaire non filtré, lien de retour vers les ventes, pas de vente cachée", async () => {
+      renderDirectory([profile({ id: "a" })], "");
+
+      await screen.findByRole("heading", { name: "Avocats de l'annuaire" });
+
+      expect(mocks.fetchLawyerDirectory).toHaveBeenCalledWith({});
+      expect(screen.getByRole("link", { name: "Retour aux ventes" }).getAttribute("href")).toBe(
+        "/sales",
+      );
+      expect(document.querySelector('input[name="saleId"]')).toBeNull();
+    });
   });
 });

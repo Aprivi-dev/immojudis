@@ -684,11 +684,23 @@ def test_light_pipeline_geocodes_and_reupserts_when_heavy_enrichment_disabled(mo
 @pytest.mark.parametrize(
     "source,limit,global_cleanup", [("all", None, True), ("avoventes", None, False), ("all", 10, False), ("agrasc", None, False)]
 )
-def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch, source, limit, global_cleanup) -> None:
+@pytest.mark.parametrize(
+    "dedupe_settings,dedupe_call",
+    [
+        ({"dedupe_reconcile_enabled": True}, "reconcile"),
+        ({"dedupe_reconcile_enabled": False}, None),
+        ({}, None),
+        # Mode candidats : le balayage tourne (il n'écrit rien dans ce mode), même sans activation.
+        ({"dedupe_reconcile_enabled": False, "dedupe_reconcile_mode": "candidates"}, "reconcile"),
+    ],
+)
+def test_pipeline_deletes_expired_sales_after_supabase_publication(
+    monkeypatch, source, limit, global_cleanup, dedupe_settings, dedupe_call
+) -> None:
     summary_capture: dict[str, object] = {}
     calls: list[str] = []
 
-    monkeypatch.setattr(main, "load_settings", lambda: _settings())
+    monkeypatch.setattr(main, "load_settings", lambda: {**_settings(), **dedupe_settings})
     monkeypatch.setattr(main, "create_run_in_supabase", lambda *args, **kwargs: "run-1")
     monkeypatch.setattr(
         main,
@@ -748,13 +760,13 @@ def test_pipeline_deletes_expired_sales_after_supabase_publication(monkeypatch, 
     expected_cleanup = [
         "bridge",
         "delete_secondary",
-        "reconcile",
+        *([dedupe_call] if dedupe_call else []),
         "mark_past",
         "delete_expired",
         "delete_vench",
     ]
     if global_cleanup:
-        assert calls[-6:] == expected_cleanup
+        assert calls[-len(expected_cleanup) :] == expected_cleanup
     else:
         assert "bridge" not in calls
         assert "delete_secondary" not in calls

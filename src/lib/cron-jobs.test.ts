@@ -15,6 +15,7 @@ vi.mock("@/lib/operational-alerts", () => ({
 import {
   evaluateOperationalHealth,
   operationalErrorMessage,
+  runDataRetention,
   runMonitoredCron,
 } from "@/lib/cron-jobs";
 
@@ -95,6 +96,34 @@ describe("operational cron errors", () => {
       },
     });
     expect(mocks.rpc).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports a clean data retention run", async () => {
+    mocks.rpc.mockResolvedValue({ data: { user_sale_unlocks: 2 }, error: null });
+
+    await expect(runDataRetention(new Date("2026-10-15T10:00:00.000Z"))).resolves.toEqual({
+      deleted: { user_sale_unlocks: 2 },
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith("run_data_retention", {
+      p_now: "2026-10-15T10:00:00.000Z",
+    });
+  });
+
+  it("fails the data retention job when an isolated purge failed", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: { information_agent_contacts: 3, purge_errors: { purge_sale_unlocks: "57014" } },
+      error: null,
+    });
+
+    await expect(runDataRetention()).rejects.toThrow(
+      "Data retention: purge failed: purge_sale_unlocks (57014).",
+    );
+  });
+
+  it("ignores an empty purge_errors report", async () => {
+    mocks.rpc.mockResolvedValue({ data: { purge_errors: {} }, error: null });
+
+    await expect(runDataRetention()).resolves.toEqual({ deleted: { purge_errors: {} } });
   });
 
   it("rejects unauthorized calls with a safe request id and a structured log", async () => {

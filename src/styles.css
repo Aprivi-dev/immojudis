@@ -5,6 +5,48 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
+ * Italique de Cormorant Garamond : UN fichier, déclaré ici et nulle part ailleurs. `next/font` ne
+ * convient pas à cette police : il précharge tout fichier déclaré sur toutes les routes qui
+ * l'appellent (39 Ko d'en-tête sur /sales, qui n'affiche aucune italique), et deux déclarations
+ * (une précharge, une non) produisent deux fichiers `.woff2` distincts. L'accueil et /ressources
+ * la préchargent à la main : `src/components/PreloadCormorantItalic.tsx`.
+ *
+ * Même famille (`cormorantGaramond`, nom que `next/font` donne aux graisses normales du layout) :
+ * normal et italique restent une seule famille, sans italique synthétique. Une déclaration par
+ * graisse, comme les graisses normales, et la même plage de caractères (latin).
+ */
+@font-face {
+  font-family: cormorantGaramond;
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/cormorant-garamond-latin-italic.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: cormorantGaramond;
+  font-style: italic;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/cormorant-garamond-latin-italic.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: cormorantGaramond;
+  font-style: italic;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/cormorant-garamond-latin-italic.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
  * Design system — Immojudis
  * Direction 2026 : ciel clair / cuivre judiciaire / crème, reprise de la homepage.
  * Typo : Cormorant Garamond (brand/display) + IBM Plex Sans (UI/body).
@@ -426,6 +468,17 @@
     background:
       linear-gradient(180deg, rgb(238 247 255 / 74%) 0%, rgb(255 250 242 / 96%) 54%, #ffffff 100%),
       url("/media/landing/cloud-background.webp") center top / cover no-repeat;
+  }
+
+  /* Même dégradé sans l'image des nuages (51 Ko) : pour les squelettes de chargement, où elle
+     ne sert qu'à retarder le premier affichage sur mobile. Déclaré après `.liquid-page`. */
+  .liquid-page.liquid-page-plain {
+    background: linear-gradient(
+      180deg,
+      rgb(238 247 255 / 74%) 0%,
+      rgb(255 250 242 / 96%) 54%,
+      #ffffff 100%
+    );
   }
 
   .liquid-page::before {

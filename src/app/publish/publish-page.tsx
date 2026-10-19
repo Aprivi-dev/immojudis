@@ -52,7 +52,8 @@ const INITIAL_DRAFT: PublishDraft = {
   cautions: "",
   anonymizeDocuments: true,
   selectedDocuments: [],
-  selectedPromotions: ["featured"],
+  // Aucune option n'est cochée d'office: chacune est une demande adressée à l'équipe.
+  selectedPromotions: [],
   fileCount: 0,
 };
 
@@ -67,8 +68,8 @@ const DOCUMENT_TYPES = [
 const PROMOTION_OPTIONS = [
   {
     id: "featured",
-    label: "Demander une mise en avant éditoriale",
-    desc: "L'équipe étudie une mise en avant dans les sélections et pages de recherche.",
+    label: "Demander une mise en avant éditoriale (sélections et contenus Immojudis)",
+    desc: "L'équipe étudie une présentation dans les sélections et contenus éditoriaux d'Immojudis. Cette option n'a aucun effet sur l'ordre des résultats de recherche : le classement ne dépend d'aucune rémunération ni demande. Si une contrepartie est convenue, le contenu concerné est signalé comme publicité.",
   },
   {
     id: "seo",

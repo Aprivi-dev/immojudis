@@ -10,10 +10,13 @@ import Camera from "lucide-react/dist/esm/icons/camera.js";
 import MapPin from "lucide-react/dist/esm/icons/map-pin.js";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
 import { StreetViewDialog } from "@/components/StreetViewDialog";
+import { PhotoCredit } from "@/components/PhotoCredit";
 import { SaleVisual } from "@/components/SaleVisual";
 import listingStyles from "@/components/sale-detail/SaleListing.module.css";
 import { propertyTypeLabel } from "@/lib/format";
 import { listingCoordinates } from "@/lib/sale-listing";
+import { photoCredit } from "@/lib/photo-credit";
+import { photoMirrorForCard, photoMirrorForDetail } from "@/lib/photo-mirror";
 import { propertyImages } from "@/lib/sale-media";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import {
@@ -38,6 +41,8 @@ export function PropertyIdentity({
   aiReviewStatus?: AiReviewRequestStatus;
 }) {
   const images = propertyImages(sale.media);
+  // La source d'une photo est l'hôte de son URL d'ORIGINE (jamais celui de notre copie).
+  const creditOf = (index: number) => photoCredit(images[index]?.url, sale);
   const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   const [mobilePhotoIndex, setMobilePhotoIndex] = useState(0);
   const mobileCarouselRef = useRef<HTMLDivElement>(null);
@@ -94,6 +99,7 @@ export function PropertyIdentity({
                 >
                   <ListingPhoto
                     src={image.url}
+                    mirror={photoMirrorForDetail(image.mirror)}
                     alt={
                       index === 0
                         ? `Photo principale de ${title}`
@@ -139,6 +145,7 @@ export function PropertyIdentity({
             >
               <ListingPhoto
                 src={images[0].url}
+                mirror={photoMirrorForDetail(images[0].mirror)}
                 fetchPriority="high"
                 alt={`Photo principale de ${title}`}
                 className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.015]"
@@ -189,6 +196,15 @@ export function PropertyIdentity({
         )}
       </div>
 
+      {images[0] ? (
+        // Sur grand écran la photo affichée est la principale ; sur mobile, celle du carrousel.
+        <PhotoCredit
+          credit={creditOf(mobilePhotoIndex)}
+          className="mt-1.5 block text-xs text-muted-foreground"
+          linkClassName="hover:text-foreground"
+        />
+      ) : null}
+
       {images.length > 1 ? (
         <div className="mt-2 hidden grid-cols-3 gap-2 md:grid">
           {images.slice(1, 4).map((image, index) => (
@@ -201,6 +217,7 @@ export function PropertyIdentity({
             >
               <ListingPhoto
                 src={image.url}
+                mirror={photoMirrorForCard(image.mirror)}
                 alt={`Photo ${index + 2} de ${title}`}
                 compactFallback
                 className="h-full w-full object-cover transition-transform duration-300 hover:scale-[1.03]"
@@ -219,6 +236,8 @@ export function PropertyIdentity({
             url: image.url,
             alt: index === 0 ? `Photo principale de ${title}` : `Photo ${index + 1} de ${title}`,
             source: image.source,
+            mirror: image.mirror,
+            credit: photoCredit(image.url, sale),
           }))}
           initialIndex={galleryIndex}
           title={title}

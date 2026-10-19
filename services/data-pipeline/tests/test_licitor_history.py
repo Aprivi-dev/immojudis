@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 
 import pytest
@@ -229,3 +230,25 @@ def test_live_crawl_requires_the_independent_environment_gate(monkeypatch: pytes
             max_pages_per_zone=1,
             authorization_confirmed=True,
         )
+
+
+def test_history_rows_never_carry_the_decoded_lawyer_email() -> None:
+    # Fiche réelle 110031 : l'adresse Cloudflare de l'avocat est décodée par le parseur des annonces, mais
+    # l'historique (droits de réutilisation commerciale en attente) ne la reprend pas.
+    from pathlib import Path
+
+    html = (
+        Path(__file__).resolve().parents[3] / "docs/audits/sources-2026-10-02/primary/licitor-110031.html"
+    ).read_text(encoding="utf-8")
+    url = "https://www.licitor.com/annonce/11/00/31/vente-aux-encheres/trois-lots-de-copropriete/poitiers/86/110031.html"
+
+    rows = parse_licitor_historical_detail_html(html, url)
+
+    assert rows
+    for row in rows:
+        assert "avocats-dc.fr" not in json.dumps(row, ensure_ascii=False, default=str)
+        assert "internal_contacts" not in row
+        features = row["source_property_features"]
+        assert all("email" not in lawyer for lawyer in features["lawyers"])
+        # Le reste est inchangé : le téléphone de l'avocat reste dans les features.
+        assert features["lawyers"][0]["phone"] == "05 49 88 96 40"

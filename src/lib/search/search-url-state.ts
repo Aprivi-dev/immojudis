@@ -19,6 +19,8 @@ export const SEARCH_SORT_KEYS = [
   "sqft_desc",
   "beds_desc",
   "distance",
+  // Score d'investissement : tri explicite, réservé à l'offre Analyse (ancienne valeur d'URL).
+  "score_desc",
 ] as const;
 
 export type SearchSortKey = (typeof SEARCH_SORT_KEYS)[number];
@@ -152,7 +154,6 @@ function parseSort(value: unknown): SearchSortKey | undefined {
 
   const legacy: Record<string, SearchSortKey> = {
     date_desc: "newest",
-    score_desc: "relevance",
     surface_desc: "sqft_desc",
   };
   return legacy[raw];

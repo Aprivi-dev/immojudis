@@ -22,5 +22,15 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-      - name: Check production availability and request correlation
+      - name: Check production availability, request correlation and search-engine signals
+        # The script must know which indexing state to expect: the repository variable
+        # SEO_INDEXING_ENABLED (Settings > Secrets and variables > Actions > Variables) mirrors
+        # the Vercel variable of the same name. "true" = open (robots.txt with sitemaps, no
+        # X-Robots-Tag, a sale taken from the sitemap); any other value = closed (noindex on
+        # every response, robots.txt without sitemap). Production indexing was opened on
+        # 2026-10-15, so an absent variable means "expect open": an accidental closure is then
+        # caught. To close indexing, set Vercel to anything but "true" and this variable to
+        # "false" at the same time.
+        env:
+          SEO_INDEXING_ENABLED: ${{ vars.SEO_INDEXING_ENABLED || 'true' }}
         run: node scripts/check-production-smoke.mjs --origin https://immojudis.com

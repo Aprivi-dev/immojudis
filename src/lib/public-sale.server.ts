@@ -1,13 +1,20 @@
 import { unstable_cache } from "next/cache";
 import { cache } from "react";
 import { fetchPublicSaleSummary, SALE_ID_PATTERN } from "@/lib/public-sale-summary";
+import { withPhotoMirror, type PhotoMirrorClient } from "@/lib/photo-mirror";
+import { cachedPhotoMirrorFetcher } from "@/lib/photo-mirror.server";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 import { loadWithdrawnSources } from "@/lib/withdrawn-sources";
 import type { AuctionSale } from "@/lib/types";
 
 export type PublicSaleLookup =
   /** The sale is in the public catalogue: render its page. */
-  | { status: "found"; sale: AuctionSale }
+  | {
+      status: "found";
+      sale: AuctionSale;
+      /** Database verdict on indexing; absent while the function is not deployed. */
+      indexable?: boolean;
+    }
   /** No such public sale: answer 404. */
   | { status: "missing" }
   /** The server cannot reach the database (not configured): let the browser decide. */
@@ -54,8 +61,14 @@ async function readPublicSale(
 ): Promise<PublicSaleLookup> {
   // Le contenu d'une source retirée (photo d'une vente fusionnée) ne sort pas, y compris côté serveur.
   await loadWithdrawnSources(client);
-  const summary = await fetchPublicSaleSummary(client, id);
-  if (summary.kind === "found") return { status: "found", sale: summary.sale };
+  const summary = await fetchPublicSaleSummary(client, id, { withIndexability: true });
+  if (summary.kind === "found") {
+    return {
+      status: "found",
+      sale: summary.sale,
+      ...(summary.indexable === undefined ? {} : { indexable: summary.indexable }),
+    };
+  }
   if (summary.kind === "missing") return { status: "missing" };
 
   const sale = await legacyPreview(client, id);
@@ -82,9 +95,18 @@ export const lookupPublicSale = cache(async (id: string): Promise<PublicSaleLook
   if (!client) return { status: "unavailable" };
 
   const normalizedId = id.toLowerCase();
-  return unstable_cache(
+  const lookup = await unstable_cache(
     () => readPublicSale(client, normalizedId),
     ["public-sale-lookup", normalizedId],
     { tags: [publicSaleCacheTag(normalizedId)], revalidate: PUBLIC_SALE_REVALIDATE_SECONDS },
   )();
+  if (lookup.status !== "found") return lookup;
+  // Copie hébergée de la photo : cherchée après le cache de la vente, pour qu'un échec ou un délai
+  // dépassé ne reste pas cinq minutes. Seules les 3 premières photos affichées sont cherchées, et
+  // les copies trouvées ont leur propre cache (photo-mirror.server.ts). Jamais bloquant ni visible.
+  const mirrorClient = client as unknown as PhotoMirrorClient;
+  const sale = await withPhotoMirror(lookup.sale, mirrorClient, {
+    fetchMirrors: cachedPhotoMirrorFetcher(mirrorClient),
+  });
+  return sale === lookup.sale ? lookup : { ...lookup, sale };
 });

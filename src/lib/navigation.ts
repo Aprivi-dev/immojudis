@@ -3,6 +3,19 @@ export const OFFERS_PATH = "/offres";
 
 export type SiteLink = { readonly href: string; readonly label: string };
 
+/**
+ * Pages rendues à la demande (elles lisent les paramètres de la requête ou la date du jour) :
+ * les liens globaux (en-tête, menu, pied de page, accueil) qui y mènent ne les préchargent pas,
+ * sinon chaque page vue déclenche autant d'appels serveur que de liens à l'écran. La page se
+ * charge au clic, comme avant.
+ */
+const DYNAMIC_PAGE_PATHS: ReadonlySet<string> = new Set(["/sales", "/annonce-exemple"]);
+
+/** Valeur de la propriété `prefetch` de `<Link>` : `false` pour une page dynamique, sinon le défaut. */
+export function linkPrefetch(href: string): false | undefined {
+  return DYNAMIC_PAGE_PATHS.has(href) ? false : undefined;
+}
+
 /** Les cinq entrées de l'en-tête, identiques sur toutes les pages. */
 export const SITE_NAV_LINKS: readonly SiteLink[] = [
   { href: "/sales", label: "Ventes" },
@@ -23,6 +36,7 @@ export const SITE_LEGAL_LINKS: readonly SiteLink[] = [
   { href: "/legal", label: "Mentions légales" },
   { href: "/conditions-generales", label: "Conditions générales" },
   { href: "/privacy", label: "Confidentialité" },
+  { href: "/classement-des-annonces", label: "Classement des annonces" },
   { href: "/mes-droits", label: "Mes droits" },
 ];
 
@@ -34,7 +48,7 @@ export const ACCOUNT_LINKS: readonly SiteLink[] = [
 ];
 
 /** Pourquoi la personne arrive sur la page de connexion : sert au bandeau d'explication. */
-export const LOGIN_REASONS = ["alerte", "favori", "export", "offre"] as const;
+export const LOGIN_REASONS = ["alerte", "favori", "export", "offre", "fiche"] as const;
 export type LoginReason = (typeof LOGIN_REASONS)[number];
 
 export function loginReason(value: unknown): LoginReason | undefined {
@@ -82,7 +96,9 @@ export function safeSalesReturnTo(value: unknown): string | undefined {
 export function saleDetailPath(saleId: string, returnTo?: string): string {
   const path = `/sales/${encodeURIComponent(saleId)}`;
   const safeReturnTo = safeSalesReturnTo(returnTo);
-  if (!safeReturnTo) return path;
+  // The plain catalogue is where "back" leads by default: a `?from=/sales` on every card would
+  // only multiply the URLs of each sale for crawlers (and for the cache).
+  if (!safeReturnTo || safeReturnTo === "/sales") return path;
 
   const search = new URLSearchParams({ from: safeReturnTo });
   return `${path}?${search.toString()}`;

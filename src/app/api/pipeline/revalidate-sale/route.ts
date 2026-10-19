@@ -1,12 +1,19 @@
 import { revalidatePath, revalidateTag } from "next/cache";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { cronRequestAuthorized } from "@/lib/cron-auth";
+import { PUBLIC_CATALOGUE_CACHE_TAG } from "@/lib/public-catalogue.server";
 import { publicSaleCacheTag } from "@/lib/public-sale.server";
 import { SALE_ID_PATTERN } from "@/lib/public-sale-summary";
 import { resolveRequestId } from "@/lib/request-id";
+import { warmSalePages } from "@/lib/sale-page-warmup";
+import { SALES_DEFAULT_PATH } from "@/lib/sales-isr";
 
 const MAX_SALES_PER_CALL = 100;
+
+// The warm-up runs in `after()`, inside this budget: 24 pages at 4 at a time and 5 s each take
+// 30 s in the worst case (see `MAX_WARMUP_PAGES`), so 60 s leaves a 30 s margin.
+export const maxDuration = 60;
 
 const saleIdSchema = z.string().regex(SALE_ID_PATTERN, "Identifiant de vente invalide.");
 const bodySchema = z.union([
@@ -22,6 +29,16 @@ const bodySchema = z.union([
  * or `{ "saleIds": ["<uuid>", ...] }` (at most 100). For every sale it expires the
  * `sale-<id>` data-cache tag and the cached page `/sales/<id>`: the next visitor triggers
  * a fresh read instead of waiting for the 5-minute revalidation.
+ *
+ * The call also expires, once per call whatever the number of sales, the catalogue pages: the
+ * `public-catalogue` data-cache tag (first page, 5 minutes) and the static page that serves the
+ * bare `/sales`. A sale that is withdrawn, cancelled or changed must leave `/sales` as soon as it
+ * leaves its own page, not 5 to 10 minutes later. The pipeline must therefore announce those
+ * sales too, not only the new ones.
+ *
+ * Once the response is sent (`after()`), each invalidated page is requested once on the public
+ * origin so that it is regenerated before the first visitor (often a crawler) arrives. That
+ * warm-up never delays nor fails the response (see `warmSalePages`).
  */
 export async function POST(request: Request) {
   const requestId = resolveRequestId(request.headers.get("x-request-id"));
@@ -59,6 +76,13 @@ export async function POST(request: Request) {
     revalidateTag(publicSaleCacheTag(id), { expire: 0 });
     revalidatePath(`/sales/${id}`);
   }
+  // The catalogue lists the sale whatever its id: once per call, not once per sale.
+  revalidateTag(PUBLIC_CATALOGUE_CACHE_TAG, { expire: 0 });
+  // The destination of the rewrite, not `/sales`: `revalidatePath` works on the route files, and
+  // the proxy (which rewrites `/sales` to this page) does not run for revalidations.
+  revalidatePath(SALES_DEFAULT_PATH);
+  // One GET per invalidated sale, after the response: it cannot call this route back.
+  after(() => warmSalePages(ids, { requestId }));
 
   return NextResponse.json(
     { ok: true, revalidated: ids.map(publicSaleCacheTag), requestId },

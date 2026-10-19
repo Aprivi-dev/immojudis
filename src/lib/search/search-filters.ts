@@ -30,7 +30,8 @@ export const HOME_TYPE_OPTIONS = [
 export const STATUS_OPTIONS = [{ label: "À venir", value: "upcoming" }] as const;
 
 export const SORT_OPTIONS: Array<{ label: string; value: SearchSortKey }> = [
-  { label: "Pertinence", value: "relevance" },
+  { label: "Mieux renseignées d’abord", value: "relevance" },
+  { label: "Score d’investissement", value: "score_desc" },
   { label: "Date de vente croissante", value: "sale_date_asc" },
   { label: "Prix décroissant", value: "price_desc" },
   { label: "Prix croissant", value: "price_asc" },
@@ -40,7 +41,22 @@ export const SORT_OPTIONS: Array<{ label: string; value: SearchSortKey }> = [
   { label: "Distance", value: "distance" },
 ];
 
-export function dataSortFromSearch(sort: SearchSortKey | undefined): SortKey {
+/**
+ * Options de tri qui n'existent que pour l'offre Analyse : le score d'investissement n'est
+ * calculé ni exposé pour les visiteurs ni pour l'offre Découverte.
+ */
+export const ANALYSIS_ONLY_SORT_KEYS: readonly SearchSortKey[] = ["score_desc"];
+
+/**
+ * Tri de données d'une option de tri de l'URL. « Mieux renseignées d’abord » (défaut) classe par complétude
+ * de l'annonce, puis par date de vente (voir `listing-completeness-ranking.ts`). Le score
+ * d'investissement n'est honoré que si l'appelant est sûr que l'offre l'autorise ; sinon on
+ * retombe sur le tri par défaut.
+ */
+export function dataSortFromSearch(
+  sort: SearchSortKey | undefined,
+  options: { allowInvestmentScore?: boolean } = {},
+): SortKey {
   switch (sort) {
     case "price_desc":
       return "price_desc";
@@ -54,11 +70,24 @@ export function dataSortFromSearch(sort: SearchSortKey | undefined): SortKey {
       return "surface_desc";
     case "beds_desc":
       return "beds_desc";
+    case "score_desc":
+      return options.allowInvestmentScore ? "score_desc" : "completeness_desc";
     case "distance":
     case "relevance":
     default:
-      return "score_desc";
+      return "completeness_desc";
   }
+}
+
+/** Tri affiché : une option réservée à Analyse, arrivée par l'URL, retombe sur « Mieux renseignées d’abord ». */
+export function visibleSearchSort(
+  sort: SearchSortKey | undefined,
+  options: { allowInvestmentScore?: boolean } = {},
+): SearchSortKey {
+  if (!sort) return "relevance";
+  return !options.allowInvestmentScore && ANALYSIS_ONLY_SORT_KEYS.includes(sort)
+    ? "relevance"
+    : sort;
 }
 
 export function dataFiltersFromSearch(search: SalesSearchParams): SaleFilters {

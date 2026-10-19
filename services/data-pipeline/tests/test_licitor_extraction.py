@@ -169,7 +169,9 @@ def test_detail_reads_procedure_conditions_lawyers_and_visits() -> None:
         "Maître Jeanne Exemple, membre de la SELARL Exemple Avocats, Avocat",
         "SCP Fictive et Associés, Avocats",
     ]
-    assert features["lawyers"][0]["email_published"] is True
+    # data-cfemail="00" n'est pas décodable : la donnée est ignorée et le texte masqué retiré
+    # (le décodage valide est testé dans test_licitor_cloudflare_email.py).
+    assert "email" not in features["lawyers"][0] and "protected" not in str(raw)
     assert features["procedure"]["codes"] == ["saisie_immobiliere"]
     assert features["procedure"]["greffe_reference"] == "26/00999"
     assert features["procedure"]["venue"] == "Parvis Robert Badinter, à Paris 17ème"

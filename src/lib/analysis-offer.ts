@@ -28,6 +28,35 @@ export function resolveAnalysisOfferLabel(
   return label || DEFAULT_ANALYSIS_OFFER_LABEL;
 }
 
+/** A search engine shows about 160 characters of a meta description. */
+export const OFFERS_DESCRIPTION_MAX_LENGTH = 160;
+
+/**
+ * Meta description of /offres. While the subscription cannot be bought (Stripe price or legal
+ * identity missing) it states no price: a snippet that quotes "29 € par mois" for an offer that
+ * is closed would be an advertisement for something that cannot be bought. Once open, it quotes
+ * the public label (`resolveAnalysisOfferLabel`) when the sentence still fits in 160 characters.
+ */
+export function offersPageDescription({
+  open,
+  label = resolveAnalysisOfferLabel(),
+}: {
+  open: boolean;
+  label?: string;
+}): string {
+  if (!open) {
+    return "Découverte est gratuite. Analyse, l’offre d’aide à la décision (enchère plafond, alertes quotidiennes, comparables), n’est pas encore ouverte à la souscription.";
+  }
+  const candidates = [
+    `Découverte est gratuite. Analyse chiffre votre enchère plafond, suit les nouvelles ventes avec des alertes et s’appuie sur des comparables : ${label}.`,
+    `Découverte est gratuite. Analyse chiffre votre enchère plafond et suit les nouvelles ventes : ${label}.`,
+  ];
+  return (
+    candidates.find((text) => text.length <= OFFERS_DESCRIPTION_MAX_LENGTH) ??
+    "Découverte est gratuite. Analyse chiffre votre enchère plafond et suit les nouvelles ventes avec des alertes."
+  );
+}
+
 const LABEL_AMOUNT = String.raw`\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?`;
 const LABEL_CURRENCY = String.raw`(?:€|eur(?:os?)?)`;
 

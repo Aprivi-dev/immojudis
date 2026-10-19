@@ -124,14 +124,24 @@ PIPELINE_PDF_WORKERS=2
 PIPELINE_PDF_MAX_TARGETS=10
 PIPELINE_LLM_MAX_TARGETS=0
 PIPELINE_LLM_BACKFILL_MAX_TARGETS=10
-DEDUPE_RECONCILE_ENABLED=true
-DEDUPE_RECONCILE_MAX_ROWS=2000
+DEDUPE_RECONCILE_ENABLED=false
+DEDUPE_RECONCILE_MAX_ROWS=20000
+DEDUPE_RECONCILE_MAX_MERGES=100
+DEDUPE_RECONCILE_MODE=apply
 ```
 
-Après les upserts, le pipeline peut relire un lot borné d'annonces
-actives/prochaines déjà stockées et réappliquer la fusion multi-sources. Cette
-passe corrige les doublons historiques qui ne repassent pas forcément ensemble
-dans le scraping du jour, puis supprime les lignes sources secondaires.
+Après les upserts d'une collecte complète, le pipeline peut relire toutes les annonces
+actives/prochaines/inconnues déjà stockées (pagination, jusqu'à `DEDUPE_RECONCILE_MAX_ROWS` lignes lues)
+et réappliquer la fusion multi-sources. Cette passe corrige les doublons historiques qui ne repassent pas
+forcément ensemble dans le scraping du jour, puis supprime les lignes sources secondaires. Elle est
+coupée par défaut (`DEDUPE_RECONCILE_ENABLED=false`) ; garde-fou d'écriture : au plus
+`DEDUPE_RECONCILE_MAX_MERGES` lignes supprimées par passage, par groupes entiers.
+
+Mode candidats, sans aucune écriture, à lancer avant d'activer la passe :
+`python -m src.dedupe_candidates [--output rapport.json]`, ou le workflow GitHub « Dedupe candidates
+report » (lecture seule), ou la variable de dépôt `DEDUPE_RECONCILE_MODE=candidates` pendant une collecte
+complète. Il journalise chaque paire conservée / supprimée (identifiant, source, commune, date, mise à prix, raison)
+et écrit le même tableau dans le résumé du job.
 
 Pour résorber progressivement les annonces déjà en base sans synthèse IA
 publique, lancer un backfill borné. Il ne relance pas le scraping et cible par
@@ -490,7 +500,7 @@ elle devient `sale_date` si elle est unique et à venir.
 
 ### Vider le stock de pièces jointes
 
-Le mode manuel « documents_backlog » du workflow *Immojudis Data Pipeline*
+Le mode manuel « documents_backlog » du workflow _Immojudis Data Pipeline_
 (`workflow_dispatch`) ne fait que la lecture des pièces jointes :
 
 ```bash
@@ -513,6 +523,39 @@ python -m src.document_backlog --max-sales 200 --budget-minutes 120 --max-passes
 `auction_documents` reprend désormais document par document le texte déjà
 persisté dans `auction_extractions` (statut `verified`) quand le cache local
 du runner est absent, au lieu de repasser ces pièces en `unknown`.
+
+### Copier la photo principale des ventes
+
+Étape séparée de la collecte (jamais dans `_finalize_sale_for_app`, aucune écriture dans
+`auction_sales`). Tant que `PHOTO_MIRROR_ENABLED` ne vaut pas `true`, aucune photo n'est
+téléchargée ni copiée, mais les retraits s'appliquent quand même (un retrait n'attend pas la
+réactivation) :
+
+```bash
+PHOTO_MIRROR_ENABLED=true python -m src.photo_mirror --max-photos 400 --budget-minutes 15
+```
+
+- ventes du catalogue public dont `catalogue_thumbnail_url` n'a pas de ligne `sale_photos` (ou dont
+  la ligne est `failed`, moins de 3 essais, dernier essai de plus de 12 h), la plus proche date
+  d'abord ; plafonds `PHOTO_MIRROR_MAX_PHOTOS` (400) et `PHOTO_MIRROR_BUDGET_MINUTES` (15, jusqu'à 150) ;
+  l'option `--automatic` (étape planifiée de `data-pipeline.yml`) ramène le budget à 20 minutes au
+  plus, sous le `timeout-minutes` de 25 de l'étape ;
+- les ventes Enchères Publiques sont exclues tant que l'accès n'est pas autorisé (source de la vente
+  comme hôte de la photo) ;
+- même garde anti-SSRF, même robots.txt, même délai par hôte (2 s au moins) et même User-Agent que
+  les pièces jointes ; 15 s par requête, 2 reprises sur erreur réseau, 5xx ou 429 seulement ; lecture
+  coupée à 8 Mo ; type contrôlé sur les premiers octets (jpeg, png, webp) ;
+- deux WebP sans EXIF (640 px et 1600 px, jamais agrandis) dans le bucket `sale-photos` ;
+- au début de chaque passage, les copies d'une source retirée passent en `withdrawn` et leurs
+  fichiers sont supprimés ;
+- interrupteur allumé, chaque passage supprime aussi (300 lignes au plus) les copies `stored` dont
+  l'URL n'est plus la `catalogue_thumbnail_url` de leur vente ; un fichier encore utilisé par une
+  autre copie de la vente est conservé ;
+- un chemin encore dans `sale_retention_storage_queue` n'est pas réutilisé : la photo est reportée
+  au passage suivant ;
+- JPEG multi-images (`MPO`) acceptés ; profil ICC converti en sRGB puis supprimé ;
+- un JSON par photo, puis un résumé final ; le workflow manuel « Photo Mirror Backfill »
+  (`.github/workflows/photo-mirror-backfill.yml`) rattrape le stock (60 min et 3 000 photos par défaut). Retrait : `docs/runbooks/retrait-photos.md`.
 
 ## Enrichissement LLM Replicate
 
@@ -641,6 +684,12 @@ contexte consolidé plus court. Les métriques `llm_fact_context_coverage` et
 Règle de sûreté : le LLM ne remplace pas une valeur déterministe déjà fiable. Il complète surtout les champs absents : `surface_m2`, `rooms_count`, `bedrooms_count`, `occupancy_status`, certains risques, `summary` et `raw_payload.llm_extraction`.
 
 ## Source Licitor
+
+> **Décodage des adresses email masquées par Cloudflare (usage interne).** `LICITOR_DECODE_PROTECTED_EMAILS` est actif
+> par défaut ; pour le couper, mettre `false` (toute autre valeur le laisse actif, une valeur non reconnue est
+> signalée par un avertissement). Coupé, les éléments masqués sont toujours retirés de la page (jamais publiés)
+> mais aucune adresse n'est décodée ni écrite au registre de l'agent. En production : variable de dépôt GitHub
+> `LICITOR_DECODE_PROTECTED_EMAILS` (absente = actif). Procédure complète : `docs/runbooks/information-agent.md`.
 
 > **Licitor est collecté et affiché normalement.** Aucune source n'est retirée du catalogue à ce jour. Le dépôt
 > garde toutefois un **interrupteur de retrait** pour un usage futur (par exemple si une source devait être

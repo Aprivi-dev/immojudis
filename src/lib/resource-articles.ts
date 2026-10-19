@@ -8,6 +8,9 @@ import saleTypesArticle from "@/content/resources/ventes-notariales-domaniales-d
 import saleConditionsArticle from "@/content/resources/lire-cahier-conditions-vente-preparer-visite.json";
 import costsArticle from "@/content/resources/frais-vente-encheres-judiciaire.json";
 import financingArticle from "@/content/resources/financer-achat-encheres-pret-delais.json";
+import licitationArticle from "@/content/resources/licitation-vente-bien-indivis-encheres-acheteur.json";
+import seizureArticle from "@/content/resources/saisie-immobiliere-etapes-vente-forcee-acheteur.json";
+import lawyerArticle from "@/content/resources/avocat-obligatoire-encherir-tribunal-choisir-mandat-cout.json";
 
 export interface ResourceSection {
   id: string;
@@ -21,7 +24,14 @@ export interface ResourceSection {
 interface ResourceContent {
   slug: string;
   publishedAt: string;
+  /** Last substantial change (`AAAA-MM-JJ`): `dateModified` of the article and sitemap `lastmod`. */
+  updatedAt?: string;
   title: string;
+  /**
+   * `<title>` and share title when the headline is too long for a search result (60 characters
+   * with the " - Immojudis" suffix). The `h1` and the cards keep `title`.
+   */
+  seoTitle?: string;
   category: string;
   description: string;
   intro: string[];
@@ -78,6 +88,9 @@ export const RESOURCE_ARTICLES: ResourceArticle[] = [
   defineArticle(occupationArticle, "/media/landing/dossier-apartment.webp"),
   defineArticle(buildingArticle, "/media/landing/auction-lyon.webp"),
   defineArticle(selectionArticle, "/media/landing/auction-nantes.webp"),
+  defineArticle(seizureArticle, "/media/landing/justice-goddess.webp"),
+  defineArticle(licitationArticle, "/media/landing/home-favorites.webp"),
+  defineArticle(lawyerArticle, "/media/landing/auction-toulouse.webp"),
 ];
 
 export const EXISTING_GUIDE: ResourceSummary = {
@@ -106,6 +119,20 @@ export const RESOURCE_SUMMARIES: ResourceSummary[] = [
     }),
   ),
 ];
+
+/** Title used for `<title>` and the share cards: `seoTitle` when set, the headline otherwise. */
+export function resourceDocumentTitle(
+  article: Pick<ResourceArticle, "title" | "seoTitle">,
+): string {
+  return article.seoTitle?.trim() || article.title;
+}
+
+/** Last modification date of an article: `updatedAt`, or the publication date. */
+export function resourceLastModified(
+  article: Pick<ResourceArticle, "publishedAt" | "updatedAt">,
+): string {
+  return article.updatedAt || article.publishedAt;
+}
 
 export function getResourceArticle(slug: string): ResourceArticle | undefined {
   return RESOURCE_ARTICLES.find((article) => article.slug === slug);

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import { publicSaleVenueCopy, SalePublicPreview } from "./SalePublicPreview";
@@ -19,11 +19,36 @@ describe("SalePublicPreview", () => {
       />,
     );
     const href = screen
-      .getByRole("link", { name: /Voir gratuitement le dossier/ })
+      .getByRole("link", { name: /Créer mon compte gratuit/ })
       .getAttribute("href")!;
-    expect(new URL(href, "https://example.test").searchParams.get("redirect")).toBe(
-      "/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs",
+    const params = new URL(href, "https://example.test").searchParams;
+    expect(params.get("redirect")).toBe("/sales/sale-1?from=%2Fsales%3Fcity%3DToulouse#proofs");
+    // Le bandeau de la page de connexion explique ce que le compte gratuit ouvre sur cette fiche.
+    expect(params.get("mode")).toBe("investor");
+    expect(params.get("reason")).toBe("fiche");
+  });
+
+  it("announces the statistics of the tribunal in the unlock only while their flag is open", () => {
+    const tribunal = { id: "sale-1", sale_venue_type: "tribunal" } as AuctionSale;
+    const closed = render(
+      <SalePublicPreview saleId="sale-1" preview={tribunal} returnTo="/sales" />,
     );
+    const intro = (view: typeof closed) =>
+      view.container.querySelector("#public-access-title")?.parentElement?.textContent ?? "";
+    expect(intro(closed)).toContain("débloquer 3 ventes par mois");
+    expect(intro(closed)).toContain("l’enchère plafond, la lecture des pièces");
+    expect(intro(closed)).not.toContain("statistiques du tribunal");
+    closed.unmount();
+
+    const open = render(
+      <SalePublicPreview
+        saleId="sale-1"
+        preview={tribunal}
+        returnTo="/sales"
+        adjudicationStatisticsEnabled
+      />,
+    );
+    expect(intro(open)).toContain("les statistiques du tribunal");
   });
 
   it.each([
@@ -61,9 +86,87 @@ describe("SalePublicPreview", () => {
     expect(container.textContent).not.toContain("enchère plafond");
     expect(screen.queryByText(/Activité publique du tribunal/)).toBeNull();
 
-    const cta = screen.getByRole("link", { name: /Voir gratuitement le dossier/ });
+    const cta = screen.getByRole("link", { name: /Créer mon compte gratuit/ });
     expect(cta.getAttribute("href")).toContain("mode=investor");
-    expect(cta.getAttribute("href")).toContain(encodeURIComponent("/sales/sale-1?from=%2Fsales"));
+    // The unfiltered catalogue is the default way back: no `?from=/sales` in the destination.
+    const redirect = new URL(cta.getAttribute("href")!, "https://example.test").searchParams.get(
+      "redirect",
+    );
+    expect(redirect).toBe("/sales/sale-1");
+  });
+
+  describe("photo principale", () => {
+    const ORIGINAL = "https://www.licitor.com/photos/maison.jpg";
+    const BASE = "https://ci.supabase.co/storage/v1/object/public/sale-photos/";
+
+    beforeEach(() => vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co"));
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("affiche la copie hébergée et crédite la source de l'URL d'origine, sans lien", () => {
+      renderPreview({
+        media: [
+          {
+            type: "image",
+            url: ORIGINAL,
+            mirror: {
+              path640: "s/a-640.webp",
+              path1600: "s/a-1600.webp",
+              width: 1600,
+              height: 1200,
+            },
+          },
+        ],
+      });
+
+      const image = screen.getByRole("img", { name: /Photo du bien/ });
+      expect(image.getAttribute("src")).toBe(`${BASE}s/a-1600.webp`);
+      expect(image.getAttribute("srcset")).toContain("640w");
+      // La page publique ne reçoit pas l'annonce d'origine : le nom de la source, sans lien.
+      expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
+      expect(screen.queryByRole("link", { name: "Licitor" })).toBeNull();
+    });
+
+    it("sans copie, la photo de la source reste affichée telle quelle", () => {
+      renderPreview({ media: [{ type: "image", url: ORIGINAL }] });
+
+      expect(screen.getByRole("img", { name: /Photo du bien/ }).getAttribute("src")).toBe(ORIGINAL);
+      expect(screen.getByTestId("photo-credit").textContent).toBe("Photo : via Licitor");
+    });
+
+    it("hôte inconnu : « source de l'annonce », sans hôte brut ni lien", () => {
+      renderPreview({ media: [{ type: "image", url: "https://d1x9.cloudfront.net/p/a.jpg" }] });
+
+      const credit = screen.getByTestId("photo-credit");
+      expect(credit.textContent).toBe("Photo : source de l'annonce");
+      expect(credit.textContent).not.toContain("cloudfront");
+      expect(credit.querySelector("a")).toBeNull();
+    });
+
+    it("sans photo, aucun crédit", () => {
+      renderPreview({ media: [] });
+      expect(screen.queryByTestId("photo-credit")).toBeNull();
+    });
+  });
+
+  it("links to the guide, the costs article, the courts and the fees simulator", () => {
+    render(
+      <SalePublicPreview
+        saleId="sale-1"
+        preview={{ id: "sale-1" } as AuctionSale}
+        returnTo="/sales"
+      />,
+    );
+    const section = screen.getByRole("region", { name: "Pour aller plus loin" });
+    expect(section.querySelector("h2")?.textContent).toBe("Pour aller plus loin");
+    const hrefs = Array.from(section.querySelectorAll("a")).map((link) =>
+      link.getAttribute("href"),
+    );
+    expect(hrefs).toEqual([
+      "/ventes-immobilieres-judiciaires",
+      "/ressources/frais-vente-encheres-judiciaire",
+      "/tribunaux",
+      "/simulateur-frais-encheres",
+    ]);
   });
 
   it("keeps court-specific guidance without exposing court statistics in the public teaser", () => {
@@ -198,7 +301,7 @@ describe("SalePublicPreview", () => {
     );
     expect(description.textContent).toContain("Jardin");
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
-    expect(teaser.textContent).toContain("Enchère plafond conseillée");
+    expect(teaser.textContent).toContain("Enchère plafond (simulation)");
     expect(teaser.textContent).toContain("000 000 €");
     expect(teaser.textContent).not.toMatch(/[1-9]\d* ?\d* €/);
   });
@@ -208,6 +311,26 @@ describe("SalePublicPreview", () => {
     const teaser = screen.getByRole("region", { name: "L’analyse de cette vente" });
     expect(teaser.textContent).not.toContain("plafond");
     expect(teaser.textContent).toContain("Ventes comparables");
+  });
+
+  it("offers « Ajouter à mon agenda » on a tribunal hearing, never on another venue or without date", () => {
+    const tribunal = renderPreview({
+      sale_venue_type: "tribunal",
+      sale_date: "2099-01-20T08:30:00+00:00",
+    });
+    expect(screen.getByRole("button", { name: "Ajouter à mon agenda" })).toBeTruthy();
+    expect(screen.getByText(/à vérifier auprès de l’avocat poursuivant/)).toBeTruthy();
+    tribunal.unmount();
+
+    const notary = renderPreview({
+      sale_venue_type: "notary",
+      sale_date: "2099-01-20T08:30:00+00:00",
+    });
+    expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
+    notary.unmount();
+
+    renderPreview({ sale_venue_type: "tribunal", sale_date: null });
+    expect(screen.queryByRole("button", { name: "Ajouter à mon agenda" })).toBeNull();
   });
 
   it("has no structural accessibility violations", async () => {

@@ -45,6 +45,23 @@ export function buildInformationAgentOptOutUrl({
   return url.toString();
 }
 
+/**
+ * Same signed address as `buildInformationAgentOptOutUrl`, as a same-origin path. The contribution
+ * page keeps it in memory (never in a persistent link) for its "Ne plus être contacté" action.
+ */
+export function buildInformationAgentOptOutPath({
+  email,
+  secret,
+}: {
+  email: string;
+  secret: string;
+}): string {
+  const url = new URL(
+    buildInformationAgentOptOutUrl({ appUrl: "https://placeholder.invalid", email, secret }),
+  );
+  return `${url.pathname}${url.search}`;
+}
+
 export function parseOptOutEmail(encoded: string | null): string | null {
   if (!encoded || encoded.length > 400 || !/^[A-Za-z0-9_-]+$/.test(encoded)) return null;
   const email = Buffer.from(encoded, "base64url").toString("utf8");

@@ -187,3 +187,23 @@ describe("favorite vocabulary and onboarding", () => {
     expect(mocks.track).toHaveBeenCalledWith("favorite_added");
   });
 });
+
+describe("favorite touch target", () => {
+  it("garde une hauteur tactile d'au moins 44 px, y compris dans sa version non compacte", () => {
+    mocks.read.mockResolvedValue({ data: null, error: null });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <FavoriteButton saleId="sale" />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("button").className).toContain("min-h-11");
+    cleanup();
+    render(
+      <QueryClientProvider client={client}>
+        <FavoriteButton saleId="sale" compact />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("button").className).toContain("h-11");
+  });
+});

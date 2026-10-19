@@ -46,7 +46,17 @@ const MAX_CLIENT_CHUNK_BYTES = 1_875_000;
 // total; the home page itself went DOWN to 525,931 bytes once the consent strings were
 // split from the zod schema. The ceiling is raised once, to 5,400,000; every route-level
 // initial-load budget below is unchanged.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_400_000;
+//
+// « 3 déblocages par mois » (PR #243) adds the unlock panel, the unlocked sale detail view
+// and the reduced ceiling estimate to the sale detail chunks. Measured 5,402,556 bytes in
+// total. The ceiling is raised once, to 5,450,000; every route-level initial-load budget
+// below is unchanged and still passes.
+//
+// The adjuge.info batch (October 2026) adds the reverse fees simulator and surenchère
+// calculator, the departments pages, the sale key-facts band and the optional results
+// table of /sales (desktop only). Measured 5,456,599 bytes in total. The ceiling is raised
+// once, to 5,500,000; every route-level initial-load budget below is unchanged.
+const MAX_TOTAL_CLIENT_JS_BYTES = 5_500_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
@@ -211,6 +221,29 @@ const routeBudgets = [
   },
 ];
 
+// JavaScript réellement référencé par le HTML préfabriqué d'une page publique (balises
+// <script src> hors `nomodule`) : socle commun à toutes les routes (React, Next, runtime,
+// en-tête, fournisseurs) plus le code propre à la page. Les budgets de route ci-dessus ne
+// comptent que les fichiers propres à la page (`entryJSFiles`) et ne voient donc pas ce socle.
+// Avant l'allègement du JavaScript commun (V7 de l'audit de vitesse, `supabase-js` chargé à la
+// demande, Analytics et menu « Mon compte » différés) : accueil 998 093 octets, guide 910 095,
+// article 924 937. Après : 720 427, 632 403 et 647 245. Les plafonds ci-dessous laissent ~2 % de
+// marge sur la mesure après. Ne relevez pas un plafond sans accord du propriétaire.
+//
+// Piège mesuré : ne pas charger par `import()` un module aussi importé statiquement par d'autres
+// pages (Sonner, Radix Dialog). Turbopack en recopie alors le code dans chacun de leurs fichiers
+// (Sonner : 13 copies, +600 Ko au total) au lieu de le partager avec le socle commun.
+const htmlScriptBudgets = [
+  { name: "home", html: ".next/server/app/index.html", maxBytes: 735_000 },
+  {
+    name: "guide",
+    html: ".next/server/app/ventes-immobilieres-judiciaires.html",
+    maxBytes: 645_000,
+  },
+  // Premier article préfabriqué par ordre alphabétique (le slug exact importe peu).
+  { name: "article", htmlDirectory: ".next/server/app/ressources", maxBytes: 660_000 },
+];
+
 await checkSourceLineLimits();
 
 const requiredHtml = [[".next/server/app/index.html", "Les enchères immobilières"]];
@@ -227,6 +260,8 @@ for (const [path, expectedText] of requiredHtml) {
 // prerendered HTML to inspect, only the server entry that must exist.
 await readFile(".next/server/app/sales/page.js", "utf8");
 await readFile(".next/server/app/annonce-exemple/page.js", "utf8");
+
+await checkCormorantItalicFont();
 
 const businessModuleLines = Object.fromEntries(
   await Promise.all(
@@ -266,6 +301,17 @@ for (const budget of routeBudgets) {
   }
 }
 
+const htmlScriptBytesByPage = {};
+for (const budget of htmlScriptBudgets) {
+  const bytes = await htmlReferencedJavaScriptBytes(await resolveHtmlPath(budget));
+  htmlScriptBytesByPage[budget.name] = bytes;
+  if (bytes > budget.maxBytes) {
+    throw new Error(
+      `JavaScript référencé par le HTML trop lourd pour ${budget.name}: ${bytes} octets > ${budget.maxBytes}.`,
+    );
+  }
+}
+
 if (totalClientBytes > MAX_TOTAL_CLIENT_JS_BYTES) {
   throw new Error(
     `JavaScript client total trop lourd: ${totalClientBytes} octets > ${MAX_TOTAL_CLIENT_JS_BYTES}.`,
@@ -301,11 +347,87 @@ console.info(
     largestChunkBytes,
     landingWebpCount: landingImages.length,
     largestBusinessModuleLines: Math.max(...Object.values(businessModuleLines)),
+    htmlScriptBytesByPage,
     publicMediaBytes,
     routeClientBytes,
     totalClientBytes,
   }),
 );
+
+/**
+ * L'italique de Cormorant Garamond, mesurée sur le build et non sur le code source :
+ * - un seul fichier dans `_next/static/media`, et toutes les règles `@font-face` italiques des
+ *   feuilles de style pointent vers lui (pas de doublon préchargé / non préchargé) ;
+ * - l'accueil et /ressources le préchargent, une seule fois ;
+ * - /sales (variante statique) ne le précharge pas ;
+ * - aucun indice de préchargement (`:HL[…]`) de l'italique dans les charges RSC (`.rsc`) que les
+ *   autres pages préfetchent : sinon /sales l'ajouterait à son `<head>` au préfetch du menu
+ *   (avertissement « preloaded but not used »).
+ */
+async function checkCormorantItalicFont() {
+  const media = await readdir(".next/static/media");
+  const italicFiles = media.filter((name) => /cormorant.*italic.*\.woff2$/iu.test(name));
+  if (italicFiles.length !== 1) {
+    throw new Error(
+      `Un seul fichier d'italique Cormorant attendu dans .next/static/media, trouvé : ${italicFiles.join(", ") || "aucun"}.`,
+    );
+  }
+  const italicUrl = `/_next/static/media/${italicFiles[0]}`;
+
+  const stylesheets = await filesUnder(".next/static/chunks", (path) => path.endsWith(".css"));
+  let italicFontFaces = 0;
+  for (const path of stylesheets) {
+    for (const [rule] of (await readFile(path, "utf8")).matchAll(/@font-face\{[^}]*\}/gu)) {
+      if (!/font-style:italic/u.test(rule)) continue;
+      italicFontFaces += 1;
+      const target = /url\(([^)]+)\)/u.exec(rule)?.[1]?.replace(/["']/gu, "");
+      if (!target || !target.endsWith(`/${italicFiles[0]}`)) {
+        throw new Error(
+          `@font-face italique vers un autre fichier que ${italicFiles[0]} : ${path}.`,
+        );
+      }
+    }
+  }
+  if (italicFontFaces === 0)
+    throw new Error("Aucun @font-face italique dans les feuilles de style.");
+
+  const italicPreloads = (html) =>
+    [...html.matchAll(/<link\b[^>]*>/giu)]
+      .map(([tag]) => tag)
+      .filter((tag) => /\srel="preload"/iu.test(tag) && /\sas="font"/iu.test(tag))
+      .map((tag) => /\shref="([^"]+)"/iu.exec(tag)?.[1] ?? "")
+      .filter((href) => /italic/iu.test(href));
+
+  for (const path of [".next/server/app/index.html", ".next/server/app/ressources.html"]) {
+    const preloads = italicPreloads(await readFile(path, "utf8"));
+    if (preloads.length !== 1 || preloads[0] !== italicUrl) {
+      throw new Error(
+        `${path} doit précharger l'italique une fois (${italicUrl}), trouvé : ${JSON.stringify(preloads)}.`,
+      );
+    }
+  }
+  const salesPreloads = italicPreloads(
+    await readFile(".next/server/app/sales/defaut.html", "utf8"),
+  );
+  if (salesPreloads.length > 0) {
+    throw new Error(`/sales ne doit pas précharger l'italique : ${JSON.stringify(salesPreloads)}.`);
+  }
+
+  for (const path of [
+    ".next/server/app/index.rsc",
+    ".next/server/app/ressources.rsc",
+    ".next/server/app/sales/defaut.rsc",
+  ]) {
+    const hints = [...(await readFile(path, "utf8")).matchAll(/:HL\[[^\]]*\]/gu)]
+      .map(([hint]) => hint)
+      .filter((hint) => /italic/iu.test(hint));
+    if (hints.length > 0) {
+      throw new Error(
+        `${path} (préfetché par les autres pages) porte un indice de préchargement de l'italique : ${hints.join(" ")}.`,
+      );
+    }
+  }
+}
 
 async function checkSourceLineLimits() {
   const today = new Date().toISOString().slice(0, 10);
@@ -336,6 +458,32 @@ async function clientJavaScriptBytesForRoute({ manifest, routeKey, entryKey }) {
   }
   const sizes = await Promise.all(
     [...new Set(files)].map(async (path) => (await stat(join(".next", path))).size),
+  );
+  return sizes.reduce((sum, bytes) => sum + bytes, 0);
+}
+
+async function resolveHtmlPath({ html, htmlDirectory }) {
+  if (html) return html;
+  const pages = (await readdir(htmlDirectory)).filter((name) => name.endsWith(".html")).sort();
+  if (pages.length === 0) throw new Error(`Aucune page HTML préfabriquée dans ${htmlDirectory}.`);
+  return join(htmlDirectory, pages[0]);
+}
+
+/** Somme des fichiers .js que le HTML d'une page demande au navigateur d'exécuter. */
+async function htmlReferencedJavaScriptBytes(htmlPath) {
+  const html = await readFile(htmlPath, "utf8");
+  const files = new Set();
+  for (const [tag] of html.matchAll(/<script\b[^>]*>/giu)) {
+    if (/\snomodule(?:[\s=>]|$)/iu.test(tag)) continue;
+    const source = /\ssrc="([^"]+)"/iu.exec(tag)?.[1];
+    const file = source && /\/_next\/(static\/[^?"#]+\.js)(?:[?#]|$)/u.exec(source)?.[1];
+    if (file) files.add(decodeURIComponent(file));
+  }
+  if (files.size === 0) {
+    throw new Error(`Aucun <script src> de /_next/static trouvé dans ${htmlPath}.`);
+  }
+  const sizes = await Promise.all(
+    [...files].map(async (file) => (await stat(join(".next", file))).size),
   );
   return sizes.reduce((sum, bytes) => sum + bytes, 0);
 }

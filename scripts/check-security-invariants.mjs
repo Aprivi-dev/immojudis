@@ -448,26 +448,49 @@ if (
 ) {
   failures.push("auction_sales keeps a table-wide SELECT grant for authenticated");
 }
-const columnGrant =
-  /grant\s+select\s*\(([\s\S]*?)\)\s+on\s+table\s+public\.auction_sales\s+to\s+authenticated/i.exec(
-    columnGrantMigration,
-  )?.[1];
-if (!columnGrant) {
-  failures.push("auction_sales has no column-level grant for authenticated");
-} else {
-  for (const internal of [
-    "raw_text",
-    "content_hash",
-    "last_run_id",
-    "external_id",
-    "premium_readiness_status",
-    "premium_readiness_override_reason",
-    "retention_deadline",
-  ]) {
-    if (new RegExp(`\\b${internal}\\b`).test(columnGrant)) {
-      failures.push(`auction_sales column grant exposes internal column ${internal}`);
+// Every `grant select (columns) on public.auction_sales to ... authenticated` of every migration is
+// checked against the internal columns, not only the first one: a later migration that adds a column
+// to the grant (the catalogue visibility columns, 20261027100200) must not open an internal one.
+// The columns granted for the catalogue visibility (catalogue_quarantined, catalogue_expiry_fallback,
+// catalogue_state_observed_at, catalogue_state_end_estimate) are dates and a boolean: allowed.
+// Grants made by dynamic SQL (execute format(...)) are out of reach of this static scan.
+const migrationsUrl = new URL("../supabase/migrations/", import.meta.url);
+const migrationSources = new Map(
+  await Promise.all(
+    (await readdir(migrationsUrl))
+      .filter((file) => file.endsWith(".sql"))
+      .sort()
+      .map(async (file) => [file, await readFile(new URL(file, migrationsUrl), "utf8")]),
+  ),
+);
+const internalAuctionSalesColumns = [
+  /^raw_text$/,
+  /^content_hash$/,
+  /^last_run_id$/,
+  /^external_id$/,
+  /^location$/,
+  /^premium_readiness_\w+$/,
+  /^retention_\w+$/,
+];
+let authenticatedColumnGrants = 0;
+for (const [name, source] of migrationSources) {
+  const sql = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  for (const grant of sql.matchAll(
+    /grant\s+select\s*\(([^)]*)\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+to\s+([^;]+);/gi,
+  )) {
+    if (!/\b(?:authenticated|public)\b/i.test(grant[2] ?? "")) continue;
+    authenticatedColumnGrants += 1;
+    for (const column of (grant[1] ?? "")
+      .split(",")
+      .map((entry) => entry.trim().replace(/"/g, "").toLowerCase())) {
+      if (internalAuctionSalesColumns.some((internal) => internal.test(column))) {
+        failures.push(`${name}: auction_sales column grant exposes internal column ${column}`);
+      }
     }
   }
+}
+if (authenticatedColumnGrants === 0) {
+  failures.push("auction_sales has no column-level grant for authenticated");
 }
 const defaultPrivilegeMigration = await readFile(
   new URL("../supabase/migrations/20261010004000_default_function_privileges.sql", import.meta.url),
@@ -504,9 +527,7 @@ if (
 // raw_payload / observations / lawyer_contact feed v_auction_sales_app (security_invoker) and the
 // fiche displays the lawyer line: revoking them from `authenticated` without turning that view into
 // a definer view (stage 2 of 20261010003000) breaks the whole catalogue for connected users.
-const migrationsUrl = new URL("../supabase/migrations/", import.meta.url);
-for (const name of (await readdir(migrationsUrl)).filter((file) => file.endsWith(".sql"))) {
-  const migration = await readFile(new URL(name, migrationsUrl), "utf8");
+for (const [name, migration] of migrationSources) {
   const rawColumnRevoke =
     /revoke\s+select\s*\([^)]*\b(?:raw_payload|observations|lawyer_contact)\b[^)]*\)\s+on\s+(?:table\s+)?(?:public\.)?auction_sales\s+from\s+[^;]*\bauthenticated\b/i;
   if (rawColumnRevoke.test(migration) && !/security_invoker\s*=\s*false/i.test(migration)) {
@@ -555,6 +576,287 @@ if (!/export function redactSaleTexts/.test(personalDataFilter)) {
   failures.push("the TypeScript personal-data filter is missing");
 }
 
+// « 3 déblocages par mois » (Découverte): an account unlocks one online sale at a time, the quota is
+// enforced in the database, and the unlock opens that sale's rows only.
+const [saleUnlockMigration, documentReadingServer, documentReadingRedaction] = await Promise.all([
+  readFile(
+    new URL("../supabase/migrations/20261023100000_discovery_sale_unlocks.sql", import.meta.url),
+    "utf8",
+  ),
+  readFile(new URL("../src/lib/document-reading.server.ts", import.meta.url), "utf8"),
+  readFile(new URL("../src/lib/document-reading-redaction.ts", import.meta.url), "utf8"),
+]);
+if (
+  !/alter\s+table\s+public\.user_sale_unlocks\s+enable\s+row\s+level\s+security/i.test(
+    saleUnlockMigration,
+  )
+) {
+  failures.push("Sale unlocks do not enable RLS");
+}
+const saleUnlockStatements = saleUnlockMigration
+  .split(";")
+  .map((statement) => statement.trim())
+  .filter(Boolean);
+if (
+  saleUnlockStatements.some(
+    (statement) =>
+      /^grant\s/i.test(statement) &&
+      /\bpublic\.user_sale_unlocks\b/i.test(statement) &&
+      /\bto\s+(?:public|anon|authenticated)\b/i.test(statement) &&
+      /\b(?:insert|update|delete|all)\b/i.test(statement.split(/\bon\b/i)[0] ?? ""),
+  )
+) {
+  failures.push("Sale unlocks can be written directly by a browser role");
+}
+for (const unlockFunction of ["unlock_sale_at", "unlock_sale"]) {
+  const definition = new RegExp(
+    `create\\s+or\\s+replace\\s+function\\s+(?:public|app_private)\\.${unlockFunction}\\([^)]*\\)\\s*returns\\s+\\w+\\s+language\\s+\\w+\\s+security\\s+definer\\s+set\\s+search_path\\s*=\\s*''\\s*as`,
+    "i",
+  );
+  if (!definition.test(saleUnlockMigration)) {
+    failures.push(`${unlockFunction} is not SECURITY DEFINER with a fixed search_path`);
+  }
+}
+// The unlock opens five things only. auction_sales is never widened (row level security cannot limit
+// columns): the sale is served by a redacted definer view that lists the caller's own unlocks.
+if (
+  /(?:alter|create)\s+(?:or\s+replace\s+)?policy\s+auction_sales_authenticated_read/i.test(
+    saleUnlockMigration,
+  )
+) {
+  failures.push("The sale unlock migration widens auction_sales_authenticated_read");
+}
+if (/set_catalogue_raw_columns_hidden/i.test(saleUnlockMigration)) {
+  failures.push("The sale unlock migration redefines set_catalogue_raw_columns_hidden");
+}
+for (const table of [
+  "auction_documents",
+  "auction_risks",
+  "auction_risk_occurrences",
+  "auction_score_factors",
+  "auction_features",
+  "auction_surfaces",
+]) {
+  if (new RegExp(`on\\s+public\\.${table}\\b`, "i").test(saleUnlockMigration)) {
+    failures.push(`The sale unlock migration opens ${table} to an unlock`);
+  }
+}
+const unlockedView =
+  /create\s+or\s+replace\s+view\s+public\.v_auction_sales_unlocked\s+with\s*\(\s*security_invoker\s*=\s*false\s*,\s*security_barrier\s*=\s*true\s*\)[\s\S]*?;/i.exec(
+    saleUnlockMigration,
+  )?.[0];
+if (
+  !unlockedView ||
+  !/from\s+public\.user_sale_unlocks[\s\S]*?where\s+unlock_row\.user_id\s*=\s*\(select\s+auth\.uid\(\)\)[\s\S]*?app_private\.current_user_unlocked_sale\(s\.id\)/i.test(
+    unlockedView,
+  )
+) {
+  failures.push("v_auction_sales_unlocked is not limited to the sales the caller unlocked");
+} else if (
+  /null::double precision as investment_score/i.test(unlockedView) === false ||
+  /'\[\]'::jsonb as risks/i.test(unlockedView) === false ||
+  /null::text as source_url/i.test(unlockedView) === false ||
+  /\braw_payload\s*,|\bs\.raw_payload\s+as\b|\bs\.observations\s+as\b/i.test(unlockedView)
+) {
+  failures.push(
+    "v_auction_sales_unlocked leaks the score, the risks, the source url or the raw payload",
+  );
+}
+// The source blocks carry the page text, the listing urls (completeness evidence) and, as keys, the
+// names of the source platforms: the unlocked view may only serve their ceiling projection.
+if (
+  unlockedView &&
+  (/raw_payload\s*->\s*'source_blocks'\s+as\b/i.test(unlockedView) ||
+    /\bobservations\s+as\b/i.test(unlockedView) ||
+    !/app_private\.unlocked_ceiling_blocks\(\s*s\.raw_payload\s*->\s*'source_blocks'\s*\)\s+as\s+source_blocks\b/i.test(
+      unlockedView,
+    ) ||
+    !/app_private\.unlocked_ceiling_blocks_by_source\(/i.test(unlockedView))
+) {
+  failures.push("v_auction_sales_unlocked serves raw source blocks instead of their projection");
+}
+// A definer view runs the functions it calls as the caller: sale_is_unlockable is granted to
+// service_role only, so the view must go through the granted definer helper.
+if (unlockedView && /sale_is_unlockable\(/i.test(unlockedView)) {
+  failures.push(
+    "v_auction_sales_unlocked calls a function authenticated cannot execute (sale_is_unlockable)",
+  );
+}
+if (
+  !/revoke\s+all\s+on\s+table\s+public\.v_auction_sales_unlocked\s+from\s+public,\s*anon/i.test(
+    saleUnlockMigration,
+  )
+) {
+  failures.push("v_auction_sales_unlocked is not closed to anon");
+}
+if (/using\s*\(\s*true\s*\)/i.test(saleUnlockMigration)) {
+  failures.push("The sale unlock migration contains a permissive policy");
+}
+if (
+  !/redactReadingTexts\(\s*mapDocumentReading\(/.test(documentReadingServer) ||
+  !/import\s*\{\s*redactPersonalText\s*\}\s*from\s*"@\/lib\/personal-data-filter"/.test(
+    documentReadingRedaction,
+  ) ||
+  (documentReadingRedaction.match(/redactPersonalText\(point\./g) ?? []).length !== 3
+) {
+  failures.push("document reading quotes reach the page without the personal-data filter");
+}
+
+// Classement de /sales par complétude: the numeric score of a listing stays in the database. Browser
+// roles read the tier only (via the search views and the public RPC), the table is written by
+// service_role alone.
+const completenessMigration = await readFile(
+  new URL(
+    "../supabase/migrations/20261024100000_listing_completeness_ranking.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+if (
+  !/alter\s+table\s+public\.auction_sale_listing_completeness\s+enable\s+row\s+level\s+security/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("The listing completeness table does not enable RLS");
+}
+if (
+  !/revoke\s+all\s+on\s+table\s+public\.auction_sale_listing_completeness\s+from\s+public,\s*anon,\s*authenticated/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("The listing completeness table is not closed to anon and authenticated");
+}
+if (
+  completenessMigration
+    .split(";")
+    .some(
+      (statement) =>
+        /^\s*(?:--[^\n]*\n\s*)*grant\s/i.test(statement) &&
+        /\bpublic\.auction_sale_listing_completeness\b/i.test(statement) &&
+        /\bto\s+(?:public|anon|authenticated)\b/i.test(statement),
+    )
+) {
+  failures.push("The listing completeness table is granted to a browser role");
+}
+if (
+  /create\s+policy[^;]*auction_sale_listing_completeness[^;]*\bto\s+(?:public|anon|authenticated)\b/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("The listing completeness table has a policy for a browser role");
+}
+// Every column the search views and the public RPC publish is the tier: the score, its inputs and
+// the policy version never appear in a select list or a RETURNS TABLE.
+if (
+  /returns\s+table\s*\([^)]*\b(?:score|input_fingerprint|policy_version|evaluated_at)\b/i.test(
+    completenessMigration,
+  ) ||
+  /\bcompleteness\.(?:score|input_fingerprint|policy_version|evaluated_at)\b/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("The listing completeness migration publishes more than the tier");
+}
+if (
+  !/create\s+or\s+replace\s+function\s+app_private\.sale_completeness_tier\(p_sale_id\s+uuid\)\s*returns\s+smallint\s+language\s+sql\s+stable\s+security\s+definer\s+set\s+search_path\s*=\s*''/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("sale_completeness_tier is not SECURITY DEFINER with a fixed search_path");
+}
+if (
+  !/create\s+or\s+replace\s+view\s+public\.v_auction_sales_discovery_search\s+with\s*\(\s*security_invoker\s*=\s*false\s*,\s*security_barrier\s*=\s*true\s*\)/i.test(
+    completenessMigration,
+  )
+) {
+  failures.push("v_auction_sales_discovery_search lost its security barrier");
+}
+
+// Photos principales hébergées (test du 16/10/2026): the bucket serves only re-encoded WebP files by
+// public URL, the table is closed to the browser roles, the site reads copies through one definer
+// function keyed by a source URL it already knows, and the files leave with the sale through the
+// retention queue.
+const [salePhotosMigration, saleRetentionSource] = await Promise.all([
+  readFile(
+    new URL("../supabase/migrations/20261026100000_sale_photo_mirrors.sql", import.meta.url),
+    "utf8",
+  ),
+  readFile(new URL("../src/lib/sale-retention.ts", import.meta.url), "utf8"),
+]);
+if (
+  !/insert\s+into\s+storage\.buckets[\s\S]*?'sale-photos'[\s\S]*?\btrue\b[\s\S]*?2097152[\s\S]*?array\['image\/webp'\]/i.test(
+    salePhotosMigration,
+  )
+) {
+  failures.push("The sale-photos bucket is not limited to 2 MB of image/webp");
+}
+if (
+  /create\s+policy[\s\S]{0,500}?on\s+storage\.objects[\s\S]{0,500}?sale-photos/i.test(
+    salePhotosMigration,
+  )
+) {
+  failures.push("The sale-photos bucket has a browser-facing Storage policy");
+}
+if (
+  !/alter\s+table\s+public\.sale_photos\s+enable\s+row\s+level\s+security/i.test(
+    salePhotosMigration,
+  )
+) {
+  failures.push("sale_photos does not enable RLS");
+}
+if (
+  !/revoke\s+all\s+on\s+table\s+public\.sale_photos\s+from\s+public,\s*anon,\s*authenticated/i.test(
+    salePhotosMigration,
+  )
+) {
+  failures.push("sale_photos is not closed to anon and authenticated");
+}
+if (
+  salePhotosMigration
+    .split(";")
+    .some(
+      (statement) =>
+        /^\s*(?:--[^\n]*\n\s*)*grant\s/i.test(statement) &&
+        /\bpublic\.sale_photos\b/i.test(statement) &&
+        /\bto\s+(?:public|anon|authenticated)\b/i.test(statement),
+    ) ||
+  /create\s+policy[^;]*\bsale_photos\b/i.test(salePhotosMigration)
+) {
+  failures.push("sale_photos is granted or exposed by a policy to a browser role");
+}
+const salePhotoReader =
+  /create\s+or\s+replace\s+function\s+app_private\.sale_photo_mirrors\([^)]*\)[\s\S]*?\$function\$;/i.exec(
+    salePhotosMigration,
+  )?.[0];
+if (
+  !salePhotoReader ||
+  !/security\s+definer\s+set\s+search_path\s*=\s*''/i.test(salePhotoReader) ||
+  !/photo\.status\s*=\s*'stored'/i.test(salePhotoReader) ||
+  !/p_source_urls\[1:100\]/i.test(salePhotoReader)
+) {
+  failures.push(
+    "sale_photo_mirrors is not a bounded SECURITY DEFINER reader of the stored copies only",
+  );
+}
+if (
+  /function\s+public\.sale_photo_mirrors\([^)]*\)\s*returns\s+table\s*\([^)]*\)[^$]*?security\s+definer/i.test(
+    salePhotosMigration,
+  )
+) {
+  failures.push("public.sale_photo_mirrors is SECURITY DEFINER (use the app_private wrapper)");
+}
+if (
+  !/after\s+delete\s+on\s+public\.sale_photos[\s\S]*?enqueue_sale_photo_files_for_deletion/i.test(
+    salePhotosMigration,
+  ) ||
+  !/check\s*\(bucket\s+in\s*\([^)]*'sale-photos'[^)]*\)\)/i.test(salePhotosMigration)
+) {
+  failures.push("Deleting a sale photo does not queue its files for removal");
+}
+if (!/"sale-photos"/.test(saleRetentionSource)) {
+  failures.push("The retention worker does not accept the sale-photos bucket");
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -589,6 +891,10 @@ console.log(
       "approved-evidence-private-bucket",
       "raw-columns-not-revoked-without-definer-view",
       "personal-data-filter-write-boundary",
+      "sale-unlock-rls-and-definer-boundary",
+      "document-reading-personal-data-filter",
+      "listing-completeness-score-stays-private",
+      "sale-photos-bucket-table-and-purge",
     ],
   }),
 );

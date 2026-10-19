@@ -113,6 +113,13 @@ describe("art. 14 GDPR prerequisites (P4-12)", () => {
     expect(() =>
       assertInformationAgentControllerIdentity({ NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS" }),
     ).toThrow("responsable de traitement");
+    // L'adresse de contact est obligatoire : c'est le moyen d'exercer ses droits sans compte.
+    expect(() =>
+      assertInformationAgentControllerIdentity({
+        NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS",
+        NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS: "1 rue de la Paix",
+      }),
+    ).toThrow("NEXT_PUBLIC_LEGAL_CONTACT_EMAIL");
     expect(
       informationAgentControllerIdentity({
         NEXT_PUBLIC_LEGAL_ENTITY_NAME: "Immojudis SAS",
@@ -133,8 +140,9 @@ describe("art. 14 GDPR prerequisites (P4-12)", () => {
         sourceUrl: "https://www.licitor.com/annonce/1",
       }),
     ).toEqual({
-      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor.",
+      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/1).",
       url: "https://www.licitor.com/annonce/1",
+      automated: false,
     });
     expect(
       informationAgentAddressOrigin({
@@ -142,7 +150,7 @@ describe("art. 14 GDPR prerequisites (P4-12)", () => {
         manual: true,
       }).text,
     ).toBe(
-      "Votre adresse professionnelle a été relevée sur une page publique (annuaire.example.test).",
+      "Votre adresse professionnelle a été relevée par un membre de l’équipe Immojudis sur une page publique (https://annuaire.example.test/me-x).",
     );
     expect(informationAgentAddressOrigin({ sourceUrl: "javascript:alert(1)" }).url).toBeNull();
     expect(describeInformationAgentAddressOrigin({})).toContain("avis de vente publié");
@@ -150,18 +158,17 @@ describe("art. 14 GDPR prerequisites (P4-12)", () => {
     const lines = informationAgentLegalFooterLines({
       controllerName: "Immojudis SAS",
       controllerAddress: "1 rue de la Paix",
-      contactEmail: null,
+      contactEmail: "contact@immojudis.test",
       addressOrigin: "Origine X.",
       addressOriginUrl: "https://www.licitor.com/annonce/1",
+      aiProvider: { id: "replicate", name: "Replicate", country: "États-Unis" },
       privacyUrl: "https://immojudis.com/privacy",
       optOutUrl: "https://immojudis.com/api/information-agent/opt-out?e=a&t=b",
     }).join("\n");
     expect(lines).toContain("Responsable de traitement : Immojudis SAS, 1 rue de la Paix");
-    expect(lines).toContain("Origine X. Annonce : https://www.licitor.com/annonce/1");
+    expect(lines).toContain("Origine : Origine X.");
     expect(lines).toContain("https://immojudis.com/privacy");
-    expect(lines).toContain(
-      "Votre adresse et nos échanges sont conservés au plus 24 mois sans activité.",
-    );
+    expect(lines).toContain("24 mois après le dernier échange");
     expect(lines).toContain("opt-out?e=a&t=b");
   });
 });
@@ -196,6 +203,8 @@ describe("one-click objection link (P4-12)", () => {
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain('method="post"');
+    // 15 px of text + 2 x 14 px of padding: a touch target of at least 44 px.
+    expect(html).toContain("padding:14px 18px");
     expect(html).toContain("cabinet@example.test");
     expect(mocks.upsert).not.toHaveBeenCalled();
   });

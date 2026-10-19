@@ -1,10 +1,50 @@
 import Link from "next/link";
 import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import CheckCircle2 from "lucide-react/dist/esm/icons/check-circle-2.js";
+import { CloudBackgroundPreload } from "@/components/CloudBackgroundPreload";
 import { SaleTypesOverview } from "@/components/SaleTypesOverview";
 import ExternalLink from "lucide-react/dist/esm/icons/external-link.js";
 import { jsonLdString } from "@/lib/json-ld";
+import { GUIDE_LAST_UPDATED } from "@/lib/guide-dates";
 import { getResourceArticle } from "@/lib/resource-articles";
+
+/**
+ * Date de la dernière révision éditoriale du guide : elle est définie dans `@/lib/guide-dates`
+ * (source unique) et alimente la mention « Mis à jour le » de la page, le `dateModified` de ses
+ * données structurées et l'entrée du guide dans le sitemap (`src/app/sitemap.ts`).
+ */
+export { GUIDE_LAST_UPDATED };
+
+/** « 2026-10-13 » devient « 13/10/2026 ». */
+export function formatGuideDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-");
+  return `${day}/${month}/${year}`;
+}
+
+/** Vitesse de lecture retenue pour un texte d'information en français (mots par minute). */
+export const READING_WORDS_PER_MINUTE = 230;
+
+/**
+ * Temps de lecture affiché, en minutes. Constante plutôt que calcul au rendu : le texte du guide
+ * est du JSX, que seul un rendu complet permet de compter. Le test du guide recompte les mots de
+ * la page et échoue si cette valeur s'écarte de plus d'une minute du résultat.
+ */
+export const GUIDE_READING_MINUTES = 23;
+
+/** Slug stable d'un terme du lexique : minuscules, sans accents, espaces et apostrophes en tirets. */
+export function lexiqueSlug(term: string): string {
+  return term
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** Identifiant (ancre) d'un terme du lexique : `lexique-<slug>`. */
+export function lexiqueAnchor(term: string): string {
+  return `lexique-${lexiqueSlug(term)}`;
+}
 
 const FAQ: Array<{ q: string; a: string }> = [
   {
@@ -45,11 +85,11 @@ const FAQ: Array<{ q: string; a: string }> = [
   },
   {
     q: "Que se passe-t-il en cas de surenchère ?",
-    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE) et en licitation judiciaire (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art. 1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10 % dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
+    a: "En saisie immobilière, toute personne peut former une surenchère d’au moins un dixième du prix principal, par acte d’avocat déposé au greffe du juge de l’exécution dans les dix jours qui suivent l’adjudication (art. R. 322-50 et R. 322-51). Une nouvelle audience a alors lieu deux à quatre mois plus tard, et l’adjudication initiale n’est pas définitive. La surenchère du dixième dans les dix jours est une règle légale en saisie immobilière (art. R. 322-50 et R. 322-51 du CPCE) et en licitation judiciaire (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art. 1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le cahier des charges peut la prévoir (Notaires de France décrit 10\u00a0% dans les 10 jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des charges. Lisez-le avant d’enchérir.",
   },
   {
     q: "Quels frais s’ajoutent au prix d’adjudication ?",
-    a: "Les frais de poursuite taxés et les droits de mutation sont payés en sus du prix (art. R. 322-58) ; s’y ajoutent les émoluments d’avocat (art. A. 444-191 du Code de commerce) et les honoraires convenus avec votre avocat. À titre d’ordre de grandeur, les hypothèses par défaut du simulateur Immojudis donnent environ 12 % du prix pour un bien à 150 000 € ; ces valeurs sont à vérifier sur le cahier des conditions de vente et auprès de l’avocat. Voir l’article « Frais d’une vente aux enchères judiciaire ».",
+    a: "Les frais de poursuite taxés et les droits de mutation sont payés en sus du prix (art. R. 322-58) ; s’y ajoutent les émoluments d’avocat (art. A. 444-191 du Code de commerce) et les honoraires convenus avec votre avocat. À titre d’ordre de grandeur, les hypothèses par défaut du simulateur Immojudis donnent environ 12\u00a0% du prix pour un bien à 150\u202f000\u00a0€ ; ces valeurs sont à vérifier sur le cahier des conditions de vente et auprès de l’avocat. Voir l’article « Frais d’une vente aux enchères judiciaire ».",
   },
   {
     q: "Immojudis remplace-t-il un avocat ?",
@@ -150,7 +190,7 @@ const LEXIQUE: Array<{ term: string; def: string }> = [
   },
   {
     term: "Garantie pour enchérir",
-    def: "Chèque de banque ou caution bancaire irrévocable remis à l’avocat avant les enchères : 10 % de la mise à prix, avec un minimum de 3 000 € en saisie immobilière (art. R. 322-41). Elle est restituée à l’enchérisseur qui ne gagne pas.",
+    def: "Chèque de banque ou caution bancaire irrévocable remis à l’avocat avant les enchères : 10\u00a0% de la mise à prix, avec un minimum de 3\u202f000\u00a0€ en saisie immobilière (art. R. 322-41). Elle est restituée à l’enchérisseur qui ne gagne pas.",
   },
   {
     term: "Jouissance",
@@ -232,7 +272,10 @@ const INSTITUTIONAL_LINKS: Array<{ href: string; label: string }> = [
 
 const RELATED_SLUGS = [
   "ventes-notariales-domaniales-differences-tribunal",
+  "saisie-immobiliere-etapes-vente-forcee-acheteur",
+  "licitation-vente-bien-indivis-encheres-acheteur",
   "lire-cahier-conditions-vente-preparer-visite",
+  "avocat-obligatoire-encherir-tribunal-choisir-mandat-cout",
   "jour-audience-encheres-role-avocat",
   "apres-adjudication-surenchere-paiement-titre-vente",
   "frais-vente-encheres-judiciaire",
@@ -241,9 +284,81 @@ const RELATED_SLUGS = [
   "prix-plafond-encheres-immobilieres",
 ] as const;
 
+/**
+ * Frise de la procédure. Les descriptions reprennent ce que le guide dit plus bas (sections
+ * « Comment se déroule une vente… » et « Quels frais prévoir… »), sans règle nouvelle.
+ * « Remettre la garantie » désigne la garantie remise à l'avocat avant les enchères (art.
+ * R. 322-41), pas la consignation du prix, qui se fait après la vente (voir le lexique) : le
+ * titre évite le verbe « consigner » pour ne pas confondre les deux.
+ */
+const PROCEDURE_STEPS: Array<{ title: string; text: string; href: string }> = [
+  {
+    title: "Visiter",
+    text: "Les visites sont généralement organisées avant l’audience, souvent avec un commissaire de justice.",
+    href: "#visite",
+  },
+  {
+    title: "Remettre la garantie",
+    text: "Remettre à l’avocat, avant les enchères, la garantie (chèque de banque ou caution bancaire irrévocable) : 10 % de la mise à prix, avec un minimum de 3 000 € en saisie immobilière (art. R. 322-41). Elle est restituée si vous ne gagnez pas.",
+    href: "#garanties",
+  },
+  {
+    title: "Enchérir",
+    text: "À l’audience, les enchères sont portées par l’avocat, qui ne peut porter qu’un seul mandat.",
+    href: "#audience",
+  },
+  {
+    title: "Surenchère possible (10 jours)",
+    text: "En saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication.",
+    href: "#apres-adjudication",
+  },
+  {
+    title: "Payer",
+    text: "Le prix est versé ou consigné, et les frais payés, dans les deux mois qui suivent l’adjudication définitive.",
+    href: "#apres-adjudication",
+  },
+];
+
+/**
+ * Encadrés « À retenir » du début des grandes parties : chaque ligne reprend une phrase ou une
+ * règle déjà énoncée plus bas dans la même partie.
+ */
+const KEY_POINTS = {
+  deroulement: [
+    "La vente se déroule en trois temps : l’analyse avant la vente, l’audience d’adjudication, puis les formalités après l’enchère.",
+    "Pour enchérir, il faut être représenté par un avocat inscrit au barreau du tribunal compétent : l’acheteur ne porte pas lui-même les enchères.",
+    "Le Code impose de remettre à l’avocat, avant les enchères, une garantie de 10 % de la mise à prix, avec un minimum de 3 000 €.",
+    "En saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’adjudication n’est définitive qu’à l’expiration de ce délai.",
+  ],
+  frais: [
+    "Le budget d’une vente judiciaire ne doit jamais être limité au prix d’adjudication.",
+    "Les frais de poursuite taxés et les droits de mutation se paient en plus du prix.",
+    "Les émoluments des avocats sont fixés par un barème ; les honoraires sont librement convenus avec l’avocat.",
+    "Travaux, portage et marge de sécurité entrent aussi dans le coût complet.",
+  ],
+  risques: [
+    "Une mise à prix basse ne garantit pas une bonne affaire.",
+    "Une servitude, une occupation, une procédure en cours, une copropriété fragile ou un diagnostic défavorable peuvent modifier fortement la valeur du bien.",
+    "Il n’y a pas de condition suspensive d’obtention de prêt : si le financement n’est pas sécurisé, l’adjudicataire peut se retrouver dans l’incapacité de payer le prix.",
+    "En audience, la concurrence peut pousser à dépasser son enchère plafond : c’est ce qu’il faut éviter.",
+  ],
+} as const;
+
+/** Index A–Z du lexique : la première entrée de chaque lettre présente, dans l'ordre du lexique. */
+const LEXIQUE_INDEX: Array<{ letter: string; anchor: string }> = LEXIQUE.reduce<
+  Array<{ letter: string; anchor: string }>
+>((index, entry) => {
+  const letter = lexiqueSlug(entry.term).charAt(0).toUpperCase();
+  if (!index.some((item) => item.letter === letter)) {
+    index.push({ letter, anchor: lexiqueAnchor(entry.term) });
+  }
+  return index;
+}, []);
+
 const FAQ_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "FAQPage",
+  dateModified: GUIDE_LAST_UPDATED,
   mainEntity: FAQ.map((item) => ({
     "@type": "Question",
     name: item.q,
@@ -254,6 +369,7 @@ const FAQ_JSON_LD = {
 export function ResourcesPage() {
   return (
     <main id="contenu" className="liquid-page min-h-screen bg-background pb-24 text-foreground">
+      <CloudBackgroundPreload />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdString(FAQ_JSON_LD) }}
@@ -281,7 +397,10 @@ export function ResourcesPage() {
             à ne pas dépasser.
           </p>
           <p className="mt-4 text-xs text-muted-foreground">
-            Mis à jour le <time dateTime="2026-10-13">13/10/2026</time>
+            Mis à jour le{" "}
+            <time dateTime={GUIDE_LAST_UPDATED}>{formatGuideDate(GUIDE_LAST_UPDATED)}</time>
+            <span aria-hidden> · </span>
+            <span data-reading-time>Temps de lecture : environ {GUIDE_READING_MINUTES} min</span>
           </p>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
@@ -299,6 +418,51 @@ export function ResourcesPage() {
             </IntroCard>
           </div>
         </header>
+
+        {/* ── Frise de la procédure ────────────────────────────────────── */}
+        <section
+          aria-labelledby="frise-procedure"
+          className="liquid-panel mt-6 rounded-lg p-5 sm:p-6"
+        >
+          <h2 id="frise-procedure" className="font-display text-xl text-foreground">
+            La vente à la barre du tribunal en 5 étapes
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Cette frise décrit une saisie immobilière jugée au tribunal. Chez un notaire ou pour une
+            vente de l’État, les règles diffèrent : voir{" "}
+            <a
+              href="#differences"
+              className="text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
+            >
+              «&nbsp;Tribunal, notaire ou État : quelle différence&nbsp;?&nbsp;»
+            </a>
+            .
+          </p>
+          <ol className="mt-4 grid list-none gap-3 p-0 lg:grid-cols-5 lg:gap-4">
+            {PROCEDURE_STEPS.map((step, index) => (
+              <li
+                key={step.title}
+                className="liquid-panel-soft flex gap-3 rounded-lg p-4 lg:flex-col"
+              >
+                <span
+                  aria-hidden
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gold text-xs font-bold text-brand-navy"
+                >
+                  {index + 1}
+                </span>
+                <div>
+                  <a
+                    href={step.href}
+                    className="text-base font-semibold text-foreground underline-offset-4 hover:text-gold-text hover:underline"
+                  >
+                    {step.title}
+                  </a>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{step.text}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
 
         {/* ── Sommaire ─────────────────────────────────────────────────── */}
         <nav aria-labelledby="sommaire" className="liquid-panel mt-6 rounded-lg p-5 sm:p-6">
@@ -478,6 +642,7 @@ export function ResourcesPage() {
               La vente immobilière judiciaire se déroule en trois temps : l'analyse avant la vente,
               l'audience d'adjudication, puis les formalités après l'enchère.
             </P>
+            <KeyPoints part="déroulement" items={KEY_POINTS.deroulement} />
 
             <SubTitle>1. Avant la vente : analyser le dossier</SubTitle>
             <P>
@@ -564,7 +729,7 @@ export function ResourcesPage() {
               les pièces du dossier, et ne pas se contenter d'une simple mention dans l'annonce.
             </P>
 
-            <SubTitle>Visiter le bien</SubTitle>
+            <SubTitle id="visite">Visiter le bien</SubTitle>
             <P>
               Les visites sont généralement organisées avant l'audience, sur un ou plusieurs
               créneaux. Elles sont souvent collectives et encadrées par un commissaire de justice.
@@ -650,15 +815,15 @@ export function ResourcesPage() {
               <Ext href="https://www.cnb.avocat.fr/">Conseil national des barreaux</Ext>.
             </P>
 
-            <SubTitle>Prévoir les garanties et frais avant l'audience</SubTitle>
+            <SubTitle id="garanties">Prévoir les garanties et frais avant l'audience</SubTitle>
             <P>
               Avant de porter les enchères, l’avocat se fait remettre par son client, contre
               récépissé, une garantie : une caution bancaire irrévocable ou un chèque de banque
-              représentant 10 % de la mise à prix, avec un minimum de 3 000 €. C’est le Code des
-              procédures civiles d’exécution qui l’impose (art. R. 322-41) ; le cahier des
-              conditions de vente précise seulement à l’ordre de qui le chèque est rédigé (séquestre
-              ou Caisse des dépôts). Pour un immeuble d’habitation, l’avocat reçoit aussi une
-              attestation sur l’honneur (art. R. 322-41-1).
+              représentant 10&nbsp;% de la mise à prix, avec un minimum de 3&#8239;000&nbsp;€. C’est
+              le Code des procédures civiles d’exécution qui l’impose (art. R. 322-41) ; le cahier
+              des conditions de vente précise seulement à l’ordre de qui le chèque est rédigé
+              (séquestre ou Caisse des dépôts). Pour un immeuble d’habitation, l’avocat reçoit aussi
+              une attestation sur l’honneur (art. R. 322-41-1).
             </P>
             <P>
               Ces éléments doivent être préparés avant l’audience. Sans dossier complet, l’avocat ne
@@ -670,7 +835,7 @@ export function ResourcesPage() {
               intégrer dans l’enchère plafond (voir la section « Quels frais prévoir ? » plus bas).
             </P>
 
-            <SubTitle>2. Le jour de l'audience : enchérir au tribunal</SubTitle>
+            <SubTitle id="audience">2. Le jour de l'audience : enchérir au tribunal</SubTitle>
             <P>
               L'audience d'adjudication se tient au tribunal judiciaire. Elle est publique, mais les
               enchères sont portées par les avocats.
@@ -695,7 +860,9 @@ export function ResourcesPage() {
               .
             </P>
 
-            <SubTitle>3. Après l'adjudication : surenchère, paiement et propriété</SubTitle>
+            <SubTitle id="apres-adjudication">
+              3. Après l'adjudication : surenchère, paiement et propriété
+            </SubTitle>
             <P>
               Remporter l'audience ne signifie pas toujours que l'achat est immédiatement définitif.
             </P>
@@ -707,9 +874,9 @@ export function ResourcesPage() {
               les dix jours est une règle légale en saisie immobilière et en licitation judiciaire
               (art. 1377 et 1279 du CPC ; devant notaire, elle se forme par requête au greffe, art.
               1280). Dans une vente notariale volontaire, elle n’est pas prévue par la loi : seul le
-              cahier des charges peut la prévoir (Notaires de France décrit 10 % dans les 10 jours
-              pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier des
-              charges. Lisez-le avant d’enchérir.
+              cahier des charges peut la prévoir (Notaires de France décrit 10&nbsp;% dans les 10
+              jours pour la vente « à la bougie »). Dans une vente domaniale, tout dépend du cahier
+              des charges. Lisez-le avant d’enchérir.
             </P>
             <P>
               Vous pouvez consulter le texte officiel sur Légifrance :{" "}
@@ -755,8 +922,8 @@ export function ResourcesPage() {
             </P>
             <Checklist
               items={[
-                "en saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’achat n’est définitif qu’à l’expiration de ce délai ;",
-                "le Code impose de remettre à l’avocat, avant les enchères, une garantie de 10 % de la mise à prix, avec un minimum de 3 000 €, sous forme de chèque de banque ou de caution bancaire irrévocable (art. R. 322-41) ;",
+                "en saisie immobilière, une surenchère d’au moins un dixième du prix principal peut être formée dans les 10 jours qui suivent l’adjudication : l’adjudication n’est définitive qu’à l’expiration de ce délai ;",
+                "le Code impose de remettre à l’avocat, avant les enchères, une garantie de 10\u00a0% de la mise à prix, avec un minimum de 3\u202f000\u00a0€, sous forme de chèque de banque ou de caution bancaire irrévocable (art. R. 322-41) ;",
                 "le prix doit être versé ou consigné dans les deux mois qui suivent l’adjudication définitive ; au-delà, des intérêts sont dus (art. R. 322-56) ;",
                 "les frais de poursuite taxés et les droits de mutation se paient en plus du prix, dans le même délai fixé par le Code : le justificatif doit être remis au greffe avant l’expiration de deux mois à compter de l’adjudication définitive (art. R. 322-58) ;",
                 "l’avocat qui porte les enchères doit être inscrit au barreau du tribunal judiciaire où se tient la vente (art. R. 322-40).",
@@ -770,6 +937,7 @@ export function ResourcesPage() {
           </Section>
 
           <Section id="frais" title="Quels frais prévoir lors d'une vente immobilière judiciaire ?">
+            <KeyPoints part="frais" items={KEY_POINTS.frais} />
             <P>
               Le budget d'une vente judiciaire ne doit jamais être limité au prix d'adjudication. Il
               faut généralement prévoir :
@@ -838,6 +1006,7 @@ export function ResourcesPage() {
           </Section>
 
           <Section id="risques" title="Quels sont les risques ?">
+            <KeyPoints part="risques" items={KEY_POINTS.risques} />
             <P>
               Les risques sont réels. Le premier risque est de se focaliser sur la mise à prix. Une
               mise à prix basse ne garantit pas une bonne affaire.
@@ -903,10 +1072,29 @@ export function ResourcesPage() {
           </Section>
 
           <Section id="lexique" title="Lexique des ventes immobilières judiciaires">
-            <dl className="mt-2 divide-y divide-white/10 border-y border-white/10">
+            <nav aria-label="Index alphabétique du lexique" className="mt-2">
+              <ul className="flex flex-wrap gap-1.5">
+                {LEXIQUE_INDEX.map((item) => (
+                  <li key={item.letter}>
+                    <a
+                      href={`#${item.anchor}`}
+                      className="grid h-8 w-8 place-items-center rounded-md border border-white/10 text-sm font-semibold text-gold-text transition-colors hover:bg-gold/10"
+                    >
+                      {item.letter}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+            <dl className="mt-4 divide-y divide-white/10 border-y border-white/10">
               {LEXIQUE.map((entry) => (
                 <div key={entry.term} className="grid gap-1 py-4 sm:grid-cols-[14rem_1fr] sm:gap-6">
-                  <dt className="font-semibold text-foreground">{entry.term}</dt>
+                  <dt
+                    id={lexiqueAnchor(entry.term)}
+                    className="scroll-mt-24 font-semibold text-foreground"
+                  >
+                    {entry.term}
+                  </dt>
                   <dd className="text-sm leading-relaxed text-muted-foreground">{entry.def}</dd>
                 </div>
               ))}
@@ -971,10 +1159,12 @@ export function ResourcesPage() {
 
 function IntroCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="liquid-panel-soft rounded-lg p-5">
-      <h3 className="text-base font-semibold text-foreground">{title}</h3>
+    // Not a heading: these three cards sit between the h1 and the first h2 ("Sommaire"), and an
+    // h3 there would skip a level in the outline of the page.
+    <div className="liquid-panel-soft rounded-lg p-5">
+      <p className="text-base font-semibold text-foreground">{title}</p>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{children}</p>
-    </section>
+    </div>
   );
 }
 
@@ -1006,8 +1196,31 @@ function P({ children, className }: { children: React.ReactNode; className?: str
   );
 }
 
-function SubTitle({ children }: { children: React.ReactNode }) {
-  return <h3 className="mt-8 text-lg font-semibold text-gold-text">{children}</h3>;
+function SubTitle({ id, children }: { id?: string; children: React.ReactNode }) {
+  return (
+    <h3 id={id} className="mt-8 scroll-mt-24 text-lg font-semibold text-gold-text">
+      {children}
+    </h3>
+  );
+}
+
+/** Encadré « À retenir » : 3 à 4 lignes qui reprennent ce que la partie dit plus bas. */
+function KeyPoints({ part, items }: { part: string; items: readonly string[] }) {
+  return (
+    <div
+      role="note"
+      aria-label={`À retenir : ${part}`}
+      data-key-points={part}
+      className="mt-4 rounded-lg border-l-4 border-gold bg-gold/[0.07] px-5 py-4"
+    >
+      <p className="text-sm font-semibold uppercase tracking-[0.14em] text-gold-text">À retenir</p>
+      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[15px] leading-relaxed text-foreground">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function Checklist({ items }: { items: string[] }) {

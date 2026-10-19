@@ -13,8 +13,13 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 import SearchIcon from "lucide-react/dist/esm/icons/search.js";
 import SlidersHorizontal from "lucide-react/dist/esm/icons/sliders-horizontal.js";
 import { SiteHeader } from "@/components/SiteHeader";
-import { HOME_TYPE_OPTIONS, SORT_OPTIONS } from "@/lib/search/search-filters";
+import {
+  ANALYSIS_ONLY_SORT_KEYS,
+  HOME_TYPE_OPTIONS,
+  SORT_OPTIONS,
+} from "@/lib/search/search-filters";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
+import type { ResultsView } from "@/lib/search/results-view";
 import type { SalesSearchParams, SearchSortKey } from "@/lib/search/search-url-state";
 import type { SearchDraft } from "./search-page-state";
 
@@ -385,7 +390,7 @@ export function HomeTypeFilter({
   setDraft: React.Dispatch<React.SetStateAction<SearchDraft>>;
 }) {
   return (
-    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
+    <label className="relative inline-flex min-h-11 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
       <Building2 className="ml-3 h-4 w-4 text-ink-soft" />
       <span className="sr-only">Type de bien</span>
       <select
@@ -413,16 +418,19 @@ export function HomeTypeFilter({
 export function SortDropdown({
   preview = false,
   hasCenter = false,
+  investmentScore = false,
   sort,
   onChange,
 }: {
   preview?: boolean;
   hasCenter?: boolean;
+  /** Offre Analyse : propose aussi le tri par score d'investissement (absent ailleurs). */
+  investmentScore?: boolean;
   sort: SearchSortKey;
   onChange: (sort: SearchSortKey) => void;
 }) {
   return (
-    <label className="relative inline-flex h-10 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
+    <label className="relative inline-flex min-h-11 shrink-0 items-center rounded-md border border-line bg-white shadow-sm">
       <ArrowUpDown className="ml-3 h-4 w-4 text-ink-soft" />
       <span className="sr-only">Tri</span>
       <select
@@ -430,20 +438,96 @@ export function SortDropdown({
         onChange={(event) => onChange(event.target.value as SearchSortKey)}
         className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
       >
-        {SORT_OPTIONS.filter((option) => !(preview && option.value === "beds_desc")).map(
-          (option) => {
-            // Sans adresse, il n'y a rien à mesurer : l'option reste visible mais grisée.
-            const unavailable = option.value === "distance" && !hasCenter;
-            return (
-              <option key={option.value} value={option.value} disabled={unavailable}>
-                {unavailable ? `${option.label} (saisissez une adresse)` : option.label}
-              </option>
-            );
-          },
-        )}
+        {SORT_OPTIONS.filter(
+          (option) =>
+            !(preview && option.value === "beds_desc") &&
+            !(!investmentScore && ANALYSIS_ONLY_SORT_KEYS.includes(option.value)),
+        ).map((option) => {
+          // Sans adresse, il n'y a rien à mesurer : l'option reste visible mais grisée.
+          const unavailable = option.value === "distance" && !hasCenter;
+          return (
+            <option key={option.value} value={option.value} disabled={unavailable}>
+              {unavailable ? `${option.label} (saisissez une adresse)` : option.label}
+            </option>
+          );
+        })}
       </select>
       <ChevronDown className="pointer-events-none absolute right-2.5 h-4 w-4 text-ink-soft" />
     </label>
+  );
+}
+
+/**
+ * Raccourci visible à côté du tri par défaut (« Mieux renseignées d’abord ») : un appui trie par
+ * date de vente (la plus proche d'abord), un second appui revient au classement par défaut.
+ */
+export const SORT_BY_DATE_SHORTCUT_LABEL = "Trier par date de vente";
+
+export function SortByDateShortcut({
+  sort,
+  onChange,
+}: {
+  sort: SearchSortKey;
+  onChange: (sort: SearchSortKey) => void;
+}) {
+  const active = sort === "sale_date_asc";
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={() => onChange(active ? "relevance" : "sale_date_asc")}
+      className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+        active
+          ? "border-brand-navy bg-brand-navy text-white"
+          : "border-line bg-white text-brand-navy hover:border-gold"
+      }`}
+    >
+      <CalendarDays className="h-4 w-4" aria-hidden />
+      {SORT_BY_DATE_SHORTCUT_LABEL}
+    </button>
+  );
+}
+
+const RESULTS_VIEW_OPTIONS = [
+  { value: "cards", label: "Cartes" },
+  { value: "table", label: "Tableau" },
+] as const satisfies readonly { value: ResultsView; label: string }[];
+
+/**
+ * « Cartes / Tableau » : l'affichage des résultats. Réservé à l'écran large (≥ lg), où le tableau
+ * existe ; en dessous, la liste reste en cartes et ce choix n'est pas proposé.
+ */
+export function ResultsViewToggle({
+  view,
+  onChange,
+}: {
+  view: ResultsView;
+  onChange: (view: ResultsView) => void;
+}) {
+  return (
+    <fieldset className="hidden min-w-0 border-0 p-0 lg:block">
+      <legend className="sr-only">Affichage des résultats</legend>
+      <div className="inline-flex overflow-hidden rounded-md border border-line bg-white shadow-sm">
+        {RESULTS_VIEW_OPTIONS.map(({ value, label }) => {
+          const active = view === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(value)}
+              className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 px-3 text-sm font-bold focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-soft ${
+                active
+                  ? "bg-brand-navy text-white"
+                  : "bg-white text-brand-navy hover:bg-surface-tint"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -614,6 +698,18 @@ export function LayoutToggle({ wideMap, onToggle }: { wideMap: boolean; onToggle
   );
 }
 
+/**
+ * Hauteur de l'en-tête avec un titre sur DEUX lignes, réservée sous `sm`. À 412 px, le h1 tient
+ * sur une ligne en Cormorant Garamond (348 px pour 348 px disponibles) mais sur deux dans la
+ * police de secours, plus large (379 px) ; sur les écrans plus étroits, sur deux dans les deux.
+ * Quand la police arrive après le premier affichage (4G), la ligne en trop disparaissait : tout
+ * ce qui suit remontait de 33 px (CLS 0,03) et la photo de la première carte, déjà peinte, gardait
+ * pour le LCP une surface rognée par le bas de l'écran (puis un second LCP quand elle était
+ * recréée à l'hydratation). Valeur : py-4 (2 rem) + surtitre (0,9375) + marge (0,25) + h1 de
+ * 2 × 2,0625 (1,65 rem, interligne 1,25) + marge (0,25) + compteur (1,25) = 8,8125 rem.
+ */
+const RESULTS_SUMMARY_MOBILE_MIN_HEIGHT = "min-h-[8.8125rem] sm:min-h-0";
+
 export function ResultsSummary({
   search,
   displayCount,
@@ -631,7 +727,7 @@ export function ResultsSummary({
 }) {
   const location = search.city || search.department || search.query || "France entière";
   return (
-    <div className="min-w-0 px-4 py-4 sm:px-5">
+    <div className={`min-w-0 px-4 py-4 sm:px-5 ${RESULTS_SUMMARY_MOBILE_MIN_HEIGHT}`}>
       <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gold-text">
         Le catalogue des enchères
       </p>

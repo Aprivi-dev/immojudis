@@ -21,11 +21,10 @@ import {
 } from "@/lib/fact-reliability";
 import {
   buildInformationAgentInventory,
+  informationAgentInventorySnapshot,
   type InformationAgentInventory,
   type InformationAgentInventoryItem,
-  type InformationAgentInventoryKey,
   type InformationAgentInventorySale,
-  type InformationAgentMissingDocument,
 } from "@/lib/information-agent-inventory";
 import { formatDate, formatStartingPrice } from "@/lib/format";
 import {
@@ -34,21 +33,28 @@ import {
   type InformationAgentEmailTemplateContent,
 } from "@/lib/information-agent-email-template";
 import {
-  informationAgentAddressOrigin,
   informationAgentControllerIdentity,
   type InformationAgentAddressOrigin,
-  INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS,
   type InformationAgentLegalFooter,
 } from "@/lib/information-agent-compliance";
+import {
+  informationAgentAiProvider,
+  type InformationAgentAiProvider,
+} from "@/lib/information-agent-ai-provider";
+import { assertNoInformationAgentCommercialMention } from "@/lib/information-agent-commercial-guard";
 import { buildInformationAgentOptOutUrl } from "@/lib/information-agent-opt-out";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import type { AuctionSale } from "@/lib/types";
 import { informationAgentContributionUrl } from "@/lib/information-agent-contribution";
+import { informationAgentIdentityKeys } from "@/lib/information-agent/identity";
 import {
   assertInformationAgentContactAllowed,
   contactCandidateSnapshot,
+  INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE,
+  loadOpposedInformationAgentIdentityKeys,
+  recordInformationAgentAdminAddressEntry,
   discoverInformationAgentContacts,
   type InformationAgentContactCandidate,
   type InformationAgentRecipientKind,
@@ -56,7 +62,32 @@ import {
   persistInformationAgentContactObservations,
   selectInformationAgentContact,
 } from "@/lib/information-agent/contacts";
+import {
+  ADDRESS_NOT_RECORDED_MESSAGE,
+  assertAgentFoundOriginIntact,
+  assertInformationAgentSearchedAddressAllowed,
+  isAgentFoundRecipient,
+  searchInformationAgentAddressForDraft,
+} from "@/lib/information-agent/address-search";
 import { recordManualMissionReply } from "@/lib/information-agent/manual-reply";
+import {
+  assertInformationAgentSourceAllowed,
+  INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
+  resolveInformationAgentAddressOrigin,
+} from "@/lib/information-agent/address-origin";
+import {
+  missionIdentityKeys,
+  missionSaleReference,
+  saleIdentityPlace,
+} from "@/lib/information-agent/mission-identity";
+import { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
+
+// Ré-exports : ces fonctions vivaient dans ce module (et ses tests les importent d'ici).
+export {
+  INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE,
+  resolveInformationAgentAddressOrigin,
+} from "@/lib/information-agent/address-origin";
+export { assertInformationAgentRecipientCooldown } from "@/lib/information-agent/recipient-cooldown";
 
 export {
   discoverInformationAgentContacts,
@@ -65,6 +96,12 @@ export {
   loadInformationAgentContactRegistry,
   persistInformationAgentContactObservations,
   assertInformationAgentContactAllowed,
+  assertInformationAgentIdentityAllowed,
+  loadOpposedInformationAgentIdentityKeys,
+  recordInformationAgentAdminAddressEntry,
+  isCourtRegistryEmail,
+  isInformationAgentExcludedAddress,
+  informationAgentExcludedAddressReason,
 } from "@/lib/information-agent/contacts";
 export type {
   InformationAgentRecipientKind,
@@ -74,68 +111,33 @@ export type {
   InformationAgentContactRegistryBlock,
 } from "@/lib/information-agent/contacts";
 
+import {
+  detectInformationGaps,
+  INFORMATION_AGENT_QUESTIONS,
+  informationAgentQuestionContext,
+  informationAgentQuestionText,
+  selectDefaultInformationAgentQuestionKeys,
+  type InformationAgentGap,
+  type InformationAgentQuestionKey,
+} from "@/lib/information-agent-questions";
+
+// Ré-exports : ces éléments vivaient dans ce module (et ses tests les importent d'ici).
+export {
+  detectInformationGaps,
+  INFORMATION_AGENT_QUESTIONS,
+  informationAgentQuestionContext,
+  informationAgentQuestionText,
+  selectDefaultInformationAgentQuestionKeys,
+} from "@/lib/information-agent-questions";
+export type {
+  InformationAgentGap,
+  InformationAgentQuestionContext,
+  InformationAgentQuestionKey,
+} from "@/lib/information-agent-questions";
+
 type MissionRow = Database["public"]["Tables"]["information_agent_missions"]["Row"];
 type FactRow = Database["public"]["Tables"]["information_agent_fact_candidates"]["Row"];
 
-export const INFORMATION_AGENT_QUESTIONS = {
-  sale_date: {
-    label: "Date de vente",
-    question:
-      "Pouvez-vous confirmer la date, l'heure et le lieu de la vente de ce lot, ainsi que tout report ou changement annoncé ?",
-  },
-  starting_price_eur: {
-    label: "Mise à prix",
-    question:
-      "Pouvez-vous confirmer la mise à prix applicable à ce lot et nous signaler toute correction publiée ?",
-  },
-  documents: {
-    label: "Pièces du dossier",
-    question:
-      "Pourriez-vous transmettre le cahier des conditions de vente et les pièces consultables du dossier, en indiquant leur date ou leur version si elle est connue ?",
-  },
-  photos: {
-    label: "Photos complémentaires",
-    question:
-      "Pourriez-vous transmettre des photos complémentaires que vous êtes autorisé à partager, en précisant leur date approximative et les pièces ou annexes qu’elles montrent ?",
-  },
-  visit: {
-    label: "Visites",
-    question:
-      "Quelles sont les prochaines dates de visite, les modalités d'inscription et le contact à utiliser pour confirmer sa venue ?",
-  },
-  occupancy: {
-    label: "Occupation",
-    question:
-      "Le bien est-il actuellement libre, occupé ou loué ? Si le bien est loué, pouvez-vous préciser le loyer connu et signaler toute évolution récente ?",
-  },
-  surface: {
-    label: "Surface",
-    question:
-      "Pouvez-vous confirmer séparément la surface habitable, la surface Carrez et, le cas échéant, la surface du terrain ?",
-  },
-  diagnostics: {
-    label: "Diagnostics",
-    question:
-      "Les diagnostics techniques, notamment le DPE, sont-ils disponibles dans une version à jour ? Merci d'indiquer leur date et les classes connues.",
-  },
-  composition: {
-    label: "Composition",
-    question:
-      "Pouvez-vous confirmer la composition du bien, le nombre de pièces et les éventuelles annexes en distinguant celles incluses dans le lot ?",
-  },
-  sale_terms: {
-    label: "Modalités de vente",
-    question:
-      "Pouvez-vous confirmer les modalités d'enchère, le montant et la forme de la consignation, les frais annoncés et les délais applicables ?",
-  },
-  cadastre: {
-    label: "Références cadastrales",
-    question:
-      "Pouvez-vous nous indiquer les références cadastrales du bien (section et numéro de parcelle) ?",
-  },
-} as const;
-
-export type InformationAgentQuestionKey = keyof typeof INFORMATION_AGENT_QUESTIONS;
 const QUESTION_KEYS = Object.keys(INFORMATION_AGENT_QUESTIONS) as [
   InformationAgentQuestionKey,
   ...InformationAgentQuestionKey[],
@@ -210,44 +212,6 @@ export const informationAgentAdminActionSchema = z.discriminatedUnion("action", 
 export type InformationAgentCreateInput = z.input<typeof informationAgentCreateSchema>;
 export type InformationAgentAdminActionPayload = z.output<typeof informationAgentAdminActionSchema>;
 
-export type InformationAgentGap = {
-  key: InformationAgentQuestionKey;
-  label: string;
-  reason: string;
-  /** Higher values are asked first when the admin did not choose questions manually. */
-  priority: number;
-  /** A gap that can change the safety or feasibility of a bid. */
-  blocking: boolean;
-};
-
-const QUESTION_PRIORITY: Record<InformationAgentQuestionKey, { score: number; blocking: boolean }> =
-  {
-    sale_date: { score: 96, blocking: true },
-    starting_price_eur: { score: 92, blocking: true },
-    documents: { score: 100, blocking: true },
-    sale_terms: { score: 94, blocking: true },
-    visit: { score: 88, blocking: true },
-    occupancy: { score: 82, blocking: true },
-    surface: { score: 72, blocking: false },
-    diagnostics: { score: 70, blocking: false },
-    composition: { score: 64, blocking: false },
-    cadastre: { score: 56, blocking: false },
-    photos: { score: 48, blocking: false },
-  };
-
-const MAX_DEFAULT_QUESTION_KEYS = 4;
-
-export function selectDefaultInformationAgentQuestionKeys(
-  gaps: readonly InformationAgentGap[],
-): InformationAgentQuestionKey[] {
-  if (!gaps.length) return [];
-  return [...gaps]
-    .sort((left, right) => right.priority - left.priority)
-    .map((gap) => gap.key)
-    .filter((key, index, keys) => keys.indexOf(key) === index)
-    .slice(0, MAX_DEFAULT_QUESTION_KEYS);
-}
-
 export type InformationAgentMission = {
   id: string;
   caseId: string | null;
@@ -268,6 +232,8 @@ export type InformationAgentMission = {
   repliedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Titre de la vente, renseigné par la liste admin seulement (jamais par l'e-mail ni le dépôt). */
+  saleTitle?: string | null;
 };
 
 export type InformationAgentFact = {
@@ -300,126 +266,6 @@ export type InformationAgentAdminListResponse = {
 
 /** Liste paginée des missions (50 par page) : offset / limit demandés, total toutes pages. */
 export type InformationAgentAdminMissionPage = InformationAgentAdminListResponse & AdminPageMeta;
-
-export function detectInformationGaps(
-  sale: InformationAgentInventorySale,
-  facts: FactReliabilityMap = getKeyFactReliabilities(sale),
-  inventory: InformationAgentInventory = buildInformationAgentInventory(sale, facts),
-): InformationAgentGap[] {
-  const gaps: InformationAgentGap[] = [];
-  const byKey = new Map(inventory.items.map((entry) => [entry.key, entry]));
-  const open = (key: InformationAgentInventoryKey) => {
-    const entry = byKey.get(key);
-    return entry && (entry.status === "missing" || entry.status === "to_confirm") ? entry : null;
-  };
-
-  // Date et lieu partagent une question : la date d'audience (ou limite) et, s'il manque, le lieu.
-  const hearing = open("hearing");
-  const venue = open("venue");
-  const dateOrVenue = hearing ?? venue;
-  if (dateOrVenue) {
-    addGap(
-      gaps,
-      "sale_date",
-      [hearing?.detail, venue?.detail].filter(Boolean).join(" "),
-      criticalPriority("sale_date", dateOrVenue),
-    );
-  }
-  const price = open("starting_price");
-  if (price) {
-    addGap(gaps, "starting_price_eur", price.detail, criticalPriority("starting_price_eur", price));
-  }
-
-  if (inventory.missingDocuments.length) {
-    const names = inventory.missingDocuments.map((key) => MISSING_DOCUMENT_NAMES[key]);
-    addGap(
-      gaps,
-      "documents",
-      `Pièces absentes : ${names.join(", ")}.`,
-      inventory.missingDocuments.includes("sale_conditions")
-        ? QUESTION_PRIORITY.documents.score
-        : inventory.missingDocuments.includes("pv_descriptif")
-          ? 84
-          : QUESTION_PRIORITY.diagnostics.score,
-    );
-  }
-  const photos = open("photos");
-  if (photos) {
-    addGap(
-      gaps,
-      "photos",
-      photos.detail,
-      QUESTION_PRIORITY.photos.score + (photos.status === "missing" ? 10 : 0),
-    );
-  }
-  const visits = open("visits");
-  if (visits) addGap(gaps, "visit", visits.detail);
-  const occupancy = open("occupancy");
-  if (occupancy) {
-    addGap(gaps, "occupancy", occupancy.detail, criticalPriority("occupancy", occupancy));
-  }
-  const surface = open("surface");
-  if (surface) addGap(gaps, "surface", surface.detail, criticalPriority("surface", surface));
-  const cadastre = open("cadastre");
-  if (cadastre) addGap(gaps, "cadastre", cadastre.detail);
-  const composition = open("composition");
-  if (composition) addGap(gaps, "composition", composition.detail);
-  const terms = open("sale_terms");
-  if (terms) addGap(gaps, "sale_terms", terms.detail);
-
-  return gaps;
-}
-
-const MISSING_DOCUMENT_NAMES: Record<InformationAgentMissingDocument, string> = {
-  sale_conditions: "le cahier des conditions de vente",
-  pv_descriptif: "le procès-verbal descriptif",
-  diagnostics: "le dossier de diagnostics techniques",
-};
-
-/** Contexte qui précise le libellé de certaines questions (pièces manquantes, type de vente). */
-export type InformationAgentQuestionContext = {
-  judicial: boolean;
-  venueMissing: boolean;
-  missingDocuments: readonly InformationAgentMissingDocument[];
-};
-
-export function informationAgentQuestionContext(
-  inventory: InformationAgentInventory,
-): InformationAgentQuestionContext {
-  return {
-    judicial: inventory.judicial,
-    venueMissing: inventory.items.some(
-      (entry) => entry.key === "venue" && entry.status === "missing",
-    ),
-    missingDocuments: inventory.missingDocuments,
-  };
-}
-
-/** Libellé exact d'une question : les pièces et la date sont nommées selon la fiche. */
-export function informationAgentQuestionText(
-  key: InformationAgentQuestionKey,
-  context?: InformationAgentQuestionContext,
-): string {
-  if (key === "documents" && context?.missingDocuments.length) {
-    const names = context.missingDocuments.map((entry) => MISSING_DOCUMENT_NAMES[entry]);
-    const list =
-      names.length > 1
-        ? `${names.slice(0, -1).join(", ")} et ${names[names.length - 1]}`
-        : names[0];
-    return `Pourriez-vous nous transmettre ${list}, en indiquant leur date ou leur version si elle est connue ?`;
-  }
-  if (key === "sale_date" && context) {
-    if (context.judicial) {
-      return `Pouvez-vous confirmer la date et l'heure de l'audience d'adjudication${
-        context.venueMissing ? ", ainsi que le tribunal où elle se tient," : ""
-      } et nous signaler tout report annoncé ?`;
-    }
-    return `Pouvez-vous confirmer la date de la vente ou la date limite de dépôt des offres${
-      context.venueMissing ? ", ainsi que le lieu ou la plateforme de vente," : ""
-    } et nous signaler tout report annoncé ?`;
-  }
-  return INFORMATION_AGENT_QUESTIONS[key].question;
-}
 
 export function buildInformationRequestDraft({
   sale,
@@ -517,26 +363,65 @@ export async function createAdminInformationAgentDraft({
       "Aucune lacune n'est identifiée pour cette annonce. Choisissez explicitement une question si une vérification reste nécessaire.",
     );
   }
-  const contactCandidates = discoverInformationAgentContacts(sale);
+  // Opposition par identité, avant d'enregistrer ou de choisir la moindre adresse : un professionnel
+  // opposé n'est plus sollicité sous une autre adresse, et son adresse n'est pas stockée.
+  const identityPlace = saleIdentityPlace(sale);
+  const discovered = discoverInformationAgentContacts(sale).map((candidate) => ({
+    ...candidate,
+    identityKeys: informationAgentIdentityKeys({
+      role: candidate.role,
+      name: candidate.name ?? (candidate.role === "lawyer" ? sale.lawyer_name : null),
+      ...identityPlace,
+    }),
+  }));
+  const opposedKeys = new Set(
+    await loadOpposedInformationAgentIdentityKeys(discovered.flatMap((item) => item.identityKeys)),
+  );
+  const listingCandidates = discovered.filter(
+    (candidate) => !candidate.identityKeys.some((key) => opposedKeys.has(key)),
+  );
+  const candidatesSkippedForOpposition = discovered.length - listingCandidates.length;
+  const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
+
+  // Recherche autonome (niveau 1), sans adresse dans l'annonce ni saisie : elle ne fait que préparer.
+  const search = await searchInformationAgentAddressForDraft({
+    sale,
+    identityPlace,
+    siteOrigin: informationAgentAppOrigin(),
+    skip: Boolean(explicitRecipientEmail) || discovered.length > 0,
+  });
+  const foundContact = search.candidate;
+  const contactCandidates = foundContact ? [foundContact] : listingCandidates;
   await persistInformationAgentContactObservations({
     saleId: sale.id,
-    candidates: contactCandidates,
+    candidates: foundContact ? [] : contactCandidates,
   });
-  const selectedContact = selectInformationAgentContact(contactCandidates);
-  const explicitRecipientEmail = normalizedEmail(input.recipientEmail);
+  const selectedContact = foundContact ?? selectInformationAgentContact(contactCandidates);
   const recipientEmail = explicitRecipientEmail ?? selectedContact?.email;
   if (!recipientEmail) {
     throw new Error(
-      contactCandidates.length > 1
-        ? "Requête invalide : plusieurs contacts sont possibles. Choisissez explicitement l'adresse email du professionnel à contacter."
-        : "Requête invalide : renseignez l'adresse email du professionnel à contacter.",
+      candidatesSkippedForOpposition > 0 && !contactCandidates.length
+        ? INFORMATION_AGENT_IDENTITY_OPPOSED_MESSAGE
+        : contactCandidates.length > 1
+          ? "Requête invalide : plusieurs contacts sont possibles. Choisissez explicitement l'adresse email du professionnel à contacter."
+          : `Requête invalide : renseignez l'adresse email du professionnel à contacter.${search.noAddressNote}`,
     );
   }
-  await assertInformationAgentContactAllowed({ saleId: sale.id, email: recipientEmail });
   const selectedByEmail = contactCandidates.find((candidate) => candidate.email === recipientEmail);
   // A manual address or another source contact must not inherit the lawyer's
   // name: it can belong to a different professional entirely.
   const recipientName = input.recipientName ?? selectedByEmail?.name ?? null;
+  const recipientIdentityRole = selectedByEmail?.role ?? null;
+  const recipientIdentityKeys = informationAgentIdentityKeys({
+    role: recipientIdentityRole,
+    name: recipientName,
+    ...identityPlace,
+  });
+  await assertInformationAgentContactAllowed({
+    saleId: sale.id,
+    email: recipientEmail,
+    identityKeys: recipientIdentityKeys,
+  });
   const draft = buildInformationRequestDraft({
     sale,
     recipientName,
@@ -556,6 +441,7 @@ export async function createAdminInformationAgentDraft({
         (explicitRecipientEmail ? "manual_professional" : "source_contact"),
       recipient_name: recipientName || null,
       recipient_email: recipientEmail,
+      recipient_identity_keys: recipientIdentityKeys,
       share_requester_email: false,
       subject: draft.subject,
       body_text: draft.bodyText,
@@ -565,19 +451,25 @@ export async function createAdminInformationAgentDraft({
       privacy_version: LEGAL_DOCUMENTS.privacy.version,
       metadata: {
         draft_source: "admin_source_first_gap_analysis",
+        // Lieu et rôle de l'identité (jamais l'adresse) : l'envoi recalcule les clés d'identité.
+        contact_identity: {
+          role: recipientIdentityRole,
+          bar: identityPlace.bar,
+          city: identityPlace.city,
+        },
+        candidates_skipped_for_opposition: candidatesSkippedForOpposition,
+        address_search: search.snapshot,
         fact_claims_checked: claimRead.claimsBacked,
         fact_claim_count: claimRead.claims.length,
         contact_discovery: {
           method: explicitRecipientEmail
             ? "admin_override"
-            : selectedByEmail
-              ? "source_data"
-              : "manual_required",
+            : (search.discoveryMethod ?? (selectedByEmail ? "source_data" : "manual_required")),
           selected_email: selectedByEmail?.email ?? explicitRecipientEmail ?? null,
           candidates: contactCandidates.slice(0, 8).map(contactCandidateSnapshot),
         },
         initiated_by_admin: auth.userId,
-        inventory: inventorySnapshot(inventory),
+        inventory: informationAgentInventorySnapshot(inventory),
         email_content_template_id: emailTemplate.id,
         email_content_template_revision: emailTemplate.revision,
       },
@@ -591,6 +483,19 @@ export async function createAdminInformationAgentDraft({
     p_mission_id: data.id,
   });
   if (subscribeError) throw subscribeError;
+  // L'adresse trouvée n'est enregistrée qu'une fois contrôlée et le brouillon créé.
+  if (foundContact) {
+    try {
+      await persistInformationAgentContactObservations({
+        saleId: sale.id,
+        candidates: [foundContact],
+      });
+    } catch {
+      // Sans ligne de registre, l'origine de l'adresse est inconnue : le brouillon est annulé.
+      await cancelMission({ adminId: auth.userId, missionId: data.id }).catch(() => undefined);
+      throw new Error(ADDRESS_NOT_RECORDED_MESSAGE);
+    }
+  }
   const subscribedMission = await loadOwnedMission(auth.userId, data.id);
   return {
     ok: true,
@@ -627,14 +532,43 @@ export async function listAdminInformationAgentMissions({
   const { data, error, count } = await query;
   if (error) throw error;
   const rows = data ?? [];
+  const saleTitles = await loadSaleTitles(
+    rows.flatMap((mission) => (mission.sale_id ? [mission.sale_id] : [])),
+  );
   return {
     ok: true,
-    missions: rows.map(missionFromRow),
+    missions: rows.map((row) => ({
+      ...missionFromRow(row),
+      saleTitle: row.sale_id ? (saleTitles.get(row.sale_id) ?? null) : null,
+    })),
     facts: await listFactsForCases(
       rows.flatMap((mission) => (mission.case_id ? [mission.case_id] : [])),
     ),
     ...adminPageMeta({ offset, limit, total: count ?? offset + rows.length }),
   };
+}
+
+/**
+ * Titres des ventes de la page de missions, pour que l'administrateur reconnaisse la vente sans
+ * ouvrir chaque ligne. Réservé à la liste admin ; une lecture en échec laisse simplement les lignes
+ * sans titre (jamais un échec de la liste).
+ */
+async function loadSaleTitles(saleIds: string[]): Promise<Map<string, string>> {
+  const titles = new Map<string, string>();
+  const uniqueIds = [...new Set(saleIds)];
+  if (!uniqueIds.length) return titles;
+  const { data, error } = await supabaseAdmin
+    .from("auction_sales")
+    .select("id,title")
+    .in("id", uniqueIds);
+  if (error) {
+    console.warn("Titres des ventes de l'agent illisibles", { code: error.code ?? null });
+    return titles;
+  }
+  for (const row of data ?? []) {
+    if (typeof row.title === "string" && row.title.trim()) titles.set(row.id, row.title.trim());
+  }
+  return titles;
 }
 
 export async function runAdminInformationAgentAction({
@@ -680,16 +614,27 @@ async function approveAndSendMission({
   }
   // Envoi strictement manuel : l'administrateur a affiché l'aperçu de ce contenu exact.
   assertInformationAgentPreviewFingerprint({ adminId, input });
+  // Aucune mention commerciale : le message reste purement informatif.
+  assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`);
+  // Opposition par adresse et par identité (le nom corrigé à l'aperçu compte), avant l'envoi.
+  const identityKeys = missionIdentityKeys(mission, input.recipientName);
   await assertInformationAgentContactAllowed({
     saleId: mission.sale_id,
     email: input.recipientEmail,
+    identityKeys,
   });
+  // Adresse retrouvée par l'agent : sa seule origine est la ligne de registre de l'agent.
+  const agentFound = isAgentFoundRecipient(mission, input.recipientEmail);
   const addressOrigin = await resolveInformationAgentAddressOrigin({
     email: input.recipientEmail,
     saleId: mission.sale_id,
-    manualOriginUrl: input.recipientOriginUrl ?? null,
+    manualOriginUrl: agentFound ? null : (input.recipientOriginUrl ?? null),
+    fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) throw new Error(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+  assertAgentFoundOriginIntact(agentFound, addressOrigin);
+  assertInformationAgentSourceAllowed(addressOrigin);
+  assertInformationAgentSearchedAddressAllowed(addressOrigin.origin);
   assertInformationAgentOutboundEnabled();
   assertInformationAgentCanaryRecipient(input.recipientEmail);
   // Validate delivery prerequisites before approval reserves the case for sending.
@@ -711,10 +656,24 @@ async function approveAndSendMission({
       ? mission.recipient_kind
       : "manual_professional";
 
+  // Adresse saisie par un administrateur : source typée, date de relevé et auteur au registre.
+  if (addressOrigin.kind === "admin_entry" && mission.sale_id) {
+    await recordInformationAgentAdminAddressEntry({
+      saleId: mission.sale_id,
+      email: input.recipientEmail,
+      name: input.recipientName || mission.recipient_name,
+      url: addressOrigin.origin.url,
+      observedAt: mission.created_at,
+      adminId,
+      identityKeys,
+    });
+  }
+
   const { data: edited, error: editError } = await supabaseAdmin
     .from("information_agent_missions")
     .update({
       recipient_email: input.recipientEmail,
+      recipient_identity_keys: identityKeys,
       recipient_kind: recipientKind,
       recipient_name: input.recipientName || null,
       reply_to_email: null,
@@ -754,6 +713,7 @@ async function approveAndSendMission({
     await assertInformationAgentContactAllowed({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
+      identityKeys: edited.recipient_identity_keys,
     });
     // Approval is already recorded: if a concurrent approval for the same recipient is older,
     // this one stands down, so only the earliest request is ever sent within the 30 days.
@@ -767,6 +727,7 @@ async function approveAndSendMission({
       appUrl: config.appUrl,
       email: edited.recipient_email,
       addressOrigin: addressOrigin.origin,
+      saleReference: missionSaleReference(subscribedMission),
     });
     const renderedEmail = await renderInformationRequestEmail({
       subject: edited.subject,
@@ -777,9 +738,16 @@ async function approveAndSendMission({
       contributionUrl,
       legalFooter,
     });
+    assertNoInformationAgentCommercialMention(`${renderedEmail.html}\n${renderedEmail.text}`, {
+      appOrigin: config.appUrl,
+      allowedUrls: [legalFooter.addressOriginUrl],
+      // La référence de la vente vient de l'annonce : elle ne peut pas faire échouer l'envoi.
+      ignore: [legalFooter.saleReference],
+    });
     await assertInformationAgentContactAllowed({
       saleId: subscribedMission.sale_id,
       email: edited.recipient_email,
+      identityKeys: edited.recipient_identity_keys,
     });
     assertInformationAgentCanaryRecipient(edited.recipient_email);
     const delivery = await sendResendEmail({
@@ -818,6 +786,7 @@ async function approveAndSendMission({
         preview_fingerprint: input.previewFingerprint,
         approved_by_admin: adminId,
         address_origin_url: legalFooter.addressOriginUrl ?? null,
+        address_origin_text: legalFooter.addressOrigin,
         email_template_version: INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION,
         email_content_template_id: missionMetadata.email_content_template_id ?? null,
         email_content_template_revision: missionMetadata.email_content_template_revision ?? null,
@@ -858,58 +827,7 @@ export function assertInformationAgentControllerIdentity(
 ): void {
   if (!informationAgentControllerIdentity(env)) {
     throw new Error(
-      "Identité du responsable de traitement non configurée : envoi impossible (NEXT_PUBLIC_LEGAL_ENTITY_NAME et NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS).",
-    );
-  }
-}
-
-const COOLDOWN_BLOCKING_MISSION_STATUSES = [
-  "approved",
-  "sending",
-  "sent",
-  "replied",
-  "completed",
-] as const;
-
-function escapeIlike(value: string): string {
-  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
-}
-
-/**
- * One email per recipient and per 30 days, all sales combined (plan P4-12). Counts every other
- * mission to the same address that was approved in the window and not failed. With `approvedAt`
- * (post-approval check) only strictly older approvals count, which makes concurrent approvals
- * deterministic: the earliest one proceeds, the others stand down.
- */
-export async function assertInformationAgentRecipientCooldown({
-  email,
-  missionId,
-  approvedAt,
-  now = new Date(),
-}: {
-  email: string;
-  missionId: string;
-  approvedAt?: string | null;
-  now?: Date;
-}): Promise<void> {
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
-  const since = new Date(
-    now.getTime() - INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS * 24 * 60 * 60 * 1000,
-  ).toISOString();
-  let query = supabaseAdmin
-    .from("information_agent_missions")
-    .select("id,approved_at")
-    .ilike("recipient_email", escapeIlike(normalized))
-    .in("status", [...COOLDOWN_BLOCKING_MISSION_STATUSES])
-    .neq("id", missionId)
-    .gte("approved_at", since);
-  if (approvedAt) query = query.lte("approved_at", approvedAt);
-  const { data, error } = await query.limit(1);
-  if (error) throw error;
-  if (data?.length) {
-    throw new Error(
-      `Ce destinataire a déjà été sollicité au cours des ${INFORMATION_AGENT_RECIPIENT_COOLDOWN_DAYS} derniers jours : un seul email est autorisé par période.`,
+      "Identité du responsable de traitement non configurée : envoi impossible (NEXT_PUBLIC_LEGAL_ENTITY_NAME, NEXT_PUBLIC_LEGAL_ENTITY_ADDRESS et NEXT_PUBLIC_LEGAL_CONTACT_EMAIL).",
     );
   }
 }
@@ -923,11 +841,13 @@ function buildInformationAgentLegalFooter({
   appUrl,
   email,
   addressOrigin,
+  saleReference = null,
   env = process.env,
 }: {
   appUrl: string;
   email: string;
   addressOrigin: InformationAgentAddressOrigin;
+  saleReference?: string | null;
   env?: Readonly<Record<string, string | undefined>>;
 }): InformationAgentLegalFooter {
   const controller = informationAgentControllerIdentity(env);
@@ -940,57 +860,16 @@ function buildInformationAgentLegalFooter({
     controllerName: controller!.name,
     controllerAddress: controller!.address,
     contactEmail: controller!.contactEmail,
+    saleReference,
     addressOrigin: addressOrigin.text,
     addressOriginUrl: addressOrigin.url,
+    automatedSearch: addressOrigin.automated,
+    automatedSearchSource: addressOrigin.searchSource,
+    // Lève une erreur si la configuration désigne un prestataire d'IA non nommé dans le pied.
+    aiProvider: informationAgentAiProvider(env),
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: buildInformationAgentOptOutUrl({ appUrl, email: normalized, secret }),
   };
-}
-
-export const INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE =
-  "Origine de l’adresse inconnue : elle ne figure pas dans l’annonce de cette vente. Indiquez la page publique où vous l’avez trouvée avant l’envoi.";
-
-/**
- * Origine de l'adresse pour cette vente (art. 14 RGPD). Seul le registre des contacts observés
- * dans l'annonce de la même vente fait foi ; à défaut, l'administrateur doit citer la page
- * publique où il a relevé l'adresse. Une adresse sans origine connue n'est jamais sollicitée.
- */
-export async function resolveInformationAgentAddressOrigin({
-  email,
-  saleId,
-  manualOriginUrl,
-}: {
-  email: string;
-  saleId: string | null;
-  manualOriginUrl: string | null;
-}): Promise<{ origin: InformationAgentAddressOrigin; known: boolean }> {
-  const normalized = normalizedEmail(email);
-  if (!normalized) throw new Error("Adresse email du contact invalide.");
-  if (saleId) {
-    const { data, error } = await supabaseAdmin
-      .from("information_agent_contacts")
-      .select("source_name,source_url")
-      .eq("normalized_email", normalized)
-      .eq("scope_sale_id", saleId)
-      .limit(1);
-    if (error) throw error;
-    const row = data?.[0];
-    if (row && (row.source_name || row.source_url)) {
-      return {
-        origin: informationAgentAddressOrigin({
-          sourceName: row.source_name,
-          sourceUrl: row.source_url,
-        }),
-        known: true,
-      };
-    }
-  }
-  const manual = manualOriginUrl?.trim();
-  if (manual && /^https?:\/\//i.test(manual)) {
-    const origin = informationAgentAddressOrigin({ sourceUrl: manual, manual: true });
-    if (origin.url) return { origin, known: true };
-  }
-  return { origin: informationAgentAddressOrigin({}), known: false };
 }
 
 const PREVIEW_FINGERPRINT_CONTEXT = "immojudis:information-agent:preview:v1";
@@ -1070,7 +949,7 @@ export type InformationAgentPreviewResponse = {
   };
   /** Motifs qui empêcheront l'envoi (opposition, délai de 30 jours, configuration…). */
   blockers: string[];
-  addressOrigin: { text: string; url: string | null; known: boolean };
+  addressOrigin: { text: string; url: string | null; automated: boolean; known: boolean };
   /** À renvoyer avec « Valider et envoyer » ; null si l'envoi est impossible. */
   fingerprint: string | null;
 };
@@ -1105,17 +984,29 @@ export async function previewAdminInformationAgentMission({
     blockers.push("Cette mission n’est plus un brouillon : elle ne peut pas être envoyée.");
   }
   await collect(() =>
-    assertInformationAgentContactAllowed({ saleId: mission.sale_id, email: recipient }),
+    assertInformationAgentContactAllowed({
+      saleId: mission.sale_id,
+      email: recipient,
+      identityKeys: missionIdentityKeys(mission, input.recipientName),
+    }),
+  );
+  await collect(() =>
+    assertNoInformationAgentCommercialMention(`${input.subject}\n${input.bodyText}`),
   );
   await collect(() =>
     assertInformationAgentRecipientCooldown({ email: recipient, missionId: mission.id }),
   );
+  const agentFound = isAgentFoundRecipient(mission, recipient);
   const addressOrigin = await resolveInformationAgentAddressOrigin({
     email: recipient,
     saleId: mission.sale_id,
-    manualOriginUrl: input.recipientOriginUrl ?? null,
+    manualOriginUrl: agentFound ? null : (input.recipientOriginUrl ?? null),
+    fallbackObservedAt: mission.created_at,
   });
   if (!addressOrigin.known) blockers.push(INFORMATION_AGENT_ORIGIN_REQUIRED_MESSAGE);
+  await collect(() => assertAgentFoundOriginIntact(agentFound, addressOrigin));
+  await collect(() => assertInformationAgentSourceAllowed(addressOrigin));
+  await collect(() => assertInformationAgentSearchedAddressAllowed(addressOrigin.origin, env));
   await collect(() => assertInformationAgentOutboundEnabled(env));
   await collect(() => assertInformationAgentCanaryRecipient(recipient, env));
   await collect(() => resolveInformationAgentEmailConfig(env));
@@ -1128,9 +1019,13 @@ export async function previewAdminInformationAgentMission({
   const legalFooter: InformationAgentLegalFooter = {
     controllerName: controller?.name ?? "[Responsable de traitement à configurer]",
     controllerAddress: controller?.address ?? "[Adresse à configurer]",
-    contactEmail: controller?.contactEmail ?? null,
+    contactEmail: controller?.contactEmail ?? "[Contact à configurer]",
+    saleReference: missionSaleReference(mission),
     addressOrigin: addressOrigin.origin.text,
     addressOriginUrl: addressOrigin.origin.url,
+    automatedSearch: addressOrigin.origin.automated,
+    automatedSearchSource: addressOrigin.origin.searchSource,
+    aiProvider: previewAiProvider(env, blockers),
     privacyUrl: new URL("/privacy", appUrl).toString(),
     optOutUrl: secret
       ? buildInformationAgentOptOutUrl({ appUrl, email: recipient, secret })
@@ -1148,6 +1043,13 @@ export async function previewAdminInformationAgentMission({
     contributionUrl: new URL("/contribuer/lien-prive-attribue-a-l-envoi", appUrl).toString(),
     legalFooter,
   });
+  await collect(() =>
+    assertNoInformationAgentCommercialMention(`${rendered.html}\n${rendered.text}`, {
+      appOrigin: appUrl,
+      allowedUrls: [addressOrigin.origin.url],
+      ignore: [legalFooter.saleReference],
+    }),
+  );
   return {
     ok: true,
     preview: {
@@ -1162,6 +1064,19 @@ export async function previewAdminInformationAgentMission({
     addressOrigin: { ...addressOrigin.origin, known: addressOrigin.known },
     fingerprint: informationAgentPreviewFingerprint({ adminId: auth.userId, ...input }, env),
   };
+}
+
+/** Prestataire d'IA du pied ; une configuration inconnue devient un motif de blocage de l'aperçu. */
+function previewAiProvider(
+  env: Readonly<Record<string, string | undefined>>,
+  blockers: string[],
+): InformationAgentAiProvider {
+  try {
+    return informationAgentAiProvider(env);
+  } catch (error) {
+    blockers.push(error instanceof Error ? error.message : "Prestataire d’IA non identifié.");
+    return informationAgentAiProvider({});
+  }
 }
 
 export function assertInformationAgentOutboundEnabled(env: NodeJS.ProcessEnv = process.env): void {
@@ -1268,16 +1183,6 @@ function missionFromRow(row: MissionRow): InformationAgentMission {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-}
-
-function inventorySnapshot(inventory: InformationAgentInventory): Json {
-  return inventory.items.map((entry) => ({
-    key: entry.key,
-    label: entry.label,
-    status: entry.status,
-    detail: entry.detail,
-    origin: entry.origin,
-  }));
 }
 
 const INVENTORY_STATUSES = new Set(["present", "to_confirm", "missing", "not_applicable"]);
@@ -1395,21 +1300,6 @@ async function listFactsForCases(caseIds: string[]): Promise<InformationAgentFac
   }));
 }
 
-function addGap(
-  gaps: InformationAgentGap[],
-  key: InformationAgentQuestionKey,
-  reason: string,
-  priority = QUESTION_PRIORITY[key].score,
-) {
-  gaps.push({
-    key,
-    label: INFORMATION_AGENT_QUESTIONS[key].label,
-    reason,
-    priority,
-    blocking: QUESTION_PRIORITY[key].blocking,
-  });
-}
-
 function uniqueQuestionKeys(keys: readonly InformationAgentQuestionKey[]) {
   return [...new Set(keys)].slice(0, 8);
 }
@@ -1420,19 +1310,6 @@ function shortenSubjectTitle(title: string): string {
   const prefix = normalized.slice(0, 69);
   const lastSpace = prefix.lastIndexOf(" ");
   return `${(lastSpace >= 40 ? prefix.slice(0, lastSpace) : prefix).trimEnd()}…`;
-}
-
-/**
- * Priorité d'une question portant sur un fait clé : une contradiction passe devant tout, une
- * valeur absente avant une valeur simplement estimée.
- */
-function criticalPriority(
-  key: InformationAgentQuestionKey,
-  entry: Pick<InformationAgentInventoryItem, "status" | "detail">,
-): number {
-  const base = QUESTION_PRIORITY[key].score;
-  if (entry.status === "missing") return base + 10;
-  return /contredisent/.test(entry.detail) ? base + 40 : base + 5;
 }
 
 function isQuestionKey(value: string): value is InformationAgentQuestionKey {

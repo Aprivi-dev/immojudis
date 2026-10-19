@@ -80,7 +80,7 @@ jobs:
           SOURCE_FETCH_RELAY_URL: ${{ vars.SOURCE_FETCH_RELAY_URL }}
           SOURCE_FETCH_RELAY_TOKEN: ${{ secrets.SOURCE_FETCH_RELAY_TOKEN }}
         run: python -m src.source_reconciliation_audit --source "$AUDIT_SOURCE" --output "data/audits/reconciliation-$AUDIT_SOURCE.json"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: source-inventory-${{ matrix.source }}

@@ -25,6 +25,7 @@ const row = {
   latitude: 44.84,
   longitude: -0.58,
   thumbnail_url: "https://media.immobilier.notaires.fr/inotr/media/a.jpg",
+  completeness_tier: 1,
 };
 
 describe("public preview search", () => {
@@ -40,8 +41,28 @@ describe("public preview search", () => {
   });
 
   it("falls back to relevance for the bedroom sort, which the public RPC does not know", () => {
-    expect(buildPreviewSearchArgs({ sort: "beds_desc" })).toMatchObject({ p_sort: "score_desc" });
+    expect(buildPreviewSearchArgs({ sort: "beds_desc" })).toMatchObject({
+      p_sort: "completeness_desc",
+    });
     expect(buildPreviewSearchArgs({ sort: "price_asc" })).toMatchObject({ p_sort: "price_asc" });
+  });
+
+  it("classe par complétude par défaut, et jamais par score d'investissement", () => {
+    expect(buildPreviewSearchArgs({})).toMatchObject({ p_sort: "completeness_desc" });
+    expect(buildPreviewSearchArgs({ sort: "relevance" })).toMatchObject({
+      p_sort: "completeness_desc",
+    });
+    expect(buildPreviewSearchArgs({ sort: "distance" })).toMatchObject({
+      p_sort: "completeness_desc",
+    });
+    // Le score d'investissement est réservé à Analyse : un visiteur qui arrive avec cette valeur
+    // dans l'URL retombe sur le tri par défaut.
+    expect(buildPreviewSearchArgs({ sort: "score_desc" })).toMatchObject({
+      p_sort: "completeness_desc",
+    });
+    expect(buildPreviewSearchArgs({ sort: "sale_date_asc" })).toMatchObject({
+      p_sort: "date_asc",
+    });
   });
 
   it("paginates with the requested page and size", () => {
@@ -74,6 +95,12 @@ describe("public preview search", () => {
     });
   });
 
+  it("transmet le palier de complétude de chaque carte (badge « bien renseignée »)", () => {
+    const [high, low] = mapPreviewRows([row, { ...row, id: "sale-2", completeness_tier: 0 }]);
+    expect(high.completeness_tier).toBe(1);
+    expect(low.completeness_tier).toBe(0);
+  });
+
   it("ignores a thumbnail that is not a property photo", () => {
     expect(mapPreviewRows([{ ...row, thumbnail_url: "javascript:alert(1)" }])[0].media).toEqual([]);
     expect(mapPreviewRows([{ ...row, thumbnail_url: null }])[0].media).toEqual([]);
@@ -82,6 +109,35 @@ describe("public preview search", () => {
   it("rejects instead of hiding a database error", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: new Error("timeout") });
     await expect(runPreviewSearch({ rpc }, {})).rejects.toThrow("timeout");
+  });
+
+  it("lève une Error lisible (message et code PostgREST) au lieu de l'objet brut", async () => {
+    const postgrestError = {
+      message: "canceling statement due to statement timeout",
+      code: "57014",
+      details: null,
+      hint: null,
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: postgrestError });
+
+    const failure = await runPreviewSearch({ rpc }, {}).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe(
+      "Recherche d'aperçu en échec : canceling statement due to statement timeout (code 57014)",
+    );
+    expect((failure as Error).cause).toBe(postgrestError);
+  });
+
+  it("garde une Error telle quelle et nomme une erreur sans message", async () => {
+    const original = new Error("timeout");
+    const rpc = vi.fn().mockResolvedValueOnce({ data: null, error: original });
+    await expect(runPreviewSearch({ rpc }, {})).rejects.toBe(original);
+
+    rpc.mockResolvedValueOnce({ data: null, error: { code: "PGRST000" } });
+    await expect(runPreviewSearch({ rpc }, {})).rejects.toThrow(
+      "Recherche d'aperçu en échec : erreur inconnue (code PGRST000)",
+    );
   });
 
   it("derives one request key per distinct search", () => {

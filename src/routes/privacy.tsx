@@ -25,10 +25,10 @@ const processingRows = [
   },
   {
     purpose: "Fonctions Découverte et Analyse",
-    data: "Favoris, alertes, zones, rapports, notes, simulations, exports et espaces collaboratifs",
+    data: "Favoris, alertes, zones, rapports, notes, simulations, exports et espaces collaboratifs ; journal des fonctions utilisées (compte, vente ou tribunal concerné, date), par exemple pour l’historique ou la valeur d’une vente débloquée",
     basis: "Exécution du contrat ou mesures précontractuelles",
     retention:
-      "Pendant le compte ; les données d’usage expirées sont purgées selon la matrice de conservation",
+      "Pendant le compte ; le journal d’usage est conservé 24 mois au plus ; les autres données d’usage expirées sont purgées selon la matrice de conservation",
   },
   {
     purpose: "Commande et accès payant",
@@ -36,6 +36,14 @@ const processingRows = [
     basis: "Exécution du contrat et obligations comptables/fiscales",
     retention:
       "Preuves contractuelles et comptables jusqu’à 10 ans ; données carte conservées par Stripe, pas par Immojudis",
+  },
+  {
+    purpose: "Déblocages mensuels de ventes (offre Découverte)",
+    data: "Identifiant de compte, vente débloquée, date du déblocage",
+    basis:
+      "Exécution du contrat : appliquer l’avantage et sa limite prévus par les conditions générales",
+    retention:
+      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, jusqu’à la fin du mois civil du déblocage (effacement lors de la purge hebdomadaire qui suit), pour que le compteur du mois ne soit pas remis à zéro.",
   },
   {
     purpose: "Alertes email",
@@ -89,12 +97,13 @@ const processingRows = [
       "Pas de conservation propre à ce traitement par Immojudis ; durée de conservation de Mapbox et de l’IGN selon leurs conditions",
   },
   {
-    purpose: "Enrichissement de dossier supervisé par Immojudis",
-    data: "Annonce, informations manquantes, coordonnées professionnelles, questions, messages, réponses, pièces et décisions de validation",
+    purpose:
+      "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
+    data: "Nom, fonction, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation",
     basis:
-      "Intérêt légitime à fiabiliser le catalogue auprès des professionnels contactés ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les adresses ayant exercé leur opposition sont conservées pour la respecter.",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     retention:
-      "Pendant le suivi ; sans activité, brouillons purgés après 6 mois et échanges après 24 mois",
+      "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle",
   },
   {
     purpose: "Formulaire de contact",
@@ -105,7 +114,7 @@ const processingRows = [
   },
   {
     purpose: "Mesure, qualité et exploitation",
-    data: "Événements d’usage et de parcours agrégés, sans identifiant de personne, performances, identifiants techniques, erreurs et état des traitements",
+    data: "Événements de parcours agrégés, sans identifiant de personne, performances, identifiants techniques, erreurs et état des traitements",
     basis: "Intérêt légitime à améliorer, sécuriser et maintenir Immojudis",
     retention:
       "Événements d’usage et journaux applicatifs : 24 mois au plus, conformément à la matrice de conservation ; données de mesure conservées par Vercel selon sa propre durée",
@@ -181,6 +190,33 @@ export function PrivacyPage() {
             </div>
           </PrivacySection>
 
+          <PrivacySection title="Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)">
+            <p>
+              Pour obtenir une information sur une vente, Immojudis peut écrire à l’avocat, au
+              notaire, au commissaire de justice ou au gestionnaire qui la mène. Nous utilisons son
+              nom, sa fonction et son adresse professionnelle, relevés dans l’annonce publique de la
+              vente, dans un annuaire professionnel officiel (annuaire des avocats du CNB, annuaires
+              de certains barreaux, annuaire des commissaires de justice) ou sur le site de son
+              cabinet ou de son étude. La source et la date de relevé sont indiquées dans chaque
+              message. Base juridique : intérêt légitime à publier des informations exactes sur les
+              ventes. Les messages ne contiennent aucune offre commerciale. Chaque message est
+              validé par un administrateur. Les adresses professionnelles figurant dans les annonces
+              publiées sur Licitor, dont l’adresse e-mail est masquée par le site, sont relevées
+              automatiquement lors de la collecte de l’annonce ; elles sont conservées en interne,
+              jamais publiées, et ne servent qu’à une demande d’information validée par un membre de
+              l’équipe. Une adresse relevée à la collecte de l’annonce et non utilisée pour un envoi
+              est conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la
+              date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de
+              l’annonce (purge hebdomadaire, seuil de 21 jours). Les données d’un échange sont
+              conservées 12 mois si vous ne répondez pas, 24 mois après le dernier échange si vous
+              répondez. Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus
+              être contacté » de chaque message ou à {legalValue(publisher.contactEmail)}. Votre
+              opposition est enregistrée et vaut pour tous nos canaux. Vous pouvez aussi demander
+              l’accès, la rectification ou l’effacement, et saisir la CNIL. Pour exercer ces droits,
+              écrivez à {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
+            </p>
+          </PrivacySection>
+
           <PrivacySection title="Personnes citées dans une annonce">
             <p>
               Les annonces de vente et leurs pièces publiques concernent des biens, mais peuvent
@@ -205,16 +241,18 @@ export function PrivacyPage() {
             <p>
               Les données sont accessibles aux personnes habilitées d’Immojudis et, selon le besoin,
               à Supabase (authentification et base), Vercel (hébergement, journaux et mesure de
-              performance), Stripe (paiement), Resend (emails), Mapbox (cartes, vignettes et
-              géocodage), l’Institut national de l’information géographique et forestière (IGN :
-              Base Adresse Nationale en repli du géocodage, Géoplateforme pour les cartes
-              cadastrales), le prestataire d’IA utilisé pour lire les annonces et les pièces
-              (Replicate), le service de rapport d’erreurs lorsqu’il est configuré (sans cookie,
-              en-tête, paramètre d’adresse ni contenu de requête), aux avocats référencés uniquement
-              lorsqu’une mise en relation est demandée et à l’intermédiaire professionnel contacté
-              par Immojudis après validation par un administrateur. Dans ce dernier cas, seules les
-              informations nécessaires à l’enrichissement du dossier et au suivi de la réponse sont
-              transmises. Les prestataires agissent dans la limite de leurs missions contractuelles.
+              performance), Stripe (paiement), Resend (envoi et réception des courriels), GitHub
+              (exécution des traitements automatisés), Mapbox (cartes, vignettes et géocodage),
+              l’Institut national de l’information géographique et forestière (IGN : Base Adresse
+              Nationale en repli du géocodage, Géoplateforme pour les cartes cadastrales), le
+              prestataire d’IA utilisé pour lire les annonces et les pièces, ainsi que les réponses
+              des professionnels contactés (Replicate, États-Unis), le service de rapport d’erreurs
+              lorsqu’il est configuré (sans cookie, en-tête, paramètre d’adresse ni contenu de
+              requête), aux avocats référencés uniquement lorsqu’une mise en relation est demandée
+              et à l’intermédiaire professionnel contacté par Immojudis après validation par un
+              administrateur. Dans ce dernier cas, seules les informations nécessaires à
+              l’enrichissement du dossier et au suivi de la réponse sont transmises. Les
+              prestataires agissent dans la limite de leurs missions contractuelles.
             </p>
             <p className="mt-3">
               Mise en relation avec un avocat. Si vous ne choisissez pas d’avocat, Immojudis en
@@ -228,11 +266,10 @@ export function PrivacyPage() {
 
           <PrivacySection title="Transferts hors de l’Espace économique européen">
             <p>
-              Certains fournisseurs peuvent traiter des données aux États-Unis ou dans d’autres
-              pays. Ces transferts reposent, selon le fournisseur et le service, sur une décision
-              d’adéquation telle que le cadre UE–États-Unis applicable, des clauses contractuelles
-              types ou une autre garantie prévue par le RGPD. Les garanties pertinentes peuvent être
-              demandées depuis l’espace Mes droits.
+              Certains prestataires peuvent traiter des données aux États-Unis ou dans d’autres
+              pays, notamment le prestataire d’IA (Replicate) et GitHub. Pour savoir quelle garantie
+              s’applique à chacun, ou en obtenir une copie, écrivez à{" "}
+              {legalValue(publisher.contactEmail)} ; aucun compte n’est nécessaire.
             </p>
           </PrivacySection>
 

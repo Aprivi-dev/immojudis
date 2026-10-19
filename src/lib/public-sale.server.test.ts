@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   client: vi.fn(),
@@ -118,6 +118,83 @@ describe("public sale lookup", () => {
   it("lets the browser decide when the server has no database access", async () => {
     mocks.client.mockReturnValue(null);
     expect(await lookupPublicSale(ID)).toEqual({ status: "unavailable" });
+  });
+
+  describe("copie hébergée de la photo", () => {
+    const PHOTO = "https://www.licitor.com/photos/maison.jpg";
+    const row = { id: ID, city: "Pau", starting_price_eur: 1, thumbnail_url: PHOTO };
+    const mirrorRow = {
+      source_url: PHOTO,
+      path_640: `${ID}/abc-640.webp`,
+      path_1600: `${ID}/abc-1600.webp`,
+      width: 1600,
+      height: 1200,
+    };
+
+    function withMirrors(mirrors: unknown) {
+      return {
+        rpc: vi.fn((fn: string) =>
+          Promise.resolve(fn === "sale_photo_mirrors" ? mirrors : { data: [row], error: null }),
+        ),
+        from: vi.fn(),
+      };
+    }
+    const mirrorReads = (supabase: { rpc: ReturnType<typeof vi.fn> }) =>
+      supabase.rpc.mock.calls.filter(([fn]) => fn === "sale_photo_mirrors").length;
+
+    beforeEach(() => {
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    });
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("ajoute la copie à la photo, l'URL d'origine restant celle de la source", async () => {
+      const supabase = withMirrors({ data: [mirrorRow], error: null });
+      mocks.client.mockReturnValue(supabase);
+
+      const result = await lookupPublicSale(ID);
+
+      expect(result).toMatchObject({
+        status: "found",
+        sale: { media: [{ url: PHOTO, mirror: { path640: `${ID}/abc-640.webp` } }] },
+      });
+      expect(mirrorReads(supabase)).toBe(1);
+    });
+
+    it("n'est pas gardée dans le cache de données : une panne ne dure pas cinq minutes", async () => {
+      const supabase = withMirrors({ data: null, error: { message: "boom" } });
+      mocks.client.mockReturnValue(supabase);
+      const first = await lookupPublicSale(ID);
+      expect(first).toMatchObject({ sale: { media: [{ url: PHOTO }] } });
+      expect(JSON.stringify([...mocks.store.values()])).not.toContain("mirror");
+
+      const healthy = withMirrors({ data: [mirrorRow], error: null });
+      mocks.client.mockReturnValue(healthy);
+      const second = await lookupPublicSale(ID);
+      expect(second).toMatchObject({ sale: { media: [{ mirror: { width: 1600 } }] } });
+      expect(summaryReads(healthy)).toBe(0);
+    });
+
+    it("interrupteur éteint : aucun appel et la même réponse qu'avant", async () => {
+      vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "");
+      const supabase = withMirrors({ data: [mirrorRow], error: null });
+      mocks.client.mockReturnValue(supabase);
+
+      const result = await lookupPublicSale(ID);
+
+      expect(mirrorReads(supabase)).toBe(0);
+      expect(JSON.stringify(result)).not.toContain("mirror");
+    });
+
+    it("une vente introuvable ne cherche aucune copie", async () => {
+      const supabase = {
+        rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+        from: vi.fn(),
+      };
+      mocks.client.mockReturnValue(supabase);
+      expect(await lookupPublicSale(ID)).toEqual({ status: "missing" });
+      expect(mirrorReads(supabase)).toBe(0);
+    });
   });
 
   describe("data cache", () => {

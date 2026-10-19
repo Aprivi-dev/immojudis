@@ -58,6 +58,17 @@ describe("/sales server page", () => {
     expect(html).toContain("<h1>Ventes immobilières aux enchères</h1>");
   });
 
+  it("keeps the rows fresh from the moment of the render (a page built on demand is not cached)", async () => {
+    mocks.load.mockResolvedValue({ signature: "[]", items: [{ id: "a" }], count: 1 });
+    const before = Date.now();
+    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+    const raw = /data-state="([^"]*)"/.exec(html)![1].replaceAll("&quot;", '"');
+    const updatedAt = (JSON.parse(raw) as { queries: Array<{ state: { dataUpdatedAt: number } }> })
+      .queries[0].state.dataUpdatedAt;
+    expect(updatedAt).toBeGreaterThanOrEqual(before);
+    expect(updatedAt).toBeLessThanOrEqual(Date.now());
+  });
+
   it("reads the filters of the URL on the server", async () => {
     mocks.load.mockResolvedValue(null);
     await Page({
@@ -73,6 +84,17 @@ describe("/sales server page", () => {
     const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
     expect(hydratedQueries(html)).toHaveLength(0);
     expect(html).toContain('data-seeded="false"');
+  });
+
+  it("keeps that fallback in production too: only the static variant refuses an empty page", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      mocks.load.mockResolvedValue(null);
+      const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }));
+      expect(html).toContain('data-seeded="false"');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("has an accented title and description, without the site name", () => {

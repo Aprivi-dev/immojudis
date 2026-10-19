@@ -103,6 +103,127 @@ describe("admin information request authorization", () => {
     expect(calls).toContainEqual(["range", [50, 99]]);
   });
 
+  it("adds the sale title to each listed mission, read for this page's sales only", async () => {
+    mocks.auth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
+    const missionRow = (id: string, sale_id: string | null) => ({
+      id,
+      case_id: null,
+      sale_id,
+      status: "sent",
+      recipient_kind: "source_lawyer",
+      recipient_name: null,
+      recipient_email: "contact@example.test",
+      subject: "Demande",
+      body_text: "Bonjour",
+      question_keys: [],
+      missing_information: [],
+      metadata: {},
+      failure_reason: null,
+      approved_at: null,
+      sent_at: null,
+      replied_at: null,
+      created_at: "2026-10-01T10:00:00.000Z",
+      updated_at: "2026-10-01T10:00:00.000Z",
+    });
+    const otherSaleId = "33333333-3333-4333-8333-333333333333";
+    const salesIn = vi.fn();
+    const chainFor = (result: unknown) => {
+      const chain: Record<string, unknown> = {
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
+      };
+      for (const method of ["select", "eq", "order", "range"]) chain[method] = () => chain;
+      chain.in = (...args: unknown[]) => {
+        salesIn(...args);
+        return chain;
+      };
+      return chain;
+    };
+    mocks.from.mockImplementation((table: string) =>
+      table === "auction_sales"
+        ? chainFor({
+            data: [
+              { id: saleId, title: " Appartement à Bordeaux " },
+              { id: otherSaleId, title: null },
+            ],
+            error: null,
+          })
+        : chainFor({
+            data: [
+              missionRow("a", saleId),
+              missionRow("b", saleId),
+              missionRow("c", otherSaleId),
+              missionRow("d", null),
+            ],
+            error: null,
+            count: 4,
+          }),
+    );
+
+    const response = await GET(request("GET"));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(
+      body.missions.map((mission: { id: string; saleTitle: string | null }) => [
+        mission.id,
+        mission.saleTitle,
+      ]),
+    ).toEqual([
+      ["a", "Appartement à Bordeaux"],
+      ["b", "Appartement à Bordeaux"],
+      ["c", null],
+      ["d", null],
+    ]);
+    expect(salesIn).toHaveBeenCalledWith("id", [saleId, otherSaleId]);
+  });
+
+  it("still lists the missions when the sale titles cannot be read", async () => {
+    mocks.auth.mockResolvedValue({ isAdmin: true, userId: "admin-1" });
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const chainFor = (result: unknown) => {
+      const chain: Record<string, unknown> = {
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
+      };
+      for (const method of ["select", "eq", "order", "range", "in"]) chain[method] = () => chain;
+      return chain;
+    };
+    mocks.from.mockImplementation((table: string) =>
+      table === "auction_sales"
+        ? chainFor({ data: null, error: { code: "57014", message: "timeout" } })
+        : chainFor({
+            data: [
+              {
+                id: "a",
+                case_id: null,
+                sale_id: saleId,
+                status: "sent",
+                recipient_kind: "source_lawyer",
+                recipient_name: null,
+                recipient_email: "contact@example.test",
+                subject: "Demande",
+                body_text: "Bonjour",
+                question_keys: [],
+                missing_information: [],
+                metadata: {},
+                failure_reason: null,
+                approved_at: null,
+                sent_at: null,
+                replied_at: null,
+                created_at: "2026-10-01T10:00:00.000Z",
+                updated_at: "2026-10-01T10:00:00.000Z",
+              },
+            ],
+            error: null,
+            count: 1,
+          }),
+    );
+
+    const response = await GET(request("GET"));
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).missions[0]).toMatchObject({ id: "a", saleTitle: null });
+  });
+
   it("denies visitors before loading a sale or a mission", async () => {
     expect((await POST(request("POST", { saleId }, false))).status).toBe(401);
     expect(mocks.auth).not.toHaveBeenCalled();

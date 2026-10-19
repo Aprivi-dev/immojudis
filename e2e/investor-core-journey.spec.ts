@@ -150,6 +150,12 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   expect(reportId).toBe("report-e2e");
 
   await page.goto("/offres");
+  // « 3 déblocages par mois » : la limite est annoncée avec l'offre gratuite, et le comparatif ne
+  // dit pas « Non inclus » pour ce qu'un déblocage ouvre.
+  await expect(page.getByText(/^3 déblocages par mois : l[’']enchère plafond/)).toBeVisible();
+  await expect(
+    page.getByRole("row", { name: /Enchère plafond chiffrée/ }).getByText("Pour 3 ventes par mois"),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Démarrer l’essai Analyse" }).click();
   await expect(page.getByRole("heading", { name: "Récapitulatif avant paiement" })).toBeVisible();
   const consentCheckboxes = page.getByRole("checkbox");
@@ -208,7 +214,8 @@ function mockSale() {
     tribunal_code: "TJ-BDX",
     property_type: "apartment",
     starting_price_eur: 120000,
-    sale_date: "2026-09-15T09:00:00.000Z",
+    // Toujours à venir, quelle que soit la date d'exécution : une vente passée n'est plus proposée.
+    sale_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     latitude: 44.8378,
     longitude: -0.5792,
     occupancy_status: "vacant",

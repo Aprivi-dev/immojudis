@@ -4,10 +4,11 @@ import subprocess
 import time
 import unicodedata
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from urllib.parse import unquote, urlparse
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -831,7 +832,30 @@ def test_enrich_sale_from_pdf_text_extracts_visit_dates_with_provenance() -> Non
     assert "visite virtuelle" not in " ".join(extraction["visit_dates"]).lower()
 
 
+_FRENCH_MONTHS = (
+    "janvier",
+    "février",
+    "mars",
+    "avril",
+    "mai",
+    "juin",
+    "juillet",
+    "août",
+    "septembre",
+    "octobre",
+    "novembre",
+    "décembre",
+)
+
+
 def test_enrich_sale_from_pdf_text_extracts_sale_date_with_provenance() -> None:
+    # Une date passée ou à plus de 548 jours est écartée (pdf_sale_date_guard) : le test prend un jeudi
+    # environ deux mois après le jour où il tourne, pour ne jamais dépendre de la date d'exécution.
+    hearing_day = date.today() + timedelta(days=60)
+    hearing_day += timedelta(days=(3 - hearing_day.weekday()) % 7)
+    month = _FRENCH_MONTHS[hearing_day.month - 1]
+    hearing_text = f"le jeudi {hearing_day.day} {month} {hearing_day.year} à 15h00"
+    expected = datetime(hearing_day.year, hearing_day.month, hearing_day.day, 15, tzinfo=ZoneInfo("Europe/Paris")).astimezone(UTC)
     sale = normalize_sale(
         {
             "source_name": "info_encheres",
@@ -847,7 +871,7 @@ def test_enrich_sale_from_pdf_text_extracts_sale_date_with_provenance() -> None:
             "document_type": "cahier_conditions_vente",
             "text": (
                 "Sommaire du cahier. "
-                "Audience d'adjudication le jeudi 15 octobre 2026 à 15h00 au tribunal judiciaire de Bordeaux."
+                f"Audience d'adjudication {hearing_text} au tribunal judiciaire de Bordeaux."
             ),
             "pages": [
                 {
@@ -859,7 +883,7 @@ def test_enrich_sale_from_pdf_text_extracts_sale_date_with_provenance() -> None:
                 {
                     "page": 2,
                     "text": (
-                        "Audience d'adjudication le jeudi 15 octobre 2026 à 15h00 au tribunal judiciaire de Bordeaux."
+                        f"Audience d'adjudication {hearing_text} au tribunal judiciaire de Bordeaux."
                     ),
                     "confidence": 0.94,
                     "method": "pymupdf_text",
@@ -871,9 +895,9 @@ def test_enrich_sale_from_pdf_text_extracts_sale_date_with_provenance() -> None:
 
     enrich_sale_from_pdf_text(sale, pdf_texts)
 
-    assert sale.sale_date == datetime(2026, 10, 15, 13, 0, tzinfo=UTC)
+    assert sale.sale_date == expected
     extraction = sale.raw_payload["pdf_sale_date_extraction"]
-    assert extraction["sale_date"] == "2026-10-15T13:00:00+00:00"
+    assert extraction["sale_date"] == expected.isoformat()
     assert extraction["document_label"] == "Cahier des conditions de vente"
     assert extraction["document_url"] == "https://example.test/ccv"
     assert extraction["document_type"] == "cahier_conditions_vente"

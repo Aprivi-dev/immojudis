@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   loginPathWithRedirect,
+  linkPrefetch,
   loginReason,
   pathWithSearch,
   searchParamsToRecord,
@@ -41,10 +42,22 @@ describe("loginPathWithRedirect", () => {
   });
 });
 
+describe("login from a sale page", () => {
+  it("garde la fiche (et l'ancre) à retrouver, avec le motif « fiche »", () => {
+    expect(loginPathWithRedirect("/sales/abc?from=%2Fsales#proofs", { reason: "fiche" })).toBe(
+      "/login?redirect=%2Fsales%2Fabc%3Ffrom%3D%252Fsales%23proofs&mode=investor&reason=fiche",
+    );
+    expect(loginPathWithRedirect("/sales/abc", { mode: "login", reason: "fiche" })).toBe(
+      "/login?redirect=%2Fsales%2Fabc&reason=fiche",
+    );
+  });
+});
+
 describe("loginReason", () => {
   it("ne garde que les motifs connus", () => {
     expect(loginReason("alerte")).toBe("alerte");
     expect(loginReason("offre")).toBe("offre");
+    expect(loginReason("fiche")).toBe("fiche");
     expect(loginReason("<script>")).toBeUndefined();
     expect(loginReason(undefined)).toBeUndefined();
   });
@@ -94,5 +107,18 @@ describe("searchParamsToRecord", () => {
     expect(searchParamsToRecord(new URLSearchParams("city=Lyon&city=Nice"))).toEqual({
       city: "Nice",
     });
+  });
+});
+
+describe("linkPrefetch", () => {
+  it("désactive le préchargement des pages rendues à la demande", () => {
+    expect(linkPrefetch("/sales")).toBe(false);
+    expect(linkPrefetch("/annonce-exemple")).toBe(false);
+  });
+
+  it("laisse le comportement par défaut aux pages préfabriquées et aux fiches", () => {
+    expect(linkPrefetch("/offres")).toBeUndefined();
+    expect(linkPrefetch("/ressources")).toBeUndefined();
+    expect(linkPrefetch("/sales/abc")).toBeUndefined();
   });
 });

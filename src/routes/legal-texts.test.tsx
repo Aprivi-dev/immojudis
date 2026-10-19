@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_ANALYSIS_OFFER_LABEL, ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
-import { PAST_DUE_GRACE_DAYS } from "@/lib/plans";
+import { PAST_DUE_GRACE_DAYS, PLAN_LIMITS } from "@/lib/plans";
 import { TermsPage } from "./conditions-generales";
 import { PrivacyPage } from "./privacy";
 
@@ -94,7 +96,164 @@ describe("conditions générales", () => {
   });
 });
 
+describe("conditions générales : classement, référencement et mise en avant", () => {
+  it("résument le classement par défaut, la publicité des avocats et renvoient à la page publique", () => {
+    const { container } = render(<TermsPage />);
+    const text = (container.textContent ?? "").replace(/\s+/g, " ");
+    expect(text).toContain("10. Classement, référencement et mise en avant");
+    expect(text).toContain(
+      "Par défaut, les annonces dont la position sur la carte est connue passent avant les autres. Elles sont ensuite classées selon la quantité d’informations renseignées dans leur fiche, puis par date de vente la plus proche. Aucune rémunération ne peut améliorer le rang d’une annonce.",
+    );
+    expect(text).toContain(
+      "Dans l’annuaire des avocats, les cabinets qui rémunèrent Immojudis, ou bénéficient d’un essai gratuit de cette offre, sont affichés en premier dans une section distincte, signalés « Publicité · Sponsorisé » ; ils ne sont ni recommandés ni notés.",
+    );
+    expect(text).toContain(
+      "Un encart d’un cabinet d’avocats, signalé de la même façon, peut aussi apparaître dans la liste des ventes pour une zone géographique ; il ne modifie pas l’ordre des annonces et n’est ni une recommandation, ni une notation, ni une garantie de résultat.",
+    );
+    expect(text).toContain(
+      "Une vente passée, annulée ou retirée n’est plus affichée dès que cette information est connue d’Immojudis.",
+    );
+    const link = [...container.querySelectorAll("a")].find(
+      (anchor) => anchor.textContent === "Comment sont classées les annonces ?",
+    );
+    expect(link?.getAttribute("href")).toBe("/classement-des-annonces");
+    // Les sections suivantes sont renumérotées sans trou.
+    expect(text).toContain("11. Données personnelles");
+    expect(text).toContain("12. Réclamations, médiation et droit applicable");
+  });
+
+  it("portent la version 2026-10-14.1, ancrée par l'empreinte de leur source", () => {
+    expect(LEGAL_DOCUMENTS.terms.version).toBe("2026-10-14.1");
+  });
+
+  it("la politique de confidentialité est en version 2026-10-14.2 (relevé des adresses Licitor)", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-10-14.2");
+  });
+});
+
+describe("conditions générales : 3 déblocages par mois", () => {
+  const n = PLAN_LIMITS.decouverte.monthlyUnlocks;
+
+  it("définissent le déblocage : une vente, cinq éléments quand elle les comporte, le reste à Analyse", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain("Découverte est gratuite, sans limite de durée et sans carte bancaire.");
+    expect(text).toContain(`chaque mois civil, ${n} déblocages`);
+    expect(text).toContain(
+      "Un déblocage ouvre, pour une vente de votre choix, les éléments suivants de l’offre Analyse lorsque cette vente les comporte : l’enchère plafond chiffrée, la lecture des pièces, l’historique de la vente, les statistiques du tribunal compétent pour cette vente et les pièces du dossier.",
+    );
+    expect(text).toContain(
+      "Les autres fonctions de l’offre Analyse, notamment l’export PDF ou CSV, les rapports enregistrés, le budget travaux, l’estimation détaillée et les ventes comparables, les alertes avancées et la mise en relation avec un avocat référencé, restent réservées à cette offre.",
+    );
+    // Jamais « réservé » pour un élément que le compte reçoit.
+    const reserved = text.slice(text.indexOf("Les autres fonctions de l’offre Analyse"));
+    const reservedSentence = reserved.slice(0, reserved.indexOf("restent réservées"));
+    for (const received of [
+      "enchère plafond",
+      "lecture des pièces",
+      "historique",
+      "statistiques",
+      "pièces du dossier",
+    ]) {
+      expect(reservedSentence).not.toContain(received);
+    }
+  });
+
+  it("disent quand le déblocage est consommé, non restitué, non reporté, et quand le compteur repart", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Le déblocage est consommé quand vous le confirmez, après affichage du nombre restant",
+    );
+    expect(text).toContain(
+      "il n’est pas consommé en cas d’erreur technique, ni si la vente est déjà débloquée",
+    );
+    expect(text).toContain(
+      "Il n’est pas restitué si la vente est ensuite reportée ou adjugée, ni si elle est retirée par la juridiction ou la source. Si Immojudis retire elle-même la vente ou en suspend la publication pour une raison qui lui est imputable (par exemple une erreur de publication ou la suspension d’une source décidée par Immojudis), le déblocage est restitué sur simple demande adressée à",
+    );
+    expect(text).toMatch(
+      /adressée à .+, qui reçoit une réponse sous un mois\. Le déblocage restitué est rendu sur le mois du déblocage : une demande reçue après la fin de ce mois ne rend pas de déblocage, car les déblocages ne sont pas reportés\./,
+    );
+    // Le canal est l'adresse de contact : Mes droits n'a pas de demande de restitution.
+    expect(text).not.toContain("depuis Mes droits ou à l’adresse de contact");
+    expect(text).toContain("Les déblocages non utilisés ne sont pas reportés.");
+    expect(text).toContain(
+      `Le compteur est remis à ${n} le 1er de chaque mois à 00 h 00, heure de Paris.`,
+    );
+    expect(text).toContain(
+      "tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le déblocage, et tant que votre compte existe",
+    );
+  });
+
+  it("disent le sort des ventes débloquées après un abonnement Analyse", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Pendant un abonnement Analyse, essai compris, aucun déblocage n’est consommé. À la fin de l’abonnement, le compte revient à Découverte : les ventes que vous aviez déjà débloquées restent accessibles ; les autres ventes consultées pendant l’abonnement redeviennent soumises aux déblocages.",
+    );
+  });
+
+  it("limitent la clause de modification aux déblocages, avec trente jours de préavis", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Immojudis peut modifier ou supprimer les déblocages mensuels pour l’avenir, en vous prévenant au moins 30 jours à l’avance par un message dans l’application ou à l’adresse email de votre compte. Les ventes que vous avez déjà débloquées restent accessibles dans les conditions ci-dessus, et les déblocages déjà consommés ne sont pas affectés. Si la modification ne vous convient pas, vous pouvez fermer votre compte gratuitement depuis Mes droits.",
+    );
+    // Les autres avantages de Découverte (favoris, alerte) ne sont plus modifiables par cette clause.
+    expect(text).not.toContain("les avantages de l’offre Découverte");
+  });
+
+  it("rendent les déblocages personnels (article 9) sans parler d’analyses gratuites", () => {
+    const text = pageText(<TermsPage />);
+    expect(text).toContain(
+      "Les déblocages de ventes sont personnels : ils ne se partagent ni ne se transmettent.",
+    );
+    expect(text).toContain(
+      "le contournement des quotas, notamment la création de plusieurs comptes pour multiplier les déblocages",
+    );
+    expect(text).not.toMatch(/analyses? (complètes? )?gratuites?|analyse offerte/i);
+  });
+
+  it("ne réécrivent à la main ni le chiffre des déblocages ni leur nom dans les textes publics", () => {
+    for (const file of [
+      "src/routes/conditions-generales.tsx",
+      "src/app/offres/offers-page.tsx",
+      "src/lib/offer-comparison.ts",
+      "src/components/sale-detail/SaleUnlockPanel.tsx",
+      "src/components/SalePublicPreview.tsx",
+      "src/lib/sale-unlocks.ts",
+    ]) {
+      // Comments name the feature in prose; only the strings the page renders matter.
+      const source = readFileSync(resolve(file), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+      expect(source, file).not.toMatch(/(?<![\w$])(3|trois) (déblocages|ventes par mois)/i);
+      expect(source, file).not.toMatch(/analyses? (complètes? )?gratuites?|Analyse offerte/i);
+    }
+  });
+});
+
 describe("politique de confidentialité", () => {
+  it("décrit le traitement des déblocages : base contractuelle et conservation de 24 mois au plus", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("Déblocages mensuels de ventes (offre Découverte)");
+    expect(text).toContain("Identifiant de compte, vente débloquée, date du déblocage");
+    expect(text).toContain(
+      "Exécution du contrat : appliquer l’avantage et sa limite prévus par les conditions générales",
+    );
+    expect(text).toContain(
+      "24 mois au plus après le déblocage, et suppression avec le compte. Si la vente est supprimée du site, le lien avec la vente est coupé : seuls l’identifiant de compte et la date du déblocage sont gardés, jusqu’à la fin du mois civil du déblocage (effacement lors de la purge hebdomadaire qui suit), pour que le compteur du mois ne soit pas remis à zéro.",
+    );
+  });
+
+  it("dit que le journal d’usage relie un compte à la vente débloquée, pendant 24 mois au plus", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "journal des fonctions utilisées (compte, vente ou tribunal concerné, date), par exemple pour l’historique ou la valeur d’une vente débloquée",
+    );
+    expect(text).toContain("le journal d’usage est conservé 24 mois au plus");
+    // Les mesures agrégées ne sont plus décrites comme « d'usage » sans personne.
+    expect(text).toContain("Événements de parcours agrégés, sans identifiant de personne");
+    expect(text).not.toContain("Événements d’usage et de parcours agrégés");
+    expect(text).toContain("Événements d’usage et journaux applicatifs : 24 mois au plus");
+  });
+
   it("annonce sa version et écrit Immojudis", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(`Version ${LEGAL_DOCUMENTS.privacy.version}`);
@@ -183,12 +342,64 @@ describe("politique de confidentialité", () => {
   it("aligne la base légale de l'enquête dossier sur le registre et ne parle plus de prospection", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Intérêt légitime à fiabiliser le catalogue auprès des professionnels contactés ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les adresses ayant exercé leur opposition sont conservées pour la respecter.",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; les échanges sont déclenchés et chaque message envoyé est validé par un administrateur. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     );
     // L'email du demandeur n'est jamais communiqué (share_requester_email reste à false).
     expect(text).not.toContain("consentement pour la communication de l’email de réponse");
     expect(text).not.toContain("service professionnel");
     expect(text).toContain("aucune sollicitation commerciale");
+  });
+
+  it("décrit les professionnels contactés : sources, durées, opposition, droits sans compte", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).not.toContain("Enrichissement de dossier supervisé par Immojudis");
+    expect(text).toContain(
+      "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
+    );
+    expect(text).toContain(
+      "relevés dans l’annonce publique de la vente, dans un annuaire professionnel officiel (annuaire des avocats du CNB, annuaires de certains barreaux, annuaire des commissaires de justice) ou sur le site de son cabinet ou de son étude. La source et la date de relevé sont indiquées dans chaque message.",
+    );
+    expect(text).not.toContain("annuaire des notaires");
+    expect(text).toContain("Base juridique : intérêt légitime à publier des informations exactes");
+    expect(text).toContain("Les messages ne contiennent aucune offre commerciale.");
+    expect(text).toContain(
+      "Les adresses professionnelles figurant dans les annonces publiées sur Licitor, dont l’adresse e-mail est masquée par le site, sont relevées automatiquement lors de la collecte de l’annonce ; elles sont conservées en interne, jamais publiées, et ne servent qu’à une demande d’information validée par un membre de l’équipe.",
+    );
+    expect(text).toContain(
+      "Une adresse relevée à la collecte de l’annonce et non utilisée pour un envoi est conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours).",
+    );
+    expect(text).toContain(
+      "Les données d’un échange sont conservées 12 mois si vous ne répondez pas, 24 mois après le dernier échange si vous répondez.",
+    );
+    expect(text).not.toContain("conservées un mois au plus si aucun message n’est envoyé");
+    expect(text).toContain(
+      "Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus être contacté » de chaque message ou à contact@immojudis.example. Votre opposition est enregistrée et vaut pour tous nos canaux.",
+    );
+    expect(text).toContain(
+      "Pour exercer ces droits, écrivez à contact@immojudis.example ; aucun compte n’est nécessaire.",
+    );
+    expect(text).toContain(
+      "liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle",
+    );
+    expect(text).toContain("adresses invalides (rebond permanent) : 12 mois");
+  });
+
+  it("ne publie pas l'outil de recherche automatisé tant qu'il n'existe pas", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).not.toContain("outil de recherche automatisé");
+    expect(text).not.toContain("agent-information");
+  });
+
+  it("nomme le prestataire d'IA et GitHub, sans affirmer de mécanisme de transfert non vérifié", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain("les réponses des professionnels contactés (Replicate, États-Unis)");
+    expect(text).toContain("Resend (envoi et réception des courriels)");
+    expect(text).toContain("GitHub (exécution des traitements automatisés)");
+    expect(text).toContain(
+      "Pour savoir quelle garantie s’applique à chacun, ou en obtenir une copie, écrivez à contact@immojudis.example ; aucun compte n’est nécessaire.",
+    );
+    expect(text).not.toContain("clauses contractuelles types");
+    expect(text).not.toContain("décision d’adéquation");
   });
 
   it("décrit l'IA du message d'enquête comme le fait le message lui-même", () => {

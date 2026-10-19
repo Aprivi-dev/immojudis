@@ -2,29 +2,46 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailFallbacks";
 
 import { SalePublicPreview } from "@/components/SalePublicPreview";
 import { useAuth } from "@/hooks/use-auth";
 import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
-import { fetchAccessPlan } from "@/lib/client-api";
-import { safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
+import { fetchAccessPlan, fetchSaleUnlockStatus } from "@/lib/client-api";
+import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
 import type { AuctionSale } from "@/lib/types";
-import { queryKeys } from "@/lib/query-keys";
+import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
+import type { SaleUnlockResult } from "@/lib/sale-unlocks";
+
+const loadDiscoveryView = () => import("@/components/DiscoverySaleDetailView");
+const loadSimplifiedViews = () => import("@/components/SimplifiedSaleDetailView");
 
 const DiscoverySaleDetailView = dynamic(
-  () =>
-    import("@/components/DiscoverySaleDetailView").then((module) => module.DiscoverySaleDetailView),
+  () => loadDiscoveryView().then((module) => module.DiscoverySaleDetailView),
   { loading: () => <SaleDetailSkeleton /> },
 );
 
 const AnalysisSaleDetailView = dynamic(
-  () =>
-    import("@/components/SimplifiedSaleDetailView").then((module) => module.AnalysisSaleDetailView),
+  () => loadSimplifiedViews().then((module) => module.AnalysisSaleDetailView),
   { loading: () => <SaleDetailSkeleton /> },
 );
+
+const UnlockedSaleDetailView = dynamic(
+  () => loadSimplifiedViews().then((module) => module.UnlockedSaleDetailView),
+  { loading: () => <SaleDetailSkeleton /> },
+);
+
+/**
+ * Downloads the code of the views (not data) while the rights and the listing are being read, so
+ * that it is already there when the access mode is known. A failed download is ignored: the
+ * `dynamic` loaders import the module again when the view is actually displayed.
+ */
+function preloadSaleViews(views: { discovery: boolean; simplified: boolean }) {
+  if (views.discovery) void loadDiscoveryView().catch(() => undefined);
+  if (views.simplified) void loadSimplifiedViews().catch(() => undefined);
+}
 
 type SaleDetailRouteData = {
   sale: AuctionSale | null;
@@ -33,11 +50,14 @@ type SaleDetailRouteData = {
 
 async function loadSaleDetailRouteData(
   id: string,
-  options: { discovery?: boolean; authenticated: boolean },
+  options: { discovery?: boolean; unlocked?: boolean; authenticated: boolean },
 ): Promise<SaleDetailRouteData> {
-  const sale = options.authenticated
-    ? await getSaleById(id, { discovery: options.discovery })
+  let sale = options.authenticated
+    ? await getSaleById(id, { discovery: options.discovery, unlocked: options.unlocked })
     : null;
+  // A sale that leaves the catalogue between the unlock check and this read is no longer served
+  // by the full view: fall back to the free one rather than to a missing page.
+  if (!sale && options.unlocked) sale = await getSaleById(id, { discovery: true });
   if (sale) return { sale, preview: null };
   return { sale: null, preview: await getSalePreviewById(id) };
 }
@@ -80,21 +100,83 @@ export function SaleDetailPage({
     staleTime: 5 * 60_000,
   });
   const discovery = Boolean(session) && entitlementsData?.plan.hasAnalysisAccess !== true;
-  const accessReady = !session || Boolean(entitlementsData);
+  // « 3 déblocages par mois » : un compte Découverte peut avoir débloqué cette vente. Sans réponse
+  // (base sans le déblocage, erreur), la fiche reste la fiche gratuite.
+  const unlockEnabled = discovery && !authLoading && Boolean(entitlementsData);
+  const queryClient = useQueryClient();
+  // The unlock status is the account's own, and it only decides the view for a Discovery account:
+  // it is never read before the rights are known, nor for an account that includes the analysis.
+  const entitlementsKnown = Boolean(entitlementsData);
+  const unlockQuery = useQuery({
+    queryKey: queryKeys.saleUnlock(id, sessionKey),
+    queryFn: () => fetchSaleUnlockStatus(id),
+    enabled: unlockEnabled,
+    staleTime: 60_000,
+    // One more try before the free view is shown with a notice: a transient failure must not look
+    // like a lost unlock.
+    retry: 1,
+    retryDelay: 800,
+  });
+  const unlockReady = !unlockEnabled || unlockQuery.isSuccess || unlockQuery.isError;
+  const unlocked = unlockEnabled && unlockQuery.data?.unlocked === true;
+  const accessMode: SaleAccessMode = !discovery ? "analysis" : unlocked ? "unlocked" : "discovery";
+  const accessReady = !session || (Boolean(entitlementsData) && unlockReady);
+  const [justUnlocked, setJustUnlocked] = useState(false);
+  const handleSaleUnlocked = (result: SaleUnlockResult) => {
+    setJustUnlocked(true);
+    queryClient.setQueryData(queryKeys.saleUnlock(id, sessionKey), result);
+    void queryClient.invalidateQueries({ queryKey: ["sale-detail", id] });
+  };
+  const signedIn = Boolean(session) && !authLoading;
+  useEffect(() => {
+    if (!signedIn) return;
+    if (entitlementsKnown) {
+      preloadSaleViews({ discovery, simplified: !discovery || unlockEnabled });
+      return;
+    }
+    // Rights not known yet: the code of both families of views is fetched now, and the free
+    // listing (the one every signed-in account may read) is read while the rights are being
+    // checked. It is only displayed if the rights say « Découverte » (`accessReady` below); any
+    // other mode reads its own view afterwards, exactly as before.
+    preloadSaleViews({ discovery: true, simplified: true });
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.saleDetail(id, sessionKey, "discovery"),
+      queryFn: () =>
+        loadSaleDetailRouteData(id, { discovery: true, unlocked: false, authenticated: true }),
+      staleTime: 5 * 60_000,
+    });
+  }, [signedIn, entitlementsKnown, discovery, unlockEnabled, queryClient, id, sessionKey]);
   const canUseServerInitialData =
     initialData?.sale?.id === id || (!session && initialData?.preview?.id === id);
-  const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.saleDetail(id, sessionKey, discovery ? "discovery" : "analysis"),
-    queryFn: () => loadSaleDetailRouteData(id, { discovery, authenticated: Boolean(session) }),
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: queryKeys.saleDetail(id, sessionKey, accessMode),
+    queryFn: () =>
+      loadSaleDetailRouteData(id, {
+        discovery: accessMode === "discovery",
+        unlocked: accessMode === "unlocked",
+        authenticated: Boolean(session),
+      }),
     enabled: !authLoading && accessReady,
     initialData: canUseServerInitialData ? initialData : undefined,
     staleTime: 5 * 60_000,
   });
+  // Right after « Confirmer le déblocage » the key of the query changes (the unlocked view is a
+  // different read): the free view that was on screen is kept, with a banner, instead of a blank
+  // skeleton, and a failed re-read never ends on the error page (the unlock is already recorded).
+  const freeViewBeforeUnlock =
+    justUnlocked && accessMode === "unlocked" && !data?.sale
+      ? (queryClient.getQueryData<SaleDetailRouteData>(
+          queryKeys.saleDetail(id, sessionKey, "discovery"),
+        )?.sale ?? null)
+      : null;
   const sale = data?.sale ?? null;
   const preview = data?.preview ?? null;
+  // The listing may already be in the cache (read while the rights were being checked): it only
+  // counts as viewed once it can be displayed.
+  const displayable = !authLoading && accessReady;
   useEffect(() => {
-    if (sale?.id) markSaleViewed(sale.id);
-  }, [sale?.id]);
+    if (displayable && sale?.id) markSaleViewed(sale.id);
+  }, [displayable, sale?.id]);
 
   useEffect(() => {
     if (authLoading || !accessReady || !sale?.id) return;
@@ -129,8 +211,8 @@ export function SaleDetailPage({
           <h1 className="text-xl font-semibold">Connexion à renouveler</h1>
           <p className="mt-3 text-sm text-muted-foreground">{authError}</p>
           <a
-            href={`/login?redirect=${encodeURIComponent(loginReturnTo)}`}
-            className="mt-5 inline-flex rounded-md bg-brand-navy px-4 py-2 text-white"
+            href={loginPathWithRedirect(loginReturnTo, { mode: "login", reason: "fiche" })}
+            className="mt-5 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-4 py-2 text-white"
           >
             Se reconnecter
           </a>
@@ -170,7 +252,47 @@ export function SaleDetailPage({
         preview={serverPreview}
         returnTo={returnTo}
         requestedHash={requestedHash}
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       />
+    );
+  }
+  if (freeViewBeforeUnlock && !authLoading && accessReady && (isLoading || error)) {
+    return (
+      <>
+        {error ? (
+          <div
+            role="alert"
+            className="mx-auto mt-4 flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          >
+            <p className="font-medium">
+              Vente débloquée, mais le détail n’a pas pu être chargé. Votre déblocage est conservé.
+            </p>
+            <button
+              type="button"
+              className="min-h-10 rounded-md border border-amber-700/40 bg-white px-3 font-semibold text-amber-900"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+            >
+              Réessayer
+            </button>
+          </div>
+        ) : (
+          <div
+            role="status"
+            className="mx-auto mt-4 max-w-[1260px] rounded-lg border border-emerald-700/30 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900"
+          >
+            Vente débloquée. Chargement du détail…
+          </div>
+        )}
+        <DiscoverySaleDetailView
+          sale={freeViewBeforeUnlock}
+          returnTo={returnTo}
+          adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+          unlockStatus={unlockQuery.data ?? null}
+          justUnlocked={justUnlocked}
+          onSaleUnlocked={handleSaleUnlocked}
+        />
+      </>
     );
   }
   if (authLoading || entitlementsLoading || !accessReady || isLoading) {
@@ -184,6 +306,7 @@ export function SaleDetailPage({
         preview={preview}
         returnTo={returnTo}
         requestedHash={requestedHash}
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
       />
     );
   }
@@ -197,7 +320,7 @@ export function SaleDetailPage({
             la fiche complète.
           </p>
           <a
-            href={`/login?redirect=${encodeURIComponent(loginReturnTo)}`}
+            href={loginPathWithRedirect(loginReturnTo, { reason: "fiche" })}
             className="mt-5 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-4 py-2 text-sm font-medium text-white"
           >
             Se connecter ou créer un compte
@@ -211,12 +334,47 @@ export function SaleDetailPage({
   }
   if (!sale) return <SaleNotFoundComponent />;
 
-  return discovery ? (
-    <DiscoverySaleDetailView
-      sale={sale}
-      returnTo={returnTo}
-      adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
-    />
+  if (accessMode === "unlocked") {
+    return (
+      <UnlockedSaleDetailView
+        sale={sale}
+        returnTo={returnTo}
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        unlockStatus={unlockQuery.data ?? null}
+        justUnlocked={justUnlocked}
+      />
+    );
+  }
+  return accessMode === "discovery" ? (
+    <>
+      {unlockEnabled && unlockQuery.isError ? (
+        <div
+          role="alert"
+          className="mx-auto mt-4 flex max-w-[1260px] flex-wrap items-center gap-3 rounded-lg border border-amber-700/30 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          <p className="font-medium">État de vos déblocages indisponible</p>
+          <p>
+            Si vous avez déjà débloqué cette vente, elle apparaîtra de nouveau dès que l’état sera
+            relu.
+          </p>
+          <button
+            type="button"
+            className="min-h-10 rounded-md border border-amber-700/40 bg-white px-3 font-semibold text-amber-900"
+            onClick={() => void unlockQuery.refetch()}
+            disabled={unlockQuery.isFetching}
+          >
+            Réessayer
+          </button>
+        </div>
+      ) : null}
+      <DiscoverySaleDetailView
+        sale={sale}
+        returnTo={returnTo}
+        adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
+        unlockStatus={unlockQuery.data ?? null}
+        onSaleUnlocked={handleSaleUnlocked}
+      />
+    </>
   ) : (
     <AnalysisSaleDetailView
       sale={sale}

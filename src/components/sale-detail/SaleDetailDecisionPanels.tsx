@@ -2,15 +2,20 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import type { ReactNode } from "react";
+import { Terme } from "@/components/ceiling/Terme";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
+import { UnlockCallToAction } from "@/components/sale-detail/UnlockCallToAction";
 import panelStyles from "@/components/sale-detail/SaleDetailPanels.module.css";
 import { useAuth } from "@/hooks/use-auth";
 import { UNPROFITABLE_HEADLINE, type CeilingGap } from "@/lib/bid-ceiling-gaps";
 import { fetchValuePreview } from "@/lib/client-api";
 import { formatPrice, formatStartingPrice } from "@/lib/format";
 import type { MarketEstimate } from "@/lib/market.server";
+import { describeMarketGap } from "@/lib/market-gap";
+import type { CeilingMarketEstimate } from "@/lib/market-estimate-ceiling";
 import { getSaleProcedure } from "@/lib/sale-procedure";
-import { saleDetailPath } from "@/lib/navigation";
+import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import { getMarketValuationSurfaces } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
@@ -27,7 +32,8 @@ export function AnalysisDecisionPanel({
   onEditWorks,
 }: {
   sale: AuctionSale;
-  marketEstimate: MarketEstimate | null;
+  /** The ceiling projection is enough here: this panel is also served to an unlocked sale. */
+  marketEstimate: CeilingMarketEstimate | null;
   marketLoading: boolean;
   /** `null`: not computable yet; `0`: no works retained. */
   worksBudget: number | null;
@@ -75,7 +81,7 @@ export function AnalysisDecisionPanel({
           const missing = marker.value == null ? missingMarker(marker.label) : null;
           return (
             <div key={marker.label}>
-              <dt>{marker.label}</dt>
+              <dt>{markerLabel(marker.label)}</dt>
               <dd className={missing?.compact ? panelStyles.textValue : undefined}>
                 {marker.value != null ? formatPrice(marker.value) : missing?.main}
                 {missing?.note ? (
@@ -88,15 +94,10 @@ export function AnalysisDecisionPanel({
       </dl>
       <div className={panelStyles.estimationFoot}>
         <p>
-          <strong>
-            Travaux inclus :{" "}
-            {worksBudget == null
-              ? "à chiffrer"
-              : worksBudget > 0
-                ? formatPrice(worksBudget)
-                : "aucun (bien repris en l’état)"}
-          </strong>
-          <span>Plafond indicatif selon vos hypothèses de marché, de frais et de travaux.</span>
+          <strong>{worksLine(worksBudget)}</strong>
+          <span>
+            Enchère plafond (simulation), selon vos hypothèses de marché, de frais et de travaux.
+          </span>
         </p>
         <div>
           {onEditWorks ? (
@@ -144,7 +145,7 @@ export function NonJudicialDecisionPanel({
     <aside className={panelStyles.estimationCard} aria-label="Repères de prix">
       <dl className={panelStyles.priceGrid}>
         <div>
-          <dt>{venue === "state" ? "Prix publié" : "Mise à prix"}</dt>
+          <dt>{venue === "state" ? "Prix publié" : markerLabel("Mise à prix")}</dt>
           <dd>{startingPriceOrConfirm(sale.starting_price_eur)}</dd>
         </div>
         <div>
@@ -178,11 +179,13 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
   });
   const value = user && preview.data?.available ? preview.data : null;
   const salePath = saleDetailPath(sale.id);
+  // `describeMarketGap` is also the guard: an implausible gap never reaches the page as a %.
+  const gapSentence = value ? describeMarketGap(value) : null;
   return (
     <aside className={panelStyles.estimationCard} aria-label="Aperçu des repères de prix">
       <dl className={panelStyles.priceGrid}>
         <div>
-          <dt>Mise à prix</dt>
+          <dt>{markerLabel("Mise à prix")}</dt>
           <dd>{startingPriceOrConfirm(sale.starting_price_eur)}</dd>
         </div>
         <div>
@@ -195,7 +198,7 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
                 "Calcul…"
               ) : (
                 <Link
-                  href={`/login?mode=investor&redirect=${encodeURIComponent(salePath)}`}
+                  href={loginPathWithRedirect(salePath, { reason: "fiche" })}
                   className={panelStyles.valueLink}
                 >
                   Créez un compte gratuit pour voir la fourchette de valeur
@@ -209,28 +212,59 @@ export function DiscoveryDecisionPanel({ sale }: { sale: AuctionSale }) {
           </dd>
         </div>
         <div>
-          <dt>Enchère plafond</dt>
-          <dd className={panelStyles.textValue}>Avec l’offre Analyse</dd>
+          <dt>{markerLabel("Enchère plafond (simulation)")}</dt>
+          <dd className={panelStyles.textValue}>
+            Avec l’offre Analyse ou en débloquant cette vente
+            <div className={panelStyles.valueNote}>
+              <UnlockCallToAction
+                onlyWithUnlockCard
+                primaryClassName={panelStyles.valueLink}
+                secondaryClassName={panelStyles.valueLink}
+              />
+            </div>
+          </dd>
         </div>
       </dl>
-      {value?.discountPct != null ? (
+      {gapSentence ? (
         <p className={panelStyles.surfaceCaution} role="status">
-          {value.discountPct > 0
-            ? `La mise à prix est environ ${value.discountPct} % sous la valeur estimée du bien.`
-            : value.discountPct < 0
-              ? `La mise à prix est environ ${-value.discountPct} % au-dessus de la valeur estimée du bien.`
-              : "La mise à prix est proche de la valeur estimée du bien."}{" "}
-          Reste à savoir jusqu’où enchérir une fois les frais, les travaux et la libération du bien
-          comptés : c’est le calcul de l’enchère plafond.
+          {gapSentence} Reste à savoir jusqu’où enchérir une fois les frais, les travaux et la
+          libération du bien comptés : c’est le calcul de l’enchère plafond.
         </p>
       ) : null}
       <PremiumFeaturePreview
-        title="Votre enchère plafond, les comparables et les travaux avec l’offre Analyse"
+        title={
+          getSaleProcedure(sale).venueType === "tribunal"
+            ? "Les comparables et les travaux avec l’offre Analyse ; l’enchère plafond aussi en débloquant cette vente"
+            : "Les comparables et les travaux avec l’offre Analyse"
+        }
         description="Le calcul complet de la mise à ne pas dépasser : valeur du bien, marge, travaux, libération, portage et tous les frais de la vente, avec les ventes comparables du secteur."
-        labels={["Enchère plafond", "Ventes comparables", "Travaux et frais"]}
+        labels={["Enchère plafond (simulation)", "Ventes comparables", "Travaux et frais"]}
+        unlockOffer={getSaleProcedure(sale).venueType === "tribunal"}
       />
     </aside>
   );
+}
+
+/**
+ * What the ceiling rests on as far as works go. Without a works budget the ceiling is NOT after
+ * works: say so, rather than « Travaux inclus : à chiffrer » which read as if works were counted.
+ */
+function worksLine(worksBudget: number | null): string {
+  if (worksBudget == null) {
+    return "Plafond hors travaux : ajoutez votre budget travaux pour l’affiner";
+  }
+  return worksBudget > 0
+    ? `Plafond après ${formatPrice(worksBudget)} de travaux`
+    : "Travaux inclus : aucun (bien repris en l’état)";
+}
+
+/** The two terms a reader may not know get a « ? » definition; the others stay plain text. */
+function markerLabel(label: string): ReactNode {
+  if (label === "Mise à prix") return <Terme terme="mise-a-prix">{label}</Terme>;
+  if (label === "Enchère plafond (simulation)") {
+    return <Terme terme="enchere-plafond">{label}</Terme>;
+  }
+  return label;
 }
 
 /** « À confirmer » for an absent or zero starting price, the amount otherwise. */
@@ -261,7 +295,7 @@ function comparisonMarkerPositions({
 
   return [
     { label: "Mise à prix", value: start, position: position(start, 8) },
-    { label: "Enchère plafond", value: ceiling, position: position(ceiling, 50) },
+    { label: "Enchère plafond (simulation)", value: ceiling, position: position(ceiling, 50) },
     { label: "Valeur estimée", value: market, position: position(market, 92) },
   ];
 }

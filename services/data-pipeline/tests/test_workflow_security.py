@@ -137,6 +137,7 @@ def test_secrets_are_never_in_the_environment_of_pip_and_apt_steps(path: Path) -
         "dvf-import.yml",
         "reference-data-import.yml",
         "valuation-model-training.yml",
+        "photo-mirror-backfill.yml",
     ],
 )
 def test_pipeline_workflows_keep_secrets_out_of_the_job_environment(name: str) -> None:
@@ -164,6 +165,7 @@ def test_data_pipeline_secrets_reach_only_the_business_steps() -> None:
         "Run manually requested pipeline",
         "Finalize unfinished run",
         "Report source coverage and enrichment backlog",
+        "Copie des photos principales",
     }
     benchmark = {step.name: step for step in jobs["model-benchmark"].steps}
     assert [name for name, step in benchmark.items() if SECRET.search(step.env)] == [
@@ -189,6 +191,22 @@ def test_recompute_secrets_reach_only_the_recompute_steps() -> None:
             assert "SUPABASE_URL" in step.env and "SUPABASE_SERVICE_ROLE_KEY" in step.env
 
 
+def test_dedupe_candidates_reads_production_through_the_production_environment() -> None:
+    text = (WORKFLOWS / "dedupe-candidates.yml").read_text(encoding="utf-8")
+    migrations = (WORKFLOWS / "apply-supabase-migrations.yml").read_text(encoding="utf-8")
+    jobs = parse_jobs(text)
+
+    # Même nom d'environnement que le workflow de migrations, sur l'unique job qui reçoit les secrets.
+    assert re.search(r"^    environment: Production$", migrations, re.M)
+    assert re.search(r"^    environment: Production$", text, re.M)
+    assert [job.name for job in jobs] == ["report"]
+    assert [job.name for job in jobs if SECRET.search(job.env)] == []
+    assert [step.name for step in jobs[0].steps if SECRET.search(step.env)] == [
+        "List duplicate candidates without writing"
+    ]
+    assert "workflow_dispatch" in text and "pull_request" not in text and "schedule" not in text
+
+
 def test_information_agent_always_runs_main_with_secrets_on_its_two_business_steps() -> None:
     text = (WORKFLOWS / "information-agent-evidence.yml").read_text(encoding="utf-8")
     steps = {step.name: step for step in parse_jobs(text)[0].steps}
@@ -210,6 +228,7 @@ def test_dvf_and_training_secrets_reach_only_their_python_step() -> None:
         ("dvf-import.yml", "Download and import DVF resources"),
         ("reference-data-import.yml", "Import reference data"),
         ("valuation-model-training.yml", "Train, validate and publish"),
+        ("photo-mirror-backfill.yml", "Copy main photos"),
     ):
         steps = parse_jobs((WORKFLOWS / name).read_text(encoding="utf-8"))[0].steps
         assert [step.name for step in steps if SECRET.search(step.env)] == [step_name], name

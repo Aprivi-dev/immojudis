@@ -14,12 +14,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const context = createApiRequestContext(request, "adjudication-price-statistics.sale");
   try {
     const auth = await requireSupabaseAuthContext(bearerTokenFromRequest(request));
+    const rawParams = await params;
+    // Analyse, or a Découverte account that unlocked this very sale (« 3 déblocages par mois »):
+    // the statistics of the tribunal of this sale only. The identifier is validated after the
+    // entitlement, as before; an invalid one simply cannot match an unlock.
     await assertFeatureEntitlement(
       auth,
       "sales.statistics",
       "Statistiques d’adjudication réservées au plan Analyse.",
+      { saleId: paramsSchema.safeParse(rawParams).data?.id },
     );
-    const { id: saleId } = paramsSchema.parse(await params);
+    const { id: saleId } = paramsSchema.parse(rawParams);
     const statistics = await getAdjudicationPriceStatisticsForSale(saleId);
 
     recordUsageSafely({

@@ -4,7 +4,7 @@ import type { EnvironmentalContextResponse } from "@/lib/environmental-context";
 import type { FactReliabilityMap } from "@/lib/fact-reliability";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
 import type { MarketAnalyticsResponse } from "@/lib/market-analytics";
-import type { MarketContext } from "@/lib/market.server";
+import type { SaleMarketContext } from "@/lib/market-estimate-ceiling";
 import type { ValuePreview } from "@/lib/value-preview";
 import type { OutcomeGraphForecast } from "@/lib/outcome-graph";
 import type { DvfComparablesResponse } from "@/lib/dvf-comparables";
@@ -13,6 +13,12 @@ import type { SaleHistoryResponse } from "@/lib/sale-history";
 import type { SalePassagesResponse } from "@/lib/sale-passages";
 import type { AuctionScenariosResponse, CourtAuctionSummary } from "@/lib/auction-scenarios";
 import type { DocumentReadingResponse } from "@/lib/document-reading";
+import type {
+  SaleUnlockQuotaReachedResponse,
+  SaleUnlockResult,
+  SaleUnlockStatus,
+  SaleUnlocksOverview,
+} from "@/lib/sale-unlocks";
 import type { StructuredUrbanPlanningSignal } from "@/lib/urban-planning-analysis";
 import type { ValuationBacktestResponse } from "@/lib/valuation-backtest";
 import type { ValuationAdminResponse } from "@/lib/valuation-admin";
@@ -74,6 +80,57 @@ export async function fetchValuePreview(saleId: string): Promise<ValuePreview> {
   return readJson<ValuePreview>(response);
 }
 
+/** Where the account stands this month and whether this sale is unlocked. Consumes nothing. */
+export async function fetchSaleUnlockStatus(saleId: string): Promise<SaleUnlockStatus> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/unlock`, {
+    headers: await authHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  return (await readJson<{ status: SaleUnlockStatus }>(response)).status;
+}
+
+/** The month so far (used, reset date) and the sales this account unlocked. Consumes nothing. */
+export async function fetchSaleUnlocksOverview(): Promise<SaleUnlocksOverview> {
+  const response = await fetch("/api/sale-unlocks", {
+    headers: await authHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  return readJson<SaleUnlocksOverview>(response);
+}
+
+/** The monthly quota is spent: carries the counter so the page can explain it. */
+export class SaleUnlockQuotaReachedError extends Error {
+  readonly status: SaleUnlockStatus;
+
+  constructor(status: SaleUnlockStatus) {
+    super("Vous avez utilisé tous vos déblocages de ce mois-ci.");
+    this.name = "SaleUnlockQuotaReachedError";
+    this.status = status;
+  }
+}
+
+/** Unlocks this sale (idempotent: an already unlocked sale consumes nothing). */
+export async function unlockSaleRequest(saleId: string): Promise<SaleUnlockResult> {
+  const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/unlock`, {
+    method: "POST",
+    headers: await authHeaders(),
+    cache: "no-store",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (response.status === 409) {
+    const payload = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as SaleUnlockQuotaReachedResponse | null;
+    if (payload?.code === "unlock_quota_reached") {
+      throw new SaleUnlockQuotaReachedError(payload.status);
+    }
+  }
+  return (await readJson<{ result: SaleUnlockResult }>(response)).result;
+}
+
 export async function fetchDocumentReading(saleId: string): Promise<DocumentReadingResponse> {
   const response = await fetch(`/api/sales/${encodeURIComponent(saleId)}/document-reading`, {
     headers: await authHeaders(),
@@ -108,7 +165,7 @@ export async function fetchCourtAuctionSummaries(): Promise<{ courts: CourtAucti
 
 export async function fetchPrecomputedMarketEstimate(args: {
   saleId: string;
-}): Promise<MarketContext> {
+}): Promise<SaleMarketContext> {
   const response = await fetch("/api/market-estimate", {
     method: "POST",
     headers: {
@@ -118,7 +175,7 @@ export async function fetchPrecomputedMarketEstimate(args: {
     body: JSON.stringify({ saleId: args.saleId }),
   });
 
-  const payload = (await response.json().catch(() => null)) as MarketContext | null;
+  const payload = (await response.json().catch(() => null)) as SaleMarketContext | null;
   if (response.status === 401 || response.status === 403 || !payload) {
     throw new Error(payload?.error ?? `Erreur HTTP ${response.status}`);
   }

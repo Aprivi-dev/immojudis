@@ -6,6 +6,13 @@ import { fetchLawyerDirectory } from "@/lib/client-api";
 import type { LawyerDirectoryProfile } from "@/lib/lawyer-directory";
 import { resolveFrenchGeoSearch } from "@/lib/search/french-geo-search";
 import { queryKeys } from "@/lib/query-keys";
+import {
+  LAWYER_INVITATION_LABEL,
+  LAWYER_RANKING_HREF,
+  LAWYER_RANKING_LINK_LABEL,
+  sponsoredPlacementDisclosure,
+  sponsoredPlacementLabel,
+} from "@/lib/lawyer-placement-label";
 
 export type SearchLawyerPlacementProps = {
   geographicLabel?: string;
@@ -16,6 +23,9 @@ export type SearchLawyerPlacementProps = {
 
 /**
  * Reserves the fourth-card slot for a geographically scoped lawyer campaign.
+ *
+ * The slot is an advertisement paid for by the firm (or a free trial of that paid offer) and is
+ * labelled « Publicité · Sponsorisé »; it never changes the order of the listings.
  *
  * The directory endpoint is public, but the component only renders a lawyer
  * when the endpoint explicitly returns a real, active Immojudis placement.
@@ -77,15 +87,16 @@ function SponsoredLawyerCard({
 
   return (
     <section
-      aria-labelledby="search-lawyer-placement-title"
+      aria-labelledby="search-lawyer-placement-label search-lawyer-placement-title"
       className={`flex min-h-[320px] flex-col rounded-lg border border-gold-light bg-surface p-4 shadow-sm ${className}`.trim()}
     >
-      <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.14em] text-gold-text">
-        <Megaphone className="h-3.5 w-3.5" aria-hidden />
-        {lawyer.placement === "trial"
-          ? "Mise en avant en période d'essai"
-          : "Mise en avant payante"}
-      </div>
+      <p
+        id="search-lawyer-placement-label"
+        className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.1em] text-gold-text"
+      >
+        <Megaphone className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        {sponsoredPlacementLabel(lawyer.placement)}
+      </p>
       <h2
         id="search-lawyer-placement-title"
         className="mt-2 font-display text-lg font-semibold leading-tight text-brand-navy"
@@ -108,9 +119,14 @@ function SponsoredLawyerCard({
       >
         Voir l’annuaire du secteur
       </a>
-      <p className="mt-3 text-[11px] leading-relaxed text-ink-soft">
-        Cette mise en avant est signalée comme telle et ne constitue ni une recommandation, ni une
-        garantie de résultat.
+      <p className="mt-3 text-xs leading-relaxed text-ink-soft">
+        {sponsoredPlacementDisclosure(lawyer.placement)}{" "}
+        <a
+          href={LAWYER_RANKING_HREF}
+          className="font-semibold text-gold-text underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+        >
+          {LAWYER_RANKING_LINK_LABEL}
+        </a>
       </p>
     </section>
   );
@@ -119,11 +135,17 @@ function SponsoredLawyerCard({
 function OpenLawyerPlacement({ loading, className }: { loading: boolean; className: string }) {
   return (
     <section
-      aria-labelledby="search-lawyer-placement-title"
+      aria-labelledby="search-lawyer-placement-label search-lawyer-placement-title"
       aria-busy={loading}
       className={`flex min-h-[320px] flex-col rounded-lg border border-gold-light bg-surface p-4 shadow-sm ${className}`.trim()}
     >
-      <Megaphone className="h-4 w-4 text-ink-soft" aria-hidden />
+      <p
+        id="search-lawyer-placement-label"
+        className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.1em] text-gold-text"
+      >
+        <Megaphone className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        {LAWYER_INVITATION_LABEL}
+      </p>
       <h2
         id="search-lawyer-placement-title"
         className="mt-2 font-display text-lg font-semibold leading-tight text-brand-navy"

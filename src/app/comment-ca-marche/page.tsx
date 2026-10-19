@@ -6,13 +6,15 @@ import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import Scale from "lucide-react/dist/esm/icons/scale.js";
 import Search from "lucide-react/dist/esm/icons/search.js";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
+import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
+import { pageMetadata } from "@/lib/page-metadata";
 
-export const metadata: Metadata = {
-  alternates: { canonical: "/comment-ca-marche" },
+export const metadata: Metadata = pageMetadata({
+  path: "/comment-ca-marche",
   title: "Comment ça marche : préparer une vente",
   description:
     "Trouver une vente aux enchères, comprendre le bien, fixer son enchère plafond et se faire accompagner : les quatre étapes d’Immojudis.",
-};
+});
 
 const STEPS = [
   {
@@ -24,7 +26,7 @@ const STEPS = [
   {
     icon: FileSearch,
     title: "Étudier et visiter",
-    text: "Avec un compte gratuit, la fiche réunit l’adresse, les photos, la description, l’occupation, les visites, les risques de la commune et une fourchette de valeur. L’offre Analyse ajoute les pièces du dossier et les ventes comparables. Lisez le cahier des conditions de vente (le document qui fixe les règles de la vente), visitez le bien et comparez jusqu’à trois biens côte à côte.",
+    text: "Avec un compte gratuit, la fiche réunit l’adresse, les photos, la description, l’occupation, les visites, les risques de la commune et une fourchette de valeur. Les pièces du dossier s’ouvrent vente par vente avec les déblocages mensuels du compte gratuit, et pour toutes les ventes avec l’offre Analyse, qui ajoute aussi les ventes comparables. Lisez le cahier des conditions de vente (le document qui fixe les règles de la vente), visitez le bien et comparez jusqu’à trois biens côte à côte.",
     links: [
       { href: "/annonce-exemple", label: "Voir une fiche exemple" },
       {
@@ -57,6 +59,15 @@ const STEPS = [
 ] as const;
 
 export default function Page() {
+  return (
+    <>
+      <BreadcrumbJsonLd trail={[{ name: "Comment ça marche", path: "/comment-ca-marche" }]} />
+      <PageContent />
+    </>
+  );
+}
+
+function PageContent() {
   return (
     <PageShell
       eyebrow="Comment ça marche"

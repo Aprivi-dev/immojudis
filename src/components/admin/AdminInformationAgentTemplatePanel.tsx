@@ -70,7 +70,7 @@ function InformationAgentTemplateEditor({
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const source = workspace.draft ?? workspace.published;
+  const source = templateSource(workspace);
   const sourceKey = `${source.id}:${source.updatedAt}`;
   const lastSyncedSourceKey = useRef(sourceKey);
   const [template, setTemplate] = useState<InformationAgentEmailTemplateContent>(() =>
@@ -193,12 +193,32 @@ function InformationAgentTemplateEditor({
             </p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
-            <StatusBadge label={`Publié · v${workspace.published.revision}`} tone="green" />
+            {workspace.publishedIgnored ? (
+              <StatusBadge
+                label={`Publié · v${workspace.published.revision} (ignoré)`}
+                tone="amber"
+              />
+            ) : (
+              <StatusBadge label={`Publié · v${workspace.published.revision}`} tone="green" />
+            )}
             {workspace.draft ? (
               <StatusBadge label={`Brouillon · v${workspace.draft.revision}`} tone="amber" />
             ) : null}
           </div>
         </div>
+        {workspace.publishedIgnored ? (
+          <p
+            role="note"
+            className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-900"
+          >
+            Le modèle publié (v{workspace.published.revision}) est antérieur à la mise en conformité
+            (v{workspace.minCompliantRevision} au minimum) : il est ignoré, et les messages
+            utilisent le modèle du code (v{workspace.fallback.revision}), affiché ci-dessous. Pour
+            personnaliser le texte, enregistrez un brouillon puis publiez-le : la publication refuse
+            toute mention commerciale (offre, compte, inscription, mise en avant, prix, lien
+            étranger au dossier).
+          </p>
+        ) : null}
       </AdminPanel>
 
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.08fr)_minmax(30rem,0.92fr)]">
@@ -457,10 +477,26 @@ function InformationAgentTemplateEditor({
   );
 }
 
+/**
+ * Base d'édition : le brouillon, sinon le modèle publié, sinon (modèle publié antérieur à la mise en
+ * conformité, donc ignoré) le modèle du code, pour ne jamais repartir de l'ancien texte.
+ */
+function templateSource(workspace: InformationAgentEmailTemplateWorkspace) {
+  if (workspace.draft) return workspace.draft;
+  if (workspace.publishedIgnored) {
+    return {
+      ...workspace.fallback,
+      id: `code-v${workspace.fallback.revision}`,
+      updatedAt: workspace.published.updatedAt,
+    };
+  }
+  return workspace.published;
+}
+
 function templateContentFromWorkspace(
   workspace: InformationAgentEmailTemplateWorkspace,
 ): InformationAgentEmailTemplateContent {
-  const source = workspace.draft ?? workspace.published;
+  const source = templateSource(workspace);
   return {
     name: source.name,
     subjectTemplate: source.subjectTemplate,

@@ -2,10 +2,15 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import type { AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
-import { ListingCard, ListingMediaCarousel, SearchResultsList } from "./SearchResults";
+import {
+  EAGER_IMAGE_COUNT,
+  ListingCard,
+  ListingMediaCarousel,
+  SearchResultsList,
+} from "./SearchResults";
 import { SearchStatisticsPanel } from "./SearchStatisticsPanel";
 import { buildSearchStatistics } from "./search-page-state";
 
@@ -31,6 +36,7 @@ const testState = vi.hoisted(() => {
     },
     addFavoriteSale: vi.fn(),
     removeFavoriteSale: vi.fn(),
+    unlocksOverview: vi.fn(),
     push: vi.fn(),
   };
 });
@@ -41,13 +47,38 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: testState.supabase 
 vi.mock("@/lib/client-api", () => ({
   addFavoriteSale: testState.addFavoriteSale,
   removeFavoriteSale: testState.removeFavoriteSale,
+  fetchSaleUnlocksOverview: testState.unlocksOverview,
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: testState.push, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
 vi.mock("@/components/SaleVisual", () => ({
-  SaleVisual: ({ locked, title }: { locked: boolean; title: string }) => (
-    <div>{locked ? "Visuel réservé" : `Visuel : ${title}`}</div>
+  SaleVisual: ({
+    locked,
+    title,
+    thumbnail,
+    mapWidth,
+    mapHeight,
+    mapFramingWidth,
+    eager,
+  }: {
+    locked: boolean;
+    title: string;
+    thumbnail?: boolean;
+    mapWidth?: number;
+    mapHeight?: number;
+    mapFramingWidth?: number;
+    eager?: boolean;
+  }) => (
+    <div
+      data-testid="sale-visual"
+      data-eager={String(Boolean(eager))}
+      data-thumbnail={String(Boolean(thumbnail))}
+      data-map-size={`${mapWidth}x${mapHeight}`}
+      data-map-framing={mapFramingWidth}
+    >
+      {locked ? "Visuel réservé" : `Visuel : ${title}`}
+    </div>
   ),
 }));
 afterEach(() => {
@@ -59,6 +90,7 @@ afterEach(() => {
   testState.favoriteQuery.in.mockReset();
   testState.addFavoriteSale.mockReset().mockResolvedValue({});
   testState.removeFavoriteSale.mockReset().mockResolvedValue({});
+  testState.unlocksOverview.mockReset().mockResolvedValue({ status: {}, sales: [] });
   testState.push.mockReset();
 });
 
@@ -67,6 +99,10 @@ function setAuthenticatedUser(id: string | null) {
     user: id ? { id } : null,
     loading: false,
   };
+}
+
+function tribunalSale(id: string): AuctionSale {
+  return { ...sale(id), sale_venue_type: "tribunal" } as unknown as AuctionSale;
 }
 
 function sale(id: string): AuctionSale {
@@ -149,6 +185,13 @@ describe("useful public discovery", () => {
     ).toBe(true);
   });
 
+  it("gives high image priority to the first card only", () => {
+    renderResults([sale("eager-a"), sale("eager-b"), sale("eager-c")]);
+    const eager = screen.getAllByTestId("sale-visual").map((visual) => visual.dataset.eager);
+    expect(eager).toEqual(["true", "false", "false"]);
+    expect(EAGER_IMAGE_COUNT).toBe(1);
+  });
+
   it("keeps the active card synchronized with hover after memoization", () => {
     function HoverableResults() {
       const [hoveredSaleId, setHoveredSaleId] = useState<string | null>(null);
@@ -212,9 +255,10 @@ describe("useful public discovery", () => {
         />
       </QueryClientProvider>,
     );
-    expect(screen.getByRole("heading", { name: "Bordeaux · 33" })).toBeTruthy();
-    expect(screen.getByText("Bordeaux · 33")).toBeTruthy();
-    expect(screen.getByText(/60\s*m²/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Appartement · Bordeaux" })).toBeTruthy();
+    expect(screen.getByText(/Département 33 · 60\s*m²/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Définition : mise à prix" })).toBeTruthy();
+    expect(screen.getByText("Mise à prix").className).not.toContain("text-xs");
     expect(screen.getAllByText(/oct/i).length).toBeGreaterThan(0);
     for (const text of [
       "Visuel réservé",
@@ -227,7 +271,109 @@ describe("useful public discovery", () => {
       expect(container.textContent).not.toContain(text);
     }
     expect(container.querySelector('[class*="blur-"]')).toBeNull();
-    expect(screen.getByText(/Fiche complète avec un compte gratuit/)).toBeTruthy();
+    expect(
+      screen.getByText("Gratuit, sans carte bancaire · 3 fiches détaillées par mois"),
+    ).toBeTruthy();
+  });
+
+  it("titles the card « Type de bien · Ville » with a clean fallback when one is missing", () => {
+    const renderCard = (fields: Record<string, unknown>) =>
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={
+              {
+                id: "sale-fallback",
+                starting_price_eur: 90000,
+                media: [],
+                sale_venue_type: "notary",
+                ...fields,
+              } as unknown as AuctionSale
+            }
+            returnTo="/sales"
+            locked
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+          />
+        </QueryClientProvider>,
+      );
+
+    renderCard({ property_type: "house", city: "Lille", department: "59" });
+    expect(screen.getByRole("heading", { name: "Maison · Lille" })).toBeTruthy();
+    cleanup();
+
+    // Unknown type: « Bien », never an internal code.
+    renderCard({ property_type: "other", city: "Lille", department: "59" });
+    expect(screen.getByRole("heading", { name: "Bien · Lille" })).toBeTruthy();
+    cleanup();
+
+    // No city: the type alone, the department takes over below the title.
+    renderCard({ property_type: "apartment", city: null, department: "Gironde" });
+    expect(screen.getByRole("heading", { name: "Appartement" })).toBeTruthy();
+    expect(screen.getByText(/^Gironde · /)).toBeTruthy();
+    cleanup();
+
+    // Neither city nor department: say so rather than leave a hole.
+    renderCard({ property_type: "apartment", city: "  ", department: null });
+    expect(screen.getByRole("heading", { name: "Appartement" })).toBeTruthy();
+    expect(screen.getByText(/^Localisation à préciser · /)).toBeTruthy();
+  });
+
+  it("keeps the old reassurance on a locked sale that cannot be unlocked", () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ListingCard
+          sale={
+            {
+              id: "sale-notary",
+              city: "Lyon",
+              property_type: "apartment",
+              sale_venue_type: "notary",
+              media: [],
+            } as unknown as AuctionSale
+          }
+          returnTo="/sales"
+          locked
+          analysisLocked={false}
+          active={false}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Fiche complète avec un compte gratuit")).toBeTruthy();
+    expect(screen.queryByText(/fiches détaillées par mois/)).toBeNull();
+  });
+
+  it("signale « Annonce bien renseignée » sur les seules cartes du palier haut", () => {
+    const renderCard = (completeness_tier: number | null | undefined, locked: boolean) =>
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={{ ...sale("tier-card"), completeness_tier } as AuctionSale}
+            returnTo="/sales"
+            locked={locked}
+            analysisLocked={false}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+          />
+        </QueryClientProvider>,
+      );
+
+    renderCard(1, true);
+    expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
+    cleanup();
+    renderCard(1, false);
+    expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
+    cleanup();
+    for (const tier of [0, null, undefined]) {
+      renderCard(tier, false);
+      expect(screen.queryByText("Annonce bien renseignée")).toBeNull();
+      cleanup();
+    }
   });
 
   it("shows a starting price of 0 as not communicated on the listing card", () => {
@@ -339,8 +485,11 @@ describe("useful public discovery", () => {
       </QueryClientProvider>,
     );
 
-    expect(screen.getByText("À confirmer")).toBeTruthy();
+    expect(screen.getByText("Type de bien à confirmer")).toBeTruthy();
     expect(screen.queryByText("Appartement", { exact: true })).toBeNull();
+    expect(screen.getByRole("heading", { level: 3 }).textContent).toContain(
+      "Source : AGRASC · Bordeaux",
+    );
     expect(screen.getByText(/Source : AGRASC/)).toBeTruthy();
   });
 
@@ -462,6 +611,66 @@ describe("listing media gallery", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  describe("copie hébergée de la photo principale", () => {
+    const MIRROR_URL =
+      "https://ci.supabase.co/storage/v1/object/public/sale-photos/sale-gallery/a-640.webp";
+    const SOURCE = "https://www.licitor.com/photos/property-living-room.jpg";
+    const mirroredSale = {
+      ...mediaSale,
+      id: "sale-mirrored",
+      media: [
+        {
+          type: "image",
+          url: SOURCE,
+          mirror: {
+            path640: "sale-gallery/a-640.webp",
+            path1600: "sale-gallery/a-1600.webp",
+            width: 1600,
+            height: 1200,
+          },
+        },
+      ],
+    } as unknown as AuctionSale;
+
+    beforeEach(() => vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co"));
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("affiche la copie 640 px telle quelle, sans optimiseur", () => {
+      render(<ListingMediaCarousel sale={mirroredSale} locked={false} title="Appartement" />);
+
+      const image = screen.getByRole("img", { name: "Appartement" });
+      expect(image.getAttribute("src")).toBe(MIRROR_URL);
+      expect(image.getAttribute("src")).not.toContain("/_next/image");
+    });
+
+    it("retombe sur la source si la copie échoue, puis sur le visuel de repli", async () => {
+      render(<ListingMediaCarousel sale={mirroredSale} locked={false} title="Appartement" />);
+
+      fireEvent.error(screen.getByRole("img", { name: "Appartement" }));
+      const source = await screen.findByRole("img", { name: "Appartement" });
+      expect(source.getAttribute("src")).toBe(SOURCE);
+
+      fireEvent.error(source);
+      expect(await screen.findByTestId("sale-media-fallback-sale-mirrored")).toBeTruthy();
+    });
+
+    it("ne rejette pas la copie 640 px sur sa taille rendue (l'original a déjà été jugé)", async () => {
+      vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(640);
+      vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(230);
+      try {
+        render(<ListingMediaCarousel sale={mirroredSale} locked={false} title="Appartement" />);
+        fireEvent.load(screen.getByRole("img", { name: "Appartement" }));
+
+        expect(screen.queryByTestId("sale-media-fallback-sale-mirrored")).toBeNull();
+        expect(screen.getByRole("img", { name: "Appartement" }).getAttribute("src")).toBe(
+          MIRROR_URL,
+        );
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+  });
+
   it("keeps SaleVisual as the fallback when no usable property photo exists", () => {
     render(
       <ListingMediaCarousel
@@ -474,6 +683,123 @@ describe("listing media gallery", () => {
     expect(screen.getByTestId("sale-media-fallback-sale-no-photo")).toBeTruthy();
     expect(screen.getByText("Visuel : Appartement à Bordeaux")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Photo suivante" })).toBeNull();
+  });
+
+  it("asks SaleVisual for a light 400×300 map thumbnail framed like the former 512×384", () => {
+    render(
+      <ListingMediaCarousel
+        sale={{ ...mediaSale, id: "sale-no-photo", media: [] } as unknown as AuctionSale}
+        locked={false}
+        title="Appartement à Bordeaux"
+      />,
+    );
+
+    const visual = screen.getByTestId("sale-visual");
+    expect(visual.getAttribute("data-thumbnail")).toBe("true");
+    expect(visual.getAttribute("data-map-size")).toBe("400x300");
+    expect(visual.getAttribute("data-map-framing")).toBe("512");
+  });
+});
+
+describe("result cards off screen", () => {
+  it("skips the rendering of cards off screen but keeps the id the map scrolls to", () => {
+    renderResults([sale("sale-a"), sale("sale-b")]);
+
+    const cards = screen.getAllByRole("article");
+    expect(cards).toHaveLength(2);
+    for (const card of cards) {
+      expect(card.className).toContain("[content-visibility:auto]");
+      expect(card.className).toContain("[contain-intrinsic-size:none_auto_28rem]");
+    }
+    expect(document.getElementById("sale-card-sale-a")).toBeTruthy();
+    expect(cards[0].contains(document.getElementById("sale-card-sale-a"))).toBe(true);
+    expect(cards[1].contains(document.getElementById("sale-card-sale-b"))).toBe(true);
+  });
+});
+
+describe("« 3 déblocages par mois » on the cards of a Découverte account", () => {
+  const renderForDiscoveryAccount = (sales: AuctionSale[]) =>
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <SearchResultsList
+          sales={sales}
+          returnTo="/sales"
+          locked={false}
+          analysisLocked
+          isLoading={false}
+          error={null}
+          selectedSaleId={null}
+          hoveredSaleId={null}
+          onHover={vi.fn()}
+          onSelect={vi.fn()}
+          comparedSaleIds={[]}
+          comparisonDisabled={false}
+          onToggleComparison={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+
+  it("marks the sales the account unlocked and sells the unlocks on the others", async () => {
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
+    testState.unlocksOverview.mockResolvedValue({ status: {}, sales: [{ id: "sale-b" }] });
+
+    renderForDiscoveryAccount([tribunalSale("sale-a"), tribunalSale("sale-b")]);
+
+    expect(await screen.findAllByText("Débloquée")).toHaveLength(1);
+    const cards = screen.getAllByRole("article");
+    expect(cards[1].textContent).toContain("Débloquée");
+    expect(cards[1].textContent).toContain("Voir le détail");
+    expect(cards[0].textContent).not.toContain("Débloquée");
+    expect(cards[0].textContent).toContain(
+      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+    );
+    expect(document.body.textContent).not.toContain("Analyse détaillée avec l’offre Analyse");
+  });
+
+  it("sells the unlocks only on the sales held at a court", async () => {
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
+    testState.unlocksOverview.mockResolvedValue({ status: {}, sales: [] });
+
+    renderForDiscoveryAccount([
+      tribunalSale("sale-a"),
+      { ...sale("sale-b"), sale_venue_type: "notary" } as unknown as AuctionSale,
+    ]);
+
+    await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
+    const cards = screen.getAllByRole("article");
+    expect(cards[0].textContent).toContain(
+      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+    );
+    expect(cards[1].textContent).not.toContain("fiches détaillées par mois");
+    expect(cards[1].textContent).toContain("Voir le détail");
+  });
+
+  it("does not ask for the unlocks of a visitor or of an Analyse account", async () => {
+    renderResults([sale("sale-a")]);
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
+    renderResults([sale("sale-a")]);
+    await waitFor(() => expect(testState.favoriteQuery.in).toHaveBeenCalled());
+    expect(testState.unlocksOverview).not.toHaveBeenCalled();
+    expect(screen.queryByText("Débloquée")).toBeNull();
+  });
+
+  it("keeps the cards as they were when the unlocks cannot be read", async () => {
+    setAuthenticatedUser("user-a");
+    testState.favoriteQuery.in.mockResolvedValue({ data: [], error: null });
+    testState.unlocksOverview.mockRejectedValue(new Error("indisponible"));
+
+    renderForDiscoveryAccount([tribunalSale("sale-a")]);
+
+    await waitFor(() => expect(testState.unlocksOverview).toHaveBeenCalled());
+    expect(screen.queryByText("Débloquée")).toBeNull();
+    expect(screen.getByRole("article").textContent).toContain(
+      "Gratuit, sans carte bancaire · 3 fiches détaillées par mois",
+    );
   });
 });
 

@@ -10,6 +10,8 @@ import { FavoriteSales } from "./FavoriteSales";
 
 const mocks = vi.hoisted(() => ({
   fetchFavoriteSales: vi.fn(),
+  fetchSaleChangeEvents: vi.fn(),
+  checkoutOpen: vi.fn(),
   fetchSalesAiReviewProjections: vi.fn(),
   addFavoriteSale: vi.fn(),
   removeFavoriteSale: vi.fn(),
@@ -22,9 +24,13 @@ vi.mock("@/hooks/use-auth", () => ({
 
 vi.mock("@/lib/client-api", () => ({
   fetchFavoriteSales: mocks.fetchFavoriteSales,
+  fetchSaleChangeEvents: mocks.fetchSaleChangeEvents,
   fetchSalesAiReviewProjections: mocks.fetchSalesAiReviewProjections,
   addFavoriteSale: mocks.addFavoriteSale,
   removeFavoriteSale: mocks.removeFavoriteSale,
+}));
+vi.mock("@/hooks/use-analysis-checkout-open", () => ({
+  useAnalysisCheckoutOpen: () => mocks.checkoutOpen(),
 }));
 vi.mock("sonner", () => ({ toast: mocks.toast }));
 vi.mock("@/hooks/use-viewed-sales", () => ({ useViewedSales: () => ({ isViewed: () => false }) }));
@@ -40,6 +46,7 @@ vi.mock("./FavoriteButton", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 function favoritesResponse(): FavoriteSalesResponse {
@@ -106,7 +113,7 @@ describe("FavoriteSales", () => {
 
     expect(await screen.findByText("Localisation à préciser")).toBeTruthy();
     expect(screen.getAllByText("À confirmer").length).toBeGreaterThanOrEqual(2);
-    expect(screen.queryByText("Bordeaux · Gironde")).toBeNull();
+    expect(screen.getByRole("heading", { level: 3 }).textContent).not.toContain("Bordeaux");
     expect(screen.queryByText(/92\s?000/)).toBeNull();
     expect(screen.queryByText(/15 octobre 2026/)).toBeNull();
     expect(mocks.fetchSalesAiReviewProjections).toHaveBeenCalledWith(["sale-1"]);
@@ -126,7 +133,7 @@ describe("FavoriteSales", () => {
       </QueryClientProvider>,
     );
 
-    await screen.findByText("Bordeaux · Gironde");
+    await screen.findByRole("heading", { name: "Appartement · Bordeaux" });
     expect(screen.getByText("Mise à prix")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retirer des favoris" }));
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
@@ -156,5 +163,185 @@ describe("FavoriteSales", () => {
     expect(screen.getByRole("link", { name: "Voir les ventes" }).getAttribute("href")).toBe(
       "/sales",
     );
+  });
+});
+
+describe("FavoriteSales : changements des ventes suivies", () => {
+  function renderPage() {
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FavoriteSales />
+      </QueryClientProvider>,
+    );
+  }
+
+  function changeEvent(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "event-1",
+      saleId: "sale-1",
+      watchKind: "favorite",
+      watchId: "watch-1",
+      eventKind: "price_changed",
+      severity: "important",
+      fingerprint: "price_changed:startingPriceEur:120000:100000",
+      summaryLabel: "Mise à prix abaissée",
+      changeSummary: { field: "startingPriceEur", previousValue: 120000, currentValue: 100000 },
+      detectedAt: "2026-10-14T06:45:00.000Z",
+      readAt: null,
+      dismissedAt: null,
+      ...overrides,
+    };
+  }
+
+  function setup(events: unknown[] = []) {
+    // Only the clock is faked: the changes of the last 30 days are relative to "now".
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-15T10:00:00Z") });
+    mocks.checkoutOpen.mockReturnValue(true);
+    mocks.fetchFavoriteSales.mockResolvedValue(favoritesResponse());
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchSaleChangeEvents.mockResolvedValue({ events });
+  }
+
+  it("liste les changements récents des ventes suivies, avec leur date de détection", async () => {
+    setup([
+      changeEvent(),
+      // Même changement enregistré pour une alerte : listé une seule fois.
+      changeEvent({ id: "event-2", watchKind: "alert_match", watchId: "watch-2" }),
+      changeEvent({
+        id: "event-3",
+        eventKind: "status_changed",
+        fingerprint: "status_changed:status:upcoming:postponed",
+        changeSummary: { field: "status", previousValue: "upcoming", currentValue: "postponed" },
+        detectedAt: "2026-10-12T06:45:00.000Z",
+      }),
+      // Une vente qui n'est pas dans les favoris, et un score : ni l'un ni l'autre ne s'affichent.
+      changeEvent({ id: "event-4", saleId: "sale-9", fingerprint: "autre" }),
+      changeEvent({ id: "event-5", eventKind: "score_changed", fingerprint: "score" }),
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "Changements récents" })).toBeTruthy();
+    expect(await screen.findByText("Mise à prix abaissée")).toBeTruthy();
+    expect(screen.getAllByText("Mise à prix abaissée")).toHaveLength(1);
+    expect(screen.getByText(/120\s000\s€ → 100\s000\s€/)).toBeTruthy();
+    expect(screen.getByText("Détecté le 14 octobre 2026")).toBeTruthy();
+    expect(screen.getByText("Vente reportée")).toBeTruthy();
+    expect(screen.getByText("Nouvelle date à confirmer.")).toBeTruthy();
+    expect(screen.getByText("Détecté le 12 octobre 2026")).toBeTruthy();
+    expect(screen.queryByText(/Score/)).toBeNull();
+    expect(
+      screen.getAllByRole("link", { name: "Appartement à Bordeaux" })[0].getAttribute("href"),
+    ).toBe("/sales/sale-1");
+    expect(
+      screen.getByText(/Vérifiez toute date ou tout montant auprès de l’avocat poursuivant/),
+    ).toBeTruthy();
+    expect(mocks.fetchSaleChangeEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it("indique l'absence de changement", async () => {
+    setup([]);
+    renderPage();
+    expect(await screen.findByText("Aucun changement détecté")).toBeTruthy();
+    const body = screen.getByText(/Aucun changement détecté sur vos favoris ces 30 derniers jours/);
+    expect(body.textContent).toContain("dans les annonces que nous collectons");
+    expect(body.textContent).toContain("n’est pas une garantie");
+    expect(body.textContent).toContain("auprès de l’avocat poursuivant avant de vous déplacer");
+    expect(document.body.textContent).not.toContain("dès qu’il est détecté");
+  });
+
+  it("annonce le chargement", async () => {
+    setup();
+    mocks.fetchSaleChangeEvents.mockReturnValue(new Promise(() => undefined));
+    renderPage();
+    expect(await screen.findByText("Chargement des changements de vos ventes…")).toBeTruthy();
+  });
+
+  it("propose de réessayer quand les changements ne se chargent pas", async () => {
+    setup();
+    mocks.fetchSaleChangeEvents
+      .mockRejectedValueOnce(Object.assign(new Error("boom"), { status: 500 }))
+      .mockResolvedValueOnce({ events: [changeEvent()] });
+    renderPage();
+
+    expect(
+      await screen.findByText("Impossible de charger les changements pour le moment."),
+    ).toBeTruthy();
+    // Les favoris restent affichés malgré l'erreur.
+    expect(screen.getByRole("heading", { name: "Appartement · Bordeaux" })).toBeTruthy();
+    const retry = screen.getAllByRole("button", { name: "Réessayer" });
+    fireEvent.click(retry[retry.length - 1]);
+
+    expect(await screen.findByText("Mise à prix abaissée")).toBeTruthy();
+    expect(mocks.fetchSaleChangeEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it("masque les montants et les dates retenus par la vérification de la fiche", async () => {
+    setup([changeEvent()]);
+    mocks.fetchSalesAiReviewProjections.mockResolvedValue({
+      projections: [blockedProjection("sale.starting_price_eur")],
+    });
+    renderPage();
+
+    expect(await screen.findByText("Montants à confirmer.")).toBeTruthy();
+    expect(screen.queryByText(/120\s000/)).toBeNull();
+  });
+
+  it("n'affiche qu'un aperçu verrouillé en offre Découverte et n'appelle pas l'API", async () => {
+    setup([changeEvent()]);
+    mocks.fetchFavoriteSales.mockResolvedValue({
+      ...favoritesResponse(),
+      plan: { code: "decouverte", label: "Découverte", feature: "limited", limit: 3 },
+    });
+    renderPage();
+
+    expect(await screen.findByText("Suivez les changements de vos ventes")).toBeTruthy();
+    expect(screen.getByText(/Avec l’offre Analyse/)).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Découvrir l’offre Analyse" }).getAttribute("href"),
+    ).toBe("/offres");
+    expect(screen.queryByText("Changements récents")).toBeNull();
+    expect(screen.queryByText("Mise à prix abaissée")).toBeNull();
+    expect(mocks.fetchSaleChangeEvents).not.toHaveBeenCalled();
+  });
+
+  it("ne promet ni essai ni souscription quand l'offre Analyse n'est pas ouverte", async () => {
+    setup();
+    mocks.checkoutOpen.mockReturnValue(false);
+    mocks.fetchFavoriteSales.mockResolvedValue({
+      ...favoritesResponse(),
+      plan: { code: "decouverte", label: "Découverte", feature: "limited", limit: 3 },
+    });
+    renderPage();
+
+    expect(await screen.findByText("Suivez les changements de vos ventes")).toBeTruthy();
+    expect(
+      screen.getByText("L’offre Analyse n’est pas encore ouverte à la souscription."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/essai/i)).toBeNull();
+  });
+
+  it("revient à l'aperçu verrouillé quand l'API refuse le droit", async () => {
+    setup();
+    mocks.fetchSaleChangeEvents.mockRejectedValue(
+      Object.assign(new Error("Réservé"), { status: 403 }),
+    );
+    renderPage();
+
+    expect(await screen.findByText("Suivez les changements de vos ventes")).toBeTruthy();
+    expect(screen.queryByText("Impossible de charger les changements pour le moment.")).toBeNull();
+    expect(mocks.fetchSaleChangeEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it("n'affiche rien quand il n'y a aucun favori", async () => {
+    setup();
+    mocks.fetchFavoriteSales.mockResolvedValue({ ...favoritesResponse(), favorites: [] });
+    renderPage();
+
+    await screen.findByText("Aucun favori pour le moment");
+    expect(screen.queryByText("Changements récents")).toBeNull();
+    expect(mocks.fetchSaleChangeEvents).not.toHaveBeenCalled();
   });
 });
