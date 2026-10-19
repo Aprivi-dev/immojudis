@@ -1,4 +1,6 @@
 import { formatDate, formatPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import { pathWithSearch } from "@/lib/navigation";
+import { salesSearchToUrlRecord, type SalesSearchParams } from "@/lib/search/search-url-state";
 import { parseSaleType, saleTypeFilterLabel } from "@/lib/sale-types";
 import type { UserAlert } from "@/lib/types";
 
@@ -84,4 +86,56 @@ export function alertCriteriaSummary(
     );
   }
   return criteria;
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  const parsed = number(value);
+  return parsed != null && parsed >= 0 ? parsed : undefined;
+}
+
+type AlertSearchCriteria = Pick<
+  UserAlert,
+  | "department"
+  | "city"
+  | "property_type"
+  | "max_price_eur"
+  | "min_surface_m2"
+  | "occupancy_status"
+  | "min_investment_score"
+  | "max_price_per_m2"
+  | "min_yield_pct"
+  | "min_market_discount_pct"
+  | "dpe_classes"
+  | "require_house_with_land"
+  | "advanced_criteria"
+>;
+
+/** Les critères d'une alerte, dans la forme d'une recherche du catalogue. */
+export function alertToSalesSearch(alert: AlertSearchCriteria): SalesSearchParams {
+  const advanced = alert.advanced_criteria ?? {};
+  return {
+    department: alert.department || undefined,
+    city: alert.city || undefined,
+    homeTypes: alert.property_type ? [alert.property_type] : undefined,
+    maxPrice: alert.max_price_eur ?? undefined,
+    minSqft: alert.min_surface_m2 ?? undefined,
+    occupancy: alert.occupancy_status || undefined,
+    minScore: alert.min_investment_score ?? undefined,
+    maxPricePerM2: alert.max_price_per_m2 ?? undefined,
+    minYield: alert.min_yield_pct ?? undefined,
+    minMarketDiscount: alert.min_market_discount_pct ?? undefined,
+    dpeClasses: alert.dpe_classes?.length ? alert.dpe_classes : undefined,
+    houseWithLand: alert.require_house_with_land ? true : undefined,
+    minSaleDate: text(advanced.min_sale_date) ?? undefined,
+    maxSaleDate: text(advanced.max_sale_date) ?? undefined,
+    saleType: parseSaleType(advanced.sale_type),
+    query: text(advanced.query) ?? undefined,
+    aroundAddress: text(advanced.around_address) ?? undefined,
+    aroundRadius: nonNegativeNumber(advanced.around_radius_km),
+  };
+}
+
+/** Adresse du catalogue qui montre les ventes correspondant aux critères d'une alerte. */
+export function alertSalesPath(alert: AlertSearchCriteria): string {
+  return pathWithSearch("/sales", salesSearchToUrlRecord(alertToSalesSearch(alert)));
 }

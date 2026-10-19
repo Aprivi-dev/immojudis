@@ -93,6 +93,7 @@ const EXPECTED_CRONS = [
   "/api/cron/smart-alerts",
   "/api/cron/alert-notifications",
   "/api/cron/sale-change-monitor",
+  "/api/cron/sale-reminders",
   "/api/cron/precompute-valuations",
   "/api/cron/data-retention",
   "/api/cron/operational-health",

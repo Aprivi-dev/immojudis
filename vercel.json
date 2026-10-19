@@ -33,6 +33,14 @@
       "schedule": "45 8 * * *"
     },
     {
+      "path": "/api/cron/sale-reminders",
+      "schedule": "15 7 * * *"
+    },
+    {
+      "path": "/api/cron/sale-reminders",
+      "schedule": "15 9 * * *"
+    },
+    {
       "path": "/api/cron/data-retention",
       "schedule": "15 4 * * 0"
     },

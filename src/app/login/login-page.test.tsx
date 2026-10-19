@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -195,6 +195,21 @@ describe("login page", () => {
     expect(screen.queryByTestId("login-free-promise")).toBeNull();
   });
 
+  it("explique le détour depuis l'espace personnel : favoris et alertes", () => {
+    mocks.search = { reason: "mes-favoris" };
+    const { unmount } = render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Connectez-vous pour retrouver vos favoris.",
+    );
+    unmount();
+
+    mocks.search = { reason: "mes-alertes" };
+    render(<LoginPage />);
+    expect(screen.getByTestId("login-reason").textContent).toBe(
+      "Connectez-vous pour retrouver vos alertes.",
+    );
+  });
+
   it("l'export n'est promis au compte gratuit que si c'est vrai : exact dans les deux états", () => {
     mocks.search = { mode: "investor", reason: "export" };
     const { unmount } = render(<LoginPage />);
@@ -306,9 +321,13 @@ describe("login page", () => {
   });
 
   describe("confirmation de l'adresse après l'inscription", () => {
-    async function signUpWithoutSession() {
+    // Le temps avance aussi tout seul : `waitFor` et `findBy` continuent de fonctionner.
+    beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
+    afterEach(() => vi.useRealTimers());
+
+    async function signUpWithoutSession(user: Record<string, unknown> = { id: "u1" }) {
       mocks.search = { mode: "investor", redirect: "/sales?city=Lyon" };
-      mocks.signUp.mockResolvedValue({ data: { user: { id: "u1" }, session: null }, error: null });
+      mocks.signUp.mockResolvedValue({ data: { user, session: null }, error: null });
       render(<LoginPage />);
       fireEvent.change(screen.getByPlaceholderText("vous@exemple.fr"), {
         target: { value: "nouvelle@example.test" },
@@ -320,19 +339,78 @@ describe("login page", () => {
       return screen.findByRole("status");
     }
 
+    /** Fait passer du temps (le minuteur du compte à rebours démarre dans un effet). */
+    async function elapse(milliseconds: number) {
+      await act(async () => {});
+      act(() => {
+        vi.advanceTimersByTime(milliseconds);
+      });
+    }
+
     it("remplace le formulaire par un panneau de statut quand il n'y a pas de session", async () => {
       const panel = await signUpWithoutSession();
       expect(panel.textContent).toContain(
         "Un email de confirmation a été envoyé à nouvelle@example.test, cliquez sur le lien pour continuer.",
       );
       expect(screen.queryByPlaceholderText("vous@exemple.fr")).toBeNull();
-      expect(screen.getByRole("button", { name: "Renvoyer l'email" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /Renvoyer l'email/ })).toBeTruthy();
       expect(screen.getByRole("button", { name: "Changer d'adresse" })).toBeTruthy();
     });
 
-    it("renvoie l'email de confirmation vers la même adresse", async () => {
+    it("aide à retrouver l'email ou le compte existant sous le message", async () => {
+      await signUpWithoutSession();
+      const help = screen.getByTestId("signup-help");
+      expect(help.textContent).toBe(
+        "Vous ne recevez rien ? Vérifiez vos courriers indésirables. Si vous avez déjà un compte avec cette adresse, connectez-vous ou réinitialisez votre mot de passe.",
+      );
+      expect(
+        screen.getByRole("link", { name: "réinitialisez votre mot de passe" }).getAttribute("href"),
+      ).toBe("/mot-de-passe-oublie");
+    });
+
+    it("« connectez-vous » ramène au formulaire de connexion avec l'adresse saisie", async () => {
+      await signUpWithoutSession();
+      fireEvent.click(screen.getByRole("button", { name: "connectez-vous" }));
+      expect(mocks.replace).toHaveBeenLastCalledWith("/login?redirect=%2Fsales%3Fcity%3DLyon");
+      expect(screen.queryByRole("status")).toBeNull();
+      expect((screen.getByPlaceholderText("vous@exemple.fr") as HTMLInputElement).value).toBe(
+        "nouvelle@example.test",
+      );
+    });
+
+    it("signale un compte existant quand la réponse ne crée aucune identité", async () => {
+      const panel = await signUpWithoutSession({ id: "u1", identities: [] });
+      expect(panel.textContent).toContain("Un compte existe déjà avec cette adresse.");
+      expect(panel.textContent).not.toContain("Un email de confirmation a été envoyé");
+      // Aucun email n'est parti : renvoyer n'aurait aucun effet.
+      expect(screen.queryByRole("button", { name: /Renvoyer l'email/ })).toBeNull();
+      expect(screen.getByTestId("signup-help")).toBeTruthy();
+    });
+
+    it("garde le panneau de confirmation quand l'utilisateur a bien une identité", async () => {
+      const panel = await signUpWithoutSession({ id: "u1", identities: [{ id: "i1" }] });
+      expect(panel.textContent).toContain("Un email de confirmation a été envoyé");
+      expect(panel.textContent).not.toContain("Un compte existe déjà");
+    });
+
+    it("bloque « Renvoyer l'email » 30 secondes avec un compte à rebours", async () => {
+      await signUpWithoutSession();
+      const resend = screen.getByRole("button", { name: /Renvoyer l'email/ }) as HTMLButtonElement;
+      expect(resend.disabled).toBe(true);
+      expect(resend.textContent).toBe("Renvoyer l'email (30 s)");
+      await elapse(10_000);
+      expect(resend.textContent).toBe("Renvoyer l'email (20 s)");
+      fireEvent.click(resend);
+      expect(mocks.resend).not.toHaveBeenCalled();
+      await elapse(20_000);
+      expect(resend.disabled).toBe(false);
+      expect(resend.textContent).toBe("Renvoyer l'email");
+    });
+
+    it("renvoie l'email de confirmation vers la même adresse, puis bloque à nouveau 30 secondes", async () => {
       mocks.resend.mockResolvedValue({ error: null });
       const panel = await signUpWithoutSession();
+      await elapse(30_000);
       fireEvent.click(screen.getByRole("button", { name: "Renvoyer l'email" }));
       await waitFor(() => expect(mocks.resend).toHaveBeenCalledTimes(1));
       expect(mocks.resend.mock.calls[0][0]).toMatchObject({
@@ -342,11 +420,15 @@ describe("login page", () => {
       await waitFor(() =>
         expect(panel.textContent).toContain("Email renvoyé à nouvelle@example.test"),
       );
+      expect(
+        (screen.getByRole("button", { name: /Renvoyer l'email/ }) as HTMLButtonElement).disabled,
+      ).toBe(true);
     });
 
     it("affiche une erreur en français quand le renvoi échoue", async () => {
       mocks.resend.mockResolvedValue({ error: new Error("rate limit") });
       await signUpWithoutSession();
+      await elapse(30_000);
       fireEvent.click(screen.getByRole("button", { name: "Renvoyer l'email" }));
       expect((await screen.findByRole("alert")).textContent).toBeTruthy();
     });

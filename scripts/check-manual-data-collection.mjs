@@ -18,6 +18,8 @@ const allowedVercelCronPaths = new Set([
   "/api/cron/smart-alerts",
   "/api/cron/alert-notifications",
   "/api/cron/sale-change-monitor",
+  // Rappels d'audience par email (SALE_REMINDERS_MODE=off par défaut) : ne collecte aucune donnée.
+  "/api/cron/sale-reminders",
   "/api/cron/data-retention",
   // Calcul dérivé (palier de complétude des annonces déjà en base) : ne collecte aucune donnée.
   "/api/cron/listing-completeness",
