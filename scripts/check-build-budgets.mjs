@@ -63,7 +63,10 @@ const MAX_CLIENT_CHUNK_BYTES = 1_875_000;
 // every page). Measured 5,601,873 bytes in total before the /sales and account batches.
 // The owner approved (19/10/2026) raising the ceiling once, to 5,750,000; every
 // route-level initial-load budget below is unchanged and still passes.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_750_000;
+// The account, alerts and reminders batch (/alertes/creer, sector alerts, /compte toggles,
+// mostly on-demand chunks) then measured 5,788,672 bytes; the owner approved (19/10/2026)
+// a second raise, to 5,850,000. The home page still loads 714,554 of its 735,000 bytes.
+const MAX_TOTAL_CLIENT_JS_BYTES = 5_850_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;
