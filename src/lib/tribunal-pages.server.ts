@@ -11,7 +11,7 @@ import { TRIBUNAL_PAGE_LISTED_SALES } from "@/lib/tribunal-pages";
  * adresse exacte n'en sort.
  */
 export const TRIBUNAL_SALES_REVALIDATE_SECONDS = 3_600;
-const TRIBUNAL_SALES_CACHE_TAG = "tribunal-pages";
+export const TRIBUNAL_SALES_CACHE_TAG = "tribunal-pages";
 
 /** Ligne de `get_public_tribunal_sales` : numeric arrive parfois en chaîne de PostgREST. */
 export type TribunalSaleRow = {
