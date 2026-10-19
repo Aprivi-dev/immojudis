@@ -1,22 +1,17 @@
 import type { NextConfig } from "next";
+import { buildUnversionedAssetCacheRules } from "./src/lib/asset-cache-headers.ts";
 import { listingPhotoRemotePatterns } from "./src/lib/listing-photo-source.ts";
 import { buildSecurityHeaders, resolveCspMode } from "./src/lib/security-headers.ts";
-import { isNonProductionVercelDeployment } from "./src/lib/site-url.ts";
 
 const propertyDemoEnabled = process.env.ENABLE_PROPERTY_DEMO === "true";
 const securityHeaders = buildSecurityHeaders({
-  // The nonce-based CSP is emitted per request by src/proxy.ts (report-only unless
-  // CSP_REPORT_ONLY=false). Until it is enforced, the historical CSP keeps protecting pages.
+  // The strict, nonce-based CSP is emitted per request by src/proxy.ts only when it is enforced
+  // (CSP_REPORT_ONLY=false) or previewed (CSP_NONCE_DYNAMIC=true). Until it is enforced, the
+  // historical CSP keeps protecting pages; see `strictCspEnabled` in src/lib/security-headers.ts.
   includeLegacyCsp: !resolveCspMode().enforced,
   isProduction: process.env.NODE_ENV === "production",
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL,
 });
-
-// Aperçus et déploiements de développement Vercel : jamais indexés (robots.ts répond aussi
-// `Disallow: /`). L'en-tête couvre les pages, les images et les routes d'API.
-const nonProductionHeaders = isNonProductionVercelDeployment()
-  ? [{ key: "X-Robots-Tag", value: "noindex, nofollow" }]
-  : [];
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -68,8 +63,11 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/(.*)",
-        headers: [...securityHeaders, ...nonProductionHeaders],
+        headers: securityHeaders,
       },
+      // Après la règle de sécurité : les deux s'appliquent (clés d'en-tête différentes). Les
+      // règles suivantes ne portent que `Cache-Control`, jamais un en-tête de sécurité.
+      ...buildUnversionedAssetCacheRules(),
     ];
   },
   async redirects() {

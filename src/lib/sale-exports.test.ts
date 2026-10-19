@@ -33,6 +33,27 @@ describe("sales CSV export", () => {
     expect(csv).toContain("'@SUM(1+1)");
   });
 
+  it("exports a date-only sale as a day, never as a midnight instant (Petites Affiches)", () => {
+    // La date sans heure est stockée à minuit UTC : 01:00 ou 02:00 à Paris, une heure qui n'existe pas.
+    const sale: AuctionSale = { ...EXAMPLE_SALE, sale_date: "2026-10-14T00:00:00+00:00" };
+
+    const [item] = buildSalesApiFeedItems([sale], "https://app.immojudis.test");
+    const csv = buildSalesCsv([sale]);
+
+    expect(item.audience.saleDate).toBe("2026-10-14");
+    expect(item.audience.formattedSaleDate).toBe("14 octobre 2026");
+    expect(csv).toContain("14 octobre 2026");
+    expect(csv).not.toMatch(/01:00|02:00|T00:00/);
+  });
+
+  it("keeps the instant of a sale that has a real hour", () => {
+    const sale: AuctionSale = { ...EXAMPLE_SALE, sale_date: "2026-10-15T07:30:00+00:00" };
+
+    const [item] = buildSalesApiFeedItems([sale], "https://app.immojudis.test");
+
+    expect(item.audience.saleDate).toBe("2026-10-15T07:30:00+00:00");
+  });
+
   it("builds a light JSON feed item for Analyse API access", () => {
     const sale: AuctionSale = {
       ...EXAMPLE_SALE,

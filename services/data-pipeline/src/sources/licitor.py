@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections import deque
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ from bs4 import BeautifulSoup
 
 from src.catalogue_proof import CatalogueEvidence
 from src.config import FRENCH_POSTAL_CODE_PATTERN, TARGET_DEPARTMENTS, load_settings
+from src.information_sufficiency import excluded_contact_reason
 from src.normalize import (
     clean_text,
     extract_department,
@@ -22,8 +24,10 @@ from src.source_checkpoint import CheckpointSales
 from src.sources.common import (
     PoliteHttpClient,
     ScrapeResult,
+    extract_cloudflare_emails,
     extract_surface,
     is_allowed_origin_url,
+    is_plausible_email,
     normalize_surface_number,
     parse_html,
 )
@@ -34,6 +38,7 @@ from src.sources.licitor_extraction import (
     extract_licitor_fields,
     licitor_department,
 )
+from src.sources.professional_contact import clear_email
 from src.sources.source_features import cadastral_to_m2 as _cadastral_to_m2
 from src.sources.source_features import extract_parking_count as _extract_parking_count
 from src.sources.source_features import extract_qualified_surface as _extract_qualified_surface_impl
@@ -290,8 +295,99 @@ def parse_licitor_list_sales(html: str, page_url: str = AQUITAINE_URL) -> list[d
     return sales
 
 
+def _log_cloudflare_scope(soup: BeautifulSoup, trusts: list[Any], source_url: str) -> None:
+    """Diagnostic seul (aucune erreur) : adresses masquées hors des blocs ``.Trust`` et page sans bloc."""
+    masked = [node for node in soup.find_all(attrs={"data-cfemail": True})]
+    masked += [
+        link for link in soup.find_all("a", href=True) if "/cdn-cgi/l/email-protection#" in str(link.get("href"))
+    ]
+    outside = {id(node) for node in masked if node.find_parent("div", class_="Trust") is None}
+    if outside:
+        LOGGER.info(
+            "Licitor %s : %d élément(s) d'adresse masquée hors des blocs .Trust, non décodé(s)",
+            source_url,
+            len(outside),
+        )
+    if not trusts:
+        LOGGER.debug("Licitor %s : aucun bloc .Trust (aucun professionnel présenté), rien à décoder", source_url)
+
+
+def publishable_licitor_email(email: str) -> bool:
+    """Adresse de professionnel gardée : mêmes filtres pour une adresse décodée et une adresse en clair.
+
+    Plausible, lue par ``clear_email`` (la messagerie RPVA ``@avocat-conseil.fr`` est écartée) et
+    jamais celle d'une juridiction, de l'Ordre, d'un barreau ou d'une CARPA (``excluded_contact_reason``).
+    """
+    return (
+        is_plausible_email(email)
+        and clear_email(email) is not None
+        and excluded_contact_reason(email) is None
+    )
+
+
+DECODE_ENV = "LICITOR_DECODE_PROTECTED_EMAILS"
+
+
+_DECODE_OFF = frozenset({"false", "0", "off", "no", "non", "disabled"})
+_DECODE_ON = frozenset({"true", "1", "on", "yes", "oui", "enabled"})
+_warned_values: set[str] = set()
+
+
+def decode_protected_emails_enabled() -> bool:
+    """Interrupteur de suspension du décodage (actif par défaut, lu à chaque fiche).
+
+    Coupé par ``false`` (valeur à utiliser), ``0``, ``off``, ``no``, ``non`` ou ``disabled`` (espaces et casse
+    ignorés). Absent, vide ou vrai (``true``, ``1``, ``on``, ``yes``, ``oui``, ``enabled``) : actif. Une autre
+    valeur est inconnue : le décodage reste actif et un avertissement est journalisé une fois (sans la valeur).
+    Coupé, les éléments masqués sont tout de même retirés de la page (jamais publiés) mais aucune adresse n'est
+    décodée ni écrite au registre.
+    """
+    value = (os.getenv(DECODE_ENV) or "").strip().lower()
+    if value in _DECODE_OFF:
+        return False
+    if value and value not in _DECODE_ON and value not in _warned_values:
+        _warned_values.add(value)
+        LOGGER.warning("%s a une valeur non reconnue : le décodage reste actif (utiliser « false » pour le couper)", DECODE_ENV)
+    return True
+
+
+def _internal_lawyer_contacts(soup: BeautifulSoup, trusts: list[Any]) -> list[dict[str, str]]:
+    """Adresses masquées des blocs avocats, décodées pour un usage INTERNE seulement.
+
+    Décision du propriétaire (14/10/2026) : l'adresse décodée n'est jamais publiée. Les éléments
+    masqués sont retirés de la page, donc elle n'entre ni dans le texte, ni dans les blocs, ni dans
+    ``lawyer_contact``, ni dans les caractéristiques : elle ne part que dans ``internal_contacts``,
+    clé que ``normalize_sale`` extrait de la vente avant ``raw_payload`` et qui n'est écrite que
+    dans le registre des contacts de l'agent d'information (service_role).
+    """
+    contacts: list[dict[str, str]] = []
+    decode = decode_protected_emails_enabled()
+    for trust in trusts:
+        heading = trust.find("h3")
+        name = clean_text(heading.get_text(" ", strip=True)) if heading is not None else None
+        for email in extract_cloudflare_emails(
+            soup, accept=publishable_licitor_email, within=[trust], decode=decode
+        ):
+            if all(email != item["email"] for item in contacts):
+                contacts.append({"email": email, "name": name or "", "role": "lawyer", "source_name": "licitor"})
+    return contacts
+
+
 def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     soup = parse_html(html, "html.parser")
+    # Cloudflare masque les adresses e-mail des avocats. Licitor ayant donné son accord (14/10/2026,
+    # oral, à formaliser par écrit), on les décode dans le HTML déjà récupéré et dans les seuls blocs
+    # des professionnels (``.Trust``) ; chaque élément masqué est retiré de la page (plus de
+    # « [email protected] ») et l'adresse est mise à part, pour l'usage interne de l'agent. Une adresse
+    # refusée (juridiction, RPVA, Ordre, CARPA, illisible) est retirée ; ailleurs dans la page, rien
+    # n'est décodé. Vench ne décode pas (autre parseur).
+    trusts = soup.select("div.Trust")
+    _log_cloudflare_scope(soup, trusts, source_url)
+    try:
+        internal_contacts = _internal_lawyer_contacts(soup, trusts)
+    except Exception as exc:  # noqa: BLE001 - le décodage ne doit jamais faire échouer la lecture de la fiche
+        LOGGER.warning("Licitor %s : décodage des adresses masquées ignoré (%s)", source_url, type(exc).__name__)
+        internal_contacts = []
     raw_text = _stable_raw_text(soup.get_text("\n", strip=True))
     lines = raw_text.splitlines()
 
@@ -402,6 +498,9 @@ def parse_licitor_detail_html(html: str, source_url: str) -> dict[str, Any]:
     extracted = extract_licitor_fields(raw_text, sale)
     if extracted is not None:
         apply_licitor_fields(sale, extracted)
+    if internal_contacts:
+        # Hors de tout champ publié : extrait par ``normalize_sale``, écrit dans le registre interne.
+        sale["internal_contacts"] = internal_contacts
     return sale
 
 

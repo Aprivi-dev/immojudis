@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AuctionSale } from "@/lib/types";
 import {
   atTribunal,
+  breadcrumbStructuredData,
   GENERIC_SALE_SEO_TITLE,
   organizationStructuredData,
   SALE_TITLE_MAX_LENGTH,
@@ -163,6 +164,34 @@ describe("hearing time", () => {
 describe("sale structured data", () => {
   const origin = "https://immojudis.com";
 
+  it("ends with a breadcrumb: Accueil, Ventes, the sale itself", () => {
+    const data = saleStructuredData(sale(), { origin, now: NOW }) as {
+      "@graph": Array<Record<string, unknown>>;
+    };
+    const breadcrumb = data["@graph"].at(-1)!;
+    expect(breadcrumb["@type"]).toBe("BreadcrumbList");
+    expect(breadcrumb.itemListElement).toEqual([
+      { "@type": "ListItem", position: 1, name: "Accueil", item: origin },
+      { "@type": "ListItem", position: 2, name: "Ventes", item: `${origin}/sales` },
+      {
+        "@type": "ListItem",
+        position: 3,
+        name: expect.stringContaining("Romainville"),
+        item: `${origin}/sales/005a914d-563c-427b-88a4-740cbf851afb`,
+      },
+    ]);
+  });
+
+  it("builds a breadcrumb for an information page", () => {
+    expect(breadcrumbStructuredData(origin, [{ name: "Offres", path: "/offres" }])).toEqual({
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Accueil", item: origin },
+        { "@type": "ListItem", position: 2, name: "Offres", item: `${origin}/offres` },
+      ],
+    });
+  });
+
   it("uses absolute URLs and the facts of the page", () => {
     const data = saleStructuredData(sale(), { origin, now: NOW }) as {
       "@graph": Array<Record<string, unknown>>;
@@ -196,7 +225,7 @@ describe("sale structured data", () => {
     const withEvent = saleStructuredData(sale(), { origin, now: NOW }) as {
       "@graph": Array<Record<string, unknown>>;
     };
-    expect(withEvent["@graph"]).toHaveLength(2);
+    expect(withEvent["@graph"]).toHaveLength(3);
     expect(withEvent["@graph"][1]).toMatchObject({
       "@type": "Event",
       startDate: "2026-10-20T07:00:00.000Z",
@@ -213,7 +242,10 @@ describe("sale structured data", () => {
       const data = saleStructuredData(incomplete, { origin, now: NOW }) as {
         "@graph": unknown[];
       };
-      expect(data["@graph"]).toHaveLength(1);
+      expect(data["@graph"].map((node) => (node as { "@type": string })["@type"])).toEqual([
+        "RealEstateListing",
+        "BreadcrumbList",
+      ]);
     }
   });
 

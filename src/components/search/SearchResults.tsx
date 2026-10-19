@@ -1,11 +1,12 @@
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
+import { WellInformedBadge } from "@/components/WellInformedBadge";
 import { SaleCountdown } from "@/components/SaleCountdown";
 import type * as React from "react";
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import { getDisplaySurface } from "@/lib/surface";
 import { SaleVisual } from "@/components/SaleVisual";
 import { ListingPhoto } from "@/components/ListingPhoto";
-import { saleDisplayTitle } from "@/lib/sale-title";
+import { isPhotoMirrorUrl, photoMirrorForCard } from "@/lib/photo-mirror";
 import { propertyImages, shouldRejectRenderedPropertyImage } from "@/lib/sale-media";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import CalendarDays from "lucide-react/dist/esm/icons/calendar-days.js";
@@ -16,21 +17,23 @@ import Share2 from "lucide-react/dist/esm/icons/share-2.js";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/use-auth";
 import { useViewedSales } from "@/hooks/use-viewed-sales";
-import { supabase } from "@/integrations/supabase/client";
+import { getSupabase } from "@/integrations/supabase/lazy";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { loginPathWithRedirect, pathWithSearch, saleDetailPath } from "@/lib/navigation";
+import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import {
   FAVORITE_ADD_LABEL,
   FAVORITE_ANONYMOUS_TITLE,
+  FAVORITE_VERIFYING_TITLE,
   FAVORITE_REMOVE_LABEL,
   announceFavoriteAdded,
 } from "@/components/favorite-feedback";
 import {
   addFavoriteSale as addFavoriteSaleRequest,
+  fetchSaleUnlocksOverview,
   removeFavoriteSale as removeFavoriteSaleRequest,
 } from "@/lib/client-api";
-import { formatDate, formatStartingPrice, occupancyLabel, propertyTypeLabel } from "@/lib/format";
+import { formatDate, formatStartingPrice, occupancyLabel } from "@/lib/format";
 import { trackProductEvent } from "@/lib/product-events";
 import { stateListingStatus } from "@/lib/property-characteristics";
 import type { AuctionSale } from "@/lib/types";
@@ -38,8 +41,11 @@ import { MAX_COMPARED_SALES } from "@/lib/search/sale-comparison";
 import type { ActiveFilterChip } from "./active-filter-chips";
 import { ErrorState, NoResultsState } from "./SearchFilters";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
+import { SearchResultsTable } from "./SearchResultsTable";
+import { cardTypeLabel, departmentLabel, listingAccessLine, listingTitle } from "./listing-text";
 import styles from "./SearchResults.module.css";
 import { AiReviewField } from "@/components/sale-detail/AiReviewField";
+import { Terme } from "@/components/ceiling/Terme";
 import {
   AI_REVIEW_SURFACE_FIELD_KEYS,
   firstBlockedAiReviewField,
@@ -49,6 +55,22 @@ import {
 } from "@/lib/ai-review-guard";
 import { userMessage } from "@/lib/user-messages";
 import { queryKeys } from "@/lib/query-keys";
+import type { ResultsView } from "@/lib/search/results-view";
+
+/**
+ * Vignette cartographique d'une carte de résultats (ratio 4:3, comme le cadre `aspect-[4/3]`).
+ * `framingWidth` est la largeur de l'ancien visuel (512 px @2x) : le zoom est reculé en
+ * conséquence pour que la zone visible reste identique avec moins de pixels.
+ */
+const LIST_MAP_THUMBNAIL = { width: 400, height: 300, framingWidth: 512 } as const;
+
+/**
+ * Nombre de cartes dont l'image est chargée en priorité haute (`fetchpriority="high"`, hors
+ * chargement différé). Une seule : sur mobile la deuxième carte est sous la ligne de flottaison,
+ * et une seconde image prioritaire (33 Ko) ralentit celle de l'élément principal (LCP).
+ */
+export const EAGER_IMAGE_COUNT = 1;
+
 export function SearchResultsList({
   sales,
   sponsoredPlacement,
@@ -72,6 +94,7 @@ export function SearchResultsList({
   onResetFilters,
   onShowFrance,
   hideEmptyState = false,
+  view = "cards",
 }: {
   sales: AuctionSale[];
   sponsoredPlacement?: React.ReactNode;
@@ -97,6 +120,8 @@ export function SearchResultsList({
   onShowFrance?: () => void;
   /** Page au-delà de la dernière : c'est la pagination qui l'explique, pas les critères. */
   hideEmptyState?: boolean;
+  /** « table » : un tableau des mêmes annonces (écran large) ; les cartes sinon. */
+  view?: ResultsView;
 }) {
   const { user, loading: authLoading } = useAuth();
   const saleIds = useMemo(() => sales.map(({ id }) => id), [sales]);
@@ -104,7 +129,7 @@ export function SearchResultsList({
   const favoriteQuery = useQuery({
     queryKey: queryKeys.searchFavoriteStatus(user?.id ?? null, favoriteQueryIds),
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (await getSupabase())
         .from("user_favorites")
         .select("sale_id")
         .eq("user_id", user!.id)
@@ -117,6 +142,19 @@ export function SearchResultsList({
     retry: false,
   });
   const favoriteIds = useMemo(() => new Set(favoriteQuery.data ?? []), [favoriteQuery.data]);
+  // « 3 déblocages par mois » : un compte Découverte voit lesquelles de ces ventes il a débloquées.
+  // Sans réponse (erreur, base sans le déblocage), aucune pastille : la carte reste celle d'avant.
+  const unlocksQuery = useQuery({
+    queryKey: queryKeys.saleUnlocksOverview(user?.id ?? null),
+    queryFn: fetchSaleUnlocksOverview,
+    enabled: Boolean(user && !authLoading && !isLoading && !locked && analysisLocked),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const unlockedIds = useMemo(
+    () => new Set((unlocksQuery.data?.sales ?? []).map(({ id }) => id)),
+    [unlocksQuery.data],
+  );
   const favoriteScope = user?.id ?? null;
 
   return (
@@ -132,44 +170,81 @@ export function SearchResultsList({
         />
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 min-[600px]:grid-cols-2">
-        {isLoading
-          ? Array.from({ length: 8 }).map((_, index) => <SearchResultsSkeleton key={index} />)
-          : sales.map((sale, index) => (
-              <Fragment key={sale.id}>
-                {index === 4 && sponsoredPlacement ? (
-                  <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
-                ) : null}
-                <ListingCard
-                  sale={sale}
-                  returnTo={returnTo}
-                  eagerImage={index < 2}
-                  locked={locked}
-                  analysisLocked={analysisLocked}
-                  active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
-                  onHover={onHover}
-                  onSelect={onSelect}
-                  comparisonSelected={comparedSaleIds.includes(sale.id)}
-                  comparisonDisabled={
-                    comparisonDisabled ||
-                    (comparedSaleIds.length >= MAX_COMPARED_SALES &&
-                      !comparedSaleIds.includes(sale.id))
-                  }
-                  onToggleComparison={onToggleComparison}
-                  aiReviewProjections={aiReviewBySaleId?.[sale.id]}
-                  aiReviewStatus={aiReviewStatus}
-                  favoriteScope={favoriteScope}
-                  initialFavorite={favoriteIds.has(sale.id)}
-                />
-              </Fragment>
-            ))}
-        {sales.length === 4 && sponsoredPlacement ? (
-          <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
-        ) : null}
-      </div>
+      {view === "table" ? (
+        <>
+          <SearchResultsTable
+            sales={sales}
+            returnTo={returnTo}
+            locked={locked}
+            analysisLocked={analysisLocked}
+            isLoading={isLoading}
+            selectedSaleId={selectedSaleId}
+            hoveredSaleId={hoveredSaleId}
+            onHover={onHover}
+            onSelect={onSelect}
+            unlockedIds={unlockedIds}
+            aiReviewBySaleId={aiReviewBySaleId}
+            aiReviewStatus={aiReviewStatus}
+            favoriteIds={favoriteIds}
+            favoriteScope={favoriteScope}
+            FavoriteButton={CompactFavoriteButton}
+          />
+          {!isLoading && sales.length >= 4 && sponsoredPlacement ? (
+            <div className="mt-4">{sponsoredPlacement}</div>
+          ) : null}
+        </>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 min-[600px]:grid-cols-2">
+          {isLoading
+            ? Array.from({ length: 8 }).map((_, index) => <SearchResultsSkeleton key={index} />)
+            : sales.map((sale, index) => (
+                <Fragment key={sale.id}>
+                  {index === 4 && sponsoredPlacement ? (
+                    <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
+                  ) : null}
+                  <ListingCard
+                    sale={sale}
+                    returnTo={returnTo}
+                    eagerImage={index < EAGER_IMAGE_COUNT}
+                    locked={locked}
+                    analysisLocked={analysisLocked}
+                    active={selectedSaleId === sale.id || hoveredSaleId === sale.id}
+                    onHover={onHover}
+                    onSelect={onSelect}
+                    comparisonSelected={comparedSaleIds.includes(sale.id)}
+                    comparisonDisabled={
+                      comparisonDisabled ||
+                      (comparedSaleIds.length >= MAX_COMPARED_SALES &&
+                        !comparedSaleIds.includes(sale.id))
+                    }
+                    onToggleComparison={onToggleComparison}
+                    aiReviewProjections={aiReviewBySaleId?.[sale.id]}
+                    aiReviewStatus={aiReviewStatus}
+                    favoriteScope={favoriteScope}
+                    initialFavorite={favoriteIds.has(sale.id)}
+                    unlocked={unlockedIds.has(sale.id)}
+                  />
+                </Fragment>
+              ))}
+          {sales.length === 4 && sponsoredPlacement ? (
+            <div className="min-[600px]:col-span-2">{sponsoredPlacement}</div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
+/** Assemble les éléments présents, séparés par « · » : aucun séparateur ne reste seul. */
+function withSeparators(parts: React.ReactNode[]): React.ReactNode {
+  const kept = parts.filter((part) => part != null && part !== false && part !== "");
+  return kept.map((part, index) => (
+    <Fragment key={index}>
+      {index > 0 ? " · " : null}
+      {part}
+    </Fragment>
+  ));
+}
+
 export const ListingCard = memo(function ListingCard({
   sale,
   returnTo,
@@ -186,6 +261,7 @@ export const ListingCard = memo(function ListingCard({
   aiReviewStatus = "ready",
   favoriteScope = null,
   initialFavorite = false,
+  unlocked = false,
   onFavoriteChange,
 }: {
   sale: AuctionSale;
@@ -203,6 +279,8 @@ export const ListingCard = memo(function ListingCard({
   aiReviewStatus?: AiReviewRequestStatus;
   favoriteScope?: string | null;
   initialFavorite?: boolean;
+  /** Le compte a débloqué cette vente (« 3 déblocages par mois ») : pastille « Débloquée ». */
+  unlocked?: boolean;
   /** Appelé après l'ajout ou le retrait réussi d'un favori depuis la carte. */
   onFavoriteChange?: (saleId: string, isFavorite: boolean) => void;
 }) {
@@ -210,11 +288,6 @@ export const ListingCard = memo(function ListingCard({
   const { isViewed } = useViewedSales();
   const premiumLocked = locked || analysisLocked;
   const viewed = !locked && isViewed(sale.id);
-  const propertyTypeReview = getAiReviewFieldResult(
-    aiReviewProjections,
-    "property.property_type",
-    aiReviewStatus,
-  );
   const cityReview = getAiReviewFieldResult(aiReviewProjections, "property.city", aiReviewStatus);
   const roomsReview = getAiReviewFieldResult(
     aiReviewProjections,
@@ -226,17 +299,12 @@ export const ListingCard = memo(function ListingCard({
     AI_REVIEW_SURFACE_FIELD_KEYS,
     aiReviewStatus,
   );
-  const guardedPropertyType = propertyTypeReview.blocked
-    ? "À confirmer"
-    : propertyTypeLabel(sale.property_type);
-  const guardedCity = cityReview.blocked ? null : sale.city;
-  const title = locked
-    ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
-    : propertyTypeReview.blocked || cityReview.blocked
-      ? `${guardedPropertyType}${guardedCity ? ` à ${guardedCity}` : ""}`
-      : saleDisplayTitle(sale);
+  const title = listingTitle(sale, { locked, aiReviewProjections, aiReviewStatus });
   // Cession de l'État en ligne sans échéance publiée : « Procédure à venir » plutôt que « Date à confirmer ».
   const stateListing = stateListingStatus(sale);
+  // Titre « Type de bien · Ville » ; sans ville, le département prend le relais sous le titre.
+  const showCity = cityReview.blocked || Boolean(sale.city?.trim());
+  const departmentLine = departmentLabel(sale.department);
   const roomSummary = roomsReview.blocked
     ? null
     : sale.rooms_count != null
@@ -251,11 +319,11 @@ export const ListingCard = memo(function ListingCard({
       onMouseLeave={() => onHover(null)}
       onFocusCapture={() => onHover(sale.id)}
       onBlurCapture={() => onHover(null)}
-      className={`group relative overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)] transition-[border-color,box-shadow] ${active ? "border-gold ring-1 ring-gold" : "border-line-soft hover:border-gold hover:shadow-[0_8px_24px_rgba(19,34,56,0.09)]"}`}
+      className={`group relative overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(19,34,56,0.05)] transition-[border-color,box-shadow] [contain-intrinsic-size:none_auto_28rem] [content-visibility:auto] ${active ? "border-gold ring-1 ring-gold" : "border-line-soft hover:border-gold hover:shadow-[0_8px_24px_rgba(19,34,56,0.09)]"}`}
     >
       <Link
         id={`sale-card-${sale.id}`}
-        href={pathWithSearch(saleDetailPath(sale.id), { from: returnTo })}
+        href={saleDetailPath(sale.id, returnTo)}
         prefetch={false}
         onClick={() => onSelect(sale.id)}
         aria-label={`Voir ${title}`}
@@ -270,10 +338,19 @@ export const ListingCard = memo(function ListingCard({
           returnTo={returnTo}
           onSelect={onSelect}
         />
-        {viewed && (
-          <span className="absolute left-3 top-3 z-20 rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
-            Vu
-          </span>
+        {(unlocked || viewed) && (
+          <div className="absolute left-3 top-3 z-20 flex flex-wrap gap-1">
+            {unlocked && (
+              <span className="rounded-md bg-gold px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
+                Débloquée
+              </span>
+            )}
+            {viewed && (
+              <span className="rounded-md bg-white/95 px-2 py-1 text-[11px] font-bold text-brand-navy shadow-sm">
+                Vu
+              </span>
+            )}
+          </div>
         )}
       </div>
       <div className="relative min-w-0 p-4">
@@ -281,48 +358,56 @@ export const ListingCard = memo(function ListingCard({
           <div className="min-w-0">
             <h3 className="font-display text-lg font-semibold leading-tight sm:text-xl">
               <AiReviewField
-                fieldKey="property.city"
-                projections={aiReviewProjections}
-                reviewStatus={aiReviewStatus}
-                fallback="Localisation à préciser"
-                sourceName={sale.source_name}
-                sourceUrl={sale.source_url}
-                showSourceLink={false}
-              >
-                {[sale.city, sale.department].filter(Boolean).join(" · ") ||
-                  "Localisation à préciser"}
-              </AiReviewField>
-            </h3>
-            <p className="mt-1 text-sm leading-5 text-ink-soft">
-              <AiReviewField
                 fieldKey="property.property_type"
                 projections={aiReviewProjections}
                 reviewStatus={aiReviewStatus}
+                fallback="Type de bien à confirmer"
                 sourceName={sale.source_name}
                 sourceUrl={sale.source_url}
                 showSourceLink={false}
               >
-                {propertyTypeLabel(sale.property_type)}
-              </AiReviewField>{" "}
-              ·{" "}
-              {surfaceReviewField ? (
-                <AiReviewField
-                  fieldKey={surfaceReviewField}
-                  projections={aiReviewProjections}
-                  reviewStatus={aiReviewStatus}
-                  fallback="Surface à confirmer"
-                  sourceName={sale.source_name}
-                  sourceUrl={sale.source_url}
-                  showSourceLink={false}
-                >
-                  {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
-                </AiReviewField>
-              ) : displaySurface.value != null ? (
-                displaySurface.label
-              ) : (
-                "Surface n.c."
-              )}
-              {roomSummary ? ` · ${roomSummary}` : ""}
+                {cardTypeLabel(sale.property_type)}
+              </AiReviewField>
+              {showCity ? (
+                <>
+                  {" · "}
+                  <AiReviewField
+                    fieldKey="property.city"
+                    projections={aiReviewProjections}
+                    reviewStatus={aiReviewStatus}
+                    fallback="Localisation à préciser"
+                    sourceName={sale.source_name}
+                    sourceUrl={sale.source_url}
+                    showSourceLink={false}
+                  >
+                    {sale.city}
+                  </AiReviewField>
+                </>
+              ) : null}
+            </h3>
+            <p className="mt-1 text-sm leading-5 text-ink-soft">
+              {withSeparators([
+                !showCity && !departmentLine ? "Localisation à préciser" : null,
+                departmentLine,
+                surfaceReviewField ? (
+                  <AiReviewField
+                    fieldKey={surfaceReviewField}
+                    projections={aiReviewProjections}
+                    reviewStatus={aiReviewStatus}
+                    fallback="Surface à confirmer"
+                    sourceName={sale.source_name}
+                    sourceUrl={sale.source_url}
+                    showSourceLink={false}
+                  >
+                    {displaySurface.value != null ? displaySurface.label : "Surface n.c."}
+                  </AiReviewField>
+                ) : displaySurface.value != null ? (
+                  displaySurface.label
+                ) : (
+                  "Surface n.c."
+                ),
+                roomSummary,
+              ])}
             </p>
           </div>
           <CompactFavoriteButton
@@ -348,7 +433,11 @@ export const ListingCard = memo(function ListingCard({
             {formatStartingPrice(sale.starting_price_eur)}
           </AiReviewField>
         </p>
-        <p className="text-xs text-ink-soft">Mise à prix</p>
+        <p className="text-[13px] font-medium leading-5 text-ink-soft sm:text-sm">
+          <Terme terme="mise-a-prix" placement="top">
+            Mise à prix
+          </Terme>
+        </p>
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-soft">
           <span className="inline-flex items-center gap-1">
             <CalendarDays className="h-3.5 w-3.5" />
@@ -365,6 +454,7 @@ export const ListingCard = memo(function ListingCard({
           </span>
           <SaleCountdown sale={sale} precisionUnknown={locked} variant="chip" />
           <SaleProcedureBadge sale={sale} />
+          <WellInformedBadge sale={sale} />
           {!premiumLocked && sale.occupancy_status && (
             <span className="rounded bg-success-tint px-2 py-1">
               <AiReviewField
@@ -381,12 +471,8 @@ export const ListingCard = memo(function ListingCard({
           )}
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-1 border-t border-surface-tint pt-3">
-          <span className="text-xs text-ink-soft">
-            {locked
-              ? "Fiche complète avec un compte gratuit"
-              : analysisLocked
-                ? "Analyse détaillée avec l’offre Analyse"
-                : "Voir le détail"}
+          <span className="text-sm text-ink-soft">
+            {listingAccessLine(sale, { locked, analysisLocked, unlocked })}
           </span>
           <div className="flex items-center">
             <ShareButton sale={sale} title={title} />
@@ -554,8 +640,10 @@ export function ListingMediaCarousel({
           locked={locked}
           eager={eager}
           preferPhoto
-          mapWidth={512}
-          mapHeight={384}
+          thumbnail
+          mapWidth={LIST_MAP_THUMBNAIL.width}
+          mapHeight={LIST_MAP_THUMBNAIL.height}
+          mapFramingWidth={LIST_MAP_THUMBNAIL.framingWidth}
         />
       </div>
     );
@@ -577,7 +665,7 @@ export function ListingMediaCarousel({
       }}
     >
       <Link
-        href={pathWithSearch(saleDetailPath(sale.id), { from: returnTo })}
+        href={saleDetailPath(sale.id, returnTo)}
         prefetch={false}
         aria-label={`Voir ${title}`}
         onClick={(event) => {
@@ -590,6 +678,7 @@ export function ListingMediaCarousel({
         <ListingPhoto
           key={photo.url}
           src={photo.url}
+          mirror={photoMirrorForCard(photo.mirror)}
           alt={title}
           className={styles.photo}
           loading={eager ? "eager" : "lazy"}
@@ -600,8 +689,10 @@ export function ListingMediaCarousel({
           onOriginalError={() => markPhotoFailed(photo.url)}
           onLoad={(event) => {
             const renderedSource = event.currentTarget.currentSrc || event.currentTarget.src;
+            // La copie n'est retenue que si l'original a passé ce contrôle (voir photo-mirror.ts).
             if (
               !renderedSource.includes("/_next/image?") &&
+              !isPhotoMirrorUrl(renderedSource) &&
               shouldRejectRenderedPropertyImage(event.currentTarget)
             ) {
               markPhotoFailed(photo.url);
@@ -673,7 +764,7 @@ export function ListingBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-extrabold uppercase tracking-normal shadow-sm ${toneClass}`}
+      className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-extrabold shadow-sm ${toneClass}`}
     >
       {Icon ? <Icon className="h-3 w-3" /> : null}
       {children}
@@ -707,9 +798,7 @@ export function ListingSignal({
 }) {
   return (
     <span className="min-w-0 border-r border-line-soft px-2 py-2 last:border-r-0">
-      <span className="block text-[9px] font-bold uppercase tracking-[0.08em] text-ink-soft">
-        {label}
-      </span>
+      <span className="block text-xs font-bold text-ink-soft">{label}</span>
       <span className={`mt-0.5 block truncate font-extrabold ${tone}`}>{value}</span>
     </span>
   );
@@ -767,6 +856,8 @@ export function CompactFavoriteButton({
   const queryClient = useQueryClient();
   const [isFavorite, setIsFavorite] = useState(initialFavorite);
   const [busy, setBusy] = useState(false);
+  // `locked` pour un compte reconnu = liste publique gardée pendant la vérification de ses droits.
+  const verifying = Boolean(user) && locked;
 
   useEffect(() => {
     setIsFavorite(initialFavorite);
@@ -827,8 +918,11 @@ export function CompactFavoriteButton({
       disabled={busy}
       aria-pressed={locked ? undefined : isFavorite}
       aria-label={isFavorite && !locked ? FAVORITE_REMOVE_LABEL : FAVORITE_ADD_LABEL}
-      title={locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
-      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60"
+      // Compte reconnu sur la liste publique conservée : `aria-disabled` (le cœur reste focalisable et
+      // annoncé) plutôt qu'un clic sans effet.
+      aria-disabled={verifying ? true : undefined}
+      title={verifying ? FAVORITE_VERIFYING_TITLE : locked ? FAVORITE_ANONYMOUS_TITLE : undefined}
+      className="relative z-20 grid h-11 w-11 cursor-pointer place-items-center rounded-full text-brand-navy transition-colors hover:bg-surface-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-wait aria-disabled:opacity-60"
     >
       <Heart className={`h-5 w-5 ${isFavorite && !locked ? "fill-danger text-danger" : ""}`} />
     </button>

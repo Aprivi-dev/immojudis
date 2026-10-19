@@ -6,6 +6,7 @@ import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
+import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
 import Minus from "lucide-react/dist/esm/icons/minus.js";
@@ -13,18 +14,27 @@ import Scale from "lucide-react/dist/esm/icons/scale.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { BillingActions } from "@/components/BillingActions";
+import { Terme, type TermeKey } from "@/components/ceiling/Terme";
 import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
 import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-offer";
-import { offerComparisonRows } from "@/lib/offer-comparison";
+import { offerComparisonRows, type OfferCell } from "@/lib/offer-comparison";
+import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
 
-const BENEFITS = [
+const BENEFITS: ReadonlyArray<{
+  icon: ReactNode;
+  title: string;
+  text: string;
+  /** Terme du titre à définir : la bulle « ? » suit le titre. */
+  term?: TermeKey;
+}> = [
   {
     icon: <BadgeEuro className="size-6" aria-hidden />,
     title: "Une enchère plafond chiffrée",
+    term: "enchere-plafond",
     text: "Valeur estimée, frais, travaux et marge de sécurité : vous voyez d’où vient votre limite et vous l’ajustez selon votre projet.",
   },
   {
@@ -37,9 +47,12 @@ const BENEFITS = [
     title: "Des comparables de ventes réelles",
     text: "L’estimation du bien s’appuie sur des ventes comparables réellement conclues autour du bien, avec leur source.",
   },
-] as const;
+];
+
+const UNLOCKED_ITEMS = unlockedItemsText({ ceiling: true, statistics: true });
 
 const DISCOVERY_FEATURES = [
+  `${MONTHLY_SALE_UNLOCKS} déblocages par mois : ${UNLOCKED_ITEMS}, pour la vente choisie`,
   "Fiches complètes : adresse, photos, description, occupation, visites et contact",
   "Fourchette de valeur estimée et écart avec la mise à prix",
   "Une alerte avec un email récapitulatif par semaine, trois favoris",
@@ -47,11 +60,12 @@ const DISCOVERY_FEATURES = [
 ] as const;
 
 const ANALYSIS_FEATURES = [
-  "Enchère plafond chiffrée : travaux, libération, portage et tous les frais",
-  "Pièces du dossier et leur lecture : points clés cités avec la page",
-  "Historique de la vente : passages précédents, baisses de mise à prix, reports",
+  "Enchère plafond chiffrée pour toutes les ventes : travaux, libération, portage et tous les frais",
+  "Pièces du dossier et leur lecture pour toutes les ventes : points clés cités avec la page",
+  "Historique de la vente pour toutes les ventes : passages précédents, baisses de mise à prix, reports",
   "Estimation détaillée et ventes comparables",
   "Jusqu’à 25 alertes avec email quotidien, favoris illimités",
+  "Suivi des changements de vos favoris (date, mise à prix, statut, documents), consultable dans Mes favoris",
   "Statistiques des tribunaux : prix d’adjudication et scénarios d’enchères, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
 ] as const;
 
@@ -95,6 +109,22 @@ const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }
           l’offre Analyse au tarif affiché ({resolveAnalysisOfferLabel()}).
         </>
       ),
+  },
+  {
+    question: `Comment fonctionnent les ${MONTHLY_SALE_UNLOCKS} déblocages par mois ?`,
+    answer: () => (
+      <>
+        Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes avec votre compte
+        Découverte. Pour chacune, vous voyez, lorsque la vente les comporte, l’enchère plafond, la
+        lecture des pièces, l’historique de la vente, les statistiques du tribunal de cette vente et
+        les pièces du dossier. Le compteur repart à {MONTHLY_SALE_UNLOCKS} le 1er du mois à 00 h 00,
+        heure de Paris ; les déblocages non utilisés ne sont pas reportés. Une vente débloquée reste
+        accessible tant qu’elle est en ligne sur Immojudis, dans la limite de 24 mois après le
+        déblocage. Aucune carte bancaire n’est demandée et rien ne devient payant automatiquement.
+        L’export PDF ou CSV, les rapports enregistrés, les alertes avancées, l’estimation détaillée
+        et les ventes comparables restent réservés à Analyse.
+      </>
+    ),
   },
   {
     question: "Puis-je être remboursé ?",
@@ -198,9 +228,16 @@ export function OffersPage() {
             <li key={benefit.title}>
               <Card className="h-full">
                 <span className="text-gold-text">{benefit.icon}</span>
-                <h3 className="mt-3 font-display text-2xl font-semibold leading-tight">
-                  {benefit.title}
-                </h3>
+                <div className="mt-3 flex items-start gap-2">
+                  <h3 className="font-display text-2xl font-semibold leading-tight">
+                    {benefit.title}
+                  </h3>
+                  {benefit.term ? (
+                    <span className="mt-1">
+                      <Terme terme={benefit.term} bare />
+                    </span>
+                  ) : null}
+                </div>
                 <p className="mt-2 text-sm leading-relaxed text-ink-soft">{benefit.text}</p>
               </Card>
             </li>
@@ -216,8 +253,9 @@ export function OffersPage() {
           Deux offres, un prix clair
         </h2>
         <p className="mt-2 max-w-3xl text-ink-soft">
-          Découverte est gratuite, sans limite de durée. Analyse coûte {price}, résiliable à tout
-          moment.
+          Découverte est gratuite, sans limite de durée ; elle comprend {MONTHLY_SALE_UNLOCKS}{" "}
+          déblocages par mois, chacun ouvrant, pour une vente, {UNLOCKED_ITEMS}. Analyse coûte{" "}
+          {price}, résiliable à tout moment.
         </p>
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
           <PlanPanel
@@ -325,7 +363,11 @@ function ComparisonTable() {
           {rows.map((row) => (
             <tr key={row.id}>
               <th scope="row" className="px-3 py-3 align-top font-medium sm:px-4">
-                {row.label}
+                {row.id === "ceiling" ? (
+                  <Terme terme="enchere-plafond">{row.label}</Terme>
+                ) : (
+                  row.label
+                )}
                 {row.hint ? (
                   <span className="mt-0.5 block text-xs font-normal text-ink-soft">{row.hint}</span>
                 ) : null}
@@ -340,16 +382,19 @@ function ComparisonTable() {
   );
 }
 
-function ComparisonCell({ cell }: { cell: { included: boolean; text: string } }) {
+function ComparisonCell({ cell }: { cell: OfferCell }) {
+  const open = cell.included || cell.limited;
   return (
     <td className="px-3 py-3 align-top sm:px-4">
       <span className="flex items-start gap-2">
         {cell.included ? (
           <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+        ) : cell.limited ? (
+          <LockKeyholeOpen className="mt-0.5 size-4 shrink-0 text-gold-text" aria-hidden />
         ) : (
           <Minus className="mt-0.5 size-4 shrink-0 text-ink-soft" aria-hidden />
         )}
-        <span className={cell.included ? "" : "text-ink-soft"}>{cell.text}</span>
+        <span className={open ? "" : "text-ink-soft"}>{cell.text}</span>
       </span>
     </td>
   );
@@ -366,7 +411,7 @@ function DecisionEquation() {
       sign: "=",
       accent: true,
     },
-    { icon: <BadgeEuro className="size-8" />, label: "Enchère plafond simulée", result: true },
+    { icon: <BadgeEuro className="size-8" />, label: "Enchère plafond (simulation)", result: true },
   ];
 
   return (

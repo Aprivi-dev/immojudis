@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CsvExportButton,
+  HomeTypeFilter,
   ResultsSummary,
+  ResultsViewToggle,
   SaveSearchButton,
   SearchHeader,
+  SortByDateShortcut,
   SortDropdown,
 } from "./SearchHeader";
 import { emptySearchDraft } from "./search-page-state";
@@ -107,6 +110,68 @@ describe("SortDropdown", () => {
   });
 });
 
+describe("SortDropdown : options selon l'offre", () => {
+  const labels = () => screen.getAllByRole("option").map((option) => option.textContent);
+
+  it("n'affiche pas le tri par score d'investissement aux visiteurs ni à l'offre Découverte", () => {
+    render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
+    expect(labels()).toContain("Mieux renseignées d’abord");
+    expect(labels()).not.toContain("Score d’investissement");
+    cleanup();
+    render(<SortDropdown preview sort="relevance" onChange={vi.fn()} />);
+    expect(labels()).not.toContain("Score d’investissement");
+  });
+
+  it("propose le tri par score d'investissement à l'offre Analyse", () => {
+    render(<SortDropdown investmentScore sort="score_desc" onChange={vi.fn()} />);
+    expect(labels()).toContain("Mieux renseignées d’abord");
+    expect(labels()).toContain("Score d’investissement");
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("score_desc");
+  });
+
+  it("garde « Mieux renseignées d’abord » en première option, tri par défaut", () => {
+    render(<SortDropdown investmentScore sort="relevance" onChange={vi.fn()} />);
+    expect(labels()[0]).toBe("Mieux renseignées d’abord");
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("relevance");
+  });
+});
+
+describe("SortByDateShortcut", () => {
+  it("propose « Trier par date de vente » à côté du tri par défaut, sans le changer", () => {
+    const onChange = vi.fn();
+    render(<SortByDateShortcut sort="relevance" onChange={onChange} />);
+    const button = screen.getByRole("button", { name: "Trier par date de vente" });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    expect(button.className).toContain("min-h-11");
+    fireEvent.click(button);
+    expect(onChange).toHaveBeenCalledWith("sale_date_asc");
+    cleanup();
+    render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
+    expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("relevance");
+  });
+
+  it("revient au classement par défaut au second appui", () => {
+    const onChange = vi.fn();
+    render(<SortByDateShortcut sort="sale_date_asc" onChange={onChange} />);
+    const button = screen.getByRole("button", { name: "Trier par date de vente" });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(button);
+    expect(onChange).toHaveBeenCalledWith("relevance");
+  });
+
+  it("donne aux listes Type de bien et Tri une hauteur tactile d'au moins 44 px", () => {
+    const { container } = render(<SortDropdown sort="relevance" onChange={vi.fn()} />);
+    expect(container.querySelector("label")?.className).toContain("min-h-11");
+    expect(container.querySelector("label")?.className).not.toContain("h-10");
+  });
+
+  it("donne aussi au filtre Type de bien une hauteur tactile d'au moins 44 px", () => {
+    const { container } = render(<HomeTypeFilter draft={emptySearchDraft()} setDraft={vi.fn()} />);
+    expect(container.querySelector("label")?.className).toContain("min-h-11");
+    expect(container.querySelector("label")?.className).not.toContain("h-10");
+  });
+});
+
 describe("ResultsSummary", () => {
   it("n'annonce que le compteur aux lecteurs d'écran", () => {
     const { container } = render(
@@ -121,6 +186,27 @@ describe("ResultsSummary", () => {
     const live = container.querySelectorAll("[aria-live]");
     expect(live).toHaveLength(1);
     expect(live[0].textContent).toBe("12 annonces");
+  });
+
+  it("réserve la hauteur de deux lignes de titre sous sm, pour qu'aucune police ne décale la page", () => {
+    // Le h1 passe de deux lignes (police de secours) à une (Cormorant) à l'arrivée de la police :
+    // sans réserve, tout ce qui suit remonte de 33 px (CLS) et la photo de la première carte
+    // change de surface visible (LCP). 8,8125 rem = py-4 + surtitre + 2 lignes de h1 + compteur.
+    const summary = (city?: string) =>
+      render(
+        <ResultsSummary
+          search={city ? { city } : {}}
+          displayCount={12}
+          hasLocalFilters={false}
+          isLoading={false}
+          geocoding={false}
+        />,
+      ).container.firstElementChild as HTMLElement;
+
+    for (const root of [summary(), summary("Lyon")]) {
+      expect(root.className).toContain("min-h-[8.8125rem]");
+      expect(root.className).toContain("sm:min-h-0");
+    }
   });
 });
 
@@ -157,5 +243,42 @@ describe("CsvExportButton", () => {
     render(<CsvExportButton exporting={false} locked onClick={onClick} />);
     fireEvent.click(screen.getByRole("button", { name: "Exporter en CSV" }));
     expect(onClick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ResultsViewToggle", () => {
+  it("propose Cartes et Tableau dans un groupe nommé, avec l'affichage courant enfoncé", () => {
+    render(<ResultsViewToggle view="cards" onChange={() => undefined} />);
+    const group = screen.getByRole("group", { name: "Affichage des résultats" });
+    const cards = within(group).getByRole("button", { name: "Cartes" });
+    const table = within(group).getByRole("button", { name: "Tableau" });
+    expect(cards.getAttribute("aria-pressed")).toBe("true");
+    expect(table.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("enfonce Tableau quand c'est l'affichage courant", () => {
+    render(<ResultsViewToggle view="table" onChange={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Tableau" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Cartes" }).getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+  });
+
+  it("transmet l'affichage choisi", () => {
+    const onChange = vi.fn();
+    render(<ResultsViewToggle view="cards" onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tableau" }));
+    expect(onChange).toHaveBeenLastCalledWith("table");
+    fireEvent.click(screen.getByRole("button", { name: "Cartes" }));
+    expect(onChange).toHaveBeenLastCalledWith("cards");
+  });
+
+  it("n'apparaît qu'à partir de lg : masqué en dessous par le CSS", () => {
+    render(<ResultsViewToggle view="cards" onChange={() => undefined} />);
+    const group = screen.getByRole("group", { name: "Affichage des résultats", hidden: true });
+    expect(group.className).toContain("hidden");
+    expect(group.className).toContain("lg:block");
   });
 });

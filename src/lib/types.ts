@@ -1,4 +1,9 @@
 export type AuctionSale = {
+  /**
+   * Completeness tier of the listing (1 = well documented, 0 = otherwise or not yet evaluated).
+   * Only the tier is public: the numeric score and its inputs never leave the database.
+   */
+  completeness_tier?: number | null;
   /** Number of case documents; published to free accounts, which do not receive the documents. */
   document_count?: number | null;
   /** Signed-out page only: number of photos of the full listing. */
@@ -163,6 +168,7 @@ export const SORT_KEYS = [
   "date_desc",
   "price_asc",
   "price_desc",
+  "completeness_desc",
   "score_desc",
   "surface_desc",
   "beds_desc",
@@ -246,10 +252,26 @@ export type SaleDocumentRich = {
   text_chars?: number | null;
 };
 
+/**
+ * Copie hébergée par Immojudis d'une photo (bucket public `sale-photos`, WebP 640 px et 1600 px).
+ * Les chemins sont relatifs au bucket ; `width` et `height` sont ceux de l'original.
+ */
+export type SaleMediaMirror = {
+  path640: string;
+  path1600: string | null;
+  width: number;
+  height: number;
+};
+
 export type SaleMedia = {
   type: "image";
+  /**
+   * URL d'ORIGINE de la photo (celle de la source). Elle reste la clé de tout ce qui juge la photo
+   * (source retirée, doublons, crédit) ; `mirror` ne sert qu'à l'affichage.
+   */
   url: string;
   source?: string | null;
+  mirror?: SaleMediaMirror | null;
 };
 
 export type SaleScoreFactor = {

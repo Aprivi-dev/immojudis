@@ -44,6 +44,7 @@ npm run dev        # http://localhost:3000
 | `ALERT_EMAIL_FROM`                   | ✅ prod  | Expéditeur vérifié Resend, par exemple `ImmoJudis <alertes@immojudis.fr>`.                                                                                          |
 | `NEXT_PUBLIC_LEGAL_*`                | ✅ vente | Identité publique, contact, directeur de publication et médiateur ; le checkout reste bloqué et le build de production échoue si une valeur requise manque.         |
 | `SITE_URL`                           | ✅ prod  | Origine canonique publique (`https://immojudis.com`). Replis : `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `APP_URL`. `VERCEL_URL` ne suffit plus en production. |
+| `SEO_INDEXING_ENABLED`               | ❌       | Interrupteur d'indexation, **fermé par défaut** : seule la valeur `true` ouvre le site aux moteurs de recherche (voir « Indexation et référencement »).             |
 | `ADMIN_MFA_REQUIRED`                 | ✅ prod  | Doit valoir `true` : second facteur obligatoire pour l'administration.                                                                                              |
 | `ALLOW_INCOMPLETE_LAUNCH_CONFIG`     | ❌       | Échappatoire temporaire du build de production (voir ci-dessous).                                                                                                   |
 
@@ -133,9 +134,61 @@ et le Bearer token chiffrés dans Supabase Vault par :
 npm run ops:health-scheduler:configure
 ```
 
+Le calcul du palier de complétude des annonces (classement de `/sales`, route
+`/api/cron/listing-completeness`) suit le même mécanisme : le job Supabase Cron
+`immojudis-listing-completeness` l'appelle toutes les heures (à :20) avec les mêmes secrets Vault,
+sans nouvelle configuration. `vercel.json` ne garde qu'un filet quotidien (05:50 UTC, décalé du job horaire pour ne pas se chevaucher), compatible
+avec Vercel Hobby. La tâche figure dans la liste de fraîcheur `cron.stale` (3 h).
+
 Le workflow `Apply Supabase Migrations` exécute automatiquement cette étape, puis vérifie l'absence
 de dérive du schéma distant. Voir [`operations-phase-3.md`](operations-phase-3.md) pour les SLO,
 tableaux de bord et runbooks.
+
+### Workflow `Apply Supabase Migrations` : ordre de publication et diagnostic
+
+**Ordre de publication.** Le code déployé par Vercel suppose que les migrations de la même PR sont
+en production. Dès qu'une PR contenant un fichier `supabase/migrations/*.sql` est fusionnée dans
+`main`, lancer sans attendre le workflow `Apply Supabase Migrations` (Actions, depuis `main`,
+`confirm_target` = `production`). Ne pas attendre le prochain lot : le 14/10/2026, quatre
+migrations (`20261021120000` à `20261023110000`) sont restées en retard sur `main` alors que le code
+correspondant était en ligne, et la fonction de déblocages de l'offre Découverte était cassée en
+production.
+
+**Un échec de l'étape « Detect production schema drift » ne dit pas la même chose selon le message
+du journal** (les migrations, elles, sont déjà appliquées quand cette étape s'exécute) :
+
+| Message du journal                                       | Signification                                                                                                                            | Que faire                                                                                                                                 |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `[schema-drift] REAL DRIFT: Production differs from ...` | Dérive réelle : le schéma de production diffère des migrations. Le diff est affiché. Jamais réessayée automatiquement.                   | Enquêter et corriger (migration de réconciliation ou entrée justifiée dans `scripts/lib/schema-drift.mjs`). Relancer ne servirait à rien. |
+| `[schema-drift] TOOL UNREACHABLE: ... after 3 attempts`  | Outil injoignable : l'outil de diff (Supabase CLI) n'a pas pu se connecter à la base (timeout, `ECONNRESET`, ...). Aucun schéma comparé. | Ce n'est pas une dérive. Relancer le workflow (les migrations déjà appliquées sont ignorées) ou `npm run check:schema-drift -- --remote`. |
+| `[schema-drift] DIFF TOOL FAILED: ... not retried`       | L'outil de diff a échoué pour une autre raison (erreur SQL, authentification, ...). Le schéma n'a pas été comparé.                       | Lire l'erreur affichée au-dessus du message ; ne pas conclure à une dérive.                                                               |
+
+Sur une erreur de connexion transitoire (`timeout exceeded when trying to connect`,
+`PGDELTA_SCRIPT_ERROR` lié à la connexion, `ECONNRESET`, `ETIMEDOUT`, etc.), le contrôle réessaie
+deux fois, après 20 s puis 40 s (3 tentatives en tout), avant de conclure à « outil injoignable ».
+Un diff terminé n'est jamais réessayé : une vraie dérive échoue du premier coup. Cas observé : le run
+#80 (14/10/2026), migrations appliquées mais étape de dérive en échec sur un timeout de connexion de
+pg-delta, run #81 entièrement vert.
+
+### Contrôle quotidien des migrations en attente
+
+Le workflow `Check Pending Supabase Migrations`
+(`.github/workflows/check-pending-supabase-migrations.yml`) s'exécute tous les jours à 07:10 UTC
+(et à la main via `workflow_dispatch`, uniquement depuis `main`). Il compare les fichiers
+`supabase/migrations/*.sql` de `main` avec `supabase_migrations.schema_migrations` en production, avec
+les mêmes secrets que le workflow de migration (environnement `Production` : `SUPABASE_DB_URL`,
+`SUPABASE_DB_SSL_CA`, SSL `verify-full`).
+
+- **Lecture seule** : il exécute `node scripts/apply-supabase-migrations.mjs --dry-run
+--fail-on-pending`, dont le seul accès à la base est un `SELECT` sur l'historique. Il n'applique
+  aucune migration et n'écrit rien.
+- **Vert** : l'historique de production est à jour.
+- **Rouge** : le journal et l'annotation `Pending Supabase migrations` listent les fichiers en attente.
+  GitHub envoie alors un e-mail de workflow en échec. Lancer `Apply Supabase Migrations`. Un échec peut
+  aussi signaler un historique incohérent (« Migration history integrity checks failed ») ou une base
+  injoignable après les reprises du script : le message du journal le précise.
+- Il ne collecte aucune donnée : il n'appartient pas à la liste des workflows de collecte de
+  `scripts/check-manual-data-collection.mjs`, qui reste inchangée.
 
 Le cron `/api/cron/smart-alerts` évalue les alertes avancées des utilisateurs ayant un accès
 Analyse actif, persiste les lignes dans `user_alert_matches`, puis met à jour
@@ -204,6 +257,147 @@ elle, les adresses canoniques, `robots.txt` et le sitemap de production pointera
 `localhost`.
 
 `npm run env:check:prod` n'accepte plus `VERCEL_URL` comme origine canonique.
+
+### Indexation et référencement
+
+#### Interrupteur `SEO_INDEXING_ENABLED`
+
+Le site est **fermé aux moteurs de recherche par défaut**. Il ne s'ouvre que si la variable
+`SEO_INDEXING_ENABLED` vaut exactement `true` (espaces autour ignorés ; `TRUE`, `1`, `yes`,
+vide ou absente ferment).
+
+| État                                    | `X-Robots-Tag`                             | `robots.txt`                                                   |
+| --------------------------------------- | ------------------------------------------ | -------------------------------------------------------------- |
+| Fermé (variable absente ou ≠ `true`)    | `noindex, nofollow` (pages, API, sitemaps) | `Allow: /` + zones privées en `Disallow`, **aucun** `Sitemap:` |
+| Ouvert (`true`, déploiement production) | aucun                                      | idem + les `Sitemap:` (pages, ressources, fiches)              |
+| Aperçu ou développement Vercel          | `noindex, nofollow` (pages, API, sitemaps) | `Disallow: /`, aucun `Sitemap:` (même avec `true`)             |
+
+- **Pourquoi `noindex` en en-tête plutôt que `Disallow: /`.** Un robot qui n'a pas le droit de
+  charger une page ne lit jamais son `noindex` : une adresse déjà connue (lien externe, passage
+  antérieur) peut rester listée sans extrait. Garder `Allow: /` laisse le robot lire l'en-tête et
+  retirer l'adresse. L'aperçu Vercel garde `Disallow: /` (aucune adresse n'y est à retirer).
+- **Lecture à l'exécution.** L'en-tête est posé par `src/proxy.ts` et `robots.txt` est généré à
+  chaque requête : ni l'un ni l'autre n'est figé dans le build. (L'ancien en-tête de
+  `next.config.ts`, calculé au build, aurait suivi un build promu d'un environnement à l'autre.)
+  La variable reste celle du **déploiement** : Vercel n'applique un changement de variable qu'à un
+  nouveau déploiement (Redeploy), et un déploiement restauré (rollback, promotion) garde les
+  variables avec lesquelles il a été créé.
+- **Absente en production = fermé.** Un déploiement de production sans `SEO_INDEXING_ENABLED`
+  envoie `noindex, nofollow` et un `robots.txt` sans sitemap. Rien ne s'indexe par oubli.
+- **Limite.** Le proxy ne passe pas sur les fichiers statiques (`/_next/static`, `/media/`,
+  `/brand/`, icônes), sur `robots.txt` ni sur l'optimiseur d'images `/_next/image` : ces réponses
+  n'ont **pas** l'en-tête, donc « partout » du tableau ci-dessus s'entend « sur les pages, les
+  routes d'API et les sitemaps » (`/sitemap.xml`, `/ressources/sitemap.xml`,
+  `/sales/sitemap/N.xml`). `/_next/image` est exclu volontairement : Next.js recommande de ne pas
+  y exécuter le proxy, qui tournerait à chaque variante d'image uniquement pour poser cet en-tête.
+  Conséquence : tant que l'indexation est fermée, une image de fiche reste techniquement
+  indexable par un moteur d'images, même si la page qui l'affiche est en `noindex`. Si cet écart
+  devient gênant, il faudra poser l'en-tête sur ces chemins par `headers()` dans `next.config.ts`
+  (valeur figée au build, donc à réserver à un déploiement dont l'état d'indexation est connu).
+- **Test de fumée.** `scripts/check-production-smoke.mjs` lit la même variable
+  `SEO_INDEXING_ENABLED` pour savoir quel état vérifier. La variable de **dépôt GitHub** du même
+  nom (Settings → Secrets and variables → Actions → Variables) doit donc suivre celle de Vercel.
+  Depuis l'ouverture du 15/10/2026, le workflow « Production smoke » attend un site **ouvert**
+  quand cette variable est absente : pour refermer l'indexation, poser `false` côté GitHub en même
+  temps que Vercel.
+
+#### Les trois sitemaps
+
+`robots.txt` (quand l'indexation est ouverte) liste tous les sitemaps. Next.js ne génère pas
+d'index de sitemaps : ce sont des fichiers séparés, soumis chacun à Search Console.
+
+| Fichier                         | Contenu                                                              | Source                          |
+| ------------------------------- | -------------------------------------------------------------------- | ------------------------------- |
+| `/sitemap.xml`                  | Pages (accueil, catalogue, offres, guide, tribunaux, pages légales…) | `src/app/sitemap.ts`            |
+| `/ressources/sitemap.xml`       | Articles du blog, `lastmod` = `updatedAt`, sinon `publishedAt`       | `src/app/ressources/sitemap.ts` |
+| `/sales/sitemap/0.xml`, `1.xml` | Fiches de ventes publiques **et indexables**, 5 000 URL par fichier  | `src/app/sales/sitemap.ts`      |
+
+- **Fiches minces exclues.** La fonction SQL `app_private.is_indexable_public_sale` (migration
+  `20261025120000_indexable_public_sale_predicate.sql`) écarte du sitemap les fiches sans ville,
+  sans date exploitable, sans type précis (sauf fiche documentée) ou sans surface ni mise à prix.
+  La même fonction décide du `noindex, follow` de la page via `get_public_sale_indexability`.
+  **Appliquer cette migration avant l'ouverture** : sans elle, le sitemap liste toutes les ventes
+  visibles et la page retombe sur la copie TypeScript du prédicat (`isIndexablePublicSale`).
+- **`lastmod` des fiches.** C'est `auction_sales.updated_at`, que le pipeline réécrit à **chaque
+  passage** (`src/storage/supabase_client.py`, `row["updated_at"] = now`), même quand la vente n'a
+  pas changé : la date reflète le dernier passage, pas un changement de contenu. Google ignore un
+  `lastmod` qu'il juge inexact. Piste : une colonne `content_changed_at`, mise à jour par le
+  pipeline seulement quand la mise à prix, la date, le statut, les photos ou les pièces changent,
+  puis lue par `list_public_sale_sitemap_entries`. Non faite (elle touche l'écriture du pipeline
+  et la table `auction_sales` et ses triggers). À défaut, retirer `lastModified` de
+  `src/app/sales/sitemap.ts` est préférable à une date trompeuse.
+
+#### Jour d'ouverture
+
+À faire dans cet ordre, une fois la décision d'ouvrir prise (société créée, mentions légales
+renseignées, données relues).
+
+1. **Migrations.** `20261025120000_indexable_public_sale_predicate.sql` est appliquée en
+   production (par le propriétaire, jamais par un agent).
+2. **Redirections de domaine.** Vérifier que les variantes renvoient en **301** (ou 308,
+   permanent) vers l'origine canonique, sans chaîne : `www.immojudis.com`, `immojudis.fr`,
+   `www.immojudis.fr`. Depuis un poste :
+   `curl -sI https://www.immojudis.com/sales | grep -iE "^(HTTP|location)"` (idem pour les autres) ;
+   `location` doit être `https://immojudis.com/sales`. Réglage : Vercel → Project → Domains →
+   la variante → « Redirect to » le domaine canonique, code permanent.
+3. **Origine canonique.** `SITE_URL=https://immojudis.com` (Production). Contrôle :
+   `npm run env:check:prod`.
+4. **Ouvrir l'indexation.**
+   - Vercel → Environment Variables → `SEO_INDEXING_ENABLED=true`, environnement **Production**
+     uniquement, puis Redeploy.
+   - GitHub → Settings → Secrets and variables → Actions → Variables → `SEO_INDEXING_ENABLED=true`
+     (facultatif depuis le 15/10/2026 : sans variable, le test de fumée attend déjà un site ouvert).
+   - Lancer à la main le workflow « Production smoke » (Actions → Run workflow) : il doit passer
+     avec l'état « ouvert ».
+   - À la main : `curl -s https://immojudis.com/robots.txt` doit contenir les trois sortes de
+     `Sitemap:` et aucun `Disallow: /` ; `curl -sI https://immojudis.com/ | grep -i x-robots-tag`
+     ne doit rien afficher.
+5. **Google Search Console.** Créer une propriété **Domaine** `immojudis.com` (vérification par un
+   enregistrement DNS TXT chez le gestionnaire du domaine : elle couvre `www`, `http` et tous les
+   sous-domaines). Puis Sitemaps → ajouter `sitemap.xml`, `ressources/sitemap.xml` et chaque
+   `sales/sitemap/N.xml` (le nombre de fichiers est celui de `robots.txt`). Inspecter ensuite
+   l'accueil, une fiche et un article (« Tester l'URL en direct », puis « Demander une indexation »
+   pour l'accueil).
+6. **Bing Webmaster Tools.** Importer la propriété depuis Search Console (ou la vérifier par DNS),
+   puis soumettre les mêmes sitemaps. Bing alimente aussi plusieurs moteurs tiers.
+7. **Suivi.** Rapport « Pages » de Search Console : « Exclue par la balise noindex » doit
+   correspondre aux fiches minces et à `/login` ; surveiller « Explorée, actuellement non
+   indexée » sur les fiches. Reprendre le décompte des fiches listées dans les sitemaps (somme
+   des URL de `sales/sitemap/N.xml`) après chaque évolution du prédicat.
+
+**Retour arrière.** Poser `SEO_INDEXING_ENABLED=false` (ou supprimer la variable), Redeploy : le
+`noindex` repart sur toutes les réponses et `robots.txt` retire les sitemaps. Pour retirer vite
+des adresses déjà indexées : Search Console → Suppressions, en plus du `noindex`.
+
+### Pages publiques de prix d'adjudication
+
+Drapeaux d'environnement **fermés par défaut**, lus à chaque rendu, qui ne s'ouvrent que si la
+valeur est exactement la chaîne `true` (pas d'espaces, `TRUE`, `1` ou `yes`).
+
+| Drapeau                                 | Défaut | Effet quand il vaut `true`                                                                                                                                                                                                                           |
+| --------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PUBLIC_ADJUDICATION_PRICES_ENABLED`    | éteint | Ouvre `/prix-encheres-immobilieres` (prix final médian rapporté à la mise à prix, part adjugée au-dessus de la mise, ventilation par type de bien, méthode). Éteint : réponse 404, `noindex`, absente de `sitemap.xml`. Aucun lien du site n'y mène. |
+| `ADJUDICATION_PRICE_STATISTICS_ENABLED` | éteint | Existant ; **doit aussi valoir `true`** : c'est l'interrupteur d'arrêt des statistiques de prix. Le couper ferme cette page publique en même temps que les statistiques réservées à l'offre Analyse.                                                 |
+
+La page ne sert que des agrégats nationaux déjà publiés par
+`published_adjudication_price_statistics` (jamais une vente, une adresse, un nom ni le détail d'un
+tribunal) et masque toute cellule de moins de 10 prix. Aucune migration n'est nécessaire.
+
+**Conditions pour allumer `PUBLIC_ADJUDICATION_PRICES_ENABLED`, toutes deux requises** :
+
+1. l'**accord écrit de Licitor** (source des prix d'adjudication) est obtenu : l'accord téléphonique
+   décrit dans `docs/model-card-tribunal-statistics.md` ne suffit pas pour une publication en
+   accès libre ;
+2. la **relecture juridique-rgpd** (droit des bases de données, RGPD) est faite.
+
+Ensuite : poser la variable en **Production**, Redeploy, vérifier que la page répond 200 et
+apparaît dans `sitemap.xml`. L'indexation par les moteurs dépend en plus de
+`SEO_INDEXING_ENABLED` (voir plus haut). **Retour arrière** : supprimer la variable (ou la passer à
+`false`) et redéployer ; la page redevient 404.
+
+Pages de « résultat » des ventes passées (`PUBLIC_PAST_SALE_PAGES_ENABLED`,
+`PUBLIC_PAST_SALE_PAGES_INDEXABLE`) : **pas implémentées**. Les données publiables n'existent plus
+après la purge du catalogue (analyse du 15/10/2026) ; ces drapeaux n'existent donc pas encore.
 
 ## 4. Build
 

@@ -7,6 +7,7 @@ import { alertMatchesSale } from "@/lib/alerts";
 import { createAlertNotificationsForMatches } from "@/lib/alert-notifications";
 import { extractDpe } from "@/lib/dpe";
 import { estimateGrossYieldPct, pricePerM2 } from "@/lib/geo";
+import { resolveMarketGap } from "@/lib/market-gap";
 import { featureIncluded } from "@/lib/plans";
 import { resolvePlanEntitlements } from "@/lib/property-reports";
 import { getSales } from "@/lib/queries";
@@ -304,7 +305,6 @@ async function loadSalesToEvaluate({
     const page = await getSales(filters, pageSize, "date_asc", offset, {
       client: auth.supabase,
       discovery,
-      stableOrder: true,
     });
     for (const sale of page) {
       if (seen.has(sale.id)) continue;
@@ -656,7 +656,12 @@ async function getCachedMarketDiscount(
   return promise;
 }
 
-async function estimateMarketDiscountPct(sale: AuctionSale): Promise<number | null> {
+/**
+ * Écart entre la mise à prix et la valeur DVF précalculée, ou `null` sans estimation exploitable
+ * et pour un écart aberrant (`src/lib/market-gap.ts`) : une telle vente ne remplit donc jamais un
+ * critère « décote minimale » et son résumé n'affiche aucun pourcentage. Même entier que la fiche.
+ */
+export async function estimateMarketDiscountPct(sale: AuctionSale): Promise<number | null> {
   const marketSurfaces = getMarketValuationSurfaces(sale);
   const surface = marketSurfaces.builtSurfaceM2 ?? marketSurfaces.landSurfaceM2;
   const startingPrice = sale.starting_price_eur;
@@ -680,7 +685,11 @@ async function estimateMarketDiscountPct(sale: AuctionSale): Promise<number | nu
       estimate.estimatedValueEur ??
       (estimate.medianPricePerM2 ? estimate.medianPricePerM2 * surface : null);
     if (!estimatedValue || estimatedValue <= 0) return null;
-    return roundPercent(((estimatedValue - startingPrice) / estimatedValue) * 100);
+    const gap = resolveMarketGap({
+      estimatedValueEur: estimatedValue,
+      startingPriceEur: startingPrice,
+    });
+    return gap.status === "gap" ? gap.discountPct : null;
   } catch {
     return null;
   }

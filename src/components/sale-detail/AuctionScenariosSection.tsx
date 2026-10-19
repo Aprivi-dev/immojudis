@@ -1,7 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/primitives";
 import { fetchAuctionScenarios } from "@/lib/client-api";
+import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
 import {
   AUCTION_SCENARIO_LABELS,
   STARTING_PRICE_BAND_LABELS,
@@ -30,13 +32,25 @@ function yearLabel(date: string | null): string {
 
 /**
  * « Scénarios d'enchères » (offre Analyse) : la répartition observée des issues et la
- * fourchette de prix final, d'après les trois dernières années d'adjudications
+ * fourchette centrale des prix finaux, d'après les trois dernières années d'adjudications
  * du tribunal (Licitor pour les rapports à la mise à prix, DVF pour les prix
- * officiels). Rendered for Analyse members only.
+ * officiels). Rendered for Analyse members and for a sale the account unlocked.
  */
-export function AuctionScenariosSection({ saleId, enabled }: { saleId: string; enabled: boolean }) {
+export function AuctionScenariosSection({
+  saleId,
+  enabled,
+  access = "analysis",
+  userKey = null,
+}: {
+  saleId: string;
+  enabled: boolean;
+  /** The view the account reads (Analyse, or a sale unlocked with « 3 déblocages par mois »). */
+  access?: SaleAccessMode;
+  /** The signed-in account, so that a cached reading never crosses accounts. */
+  userKey?: string | null;
+}) {
   const query = useQuery<AuctionScenariosResponse>({
-    queryKey: ["auction-scenarios", saleId],
+    queryKey: queryKeys.auctionScenarios(saleId, access, userKey),
     queryFn: () => fetchAuctionScenarios(saleId),
     enabled,
     staleTime: 30 * 60_000,
@@ -50,6 +64,20 @@ export function AuctionScenariosSection({ saleId, enabled }: { saleId: string; e
         <p className={styles.lead} role="status">
           Lecture des adjudications du tribunal…
         </p>
+      </section>
+    );
+  }
+  // Une erreur n'est pas une absence de données : on le dit et on propose de réessayer.
+  if (query.isError) {
+    return (
+      <section className={styles.card} aria-labelledby="auction-scenarios-title">
+        <h2 id="auction-scenarios-title">Scénarios d’enchères</h2>
+        <div role="alert">
+          <p className={styles.lead}>Les statistiques du tribunal n’ont pas pu être chargées.</p>
+          <Button className="mt-3" onClick={() => void query.refetch()}>
+            Réessayer
+          </Button>
+        </div>
       </section>
     );
   }
@@ -75,17 +103,26 @@ export function AuctionScenariosSection({ saleId, enabled }: { saleId: string; e
           </p>
           {scenarios.ratioQuartiles.q25 != null && scenarios.ratioQuartiles.q75 != null ? (
             <div className={styles.headline}>
-              <span>Prix final le plus fréquent</span>
+              <span>
+                Fourchette centrale des prix finaux (estimation à partir des ventes passées)
+              </span>
               <strong>
                 {formatEuro(scenarios.ratioQuartiles.q25 * startingPrice)} à{" "}
                 {formatEuro(scenarios.ratioQuartiles.q75 * startingPrice)}
               </strong>
               <small>
-                La moitié des ventes comparables{" "}
-                {scenarios.priceScope === "court" ? `du ${court}` : "en France"} ont été adjugées
-                dans cette fourchette ; prix du milieu{" "}
-                {formatEuro((scenarios.ratioQuartiles.q50 ?? 1) * startingPrice)} (
-                {formatRatio(scenarios.ratioQuartiles.q50)} la mise à prix).
+                Dans la moitié centrale des ventes comparables{" "}
+                {scenarios.priceScope === "court" ? `du ${court}` : "en France"}, le prix final a
+                été compris entre {formatRatio(scenarios.ratioQuartiles.q25)} et{" "}
+                {formatRatio(scenarios.ratioQuartiles.q75)} la mise à prix. Appliqué à cette vente,
+                cela donne environ {formatEuro(scenarios.ratioQuartiles.q25 * startingPrice)} à{" "}
+                {formatEuro(scenarios.ratioQuartiles.q75 * startingPrice)}
+                {scenarios.ratioQuartiles.q50 != null
+                  ? `, avec un prix médian d’environ ${formatEuro(
+                      scenarios.ratioQuartiles.q50 * startingPrice,
+                    )} (${formatRatio(scenarios.ratioQuartiles.q50)})`
+                  : ""}
+                . Ce n’est pas une prévision.
               </small>
             </div>
           ) : null}
@@ -104,7 +141,7 @@ export function AuctionScenariosSection({ saleId, enabled }: { saleId: string; e
             ))}
           </ul>
           <p className={styles.chance}>
-            Part des ventes comparables adjugées au moins au double de la mise à prix :{" "}
+            Part des ventes comparables adjugées à au moins 2 fois la mise à prix :{" "}
             <strong>{formatPercent(probabilityAtLeast(scenarios.scenarios, 2))}</strong>
           </p>
         </>
@@ -131,7 +168,7 @@ export function AuctionScenariosSection({ saleId, enabled }: { saleId: string; e
               <dd>{formatEuro(licitor.meanHammerPrice)}</dd>
             </div>
             <div>
-              <dt>Adjugées au moins au double</dt>
+              <dt>Adjugées à au moins 2 fois la mise à prix</dt>
               <dd>{formatPercent(licitor.atLeastDoubleRate)}</dd>
             </div>
           </dl>

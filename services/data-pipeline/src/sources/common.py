@@ -7,7 +7,7 @@ import signal
 import ssl
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -16,7 +16,7 @@ from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from src.source_task_deadline import (
     SourceTaskDeadlineExceeded,
@@ -137,6 +137,88 @@ def parse_html(
         parsed = BeautifulSoup(html, parser)
     ensure_source_task_deadline("finishing source HTML parsing")
     return parsed
+
+
+_CLOUDFLARE_EMAIL_LINK_RE = re.compile(r"/cdn-cgi/l/email-protection#(?P<hex>[^?&\s]*)", re.I)
+_PLAUSIBLE_EMAIL_RE = re.compile(
+    r"[a-z0-9_%+'-]+(?:\.[a-z0-9_%+'-]+)*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}",
+    re.I | re.ASCII,
+)
+
+
+def is_plausible_email(value: object) -> bool:
+    """Adresse e-mail plausible (forme seulement : ni DNS, ni boîte vérifiée)."""
+    return isinstance(value, str) and len(value) <= 254 and _PLAUSIBLE_EMAIL_RE.fullmatch(value) is not None
+
+
+def decode_cloudflare_email(encoded: object) -> str | None:
+    """Décode une adresse masquée par la protection anti-spam de Cloudflare.
+
+    Le premier octet (hexadécimal) est la clé ; chaque octet suivant, combiné par OU exclusif
+    avec la clé, donne un octet de l'adresse (UTF-8). Renvoie l'adresse en minuscules, ou ``None``
+    si la donnée n'est pas de l'hexadécimal valide ou ne donne pas une adresse plausible.
+    """
+    if not isinstance(encoded, str):
+        return None
+    text = encoded.strip()
+    if len(text) < 4 or len(text) % 2 or re.fullmatch(r"[0-9a-fA-F]+", text) is None:
+        return None
+    data = bytes.fromhex(text)
+    key = data[0]
+    try:
+        decoded = bytes(byte ^ key for byte in data[1:]).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    decoded = decoded.strip().lower()
+    return decoded if is_plausible_email(decoded) else None
+
+
+def extract_cloudflare_emails(
+    soup: BeautifulSoup,
+    *,
+    accept: Callable[[str], bool] | None = None,
+    within: Iterable[Tag] | None = None,
+    decode: bool = True,
+) -> list[str]:
+    """Retire de ``soup`` les adresses masquées par Cloudflare et renvoie celles qui se décodent.
+
+    Sont lus les éléments ``data-cfemail`` et les liens ``/cdn-cgi/l/email-protection#<hex>``.
+    Chaque élément est retiré de la page (le texte « [email protected] » ne subsiste pas) et
+    l'adresse décodée n'est JAMAIS remise dans la page : l'appelant la garde à part (stockage
+    interne), elle ne doit apparaître dans aucun champ publié. Une donnée invalide ou une adresse
+    refusée (``accept`` faux) est retirée sans erreur et n'est pas renvoyée. ``within`` limite la
+    lecture à ces éléments (le reste de la page n'est pas touché). Avec ``decode=False`` les éléments
+    sont retirés de la même façon mais aucune adresse n'est décodée (interrupteur de suspension). Renvoie les adresses gardées,
+    dans l'ordre de la page, sans doublon.
+
+    Aucune requête réseau : seul le HTML déjà récupéré est lu. À n'appeler que pour une source dont
+    le décodage est autorisé (Licitor) ; Vench et Petites Affiches ne décodent pas.
+    """
+    scope = list(within) if within is not None else [soup]
+    found: list[str] = []
+    candidates: list[tuple[Tag, object]] = []
+    seen: set[int] = set()
+    for root in scope:
+        for node in root.find_all(attrs={"data-cfemail": True}):
+            if id(node) not in seen:
+                seen.add(id(node))
+                candidates.append((node, node.get("data-cfemail")))
+        for link in root.find_all("a", href=True):
+            match = _CLOUDFLARE_EMAIL_LINK_RE.search(str(link.get("href")))
+            if match and id(link) not in seen:
+                seen.add(id(link))
+                candidates.append((link, match.group("hex")))
+    # Document order, parents first, so a link wrapping a ``data-cfemail`` span is read once.
+    order = {id(node): index for index, node in enumerate(soup.find_all(True))}
+    candidates.sort(key=lambda item: order.get(id(item[0]), 0))
+    for node, encoded in candidates:
+        if node.parent is None:  # déjà retiré avec son parent
+            continue
+        email = decode_cloudflare_email(encoded) if decode else None
+        node.decompose()
+        if email and (accept is None or accept(email)) and email not in found:
+            found.append(email)
+    return found
 
 
 def _source_task_sleep(seconds: float, operation: str) -> None:

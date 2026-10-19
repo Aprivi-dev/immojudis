@@ -543,14 +543,19 @@ def test_normalize_sale_extracts_adjudication_price_from_raw_text() -> None:
 
 
 def test_normalize_sale_does_not_mark_future_adjudication_audience_as_adjudicated() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    months = "janvier février mars avril mai juin juillet août septembre octobre novembre décembre".split()
+    in_a_month = datetime.now(UTC) + timedelta(days=30)
+    hearing = f"{in_a_month.day} {months[in_a_month.month - 1]} {in_a_month.year} à 15h00"
     sale = normalize_sale(
         {
             "source_name": "info_encheres",
             "source_url": "https://www.info-encheres.com/audience-adjudication-future.html",
             "title": "Appartement à Bordeaux",
             "status": "Audience d'adjudication",
-            "sale_date": "15 octobre 2026 à 15h00",
-            "raw_text": "Audience d'adjudication le 15 octobre 2026 à 15h00.",
+            "sale_date": hearing,
+            "raw_text": f"Audience d'adjudication le {hearing}.",
         }
     )
 

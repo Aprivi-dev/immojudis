@@ -177,7 +177,7 @@ describe("report export from the listing", () => {
     mocks.user = null;
     renderActions();
     fireEvent.click(screen.getByRole("button", { name: "Export PDF" }));
-    expect(mocks.navigate).toHaveBeenCalledWith("/login?redirect=%2F");
+    expect(mocks.navigate).toHaveBeenCalledWith("/login?redirect=%2F&mode=investor&reason=offre");
     expect(mocks.fetchReports).not.toHaveBeenCalled();
     expect(mocks.save).not.toHaveBeenCalled();
     expect(mocks.exportPdf).not.toHaveBeenCalled();

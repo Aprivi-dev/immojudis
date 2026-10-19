@@ -274,11 +274,14 @@ export function getListingDataCoverage(
   };
 }
 
+/** What `factValue` shows for a fact with no value: `isNotCommunicated` compares to this same text. */
+const MISSING_INFORMATION_LABEL = "Information manquante";
+
 const STATUS_LABELS: Record<PublicListingFact["status"], string> = {
   sourced: "Source à préciser",
   reported: "Source à préciser",
   estimated: "Estimation",
-  missing: "Information manquante",
+  missing: MISSING_INFORMATION_LABEL,
   conflict: "Sources à départager",
 };
 
@@ -310,12 +313,12 @@ function sourceButtonLabel(fact: PublicListingFact): string {
 }
 
 function factValue(fact: PublicListingFact): string {
-  if (fact.status === "missing") return "Information manquante";
+  if (fact.status === "missing") return MISSING_INFORMATION_LABEL;
   if (fact.value?.trim()) return fact.value.trim();
   if (fact.status === "reported") return "À confirmer";
   if (fact.status === "conflict") return "Valeur non tranchée";
   if (fact.status === "estimated") return "Estimation indisponible";
-  return "Information manquante";
+  return MISSING_INFORMATION_LABEL;
 }
 
 function statusBadgeLabel(fact: PublicListingFact): string | null {
@@ -524,6 +527,45 @@ function PublicInformationSection({ section, defaultOpen }: PublicInformationSec
   );
 }
 
+/** A line that would read « Information manquante » : it goes to the single grouped block. */
+function isNotCommunicated(fact: PublicListingFact): boolean {
+  return factValue(fact) === MISSING_INFORMATION_LABEL;
+}
+
+type NotCommunicatedItem = { fact: PublicListingFact; sectionTitle: string };
+
+/** « 3 informations non communiquées dans le dossier » (singular for one). */
+export function notCommunicatedTitle(count: number): string {
+  return count > 1
+    ? `${count} informations non communiquées dans le dossier`
+    : `${count} information non communiquée dans le dossier`;
+}
+
+/**
+ * One collapsed block for every information the file does not give, instead of one
+ * « Information manquante » line per theme: the lines that carry a value stay readable.
+ */
+function NotCommunicatedBlock({ items }: { items: NotCommunicatedItem[] }) {
+  return (
+    <details className={`${styles.accordion} ${styles.notCommunicated}`}>
+      <summary className={styles.summary}>
+        <span>{notCommunicatedTitle(items.length)}</span>
+      </summary>
+      <ul className={styles.notCommunicatedList}>
+        {items.map(({ fact, sectionTitle }) => (
+          <li className={styles.notCommunicatedItem} key={fact.id}>
+            <p className={styles.notCommunicatedLabel}>
+              {fact.label}
+              <span className={styles.sectionCount}> · {sectionTitle}</span>
+            </p>
+            <PublicListingFactSource fact={fact} />
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export function ListingDataCoverage({
   sale,
   className,
@@ -532,12 +574,20 @@ export function ListingDataCoverage({
 }: ListingDataCoverageProps) {
   const information =
     providedPublicInformation ?? getListingPublicInformation(sale, factReliabilities);
-  const sections = information.sections.filter((section) => section.items.length > 0);
+  const notCommunicated: NotCommunicatedItem[] = information.sections.flatMap((section) =>
+    section.items.filter(isNotCommunicated).map((fact) => ({ fact, sectionTitle: section.title })),
+  );
+  const sections = information.sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((fact) => !isNotCommunicated(fact)),
+    }))
+    .filter((section) => section.items.length > 0);
   const classNames = [styles.root, className].filter(Boolean).join(" ");
 
   return (
     <section className={classNames} aria-label="Informations disponibles sur le bien">
-      {sections.length > 0 ? (
+      {sections.length > 0 || notCommunicated.length > 0 ? (
         <div className={styles.accordionList}>
           {sections.map((section, index) => (
             <PublicInformationSection
@@ -546,6 +596,7 @@ export function ListingDataCoverage({
               defaultOpen={index === 0}
             />
           ))}
+          {notCommunicated.length > 0 ? <NotCommunicatedBlock items={notCommunicated} /> : null}
         </div>
       ) : (
         <p className={styles.emptyState}>Aucune information n’est encore disponible.</p>

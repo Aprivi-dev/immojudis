@@ -21,7 +21,7 @@ Le modèle historique reste toutefois centré sur une ligne mutable par annonce 
 ### Pipeline de données
 
 - `services/data-pipeline` est un service Python séparé, mais pas encore un package de monorepo orchestré depuis la racine.
-- Son installation actuelle utilise **pip** et des fichiers `requirements*.txt`, pas encore `uv`. `pyproject.toml` borne Python à `>=3.11,<3.13`; la CI teste Python 3.11 et 3.12.
+- Son installation actuelle utilise **pip** et des fichiers `requirements*.txt`, pas encore `uv`. `pyproject.toml` borne Python à `>=3.12,<3.13` (les verrous hachés sont générés pour CPython 3.12) ; la CI teste Python 3.12.
 - Le pipeline utilise notamment Pydantic, psycopg, le client Supabase, httpx, pytest et Ruff. Les dépendances de valorisation et Docling sont optionnelles.
 - Le worker est lancé par GitHub Actions, sur planification ou à la demande. Ce n’est pas encore le conteneur long-running et la file générique `FOR UPDATE SKIP LOCKED` demandés par la cible.
 - La CI sépare les jobs web npm, pipeline pip, migrations/pgTAP et E2E Playwright.
@@ -58,7 +58,7 @@ Le schéma complet est construit par les migrations `supabase/migrations`. Les g
 | `auction_documents` | Métadonnées et extraction des documents d’annonce | Ligne mutable; fichiers gardés dans le cache/disque du worker, pas dans un coffre de preuves objet durable |
 | `auction_extractions` | Résultat d’extraction versionné par provider/hash | N’exprime pas le rapprochement dossier/lot/audience ni une revue indépendante |
 | `auction_sale_history` | Ancienne et nouvelle ligne JSON lors d’un changement | Journalise les updates significatifs, pas les inserts/deletes; sans FK et sans immutabilité stricte |
-| `v_auction_sales_app`, `v_auction_sales_discovery` | Modèles de lecture complet et découverte | Les contrats de lecture restent centrés sur `auction_sales.id` |
+| `v_auction_sales_app`, `v_auction_sales_discovery`, `v_auction_sales_unlocked` | Modèles de lecture complet, découverte et ventes débloquées (« 3 déblocages par mois ») | Les contrats de lecture restent centrés sur `auction_sales.id` |
 
 ### Enrichissement et valorisation
 

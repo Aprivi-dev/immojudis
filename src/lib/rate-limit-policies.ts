@@ -9,6 +9,13 @@ export const RATE_LIMIT_POLICIES = {
   formSubmit: { limit: 10, windowSeconds: 3600 },
   /** Anonymous public routes and third-party proxies: 60 per minute per IP. */
   publicIp: { limit: 60, windowSeconds: 60 },
+  /**
+   * Recherche d'aperçu du catalogue (`/api/catalogue/preview`) : 180 par minute et par IP. Chaque
+   * critère modifié, page tournée ou retour au premier écran d'un visiteur anonyme est un appel, et
+   * plusieurs internautes partagent une même IP (box, entreprise, mobile) : 60 serait vite atteint.
+   * La réponse est de toute façon servie par le CDN pour les recherches répétées.
+   */
+  catalogPreviewIp: { limit: 180, windowSeconds: 60 },
 } as const;
 
 /** Maximum number of lawyer profiles returned by one directory call. */

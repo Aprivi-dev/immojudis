@@ -2,16 +2,16 @@ import { unstable_cache } from "next/cache";
 import { createPublicSupabaseClient } from "@/lib/supabase-public.server";
 
 /**
- * Publicly visible sales for the sitemap, read with the anonymous client through
- * the same visibility rules as the public catalogue.
+ * Publicly visible and indexable sales for the sitemap, read with the anonymous client through
+ * the same visibility rules as the public catalogue (and the indexability predicate of
+ * `app_private.is_indexable_public_sale`, applied by the database function).
  *
- * A sitemap file holds at most 50 000 URLs; we stay at 5 000 so each file is
- * quick to build and to fetch. The root `/sitemap.xml` (static pages + the first
- * sales) never exceeds that, and `/sales/sitemap/[id].xml` carries the rest.
+ * A sitemap file holds at most 50 000 URLs; we stay at 5 000 so each file is quick to build and
+ * to fetch. The sales have their own sitemap files, `/sales/sitemap/0.xml`, `1.xml`…, of
+ * SITEMAP_URL_LIMIT sales each; the static pages (`/sitemap.xml`) and the articles
+ * (`/ressources/sitemap.xml`) are listed apart.
  */
 export const SITEMAP_URL_LIMIT = 5_000;
-/** Room kept in the root sitemap for static pages and articles. */
-export const ROOT_SITEMAP_SALE_CAPACITY = 4_900;
 export const SITEMAP_REVALIDATE_SECONDS = 3_600;
 export const SITEMAP_CACHE_TAG = "public-sitemap";
 /** PostgREST returns at most 1 000 rows per request. */
@@ -133,9 +133,7 @@ export async function loadSitemapSales(
   return sales.slice(start - offset, end - offset);
 }
 
-/** Number of additional sitemap files needed beyond the root sitemap. */
-export function overflowSitemapCount(total: number): number {
-  return total > ROOT_SITEMAP_SALE_CAPACITY
-    ? Math.ceil((total - ROOT_SITEMAP_SALE_CAPACITY) / SITEMAP_URL_LIMIT)
-    : 0;
+/** Number of sales sitemap files (`/sales/sitemap/N.xml`) needed for `total` sales. */
+export function salesSitemapCount(total: number): number {
+  return total > 0 ? Math.ceil(total / SITEMAP_URL_LIMIT) : 0;
 }

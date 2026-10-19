@@ -8,6 +8,8 @@ import {
   PLAN_FEATURES,
   PLAN_LABELS,
   PLAN_LIMITS,
+  SALE_UNLOCK_FEATURES,
+  isSaleUnlockFeature,
 } from "@/lib/plans";
 
 describe("plan matrix", () => {
@@ -46,6 +48,47 @@ describe("plan matrix", () => {
     expect(PLAN_LIMITS.decouverte.favoriteSales).toBe(3);
     expect(PLAN_LIMITS.decouverte.saleAnalysisSets).toBe(1);
     expect(PLAN_LIMITS.decouverte.saleAnalysisItems).toBe(3);
+  });
+
+  it("grants three sale unlocks a month to Découverte, none to count for Analyse", () => {
+    expect(PLAN_LIMITS.decouverte.monthlyUnlocks).toBe(3);
+    expect(PLAN_LIMITS.analyse.monthlyUnlocks).toBeNull();
+  });
+
+  it("opens exactly the five elements of the unlocked page, and no autonomous estimate", () => {
+    expect([...SALE_UNLOCK_FEATURES].sort()).toEqual([
+      "property.advancedBidScenarios",
+      "property.bidCeiling",
+      "property.documentReading",
+      "property.saleHistory",
+      "sales.statistics",
+    ]);
+  });
+
+  it("opens by unlock only the listed rights, which stay locked in the Découverte matrix", () => {
+    for (const feature of SALE_UNLOCK_FEATURES) {
+      expect(featureIncluded("decouverte", feature)).toBe(false);
+      expect(isSaleUnlockFeature(feature)).toBe(true);
+    }
+    // Exports, saved reports and the other Analyse rights are never opened by an unlock.
+    for (const feature of [
+      "property.pdfExport",
+      "sales.csvExport",
+      "property.savedReports",
+      "property.reportEditing",
+      "property.valueEstimate",
+      "property.outcomeGraph",
+      "property.soldComparables",
+      "property.activeComparables",
+      "property.urbanPlanning",
+      "property.cadastralAnalysis",
+      "alerts.realtimeChanges",
+      "workspace.collaboration",
+      "sales.apiAccess",
+      "lawyers.referrals",
+    ] as const) {
+      expect(isSaleUnlockFeature(feature)).toBe(false);
+    }
   });
 
   it("unlocks all analysis and collaboration capabilities for Analyse", () => {

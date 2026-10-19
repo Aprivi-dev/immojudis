@@ -303,6 +303,63 @@ export function saleSeoDescription(sale: SaleFacts | null | undefined): string {
   return truncateDescription(base + (closing ?? ""));
 }
 
+/** A description of at least this many characters documents a sale on its own. */
+export const INDEXABLE_DOCUMENTED_DESCRIPTION_LENGTH = 500;
+const SALE_DATE_IMPLAUSIBLE_FLAG = "sale_date_implausible";
+
+/** Facts the indexability predicate reads. Anything missing counts as "not known". */
+export type IndexableSaleFacts = {
+  city?: string | null;
+  sale_date?: string | null;
+  property_type?: string | null;
+  app_surface_m2?: number | null;
+  starting_price_eur?: number | null;
+  quality_flags?: unknown;
+  primary_source?: string | null;
+  sale_venue_type?: string | null;
+  /** Number of case documents (public details of the sale). */
+  document_count?: number | null;
+  description?: string | null;
+};
+
+/**
+ * Whether the public page of a sale is worth a place in a search index. A "thin" page (no city, no
+ * usable date, no precise type, neither surface nor starting price) is served with
+ * `noindex, follow` and left out of the sitemap.
+ *
+ * Mirror of `app_private.is_indexable_public_sale` (migration 20261025120000), which is the single
+ * source of truth for the sitemap and, through `get_public_sale_indexability`, for the page. This
+ * copy is used when that function is not deployed yet and by the tests; a shared table of cases
+ * (seo-indexable-cases.json) keeps both in line. The completeness tier plays no part in it.
+ *
+ * 1. city filled (not blank, not "-");
+ * 2. hearing date present and not flagged `sale_date_implausible`, except State disposals
+ *    (`primary_source = cessions_etat` or `sale_venue_type = state`), which have no hearing date;
+ * 3. precise property type (not `other`/`unknown`), except a documented sale (at least one case
+ *    document, or a description of 500 characters or more);
+ * 4. a surface or a starting price greater than zero.
+ */
+export function isIndexablePublicSale(sale: IndexableSaleFacts): boolean {
+  const city = sale.city?.trim();
+  if (!city || city === "-") return false;
+
+  const isStateDisposal =
+    sale.primary_source === "cessions_etat" || sale.sale_venue_type === "state";
+  const flags = Array.isArray(sale.quality_flags) ? sale.quality_flags : [];
+  const hasUsableDate =
+    parseDate(sale.sale_date) !== null && !flags.includes(SALE_DATE_IMPLAUSIBLE_FLAG);
+  if (!isStateDisposal && !hasUsableDate) return false;
+
+  const type = sale.property_type?.trim().toLowerCase();
+  const hasPreciseType = Boolean(type) && type !== "other" && type !== "unknown";
+  const isDocumented =
+    (sale.document_count ?? 0) >= 1 ||
+    (sale.description?.length ?? 0) >= INDEXABLE_DOCUMENTED_DESCRIPTION_LENGTH;
+  if (!hasPreciseType && !isDocumented) return false;
+
+  return (sale.app_surface_m2 ?? 0) > 0 || (sale.starting_price_eur ?? 0) > 0;
+}
+
 type StructuredDataContext = {
   origin: string;
   now?: Date;
@@ -406,6 +463,14 @@ export function saleStructuredData(
     });
   }
 
+  // Last, so the listing stays first and the hearing event second (consumers index the graph).
+  graph.push(
+    breadcrumbStructuredData(origin, [
+      { name: "Ventes", path: "/sales" },
+      { name: headline, path: `/sales/${encodeURIComponent(sale.id)}` },
+    ]),
+  );
+
   return { "@context": "https://schema.org", "@graph": graph };
 }
 
@@ -413,6 +478,33 @@ export function saleStructuredData(
  * Site-level JSON-LD: the organization that publishes the site (with its logo)
  * and the website with its search action. All URLs are absolute.
  */
+export type BreadcrumbItem = { name: string; path: string };
+
+/**
+ * schema.org `BreadcrumbList` of a page, from the trail that leads to it. The home page is always
+ * the first item; `trail` lists the following ones, the page itself last. Absolute URLs.
+ */
+export function breadcrumbStructuredData(
+  origin: string,
+  trail: readonly BreadcrumbItem[],
+): Record<string, unknown> {
+  const items: BreadcrumbItem[] = [{ name: "Accueil", path: "" }, ...trail];
+  return {
+    "@type": "BreadcrumbList",
+    itemListElement: items.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.name,
+      item: `${origin}${item.path}`,
+    })),
+  };
+}
+
+/** Absolute address of the site logo (publisher logo of the articles, organization logo). */
+export function siteLogoUrl(origin: string): string {
+  return `${origin}/brand/immojudis-mark-transparent.png`;
+}
+
 export function organizationStructuredData(origin: string): Record<string, unknown> {
   return {
     "@context": "https://schema.org",
@@ -424,7 +516,7 @@ export function organizationStructuredData(origin: string): Record<string, unkno
         url: origin,
         logo: {
           "@type": "ImageObject",
-          url: `${origin}/brand/immojudis-mark-transparent.png`,
+          url: siteLogoUrl(origin),
         },
       },
       {

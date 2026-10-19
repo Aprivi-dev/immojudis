@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import { fetchDocumentReading } from "@/lib/client-api";
+import { queryKeys, type SaleAccessMode } from "@/lib/query-keys";
 import {
   DOCUMENT_READING_IMPORTANCE,
   DOCUMENT_READING_THEMES,
@@ -11,6 +11,7 @@ import {
   type DocumentReadingResponse,
 } from "@/lib/document-reading";
 import styles from "./DocumentReadingSection.module.css";
+import { UnlockCallToAction } from "./UnlockCallToAction";
 
 function plural(count: number, word: string): string {
   return `${count} ${word}${count > 1 ? "s" : ""}`;
@@ -19,11 +20,23 @@ function plural(count: number, word: string): string {
 /**
  * « Lecture des pièces »: what the case documents say about occupation, works,
  * diagnostics, co-ownership… Every point quotes the document and links to the
- * cited page. A free account only learns how many points were found.
+ * cited page. A free account only learns how many points were found, until it unlocks the sale.
  */
-export function DocumentReadingSection({ saleId, enabled }: { saleId: string; enabled: boolean }) {
+export function DocumentReadingSection({
+  saleId,
+  enabled,
+  access = "discovery",
+  userKey = null,
+}: {
+  saleId: string;
+  enabled: boolean;
+  /** The view the account reads: its key keeps the free teaser out of an unlocked sale's cache. */
+  access?: SaleAccessMode;
+  /** The signed-in account, so that a cached reading never crosses accounts. */
+  userKey?: string | null;
+}) {
   const query = useQuery<DocumentReadingResponse>({
-    queryKey: ["document-reading", saleId],
+    queryKey: queryKeys.documentReading(saleId, access, userKey),
     queryFn: () => fetchDocumentReading(saleId),
     enabled,
     staleTime: 10 * 60_000,
@@ -41,12 +54,14 @@ export function DocumentReadingSection({ saleId, enabled }: { saleId: string; en
         <p className={styles.lead}>
           {plural(data.pointCount, "point")} relevé{data.pointCount > 1 ? "s" : ""} dans les pièces
           {data.alertCount ? `, dont ${data.alertCount} à vérifier en priorité` : ""}
-          {themes.length ? ` : ${themes.join(", ")}.` : "."} Chaque point cite le passage exact et
-          la page de la pièce, avec l’offre Analyse.
+          {themes.length ? ` : ${themes.join(", ")}.` : "."} Chaque point cite le passage et la page
+          de la pièce, avec l’offre Analyse ou en débloquant cette vente.
         </p>
-        <Link href="/offres" className={styles.cta}>
-          Découvrir l’offre Analyse
-        </Link>
+        <UnlockCallToAction
+          primaryClassName={styles.cta}
+          secondaryClassName={`${styles.cta} ${styles.ctaSecondary}`}
+          messageClassName={styles.lead}
+        />
       </section>
     );
   }
@@ -70,7 +85,7 @@ export function DocumentReadingSection({ saleId, enabled }: { saleId: string; en
       <h2 id="document-reading-title">Lecture des pièces du dossier</h2>
       <p className={styles.lead}>
         {data.points.length
-          ? `${plural(data.points.length, "point")} relevé${data.points.length > 1 ? "s" : ""} dans les pièces. Chaque point cite le passage exact : vérifiez-le dans la pièce et faites-le confirmer par votre avocat.`
+          ? `${plural(data.points.length, "point")} relevé${data.points.length > 1 ? "s" : ""} dans les pièces. Chaque point cite le passage de la pièce (noms de personnes remplacés par leur rôle) : vérifiez-le dans la pièce et faites-le confirmer par votre avocat.`
           : "Aucun point particulier relevé dans les pièces lues. Lisez-les quand même en entier avec votre avocat."}
       </p>
       {groups.map((group) => (
@@ -108,8 +123,9 @@ export function DocumentReadingSection({ saleId, enabled }: { saleId: string; en
       <p className={styles.note}>
         Lecture automatique des pièces publiées
         {data.partial ? " (pour les dossiers volumineux, les pages les plus utiles)" : ""}. Seuls
-        les points dont la citation a été retrouvée mot pour mot dans la pièce sont affichés. Cette
-        lecture ne remplace ni la lecture complète du dossier ni le conseil de votre avocat.
+        les points dont la citation a été retrouvée mot pour mot dans la pièce sont affichés ; les
+        noms de personnes y sont remplacés par leur rôle. Cette lecture ne remplace ni la lecture
+        complète du dossier ni le conseil de votre avocat.
       </p>
     </section>
   );

@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { MapThumbnail } from "@/components/MapThumbnail";
 import { MapboxPreviewButton } from "@/components/MapboxPreviewButton";
+import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { StreetViewDialog } from "@/components/StreetViewDialog";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { safeExternalHttpUrl } from "@/lib/external-url";
@@ -55,6 +56,7 @@ import {
   type FactReliabilityMap,
 } from "@/lib/fact-reliability";
 import { AiReviewField } from "./AiReviewField";
+import { UnlockCallToAction } from "./UnlockCallToAction";
 import { getListingPublicInformation } from "@/lib/listing-public-information";
 import {
   AI_REVIEW_ENERGY_FIELD_KEYS,
@@ -423,7 +425,7 @@ export function ListingOverview({
           </div>
           {guardedPremiumCeiling != null ? (
             <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>Enchère plafond indicative</p>
+              <p className={styles.priceLabel}>Enchère plafond (simulation)</p>
               <p className={styles.premiumPriceValue}>{formatPrice(guardedPremiumCeiling)}</p>
               {ceilingContext ? (
                 <p className={styles.premiumContext}>
@@ -442,11 +444,15 @@ export function ListingOverview({
             </div>
           ) : showPremiumTeaser ? (
             <div className={styles.premiumPrice}>
-              <p className={styles.priceLabel}>Enchère plafond</p>
-              <p className={styles.premiumTeaser}>Disponible avec l’offre Analyse</p>
-              <a href="/offres" className={styles.priceExplanation}>
-                Découvrir l’analyse
-              </a>
+              <p className={styles.priceLabel}>Enchère plafond (simulation)</p>
+              <p className={styles.premiumTeaser}>
+                Disponible avec l’offre Analyse ou en débloquant cette vente
+              </p>
+              <UnlockCallToAction
+                offerLabel="Découvrir l’analyse"
+                primaryClassName={styles.priceExplanation}
+                messageClassName={styles.premiumContext}
+              />
             </div>
           ) : null}
         </div>
@@ -593,6 +599,14 @@ export function ListingPracticalDetails({
   const tribunal = saleIsTribunalVenue(sale);
   const notary = procedure.venueType === "notary";
   const state = procedure.venueType === "state";
+  // « Ajouter à mon agenda » only for a plain announced hearing: the server re-checks the date.
+  const calendarExportable =
+    tribunal &&
+    Boolean(sale.sale_date) &&
+    !status &&
+    !schedule &&
+    !timeConflict &&
+    !getAiReviewFieldResult(aiReviewProjections, "sale.sale_date", aiReviewStatus).blocked;
   const visits = listingVisits(sale);
   const contacts = listingContactLinks(procedure.organizerContact);
   const role = procedure.procedure?.organizer_type;
@@ -646,6 +660,7 @@ export function ListingPracticalDetails({
               >
                 {listingDate(schedule?.opens_at ?? sale.sale_date)}
               </AiReviewField>
+              {calendarExportable ? <SaleCalendarButton saleId={sale.id} /> : null}
               {timeConflict ? (
                 <p role="status" className="mt-2 text-sm font-medium text-amber-900">
                   {timeConflict}

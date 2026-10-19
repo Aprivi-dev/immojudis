@@ -4,11 +4,19 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { axe } from "vitest-axe";
-import { EXAMPLE_SALE_RECORDS } from "@/lib/example-sale";
+import { getExampleSaleRecords } from "@/lib/example-sale";
+
+// Dated relative to today, like /annonce-exemple: the frozen records would turn into a past sale.
+const EXAMPLE_SALE_RECORDS = getExampleSaleRecords();
 import type { AuctionSale } from "@/lib/types";
 import type { MarketEstimate } from "@/lib/market.server";
 import { AI_REVIEW_FIELD_KEYS, type AiReviewProjectionReadModel } from "@/lib/ai-review-guard";
-import { AnalysisSaleDetailView, FreeSaleDetailView } from "./SimplifiedSaleDetailView";
+import type { SaleUnlockStatus } from "@/lib/sale-unlocks";
+import {
+  AnalysisSaleDetailView,
+  FreeSaleDetailView,
+  UnlockedSaleDetailView,
+} from "./SimplifiedSaleDetailView";
 
 const mocks = vi.hoisted(() => ({
   fetchMarket: vi.fn(),
@@ -65,6 +73,7 @@ vi.mock("next/dynamic", () => ({
       marketEstimateOverride,
       forecastQuery,
       premium,
+      showUpcomingListings,
       propertyTypeVerified,
     }: {
       images?: unknown[];
@@ -74,6 +83,7 @@ vi.mock("next/dynamic", () => ({
       marketEstimateOverride?: unknown;
       forecastQuery?: unknown;
       premium?: boolean;
+      showUpcomingListings?: boolean;
       propertyTypeVerified?: boolean;
     }) {
       if (forecastQuery) return <section>Prévision de l’audience chargée</section>;
@@ -84,6 +94,7 @@ vi.mock("next/dynamic", () => ({
             data-sale-id={sale.id}
             data-court-code={sale.tribunal_code}
             data-premium={premium ? "true" : "false"}
+            data-upcoming-listings={showUpcomingListings === false ? "false" : "true"}
             data-property-type-verified={propertyTypeVerified ? "true" : "false"}
           >
             Statistiques du tribunal
@@ -157,13 +168,13 @@ describe("integrated listing", () => {
     expect(screen.getByRole("tab", { name: "Aperçu" }).getAttribute("aria-selected")).toBe("true");
     expectActivePanel(container, "apercu");
 
-    selectTab("Estimation");
-    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+    selectTab("Prix et plafond");
+    expect(screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected")).toBe(
       "true",
     );
     expectActivePanel(container, "estimation");
 
-    fireEvent.keyDown(screen.getByRole("tab", { name: "Estimation" }), { key: "ArrowRight" });
+    fireEvent.keyDown(screen.getByRole("tab", { name: "Prix et plafond" }), { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "Statistiques" }).getAttribute("aria-selected")).toBe(
       "true",
     );
@@ -189,7 +200,7 @@ describe("integrated listing", () => {
 
     window.history.pushState(null, "", "#market");
     fireEvent(window, new Event("hashchange"));
-    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected")).toBe(
       "true",
     );
     expectActivePanel(container, "estimation");
@@ -198,7 +209,7 @@ describe("integrated listing", () => {
   it("defers tribunal forecast loading until its disclosure opens", () => {
     const sale = EXAMPLE_SALE_RECORDS.bordeaux.sale;
     renderDetail("analysis", sale, false);
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
 
     expect(mocks.forecast).toHaveBeenLastCalledWith(sale.id, false);
     const summary = screen.getByText("Perspective d’adjudication");
@@ -293,7 +304,7 @@ describe("integrated listing", () => {
           .getByRole("tab", {
             name:
               expectation.tab === "estimation"
-                ? "Estimation"
+                ? "Prix et plafond"
                 : expectation.tab === "demarches"
                   ? "Démarches"
                   : "Aperçu",
@@ -322,9 +333,9 @@ describe("integrated listing", () => {
       window.history.replaceState(null, "", `#${anchor}`);
       const { container } = renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
 
-      expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
-        "true",
-      );
+      expect(
+        screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected"),
+      ).toBe("true");
       const target = container.querySelector(`#${anchor}`);
       expect(target).not.toBeNull();
       expect(target?.closest("details")).toBeNull();
@@ -360,7 +371,7 @@ describe("integrated listing", () => {
     window.history.replaceState(null, "", "#budget-analysis");
     const { container } = renderDetail("analysis", conflictingSale, false);
 
-    expect(screen.getByRole("tab", { name: "Estimation" }).getAttribute("aria-selected")).toBe(
+    expect(screen.getByRole("tab", { name: "Prix et plafond" }).getAttribute("aria-selected")).toBe(
       "true",
     );
     expectActivePanel(container, "estimation");
@@ -386,7 +397,7 @@ describe("integrated listing", () => {
       </QueryClientProvider>,
     );
 
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     expectActivePanel(view.container, "estimation");
     window.history.replaceState(null, "", "/");
 
@@ -553,7 +564,7 @@ describe("integrated listing", () => {
       false,
       estimate,
     );
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
 
     const summary = screen.getByText("Voir les références de marché");
     const disclosure = summary.closest("details");
@@ -583,7 +594,7 @@ describe("integrated listing", () => {
       false,
       estimate,
     );
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     fireEvent.click(screen.getByText("Voir les références de marché"));
 
     const market = container.querySelector("#market")!;
@@ -600,7 +611,13 @@ describe("integrated listing", () => {
     const practical = container.querySelector("#rendez-vous")!;
     expect(practical.textContent).toContain("Tribunal judiciaire de Bordeaux");
     expect(practical.textContent).toContain("Me Camille Durand");
-    expect(practical.textContent).toMatch(/15 octobre 2026/);
+    const hearingDay = new Intl.DateTimeFormat("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "Europe/Paris",
+    }).format(new Date(EXAMPLE_SALE_RECORDS.bordeaux.sale.sale_date!));
+    expect(practical.textContent).toContain(hearingDay);
     expect(practical.textContent).toContain("Visites");
   });
 
@@ -621,7 +638,7 @@ describe("integrated listing", () => {
 
   it("points the Estimation actions to the planner and its calculation", () => {
     renderDetail("analysis", EXAMPLE_SALE_RECORDS.bordeaux.sale, false);
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
 
     expect(screen.getByRole("link", { name: "Ajuster mes hypothèses" }).getAttribute("href")).toBe(
       "#calculation",
@@ -650,7 +667,7 @@ describe("integrated listing", () => {
     window.history.replaceState(null, "", "/");
     renderDetail("analysis");
     expect(screen.getByText("Voir les sources et actions à confirmer")).toBeTruthy();
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     expect(screen.getByText("Voir les références de marché")).toBeTruthy();
   });
 
@@ -664,10 +681,10 @@ describe("integrated listing", () => {
       reliability: "medium",
     });
     renderDetail("discovery", undefined, true, true);
-    selectTab("Estimation");
+    selectTab("Prix et plafond");
     expect(
       screen.getByRole("heading", {
-        name: "Votre enchère plafond, les comparables et les travaux avec l’offre Analyse",
+        name: "Les comparables et les travaux avec l’offre Analyse ; l’enchère plafond aussi en débloquant cette vente",
       }),
     ).toBeTruthy();
     expect((await screen.findByRole("status")).textContent).toContain(
@@ -680,7 +697,9 @@ describe("integrated listing", () => {
     expect(screen.queryByText("Simulateur d’enchère plafond chargé")).toBeNull();
     selectTab("Statistiques");
     expect(
-      screen.getByRole("heading", { name: "Les statistiques du tribunal avec l’offre Analyse" }),
+      screen.getByRole("heading", {
+        name: "Les statistiques du tribunal avec l’offre Analyse ou en débloquant cette vente",
+      }),
     ).toBeTruthy();
     expect(screen.queryByText("Statistiques du tribunal")).toBeNull();
     expect(mocks.fetchMarket).not.toHaveBeenCalled();
@@ -699,7 +718,7 @@ describe("integrated listing", () => {
       } as AuctionSale;
       const { container } = renderDetail("analysis", sale, false);
       expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
-      selectTab("Estimation");
+      selectTab("Prix et plafond");
 
       expect(screen.getByRole("heading", { name: "Prix et marché" })).toBeTruthy();
       expect(screen.queryByRole("link", { name: "Ajuster mes hypothèses" })).toBeNull();
@@ -805,5 +824,174 @@ describe("integrated listing", () => {
     expect(
       result.violations.map((violation) => ({ id: violation.id, help: violation.help })),
     ).toEqual([]);
+  });
+});
+
+describe("« 3 déblocages par mois » on the sale page", () => {
+  const unlockStatus = (overrides: Partial<SaleUnlockStatus> = {}): SaleUnlockStatus => ({
+    saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
+    unlocked: false,
+    unlockable: true,
+    analysisAccess: false,
+    limit: 3,
+    used: 1,
+    remaining: 2,
+    periodStart: "2026-09-30T22:00:00.000Z",
+    resetsAt: "2026-10-31T23:00:00.000Z",
+    ...overrides,
+  });
+
+  function renderFree(status: SaleUnlockStatus | null) {
+    mocks.authUser = { id: "free-account" };
+    mocks.fetchValuePreview.mockResolvedValue({ available: false });
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FreeSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
+          adjudicationStatisticsEnabled
+          unlockStatus={status}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  function renderUnlocked(sale: AuctionSale = EXAMPLE_SALE_RECORDS.bordeaux.sale) {
+    mocks.authUser = { id: "free-account" };
+    mocks.fetchAiReviewProjections.mockResolvedValue({ projections: [] });
+    mocks.fetchFactReliabilities.mockResolvedValue({ facts: {}, source: "legacy" });
+    // An unlock receives the ceiling projection of the estimate, nothing more.
+    const { estimatedValueEur, actionable, qualityLabel, source, sourceUpdatedAt, sampleSize } =
+      EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate;
+    mocks.fetchMarket.mockResolvedValue({
+      status: "ready",
+      estimate: {
+        estimatedValueEur,
+        actionable,
+        qualityLabel,
+        source,
+        sourceUpdatedAt,
+        sampleSize,
+        medianPricePerM2: EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate.medianPricePerM2,
+        p75PricePerM2: EXAMPLE_SALE_RECORDS.bordeaux.marketEstimate.p75PricePerM2,
+      },
+      computedAt: "2026-10-12T08:00:00.000Z",
+    });
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <UnlockedSaleDetailView
+          sale={sale}
+          adjudicationStatisticsEnabled
+          unlockStatus={unlockStatus({ unlocked: true })}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("offers the unlock, with the number left, on a locked sale of a Découverte account", () => {
+    renderFree(unlockStatus());
+
+    expect(screen.getByRole("heading", { name: "Débloquer cette vente" })).toBeTruthy();
+    expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Débloquer cette vente" })).toBeTruthy();
+  });
+
+  it("shows nothing about unlocking before the status is known, or to a visitor", () => {
+    const pending = renderFree(null);
+    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    pending.unmount();
+
+    mocks.authUser = null;
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <FreeSaleDetailView
+          sale={EXAMPLE_SALE_RECORDS.bordeaux.sale}
+          unlockStatus={unlockStatus()}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+  });
+
+  it("does not offer the unlock to an Analyse account", () => {
+    mocks.authUser = { id: "analysis-account" };
+    renderDetail("analysis", undefined, false);
+    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    expect(screen.queryByText("Cette vente est débloquée")).toBeNull();
+  });
+
+  it("opens the market estimate, the bid ceiling and the statistics of an unlocked sale", async () => {
+    const { container } = renderUnlocked();
+
+    expect(screen.getByText("Cette vente est débloquée")).toBeTruthy();
+    expect(screen.getByText("Il vous reste 2 déblocages sur 3 ce mois-ci.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Débloquer cette vente" })).toBeNull();
+    expect(mocks.fetchMarket).toHaveBeenCalledWith({
+      saleId: EXAMPLE_SALE_RECORDS.bordeaux.sale.id,
+    });
+
+    selectTab("Prix et plafond");
+    expect(await screen.findByRole("heading", { name: "Le calcul, étape par étape" })).toBeTruthy();
+    expect(container.querySelector("#calculation")).not.toBeNull();
+
+    selectTab("Statistiques");
+    const statistics = container.querySelector("#stats-overview");
+    expect(statistics?.getAttribute("data-sale-id")).toBe(EXAMPLE_SALE_RECORDS.bordeaux.sale.id);
+    expect(statistics?.getAttribute("data-premium")).toBe("true");
+    // The list of the other upcoming sales of the tribunal is not sent to an unlocked account.
+    expect(statistics?.getAttribute("data-upcoming-listings")).toBe("false");
+  });
+
+  it("asks nothing more than the five elements need: no fact reliability, no forecast", () => {
+    renderUnlocked();
+
+    expect(mocks.fetchFactReliabilities).not.toHaveBeenCalled();
+    selectTab("Prix et plafond");
+    expect(screen.queryByText("Perspective d’adjudication")).toBeNull();
+    expect(screen.queryByText("Prévision de l’audience chargée")).toBeNull();
+  });
+
+  it("keeps the exports, the saved reports and the Analyse-only blocks closed on an unlocked sale", () => {
+    renderUnlocked();
+
+    // Aperçu: no risk evidence panel, only the generic « Points à vérifier » card.
+    expect(screen.queryByText("Voir les sources et actions à confirmer")).toBeNull();
+    // Estimation: no market evidence disclosure.
+    selectTab("Prix et plafond");
+    expect(screen.queryByText("Voir les références de marché")).toBeNull();
+    // Travaux stays a preview of the Analyse offer.
+    selectTab("Travaux");
+    expect(
+      screen.getByRole("heading", { name: "Estimez vos travaux avec l’offre Analyse" }),
+    ).toBeTruthy();
+    // Démarches: no report save/export, no work file.
+    selectTab("Démarches");
+    expect(screen.queryByRole("button", { name: "Export PDF" })).toBeNull();
+    expect(screen.queryByText("Conserver votre analyse")).toBeNull();
+    expect(screen.queryByText("Préparer le dossier de travail")).toBeNull();
+  });
+
+  it("states that the unlocked elements are neither legal nor financial advice", () => {
+    renderUnlocked();
+    expect(
+      screen.getByText(/ne constituent ni un conseil juridique ni un conseil financier/),
+    ).toBeTruthy();
+    expect(screen.getByText(/l’enchère plafond est une simulation/)).toBeTruthy();
+  });
+
+  it("does not load the market estimate for an unlocked notary sale: no bid ceiling there", () => {
+    renderUnlocked({
+      ...EXAMPLE_SALE_RECORDS.bordeaux.sale,
+      sale_venue_type: "notary",
+      sale_procedure: null,
+      source_blocks: null,
+    } as AuctionSale);
+    expect(mocks.fetchMarket).not.toHaveBeenCalled();
+    expect(screen.queryByRole("tab", { name: "Statistiques" })).toBeNull();
   });
 });

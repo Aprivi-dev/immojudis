@@ -4,21 +4,35 @@ import ArrowRight from "lucide-react/dist/esm/icons/arrow-right.js";
 import { FeesSimulator } from "@/components/fees-simulator/FeesSimulator";
 import { formatScaleDate } from "@/components/fees-simulator/scale-date";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
+import { BreadcrumbJsonLd } from "@/components/BreadcrumbJsonLd";
+import { pageMetadata } from "@/lib/page-metadata";
 import { EMOLUMENT_SCALE_DATE, EMOLUMENT_SCALE_REFERENCE } from "@/lib/profitability";
+import { getSurenchereReminder } from "@/lib/surenchere-reminder";
 
-export const metadata: Metadata = {
-  alternates: { canonical: "/simulateur-frais-encheres" },
+export const metadata: Metadata = pageMetadata({
+  path: "/simulateur-frais-encheres",
   title: "Simulateur de frais d’enchères immobilières",
   description:
     "Estimez le coût total d’un bien adjugé aux enchères : émoluments, droits de mutation, frais préalables, honoraires et travaux, par département.",
-};
+});
 
 export default function Page() {
+  return (
+    <>
+      <BreadcrumbJsonLd
+        trail={[{ name: "Simulateur de frais d’enchères", path: "/simulateur-frais-encheres" }]}
+      />
+      <PageContent />
+    </>
+  );
+}
+
+function PageContent() {
   return (
     <PageShell
       eyebrow="Simulateur de frais"
       title="Combien coûte vraiment un bien adjugé ?"
-      description="Le prix d’adjudication n’est qu’une partie de la dépense. S’y ajoutent les émoluments proportionnels de vente (répartis entre l’avocat poursuivant et l’avocat de l’adjudicataire), les droits de mutation, les frais préalables de la procédure, les honoraires de votre avocat et, le cas échéant, les travaux. Saisissez vos hypothèses : le total se met à jour en direct."
+      description="Le prix d’adjudication n’est qu’une partie de la dépense. S’y ajoutent les émoluments proportionnels de vente (répartis entre l’avocat poursuivant et l’avocat de l’adjudicataire), les droits de mutation, les frais préalables de la procédure, les honoraires de votre avocat et, le cas échéant, les travaux. Saisissez vos hypothèses : le total se met à jour en direct. Vous pouvez aussi partir de votre budget pour trouver le prix d’adjudication maximal, ou calculer une surenchère du dixième."
     >
       <Card as="section" aria-label="Précisions sur l’estimation" className="mb-6 bg-surface-muted">
         <p className="font-semibold">
@@ -31,7 +45,7 @@ export default function Page() {
         </p>
       </Card>
 
-      <FeesSimulator />
+      <FeesSimulator surenchereReminder={getSurenchereReminder()} />
 
       <section aria-labelledby="suites" className="mt-8">
         <h2 id="suites" className="font-display text-2xl font-semibold">

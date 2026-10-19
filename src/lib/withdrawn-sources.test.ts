@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseDocs } from "@/lib/documents";
 import { sanitizeAuctionSaleForDisplay } from "@/lib/listing-data-cleanup";
+import { withPhotoMirrors } from "@/lib/photo-mirror";
 import { isLikelyPropertyImageUrl, propertyImages } from "@/lib/sale-media";
 import { saleRows } from "@/lib/sale-rows";
 import { saleSourceLinks } from "@/lib/sale-source-links";
@@ -9,7 +10,9 @@ import type { AuctionSale } from "@/lib/types";
 import {
   DEFAULT_WITHDRAWN_SOURCES,
   getWithdrawnSources,
+  isWithdrawnSourceUrl,
   loadWithdrawnSources,
+  loadWithdrawnSourcesOncePerSession,
   resetWithdrawnSources,
   setWithdrawnSources,
   stripWithdrawnSourceContent,
@@ -134,6 +137,77 @@ describe("source retirée par l'interrupteur (usage futur)", () => {
   });
 });
 
+describe("photo copiée par Immojudis d'une source retirée", () => {
+  const MIRROR = {
+    path640: "11111111-1111-1111-1111-111111111111/abc-640.webp",
+    path1600: "11111111-1111-1111-1111-111111111111/abc-1600.webp",
+    width: 1600,
+    height: 1200,
+  };
+  const MIRROR_URL = `https://ci.supabase.co/storage/v1/object/public/sale-photos/${MIRROR.path640}`;
+
+  function mirroredSale(): AuctionSale {
+    const sale = mergedSale();
+    sale.media = [
+      { type: "image", url: LICITOR_PHOTO, mirror: MIRROR },
+      { type: "image", url: OTHER_PHOTO },
+    ];
+    return sale;
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://ci.supabase.co");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("l'URL de la copie n'est pas celle de la source : c'est l'origine qui décide", () => {
+    setWithdrawnSources(["licitor"]);
+    expect(isWithdrawnSourceUrl(MIRROR_URL)).toBe(false);
+    expect(isWithdrawnSourceUrl(LICITOR_PHOTO)).toBe(true);
+  });
+
+  it("la photo copiée d'une source retirée est masquée à l'affichage", () => {
+    setWithdrawnSources(["licitor"]);
+    const images = propertyImages(mirroredSale().media);
+    expect(images.map((image) => image.url)).toEqual([OTHER_PHOTO]);
+    expect(images.some((image) => image.mirror)).toBe(false);
+  });
+
+  it("elle est aussi retirée de la vente, copie comprise", () => {
+    setWithdrawnSources(["licitor"]);
+    const sale = sanitizeAuctionSaleForDisplay(mirroredSale());
+    expect(sale.media).toEqual([{ type: "image", url: OTHER_PHOTO }]);
+    expect(JSON.stringify(sale)).not.toContain("sale-photos");
+  });
+
+  it("une source retirée après l'enrichissement masque la photo déjà enrichie", async () => {
+    vi.stubEnv("NEXT_PUBLIC_PHOTO_MIRROR", "on");
+    const client = {
+      rpc: vi.fn().mockResolvedValue({
+        data: [
+          {
+            source_url: LICITOR_PHOTO,
+            path_640: MIRROR.path640,
+            path_1600: MIRROR.path1600,
+            width: 1600,
+            height: 1200,
+          },
+        ],
+        error: null,
+      }),
+    };
+    const [enriched] = await withPhotoMirrors([mergedSale()], client);
+    expect(enriched!.media![0]!.mirror?.path640).toBe(MIRROR.path640);
+    expect(propertyImages(enriched!.media).map((image) => image.url)).toEqual([
+      LICITOR_PHOTO,
+      OTHER_PHOTO,
+    ]);
+
+    setWithdrawnSources(["licitor"]);
+    expect(propertyImages(enriched!.media).map((image) => image.url)).toEqual([OTHER_PHOTO]);
+  });
+});
+
 describe("retrait levé", () => {
   it("le contenu Licitor réapparaît quand la base ne retire plus rien", () => {
     setWithdrawnSources(["licitor"]);
@@ -183,6 +257,93 @@ describe("retrait levé", () => {
     setWithdrawnSources(["licitor"]);
     await loadWithdrawnSources({ rpc: () => Promise.reject(new Error("réseau")) }, 1_000);
     expect([...getWithdrawnSources()]).toEqual([]);
+  });
+});
+
+describe("une lecture par session de navigation", () => {
+  function memoryStorage() {
+    const values = new Map<string, string>();
+    return {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => void values.set(key, value),
+    };
+  }
+  function countingClient(data: unknown, error: unknown = null) {
+    const client = { calls: 0, rpc: () => (client.calls++, Promise.resolve({ data, error })) };
+    return client;
+  }
+
+  it("lit la base à la première page puis plus du tout pendant la session", async () => {
+    const storage = memoryStorage();
+    const client = countingClient([]);
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 });
+    // Page suivante : le module est rechargé (état vierge) mais la session se souvient.
+    resetWithdrawnSources();
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 120_000 });
+    expect(client.calls).toBe(1);
+  });
+
+  it("applique la liste mémorisée sans interroger la base", async () => {
+    const storage = memoryStorage();
+    await loadWithdrawnSourcesOncePerSession(countingClient(["licitor"]), { storage, now: 1_000 });
+    resetWithdrawnSources();
+
+    const client = countingClient([]);
+    const names = await loadWithdrawnSourcesOncePerSession(client, { storage, now: 120_000 });
+    expect(names).toEqual(["licitor"]);
+    expect([...getWithdrawnSources()]).toEqual(["licitor"]);
+    expect(client.calls).toBe(0);
+  });
+
+  it("relit la base une fois la mémoire de session périmée (5 minutes)", async () => {
+    const storage = memoryStorage();
+    const client = countingClient([]);
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 });
+    resetWithdrawnSources();
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 + 5 * 60_000 });
+    expect(client.calls).toBe(2);
+  });
+
+  it("ne mémorise pas une erreur : la page suivante retente", async () => {
+    const storage = memoryStorage();
+    const failing = countingClient(null, { code: "PGRST202" });
+    await loadWithdrawnSourcesOncePerSession(failing, { storage, now: 1_000 });
+    resetWithdrawnSources();
+    const healthy = countingClient(["licitor"]);
+    await loadWithdrawnSourcesOncePerSession(healthy, { storage, now: 2_000 });
+    expect(failing.calls).toBe(1);
+    expect(healthy.calls).toBe(1);
+    expect([...getWithdrawnSources()]).toEqual(["licitor"]);
+  });
+
+  it("ignore une valeur mémorisée illisible et lit la base", async () => {
+    const storage = memoryStorage();
+    storage.setItem("immojudis:withdrawn-sources", "{pas du json");
+    const client = countingClient([]);
+    await loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 });
+    expect(client.calls).toBe(1);
+  });
+
+  it("lit comme avant quand sessionStorage est inaccessible", async () => {
+    const storage = {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {
+        throw new Error("denied");
+      },
+    };
+    const client = countingClient(["licitor"]);
+    await expect(
+      loadWithdrawnSourcesOncePerSession(client, { storage, now: 1_000 }),
+    ).resolves.toEqual(["licitor"]);
+    expect(client.calls).toBe(1);
+  });
+
+  it("lit comme avant sans stockage de session", async () => {
+    const client = countingClient([]);
+    await loadWithdrawnSourcesOncePerSession(client, { storage: null, now: 1_000 });
+    expect(client.calls).toBe(1);
   });
 });
 

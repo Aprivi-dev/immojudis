@@ -469,6 +469,8 @@ def _historical_raw_sale(
         "surface_m2",
         "lawyer_name",
         "lawyer_contact",
+        # Adresse décodée de l'avocat : interne aux annonces en cours, jamais reprise d'un résultat tiers.
+        "internal_contacts",
         "visit_dates",
         "occupancy_status",
         "latitude",

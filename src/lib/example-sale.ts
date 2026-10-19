@@ -233,7 +233,7 @@ export const EXAMPLE_SALE = {
   sale_date: "2026-10-15T09:30:00+02:00",
   visit_dates: ["2026-10-02 à 14:00", "2026-10-07 à 10:30"],
   lawyer_name: "Me Camille Durand",
-  lawyer_contact: "contact-demo@immojudis.fr",
+  lawyer_contact: "contact-demo@immojudis.com",
   adjudication_price_eur: null,
   latitude: 44.8378,
   longitude: -0.5792,
@@ -322,7 +322,7 @@ export const EXAMPLE_SALE = {
       participation_mode: "in_person",
       organizer_name: "Me Camille Durand",
       organizer_type: "pursuing_lawyer",
-      organizer_contact: "contact-demo@immojudis.fr",
+      organizer_contact: "contact-demo@immojudis.com",
       eligible_bar: "Barreau de Bordeaux",
       rules: {
         lawyer_required: true,
@@ -403,7 +403,7 @@ export const EXAMPLE_SALE = {
   source_blocks_by_source: {
     "demo:primary": {
       avocat: "Me Camille Durand",
-      contact_avocat: "contact-demo@immojudis.fr",
+      contact_avocat: "contact-demo@immojudis.com",
       visites: "2026-10-02 à 14:00 · 2026-10-07 à 10:30",
     },
   },

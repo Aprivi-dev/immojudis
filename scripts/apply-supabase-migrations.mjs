@@ -231,6 +231,13 @@ async function main() {
   const runOnlyIfEnabled = process.argv.includes("--if-enabled");
   const dryRun = process.argv.includes("--dry-run");
   const checkOnly = process.argv.includes("--check");
+  // Read-only watchdog mode (with --dry-run): exit non-zero when migrations are pending.
+  const failOnPending = process.argv.includes("--fail-on-pending");
+
+  if (failOnPending && !dryRun) {
+    console.error("[supabase-migrations] --fail-on-pending requires --dry-run.");
+    process.exit(1);
+  }
 
   if (runOnlyIfEnabled && !isTruthy(process.env.RUN_SUPABASE_MIGRATIONS_ON_BUILD)) {
     console.log("[supabase-migrations] Skipped; RUN_SUPABASE_MIGRATIONS_ON_BUILD is not enabled.");
@@ -259,6 +266,32 @@ async function main() {
   }
 
   if (checkOnly) {
+    const baseRef = firstFilledEnv(
+      process.argv.find((arg) => arg.startsWith("--base-ref="))?.slice("--base-ref=".length),
+      process.env.MIGRATIONS_BASE_REF,
+    );
+    if (baseRef) {
+      let baseVersions;
+      try {
+        baseVersions = listMigrationVersionsAtRef(baseRef);
+      } catch (error) {
+        console.error(`[supabase-migrations] ${error.message}`);
+        process.exit(1);
+      }
+      const orderIssues = validateMigrationOrder(migrations, baseVersions, baseRef);
+      if (orderIssues.length) {
+        console.error("[supabase-migrations] Migration timestamp order checks failed:");
+        for (const issue of orderIssues) console.error(`  - ${issue}`);
+        process.exit(1);
+      }
+      console.log(
+        `[supabase-migrations] New migrations are all newer than the latest one on ${baseRef}.`,
+      );
+    } else {
+      console.log(
+        "[supabase-migrations] Timestamp order not checked (no --base-ref / MIGRATIONS_BASE_REF).",
+      );
+    }
     console.log(
       `[supabase-migrations] ${migrations.length} migration files have unique local versions.`,
     );
@@ -331,6 +364,13 @@ async function main() {
     );
     if (dryRun) {
       console.log("[supabase-migrations] Dry run complete; no SQL was applied.");
+      if (failOnPending) {
+        const summary = `${pending.length} migration(s) committed on main are not applied in the target database: ${pending.map((m) => m.file).join(", ")}`;
+        console.error(`[supabase-migrations] ${summary}`);
+        if (process.env.GITHUB_ACTIONS === "true")
+          console.error(`::error title=Pending Supabase migrations::${summary}`);
+        process.exitCode = 1;
+      }
       return;
     }
 
@@ -690,6 +730,44 @@ function validateMigrationHistory(localMigrations, remoteMigrations) {
   }
 
   return issues;
+}
+
+// Versions (14-digit timestamps) of the migration files committed at a git ref, e.g. origin/main.
+function listMigrationVersionsAtRef(ref, run = spawnSync) {
+  if (!/^[\w./@-]+$/.test(ref) || ref.startsWith("-")) {
+    throw new Error(`Invalid base ref ${JSON.stringify(ref)}.`);
+  }
+  const result = run("git", ["ls-tree", "-r", "--name-only", ref, "--", "supabase/migrations"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `Cannot list the migrations of ${ref} (is it fetched? try: git fetch origin main): ${
+        result.error?.message || String(result.stderr || "").trim()
+      }`,
+    );
+  }
+  return String(result.stdout)
+    .split("\n")
+    .map((line) => /^supabase\/migrations\/(\d{14})_.+\.sql$/.exec(line.trim())?.[1])
+    .filter(Boolean);
+}
+
+// A migration added after the base must be newer than every migration already on the base: the
+// remote history applies pending versions by timestamp, and a late-numbered older file would be
+// applied (or skipped as "already behind") out of order. Migrations present on the base are not
+// re-checked, and a new file is not compared with the files of other branches, only with the base.
+function validateMigrationOrder(localMigrations, baseVersions, baseRef = "the base branch") {
+  const known = new Set(baseVersions);
+  const latest = [...known].sort().at(-1);
+  if (!latest) return [];
+  return localMigrations
+    .filter((migration) => !known.has(migration.version) && migration.version <= latest)
+    .map(
+      (migration) =>
+        `New migration ${migration.file} (${migration.version}) is not newer than the latest migration on ${baseRef} (${latest}); give it a timestamp after ${latest}.`,
+    );
 }
 
 function normalizeMigrationName(value) {
@@ -1229,6 +1307,7 @@ export {
   collectMigrations,
   fileSha256,
   HISTORICAL_CONTENT_DRIFT,
+  listMigrationVersionsAtRef,
   LEGACY_NO_STATEMENT_MIGRATIONS,
   applyMigrationAtomically,
   splitSqlStatements,
@@ -1237,6 +1316,7 @@ export {
   stripOuterTransactionWrappers,
   resolvePostgresSslOptions,
   validateMigrationHistory,
+  validateMigrationOrder,
   withDatabaseConnectTimeout,
   withMigrationSessionSettings,
 };

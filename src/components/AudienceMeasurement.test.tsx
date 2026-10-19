@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   analytics: vi.fn(),
   speedInsights: vi.fn(),
+  idle: [] as Array<() => void>,
+}));
+
+vi.mock("@/lib/when-idle", () => ({
+  whenIdle: (callback: () => void) => {
+    mocks.idle.push(callback);
+    return () => {
+      mocks.idle = mocks.idle.filter((pending) => pending !== callback);
+    };
+  },
 }));
 
 vi.mock("@vercel/analytics/next", () => ({
@@ -23,7 +33,15 @@ vi.mock("@vercel/speed-insights/next", () => ({
 import { setAudienceOptOut } from "@/lib/audience-opt-out";
 import { AudienceMeasurement } from "./AudienceMeasurement";
 
+/** Rend le composant puis simule le passage du navigateur à l'inactivité. */
+async function renderMeasured() {
+  const view = render(<AudienceMeasurement />);
+  await act(async () => mocks.idle.splice(0).forEach((callback) => callback()));
+  return view;
+}
+
 beforeEach(() => {
+  mocks.idle = [];
   window.localStorage.clear();
   setAudienceOptOut(false);
   vi.clearAllMocks();
@@ -32,35 +50,46 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("AudienceMeasurement", () => {
-  it("charge Vercel Analytics et Speed Insights tant que le visiteur ne s'y oppose pas", () => {
-    render(<AudienceMeasurement />);
-    expect(screen.getByTestId("analytics")).toBeTruthy();
-    expect(screen.getByTestId("speed-insights")).toBeTruthy();
+  it("charge Vercel Analytics et Speed Insights tant que le visiteur ne s'y oppose pas", async () => {
+    await renderMeasured();
+    expect(await screen.findByTestId("analytics")).toBeTruthy();
+    expect(await screen.findByTestId("speed-insights")).toBeTruthy();
   });
 
-  it("ne rend ni l'un ni l'autre quand l'opposition est déjà mémorisée", () => {
-    setAudienceOptOut(true);
+  it("n'en charge aucun avant l'inactivité du navigateur", async () => {
     render(<AudienceMeasurement />);
+    expect(mocks.idle).toHaveLength(1);
+    expect(screen.queryByTestId("analytics")).toBeNull();
+    expect(screen.queryByTestId("speed-insights")).toBeNull();
+    expect(mocks.analytics).not.toHaveBeenCalled();
+    await act(async () => mocks.idle.splice(0).forEach((callback) => callback()));
+    expect(await screen.findByTestId("analytics")).toBeTruthy();
+  });
+
+  it("ne rend ni l'un ni l'autre quand l'opposition est déjà mémorisée", async () => {
+    setAudienceOptOut(true);
+    await renderMeasured();
     expect(screen.queryByTestId("analytics")).toBeNull();
     expect(screen.queryByTestId("speed-insights")).toBeNull();
     expect(mocks.analytics).not.toHaveBeenCalled();
     expect(mocks.speedInsights).not.toHaveBeenCalled();
   });
 
-  it("les retire dès que l'opposition est activée pendant la visite", () => {
-    render(<AudienceMeasurement />);
-    expect(screen.getByTestId("analytics")).toBeTruthy();
+  it("les retire dès que l'opposition est activée pendant la visite", async () => {
+    await renderMeasured();
+    expect(await screen.findByTestId("analytics")).toBeTruthy();
 
     act(() => setAudienceOptOut(true));
     expect(screen.queryByTestId("analytics")).toBeNull();
     expect(screen.queryByTestId("speed-insights")).toBeNull();
 
     act(() => setAudienceOptOut(false));
-    expect(screen.getByTestId("analytics")).toBeTruthy();
+    expect(await screen.findByTestId("analytics")).toBeTruthy();
   });
 
-  it("annule les envois déjà armés une fois l'opposition activée", () => {
-    render(<AudienceMeasurement />);
+  it("annule les envois déjà armés une fois l'opposition activée", async () => {
+    await renderMeasured();
+    await waitFor(() => expect(mocks.analytics).toHaveBeenCalled());
     const analytics = mocks.analytics.mock.calls[0]![0] as {
       beforeSend: (event: unknown) => unknown;
     };

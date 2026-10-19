@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePublicPathname } from "@/hooks/use-public-pathname";
 import { publicLegalPublisher } from "@/lib/legal-documents";
+import { linkPrefetch } from "@/lib/navigation";
 
 const MAIN_LINKS = [
   { href: "/sales", label: "Ventes" },
   { href: "/tribunaux", label: "Tribunaux" },
+  { href: "/ventes-encheres-immobilieres", label: "Par département" },
   { href: "/avocats", label: "Avocats" },
   { href: "/ressources", label: "Ressources" },
   { href: "/comment-ca-marche", label: "Comment ça marche" },
@@ -18,6 +20,7 @@ const LEGAL_LINKS = [
   { href: "/legal", label: "Mentions légales" },
   { href: "/conditions-generales", label: "Conditions générales" },
   { href: "/privacy", label: "Confidentialité" },
+  { href: "/classement-des-annonces", label: "Classement des annonces" },
   { href: "/mes-droits", label: "Mes droits" },
 ] as const;
 
@@ -27,7 +30,7 @@ export function showsSiteFooter(pathname: string | null): boolean {
 }
 
 export function SiteFooter() {
-  const pathname = usePathname();
+  const pathname = usePublicPathname();
   if (!showsSiteFooter(pathname)) return null;
   const entityName = publicLegalPublisher().entityName ?? "Immojudis";
 
@@ -45,7 +48,11 @@ export function SiteFooter() {
             <ul className="flex flex-wrap gap-x-5 gap-y-2">
               {MAIN_LINKS.map((link) => (
                 <li key={link.href}>
-                  <Link href={link.href} className="hover:text-foreground hover:underline">
+                  <Link
+                    href={link.href}
+                    prefetch={linkPrefetch(link.href)}
+                    className="hover:text-foreground hover:underline"
+                  >
                     {link.label}
                   </Link>
                 </li>

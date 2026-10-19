@@ -13,6 +13,7 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from src.config import load_settings
+from src.models import INTERNAL_CONTACTS_KEY
 
 # Checkpoint retention is deliberately independent from source freshness.  A
 # detail captured by an interrupted run may be reusable after the source's
@@ -189,7 +190,8 @@ class CheckpointSales(list):
             # Retention is refreshed when a checkpoint is committed, but the
             # source-check timestamp above is intentionally left untouched.
             observed = datetime.now(UTC)
-            payload = json.loads(json.dumps(sale, default=str))
+            # Les adresses internes (registre de l'agent) ne sont jamais écrites dans la table de reprise.
+            payload = json.loads(json.dumps({k: v for k, v in sale.items() if k != INTERNAL_CONTACTS_KEY}, default=str))
             if self._db is None:
                 connection_context = _checkpoint_connect(context[0])
                 self._db = connection_context.__enter__()

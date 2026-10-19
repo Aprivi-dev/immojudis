@@ -128,6 +128,28 @@
 .search button:hover {
   background: var(--gold-text);
 }
+.facts {
+  margin-top: 14px;
+  color: rgb(255 255 255 / 88%);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.facts p {
+  margin: 0;
+}
+.facts a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  text-decoration: underline;
+  text-decoration-color: rgb(255 255 255 / 40%);
+  text-underline-offset: 4px;
+  transition: color 180ms;
+}
+.facts a:hover {
+  color: var(--gold-light);
+  text-decoration-color: var(--gold-light);
+}
 .exampleLink {
   display: inline-flex;
   align-items: center;

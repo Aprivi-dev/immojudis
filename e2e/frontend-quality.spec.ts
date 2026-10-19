@@ -10,6 +10,8 @@ const PUBLIC_ROUTES = [
   "/offres",
   "/ventes-immobilieres-judiciaires",
   "/annonce-exemple",
+  "/classement-des-annonces",
+  "/sales",
   "/login",
 ] as const;
 
@@ -54,4 +56,31 @@ test("la navigation mobile s’ouvre, reçoit le focus et se referme", async ({ 
     .getByRole("button", { name: "Fermer le menu" })
     .click();
   await expect(navigation).toBeHidden();
+});
+
+test("au clavier, Tab ne démarre pas la carte de /sales ; Entrée sur « Afficher la carte » la démarre et lui donne le focus", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium", "Carte du bureau, Tab vers les boutons");
+
+  await page.goto("/sales");
+  const preview = page.getByTestId("map-preview");
+  const showMap = page.getByRole("button", { name: "Afficher la carte" });
+  await expect(preview).toBeVisible();
+
+  // Tab seul traverse la page jusqu'au bouton : la carte n'est pas demandée pour autant.
+  let reached = false;
+  for (let presses = 0; presses < 120 && !reached; presses += 1) {
+    await page.keyboard.press("Tab");
+    reached = await showMap.evaluate((element) => element === document.activeElement);
+  }
+  expect(reached, "Tab atteint le bouton « Afficher la carte »").toBe(true);
+  await page.waitForTimeout(1000);
+  await expect(preview).toBeVisible();
+  await expect(showMap).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await expect(preview).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Carte des ventes" })).toBeFocused();
+  await expect(page.getByText("Carte affichée", { exact: true })).toBeAttached();
 });

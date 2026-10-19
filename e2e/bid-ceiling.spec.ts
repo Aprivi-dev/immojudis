@@ -23,7 +23,7 @@ test("l'enchère plafond de l'exemple est chiffrée, avec ses lignes dépliables
   const calculation = await openCalculation(page);
 
   await expect(calculation).not.toContainText("À compléter");
-  await expect(calculation).not.toContainText("Pas d’enchère rentable");
+  await expect(calculation).not.toContainText("Marge de sécurité non tenue");
   await expect(calculation.getByText(/\d.*€/).first()).toBeVisible();
 
   // Chaque ligne du calcul se déplie.
@@ -37,7 +37,7 @@ test("l'enchère plafond de l'exemple est chiffrée, avec ses lignes dépliables
   await expect(definition).toContainText("Attribution du bien au meilleur enchérisseur");
   await expect(definition.getByRole("link", { name: "En savoir plus" })).toHaveAttribute(
     "href",
-    "/ventes-immobilieres-judiciaires#lexique",
+    "/ventes-immobilieres-judiciaires#lexique-adjudication",
   );
   await page.keyboard.press("Escape");
   await expect(definition).toHaveCount(0);
@@ -49,7 +49,8 @@ test("vider « Frais préalables » ne réinjecte pas le défaut, on peut ressai
   const calculation = await openCalculation(page);
   await calculation.getByRole("button", { name: "Modifier les hypothèses" }).click();
 
-  const fees = page.getByLabel("Frais préalables");
+  // « exact » : les définitions du glossaire (« Définition : frais préalables ») ont aussi ce libellé.
+  const fees = page.getByLabel("Frais préalables", { exact: true });
   const defaultFees = await fees.inputValue();
   expect(Number(defaultFees)).toBeGreaterThan(0);
 

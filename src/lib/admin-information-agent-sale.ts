@@ -3,6 +3,10 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import type { AuctionSale, SaleDocumentRich, SaleMedia } from "@/lib/types";
 import type { InformationAgentInventorySignals } from "@/lib/information-agent-inventory";
+import {
+  INFORMATION_AGENT_PIPELINE_CHANNEL,
+  type InformationAgentRegistryContact,
+} from "@/lib/information-agent/contacts";
 
 /**
  * The admin information workflow is allowed to inspect a sale that is kept out
@@ -102,6 +106,8 @@ export type AdminInformationAgentSaleAuth = Pick<SupabaseAuthContext, "isAdmin">
 export type AdminInformationAgentSale = AuctionSale & {
   information_agent_signals: InformationAgentInventorySignals;
   source_block_urls: Record<string, string | null>;
+  /** Adresses du registre interne (relevées par le pipeline, jamais publiées) pour cette vente. */
+  registry_contacts: InformationAgentRegistryContact[];
 };
 
 /** Nombre maximal d'URL sources dont on lit les pièces (vente + observations). */
@@ -136,11 +142,50 @@ export async function loadAdminInformationAgentSale({
     throw new Error("Cette vente n'est plus disponible pour une demande d'informations.");
   }
 
-  const [documents, sourcePresence] = await Promise.all([
+  const [documents, sourcePresence, registryContacts] = await Promise.all([
     loadAdminInformationAgentDocuments(saleSourceUrls(row)),
     loadAdminInformationAgentSourcePresence(saleId, row.raw_payload),
+    loadAdminInformationAgentRegistryContacts(saleId),
   ]);
-  return toInformationAgentSale(row, documents, sourcePresence);
+  return {
+    ...toInformationAgentSale(row, documents, sourcePresence),
+    registry_contacts: registryContacts,
+  };
+}
+
+/**
+ * Adresses que le pipeline relève pour l'agent sans les publier (email Licitor décodé) : lignes du
+ * registre interne de cette vente, de type `sale_listing`, ni opposées ni en rebond permanent. Le
+ * registre n'est lisible que par le service ; ces adresses ne passent par aucune vue publique. Une
+ * erreur de lecture donne une liste vide (avertissement sans adresse), jamais un échec du brouillon.
+ */
+async function loadAdminInformationAgentRegistryContacts(
+  saleId: string,
+): Promise<InformationAgentRegistryContact[]> {
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_contacts")
+    .select("email,display_name,role,source_name,source_url,observed_at")
+    .eq("scope_sale_id", saleId)
+    .eq("source_kind", "sale_listing")
+    .eq("metadata->>observation_channel", INFORMATION_AGENT_PIPELINE_CHANNEL)
+    .neq("opposition_status", "opposed")
+    .neq("bounce_status", "permanent")
+    .order("observed_at", { ascending: false })
+    .limit(20);
+  if (error) {
+    // Le registre est un complément : s'il est illisible, l'agent travaille avec les données de l'annonce
+    // et l'administrateur saisit l'adresse. Aucune adresse ni détail de ligne dans le journal.
+    console.warn("Registre des contacts de l'agent illisible", { code: error.code ?? null });
+    return [];
+  }
+  return (data ?? []).map((row) => ({
+    email: row.email,
+    displayName: row.display_name,
+    role: row.role,
+    sourceName: row.source_name,
+    sourceUrl: row.source_url,
+    observedAt: row.observed_at,
+  }));
 }
 
 export function requireAdminInformationAgentSaleAccess(auth: AdminInformationAgentSaleAuth): void {
@@ -221,7 +266,7 @@ function toInformationAgentSale(
   row: AdminInformationAgentSaleRow,
   documents: SaleDocumentRich[],
   sourcePresence: AuctionSale["source_presence"],
-): AdminInformationAgentSale {
+): Omit<AdminInformationAgentSale, "registry_contacts"> {
   const rawPayload = asRecord(row.raw_payload);
   const observations = asArray(row.observations);
   const sourceBlocks = asRecordOrNull(rawPayload.source_blocks);

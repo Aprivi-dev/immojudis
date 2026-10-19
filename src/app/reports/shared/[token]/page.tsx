@@ -179,7 +179,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             value={`${stringOrNumberValue(valueEstimate.sampleSize, "0")} vente(s) comparable(s)`}
           />
           <SharedMetric
-            label="Mise maximum conseillée"
+            label="Enchère plafond (simulation)"
             value={
               ceiling.available ? formatPrice(numberValue(ceiling.maxBid)) : "Données insuffisantes"
             }

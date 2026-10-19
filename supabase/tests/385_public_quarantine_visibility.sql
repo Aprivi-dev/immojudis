@@ -1,6 +1,6 @@
 begin;
 
-select plan(15);
+select plan(18);
 
 select is(
   (select jsonb_agg(jsonb_build_array(ordinal_position, column_name, data_type) order by ordinal_position)
@@ -175,6 +175,51 @@ select is(
   0::bigint,
   'authenticated discovery view omits quarantined rows'
 );
+-- The policy itself, by its behavior and not its text: a signed-in Analyse account that is not an
+-- administrator reads the clean rows of the table and none of the quarantined one.
+select is(
+  (select count(*) from public.auction_sales
+    where id = 'c3850000-0000-4000-8000-000000000002'),
+  0::bigint,
+  'authenticated non-admin account cannot read the quarantined base row'
+);
+select is(
+  (select count(*) from public.auction_sales
+    where id in (
+      'c3850000-0000-4000-8000-000000000001',
+      'c3850000-0000-4000-8000-000000000003'
+    )),
+  2::bigint,
+  'authenticated non-admin account still reads the clean base rows (the policy is not simply empty)'
+);
+reset role;
+
+-- An administrator keeps access to the quarantined row (the admin bypass of the policy).
+insert into auth.users (
+  id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+  created_at, updated_at, raw_app_meta_data, raw_user_meta_data
+)
+values (
+  'c3850000-0000-4000-8000-000000000011',
+  '00000000-0000-0000-0000-000000000000',
+  'authenticated', 'authenticated', 'public-quarantine-admin@example.test', '',
+  now(), now(), now(), '{}'::jsonb, '{}'::jsonb
+);
+insert into public.user_profiles (user_id, email, user_role)
+values (
+  'c3850000-0000-4000-8000-000000000011', 'public-quarantine-admin@example.test', 'admin'
+)
+on conflict (user_id) do update set user_role = 'admin';
+
+set local role authenticated;
+set local "request.jwt.claim.role" = 'authenticated';
+set local "request.jwt.claim.sub" = 'c3850000-0000-4000-8000-000000000011';
+select is(
+  (select count(*) from public.auction_sales
+    where id = 'c3850000-0000-4000-8000-000000000002'),
+  1::bigint,
+  'authenticated administrator reads the quarantined base row'
+);
 reset role;
 
 select is(
@@ -192,11 +237,11 @@ select ok(
       'app_private.search_auction_sales_preview_v2(text[],text,text,text,text[],text[],numeric,numeric,numeric,numeric,integer,integer,text,numeric,text[],double precision,double precision,double precision,double precision,text,integer,integer,text)'
     ]::text[]) as signature
     where position(
-      'publication_quarantine' in
+      'catalogue_quarantined' in
       pg_catalog.pg_get_functiondef(signature::regprocedure)
     ) = 0
   ),
-  'v1 and v2 definitions retain the quarantine predicate after migration'
+  'v1 and v2 definitions retain the quarantine predicate (materialized column) after migration'
 );
 
 -- v3 and v4 read the materialized catalogue_quarantined column, which the
@@ -233,7 +278,7 @@ select ok(
     from pg_catalog.pg_policy policy
     where policy.polrelid = 'public.auction_sales'::regclass
       and policy.polname = 'auction_sales_authenticated_read'
-      and pg_catalog.pg_get_expr(policy.polqual, policy.polrelid) like '%publication_quarantine%'
+      and pg_catalog.pg_get_expr(policy.polqual, policy.polrelid) like '%catalogue_quarantined%'
       and pg_catalog.pg_get_expr(policy.polqual, policy.polrelid) like '%is_admin%'
   ),
   'authenticated base-sale policy keeps the quarantine gate while preserving admin access'

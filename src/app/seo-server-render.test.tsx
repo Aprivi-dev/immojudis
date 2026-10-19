@@ -4,8 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-// Rendering on the server must never ask for the URL through useSearchParams:
-// inside a prerendered page it would replace the whole page by an empty shell.
+// Rendering on the server must never ask for the URL through useSearchParams outside a Suspense
+// boundary: inside a prerendered page it would replace the whole page by an empty shell. Where it
+// is read (under Suspense), the prerender gives up on that part only: the throw below stands for it.
 const mocks = vi.hoisted(() => ({
   useSearchParams: vi.fn(() => {
     throw new Error("BAILOUT_TO_CLIENT_SIDE_RENDERING");
@@ -46,18 +47,20 @@ describe("pages that crawlers must read", () => {
     expect(mocks.useSearchParams).not.toHaveBeenCalled();
   });
 
-  it("/avocats renders its heading and the search form from the filters it is given", () => {
-    const output = html(<LawyerDirectoryPage search={{ bar: "Bordeaux" }} />);
+  it("/avocats prerenders its heading, explanation and search form, whatever the URL says", () => {
+    const output = html(<LawyerDirectoryPage />);
     expect(output.match(/<h1/g)).toHaveLength(1);
     expect(output).toContain("Avocats inscrits au barreau");
+    expect(output).toContain("Comment sont classés les avocats ?");
     expect(output).not.toContain("Spécialistes en droit immobilier");
-    expect(output).toContain('value="Bordeaux"');
-    expect(mocks.useSearchParams).not.toHaveBeenCalled();
-  });
-
-  it("/avocats keeps the sale the visitor came from", () => {
-    const output = html(<LawyerDirectoryPage search={{ saleId: "abc" }} />);
-    expect(output).toContain('href="/sales/abc"');
-    expect(output).toContain('name="saleId"');
+    // The form and the back link are those of the page without filters.
+    expect(output).toContain('action="/avocats"');
+    expect(output).toContain('name="bar"');
+    expect(output).not.toContain('name="saleId"');
+    expect(output).toContain('href="/sales"');
+    // The filters were asked for inside the Suspense boundary, which the prerender abandons for
+    // the browser: the HTML carries the fallback (the same page, with the loading skeleton).
+    expect(mocks.useSearchParams).toHaveBeenCalled();
+    expect(output).toContain("Chargement de l&#x27;annuaire");
   });
 });

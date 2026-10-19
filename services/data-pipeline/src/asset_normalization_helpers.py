@@ -13,10 +13,45 @@ from src.models import AuctionSale
 from src.normalize import (
     MIN_DWELLING_SURFACE_M2,
     SURFACE_VALUE_PATTERN,
+    _has_explicit_total_surface_evidence,
     _is_ambiguous_mixed_lot_surface,
     clean_text,
     parse_surface,
 )
+
+# Plafonds de vraisemblance de la surface affichée (m²). Au-delà, la valeur est presque toujours celle
+# d'une parcelle, d'un lot voisin ou d'un chiffre du titre (appartement à 34 596 m², maison à 48 256 m²).
+# Prudents : seul l'évidemment faux est écarté ; les types commercial, mixte et autres gardent leur règle
+# propre (plus de 1 000 m² sans preuve).
+MAX_PLAUSIBLE_BUILT_SURFACE_M2 = {"apartment": Decimal("500"), "house": Decimal("1000")}
+# Une surface habitable expressément étiquetée comme telle est plus fiable qu'un nombre isolé du titre.
+MAX_PLAUSIBLE_LABELLED_HOUSE_SURFACE_M2 = Decimal("5000")
+
+
+def _plausible_surface_ceiling(sale: AuctionSale) -> Decimal | None:
+    if sale.property_type == "house" and sale.app_surface_kind == "habitable":
+        return MAX_PLAUSIBLE_LABELLED_HOUSE_SURFACE_M2
+    return MAX_PLAUSIBLE_BUILT_SURFACE_M2.get(sale.property_type or "")
+
+_UNIT_WORD = r"(?:appartements?|logements?|studios?|lots?|locaux)"
+_MULTI_UNIT_PATTERN = re.compile(
+    rf"\b(?:[2-9]|[1-9][0-9])\s+{_UNIT_WORD}\b|"
+    rf"\b(?:deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+{_UNIT_WORD}\b",
+    re.I,
+)
+
+
+def _is_unestablished_multi_unit_surface(sale: AuctionSale, text: str) -> bool:
+    """Immeuble ou annonce multi-lots sans surface totale explicite.
+
+    La seule surface lue est alors celle d'un lot (le premier, le plus souvent) : « surface non établie »
+    vaut mieux que de l'afficher comme surface du bien (immeuble de 6 appartements à 29,51 m²).
+    """
+    if not text or _has_explicit_total_surface_evidence(text):
+        return False
+    if "multi_lot_sale" in sale.quality_flags:
+        return True
+    return sale.property_type == "building" and bool(_MULTI_UNIT_PATTERN.search(text))
 
 
 def _set_app_surface(sale: AuctionSale) -> None:
@@ -95,8 +130,75 @@ def _validate_app_surface_scope(sale: AuctionSale) -> None:
         sale.app_surface_m2 = None
         sale.app_surface_kind = None
         _add_quality_flag(sale, "ambiguous_surface")
+    elif (ceiling := _plausible_surface_ceiling(sale)) is not None and sale.app_surface_m2 > ceiling:
+        _demote_implausible_built_surface(sale, ceiling)
     elif sale.property_type == "land":
         sale.surface_scope = "land"
+
+
+def _demote_implausible_built_surface(sale: AuctionSale, ceiling: Decimal) -> None:
+    """Retire de la surface affichée une valeur au-dessus du plafond du type de bien.
+
+    Une maison la garde comme surface de terrain seulement si le texte source la qualifie lui-même de
+    terrain, de parcelle ou de superficie du sol et si aucun terrain n'est connu ; sinon (et pour un
+    appartement, qui n'a pas de terrain propre) la valeur est seulement écartée : la recopier en terrain
+    serait une extrapolation. La valeur rejetée reste tracée dans
+    ``raw_payload["implausible_surface_reconciliation"]``.
+    """
+    rejected = sale.app_surface_m2
+    demoted_to_land = (
+        sale.property_type == "house"
+        and sale.land_surface_m2 is None
+        and _source_qualifies_surface_as_land(sale, rejected)
+    )
+    for field in ("surface_m2", "habitable_surface_m2", "carrez_surface_m2"):
+        if getattr(sale, field) == rejected:
+            setattr(sale, field, None)
+    if demoted_to_land:
+        sale.land_surface_m2 = rejected
+    sale.app_surface_m2 = None
+    sale.app_surface_kind = None
+    sale.surface_scope = "unknown"
+    sale.raw_payload["implausible_surface_reconciliation"] = {
+        "status": "demoted_to_land" if demoted_to_land else "removed",
+        "property_type": sale.property_type,
+        "rejected_surface_m2": str(rejected),
+        "ceiling_m2": str(ceiling),
+        "basis": "built_surface_above_plausibility_ceiling",
+    }
+    _add_quality_flag(sale, "ambiguous_surface")
+
+
+_LAND_QUALIFIER_PATTERN = re.compile(
+    r"\b(?:terrains?|parcelles?|contenance|cadastr[a-zé]*|(?:superficie|surface)\s+(?:totale\s+)?du\s+sol)\b",
+    re.I,
+)
+_BUILT_QUALIFIER_PATTERN = re.compile(
+    r"\b(?:habitables?|carrez|privative|b[âa]ti(?:e|es|s)?|plancher|r[ée]f[ée]rence)\b", re.I
+)
+_SURFACE_NUMBER_PATTERN = re.compile(rf"{SURFACE_VALUE_PATTERN}\s*(?:m\s*(?:2|²)|mètres?\s+carrés?)", re.I)
+
+
+def _source_qualifies_surface_as_land(sale: AuctionSale, value: Decimal | None) -> bool:
+    """Vrai si le texte source étiquette lui-même ``value`` m² comme surface de terrain.
+
+    Le qualificatif (terrain, parcelle, contenance, superficie du sol) doit se trouver juste autour du
+    nombre, dans la même phrase, sans mention de surface bâtie (habitable, Carrez, bâti) entre les deux.
+    """
+    if value is None:
+        return False
+    for text in (sale.surface_evidence, sale.description, sale.title, sale.raw_text):
+        if not text:
+            continue
+        for match in _SURFACE_NUMBER_PATTERN.finditer(text):
+            if _parse_surface_decimal(match.group(1)) != value:
+                continue
+            before = re.split(r"[;\n]|\.\s", text[max(0, match.start() - 80) : match.start()])[-1]
+            after = re.split(r"[;\n]|\.\s", text[match.end() : match.end() + 40])[0]
+            window = f"{before} {after}"
+            if _LAND_QUALIFIER_PATTERN.search(window) and not _BUILT_QUALIFIER_PATTERN.search(window):
+                return True
+    return False
 
 
 def _large_non_residential_surface_is_supported(sale: AuctionSale) -> bool:
@@ -142,7 +244,10 @@ def _extract_count(text: str, patterns: tuple[str, ...]) -> int | None:
 
 
 def _extract_built_surface(text: str, sale: AuctionSale | None = None) -> Decimal | None:
-    if sale is not None and _is_ambiguous_mixed_lot_surface(sale.property_type or "", text):
+    if sale is not None and (
+        _is_ambiguous_mixed_lot_surface(sale.property_type or "", text)
+        or _is_unestablished_multi_unit_surface(sale, text)
+    ):
         return None
     patterns = (
         rf"superficie\s+au\s+sol\s+(?:de\s+)?{SURFACE_VALUE_PATTERN}\s*m(?:2|²)",

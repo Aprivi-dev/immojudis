@@ -137,6 +137,45 @@
       ]
     },
     {
+      "name": "RPVA, Ordre, CARPA and technical addresses are never contacts",
+      "description": "Avocat : me.exemple@cabinet-exemple.test — RPVA me.exemple@avocat-conseil.fr — Ordre secretariat@ordre-exemple.test et bureau@barreau-exemple.test — CARPA compta@carpa-exemple.test",
+      "source_blocks": {
+        "technique": "noreply@cabinet-exemple.test no-reply@cabinet-exemple.test",
+        "donnees": "dpo@cabinet-exemple.test rgpd@cabinet-exemple.test dpo.cabinet@exemple.test",
+        "bureau": "carpa@cabinet-exemple.test batonnier.exemple@cabinet-exemple.test"
+      },
+      "expected": [
+        "me.exemple@cabinet-exemple.test"
+      ]
+    },
+    {
+      "name": "look-alike local parts and domains stay contacts",
+      "description": "greffe.exemple@cabinet-exemple.test et ordrefacile@cabinet-exemple.test et sandpoint@cabinet-exemple.test et reply.exemple@cabinet-exemple.test et contact@cabinet-barreau-exemple.test et contact@carpaccio-avocats-exemple.test",
+      "expected": [
+        "contact@cabinet-barreau-exemple.test",
+        "contact@carpaccio-avocats-exemple.test",
+        "greffe.exemple@cabinet-exemple.test",
+        "ordrefacile@cabinet-exemple.test",
+        "reply.exemple@cabinet-exemple.test",
+        "sandpoint@cabinet-exemple.test"
+      ]
+    },
+    {
+      "name": "Licitor lawyer_contact with a decoded Cloudflare address between phone and website",
+      "lawyer_contact": "14, bd Exemple - CS 60062 - 86002 Exempleville Cedex | Tél.: 01 00 00 00 01 | maitre@cabinet-exemple.test | www.cabinet-exemple.test",
+      "expected": ["maitre@cabinet-exemple.test"]
+    },
+    {
+      "name": "address glued to the next word does not absorb its capital letter",
+      "lawyer_contact": "maitre@cabinet-exemple.testTél : 01 00 00 00 01",
+      "expected": ["maitre@cabinet-exemple.test"]
+    },
+    {
+      "name": "upper-case address glued to a capitalised word keeps only its extension",
+      "lawyer_contact": "MAITRE@CABINET-EXEMPLE.TESTTél 0100000001",
+      "expected": ["maitre@cabinet-exemple.test"]
+    },
+    {
       "name": "no contact anywhere",
       "description": "Maison à vendre, visite sur rendez-vous.",
       "source_blocks": {

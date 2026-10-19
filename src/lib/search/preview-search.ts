@@ -79,7 +79,7 @@ export function buildPreviewSearchArgs(search: SalesSearchParams) {
 }
 
 function previewSort(sort: SortKey): SortKey {
-  return sort === "beds_desc" ? "score_desc" : sort;
+  return sort === "beds_desc" ? "completeness_desc" : sort;
 }
 
 export function previewSearchRequestKey(search: SalesSearchParams): string {
@@ -96,6 +96,7 @@ export function mapPreviewRows(rows: PreviewSearchRow[]): AuctionSale[] {
     department: row.department,
     property_type: row.property_type,
     sale_date: row.sale_date,
+    completeness_tier: row.completeness_tier,
     app_surface_m2: row.app_surface_m2,
     app_surface_kind: row.app_surface_kind,
     rooms_count: row.rooms_count,
@@ -107,6 +108,23 @@ export function mapPreviewRows(rows: PreviewSearchRow[]): AuctionSale[] {
       ? [{ type: "image", url: row.thumbnail_url }]
       : [],
   })) as AuctionSale[];
+}
+
+/**
+ * Erreur lisible pour le journal. PostgREST renvoie un objet simple (`message`, `code`, `details`,
+ * `hint`), pas une `Error` : levé tel quel, il s'imprime « [object Object] » ou sans pile. Le
+ * message dit quelle recherche a échoué, avec le message et le code de la base ; l'objet d'origine
+ * reste dans `cause`. La route répond de toute façon par un message générique (jamais ce texte).
+ */
+function previewSearchError(error: unknown): Error {
+  if (error instanceof Error) return error;
+  const { message, code } =
+    typeof error === "object" && error !== null
+      ? (error as { message?: unknown; code?: unknown })
+      : ({} as { message?: unknown; code?: unknown });
+  const detail = typeof message === "string" && message ? message : "erreur inconnue";
+  const suffix = typeof code === "string" && code ? ` (code ${code})` : "";
+  return new Error(`Recherche d'aperçu en échec : ${detail}${suffix}`, { cause: error });
 }
 
 export async function runPreviewSearch(
@@ -121,7 +139,7 @@ export async function runPreviewSearch(
         p_max_sale_date: search.maxSaleDate ?? null,
       })
     : client.rpc("search_auction_sales_preview_v3", args));
-  if (error) throw error;
+  if (error) throw previewSearchError(error);
   const rows = (data ?? []) as PreviewSearchRow[];
   return {
     items: mapPreviewRows(rows),

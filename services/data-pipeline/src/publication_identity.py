@@ -6,7 +6,7 @@ from itertools import combinations
 
 from psycopg.types.json import Jsonb
 
-from src.admission import quarantine_reason
+from src.admission import LICITOR_MULTI_LOT_QUARANTINE, quarantine_reason
 from src.dedupe import (
     PRIMARY_SOURCE_PRIORITY,
     _address_dedupe_keys,
@@ -18,6 +18,7 @@ from src.dedupe import (
 )
 from src.freshness import invalidate_analysis
 from src.models import AuctionSale
+from src.retention_tombstones import drop_retired
 from src.reviewed_aliases import (
     ReviewedAlias,
     ReviewedAliasRegistryError,
@@ -315,7 +316,8 @@ def merge_revision(existing: AuctionSale, incoming: AuctionSale) -> AuctionSale:
                 )
     ensure_room_bedroom_consistency(result, existing, incoming)
     reason = quarantine_reason(incoming)
-    if reason:
+    # La quarantaine multi-lots Licitor est recalculée à chaque collecte : pas un conflit d'identité à conserver.
+    if reason and reason != LICITOR_MULTI_LOT_QUARANTINE:
         result.raw_payload['source_identity_mismatch'] = True
         result.raw_payload['publication_conflict_evidence'] = {
             'source_url': incoming_url, 'reason': reason, 'sale_procedure': incoming.sale_procedure,
@@ -549,4 +551,5 @@ def resolve_publication_identities(connection, sales: list[AuctionSale]) -> list
         ensure_room_bedroom_consistency(sale)
         existing_by_key[sale.id or sale.source_url] = sale
         resolved[sale.source_url] = sale
-    return list(resolved.values())
+    # The tombstone trigger sees the resolved url/date, so the check belongs after the resolution.
+    return drop_retired(connection, list(resolved.values()), sales)

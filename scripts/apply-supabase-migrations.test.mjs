@@ -10,12 +10,14 @@ import {
   LEGACY_NO_STATEMENT_MIGRATIONS,
   canonicalMigrationText,
   collectMigrations,
+  listMigrationVersionsAtRef,
   splitSqlStatements,
   statementDigestsFromSql,
   statementsSha256,
   stripOuterTransactionWrappers,
   resolvePostgresSslOptions,
   validateMigrationHistory,
+  validateMigrationOrder,
   withDatabaseConnectTimeout,
   withMigrationSessionSettings,
 } from "./apply-supabase-migrations.mjs";
@@ -288,6 +290,17 @@ commit;
     expect(stripOuterTransactionWrappers(source)).toContain("string_only");
   });
 
+  it("refuses --fail-on-pending without --dry-run before any database access", () => {
+    const script = new URL("./apply-supabase-migrations.mjs", import.meta.url).pathname;
+    const result = spawnSync(process.execPath, [script, "--fail-on-pending"], {
+      encoding: "utf8",
+      env: { ...process.env, SUPABASE_DB_URL: "", POSTGRES_URL_NON_POOLING: "", POSTGRES_URL: "" },
+      timeout: 10000,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--fail-on-pending requires --dry-run");
+  }, 15000);
+
   it("bounds repeated SQL comments before and after the trailing notification", () => {
     const moduleUrl = new URL("./apply-supabase-migrations.mjs", import.meta.url).href;
     const result = spawnSync(
@@ -448,5 +461,83 @@ commit;
     await expect(applyMigrationAtomically(runner, migration)).rejects.toThrow("division by zero");
     expect(commands).toHaveLength(2);
     expect(commands[1]).toBe("rollback;");
+  });
+});
+
+describe("Supabase migration timestamp order", () => {
+  const base = ["20260910090000", "20261024100000", "20261024100100"];
+  const migration = (version) => localMigration(version, "fixture", "select 1;\n");
+
+  it("accepts new migrations newer than the latest one of the base", () => {
+    const local = [...base, "20261025110000", "20261025120000"].map(migration);
+
+    expect(validateMigrationOrder(local, base, "origin/main")).toEqual([]);
+  });
+
+  it("refuses a new migration older than the latest one of the base", () => {
+    const local = [...base, "20261015090000"].map(migration);
+    const issues = validateMigrationOrder(local, base, "origin/main");
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("20261015090000_fixture.sql");
+    expect(issues[0]).toContain("origin/main (20261024100100)");
+  });
+
+  it("refuses a new migration just before the latest one of the base", () => {
+    const local = [...base, "20261024100099"].map(migration);
+
+    expect(validateMigrationOrder(local, base, "origin/main")).toHaveLength(1);
+  });
+
+  it("does not re-check the migrations that are already on the base", () => {
+    // Same versions as the base: duplicate versions are the job of the unique-version check.
+    expect(validateMigrationOrder(base.map(migration), base)).toEqual([]);
+    expect(validateMigrationOrder(base.slice(0, 2).map(migration), base)).toEqual([]);
+  });
+
+  it("checks nothing when the base has no migration", () => {
+    expect(validateMigrationOrder([migration("20200101000000")], [])).toEqual([]);
+  });
+
+  it("lists the versions committed at a ref and ignores other files", () => {
+    const calls = [];
+    const run = (command, args) => {
+      calls.push([command, ...args]);
+      return {
+        status: 0,
+        stdout:
+          "supabase/migrations/20261024100000_a.sql\nsupabase/migrations/README.md\nsupabase/migrations/20261024100100_b.sql\n",
+      };
+    };
+
+    expect(listMigrationVersionsAtRef("origin/main", run)).toEqual([
+      "20261024100000",
+      "20261024100100",
+    ]);
+    expect(calls[0].slice(1, 6)).toEqual(["ls-tree", "-r", "--name-only", "origin/main", "--"]);
+    expect(calls[0].at(-1)).toBe("supabase/migrations");
+  });
+
+  it("fails clearly when the ref cannot be read or looks like an option", () => {
+    const failing = () => ({ status: 128, stdout: "", stderr: "fatal: Not a valid object name" });
+
+    expect(() => listMigrationVersionsAtRef("origin/main", failing)).toThrow(/fetch origin main/);
+    expect(() => listMigrationVersionsAtRef("--output=x", failing)).toThrow(/Invalid base ref/);
+  });
+
+  it("makes --check fail on an unknown base ref and pass without any base ref", () => {
+    const check = (...args) =>
+      spawnSync(process.execPath, ["scripts/apply-supabase-migrations.mjs", "--check", ...args], {
+        encoding: "utf8",
+        env: { ...process.env, MIGRATIONS_BASE_REF: "" },
+      });
+
+    const missing = check("--base-ref=refs/heads/does-not-exist-for-this-test");
+    expect(missing.status).toBe(1);
+    expect(missing.stderr).toContain("Cannot list the migrations");
+
+    const unchecked = check();
+    expect(unchecked.status).toBe(0);
+    expect(unchecked.stdout).toContain("Timestamp order not checked");
   });
 });

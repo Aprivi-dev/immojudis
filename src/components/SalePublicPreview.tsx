@@ -7,11 +7,16 @@ import Eye from "lucide-react/dist/esm/icons/eye.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { ListingPhoto } from "@/components/ListingPhoto";
+import { PhotoCredit } from "@/components/PhotoCredit";
+import { photoCredit } from "@/lib/photo-credit";
+import { photoMirrorForDetail } from "@/lib/photo-mirror";
+import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { formatPrice } from "@/lib/format";
 import { publicDossierContents, publicSaleDescription } from "@/lib/public-sale-description";
-import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
+import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
 import Link from "next/link";
+import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
@@ -30,6 +35,33 @@ import {
 } from "@/lib/seo";
 import type { AuctionSale, SaleVenueType } from "@/lib/types";
 import styles from "./SalePublicPreview.module.css";
+
+/**
+ * Internal links of the public page: they carry the visitor from one sale to the pages that
+ * explain how a sale works, and give crawlers a path from every sale to the guides.
+ */
+const FURTHER_READING_LINKS = [
+  {
+    href: "/ventes-immobilieres-judiciaires",
+    label: "Le guide des ventes immobilières judiciaires",
+    hint: "comprendre le déroulement d’une vente",
+  },
+  {
+    href: "/ressources/frais-vente-encheres-judiciaire",
+    label: "Les frais d’une vente aux enchères",
+    hint: "ce qui s’ajoute au prix d’adjudication",
+  },
+  {
+    href: "/tribunaux",
+    label: "Les tribunaux",
+    hint: "l’activité des tribunaux qui organisent des ventes",
+  },
+  {
+    href: "/simulateur-frais-encheres",
+    label: "Le simulateur de frais",
+    hint: "estimer les frais d’une enchère",
+  },
+] as const;
 
 const VENUE_COPY: Record<SaleVenueType, { title: string; explanation: string }> = {
   tribunal: {
@@ -68,11 +100,14 @@ export function SalePublicPreview({
   preview,
   returnTo,
   requestedHash = "",
+  adjudicationStatisticsEnabled = false,
 }: {
   saleId: string;
   preview: AuctionSale;
   returnTo: string;
   requestedHash?: string;
+  /** The statistics of the tribunal are only announced while their flag is open. */
+  adjudicationStatisticsEnabled?: boolean;
 }) {
   const procedure = getSaleProcedure(preview);
   const venueCopy = publicSaleVenueCopy(procedure.venueType);
@@ -116,6 +151,7 @@ export function SalePublicPreview({
           <dd>
             {hearingDate}
             {hearingTime ? ` à ${hearingTime}` : ""}
+            {procedure.venueType === "tribunal" ? <SaleCalendarButton saleId={saleId} /> : null}
           </dd>
         </div>
       ) : null}
@@ -136,7 +172,11 @@ export function SalePublicPreview({
       ? { label: "Écart avec la mise à prix", placeholder: "00 %", tier: "Compte gratuit" }
       : null,
     procedure.venueType === "tribunal"
-      ? { label: "Enchère plafond conseillée", placeholder: "000 000 €", tier: "Offre Analyse" }
+      ? {
+          label: "Enchère plafond (simulation)",
+          placeholder: "000 000 €",
+          tier: `Offre Analyse, ou ${MONTHLY_SALE_UNLOCKS} déblocages par mois`,
+        }
       : null,
     { label: "Ventes comparables du secteur", placeholder: "00 ventes", tier: "Offre Analyse" },
   ].filter((item): item is { label: string; placeholder: string; tier: string } => item !== null);
@@ -196,14 +236,22 @@ export function SalePublicPreview({
               <span className={styles.reference}>Réf. {saleReference(saleId)}</span>
             </h1>
             {photo?.url ? (
-              <figure className={styles.photo}>
-                <ListingPhoto
-                  src={photo.url}
-                  alt={`Photo du bien : ${headline}`}
-                  className="h-full w-full object-cover"
-                  fetchPriority="high"
+              <>
+                <figure className={styles.photo}>
+                  <ListingPhoto
+                    src={photo.url}
+                    mirror={photoMirrorForDetail(photo.mirror)}
+                    alt={`Photo du bien : ${headline}`}
+                    className="h-full w-full object-cover"
+                    fetchPriority="high"
+                  />
+                </figure>
+                <PhotoCredit
+                  credit={photoCredit(photo.url, preview)}
+                  className="mt-1.5 block text-xs text-muted-foreground"
+                  linkClassName="hover:text-foreground"
                 />
-              </figure>
+              </>
             ) : null}
             {propertyFacts}
             <section className={styles.description} aria-labelledby="public-description-title">
@@ -279,18 +327,24 @@ export function SalePublicPreview({
               </h2>
               <p className={styles.accessIntro}>
                 Le compte Découverte est gratuit. Il donne accès à l’adresse, aux photos, aux
-                visites et à la fourchette de valeur estimée de cette vente.
+                visites et à la fourchette de valeur estimée de cette vente. Il permet aussi de
+                débloquer {MONTHLY_SALE_UNLOCKS} ventes par mois (
+                {unlockedItemsText({
+                  ceiling: procedure.venueType === "tribunal",
+                  statistics: procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
+                })}
+                ).
               </p>
             </div>
             <div className={styles.actions}>
               <Link
-                href={pathWithSearch("/login", {
-                  mode: "investor",
-                  redirect: `${saleDetailPath(saleId, returnTo)}${requestedHash.startsWith("#") ? requestedHash : ""}`,
-                })}
+                href={loginPathWithRedirect(
+                  `${saleDetailPath(saleId, returnTo)}${requestedHash.startsWith("#") ? requestedHash : ""}`,
+                  { reason: "fiche" },
+                )}
                 className={styles.primary}
               >
-                Voir gratuitement le dossier
+                Créer mon compte gratuit
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
               <Link href={returnTo} className={styles.secondary}>
@@ -318,7 +372,13 @@ export function SalePublicPreview({
               </h3>
               <p>
                 Adresse, photos, description, occupation, dates de visite et contact du dossier,
-                fourchette de valeur estimée, Street View, météo et risques de la commune.
+                fourchette de valeur estimée, Street View, météo et risques de la commune. Et chaque
+                mois, {MONTHLY_SALE_UNLOCKS} déblocages de ventes :{" "}
+                {unlockedItemsText({
+                  ceiling: procedure.venueType === "tribunal",
+                  statistics: procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
+                })}
+                .
               </p>
             </div>
             <div className={`${styles.tier} ${styles.tierAnalysis}`}>
@@ -333,6 +393,21 @@ export function SalePublicPreview({
               </p>
             </div>
           </div>
+        </section>
+        <section className="mt-8" aria-labelledby="public-further-title">
+          <h2 id="public-further-title" className={styles.sectionTitle}>
+            Pour aller plus loin
+          </h2>
+          <ul className="mt-3 grid gap-2 text-sm leading-relaxed text-slate-700 sm:grid-cols-2">
+            {FURTHER_READING_LINKS.map((link) => (
+              <li key={link.href}>
+                <Link href={link.href} className="font-medium underline underline-offset-4">
+                  {link.label}
+                </Link>
+                <span className="text-slate-600"> : {link.hint}</span>
+              </li>
+            ))}
+          </ul>
         </section>
         <p className="mt-6 text-sm leading-relaxed text-slate-600">
           Les sources officielles restent consultables librement :{" "}

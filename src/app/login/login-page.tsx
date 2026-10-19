@@ -32,6 +32,7 @@ import {
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import { postAuthDestination } from "@/lib/onboarding";
+import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
 import { userMessage } from "@/lib/user-messages";
 
@@ -76,6 +77,10 @@ const reasonCopy: Record<LoginReason, { signup: string; login: string }> = {
       "Créez votre compte gratuit : vous pourrez ensuite passer à l'offre Analyse quand vous le souhaitez.",
     login: "Connectez-vous pour découvrir l'offre Analyse.",
   },
+  fiche: {
+    signup: `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
+    login: "Connectez-vous pour consulter cette vente.",
+  },
 };
 
 const modeCopy: Record<
@@ -107,6 +112,8 @@ const modeCopy: Record<
     submit: "Demander mon accès pro",
   },
 };
+
+const UNLOCKED_ITEMS = unlockedItemsText({ ceiling: true, statistics: true });
 
 export function LoginPage() {
   const { user, profile, loading } = useAuth();
@@ -283,9 +290,10 @@ export function LoginPage() {
               Préparez votre achat aux enchères.
             </p>
             <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
-              Découverte ouvre gratuitement le catalogue. Analyse ajoute le calcul de votre enchère
-              plafond, les comparables et les alertes, sur abonnement résiliable. Les professionnels
-              déposent et suivent leurs annonces dans leur espace.
+              Découverte ouvre gratuitement le catalogue et, chaque mois, {MONTHLY_SALE_UNLOCKS}{" "}
+              ventes en détail ({UNLOCKED_ITEMS}). Analyse ouvre toutes les ventes, avec les
+              comparables, les alertes quotidiennes et les exports, sur abonnement résiliable. Les
+              professionnels déposent et suivent leurs annonces dans leur espace.
             </p>
 
             <div className="mt-10 grid gap-3">
@@ -389,6 +397,16 @@ export function LoginPage() {
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {copy.description}
               </p>
+              {mode === "investor" ? (
+                // The explanation column is hidden below the lg breakpoint: say the promise here.
+                <p
+                  data-testid="login-free-promise"
+                  className="mt-2 text-sm font-medium leading-relaxed text-foreground lg:hidden"
+                >
+                  Gratuit : {MONTHLY_SALE_UNLOCKS} ventes en détail par mois (selon la vente), sans
+                  carte bancaire
+                </p>
+              ) : null}
 
               {!isSupabaseConfigured ? (
                 <div className="mt-5 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-100">

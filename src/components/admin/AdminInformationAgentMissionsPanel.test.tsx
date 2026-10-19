@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminInformationAgentMissionsPanel } from "./AdminInformationAgentMissionsPanel";
 
@@ -271,6 +271,45 @@ describe("AdminInformationAgentMissionsPanel", () => {
     expect(mocks.action).not.toHaveBeenCalled();
   });
 
+  it("flags an address found by the automatic search and links its source page", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValue(
+      previewResponse({
+        addressOrigin: {
+          text: "Votre adresse professionnelle figure sur le site de votre cabinet ou de votre étude (https://www.cabinet-dupont.fr/contact).",
+          url: "https://www.cabinet-dupont.fr/contact",
+          automated: true,
+          known: true,
+        },
+      }),
+    );
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    await showPreview();
+
+    const note = screen.getByRole("note");
+    expect(note.textContent).toContain("Adresse retrouvée automatiquement");
+    const link = within(note).getByRole("link", { name: "Ouvrir la page source" });
+    expect(link.getAttribute("href")).toBe("https://www.cabinet-dupont.fr/contact");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it("shows no automatic-search note for an address taken from the listing", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValue(previewResponse());
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    await showPreview();
+
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(screen.queryByText(/retrouvée automatiquement/)).toBeNull();
+  });
+
   it("shows the inventory of the fiche with what is missing and what is known", async () => {
     mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
     mocks.create.mockResolvedValue({
@@ -333,6 +372,127 @@ describe("AdminInformationAgentMissionsPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Reprendre" }));
     expect(screen.getByRole("button", { name: "Valider et envoyer" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Annuler la mission" })).toBeTruthy();
+  });
+
+  it("shows the sale title as a link to the fiche on every history row", async () => {
+    mocks.list.mockResolvedValue({
+      ok: true,
+      missions: [
+        { ...mission("sent"), saleTitle: "Appartement à Bordeaux" },
+        {
+          ...mission("draft", "55555555-5555-4555-8555-555555555555", "autre@example.test"),
+          id: "66666666-6666-4666-8666-666666666666",
+          saleTitle: null,
+        },
+      ],
+      facts: [],
+    });
+
+    renderPanel(null);
+
+    const titled = await screen.findByRole("link", { name: "Appartement à Bordeaux" });
+    expect(titled.getAttribute("href")).toBe("/sales/11111111-1111-4111-8111-111111111111");
+    const untitled = screen.getByRole("link", { name: "Annonce sans titre" });
+    expect(untitled.getAttribute("href")).toBe("/sales/55555555-5555-4555-8555-555555555555");
+    expect(screen.getByText("cabinet@example.test")).toBeTruthy();
+    expect(screen.getByText("autre@example.test")).toBeTruthy();
+  });
+
+  it("offers Ouvrir for every status and opens a sent mission read-only", async () => {
+    mocks.list.mockResolvedValue({
+      ok: true,
+      missions: [mission("sent")],
+      facts: [],
+    });
+    mocks.action.mockResolvedValue({ ok: true, missions: [mission("sent")], facts: [] });
+
+    renderPanel(null);
+
+    expect(screen.queryByRole("button", { name: "Reprendre" })).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Ouvrir" }));
+
+    expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).readOnly).toBe(
+      true,
+    );
+    expect((screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement).readOnly).toBe(
+      true,
+    );
+    expect(screen.queryByRole("button", { name: "Valider et envoyer" })).toBeNull();
+    // Le formulaire de réponse consignée reste accessible pour une mission envoyée.
+    fireEvent.change(
+      screen.getByRole("textbox", {
+        name: /Consigner une réponse reçue hors de l’adresse du dossier/,
+      }),
+      { target: { value: "Réponse reçue par téléphone : le bien est libre." } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Rattacher la réponse au dossier" }));
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    expect(mocks.action.mock.calls[0][0]).toMatchObject({
+      action: "record_reply",
+      missionId: "22222222-2222-4222-8222-222222222222",
+    });
+  });
+
+  it("keeps Reprendre for a draft and Ouvrir for the other statuses", async () => {
+    mocks.list.mockResolvedValue({
+      ok: true,
+      missions: [
+        mission("draft"),
+        {
+          ...mission("sent", "11111111-1111-4111-8111-111111111111", "b@example.test"),
+          id: "77777777-7777-4777-8777-777777777777",
+          status: "replied",
+        },
+      ],
+      facts: [],
+    });
+
+    renderPanel(null);
+
+    expect(await screen.findAllByRole("button", { name: "Reprendre" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Ouvrir" })).toHaveLength(1);
+  });
+
+  it("explains next to the button why sending is not available yet", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValueOnce(previewResponse());
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+
+    const reason = screen.getByText("Affichez l’aperçu pour activer l’envoi.");
+    expect(sendButton().getAttribute("title")).toBeNull();
+    expect(sendButton().getAttribute("aria-describedby")).toBe(reason.id);
+
+    await showPreview();
+    expect(screen.queryByText("Affichez l’aperçu pour activer l’envoi.")).toBeNull();
+    expect(sendButton().getAttribute("aria-describedby")).toBeNull();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Message modifié après l’aperçu, à revoir avant tout envoi." },
+    });
+    expect(screen.getByText(/Le message a changé depuis l’aperçu/)).toBeTruthy();
+  });
+
+  it("explains a blocked preview and an invalid recipient next to the send button", async () => {
+    mocks.list.mockResolvedValue({ ok: true, missions: [], facts: [] });
+    mocks.create.mockResolvedValue({ ok: true, mission: mission("draft"), gaps: [], facts: [] });
+    mocks.preview.mockResolvedValueOnce(
+      previewResponse({ blockers: ["Le contact est explicitement opposé."], fingerprint: null }),
+    );
+
+    renderPanel();
+    await screen.findByRole("button", { name: "Valider et envoyer" });
+    await showPreview();
+    expect(screen.getByText(/L’aperçu signale un blocage/)).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Email" }), {
+      target: { value: "pas-un-email" },
+    });
+    expect(
+      screen.getByText("Renseignez une adresse email valide pour activer l’envoi."),
+    ).toBeTruthy();
   });
 
   it("keeps a resumed history mission when a previous queue request finishes late", async () => {
@@ -704,7 +864,11 @@ async function showPreview(label = "Afficher l’aperçu") {
 }
 
 function previewResponse(
-  overrides: Partial<{ blockers: string[]; fingerprint: string | null }> = {},
+  overrides: Partial<{
+    blockers: string[];
+    fingerprint: string | null;
+    addressOrigin: { text: string; url: string | null; automated: boolean; known: boolean };
+  }> = {},
 ) {
   return {
     ok: true,
@@ -718,8 +882,9 @@ function previewResponse(
     },
     blockers: [],
     addressOrigin: {
-      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor.",
+      text: "Votre adresse professionnelle figure dans l’annonce publique de cette vente sur Licitor (https://www.licitor.com/annonce/1.html), consultée le 14/10/2026.",
       url: "https://www.licitor.com/annonce/1.html",
+      automated: false,
       known: true,
     },
     fingerprint: "f".repeat(64),
