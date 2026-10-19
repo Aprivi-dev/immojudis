@@ -75,7 +75,9 @@ function blend(rgba: [number, number, number, number], background: string): stri
 
 describe("champs de formulaire (.form-input)", () => {
   const rule = (selector: string) => {
-    const match = css.match(new RegExp(`${selector.replace(/[.:]/g, "\\$&")}[^{}]*\\{([^}]*)\\}`));
+    const match = css.match(
+      new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\:]/g, "\\$&")}[^{}]*\\{([^}]*)\\}`),
+    );
     if (!match) throw new Error(`Règle ${selector} introuvable`);
     return match[1];
   };
