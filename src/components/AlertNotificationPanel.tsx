@@ -4,7 +4,7 @@ import Inbox from "lucide-react/dist/esm/icons/inbox.js";
 import Loader2 from "lucide-react/dist/esm/icons/loader-2.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import Trash2 from "lucide-react/dist/esm/icons/trash-2.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import Link from "next/link";
 import { updateAlertNotification } from "@/lib/client-api";
 import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";

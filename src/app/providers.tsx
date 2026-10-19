@@ -4,8 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, useEffect, useState } from "react";
 import { Navbar } from "@/components/Navbar";
 import { AuthProvider } from "@/components/AuthProvider";
+import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
 import { SiteFooter } from "@/components/SiteFooter";
-import { AppToaster } from "@/components/AppToaster";
+import { LazyToaster } from "@/components/LazyToaster";
+import { retryUnlessRefused } from "@/lib/query-retry";
 import { getWithdrawnSources, loadWithdrawnSourcesOncePerSession } from "@/lib/withdrawn-sources";
 import { createWithdrawnSourcesClient } from "@/lib/withdrawn-sources-client";
 
@@ -13,7 +15,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
-        defaultOptions: { queries: { retry: 1, staleTime: 60_000 } },
+        // Une panne est retentée une fois ; une recherche refusée par la route (400) ne l'est jamais.
+        defaultOptions: { queries: { retry: retryUnlessRefused, staleTime: 60_000 } },
       }),
   );
 
@@ -35,14 +38,16 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <div className="min-h-screen bg-background">
-          <Suspense fallback={<NavigationFallback />}>
-            <Navbar />
-          </Suspense>
-          {children}
-          <SiteFooter />
-          <AppToaster />
-        </div>
+        <LaunchOfferProvider>
+          <div className="min-h-screen bg-background">
+            <Suspense fallback={<NavigationFallback />}>
+              <Navbar />
+            </Suspense>
+            {children}
+            <SiteFooter />
+            <LazyToaster />
+          </div>
+        </LaunchOfferProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

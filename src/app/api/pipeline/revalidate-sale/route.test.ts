@@ -95,9 +95,11 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     // The destination of the rewrite: the proxy does not run for revalidations, and a path that
     // matches no route file would expire nothing.
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/sales/defaut");
+    // Pages 2 et 3 du catalogue : leurs variantes statiques sont expirées avec la première.
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/sales/defaut/[page]", "page");
     expect(mocks.revalidatePath).not.toHaveBeenCalledWith("/sales");
     expect(mocks.revalidateTag).toHaveBeenCalledTimes(2);
-    expect(mocks.revalidatePath).toHaveBeenCalledTimes(2);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(3);
   });
 
   it("expires the catalogue once per call, however many sales are withdrawn or changed", async () => {
@@ -111,9 +113,9 @@ describe("POST /api/pipeline/revalidate-sale", () => {
       ([path]) => path === "/sales/defaut",
     );
     expect(defaultPages).toHaveLength(1);
-    // Two sales: two tags and two pages for them, plus the catalogue.
+    // Two sales: two tags and two pages for them, plus the catalogue (first page and page variants).
     expect(mocks.revalidateTag).toHaveBeenCalledTimes(3);
-    expect(mocks.revalidatePath).toHaveBeenCalledTimes(3);
+    expect(mocks.revalidatePath).toHaveBeenCalledTimes(4);
   });
 
   it("expires several sales once each", async () => {
@@ -142,8 +144,10 @@ describe("POST /api/pipeline/revalidate-sale", () => {
     await callback();
 
     expect(mocks.warmSalePages).toHaveBeenCalledTimes(1);
+    // The sale pages, plus the public `/sales` (rewritten to the static page that was just expired).
     expect(mocks.warmSalePages).toHaveBeenCalledWith([ID, OTHER_ID], {
       requestId: response.headers.get("x-request-id"),
+      extraPaths: ["/sales"],
     });
   });
 

@@ -31,7 +31,7 @@ vi.mock("@/lib/client-api", () => ({
 vi.mock("@/lib/queries", () => ({ createAlert: mocks.createAlert }));
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 vi.mock("@/lib/search/analysis-offer-open", () => ({ isAnalysisOfferOpen: mocks.offerOpen }));
-vi.mock("sonner", () => ({ toast: mocks.toast }));
+vi.mock("@/lib/toast", () => ({ toast: mocks.toast }));
 
 import { useCreateAlert } from "./use-create-alert";
 

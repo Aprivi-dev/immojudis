@@ -29,7 +29,7 @@ vi.mock("@/lib/client-api", () => ({
   evaluateAlertMatches: state.evaluate,
   fetchAccessPlan: async () => ({ plan: state.plan }),
 }));
-vi.mock("sonner", () => ({ toast: state.toast }));
+vi.mock("@/lib/toast", () => ({ toast: state.toast }));
 const openNotifications = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/notification-center-events", () => ({
   requestOpenNotifications: openNotifications,

@@ -131,7 +131,13 @@ const SPECS: RowSpec[] = [
     // inclus » est exact (voir ceilingMarketContext).
     features: ["property.valueEstimate", "property.soldComparables"],
   },
-  { id: "ceiling", label: "Enchère plafond chiffrée", features: ["property.bidCeiling"] },
+  {
+    id: "ceiling",
+    label: "Enchère plafond chiffrée",
+    // L'enchère plafond n'existe que pour une vente au tribunal (voir unlockedItemsText).
+    hint: "Pour toutes les ventes au tribunal avec Analyse ; pour la vente choisie avec un déblocage",
+    features: ["property.bidCeiling"],
+  },
   {
     id: "scenarios",
     label: "Scénarios de frais, de travaux et de marge de sécurité",

@@ -14,6 +14,7 @@ from src.admission import is_date_only, licitor_lot_count, sale_date_has_passed
 from src.department_inference import department_from_geocode_evidence
 from src.listing_location import recover_listing_address, reject_monetary_address
 from src.models import INTERNAL_CONTACTS_KEY, AuctionSale
+from src.multi_unit_type import is_multi_unit_building_text
 from src.null_text import clean_text
 from src.room_counts import (
     _parse_count_token,
@@ -596,6 +597,9 @@ def normalize_property_type(value: object | None) -> str:
         r"\b(?:appartement|maison|villa|studio|immeuble|commerce|commercial|local)\b", text
     ):
         return "land"
+    if is_multi_unit_building_text(text):
+        # « Immeuble de 4 appartements » : un immeuble, pas un appartement.
+        return "building"
     for needle, normalized in PROPERTY_TYPE_MAP.items():
         if needle in text:
             return normalized
@@ -621,6 +625,11 @@ def normalize_sale_property_type(raw_sale: dict[str, object]) -> str:
         r"^(?:un[e]?\s+)?(?:appartement|studio|maison|villa)\b", detail_title, re.I
     ):
         return normalize_property_type(detail_title)
+    if property_type in {"apartment", "other", "unknown"} and any(
+        is_multi_unit_building_text(strip_accents(clean_text(raw_sale.get(key)) or "").lower())
+        for key in ("title", "description")
+    ):
+        return "building"
     if property_type not in {"other", "unknown"}:
         return property_type
 

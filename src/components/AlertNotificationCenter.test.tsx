@@ -23,7 +23,7 @@ vi.mock("@/lib/client-api", () => ({
   updateAlertNotification: state.updateNotification,
   updateNotificationPreferences: state.updatePreferences,
 }));
-vi.mock("sonner", () => ({
+vi.mock("@/lib/toast", () => ({
   toast: Object.assign(state.toast, { error: vi.fn(), success: vi.fn() }),
 }));
 afterEach(cleanup);

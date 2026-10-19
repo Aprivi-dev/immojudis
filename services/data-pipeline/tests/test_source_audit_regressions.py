@@ -1,5 +1,7 @@
 """Reduced fixtures from public pages inspected on 2026-09-11."""
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -34,19 +36,32 @@ def test_institutional_and_subscription_links_are_not_sale_documents():
     assert cessions_etat._looks_like_document_link("/cahier.pdf?download=1", "Cahier")
 
 
+_FRENCH_MONTHS = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
+
+
 def test_cessions_current_dom_recovers_description_sale_time_and_open_visits():
-    html = """<div id="panel-bien"><div class="texte"><div class="fr-text">
+    # Date relative au jour d'exécution : une date écrite en dur finit par être passée.
+    day = date.today() + timedelta(days=60)
+    numeric = f"{day:%d/%m/%Y}"
+    written = f"{day.day:02d} {_FRENCH_MONTHS[day.month - 1]} {day.year}"
+    html = f"""<div id="panel-bien"><div class="texte"><div class="fr-text">
     Terrain constructible. Visites libres.</div></div>
-    <p>Date d'adjudication : 05/11/2026</p>
-    <p>Commentaire : Adjudication le jeudi 05 novembre 2026 à 15h30</p></div>
+    <p>Date d'adjudication : {numeric}</p>
+    <p>Commentaire : Adjudication le {written} à 15h30</p></div>
     <p>Visites libres.</p><a href="/cahier.pdf?download=1">Cahier</a>"""
     raw = cessions_etat.parse_cessions_etat_detail_html(html, cessions_etat.BASE_URL + "/biens/test")
     assert raw["description"] == "Terrain constructible. Visites libres."
-    assert raw["sale_date"] == "05/11/2026 à 15h30"
+    assert raw["sale_date"] == f"{numeric} à 15h30"
     assert "Visites libres." in raw["visit_dates"]
     assert raw["documents"][0]["type"] == "pdf"
-    assert normalize_sale(raw).sale_date.isoformat() == "2026-11-05T14:30:00+00:00"
-    assert cessions_etat._extract_sale_date("Date d'adjudication : 05/11/2026\nCommentaire : Visite le 04 novembre 2026 à 10h30") == "05/11/2026"
+    expected = datetime(day.year, day.month, day.day, 15, 30, tzinfo=ZoneInfo("Europe/Paris"))
+    assert normalize_sale(raw).sale_date.isoformat() == expected.astimezone(UTC).isoformat()
+    assert cessions_etat._extract_sale_date(
+        f"Date d'adjudication : {numeric}\nCommentaire : Visite le 04 novembre 2026 à 10h30"
+    ) == numeric
 
 
 def test_cessions_detail_recognizes_explicit_offer_closing_date() -> None:
@@ -252,7 +267,7 @@ def test_notaires_keeps_list_record_when_detail_fails(monkeypatch):
                 raise RuntimeError("detail temporarily unavailable")
             return json.dumps({"annonceResumeDto": [{"annonceId": 42, "typeTransaction": "VAE",
                 "inseeDepartement": "33", "descriptionFr": "Appartement", "prixAffiche": 80000,
-                "seanceDate": "2026-11-05", "urlDetailAnnonceFr": notaires.BASE_URL + "/fr/annonce-immo/42"}]})
+                "seanceDate": (date.today() + timedelta(days=60)).isoformat(), "urlDetailAnnonceFr": notaires.BASE_URL + "/fr/annonce-immo/42"}]})
     monkeypatch.setattr(notaires, "PoliteHttpClient", Client)
     result = notaires.scrape_notaires_aquitaine_result(max_pages=1)
     assert len(result.sales) == 1

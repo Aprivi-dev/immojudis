@@ -12,6 +12,15 @@ const SALE_CANDIDATES = 3;
 // A well-formed identifier that no sale carries. Searching it never matches a real record.
 const UNKNOWN_SALE_PATH = "/sales/00000000-0000-4000-8000-000000000000";
 
+// Static variant of the bare `/sales` (src/lib/sales-isr.ts): internal, never linked nor listed.
+const SALES_DEFAULT_PATH = "/sales/defaut";
+// The paginated catalogue is rendered on demand: its HTML must still hold the listings.
+const MIN_PAGE_LISTING_LINKS = 20;
+// Sitemaps read at most, to look for the internal variant (the pages, the articles, the sales files).
+const MAX_SITEMAPS_CHECKED = 30;
+const SALE_LINK =
+  /href=["'](?:https?:\/\/[^"'/]+)?\/sales\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=[?#"'&])/gi;
+
 const checks = [
   { path: "/", kind: "html", canonical: "/" },
   { path: "/sales", kind: "html", canonical: "/sales" },
@@ -55,6 +64,7 @@ export async function checkProductionSmoke({
       }),
     ),
   );
+  const catalogueResults = await runCatalogueChecks({ origin: normalizedOrigin, fetchImpl });
   const seoResults = await runSeoChecks({
     origin: normalizedOrigin,
     fetchImpl,
@@ -69,7 +79,7 @@ export async function checkProductionSmoke({
     indexing,
     checkedAt: new Date().toISOString(),
     durationMs: Date.now() - startedAt,
-    checks: [...results, ...seoResults],
+    checks: [...results, ...catalogueResults, ...seoResults],
   };
 }
 
@@ -204,6 +214,146 @@ async function fetchText(path, { origin, fetchImpl }) {
   return { response, body: await response.text(), durationMs: Date.now() - startedAt, url };
 }
 
+/** Distinct sale identifiers linked (`/sales/<uuid>`) from an HTML document. */
+function saleLinkIds(body) {
+  return new Set(Array.from(body.matchAll(SALE_LINK), (match) => match[1].toLowerCase()));
+}
+
+async function fetchCatalogue(
+  path,
+  { origin, fetchImpl, accept = "text/html", redirect = "follow" },
+) {
+  const startedAt = Date.now();
+  const response = await fetchImpl(new URL(path, origin), {
+    headers: { accept, "user-agent": "immojudis-production-smoke/1.0" },
+    redirect,
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  return { response, startedAt };
+}
+
+/**
+ * The public catalogue and its caches (docs/runbooks/catalogue-visibility-projection.md):
+ *  - `/sales` is served from the CDN: the second of two successive requests is `x-vercel-cache: HIT`,
+ *    and neither carries `set-cookie` (a cookie makes a response uncacheable) nor `Vary` on the cached
+ *    one; its HTML lists sales (`/sales/<uuid>`);
+ *  - the static variant `/sales/defaut` is `noindex`;
+ *  - `/sales?page=2` is rendered on the server: at least 20 listings in the HTML;
+ *  - `/api/catalogue/preview` answers with a public `cache-control`.
+ */
+async function runCatalogueChecks({ origin, fetchImpl }) {
+  const results = [];
+
+  // Two successive requests: the first one fills the cache, the second one must hit it.
+  const first = await fetchCatalogue("/sales", { origin, fetchImpl });
+  if (first.response.status !== 200) {
+    throw new Error(`/sales: statut HTTP ${first.response.status} au lieu de 200.`);
+  }
+  const firstBody = await first.response.text();
+  assertNoCookie("/sales", first.response);
+  const second = await fetchCatalogue("/sales", { origin, fetchImpl });
+  if (second.response.status !== 200) {
+    throw new Error(`/sales (2e requête): statut HTTP ${second.response.status} au lieu de 200.`);
+  }
+  await second.response.body?.cancel?.();
+  const cacheStatus = second.response.headers.get("x-vercel-cache");
+  if (!/^HIT$/i.test(cacheStatus ?? "")) {
+    throw new Error(
+      `/sales: la 2e requête successive n'est pas servie par le cache (x-vercel-cache: ${cacheStatus ?? "absent"} au lieu de HIT).`,
+    );
+  }
+  assertNoCookie("/sales", second.response);
+  const vary = second.response.headers.get("vary");
+  if (vary) {
+    throw new Error(`/sales: en-tête Vary « ${vary} » sur la réponse servie par le cache.`);
+  }
+  const listed = saleLinkIds(firstBody).size;
+  if (listed === 0) {
+    throw new Error("/sales: aucun lien /sales/<identifiant> dans le HTML.");
+  }
+  results.push({
+    path: "/sales (cache)",
+    status: 200,
+    cache: "HIT",
+    sales: listed,
+    durationMs: Date.now() - first.startedAt,
+  });
+
+  // The internal static variant must never be indexed. A direct request is redirected to `/sales`
+  // by the proxy, which stamps the header on the redirect itself: read it without following.
+  const internal = await fetchCatalogue(SALES_DEFAULT_PATH, {
+    origin,
+    fetchImpl,
+    redirect: "manual",
+  });
+  await internal.response.body?.cancel?.();
+  if (internal.response.status >= 400) {
+    throw new Error(`${SALES_DEFAULT_PATH}: statut HTTP ${internal.response.status}.`);
+  }
+  if (!/noindex/i.test(internal.response.headers.get("x-robots-tag") ?? "")) {
+    throw new Error(`${SALES_DEFAULT_PATH}: en-tête X-Robots-Tag noindex absent.`);
+  }
+  results.push({
+    path: SALES_DEFAULT_PATH,
+    status: internal.response.status,
+    durationMs: Date.now() - internal.startedAt,
+  });
+
+  // The paginated catalogue is rendered at request time, with its listings in the first HTML.
+  const paginated = await fetchCatalogue("/sales?page=2", { origin, fetchImpl });
+  if (paginated.response.status !== 200) {
+    throw new Error(`/sales?page=2: statut HTTP ${paginated.response.status} au lieu de 200.`);
+  }
+  const listings = saleLinkIds(await paginated.response.text()).size;
+  if (listings < MIN_PAGE_LISTING_LINKS) {
+    throw new Error(
+      `/sales?page=2: ${listings} lien(s) de fiche dans le HTML au lieu d'au moins ${MIN_PAGE_LISTING_LINKS}.`,
+    );
+  }
+  results.push({
+    path: "/sales?page=2",
+    status: 200,
+    sales: listings,
+    durationMs: Date.now() - paginated.startedAt,
+  });
+
+  // The search API of the browser is public and cacheable.
+  const preview = await fetchCatalogue("/api/catalogue/preview", {
+    origin,
+    fetchImpl,
+    accept: "application/json",
+  });
+  if (preview.response.status !== 200) {
+    throw new Error(
+      `/api/catalogue/preview: statut HTTP ${preview.response.status} au lieu de 200.`,
+    );
+  }
+  const cacheControl = preview.response.headers.get("cache-control") ?? "";
+  if (!/(^|[\s,])public(?=[\s,]|$)/i.test(cacheControl) || /no-store|private/i.test(cacheControl)) {
+    throw new Error(
+      `/api/catalogue/preview: cache-control « ${cacheControl || "absent"} » au lieu d'un cache public.`,
+    );
+  }
+  const previewBody = await preview.response.json();
+  if (!previewBody || !Array.isArray(previewBody.items)) {
+    throw new Error("/api/catalogue/preview: contrat de la réponse invalide.");
+  }
+  results.push({
+    path: "/api/catalogue/preview",
+    status: 200,
+    cacheControl,
+    durationMs: Date.now() - preview.startedAt,
+  });
+  return results;
+}
+
+function assertNoCookie(path, response) {
+  const cookie = response.headers.get("set-cookie");
+  if (cookie) {
+    throw new Error(`${path}: en-tête Set-Cookie présent (la page ne serait pas mise en cache).`);
+  }
+}
+
 function sitemapUrls(xml) {
   return Array.from(xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi), (match) =>
     match[1].replaceAll("&amp;", "&"),
@@ -283,10 +433,34 @@ async function runSeoChecks({ origin, fetchImpl, indexing, minPageUrls, minSaleU
     durationMs: sales.durationMs,
   });
 
+  // No sitemap may list the internal static variant of /sales.
+  assertNoInternalVariant("/sitemap.xml", pageUrls);
+  assertNoInternalVariant(sales.url.pathname, saleUrls);
+  const checked = new Set([pagesSitemap, new URL(salesSitemap, origin).href]);
+  for (const sitemap of listed.slice(0, MAX_SITEMAPS_CHECKED)) {
+    if (checked.has(sitemap)) continue;
+    checked.add(sitemap);
+    const other = await fetchText(sitemap, { origin, fetchImpl });
+    assertNoInternalVariant(other.url.pathname, sitemapUrls(other.body));
+  }
+  results.push({ path: "sitemaps", status: 200, count: checked.size, durationMs: 0 });
+
   results.push(
     await checkListedSale({ saleUrls: saleUrls.slice(0, SALE_CANDIDATES), origin, fetchImpl }),
   );
   return results;
+}
+
+function assertNoInternalVariant(sitemapPath, urls) {
+  const found = urls.find((url) => {
+    try {
+      const { pathname } = new URL(url);
+      return pathname === SALES_DEFAULT_PATH || pathname.startsWith(`${SALES_DEFAULT_PATH}/`);
+    } catch {
+      return false;
+    }
+  });
+  if (found) throw new Error(`${sitemapPath}: la variante interne ${found} est listée au sitemap.`);
 }
 
 /** A sale taken from the sitemap must be a real, indexable page that describes itself. */

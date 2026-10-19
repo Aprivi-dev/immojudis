@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { SectorAlertCta } from "@/components/SectorAlertCta";
+import { UnderstandBlock } from "@/components/UnderstandBlock";
 import { Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import {
   DEPARTMENT_PAGES_PATH,
+  departmentFromCode,
   departmentNextDateLabel,
   departmentPriceLabel,
   departmentSaleDateText,
@@ -10,9 +12,11 @@ import {
   type DepartmentRef,
   type DepartmentStats,
 } from "@/lib/department-pages";
+import { neighboringDepartmentCodes } from "@/lib/department-neighbors";
 import { formatStartingPrice, propertyTypeLabel } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
 import type { PublicTribunalActivity } from "@/lib/public-tribunal-activity";
+import { understandingResources } from "@/lib/resource-related";
 import { saleHearingTime, seoLongDate, seoSurface } from "@/lib/seo";
 
 const count = new Intl.NumberFormat("fr-FR");
@@ -30,17 +34,31 @@ export function DepartmentView({
   stats,
   tribunals,
   generatedAt,
+  neighborCounts = {},
 }: {
   department: DepartmentRef;
   stats: DepartmentStats | null;
   tribunals: readonly PublicTribunalActivity[];
   generatedAt: string;
+  /** Ventes à venir des départements limitrophes, par code (absent : le catalogue n'a rien à dire). */
+  neighborCounts?: Readonly<Record<string, number>>;
 }) {
   const total = stats?.upcomingCount ?? 0;
   const now = new Date();
   const nextDate = seoLongDate(stats?.nextSaleDate);
   const updated = seoLongDate(generatedAt);
   const searchHref = departmentSearchPath(department);
+  const neighbors = neighboringDepartmentCodes(department.code)
+    .map((code) => departmentFromCode(code))
+    .filter((neighbor): neighbor is DepartmentRef => neighbor != null)
+    .map((neighbor) => {
+      const sales = neighborCounts[neighbor.code] ?? 0;
+      return {
+        href: neighbor.path,
+        label: neighbor.name,
+        ...(sales > 0 ? { detail: `(${count.format(sales)} ${saleWord(sales)})` } : {}),
+      };
+    });
 
   return (
     <PageShell
@@ -240,6 +258,12 @@ export function DepartmentView({
             .
           </p>
         </Card>
+
+        <UnderstandBlock
+          articles={understandingResources(department.code)}
+          nearbyTitle="Départements limitrophes"
+          nearby={neighbors}
+        />
 
         <p className="text-sm text-ink-soft">
           <Link href={DEPARTMENT_PAGES_PATH} className="font-semibold text-gold-text underline">

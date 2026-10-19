@@ -56,7 +56,14 @@ const MAX_CLIENT_CHUNK_BYTES = 1_875_000;
 // calculator, the departments pages, the sale key-facts band and the optional results
 // table of /sales (desktop only). Measured 5,456,599 bytes in total. The ceiling is raised
 // once, to 5,500,000; every route-level initial-load budget below is unchanged.
-const MAX_TOTAL_CLIENT_JS_BYTES = 5_500_000;
+//
+// The 18/10 team session (October 2026) adds the launch offer (provider, notes, admin
+// switch), the qualified opening waitlist, the /tribunaux/[slug] and /audiences-a-venir
+// pages and three resource articles, while Sonner moves to an on-demand chunk (-34 kB on
+// every page). Measured 5,601,873 bytes in total before the /sales and account batches.
+// The owner approved (19/10/2026) raising the ceiling once, to 5,750,000; every
+// route-level initial-load budget below is unchanged and still passes.
+const MAX_TOTAL_CLIENT_JS_BYTES = 5_750_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // New homepage: lossless panorama for large screens plus editorial photography.
 const MAX_PUBLIC_MEDIA_BYTES = 5_000_000;

@@ -80,6 +80,7 @@ export const LOGIN_REASONS = [
   "favori",
   "export",
   "offre",
+  "ouverture",
   "fiche",
   "mes-favoris",
   "mes-alertes",
@@ -137,6 +138,22 @@ export function saleDetailPath(saleId: string, returnTo?: string): string {
 
   const search = new URLSearchParams({ from: safeReturnTo });
   return `${path}?${search.toString()}`;
+}
+
+/** Préfixe de l'ancre d'une carte du catalogue : `id="sale-card-<id>"` (voir `SearchResults`). */
+export const SALE_CARD_ANCHOR_PREFIX = "sale-card-";
+
+/**
+ * Adresse du lien « Retour aux ventes » d'une fiche : la recherche d'origine, ouverte sur la carte
+ * de cette vente (ancre `#sale-card-<id>`). Le catalogue y défile une fois la liste affichée (voir
+ * `useRestoreSaleCard`). L'identifiant de la fiche est celui de la carte : rien d'autre n'est à
+ * transmettre dans l'origine (`?from=`). Une origine qui n'est pas une recherche du catalogue (page
+ * d'exemple, par exemple) est rendue telle quelle.
+ */
+export function salesReturnHref(returnTo: string | null | undefined, saleId: string): string {
+  const base = returnTo ? safeSalesReturnTo(returnTo) : "/sales";
+  if (!base) return returnTo ?? "/sales";
+  return `${base}#${SALE_CARD_ANCHOR_PREFIX}${encodeURIComponent(saleId)}`;
 }
 
 export type SearchValue = string | number | boolean | null | undefined;

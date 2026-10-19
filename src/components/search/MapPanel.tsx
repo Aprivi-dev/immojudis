@@ -712,7 +712,10 @@ export function MapPanel({
 
       {!mapError && (isLoading || !mapReady) ? (
         <div className="pointer-events-none absolute inset-x-0 top-16 z-20 grid place-items-center">
-          <div className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-3 text-sm font-bold text-brand-navy shadow-lg">
+          <div
+            role="status"
+            className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-3 text-sm font-bold text-brand-navy shadow-lg"
+          >
             <LoaderCircle className="h-4 w-4 animate-spin text-brand-navy" />
             {!mapReady ? "Chargement de la carte" : "Mise à jour de la carte"}
           </div>

@@ -281,6 +281,49 @@ describe("page d'un département : contenu", () => {
     expect(hrefs).not.toContain("/sales?tribunal=TJ+Paris");
   });
 
+  it("ajoute un bloc « Pour comprendre » : le guide, deux articles et les départements limitrophes", async () => {
+    mocks.catalogue.mockResolvedValue(
+      aggregateDepartments(
+        [...THREE, sale("l1", { department: "40" }), sale("l2", { department: "40" })],
+        NOW,
+      ),
+    );
+    render(await Page(params("gironde")));
+
+    const block = screen.getByRole("region", { name: "Pour comprendre" });
+    const hrefs = within(block)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href"));
+    expect(hrefs[0]).toBe("/ventes-immobilieres-judiciaires");
+    const articles = hrefs.filter((href) => href?.startsWith("/ressources/"));
+    expect(articles).toHaveLength(2);
+    expect(new Set(articles).size).toBe(2);
+
+    // Charente-Maritime, Dordogne, Landes et Lot-et-Garonne touchent la Gironde.
+    expect(hrefs.filter((href) => href?.startsWith("/ventes-encheres-immobilieres/"))).toEqual([
+      "/ventes-encheres-immobilieres/charente-maritime",
+      "/ventes-encheres-immobilieres/dordogne",
+      "/ventes-encheres-immobilieres/landes",
+      "/ventes-encheres-immobilieres/lot-et-garonne",
+    ]);
+    // Les ventes du voisin ne sont annoncées que lorsqu'il y en a.
+    expect(
+      within(block).getByRole("link", { name: "Landes" }).parentElement?.textContent,
+    ).toContain("(2 ventes)");
+    expect(
+      within(block).getByRole("link", { name: "Dordogne" }).parentElement?.textContent,
+    ).not.toContain("vente");
+  });
+
+  it("garde le bloc « Pour comprendre » sans voisin pour l'outre-mer", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("la-reunion")));
+
+    const block = screen.getByRole("region", { name: "Pour comprendre" });
+    expect(within(block).queryByText("Départements limitrophes")).toBeNull();
+    expect(within(block).getAllByRole("link").length).toBe(3);
+  });
+
   it("garde la page quand l'activité des tribunaux est indisponible", async () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     mocks.tribunals.mockResolvedValue({ status: "error" });

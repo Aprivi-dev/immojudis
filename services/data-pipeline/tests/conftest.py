@@ -14,6 +14,21 @@ def _drop_shared_postgres_connections():
 
 
 @pytest.fixture(autouse=True)
+def _no_reference_communes_lookup(monkeypatch):
+    """Le repli « nom de commune unique » de ``infer_missing_department`` lit ``reference_communes`` en base.
+
+    Les tests tournent sans base, même si ``SUPABASE_DB_URL`` est posée dans l'environnement ; ceux du
+    repli fournissent eux-mêmes leur index.
+    """
+    from src import commune_department_lookup
+
+    monkeypatch.setattr(commune_department_lookup, "load_unique_commune_departments", dict)
+    commune_department_lookup.reset_cache()
+    yield
+    commune_department_lookup.reset_cache()
+
+
+@pytest.fixture(autouse=True)
 def _no_network_image_checks(monkeypatch):
     """Listing images are HEAD-checked in production; tests must stay offline.
 

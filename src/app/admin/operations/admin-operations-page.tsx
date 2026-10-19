@@ -9,7 +9,7 @@ import FileSearch from "lucide-react/dist/esm/icons/file-search.js";
 import Play from "lucide-react/dist/esm/icons/play.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { AdminPipelinePanel } from "@/components/admin/AdminPipelinePanel";
 import {
   AiBackfillPanel,

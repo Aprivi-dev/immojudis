@@ -1,3 +1,4 @@
+import "server-only";
 import postgres from "postgres";
 import { requireSupabaseAuthContext } from "@/integrations/supabase/auth-middleware";
 import { resolveEmailAlertDeliveryConfig } from "@/lib/email-alerts";
@@ -99,6 +100,7 @@ const EXPECTED_CRONS = [
   "/api/cron/cnb-lawyer-directory",
   "/api/cron/information-agent-inbound",
   "/api/cron/listing-completeness",
+  "/api/cron/sale-retention",
 ] as const;
 
 export async function getAdminOperationalReadiness(

@@ -13,6 +13,7 @@ import {
 } from "@/lib/account";
 import { BrandMark } from "@/components/BrandLogo";
 import { AdminMfaGate } from "@/components/admin/AdminMfaGate";
+import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 
 const PUBLIC_PATHS = new Set([
   "/",
@@ -46,7 +47,7 @@ function normalizePath(pathname: string) {
 }
 
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, authError } = useAuth();
   const router = useRouter();
   const pathname = normalizePath(usePathname());
   const isPublic =
@@ -62,7 +63,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     getAccountType(user, profile) === "b2b" && getProfessionalStatus(profile) !== "approved";
 
   useEffect(() => {
-    if (isPublic || loading || user) return;
+    // Une identité qui n'a pas pu être vérifiée (réseau, session rejetée) n'est pas un visiteur :
+    // le bandeau propose de réessayer ou de se reconnecter, sans renvoyer d'office vers /login.
+    if (isPublic || loading || user || authError) return;
     // The query string is only needed at redirect time, so it is read from the browser then:
     // subscribing to it with useSearchParams() would push every protected page out of the
     // prerendered HTML.
@@ -70,7 +73,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     router.replace(
       loginPathWithRedirect(redirect, { mode: "login", reason: LOGIN_REASON_BY_PATH[pathname] }),
     );
-  }, [isPublic, loading, pathname, router, user]);
+  }, [authError, isPublic, loading, pathname, router, user]);
 
   if (isPublic) return <>{children}</>;
 
@@ -107,7 +110,20 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user) return null;
+  if (!user) {
+    if (!authError) return null;
+    return (
+      <main
+        id="contenu"
+        className="liquid-page flex min-h-[calc(100vh-4rem)] items-start justify-center px-4 py-10"
+      >
+        <div className="w-full max-w-3xl">
+          <h1 className="sr-only">Accès protégé</h1>
+          <AuthConnectionBanner />
+        </div>
+      </main>
+    );
+  }
 
   if (requiresAdminAccount && !isAdmin) {
     return (
@@ -178,8 +194,19 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // Admin pages ask for the TOTP code first when the session is still aal1. The enrolment page
   // itself stays reachable so a fresh administrator can set the factor up.
   if (requiresAdminAccount && pathname !== ADMIN_SECURITY_PATH) {
-    return <AdminMfaGate>{children}</AdminMfaGate>;
+    return (
+      <>
+        <AuthConnectionBanner className="mt-3" />
+        <AdminMfaGate>{children}</AdminMfaGate>
+      </>
+    );
   }
 
-  return <>{children}</>;
+  // Identité déjà vérifiée mais revérification impossible (réseau) : la page reste affichée.
+  return (
+    <>
+      <AuthConnectionBanner className="mt-3" />
+      {children}
+    </>
+  );
 }

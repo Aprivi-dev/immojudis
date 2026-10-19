@@ -65,7 +65,7 @@ describe("createPlanCheckoutSession customer reservation", () => {
       active: true,
       type: "recurring",
       currency: "eur",
-      unit_amount: 2_900,
+      unit_amount: 5_900,
       recurring: { interval: "month", interval_count: 1 },
     });
     mocks.subscriptionsList.mockResolvedValue({ data: [], has_more: false });
@@ -145,7 +145,7 @@ describe("createPlanCheckoutSession customer reservation", () => {
     );
   });
 
-  it("refuse un Price Stripe qui ne correspond pas aux 29 EUR mensuels validés", async () => {
+  it("refuse un Price Stripe qui ne correspond pas aux 59 EUR mensuels validés", async () => {
     mocks.pricesRetrieve.mockResolvedValue({
       active: true,
       type: "recurring",
@@ -161,7 +161,7 @@ describe("createPlanCheckoutSession customer reservation", () => {
         plan: "analyse",
         consent,
       }),
-    ).rejects.toThrow(/29 € \/ mois/);
+    ).rejects.toThrow(/59 € \/ mois/);
     expect(mocks.adminRpc).not.toHaveBeenCalled();
   });
 });

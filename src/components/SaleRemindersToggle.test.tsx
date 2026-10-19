@@ -13,7 +13,7 @@ vi.mock("@/lib/client-api", () => ({
   fetchNotificationPreferences: mocks.preferences,
   updateNotificationPreferences: mocks.update,
 }));
-vi.mock("sonner", () => ({ toast: { success: mocks.success, error: mocks.error } }));
+vi.mock("@/lib/toast", () => ({ toast: { success: mocks.success, error: mocks.error } }));
 
 import { SaleRemindersToggle } from "./SaleRemindersToggle";
 

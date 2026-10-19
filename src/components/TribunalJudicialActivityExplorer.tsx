@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PremiumFeaturePreview } from "@/components/PremiumFeaturePreview";
 import { PremiumAdjudicationExplorer } from "@/components/PremiumAdjudicationExplorer";
 import { useAuth } from "@/hooks/use-auth";
+import { useHasHydrated } from "@/hooks/use-has-hydrated";
 import { fetchAccessPlan } from "@/lib/client-api";
 import { fetchTribunalJudicialActivityDirectory } from "@/lib/tribunal-judicial-activity-directory-client";
 import type {
@@ -38,6 +39,7 @@ export function TribunalJudicialActivityExplorer({
   adjudicationStatisticsEnabled?: boolean;
 }) {
   const { session, loading: authLoading } = useAuth();
+  const hydrated = useHasHydrated();
   const [historyMonths, setHistoryMonths] = useState<TribunalJudicialActivityHistoryMonths>(36);
   const [search, setSearch] = useState("");
   const [selectedRegion, setSelectedRegion] = useState("");
@@ -87,7 +89,7 @@ export function TribunalJudicialActivityExplorer({
             Observatoire des ventes judiciaires
           </p>
           <h1 className="mt-3 max-w-5xl font-display text-4xl font-medium leading-tight sm:text-5xl">
-            Statistiques Tribunaux
+            Ventes judiciaires à venir par tribunal judiciaire
           </h1>
           <p className="mt-4 max-w-4xl text-sm leading-relaxed text-brand-navy/68 sm:text-base">
             {adjudicationStatisticsEnabled
@@ -102,9 +104,15 @@ export function TribunalJudicialActivityExplorer({
         {adjudicationStatisticsEnabled ? <PremiumAdjudicationExplorer /> : null}
 
         {authLoading || (session && planQuery.isLoading) ? (
-          <p className="mt-10 text-sm text-brand-navy/65" role="status">
-            Vérification de votre accès Analyse…
-          </p>
+          // Le serveur ne sait rien du compte : le message n'existe qu'après l'hydratation, hors du HTML
+          // lu par les moteurs. Un bloc de même hauteur garde la place.
+          hydrated ? (
+            <p className="mt-10 text-sm text-brand-navy/65" role="status">
+              Vérification de votre accès Analyse…
+            </p>
+          ) : (
+            <div className="mt-10 h-5" aria-hidden />
+          )
         ) : planQuery.isError ? (
           <PremiumFeaturePreview
             title="Activité des annonces et prochaines audiences"
