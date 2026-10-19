@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   sale: vi.fn(),
   parcels: vi.fn(),
   rate: vi.fn(),
+  daily: vi.fn(),
   location: vi.fn(),
   report: vi.fn(),
 }));
@@ -18,7 +19,10 @@ vi.mock("@/lib/property-report/repository", () => ({
   getSale: mocks.sale,
   getCadastralParcels: mocks.parcels,
 }));
-vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: mocks.rate }));
+vi.mock("@/lib/rate-limit", () => ({
+  enforceUserRateLimit: mocks.rate,
+  enforceDailyOperationLimits: mocks.daily,
+}));
 vi.mock("@/lib/land-report-input", () => ({ landLocationInputFromSale: mocks.location }));
 vi.mock("@/lib/land-report", () => ({ getCachedLandReport: mocks.report }));
 import { GET } from "./route";
@@ -65,6 +69,7 @@ describe("dossier PLU et risques premium", () => {
     mocks.sale.mockResolvedValue(sale);
     mocks.parcels.mockResolvedValue([]);
     mocks.rate.mockResolvedValue(undefined);
+    mocks.daily.mockResolvedValue(undefined);
     mocks.location.mockReturnValue({ address: sale.address });
     mocks.report.mockResolvedValue(report);
   });
@@ -95,6 +100,22 @@ describe("dossier PLU et risques premium", () => {
   it("applique le quota avant l'appel aux sources officielles", async () => {
     mocks.rate.mockRejectedValue(new Error("Trop de demandes. Réessayez dans quelques instants."));
     expect((await request()).status).toBe(429);
+    expect(mocks.report).not.toHaveBeenCalled();
+  });
+  it("applique le plafond journalier (compte, adresse, site) avant les sources, avec le message quotidien", async () => {
+    const { RateLimitError } = await import("@/lib/api-errors");
+    mocks.daily.mockRejectedValue(
+      new RateLimitError(undefined, 7200, "Limite quotidienne atteinte, réessayez demain."),
+    );
+    const response = await request();
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("7200");
+    expect(await response.json()).toMatchObject({
+      error: "Limite quotidienne atteinte, réessayez demain.",
+    });
+    expect(mocks.daily).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "premium", operation: "landReport" }),
+    );
     expect(mocks.report).not.toHaveBeenCalled();
   });
   it("renvoie le dossier privé avec contrôle de vente authentifié et actualisation explicite", async () => {

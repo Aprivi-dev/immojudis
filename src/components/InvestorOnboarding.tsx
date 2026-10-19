@@ -3,9 +3,15 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/hooks/use-auth";
+import { useCreateAlert } from "@/hooks/use-create-alert";
+import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { LAUNCH_OFFER_ACCOUNT_TEXT } from "@/lib/launch-offer";
 import { pathWithSearch } from "@/lib/navigation";
 import { firstSearchToUrl, type FirstSearch } from "@/lib/onboarding";
-import { HOME_TYPE_OPTIONS } from "@/lib/search/search-filters";
+import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
+import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { formatPrice } from "@/lib/format";
 import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 
@@ -15,24 +21,52 @@ const inputClass =
 
 export function InvestorOnboarding() {
   const router = useRouter();
+  const launchOffer = useLaunchOffer().active;
   const [step, setStep] = useState(0);
   const [search, setSearch] = useState<FirstSearch>({ area: "", maxPrice: "", homeType: "" });
+  // Jamais pré-cochée : la première alerte et son email récapitulatif sont un choix explicite.
+  const [wantsAlert, setWantsAlert] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
+  const { user } = useAuth();
+  const hasAnalysisAccess = useHasAnalysisAccess(user?.id);
+  const { createAlertFromSearch, saving } = useCreateAlert({ returnTo: "/bienvenue" });
 
   useEffect(() => {
     heading.current?.focus();
   }, [step]);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  const criteria = firstSearchToUrl(search);
+  const alertSearch = validateSalesSearch(criteria);
+  // L'alerte gratuite accepte des critères publics : un secteur saisi en texte libre (ni numéro de
+  // département ni code postal) n'en est pas un, et sans aucun critère elle préviendrait de tout.
+  const alertUnavailable: string | null =
+    countActiveSearchFilters(alertSearch) === 0
+      ? "Indiquez un secteur, un type de bien ou une mise à prix maximale pour créer une alerte."
+      : hasAnalysisAccess === false && alertSearch.query
+        ? "L’alerte gratuite suit un département : indiquez son numéro (ex. 33) ou un code postal pour la créer."
+        : null;
+  const alertWanted = wantsAlert && alertUnavailable === null;
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (step < steps.length - 1) {
       setStep((current) => current + 1);
       return;
     }
-    router.push(pathWithSearch("/sales", firstSearchToUrl(search)));
+    if (alertWanted) {
+      // Un seul geste : l'alerte (un récapitulatif par semaine) puis le catalogue filtré. En cas
+      // d'échec le message est affiché et la personne reste ici pour réessayer ou décocher.
+      const result = await createAlertFromSearch(alertSearch, {
+        frequency: "weekly",
+        emailRecap: true,
+        // Sans département, le secteur saisi sert de nom à l'alerte.
+        nameSearch: alertSearch.query ? { ...alertSearch, city: alertSearch.query } : alertSearch,
+      });
+      if (result.status !== "created") return;
+    }
+    router.push(pathWithSearch("/sales", criteria));
   }
 
-  const criteria = firstSearchToUrl(search);
   return (
     <main
       id="contenu"
@@ -42,6 +76,14 @@ export function InvestorOnboarding() {
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
           Bienvenue dans votre compte Découverte
         </p>
+        {launchOffer ? (
+          <p
+            data-testid="onboarding-launch-offer"
+            className="mt-4 rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground"
+          >
+            {LAUNCH_OFFER_ACCOUNT_TEXT}
+          </p>
+        ) : null}
         <ol aria-label="Étapes de démarrage" className="mt-6 flex gap-2">
           {steps.map((label, index) => (
             <li
@@ -164,8 +206,18 @@ export function InvestorOnboarding() {
               </dl>
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Ouvrez une fiche pour vérifier la date, la localisation et les caractéristiques du
-                bien. Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail (
-                {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). L’offre Analyse les ouvre toutes.
+                bien.{" "}
+                {launchOffer ? (
+                  <>
+                    Pendant l’offre de lancement, votre compte gratuit ouvre toutes les ventes avec
+                    les outils de l’offre Analyse.
+                  </>
+                ) : (
+                  <>
+                    Chaque mois, vous pouvez débloquer {MONTHLY_SALE_UNLOCKS} ventes en détail (
+                    {UNLOCK_HIGHLIGHTS_INLINE_TEXT}). L’offre Analyse les ouvre toutes.
+                  </>
+                )}
               </p>
               <Link
                 href="/annonce-exemple"
@@ -173,6 +225,32 @@ export function InvestorOnboarding() {
               >
                 Comprendre une analyse sur l’annonce exemple gratuite
               </Link>
+              <div className="rounded-lg border border-border bg-background/70 p-4">
+                <label
+                  className={`flex min-h-11 items-start gap-3 text-sm font-medium ${
+                    alertUnavailable ? "text-muted-foreground" : "cursor-pointer text-foreground"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={alertWanted}
+                    disabled={alertUnavailable !== null || saving}
+                    onChange={(event) => setWantsAlert(event.target.checked)}
+                    aria-describedby="first-alert-help"
+                    className="mt-0.5 size-5 shrink-0 accent-[var(--gold)]"
+                  />
+                  <span>
+                    Créer ma première alerte avec ces critères (un email récapitulatif par semaine)
+                  </span>
+                </label>
+                <p
+                  id="first-alert-help"
+                  className="mt-1 pl-8 text-xs leading-relaxed text-muted-foreground"
+                >
+                  {alertUnavailable ??
+                    "Facultatif. En cochant cette case, vous acceptez de recevoir par email un récapitulatif hebdomadaire des nouvelles ventes correspondant à ces critères. Vous pourrez le désactiver à tout moment depuis votre compte ou le lien de désinscription de chaque email."}
+                </p>
+              </div>
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
@@ -189,9 +267,14 @@ export function InvestorOnboarding() {
             )}
             <button
               type="submit"
-              className="liquid-button rounded-lg px-6 py-3 text-sm font-semibold"
+              disabled={saving}
+              className="liquid-button rounded-lg px-6 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {step === steps.length - 1 ? "Voir les biens" : "Continuer"}
+              {saving
+                ? "Création de l’alerte…"
+                : step === steps.length - 1
+                  ? "Voir les biens"
+                  : "Continuer"}
             </button>
           </div>
         </form>

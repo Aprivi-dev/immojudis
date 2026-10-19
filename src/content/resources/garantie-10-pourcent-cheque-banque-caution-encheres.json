@@ -1,0 +1,186 @@
+{
+  "slug": "garantie-10-pourcent-cheque-banque-caution-encheres",
+  "publishedAt": "2026-10-19",
+  "title": "Garantie de 10 % : chèque de banque ou caution ?",
+  "category": "Budget",
+  "description": "Avant d’enchérir au tribunal, il faut remettre à l’avocat une garantie de 10 % de la mise à prix. Chèque de banque ou caution bancaire, société, restitution et défaut de paiement.",
+  "intro": [
+    "Pour enchérir à l’audience d’une saisie immobilière, il ne suffit pas d’avoir un avocat : le Code impose de lui remettre, avant les enchères, une garantie. Elle représente 10 % de la mise à prix (le prix de départ des enchères), avec un minimum de 3 000 €. Vous avez le choix entre deux formes : un chèque de banque ou une caution bancaire irrévocable.",
+    "Cet article explique ce que dit le texte, compare les deux formes, aborde le cas d’un achat par une société ou à plusieurs, puis détaille ce qui arrive à cette garantie si vous perdez, si vous gagnez ou si vous ne payez pas. Il s’appuie sur le Code des procédures civiles d’exécution (CPCE) et sur service-public.fr. Le cahier des conditions de vente (le document qui fixe les règles de la vente) et votre avocat précisent les modalités pratiques."
+  ],
+  "takeaways": [
+    "La garantie est de 10 % de la mise à prix, jamais moins de 3 000 € (art. R. 322-41 du CPCE). Elle se calcule sur la mise à prix, pas sur le montant de votre enchère.",
+    "Elle prend la forme d’un chèque de banque rédigé à l’ordre du séquestre ou de la Caisse des dépôts et consignations, ou d’une caution bancaire irrévocable. L’avocat vous remet un récépissé.",
+    "Si vous n’êtes pas déclaré adjudicataire, la somme encaissée est restituée dès l’issue de l’audience.",
+    "Si vous gagnez puis ne payez pas, la somme versée ou la caution est acquise aux créanciers et, le cas échéant, au débiteur (art. R. 322-41), et vous pouvez devoir la différence avec le prix de la revente (art. L. 322-12).",
+    "Les textes consultés ne disent pas expressément comment la somme versée par l’adjudicataire s’impute sur le prix, ni comment un achat à plusieurs est géré : posez la question à l’avocat avant l’audience."
+  ],
+  "sections": [
+    {
+      "id": "la-regle",
+      "title": "Ce que dit le texte",
+      "paragraphs": [
+        "L’article R. 322-41 du CPCE prévoit qu’avant de porter les enchères, l’avocat se fait remettre par son mandant (son client), contre récépissé, une caution bancaire irrévocable ou un chèque de banque. Le chèque est rédigé à l’ordre du séquestre ou de la Caisse des dépôts et consignations, selon les indications du cahier des conditions de vente. Le montant représente 10 % de la mise à prix, sans pouvoir être inférieur à 3 000 €.",
+        "Cette garantie s’inscrit dans un principe plus général : toute personne peut enchérir si elle justifie de garanties de paiement (art. L. 322-7). Le séquestre est un tiers désigné par le cahier pour conserver les fonds ; la Caisse des dépôts et consignations est un organisme public qui peut les recevoir en consignation. Le récépissé que vous remet l’avocat doit reproduire les règles sur la restitution et sur le défaut de l’adjudicataire (troisième et quatrième alinéas de l’article R. 322-41).",
+        "Les mêmes règles d’enchères sont déclarées communes à la licitation judiciaire, la vente aux enchères d’un bien détenu à plusieurs (art. 1377 du Code de procédure civile, CPC, qui renvoie aux articles 1271 à 1281, dont l’article 1278 rend applicables, entre autres, les articles R. 322-39 à R. 322-49 du CPCE). L’article 1278 renvoie aussi aux articles R. 322-59, R. 322-61, R. 322-62 et R. 322-66 et suivants. Lorsque les enchères sont reçues par un notaire, elles peuvent toutefois être faites sans avocat : devant notaire, demandez au notaire à qui remettre la garantie et sous quelle forme."
+      ],
+      "table": {
+        "headers": ["Mise à prix (exemples fictifs)", "Garantie à remettre", "Pourquoi"],
+        "rows": [
+          ["12 000 €", "3 000 €", "Le minimum s’applique : 10 % ne feraient que 1 200 €."],
+          ["30 000 €", "3 000 €", "10 % de la mise à prix, soit exactement le minimum."],
+          ["80 000 €", "8 000 €", "10 % de la mise à prix."],
+          ["250 000 €", "25 000 €", "10 % de la mise à prix."]
+        ]
+      },
+      "callout": {
+        "title": "Une garantie, pas le prix",
+        "text": "La garantie est remise avant les enchères. Elle ne remplace pas le paiement du prix, qui intervient après l’adjudication définitive, ni les frais. Ne la confondez pas avec la consignation du prix, versée plus tard sur un compte séquestre ou à la Caisse des dépôts."
+      }
+    },
+    {
+      "id": "cheque-ou-caution",
+      "title": "Chèque de banque ou caution bancaire : comparer les deux formes",
+      "paragraphs": [
+        "Le texte ne choisit pas pour vous. Un chèque de banque est un chèque émis par la banque à votre demande. Selon service-public.fr, la somme est prélevée sur votre compte au moment de l’émission et la provision reste réservée pendant la validité du chèque, soit un an et huit jours. Le coût varie selon la convention de votre compte. Une caution est, selon le Code civil, le contrat par lequel une caution s’oblige envers le créancier à payer la dette du débiteur en cas de défaillance de celui-ci (art. 2288) ; ici, c’est une banque qui s’engage de manière irrévocable.",
+        "Le tableau compare les points à regarder. Pour la caution, les sources officielles consultées ne donnent ni délai, ni coût, ni modèle : ces points se demandent à votre banque et à votre avocat. Les pratiques locales (par exemple un chèque tiré sur le compte CARPA de l’avocat, la caisse de règlements pécuniaires des avocats, qui gère les fonds de leurs clients) varient d’un barreau et d’un tribunal à l’autre : renvoyez-vous à l’avocat."
+      ],
+      "table": {
+        "headers": ["Point", "Chèque de banque", "Caution bancaire irrévocable"],
+        "rows": [
+          [
+            "Ce que c’est",
+            "Un chèque émis par la banque, à l’ordre du séquestre ou de la Caisse des dépôts et consignations.",
+            "Un engagement de la banque de payer en cas de défaillance de l’adjudicataire."
+          ],
+          [
+            "Effet sur votre trésorerie",
+            "Le montant est prélevé de votre compte à l’émission (service-public.fr).",
+            "À demander à votre banque : contrepartie éventuelle, blocage de fonds ou non."
+          ],
+          [
+            "Coût",
+            "Selon votre convention de compte (service-public.fr).",
+            "À demander à votre banque."
+          ],
+          [
+            "Si vous perdez les enchères",
+            "La somme encaissée est restituée dès l’issue de l’audience (art. R. 322-41).",
+            "Le texte ne parle de restitution que pour la somme encaissée ; demandez à la banque comment l’engagement prend fin."
+          ],
+          [
+            "Si vous gagnez et ne payez pas",
+            "La somme versée est acquise aux créanciers et, le cas échéant, au débiteur (art. R. 322-41).",
+            "La caution apportée est acquise aux créanciers et, le cas échéant, au débiteur (art. R. 322-41)."
+          ],
+          [
+            "Forme exigée",
+            "À l’ordre du séquestre ou de la Caisse des dépôts, selon le cahier.",
+            "Le texte exige une caution « irrévocable » ; demandez à l’avocat le modèle accepté."
+          ]
+        ]
+      }
+    },
+    {
+      "id": "societe-indivision",
+      "title": "Acheter par une société ou à plusieurs",
+      "paragraphs": [
+        "Les enchères sont portées par un avocat du barreau du tribunal, qui ne peut être porteur que d’un seul mandat (art. R. 322-40). Avant la fin de l’audience, l’avocat qui a porté la dernière enchère déclare au greffier l’identité de son mandant (art. R. 322-46). S’il s’agit d’un immeuble d’habitation ou du fonds de commerce d’un établissement d’hébergement, il remet aussi une attestation datée et signée : le mandant indique s’il a fait l’objet d’une condamnation interdisant d’enchérir pour acquérir un bien d’habitation, et, s’il est une personne physique, si le bien est destiné à son occupation personnelle (art. R. 322-41-1 et L. 322-7-1).",
+        "Lorsque le mandant est une personne morale, l’attestation mentionne sa dénomination et son numéro SIREN. S’il s’agit d’une société civile immobilière (SCI) ou d’une société en nom collectif, elle mentionne aussi les informations demandées pour ses associés et mandataires sociaux (art. R. 322-41-1). Si l’attestation ne précise pas que le bien est destiné à l’occupation personnelle du mandant, le greffe demande, en l’absence de surenchère valide, le bulletin n° 2 du casier judiciaire de l’adjudicataire et, pour une SCI ou une société en nom collectif, de ses associés et mandataires sociaux ; en cas de condamnation concernée, le juge prononce d’office la nullité de l’adjudication (art. R. 322-49-1).",
+        "Les textes consultés ne détaillent pas le cas d’un achat à plusieurs, en indivision ou en couple, ni la manière dont le chèque doit être émis dans ce cas. Si vous achetez par l’intermédiaire d’une société ou avec d’autres personnes, prévenez l’avocat dès le départ : il doit préparer le mandat, l’identité du ou des mandants, la garantie et l’attestation avant l’audience."
+      ],
+      "bullets": [
+        "Société : qui signe, sur quel compte le chèque est-il émis et quels documents la banque exige-t-elle ?",
+        "Plusieurs acquéreurs : comment l’avocat déclare-t-il l’identité des mandants et comment la propriété sera-t-elle partagée ?",
+        "SCI ou société en nom collectif : l’avocat a-t-il les informations sur chaque associé et mandataire social pour l’attestation ?"
+      ]
+    },
+    {
+      "id": "apres-audience",
+      "title": "Après l’audience : restitution, imputation et défaut",
+      "paragraphs": [
+        "Si vous n’êtes pas déclaré adjudicataire, la somme encaissée par le séquestre ou la Caisse des dépôts est restituée dès l’issue de l’audience d’adjudication (art. R. 322-41). Si vous gagnez, vous disposez de deux mois à compter de l’adjudication définitive pour verser le prix au séquestre ou le consigner, à peine de réitération des enchères (art. R. 322-56). Les frais de poursuite taxés et les droits de mutation sont payés en plus du prix (art. R. 322-58). Les textes consultés n’indiquent pas expressément comment la somme versée au titre de la garantie s’impute sur le prix. Le cahier des conditions de vente ou le séquestre fixent la pratique : demandez-la à l’avocat et au séquestre, et notez la réponse.",
+        "Si l’adjudicataire est défaillant, la somme versée ou la caution apportée est acquise aux créanciers participant à la distribution et, le cas échéant, au débiteur, pour leur être distribuée avec le prix de l’immeuble (art. R. 322-41). La vente est résolue de plein droit à défaut de versement du prix ou de sa consignation et de paiement des frais, et l’adjudicataire défaillant doit la différence entre son enchère et le prix de la revente, si celui-ci est moindre, sans pouvoir réclamer ce qu’il a déjà payé (art. L. 322-12). Le bien est alors remis en vente (art. R. 322-66 et suivants)."
+      ],
+      "callout": {
+        "title": "Une précision sur les articles cités",
+        "text": "Le sort de la garantie en cas de défaut figure dans le quatrième alinéa de l’article R. 322-41 et dans l’article L. 322-12. L’article R. 322-46 concerne, lui, la déclaration d’identité du mandant à la fin des enchères. Pour la surenchère, qui suit l’adjudication, l’avocat atteste avoir reçu de son client une caution ou un chèque de banque du dixième du prix principal (art. R. 322-51)."
+      }
+    },
+    {
+      "id": "questions",
+      "title": "Les questions à poser à la banque et à l’avocat",
+      "paragraphs": [
+        "Ces questions se règlent plusieurs jours avant l’audience, car un chèque de banque ou une caution ne s’obtient pas toujours à la dernière minute. Notez les réponses avec votre plan de financement."
+      ],
+      "bullets": [
+        "À l’ordre de qui le chèque doit-il être libellé selon le cahier des conditions de vente : séquestre ou Caisse des dépôts ?",
+        "Le montant exact à remettre, calculé sur la mise à prix, est-il bien de 10 % ou du minimum de 3 000 € ?",
+        "Ma banque accepte-t-elle de délivrer une caution bancaire irrévocable, à quel coût, avec quelle contrepartie et dans quel délai ?",
+        "Quel modèle de caution l’avocat et le séquestre acceptent-ils ?",
+        "Quelles sont les pratiques locales du tribunal et du barreau (chèque tiré sur le compte CARPA de l’avocat, délai de remise, forme exacte du chèque) ?",
+        "Comment la somme versée par l’adjudicataire s’impute-t-elle sur le prix ?",
+        "Quand et comment le chèque ou la caution me sont-ils rendus si je ne l’emporte pas ?",
+        "Si j’achète par une société ou à plusieurs, quelles pièces et quelles déclarations faut-il avant l’audience ?"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-41 (garantie remise à l’avocat avant les enchères)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939157"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-41-1 (attestation du mandant)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000038542813"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-40 (avocat et mandat unique)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000039343491"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-46 (déclaration d’identité du mandant)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000038554328"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-49-1 (casier judiciaire de l’adjudicataire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000038542858"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-7 (garanties de paiement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025979"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-7-1 (incapacités d’enchérir)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000041587166"
+    },
+    {
+      "label": "Légifrance — Code de procédure civile, article 1278 (licitation : renvoi à des règles d’enchères du CPCE, applicable par l’article 1377)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000026459902"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article L. 322-12 (défaut de paiement de l’adjudicataire)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025025989"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-51 (surenchère et garantie du dixième)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939181"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-56 (paiement du prix)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939193"
+    },
+    {
+      "label": "Légifrance — Code des procédures civiles d’exécution, article R. 322-58 (frais et droits de mutation)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000025939198"
+    },
+    {
+      "label": "Légifrance — Code civil, article 2288 (cautionnement)",
+      "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000044071209"
+    },
+    {
+      "label": "Service-public.fr — Chèque de banque, chèque certifié, chèque barré (vérifié le 17/11/2025)",
+      "url": "https://www.service-public.gouv.fr/particuliers/vosdroits/F2403"
+    }
+  ]
+}

@@ -608,6 +608,228 @@
         "MARTIN",
         "Pierre"
       ]
+    },
+    {
+      "name": "occupant NOM Prénom sans civilité",
+      "input": "Les locaux sont occupés par DUPONT Pierre suivant bail du 1er mars 2019.",
+      "expected": "Les locaux sont occupés par un occupant suivant bail du 1er mars 2019.",
+      "absent": [
+        "DUPONT",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "occupant NOM Prénom composé",
+      "input": "Maison occupée par MARTIN Jean-Pierre, sans titre.",
+      "expected": "Maison occupée par un occupant, sans titre.",
+      "absent": [
+        "MARTIN",
+        "Jean-Pierre"
+      ]
+    },
+    {
+      "name": "occupant NOM Prénom, deux prénoms",
+      "input": "Appartement occupé par LEROY Marie Claire depuis 2015.",
+      "expected": "Appartement occupé par un occupant depuis 2015.",
+      "absent": [
+        "LEROY",
+        "Marie",
+        "Claire"
+      ]
+    },
+    {
+      "name": "occupant NOM Prénom, nom à particule en capitales",
+      "input": "Maison occupée par DE LA FONTAINE Claire, sans bail.",
+      "expected": "Maison occupée par un occupant, sans bail.",
+      "absent": [
+        "FONTAINE",
+        "Claire"
+      ]
+    },
+    {
+      "name": "occupant NOM Prénom, prénom accentué",
+      "input": "Appartement occupé par BERNARD Hélène suivant bail.",
+      "expected": "Appartement occupé par un occupant suivant bail.",
+      "absent": [
+        "BERNARD",
+        "Hélène"
+      ]
+    },
+    {
+      "name": "occupant NOM Prénom, nom avec apostrophe",
+      "input": "Maison occupée par D'ANGELO Marc sans titre.",
+      "expected": "Maison occupée par un occupant sans titre.",
+      "absent": [
+        "ANGELO",
+        "Marc"
+      ]
+    },
+    {
+      "name": "occupant NOM PRÉNOM en capitales",
+      "input": "LOT OCCUPÉ PAR DUPONT PIERRE SUIVANT BAIL DU 01/03/2019",
+      "expected": "LOT OCCUPÉ PAR un occupant SUIVANT BAIL DU 01/03/2019",
+      "absent": [
+        "DUPONT",
+        "PIERRE"
+      ]
+    },
+    {
+      "name": "loué à NOM Prénom",
+      "input": "Appartement loué à MARTIN Sophie, loyer 600 euros.",
+      "expected": "Appartement loué à un locataire, loyer 600 euros.",
+      "absent": [
+        "MARTIN",
+        "Sophie"
+      ]
+    },
+    {
+      "name": "bail consenti à NOM Prénom",
+      "input": "Bail consenti à PETIT Antoine le 1er mars 2019.",
+      "expected": "Bail consenti à un locataire le 1er mars 2019.",
+      "absent": [
+        "PETIT",
+        "Antoine"
+      ]
+    },
+    {
+      "name": "requête NOM Prénom avec naissance et adresse",
+      "input": "À la requête de LEROY Jean-Pierre, né le 3 mai 1961 à Nantes, demeurant 5 rue des Lilas 44000 Nantes, créancier hypothécaire.",
+      "expected": "À la requête du créancier poursuivant, créancier hypothécaire.",
+      "absent": [
+        "LEROY",
+        "Jean-Pierre",
+        "Lilas"
+      ]
+    },
+    {
+      "name": "appartenant à NOM Prénom",
+      "input": "Maison appartenant à GARCIA Maria depuis 2001.",
+      "expected": "Maison appartenant à un particulier depuis 2001.",
+      "absent": [
+        "GARCIA",
+        "Maria"
+      ]
+    },
+    {
+      "name": "après une civilité, NOM Prénom",
+      "input": "Logement occupé par Madame ROUX Valérie, retraitée.",
+      "expected": "Logement occupé par un occupant, retraitée.",
+      "absent": [
+        "ROUX",
+        "Valérie"
+      ]
+    },
+    {
+      "name": "rôle saisi suivi de Prénom NOM",
+      "input": "Le saisi, Paul ROY, occupe le bien.",
+      "expected": "Le saisi, occupe le bien.",
+      "absent": [
+        "ROY",
+        "Paul"
+      ]
+    },
+    {
+      "name": "rôle propriétaire suivi de NOM Prénom",
+      "input": "Propriétaire DUPONT Pierre",
+      "expected": "Propriétaire",
+      "absent": [
+        "DUPONT",
+        "Pierre"
+      ]
+    },
+    {
+      "name": "rôle vendeur avec deux-points",
+      "input": "Vendeur : Jean-Marc COLIN. Visite sur rendez-vous.",
+      "expected": "Vendeur. Visite sur rendez-vous.",
+      "absent": [
+        "COLIN",
+        "Jean-Marc"
+      ]
+    },
+    {
+      "name": "rôle débiteur avec naissance et adresse",
+      "input": "Le débiteur : Alain PERRIN, né le 3 mai 1961 à Paris 15e, demeurant sur place.",
+      "expected": "Le débiteur.",
+      "absent": [
+        "PERRIN",
+        "Alain"
+      ]
+    },
+    {
+      "name": "rôle créancier suivi de Prénom NOM",
+      "input": "Créancier poursuivant : Henri FAURE, demeurant à Lyon.",
+      "expected": "Créancier poursuivant.",
+      "absent": [
+        "FAURE",
+        "Henri"
+      ]
+    },
+    {
+      "name": "requête avec deux-points et civilité (cas réel)",
+      "input": "À LA REQUETE DE : Madame Florence Monique MARTIN, née le 1er mars 1950 à Paris, demeurant 3 rue des Lilas 75001 Paris",
+      "expected": "À LA REQUETE du créancier poursuivant",
+      "absent": [
+        "MARTIN",
+        "Florence",
+        "Monique",
+        "Lilas"
+      ]
+    },
+    {
+      "name": "requête avec deux-points, minuscules",
+      "input": "A la requete de : Monsieur Paul MARTIN, demeurant à Lyon",
+      "expected": "A la requete du créancier poursuivant",
+      "absent": [
+        "MARTIN",
+        "Paul"
+      ]
+    },
+    {
+      "name": "requête de la Mme (cas réel)",
+      "input": "À la requête de la Mme Fabienne BARDET, épouse DURAND, retraitée",
+      "expected": "À la requête du créancier poursuivant, retraitée",
+      "absent": [
+        "BARDET",
+        "DURAND",
+        "Fabienne"
+      ]
+    },
+    {
+      "name": "requête de la Mme, avec époux",
+      "input": "À la requête de la Mme Fabienne BARDET, épouse de Monsieur Jean BARDET, retraitée, demeurant 3 rue X 75001 Paris",
+      "expected": "À la requête du créancier poursuivant, retraitée",
+      "absent": [
+        "BARDET",
+        "Fabienne",
+        "Jean"
+      ]
+    },
+    {
+      "name": "requête de M. sans article",
+      "input": "À la requête de M. Paul MARTIN, demeurant à Lyon.",
+      "expected": "À la requête du créancier poursuivant.",
+      "absent": [
+        "MARTIN",
+        "Paul"
+      ]
+    },
+    {
+      "name": "requête de la Madame",
+      "input": "À la requête de la Madame Sylvie ROUSSEL, demeurant à Nîmes.",
+      "expected": "À la requête du créancier poursuivant.",
+      "absent": [
+        "ROUSSEL",
+        "Sylvie"
+      ]
+    },
+    {
+      "name": "requête de le Monsieur",
+      "input": "A la requête de le Monsieur Éric ROUSSEL, demeurant à Nîmes.",
+      "expected": "A la requête du créancier poursuivant.",
+      "absent": [
+        "ROUSSEL",
+        "Éric"
+      ]
     }
   ],
   "unchanged": [
@@ -878,6 +1100,106 @@
     {
       "name": "prénom et nom en casse mixte hors formule de bail",
       "input": "Local loué, visite organisée par Pierre Martin le 3 mars."
+    },
+    {
+      "name": "EDF Collectivités n'est pas un nom (sigle et mot)",
+      "input": "Local occupé par EDF Collectivités depuis 2012."
+    },
+    {
+      "name": "SNCF Réseau n'est pas un nom",
+      "input": "Local occupé par SNCF Réseau depuis 2010."
+    },
+    {
+      "name": "sigle et Banque",
+      "input": "Local occupé par LCL Banque depuis 2010."
+    },
+    {
+      "name": "créancier BNP Paribas",
+      "input": "À la requête de BNP Paribas Personal Finance, société anonyme, dont le siège est à Paris."
+    },
+    {
+      "name": "créancier BNP Paribas avec deux-points",
+      "input": "À LA REQUETE DE : BNP PARIBAS PERSONAL FINANCE, société anonyme."
+    },
+    {
+      "name": "requête de la banque, avec article",
+      "input": "À la requête de la Banque Populaire du Sud, société coopérative."
+    },
+    {
+      "name": "requête de la société, avec article",
+      "input": "À la requête de la société Martin et Fils, représentée par son gérant."
+    },
+    {
+      "name": "requête de la SCI, avec deux-points",
+      "input": "À la requête de : la SCI Les Tilleuls, société civile immobilière."
+    },
+    {
+      "name": "requête de le syndicat, avec article",
+      "input": "À la requête de le Syndicat des copropriétaires de la résidence Les Pins."
+    },
+    {
+      "name": "requête de la Mme sans nom",
+      "input": "À la requête de la Mme, créancier hypothécaire de la vente."
+    },
+    {
+      "name": "TRIBUNAL JUDICIAIRE en capitales",
+      "input": "VENTE AU TRIBUNAL JUDICIAIRE DE PARIS, AUDIENCE DU 12 NOVEMBRE. Bien occupé par le propriétaire."
+    },
+    {
+      "name": "TRIBUNAL JUDICIAIRE après un rôle",
+      "input": "Le vendeur TRIBUNAL JUDICIAIRE de Nanterre."
+    },
+    {
+      "name": "ville en capitales après un rôle",
+      "input": "Le propriétaire PARIS Habitat loue le bien."
+    },
+    {
+      "name": "ville en capitales et occupation",
+      "input": "Maison à SAINT-ETIENNE, occupée par le propriétaire, à proximité de LYON Perrache."
+    },
+    {
+      "name": "occupé par une ville en capitales",
+      "input": "Local occupé par LYON Métropole depuis 2014."
+    },
+    {
+      "name": "SCI suivie d'un nom et d'un prénom",
+      "input": "Local occupé par SCI MARTIN Paul depuis 2016."
+    },
+    {
+      "name": "SCI après un rôle",
+      "input": "Le propriétaire SCI DUPONT Pierre Immobilier loue le local."
+    },
+    {
+      "name": "avocat Me après un rôle",
+      "input": "Le propriétaire Me DUPONT, avocat au barreau de Lyon."
+    },
+    {
+      "name": "avocat Maître après un rôle",
+      "input": "Le vendeur Maître Paul DUPONT, notaire à Dijon."
+    },
+    {
+      "name": "études et cabinets avec NOM Prénom",
+      "input": "Étude de Me DUPONT Pierre, notaire, demeurant 10 place Bellecour 69002 Lyon."
+    },
+    {
+      "name": "avocat poursuivant NOM Prénom",
+      "input": "Saisie immobilière ayant pour avocat Maître DUPONT Pierre, avocat au barreau de Nantes."
+    },
+    {
+      "name": "nom de bien en capitales après un rôle",
+      "input": "Le débiteur Appartement DUPLEX est mis en vente."
+    },
+    {
+      "name": "nom de bien en capitales après occupant",
+      "input": "Occupant Local COMMERCIAL, bail en cours."
+    },
+    {
+      "name": "NOM et mot qui n'est pas un prénom",
+      "input": "Appartement occupé par DUPONT Immobilier depuis 2012."
+    },
+    {
+      "name": "rôle sans nom",
+      "input": "Le débiteur saisi occupe le bien. Le vendeur est présent à la visite."
     }
   ]
 }

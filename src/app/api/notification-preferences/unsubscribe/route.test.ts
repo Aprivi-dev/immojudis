@@ -5,14 +5,22 @@ const mocks = vi.hoisted(() => ({
     userId,
     revokedAt: "2026-10-09T10:00:00.000Z",
   })),
+  revokeSaleReminderConsent: vi.fn(async ({ userId }: { userId: string }) => ({
+    userId,
+    revokedAt: "2026-10-19T10:00:00.000Z",
+  })),
   deactivateAlertForUser: vi.fn(async (_input: { userId: string; alertId: string }) => undefined),
   unsubscribeEmailAlertsByNotificationId: vi.fn(async (_input: { notificationId: string }) => ({
     userId: "u",
     revokedAt: "x",
   })),
 }));
-const { revokeEmailAlertConsent, deactivateAlertForUser, unsubscribeEmailAlertsByNotificationId } =
-  mocks;
+const {
+  revokeEmailAlertConsent,
+  revokeSaleReminderConsent,
+  deactivateAlertForUser,
+  unsubscribeEmailAlertsByNotificationId,
+} = mocks;
 
 vi.mock("@/lib/email-alerts", () => mocks);
 
@@ -26,6 +34,7 @@ describe("unsubscribe route", () => {
   beforeEach(() => {
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-test-key");
     revokeEmailAlertConsent.mockClear();
+    revokeSaleReminderConsent.mockClear();
     deactivateAlertForUser.mockClear();
     unsubscribeEmailAlertsByNotificationId.mockClear();
   });
@@ -91,5 +100,39 @@ describe("unsubscribe route", () => {
     );
     expect(response.status).toBe(400);
     expect(revokeEmailAlertConsent).not.toHaveBeenCalled();
+  });
+
+  it("n'écrit rien sur un GET d'un jeton « rappels » et demande confirmation", async () => {
+    const token = createUnsubscribeToken({ userId, scope: { kind: "reminders" } });
+    const response = await GET(
+      new Request(`https://immojudis.test/api/notification-preferences/unsubscribe?token=${token}`),
+    );
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(html).toContain("rappels d&#39;audience");
+    expect(html).toContain("Me désinscrire des rappels");
+    expect(revokeSaleReminderConsent).not.toHaveBeenCalled();
+    expect(revokeEmailAlertConsent).not.toHaveBeenCalled();
+  });
+
+  it("retire seulement le consentement aux rappels sur le POST one-click d'un jeton « rappels »", async () => {
+    const token = createUnsubscribeToken({ userId, scope: { kind: "reminders" } });
+    const response = await POST(
+      new Request(
+        `https://immojudis.test/api/notification-preferences/unsubscribe?token=${token}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: "List-Unsubscribe=One-Click",
+        },
+      ),
+    );
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(revokeSaleReminderConsent).toHaveBeenCalledWith({ userId });
+    // Le consentement aux alertes email reste intact.
+    expect(revokeEmailAlertConsent).not.toHaveBeenCalled();
+    expect(html).toContain("Rappels désactivés");
+    expect(html).toContain("Vos alertes email ne sont pas modifiées");
   });
 });

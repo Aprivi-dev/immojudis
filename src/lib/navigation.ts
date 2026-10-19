@@ -40,15 +40,51 @@ export const SITE_LEGAL_LINKS: readonly SiteLink[] = [
   { href: "/mes-droits", label: "Mes droits" },
 ];
 
-export const ACCOUNT_LINKS: readonly SiteLink[] = [
+export const UNLOCKED_SALES_PATH = "/compte/ventes-debloquees";
+
+/** `hideForAnalysis` : l'entrée n'a de sens que pour un compte qui débloque ses ventes une à une. */
+export type AccountLink = SiteLink & { readonly hideForAnalysis?: boolean };
+
+export const ACCOUNT_LINKS: readonly AccountLink[] = [
   { href: "/favoris", label: "Mes favoris" },
   { href: "/alertes", label: "Mes alertes" },
+  { href: UNLOCKED_SALES_PATH, label: "Mes ventes débloquées", hideForAnalysis: true },
   { href: "/comparaisons", label: "Mes comparaisons" },
   { href: "/compte", label: "Mon compte" },
 ];
 
-/** Pourquoi la personne arrive sur la page de connexion : sert au bandeau d'explication. */
-export const LOGIN_REASONS = ["alerte", "favori", "export", "offre", "fiche"] as const;
+/**
+ * Les entrées du menu « Mon compte » à afficher. « Mes ventes débloquées » n'apparaît que pour un
+ * compte dont l'offre est connue et n'ouvre pas déjà toutes les ventes (`false`, pas `undefined`).
+ */
+export function visibleAccountLinks(
+  links: readonly AccountLink[],
+  hasAnalysisAccess: boolean | undefined,
+): SiteLink[] {
+  return links
+    .filter((link) => !link.hideForAnalysis || hasAnalysisAccess === false)
+    .map(({ href, label }) => ({ href, label }));
+}
+
+export function accountLinksFor(hasAnalysisAccess: boolean | undefined): SiteLink[] {
+  return visibleAccountLinks(ACCOUNT_LINKS, hasAnalysisAccess);
+}
+
+/**
+ * Pourquoi la personne arrive sur la page de connexion : sert au bandeau d'explication.
+ * `mes-favoris` et `mes-alertes` : une page de l'espace personnel demandée sans être connecté
+ * (à la différence de `favori` et `alerte`, qui suivent un clic sur un cœur ou une cloche).
+ */
+export const LOGIN_REASONS = [
+  "alerte",
+  "favori",
+  "export",
+  "offre",
+  "ouverture",
+  "fiche",
+  "mes-favoris",
+  "mes-alertes",
+] as const;
 export type LoginReason = (typeof LOGIN_REASONS)[number];
 
 export function loginReason(value: unknown): LoginReason | undefined {
@@ -102,6 +138,22 @@ export function saleDetailPath(saleId: string, returnTo?: string): string {
 
   const search = new URLSearchParams({ from: safeReturnTo });
   return `${path}?${search.toString()}`;
+}
+
+/** Préfixe de l'ancre d'une carte du catalogue : `id="sale-card-<id>"` (voir `SearchResults`). */
+export const SALE_CARD_ANCHOR_PREFIX = "sale-card-";
+
+/**
+ * Adresse du lien « Retour aux ventes » d'une fiche : la recherche d'origine, ouverte sur la carte
+ * de cette vente (ancre `#sale-card-<id>`). Le catalogue y défile une fois la liste affichée (voir
+ * `useRestoreSaleCard`). L'identifiant de la fiche est celui de la carte : rien d'autre n'est à
+ * transmettre dans l'origine (`?from=`). Une origine qui n'est pas une recherche du catalogue (page
+ * d'exemple, par exemple) est rendue telle quelle.
+ */
+export function salesReturnHref(returnTo: string | null | undefined, saleId: string): string {
+  const base = returnTo ? safeSalesReturnTo(returnTo) : "/sales";
+  if (!base) return returnTo ?? "/sales";
+  return `${base}#${SALE_CARD_ANCHOR_PREFIX}${encodeURIComponent(saleId)}`;
 }
 
 export type SearchValue = string | number | boolean | null | undefined;

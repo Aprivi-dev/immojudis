@@ -254,6 +254,7 @@ export const ERASURE_TABLES: ReadonlyArray<readonly [table: string, column: stri
   ["user_alert_matches", "user_id"],
   ["user_alert_notifications", "user_id"],
   ["user_favorites", "user_id"],
+  ["user_followed_sale_snapshots", "user_id"],
   ["user_watched_zones", "user_id"],
   ["user_sale_change_events", "user_id"],
   ["user_sale_unlocks", "user_id"],

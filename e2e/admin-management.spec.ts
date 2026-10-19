@@ -122,7 +122,8 @@ test.describe("admin management", () => {
   test("loads only its own data on every management view", async ({ page }) => {
     const state = await prepareAdminManagementPage(page);
     const own: Array<[string, string[]]> = [
-      ["/admin/clients", ["/api/admin/subscriptions"]],
+      // /admin/clients porte aussi l'interrupteur de l'offre de lancement.
+      ["/admin/clients", ["/api/admin/launch-offer", "/api/admin/subscriptions"]],
       ["/admin/lawyers", ["/api/admin/lawyer-referrals"]],
       ["/admin/compliance", ["/api/admin/privacy-requests", "/api/admin/readiness"]],
       ["/admin/publications", ["/api/admin/publications"]],
@@ -275,6 +276,11 @@ async function prepareAdminManagementPage(page: Page): Promise<ManagementState> 
           publishedSaleId: "76000000-0000-4000-8000-000000000105",
         },
       });
+      return;
+    }
+
+    if (path === "/api/admin/launch-offer" && method === "GET") {
+      await route.fulfill({ status: 200, json: { active: true } });
       return;
     }
 

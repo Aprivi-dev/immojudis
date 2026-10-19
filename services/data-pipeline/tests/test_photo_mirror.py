@@ -1172,6 +1172,46 @@ def test_main_with_the_switch_off_still_runs_the_pass_for_withdrawals(
     assert seen == [MirrorLimits(budget_seconds=20 * 60.0, max_photos=400)]
 
 
+def test_a_selection_that_raises_stops_the_pass_and_main_exits_one_visibly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class BrokenSelectionStore(_Store):
+        def select_candidates(self, limit: int, *, include_encheres_publiques: bool) -> list[Candidate]:
+            raise RuntimeError("column s.catalogue_thumbnail_url does not exist")
+
+    store = BrokenSelectionStore([])
+    downloader, clock, _ = _downloader(_Get())
+    with pytest.raises(RuntimeError, match="catalogue_thumbnail_url"):
+        run_photo_mirror(
+            MirrorLimits(), settings=SETTINGS, store=store, storage=_Storage(), downloader=downloader,
+            env=ENABLED, clock=clock,
+        )
+
+    # main() turns it into a failed step: exit code 1 and a GitHub error annotation, never a silent 0.
+    def failing_pass(limits: MirrorLimits, **kwargs: Any) -> photo_mirror.MirrorSummary:
+        raise RuntimeError("column s.catalogue_thumbnail_url does not exist")
+
+    monkeypatch.setattr(photo_mirror, "run_photo_mirror", failing_pass)
+    monkeypatch.setattr(photo_mirror, "load_settings", lambda: SETTINGS)
+    assert photo_mirror.main(["--automatic"]) == 1
+    output = capsys.readouterr().out
+    assert "::error" in output and "RuntimeError" in output
+    assert "photo_mirror_summary" not in output
+
+
+def test_photo_failures_never_fail_the_step(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    # Network, robots.txt or format failures are counted in the summary of a pass that ran: exit code 0.
+    def pass_with_failures(limits: MirrorLimits, **kwargs: Any) -> photo_mirror.MirrorSummary:
+        summary = photo_mirror.MirrorSummary(stop_reason="budget", selected=3, processed=3)
+        summary.failures_by_reason["network_error"] += 2
+        summary.failures_by_reason["timeout"] += 1
+        return summary
+
+    monkeypatch.setattr(photo_mirror, "run_photo_mirror", pass_with_failures)
+    assert photo_mirror.main(["--automatic"]) == 0
+    assert json.loads(capsys.readouterr().out)["failures_by_reason"] == {"network_error": 2, "timeout": 1}
+
+
 def test_limits_come_from_the_environment_inputs_and_are_bounded() -> None:
     assert limits_from_inputs() == MirrorLimits(budget_seconds=15 * 60, max_photos=400)
     assert limits_from_inputs("3000", "60") == MirrorLimits(budget_seconds=3600, max_photos=3000)

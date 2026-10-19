@@ -6,11 +6,21 @@
 /** Raised when a per-user or per-IP quota is exhausted. Mapped to HTTP 429 + Retry-After. */
 export class RateLimitError extends Error {
   readonly retryAfterSeconds: number;
+  /**
+   * Message rendu tel quel à l'utilisateur à la place du « Trop de demandes. » générique (plafonds
+   * journaliers : « Limite quotidienne atteinte, réessayez demain. »). Absent : message générique.
+   */
+  readonly publicMessage?: string;
 
-  constructor(message = "Trop de demandes. Réessayez dans une minute.", retryAfterSeconds = 60) {
+  constructor(
+    message = "Trop de demandes. Réessayez dans une minute.",
+    retryAfterSeconds = 60,
+    publicMessage?: string,
+  ) {
     super(message);
     this.name = "RateLimitError";
     this.retryAfterSeconds = Math.max(1, Math.ceil(retryAfterSeconds));
+    if (publicMessage) this.publicMessage = publicMessage;
   }
 }
 

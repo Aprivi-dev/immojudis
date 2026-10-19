@@ -18,6 +18,8 @@ import type {
   AdminLawyerReferralUpdateInput,
   AdminLawyerReferralUpdateResponse,
 } from "@/lib/admin-lawyer-referrals";
+import type { AdminLaunchOfferState } from "@/lib/admin-launch-offer";
+import type { AdminPilotage } from "@/lib/admin-pilotage";
 import type {
   AdminSubscriptionGrantInput,
   AdminSubscriptionGrantResponse,
@@ -200,4 +202,34 @@ export async function grantAdminSubscription(args: {
   });
 
   return readJson<AdminSubscriptionGrantResponse>(response);
+}
+
+export async function fetchAdminPilotage(): Promise<AdminPilotage> {
+  const response = await fetch("/api/admin/pilotage", {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+
+  return readJson<AdminPilotage>(response);
+}
+
+export async function fetchAdminLaunchOffer(): Promise<AdminLaunchOfferState> {
+  const response = await fetch("/api/admin/launch-offer", {
+    signal: AbortSignal.timeout(30_000),
+    headers: await authHeaders(),
+    cache: "no-store",
+  });
+
+  return readJson<AdminLaunchOfferState>(response);
+}
+
+export async function setAdminLaunchOfferClient(active: boolean): Promise<AdminLaunchOfferState> {
+  const response = await fetch("/api/admin/launch-offer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ active }),
+  });
+
+  return readJson<AdminLaunchOfferState>(response);
 }

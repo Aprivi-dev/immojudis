@@ -20,7 +20,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       bucketKey: "property-reports.export",
       ...RATE_LIMIT_POLICIES.compute,
     });
-    const pdf = await exportPropertyReportPdf({ auth, reportId: id });
+    const pdf = await exportPropertyReportPdf({ auth, reportId: id, request });
     const body = pdf.bytes.buffer.slice(
       pdf.bytes.byteOffset,
       pdf.bytes.byteOffset + pdf.bytes.byteLength,

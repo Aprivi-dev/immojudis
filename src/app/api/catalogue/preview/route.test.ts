@@ -109,7 +109,7 @@ describe("GET /api/catalogue/preview", () => {
   it("appelle la fonction publique avec les arguments de la page (mêmes filtres, même tri)", async () => {
     await GET(
       request(
-        "/api/catalogue/preview?department=33&minPrice=50000&maxPrice=200000&sort=price_asc&page=2&limit=12&homeTypes=house,apartment",
+        "/api/catalogue/preview?department=33&minPrice=50000&maxPrice=200000&sort=price_asc&page=2&limit=50&homeTypes=house,apartment",
       ),
     );
 
@@ -119,8 +119,8 @@ describe("GET /api/catalogue/preview", () => {
       p_max_price: 200000,
       p_property_types: ["house", "apartment"],
       p_sort: "price_asc",
-      p_limit: 12,
-      p_offset: 12,
+      p_limit: 50,
+      p_offset: 50,
       // Les critères réservés ne sont jamais transmis à la fonction publique.
       p_occupancy_status: null,
       p_min_score: null,
@@ -176,29 +176,29 @@ describe("GET /api/catalogue/preview", () => {
     expect(rpcCalls("sale_photo_mirrors")).toHaveLength(0);
   });
 
-  it("garde la première page sans filtre 300 s dans le CDN", async () => {
+  it("garde la première page sans filtre 60 s dans le CDN (pas de purge par étiquette)", async () => {
     const response = await GET(request("/api/catalogue/preview"));
 
     expect(response.headers.get("cache-control")).toBe(
-      "public, s-maxage=300, stale-while-revalidate=60",
+      "public, s-maxage=60, stale-while-revalidate=60",
     );
   });
 
-  it("garde une recherche filtrée 120 s seulement", async () => {
+  it("garde aussi une recherche filtrée 60 s (même durée : la purge du CDN n'est pas possible)", async () => {
     for (const query of ["city=Pau", "page=2", "sort=price_asc", "minSaleDate=2026-11-01"]) {
       const response = await GET(request(`/api/catalogue/preview?${query}`));
 
       expect(response.headers.get("cache-control"), query).toBe(
-        "public, s-maxage=120, stale-while-revalidate=60",
+        "public, s-maxage=60, stale-while-revalidate=60",
       );
     }
   });
 
-  it("garde la première page par défaut même quand les valeurs par défaut sont explicites", async () => {
+  it("garde la même durée pour la première page même quand les valeurs par défaut sont explicites", async () => {
     const response = await GET(request("/api/catalogue/preview?sort=relevance&page=1"));
 
     expect(response.headers.get("cache-control")).toBe(
-      "public, s-maxage=300, stale-while-revalidate=60",
+      "public, s-maxage=60, stale-while-revalidate=60",
     );
   });
 
@@ -283,7 +283,7 @@ describe("GET /api/catalogue/preview", () => {
       const response = await GET(request("/api/catalogue/preview"));
 
       expect(response.headers.get("cache-control")).toBe(
-        "public, s-maxage=300, stale-while-revalidate=60",
+        "public, s-maxage=60, stale-while-revalidate=60",
       );
     });
 
@@ -300,7 +300,7 @@ describe("GET /api/catalogue/preview", () => {
       const response = await GET(request("/api/catalogue/preview"));
 
       expect(response.headers.get("cache-control")).toBe(
-        "public, s-maxage=300, stale-while-revalidate=60",
+        "public, s-maxage=60, stale-while-revalidate=60",
       );
     });
   });
@@ -349,6 +349,17 @@ describe("GET /api/catalogue/preview", () => {
       ["une page illisible", "page=abc"],
       ["une page au-delà de la limite de la fonction (10 000 lignes)", "page=500&limit=24"],
       ["une taille de page supérieure à 100", "limit=101"],
+      ["une taille de page hors de la liste (1)", "limit=1"],
+      ["une taille de page hors de la liste (12)", "limit=12"],
+      ["une taille de page hors de la liste (99)", "limit=99"],
+      ["un prix au-delà du plafond de 100 000 000 €", "maxPrice=100000001"],
+      ["un prix minimum au-delà du plafond", "minPrice=99999999999999"],
+      ["un prix en notation scientifique", "maxPrice=1e30"],
+      ["un prix décimal", "minPrice=1000.5"],
+      ["un prix hexadécimal", "maxPrice=0x10"],
+      ["un prix signé", "minPrice=%2B5000"],
+      ["un prix avec un zéro de tête", "minPrice=050000"],
+      ["un prix infini", "maxPrice=Infinity"],
       ["une taille de page négative", "limit=-5"],
       ["un prix illisible", "minPrice=beaucoup"],
       ["un prix négatif", "maxPrice=-1"],
@@ -402,6 +413,8 @@ describe("GET /api/catalogue/preview", () => {
       ["0 chambre", "minBeds=0&minBaths=0"],
       ["20 chambres et salles de bain", "minBeds=20&minBaths=20"],
       ["la dernière page", "page=101&limit=100"],
+      ["chacune des trois tailles de page", "limit=50"],
+      ["un prix au plafond", "minPrice=0&maxPrice=100000000"],
     ])("accepte %s", async (_label, query) => {
       const response = await GET(request(`/api/catalogue/preview?${query}`));
 

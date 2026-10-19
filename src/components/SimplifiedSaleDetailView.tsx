@@ -8,6 +8,7 @@ import dynamic from "next/dynamic";
 import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left.js";
 import { listingValuationConflict } from "@/lib/listing-evidence";
 import { useAuth } from "@/hooks/use-auth";
+import { salesReturnHref } from "@/lib/navigation";
 import { DocumentReadingSection } from "@/components/sale-detail/DocumentReadingSection";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
@@ -116,6 +117,10 @@ const PropertyReportActions = dynamic(
       <p className="mt-3 text-sm text-muted-foreground">Chargement des actions du rapport…</p>
     ),
   },
+);
+// « Mon dossier » gratuit (point 68) : chargé à la demande, hors du JavaScript initial de la fiche.
+const SaleFileCard = dynamic(() =>
+  import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFileCard),
 );
 const ListingWorks = dynamic(
   () => import("@/components/sale-detail/ListingWorks").then((module) => module.ListingWorks),
@@ -520,8 +525,8 @@ function SaleDetailWorkspace({
         <div className={listingStyles.container}>
           <div className={listingStyles.topbar}>
             <Link
-              href={returnTo ?? "/sales"}
-              className="inline-flex min-h-10 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              href={salesReturnHref(returnTo, sale.id)}
+              className="inline-flex min-h-11 items-center gap-2 rounded-md text-sm font-semibold text-brand-navy transition-colors hover:text-gold-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden />
               {backLabel}
@@ -589,6 +594,13 @@ function SaleDetailWorkspace({
               opens={{ ceiling: isTribunalSale, statistics: statisticsAvailable }}
               announce={justUnlocked}
               onUnlocked={(result) => onSaleUnlocked?.(result)}
+            />
+          ) : null}
+          {!publicDemo && user ? (
+            <SaleFileCard
+              saleId={sale.id}
+              calculatedCeiling={heroCeiling}
+              calculationPending={ceilingEnabled && marketPending}
             />
           ) : null}
         </div>

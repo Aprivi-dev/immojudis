@@ -190,11 +190,11 @@ describe("garde-fous de lancement (build de production)", () => {
     expect(ANALYSIS_RECURRING_PRICE_CENTS).toBe(TS_ANALYSIS_RECURRING_PRICE_CENTS);
     for (const label of [
       DEFAULT_ANALYSIS_OFFER_LABEL,
-      "29 € / mois",
-      "29,00 € TTC par mois",
-      "€29 / mois",
+      "59 € / mois",
+      "59,00 € TTC par mois",
+      "€59 / mois",
       "39 € TTC / mois",
-      "19 € puis 29 € / mois",
+      "19 € puis 59 € / mois",
       "1 290,50 € / mois",
       "Sur devis",
     ]) {
@@ -207,7 +207,7 @@ describe("garde-fous de lancement (build de production)", () => {
       "39 € TTC / mois",
       "2,90 € / mois",
       "Sur devis",
-      "19 € puis 29 € / mois",
+      "19 € puis 59 € / mois",
     ]) {
       expect(
         analysisOfferLabelProblems({ NEXT_PUBLIC_ANALYSIS_OFFER_LABEL: label }),
@@ -233,7 +233,7 @@ describe("garde-fous de lancement (build de production)", () => {
   });
 
   it("accepte un libellé vide ou conforme au prix facturé", () => {
-    for (const label of [undefined, "", "  ", "29 € TTC / mois", "29 € / mois"]) {
+    for (const label of [undefined, "", "  ", "59 € TTC / mois", "59 € / mois"]) {
       expect(
         analysisOfferLabelProblems({ NEXT_PUBLIC_ANALYSIS_OFFER_LABEL: label }),
         label,
@@ -242,7 +242,7 @@ describe("garde-fous de lancement (build de production)", () => {
     const result = runBuildCheck({
       ...completeLaunch,
       VERCEL_ENV: "production",
-      NEXT_PUBLIC_ANALYSIS_OFFER_LABEL: "29 € / mois",
+      NEXT_PUBLIC_ANALYSIS_OFFER_LABEL: "59 € / mois",
     });
     expect(result.status).toBe(0);
   });
@@ -304,6 +304,20 @@ describe("garde-fous de lancement (build de production)", () => {
     expect(text).toContain("ATTENTION");
     expect(text).toContain("NEXT_PUBLIC_LEGAL_ENTITY_NAME");
     expect(text).toContain("ADMIN_MFA_REQUIRED");
+  });
+
+  it("avertit, sans jamais bloquer, d'une valeur inconnue de SALE_REMINDERS_MODE", () => {
+    const production = { ...completeLaunch, VERCEL_ENV: "production" };
+    for (const SALE_REMINDERS_MODE of [undefined, "", "off", "internal", " ON "]) {
+      expect(
+        evaluateProductionLaunchConfig({ ...production, SALE_REMINDERS_MODE }),
+        String(SALE_REMINDERS_MODE),
+      ).toEqual({ exitCode: 0, errors: [], warnings: [] });
+    }
+    const outcome = evaluateProductionLaunchConfig({ ...production, SALE_REMINDERS_MODE: "oui" });
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.errors).toEqual([]);
+    expect(outcome.warnings.join("\n")).toContain("SALE_REMINDERS_MODE vaut « oui »");
   });
 
   it("l'échappatoire ne change rien quand la configuration est complète", () => {

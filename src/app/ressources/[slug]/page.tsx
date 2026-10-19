@@ -6,12 +6,12 @@ import { ResourceCard } from "@/components/resources/ResourceCard";
 import { ResourcesNextStep } from "@/components/resources/ResourcesNextStep";
 import {
   RESOURCE_ARTICLES,
-  RESOURCE_SUMMARIES,
   getResourceArticle,
   formatResourceDate,
   resourceDocumentTitle,
   resourceLastModified,
 } from "@/lib/resource-articles";
+import { relatedResources } from "@/lib/resource-related";
 import { siteLogoUrl } from "@/lib/seo";
 import { resolveSiteOrigin } from "@/lib/site-url";
 import styles from "@/components/resources/Resources.module.css";
@@ -98,7 +98,8 @@ export default async function Page({ params }: Props) {
       },
     ],
   };
-  const related = RESOURCE_SUMMARIES.filter((item) => item.slug !== slug).slice(0, 3);
+  // Sujets puis catégorie en commun ; l'ordre du registre départage (voir resource-related.ts).
+  const related = relatedResources(slug);
 
   return (
     <main id="contenu" className={styles.root}>

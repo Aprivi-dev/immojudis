@@ -5,6 +5,41 @@ import LoaderCircle from "lucide-react/dist/esm/icons/loader-circle.js";
 const PAGE_CONTROL_CLASSES =
   "inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-bold text-brand-navy transition-colors hover:border-brand-navy hover:text-brand-navy aria-disabled:cursor-not-allowed aria-disabled:opacity-60";
 
+/** Pastille d'un numéro de page : même hauteur de 44 px, largeur minimale d'un doigt. */
+const PAGE_NUMBER_CLASSES = `${PAGE_CONTROL_CLASSES} min-w-11 px-2`;
+
+/** Identifiant de la pagination : cible du lien d'évitement « Aller à la pagination ». */
+export const SALES_PAGINATION_ID = "sales-pagination";
+
+/**
+ * Plus grand décalage lu par la recherche publique (`RPC_LIMITS.maxOffset`) : au-delà, la route
+ * refuse la page. Les numéros proposés s'arrêtent donc là.
+ */
+const MAX_OFFSET = 10_000;
+
+/** Un numéro de page, ou « … » pour les pages sautées. */
+export type PageItem = number | "gap";
+
+/**
+ * Numéros affichés : la première page, les deux suivantes, la dernière et la page courante avec ses
+ * voisines. Un trou d'une seule page est comblé (« 1 2 3 4 … » plutôt que « 1 2 3 … 5 »).
+ */
+export function visiblePages(page: number, totalPages: number): PageItem[] {
+  const wanted = new Set<number>();
+  for (const candidate of [1, 2, 3, totalPages, page - 1, page, page + 1]) {
+    if (candidate >= 1 && candidate <= totalPages) wanted.add(candidate);
+  }
+  const sorted = [...wanted].sort((a, b) => a - b);
+  const items: PageItem[] = [];
+  sorted.forEach((value, index) => {
+    const previous = sorted[index - 1];
+    if (previous !== undefined && value - previous === 2) items.push(previous + 1);
+    else if (previous !== undefined && value - previous > 2) items.push("gap");
+    items.push(value);
+  });
+  return items;
+}
+
 /**
  * A page change is a real link (`?page=N`) when its address is known: crawlers and "open in a new
  * tab" follow it. A plain click keeps the client behaviour (the list is updated in place, without
@@ -16,12 +51,16 @@ function PageControl({
   disabled,
   onActivate,
   rel,
+  className = PAGE_CONTROL_CLASSES,
+  ariaLabel,
   children,
 }: {
   href: string | undefined;
   disabled: boolean;
   onActivate: () => void;
   rel?: "next" | "prev";
+  className?: string;
+  ariaLabel?: string;
   children: ReactNode;
 }) {
   if (!href) {
@@ -31,7 +70,8 @@ function PageControl({
         onClick={onActivate}
         disabled={disabled}
         aria-disabled={disabled}
-        className={PAGE_CONTROL_CLASSES}
+        aria-label={ariaLabel}
+        className={className}
       >
         {children}
       </button>
@@ -54,8 +94,9 @@ function PageControl({
       rel={rel}
       prefetch={false}
       aria-disabled={disabled || undefined}
+      aria-label={ariaLabel}
       onClick={handleClick}
-      className={PAGE_CONTROL_CLASSES}
+      className={className}
     >
       {children}
     </Link>
@@ -76,8 +117,18 @@ export type SearchPaginationProps = {
   /** Address of the next / previous page (`/sales?…&page=N`): turns the buttons into links. */
   nextHref?: string;
   previousHref?: string;
+  /**
+   * Address of any page of the search, and the client action for a plain click on it: the numbered
+   * links (1, 2, 3, …, last) are real `<a href>` when both are given.
+   */
+  pageHref?: (page: number) => string | undefined;
+  onGoToPage?: (page: number) => void;
   /** Pour revenir au début quand la page demandée dépasse la dernière. */
   onFirstPage?: () => void;
+  /** Address of page 1: « Revenir à la page 1 » is then a real link. */
+  firstHref?: string;
+  /** La route a refusé la page (hors bornes) : le message le dit, sans parler de résultats vides. */
+  outOfRange?: boolean;
 };
 
 export function SearchPagination({
@@ -93,7 +144,11 @@ export function SearchPagination({
   onPrevious,
   nextHref,
   previousHref,
+  pageHref,
+  onGoToPage,
   onFirstPage,
+  firstHref,
+  outOfRange = false,
 }: SearchPaginationProps) {
   if (!hasMore && !hasPrevious && loadedCount === 0) return null;
 
@@ -102,20 +157,25 @@ export function SearchPagination({
   if (page > 1 && loadedCount === 0 && !isFetching) {
     return (
       <nav
-        className="flex flex-wrap items-center justify-center gap-3 px-4 pb-10 pt-2 text-center sm:px-5"
+        id={SALES_PAGINATION_ID}
+        tabIndex={-1}
+        className="flex flex-wrap items-center justify-center gap-3 px-4 pb-10 pt-2 text-center outline-none sm:px-5"
         aria-label="Pagination des ventes"
       >
         <span className="text-sm font-semibold text-ink-soft" role="status">
-          Aucun résultat sur cette page
+          {outOfRange
+            ? "Cette page n’existe pas pour cette recherche"
+            : "Aucun résultat sur cette page"}
         </span>
         {onFirstPage ? (
-          <button
-            type="button"
-            onClick={onFirstPage}
+          <PageControl
+            href={firstHref}
+            disabled={false}
+            onActivate={onFirstPage}
             className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md border border-line bg-white px-4 text-sm font-bold text-brand-navy transition-colors hover:border-brand-navy"
           >
             Revenir à la page 1
-          </button>
+          </PageControl>
         ) : null}
       </nav>
     );
@@ -123,10 +183,17 @@ export function SearchPagination({
 
   const firstResult = loadedCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastResult = (page - 1) * pageSize + loadedCount;
+  const totalPages =
+    totalCount != null && pageSize > 0 && !mapListFollowsViewport
+      ? Math.min(Math.ceil(totalCount / pageSize), Math.floor(MAX_OFFSET / pageSize) + 1)
+      : 0;
+  const numbered = totalPages > 1 && pageHref && onGoToPage ? visiblePages(page, totalPages) : [];
 
   return (
     <nav
-      className="flex flex-wrap items-center justify-center gap-3 px-4 pb-10 pt-2 text-center sm:px-5"
+      id={SALES_PAGINATION_ID}
+      tabIndex={-1}
+      className="flex flex-wrap items-center justify-center gap-3 px-4 pb-10 pt-2 text-center outline-none sm:px-5"
       aria-label="Pagination des ventes"
       aria-busy={isFetching}
     >
@@ -155,6 +222,39 @@ export function SearchPagination({
           {isFetching ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
           {isFetching ? "Chargement..." : "Page suivante"}
         </PageControl>
+      ) : null}
+      {numbered.length > 0 ? (
+        <ol className="order-last flex w-full flex-wrap items-center justify-center gap-1.5">
+          {numbered.map((item, index) =>
+            item === "gap" ? (
+              <li key={`gap-${index}`} aria-hidden="true" className="px-1 text-ink-soft">
+                …
+              </li>
+            ) : (
+              <li key={item}>
+                {item === page ? (
+                  <span
+                    aria-current="page"
+                    aria-label={`Page ${item}, page actuelle`}
+                    className={`${PAGE_NUMBER_CLASSES} border-brand-navy bg-brand-navy text-white`}
+                  >
+                    {item.toLocaleString("fr-FR")}
+                  </span>
+                ) : (
+                  <PageControl
+                    href={pageHref?.(item)}
+                    disabled={isFetching}
+                    onActivate={() => onGoToPage?.(item)}
+                    className={PAGE_NUMBER_CLASSES}
+                    ariaLabel={`Page ${item}`}
+                  >
+                    {item.toLocaleString("fr-FR")}
+                  </PageControl>
+                )}
+              </li>
+            ),
+          )}
+        </ol>
       ) : null}
     </nav>
   );

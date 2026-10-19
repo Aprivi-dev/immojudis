@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -33,6 +34,38 @@ function concurrentRead<T>(pending: Map<string, Promise<T>>, key: string, read: 
 
 export type AuthState = ReturnType<typeof useVerifiedAuth>;
 
+/** Message unique quand l'identité du compte n'a pas pu être vérifiée (réseau ou session rejetée). */
+export const SESSION_UNVERIFIED_MESSAGE = "Votre session n’a pas pu être vérifiée.";
+
+/**
+ * Pourquoi l'identité n'a pas pu être vérifiée : `expired` quand le serveur d'authentification
+ * répond que la session n'est plus valable (reconnexion nécessaire), `unavailable` quand il n'a pas
+ * répondu (réseau, erreur serveur, client non chargé) : réessayer a alors un sens.
+ */
+export type AuthErrorKind = "expired" | "unavailable";
+
+/**
+ * Une réponse 4xx du serveur d'authentification (hors délai et limitation de débit) ou une session
+ * absente rejette la session ; tout le reste (exception, 5xx, statut 0 d'une coupure réseau, erreur
+ * sans statut) est une indisponibilité.
+ */
+export function identityErrorKind(error: unknown): AuthErrorKind {
+  if (typeof error !== "object" || error === null) return "unavailable";
+  const { status, name } = error as { status?: unknown; name?: unknown };
+  if (name === "AuthSessionMissingError") return "expired";
+  if (
+    typeof status === "number" &&
+    status >= 400 &&
+    status < 500 &&
+    status !== 408 &&
+    status !== 429
+  )
+    return "expired";
+  return "unavailable";
+}
+
+function noRetry() {}
+
 // État rendu par le serveur et par le premier rendu d'hydratation : identité en cours de vérification.
 const INITIAL_AUTH_STATE: Readonly<AuthState> = Object.freeze({
   session: null,
@@ -40,6 +73,8 @@ const INITIAL_AUTH_STATE: Readonly<AuthState> = Object.freeze({
   profile: null,
   loading: true,
   authError: null,
+  authErrorKind: null,
+  retry: noRetry,
 });
 
 export type AuthStore = {
@@ -71,7 +106,9 @@ export function createAuthStore(): AuthStore {
         next.user === state.user &&
         next.profile === state.profile &&
         next.loading === state.loading &&
-        next.authError === state.authError
+        next.authError === state.authError &&
+        next.authErrorKind === state.authErrorKind &&
+        next.retry === state.retry
       )
         return;
       state = next;
@@ -104,7 +141,9 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authErrorKind, setAuthErrorKind] = useState<AuthErrorKind | null>(null);
   const refreshRef = useRef<(() => void) | null>(null);
+  const retryRef = useRef<(() => void) | null>(null);
   const previousRouteRef = useRef(routeKey);
 
   useEffect(() => {
@@ -137,10 +176,20 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
       return (data as AccountProfile | null) ?? profileFromUserMetadata(nextUser);
     }
 
+    function reportAuthError(kind: AuthErrorKind) {
+      setAuthError(SESSION_UNVERIFIED_MESSAGE);
+      setAuthErrorKind(kind);
+    }
+
+    function clearAuthError() {
+      setAuthError(null);
+      setAuthErrorKind(null);
+    }
+
     async function verifySession(nextSession: Session | null) {
       currentSession = nextSession;
       const currentVerification = ++verification;
-      setAuthError(null);
+      clearAuthError();
       if (nextSession?.user.id !== verifiedUserId) {
         setLoading(true);
         setSession(null);
@@ -162,11 +211,19 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
       ).catch(() => ({ data: { user: null }, error: new Error("Identity unavailable") }));
       if (!active || currentVerification !== verification) return;
       if (error || !data.user || data.user.id !== nextSession.user.id) {
+        // Sans réponse du serveur d'authentification (réseau, erreur serveur), l'identité déjà
+        // vérifiée de ce même compte reste affichée : une coupure passagère ne vide pas la session
+        // locale (le stockage de supabase-js n'est jamais touché ici). Seule une réponse qui rejette
+        // la session, ou une identité jamais vérifiée, la retire de l'état.
+        const kind = error ? identityErrorKind(error) : "expired";
+        if (kind === "unavailable" && verifiedUserId === nextSession.user.id) {
+          reportAuthError(kind);
+          setLoading(false);
+          return;
+        }
         verifiedUserId = undefined;
         setSession(null);
-        setAuthError(
-          "Votre session n’a pas pu être vérifiée. Reconnectez-vous pour ouvrir l’annonce.",
-        );
+        reportAuthError(kind);
         setUser(null);
         setProfile(null);
         setLoading(false);
@@ -198,14 +255,20 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
         const currentVerification = verification;
         supabase.auth
           .getSession()
-          .then(({ data }) => {
-            if (active && verification === currentVerification) void verifySession(data.session);
+          .then(({ data, error }) => {
+            if (!active || verification !== currentVerification) return;
+            // Une session stockée que supabase-js n'a pas pu renouveler (jeton expiré, réseau
+            // coupé) arrive ici sans session mais avec une erreur : ce n'est pas un visiteur.
+            if (!data.session && error) {
+              reportAuthError(identityErrorKind(error));
+              setLoading(false);
+              return;
+            }
+            void verifySession(data.session);
           })
           .catch(() => {
             if (!active || verification !== currentVerification) return;
-            setAuthError(
-              "Votre session n’a pas pu être vérifiée. Reconnectez-vous pour ouvrir l’annonce.",
-            );
+            reportAuthError("unavailable");
             setLoading(false);
           });
       }
@@ -220,12 +283,21 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
     function loadClient() {
       getSupabase().then(attach, () => {
         if (!active) return;
-        setAuthError(
-          "Votre session n’a pas pu être vérifiée. Reconnectez-vous pour ouvrir l’annonce.",
-        );
+        reportAuthError("unavailable");
         setLoading(false);
       });
     }
+
+    // « Réessayer » : relit la session (ou recharge le client s'il n'a pas pu l'être) et revérifie
+    // l'identité, par le même chemin que le rafraîchissement lors d'un changement de page.
+    retryRef.current = () => {
+      if (!attached || currentSession === undefined) {
+        clearAuthError();
+        setLoading(true);
+      }
+      if (attached) refreshRef.current?.();
+      else loadClient();
+    };
 
     // Dès qu'un client existe (chargé ici ou par une page : connexion, catalogue…), on le surveille.
     const stopListening = onSupabaseClient(attach);
@@ -258,6 +330,7 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
     return () => {
       active = false;
       refreshRef.current = null;
+      retryRef.current = null;
       stopListening();
       stopWatching?.();
       stopWatchingAnonymous?.();
@@ -272,5 +345,8 @@ export function useVerifiedAuth(enabled = true, routeKey?: string) {
     refreshRef.current?.();
   }, [routeKey]);
 
-  return { session, user, profile, loading, authError };
+  // Identité stable : le magasin partagé ne republie pas pour une fonction qui ne change jamais.
+  const retry = useCallback(() => retryRef.current?.(), []);
+
+  return { session, user, profile, loading, authError, authErrorKind, retry };
 }

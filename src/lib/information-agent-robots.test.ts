@@ -103,16 +103,35 @@ describe("lecture de robots.txt", () => {
   });
 
   describe("robustesse face à un fichier hostile", () => {
-    it("30 jokers contre un chemin de 200 caractères restent quasi instantanés", () => {
+    it("30 jokers contre un chemin de 200 caractères restent polynomiaux, pas exponentiels", () => {
+      // Un appariement à retour arrière exponentiel mettrait des heures sur ce motif ; le bon prend
+      // quelques millisecondes. Le seuil (1 s pour 200 appels, 1 s pour un seul) vise à séparer ces
+      // deux mondes, pas à mesurer la vitesse : il tient sur une machine chargée, où 50 ms échouait.
+      const BUDGET_MS = 1_000;
       const pattern = `/${"*a".repeat(30)}b`;
       const path = `/${"a".repeat(200)}`;
       const started = performance.now();
       for (let i = 0; i < 200; i += 1) expect(robotsPatternMatches(pattern, path)).toBe(false);
-      expect(performance.now() - started).toBeLessThan(50);
+      expect(performance.now() - started).toBeLessThan(BUDGET_MS);
       const text = `User-agent: *\nDisallow: ${pattern}`;
       const single = performance.now();
       expect(allowed(text, path)).toBe(true);
-      expect(performance.now() - single).toBeLessThan(50);
+      expect(performance.now() - single).toBeLessThan(BUDGET_MS);
+    });
+
+    it("le temps croît de façon bornée avec le nombre de jokers (mesure relative)", () => {
+      const path = `/${"a".repeat(200)}`;
+      const timeOf = (wildcards: number) => {
+        const pattern = `/${"*a".repeat(wildcards)}b`;
+        const started = performance.now();
+        for (let i = 0; i < 50; i += 1) robotsPatternMatches(pattern, path);
+        return performance.now() - started;
+      };
+      timeOf(5); // échauffement
+      // Quadratique au pire : 30 jokers contre 5 coûtent au plus quelques dizaines de fois plus ; un
+      // appariement exponentiel coûterait des milliards de fois plus. Plancher de 1 ms contre le bruit.
+      const small = Math.max(timeOf(5), 1);
+      expect(timeOf(30)).toBeLessThan(small * 500);
     });
 
     it("apparie comme la spécification les cas limites de jokers", () => {

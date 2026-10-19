@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PHOTO_MIRROR_BROWSER_TIMEOUT_MS,
+  PHOTO_MIRROR_ISR_TIMEOUT_MS,
+  PHOTO_MIRROR_TIMEOUT_MS,
   PHOTO_MIRROR_MAX_URLS,
   PHOTO_MIRROR_MEMORY_MAX,
   fetchPhotoMirrors,
@@ -372,6 +374,9 @@ describe("photo mirrors", () => {
 
     it("le délai du navigateur est de 1 500 ms, celui du serveur de 300 ms", async () => {
       expect(PHOTO_MIRROR_BROWSER_TIMEOUT_MS).toBe(1500);
+      expect(PHOTO_MIRROR_TIMEOUT_MS).toBe(300);
+      // La seule régénération statique de /sales attend aussi longtemps que le navigateur.
+      expect(PHOTO_MIRROR_ISR_TIMEOUT_MS).toBe(1500);
       vi.useFakeTimers();
       const rpc = vi.fn(() => new Promise(() => undefined));
       const sales = [sale("a", LICITOR)];

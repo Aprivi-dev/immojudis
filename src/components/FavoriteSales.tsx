@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Heart from "lucide-react/dist/esm/icons/heart.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useAuth } from "@/hooks/use-auth";
 import {
   addFavoriteSale,
@@ -19,7 +19,10 @@ import { userMessage } from "@/lib/user-messages";
 import { Badge, Card, PageShell, buttonClasses } from "@/components/ui/primitives";
 import { ListingCard } from "@/components/search/SearchResults";
 import { FavoriteButton } from "./FavoriteButton";
+import { FavoriteDossierLine } from "./FavoriteDossierLine";
+import { PastFollowedSales } from "./PastFollowedSales";
 import { FavoriteSaleChanges } from "./FavoriteSaleChanges";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { queryKeys } from "@/lib/query-keys";
 
 const NOOP = () => undefined;
@@ -92,7 +95,8 @@ export function FavoriteSales() {
       description={
         <>
           Retrouvez ici les ventes que vous avez ajoutées aux favoris, sur tous vos appareils.
-          L’offre Découverte permet 3 favoris ; l’offre Analyse n’a pas de limite.
+          L’offre Découverte permet {PLAN_LIMITS.decouverte.favoriteSales} favoris ; l’offre Analyse
+          n’a pas de limite.
           {limit != null && data ? (
             <>
               {" "}
@@ -140,6 +144,33 @@ export function FavoriteSales() {
         </Card>
       ) : null}
       {data && data.favorites.length > 0 ? (
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {data.favorites.map((favorite) => {
+            const { saleId, sale } = favorite;
+            return (
+              <li key={saleId} className="min-w-0">
+                <ListingCard
+                  sale={sale}
+                  returnTo="/favoris"
+                  locked={false}
+                  analysisLocked={!isAnalysis}
+                  active={false}
+                  onHover={NOOP}
+                  onSelect={NOOP}
+                  aiReviewProjections={aiReviewBySaleId[saleId]}
+                  aiReviewStatus={aiReviewStatus}
+                  favoriteScope={user?.id ?? null}
+                  initialFavorite
+                  onFavoriteChange={handleFavoriteChange}
+                />
+                <FavoriteDossierLine favorite={favorite} />
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {/* Les favoris d'abord ; le suivi des changements (ou sa ligne d'offre) vient après. */}
+      {data && data.favorites.length > 0 ? (
         <FavoriteSaleChanges
           userId={user?.id}
           favorites={data.favorites}
@@ -148,28 +179,8 @@ export function FavoriteSales() {
           aiReviewStatus={aiReviewStatus}
         />
       ) : null}
-      {data && data.favorites.length > 0 ? (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {data.favorites.map(({ saleId, sale }) => (
-            <li key={saleId} className="min-w-0">
-              <ListingCard
-                sale={sale}
-                returnTo="/favoris"
-                locked={false}
-                analysisLocked={!isAnalysis}
-                active={false}
-                onHover={NOOP}
-                onSelect={NOOP}
-                aiReviewProjections={aiReviewBySaleId[saleId]}
-                aiReviewStatus={aiReviewStatus}
-                favoriteScope={user?.id ?? null}
-                initialFavorite
-                onFavoriteChange={handleFavoriteChange}
-              />
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {/* Ventes suivies dont l'audience est passée : instantané gardé 6 mois au plus (point 70). */}
+      <PastFollowedSales />
       {data?.unavailableSaleIds?.length ? (
         <section className="mt-10">
           <h2 className="font-display text-2xl font-semibold">Annonces retirées du catalogue</h2>

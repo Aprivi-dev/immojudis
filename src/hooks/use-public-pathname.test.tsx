@@ -19,6 +19,13 @@ describe("usePublicPathname", () => {
     expect(renderHook(() => usePublicPathname()).result.current).toBe("/sales");
   });
 
+  it("returns the address of the visitor on the static variants of ?page=2 and ?page=3", () => {
+    for (const pathname of ["/sales/defaut/2", "/sales/defaut/3"]) {
+      mocks.pathname = pathname;
+      expect(renderHook(() => usePublicPathname()).result.current).toBe("/sales");
+    }
+  });
+
   it("returns every other pathname unchanged", () => {
     for (const pathname of ["/sales", "/", "/sales/abc", "/admin/securite"]) {
       mocks.pathname = pathname;

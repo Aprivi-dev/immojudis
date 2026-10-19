@@ -179,6 +179,9 @@ describe("/sales : choix Cartes / Tableau", () => {
       "table",
     );
     const fiche = screen.getAllByRole("link", { name: /^Voir / })[0];
+    // Pas de ?from= dans le HTML du serveur : l'origine s'ajoute dès que le lien est approché.
+    expect(fiche.getAttribute("href")).not.toContain("from=");
+    fireEvent.pointerEnter(fiche);
     expect(decodeURIComponent(fiche.getAttribute("href") ?? "")).toContain("view=table");
   });
 
@@ -218,7 +221,9 @@ describe("/sales : la carte du bureau ne démarre qu'au premier geste", () => {
       expect(screen.queryByTestId("map-panel")).toBeNull();
 
       fireEvent[gesture](window);
-      expect(await screen.findByTestId("map-panel", undefined, { timeout: 500 })).toBeTruthy();
+      // 2 s : le geste ne coûte que quelques ms au calme, mais la machine peut être très chargée (CI,
+      // autres chantiers) ; 500 ms échouait par intermittence sans rien révéler du comportement.
+      expect(await screen.findByTestId("map-panel", undefined, { timeout: 2_000 })).toBeTruthy();
       expect(screen.queryByTestId("map-preview")).toBeNull();
     },
   );

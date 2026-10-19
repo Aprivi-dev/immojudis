@@ -6,6 +6,7 @@ import BadgeEuro from "lucide-react/dist/esm/icons/badge-euro.js";
 import Bell from "lucide-react/dist/esm/icons/bell.js";
 import Building2 from "lucide-react/dist/esm/icons/building-2.js";
 import Check from "lucide-react/dist/esm/icons/check.js";
+import Gift from "lucide-react/dist/esm/icons/gift.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down.js";
 import FileText from "lucide-react/dist/esm/icons/file-text.js";
@@ -17,8 +18,12 @@ import { BillingActions } from "@/components/BillingActions";
 import { Terme, type TermeKey } from "@/components/ceiling/Terme";
 import { Badge, Card, Eyebrow, buttonClasses } from "@/components/ui/primitives";
 import { ANALYSIS_TRIAL_DAYS, resolveAnalysisOfferLabel } from "@/lib/analysis-offer";
+import { useAuth } from "@/hooks/use-auth";
 import { useBillingOffer, type BillingOfferState } from "@/hooks/use-billing-offer";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { launchOfferText } from "@/lib/launch-offer";
 import { offerComparisonRows, type OfferCell } from "@/lib/offer-comparison";
+import { PLAN_LIMITS } from "@/lib/plans";
 import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import Link from "next/link";
 import { pathWithSearch } from "@/lib/navigation";
@@ -55,12 +60,12 @@ const DISCOVERY_FEATURES = [
   `${MONTHLY_SALE_UNLOCKS} déblocages par mois : ${UNLOCKED_ITEMS}, pour la vente choisie`,
   "Fiches complètes : adresse, photos, description, occupation, visites et contact",
   "Fourchette de valeur estimée et écart avec la mise à prix",
-  "Une alerte avec un email récapitulatif par semaine, trois favoris",
+  `Une alerte avec un email récapitulatif par semaine, ${PLAN_LIMITS.decouverte.favoriteSales} favoris`,
   "Simulateur de financement, risques de la commune et annuaire des avocats",
 ] as const;
 
 const ANALYSIS_FEATURES = [
-  "Enchère plafond chiffrée pour toutes les ventes : travaux, libération, portage et tous les frais",
+  "Enchère plafond chiffrée pour toutes les ventes au tribunal : travaux, libération, portage et tous les frais",
   "Pièces du dossier et leur lecture pour toutes les ventes : points clés cités avec la page",
   "Historique de la vente pour toutes les ventes : passages précédents, baisses de mise à prix, reports",
   "Estimation détaillée et ventes comparables",
@@ -68,6 +73,19 @@ const ANALYSIS_FEATURES = [
   "Suivi des changements de vos favoris (date, mise à prix, statut, documents), consultable dans Mes favoris",
   "Statistiques des tribunaux : prix d’adjudication et scénarios d’enchères, quand l’historique du tribunal est suffisant ; rapport PDF et export des résultats",
 ] as const;
+
+const LAUNCH_OFFER_FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode } = {
+  question: "Qu’est-ce que l’offre de lancement ?",
+  answer: () => (
+    <>
+      Tant que le site n’est pas officiellement lancé, tout compte gratuit bénéficie, à titre
+      exceptionnel, des avantages de l’offre Analyse, sans carte bancaire et sans paiement. Ces
+      avantages pourront être retirés sans préavis dès le lancement officiel : le compte gratuit
+      reviendra alors à l’offre Découverte, sans que vos données soient supprimées. Aucun
+      prélèvement n’est possible aujourd’hui.
+    </>
+  ),
+};
 
 const FAQ: { question: string; answer: (offer: BillingOfferState) => ReactNode }[] = [
   {
@@ -174,20 +192,25 @@ export function OffersPage() {
   useEffect(() => {
     trackProductEvent("offers_viewed");
   }, []);
+  const { user } = useAuth();
+  const launch = useLaunchOffer();
   const source = useBillingOffer();
   const { offer } = source;
   const price = resolveAnalysisOfferLabel();
+  // Offre de lancement : le compte gratuit a les avantages Analyse, le paiement reste fermé.
+  const launchActive = launch.active;
   const trialLine =
-    offer.status !== "ready"
+    launchActive || offer.status !== "ready"
       ? null
       : !offer.open
-        ? "Ouverture prochaine des souscriptions. Le catalogue reste accessible gratuitement."
+        ? `Tarif prévu : ${price}. Pas encore souscriptible.`
         : offer.trialAvailable
           ? `Essai gratuit de ${ANALYSIS_TRIAL_DAYS} jours avec carte bancaire, puis abonnement résiliable à tout moment.`
           : "Abonnement résiliable à tout moment, sans nouvel essai.";
 
   return (
     <main id="contenu" className="min-h-screen bg-white text-brand-navy">
+      {launchActive ? <LaunchOfferBanner signedIn={Boolean(user)} /> : null}
       <section className="border-b border-brand-navy/10 bg-background">
         <div className="mx-auto grid max-w-[1460px] gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(500px,0.85fr)] lg:items-center lg:px-8 lg:py-12">
           <div>
@@ -254,8 +277,12 @@ export function OffersPage() {
         </h2>
         <p className="mt-2 max-w-3xl text-ink-soft">
           Découverte est gratuite, sans limite de durée ; elle comprend {MONTHLY_SALE_UNLOCKS}{" "}
-          déblocages par mois, chacun ouvrant, pour une vente, {UNLOCKED_ITEMS}. Analyse coûte{" "}
-          {price}, résiliable à tout moment.
+          déblocages par mois, chacun ouvrant, pour une vente, {UNLOCKED_ITEMS}.{" "}
+          {launchActive
+            ? `Analyse est prévue à ${price} ; sa souscription n’est pas ouverte et rien ne devient payant automatiquement.`
+            : offer.status === "ready" && !offer.open
+              ? `Analyse : tarif prévu ${price}, pas encore souscriptible.`
+              : `Analyse coûte ${price}, résiliable à tout moment.`}
         </p>
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
           <PlanPanel
@@ -264,12 +291,14 @@ export function OffersPage() {
             description="Pour repérer les ventes et conserver vos favoris."
             features={DISCOVERY_FEATURES}
           >
-            <Link
-              href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
-              className={buttonClasses({ size: "lg", className: "w-full" })}
-            >
-              Créer mon compte gratuit
-            </Link>
+            {user ? null : (
+              <Link
+                href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
+                className={buttonClasses({ size: "lg", className: "w-full" })}
+              >
+                Créer mon compte gratuit
+              </Link>
+            )}
           </PlanPanel>
 
           <PlanPanel
@@ -278,15 +307,30 @@ export function OffersPage() {
             description="Pour décider, chiffrer et préparer l’enchère."
             features={ANALYSIS_FEATURES}
             highlighted
-            recommended={offer.status === "ready" && offer.open}
+            recommended={!launchActive && offer.status === "ready" && offer.open}
           >
-            {trialLine ? <p className="mb-4 text-center text-sm font-medium">{trialLine}</p> : null}
-            <BillingActions
-              hideHelper
-              offerSource={source}
-              handleCheckoutReturn
-              className="[&>button]:w-full"
-            />
+            {launch.pending ? (
+              <div
+                role="status"
+                aria-busy="true"
+                aria-label="Chargement de l’offre"
+                className="h-11 w-full animate-pulse rounded-md bg-muted"
+              />
+            ) : launchActive ? (
+              <LaunchOfferPanel signedIn={Boolean(user)} />
+            ) : (
+              <>
+                {trialLine ? (
+                  <p className="mb-4 text-center text-sm font-medium">{trialLine}</p>
+                ) : null}
+                <BillingActions
+                  hideHelper
+                  offerSource={source}
+                  handleCheckoutReturn
+                  className="[&>button]:w-full"
+                />
+              </>
+            )}
           </PlanPanel>
         </div>
       </section>
@@ -317,7 +361,7 @@ export function OffersPage() {
           Questions fréquentes
         </h2>
         <div className="mt-6 divide-y divide-line border-y border-line">
-          {FAQ.map((item) => (
+          {(launchActive ? [LAUNCH_OFFER_FAQ, ...FAQ] : FAQ).map((item) => (
             <details key={item.question} className="group py-4">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold">
                 {item.question}
@@ -343,7 +387,41 @@ export function OffersPage() {
 function ComparisonTable() {
   const rows = offerComparisonRows();
   return (
-    <div className="mt-6 overflow-hidden rounded-xl border border-line bg-white">
+    <>
+      <ComparisonList rows={rows} />
+      <ComparisonGrid rows={rows} />
+    </>
+  );
+}
+
+/** Sous 640 px : une ligne par fonctionnalité, « Découverte : … » puis « Analyse : … ». */
+function ComparisonList({ rows }: { rows: ReturnType<typeof offerComparisonRows> }) {
+  return (
+    <ul
+      aria-label="Comparaison des offres Découverte et Analyse, en liste"
+      className="mt-6 divide-y divide-line-soft overflow-hidden rounded-xl border border-line bg-white sm:hidden"
+    >
+      {rows.map((row) => (
+        <li key={row.id} className="px-3 py-3 text-sm">
+          <p className="font-medium">{row.label}</p>
+          {row.hint ? <p className="mt-0.5 text-xs text-ink-soft">{row.hint}</p> : null}
+          <p
+            className={`mt-2 ${row.decouverte.included || row.decouverte.limited ? "" : "text-ink-soft"}`}
+          >
+            <span className="font-semibold">Découverte :</span> {row.decouverte.text}
+          </p>
+          <p className={row.analyse.included || row.analyse.limited ? "" : "text-ink-soft"}>
+            <span className="font-semibold">Analyse :</span> {row.analyse.text}
+          </p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ComparisonGrid({ rows }: { rows: ReturnType<typeof offerComparisonRows> }) {
+  return (
+    <div className="mt-6 hidden overflow-hidden rounded-xl border border-line bg-white sm:block">
       <table className="w-full table-fixed border-collapse text-left text-sm">
         <caption className="sr-only">Comparaison des offres Découverte et Analyse</caption>
         <thead className="bg-surface-tint">
@@ -397,6 +475,62 @@ function ComparisonCell({ cell }: { cell: OfferCell }) {
         <span className={open ? "" : "text-ink-soft"}>{cell.text}</span>
       </span>
     </td>
+  );
+}
+
+/** En tête de page tant que l'offre de lancement dure : elle passe avant les deux offres. */
+function LaunchOfferBanner({ signedIn }: { signedIn: boolean }) {
+  return (
+    <section
+      aria-label="Offre de lancement"
+      data-testid="launch-offer-banner"
+      className="border-b border-gold/40 bg-gold/10"
+    >
+      <div className="mx-auto flex max-w-[1460px] flex-col gap-4 px-4 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+        <p className="flex max-w-4xl items-start gap-3 text-sm font-medium leading-relaxed text-brand-navy sm:text-base">
+          <Gift className="mt-0.5 size-5 shrink-0 text-gold-text" aria-hidden />
+          <span>{launchOfferText(signedIn ? "account" : "visitor")}</span>
+        </p>
+        {signedIn ? (
+          <Link href="/sales" className={buttonClasses({ variant: "primary", size: "lg" })}>
+            Explorer les ventes
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
+        ) : (
+          <Link
+            href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
+            className={buttonClasses({ variant: "primary", size: "lg" })}
+          >
+            Créer mon compte gratuit
+            <ArrowRight className="size-4" aria-hidden />
+          </Link>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** Dans la carte Analyse tant que l'offre de lancement dure : aucun bouton de paiement. */
+function LaunchOfferPanel({ signedIn }: { signedIn: boolean }) {
+  return (
+    <div className="text-center text-sm leading-relaxed" data-testid="launch-offer-panel">
+      <p className="font-semibold">
+        {signedIn
+          ? "Inclus avec votre compte gratuit pendant l’offre de lancement."
+          : "Inclus avec un compte gratuit pendant l’offre de lancement."}
+      </p>
+      <p className="mt-1 text-ink-soft">
+        Tarif prévu : {resolveAnalysisOfferLabel()}. Pas encore souscriptible.
+      </p>
+      {signedIn ? null : (
+        <Link
+          href={pathWithSearch("/login", { mode: "investor", redirect: "/sales" })}
+          className={buttonClasses({ variant: "primary", size: "lg", className: "mt-4 w-full" })}
+        >
+          Créer mon compte gratuit
+        </Link>
+      )}
+    </div>
   );
 }
 

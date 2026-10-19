@@ -161,6 +161,8 @@ describe("magasin d'authentification", () => {
     profile: null,
     loading: false,
     authError: null,
+    authErrorKind: null,
+    retry: () => {},
   };
 
   it("commence en vérification, sans identité", () => {
@@ -170,6 +172,8 @@ describe("magasin d'authentification", () => {
       profile: null,
       loading: true,
       authError: null,
+      authErrorKind: null,
+      retry: expect.any(Function),
     });
   });
 

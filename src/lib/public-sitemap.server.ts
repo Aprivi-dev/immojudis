@@ -17,6 +17,11 @@ export const SITEMAP_CACHE_TAG = "public-sitemap";
 /** PostgREST returns at most 1 000 rows per request. */
 const DATABASE_PAGE_SIZE = 1_000;
 
+/**
+ * `lastModified` : date du dernier changement VISIBLE de la fiche (`content_changed_at`), jamais la
+ * date technique de la ligne (`updated_at` bouge à chaque passage de la collecte). `null` tant que la
+ * fiche n'a pas changé depuis la pose de la colonne : le sitemap n'émet alors aucun `lastmod`.
+ */
 export type SitemapSale = { id: string; lastModified: string | null };
 export type SitemapSalePage = { sales: SitemapSale[]; total: number };
 
@@ -57,8 +62,9 @@ function isMissingFunction(error: ErrorLike): boolean {
 
 /**
  * One page of publicly visible sales, ordered by id. Uses the dedicated RPC
- * (identifier + last update) and falls back to the anonymous preview view
- * (identifier only) while the RPC is not deployed.
+ * (identifier + date of the last visible change) and falls back to the anonymous preview view
+ * (identifier only) while the RPC is not deployed. A database that has not been migrated yet answers
+ * without `content_changed_at`: no date is emitted, never the technical `updated_at`.
  */
 export async function fetchSitemapSalePage(
   client: SitemapClient,
@@ -72,11 +78,11 @@ export async function fetchSitemapSalePage(
   if (!error) {
     const rows = (data ?? []) as Array<{
       id: string;
-      updated_at: string | null;
+      content_changed_at?: string | null;
       total_count: number | string;
     }>;
     return {
-      sales: rows.map((row) => ({ id: row.id, lastModified: row.updated_at ?? null })),
+      sales: rows.map((row) => ({ id: row.id, lastModified: row.content_changed_at ?? null })),
       total: rows.length > 0 ? Number(rows[0].total_count) : offset,
     };
   }
@@ -101,7 +107,7 @@ const cachedSalePage = unstable_cache(
     if (!client) throw new Error("Supabase n'est pas configuré côté serveur.");
     return fetchSitemapSalePage(client as unknown as SitemapClient, pageIndex);
   },
-  ["public-sitemap", "sales-page", "v1"],
+  ["public-sitemap", "sales-page", "v2"],
   { revalidate: SITEMAP_REVALIDATE_SECONDS, tags: [SITEMAP_CACHE_TAG] },
 );
 

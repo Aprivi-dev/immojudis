@@ -103,7 +103,7 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
         configured: true,
         trialDays: 7,
         trialAvailable: true,
-        label: "29 € / mois",
+        label: "59 € / mois",
       },
     });
   });
@@ -153,8 +153,12 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
   // « 3 déblocages par mois » : la limite est annoncée avec l'offre gratuite, et le comparatif ne
   // dit pas « Non inclus » pour ce qu'un déblocage ouvre.
   await expect(page.getByText(/^3 déblocages par mois : l[’']enchère plafond/)).toBeVisible();
+  // Tableau au-delà de 640 px, liste en dessous : seule la forme visible est trouvée.
   await expect(
-    page.getByRole("row", { name: /Enchère plafond chiffrée/ }).getByText("Pour 3 ventes par mois"),
+    page
+      .getByRole("row", { name: /Enchère plafond chiffrée/ })
+      .or(page.getByRole("listitem").filter({ hasText: "Enchère plafond chiffrée" }))
+      .getByText("Pour 3 ventes par mois"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Démarrer l’essai Analyse" }).click();
   await expect(page.getByRole("heading", { name: "Récapitulatif avant paiement" })).toBeVisible();

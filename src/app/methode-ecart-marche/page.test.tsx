@@ -7,6 +7,10 @@ import {
   MARKET_GAP_MIN_DISCOUNT_PCT,
   MARKET_GAP_NOT_SIGNIFICANT_LABEL,
 } from "@/lib/market-gap";
+import {
+  MARKET_GAP_BAND_LABELS,
+  MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT,
+} from "@/lib/market-gap-band";
 import { selectStatisticScope } from "@/lib/dvf-market-statistics";
 import { URBAN_POPULATION_THRESHOLD } from "@/lib/market-server/constants";
 import type { Database } from "@/integrations/supabase/types";
@@ -155,6 +159,19 @@ describe("page « Comment est calculé l’écart avec le marché ? »", () => {
     expect(text).toContain("critère de décote minimale");
     expect(text).toContain("Décote de départ");
     expect(text).toContain(MARKET_GAP_NOT_SIGNIFICANT_LABEL);
+  });
+
+  it("explique le repère en trois bandes de la fiche publique, sans chiffre ni conseil", () => {
+    render(<Page />);
+    const bands = section("Le repère en trois bandes de la fiche publique");
+    const text = (bands.textContent ?? "").replace(/\s/g, " ");
+    expect(within(bands).getAllByRole("listitem")).toHaveLength(3);
+    expect(text).toContain("sans aucun chiffre");
+    expect(text).toContain("du 10e au 90e centile");
+    expect(text).toContain(`${MARKET_GAP_BAND_MAX_INTERVAL_WIDTH_PCT} % de la valeur estimée`);
+    expect(text).toContain(MARKET_GAP_BAND_LABELS.insufficient);
+    expect(text).toContain("ne remplace ni une visite ni l’avis d’un professionnel");
+    expect(text).not.toMatch(/bonne affaire|achetez/i);
   });
 
   it("énonce les limites sans promettre de conseil", () => {

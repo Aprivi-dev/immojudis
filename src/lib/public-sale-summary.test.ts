@@ -20,7 +20,7 @@ const row = {
   tribunal_city: null,
   thumbnail_url:
     "https://media.immobilier.notaires.fr/inotr/media/1/76065/2084645/2f4198e8_VGA.jpg",
-  updated_at: "2026-10-08T08:29:21Z",
+  content_changed_at: "2026-10-08T08:29:21Z",
 };
 
 describe("public sale summary", () => {
@@ -39,6 +39,30 @@ describe("public sale summary", () => {
     });
     expect(result.sale).not.toHaveProperty("thumbnail_url");
     expect(result.sale).not.toHaveProperty("address");
+  });
+
+  it("carries the date of the last visible change, and nothing else as a modification date", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ ...row, updated_at: "2026-10-18T08:00:00Z" }],
+      error: null,
+    });
+    const result = await fetchPublicSaleSummary({ rpc }, ID);
+    if (result.kind !== "found") throw new Error("expected a found sale");
+    expect(result.sale.content_changed_at).toBe("2026-10-08T08:29:21Z");
+    // The technical date of the row is not part of the public sale.
+    expect(result.sale).not.toHaveProperty("updated_at");
+  });
+
+  it("has no modification date when the sale never changed, or while the function is not migrated", async () => {
+    for (const data of [
+      { ...row, content_changed_at: null },
+      (({ content_changed_at: _omitted, ...rest }) => rest)(row),
+    ]) {
+      const rpc = vi.fn().mockResolvedValue({ data: [data], error: null });
+      const result = await fetchPublicSaleSummary({ rpc }, ID);
+      if (result.kind !== "found") throw new Error("expected a found sale");
+      expect(result.sale.content_changed_at).toBeNull();
+    }
   });
 
   it("reports a sale outside the public catalogue as missing", async () => {
@@ -120,6 +144,58 @@ describe("public sale summary", () => {
     const result = await fetchPublicSaleSummary({ rpc }, ID);
     expect(result.kind).toBe("found");
     if (result.kind === "found") expect(result.sale).not.toHaveProperty("photo_count");
+  });
+
+  describe("market gap band", () => {
+    const answer = (band: unknown, error: unknown = null) =>
+      vi.fn((fn: string) =>
+        Promise.resolve(
+          fn === "get_public_sale_market_gap_band"
+            ? { data: error ? null : band, error }
+            : { data: [row], error: null },
+        ),
+      );
+
+    it("joins the public sale when the database has a band", async () => {
+      for (const band of ["under", "near", "above", "insufficient"]) {
+        const rpc = answer(band);
+        const result = await fetchPublicSaleSummary({ rpc }, ID);
+        expect(rpc).toHaveBeenCalledWith("get_public_sale_market_gap_band", { p_sale_id: ID });
+        if (result.kind !== "found") throw new Error("expected a sale");
+        expect(result.sale.market_gap_band).toBe(band);
+      }
+    });
+
+    it("leaves the band out when the database has nothing to say", async () => {
+      const result = await fetchPublicSaleSummary({ rpc: answer(null) }, ID);
+      if (result.kind !== "found") throw new Error("expected a sale");
+      expect(result.sale).not.toHaveProperty("market_gap_band");
+    });
+
+    it("never lets a figure or an unexpected answer through", async () => {
+      for (const unexpected of [42, "-45 %", "120000", ["near"], { band: "near" }, "NEAR"]) {
+        const result = await fetchPublicSaleSummary({ rpc: answer(unexpected) }, ID);
+        if (result.kind !== "found") throw new Error("expected a sale");
+        expect(result.sale).not.toHaveProperty("market_gap_band");
+      }
+    });
+
+    it("keeps the sale, without band, while the function is missing or fails", async () => {
+      for (const error of [
+        { code: "PGRST202", message: "Could not find the function" },
+        { code: "57014", message: "timeout" },
+      ]) {
+        const result = await fetchPublicSaleSummary({ rpc: answer(null, error) }, ID);
+        expect(result.kind).toBe("found");
+        if (result.kind === "found") expect(result.sale).not.toHaveProperty("market_gap_band");
+      }
+      const rpc = vi.fn((fn: string) =>
+        fn === "get_public_sale_market_gap_band"
+          ? Promise.reject(new Error("network"))
+          : Promise.resolve({ data: [row], error: null }),
+      );
+      expect((await fetchPublicSaleSummary({ rpc }, ID)).kind).toBe("found");
+    });
   });
 
   describe("indexability verdict of the database", () => {

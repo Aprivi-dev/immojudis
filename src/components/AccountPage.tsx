@@ -2,10 +2,15 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { BillingActions } from "@/components/BillingActions";
+import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
 import { useAuth } from "@/hooks/use-auth";
 import { fetchSaleUnlocksOverview } from "@/lib/client-api";
 import { fetchAccessPlan } from "@/lib/client-billing";
+import { accountLinksFor } from "@/lib/navigation";
+import { LAUNCH_OFFER_ACCOUNT_TEXT } from "@/lib/launch-offer";
+import { hasLiveStripeSubscription } from "@/lib/plans";
 import { queryKeys } from "@/lib/query-keys";
 import { unlockUsageLine } from "@/lib/sale-unlocks";
 
@@ -14,6 +19,17 @@ const dateFormat = new Intl.DateTimeFormat("fr-FR", {
   month: "long",
   year: "numeric",
 });
+
+const TOGGLE_CLASS =
+  "mt-3 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm";
+
+/** Ce que l'on retrouve derrière chaque entrée de « Mon espace ». */
+const SPACE_DESCRIPTIONS: Readonly<Record<string, string>> = {
+  "/favoris": "Les ventes que vous suivez, sur tous vos appareils.",
+  "/alertes": "Vos recherches enregistrées et les nouvelles ventes qui y correspondent.",
+  "/compte/ventes-debloquees": "Les ventes que vous avez ouvertes en détail.",
+  "/comparaisons": "Vos ventes mises côte à côte.",
+};
 
 function formatDate(value: string | null | undefined): string | null {
   if (!value) return null;
@@ -39,9 +55,17 @@ export function AccountPage() {
     retry: false,
   });
   const unlockStatus = unlocksQuery.data?.status;
+  // « Mon espace » : les mêmes entrées que le menu « Mon compte », sans cette page elle-même.
+  const spaceLinks = accountLinksFor(plan?.hasAnalysisAccess).filter(
+    (link) => link.href in SPACE_DESCRIPTIONS,
+  );
   const pastDue = plan?.billing?.status === "past_due";
   const graceEnd = formatDate(plan?.billing?.graceEndsAt);
   const periodEnd = formatDate(plan?.currentPeriodEnd);
+  // Plan Analyse grâce à l'offre de lancement : pas d'abonnement, donc ni date de fin ni portail.
+  const launchOffer = plan?.launchOffer === true;
+  const manageableSubscription =
+    !launchOffer || hasLiveStripeSubscription(plan?.billing, plan?.currentPeriodEnd);
 
   return (
     <main id="contenu" className="mx-auto max-w-3xl px-4 pb-16 pt-28 sm:px-6">
@@ -64,6 +88,59 @@ export function AccountPage() {
 
       <section
         className="mt-6 rounded-xl border border-border bg-card p-5"
+        aria-labelledby="acc-space"
+      >
+        <h2 id="acc-space" className="text-lg font-semibold text-foreground">
+          Mon espace
+        </h2>
+        <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+          {spaceLinks.map((link, index) => (
+            <li key={link.href}>
+              <Link
+                href={link.href}
+                aria-labelledby={`space-label-${index}`}
+                aria-describedby={`space-description-${index}`}
+                className="block h-full rounded-lg border border-border px-4 py-3 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold"
+              >
+                <span
+                  id={`space-label-${index}`}
+                  className="block text-sm font-semibold text-foreground"
+                >
+                  {link.label}
+                </span>
+                <span
+                  id={`space-description-${index}`}
+                  className="mt-0.5 block text-xs leading-relaxed text-muted-foreground"
+                >
+                  {SPACE_DESCRIPTIONS[link.href]}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section
+        className="mt-6 rounded-xl border border-border bg-card p-5"
+        aria-labelledby="acc-notifications"
+      >
+        <h2 id="acc-notifications" className="text-lg font-semibold text-foreground">
+          Notifications
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Les nouvelles ventes de vos alertes s’affichent dans la cloche de l’en-tête. L’email
+          récapitulatif n’est envoyé que si vous l’activez ici ou depuis la cloche.
+        </p>
+        {user ? (
+          <>
+            <AlertEmailRecapToggle userId={user.id} className={TOGGLE_CLASS} />
+            <SaleRemindersToggle userId={user.id} className={TOGGLE_CLASS} />
+          </>
+        ) : null}
+      </section>
+
+      <section
+        className="mt-6 rounded-xl border border-border bg-card p-5"
         aria-labelledby="acc-sub"
       >
         <h2 id="acc-sub" className="text-lg font-semibold text-foreground">
@@ -76,10 +153,27 @@ export function AccountPage() {
         ) : (
           <p className="mt-2 text-sm text-muted-foreground">
             Offre actuelle :{" "}
-            <strong className="text-foreground">{plan ? plan.label : "Chargement…"}</strong>
-            {plan?.hasAnalysisAccess && periodEnd ? <> · accès jusqu’au {periodEnd}</> : null}
+            <strong className="text-foreground">
+              {plan
+                ? launchOffer
+                  ? `${plan.label} · offre de lancement`
+                  : plan.label
+                : "Chargement…"}
+            </strong>
+            {plan?.hasAnalysisAccess && periodEnd && !launchOffer ? (
+              <> · accès jusqu’au {periodEnd}</>
+            ) : null}
           </p>
         )}
+        {launchOffer ? (
+          <p
+            role="status"
+            data-testid="account-launch-offer"
+            className="mt-3 rounded-lg border border-gold/30 bg-gold/10 p-3 text-sm leading-relaxed text-foreground"
+          >
+            {LAUNCH_OFFER_ACCOUNT_TEXT}
+          </p>
+        ) : null}
         {pastDue ? (
           <p
             role="status"
@@ -102,20 +196,16 @@ export function AccountPage() {
             ) : (
               <p>Chargement de vos déblocages…</p>
             )}
-            <Link
-              href="/compte/ventes-debloquees"
-              className="mt-1 inline-flex min-h-11 items-center font-semibold text-gold-text underline underline-offset-4"
-            >
-              Mes ventes débloquées
-            </Link>
           </div>
         ) : null}
         <BillingActions className="mt-4" hideHelper />
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          « Gérer mon abonnement » ouvre le portail sécurisé Stripe : vous y changez de carte et
-          téléchargez vos factures. « Résilier mon abonnement » ouvre directement le formulaire de
-          résiliation, à tout moment. La résiliation prend effet à la fin de la période payée.
-        </p>
+        {manageableSubscription ? (
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            « Gérer mon abonnement » ouvre le portail sécurisé Stripe : vous y changez de carte et
+            téléchargez vos factures. « Résilier mon abonnement » ouvre directement le formulaire de
+            résiliation, à tout moment. La résiliation prend effet à la fin de la période payée.
+          </p>
+        ) : null}
       </section>
 
       <section

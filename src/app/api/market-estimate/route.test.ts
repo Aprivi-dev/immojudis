@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   included: vi.fn(),
   refresh: vi.fn(),
   enforce: vi.fn(),
+  record: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/auth-middleware", () => ({
@@ -19,6 +20,9 @@ vi.mock("@/lib/property-reports", () => ({
 vi.mock("@/lib/sale-market-estimates", () => ({ refreshSaleValuationOnDemand: mocks.refresh }));
 vi.mock("@/lib/usage", () => ({ recordFeatureUsageEvent: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({ enforceUserRateLimit: mocks.enforce }));
+vi.mock("@/lib/account-product-events.server", () => ({
+  recordAccountProductEvent: mocks.record,
+}));
 
 import { POST } from "./route";
 
@@ -47,6 +51,7 @@ describe("POST /api/market-estimate sale readiness", () => {
     mocks.included.mockResolvedValue(true);
     mocks.entitlement.mockResolvedValue({ plan: { plan: "decouverte" }, door: "unlock" });
     mocks.enforce.mockResolvedValue(1);
+    mocks.record.mockResolvedValue(true);
   });
 
   it("applies the sale page visibility rule before computing anything", async () => {
@@ -138,6 +143,18 @@ describe("POST /api/market-estimate sale readiness", () => {
       expect(mocks.entitlement).not.toHaveBeenCalled();
     });
 
+    it("measures, for the account, that the reference value of the ceiling was served", async () => {
+      authWithVisibleSale(true);
+
+      await POST(request());
+
+      expect(mocks.record).toHaveBeenCalledTimes(1);
+      expect(mocks.record).toHaveBeenCalledWith("user-1", {
+        type: "bid_ceiling_calculated",
+        saleId,
+      });
+    });
+
     it("sends an unlocked sale only what the bid ceiling reads, through the discovery view", async () => {
       const { from } = authWithVisibleSale(true);
       mocks.included.mockResolvedValue(false);
@@ -179,5 +196,7 @@ describe("POST /api/market-estimate sale readiness", () => {
 
     expect(response.status).toBe(202);
     expect(mocks.refresh).toHaveBeenCalledWith(saleId);
+    // Pas de valeur de référence servie : rien n'est mesuré.
+    expect(mocks.record).not.toHaveBeenCalled();
   });
 });

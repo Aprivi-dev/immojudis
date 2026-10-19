@@ -13,8 +13,9 @@ import LockKeyhole from "lucide-react/dist/esm/icons/lock-keyhole.js";
 import Mail from "lucide-react/dist/esm/icons/mail.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import UserRound from "lucide-react/dist/esm/icons/user-round.js";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 import {
   getAccountType,
@@ -31,10 +32,12 @@ import {
   type LoginReason,
 } from "@/lib/navigation";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
+import { LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { postAuthDestination } from "@/lib/onboarding";
-import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
+import { PLAN_LIMITS } from "@/lib/plans";
+import { MONTHLY_SALE_UNLOCKS, UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 import { trackProductEvent } from "@/lib/product-events";
-import { userMessage } from "@/lib/user-messages";
+import { ACCOUNT_EXISTS_MESSAGE, userMessage } from "@/lib/user-messages";
 
 type LoginSearch = {
   redirect?: string;
@@ -58,30 +61,74 @@ type LoginMode = LoginPageMode;
 
 const PASSWORD_RULE_ID = "login-password-rule";
 
-/** Phrase du bandeau : l'action qui a envoyé la personne ici, et ce que le compte gratuit change. */
-const reasonCopy: Record<LoginReason, { signup: string; login: string }> = {
-  alerte: {
-    signup: "Créez votre compte gratuit pour enregistrer cette alerte, sans carte bancaire.",
-    login: "Connectez-vous pour enregistrer cette alerte.",
-  },
-  favori: {
-    signup: "Créez votre compte gratuit pour garder cette vente en favori (3 favoris offerts).",
-    login: "Connectez-vous pour garder cette vente en favori.",
-  },
-  export: {
-    signup: "Créez votre compte gratuit pour exporter ces résultats, sans carte bancaire.",
-    login: "Connectez-vous pour exporter ces résultats.",
-  },
-  offre: {
-    signup:
-      "Créez votre compte gratuit : vous pourrez ensuite passer à l'offre Analyse quand vous le souhaitez.",
-    login: "Connectez-vous pour découvrir l'offre Analyse.",
-  },
-  fiche: {
-    signup: `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
-    login: "Connectez-vous pour consulter cette vente.",
-  },
-};
+/** Délai avant de pouvoir demander un nouvel email de confirmation. */
+const RESEND_COOLDOWN_SECONDS = 30;
+
+/**
+ * Phrase du bandeau : l'action qui a envoyé la personne ici, et ce que le compte gratuit change.
+ * Deux états : avec l'offre de lancement le compte gratuit a les avantages Analyse (export compris) ;
+ * sans elle, l'export reste réservé à l'offre Analyse et le texte ne promet pas plus que le produit.
+ */
+function reasonCopy(reason: LoginReason, launchOffer: boolean): { signup: string; login: string } {
+  switch (reason) {
+    case "alerte":
+      return {
+        signup: "Créez votre compte gratuit pour enregistrer cette alerte, sans carte bancaire.",
+        login: "Connectez-vous pour enregistrer cette alerte.",
+      };
+    case "favori":
+      return {
+        signup: `Créez votre compte gratuit pour garder cette vente en favori (${PLAN_LIMITS.decouverte.favoriteSales} favoris offerts).`,
+        login: "Connectez-vous pour garder cette vente en favori.",
+      };
+    case "export":
+      return launchOffer
+        ? {
+            signup:
+              "Créez votre compte gratuit pour exporter ces résultats : l’export fait partie des avantages de l’offre Analyse accordés pendant l’offre de lancement, sans carte bancaire.",
+            login: "Connectez-vous pour exporter ces résultats.",
+          }
+        : {
+            signup:
+              "Créez votre compte gratuit, sans carte bancaire. L’export des résultats est réservé à l’offre Analyse.",
+            login: "Connectez-vous. L’export des résultats est réservé à l’offre Analyse.",
+          };
+    case "offre":
+      return launchOffer
+        ? {
+            signup:
+              "Créez votre compte gratuit : pendant l’offre de lancement, il bénéficie des avantages de l’offre Analyse.",
+            login: "Connectez-vous pour retrouver les avantages de l’offre Analyse.",
+          }
+        : {
+            signup:
+              "Créez votre compte gratuit : vous pourrez ensuite passer à l'offre Analyse quand vous le souhaitez.",
+            login: "Connectez-vous pour découvrir l'offre Analyse.",
+          };
+    case "ouverture":
+      return {
+        signup: "Créez votre compte gratuit pour être prévenu de l’ouverture de l’offre Analyse.",
+        login: "Connectez-vous pour être prévenu de l’ouverture de l’offre Analyse.",
+      };
+    case "mes-favoris":
+      return {
+        signup: "Créez votre compte gratuit pour garder vos ventes en favori et les retrouver ici.",
+        login: "Connectez-vous pour retrouver vos favoris.",
+      };
+    case "mes-alertes":
+      return {
+        signup: "Créez votre compte gratuit pour enregistrer vos alertes et les retrouver ici.",
+        login: "Connectez-vous pour retrouver vos alertes.",
+      };
+    case "fiche":
+      return {
+        signup: launchOffer
+          ? "Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente : pendant l’offre de lancement, il ouvre aussi les analyses de l’offre Analyse."
+          : `Créez votre compte gratuit pour voir l'adresse, les photos et la fourchette de valeur de cette vente, et en débloquer ${MONTHLY_SALE_UNLOCKS} en détail chaque mois (contenu selon la vente).`,
+        login: "Connectez-vous pour consulter cette vente.",
+      };
+  }
+}
 
 const modeCopy: Record<
   LoginMode,
@@ -113,10 +160,9 @@ const modeCopy: Record<
   },
 };
 
-const UNLOCKED_ITEMS = unlockedItemsText({ ceiling: true, statistics: true });
-
 export function LoginPage() {
   const { user, profile, loading } = useAuth();
+  const launchOffer = useLaunchOffer().active;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -142,6 +188,25 @@ export function LoginPage() {
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [resendNotice, setResendNotice] = useState<string | null>(null);
+  /**
+   * Supabase répond sans erreur à une inscription avec une adresse déjà confirmée : il renvoie
+   * un utilisateur sans identité (`identities` vide) et n'envoie rien. On le dit à la personne.
+   */
+  const [accountExists, setAccountExists] = useState(false);
+  /**
+   * Instant (ms) à partir duquel l'email peut être renvoyé. Le décompte se recalcule depuis
+   * l'horloge à chaque seconde : un onglet en veille ou une horloge avancée ne le figent pas.
+   */
+  const [resendAvailableAt, setResendAvailableAt] = useState<number | null>(null);
+  const [clockNow, setClockNow] = useState(0);
+  /** Secondes restantes avant de pouvoir renvoyer l'email (0 = disponible). */
+  const resendCountdown =
+    resendAvailableAt === null ? 0 : Math.max(0, Math.ceil((resendAvailableAt - clockNow) / 1000));
+  function startResendCooldown() {
+    const now = Date.now();
+    setClockNow(now);
+    setResendAvailableAt(now + RESEND_COOLDOWN_SECONDS * 1000);
+  }
 
   const copy = modeCopy[mode];
   const isSignup = mode !== "login";
@@ -159,6 +224,14 @@ export function LoginPage() {
   useEffect(() => {
     if (user && !loading) router.push(postAuthTarget);
   }, [loading, postAuthTarget, router, user]);
+
+  // Compte à rebours du bouton « Renvoyer l'email » : relu sur l'horloge chaque seconde, jusqu'à 0.
+  const countingDown = resendCountdown > 0;
+  useEffect(() => {
+    if (!countingDown) return;
+    const timer = setInterval(() => setClockNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [countingDown]);
 
   /** Switches the form mode and keeps the rest of the query string (the `redirect`). */
   function switchMode(next: LoginMode) {
@@ -181,7 +254,7 @@ export function LoginPage() {
   }
 
   async function resendConfirmation() {
-    if (!pendingEmail || resending) return;
+    if (!pendingEmail || resending || resendCountdown > 0) return;
     setResending(true);
     setResendNotice(null);
     setFormError(null);
@@ -199,14 +272,23 @@ export function LoginPage() {
       setFormError(userMessage(err, "Impossible de renvoyer l'email pour le moment. Réessayez."));
     } finally {
       setResending(false);
+      startResendCooldown();
     }
   }
 
   function changeAddress() {
     setPendingEmail(null);
+    setAccountExists(false);
+    setResendAvailableAt(null);
     setResendNotice(null);
     setFormError(null);
     setPassword("");
+  }
+
+  /** Depuis le panneau « compte existant » : retour au formulaire en mode connexion. */
+  function goToLogin() {
+    changeAddress();
+    switchMode("login");
   }
 
   async function submit(e: FormEvent) {
@@ -255,6 +337,8 @@ export function LoginPage() {
       // laisserait la personne devant le même formulaire, on le remplace donc par un panneau.
       if (data?.session === null) {
         setResendNotice(null);
+        setAccountExists(isExistingAccountResponse(data));
+        startResendCooldown();
         setPendingEmail(email.trim());
         return;
       }
@@ -291,10 +375,18 @@ export function LoginPage() {
             </p>
             <p className="mt-5 max-w-md text-sm leading-relaxed text-muted-foreground">
               Découverte ouvre gratuitement le catalogue et, chaque mois, {MONTHLY_SALE_UNLOCKS}{" "}
-              ventes en détail ({UNLOCKED_ITEMS}). Analyse ouvre toutes les ventes, avec les
-              comparables, les alertes quotidiennes et les exports, sur abonnement résiliable. Les
-              professionnels déposent et suivent leurs annonces dans leur espace.
+              ventes en détail ({UNLOCK_HIGHLIGHTS_INLINE_TEXT}). Analyse ouvre toutes les ventes,
+              avec les comparables, les alertes quotidiennes et les exports, sur abonnement
+              résiliable. Les professionnels déposent et suivent leurs annonces dans leur espace.
             </p>
+            {launchOffer ? (
+              <p
+                data-testid="login-launch-offer-column"
+                className="mt-5 max-w-md rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground"
+              >
+                {LAUNCH_OFFER_VISITOR_TEXT}
+              </p>
+            ) : null}
 
             <div className="mt-10 grid gap-3">
               <FeatureLine
@@ -316,21 +408,43 @@ export function LoginPage() {
             <div>
               <div className="flex items-center gap-3 text-xs font-semibold text-gold-text">
                 <Mail className="h-4 w-4" />
-                Compte créé
+                {accountExists ? "Adresse déjà inscrite" : "Compte créé"}
               </div>
               <h1 className="mt-4 font-display text-3xl text-foreground">
-                Confirmez votre adresse email
+                {accountExists ? "Un compte existe déjà" : "Confirmez votre adresse email"}
               </h1>
               <div
                 role="status"
                 className="mt-4 rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm leading-relaxed text-foreground"
               >
-                <p>
-                  Un email de confirmation a été envoyé à <strong>{pendingEmail}</strong>, cliquez
-                  sur le lien pour continuer.
-                </p>
+                {accountExists ? (
+                  <p>
+                    {ACCOUNT_EXISTS_MESSAGE} Aucun email de confirmation n'a été envoyé à{" "}
+                    <strong>{pendingEmail}</strong>.
+                  </p>
+                ) : (
+                  <p>
+                    Un email de confirmation a été envoyé à <strong>{pendingEmail}</strong>, cliquez
+                    sur le lien pour continuer.
+                  </p>
+                )}
                 {resendNotice ? <p className="mt-2 text-muted-foreground">{resendNotice}</p> : null}
               </div>
+              <p
+                data-testid="signup-help"
+                className="mt-3 text-sm leading-relaxed text-muted-foreground"
+              >
+                Vous ne recevez rien ? Vérifiez vos courriers indésirables. Si vous avez déjà un
+                compte avec cette adresse,{" "}
+                <button type="button" onClick={goToLogin} className="text-foreground underline">
+                  connectez-vous
+                </button>{" "}
+                ou{" "}
+                <Link href="/mot-de-passe-oublie" className="text-foreground underline">
+                  réinitialisez votre mot de passe
+                </Link>
+                .
+              </p>
               {formError ? (
                 <p
                   role="alert"
@@ -340,14 +454,20 @@ export function LoginPage() {
                 </p>
               ) : null}
               <div className="mt-5 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={() => void resendConfirmation()}
-                  disabled={resending}
-                  className="liquid-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {resending ? "Envoi..." : "Renvoyer l'email"}
-                </button>
+                {accountExists ? null : (
+                  <button
+                    type="button"
+                    onClick={() => void resendConfirmation()}
+                    disabled={resending || resendCountdown > 0}
+                    className="liquid-button inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {resending
+                      ? "Envoi..."
+                      : resendCountdown > 0
+                        ? `Renvoyer l'email (${resendCountdown} s)`
+                        : "Renvoyer l'email"}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={changeAddress}
@@ -379,7 +499,9 @@ export function LoginPage() {
                   data-testid="login-reason"
                   className="mt-5 rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm leading-relaxed text-foreground"
                 >
-                  {isSignup ? reasonCopy[reason].signup : reasonCopy[reason].login}
+                  {isSignup
+                    ? reasonCopy(reason, launchOffer).signup
+                    : reasonCopy(reason, launchOffer).login}
                 </p>
               ) : null}
 
@@ -403,8 +525,17 @@ export function LoginPage() {
                   data-testid="login-free-promise"
                   className="mt-2 text-sm font-medium leading-relaxed text-foreground lg:hidden"
                 >
-                  Gratuit : {MONTHLY_SALE_UNLOCKS} ventes en détail par mois (selon la vente), sans
-                  carte bancaire
+                  {launchOffer
+                    ? LAUNCH_OFFER_VISITOR_TEXT
+                    : `Gratuit : ${MONTHLY_SALE_UNLOCKS} ventes en détail par mois (${UNLOCK_HIGHLIGHTS_INLINE_TEXT}), sans carte bancaire`}
+                </p>
+              ) : null}
+              {mode === "investor" && launchOffer ? (
+                <p
+                  data-testid="login-launch-offer"
+                  className="mt-3 hidden rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground lg:block"
+                >
+                  {LAUNCH_OFFER_VISITOR_TEXT}
                 </p>
               ) : null}
 
@@ -586,6 +717,14 @@ export function LoginPage() {
       </div>
     </main>
   );
+}
+
+/** Une inscription « réussie » sans identité créée correspond à une adresse déjà inscrite. */
+function isExistingAccountResponse(
+  data: { user?: { identities?: unknown[] | null } | null } | null | undefined,
+): boolean {
+  const identities = data?.user?.identities;
+  return Array.isArray(identities) && identities.length === 0;
 }
 
 function safeRedirect(value: unknown): string | undefined {

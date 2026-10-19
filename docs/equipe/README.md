@@ -33,6 +33,25 @@ modifié dans le code tant que la validation n'est pas donnée, par exemple :
 | `redacteur-contenu`      | Propose des contenus ; les rédige seulement après validation       |
 | `developpeur`            | Applique les points de code validés ; seul à modifier le code      |
 
+### Renforts spécialisés (lecture seule)
+
+Adaptés le 19/10/2026 de [msitarzewski/agency-agents](https://github.com/msitarzewski/agency-agents)
+(licence MIT, voir `docs/equipe/licences/agency-agents-MIT.txt`). Ils analysent et proposent ;
+comme le reste de l'équipe, ils ne modifient aucun fichier et n'écrivent jamais en base.
+
+| Domaine                | Agents                                                                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Architecture et base   | `architecte-logiciel`, `expert-postgres`, `archeologue-code`, `api-publique`, `testeur-api`                                                  |
+| Exploitation           | `devops-ci`, `fiabilite-sre`, `gestion-incidents`, `redacteur-technique`                                                                     |
+| Sécurité et données    | `securite-applicative`, `audit-code-ia`, `protection-donnees-code` (technique ; le juridique reste à `juridique-rgpd`)                       |
+| IA, modèles, chiffres  | `prompts-llm`, `qa-modeles`, `statisticien`, `analyste-spatial`, `visualisation-donnees`, `rapports-pdf`                                     |
+| Carte et géographie    | `carte-web`, `cartographe`, `donnees-geographiques`, `qa-geographique`                                                                       |
+| Utilisateurs et design | `recherche-utilisateurs`, `parcours-persona`, `audit-accessibilite`, `gardien-marque`, `synthese-retours`, `synthese-recherche`              |
+| Produit et mesure      | `chef-de-produit`, `analyste-indicateurs`, `suivi-experiences`                                                                               |
+| Paiements et prix      | `paiements-stripe`, `analyste-prix`                                                                                                          |
+| Croissance             | `croissance`, `offres-acquisition`, `strategie-email`, `linkedin`, `relations-presse`, `publicite-search`, `aeo-fondations`, `visibilite-ia` |
+| Entreprise et clients  | `strategie-entreprise`, `prospection-avocats`, `support-client`                                                                              |
+
 Le garde-fou `.claude/hooks/supabase-lecture-seule.mjs` bloque toute requête SQL autre
 qu'une lecture lancée par `qualite-donnees`.
 

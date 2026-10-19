@@ -1,6 +1,6 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import { fetchPipelineStatus, setPipelineSourceEnabled } from "@/lib/client-api";
 import { pipelineSourceStatus } from "@/lib/pipeline-source-status";
 function date(value: string | null) {

@@ -234,7 +234,7 @@ describe("useful public discovery", () => {
       department: "33",
       property_type: "apartment",
       starting_price_eur: 90000,
-      sale_date: "2026-10-01T09:00:00Z",
+      sale_date: "2099-10-01T09:00:00Z",
       app_surface_m2: 60,
       app_surface_kind: "habitable",
       rooms_count: 3,
@@ -374,6 +374,75 @@ describe("useful public discovery", () => {
       expect(screen.queryByText("Annonce bien renseignée")).toBeNull();
       cleanup();
     }
+  });
+
+  describe("pastille « N points à vérifier »", () => {
+    const cardSale = (overrides: Record<string, unknown> = {}) =>
+      ({
+        ...sale("verify-card"),
+        sale_date: "2099-01-20T09:00:00Z",
+        app_surface_m2: 50,
+        app_surface_kind: "habitable",
+        occupancy_status: "libre",
+        status: "upcoming",
+        ...overrides,
+      }) as unknown as AuctionSale;
+    const renderCard = (
+      cardOverrides: Record<string, unknown>,
+      access: { locked: boolean; analysisLocked: boolean } = {
+        locked: false,
+        analysisLocked: false,
+      },
+    ) =>
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ListingCard
+            sale={cardSale(cardOverrides)}
+            returnTo="/sales"
+            {...access}
+            active={false}
+            onHover={vi.fn()}
+            onSelect={vi.fn()}
+          />
+        </QueryClientProvider>,
+      );
+
+    it("compte les points déjà visibles sur la carte et mène à la fiche", () => {
+      renderCard({ app_surface_m2: null, occupancy_status: null });
+      expect(screen.getByText("Surface n.c.")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "2 points à vérifier" }));
+      const note = screen.getByRole("note");
+      expect(note.textContent).toContain("Surface non communiquée dans l’annonce");
+      expect(note.textContent).toContain("Occupation du bien à confirmer");
+      expect(screen.getByRole("link", { name: "Voir la fiche" }).getAttribute("href")).toBe(
+        "/sales/verify-card",
+      );
+    });
+
+    it("n'affiche rien pour une carte complète", () => {
+      renderCard({});
+      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
+    });
+
+    it("ne compte pas l'occupation quand la carte ne la montre pas (liste publique, compte gratuit)", () => {
+      renderCard({ occupancy_status: null }, { locked: true, analysisLocked: false });
+      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
+      cleanup();
+      renderCard({ occupancy_status: null }, { locked: false, analysisLocked: true });
+      expect(screen.queryByRole("button", { name: /à vérifier/ })).toBeNull();
+      cleanup();
+      renderCard(
+        { occupancy_status: null, app_surface_m2: null },
+        { locked: true, analysisLocked: false },
+      );
+      expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
+    });
+
+    it("garde la pastille « Annonce bien renseignée » à côté, sans la remplacer", () => {
+      renderCard({ completeness_tier: 1, app_surface_m2: null });
+      expect(screen.getByText("Annonce bien renseignée")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "1 point à vérifier" })).toBeTruthy();
+    });
   });
 
   it("shows a starting price of 0 as not communicated on the listing card", () => {
@@ -562,14 +631,14 @@ describe("listing media gallery", () => {
       />,
     );
 
-    expect(screen.getByRole("img", { name: "Appartement à Bordeaux" }).getAttribute("src")).toBe(
-      "https://cdn.example.com/property-living-room.jpg",
-    );
+    expect(
+      screen.getByRole("img", { name: "Appartement à Bordeaux", hidden: true }).getAttribute("src"),
+    ).toBe("https://cdn.example.com/property-living-room.jpg");
     fireEvent.click(screen.getByRole("button", { name: "Photo suivante" }));
     expect(screen.getByText("2 / 2")).toBeTruthy();
-    expect(screen.getByRole("img", { name: "Appartement à Bordeaux" }).getAttribute("src")).toBe(
-      "https://cdn.example.com/property-bedroom.jpg",
-    );
+    expect(
+      screen.getByRole("img", { name: "Appartement à Bordeaux", hidden: true }).getAttribute("src"),
+    ).toBe("https://cdn.example.com/property-bedroom.jpg");
     expect(onSelect).not.toHaveBeenCalled();
 
     fireEvent.keyDown(screen.getByTestId("sale-media-carousel-sale-gallery"), {
@@ -590,7 +659,7 @@ describe("listing media gallery", () => {
       />,
     );
     const carousel = screen.getByTestId("sale-media-carousel-sale-gallery");
-    const image = screen.getByRole("img", { name: "Appartement à Bordeaux" });
+    const image = screen.getByRole("img", { name: "Appartement à Bordeaux", hidden: true });
 
     fireEvent.pointerDown(carousel, {
       pointerId: 1,
@@ -638,7 +707,7 @@ describe("listing media gallery", () => {
     it("affiche la copie 640 px telle quelle, sans optimiseur", () => {
       render(<ListingMediaCarousel sale={mirroredSale} locked={false} title="Appartement" />);
 
-      const image = screen.getByRole("img", { name: "Appartement" });
+      const image = screen.getByRole("img", { name: "Appartement", hidden: true });
       expect(image.getAttribute("src")).toBe(MIRROR_URL);
       expect(image.getAttribute("src")).not.toContain("/_next/image");
     });
@@ -646,8 +715,8 @@ describe("listing media gallery", () => {
     it("retombe sur la source si la copie échoue, puis sur le visuel de repli", async () => {
       render(<ListingMediaCarousel sale={mirroredSale} locked={false} title="Appartement" />);
 
-      fireEvent.error(screen.getByRole("img", { name: "Appartement" }));
-      const source = await screen.findByRole("img", { name: "Appartement" });
+      fireEvent.error(screen.getByRole("img", { name: "Appartement", hidden: true }));
+      const source = await screen.findByRole("img", { name: "Appartement", hidden: true });
       expect(source.getAttribute("src")).toBe(SOURCE);
 
       fireEvent.error(source);
@@ -659,12 +728,12 @@ describe("listing media gallery", () => {
       vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(230);
       try {
         render(<ListingMediaCarousel sale={mirroredSale} locked={false} title="Appartement" />);
-        fireEvent.load(screen.getByRole("img", { name: "Appartement" }));
+        fireEvent.load(screen.getByRole("img", { name: "Appartement", hidden: true }));
 
         expect(screen.queryByTestId("sale-media-fallback-sale-mirrored")).toBeNull();
-        expect(screen.getByRole("img", { name: "Appartement" }).getAttribute("src")).toBe(
-          MIRROR_URL,
-        );
+        expect(
+          screen.getByRole("img", { name: "Appartement", hidden: true }).getAttribute("src"),
+        ).toBe(MIRROR_URL);
       } finally {
         vi.restoreAllMocks();
       }
@@ -685,7 +754,7 @@ describe("listing media gallery", () => {
     expect(screen.queryByRole("button", { name: "Photo suivante" })).toBeNull();
   });
 
-  it("asks SaleVisual for a light 400×300 map thumbnail framed like the former 512×384", () => {
+  it("asks SaleVisual for a light 320×240 map thumbnail framed like the former 512×384", () => {
     render(
       <ListingMediaCarousel
         sale={{ ...mediaSale, id: "sale-no-photo", media: [] } as unknown as AuctionSale}
@@ -696,7 +765,7 @@ describe("listing media gallery", () => {
 
     const visual = screen.getByTestId("sale-visual");
     expect(visual.getAttribute("data-thumbnail")).toBe("true");
-    expect(visual.getAttribute("data-map-size")).toBe("400x300");
+    expect(visual.getAttribute("data-map-size")).toBe("320x240");
     expect(visual.getAttribute("data-map-framing")).toBe("512");
   });
 });
@@ -1012,7 +1081,7 @@ describe("favourite heart for a visitor", () => {
     renderAnonymous();
     const heart = screen.getByRole("button", { name: "Ajouter aux favoris" });
     expect(heart.getAttribute("title")).toBe(
-      "Créer un compte gratuit pour garder cette vente (3 favoris)",
+      "Créer un compte gratuit pour garder cette vente (10 favoris)",
     );
     expect(heart.className).toContain("h-11");
   });

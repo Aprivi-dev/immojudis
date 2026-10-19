@@ -252,6 +252,18 @@ describe("page d'un département : contenu", () => {
     expect(list.textContent).not.toContain("audience le 20 octobre 2026");
   });
 
+  it("propose à un visiteur « Recevoir les nouvelles ventes de ce secteur » via la connexion", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("gironde")));
+    const cta = screen.getByRole("link", { name: "Recevoir les nouvelles ventes de ce secteur" });
+    // Motif « alerte », puis retour sur la confirmation avec le département choisi.
+    expect(cta.getAttribute("href")).toBe(
+      "/login?redirect=%2Falertes%2Fcreer%3Fdepartment%3D33&mode=investor&reason=alerte",
+    );
+    // Aucune alerte ni email n'est créé par la page elle-même.
+    expect(screen.queryByRole("checkbox")).toBeNull();
+  });
+
   it("renvoie vers la recherche du département et vers les tribunaux concernés", async () => {
     mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
     render(await Page(params("gironde")));
@@ -267,6 +279,49 @@ describe("page d'un département : contenu", () => {
     expect(hrefs).toContain("/tribunaux");
     // Le tribunal de Paris n'appartient pas à la Gironde.
     expect(hrefs).not.toContain("/sales?tribunal=TJ+Paris");
+  });
+
+  it("ajoute un bloc « Pour comprendre » : le guide, deux articles et les départements limitrophes", async () => {
+    mocks.catalogue.mockResolvedValue(
+      aggregateDepartments(
+        [...THREE, sale("l1", { department: "40" }), sale("l2", { department: "40" })],
+        NOW,
+      ),
+    );
+    render(await Page(params("gironde")));
+
+    const block = screen.getByRole("region", { name: "Pour comprendre" });
+    const hrefs = within(block)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("href"));
+    expect(hrefs[0]).toBe("/ventes-immobilieres-judiciaires");
+    const articles = hrefs.filter((href) => href?.startsWith("/ressources/"));
+    expect(articles).toHaveLength(2);
+    expect(new Set(articles).size).toBe(2);
+
+    // Charente-Maritime, Dordogne, Landes et Lot-et-Garonne touchent la Gironde.
+    expect(hrefs.filter((href) => href?.startsWith("/ventes-encheres-immobilieres/"))).toEqual([
+      "/ventes-encheres-immobilieres/charente-maritime",
+      "/ventes-encheres-immobilieres/dordogne",
+      "/ventes-encheres-immobilieres/landes",
+      "/ventes-encheres-immobilieres/lot-et-garonne",
+    ]);
+    // Les ventes du voisin ne sont annoncées que lorsqu'il y en a.
+    expect(
+      within(block).getByRole("link", { name: "Landes" }).parentElement?.textContent,
+    ).toContain("(2 ventes)");
+    expect(
+      within(block).getByRole("link", { name: "Dordogne" }).parentElement?.textContent,
+    ).not.toContain("vente");
+  });
+
+  it("garde le bloc « Pour comprendre » sans voisin pour l'outre-mer", async () => {
+    mocks.catalogue.mockResolvedValue(aggregateDepartments(THREE, NOW));
+    render(await Page(params("la-reunion")));
+
+    const block = screen.getByRole("region", { name: "Pour comprendre" });
+    expect(within(block).queryByText("Départements limitrophes")).toBeNull();
+    expect(within(block).getAllByRole("link").length).toBe(3);
   });
 
   it("garde la page quand l'activité des tribunaux est indisponible", async () => {

@@ -209,18 +209,52 @@ def licitor_lot_count(payload: object) -> int:
     return max(counts, default=0)
 
 
-def is_licitor_multi_lot_with_first_lot_values(sale: AuctionSale) -> bool:
-    """Annonce Licitor en plusieurs lots dont la fiche n'expose que les valeurs du premier lot.
+# Avoventes et Enchères Immobilières n'ont pas de lots structurés : l'annonce en plusieurs lots se lit dans
+# le titre, la description ou l'URL.
+MULTI_LOT_QUARANTINE = "multi_lot_first_lot_values"
+MULTI_LOT_TEXT_SOURCES = frozenset({"avoventes", "encheres_immobilieres"})
+_LOT_COUNT = r"(?:deux|trois|quatre|cinq|six|sept|huit|neuf|dix|[2-9]|1[0-9])"
+_SEVERAL_LOTS_PATTERN = re.compile(
+    rf"\ben\s+{_LOT_COUNT}\s+lots\b|"
+    r"\blot\s*(?:n[°o.]?\s*)?1\b[\s:;,.\-–]{0,6}mise\s+[àa]\s+prix|"
+    r"\bmise\s+[àa]\s+prix\s+(?:du\s+|de\s+la\s+)?lot\s*(?:n[°o.]?\s*)?[12]\b",
+    re.I,
+)
+# « en un seul lot » : plusieurs biens, mais une seule mise à prix, celle de l'ensemble.
+_SINGLE_LOT_PATTERN = re.compile(r"\b(?:en\s+un\s+(?:seul\s+)?lot|un\s+seul\s+lot|lot\s+unique)\b", re.I)
 
-    ``parse_licitor_detail_html`` produit une seule ligne (adresse, mise à prix, surface, point du
-    premier lot). Tant que le catalogue ne sait pas représenter un lot à part, publier cette ligne
-    afficherait comme valeurs du bien celles d'un seul lot.
+
+def announces_several_lots(*texts: object) -> bool:
+    """Vrai si le titre, la description ou l'URL annonce plusieurs lots (« en deux lots », « lot 1 mise à prix »).
+
+    Une annonce qui dit expressément vendre l'ensemble « en un seul lot » n'est jamais multi-lots.
     """
-    return (
-        sale.source_name == "licitor"
-        and "multi_lot_sale" in sale.quality_flags
-        and licitor_lot_count(sale.raw_payload) > 1
+    from urllib.parse import unquote
+
+    text = " ".join(
+        re.sub(r"[-_/]+", " ", unquote(str(value))) if str(value).startswith("http") else str(value)
+        for value in texts
+        if value
     )
+    if _SINGLE_LOT_PATTERN.search(text):
+        return False
+    return bool(_SEVERAL_LOTS_PATTERN.search(text))
+
+
+def is_multi_lot_with_first_lot_values(sale: AuctionSale) -> bool:
+    """Annonce en plusieurs lots dont la fiche n'expose que les valeurs du premier lot.
+
+    Licitor : ``parse_licitor_detail_html`` produit une seule ligne (adresse, mise à prix, surface, point du
+    premier lot), repérée par ``multi_lot_sale`` et les lots structurés de la source. Avoventes et Enchères
+    Immobilières : l'annonce en plusieurs lots se lit dans le titre, la description ou l'URL. Tant que le
+    catalogue ne sait pas représenter un lot à part, publier cette ligne afficherait comme valeurs du bien
+    celles d'un seul lot.
+    """
+    if sale.source_name == "licitor":
+        return "multi_lot_sale" in sale.quality_flags and licitor_lot_count(sale.raw_payload) > 1
+    if sale.source_name in MULTI_LOT_TEXT_SOURCES:
+        return announces_several_lots(sale.title, sale.description, sale.source_url)
+    return False
 
 
 def quarantine_reason(sale: AuctionSale) -> str | None:
@@ -234,8 +268,8 @@ def quarantine_reason(sale: AuctionSale) -> str | None:
     for flag in ("property_identity_conflict", "lot_identity_conflict", "source_identity_mismatch"):
         if flag in sale.quality_flags:
             return flag
-    if is_licitor_multi_lot_with_first_lot_values(sale):
-        return LICITOR_MULTI_LOT_QUARANTINE
+    if is_multi_lot_with_first_lot_values(sale):
+        return LICITOR_MULTI_LOT_QUARANTINE if sale.source_name == "licitor" else MULTI_LOT_QUARANTINE
     return None
 
 

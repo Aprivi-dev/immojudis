@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSaleChangeSnapshot,
   detectSaleChanges,
+  selectRotatingMonitorCandidates,
   saleChangeEventActionSchema,
   systemAuthForInvestorUser,
 } from "@/lib/sale-change-monitor";
@@ -159,3 +160,78 @@ function saleFixture(overrides: Partial<AuctionSale> = {}): AuctionSale {
     ...overrides,
   } as AuctionSale;
 }
+
+describe("rotation du lot de suivi des changements", () => {
+  const candidate = (index: number, priority = false) => ({
+    userId: `user-${String(index).padStart(3, "0")}`,
+    userRole: "user" as const,
+    priority,
+  });
+  const day = (offset: number) => new Date(Date.UTC(2026, 9, 20 + offset, 6, 45));
+  const ids = (list: Array<{ userId: string }>) => list.map((item) => item.userId);
+
+  it("deux passages successifs couvrent des profils différents, puis tout le monde est vu", () => {
+    const candidates = Array.from({ length: 60 }, (_, index) => candidate(index));
+    const first = ids(selectRotatingMonitorCandidates({ candidates, limit: 20, now: day(0) }));
+    const second = ids(selectRotatingMonitorCandidates({ candidates, limit: 20, now: day(1) }));
+    const third = ids(selectRotatingMonitorCandidates({ candidates, limit: 20, now: day(2) }));
+
+    expect(first).toHaveLength(20);
+    expect(second.filter((id) => first.includes(id))).toEqual([]);
+    expect(new Set([...first, ...second, ...third]).size).toBe(60);
+  });
+
+  it("le rattrapage du même jour retombe sur le même lot", () => {
+    const candidates = Array.from({ length: 60 }, (_, index) => candidate(index));
+    const morning = new Date(Date.UTC(2026, 9, 20, 6, 45));
+    const catchUp = new Date(Date.UTC(2026, 9, 20, 8, 45));
+    expect(selectRotatingMonitorCandidates({ candidates, limit: 20, now: morning })).toEqual(
+      selectRotatingMonitorCandidates({ candidates, limit: 20, now: catchUp }),
+    );
+  });
+
+  it("l'ordre d'arrivée des candidats ne change pas le lot", () => {
+    const candidates = Array.from({ length: 40 }, (_, index) => candidate(index));
+    expect(ids(selectRotatingMonitorCandidates({ candidates, limit: 10, now: day(0) }))).toEqual(
+      ids(
+        selectRotatingMonitorCandidates({
+          candidates: [...candidates].reverse(),
+          limit: 10,
+          now: day(0),
+        }),
+      ),
+    );
+  });
+
+  it("les comptes prioritaires passent d'abord, un quart du lot reste aux autres", () => {
+    const priority = Array.from({ length: 30 }, (_, index) => candidate(index, true));
+    const rest = Array.from({ length: 30 }, (_, index) => candidate(100 + index));
+    const selected = selectRotatingMonitorCandidates({
+      candidates: [...rest, ...priority],
+      limit: 20,
+      now: day(0),
+    });
+
+    expect(selected).toHaveLength(20);
+    expect(ids(selected).filter((id) => Number(id.slice(5)) < 100)).toHaveLength(15);
+    expect(ids(selected).filter((id) => Number(id.slice(5)) >= 100)).toHaveLength(5);
+  });
+
+  it("quand les prioritaires sont peu nombreux, ils sont tous pris et les autres complètent", () => {
+    const priority = Array.from({ length: 3 }, (_, index) => candidate(index, true));
+    const rest = Array.from({ length: 30 }, (_, index) => candidate(100 + index));
+    const selected = selectRotatingMonitorCandidates({
+      candidates: [...rest, ...priority],
+      limit: 20,
+      now: day(0),
+    });
+
+    expect(selected).toHaveLength(20);
+    expect(ids(selected)).toEqual(expect.arrayContaining(ids(priority)));
+  });
+
+  it("rend tout le monde quand le lot suffit", () => {
+    const candidates = [candidate(1, true), candidate(2)];
+    expect(selectRotatingMonitorCandidates({ candidates, limit: 25, now: day(3) })).toHaveLength(2);
+  });
+});

@@ -98,7 +98,7 @@ export function productionLaunchProblems(env) {
 }
 
 /** Billed price of the Analyse subscription. Keep in sync with src/lib/analysis-offer.ts (tested). */
-export const ANALYSIS_RECURRING_PRICE_CENTS = 2_900;
+export const ANALYSIS_RECURRING_PRICE_CENTS = 5_900;
 export const ANALYSIS_OFFER_LABEL_ENV = "NEXT_PUBLIC_ANALYSIS_OFFER_LABEL";
 
 const LABEL_AMOUNT = String.raw`\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d{1,2})?`;
@@ -117,7 +117,7 @@ export function analysisOfferLabelAmountsCents(label) {
 }
 
 /**
- * The public price label is only copy; the amount charged is the Stripe Price (2 900 cents).
+ * The public price label is only copy; the amount charged is the Stripe Price (5 900 cents).
  * A label that states another amount, or none, would advertise a price that is not billed:
  * the build is refused. An unset (blank) label falls back to the approved default label.
  * Not covered by the launch escape hatch: it is a wrong price, not a missing value.
@@ -186,15 +186,32 @@ export function blockingLaunchProblems(env) {
   return problems;
 }
 
+/** Valeurs reconnues de SALE_REMINDERS_MODE (src/lib/sale-reminders-mode.ts). */
+const SALE_REMINDERS_MODE_VALUES = ["off", "internal", "on"];
+
+/**
+ * Avertissement (jamais bloquant) quand SALE_REMINDERS_MODE a une valeur que le site ne reconnaît
+ * pas : il la traite comme « off », donc aucun rappel ne partirait alors que le propriétaire croit
+ * l'avoir ouvert. Variable absente ou vide : mode « off » voulu, rien à dire.
+ */
+export function saleRemindersModeAdvisories(env) {
+  const raw = String(env.SALE_REMINDERS_MODE ?? "").trim();
+  if (!raw || SALE_REMINDERS_MODE_VALUES.includes(raw.toLowerCase())) return [];
+  return [
+    `[env] SALE_REMINDERS_MODE vaut « ${raw} », valeur inconnue : les rappels d'audience restent fermés (off). Valeurs reconnues : ${SALE_REMINDERS_MODE_VALUES.join(", ")}.`,
+  ];
+}
+
 /**
  * Applies the guards to a production build. Returns the process exit code and
  * the lines to print, so the caller (and the tests) decide how to emit them.
  */
 export function evaluateProductionLaunchConfig(env) {
   if (!isProductionBuild(env)) return { exitCode: 0, errors: [], warnings: [] };
+  const advisories = saleRemindersModeAdvisories(env);
   const blocking = blockingLaunchProblems(env);
   const problems = [...productionLaunchProblems(env), ...blocking];
-  if (!problems.length) return { exitCode: 0, errors: [], warnings: [] };
+  if (!problems.length) return { exitCode: 0, errors: [], warnings: advisories };
 
   if (launchEscapeHatchEnabled(env) && !blocking.length) {
     const bar = "!".repeat(78);
@@ -207,6 +224,7 @@ export function evaluateProductionLaunchConfig(env) {
         ...problems.map((problem) => `[env]   - ${problem}`),
         `[env] Ce déploiement n'est pas conforme. Retirer ${ESCAPE_HATCH} dès que les valeurs sont fournies.`,
         bar,
+        ...advisories,
       ],
     };
   }
@@ -220,6 +238,6 @@ export function evaluateProductionLaunchConfig(env) {
         ? `[env] L'origine canonique ne peut pas être contournée par ${ESCAPE_HATCH} : définir SITE_URL (https, domaine public) dans Vercel.`
         : `[env] Renseigner ces variables dans Vercel, ou définir ${ESCAPE_HATCH}=true pour ne recevoir que des avertissements (déploiement non conforme).`,
     ],
-    warnings: [],
+    warnings: advisories,
   };
 }

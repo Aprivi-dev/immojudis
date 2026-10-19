@@ -73,6 +73,8 @@ test.describe("inscription avec confirmation par email", () => {
   test("explique le motif, remplace le formulaire par un panneau et permet de renvoyer l'email", async ({
     page,
   }) => {
+    // Horloge simulée : « Renvoyer l'email » est bloqué 30 s après l'envoi.
+    await page.clock.install();
     await page.goto("/login?mode=investor&reason=alerte");
 
     await expect(page.getByTestId("login-reason")).toHaveText(
@@ -93,6 +95,8 @@ test.describe("inscription avec confirmation par email", () => {
     );
     await expect(page.getByLabel("Mot de passe", { exact: true })).toHaveCount(0);
 
+    await expect(page.getByRole("button", { name: /Renvoyer l'email \(\d+ s\)/ })).toBeDisabled();
+    await page.clock.fastForward(30_000);
     await page.getByRole("button", { name: "Renvoyer l'email" }).click();
     await expect(panel).toContainText(`Email renvoyé à ${email}`);
 

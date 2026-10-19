@@ -7,6 +7,7 @@ import Settings from "lucide-react/dist/esm/icons/settings.js";
 import CreditCard from "lucide-react/dist/esm/icons/credit-card.js";
 import Database from "lucide-react/dist/esm/icons/database.js";
 import FileCheck2 from "lucide-react/dist/esm/icons/file-check-2.js";
+import Gauge from "lucide-react/dist/esm/icons/gauge.js";
 import LayoutDashboard from "lucide-react/dist/esm/icons/layout-dashboard.js";
 import Menu from "lucide-react/dist/esm/icons/menu.js";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw.js";
@@ -26,6 +27,7 @@ export type AdminSection =
   | "quality"
   | "publications"
   | "clients"
+  | "pilotage"
   | "lawyers"
   | "compliance";
 
@@ -41,6 +43,7 @@ const ADMIN_NAV_ITEMS: Array<{
   { section: "quality", href: "/admin/quality", label: "Qualité des données", icon: BarChart3 },
   { section: "publications", href: "/admin/publications", label: "Publications", icon: FileCheck2 },
   { section: "clients", href: "/admin/clients", label: "Clients & abonnements", icon: CreditCard },
+  { section: "pilotage", href: "/admin/pilotage", label: "Pilotage", icon: Gauge },
   { section: "lawyers", href: "/admin/lawyers", label: "Avocats", icon: Scale },
   { section: "compliance", href: "/admin/compliance", label: "Conformité", icon: ShieldCheck },
   { section: "settings", href: "/admin/settings", label: "Configuration", icon: Settings },

@@ -6,7 +6,7 @@ import Clock from "lucide-react/dist/esm/icons/clock.js";
 import Send from "lucide-react/dist/esm/icons/send.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/toast";
 import Link from "next/link";
 import { createPrivacyRequestClient, fetchPrivacyRequests } from "@/lib/client-api";
 import type { PrivacyRequestType } from "@/lib/privacy-requests";

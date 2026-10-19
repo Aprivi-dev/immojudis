@@ -48,6 +48,8 @@ export {
   updateAdminLawyerReferralRequest,
   fetchAdminSubscriptions,
   grantAdminSubscription,
+  fetchAdminLaunchOffer,
+  setAdminLaunchOfferClient,
 } from "@/lib/client-api/admin";
 
 export {
@@ -125,6 +127,10 @@ export {
   fetchFavoriteSales,
   addFavoriteSale,
   removeFavoriteSale,
+  fetchFavoriteDossier,
+  saveFavoriteDossier,
+  fetchFollowedSaleSnapshots,
+  deleteFollowedSaleSnapshot,
 } from "@/lib/client-api/favorites";
 
 export {

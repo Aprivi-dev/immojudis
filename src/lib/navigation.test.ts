@@ -1,13 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountLinksFor,
   loginPathWithRedirect,
   linkPrefetch,
   loginReason,
   pathWithSearch,
+  salesReturnHref,
   searchParamsToRecord,
   SITE_NAV_LINKS,
 } from "./navigation";
 import { validateSalesSearch } from "./search/search-url-state";
+
+describe("salesReturnHref", () => {
+  it("ramène à la recherche d'origine, sur la carte de la vente", () => {
+    expect(salesReturnHref("/sales?city=Lyon&page=2", "abc-123")).toBe(
+      "/sales?city=Lyon&page=2#sale-card-abc-123",
+    );
+    expect(salesReturnHref(undefined, "abc-123")).toBe("/sales#sale-card-abc-123");
+    expect(salesReturnHref(null, "abc-123")).toBe("/sales#sale-card-abc-123");
+  });
+
+  it("n'ajoute pas d'ancre à une origine qui n'est pas le catalogue", () => {
+    expect(salesReturnHref("/annonce-exemple", "abc")).toBe("/annonce-exemple");
+    expect(salesReturnHref("https://example.test/sales", "abc")).toBe("https://example.test/sales");
+  });
+});
 
 describe("loginPathWithRedirect", () => {
   it("ramène la personne sur sa recherche après la connexion", () => {
@@ -58,8 +75,39 @@ describe("loginReason", () => {
     expect(loginReason("alerte")).toBe("alerte");
     expect(loginReason("offre")).toBe("offre");
     expect(loginReason("fiche")).toBe("fiche");
+    expect(loginReason("mes-favoris")).toBe("mes-favoris");
+    expect(loginReason("mes-alertes")).toBe("mes-alertes");
     expect(loginReason("<script>")).toBeUndefined();
     expect(loginReason(undefined)).toBeUndefined();
+  });
+});
+
+describe("accountLinksFor", () => {
+  const labels = (hasAnalysisAccess: boolean | undefined) =>
+    accountLinksFor(hasAnalysisAccess).map((link) => link.label);
+
+  it("ajoute « Mes ventes débloquées » aux seuls comptes sans l'offre Analyse", () => {
+    expect(labels(false)).toEqual([
+      "Mes favoris",
+      "Mes alertes",
+      "Mes ventes débloquées",
+      "Mes comparaisons",
+      "Mon compte",
+    ]);
+    expect(labels(true)).toEqual(["Mes favoris", "Mes alertes", "Mes comparaisons", "Mon compte"]);
+  });
+
+  it("n'affiche rien de propre à l'une ou l'autre offre tant que l'offre est inconnue", () => {
+    expect(labels(undefined)).toEqual(labels(true));
+  });
+
+  it("ne laisse fuir aucun indicateur interne dans les liens rendus", () => {
+    for (const link of accountLinksFor(false)) {
+      expect(Object.keys(link).sort()).toEqual(["href", "label"]);
+    }
+    expect(
+      accountLinksFor(false).find((link) => link.label === "Mes ventes débloquées")?.href,
+    ).toBe("/compte/ventes-debloquees");
   });
 });
 

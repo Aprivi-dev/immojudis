@@ -25,6 +25,25 @@ describe("unsubscribe tokens", () => {
     });
   });
 
+  it("porte la portée « rappels d'audience », distincte de celle des alertes", () => {
+    const token = createUnsubscribeToken({ userId, scope: { kind: "reminders" }, now, env });
+    expect(verifyUnsubscribeToken(token, { now, env })).toMatchObject({
+      userId,
+      scope: { kind: "reminders" },
+    });
+    const alerts = createUnsubscribeToken({ userId, now, env });
+    expect(token).not.toBe(alerts);
+    // La signature couvre la portée : un jeton d'alertes ne devient pas un jeton de rappels.
+    const [payload, signature] = alerts.split(".");
+    const forged = Buffer.from(
+      JSON.stringify({
+        ...JSON.parse(Buffer.from(payload, "base64url").toString()),
+        s: "reminders",
+      }),
+    ).toString("base64url");
+    expect(verifyUnsubscribeToken(`${forged}.${signature}`, { now, env })).toBeNull();
+  });
+
   it("expire après 60 jours", () => {
     const token = createUnsubscribeToken({ userId, now, env });
     const later = new Date(now.getTime() + 61 * 86_400_000);

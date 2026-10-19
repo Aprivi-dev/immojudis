@@ -20,9 +20,18 @@ export function SaleComparisonBar({
   onRemove,
   onClear,
   onRestore,
+  open: controlledOpen,
+  onOpenChange,
   hideWhenEmpty = false,
 }: {
   hideWhenEmpty?: boolean;
+  /**
+   * Fenêtre du comparateur pilotée de l'extérieur : sous `lg` la barre est masquée et la fenêtre
+   * s'ouvre par la pastille « Comparer (N) » de la barre basse (voir `MobileMapToggle`). Sans ces
+   * deux propriétés, la barre garde son propre état.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   items: ComparedSale[];
   returnTo: string;
   userId: string | null;
@@ -30,7 +39,9 @@ export function SaleComparisonBar({
   onClear: () => void;
   onRestore: (items: ComparedSale[]) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlledOpen ?? ownOpen;
+  const setOpen = (value: boolean) => (onOpenChange ?? setOwnOpen)(value);
   const [hasOpened, setHasOpened] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const barRef = useRef<HTMLElement>(null);
@@ -43,7 +54,9 @@ export function SaleComparisonBar({
         ref={barRef}
         tabIndex={-1}
         aria-label="Sélection à comparer"
-        className="sticky top-[var(--sales-header-height)] z-20 border-y border-line-soft bg-surface-tint px-3 py-3 shadow-sm outline-none sm:px-5"
+        // Sous `lg` : masquée, la pastille « Comparer (N) » de la barre basse la remplace. Elle ne
+        // reste collée sous l'en-tête que sur grand écran.
+        className="z-20 hidden border-y border-line-soft bg-surface-tint px-3 py-3 shadow-sm outline-none sm:px-5 lg:sticky lg:top-[var(--sales-header-height)] lg:block"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -84,7 +97,7 @@ export function SaleComparisonBar({
           </div>
         </div>
       </section>
-      {hasOpened ? (
+      {hasOpened || open ? (
         <SaleComparisonDialog
           open={open}
           items={items}
@@ -97,8 +110,12 @@ export function SaleComparisonBar({
           }}
           onRestore={onRestore}
           onRestoreFocus={() => {
-            if (triggerRef.current && !triggerRef.current.disabled) triggerRef.current.focus();
-            else barRef.current?.focus();
+            // Barre masquée (mobile) : le focus revient à la pastille de la barre basse.
+            if (barRef.current && getComputedStyle(barRef.current).display === "none") {
+              document.querySelector<HTMLElement>("[data-comparison-pill]")?.focus();
+            } else if (triggerRef.current && !triggerRef.current.disabled) {
+              triggerRef.current.focus();
+            } else barRef.current?.focus();
           }}
         />
       ) : null}
