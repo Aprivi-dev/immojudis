@@ -3,9 +3,13 @@ import type { SupabaseAuthContext } from "@/integrations/supabase/auth-middlewar
 
 const mocks = vi.hoisted(() => ({
   launchOffer: vi.fn(),
+  confirmedEmail: vi.fn(),
   adminRows: vi.fn(),
 }));
-vi.mock("@/lib/launch-offer.server", () => ({ isLaunchOfferActive: mocks.launchOffer }));
+vi.mock("@/lib/launch-offer.server", () => ({
+  isLaunchOfferActive: mocks.launchOffer,
+  hasConfirmedEmail: mocks.confirmedEmail,
+}));
 vi.mock("@/lib/sale-unlocks.server", () => ({ hasUnlockedSale: vi.fn() }));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: {
@@ -69,7 +73,37 @@ const soon = new Date(Date.now() + 20 * 86_400_000).toISOString();
 describe("plan effectif pendant l'offre de lancement", () => {
   beforeEach(() => {
     mocks.launchOffer.mockReset();
+    mocks.confirmedEmail.mockReset();
+    mocks.confirmedEmail.mockResolvedValue(true);
     mocks.adminRows.mockReset();
+  });
+
+  it("n'accorde rien à un compte dont l'email n'est pas confirmé, comme la base", async () => {
+    mocks.launchOffer.mockResolvedValue(true);
+    mocks.confirmedEmail.mockResolvedValue(false);
+    const plan = await resolvePlanEntitlements(account({ hasProfile: true }));
+
+    expect(plan.plan).toBe("decouverte");
+    expect(plan.hasAnalysisAccess).toBe(false);
+    expect(plan).not.toHaveProperty("launchOffer");
+    expect(plan.limits).toEqual(PLAN_LIMITS.decouverte);
+    expect(mocks.confirmedEmail).toHaveBeenCalledWith("user-1");
+    await expect(
+      assertFeatureEntitlement(
+        account({ hasProfile: true }),
+        "property.pdfExport",
+        "Export réservé.",
+      ),
+    ).rejects.toThrow("Export réservé.");
+  });
+
+  it("ne lit pas la confirmation de l'email quand l'offre est coupée ou que le plan est réel", async () => {
+    mocks.launchOffer.mockResolvedValue(false);
+    await resolvePlanEntitlements(account({ hasProfile: true }));
+    mocks.launchOffer.mockResolvedValue(true);
+    await resolvePlanEntitlements(account({ accountTier: "premium" }));
+    await resolvePlanEntitlements(account({ isAdmin: true }));
+    expect(mocks.confirmedEmail).not.toHaveBeenCalled();
   });
 
   it("surclasse un compte gratuit en Analyse avec le marqueur d'affichage", async () => {
@@ -167,6 +201,8 @@ describe("plan effectif pendant l'offre de lancement", () => {
 describe("liens de partage d'un compte gratuit", () => {
   beforeEach(() => {
     mocks.launchOffer.mockReset();
+    mocks.confirmedEmail.mockReset();
+    mocks.confirmedEmail.mockResolvedValue(true);
     mocks.adminRows.mockReset();
     mocks.adminRows.mockImplementation((table: string) =>
       table === "user_profiles" ? { account_tier: "free", user_role: "user" } : null,
@@ -180,6 +216,12 @@ describe("liens de partage d'un compte gratuit", () => {
 
   it("se referment avec elle", async () => {
     mocks.launchOffer.mockResolvedValue(false);
+    await expect(shareOwnerKeepsSavedReports("user-1")).resolves.toBe(false);
+  });
+
+  it("ne sont pas ouverts à un propriétaire dont l'email n'est pas confirmé", async () => {
+    mocks.launchOffer.mockResolvedValue(true);
+    mocks.confirmedEmail.mockResolvedValue(false);
     await expect(shareOwnerKeepsSavedReports("user-1")).resolves.toBe(false);
   });
 

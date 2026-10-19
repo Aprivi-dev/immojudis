@@ -17,9 +17,10 @@ import {
   type PlanCode,
   type PlanStatus,
 } from "@/lib/plans";
+import { enforceDailyOperationLimits } from "@/lib/rate-limit";
 import { createTextPdf } from "@/lib/simple-pdf";
 import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
-import { isLaunchOfferActive } from "@/lib/launch-offer.server";
+import { hasConfirmedEmail, isLaunchOfferActive } from "@/lib/launch-offer.server";
 import { hasUnlockedSale } from "@/lib/sale-unlocks.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
@@ -281,12 +282,22 @@ export async function getPropertyReport({
 export async function savePropertyReport({
   auth,
   input,
+  request,
 }: {
   auth: SupabaseAuthContext;
   input: PropertyReportRequestPayload;
+  /** Requête HTTP d'origine : sert au plafond journalier par adresse. */
+  request: Request;
 }): Promise<PropertyReportSaveResponse> {
   const plan = await resolvePlanEntitlements(auth);
   assertEntitlementIncluded(plan, "property.savedReports", "Rapports réservés au plan Analyse.");
+  // Après le droit d'accès : un compte sans droit ne doit pas user les compteurs de son adresse ni
+  // le disjoncteur global. Le quota mensuel de l'offre Analyse est illimité, ce plafond est le seul.
+  await enforceDailyOperationLimits({
+    request,
+    userId: auth.userId,
+    operation: "propertyReportCreate",
+  });
   const existingReportId = await getExistingReportId(
     auth.supabase,
     auth.userId,
@@ -455,12 +466,20 @@ export async function deletePropertyReport({
 export async function exportPropertyReportPdf({
   auth,
   reportId,
+  request,
 }: {
   auth: SupabaseAuthContext;
   reportId: string;
+  /** Requête HTTP d'origine : sert au plafond journalier par adresse. */
+  request: Request;
 }): Promise<PropertyReportExport> {
   const plan = await resolvePlanEntitlements(auth);
   assertEntitlementIncluded(plan, "property.pdfExport", "Export PDF réservé au plan Analyse.");
+  await enforceDailyOperationLimits({
+    request,
+    userId: auth.userId,
+    operation: "propertyReportPdf",
+  });
   await assertPdfExportAvailable(auth, plan);
   const report = await getReport(auth.supabase, auth.userId, reportId);
   assertReportSourceCurrent(report.report_snapshot, await getSale(auth.supabase, report.sale_id));
@@ -616,7 +635,7 @@ export async function shareOwnerKeepsSavedReports(userId: string): Promise<boole
   if (profileError) throw profileError;
   if (profile?.user_role === "admin" || profile?.account_tier === "premium") return true;
   // Offre de lancement : les liens partagés par un compte gratuit restent ouverts tant qu'elle dure.
-  if (profile && (await isLaunchOfferActive())) return true;
+  if (profile && (await isLaunchOfferActive()) && (await hasConfirmedEmail(userId))) return true;
 
   const { data: subscription, error } = await supabaseAdmin
     .from("user_subscriptions")
@@ -732,7 +751,13 @@ export async function resolvePlanEntitlements(
   // quotas (rapports, PDF, actualisations). L'état vient de la base, comme pour les fonctions SQL
   // d'accès (`app_private.has_active_analysis_access`) ; rien n'est écrit sur le compte, couper
   // l'offre ramène donc le plan Découverte sans nettoyage.
-  if (plan === "decouverte" && auth.hasProfile !== false && (await isLaunchOfferActive())) {
+  if (
+    plan === "decouverte" &&
+    auth.hasProfile !== false &&
+    (await isLaunchOfferActive()) &&
+    // Adresse email confirmée exigée, comme `app_private.launch_offer_account_eligible` côté base.
+    (await hasConfirmedEmail(auth.userId))
+  ) {
     return buildPlanEntitlements(
       "analyse",
       data?.current_period_end ?? null,

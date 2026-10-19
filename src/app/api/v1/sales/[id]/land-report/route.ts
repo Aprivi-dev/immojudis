@@ -11,7 +11,7 @@ import {
 } from "@/lib/api-observability";
 import { assertFeatureEntitlement } from "@/lib/property-reports";
 import { getCadastralParcels, getSale } from "@/lib/property-report/repository";
-import { enforceUserRateLimit } from "@/lib/rate-limit";
+import { enforceDailyOperationLimits, enforceUserRateLimit } from "@/lib/rate-limit";
 import { landLocationInputFromSale } from "@/lib/land-report-input";
 import { getCachedLandReport } from "@/lib/land-report";
 import { landReportToLines, LAND_REPORT_HEADINGS } from "@/lib/land-report-export";
@@ -52,6 +52,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       bucketKey: "land-report",
       limit: 12,
       windowSeconds: 60,
+    });
+    // Après les droits d'accès : seul un compte qui y a droit use les compteurs de son adresse et le
+    // disjoncteur global. Le dossier appelle les services de l'État (fonction jusqu'à 180 s).
+    await enforceDailyOperationLimits({
+      request,
+      userId: auth.userId,
+      operation: "landReport",
     });
     const parcels = await getCadastralParcels(sale.source_url);
     const report = await getCachedLandReport(landLocationInputFromSale(sale, parcels), {
