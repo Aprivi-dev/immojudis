@@ -377,11 +377,13 @@ def _extract_page_text_with_tesseract_result(
             if result.returncode == 0:
                 # Tesseract read the whole page and found no text: photographs
                 # or a plan. Another attempt gives the same answer, so the page
-                # is settled instead of keeping the document "incomplete".
+                # is settled instead of keeping the document "incomplete". Any
+                # native text of the page is kept, with the confidence of a
+                # native read since OCR added nothing to it.
                 return {
                     "text": fallback,
                     "method": OCR_NO_TEXT_METHOD,
-                    "confidence": page_text_confidence(fallback, method="ocr_tesseract"),
+                    "confidence": page_text_confidence(fallback, method="pymupdf_text"),
                     "status": "extracted" if clean_text(fallback) else "no_text",
                     "retryable": False,
                 }

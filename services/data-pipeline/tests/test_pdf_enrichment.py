@@ -3318,3 +3318,65 @@ def test_a_page_of_photographs_does_not_keep_the_document_incomplete(tmp_path, m
     assert photo_record["failure_reason"] == "image_without_text_after_ocr"
     assert payload["complete"] is True
     assert payload["failed_pages"] == []
+
+
+def test_a_failed_tesseract_run_stays_retryable(monkeypatch) -> None:
+    from src.pdf_enrichment import _extract_page_text_with_ocr_result
+
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    page = SimpleNamespace(
+        get_textpage_ocr=lambda **kwargs: (_ for _ in ()).throw(RuntimeError("OCR backend unavailable")),
+        get_pixmap=lambda **kwargs: SimpleNamespace(save=lambda path: None),
+    )
+    monkeypatch.setattr(
+        "src.pdf_enrichment.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=1, stdout="", stderr="Error opening data file"),
+    )
+
+    result = _extract_page_text_with_ocr_result(page, fallback="")
+
+    assert result["method"] == "fallback_text"
+    assert result["status"] == "failed"
+    assert result["retryable"] is True
+    assert result["failure_reason"] == "ocr_failed"
+
+
+def test_a_page_with_native_text_keeps_it_when_ocr_finds_nothing_more(tmp_path, monkeypatch) -> None:
+    """Review edge case: a short native text over an image and an empty OCR. The native
+    text stays and the page is "extracted", not excluded as an image without text."""
+    import time
+
+    import fitz
+
+    from src.pdf_enrichment import _page_requires_retry, pdf_deadline_scope
+    from src.pdf_ocr import OCR_NO_TEXT_METHOD
+
+    monkeypatch.setattr("src.pdf_enrichment.PDF_DOCUMENT_TEXTS_DIR", tmp_path / "cache")
+    monkeypatch.setenv("PDF_EXTRACTOR", "pymupdf")
+    monkeypatch.setenv("PDF_OCR_ENABLED", "true")
+    path = tmp_path / "legende-photo.pdf"
+    photo = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 400, 300), False)
+    photo.set_rect(photo.irect, (90, 140, 200))
+    with fitz.open() as document:
+        page = document.new_page()
+        page.insert_image(fitz.Rect(36, 120, 559, 806), pixmap=photo)
+        page.insert_text((72, 72), "Photographie 1 : facade")
+        document.save(path)
+    monkeypatch.setattr(
+        "src.pdf_enrichment.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+
+    with pdf_deadline_scope(time.monotonic() + 120):
+        payload = extract_pdf_document(path, document={"label": "PV", "url": "https://example.test/pv.pdf"})
+
+    record = payload["pages"][0]
+    assert record["method"] == OCR_NO_TEXT_METHOD
+    assert record["status"] == "extracted"
+    assert "failure_reason" not in record
+    assert "Photographie 1" in record["text"]
+    assert record["confidence"] > 0.5
+    assert _page_requires_retry(record, ocr_enabled=True) is False
+    assert payload["visual_blank_pages"] == []
+    assert payload["complete"] is True
+    assert "Photographie 1" in payload["text"]
