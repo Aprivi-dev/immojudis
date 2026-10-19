@@ -66,6 +66,8 @@ describe("/sales static variant (ISR)", () => {
     const html = renderToStaticMarkup(await Page());
     expect(mocks.load).toHaveBeenCalledTimes(1);
     expect(salesSearchSignature(mocks.load.mock.calls[0][0])).toBe(salesSearchSignature({}));
+    // Regeneration waits longer for the photo copies than a visitor's request does (300 ms).
+    expect(mocks.load.mock.calls[0][1]).toEqual({ photoMirrorTimeoutMs: 1_500 });
     expect(html).toContain('data-seeded="true"');
     expect(html).toContain("<h1>Ventes immobilières aux enchères</h1>");
   });

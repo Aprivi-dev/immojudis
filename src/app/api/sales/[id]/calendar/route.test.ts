@@ -65,6 +65,35 @@ describe("GET /api/sales/[id]/calendar", () => {
     });
   });
 
+  it("keeps the file one minute in the CDN and does not echo the request id on it", async () => {
+    const response = await GET(
+      new Request(`https://example.test/api/sales/${saleId}/calendar`, {
+        headers: { "x-request-id": "req-agenda-1" },
+      }),
+      { params: Promise.resolve({ id: saleId }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe(
+      "public, s-maxage=60, stale-while-revalidate=60",
+    );
+    // A shared cache would serve the id of the first request to every other visitor.
+    expect(response.headers.has("x-request-id")).toBe(false);
+  });
+
+  it("still returns the request id on an error, which is never cached", async () => {
+    const response = await GET(
+      new Request(`https://example.test/api/sales/${saleId}/calendar`, {
+        headers: { "x-request-id": "req-agenda-2" },
+      }),
+      { params: Promise.resolve({ id: "pas-un-uuid" }) },
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(response.headers.get("x-request-id")).toBe("req-agenda-2");
+  });
+
   it("limits the number of requests per IP address", async () => {
     await call();
     expect(mocks.enforceIp).toHaveBeenCalledWith(

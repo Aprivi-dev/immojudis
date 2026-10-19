@@ -22,7 +22,13 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-      - name: Check production availability, request correlation and search-engine signals
+      - name: Check production availability, request correlation, catalogue caches and search-engine signals
+        # Whatever the indexing state, the script also checks the public catalogue and its caches:
+        # two successive requests to /sales (the second one `x-vercel-cache: HIT`, no Set-Cookie, no
+        # Vary, sale links in the HTML), /sales/defaut in noindex, at least 20 listings in the HTML of
+        # /sales?page=2, a public cache-control on /api/catalogue/preview, and no sitemap listing
+        # /sales/defaut (when indexing is open).
+        #
         # The script must know which indexing state to expect: the repository variable
         # SEO_INDEXING_ENABLED (Settings > Secrets and variables > Actions > Variables) mirrors
         # the Vercel variable of the same name. "true" = open (robots.txt with sitemaps, no
