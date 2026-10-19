@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LAUNCH_OFFER_ACCOUNT_TEXT, LAUNCH_OFFER_VISITOR_TEXT } from "@/lib/launch-offer";
 import { PLAN_LIMITS } from "@/lib/plans";
 
 const mocks = vi.hoisted(() => ({
+  launch: vi.fn(() => ({ active: false, pending: false })),
+  user: vi.fn((): { id: string } | null => null),
   offer: vi.fn(),
   legalReady: vi.fn(),
   billingActionsProps: vi.fn(),
@@ -12,7 +15,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/product-events", () => ({ trackProductEvent: mocks.track }));
 
 vi.mock("@/lib/client-billing", () => ({ fetchBillingOffer: mocks.offer }));
-vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: null, loading: false }) }));
+vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: mocks.user(), loading: false }) }));
+vi.mock("@/hooks/use-launch-offer", () => ({ useLaunchOffer: () => mocks.launch() }));
 vi.mock("@/lib/legal-documents", () => ({
   legalPublisherConfigurationStatus: mocks.legalReady,
 }));
@@ -25,11 +29,13 @@ vi.mock("@/components/BillingActions", () => ({
 import { OffersPage } from "./offers-page";
 
 beforeEach(() => {
+  mocks.launch.mockReturnValue({ active: false, pending: false });
+  mocks.user.mockReturnValue(null);
   mocks.legalReady.mockReturnValue({ ready: true, missing: [] });
   mocks.offer.mockResolvedValue({
     configured: true,
     trialAvailable: true,
-    label: "29 € TTC / mois",
+    label: "59 € TTC / mois",
   });
 });
 afterEach(() => {
@@ -57,7 +63,7 @@ describe("page Offres", () => {
     expect(within(table).getByRole("columnheader", { name: "Analyse" })).toBeTruthy();
     expect(within(table).getByRole("rowheader", { name: /Enchère plafond chiffrée/ })).toBeTruthy();
 
-    expect(screen.getAllByText(/29 € TTC \/ mois/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/59 € TTC \/ mois/).length).toBeGreaterThan(0);
     await waitFor(() => expect(mocks.offer).toHaveBeenCalled());
   });
 
@@ -122,10 +128,12 @@ describe("page Offres", () => {
     mocks.offer.mockResolvedValue({
       configured: false,
       trialAvailable: false,
-      label: "29 € TTC / mois",
+      label: "59 € TTC / mois",
     });
     render(<OffersPage />);
-    expect(await screen.findByText(/Ouverture prochaine des souscriptions/)).toBeTruthy();
+    expect(
+      await screen.findByText(/Tarif prévu : 59 € TTC \/ mois\. Pas encore souscriptible\./),
+    ).toBeTruthy();
     expect(screen.queryByText(/Essai gratuit de 7 jours avec carte bancaire/)).toBeNull();
   });
 
@@ -134,6 +142,7 @@ describe("page Offres", () => {
     const { container, unmount } = render(<OffersPage />);
     expect(container.textContent).not.toMatch(/essai de 7 jours|Essai gratuit de 7 jours/);
     expect(container.textContent).not.toMatch(/Ouverture prochaine|ne sont pas ouvertes/);
+    expect(container.textContent).not.toMatch(/Tarif prévu|Pas encore souscriptible/);
     expect(
       screen.getByText("Les conditions de l’essai s’affichent dès que l’offre est chargée."),
     ).toBeTruthy();
@@ -143,7 +152,7 @@ describe("page Offres", () => {
     const failed = render(<OffersPage />);
     expect(await screen.findByText(/n’ont pas pu être chargées/)).toBeTruthy();
     expect(failed.container.textContent).not.toMatch(/essai de 7 jours|Essai gratuit de 7 jours/);
-    expect(failed.container.textContent).not.toMatch(/Ouverture prochaine/);
+    expect(failed.container.textContent).not.toMatch(/Ouverture prochaine|Tarif prévu/);
   });
 
   it("affiche « Recommandée » seulement quand l'offre est ouverte", async () => {
@@ -152,16 +161,16 @@ describe("page Offres", () => {
     expect(await screen.findByText("Recommandée")).toBeTruthy();
     cleanup();
 
-    mocks.offer.mockResolvedValue({ configured: false, trialAvailable: true, label: "29 €" });
+    mocks.offer.mockResolvedValue({ configured: false, trialAvailable: true, label: "59 €" });
     render(<OffersPage />);
-    await screen.findByText(/Ouverture prochaine des souscriptions/);
+    await screen.findByText(/Tarif prévu : 59 € TTC \/ mois\. Pas encore souscriptible\./);
     expect(screen.queryByText("Recommandée")).toBeNull();
     cleanup();
 
-    mocks.offer.mockResolvedValue({ configured: true, trialAvailable: true, label: "29 €" });
+    mocks.offer.mockResolvedValue({ configured: true, trialAvailable: true, label: "59 €" });
     mocks.legalReady.mockReturnValue({ ready: false, missing: ["NEXT_PUBLIC_LEGAL_ENTITY_NAME"] });
     render(<OffersPage />);
-    await screen.findByText(/Ouverture prochaine des souscriptions/);
+    await screen.findByText(/Tarif prévu : 59 € TTC \/ mois\. Pas encore souscriptible\./);
     expect(screen.queryByText("Recommandée")).toBeNull();
   });
 
@@ -240,6 +249,87 @@ describe("page Offres", () => {
       name: /Rapport PDF du scénario/,
     }).parentElement!;
     expect(pdf.textContent).toContain("Non inclus");
+  });
+
+  it("ne promet l'enchère plafond « pour toutes les ventes » que pour celles du tribunal", () => {
+    const { container } = render(<OffersPage />);
+    const text = container.textContent ?? "";
+    expect(text).toContain(
+      "Enchère plafond chiffrée pour toutes les ventes au tribunal : travaux, libération, portage et tous les frais",
+    );
+    expect(text).not.toContain("Enchère plafond chiffrée pour toutes les ventes :");
+    expect(text).toContain(`${PLAN_LIMITS.decouverte.favoriteSales} favoris`);
+    expect(text).not.toContain("trois favoris");
+  });
+
+  it("offre fermée : le tarif prévu est annoncé sans promettre un prix à payer", async () => {
+    mocks.offer.mockResolvedValue({ configured: false, trialAvailable: true, label: "59 €" });
+    const { container } = render(<OffersPage />);
+    await screen.findByText(/Tarif prévu : 59 € TTC \/ mois\. Pas encore souscriptible\./);
+    expect(container.textContent).toContain("Analyse : tarif prévu 59 € TTC / mois, pas encore");
+    expect(container.textContent).not.toContain("Analyse coûte");
+    expect(screen.queryByTestId("launch-offer-banner")).toBeNull();
+  });
+
+  it("comparatif : une liste d'une ligne par fonctionnalité sous 640 px, le tableau au-dessus", () => {
+    render(<OffersPage />);
+    const list = screen.getByRole("list", { name: /en liste/ });
+    expect(list.className).toContain("sm:hidden");
+    const item = within(list)
+      .getAllByRole("listitem")
+      .find((node) => node.textContent?.includes("Rapport PDF du scénario"))!;
+    expect(item.textContent).toContain("Découverte : Non inclus");
+    expect(item.textContent).toContain("Analyse : Inclus");
+    const table = screen.getByRole("table", { name: /Comparaison des offres/ });
+    expect(table.parentElement?.className).toContain("hidden");
+    expect(table.parentElement?.className).toContain("sm:block");
+  });
+
+  it("offre de lancement : la mention passe avant les offres, sans bouton de paiement", async () => {
+    mocks.launch.mockReturnValue({ active: true, pending: false });
+    const { container } = render(<OffersPage />);
+
+    const banner = screen.getByTestId("launch-offer-banner");
+    expect(banner.textContent).toContain(LAUNCH_OFFER_VISITOR_TEXT);
+    // Le bandeau précède le titre de la page.
+    expect(
+      banner.compareDocumentPosition(screen.getByRole("heading", { level: 1 })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.getAllByRole("link", { name: /Créer mon compte gratuit/ }).length,
+    ).toBeGreaterThan(0);
+
+    // Aucun parcours d'achat : la carte Analyse ne monte pas le bouton de paiement.
+    expect(mocks.billingActionsProps).not.toHaveBeenCalled();
+    expect(screen.queryByText("Démarrer l’essai Analyse")).toBeNull();
+    const panel = screen.getByTestId("launch-offer-panel");
+    expect(panel.textContent).toContain("Tarif prévu : 59 € TTC / mois. Pas encore souscriptible.");
+    expect(container.textContent).not.toMatch(/Essai gratuit de 7 jours/);
+    expect(container.textContent).toContain("Qu’est-ce que l’offre de lancement ?");
+  });
+
+  it("offre de lancement : un compte connecté lit la mention de son compte", () => {
+    mocks.launch.mockReturnValue({ active: true, pending: false });
+    mocks.user.mockReturnValue({ id: "user-1" });
+    render(<OffersPage />);
+    expect(screen.getByTestId("launch-offer-banner").textContent).toContain(
+      LAUNCH_OFFER_ACCOUNT_TEXT,
+    );
+    expect(screen.getByRole("link", { name: /Explorer les ventes/ }).getAttribute("href")).toBe(
+      "/sales",
+    );
+    expect(screen.getByTestId("launch-offer-panel").textContent).not.toContain(
+      "Créer mon compte gratuit",
+    );
+  });
+
+  it("n'affiche ni l'offre de lancement ni le bouton de paiement tant que l'état est inconnu", () => {
+    mocks.launch.mockReturnValue({ active: false, pending: true });
+    render(<OffersPage />);
+    expect(screen.queryByTestId("launch-offer-banner")).toBeNull();
+    expect(mocks.billingActionsProps).not.toHaveBeenCalled();
+    expect(screen.getByRole("status", { name: "Chargement de l’offre" })).toBeTruthy();
   });
 
   it("définit l'enchère plafond là où elle est présentée, vers le lexique du guide", () => {

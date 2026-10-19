@@ -61,7 +61,40 @@ export function SalePassagesSection({
     staleTime: 10 * 60_000,
     retry: false,
   });
-  if (!enabled || !query.data) return null;
+  if (!enabled) return null;
+  // Chargement et erreur (avec « Réessayer ») visibles, à hauteur réservée ; le cas « teaser »
+  // plus bas reste inchangé : rien de plus n'est dit à un compte qui n'a pas le détail.
+  if (!query.data) {
+    return (
+      <section
+        id="historique"
+        className={`${styles.card} ${styles.placeholder}`}
+        aria-labelledby="sale-passages-title"
+        aria-busy={!query.isError}
+      >
+        <h2 id="sale-passages-title">Historique de la vente</h2>
+        {query.isError ? (
+          <>
+            <p role="alert" className={styles.lead}>
+              L’historique de la vente n’a pas pu être chargé.
+            </p>
+            <button
+              type="button"
+              className={styles.stateAction}
+              onClick={() => void query.refetch()}
+              disabled={query.isFetching}
+            >
+              Réessayer
+            </button>
+          </>
+        ) : (
+          <p role="status" className={styles.lead}>
+            Chargement de l’historique…
+          </p>
+        )}
+      </section>
+    );
+  }
   const data = query.data;
   const highlight = summaryLine(data.summary);
 

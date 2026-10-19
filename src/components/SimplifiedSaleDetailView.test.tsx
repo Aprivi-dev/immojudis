@@ -161,6 +161,14 @@ function expectActivePanel(container: HTMLElement, tab: string): HTMLElement {
 }
 
 describe("integrated listing", () => {
+  it("brings « Retour aux ventes » back to the card of this sale, in a 44 px target", () => {
+    const sale = EXAMPLE_SALE_RECORDS.bordeaux.sale;
+    renderDetail("analysis", sale, true);
+    const back = screen.getByRole("link", { name: /Retour aux ventes/ });
+    expect(back.getAttribute("href")).toBe(`/sales#sale-card-${encodeURIComponent(sale.id)}`);
+    expect(back.className).toContain("min-h-11");
+  });
+
   it("mounts one panel at a time and supports keyboard tab navigation", () => {
     const { container } = renderDetail("analysis", undefined, true, true);
 

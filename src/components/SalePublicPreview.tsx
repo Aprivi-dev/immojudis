@@ -6,6 +6,7 @@ import ChartNoAxesCombined from "lucide-react/dist/esm/icons/chart-no-axes-combi
 import Eye from "lucide-react/dist/esm/icons/eye.js";
 import LockKeyholeOpen from "lucide-react/dist/esm/icons/lock-keyhole-open.js";
 import ShieldCheck from "lucide-react/dist/esm/icons/shield-check.js";
+import { Terme } from "@/components/ceiling/Terme";
 import { ListingPhoto } from "@/components/ListingPhoto";
 import { PhotoCredit } from "@/components/PhotoCredit";
 import { photoCredit } from "@/lib/photo-credit";
@@ -13,10 +14,10 @@ import { photoMirrorForDetail } from "@/lib/photo-mirror";
 import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { formatPrice } from "@/lib/format";
-import { publicDossierContents, publicSaleDescription } from "@/lib/public-sale-description";
-import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
+import { publicSaleDescription } from "@/lib/public-sale-description";
+import { loginPathWithRedirect, saleDetailPath, salesReturnHref } from "@/lib/navigation";
 import Link from "next/link";
-import { MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
+import { FREE_ACCESS_LINE, MONTHLY_SALE_UNLOCKS, unlockedItemsText } from "@/lib/sale-unlocks";
 import {
   getSaleProcedure,
   lawyerRequirementLabel,
@@ -95,12 +96,27 @@ export function publicSaleVenueCopy(venueType: SaleVenueType) {
   return VENUE_COPY[venueType];
 }
 
+/** « adjudication » prend sa définition (`Terme`) ; le texte de `VENUE_COPY` reste une chaîne brute. */
+function withAdjudicationTerm(text: string) {
+  const word = "adjudication";
+  const index = text.indexOf(word);
+  if (index < 0) return text;
+  return (
+    <>
+      {text.slice(0, index)}
+      <Terme terme="adjudication">{word}</Terme>
+      {text.slice(index + word.length)}
+    </>
+  );
+}
+
 export function SalePublicPreview({
   saleId,
   preview,
   returnTo,
   requestedHash = "",
   adjudicationStatisticsEnabled = false,
+  verifyingAccount = false,
 }: {
   saleId: string;
   preview: AuctionSale;
@@ -108,6 +124,11 @@ export function SalePublicPreview({
   requestedHash?: string;
   /** The statistics of the tribunal are only announced while their flag is open. */
   adjudicationStatisticsEnabled?: boolean;
+  /**
+   * Une session est détectée et ses droits sont en cours de lecture : l'inscription n'a pas de sens
+   * pour ce visiteur, la page dit qu'elle vérifie son compte au lieu de proposer d'en créer un.
+   */
+  verifyingAccount?: boolean;
 }) {
   const procedure = getSaleProcedure(preview);
   const venueCopy = publicSaleVenueCopy(procedure.venueType);
@@ -164,7 +185,6 @@ export function SalePublicPreview({
     </dl>
   );
   const description = publicSaleDescription(preview);
-  const freeContents = publicDossierContents(preview);
   // Placeholders only: the real figures are never sent to a signed-out visitor.
   const analysisTeaser = [
     { label: "Valeur estimée", placeholder: "000 000 € – 000 000 €", tier: "Compte gratuit" },
@@ -183,7 +203,9 @@ export function SalePublicPreview({
   const priceBlock =
     price || !state ? (
       <div className={styles.priceBlock}>
-        <p className={styles.priceLabel}>{state ? "Prix publié" : "Mise à prix"}</p>
+        <p className={styles.priceLabel}>
+          {state ? "Prix publié" : <Terme terme="mise-a-prix">Mise à prix</Terme>}
+        </p>
         <p className={styles.price}>
           {price ? formatPrice(preview.starting_price_eur) : "À confirmer"}
         </p>
@@ -198,6 +220,33 @@ export function SalePublicPreview({
         Prix non publié · conditions à consulter dans l'annonce officielle
       </p>
     );
+  const accountLink = loginPathWithRedirect(
+    `${saleDetailPath(saleId, returnTo)}${requestedHash.startsWith("#") ? requestedHash : ""}`,
+    { reason: "fiche" },
+  );
+  // Sous le prix, là où le visiteur se demande ce que cache le reste : l'inscription, avec la ligne
+  // d'accès commune. Avec une session détectée, la page dit qu'elle vérifie le compte.
+  const signupBlock = (
+    <div className={styles.signup} data-testid="public-signup">
+      {verifyingAccount ? (
+        <p role="status" className={styles.signupStatus}>
+          Vérification de votre compte…
+        </p>
+      ) : (
+        <>
+          <p className={styles.signupText}>
+            Créez votre compte gratuit pour voir l’adresse, les photos et la fourchette de valeur de
+            cette vente.
+          </p>
+          <Link href={accountLink} className={styles.primary}>
+            Créer mon compte gratuit
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+          <p className={styles.signupLine}>{FREE_ACCESS_LINE}</p>
+        </>
+      )}
+    </div>
+  );
   const factsBlock = (
     <dl className={styles.facts}>
       <div className={styles.fact}>
@@ -220,7 +269,23 @@ export function SalePublicPreview({
   return (
     <main id="contenu" className={styles.page}>
       <div className={styles.container}>
-        <Link href={returnTo} className={styles.back}>
+        {/* Même chemin que le BreadcrumbList JSON-LD de la fiche (Accueil, Ventes, la vente). */}
+        <nav className={styles.breadcrumb} aria-label="Fil d’Ariane">
+          <ol>
+            <li>
+              <Link href="/">Accueil</Link>
+            </li>
+            <li>
+              <Link href="/sales">Ventes</Link>
+            </li>
+            <li>
+              <span aria-current="page" title={headline}>
+                {headline}
+              </span>
+            </li>
+          </ol>
+        </nav>
+        <Link href={salesReturnHref(returnTo, preview.id ?? saleId)} className={styles.back}>
           <ArrowLeft className="h-4 w-4" aria-hidden />
           Retour aux ventes
         </Link>
@@ -267,14 +332,6 @@ export function SalePublicPreview({
                 </ul>
               ) : null}
             </section>
-            <div className={styles.adds}>
-              <h2 className={styles.addsTitle}>Avec le compte gratuit, vous voyez aussi</h2>
-              <ul>
-                {freeContents.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
             <section className={styles.teaser} aria-labelledby="public-teaser-title">
               <h2 id="public-teaser-title" className={styles.addsTitle}>
                 L’analyse de cette vente
@@ -284,7 +341,7 @@ export function SalePublicPreview({
                   <div key={item.label} className={styles.teaserRow}>
                     <dt>{item.label}</dt>
                     <dd>
-                      <span className={styles.blurred} aria-hidden>
+                      <span className={styles.blurred} aria-hidden data-nosnippet>
                         {item.placeholder}
                       </span>
                       <span className={styles.teaserTier}>{item.tier}</span>
@@ -294,15 +351,26 @@ export function SalePublicPreview({
               </dl>
             </section>
 
-            {state || notary ? factsBlock : priceBlock}
-            {state || notary ? priceBlock : factsBlock}
+            {state || notary ? (
+              <>
+                {factsBlock}
+                {priceBlock}
+                {signupBlock}
+              </>
+            ) : (
+              <>
+                {priceBlock}
+                {signupBlock}
+                {factsBlock}
+              </>
+            )}
           </section>
 
           <aside className={styles.procedure} aria-labelledby="public-procedure-title">
             <h2 id="public-procedure-title" className={styles.sectionTitle}>
               Cette vente en clair
             </h2>
-            <p className={styles.procedureText}>{venueCopy.explanation}</p>
+            <p className={styles.procedureText}>{withAdjudicationTerm(venueCopy.explanation)}</p>
             <div className={styles.verification}>
               <ShieldCheck aria-hidden />
               <p>
@@ -325,28 +393,14 @@ export function SalePublicPreview({
               <h2 id="public-access-title" className={styles.sectionTitle}>
                 Consulter le dossier
               </h2>
-              <p className={styles.accessIntro}>
-                Le compte Découverte est gratuit. Il donne accès à l’adresse, aux photos, aux
-                visites et à la fourchette de valeur estimée de cette vente. Il permet aussi de
-                débloquer {MONTHLY_SALE_UNLOCKS} ventes par mois (
-                {unlockedItemsText({
-                  ceiling: procedure.venueType === "tribunal",
-                  statistics: procedure.venueType === "tribunal" && adjudicationStatisticsEnabled,
-                })}
-                ).
-              </p>
             </div>
             <div className={styles.actions}>
-              <Link
-                href={loginPathWithRedirect(
-                  `${saleDetailPath(saleId, returnTo)}${requestedHash.startsWith("#") ? requestedHash : ""}`,
-                  { reason: "fiche" },
-                )}
-                className={styles.primary}
-              >
-                Créer mon compte gratuit
-                <ArrowRight className="h-4 w-4" aria-hidden />
-              </Link>
+              {verifyingAccount ? null : (
+                <Link href={accountLink} className={styles.primary}>
+                  Créer mon compte gratuit
+                  <ArrowRight className="h-4 w-4" aria-hidden />
+                </Link>
+              )}
               <Link href={returnTo} className={styles.secondary}>
                 Continuer ma recherche
               </Link>

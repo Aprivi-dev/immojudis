@@ -18,6 +18,13 @@ export const PHOTO_MIRROR_BUCKET = "sale-photos";
  */
 export const PHOTO_MIRROR_TIMEOUT_MS = 300;
 /**
+ * Délai de la seule régénération de la page statique `/sales` (ISR, `src/app/sales/defaut/page.tsx`) :
+ * personne n'attend cette page, qui reste cinq minutes dans le CDN avec les photos qu'elle a reçues.
+ * Un délai de 300 ms y figeait les photos des sources pour toute la période dès que la base ralentissait
+ * (deux erreurs de délai dépassé relevées le 18/10). Le rendu à la demande garde 300 ms.
+ */
+export const PHOTO_MIRROR_ISR_TIMEOUT_MS = 1_500;
+/**
  * Même délai côté navigateur (recherche, fiche) : l'appel part de chez l'internaute, vers la base,
  * et ne bloque aucun rendu serveur. Un délai de 300 ms y ferait perdre la copie sur un réseau lent.
  */

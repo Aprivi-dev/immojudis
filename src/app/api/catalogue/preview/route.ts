@@ -2,9 +2,6 @@ import { PublicApiError } from "@/lib/api-errors";
 import { apiError, apiJson, createApiRequestContext } from "@/lib/api-observability";
 import {
   DEGRADED_MIRRORS_REVALIDATE_SECONDS,
-  FILTERED_SEARCH_REVALIDATE_SECONDS,
-  FIRST_PAGE_REVALIDATE_SECONDS,
-  isDefaultCatalogueSearch,
   loadPreviewCataloguePage,
   type PreviewCataloguePage,
 } from "@/lib/public-catalogue.server";
@@ -14,7 +11,6 @@ import {
   parsePreviewSearchRequest,
   type PreviewSearchApiResponse,
 } from "@/lib/search/preview-search-request";
-import type { SalesSearchParams } from "@/lib/search/search-url-state";
 
 /**
  * Recherche publique d'aperçu du catalogue, pour le navigateur d'un visiteur anonyme : un seul
@@ -29,21 +25,25 @@ import type { SalesSearchParams } from "@/lib/search/search-url-state";
 const STALE_WHILE_REVALIDATE_SECONDS = 60;
 
 /**
- * Durée de garde de la réponse par le CDN :
- *  - première page sans filtre : 300 s, comme sa mise en cache de données côté serveur
- *    (`FIRST_PAGE_REVALIDATE_SECONDS`) ; tous les visiteurs la lisent, elle se rafraîchit en tâche
- *    de fond (`stale-while-revalidate`) ;
- *  - recherche filtrée : 120 s (`FILTERED_SEARCH_REVALIDATE_SECONDS`), car c'est là qu'on guette une
- *    nouvelle annonce ; peu de lecteurs par adresse, donc peu de lectures de plus ;
- *  - copies de photos en échec (voir `PreviewCataloguePage.mirrorsDegraded`) : 10 s seulement et
- *    sans `stale-while-revalidate`, pour que le CDN ne fige pas les photos des sources.
+ * Durée de garde de la réponse par le CDN : 60 s, que la recherche soit filtrée ou non.
+ *
+ * Elle valait 300 s (première page) et 120 s (recherche filtrée) tant qu'on comptait purger ce cache
+ * à chaque retrait. La purge par étiquette du CDN de Vercel (`invalidateByTag` de `@vercel/functions`)
+ * n'est pas disponible ici : ce paquet n'est pas une dépendance du dépôt (ni dans `node_modules/`).
+ * `revalidate-sale` purge donc le cache de données de Next (étiquette `public-catalogue`) et la page
+ * `/sales`, mais pas cette réponse du CDN : on borne à la place sa durée de vie. Une vente retirée
+ * disparaît de l'aperçu au plus 60 s (+ 60 s de `stale-while-revalidate`, servi une seule fois pendant
+ * le rafraîchissement) après la purge du cache de données. Voir
+ * docs/runbooks/catalogue-visibility-projection.md pour la suite possible (étiquettes de cache).
+ *
+ * Copies de photos en échec (voir `PreviewCataloguePage.mirrorsDegraded`) : 10 s seulement et sans
+ * `stale-while-revalidate`, pour que le CDN ne fige pas les photos des sources.
  */
-function previewCacheControl(search: SalesSearchParams, mirrorsDegraded: boolean): string {
+const PREVIEW_CDN_MAX_AGE_SECONDS = 60;
+
+function previewCacheControl(mirrorsDegraded: boolean): string {
   if (mirrorsDegraded) return `public, s-maxage=${DEGRADED_MIRRORS_REVALIDATE_SECONDS}`;
-  const maxAge = isDefaultCatalogueSearch(search)
-    ? FIRST_PAGE_REVALIDATE_SECONDS
-    : FILTERED_SEARCH_REVALIDATE_SECONDS;
-  return `public, s-maxage=${maxAge}, stale-while-revalidate=${STALE_WHILE_REVALIDATE_SECONDS}`;
+  return `public, s-maxage=${PREVIEW_CDN_MAX_AGE_SECONDS}, stale-while-revalidate=${STALE_WHILE_REVALIDATE_SECONDS}`;
 }
 
 export async function GET(request: Request) {
@@ -65,7 +65,7 @@ export async function GET(request: Request) {
     return apiJson(
       response,
       context,
-      { headers: { "cache-control": previewCacheControl(parsed.search, mirrorsDegraded) } },
+      { headers: { "cache-control": previewCacheControl(mirrorsDegraded) } },
       { echoRequestId: false },
     );
   } catch (error) {

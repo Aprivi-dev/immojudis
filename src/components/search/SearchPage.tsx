@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import X from "lucide-react/dist/esm/icons/x.js";
 import { toast } from "@/lib/toast";
+import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { useAuth } from "@/hooks/use-auth";
 import { useSaleComparison } from "@/hooks/use-sale-comparison";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -66,6 +67,7 @@ import type { MapViewportChange } from "./MapPanel";
 import { FiltersLoadingFallback } from "./FiltersLoadingFallback";
 import { SearchPagination } from "./SearchPagination";
 import { scrollToSaleCard } from "./scroll-to-sale-card";
+import { useRestoreSaleCard } from "./use-restore-sale-card";
 import { DesktopMapZone } from "./DesktopMapZone";
 import { useFirstGestureStart } from "./use-first-gesture-start";
 import { WHOLE_FRANCE_PATCH, activeFilterChips, hasGeographicFilter } from "./active-filter-chips";
@@ -530,6 +532,8 @@ export function SearchPage({
   const hasLocalFilters = false;
   const isInitialLoading =
     !publicListShown && ((authLoading && !serverSeeded) || entitlementsLoading || isLoading);
+  // « Retour aux ventes » d'une fiche : la liste défile jusqu'à la carte consultée.
+  useRestoreSaleCard(!isInitialLoading && rawSales.length > 0);
   const startDesktopMap = useCallback(() => setDesktopMapStarted(true), []);
   useFirstGestureStart({
     enabled: isDesktop && !desktopMapStarted,
@@ -896,6 +900,8 @@ export function SearchPage({
         onExportCsv={exportCsv}
         onToggleLayout={() => setWideMap((value) => !value)}
       />
+
+      <AuthConnectionBanner className="my-3" />
 
       <div
         className={`grid min-h-[calc(100svh_-_var(--sales-header-height))] grid-cols-1 ${splitClass}`}

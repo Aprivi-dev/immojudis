@@ -1,5 +1,10 @@
 import type { BillingSessionResponse } from "@/lib/billing";
-import { OFFER_OPENING_CONSENT_VERSION } from "@/lib/offer-opening-consent";
+import { parseLaunchOfferResponse } from "@/lib/launch-offer";
+import {
+  OFFER_OPENING_CONSENT_VERSION,
+  OFFER_OPENING_SURVEY_VERSION,
+  type OfferOpeningSurveyProfile,
+} from "@/lib/offer-opening-consent";
 import type { OfferOpeningNotificationResponse } from "@/lib/offer-opening-notification";
 import type { PlanCode } from "@/lib/plans";
 import type { PlanEntitlements } from "@/lib/property-reports";
@@ -21,6 +26,15 @@ export async function fetchBillingOffer(): Promise<BillingOfferResponse> {
     cache: "no-store",
   });
   return readJson<BillingOfferResponse>(response);
+}
+
+/**
+ * État de l'offre de lancement (public, identique pour tous, mis en cache au CDN 30 s). `null` :
+ * réponse illisible. Une erreur réseau ou HTTP lève : l'appelant retombe sur « pas d'offre ».
+ */
+export async function fetchLaunchOffer(): Promise<boolean | null> {
+  const response = await fetch("/api/launch-offer");
+  return parseLaunchOfferResponse(await readJson<unknown>(response));
 }
 
 export async function fetchAccessPlan(): Promise<{ plan: PlanEntitlements }> {
@@ -95,6 +109,26 @@ export async function updateOfferOpeningNotification(
     body: JSON.stringify(
       enabled ? { enabled, consentTextVersion: OFFER_OPENING_CONSENT_VERSION } : { enabled },
     ),
+  });
+  return readJson<OfferOpeningNotificationResponse>(response);
+}
+
+/** The optional answers of the qualified waiting list; every field may stay empty. */
+export type OfferOpeningSurveyAnswers = {
+  profile: OfferOpeningSurveyProfile | null;
+  salesPerMonth: number | null;
+  priceTooExpensiveEur: number | null;
+  priceCheapEur: number | null;
+  interviewAccepted: boolean;
+};
+
+export async function updateOfferOpeningSurvey(
+  answers: OfferOpeningSurveyAnswers,
+): Promise<OfferOpeningNotificationResponse> {
+  const response = await fetch("/api/billing/opening-notification", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ ...answers, surveyTextVersion: OFFER_OPENING_SURVEY_VERSION }),
   });
   return readJson<OfferOpeningNotificationResponse>(response);
 }

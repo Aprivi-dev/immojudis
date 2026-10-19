@@ -223,7 +223,7 @@ describe("SaleUnlockPanel", () => {
       "Vous avez utilisé vos 3 déblocages d’octobre. Ils reviennent le 1er novembre.",
     );
     expect(text).toContain(
-      "Analyse ouvre toutes les ventes sans limite : 29 € TTC / mois, résiliable à tout moment.",
+      "Analyse ouvre toutes les ventes sans limite : 59 € TTC / mois, résiliable à tout moment.",
     );
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" }).getAttribute("href")).toBe(
       "/offres",
@@ -244,7 +244,7 @@ describe("SaleUnlockPanel", () => {
     );
     const text = container.textContent ?? "";
     expect(text).toContain("L’offre Analyse n’est pas encore ouverte à la souscription.");
-    expect(text).not.toMatch(/souscrire|29 €|résiliable/);
+    expect(text).not.toMatch(/souscrire|59 €|résiliable/);
     expect(text).toContain("Ils reviennent le 1er novembre.");
     // The primary action is the opening request, not a link to a page that cannot sell it yet.
     expect(screen.getByRole("button", { name: "Me prévenir de l’ouverture" })).toBeTruthy();
@@ -262,7 +262,7 @@ describe("SaleUnlockPanel", () => {
       />,
     );
     const text = container.textContent ?? "";
-    expect(text).not.toMatch(/souscri|29 €|résiliable|pas encore ouverte/);
+    expect(text).not.toMatch(/souscri|59 €|résiliable|pas encore ouverte/);
     expect(screen.getByRole("link", { name: "Voir l’offre Analyse" })).toBeTruthy();
   });
 
@@ -393,6 +393,28 @@ describe("SaleUnlockPanel", () => {
     ).toBeTruthy();
     expect(screen.getByText("Il vous reste 1 déblocage sur 3 ce mois-ci.")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("links an unlocked tribunal sale to its bid ceiling, and never promises one elsewhere", () => {
+    const unlockedStatus = status({ unlocked: true, used: 2, remaining: 1 });
+    const view = render(
+      <SaleUnlockPanel saleId={saleId} status={unlockedStatus} unlocked onUnlocked={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("link", { name: "Voir mon enchère plafond" }).getAttribute("href"),
+    ).toBe("#calculation");
+    view.unmount();
+
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={unlockedStatus}
+        unlocked
+        opens={{ ceiling: false, statistics: false }}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: "Voir mon enchère plafond" })).toBeNull();
   });
 
   it("renders nothing before the status is known and for an Analyse account", () => {

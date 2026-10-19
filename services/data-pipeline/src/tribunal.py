@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from src.commune_department_lookup import unique_department_for_commune
 from src.court_competence import (
     OfficialCourt,
     resolve_competent_court,
@@ -103,10 +104,19 @@ DEPARTMENT_TRIBUNALS = {
 }
 
 
+# Sources dont la description libre nomme le tribunal (« Tribunal judiciaire de Nice ») sans que la
+# carte ou la fiche en fasse un champ.
+DESCRIPTION_TRIBUNAL_SOURCES = frozenset({"avoventes", "encheres_immobilieres"})
+
+
 def infer_tribunal(sale: AuctionSale) -> str | None:
     explicit = _extract_explicit_tribunal(sale.raw_text)
     if explicit:
         return explicit
+    if sale.source_name in DESCRIPTION_TRIBUNAL_SOURCES:
+        explicit = _extract_explicit_tribunal(sale.description)
+        if explicit:
+            return explicit
     if _is_non_judicial_sale_context(sale):
         return None
 
@@ -131,11 +141,12 @@ def fill_tribunal(sale: AuctionSale) -> AuctionSale:
 
 
 def infer_missing_department(sale: AuctionSale) -> AuctionSale:
-    """Département déduit du code INSEE géocodé, puis du code postal (jamais écrasé).
+    """Département déduit du code INSEE géocodé, du code postal, puis du nom de commune (jamais écrasé).
 
     Le tribunal n'est pas une source : il peut couvrir une commune d'un département voisin, et une
-    valeur déduite de lui serait écrite comme un fait. Sans code postal ni géocodage accepté, le
-    département reste absent.
+    valeur déduite de lui serait écrite comme un fait. Le nom de commune n'est un repli que s'il
+    désigne une seule commune en France (référentiel ``reference_communes``) ; un nom ambigu ne donne
+    rien. Sans rien de tout cela, le département reste absent.
     """
     if sale.department:
         return sale
@@ -150,6 +161,11 @@ def infer_missing_department(sale: AuctionSale) -> AuctionSale:
         sale.department = department
         payload["department_inference"] = {"source": source, "value": department}
         return sale
+    # Évalué en dernier : ce repli peut lire la base de référence, les deux preuves ci-dessus non.
+    department = unique_department_for_commune(sale.city)
+    if department:
+        sale.department = department
+        payload["department_inference"] = {"source": "reference_communes", "value": department}
     return sale
 
 

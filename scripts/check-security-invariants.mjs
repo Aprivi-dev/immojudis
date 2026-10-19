@@ -857,6 +857,83 @@ if (!/"sale-photos"/.test(saleRetentionSource)) {
   failures.push("The retention worker does not accept the sale-photos bucket");
 }
 
+// Offre de lancement (19/10/2026): a single read-only switch in the database decides whether a free
+// account has the Analyse access. The table is closed to the browser roles, the reader is a definer
+// function with an empty search_path that anon never executes, the two access functions consult it,
+// the switch is limited to administrators, and nothing is ever written to the accounts.
+const launchOfferName = "20261028120000_launch_offer.sql";
+const launchOfferMigration = migrationSources.get(launchOfferName) ?? "";
+const launchOfferSql = launchOfferMigration
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/--[^\n]*/g, "");
+if (!launchOfferSql) {
+  failures.push("The launch offer migration is missing");
+} else {
+  if (
+    !/alter\s+table\s+app_private\.launch_offer\s+enable\s+row\s+level\s+security/i.test(
+      launchOfferSql,
+    ) ||
+    !/revoke\s+all\s+on\s+table\s+app_private\.launch_offer\s+from\s+public,\s*anon,\s*authenticated/i.test(
+      launchOfferSql,
+    )
+  ) {
+    failures.push("app_private.launch_offer is not closed to the browser roles");
+  }
+  const launchOfferReader =
+    /create\s+or\s+replace\s+function\s+app_private\.launch_offer_active\(\)[\s\S]*?\$function\$;/i.exec(
+      launchOfferSql,
+    )?.[0];
+  if (
+    !launchOfferReader ||
+    !/\bstable\b/i.test(launchOfferReader) ||
+    !/security\s+definer\s+set\s+search_path\s+to\s+''/i.test(launchOfferReader)
+  ) {
+    failures.push("launch_offer_active is not a STABLE SECURITY DEFINER with an empty search_path");
+  }
+  for (const statement of launchOfferSql.split(";")) {
+    if (
+      /^\s*grant\s/i.test(statement) &&
+      /launch_offer|get_launch_offer_status/i.test(statement) &&
+      /\bto\s+[^;]*\b(?:public|anon)\b/i.test(statement) &&
+      !/\bset_launch_offer\b/i.test(statement)
+    ) {
+      failures.push("The launch offer state is granted to anon or public");
+    }
+  }
+  if (
+    !/function\s+public\.set_launch_offer\(p_active\s+boolean\)[\s\S]*?if\s+not\s+public\.is_admin\(\)\s+then\s+raise\s+exception/i.test(
+      launchOfferSql,
+    ) ||
+    !/revoke\s+all\s+on\s+function\s+public\.set_launch_offer\(boolean\)\s+from\s+public,\s*anon/i.test(
+      launchOfferSql,
+    )
+  ) {
+    failures.push("set_launch_offer is not limited to administrators");
+  }
+  if (
+    /\b(?:update|insert\s+into|delete\s+from)\s+public\.(?:user_profiles|user_subscriptions)\b/i.test(
+      launchOfferSql,
+    ) ||
+    /\bset\s+account_tier\b/i.test(launchOfferSql)
+  ) {
+    failures.push("The launch offer writes into user_profiles or user_subscriptions");
+  }
+}
+// Every later definition of the two access functions keeps consulting the switch.
+for (const [name, source] of migrationSources) {
+  if (name <= launchOfferName) continue;
+  const sql = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+  for (const accessFunction of ["current_user_has_premium_access", "has_active_analysis_access"]) {
+    const definition = new RegExp(
+      `create\\s+or\\s+replace\\s+function\\s+app_private\\.${accessFunction}\\([^)]*\\)[\\s\\S]*?\\$(\\w*)\\$;`,
+      "i",
+    ).exec(sql)?.[0];
+    if (definition && !/launch_offer_active\(\)/.test(definition)) {
+      failures.push(`${name} redefines ${accessFunction} without the launch offer switch`);
+    }
+  }
+}
+
 if (failures.length) {
   console.error(JSON.stringify({ ok: false, failures }, null, 2));
   process.exit(1);
@@ -895,6 +972,7 @@ console.log(
       "document-reading-personal-data-filter",
       "listing-completeness-score-stays-private",
       "sale-photos-bucket-table-and-purge",
+      "launch-offer-switch-and-access-functions",
     ],
   }),
 );

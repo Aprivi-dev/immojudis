@@ -36,6 +36,22 @@ describe("page Comment ça marche", () => {
     expect(text).not.toMatch(/sponsoris/i);
   });
 
+  it("ne dit plus que l'enchère plafond est réservée à Analyse : le compte gratuit l'ouvre sur 3 ventes au tribunal", () => {
+    const { container } = render(<Page />);
+    const step = within(screen.getByRole("list")).getAllByRole("listitem")[2]!;
+    const text = step.textContent ?? "";
+    expect(text).toContain(
+      "Le compte gratuit l’ouvre sur 3 ventes au tribunal par mois (déblocages) ; l’offre Analyse l’ouvre sur toutes les ventes au tribunal.",
+    );
+    expect(text).not.toContain("Avec l’offre Analyse, le simulateur chiffre");
+    expect(container.textContent).not.toMatch(/se fixe avec l’offre Analyse/);
+  });
+
+  it("ne montre pas la mention de l'offre de lancement tant que son état n'est pas lu", () => {
+    render(<Page />);
+    expect(screen.queryByTestId("launch-offer-note")).toBeNull();
+  });
+
   it("ne mentionne plus les limites internes du produit", () => {
     const { container } = render(<Page />);
     expect(container.textContent).not.toMatch(

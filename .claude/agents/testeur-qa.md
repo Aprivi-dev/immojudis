@@ -18,10 +18,11 @@ de lecture ; tu ne lances rien qui touche la production.
   local, navigateurs bureau et mobile).
 - Tests unitaires Vitest : `npm test`.
 - `npm ci` d'abord si `node_modules/` est absent. Pour Playwright :
-  `npx playwright install --with-deps chromium`, puis
   `npx playwright test --project=desktop-chromium` (ajoute `mobile-chromium` pour le
-  mobile). Si l'installation des navigateurs est impossible, dis-le et passe à la revue
-  des parcours dans le code.
+  mobile). Chromium est préinstallé dans `/opt/pw-browsers/` : ne lance jamais
+  `playwright install` ; si la version attendue manque, utilise
+  `executablePath: '/opt/pw-browsers/chromium'` dans une config temporaire hors du dépôt. Si
+  aucun navigateur ne démarre, dis-le et passe à la revue des parcours dans le code.
 
 ## Méthode
 

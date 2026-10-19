@@ -122,6 +122,54 @@ describe("warmSalePages", () => {
     ).resolves.toMatchObject({ warmed: 1, failed: 0 });
   });
 
+  it("also warms the extra public paths, first, so that the page cap never drops them", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => page());
+    const log = vi.fn();
+
+    const summary = await warmSalePages([ID, OTHER_ID], {
+      env: PRODUCTION,
+      fetchImpl,
+      log,
+      extraPaths: ["/sales", "/sales"],
+      concurrency: 1,
+    });
+
+    expect(summary).toEqual({ requested: 3, warmed: 3, failed: 0 });
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      "https://immojudis.com/sales",
+      `https://immojudis.com/sales/${ID}`,
+      `https://immojudis.com/sales/${OTHER_ID}`,
+    ]);
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "warmed", path: "/sales", saleId: undefined }),
+    );
+  });
+
+  it("keeps the extra path when a large batch is cut at the page cap", async () => {
+    const ids = Array.from(
+      { length: MAX_WARMUP_PAGES + 10 },
+      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    );
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => page());
+
+    const summary = await warmSalePages(ids, {
+      env: PRODUCTION,
+      fetchImpl,
+      log: vi.fn(),
+      extraPaths: ["/sales"],
+    });
+
+    expect(summary.requested).toBe(MAX_WARMUP_PAGES);
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toContain("https://immojudis.com/sales");
+  });
+
+  it("warms the extra paths even when no sale is given", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => page());
+    await expect(
+      warmSalePages([], { env: PRODUCTION, fetchImpl, log: vi.fn(), extraPaths: ["/sales"] }),
+    ).resolves.toEqual({ requested: 1, warmed: 1, failed: 0 });
+  });
+
   it("really gives up after the time limit", async () => {
     const fetchImpl = vi.fn(
       (_url: string | URL | Request, init?: RequestInit) =>

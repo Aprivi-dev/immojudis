@@ -2,7 +2,7 @@ import hashlib
 import json
 import sys
 import types
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from threading import Lock
 
@@ -1859,7 +1859,15 @@ def _settings() -> dict[str, object]:
     }
 
 
+_FRENCH_MONTHS = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
+
+
 def _raw_sale() -> dict[str, object]:
+    # Date relative au jour d'exécution : une vente datée en dur finit par être passée, donc non publiée.
+    sale_day = date.today() + timedelta(days=90)
     return {
         "source_name": "avoventes",
         "source_url": "https://example.test/vente",
@@ -1867,7 +1875,7 @@ def _raw_sale() -> dict[str, object]:
         "city": "Bordeaux",
         "postal_code": "33000",
         "property_type": "apartment",
-        "sale_date": "10 janvier 2027 à 9h00",
+        "sale_date": f"{sale_day.day} {_FRENCH_MONTHS[sale_day.month - 1]} {sale_day.year} à 9h00",
         "starting_price_eur": "100 000 €",
         "documents": [{"label": "PV descriptif", "url": "https://example.test/pv.pdf"}],
     }

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 import { mapPreviewRows, type PreviewSearchRow } from "@/lib/search/preview-search";
 import { parsePreviewSearchRequest } from "@/lib/search/preview-search-request";
 
@@ -104,7 +104,7 @@ test.describe("visiteur sans compte", () => {
     await expect(heart).toBeVisible();
     await expect(heart).toHaveAttribute(
       "title",
-      "Créer un compte gratuit pour garder cette vente (3 favoris)",
+      "Créer un compte gratuit pour garder cette vente (10 favoris)",
     );
     const box = await heart.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(43.5);
@@ -369,5 +369,127 @@ test.describe("compte gratuit connecté", () => {
     await page.getByRole("button", { name: "Créer l’alerte" }).click();
     await expect(page.getByText(/Email récapitulatif activé/)).toBeVisible();
     expect(consents).toEqual([{ alertEmailEnabled: true, consentSource: "alert_creation" }]);
+  });
+});
+
+test.describe("session impossible à vérifier", () => {
+  const PAGES = ["/favoris", "/alertes", "/compte", "/sales?city=Lyon"] as const;
+  const UNAVAILABLE = "Nous n’avons pas pu vérifier votre connexion.";
+  const EXPIRED = "Votre session a expiré.";
+
+  /** Session stockée dans le navigateur, comme après une connexion ; durée négative : jeton périmé. */
+  async function storeSession(page: Page, expiresInSeconds = 3600) {
+    await page.addInitScript(
+      ({ storedUser, expiresIn }) => {
+        window.localStorage.setItem(
+          "encheres-immo-auth",
+          JSON.stringify({
+            access_token: "e2e-access-token",
+            refresh_token: "e2e-refresh-token",
+            token_type: "bearer",
+            expires_in: 3600,
+            expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+            user: storedUser,
+          }),
+        );
+      },
+      { storedUser: user, expiresIn: expiresInSeconds },
+    );
+  }
+
+  /** Supabase répond `[]` partout ; l'identité (`/auth/v1/user`) est réglée par chaque test. */
+  async function mockSupabase(page: Page, identity: (route: Route) => Promise<void>) {
+    await mockPublicCatalogue(page);
+    await page.route("https://ci.supabase.co/**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === "/auth/v1/user") return identity(route);
+      await route.fulfill({ status: 200, json: [] });
+    });
+    await page.route("**/api/favorites", (route) =>
+      route.fulfill({
+        status: 200,
+        json: { favorites: [], unavailableSaleIds: [], summary: {}, plan: { code: "decouverte" } },
+      }),
+    );
+  }
+
+  for (const path of PAGES) {
+    test(`${path} : réseau coupé, bandeau « Réessayer » / « Se reconnecter » sans renvoi vers /login`, async ({
+      page,
+    }) => {
+      await storeSession(page);
+      await mockSupabase(page, (route) => route.abort("connectionfailed"));
+      await page.goto(path);
+
+      const banner = page.getByTestId("auth-connection-banner");
+      await expect(banner).toContainText(UNAVAILABLE);
+      await expect(banner.getByRole("button", { name: "Réessayer" })).toBeVisible();
+      await expect(banner.getByRole("link", { name: "Se reconnecter" })).toHaveAttribute(
+        "href",
+        /^\/login\?redirect=/,
+      );
+      // Les cibles du bandeau font au moins 44 px.
+      for (const control of [
+        banner.getByRole("button", { name: "Réessayer" }),
+        banner.getByRole("link", { name: "Se reconnecter" }),
+      ]) {
+        expect((await control.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(43.5);
+      }
+      await expect(page).not.toHaveURL(/\/login/);
+    });
+
+    test(`${path} : session refusée par le serveur (401), seule la reconnexion est proposée`, async ({
+      page,
+    }) => {
+      await storeSession(page);
+      await mockSupabase(page, (route) =>
+        route.fulfill({
+          status: 401,
+          json: { code: 401, error_code: "bad_jwt", msg: "invalid JWT" },
+        }),
+      );
+      await page.goto(path);
+
+      const banner = page.getByTestId("auth-connection-banner");
+      await expect(banner).toContainText(EXPIRED);
+      await expect(banner.getByRole("link", { name: "Se reconnecter" })).toBeVisible();
+      await expect(banner.getByRole("button", { name: "Réessayer" })).toHaveCount(0);
+      await expect(page).not.toHaveURL(/\/login/);
+    });
+  }
+
+  test("jeton périmé dont le renouvellement est refusé (401 puis refus du refresh) : le compte est bien déconnecté, retour à /login", async ({
+    page,
+  }) => {
+    // Un refresh refusé par le serveur n'est pas une panne : la session est retirée par supabase-js
+    // (SIGNED_OUT), la page protégée renvoie vers la connexion comme avant, sans bandeau ni boucle.
+    await storeSession(page, -60);
+    await mockSupabase(page, (route) => route.fulfill({ status: 200, json: user }));
+    await page.route("https://ci.supabase.co/auth/v1/token**", (route) =>
+      route.fulfill({
+        status: 400,
+        json: { error: "invalid_grant", error_description: "Invalid Refresh Token" },
+      }),
+    );
+    await page.goto("/favoris");
+
+    await expect(page).toHaveURL(/\/login\?redirect=%2Ffavoris/);
+    await expect(page.getByTestId("auth-connection-banner")).toHaveCount(0);
+  });
+
+  test("« Réessayer » revérifie le compte quand le réseau revient", async ({ page }) => {
+    let networkUp = false;
+    await storeSession(page);
+    await mockSupabase(page, (route) =>
+      networkUp ? route.fulfill({ status: 200, json: user }) : route.abort("connectionfailed"),
+    );
+    await page.goto("/favoris");
+
+    const banner = page.getByTestId("auth-connection-banner");
+    await expect(banner).toContainText(UNAVAILABLE);
+    networkUp = true;
+    await banner.getByRole("button", { name: "Réessayer" }).click();
+    await expect(page.getByTestId("auth-connection-banner")).toHaveCount(0);
+    await expect(page).not.toHaveURL(/\/login/);
   });
 });

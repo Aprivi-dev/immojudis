@@ -50,7 +50,6 @@ export function SaleCalendarButton({ saleId }: { saleId: string }) {
     <div className="mt-2">
       <Button
         variant="secondary"
-        size="sm"
         onClick={() => void download()}
         disabled={pending}
         aria-busy={pending}
