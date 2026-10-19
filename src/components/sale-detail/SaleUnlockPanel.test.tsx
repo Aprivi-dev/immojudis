@@ -395,6 +395,28 @@ describe("SaleUnlockPanel", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("links an unlocked tribunal sale to its bid ceiling, and never promises one elsewhere", () => {
+    const unlockedStatus = status({ unlocked: true, used: 2, remaining: 1 });
+    const view = render(
+      <SaleUnlockPanel saleId={saleId} status={unlockedStatus} unlocked onUnlocked={vi.fn()} />,
+    );
+    expect(
+      screen.getByRole("link", { name: "Voir mon enchère plafond" }).getAttribute("href"),
+    ).toBe("#calculation");
+    view.unmount();
+
+    render(
+      <SaleUnlockPanel
+        saleId={saleId}
+        status={unlockedStatus}
+        unlocked
+        opens={{ ceiling: false, statistics: false }}
+        onUnlocked={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: "Voir mon enchère plafond" })).toBeNull();
+  });
+
   it("renders nothing before the status is known and for an Analyse account", () => {
     const pending = render(
       <SaleUnlockPanel saleId={saleId} status={null} unlocked={false} onUnlocked={vi.fn()} />,

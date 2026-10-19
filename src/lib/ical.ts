@@ -92,6 +92,18 @@ export type IcsEvent = {
   url?: string | null;
   /** TENTATIVE tells the calendar the date still has to be confirmed. */
   status?: "CONFIRMED" | "TENTATIVE";
+  /**
+   * End of a timed event (DTEND, UTC). Ignored for an all-day event, whose end is the next day.
+   * Without it, a timed event has no end and calendars invent their own duration.
+   */
+  end?: Date | null;
+  /**
+   * Revision number of the event (SEQUENCE, RFC 5545 section 3.8.7.4): a calendar that already
+   * holds the UID replaces its copy when the file carries a higher number.
+   */
+  sequence?: number | null;
+  /** Display reminders (VALARM). `trigger` is an RFC 5545 duration before the start: `-P7D`. */
+  alarms?: ReadonlyArray<{ trigger: string; description: string }>;
 };
 
 export function buildIcsCalendar(event: IcsEvent, prodId: string): string {
@@ -115,12 +127,30 @@ export function buildIcsCalendar(event: IcsEvent, prodId: string): string {
     );
   } else {
     lines.push(`DTSTART:${formatIcsUtc(event.start.at)}`);
+    if (event.end && Number.isFinite(event.end.getTime()) && event.end > event.start.at) {
+      lines.push(`DTEND:${formatIcsUtc(event.end)}`);
+    }
+  }
+  if (event.sequence != null && Number.isInteger(event.sequence) && event.sequence >= 0) {
+    lines.push(`SEQUENCE:${event.sequence}`);
   }
   lines.push(`SUMMARY:${escapeIcsText(event.summary)}`);
   if (event.description) lines.push(`DESCRIPTION:${escapeIcsText(event.description)}`);
   if (event.location) lines.push(`LOCATION:${escapeIcsText(event.location)}`);
   // URI value type: not TEXT, so it is not escaped, but it can never carry a line break.
   if (event.url) lines.push(`URL:${event.url.replace(/[\r\n]/g, "")}`);
-  lines.push(`STATUS:${event.status ?? "CONFIRMED"}`, "END:VEVENT", "END:VCALENDAR");
+  lines.push(`STATUS:${event.status ?? "CONFIRMED"}`);
+  for (const alarm of event.alarms ?? []) {
+    // A duration, never free text: it cannot carry a line break or another property.
+    if (!/^-P(?=\d|T\d)(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?)?$/.test(alarm.trigger)) continue;
+    lines.push(
+      "BEGIN:VALARM",
+      "ACTION:DISPLAY",
+      `TRIGGER:${alarm.trigger}`,
+      `DESCRIPTION:${escapeIcsText(alarm.description)}`,
+      "END:VALARM",
+    );
+  }
+  lines.push("END:VEVENT", "END:VCALENDAR");
   return lines.map(foldIcsLine).join(CRLF) + CRLF;
 }

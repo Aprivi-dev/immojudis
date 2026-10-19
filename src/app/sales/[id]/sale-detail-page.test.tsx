@@ -17,14 +17,20 @@ const mocks = vi.hoisted(() => ({
   authenticated: true,
   authLoading: false,
   authError: null as string | null,
+  authErrorKind: null as "expired" | "unavailable" | null,
+  retry: vi.fn(),
+  hint: false,
 }));
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
     session: mocks.authenticated ? { user: { id: "test" } } : null,
     loading: mocks.authLoading,
     authError: mocks.authError,
+    authErrorKind: mocks.authErrorKind,
+    retry: mocks.retry,
   }),
 }));
+vi.mock("@/integrations/supabase/lazy", () => ({ hasSupabaseAuthHint: () => mocks.hint }));
 vi.mock("@/hooks/use-viewed-sales", () => ({ markSaleViewed: vi.fn() }));
 vi.mock("@/lib/client-api", () => ({
   fetchAccessPlan: mocks.entitlements,
@@ -67,9 +73,20 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
   ),
 }));
 vi.mock("@/components/SalePublicPreview", () => ({
-  SalePublicPreview: ({ returnTo }: { returnTo: string }) => (
+  SalePublicPreview: ({
+    returnTo,
+    verifyingAccount,
+  }: {
+    returnTo: string;
+    verifyingAccount?: boolean;
+  }) => (
     <div>
       Aperçu public <span data-testid="return-to">{returnTo}</span>
+      {verifyingAccount ? (
+        <span>Vérification de votre compte…</span>
+      ) : (
+        <span>Créer mon compte</span>
+      )}
     </div>
   ),
 }));
@@ -80,6 +97,8 @@ afterEach(() => {
   mocks.authenticated = true;
   mocks.authLoading = false;
   mocks.authError = null;
+  mocks.authErrorKind = null;
+  mocks.hint = false;
 });
 describe("listing access resolution", () => {
   it("restores a deep-link anchor after asynchronous access and listing resolution", async () => {
@@ -146,11 +165,108 @@ describe("listing access resolution", () => {
         <SaleDetailPage id="sale" />
       </QueryClientProvider>,
     );
-    expect(screen.getByRole("heading", { name: "Connexion à renouveler" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Connexion à vérifier" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Se reconnecter" }).getAttribute("href")).toBe(
       "/login?redirect=%2Fsales%2Fsale%23proofs&reason=fiche",
     );
     expect(mocks.sale).not.toHaveBeenCalled();
+  });
+
+  it("offers « Réessayer » when the session could not be verified because of the network", () => {
+    mocks.authenticated = false;
+    mocks.authError = "Votre session n’a pas pu être vérifiée.";
+    mocks.authErrorKind = "unavailable";
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Nous n’avons pas pu vérifier votre connexion.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+    expect(mocks.retry).toHaveBeenCalledTimes(1);
+  });
+
+  it("only proposes to sign in again when the server rejected the session", () => {
+    mocks.authenticated = false;
+    mocks.authError = "Votre session n’a pas pu être vérifiée.";
+    mocks.authErrorKind = "expired";
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText(/Votre session a expiré/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Réessayer" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Se reconnecter" })).toBeTruthy();
+  });
+
+  it("keeps the listing on screen, under a banner, when a verified account cannot be re-verified", async () => {
+    mocks.authError = "Votre session n’a pas pu être vérifiée.";
+    mocks.authErrorKind = "unavailable";
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("Analyse premium")).toBeTruthy();
+    expect(screen.getByTestId("auth-connection-banner")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Connexion à vérifier" })).toBeNull();
+  });
+
+  it("keeps the public preview, saying that the account is verified, instead of a full-screen skeleton", async () => {
+    let release!: (value: unknown) => void;
+    mocks.entitlements.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "sale" } }}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText(/Aperçu public/)).toBeTruthy();
+    expect(screen.getByText("Vérification de votre compte…")).toBeTruthy();
+    expect(screen.queryByRole("status", { name: "Chargement de la fiche" })).toBeNull();
+    release({ plan: { hasAnalysisAccess: true } });
+    expect(await screen.findByText("Analyse premium")).toBeTruthy();
+    expect(screen.queryByText(/Aperçu public/)).toBeNull();
+  });
+
+  it("says nothing about an account while the session is restored for a visitor without stored session", () => {
+    mocks.authenticated = false;
+    mocks.authLoading = true;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "sale" } }}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Créer mon compte")).toBeTruthy();
+    cleanup();
+    mocks.hint = true;
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage
+          id="sale"
+          initialData={{ sale: null, preview: { ...EXAMPLE_SALE, id: "sale" } }}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText("Vérification de votre compte…")).toBeTruthy();
   });
 
   it("only requests the public preview without a verified session", async () => {

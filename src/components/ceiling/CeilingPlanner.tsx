@@ -387,7 +387,7 @@ function WorksCeilings({
           <button
             type="button"
             onClick={onEditWorks}
-            className="text-sm font-semibold text-gold-text underline-offset-4 hover:underline"
+            className="inline-flex min-h-11 items-center text-sm font-semibold text-gold-text underline-offset-4 hover:underline"
           >
             Choisir les travaux
           </button>
@@ -440,6 +440,13 @@ function WorksCeilings({
 function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
   const defaultBid = hypotheses.startingPrice ?? plan.maxBid;
   const [bid, setBid] = useState<number>(defaultBid);
+  // Texte en cours de saisie : effacer le champ le laisse vide au lieu de le ramener à 0. `null` :
+  // le champ montre le montant (choix rapide, sortie du champ).
+  const [bidText, setBidText] = useState<string | null>(null);
+  const pickBid = (value: number) => {
+    setBid(value);
+    setBidText(null);
+  };
   const evaluation = evaluateBid(hypotheses, plan, bid);
   const fees = evaluation.fees;
   const rows: Array<[label: string, value: number, term?: TermeKey]> = [
@@ -464,17 +471,21 @@ function BidSimulator({ hypotheses, plan }: { hypotheses: CeilingHypotheses; pla
           inputMode="numeric"
           min={0}
           step={500}
-          value={Number.isFinite(bid) ? bid : 0}
-          onChange={(event) => setBid(Math.max(0, Number(event.target.value) || 0))}
+          value={bidText ?? (Number.isFinite(bid) ? bid : 0)}
+          onChange={(event) => {
+            setBidText(event.target.value);
+            setBid(Math.max(0, Number(event.target.value) || 0));
+          }}
+          onBlur={() => setBidText(null)}
           className="min-h-11 w-full bg-transparent text-lg font-semibold tabular-nums outline-none"
         />
         <span className="text-sm text-muted-foreground">€</span>
       </label>
       <div className="mt-2 flex flex-wrap gap-2 text-xs">
         {hypotheses.startingPrice ? (
-          <QuickBid label="Mise à prix" value={hypotheses.startingPrice} onPick={setBid} />
+          <QuickBid label="Mise à prix" value={hypotheses.startingPrice} onPick={pickBid} />
         ) : null}
-        {plan.reachable ? <QuickBid label="Plafond" value={plan.maxBid} onPick={setBid} /> : null}
+        {plan.reachable ? <QuickBid label="Plafond" value={plan.maxBid} onPick={pickBid} /> : null}
       </div>
       <dl className="mt-4 divide-y divide-border border-y border-border text-sm">
         {rows

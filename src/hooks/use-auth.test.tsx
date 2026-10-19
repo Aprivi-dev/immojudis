@@ -8,7 +8,7 @@ import {
   SUPABASE_AUTH_STORAGE_KEY,
   type SupabaseBrowserClient,
 } from "@/integrations/supabase/lazy";
-import { useAuth } from "./use-auth";
+import { identityErrorKind, SESSION_UNVERIFIED_MESSAGE, useAuth } from "./use-auth";
 
 const mocks = vi.hoisted(() => ({
   client: null as unknown,
@@ -301,6 +301,131 @@ describe("verified authentication state", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.authError).toBeTruthy();
     expect(result.current.user).toBeNull();
+  });
+
+  describe("session impossible à vérifier", () => {
+    it("distingue une session rejetée par le serveur d'une indisponibilité", () => {
+      expect(identityErrorKind({ name: "AuthApiError", status: 401 })).toBe("expired");
+      expect(identityErrorKind({ name: "AuthApiError", status: 403 })).toBe("expired");
+      expect(identityErrorKind({ name: "AuthSessionMissingError", status: 400 })).toBe("expired");
+      expect(identityErrorKind({ name: "AuthRetryableFetchError", status: 0 })).toBe("unavailable");
+      expect(identityErrorKind({ name: "AuthRetryableFetchError", status: 503 })).toBe(
+        "unavailable",
+      );
+      expect(identityErrorKind({ status: 408 })).toBe("unavailable");
+      expect(identityErrorKind({ status: 429 })).toBe("unavailable");
+      expect(identityErrorKind(new Error("Failed to fetch"))).toBe("unavailable");
+      expect(identityErrorKind(null)).toBe("unavailable");
+    });
+
+    it("utilise un seul message neutre, sans renvoyer à l'annonce", async () => {
+      mocks.getSession.mockResolvedValue({ data: { session: session("expired") } });
+      mocks.getUser.mockResolvedValue({
+        data: { user: null },
+        error: { name: "AuthApiError", status: 401, message: "invalid JWT" },
+      });
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.authError).toBe(SESSION_UNVERIFIED_MESSAGE));
+      expect(SESSION_UNVERIFIED_MESSAGE).toBe("Votre session n’a pas pu être vérifiée.");
+      expect(result.current.authErrorKind).toBe("expired");
+      expect(result.current.session).toBeNull();
+      expect(result.current.loading).toBe(false);
+    });
+
+    it("réessaie : le retour du réseau rétablit la session et efface l'erreur", async () => {
+      mocks.getSession.mockResolvedValue({ data: { session: session("retry") } });
+      mocks.getUser.mockRejectedValueOnce(new Error("Failed to fetch"));
+      mocks.getUser.mockResolvedValue({ data: { user: { id: "retry" } }, error: null });
+      mocks.profile.mockResolvedValue({ data: { user_id: "retry" }, error: null });
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.authErrorKind).toBe("unavailable"));
+      expect(result.current.user).toBeNull();
+
+      act(() => result.current.retry());
+      await waitFor(() => expect(result.current.user?.id).toBe("retry"));
+      expect(result.current.authError).toBeNull();
+      expect(result.current.authErrorKind).toBeNull();
+      // La session stockée est relue une seule fois : la revérification repart de celle en mémoire.
+      expect(mocks.getSession).toHaveBeenCalledTimes(1);
+      expect(mocks.getUser).toHaveBeenCalledTimes(2);
+    });
+
+    it("garde l'identité déjà vérifiée quand une revérification échoue faute de réseau", async () => {
+      mocks.getSession.mockResolvedValue({ data: { session: session("blip") } });
+      mocks.getUser.mockResolvedValue({ data: { user: { id: "blip" } }, error: null });
+      mocks.profile.mockResolvedValue({ data: { user_id: "blip" }, error: null });
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.user?.id).toBe("blip"));
+
+      mocks.getUser.mockRejectedValue(new Error("Failed to fetch"));
+      act(() => mocks.callback?.("TOKEN_REFRESHED", session("blip")));
+      await waitFor(() => expect(result.current.authErrorKind).toBe("unavailable"));
+      // Ni la session ni le profil ne sont vidés, et la page n'attend pas : seul le bandeau paraît.
+      expect(result.current.user?.id).toBe("blip");
+      expect(result.current.session?.user.id).toBe("blip");
+      expect(result.current.profile?.user_id).toBe("blip");
+      expect(result.current.loading).toBe(false);
+
+      mocks.getUser.mockResolvedValue({ data: { user: { id: "blip" } }, error: null });
+      act(() => result.current.retry());
+      await waitFor(() => expect(result.current.authError).toBeNull());
+      expect(result.current.user?.id).toBe("blip");
+    });
+
+    it("retire l'identité quand le serveur rejette la session déjà vérifiée", async () => {
+      mocks.getSession.mockResolvedValue({ data: { session: session("revoked") } });
+      mocks.getUser.mockResolvedValue({ data: { user: { id: "revoked" } }, error: null });
+      mocks.profile.mockResolvedValue({ data: { user_id: "revoked" }, error: null });
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.user?.id).toBe("revoked"));
+
+      mocks.getUser.mockResolvedValue({
+        data: { user: null },
+        error: { name: "AuthApiError", status: 401, message: "session revoked" },
+      });
+      act(() => mocks.callback?.("TOKEN_REFRESHED", session("revoked")));
+      await waitFor(() => expect(result.current.authErrorKind).toBe("expired"));
+      expect(result.current.user).toBeNull();
+      expect(result.current.session).toBeNull();
+    });
+
+    it("signale une session stockée que supabase-js n'a pas pu renouveler", async () => {
+      mocks.getSession.mockResolvedValue({
+        data: { session: null },
+        error: { name: "AuthRetryableFetchError", status: 0, message: "Failed to fetch" },
+      });
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.authErrorKind).toBe("unavailable"));
+      expect(result.current.loading).toBe(false);
+
+      mocks.getSession.mockResolvedValue({ data: { session: session("renewed") } });
+      mocks.getUser.mockResolvedValue({ data: { user: { id: "renewed" } }, error: null });
+      mocks.profile.mockResolvedValue({ data: { user_id: "renewed" }, error: null });
+      act(() => result.current.retry());
+      await waitFor(() => expect(result.current.user?.id).toBe("renewed"));
+      expect(mocks.getSession).toHaveBeenCalledTimes(2);
+    });
+
+    it("relance le chargement du client quand il a échoué, sans rester bloqué en vérification", async () => {
+      mocks.failImport = true;
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.authErrorKind).toBe("unavailable"));
+
+      // Le chargement échoue encore : l'erreur est reposée et la page n'attend pas indéfiniment.
+      act(() => result.current.retry());
+      await waitFor(() => expect(result.current.authErrorKind).toBe("unavailable"));
+      expect(result.current.loading).toBe(false);
+      expect(result.current.user).toBeNull();
+    });
+
+    it("n'a rien à relancer pour un visiteur anonyme", async () => {
+      window.localStorage.clear();
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.authError).toBeNull();
+      expect(result.current.authErrorKind).toBeNull();
+      expect(typeof result.current.retry).toBe("function");
+    });
   });
 
   describe("visiteur anonyme : synchronisation avec les autres onglets", () => {
