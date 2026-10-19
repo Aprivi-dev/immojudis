@@ -135,9 +135,18 @@ describe("/tribunaux", () => {
     const section = screen.getByRole("region", {
       name: "107 ventes judiciaires à venir dans 1 tribunal",
     });
+    // Le nom mène à la page du tribunal ; le nombre de ventes, à la recherche filtrée.
     expect(screen.getByRole("link", { name: "Bobigny" }).getAttribute("href")).toBe(
-      "/sales?tribunal=TJ+Bobigny",
+      "/tribunaux/bobigny",
     );
+    expect(
+      screen
+        .getByRole("link", { name: "Voir dans la recherche 107 ventes : Bobigny" })
+        .getAttribute("href"),
+    ).toBe("/sales?tribunal=TJ+Bobigny");
+    expect(
+      screen.getByRole("link", { name: "la page des audiences à venir" }).getAttribute("href"),
+    ).toBe("/audiences-a-venir");
     expect(section.textContent).toMatch(/40\s500\s€/);
     expect(section.textContent).toContain("13 oct.");
     // Tant que les statistiques d'adjudication sont fermées, la page ne les annonce pas.
