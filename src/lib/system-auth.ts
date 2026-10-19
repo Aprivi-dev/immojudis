@@ -22,6 +22,7 @@ export async function systemAuthForUser(userId: string): Promise<SupabaseAuthCon
     claims: {},
     accountTier: data?.account_tier === "premium" ? "premium" : "free",
     userRole,
+    hasProfile: data != null,
     // Same rule as the request middleware: an admin account has the Analyse plan.
     isAdmin: userRole === "admin",
   };

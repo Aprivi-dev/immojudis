@@ -19,6 +19,7 @@ import {
 } from "@/lib/plans";
 import { createTextPdf } from "@/lib/simple-pdf";
 import { REPORT_COMPLIANCE_NOTICE, type SourceTraceEntry } from "@/lib/source-traceability";
+import { isLaunchOfferActive } from "@/lib/launch-offer.server";
 import { hasUnlockedSale } from "@/lib/sale-unlocks.server";
 import { recordFeatureUsageEvent } from "@/lib/usage";
 import { getPublicationVisibleSaleIds } from "@/lib/sale-publication-guard";
@@ -110,6 +111,12 @@ export type PlanEntitlements = {
   hasAnalysisAccess: boolean;
   currentPeriodEnd: string | null;
   billing?: PlanBilling;
+  /**
+   * Le plan est Analyse grâce à l'offre de lancement (compte gratuit surclassé tant que
+   * `app_private.launch_offer` est active). Absent pour un abonné, un compte premium ou un
+   * administrateur. Sert à l'affichage : mention retirable sans préavis, pas de parcours de paiement.
+   */
+  launchOffer?: true;
   limits: (typeof PLAN_LIMITS)[PlanCode];
   features: {
     salesStatistics: FeatureAccess;
@@ -608,6 +615,8 @@ export async function shareOwnerKeepsSavedReports(userId: string): Promise<boole
     .maybeSingle();
   if (profileError) throw profileError;
   if (profile?.user_role === "admin" || profile?.account_tier === "premium") return true;
+  // Offre de lancement : les liens partagés par un compte gratuit restent ouverts tant qu'elle dure.
+  if (profile && (await isLaunchOfferActive())) return true;
 
   const { data: subscription, error } = await supabaseAdmin
     .from("user_subscriptions")
@@ -714,11 +723,25 @@ export async function resolvePlanEntitlements(
     data && isPlanPeriodActive(data.status, data.current_period_end)
       ? normalizePlanCode(data.plan_code)
       : "decouverte";
-  return buildPlanEntitlements(plan, data?.current_period_end ?? null, PLAN_LIMITS[plan], {
+  const billing: PlanBilling = {
     status: (data?.status as PlanStatus | undefined) ?? null,
     hasStripeCustomer: Boolean(data?.stripe_customer_id),
     graceEndsAt: data?.status === "past_due" ? pastDueGraceEnd(data.current_period_end) : null,
-  });
+  };
+  // Offre de lancement : un compte gratuit qui a un profil reçoit le plan Analyse, avec ses
+  // quotas (rapports, PDF, actualisations). L'état vient de la base, comme pour les fonctions SQL
+  // d'accès (`app_private.has_active_analysis_access`) ; rien n'est écrit sur le compte, couper
+  // l'offre ramène donc le plan Découverte sans nettoyage.
+  if (plan === "decouverte" && auth.hasProfile !== false && (await isLaunchOfferActive())) {
+    return buildPlanEntitlements(
+      "analyse",
+      data?.current_period_end ?? null,
+      PLAN_LIMITS.analyse,
+      billing,
+      { launchOffer: true },
+    );
+  }
+  return buildPlanEntitlements(plan, data?.current_period_end ?? null, PLAN_LIMITS[plan], billing);
 }
 
 /** The door that opens a right for a sale: the offer itself, or the unlock of this very sale. */
