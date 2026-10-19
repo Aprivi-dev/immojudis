@@ -332,6 +332,22 @@ jobs:
           REQUESTED_RUN_ID: ${{ inputs.run_id }}
         run: python -m src.run_finalizer
 
+      # Invalidation du cache public après un retrait : un déclencheur de auction_sales note dans
+      # app_private.catalogue_invalidations les ventes qui quittent le catalogue ; cette étape les envoie à
+      # POST /api/pipeline/revalidate-sale (100 par appel, supprimées seulement sur une réponse 2xx). Elle
+      # tourne même quand la collecte échoue (un retrait déjà enregistré doit partir), ne fait jamais échouer
+      # le job, et c'est la seule étape qui reçoit CRON_SECRET (variable de dépôt SITE_URL : l'origine
+      # publique, https://immojudis.com). Voir docs/runbooks/catalogue-visibility-projection.md.
+      - name: Invalidate public cache
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: python -m src.cache_invalidation --flush
+
       - name: Report source coverage and enrichment backlog
         if: always()
         env:
