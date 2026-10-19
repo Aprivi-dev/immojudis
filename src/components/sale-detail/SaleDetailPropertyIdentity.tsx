@@ -175,7 +175,8 @@ export function PropertyIdentity({
               type="button"
               onClick={() => setGalleryIndex(mobilePhotoIndex)}
               className="absolute bottom-8 right-3 z-10 inline-flex min-h-10 items-center gap-2 rounded-md border border-white/70 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold md:bottom-4 md:right-4"
-              aria-label={`Ouvrir la galerie de ${images.length} photos`}
+              // The name contains the visible text at every breakpoint (WCAG 2.5.3).
+              aria-label={`Ouvrir la galerie de ${images.length} photo${images.length > 1 ? "s" : ""}, photo ${mobilePhotoIndex + 1} / ${images.length}`}
             >
               <Camera className="h-4 w-4" aria-hidden />
               <span className="md:hidden" aria-live="polite">
