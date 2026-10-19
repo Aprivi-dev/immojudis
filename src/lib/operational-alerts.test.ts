@@ -142,13 +142,12 @@ describe("operational alert email (second channel)", () => {
 
   function routedFetch(routes: { github?: Response; resend?: Response }) {
     return vi.fn<typeof fetch>(async (input) => {
-      const url = String(input);
-      if (url.startsWith("https://api.resend.com")) return routes.resend ?? ok();
+      if (new URL(String(input)).hostname === "api.resend.com") return routes.resend ?? ok();
       return routes.github ?? new Response(null, { status: 204 });
     });
   }
   const callsTo = (fetchImpl: ReturnType<typeof routedFetch>, host: string) =>
-    fetchImpl.mock.calls.filter(([input]) => String(input).startsWith(host));
+    fetchImpl.mock.calls.filter(([input]) => new URL(String(input)).hostname === host);
 
   it("sends nothing and says nothing without OPERATIONS_ALERT_EMAIL_TO", async () => {
     const fetchImpl = routedFetch({});
@@ -158,7 +157,7 @@ describe("operational alert email (second channel)", () => {
       fetchImpl,
     });
 
-    expect(callsTo(fetchImpl, "https://api.resend.com")).toHaveLength(0);
+    expect(callsTo(fetchImpl, "api.resend.com")).toHaveLength(0);
     expect(summary).toEqual({
       channel: "github_actions",
       configured: true,
@@ -183,8 +182,8 @@ describe("operational alert email (second channel)", () => {
       failed: 0,
       email: { sent: 1, failed: 0 },
     });
-    expect(callsTo(fetchImpl, "https://api.github.com")).toHaveLength(1);
-    const [[, request]] = callsTo(fetchImpl, "https://api.resend.com");
+    expect(callsTo(fetchImpl, "api.github.com")).toHaveLength(1);
+    const [[, request]] = callsTo(fetchImpl, "api.resend.com");
     const headers = request?.headers as Record<string, string>;
     expect(headers.authorization).toBe("Bearer re_test_key");
     expect(headers["idempotency-key"]).toBe("immojudis-ops-alert-cron.stale-2-owner@example.test");
@@ -229,7 +228,7 @@ describe("operational alert email (second channel)", () => {
       fetchImpl,
     });
 
-    expect(callsTo(fetchImpl, "https://api.resend.com")).toHaveLength(1);
+    expect(callsTo(fetchImpl, "api.resend.com")).toHaveLength(1);
     expect(summary).toMatchObject({ delivered: 0, failed: 1, email: { sent: 1, failed: 0 } });
     expect(client.rpc).toHaveBeenLastCalledWith(
       "complete_operational_alert_notification",
@@ -248,7 +247,7 @@ describe("operational alert email (second channel)", () => {
     });
 
     expect(summary).toMatchObject({ channel: "email", configured: true, delivered: 1, failed: 0 });
-    expect(callsTo(fetchImpl, "https://api.github.com")).toHaveLength(0);
+    expect(callsTo(fetchImpl, "api.github.com")).toHaveLength(0);
   });
 
   it("retries an email-only incident when the email fails", async () => {
