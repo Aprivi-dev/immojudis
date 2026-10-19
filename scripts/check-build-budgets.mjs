@@ -216,6 +216,13 @@ const routeBudgets = [
     maxBytes: 545_000,
   },
   {
+    name: "admin-pilotage",
+    manifest: ".next/server/app/admin/pilotage/page_client-reference-manifest.js",
+    routeKey: "/admin/pilotage/page",
+    entryKey: "[project]/src/app/admin/pilotage/page",
+    maxBytes: 540_000,
+  },
+  {
     name: "admin-lawyers",
     manifest: ".next/server/app/admin/lawyers/page_client-reference-manifest.js",
     routeKey: "/admin/lawyers/page",
