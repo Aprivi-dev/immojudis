@@ -44,13 +44,21 @@ describe("mapTribunalSaleRows", () => {
     ]);
   });
 
-  it("marque les ventes reportées, et elles seules", () => {
+  it("marque les ventes reportées et celles au statut inconnu, sans les présenter comme à venir", () => {
     const sales = mapTribunalSaleRows([
       { ...ROW, status: "postponed" },
       { ...ROW, status: "unknown" },
       { ...ROW, status: null },
+      { ...ROW, status: "" },
+      { ...ROW, status: "upcoming" },
     ]);
-    expect(sales.map((sale) => sale.status)).toEqual(["postponed", "scheduled", "scheduled"]);
+    expect(sales.map((sale) => sale.status)).toEqual([
+      "postponed",
+      "unknown",
+      "unknown",
+      "unknown",
+      "scheduled",
+    ]);
   });
 
   it("laisse vide ce que la base ne renseigne pas, sans inventer de zéro", () => {

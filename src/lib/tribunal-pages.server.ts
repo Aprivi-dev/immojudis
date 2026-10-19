@@ -38,7 +38,16 @@ function finite(value: number | string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** Une vente reportée n'a plus de date valable : la page ne l'annonce pas comme prochaine audience. */
+function tribunalSaleStatus(status: string | null): DepartmentSale["status"] {
+  if (status === "postponed") return "postponed";
+  return status == null || status.trim() === "" || status === "unknown" ? "unknown" : "scheduled";
+}
+
+/**
+ * Une vente reportée n'a plus de date valable : la page ne l'annonce pas comme prochaine audience.
+ * Un statut que la base ne connaît pas (`unknown`, ou absent) reste `unknown` : il n'est pas
+ * présenté comme une vente à venir confirmée.
+ */
 export function mapTribunalSaleRows(rows: readonly TribunalSaleRow[]): DepartmentSale[] {
   return rows.map((row) => ({
     id: row.id,
@@ -49,7 +58,7 @@ export function mapTribunalSaleRows(rows: readonly TribunalSaleRow[]): Departmen
     surfaceM2: finite(row.surface_m2),
     // La fonction ne rend que des ventes au tribunal.
     venueType: "tribunal" as const,
-    status: row.status === "postponed" ? ("postponed" as const) : ("scheduled" as const),
+    status: tribunalSaleStatus(row.status),
   }));
 }
 

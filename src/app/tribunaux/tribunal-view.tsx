@@ -118,7 +118,7 @@ export function TribunalView({
             </div>
             <div>
               <dt className="text-sm text-ink-soft">Prochaine audience</dt>
-              <dd className="mt-1 text-lg font-semibold">{nextDate ?? "Date à confirmer"}</dd>
+              <dd className="mt-1 text-lg font-semibold">{nextDate ?? "Non connue"}</dd>
             </div>
             <div>
               <dt className="text-sm text-ink-soft">Mise à prix médiane</dt>
@@ -184,7 +184,12 @@ export function TribunalView({
                           {sale.city || "Commune à confirmer"}
                         </span>
                         <span className="block text-sm text-ink-soft">
-                          {[propertyTypeLabel(sale.propertyType), surface, dateText]
+                          {[
+                            propertyTypeLabel(sale.propertyType),
+                            surface,
+                            dateText,
+                            sale.status === "unknown" ? "Statut à confirmer" : null,
+                          ]
                             .filter(Boolean)
                             .join(" · ")}
                         </span>

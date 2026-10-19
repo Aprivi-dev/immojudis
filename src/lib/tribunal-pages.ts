@@ -210,8 +210,11 @@ export function tribunalDepartment(
  * Prochaine audience du tribunal. La fonction d'activité publique prend la plus proche date de
  * toutes les ventes à venir, reportées comprises (une vente reportée garde son ancienne date). La
  * liste des ventes, elle, connaît le statut : quand elle est lue, la prochaine audience est la
- * première vente non reportée dont la date n'est pas passée. Sans liste, on garde la date de
- * l'activité publique.
+ * première vente non reportée dont la date n'est pas passée, cherchée sur toutes les lignes reçues
+ * (dans n'importe quel ordre). Sans liste, on garde la date de l'activité publique. `null` veut dire
+ * « non connue » : la page l'écrit (« Non connue »), elle ne laisse pas la case vide. Cela arrive
+ * quand aucune ligne reçue ne convient, par exemple quand toutes les premières lignes (la liste est
+ * bornée) sont des ventes reportées : une audience plus lointaine peut exister sans qu'on la voie.
  */
 export function nextAudienceDate(
   activity: Pick<PublicTribunalActivity, "nextSaleDate">,
