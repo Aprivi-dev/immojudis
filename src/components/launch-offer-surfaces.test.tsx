@@ -37,7 +37,17 @@ vi.mock("@/lib/client-billing", () => ({
   updateOfferOpeningNotification: vi.fn(),
   updateOfferOpeningSurvey: vi.fn(),
 }));
-vi.mock("@/lib/client-api", () => ({ fetchSaleUnlocksOverview: mocks.overview }));
+vi.mock("@/lib/client-api", () => ({
+  fetchSaleUnlocksOverview: mocks.overview,
+  fetchAccessPlan: mocks.plan,
+  fetchNotificationPreferences: vi.fn().mockResolvedValue({ preferences: {} }),
+  updateNotificationPreferences: vi.fn(),
+}));
+// /bienvenue crée l'alerte par ce crochet (chantier W5) : simulé, il est testé à part.
+vi.mock("@/hooks/use-has-analysis-access", () => ({ useHasAnalysisAccess: () => false }));
+vi.mock("@/hooks/use-create-alert", () => ({
+  useCreateAlert: () => ({ createAlertFromSearch: vi.fn(), saving: false }),
+}));
 vi.mock("@/components/BillingActions", () => ({ BillingActions: () => <div>Actions</div> }));
 
 import { AccountPage } from "./AccountPage";
