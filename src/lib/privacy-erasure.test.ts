@@ -127,6 +127,7 @@ describe("erasure execution (P4-10)", () => {
     for (const table of [
       "user_alerts",
       "user_favorites",
+      "user_followed_sale_snapshots",
       "saved_property_reports",
       "sale_workspaces",
       "user_subscriptions",

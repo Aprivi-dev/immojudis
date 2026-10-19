@@ -10795,6 +10795,85 @@ export type Database = {
           },
         ];
       };
+      // À régénérer par db:types (ajout minimal, point 70).
+      user_followed_sale_snapshots: {
+        Row: {
+          adjudication_price_eur: number | null;
+          adjudication_price_source: string | null;
+          adjudication_price_withheld: boolean;
+          bid_ceiling_eur: number | null;
+          captured_at: string;
+          city: string | null;
+          department: string | null;
+          expires_at: string;
+          id: string;
+          lawyer_name: string | null;
+          personal_status: string | null;
+          postal_code: string | null;
+          property_type: string | null;
+          result_status: string;
+          sale_date: string | null;
+          sale_id: string;
+          sale_legal_framework: string | null;
+          sale_venue_type: string | null;
+          source_name: string | null;
+          starting_price_eur: number | null;
+          title: string | null;
+          tribunal_name: string | null;
+          user_id: string;
+        };
+        Insert: {
+          adjudication_price_eur?: number | null;
+          adjudication_price_source?: string | null;
+          adjudication_price_withheld?: boolean;
+          bid_ceiling_eur?: number | null;
+          captured_at?: string;
+          city?: string | null;
+          department?: string | null;
+          expires_at: string;
+          id?: string;
+          lawyer_name?: string | null;
+          personal_status?: string | null;
+          postal_code?: string | null;
+          property_type?: string | null;
+          result_status: string;
+          sale_date?: string | null;
+          sale_id: string;
+          sale_legal_framework?: string | null;
+          sale_venue_type?: string | null;
+          source_name?: string | null;
+          starting_price_eur?: number | null;
+          title?: string | null;
+          tribunal_name?: string | null;
+          user_id: string;
+        };
+        Update: {
+          adjudication_price_eur?: number | null;
+          adjudication_price_source?: string | null;
+          adjudication_price_withheld?: boolean;
+          bid_ceiling_eur?: number | null;
+          captured_at?: string;
+          city?: string | null;
+          department?: string | null;
+          expires_at?: string;
+          id?: string;
+          lawyer_name?: string | null;
+          personal_status?: string | null;
+          postal_code?: string | null;
+          property_type?: string | null;
+          result_status?: string;
+          sale_date?: string | null;
+          sale_id?: string;
+          sale_legal_framework?: string | null;
+          sale_venue_type?: string | null;
+          source_name?: string | null;
+          starting_price_eur?: number | null;
+          title?: string | null;
+          tribunal_name?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       user_notification_preferences: {
         Row: {
           alert_email_consented_at: string | null;

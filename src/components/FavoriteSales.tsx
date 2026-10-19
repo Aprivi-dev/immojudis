@@ -20,6 +20,7 @@ import { Badge, Card, PageShell, buttonClasses } from "@/components/ui/primitive
 import { ListingCard } from "@/components/search/SearchResults";
 import { FavoriteButton } from "./FavoriteButton";
 import { FavoriteDossierLine } from "./FavoriteDossierLine";
+import { PastFollowedSales } from "./PastFollowedSales";
 import { FavoriteSaleChanges } from "./FavoriteSaleChanges";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { queryKeys } from "@/lib/query-keys";
@@ -178,6 +179,8 @@ export function FavoriteSales() {
           aiReviewStatus={aiReviewStatus}
         />
       ) : null}
+      {/* Ventes suivies dont l'audience est passée : instantané gardé 6 mois au plus (point 70). */}
+      <PastFollowedSales />
       {data?.unavailableSaleIds?.length ? (
         <section className="mt-10">
           <h2 className="font-display text-2xl font-semibold">Annonces retirées du catalogue</h2>
