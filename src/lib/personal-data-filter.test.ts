@@ -66,6 +66,13 @@ describe("redactPersonalText : temps linéaire sur de longues suites d'espaces",
     "bail consenti répété": `bail consenti${spaces(300)}`.repeat(200),
     "occupé par répété": `occupé par Madame Eva ROY${spaces(300)}`.repeat(200),
     "à la requête de répété": `à la requête de${spaces(300)}`.repeat(200),
+    "à la requête de : répété": `à la requête de :${spaces(300)}la${spaces(300)}`.repeat(100),
+    "rôle répété": `Le débiteur${spaces(300)}`.repeat(200),
+    "rôle suivi d'un nom répété": `Le saisi, Paul${spaces(300)}ROY${spaces(300)}`.repeat(100),
+    "NOM Prénom répété": `occupé par DUPONT${spaces(300)}Pierre${spaces(300)}`.repeat(100),
+    "longue suite de noms en capitales": `occupé par ${"DUPONT ".repeat(5000)}`,
+    "longue suite de prénoms": `Le saisi, ${"Pierre ".repeat(5000)}`,
+    "longue suite de NOM Prénom": `occupé par ${"DUPONT Pierre ".repeat(3000)}`,
   };
 
   it.each(Object.entries(texts))("%s", (_name, text) => {
@@ -141,5 +148,25 @@ describe("redactSaleTexts", () => {
   it("conserve la forme d'une fiche sans texte libre", () => {
     const sale = { id: "sale-2", description: null, risks: null, source_blocks: null };
     expect(redactSaleTexts(sale)).toEqual(sale);
+  });
+});
+
+describe("liste des prénoms", () => {
+  it("est la même que celle du miroir Python (`_FIRST_NAMES`)", () => {
+    const quoted = (source: string, start: RegExp) => {
+      const block = new RegExp(`${start.source}([\\s\\S]*?)(?:;\\n|\\n\\)\\n)`).exec(source)![1];
+      return [...block.matchAll(/"([^"]*)"/g)].map((match) => match[1]).join("");
+    };
+    const typescript = quoted(
+      readFileSync(path.join(process.cwd(), "src/lib/personal-data-filter.ts"), "utf8"),
+      /const FIRST_NAMES =/,
+    );
+    const python = quoted(
+      readFileSync(path.join(process.cwd(), "services/data-pipeline/src/personal_data.py"), "utf8"),
+      /_FIRST_NAMES = \(/,
+    );
+
+    expect(typescript.split(" ").length).toBeGreaterThan(300);
+    expect(python).toBe(typescript);
   });
 });
