@@ -127,14 +127,50 @@ def test_a_large_but_plausible_house_is_kept() -> None:
     assert sale.app_surface_m2 == Decimal("420")
 
 
-def test_an_explicitly_labelled_habitable_house_surface_has_a_higher_ceiling() -> None:
+def test_an_explicitly_labelled_habitable_house_surface_keeps_the_house_ceiling() -> None:
+    # Le plafond « habitable » de 5 000 m² est ramené à 1 000 m² (comme toute maison) : une surface
+    # habitable de plus de 1 000 m² sans preuve d'un total bâti est presque toujours une parcelle.
     sale = _sale("house", None, description="Maison. Surface habitable : 2 464,70 m².")
+
+    assert sale.app_surface_m2 is None
+    assert sale.surface_m2 is None
+    assert sale.habitable_surface_m2 is None
+    assert "ambiguous_surface" in sale.quality_flags
+    reconciliation = sale.raw_payload["implausible_surface_reconciliation"]
+    assert reconciliation["status"] == "removed"
+    assert reconciliation["ceiling_m2"] == "1000"
+    assert reconciliation["rejected_surface_m2"] == "2464.70"
+
+
+def test_a_house_at_the_ceiling_keeps_its_labelled_habitable_surface() -> None:
+    sale = _sale("house", None, description="Maison. Surface habitable : 1 000 m².")
+
+    assert sale.app_surface_m2 == Decimal("1000")
+    assert "implausible_surface_reconciliation" not in sale.raw_payload
+
+
+def test_a_proven_built_total_raises_the_ceiling_of_the_labelled_house_surface() -> None:
+    sale = _sale("house", None, description="Maison. Surface habitable : 2 464,70 m² (surface totale bâtie).")
 
     assert sale.app_surface_m2 == Decimal("2464.70")
     assert "implausible_surface_reconciliation" not in sale.raw_payload
 
-    huge = _sale("house", None, description="Maison. Surface habitable : 48 256 m².")
+    huge = _sale("house", None, description="Maison. Surface habitable : 48 256 m² (surface totale bâtie).")
     assert huge.app_surface_m2 is None
+
+
+def test_a_total_that_closes_a_parcel_list_is_not_a_proven_built_total() -> None:
+    sale = _sale(
+        "house",
+        None,
+        description=(
+            "Maison. Surface habitable : 1 550 m². Parcelles cadastrées section AB n°12 pour 5a 20ca "
+            "et n°13 pour 10a 30ca, soit superficie totale 1 550 m²."
+        ),
+    )
+
+    assert sale.app_surface_m2 is None
+    assert sale.land_surface_m2 == Decimal("1550")
 
 
 def test_the_nine_square_meter_rule_is_unchanged() -> None:

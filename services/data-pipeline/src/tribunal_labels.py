@@ -12,8 +12,10 @@ import re
 import unicodedata
 
 _MAX_COURT_NAME_WORDS = 7
+# L'article doit être un mot entier (``\b``) : sans cela « de Lille » se lisait « de l » + « ille » et
+# « TJ Dax » « d » + « ax ».
 _LEADING_COURT_WORDS = re.compile(
-    r"^(?:tj|tribunal judiciaire|tribunal de grande instance|tgi)\b(?:\s+(?:de la|de l|du|des|de|d))?\s*"
+    r"^(?:tj|tribunal judiciaire|tribunal de grande instance|tgi)\b(?:\s+(?:de la|de l|du|des|de|d)\b)?\s*"
 )
 # Mots qui ne font jamais partie d'un nom de tribunal : leur présence signale du texte d'annonce.
 _STRONG_NOISE_WORDS = frozenset(

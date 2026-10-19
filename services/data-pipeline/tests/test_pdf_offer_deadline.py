@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from src.models import AuctionSale
@@ -14,6 +14,10 @@ from src.pdf_offer_deadline import (
 )
 
 FUTURE_YEAR = datetime.now(UTC).year + 1
+_FRENCH_MONTHS = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)
 
 
 def _document(
@@ -75,15 +79,19 @@ def test_call_for_offers_gets_its_deadline_as_sale_date() -> None:
         starting_price_eur=Decimal("90000"),
         status="upcoming",
     )
+    # Une date passée ou à plus de 548 jours est écartée (pdf_sale_date_guard) : « 15 novembre <année suivante> »
+    # sortait de la fenêtre dès le 1er janvier. La date est donc relative au jour d'exécution.
+    deadline = date.today() + timedelta(days=60)
+    month = _FRENCH_MONTHS[deadline.month - 1]
     document = _document(
-        f"Consultation. La date limite de remise des offres est fixée au 15 novembre {FUTURE_YEAR} à 12h00. "
-        "Le bien est libre de toute occupation."
+        f"Consultation. La date limite de remise des offres est fixée au {deadline.day} {month} {deadline.year} "
+        "à 12h00. Le bien est libre de toute occupation."
     )
 
     enrich_sale_from_pdf_text(sale, [document])
 
-    assert sale.sale_date is not None and sale.sale_date.year == FUTURE_YEAR
-    assert sale.sale_date.month == 11 and sale.sale_date.day == 15
+    assert sale.sale_date is not None and sale.sale_date.year == deadline.year
+    assert sale.sale_date.month == deadline.month and sale.sale_date.day == deadline.day
     assert sale.raw_payload["pdf_offer_deadline_extraction"]["document_type"] == "cahier_conditions_vente"
     assert sale.raw_payload["pdf_sale_date_extraction"]["sale_date_kind"] == "offer_deadline"
 

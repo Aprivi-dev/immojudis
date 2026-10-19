@@ -22,7 +22,8 @@ def _row(transaction_type: str, price: int = 100000, **dates: str) -> dict:
         "typeBien": "APP",
         "descriptionFr": "Appartement à Bordeaux",
         "prixAffiche": price,
-        "seanceDate": "2026-12-24",
+        # Relative au jour d'exécution : une séance datée en dur finit par être passée (carte « longtemps passée »).
+        "seanceDate": (datetime.now(UTC) + timedelta(days=60)).date().isoformat(),
     }
 
 
