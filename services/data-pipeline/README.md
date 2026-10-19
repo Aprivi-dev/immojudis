@@ -143,6 +143,18 @@ report » (lecture seule), ou la variable de dépôt `DEDUPE_RECONCILE_MODE=cand
 complète. Il journalise chaque paire conservée / supprimée (identifiant, source, commune, date, mise à prix, raison)
 et écrit le même tableau dans le résumé du job.
 
+La collecte planifiée lance une seule source à la fois ; or la passe ci-dessus n'est appelée par
+`src.main` que pour `--source all` sans limite, donc jamais en collecte planifiée. Le point d'entrée
+`python -m src.dedupe_apply` (workflow GitHub « Dedupe sweep », manuel, groupe de concurrence
+`immojudis-data-pipeline`, environnement Production) l'exécute à part : passerelle du catalogue, puis
+fusion et suppression, au plus 100 lignes par passage et seulement si `DEDUPE_RECONCILE_ENABLED=true`
+(sinon rien n'est écrit, et le mode candidats reste en lecture seule). Dans ce balayage, la clé de repli
+stricte (tribunal, jour, mise à prix, bien) est permise hors Vench / Petites Affiches, et un (jour, prix)
+partagé par plus de 5 annonces ou un groupe de plus de 5 lignes n'est jamais fusionné. Les données des
+comptes (favoris, notes, alertes, rapports…) des lignes supprimées passent à la fiche conservée dans la
+base (migration `20261028110000`), qui garde aussi la correspondance ancien identifiant → fiche conservée
+(redirection 308 de `/sales/<ancien id>`).
+
 Pour résorber progressivement les annonces déjà en base sans synthèse IA
 publique, lancer un backfill borné. Il ne relance pas le scraping et cible par
 défaut les ventes `active` et `upcoming` :

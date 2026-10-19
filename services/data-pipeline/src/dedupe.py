@@ -5,7 +5,7 @@ import re
 import unicodedata
 from collections.abc import Iterable
 from copy import deepcopy
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -86,12 +86,27 @@ def dedupe_sales(sales: Iterable[AuctionSale]) -> list[AuctionSale]:
     return merge_duplicate_sales(sales)
 
 
-def merge_duplicate_sales(sales: Iterable[AuctionSale], *, strict_fallback: bool = True) -> list[AuctionSale]:
+# Balayage des lignes déjà publiées : la clé de repli stricte n'y sert que hors Vench / Petites Affiches
+# (l'identifiant d'annonce commun prouve l'identité de ces deux sources, et leur recoupement par la clé
+# stricte n'est pas retenu), et jamais sur un jour et un prix partagés par plus de 5 annonces : ce sont
+# des lots distincts d'une même audience.
+SWEEP_STRICT_EXCLUDED_SOURCES = frozenset({"vench", "petites_affiches"})
+SWEEP_STRICT_MAX_GROUP = 5
+
+
+def merge_duplicate_sales(
+    sales: Iterable[AuctionSale],
+    *,
+    strict_fallback: bool = True,
+    strict_excluded_sources: frozenset[str] = frozenset(),
+    strict_max_group: int | None = None,
+) -> list[AuctionSale]:
     """Fusionne les observations d'un même bien.
 
-    ``strict_fallback=False`` désactive la clé de repli stricte (tribunal, jour, prix, signal fort) :
-    le balayage qui relit les lignes déjà publiées l'utilise pour ne fusionner et supprimer que
-    sur preuve (adresse précise, identifiant d'annonce commun).
+    ``strict_fallback=False`` désactive la clé de repli stricte (tribunal, jour, prix, signal fort).
+    Le balayage qui relit les lignes déjà publiées la restreint plutôt que de la couper :
+    ``strict_excluded_sources`` écarte les annonces de ces sources de la clé stricte, et
+    ``strict_max_group`` écarte les (jour, prix) partagés par plus d'annonces que ce plafond.
     """
     by_source_url: dict[str, AuctionSale] = {}
     for sale in sales:
@@ -141,7 +156,11 @@ def merge_duplicate_sales(sales: Iterable[AuctionSale], *, strict_fallback: bool
     # Un identifiant d'annonce commun (Vench / Petites Affiches) prouve l'identité ; la clé de repli
     # stricte (tribunal, jour, prix, signal fort) ne passe qu'en dernier.
     survivors = _merge_by_address(_merge_by_shared_listing_id(survivors))
-    return _merge_by_strict_key(survivors) if strict_fallback else survivors
+    if not strict_fallback:
+        return survivors
+    return _merge_by_strict_key(
+        survivors, excluded_sources=strict_excluded_sources, max_group=strict_max_group
+    )
 
 
 def _is_richer(candidate: AuctionSale, current: AuctionSale) -> bool:
@@ -199,6 +218,14 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
         incoming = getattr(source, field)
         if _is_empty(current) and not _is_empty(incoming):
             setattr(target, field, incoming)
+        elif (
+            field == "sale_date"
+            and not _is_empty(incoming)
+            and (timed := _timed_same_day_sale_date(current, incoming)) is not None
+        ):
+            # Même jour civil à Paris, une seule heure connue : ce n'est pas un désaccord entre sources,
+            # la date horodatée l'emporte sur la date seule (minuit UTC) quelle que soit sa source.
+            setattr(target, field, timed)
         elif field not in {"raw_payload", "raw_text"} and not _is_empty(incoming) and current != incoming and not isinstance(current, (list, dict)):
             conflicts = target.raw_payload.setdefault("source_conflicts", [])
             incoming_selected = _field_authority(source, field) > _field_authority(target, field)
@@ -261,6 +288,29 @@ def _merge_into(target: AuctionSale, source: AuctionSale, confidence: str) -> Au
     if source.raw_text and source.raw_text not in (target.raw_text or ""):
         target.raw_text = clean_text(f"{target.raw_text or ''}\n\n--- SOURCE {source.source_name.upper()} ---\n{source.raw_text}")
     return target
+
+
+def _has_known_time(value: datetime) -> bool:
+    """Vrai si la date porte une heure : un minuit UTC est une date seule (le jour sans l'heure)."""
+    utc_value = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return utc_value.time() != time(0, 0)
+
+
+def _timed_same_day_sale_date(first: Any, second: Any) -> datetime | None:
+    """La date horodatée, si les deux dates tombent le même jour civil à Paris et qu'une seule a une heure.
+
+    Petites Affiches publie souvent le jour seul (minuit UTC) d'une vente que Vench donne à 14 h : la
+    date seule ne doit pas écraser l'heure. Dans tous les autres cas (jours différents, deux heures
+    connues et différentes, aucune heure) renvoie None et la règle d'autorité des champs s'applique.
+    """
+    if not isinstance(first, datetime) or not isinstance(second, datetime):
+        return None
+    if _civil_day(first) != _civil_day(second):
+        return None
+    first_timed, second_timed = _has_known_time(first), _has_known_time(second)
+    if first_timed == second_timed:
+        return None
+    return first if first_timed else second
 
 
 def _ensure_observation_metadata(sale: AuctionSale) -> None:
@@ -599,11 +649,20 @@ def strict_duplicate_key_match(first: AuctionSale, second: AuctionSale) -> bool:
     )
 
 
-def _merge_by_strict_key(sales: list[AuctionSale]) -> list[AuctionSale]:
+def _merge_by_strict_key(
+    sales: list[AuctionSale],
+    *,
+    excluded_sources: frozenset[str] = frozenset(),
+    max_group: int | None = None,
+) -> list[AuctionSale]:
     """Fusionne les paires que la clé stricte désigne sans ambiguïté, de part et d'autre.
 
     Si une annonce a deux partenaires possibles (deux lots de même prix le même jour), rien n'est
     fusionné : on ne peut pas savoir quel lot est lequel.
+
+    ``excluded_sources`` : les annonces de ces sources ne sont jamais rapprochées par cette clé.
+    ``max_group`` : un (jour, prix) partagé par plus d'annonces (toutes sources comptées, y compris les
+    sources exclues) est ignoré en entier : ce sont des lots distincts mis à prix pareil.
     """
     partners: dict[int, list[AuctionSale]] = {id(sale): [] for sale in sales}
     buckets: dict[tuple[date, int], list[AuctionSale]] = {}
@@ -611,7 +670,10 @@ def _merge_by_strict_key(sales: list[AuctionSale]) -> list[AuctionSale]:
         day, price = _civil_day(sale.sale_date), _whole_euros(sale.starting_price_eur)
         if day is not None and price is not None:
             buckets.setdefault((day, price), []).append(sale)
-    for bucket in buckets.values():
+    for full_bucket in buckets.values():
+        if max_group is not None and len(full_bucket) > max_group:
+            continue
+        bucket = [sale for sale in full_bucket if sale.source_name not in excluded_sources]
         for index, first in enumerate(bucket):
             for second in bucket[index + 1 :]:
                 if strict_duplicate_key_match(first, second):

@@ -339,15 +339,18 @@ jobs:
         run: python -m src.pipeline_health --report-only
 
       # Copie des photos principales après la collecte planifiée : étape séparée et bornée (15 min,
-      # 400 photos par défaut, et jamais plus de 20 min grâce à --automatic, sous le timeout de 25),
-      # qui ne fait jamais échouer la collecte (continue-on-error). Elle tourne à chaque collecte
-      # planifiée, même quand la variable de dépôt PHOTO_MIRROR_ENABLED n'est pas « true » : dans ce
-      # cas rien n'est téléchargé, mais les retraits (source retirée, copie « withdrawn ») s'appliquent,
-      # car un retrait n'attend pas la réactivation. Le rattrapage du stock est un workflow à part
-      # (photo-mirror-backfill.yml).
+      # 400 photos par défaut, et jamais plus de 20 min grâce à --automatic, sous le timeout de 25).
+      # Elle tourne même quand l'étape de collecte échoue (always()) : la collecte est déjà publiée
+      # et un retrait de photo n'attend pas. Les échecs de photos (réseau, robots.txt, format) sont
+      # comptés dans le résumé et ne font pas échouer l'étape (code 0) ; si le passage lui-même ne peut
+      # pas tourner (la requête de sélection lève, base injoignable), l'étape sort en code 1 et le
+      # travail devient rouge : pas de continue-on-error, qui avait caché une sélection cassée. Elle
+      # tourne à chaque collecte planifiée, même quand la variable de dépôt PHOTO_MIRROR_ENABLED n'est
+      # pas « true » : dans ce cas rien n'est téléchargé, mais les retraits (source retirée, copie
+      # « withdrawn ») s'appliquent, car un retrait n'attend pas la réactivation. Le rattrapage du
+      # stock est un workflow à part (photo-mirror-backfill.yml).
       - name: Copie des photos principales
-        if: inputs.automatic == true
-        continue-on-error: true
+        if: always() && inputs.automatic == true
         timeout-minutes: 25
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
