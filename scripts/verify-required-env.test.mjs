@@ -306,6 +306,20 @@ describe("garde-fous de lancement (build de production)", () => {
     expect(text).toContain("ADMIN_MFA_REQUIRED");
   });
 
+  it("avertit, sans jamais bloquer, d'une valeur inconnue de SALE_REMINDERS_MODE", () => {
+    const production = { ...completeLaunch, VERCEL_ENV: "production" };
+    for (const SALE_REMINDERS_MODE of [undefined, "", "off", "internal", " ON "]) {
+      expect(
+        evaluateProductionLaunchConfig({ ...production, SALE_REMINDERS_MODE }),
+        String(SALE_REMINDERS_MODE),
+      ).toEqual({ exitCode: 0, errors: [], warnings: [] });
+    }
+    const outcome = evaluateProductionLaunchConfig({ ...production, SALE_REMINDERS_MODE: "oui" });
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.errors).toEqual([]);
+    expect(outcome.warnings.join("\n")).toContain("SALE_REMINDERS_MODE vaut « oui »");
+  });
+
   it("l'échappatoire ne change rien quand la configuration est complète", () => {
     expect(
       evaluateProductionLaunchConfig({

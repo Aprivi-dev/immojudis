@@ -1,3 +1,5 @@
+import { serverEnv, type EnvSource } from "@/lib/env";
+
 /**
  * Mode d'envoi des rappels d'audience et des avertissements graves (variable `SALE_REMINDERS_MODE`) :
  *
@@ -15,7 +17,8 @@ export type SaleRemindersMode = (typeof SALE_REMINDERS_MODES)[number];
 export function saleRemindersMode(
   env: Pick<NodeJS.ProcessEnv, string> = process.env,
 ): SaleRemindersMode {
-  const value = env.SALE_REMINDERS_MODE?.trim().toLowerCase();
+  // Lecture par le circuit de configuration commun (`serverEnv`, valeur nettoyée des espaces).
+  const value = serverEnv(env as EnvSource).saleReminders.mode?.toLowerCase();
   return value === "internal" || value === "on" ? value : "off";
 }
 
